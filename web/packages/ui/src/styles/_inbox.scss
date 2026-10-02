@@ -231,9 +231,10 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
   min-width: 0;
 }
 
+// Boss tags wrap as whole units: each name stays beside its pill.
 .proposal__title {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   max-width: 100%;
   align-items: center;
   gap: 10px;
@@ -259,6 +260,10 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
 
 .proposal__card { color: var(--accent-text); }
 .proposal__title .boss { min-width: 0; }
+// A wrapped tag starts flush with the line; the gap spaces tags that share one.
+.proposal__title .boss + .boss { margin-inline-start: 0; }
+// Only a tag wider than the whole line wraps its name, and never under the pill.
+.proposal__title .boss__name { min-width: 0; overflow-wrap: anywhere; }
 
 // The source as a tonal chip (mockup `.tonal2`), the confidence on a surface.
 .proposal__meta .chip {

@@ -799,6 +799,13 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 admin phones keep selected list rows on their compact line across Fixed,
+  Week, Inbox, History, Members, Bosses and Config, including landscape; the
+  sideways settings strip never grows, while desktop rows still expand; the
+  Inbox heading wraps each boss name with its pill as one unit, and a Members
+  name cell keeps the name whole, ellipsises aliases and drops the "chat only"
+  chip below the name rather than past the column.
+
 - v5 admin Bosses: a whole catalog or event row selects its boss, weekly timings
   read as one outlined list and open that timing's editor in Fixed
   (`/fixed?open=<id>`), difficulty notes sit in their own accented callouts, and

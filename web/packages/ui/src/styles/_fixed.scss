@@ -67,10 +67,13 @@
 .fixed-list__flags:empty { display: none; }
 .fixed-list__flags > * + * { margin-inline-start: 6px; }
 .fixed-list__expanded { display: block; padding-block: 6px; }
-.fixed-list__row--active .fixed-list__bossline { flex-wrap: wrap; }
-.fixed-list__row--active .boss { white-space: normal; }
-.fixed-list__row--active .boss__name { overflow: visible; }
-.fixed-list__row--active .pill { flex: none; }
+// A selected single-boss row grows in place too, but never on phones.
+@media (min-width: 600px) and (min-height: 501px) {
+  .fixed-list__row--active .fixed-list__bossline { flex-wrap: wrap; }
+  .fixed-list__row--active .boss { white-space: normal; }
+  .fixed-list__row--active .boss__name { overflow: visible; }
+  .fixed-list__row--active .pill { flex: none; }
+}
 .fixed-list .portrait--sm { width: 28px; height: 28px; border-width: 1.5px; border-radius: 8px; }
 .fixed-list__party { color: var(--dim); font-size: var(--fs-small); }
 .fixed-list__party .chips { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

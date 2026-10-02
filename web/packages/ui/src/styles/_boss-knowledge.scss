@@ -15,11 +15,12 @@
 .bosses-list .bossrow__name { display: block; overflow: hidden; font-size: var(--fs-small); font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .bosses-list .bossrow__pills { flex-wrap: nowrap; gap: 3px; overflow: hidden; }
 .bosses-list .bossrow > .row-content { flex: 0 1 46%; width: auto; }
-.bosses-list .bossrow--active .bossrow__name { white-space: normal; }
-// Selected: identity keeps its own line; difficulties wrap below it, item by item.
-.bosses-list .bossrow--active { flex-wrap: wrap; }
-.bosses-list .bossrow--active > .bossrow__id { min-height: 52px; }
-.bosses-list .bossrow--active > .row-content { flex-basis: 100%; }
+// Selected and grown (never on phones): identity keeps its own line;
+// difficulties wrap below it, item by item.
+.bosses-list .bossrow:has(> .row-content--expanded) { flex-wrap: wrap; }
+.bosses-list .bossrow:has(> .row-content--expanded) .bossrow__name { white-space: normal; }
+.bosses-list .bossrow:has(> .row-content--expanded) > .bossrow__id { min-height: 52px; }
+.bosses-list .bossrow > .row-content--expanded { flex-basis: 100%; }
 .bossrow__difficulties { display: flex; flex-direction: column; gap: 4px; padding-block: 8px; }
 .bosses-list .bossrow__difficulties { flex-flow: row wrap; gap: 6px 10px; padding: 0 0 10px 44px; }
 .bosses-list .bossrow__difficulties > span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }

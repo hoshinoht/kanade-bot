@@ -28,11 +28,8 @@ const KEY = Symbol('kanade-chrome');
 export const setChrome = (chrome: Chrome) => setContext(KEY, chrome);
 export const getChrome = () => getContext<Chrome | undefined>(KEY);
 
-/**
- * The phone frame: narrow screens, and phone landscape (a 96 px rail of eleven
- * destinations does not fit under 500 px of height).
- */
-export const PHONE_QUERY = '(max-width: 599px), (max-height: 500px)';
+// The phone frame lives in @kanade/ui so shared rows can follow it too.
+export { PHONE_QUERY } from '@kanade/ui';
 
 const RAIL_KEY = 'rail';
 

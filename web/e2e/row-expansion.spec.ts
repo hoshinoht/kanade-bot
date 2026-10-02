@@ -164,3 +164,81 @@ test('Fixed: expanding a lower row never scrolls the fixed shell or jumps the li
   expect(after.body).toBe(0);
   expect(after.moved).toBe(false);
 });
+
+// Inbox and Bosses replace their phone list with a detail. Measure that same
+// selected DOM briefly at its original list width, then restore it before paint.
+async function selectedHeight(row: Locator, listWidth: number): Promise<number> {
+  return row.evaluate((element, width) => {
+    const list = element.closest<HTMLElement>('.inbox__list, .bosses-list');
+    if (!list || getComputedStyle(list).display !== 'none') return Math.round(element.getBoundingClientRect().height);
+    const properties = ['display', 'position', 'width'];
+    const previous = properties.map((property) => ({ property, value: list.style.getPropertyValue(property), priority: list.style.getPropertyPriority(property) }));
+    try {
+      list.style.setProperty('display', 'flex', 'important');
+      list.style.setProperty('position', 'fixed');
+      list.style.setProperty('width', `${width}px`);
+      return Math.round(element.getBoundingClientRect().height);
+    } finally {
+      for (const { property, value, priority } of previous) {
+        if (value) list.style.setProperty(property, value, priority);
+        else list.style.removeProperty(property);
+      }
+    }
+  }, listWidth);
+}
+
+const PHONE_ROWS = [
+  { name: 'Fixed multi-boss', path: '/fixed', row: 'tr:has([data-fixed="f-carling"])', trigger: '[data-fixed="f-carling"]', state: 'aria-current' },
+  { name: 'Fixed single-boss with a flag', path: '/fixed', row: 'tr:has([data-fixed="f-kalos"])', trigger: '[data-fixed="f-kalos"]', state: 'aria-current' },
+  { name: 'Week', path: '/', row: '[data-run="r-carling"]', trigger: '.plan-card__open', state: 'aria-current' },
+  { name: 'Inbox self-service', path: '/inbox?tab=self_service', row: '[data-item="p-carling-link"]', state: 'aria-selected' },
+  { name: 'Inbox extractor', path: '/inbox?tab=extractor', row: '[data-item="p-bm-move"]', state: 'aria-selected' },
+  { name: 'History', path: '/history', row: '[data-history="2"]', state: 'aria-current' },
+  { name: 'Members', path: '/members', row: '[data-member="1003"]', state: 'aria-current' },
+  { name: 'Bosses catalog', path: '/bosses', row: '.bossrow:has(a[href="/bosses/Carling/knowledge"])', trigger: 'a', state: 'aria-current' },
+  { name: 'Bosses event', path: '/bosses', row: '.bosses-events li:has(a[href="/bosses/Kai/knowledge"])', trigger: 'a', state: 'aria-current' },
+  { name: 'Config', path: '/config?section=pings', row: '.settings__tab[aria-controls$="-models"]', state: 'aria-selected' },
+];
+
+for (const size of [{ width: 390, height: 844 }, { width: 844, height: 390 }]) {
+  for (const screen of PHONE_ROWS) {
+    test(`${screen.name}: phone selection keeps the collapsed height at ${size.width}×${size.height}`, async ({ page }) => {
+      await page.setViewportSize(size);
+      await page.goto(`${ADMIN}${screen.path}${screen.path.includes('?') ? '&' : '?'}sw=off`);
+      const row = page.locator(screen.row).first();
+      const trigger = 'trigger' in screen ? row.locator(screen.trigger!) : row;
+      await trigger.scrollIntoViewIfNeeded();
+      await expect(row).toBeVisible();
+      await page.evaluate(() => document.fonts.ready);
+      await page.waitForTimeout(300);
+      const before = await height(row);
+      const listWidth = await row.evaluate((element) => element.closest('.inbox__list, .bosses-list')?.getBoundingClientRect().width ?? 0);
+      await trigger.click();
+      await expect(trigger).toHaveAttribute(screen.state, 'true');
+      await page.waitForTimeout(300);
+      expect(await selectedHeight(row, listWidth)).toBe(before);
+      await expect(row.locator('.row-content--expanded')).toHaveCount(0);
+      if (await row.locator('.row-content').count()) {
+        await expect(row.locator('.row-content__compact')).toHaveAttribute('aria-hidden', 'false');
+        await expect(row.locator('.row-content__reveal')).toHaveAttribute('aria-hidden', 'true');
+      }
+      expect(await page.evaluate(() => document.scrollingElement!.scrollTop)).toBe(0);
+    });
+  }
+}
+
+for (const width of [600, 899]) {
+  test(`Config: the ${width}px sideways strip keeps its selected tab one line tall`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(`${ADMIN}/config?section=pings&sw=off`);
+    const models = page.locator('.settings__tab[aria-controls$="-models"]');
+    await models.scrollIntoViewIfNeeded();
+    const before = await height(models);
+    await models.click();
+    await expect(models).toHaveAttribute('aria-selected', 'true');
+    await page.waitForTimeout(300);
+    expect(await height(models)).toBe(before);
+    await expect(models.locator('.row-content--expanded')).toHaveCount(0);
+    await expect(models.locator('.row-content__compact')).toBeVisible();
+  });
+}

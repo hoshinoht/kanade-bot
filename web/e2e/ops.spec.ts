@@ -841,7 +841,8 @@ test('config on a phone: the section strip scrolls itself, never the frame', asy
   await expect(page.getByRole('tablist', { name: 'Settings sections' })).toHaveAttribute('aria-orientation', 'horizontal');
   await expect(tab).toBeInViewport({ ratio: 1 });
   // The selected tab is marked by an underline as well as its fill.
-  await expect(tab.locator('.row-content__full .settings__label')).toHaveCSS('text-decoration-line', 'underline');
+  await expect(tab.locator('.row-content__compact .settings__label')).toBeVisible();
+  await expect(tab.locator('.row-content__compact .settings__label')).toHaveCSS('text-decoration-line', 'underline');
   const scrolled = await page.evaluate(() => ({
     doc: document.scrollingElement!.scrollTop + document.scrollingElement!.scrollLeft,
     shell: document.querySelector('.shell')!.scrollLeft,

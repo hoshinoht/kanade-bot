@@ -115,8 +115,8 @@
               >
                 <RowContent expanded={member.id === openId}>
                   {#snippet compact()}<span class="memberlist__name">
-                  <strong>{memberLabel(members.data ?? [], member.id)}</strong>
-                  {#if member.nickname}<span class="id">{member.nickname}</span>{:else if member.aliases.length}<span class="id">{member.aliases.join(' · ')}</span>{/if}
+                  <span class="memberlist__who"><strong>{memberLabel(members.data ?? [], member.id)}</strong>
+                  {#if member.nickname}<span class="id">{member.nickname}</span>{:else if member.aliases.length}<span class="id">{member.aliases.join(' · ')}</span>{/if}</span>
                   {#if !member.bossing}<span class="chip chip--waiting">chat only</span>{/if}
                   </span>{/snippet}
                   <span class="memberlist__identity"><strong>{memberLabel(members.data ?? [], member.id)}</strong>{#if member.name !== memberLabel(members.data ?? [], member.id)}<span class="id">{member.name}</span>{/if}{#if member.nickname && member.nickname !== memberLabel(members.data ?? [], member.id)}<span class="id">{member.nickname}</span>{/if}{#if member.aliases.length}<span class="id">{member.aliases.join(' · ')}</span>{/if}{#if !member.bossing}<span class="chip chip--waiting">chat only</span>{/if}</span>

@@ -1,0 +1,96 @@
+import type { Page } from '@playwright/test';
+import { ADMIN, expect, test } from './support';
+
+// Phone clipping regressions: the Inbox heading's boss tags wrap as whole
+// units, and the Members name cell keeps its name, aliases and chip inside it.
+
+const SIZES = [{ width: 390, height: 844 }, { width: 360, height: 780 }];
+
+async function itemIds(page: Page, tab: string): Promise<string[]> {
+  await page.goto(`${ADMIN}/inbox?tab=${tab}&sw=off`);
+  await expect(page.locator('[data-item]').first()).toBeVisible();
+  return page.locator('[data-item]').evaluateAll((items) => items.map((item) => item.getAttribute('data-item')!));
+}
+
+/** Overlaps inside the open item's heading, as readable strings (empty when it is clean). */
+function headingFaults(page: Page) {
+  return page.locator('.proposal__title').evaluate((title) => {
+    const meets = (a: DOMRect, b: DOMRect) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+    const bound = title.getBoundingClientRect();
+    const tags = [...title.querySelectorAll<HTMLElement>(':scope > .boss')];
+    const text = [...title.childNodes].filter((node) => node.nodeType === Node.TEXT_NODE && node.textContent!.trim()).flatMap((node) => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      return [...range.getClientRects()];
+    });
+    const faults: string[] = [];
+    tags.forEach((tag, i) => {
+      const box = tag.getBoundingClientRect();
+      const label = tag.textContent!.trim();
+      if (box.right > bound.right + 0.5 || box.left < bound.left - 0.5) faults.push(`${label} leaves the heading`);
+      for (const other of tags.slice(i + 1)) if (meets(box, other.getBoundingClientRect())) faults.push(`${label} meets ${other.textContent!.trim()}`);
+      if (text.some((rect) => meets(box, rect))) faults.push(`${label} meets the heading text`);
+      const name = tag.querySelector('.boss__name')!;
+      const pill = tag.querySelector('.pill')!;
+      if (meets(name.getBoundingClientRect(), pill.getBoundingClientRect())) faults.push(`${label}: the name runs under its pill`);
+      const line = parseFloat(getComputedStyle(name).lineHeight) || parseFloat(getComputedStyle(name).fontSize) * 1.2;
+      if (name.getBoundingClientRect().height > line * 1.5) faults.push(`${label}: the name wraps inside its tag`);
+    });
+    return { tags: tags.length, faults };
+  });
+}
+
+for (const size of [...SIZES, { width: 1280, height: 800 }]) {
+  test(`Inbox: heading boss tags wrap whole, never overlapping, at ${size.width}×${size.height}`, async ({ page }) => {
+    await page.setViewportSize(size);
+    let checked = 0;
+    for (const tab of ['self_service', 'extractor']) {
+      for (const id of await itemIds(page, tab)) {
+        await page.goto(`${ADMIN}/inbox?tab=${tab}&item=${id}&sw=off`);
+        await expect(page.locator('.proposal__title')).toBeVisible();
+        await page.evaluate(() => document.fonts.ready);
+        const { tags, faults } = await headingFaults(page);
+        expect(faults, `${tab}/${id}`).toEqual([]);
+        checked += tags > 1 ? 1 : 0;
+      }
+    }
+    // The pwa-mock's multi-boss member request must be among them.
+    expect(checked).toBeGreaterThan(0);
+  });
+}
+
+// The default text size, and phones that scale text up (Android's font size, 125%).
+for (const size of SIZES) {
+  for (const scale of ['', '125%']) {
+    test(`Members: every name cell keeps its parts inside it at ${size.width}×${size.height}${scale ? ` with ${scale} text` : ''}`, async ({ page }) => {
+      await page.setViewportSize(size);
+      await page.goto(`${ADMIN}/members?sw=off`);
+      await expect(page.locator('[data-member="1014"]')).toBeAttached();
+      await page.evaluate(async (fontSize) => {
+        await document.fonts.ready;
+        if (fontSize) document.documentElement.style.fontSize = fontSize;
+      }, scale);
+      const faults = await page.locator('.memberlist__row').evaluateAll((rows) => rows.flatMap((row) => {
+        const who = row.querySelector('strong')!.textContent!;
+        const cell = row.querySelector('.row-content')!.getBoundingClientRect();
+        const stat = row.querySelector('.memberlist__stat')!.getBoundingClientRect();
+        const name = row.querySelector('.memberlist__name')!;
+        const out: string[] = [];
+        for (const part of name.querySelectorAll<HTMLElement>('strong, .id, .chip')) {
+          const box = part.getBoundingClientRect();
+          if (box.width === 0) continue;
+          const label = `${who}: ${part.textContent!.trim()}`;
+          if (box.left < cell.left - 0.5 || box.right > cell.right + 0.5 || box.top < cell.top - 0.5 || box.bottom > cell.bottom + 0.5) out.push(`${label} leaves its cell`);
+          if (box.right > stat.left - 0.5) out.push(`${label} reaches THIS WK`);
+        }
+        const strong = row.querySelector<HTMLElement>('.memberlist__name strong')!;
+        if (strong.scrollWidth > strong.clientWidth) out.push(`${who}: the name is cut`);
+        const chip = name.querySelector<HTMLElement>('.chip');
+        if (chip && chip.scrollWidth > chip.clientWidth) out.push(`${who}: the chip is cut`);
+        return out;
+      }));
+      expect(faults).toEqual([]);
+      await expect(page.getByRole('button', { name: /^Kohane/ }).locator('.memberlist__name .chip')).toHaveText('chat only');
+    });
+  }
+}

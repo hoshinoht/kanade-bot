@@ -218,24 +218,32 @@
     }
   }
 
-  function summary(item: Key): string {
+  /** Expanded-row facts, one per line. */
+  function summary(item: Key): string[] {
     const c = config.data;
-    if (!c) return '';
+    if (!c) return [];
     switch (item) {
-      case 'pings': return `${c.pings.day_of_ping_time} · countdowns ${c.pings.countdown_minutes.join(', ')} min`;
-      case 'run-lengths': return `${c.run_lengths.default_minutes} min default · ${c.run_lengths.overrides.length} overrides`;
-      case 'watching': return `${c.watching.paused ? 'Watching paused' : 'Watching on'} · extractor ${c.watching.extract_enabled ? 'on' : 'off'}`;
-      case 'chatbot': return `${c.chatbot.enabled ? 'On' : 'Off'} · ${c.chatbot.member_rate.count} answers / ${c.chatbot.member_rate.window_s}s per person`;
-      case 'persona': return `${hint(item)} · ${c.persona.profiles.length} reply profiles · ${c.persona.role_profiles.length} role overrides`;
-      case 'models': return Object.entries(c.models.roles).map(([role, model]) => `${role}: ${model.alias ?? 'unset'}`).join(' · ');
-      case 'self-service': return `Portal ${hint(item)} · ${c.self_service.effective_mode.replaceAll('_', ' ')}`;
-      case 'notifications': return `Quiet mode ${c.notifications.quiet_mode ? 'on' : 'off'}`;
-      case 'digest': return 'Weekly post · channel and preview';
-      case 'rescan': return `${targets.data?.length ?? 0} available channels`;
-      case 'access': return `${missingManage.length} channels missing Manage Messages`;
-      case 'theme': return `${colorway} · kept in this browser`;
-      case 'env': return c.env.map((setting) => setting.label).join(' · ');
+      case 'pings': return [c.pings.day_of_ping_time, `Countdowns ${c.pings.countdown_minutes.join(', ')} min`];
+      case 'run-lengths': return [`${c.run_lengths.default_minutes} min default`, `${c.run_lengths.overrides.length} overrides`];
+      case 'watching': return [c.watching.paused ? 'Watching paused' : 'Watching on', `Extractor ${c.watching.extract_enabled ? 'on' : 'off'}`];
+      case 'chatbot': return [c.chatbot.enabled ? 'On' : 'Off', `${c.chatbot.member_rate.count} answers / ${c.chatbot.member_rate.window_s}s per person`];
+      case 'persona': return [hint(item), `${c.persona.profiles.length} reply profiles`, `${c.persona.role_profiles.length} role overrides`];
+      case 'models': return Object.entries(c.models.roles).map(([role, model]) => `${role}: ${model.alias ?? 'unset'}`);
+      case 'self-service': return [`Portal ${hint(item)}`, c.self_service.effective_mode.replaceAll('_', ' ')];
+      case 'notifications': return [`Quiet mode ${c.notifications.quiet_mode ? 'on' : 'off'}`];
+      case 'digest': return ['Weekly post', 'Channel and preview'];
+      case 'rescan': return [`${targets.data?.length ?? 0} available channels`];
+      case 'access': return [`${missingManage.length} channels missing Manage Messages`];
+      case 'theme': return [colorway, 'Kept in this browser'];
+      case 'env': return c.env.map((setting) => setting.label);
     }
+  }
+
+  /** The first few facts; the open panel holds the rest. */
+  const FACTS_SHOWN = 3;
+  function facts(item: Key): { shown: string[]; more: number } {
+    const all = summary(item).filter(Boolean);
+    return all.length > FACTS_SHOWN + 1 ? { shown: all.slice(0, FACTS_SHOWN), more: all.length - FACTS_SHOWN } : { shown: all, more: 0 };
   }
 
   async function save(patch: ConfigPatch, done: string, undo?: Undo): Promise<string> {
@@ -356,9 +364,10 @@
               onclick={() => onsection?.(item.key)}
               onkeydown={(event) => onKeydown(event, index)}
             >
-              <RowContent expanded={selected === item.key}>
+              <!-- The sideways strip (≤ 899 px) keeps every tab one line tall. -->
+              <RowContent expanded={selected === item.key && !narrow}>
                 {#snippet compact()}<span class="settings__scan"><span class="settings__label">{item.label}</span>{#if hint(item.key)}<span class="settings__hint">{hint(item.key)}</span>{/if}</span>{/snippet}
-                <span class="settings__expanded"><span class="settings__label">{item.label}</span><span class="settings__summary">{summary(item.key)}</span></span>
+                <span class="settings__expanded"><span class="settings__label">{item.label}</span><span class="settings__summary">{#each facts(item.key).shown as fact, i (i)}<span>{#if i}<span class="vh">, </span>{/if}{fact}</span>{/each}{#if facts(item.key).more}<span class="settings__more"><span class="vh">, </span>+{facts(item.key).more} more</span>{/if}</span></span>
               </RowContent>
               {#if isDirty(item.key)}<span class="settings__dirty"><span class="vh">, unsaved changes</span></span>{/if}
               {#if item.key === 'access' && missingManage.length}<span class="settings__flag"

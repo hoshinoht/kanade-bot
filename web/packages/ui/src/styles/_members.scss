@@ -90,12 +90,15 @@
   background: var(--select);
 }
 
-.memberlist__name { min-width: 0; display: flex; align-items: baseline; gap: 0.5rem; overflow: hidden; }
+// The name and its aliases share one line (aliases ellipsise before the name);
+// the chip stays whole and drops below them when the column is too narrow.
+.memberlist__name { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 0.5rem; overflow: hidden; }
+.memberlist__who { display: flex; flex: 0 1 auto; align-items: baseline; gap: 0.5rem; min-width: 0; max-width: 100%; }
 .memberlist__name strong,
-.memberlist__name .id { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.memberlist__name strong { font-size: var(--fs-small); font-weight: 700; }
-.memberlist__name .id { color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-mini); }
-.memberlist__name .chip { align-self: center; }
+.memberlist__name .id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memberlist__name strong { flex: none; max-width: 100%; font-size: var(--fs-small); font-weight: 700; }
+.memberlist__name .id { flex: 0 1 auto; color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-mini); }
+.memberlist__name .chip { flex: none; align-self: center; white-space: nowrap; }
 .memberlist__identity { display: flex; flex-direction: column; gap: 3px; padding-block: 8px; font-size: var(--fs-small); }
 .memberlist__identity .id { color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-mini); }
 .memberlist__identity .chip { align-self: flex-start; }

@@ -134,6 +134,9 @@
 .settings__expanded { display: flex; flex-direction: column; gap: 4px; padding-block: 8px; }
 .settings__expanded .settings__label { white-space: normal; }
 .settings__summary { color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-micro); font-weight: 400; }
+// One fact per line; a fact wraps only at word boundaries.
+.settings__summary { display: flex; flex-direction: column; gap: 2px; overflow-wrap: break-word; }
+.settings__summary > span { display: block; }
 
 .settings__tab .settings__flag {
   margin-left: 6px;
