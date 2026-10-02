@@ -13,12 +13,12 @@ use super::drafts::{
 use super::rows;
 use super::schedule::store_error;
 use crate::domain::drafts::{
-    DraftChange, DraftEventKind, DraftKind, DraftStatus, DraftUpdate, DraftWrite, LoadedDraft,
-    NewDraft, NewProposal, ProposalCreated, ProposalInfo, ProposalSource, SUPERSEDED,
-    StoredProposal, check_new_proposal,
+    DraftChange, DraftEventKind, DraftKind, DraftStatus, DraftUpdate, DraftWrite, ExistingProposal,
+    LoadedDraft, NewDraft, NewProposal, ProposalCreated, ProposalInfo, ProposalSource,
+    ProposalSubmission, SUPERSEDED, StoredProposal, check_new_proposal,
 };
 use crate::domain::history::Actor;
-use crate::domain::scheduler::StoreError;
+use crate::domain::scheduler::{CARDLESS_CHAT_GRACE, StoreError, same_run_proposal};
 
 const INFO_COLUMNS: &str = "source, source_id, supersede_key, expires_at";
 
@@ -178,6 +178,64 @@ async fn expire_in(
 }
 
 impl crate::domain::drafts::ProposalStore for SqliteStore {
+    async fn create_proposal_or_existing(
+        &self,
+        new: NewProposal,
+        current_week: chrono::DateTime<chrono::Utc>,
+    ) -> Result<ProposalSubmission, StoreError> {
+        let expires_at = check_new_proposal(&new)?;
+        if new.source != ProposalSource::Chat {
+            return Err(StoreError::Constraint(
+                "duplicate lookup is chat-only".into(),
+            ));
+        }
+        write_txn!(self, tx, async {
+            // Preserve id replay/conflict semantics before looking for siblings.
+            if load_in(&mut tx, &new.id).await?.is_none() {
+                let candidates: Vec<String> = sqlx::query_scalar(
+                    "SELECT d.id FROM drafts d JOIN draft_proposals p ON p.draft_id = d.id \
+                     WHERE d.status = 'submitted' AND p.expires_at > ?1 ORDER BY d.rowid",
+                )
+                .bind(rows::instant(&new.at)?)
+                .fetch_all(&mut *tx)
+                .await
+                .map_err(store_error)?;
+                for id in candidates {
+                    let loaded = load_in(&mut tx, &id)
+                        .await?
+                        .ok_or_else(|| StoreError::Backend(format!("proposal {id} vanished")))?;
+                    let info = info_in(&mut tx, &id).await?.ok_or_else(|| {
+                        StoreError::Backend(format!("proposal {id} facts vanished"))
+                    })?;
+                    if let Some(channel) = same_run_proposal(&new, &loaded, &info, current_week) {
+                        let card: Option<(String, Option<String>)> = sqlx::query_as(
+                            "SELECT channel_id, message_id FROM proposal_cards WHERE draft_id = ?1",
+                        )
+                        .bind(&id)
+                        .fetch_optional(&mut *tx)
+                        .await
+                        .map_err(store_error)?;
+                        if info.source == ProposalSource::Chat
+                            && card.is_none()
+                            && new.at - loaded.draft.created_at >= CARDLESS_CHAT_GRACE
+                        {
+                            continue;
+                        }
+                        let (channel_id, message_id) = card.unwrap_or((channel, None));
+                        return Ok(ProposalSubmission::Existing(ExistingProposal {
+                            proposal_id: id,
+                            channel_id,
+                            message_id,
+                        }));
+                    }
+                }
+            }
+            Ok(ProposalSubmission::Created(Box::new(
+                create_in(&mut tx, &new, expires_at).await?,
+            )))
+        })
+    }
+
     async fn create_proposal(&self, new: NewProposal) -> Result<ProposalCreated, StoreError> {
         let expires_at = check_new_proposal(&new)?;
         write_txn!(self, tx, create_in(&mut tx, &new, expires_at))

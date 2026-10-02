@@ -656,6 +656,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- v5 chat reuses another channel's live proposal for the same run change,
+  pointing to its existing card (or saying it is still being posted) instead
+  of creating a duplicate, while retaining normal retirement and card
+  refreshes; cardless chat proposals qualify only during a two-minute grace.
+
 - v5 admin shared M3E furniture now follows the mockups: an unboxed page line
   (display title, bold mono count, serif context, no ⓘ), a "Live HH:MM" chip
   and "Ctrl K" pill, 48 px window title bars with pill search and pill

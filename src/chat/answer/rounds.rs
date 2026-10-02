@@ -400,6 +400,11 @@ where
                         &arguments,
                     )
                     .await;
+                    if !dispatched.superseded.is_empty() {
+                        // Retirement already committed: finish its card refresh
+                        // even when dispatch used the rest of the deadline.
+                        ports.refresh_proposals(&dispatched.superseded).await;
+                    }
                     (
                         dispatched.outcome,
                         dispatched.model_content,

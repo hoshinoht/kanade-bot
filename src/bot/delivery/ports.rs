@@ -240,6 +240,15 @@ impl<S: DraftStore + Sync> DraftStore for StoreRef<'_, S> {
 }
 
 impl<S: ProposalStore + Sync> ProposalStore for StoreRef<'_, S> {
+    fn create_proposal_or_existing(
+        &self,
+        new: NewProposal,
+        current_week: DateTime<Utc>,
+    ) -> impl Future<Output = Result<crate::domain::drafts::ProposalSubmission, StoreError>> + Send
+    {
+        self.0.create_proposal_or_existing(new, current_week)
+    }
+
     fn create_proposal(
         &self,
         new: NewProposal,

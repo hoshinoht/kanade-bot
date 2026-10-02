@@ -25,8 +25,9 @@ pub use port::{
     NewDraft, RequestLimit, RequestLimits, StagedOp, StoredDraft, Submission,
 };
 pub use proposal::{
-    DEFAULT_PROPOSAL_TTL, NewProposal, ProposalCreated, ProposalInfo, ProposalSource,
-    ProposalStore, SUPERSEDED, StoredProposal, check_new as check_new_proposal,
+    DEFAULT_PROPOSAL_TTL, ExistingProposal, NewProposal, ProposalCreated, ProposalInfo,
+    ProposalSource, ProposalStore, ProposalSubmission, SUPERSEDED, StoredProposal,
+    check_new as check_new_proposal,
 };
 pub use replay::{
     PREVIEW_ID_PREFIX, PreviewIds, Rejected, Replay, StagedError, check_staged, replay,

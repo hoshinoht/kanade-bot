@@ -29,8 +29,8 @@ use crate::domain::proposals::{ChangeKind, Payload, ProposedChange};
 use crate::domain::pytext::strip;
 use crate::domain::schedule::{RsvpState, Run, RunStatus, SchedulePolicy, utc_instant};
 use crate::domain::scheduler::{
-    Clock, IdSource, ProposalError, ProposalRequest, ScheduleStore, SchedulerService, Supersede,
-    SupersedeScope,
+    ChatProposed, Clock, IdSource, ProposalError, ProposalRequest, ScheduleStore, SchedulerService,
+    Supersede, SupersedeScope,
 };
 use crate::domain::weeks::{parse_hhmm, parse_weekday, week_start};
 use card::{card_party, card_when, names};
@@ -47,7 +47,15 @@ pub struct Proposer<'a, S, I, C> {
     pub policy: &'a SchedulePolicy,
 }
 
-type Proposed = Result<ProposalCard, CallError>;
+pub enum ProposalReply {
+    Created(Box<ProposalCard>),
+    Existing {
+        output: String,
+        superseded: Vec<String>,
+    },
+}
+
+type Proposed = Result<ProposalReply, CallError>;
 
 /// What one tool wants staged, before the scheduler sees it.
 struct Plan<'r> {
@@ -157,7 +165,7 @@ where
         };
         let proposed = self
             .service
-            .propose(
+            .propose_chat(
                 ProposalRequest {
                     change,
                     source: ProposalSource::Chat,
@@ -176,7 +184,10 @@ where
                 ProposalError::Expired => ToolError::new(EXPIRED).into(),
                 other => failed(other),
             })?;
-        let id = proposed.proposal.id;
+        let (id, existing) = match proposed {
+            ChatProposed::Created(proposed) => (proposed.proposal.id, None),
+            ChatProposed::Existing(existing) => (existing.proposal_id.clone(), Some(existing)),
+        };
         // v4 retired the older live cards about the same run (scoped to this
         // channel unless it is the run's home) or the same new boss set here.
         let retired = self
@@ -191,7 +202,13 @@ where
             })
             .await
             .map_err(failed)?;
-        Ok(ProposalCard {
+        if let Some(existing) = existing {
+            return Ok(ProposalReply::Existing {
+                output: card::already_proposed(&existing, &world.pilot.guild_id),
+                superseded: retired,
+            });
+        }
+        Ok(ProposalReply::Created(Box::new(ProposalCard {
             kind_label: kind_label(plan.kind, &plan.card_payload),
             when: card_when(world, plan.kind, plan.at, plan.run, &plan.card_payload),
             party: card_party(world, &plan.participants, plan.run, &plan.card_payload),
@@ -208,7 +225,7 @@ where
             week_start: week,
             evidence_message_ids: vec![ctx.message_id.clone()],
             superseded: retired,
-        })
+        })))
     }
 
     /// `propose_move`: one dated run to a new day and time.

@@ -118,6 +118,10 @@ fn entry(card: &ProposalCard) -> Option<CardEntry> {
 }
 
 impl<T: GatewayTransport> ChatPorts for ChatCards<'_, T> {
+    async fn refresh_proposals(&self, proposal_ids: &[String]) {
+        self.desk.refresh_proposals(proposal_ids).await;
+    }
+
     /// Live proposals with a card, guild-wide (v4 `service.pending`).
     async fn pending(&self) -> Vec<PendingCard> {
         let Ok(live) = self.store.list_proposals(true).await else {

@@ -136,6 +136,19 @@ impl DraftStore for SlowStore<'_> {
 }
 
 impl ProposalStore for SlowStore<'_> {
+    async fn create_proposal_or_existing(
+        &self,
+        new: NewProposal,
+        current_week: DateTime<Utc>,
+    ) -> Result<kanade::domain::drafts::ProposalSubmission, StoreError> {
+        let created = self
+            .inner
+            .create_proposal_or_existing(new, current_week)
+            .await;
+        tokio::time::sleep(self.stall).await;
+        created
+    }
+
     async fn create_proposal(&self, new: NewProposal) -> Result<ProposalCreated, StoreError> {
         let created = self.inner.create_proposal(new).await;
         tokio::time::sleep(self.stall).await;

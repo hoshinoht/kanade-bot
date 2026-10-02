@@ -25,6 +25,8 @@ pub struct Dispatched {
     pub model_content: String,
     /// A bundle `request_tools` added; the loop charges it one round.
     pub requested: Option<super::bundles::Bundle>,
+    /// Retired cards to refresh when no new card will be posted.
+    pub superseded: Vec<String>,
 }
 
 /// v4 `_arguments`: an object, a JSON object string, or `{}`.
@@ -80,6 +82,7 @@ where
     I: IdSource,
     C: Clock,
 {
+    let mut superseded = Vec::new();
     let (outcome, requested) = call(
         ctx,
         world,
@@ -89,6 +92,7 @@ where
             name,
             arguments: arguments(raw_arguments),
         },
+        &mut superseded,
     )
     .await;
     let model_content = session.tool_result(&outcome.output);
@@ -96,6 +100,7 @@ where
         outcome,
         model_content,
         requested,
+        superseded,
     }
 }
 
@@ -105,6 +110,7 @@ async fn call<S, I, C>(
     offer: &mut ToolOffer,
     proposer: &mut Proposer<'_, S, I, C>,
     call: Call<'_>,
+    superseded: &mut Vec<String>,
 ) -> (ToolOutcome, Option<super::bundles::Bundle>)
 where
     S: ScheduleStore + ProposalStore + Sync,
@@ -168,9 +174,16 @@ where
                 read => unreachable!("{read:?} is dispatched above"),
             };
             return match proposed {
-                Ok(card) => {
+                Ok(super::propose::ProposalReply::Created(card)) => {
                     let output = super::propose::card_ready(&card);
-                    (call.done(output, None, vec![card]), None)
+                    (call.done(output, None, vec![*card]), None)
+                }
+                Ok(super::propose::ProposalReply::Existing {
+                    output,
+                    superseded: retired,
+                }) => {
+                    *superseded = retired;
+                    (call.done(output, None, Vec::new()), None)
                 }
                 Err(error) => (failure(call, error), None),
             };

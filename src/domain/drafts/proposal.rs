@@ -90,6 +90,21 @@ pub enum ProposalCreated {
     Replayed(StoredDraft),
 }
 
+/// An already-submitted proposal's card location, possibly not yet posted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExistingProposal {
+    pub proposal_id: String,
+    pub channel_id: String,
+    pub message_id: Option<String>,
+}
+
+/// Chat creation may instead point at another channel's existing proposal.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ProposalSubmission {
+    Created(Box<ProposalCreated>),
+    Existing(ExistingProposal),
+}
+
 /// A proposal draft with its stored facts.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StoredProposal {
@@ -108,6 +123,17 @@ pub trait ProposalStore: DraftStore {
         &self,
         new: NewProposal,
     ) -> impl Future<Output = Result<ProposalCreated, StoreError>> + Send;
+
+    /// Atomically reuse the oldest submitted, unexpired same-run/same-change
+    /// proposal in another channel, or create normally. Reuse writes nothing,
+    /// including when its card has not been bound yet. A chat proposal with
+    /// no saved card qualifies only within `CARDLESS_CHAT_GRACE`. Chat only;
+    /// same-channel and run-less proposals retain normal creation semantics.
+    fn create_proposal_or_existing(
+        &self,
+        new: NewProposal,
+        current_week: DateTime<Utc>,
+    ) -> impl Future<Output = Result<ProposalSubmission, StoreError>> + Send;
 
     fn load_proposal(
         &self,
@@ -130,6 +156,14 @@ pub trait ProposalStore: DraftStore {
 }
 
 impl<T: ProposalStore + Send + Sync> ProposalStore for std::sync::Arc<T> {
+    fn create_proposal_or_existing(
+        &self,
+        new: NewProposal,
+        current_week: DateTime<Utc>,
+    ) -> impl Future<Output = Result<ProposalSubmission, StoreError>> + Send {
+        (**self).create_proposal_or_existing(new, current_week)
+    }
+
     fn create_proposal(
         &self,
         new: NewProposal,

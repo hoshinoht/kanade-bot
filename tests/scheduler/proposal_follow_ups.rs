@@ -148,6 +148,16 @@ impl DraftStore for Flaky {
 }
 
 impl ProposalStore for Flaky {
+    async fn create_proposal_or_existing(
+        &self,
+        new: NewProposal,
+        current_week: DateTime<Utc>,
+    ) -> Result<kanade::domain::drafts::ProposalSubmission, StoreError> {
+        self.inner
+            .create_proposal_or_existing(new, current_week)
+            .await
+    }
+
     async fn create_proposal(&self, new: NewProposal) -> Result<ProposalCreated, StoreError> {
         self.inner.create_proposal(new).await
     }

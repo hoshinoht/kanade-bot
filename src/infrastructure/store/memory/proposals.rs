@@ -5,11 +5,12 @@ use chrono::{DateTime, Utc};
 
 use super::{MemoryScheduleStore, Tables, draft_event, micros};
 use crate::domain::drafts::{
-    DraftEventKind, DraftKind, DraftScope, DraftStatus, LoadedDraft, NewProposal, ProposalCreated,
-    ProposalInfo, ProposalStore, SUPERSEDED, StoredDraft, StoredProposal, check_new_proposal,
+    DraftEventKind, DraftKind, DraftScope, DraftStatus, ExistingProposal, LoadedDraft, NewProposal,
+    ProposalCreated, ProposalInfo, ProposalSource, ProposalStore, ProposalSubmission, SUPERSEDED,
+    StoredDraft, StoredProposal, check_new_proposal,
 };
 use crate::domain::history::Actor;
-use crate::domain::scheduler::StoreError;
+use crate::domain::scheduler::{CARDLESS_CHAT_GRACE, StoreError, same_run_proposal};
 
 /// Close a live draft as `actor` (no version bump, as expiry).
 fn close(
@@ -44,97 +45,146 @@ fn close(
     );
 }
 
+fn create_in(tables: &mut Tables, new: &NewProposal) -> Result<ProposalCreated, StoreError> {
+    let expires_at = micros(check_new_proposal(new)?);
+    let at = micros(new.at);
+    if let Some(existing) = tables.drafts.drafts.get(&new.id) {
+        return match tables.drafts.proposals.get(&new.id) {
+            Some(info) if info.source == new.source && info.source_id == new.source_id => {
+                Ok(ProposalCreated::Replayed(existing.clone()))
+            }
+            _ => Err(StoreError::Constraint(format!("draft {} exists", new.id))),
+        };
+    }
+    let superseded: Vec<String> = match &new.supersede_key {
+        None => Vec::new(),
+        Some(key) => tables
+            .drafts
+            .order
+            .iter()
+            .filter(|id| {
+                tables
+                    .drafts
+                    .proposals
+                    .get(*id)
+                    .and_then(|info| info.supersede_key.as_ref())
+                    == Some(key)
+                    && tables
+                        .drafts
+                        .drafts
+                        .get(*id)
+                        .is_some_and(|draft| draft.status.is_live())
+            })
+            .cloned()
+            .collect(),
+    };
+    let stored = StoredDraft {
+        id: new.id.clone(),
+        kind: DraftKind::Proposal,
+        title: new.title.clone(),
+        author: new.author.clone(),
+        base: new.base.clone(),
+        base_revision: new.base_revision,
+        version: 1,
+        status: DraftStatus::Submitted,
+        request_type: None,
+        subject: new.subject.clone(),
+        merged_seq: None,
+        closed_by: None,
+        close_reason: None,
+        created_at: at,
+        updated_at: at,
+        scope: match new.expires_week {
+            None => DraftScope::Weekly,
+            Some(week) => DraftScope::Week(micros(week)),
+        },
+    };
+    let mut next = tables.clone();
+    next.drafts.drafts.insert(new.id.clone(), stored.clone());
+    next.drafts.order.push(new.id.clone());
+    next.drafts.proposals.insert(
+        new.id.clone(),
+        ProposalInfo {
+            source: new.source,
+            source_id: new.source_id.clone(),
+            supersede_key: new.supersede_key.clone(),
+            expires_at,
+        },
+    );
+    let mut ops = new.ops.clone();
+    for (position, staged) in ops.iter_mut().enumerate() {
+        staged.ord = position;
+    }
+    next.drafts.ops.insert(new.id.clone(), ops);
+    for kind in [DraftEventKind::Created, DraftEventKind::Submitted] {
+        draft_event(&mut next, &new.id, 1, kind, &new.author, at, None);
+    }
+    for id in &superseded {
+        close(
+            &mut next,
+            id,
+            DraftStatus::Discarded,
+            Some(SUPERSEDED),
+            &new.author,
+            at,
+        );
+    }
+    *tables = next;
+    Ok(ProposalCreated::Created {
+        draft: stored,
+        superseded,
+    })
+}
+
 impl ProposalStore for MemoryScheduleStore {
     async fn create_proposal(&self, new: NewProposal) -> Result<ProposalCreated, StoreError> {
-        let expires_at = micros(check_new_proposal(&new)?);
-        let at = micros(new.at);
+        create_in(&mut self.tables(), &new)
+    }
+
+    async fn create_proposal_or_existing(
+        &self,
+        new: NewProposal,
+        current_week: DateTime<Utc>,
+    ) -> Result<ProposalSubmission, StoreError> {
+        check_new_proposal(&new)?;
+        if new.source != ProposalSource::Chat {
+            return Err(StoreError::Constraint(
+                "duplicate lookup is chat-only".into(),
+            ));
+        }
         let mut tables = self.tables();
-        if let Some(existing) = tables.drafts.drafts.get(&new.id) {
-            return match tables.drafts.proposals.get(&new.id) {
-                Some(info) if info.source == new.source && info.source_id == new.source_id => {
-                    Ok(ProposalCreated::Replayed(existing.clone()))
+        if !tables.drafts.drafts.contains_key(&new.id) {
+            for id in &tables.drafts.order {
+                let (Some(draft), Some(info)) = (
+                    tables.drafts.drafts.get(id),
+                    tables.drafts.proposals.get(id),
+                ) else {
+                    continue;
+                };
+                let loaded = LoadedDraft {
+                    draft: draft.clone(),
+                    ops: tables.drafts.ops.get(id).cloned().unwrap_or_default(),
+                };
+                if let Some(channel) = same_run_proposal(&new, &loaded, info, current_week) {
+                    let card = tables.drafts.cards.get(id).map(|(_, card)| card);
+                    if info.source == ProposalSource::Chat
+                        && card.is_none()
+                        && new.at - loaded.draft.created_at >= CARDLESS_CHAT_GRACE
+                    {
+                        continue;
+                    }
+                    return Ok(ProposalSubmission::Existing(ExistingProposal {
+                        proposal_id: id.clone(),
+                        channel_id: card.map_or(channel, |card| card.channel_id.clone()),
+                        message_id: card.and_then(|card| card.message_id.clone()),
+                    }));
                 }
-                _ => Err(StoreError::Constraint(format!("draft {} exists", new.id))),
-            };
+            }
         }
-        let superseded: Vec<String> = match &new.supersede_key {
-            None => Vec::new(),
-            Some(key) => tables
-                .drafts
-                .order
-                .iter()
-                .filter(|id| {
-                    tables
-                        .drafts
-                        .proposals
-                        .get(*id)
-                        .and_then(|info| info.supersede_key.as_ref())
-                        == Some(key)
-                        && tables
-                            .drafts
-                            .drafts
-                            .get(*id)
-                            .is_some_and(|draft| draft.status.is_live())
-                })
-                .cloned()
-                .collect(),
-        };
-        let stored = StoredDraft {
-            id: new.id.clone(),
-            kind: DraftKind::Proposal,
-            title: new.title.clone(),
-            author: new.author.clone(),
-            base: new.base.clone(),
-            base_revision: new.base_revision,
-            version: 1,
-            status: DraftStatus::Submitted,
-            request_type: None,
-            subject: new.subject.clone(),
-            merged_seq: None,
-            closed_by: None,
-            close_reason: None,
-            created_at: at,
-            updated_at: at,
-            scope: match new.expires_week {
-                None => DraftScope::Weekly,
-                Some(week) => DraftScope::Week(micros(week)),
-            },
-        };
-        let mut next = tables.clone();
-        next.drafts.drafts.insert(new.id.clone(), stored.clone());
-        next.drafts.order.push(new.id.clone());
-        next.drafts.proposals.insert(
-            new.id.clone(),
-            ProposalInfo {
-                source: new.source,
-                source_id: new.source_id.clone(),
-                supersede_key: new.supersede_key.clone(),
-                expires_at,
-            },
-        );
-        let mut ops = new.ops.clone();
-        for (position, staged) in ops.iter_mut().enumerate() {
-            staged.ord = position;
-        }
-        next.drafts.ops.insert(new.id.clone(), ops);
-        for kind in [DraftEventKind::Created, DraftEventKind::Submitted] {
-            draft_event(&mut next, &new.id, 1, kind, &new.author, at, None);
-        }
-        for id in &superseded {
-            close(
-                &mut next,
-                id,
-                DraftStatus::Discarded,
-                Some(SUPERSEDED),
-                &new.author,
-                at,
-            );
-        }
-        *tables = next;
-        Ok(ProposalCreated::Created {
-            draft: stored,
-            superseded,
-        })
+        Ok(ProposalSubmission::Created(Box::new(create_in(
+            &mut tables,
+            &new,
+        )?)))
     }
 
     async fn load_proposal(

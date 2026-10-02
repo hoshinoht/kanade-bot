@@ -47,6 +47,9 @@ pub trait ChatPorts {
 
     /// Post one card in the asking channel; `Err` means nobody can see it.
     fn post_card(&self, card: &ProposalCard) -> impl Future<Output = Result<(), String>> + Send;
+
+    /// Refresh retired cards when reusing a proposal instead of posting one.
+    fn refresh_proposals(&self, proposal_ids: &[String]) -> impl Future<Output = ()> + Send;
 }
 
 /// The guild facts every round's tools read besides the schedule.

@@ -7,14 +7,21 @@ use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
 use crate::domain::drafts::{
     DEFAULT_PROPOSAL_TTL, DraftEventKind, DraftKind, DraftStatus, MergeCommit, NewDraft,
-    NewProposal, ProposalCreated, ProposalSource, ProposalStore, SUPERSEDED, StagedOp, Target,
+    NewProposal, ProposalCreated, ProposalSource, ProposalStore, ProposalSubmission, SUPERSEDED,
+    StagedOp, Target,
 };
 use crate::domain::history::{Actor, ChangeHistory, ChangeMeta, ChangeRef, Origin, Surface};
+use crate::domain::notify::{
+    Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, NotificationIntent, Receipt,
+};
+use crate::domain::proposals::{CardDetails, ChangeKind, ProposalCardStore, ProposalSubject};
 use crate::domain::schedule::{Change, ChangeSet, Run, RunSource, RunStatus};
-use crate::domain::scheduler::{ScheduleStore, Scope, StoreError};
+use crate::domain::scheduler::{CARDLESS_CHAT_GRACE, ScheduleStore, Scope, StoreError};
 
 /// Run every check, each against a fresh store from `make`.
-pub async fn run_suite<S: ScheduleStore + ChangeHistory + ProposalStore + Sync>(
+pub async fn run_suite<
+    S: ScheduleStore + ChangeHistory + ProposalStore + ProposalCardStore + DeliveryJournal + Sync,
+>(
     make: impl AsyncFn() -> S,
 ) {
     create_load_and_list(make().await).await;
@@ -23,6 +30,12 @@ pub async fn run_suite<S: ScheduleStore + ChangeHistory + ProposalStore + Sync>(
     newer_proposals_supersede_live_ones_with_their_key(make().await).await;
     ttl_expiry_closes_due_proposals_only(make().await).await;
     proposals_merge_through_commit_merge(make().await).await;
+    cross_channel_lookup_preserves_existing_and_reads_bound_card(make().await).await;
+    expired_proposals_do_not_block_lookup_or_create(make().await).await;
+    concurrent_cross_channel_asks_create_only_one_proposal(make().await).await;
+    cardless_chat_reuse_ends_at_the_grace_boundary(make().await).await;
+    saved_chat_cards_outlive_the_cardless_grace(make().await).await;
+    cardless_extraction_outlives_the_chat_grace(make().await).await;
 }
 
 fn utc(day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
@@ -372,4 +385,290 @@ async fn proposals_merge_through_commit_merge<S: ScheduleStore + ChangeHistory +
             .is_empty(),
         "merge: a merged proposal never expires"
     );
+}
+
+fn run_move(
+    id: &str,
+    base: &(ChangeRef, u64),
+    channel: &str,
+    source: ProposalSource,
+) -> NewProposal {
+    let mut new = proposal(id, base, None);
+    new.source = source;
+    new.author = Actor::system(source.as_str());
+    new.subject = Some(
+        ProposalSubject {
+            kind: ChangeKind::Move,
+            run_id: Some("run-1".into()),
+            fixed_run_id: None,
+            channel_id: Some(channel.into()),
+            bosses: vec!["HFA".into()],
+            named: Vec::new(),
+        }
+        .encode(),
+    );
+    new.ops[0].author = new.author.clone();
+    new.ops[0].op = crate::domain::drafts::DraftOp::AmendRun {
+        run: Target::Existing("run-1".into()),
+        to: utc(21, 22, 0),
+    };
+    new
+}
+
+async fn cross_channel_lookup_preserves_existing_and_reads_bound_card<S>(store: S)
+where
+    S: ScheduleStore + ChangeHistory + ProposalStore + ProposalCardStore + DeliveryJournal,
+{
+    let base = base(&store).await;
+    let original = run_move("p-old", &base, "900", ProposalSource::Extraction);
+    created(&store, original).await;
+    let new = run_move("p-new", &base, "901", ProposalSource::Chat);
+    let before = store.load_proposal("p-old").await.unwrap();
+    let events = store.draft_events("p-old").await.unwrap();
+    let week = utc(17, 0, 0);
+    for stage in 0..3 {
+        if stage == 1 {
+            let details =
+                CardDetails::from_json(&serde_json::json!({"kind": "move", "run_id": "run-1"}))
+                    .unwrap();
+            store
+                .save_card("p-old", "900", &details, new.at)
+                .await
+                .unwrap();
+        }
+        if stage == 2 {
+            let lease = store
+                .begin_lease("test", "lookup-bind", new.at)
+                .await
+                .unwrap();
+            let intent = NotificationIntent {
+                effect: EffectKind::Card,
+                effect_context: Vec::new(),
+                channel_id: "900".into(),
+                targets: vec![DeliveryTarget::Card("p-old".into())],
+                mentions: Vec::new(),
+                warnings: Vec::new(),
+                content: IntentContent::ProposalCard {
+                    proposal_ids: vec!["p-old".into()],
+                },
+            };
+            let Claim::Fresh(attempt) = store.claim(&lease, &intent, None, new.at).await.unwrap()
+            else {
+                panic!("fresh claim")
+            };
+            store
+                .bind(
+                    &lease,
+                    &attempt,
+                    &Receipt {
+                        channel_id: "900".into(),
+                        message_id: "9500".into(),
+                    },
+                    None,
+                    new.at,
+                )
+                .await
+                .unwrap();
+            store.end_lease(&lease, new.at).await.unwrap();
+        }
+        let cards = store.load_cards(&["p-old".into()]).await.unwrap();
+        let ProposalSubmission::Existing(existing) = store
+            .create_proposal_or_existing(new.clone(), week)
+            .await
+            .unwrap()
+        else {
+            panic!("existing cross-channel move")
+        };
+        assert_eq!(existing.proposal_id, "p-old");
+        assert_eq!(existing.channel_id, "900");
+        assert_eq!(
+            existing.message_id.as_deref(),
+            (stage == 2).then_some("9500")
+        );
+        assert_eq!(store.list_proposals(false).await.unwrap().len(), 1);
+        assert_eq!(store.load_proposal("p-old").await.unwrap(), before);
+        assert_eq!(store.draft_events("p-old").await.unwrap(), events);
+        assert_eq!(store.load_cards(&["p-old".into()]).await.unwrap(), cards);
+        assert!(store.draft_events("p-new").await.unwrap().is_empty());
+    }
+    // Same id still replays, even when a matching sibling could be reused.
+    let replay = run_move("p-old", &base, "900", ProposalSource::Extraction);
+    assert!(
+        matches!(
+            store.create_proposal_or_existing(replay, week).await,
+            Err(StoreError::Constraint(_))
+        ),
+        "chat-only port"
+    );
+    let chat = run_move("p-chat", &base, "901", ProposalSource::Chat);
+    created(&store, chat.clone()).await;
+    assert!(
+        matches!(store.create_proposal_or_existing(chat, week).await.unwrap(), ProposalSubmission::Created(created) if matches!(*created, ProposalCreated::Replayed(_)))
+    );
+    let mut conflicting = new;
+    conflicting.id = "p-old".into();
+    assert!(matches!(
+        store.create_proposal_or_existing(conflicting, week).await,
+        Err(StoreError::Constraint(_))
+    ));
+}
+
+async fn expired_proposals_do_not_block_lookup_or_create<S>(store: S)
+where
+    S: ScheduleStore + ChangeHistory + ProposalStore,
+{
+    let base = base(&store).await;
+    let mut ttl = run_move("p-ttl", &base, "900", ProposalSource::Extraction);
+    ttl.ttl = TimeDelta::hours(1);
+    created(&store, ttl.clone()).await;
+    let mut past_week = run_move("p-week", &base, "900", ProposalSource::Chat);
+    past_week.expires_week = Some(utc(10, 0, 0));
+    created(&store, past_week).await;
+    let mut new = run_move("p-new", &base, "901", ProposalSource::Chat);
+    new.at = ttl.at + ttl.ttl;
+    assert!(matches!(
+        store
+            .create_proposal_or_existing(new, utc(17, 0, 0))
+            .await
+            .unwrap(),
+        ProposalSubmission::Created(_)
+    ));
+    assert_eq!(
+        store
+            .load_proposal("p-ttl")
+            .await
+            .unwrap()
+            .unwrap()
+            .0
+            .draft
+            .status,
+        DraftStatus::Submitted,
+        "lookup never closes expired rows"
+    );
+    assert_eq!(store.list_proposals(false).await.unwrap().len(), 3);
+}
+
+async fn concurrent_cross_channel_asks_create_only_one_proposal<S>(store: S)
+where
+    S: ScheduleStore + ChangeHistory + ProposalStore + Sync,
+{
+    let base = base(&store).await;
+    let first = run_move("p-a", &base, "900", ProposalSource::Chat);
+    let second = run_move("p-b", &base, "901", ProposalSource::Chat);
+    let barrier = tokio::sync::Barrier::new(2);
+    let week = utc(17, 0, 0);
+    let (a, b) = tokio::join!(
+        async {
+            barrier.wait().await;
+            store
+                .create_proposal_or_existing(first, week)
+                .await
+                .unwrap()
+        },
+        async {
+            barrier.wait().await;
+            store
+                .create_proposal_or_existing(second, week)
+                .await
+                .unwrap()
+        },
+    );
+    let (created, existing) = match (a, b) {
+        (ProposalSubmission::Created(created), ProposalSubmission::Existing(existing))
+        | (ProposalSubmission::Existing(existing), ProposalSubmission::Created(created)) => {
+            (created, existing)
+        }
+        other => panic!("one creation and one reuse: {other:?}"),
+    };
+    let ProposalCreated::Created { draft, superseded } = *created else {
+        panic!("new proposal")
+    };
+    assert!(superseded.is_empty());
+    assert_eq!(existing.proposal_id, draft.id);
+    assert_eq!(existing.message_id, None);
+    assert_eq!(store.list_proposals(false).await.unwrap().len(), 1);
+    assert_eq!(store.list_drafts(None).await.unwrap().len(), 1);
+}
+
+async fn cardless_chat_reuse_ends_at_the_grace_boundary<S>(store: S)
+where
+    S: ScheduleStore + ChangeHistory + ProposalStore,
+{
+    let base = base(&store).await;
+    let old = run_move("p-old", &base, "900", ProposalSource::Chat);
+    created(&store, old.clone()).await;
+    let before = store.load_proposal("p-old").await.unwrap();
+    let mut new = run_move("p-new", &base, "901", ProposalSource::Chat);
+    new.at = old.at + CARDLESS_CHAT_GRACE - TimeDelta::seconds(1);
+    assert!(
+        matches!(
+            store
+                .create_proposal_or_existing(new.clone(), utc(17, 0, 0))
+                .await
+                .unwrap(),
+            ProposalSubmission::Existing(_)
+        ),
+        "in-flight grace"
+    );
+    new.at = old.at + CARDLESS_CHAT_GRACE;
+    assert!(
+        matches!(
+            store
+                .create_proposal_or_existing(new, utc(17, 0, 0))
+                .await
+                .unwrap(),
+            ProposalSubmission::Created(_)
+        ),
+        "expired grace, even at its exact boundary"
+    );
+    assert_eq!(
+        store.load_proposal("p-old").await.unwrap(),
+        before,
+        "cardless draft remains actionable in the admin Inbox"
+    );
+    assert_eq!(store.list_proposals(false).await.unwrap().len(), 2);
+}
+
+async fn saved_chat_cards_outlive_the_cardless_grace<S>(store: S)
+where
+    S: ScheduleStore + ChangeHistory + ProposalStore + ProposalCardStore,
+{
+    let base = base(&store).await;
+    let old = run_move("p-old", &base, "900", ProposalSource::Chat);
+    created(&store, old.clone()).await;
+    let details =
+        CardDetails::from_json(&serde_json::json!({"kind": "move", "run_id": "run-1"})).unwrap();
+    store
+        .save_card("p-old", "900", &details, old.at)
+        .await
+        .unwrap();
+    let mut new = run_move("p-new", &base, "901", ProposalSource::Chat);
+    new.at = old.at + CARDLESS_CHAT_GRACE;
+    assert!(
+        matches!(store.create_proposal_or_existing(new, utc(17, 0, 0)).await.unwrap(), ProposalSubmission::Existing(existing) if existing.message_id.is_none()),
+        "saved details, unbound card remains eligible"
+    );
+    assert_eq!(store.list_proposals(false).await.unwrap().len(), 1);
+}
+
+async fn cardless_extraction_outlives_the_chat_grace<S>(store: S)
+where
+    S: ScheduleStore + ChangeHistory + ProposalStore,
+{
+    let base = base(&store).await;
+    let old = run_move("p-old", &base, "900", ProposalSource::Extraction);
+    created(&store, old.clone()).await;
+    let mut new = run_move("p-new", &base, "901", ProposalSource::Chat);
+    new.at = old.at + CARDLESS_CHAT_GRACE;
+    assert!(
+        matches!(
+            store
+                .create_proposal_or_existing(new, utc(17, 0, 0))
+                .await
+                .unwrap(),
+            ProposalSubmission::Existing(_)
+        ),
+        "grace applies only to chat without saved card details"
+    );
+    assert_eq!(store.list_proposals(false).await.unwrap().len(), 1);
 }

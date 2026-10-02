@@ -98,6 +98,36 @@ are C3. Serve wiring is `chat::driver` (below).
   the channel focus (`Generation::focus`, for `Conversations::note_card`).
   `ChatPorts::pending` supplies the inbox for `get_pending` each call;
   intent labels and card context reach bundle routing through `ToolOffer`.
+- `D-CROSS-CHANNEL-PROPOSAL` (deliberate v5 difference from v4): after the
+  unchanged authority checks, a run-bound chat proposal reuses the oldest
+  submitted, unexpired proposal for the same change in another channel,
+  whether its source is extraction or chat. Equality is the same run and
+  kind, plus the destination instant for move, or the member/answer set for
+  RSVP; cancel needs only the run. Add and weekly tools have no target run
+  and are unchanged. The scheduler's `propose_chat` uses atomic store
+  lookup-or-create under SQLite's existing write transaction or memory's
+  existing lock, including before card details are saved. A chat proposal
+  without a `proposal_cards` row qualifies only while its age is less than
+  `CARDLESS_CHAT_GRACE` (two minutes); at that boundary a new ask creates
+  normally. Saved but unbound cards and extraction proposals retain the
+  normal TTL/boss-week eligibility. Cardless proposals are not automatically
+  discarded on timeout or question deletion: they remain actionable in the
+  admin Inbox, and lifecycle cleanup is deferred. Reuse creates no draft/card
+  and leaves the kept proposal unchanged, but still retires other proposals
+  under the normal scope: this channel, or all channels when asking from the
+  run's home channel. Retired ids travel separately from new cards through
+  the dispatcher; the answer loop awaits `CardDesk::refresh_proposals` via
+  its port before checking the post-dispatch deadline. Its
+  successful tool result names the existing proposal and channel, supplies
+  the Discord jump link when bound, otherwise says the card is still being
+  posted, and tells the model it is already proposed and awaiting approval,
+  not done. The jump link may name a channel the asker cannot see; authority
+  remains on the run, without an additional channel-visibility check.
+  Same-channel superseding and different-target cross-channel
+  proposals keep their old behaviour. Closed proposals, elapsed TTLs and
+  past boss weeks do not block creation. Covered by
+  `tests/chat/proposal_dedupe.rs` and the shared proposal-store conformance
+  suite; frozen v4 vectors remain unchanged.
 - Tool calls: chat sessions validate tool calls leniently (runner
   `ToolCallValidation::Lenient`, user decision 2026-09-25), so unknown,
   unoffered and schema-invalid object-argument calls reach the dispatcher and

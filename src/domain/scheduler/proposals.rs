@@ -16,9 +16,9 @@ use super::ports::{Clock, IdSource, ScheduleStore, Scope, StoreError};
 use super::service::{SchedulerError, SchedulerService, digest};
 use crate::domain::drafts::{
     DEFAULT_PROPOSAL_TTL, DraftChange, DraftOp, DraftStale, DraftStatus, DraftUpdate, DraftWrite,
-    LoadedDraft, MergeAnalysis, NewProposal, ProposalCreated, ProposalInfo, ProposalSource,
-    ProposalStore, SUPERSEDED, StagedOp, StoredDraft, Target, analyze_merge_applying, expires_week,
-    replay,
+    ExistingProposal, LoadedDraft, MergeAnalysis, NewProposal, ProposalCreated, ProposalInfo,
+    ProposalSource, ProposalStore, ProposalSubmission, SUPERSEDED, StagedOp, StoredDraft, Target,
+    analyze_merge_applying, expires_week, replay,
 };
 use crate::domain::history::{Actor, Origin, Surface};
 use crate::domain::members::Directory;
@@ -123,6 +123,27 @@ pub struct Proposed {
     pub subject: ProposalSubject,
     /// Live proposals it superseded.
     pub superseded: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ChatProposed {
+    Created(Box<Proposed>),
+    Existing(ExistingProposal),
+}
+
+fn proposed(created: ProposalCreated, subject: ProposalSubject) -> Proposed {
+    match created {
+        ProposalCreated::Created { draft, superseded } => Proposed {
+            proposal: draft,
+            subject,
+            superseded,
+        },
+        ProposalCreated::Replayed(draft) => Proposed {
+            proposal: draft,
+            subject,
+            superseded: Vec::new(),
+        },
+    }
 }
 
 /// A merged proposal: the merge (its notices take the draft-merge outbox
@@ -389,6 +410,43 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
         policy: &SchedulePolicy,
         directory: &(dyn Directory + Sync),
     ) -> ProposalResult<Proposed> {
+        let (new, subject) = self.prepare_proposal(request, policy, directory).await?;
+        Ok(proposed(self.store.create_proposal(new).await?, subject))
+    }
+
+    /// Chat alone reuses another channel's identical live run proposal.
+    /// The store performs the lookup and creation in one write transaction.
+    pub async fn propose_chat(
+        &mut self,
+        request: ProposalRequest,
+        policy: &SchedulePolicy,
+        directory: &(dyn Directory + Sync),
+    ) -> ProposalResult<ChatProposed> {
+        let (new, subject) = self.prepare_proposal(request, policy, directory).await?;
+        let current_week = policy
+            .week_of(&new.at)
+            .and_then(|week| utc_instant(&week))
+            .map_err(ScheduleError::from)?;
+        Ok(
+            match self
+                .store
+                .create_proposal_or_existing(new, current_week)
+                .await?
+            {
+                ProposalSubmission::Created(created) => {
+                    ChatProposed::Created(Box::new(proposed(*created, subject)))
+                }
+                ProposalSubmission::Existing(existing) => ChatProposed::Existing(existing),
+            },
+        )
+    }
+
+    async fn prepare_proposal(
+        &mut self,
+        request: ProposalRequest,
+        policy: &SchedulePolicy,
+        directory: &(dyn Directory + Sync),
+    ) -> ProposalResult<(NewProposal, ProposalSubject)> {
         self.check_policy(policy)?;
         let now = self.clock.now();
         let (snapshot, head) = self.store.snapshot_with_head().await?;
@@ -431,18 +489,7 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
             },
             ttl: DEFAULT_PROPOSAL_TTL,
         };
-        Ok(match self.store.create_proposal(new).await? {
-            ProposalCreated::Created { draft, superseded } => Proposed {
-                proposal: draft,
-                subject,
-                superseded,
-            },
-            ProposalCreated::Replayed(draft) => Proposed {
-                proposal: draft,
-                subject,
-                superseded: Vec::new(),
-            },
-        })
+        Ok((new, subject))
     }
 
     /// Load a live proposal `approver` may answer; one past its TTL is then

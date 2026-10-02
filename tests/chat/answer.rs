@@ -1004,6 +1004,10 @@ async fn the_clean_retry_is_a_round_with_its_own_usage() {
 struct SlowPorts(Ports);
 
 impl kanade::chat::answer::ChatPorts for SlowPorts {
+    async fn refresh_proposals(&self, proposal_ids: &[String]) {
+        self.0.refresh_proposals(proposal_ids).await;
+    }
+
     async fn pending(&self) -> Vec<kanade::chat::tools::read::PendingCard> {
         tokio::time::sleep(Duration::from_millis(250)).await;
         self.0.pending().await

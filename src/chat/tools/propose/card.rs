@@ -177,3 +177,21 @@ pub fn card_ready(card: &ProposalCard) -> String {
     );
     facts.join("\n")
 }
+
+pub(super) fn already_proposed(
+    existing: &crate::domain::drafts::ExistingProposal,
+    guild_id: &str,
+) -> String {
+    let location = match &existing.message_id {
+        Some(message_id) => format!(
+            "- existing card: https://discord.com/channels/{guild_id}/{}/{message_id}",
+            existing.channel_id,
+        ),
+        None => "- existing card: still being posted; no jump link yet".to_owned(),
+    };
+    format!(
+        "Already proposed -- the same change to this run is awaiting approval in another channel. No new proposal or card was created.\n- proposal: {}\n- channel: <#{}>\n{location}\nNothing has changed yet. Reply in your own voice saying it is already proposed and awaiting a ✅ on the existing card; point them to that channel and the jump link when present. If it is still being posted, say so, and never claim a new card is up or that the change is done, moved, or confirmed.",
+        short_id(&existing.proposal_id),
+        existing.channel_id,
+    )
+}

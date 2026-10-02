@@ -32,6 +32,7 @@ pub const V4_TOOL_ROUNDS: u8 = 4;
 #[derive(Default)]
 pub struct Ports {
     pub posted: Mutex<Vec<ProposalCard>>,
+    pub refreshed: Mutex<Vec<String>>,
     pub pending: Vec<PendingCard>,
     pub fail: bool,
     /// Posting never completes (a stuck gateway).
@@ -39,6 +40,13 @@ pub struct Ports {
 }
 
 impl ChatPorts for Ports {
+    async fn refresh_proposals(&self, proposal_ids: &[String]) {
+        self.refreshed
+            .lock()
+            .expect("refreshed")
+            .extend_from_slice(proposal_ids);
+    }
+
     async fn pending(&self) -> Vec<PendingCard> {
         self.pending.clone()
     }
