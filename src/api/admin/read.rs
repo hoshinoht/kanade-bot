@@ -96,8 +96,10 @@ async fn summary(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
         .await
         .map_err(unavailable)?;
     let inbox = state.store.inbox_count().await.map_err(unavailable)?;
+    let profiles = state.store.members().await.map_err(unavailable)?;
+    let members = dto::members::bossers(&profiles, &state.access);
     let ctx = context(&site, state, roster(&[]), now);
-    Ok(Json(dto::week::summary(&ctx, &snapshot, inbox)).into_response())
+    Ok(Json(dto::week::summary(&ctx, &snapshot, inbox, members)).into_response())
 }
 
 async fn fixed(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {

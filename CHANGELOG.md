@@ -6,6 +6,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin phone navigation drawer shows Members and Reminders counts beside
+  Week: `GET /api/admin/summary` adds `members` (bossing roster) and
+  `reminders` (upcoming cards), derived as the Members and Reminders pages count.
+
 - v5 admin Bosses now uses the M3E catalog and checked-in knowledge workspace:
   level-ordered boss rows keep weekly difficulty ticks visible beside the selected
   strategy, facts, provenance and seasonal availability, with this week's linked

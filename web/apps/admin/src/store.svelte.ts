@@ -204,6 +204,17 @@ export class AdminWeek {
     return this.week ? this.week.runs.filter((r) => !isPast(r)).length : null;
   }
 
+  /** B_PhoneNav counts by section key; each is absent until its source loads. */
+  get drawerCounts(): Partial<Record<string, number>> {
+    const counts: Partial<Record<string, number>> = {};
+    if (this.openRuns !== null) counts.week = this.openRuns;
+    if (this.summary) {
+      counts.members = this.summary.members;
+      counts.reminders = this.summary.reminders;
+    }
+    return counts;
+  }
+
   run(id: string): Run | undefined {
     return this.week?.runs.find((r) => r.id === id);
   }

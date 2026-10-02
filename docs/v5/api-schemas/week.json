@@ -171,7 +171,7 @@
     "Summary": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["next", "unanswered", "inbox", "model"],
+      "required": ["next", "unanswered", "inbox", "members", "reminders", "model"],
       "properties": {
         "next": {
           "anyOf": [
@@ -193,6 +193,8 @@
         },
         "unanswered": { "type": "integer", "minimum": 0 },
         "inbox": { "type": "integer", "minimum": 0 },
+        "members": { "type": "integer", "minimum": 0 },
+        "reminders": { "type": "integer", "minimum": 0 },
         "model": {
           "type": "object",
           "additionalProperties": false,

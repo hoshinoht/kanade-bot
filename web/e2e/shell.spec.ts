@@ -171,6 +171,21 @@ test('phone: the drawer carries the account and the time zone', async ({ page })
   await expect(drawer.getByRole('menu', { name: 'Account' }).getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
 });
 
+test('phone: the drawer counts Members and Reminders as their page headings do', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${ADMIN}/?sw=off`);
+  await expect(page.locator('[data-run="r-carling"]')).toBeVisible();
+  for (const label of ['Members', 'Reminders']) {
+    await page.getByRole('button', { name: 'Open the navigation' }).click();
+    const link = page.getByRole('dialog', { name: 'Navigation' }).getByRole('link', { name: label, exact: true });
+    const count = link.locator('.navlist__count');
+    await expect(count).toHaveText(/^\d+$/);
+    const shown = await count.textContent();
+    await link.click();
+    await expect(page.getByRole('heading', { level: 1 }).locator('.pageline__num').first()).toHaveText(shown!);
+  }
+});
+
 test('phone landscape uses the phone frame (the rail would not fit 390 px of height)', async ({ page }) => {
   await page.setViewportSize({ width: 844, height: 390 });
   await page.goto(`${ADMIN}/inbox?sw=off`);

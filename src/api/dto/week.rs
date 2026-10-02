@@ -394,6 +394,10 @@ pub struct Summary {
     pub next: Option<NextRun>,
     pub unanswered: usize,
     pub inbox: u64,
+    /// Listed members with the bossing role, as `/api/admin/members` counts them.
+    pub members: usize,
+    /// `/api/admin/reminders` `upcoming` rows over the same two weeks.
+    pub reminders: usize,
     pub model: Model,
 }
 
@@ -404,7 +408,12 @@ fn is_ahead(run: &Run, now: DateTime<Utc>) -> bool {
     ) && run.datetime > now
 }
 
-pub fn summary(ctx: &Context<'_>, snapshot: &ScheduleSnapshot, inbox: u64) -> Summary {
+pub fn summary(
+    ctx: &Context<'_>,
+    snapshot: &ScheduleSnapshot,
+    inbox: u64,
+    members: usize,
+) -> Summary {
     let next = snapshot
         .runs
         .iter()
@@ -441,6 +450,8 @@ pub fn summary(ctx: &Context<'_>, snapshot: &ScheduleSnapshot, inbox: u64) -> Su
         next,
         unanswered,
         inbox,
+        members,
+        reminders: super::reminders::upcoming(ctx, snapshot),
         // The model governor is not composed into the API yet.
         model: Model {
             busy: false,

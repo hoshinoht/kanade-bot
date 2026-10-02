@@ -149,6 +149,8 @@ pub struct Summary {
     pub next: Option<NextRun>,
     pub unanswered: usize,
     pub inbox: usize,
+    pub members: usize,
+    pub reminders: usize,
     pub model: Model,
 }
 

@@ -7,7 +7,10 @@ use super::{
     week::{Context, card_label, card_state, message_url},
     when,
 };
-use crate::domain::{ids::short_id, schedule::ScheduleSnapshot};
+use crate::domain::{
+    ids::short_id,
+    schedule::{Reminder, Run, ScheduleSnapshot},
+};
 
 #[derive(Serialize)]
 pub struct ReminderRow {
@@ -32,19 +35,7 @@ pub struct Reminders {
 pub fn reminders(ctx: &Context<'_>, snapshot: &ScheduleSnapshot) -> Reminders {
     let mut upcoming = Vec::new();
     let mut sent = Vec::new();
-    for reminder in &snapshot.reminders {
-        let Some(kind) = card_label(&reminder.kind) else {
-            continue;
-        };
-        let Some(run) = snapshot.runs.iter().find(|run| run.id == reminder.run_id) else {
-            continue;
-        };
-        let state = match card_state(reminder, snapshot, ctx.now) {
-            "posted" => "sent",
-            "skipped" => "stale",
-            _ if reminder.fire_at <= ctx.now => "due",
-            _ => "queued",
-        };
+    for (reminder, run, kind, state) in classified(ctx, snapshot) {
         let row = ReminderRow {
             id: reminder.id.clone(),
             run_id: run.id.clone(),
@@ -59,7 +50,7 @@ pub fn reminders(ctx: &Context<'_>, snapshot: &ScheduleSnapshot) -> Reminders {
                 .flatten(),
         };
         let key = (reminder.fire_at, reminder.id.clone());
-        if matches!(state, "queued" | "due") {
+        if is_upcoming(state) {
             upcoming.push((key, row));
         } else {
             sent.push((key, row));
@@ -71,4 +62,34 @@ pub fn reminders(ctx: &Context<'_>, snapshot: &ScheduleSnapshot) -> Reminders {
         upcoming: upcoming.into_iter().map(|(_, row)| row).collect(),
         sent: sent.into_iter().map(|(_, row)| row).collect(),
     }
+}
+
+/// How many rows [`reminders`] lists as `upcoming`: the Reminders page's queued count.
+pub fn upcoming(ctx: &Context<'_>, snapshot: &ScheduleSnapshot) -> usize {
+    classified(ctx, snapshot)
+        .filter(|(.., state)| is_upcoming(state))
+        .count()
+}
+
+fn is_upcoming(state: &str) -> bool {
+    matches!(state, "queued" | "due")
+}
+
+/// Each listable reminder with its run, card label and row state.
+fn classified<'s>(
+    ctx: &Context<'_>,
+    snapshot: &'s ScheduleSnapshot,
+) -> impl Iterator<Item = (&'s Reminder, &'s Run, &'static str, &'static str)> {
+    let now = ctx.now;
+    snapshot.reminders.iter().filter_map(move |reminder| {
+        let kind = card_label(&reminder.kind)?;
+        let run = snapshot.runs.iter().find(|run| run.id == reminder.run_id)?;
+        let state = match card_state(reminder, snapshot, now) {
+            "posted" => "sent",
+            "skipped" => "stale",
+            _ if reminder.fire_at <= now => "due",
+            _ => "queued",
+        };
+        Some((reminder, run, kind, state))
+    })
 }

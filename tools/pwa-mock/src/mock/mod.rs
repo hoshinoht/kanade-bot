@@ -408,6 +408,9 @@ impl Store {
                 .filter(|p| p.answer == "waiting")
                 .count(),
             inbox: self.proposals.len(),
+            // Same derivations as the Members and Reminders pages' headings.
+            members: self.member_rows().iter().filter(|m| m.bossing).count(),
+            reminders: self.reminders().upcoming.len(),
             model: Model {
                 busy: true,
                 holder: Some("extractor"),

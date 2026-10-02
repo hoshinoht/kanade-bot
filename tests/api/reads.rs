@@ -910,6 +910,7 @@ async fn stats_summary_and_reminders() {
         "Dan this week, all of n-kalos"
     );
     assert_eq!(summary["inbox"], 0);
+    assert_eq!(summary["members"], 3, "Alice, Bob, Dan; never the bot");
 
     let reminders = reads
         .read("/api/admin/reminders", "reminders.json#/$defs/Reminders")
@@ -929,6 +930,7 @@ async fn stats_summary_and_reminders() {
             .collect()
     };
     assert_eq!(ids("upcoming"), ["m-kalos-60:queued", "m-kalos-15:queued"]);
+    assert_eq!(summary["reminders"], 2, "the upcoming rows above");
     assert_eq!(ids("sent"), ["m-kalos-day:sent", "m-star-day:stale"]);
     assert_eq!(
         reminders["sent"][0]["party"],

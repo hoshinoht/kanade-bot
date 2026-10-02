@@ -327,6 +327,10 @@ export interface Summary {
   next: { run_id: string; bosses: string; when: string; countdown: string; on: number; total: number } | null;
   unanswered: number;
   inbox: number;
+  /** Members listed with `bossing` (the Members heading's count). */
+  members: number;
+  /** Upcoming (queued or due) reminders, this and next week (the Reminders heading's count). */
+  reminders: number;
   model: { busy: boolean; holder: string | null };
 }
 

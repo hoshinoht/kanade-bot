@@ -435,7 +435,7 @@
         avatar={store.identity ? artUrl(store.identity.avatar, store.identity) : null}
         active={section?.key ?? ''}
         inbox={store.summary?.inbox ?? 0}
-        counts={store.openRuns === null ? {} : { week: store.openRuns }}
+        counts={store.drawerCounts}
         timezone={store.week?.timezone ?? ''}
         returnTo={menuButton}
         {account}

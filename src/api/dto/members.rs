@@ -48,12 +48,27 @@ pub fn rows(
 ) -> Vec<MemberRow> {
     let mut rows: Vec<MemberRow> = profiles
         .iter()
-        .filter(|profile| !profile.member.is_bot)
-        .filter(|profile| profile.member.has_role || access.access(profile) != "none")
+        .filter(|profile| listed(profile, access))
         .map(|profile| row(profile, access, personas, snapshot, this_week))
         .collect();
     rows.sort_by(|a, b| (a.name.to_lowercase(), &a.id).cmp(&(b.name.to_lowercase(), &b.id)));
     rows
+}
+
+/// The listed rows with `bossing` set: the Members page heading's count.
+pub fn bossers(profiles: &[MemberProfile], access: &GuildAccess) -> usize {
+    profiles
+        .iter()
+        .filter(|profile| listed(profile, access) && bossing(profile))
+        .count()
+}
+
+fn listed(profile: &MemberProfile, access: &GuildAccess) -> bool {
+    !profile.member.is_bot && (bossing(profile) || access.access(profile) != "none")
+}
+
+fn bossing(profile: &MemberProfile) -> bool {
+    profile.member.has_role
 }
 
 /// One member's row (also for edits of members outside the listed roster).
@@ -83,7 +98,7 @@ pub fn row(
             .reply_style
             .as_ref()
             .is_none_or(|key| personas.iter().any(|option| option.key == *key)),
-        bossing: member.has_role,
+        bossing: bossing(profile),
         access: access.access(profile),
     }
 }
