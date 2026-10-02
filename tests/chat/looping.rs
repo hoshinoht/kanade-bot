@@ -288,6 +288,7 @@ fn named() -> Vec<Named> {
     let mut grounding = Vec::new();
     let mut budget = Vec::new();
     let mut reserve = Vec::new();
+    let mut seasonal_list = Vec::new();
     for case in file["cases"].as_array().expect("cases") {
         let case_id = *CASES
             .iter()
@@ -396,6 +397,12 @@ fn named() -> Vec<Named> {
                     reserve.push(error(
                         "ContextBudgetError: chat request estimate 18613 exceeds context budget 8192 with completion reserve 1024",
                     ));
+                    seasonal_list.push(dev(
+                        case_id,
+                        format!("{pointer}/error"),
+                        json!("ContextBudgetError: chat request estimate 18613 exceeds context budget 8192 with completion reserve 1024"),
+                        json!("ContextBudgetError: chat request estimate 18662 exceeds context budget 8192 with completion reserve 1024"),
+                    ));
                 }
                 ("missing-model-alias", 0) => {
                     failures.push(error("role is not configured"));
@@ -443,6 +450,10 @@ fn named() -> Vec<Named> {
         Named {
             name: "D-CONTEXT-BUDGET-RESERVE",
             entries: reserve,
+        },
+        Named {
+            name: "D-SEASONAL-LIST",
+            entries: seasonal_list,
         },
     ]
 }

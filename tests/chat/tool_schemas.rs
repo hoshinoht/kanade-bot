@@ -1,5 +1,5 @@
-//! `tool_schemas.json`: the full-set surface is v4's bytes, and every loop,
-//! context and reply constant is the crate's own.
+//! `tool_schemas.json`: the full-set surface keeps v4's structure, with named
+//! schema differences; every loop, context and reply constant is the crate's own.
 
 use kanade::chat::context::{
     ANCHOR_CACHE, COMPLETION_RESERVE_TOKENS, CONVERSATION_BUDGET_TOKENS, HISTORY_EXCHANGES,
@@ -15,7 +15,13 @@ use kanade::chat::tools::{MAX_MEMBER_REPLY, MAX_RUNS, READ_ONLY_TURN, ToolName, 
 use serde_json::{Value, json};
 
 use crate::common::text;
-use crate::support::{Named, check_family, dev, unknown_op, value};
+use crate::support::{Named, check_family, dev, load, unknown_op, value};
+
+const V4_LIST_BOSSES_DESCRIPTION: &str =
+    "The bosses this guild runs, with their difficulties. Use it to check a name.";
+const V5_LIST_BOSSES_DESCRIPTION: &str = "The bosses this guild runs, with their difficulties, plus seasonal event bosses that only have a guide. Use it to check a name or to say which guides exist.";
+const V4_GET_BOSS_STRATEGY_DESCRIPTION: &str = "Source-backed local strategy notes for one boss. Use this for boss mechanics, phases, dangers, and strategy facts; it returns only checked-in guide content.";
+const V5_GET_BOSS_STRATEGY_DESCRIPTION: &str = "Source-backed local strategy notes for one boss. Use this for boss mechanics, phases, dangers, and strategy facts; it returns only checked-in guide content. Also covers seasonal event bosses listed by list_bosses.";
 
 fn surface(read_only: bool) -> Value {
     let offer = ToolOffer::full_set(read_only);
@@ -57,17 +63,76 @@ fn constants() -> Value {
     })
 }
 
+fn seasonal_schema_text(v4_text: &str) -> String {
+    let mut text = v4_text.to_owned();
+    for (v4, v5) in [
+        (V4_LIST_BOSSES_DESCRIPTION, V5_LIST_BOSSES_DESCRIPTION),
+        (
+            V4_GET_BOSS_STRATEGY_DESCRIPTION,
+            V5_GET_BOSS_STRATEGY_DESCRIPTION,
+        ),
+    ] {
+        let old = format!("\"description\":\"{v4}\"");
+        let new = format!("\"description\":\"{v5}\"");
+        assert_eq!(text.matches(&old).count(), 1, "frozen schema text");
+        text = text.replacen(&old, &new, 1);
+    }
+    text
+}
+
 fn named() -> Vec<Named> {
-    vec![Named {
-        // User decision 2026-09-25: 8 tool rounds by default (v4: 4).
-        name: "D-TOOL-ROUNDS",
-        entries: vec![dev(
+    let vector = load("tool_schemas.json");
+    let steps = vector["cases"][0]["expected"]["steps"].as_array().unwrap();
+    let full = surface(false);
+    let read_only = surface(true);
+    let mut seasonal_entries = Vec::new();
+    for (step, actual) in [(0, &full), (1, &read_only)] {
+        seasonal_entries.extend([
+            dev(
+                "surface",
+                format!("/steps/{step}/value/tools/2/function/description"),
+                json!(V4_LIST_BOSSES_DESCRIPTION),
+                json!(V5_LIST_BOSSES_DESCRIPTION),
+            ),
+            dev(
+                "surface",
+                format!("/steps/{step}/value/tools/3/function/description"),
+                json!(V4_GET_BOSS_STRATEGY_DESCRIPTION),
+                json!(V5_GET_BOSS_STRATEGY_DESCRIPTION),
+            ),
+            dev(
+                "surface",
+                format!("/steps/{step}/value/tokens"),
+                steps[step]["value"]["tokens"].clone(),
+                actual["tokens"].clone(),
+            ),
+        ]);
+        let v4_text = steps[step]["value"]["text"]
+            .as_str()
+            .expect("frozen tool schema text");
+        seasonal_entries.push(dev(
             "surface",
-            "/steps/2/value/max_tool_rounds",
-            json!(V4_MAX_TOOL_ROUNDS),
-            json!(DEFAULT_TOOL_ROUNDS),
-        )],
-    }]
+            format!("/steps/{step}/value/text"),
+            json!(v4_text),
+            json!(seasonal_schema_text(v4_text)),
+        ));
+    }
+    vec![
+        Named {
+            // User decision 2026-09-25: 8 tool rounds by default (v4: 4).
+            name: "D-TOOL-ROUNDS",
+            entries: vec![dev(
+                "surface",
+                "/steps/2/value/max_tool_rounds",
+                json!(V4_MAX_TOOL_ROUNDS),
+                json!(DEFAULT_TOOL_ROUNDS),
+            )],
+        },
+        Named {
+            name: "D-SEASONAL-LIST",
+            entries: seasonal_entries,
+        },
+    ]
 }
 
 async fn replay(case: Value) -> Vec<Value> {

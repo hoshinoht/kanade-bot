@@ -22,11 +22,12 @@ pub(crate) fn read_document(path: &Path) -> Result<Value, LoadError> {
         .map_err(|error| LoadError::new(path, format!("invalid YAML: {error}")))
 }
 
-/// An event boss document (one with an `event` block): its key and the
-/// other names members use for it.
+/// An event boss document (one with an `event` block) and its listing details.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KnowledgeEvent {
     pub key: String,
+    pub name: String,
+    pub availability: String,
     pub aliases: Vec<String>,
 }
 
@@ -108,6 +109,16 @@ pub fn load_knowledge_dir(dir: &Path) -> Result<KnowledgeDir, LoadError> {
             ));
         }
         if let Some(event) = doc.get("event") {
+            let event_name = event
+                .get("name")
+                .and_then(Value::as_str)
+                .ok_or_else(|| LoadError::new(&path, "missing event name"))?
+                .to_owned();
+            let availability = event
+                .get("availability")
+                .and_then(Value::as_str)
+                .ok_or_else(|| LoadError::new(&path, "missing event availability"))?
+                .to_owned();
             let aliases = event
                 .get("aliases")
                 .and_then(Value::as_array)
@@ -118,6 +129,8 @@ pub fn load_knowledge_dir(dir: &Path) -> Result<KnowledgeDir, LoadError> {
                 .collect();
             events.push(KnowledgeEvent {
                 key: key.to_owned(),
+                name: event_name,
+                availability,
                 aliases,
             });
         }

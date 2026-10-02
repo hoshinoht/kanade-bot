@@ -91,7 +91,7 @@ pub fn get_run(
     Ok(run_detail(world, run))
 }
 
-/// `list_bosses`: every boss in display and canonical-token vocabularies.
+/// `list_bosses`: catalog bosses and any event bosses with checked-in guides.
 pub fn list_bosses(world: &ToolWorld<'_>) -> String {
     let rows: Vec<String> = world
         .catalog
@@ -119,7 +119,29 @@ pub fn list_bosses(world: &ToolWorld<'_>) -> String {
         .collect();
     let mut lines = vec!["**Bosses this guild runs**".to_owned(), String::new()];
     lines.extend(rows);
-    lines.join("\n")
+    let mut output = lines.join("\n");
+    let mut events = world
+        .guides
+        .map(|guides| guides.events())
+        .unwrap_or_default();
+    events.sort_by(|left, right| left.key.cmp(&right.key));
+    if !events.is_empty() {
+        output.push_str("\n\n**Seasonal bosses (guide only, not scheduled)**");
+        for event in events {
+            output.push_str(&format!(
+                "\n**{}** ({}): {}{}",
+                event.key,
+                event.name,
+                event.availability,
+                if event.aliases.is_empty() {
+                    String::new()
+                } else {
+                    format!(" Also called {}.", event.aliases.join(", "))
+                }
+            ));
+        }
+    }
+    output
 }
 
 /// `list_fixed`: the recurring weekly timings.

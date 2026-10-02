@@ -739,6 +739,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 Discord chat: asking which seasonal bosses or guides exist now names the seasonal event bosses (Kai, Meilin) with their event and availability.
 - v5 Discord chat: after a schedule lookup, a reply announcing a posted card
   (e.g. a move proposal waiting for ✅) is no longer replaced by the lookup's
   run listing; the card reply posts as the model wrote it.

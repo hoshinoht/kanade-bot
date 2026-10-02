@@ -7,6 +7,8 @@ use crate::domain::catalog::BossTable;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EventBoss {
     pub key: String,
+    pub name: String,
+    pub availability: String,
     pub aliases: Vec<String>,
 }
 

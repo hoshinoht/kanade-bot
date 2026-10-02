@@ -101,6 +101,8 @@ impl StrategyGuides for LiveStrategyGuides<'_> {
             .filter(|event| self.catalog.boss(&event.key).is_none())
             .map(|event| EventBoss {
                 key: event.key.clone(),
+                name: event.name.clone(),
+                availability: event.availability.clone(),
                 aliases: event.aliases.clone(),
             })
             .collect()

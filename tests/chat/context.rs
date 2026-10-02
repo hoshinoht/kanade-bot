@@ -194,5 +194,21 @@ async fn the_context_family_replays_exactly() {
             ),
         )],
     };
-    assert_eq!(check_family("context", &[reserve], replay).await, (6, 58));
+    let seasonal_list = Named {
+        name: "D-SEASONAL-LIST",
+        entries: vec![dev(
+            "request-budget-trims-prior-history",
+            "/steps/3/error/message",
+            json!(
+                "chat request estimate 9668 exceeds context budget 6144 with completion reserve 1024"
+            ),
+            json!(
+                "chat request estimate 9717 exceeds context budget 6144 with completion reserve 1024"
+            ),
+        )],
+    };
+    assert_eq!(
+        check_family("context", &[reserve, seasonal_list], replay).await,
+        (6, 58)
+    );
 }

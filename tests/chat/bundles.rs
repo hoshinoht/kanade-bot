@@ -151,12 +151,19 @@ fn unavailable_strategy_is_hidden_from_the_dynamic_surface() {
 
 #[test]
 fn a_read_question_costs_far_less_prompt_than_v4s_surface() {
-    let v4 = ToolOffer::full_set(false).estimated_tokens();
-    let v4_read_only = ToolOffer::full_set(true).estimated_tokens();
+    let full = ToolOffer::full_set(false).estimated_tokens();
+    let full_read_only = ToolOffer::full_set(true).estimated_tokens();
     let read = ToolOffer::dynamic([], false).estimated_tokens();
-    assert_eq!((v4, v4_read_only), (3047, 1045), "v4's measured surfaces");
-    assert!(read * 2 < v4, "{read} tokens for a read question vs {v4}");
-    assert!(read < v4_read_only, "{read} vs v4 read-only {v4_read_only}");
+    // D-SEASONAL-LIST adds 49 estimated tokens to each full-set surface.
+    assert_eq!((full, full_read_only), (3096, 1094));
+    assert!(
+        read * 2 < full,
+        "{read} tokens for a read question vs {full}"
+    );
+    assert!(
+        read < full_read_only,
+        "{read} vs full-set read-only {full_read_only}"
+    );
 }
 
 #[test]

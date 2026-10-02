@@ -320,8 +320,16 @@ through `ReplyPort::post_reply`, the adapter wires it later).
   path and problem. Without the directory, live chat removes the
   `strategy` bundle (`ToolOffer::disallow`): `get_boss_strategy` is never
   offered and `request_tools` neither advertises nor accepts `strategy`.
-  Full-set (v4) surfaces and dynamic surfaces with every bundle available
-  keep their exact bytes.
+  `D-SEASONAL-LIST` (tests in `tests/chat/strategy_guides.rs`,
+  `tests/chat/tool_schemas.rs`, `tests/chat/context.rs` and
+  `tests/chat/looping.rs`): `list_bosses` preserves its catalog block and
+  appends key-ordered seasonal guide bosses with event name, availability and
+  aliases when present; it adds no section without event guides. The tool
+  descriptions also direct the model between the listing and guide lookup;
+  their added length raises each full-set surface estimate by 49 tokens, which
+  is named in the context and loop vector replays.
+  Full-set (v4) schema shapes and key order remain; these named descriptions
+  differ. Dynamic surfaces with every bundle available use the same schemas.
 - Not here: strategy prefetch and source attribution, and a model
   pre-screen.
 

@@ -8,7 +8,7 @@ use std::{
 };
 
 use kanade::chat::tools::read::{
-    EventBoss, GuideError, StrategyGuides, get_boss_strategy, render_guide,
+    EventBoss, GuideError, StrategyGuides, get_boss_strategy, list_bosses, render_guide,
 };
 use kanade::domain::catalog::{BossReference, BossTable};
 use kanade::domain::schedule::ScheduleSnapshot;
@@ -144,6 +144,8 @@ impl StrategyGuides for Guides<'_> {
             .filter(|event| self.catalog.boss(&event.key).is_none())
             .map(|event| EventBoss {
                 key: event.key.clone(),
+                name: event.name.clone(),
+                availability: event.availability.clone(),
                 aliases: event.aliases.clone(),
             })
             .collect()
@@ -172,13 +174,61 @@ async fn strategy(args: Value) -> Result<String, String> {
 }
 
 #[test]
-fn knowledge_records_event_documents_with_their_aliases() {
+fn knowledge_records_event_documents_with_name_availability_and_aliases() {
     let fixture = Fixture::new();
     let knowledge = load_knowledge_dir(&fixture.0).expect("fixture knowledge");
     assert_eq!(knowledge.keys, ["MaleficStar", "Zephyrine"]);
     assert_eq!(knowledge.events.len(), 1);
     assert_eq!(knowledge.events[0].key, "Zephyrine");
+    assert_eq!(knowledge.events[0].name, "Invented Winds Season");
+    assert_eq!(
+        knowledge.events[0].availability,
+        "Invented World only, 1 Jan 2031 until 1 Mar 2031; solo only."
+    );
     assert_eq!(knowledge.events[0].aliases, ["Zephy", "제피린"]);
+}
+
+#[tokio::test]
+async fn d_seasonal_list_appends_tracked_guides_after_the_unchanged_catalog_block() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let catalog = load_catalog(&root.join("boss/bosses.yaml")).expect("shipped catalog");
+    let knowledge = load_knowledge_dir(&root.join("boss/knowledge")).expect("knowledge");
+    let guides = Guides {
+        knowledge: &knowledge,
+        catalog: &catalog,
+    };
+    let vectors = load("read_tools.json");
+    let world = World::new(&vectors["cases"][0]["input"]).await;
+    let snapshot = ScheduleSnapshot::default();
+    let catalog_world = kanade::chat::tools::read::ToolWorld {
+        catalog: &catalog,
+        guides: None,
+        ..world.tool_world(&snapshot)
+    };
+    let catalog_only = list_bosses(&catalog_world);
+    let tool_world = kanade::chat::tools::read::ToolWorld {
+        guides: Some(&guides),
+        ..catalog_world
+    };
+
+    assert_eq!(
+        list_bosses(&tool_world),
+        format!(
+            "{catalog_only}\n\n**Seasonal bosses (guide only, not scheduled)**\n\
+             **Kai** (Challengers World Season 3): MapleSEA: ran in Challengers World Season 3 only, from 3 Jun 2026 (after the v251 patch) until it ended at the 30 Sep 2026 maintenance; solo only. Not currently available.\n\
+             **Meilin** (Challengers World Season 4): KMS Challengers World Season 4 ran 18 Jun – 17 Sep 2026. Expected in MapleSEA around Nov 2026 (not yet announced); MapleSEA names may differ. Also called Maerin, 메이린."
+        )
+    );
+}
+
+#[tokio::test]
+async fn list_bosses_omits_the_seasonal_section_without_event_guides() {
+    let vectors = load("read_tools.json");
+    let world = World::new(&vectors["cases"][0]["input"]).await;
+    let snapshot = ScheduleSnapshot::default();
+    let listing = list_bosses(&world.tool_world(&snapshot));
+
+    assert!(!listing.contains("**Seasonal bosses (guide only, not scheduled)**"));
 }
 
 #[tokio::test]

@@ -80,7 +80,7 @@ impl ToolName {
         )
     }
 
-    /// The compact JSON schema, byte-identical to v4's for the v4 tools.
+    /// The compact JSON schema in v4 key order; named v5 differences are documented.
     pub fn schema_text(self) -> &'static str {
         match self {
             Self::GetSchedule => text::GET_SCHEDULE,

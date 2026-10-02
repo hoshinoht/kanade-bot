@@ -2,7 +2,7 @@
 //! twelve schemas every round (~2.2k of a 2.5k-token conversation budget);
 //! v5 offers fixed, stably ordered bundles chosen by code with no extra
 //! model call, plus a tiny `request_tools` escape hatch. The full-set mode
-//! reproduces v4's surface byte for byte for vector parity.
+//! keeps v4's schema shape and key order, with named schema differences.
 //!
 //! Order is fixed for prefix caching: READ, `request_tools`, then STRATEGY,
 //! RUN_WRITES and FIXED_WRITES as offered. What is offered never grants
@@ -274,7 +274,7 @@ impl ToolOffer {
         }
     }
 
-    /// The compact `tools` JSON for the request (v4 bytes in full-set mode).
+    /// The compact `tools` JSON for the request, in v4 key order.
     pub fn surface_text(&self) -> String {
         if self.mode == Mode::FullSet {
             return surface_text(&self.tools());
