@@ -4,7 +4,8 @@ use kanade::extract::matching::{self, MatchResult};
 use serde_json::{Value, json};
 
 use crate::support::{
-    Outcome, amendment, date, opt_text, replay_family, run, select, strings, text, unknown_op, zone,
+    Deviation, Outcome, amendment, date, opt_text, replay_family_with, run, select, strings, text,
+    unknown_op, zone,
 };
 
 fn run_ids(runs: &[&Run]) -> Value {
@@ -45,7 +46,15 @@ fn replay(input: &Value, step: &Value) -> Outcome {
         )),
         "reachable" => {
             let day = (!step["day"].is_null()).then(|| date(&step["day"]));
-            run_ids(&matching::reachable(&select(&pool, &step["runs"]), day, tz))
+            // The frozen operation has no evidence time; pin it to the
+            // fixture's first boss week to replay dayless RSVP/Sub reachability
+            // under D-EXTRACT-WEEK-ANCHOR.
+            run_ids(&matching::reachable(
+                &select(&pool, &step["runs"]),
+                day,
+                tz,
+                Some(pool[0].week_start),
+            ))
         }
         "needs_run" => {
             let kind = AmendmentKind::parse(text(&step["kind"])).expect("kind");
@@ -58,5 +67,50 @@ fn replay(input: &Value, step: &Value) -> Outcome {
 
 #[test]
 fn match_vectors_replay_exactly() {
-    assert_eq!(replay_family("match", replay), (3, 33));
+    let deviations = [
+        Deviation {
+            name: "D-EXTRACT-STALE-HINT",
+            case_id: "model-hints-are-checked",
+            step: 4,
+            rewrite: |value| {
+                assert_eq!(
+                    *value,
+                    json!({
+                        "ambiguous": true,
+                        "candidate_ids": ["a1a1a1a1-0000-4000-8000-000000000001", "b2b2b2b2-0000-4000-8000-000000000002"],
+                        "matched": true,
+                        "reason": "2 runs match equally well",
+                        "reason_code": "",
+                        "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                    })
+                );
+                *value = json!({
+                    "ambiguous": false, "candidate_ids": [], "matched": false,
+                    "reason": "model pointed at terminal run #e5e5e5e5",
+                    "reason_code": "terminal-hint", "run_id": null,
+                });
+                1
+            },
+        },
+        Deviation {
+            name: "D-EXTRACT-WEEK-ANCHOR",
+            case_id: "spanning-reachability-and-kinds",
+            step: 6,
+            rewrite: |value| {
+                assert_eq!(
+                    *value,
+                    json!([
+                        "a1a1a1a1-0000-4000-8000-000000000001",
+                        "d4d4d4d4-0000-4000-8000-000000000004",
+                    ])
+                );
+                *value = json!(["a1a1a1a1-0000-4000-8000-000000000001"]);
+                1
+            },
+        },
+    ];
+    assert_eq!(
+        replay_family_with("match", &deviations, |_, _| {}, replay),
+        (3, 33)
+    );
 }

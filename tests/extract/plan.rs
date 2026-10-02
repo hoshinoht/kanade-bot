@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::Utc;
+use chrono::{NaiveTime, Utc, Weekday};
 use kanade::domain::schedule::Run;
 use kanade::extract::plan::{
     BurstInputs, BurstMessage, Payload, Plan, Planned, consolidate, plan_burst,
@@ -90,10 +90,14 @@ fn planned<'a>(input: &Value, step: &Value, pool: &'a [Run]) -> Plan<'a> {
         anchor: instant(&step["anchor"]).with_timezone(&Utc),
         now: instant(&step["now"]).with_timezone(&Utc),
         zone: zone(input),
+        reset_weekday: Weekday::Thu,
+        reset_time: NaiveTime::MIN,
         channel_runs: &channel,
         guild_runs: &guild,
         burst_order: &order,
         author_ids: &authors,
+        // Frozen planning inputs supply one burst anchor, not per-message times.
+        message_times: &HashMap::new(),
         min_confidence: step["min_confidence"].as_f64().expect("min_confidence"),
         boss_table: flag(&step["use_boss_table"]).then_some(&table),
         burst_messages: &messages,

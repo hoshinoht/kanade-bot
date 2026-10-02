@@ -750,6 +750,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 extraction refuses hints naming only done or cancelled runs for kinds
+  that act on existing runs; Add/Fix keep v4 behaviour. Dayless RSVP/Sub
+  answers stay in their evidence message's boss week without escaping a
+  channel that has live runs; bare clocks keep their implicit resolved day
+  ("Refuse + anchor", including on rescans).
 - v5 Discord chat: asking which seasonal bosses or guides exist now names the seasonal event bosses (Kai, Meilin) with their event and availability.
 - v5 Discord chat: after a schedule lookup, a reply announcing a posted card
   (e.g. a move proposal waiting for ✅) is no longer replaced by the lookup's

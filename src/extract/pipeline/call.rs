@@ -99,6 +99,7 @@ pub(super) struct Prepared<'a> {
     pub guild_runs: Vec<&'a Run>,
     pub burst_order: Vec<String>,
     pub author_ids: HashMap<String, String>,
+    pub message_times: HashMap<String, DateTime<Utc>>,
     pub burst_messages: Vec<BurstMessage>,
 }
 
@@ -414,8 +415,10 @@ where
             anchor,
             burst_order: ordered.clone().map(|m| m.id.clone()).collect(),
             author_ids: ordered
+                .clone()
                 .map(|m| (m.id.clone(), m.author_id.clone()))
                 .collect(),
+            message_times: ordered.map(|m| (m.id.clone(), m.created_at)).collect(),
             burst_messages: chunk
                 .iter()
                 .map(|row| BurstMessage {
@@ -574,10 +577,13 @@ where
             anchor: prepared.anchor,
             now: self.clock.now(),
             zone: self.config.zone,
+            reset_weekday: self.config.reset_weekday,
+            reset_time: self.config.reset_time,
             channel_runs: &prepared.channel_runs,
             guild_runs: &prepared.guild_runs,
             burst_order: &prepared.burst_order,
             author_ids: &prepared.author_ids,
+            message_times: &prepared.message_times,
             min_confidence: self.config.min_confidence,
             boss_table: Some(&loaded.bosses),
             burst_messages: &prepared.burst_messages,

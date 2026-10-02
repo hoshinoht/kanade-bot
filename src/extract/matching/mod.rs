@@ -7,7 +7,7 @@
 use std::cmp::Reverse;
 use std::collections::HashSet;
 
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, Utc};
 use chrono_tz::Tz;
 
 use crate::domain::ids::{canonical, short_id};
@@ -17,6 +17,8 @@ use crate::extract::{Amendment, AmendmentKind};
 /// `reason_code` for "bosses were named and nothing here runs them": with a
 /// day and time the caller turns it into an `add`, otherwise it is dropped.
 pub const NO_BOSS_OVERLAP: &str = "no-boss-overlap";
+/// A known terminal hint must never fall through to another run.
+pub const TERMINAL_HINT: &str = "terminal-hint";
 
 /// Kinds meaningless without a target run; `add` and `fix` create their own.
 pub fn needs_run(kind: AmendmentKind) -> bool {
@@ -30,11 +32,20 @@ pub fn starts_after(run: &Run, day: Option<NaiveDate>, zone: Tz) -> bool {
 }
 
 /// The runs an amendment about `day` may be about: moving a run forward past
-/// the reset is ordinary, reaching back into an earlier week is not.
-pub fn reachable<'a>(runs: &[&'a Run], day: Option<NaiveDate>, zone: Tz) -> Vec<&'a Run> {
+/// the reset is ordinary, reaching back into an earlier week is not. A supplied
+/// evidence week bounds only dayless RSVP/Sub answers; other callers omit it.
+pub fn reachable<'a>(
+    runs: &[&'a Run],
+    day: Option<NaiveDate>,
+    zone: Tz,
+    evidence_week: Option<DateTime<Utc>>,
+) -> Vec<&'a Run> {
     runs.iter()
         .copied()
-        .filter(|run| !starts_after(run, day, zone))
+        .filter(|run| match day {
+            Some(_) => !starts_after(run, day, zone),
+            None => evidence_week.is_none_or(|week| run.week_start == week),
+        })
         .collect()
 }
 
@@ -83,26 +94,53 @@ fn live<'a>(runs: &[&'a Run]) -> Vec<&'a Run> {
         .collect()
 }
 
-/// The run `target_run_hint` points at, refused when the amendment names
-/// bosses that run lacks: the model will happily point anywhere it saw a run.
-fn hinted<'a>(hint: Option<&str>, runs: &[&'a Run], bosses: &HashSet<&str>) -> Option<&'a Run> {
+fn hinted<'a>(hint: Option<&str>, runs: impl Iterator<Item = &'a Run>) -> Option<&'a Run> {
     let prefix = canonical(hint.filter(|hint| !hint.is_empty())?);
     if prefix.chars().count() < 4 {
         return None;
     }
-    let run = runs
-        .iter()
-        .copied()
-        .find(|run| canonical(&run.id).starts_with(&prefix))?;
-    (bosses.is_empty() || overlap(bosses, &run.bosses) > 0).then_some(run)
+    runs.into_iter()
+        .find(|run| canonical(&run.id).starts_with(&prefix))
+}
+
+/// Check before reachability, live filtering or spanning: a stale hint is a
+/// refusal for run-acting kinds, not permission to score a different run
+/// (D-EXTRACT-STALE-HINT). A prefix also matching a live run is not stale.
+pub fn refuse_terminal_hint<'a>(
+    amendment: &Amendment,
+    channel_runs: &[&'a Run],
+    guild_runs: &[&'a Run],
+) -> Option<MatchResult<'a>> {
+    if !needs_run(amendment.kind) {
+        return None;
+    }
+    let runs = channel_runs.iter().chain(guild_runs).copied();
+    if hinted(
+        amendment.target_run_hint.as_deref(),
+        runs.clone().filter(|run| !run.status.is_terminal()),
+    )
+    .is_some()
+    {
+        return None;
+    }
+    let run = hinted(amendment.target_run_hint.as_deref(), runs)?;
+    run.status.is_terminal().then(|| MatchResult {
+        reason_code: TERMINAL_HINT,
+        ..MatchResult::new(
+            None,
+            format!("model pointed at terminal run #{}", short_id(&run.id)),
+            Vec::new(),
+        )
+    })
 }
 
 /// Pick the run `amendment` is about.
 ///
-/// `guild_runs` are consulted only when the channel has no live runs. Ties are
-/// broken by participant overlap with the author and anyone mentioned; a tie
-/// that survives is reported `ambiguous` (first rival as the run) so the caller
-/// asks instead of guessing.
+/// Terminal hints are checked across both pools first. Live `guild_runs` are
+/// consulted only when the channel has no live runs. Ties are broken by
+/// participant overlap with the author and anyone mentioned; a surviving tie
+/// is reported `ambiguous` (first rival as the run). The planner drops it
+/// except for RSVP/Sub.
 pub fn match_run<'a, S: AsRef<str>>(
     amendment: &Amendment,
     channel_runs: &[&'a Run],
@@ -110,6 +148,9 @@ pub fn match_run<'a, S: AsRef<str>>(
     author_id: Option<&str>,
     mentioned: &[S],
 ) -> MatchResult<'a> {
+    if let Some(refusal) = refuse_terminal_hint(amendment, channel_runs, guild_runs) {
+        return refusal;
+    }
     let mut scoped = live(channel_runs);
     let wide = scoped.is_empty();
     if wide {
@@ -124,7 +165,10 @@ pub fn match_run<'a, S: AsRef<str>>(
     people.extend(mentioned.iter().map(AsRef::as_ref));
     people.extend(author_id.filter(|id| !id.is_empty()));
 
-    if let Some(run) = hinted(amendment.target_run_hint.as_deref(), &scoped, &bosses) {
+    // Live hints still require boss overlap, as in v4.
+    if let Some(run) = hinted(amendment.target_run_hint.as_deref(), scoped.iter().copied())
+        .filter(|run| bosses.is_empty() || overlap(&bosses, &run.bosses) > 0)
+    {
         let reason = format!("model pointed at #{}", short_id(&run.id));
         return MatchResult::new(Some(run), reason, scoped);
     }

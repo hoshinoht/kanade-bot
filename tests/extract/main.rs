@@ -25,6 +25,7 @@ mod resolve;
 mod self_service;
 mod session;
 mod shaping;
+mod stale_answers;
 mod support;
 mod usage;
 mod window;

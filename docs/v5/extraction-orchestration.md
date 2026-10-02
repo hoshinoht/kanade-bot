@@ -322,6 +322,24 @@ extraction alias or effort change (`TODO(config slice)` in
 
 ## Differences from v4
 
+- **Refuse + anchor** (user decision 2026-10-02, narrowed after review):
+  `D-EXTRACT-STALE-HINT` drops only kinds that act on an existing run
+  (`needs_run`) whose `target_run_hint` resolves only to a done or cancelled
+  run, before live/week filtering or multi-run spanning. It never falls
+  through to another run, even when the named bosses disagree. Add/Fix keep
+  v4 behaviour; unknown hints retain v4 matching, and a prefix also matching
+  a live run is not refused.
+  `D-EXTRACT-WEEK-ANCHOR` bounds only dayless RSVP/Sub answers to the boss week of
+  its latest known cited evidence message's creation time, using the configured
+  reset weekday/time and guild zone, not the rescan or commit clock. Context
+  message times are included; without a known citation the existing burst
+  anchor is used. For anchored answers, guild-wide fallback is decided from
+  the unfiltered channel runs: any live channel run prevents fallback, even
+  when it belongs to another week. Other kinds and dated answers keep v4
+  reachability; bare clocks keep their implicit resolved day for every kind.
+  RSVP/Sub ties within the anchored week still act. Frozen v4 vectors stay
+  unchanged; replay tests assert their original values before named overrides.
+  Regression coverage: `tests/extract/stale_answers.rs`.
 - Proposals are refused up front instead of carded and refused at ✅
   (`D-PROPOSE-REFUSES`); the log row is written once, after proposing
   (v4 logged, then attached amendment ids).

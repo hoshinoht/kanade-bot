@@ -17,8 +17,12 @@ pub use rules::{
 use crate::domain::catalog::BossTable;
 use crate::domain::schedule::Run;
 use crate::domain::time::DateOutOfRange;
+use crate::domain::weeks;
 use crate::extract::gate::{explicit_rsvp, find_days};
-use crate::extract::matching::{NO_BOSS_OVERLAP, match_run, needs_run, reachable, runs_spanned};
+use crate::extract::matching::{
+    NO_BOSS_OVERLAP, TERMINAL_HINT, match_run, needs_run, reachable, refuse_terminal_hint,
+    runs_spanned,
+};
 use crate::extract::merge::merge;
 use crate::extract::resolve::{Resolved, resolve};
 use crate::extract::schema::Extraction;
@@ -93,17 +97,22 @@ pub struct BurstMessage {
 /// Planned entries borrow only the runs (`'a`).
 #[derive(Clone, Copy, Debug)]
 pub struct BurstInputs<'i, 'a> {
-    /// The latest evidence message's time, which day/time text resolves against.
+    /// The latest burst message's time, which day/time text resolves against;
+    /// also the fallback when no cited evidence time is known.
     pub anchor: DateTime<Utc>,
     /// What "already passed" is measured against.
     pub now: DateTime<Utc>,
     pub zone: Tz,
+    pub reset_weekday: Weekday,
+    pub reset_time: NaiveTime,
     pub channel_runs: &'i [&'a Run],
     pub guild_runs: &'i [&'a Run],
     /// Message ids oldest first, context included.
     pub burst_order: &'i [String],
     /// Message id -> author id.
     pub author_ids: &'i HashMap<String, String>,
+    /// Message id -> creation time, context included.
+    pub message_times: &'i HashMap<String, DateTime<Utc>>,
     pub min_confidence: f64,
     /// Canonicalises model boss names when given.
     pub boss_table: Option<&'i BossTable>,
@@ -217,11 +226,41 @@ pub fn plan_burst<'a>(
             .iter()
             .find_map(|id| inputs.author_ids.get(id))
             .map(String::as_str);
-        // Runs whose week starts after the night in question are never
-        // candidates, on any matching path.
-        let here = reachable(inputs.channel_runs, resolved.day, zone);
-        let guild_here = reachable(inputs.guild_runs, resolved.day, zone);
-        let spanned = if splits_across_runs(amendment.kind) {
+        let refusal = refuse_terminal_hint(amendment, inputs.channel_runs, inputs.guild_runs);
+        let evidence = amendment
+            .evidence_message_ids
+            .iter()
+            .filter_map(|id| inputs.message_times.get(id))
+            .max()
+            .copied()
+            .unwrap_or(inputs.anchor);
+        // Bare clocks keep resolve's implicit day; only dayless answers anchor.
+        let anchored = matches!(amendment.kind, AmendmentKind::Rsvp | AmendmentKind::Sub)
+            && resolved.day.is_none();
+        let evidence_week = if anchored {
+            Some(
+                weeks::week_start(&evidence, zone, inputs.reset_weekday, inputs.reset_time)?
+                    .to_fixed()
+                    .with_timezone(&Utc),
+            )
+        } else {
+            None
+        };
+        // Apply the same bound to local, guild-wide and spanning matches.
+        let here = reachable(inputs.channel_runs, resolved.day, zone, evidence_week);
+        // Week filtering must not turn a channel with live runs into an empty
+        // channel eligible for guild-wide matching.
+        let guild_here = if anchored
+            && inputs
+                .channel_runs
+                .iter()
+                .any(|run| !run.status.is_terminal())
+        {
+            Vec::new()
+        } else {
+            reachable(inputs.guild_runs, resolved.day, zone, evidence_week)
+        };
+        let spanned = if refusal.is_none() && splits_across_runs(amendment.kind) {
             runs_spanned(amendment, &here, author)
         } else {
             Vec::new()
@@ -248,15 +287,26 @@ pub fn plan_burst<'a>(
                 });
             }
         } else {
-            let mut result = match_run(
-                amendment,
-                &here,
-                &guild_here,
-                author,
-                &amendment.participants,
-            );
-            if result.run.is_none() && !inputs.channel_runs.is_empty() && here.is_empty() {
-                result.reason = "every run here belongs to a later boss week".to_owned();
+            let mut result = refusal.unwrap_or_else(|| {
+                match_run(
+                    amendment,
+                    &here,
+                    &guild_here,
+                    author,
+                    &amendment.participants,
+                )
+            });
+            if result.run.is_none()
+                && result.reason_code != TERMINAL_HINT
+                && !inputs.channel_runs.is_empty()
+                && here.is_empty()
+            {
+                result.reason = if !anchored {
+                    "every run here belongs to a later boss week"
+                } else {
+                    "no run here belongs to the evidence boss week"
+                }
+                .to_owned();
             }
             let mut amendment = amendment.clone();
             if result.run.is_none()
