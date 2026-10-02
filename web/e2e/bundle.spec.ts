@@ -44,6 +44,14 @@ test('admin bundle contains every marker (each one can catch a leak)', () => {
   expect(ADMIN_ONLY.filter((s) => !all.includes(s))).toEqual([]);
 });
 
+// `stripFidelityTags` removes them unless KANADE_FIDELITY=1; `bun run fidelity`
+// rebuilds clean afterwards. A tagged build must never be what ships.
+test('no bundle keeps the layout-fidelity tags', () => {
+  for (const app of ['public', 'admin']) {
+    expect(text(app).filter(({ body }) => body.includes('data-fid')).map(({ f }) => f)).toEqual([]);
+  }
+});
+
 test('no bundle registers a pass-through Trusted Types policy or writes HTML strings', () => {
   for (const app of ['public', 'admin']) {
     const all = text(app).map((x) => x.body).join('\n');

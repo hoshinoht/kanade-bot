@@ -62,3 +62,23 @@ export function forbidModules({ patterns }: ForbidOptions): Plugin {
     },
   };
 }
+
+/** Literal `data-fid="…"` attributes only; dynamic values are not supported (and not stripped). */
+const FID_ATTR = /\s+data-fid="[^"{}]*"/g;
+
+/**
+ * Removes the layout-fidelity tags (`data-fid`, matched against the M3E boards
+ * by `e2e/fidelity.spec.ts`) from Svelte sources before they compile, so no
+ * normal build ships them. Only `KANADE_FIDELITY=1` keeps them, and
+ * `e2e/bundle.spec.ts` fails if a kept build is left in `dist`.
+ */
+export function stripFidelityTags(keep = process.env.KANADE_FIDELITY === '1'): Plugin {
+  return {
+    name: 'kanade-strip-fidelity-tags',
+    enforce: 'pre',
+    transform(code, id) {
+      if (keep || !id.endsWith('.svelte') || !code.includes('data-fid')) return null;
+      return { code: code.replace(FID_ATTR, ''), map: null };
+    },
+  };
+}

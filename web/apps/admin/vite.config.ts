@@ -1,11 +1,12 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
-import { themeBoot } from '@kanade/ui/vite';
+import { stripFidelityTags, themeBoot } from '@kanade/ui/vite';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   plugins: [
     themeBoot(),
+    stripFidelityTags(),
     svelte(),
     VitePWA({
       strategies: 'injectManifest',

@@ -1,5 +1,5 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
-import { forbidModules, themeBoot } from '@kanade/ui/vite';
+import { forbidModules, stripFidelityTags, themeBoot } from '@kanade/ui/vite';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { ADMIN_ONLY_MODULES } from './admin-only.ts';
@@ -7,6 +7,7 @@ import { ADMIN_ONLY_MODULES } from './admin-only.ts';
 export default defineConfig({
   plugins: [
     themeBoot(),
+    stripFidelityTags(),
     svelte(),
     forbidModules({ patterns: ADMIN_ONLY_MODULES }),
     VitePWA({
