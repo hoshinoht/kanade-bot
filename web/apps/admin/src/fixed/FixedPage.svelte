@@ -121,7 +121,7 @@
   <p class="pageline__context">the baseline, materialised into runs for this week and next</p>
   {#snippet side()}
     <div class="page-head__side">
-      <button class="btn btn--primary" type="button" data-fid="fixed-add" data-fixed-add bind:this={addTrigger} onclick={(event) => open(null, event.currentTarget)}><Icon name="plus" />Add a weekly timing</button>
+      <button class="btn btn--primary fixed-add" type="button" data-fid="fixed-add" data-fixed-add bind:this={addTrigger} onclick={(event) => open(null, event.currentTarget)}><Icon name="plus" />Add a weekly timing</button>
     </div>
   {/snippet}
 </PageLine>

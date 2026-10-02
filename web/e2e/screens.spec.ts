@@ -699,6 +699,19 @@ test('fixed editor: one line of difficulty pills per boss, own bosses first', as
     expect(new Set(tops).size, await row.innerText()).toBe(1);
     expect((await row.boundingBox())!.height).toBeLessThanOrEqual(48);
   }
+  // The party: the picked members and the first few others, then "+n" for the
+  // rest; pressing it shows them and moves focus to the first one it showed.
+  const more = editor.getByRole('button', { name: /^Show \d+ more members?$/ });
+  await expect(more).toHaveText(/^\+\d+$/);
+  const hidden = Number((await more.textContent())!.slice(1));
+  const people = editor.locator('.run__people input[type="checkbox"]');
+  const values = () => people.evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value));
+  const before = await values();
+  await more.click();
+  await expect(more).toHaveCount(0);
+  await expect(people).toHaveCount(before.length + hidden);
+  const first = (await values()).find((value) => !before.includes(value))!;
+  await expect(editor.locator(`.run__people input[value="${first}"]`)).toBeFocused();
 });
 
 // B_InboxSelf / B_PhoneInbox: the boss art beside the title; the thread's

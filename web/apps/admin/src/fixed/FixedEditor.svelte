@@ -7,6 +7,7 @@
   import type { Boss, BossRow, Channel, FixedRequest, FixedRow, MemberRow, ValidateResult } from '@kanade/api-types';
   import { BossTag, Modal, dayLabel } from '@kanade/ui';
   import '@kanade/ui/styles/fixed.scss';
+  import { tick } from 'svelte';
   import BossGrid from '../bosses/BossGrid.svelte';
   import { send } from '../resource.svelte';
   import { memberLabel } from '../names/directory.svelte';
@@ -58,6 +59,12 @@
   let allBosses = $state(false);
   let ownKeys = $state<string[]>([]);
   const shownBosses = $derived(allBosses ? bosses : bosses.filter((b) => ownKeys.includes(b.key)));
+  // B_Fixed: the party shows its picked members and the first few others, then "+n".
+  const PARTY_PREVIEW = 9;
+  let allParty = $state(false);
+  /** The party when the form opened: the preview stays put while chips are toggled. */
+  let openParty = $state<string[]>([]);
+  let partyChips = $state<HTMLElement>();
   let typed = $state('');
   let check = $state<{ bosses: Boss[] } | { error: string } | null>(null);
   let error = $state('');
@@ -78,6 +85,8 @@
       channel = row?.channel_id ?? channels[0]?.id ?? '';
       note = row?.note ?? '';
       party = row?.participants.map((p) => p.id) ?? [];
+      openParty = [...party];
+      allParty = false;
       selected = row?.bosses.map((b) => b.token) ?? [];
       allBosses = !row;
       ownKeys = row?.bosses.map((b) => b.key) ?? [];
@@ -106,6 +115,29 @@
 
   const amended = $derived(row?.runs.filter((r) => r.amended) ?? []);
   const roster = $derived(members.filter((m) => m.bossing));
+  const shownRoster = $derived.by(() => {
+    if (allParty) return roster;
+    let room = PARTY_PREVIEW - roster.filter((m) => openParty.includes(m.id)).length;
+    const shown: MemberRow[] = [];
+    for (const member of roster) {
+      if (openParty.includes(member.id)) shown.push(member);
+      else if (room > 0) {
+        shown.push(member);
+        room -= 1;
+      }
+    }
+    return shown;
+  });
+  const hiddenParty = $derived(roster.length - shownRoster.length);
+
+  /** "+n" goes away once pressed; focus moves to the first member it showed. */
+  async function showAllParty() {
+    const before = new Set(shownRoster.map((m) => m.id));
+    allParty = true;
+    await tick();
+    const first = roster.find((m) => !before.has(m.id));
+    if (first) partyChips?.querySelector<HTMLInputElement>(`input[value="${CSS.escape(first.id)}"]`)?.focus();
+  }
 
   function request(): FixedRequest {
     return {
@@ -171,20 +203,23 @@
       <!-- B_Fixed: an existing timing shows its own bosses; "All n bosses…" opens the full list. -->
       <div class="fixedsheet__bosses" data-fid="fixed-bosses">
         <BossGrid rows={shownBosses} bind:selected />
-        {#if row}
-          <button type="button" class="linklike fixedsheet__all" aria-expanded={allBosses} onclick={() => (allBosses = !allBosses)}
-            >{allBosses ? 'Only the picked bosses' : `All ${bosses.length} bosses…`}</button
-          >
-        {/if}
+        <!-- The expander and the typed field share one line under the rows; the check reads out below them. -->
+        <div class="fixedsheet__more">
+          {#if row}
+            <button type="button" class="linklike fixedsheet__all" aria-expanded={allBosses} onclick={() => (allBosses = !allBosses)}
+              >{allBosses ? 'Only the picked bosses' : `All ${bosses.length} bosses…`}</button
+            >
+          {/if}
+          <label class="fixedsheet__typed">
+            <span>…or type them</span>
+            <input bind:value={typed} placeholder="hstar, hfa" aria-describedby="{uid}-check" />
+          </label>
+          <span class="boss-check" id="{uid}-check" role="status">
+            {#if check && 'error' in check}<span class="status status--at_risk">{check.error}</span>
+            {:else if check}{#each check.bosses as boss (boss.token)}<BossTag {boss} />{/each}{/if}
+          </span>
+        </div>
       </div>
-      <label class="field fixedsheet__typed">
-          <span>…or type them</span>
-          <input bind:value={typed} placeholder="hstar, hfa" aria-describedby="{uid}-check" />
-      </label>
-      <span class="boss-check" id="{uid}-check" role="status">
-        {#if check && 'error' in check}<span class="status status--at_risk">{check.error}</span>
-        {:else if check}{#each check.bosses as boss (boss.token)}<BossTag {boss} />{/each}{/if}
-      </span>
       <div class="fixedsheet__fields" data-fid="fixed-fields">
         <label class="field">
           <span>Day</span>
@@ -201,18 +236,22 @@
           {#each channels as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
         </select>
       </label>
-      <label class="field fixedsheet__note"><span>Note</span><input bind:value={note} /></label>
-      <fieldset class="field">
+      <fieldset class="field fixedsheet__party">
         <legend class="label">Party · {party.length} of {roster.length}</legend>
-        <div class="run__people" data-fid="fixed-party">
-          {#each roster as member (member.id)}
+        <div class="run__people" data-fid="fixed-party" bind:this={partyChips}>
+          {#each shownRoster as member (member.id)}
             <label class="chip">
               <input type="checkbox" value={member.id} bind:group={party} />
               {memberLabel(roster, member.id)}
             </label>
           {/each}
+          {#if hiddenParty > 0}
+            <button type="button" class="chip fixedsheet__more-party" aria-label="Show {hiddenParty} more member{hiddenParty === 1 ? '' : 's'}" onclick={showAllParty}>+{hiddenParty}</button>
+          {/if}
         </div>
       </fieldset>
+      <!-- Not on the board: the note follows the party, after the fields the board shows. -->
+      <label class="field fixedsheet__note"><span>Note</span><input bind:value={note} /></label>
     {:else}
       <p>
         {amended.length === 1 ? 'One run from this timing was' : `${amended.length} runs from this timing were`} changed

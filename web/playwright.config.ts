@@ -10,8 +10,10 @@ import { defineConfig } from '@playwright/test';
 const real = process.env.KANADE_REAL_ART === '1';
 export const MOCK_NOW = '2026-09-29T04:00:00Z';
 // e2e owns its ports; dev servers use 4173/4174 (or anything else), never these.
-const adminPort = real ? '4383' : '4373';
-const publicPort = real ? '4384' : '4374';
+// Parallel worktree lanes set KANADE_E2E_PORT_BASE (e.g. 4473) to avoid clashing.
+const base = Number(process.env.KANADE_E2E_PORT_BASE ?? '4373') + (real ? 10 : 0);
+const adminPort = String(base);
+const publicPort = String(base + 1);
 process.env.KANADE_E2E_ADMIN = `http://127.0.0.1:${adminPort}`;
 process.env.KANADE_E2E_PUBLIC = `http://127.0.0.1:${publicPort}`;
 
