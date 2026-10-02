@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { MemberPatch, MemberRow, Persona, PingLevel } from '@kanade/api-types';
-  import { Icon, Modal } from '@kanade/ui';
+  import { Icon, initial, Modal } from '@kanade/ui';
   import { send } from '../resource.svelte';
   import { directory } from '../names/directory.svelte';
   import Name from '../names/Name.svelte';
@@ -205,7 +205,7 @@
 {#if wide}
   <aside class="side-pane" aria-label="Member details" data-fid="members-pane">
     <header class="membersheet__head" data-fid="members-pane-head">
-      <span class="membersheet__avatar" aria-hidden="true">{member.name.slice(0, 1)}</span>
+      <span class="membersheet__avatar" aria-hidden="true">{initial(member.name)}</span>
       <div class="membersheet__who">
         <p class="cap">{member.bossing ? 'Member' : 'Chat access only'}</p>
         <h2>{directory.label('member', member.id, member.name)}</h2>

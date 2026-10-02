@@ -7,7 +7,7 @@
 -->
 <script lang="ts">
   import type { ApproveRequest, Evidence, Proposal, RunStatus } from '@kanade/api-types';
-  import { BossTag, DecisionCard, Icon, PendingLabel, Portrait, RUN_TONE, STATUS_WORDS, StatusChip, ThreadPanel } from '@kanade/ui';
+  import { BossTag, DecisionCard, Icon, initial, PendingLabel, Portrait, RUN_TONE, STATUS_WORDS, StatusChip, ThreadPanel } from '@kanade/ui';
   import { directory } from '../names/directory.svelte';
   import Mentions from '../names/Mentions.svelte';
   import Name from '../names/Name.svelte';
@@ -101,7 +101,6 @@
   const discordUrl = $derived(messages.find((m) => m.used !== false && m.url && !m.missing)?.url ?? null);
   /** "Wed 30 Sep 23:30" as its date and its time, so the decision card can set the time under the date. */
   const clock = (text: string) => /^(.+) (\d{1,2}:\d{2})$/.exec(text)?.slice(1, 3) as [string, string] | undefined;
-  const initial = (name: string) => [...name.trim()][0]?.toUpperCase() ?? '?';
 
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   /** A sortable minute from a message's `at` ("Mon 28 Sep 21:00"), or null when it has no such date. */

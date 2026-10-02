@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
   import type { Session } from '@kanade/api-types';
-  import { Icon } from '@kanade/ui';
+  import { Icon, initial } from '@kanade/ui';
   import { tick } from 'svelte';
 
   let {
@@ -90,7 +90,7 @@
     onclick={() => (open ? hide() : void show('first'))}
     onkeydown={onChipKey}
   >
-    <span class="account__initial" aria-hidden="true">{who.slice(0, 1)}</span>
+    <span class="account__initial" aria-hidden="true">{initial(who)}</span>
     <span class="account__name">{who}</span>
     <Icon name="chevron-down" />
   </button>

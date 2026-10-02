@@ -808,6 +808,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 avatar initials (Members sheet, inbox transcript, rail, drawer, account
+  menu, sign-in and public masthead) show the first readable letter of a name,
+  skipping emoji and symbols: "🥔猫铃薯🥔" shows "猫" instead of a broken half
+  of the emoji.
 - v5 admin phones keep selected list rows on their compact line across Fixed,
   Week, Inbox, History, Members, Bosses and Config, including landscape; the
   sideways settings strip never grows, while desktop rows still expand; the

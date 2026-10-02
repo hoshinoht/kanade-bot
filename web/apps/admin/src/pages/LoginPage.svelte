@@ -1,7 +1,7 @@
 <script lang="ts">
   import '@kanade/ui/styles/gate.scss';
   import type { Identity, Session, SignInMethods } from '@kanade/api-types';
-  import { PendingLabel } from '@kanade/ui';
+  import { initial, PendingLabel } from '@kanade/ui';
   import { tick } from 'svelte';
   import { discordStart, loginErrorText } from '../auth';
   import { send } from '../resource.svelte';
@@ -88,7 +88,7 @@
       {#if identity}
         <img class="gate__avatar" src={artUrl(identity.avatar, identity)} alt="" width="64" height="64" />
       {:else}
-        <span class="gate__avatar" aria-hidden="true">{name.slice(0, 1)}</span>
+        <span class="gate__avatar" aria-hidden="true">{initial(name)}</span>
       {/if}
       <h1 class="gate__name" id="{uid}-name">{name}</h1>
       <p class="gate__sub">

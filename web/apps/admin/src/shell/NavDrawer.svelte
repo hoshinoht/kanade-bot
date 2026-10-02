@@ -7,7 +7,7 @@
   new page, as any route change does).
 -->
 <script lang="ts">
-  import { Icon } from '@kanade/ui';
+  import { Icon, initial } from '@kanade/ui';
   import type { Snippet } from 'svelte';
   import NavList from './NavList.svelte';
 
@@ -104,7 +104,7 @@
           {#if avatar}
             <img class="brand__avatar navrail__tile" src={avatar} alt="" width="36" height="36" />
           {:else}
-            <span class="brand__avatar navrail__tile" aria-hidden="true">{name.slice(0, 1)}</span>
+            <span class="brand__avatar navrail__tile" aria-hidden="true">{initial(name)}</span>
           {/if}
           <span class="brand__name">{name}</span>
         </a>

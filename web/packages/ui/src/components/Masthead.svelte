@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import { initial } from '../initial';
 
   let {
     name,
@@ -17,7 +18,7 @@
       {#if avatar}
         <img class="brand__avatar" src={avatar} alt="" width="26" height="26" />
       {:else}
-        <span class="brand__avatar" aria-hidden="true">{name.slice(0, 1)}</span>
+        <span class="brand__avatar" aria-hidden="true">{initial(name)}</span>
       {/if}
       <span class="brand__name">{name}</span>
       {#if by}<span class="brand__by">{by}</span>{/if}
