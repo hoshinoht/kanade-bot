@@ -140,8 +140,11 @@
 </p>
 
 <div class="settings__card ctx__effective" data-fid="cfg-card">
-  <table class="settings__table">
-    <caption class="settings__cardtitle">In effect now</caption>
+  <div class="settings__cardhead">
+    <h4 class="settings__cardtitle" id="{uid}-effective">In effect now</h4>
+    <span class="settings__cardnote">What each role's next call uses.</span>
+  </div>
+  <table class="settings__table" aria-labelledby="{uid}-effective">
     <thead>
       <tr>
         <th scope="col">Role</th>

@@ -53,17 +53,21 @@
 </script>
 
 <form class="rescan" onsubmit={start}>
-  <fieldset class="field">
-    <legend class="label">Channels</legend>
-    <div class="run__people">
+  <fieldset class="rescan__channels">
+    <legend class="label">Channels · {chosen.length} of {targets.length}</legend>
+    <div class="rescan__picks">
+      <button class="btn btn--ghost" type="button" onclick={() => (chosen = targets.map((t) => t.id))}>Select all</button>
+      <button class="btn btn--ghost" type="button" disabled={chosen.length === 0} onclick={() => (chosen = [])}>Clear</button>
+    </div>
+    <div class="rescan__chips">
       {#each targets as t (t.id)}
         <label class="chip"><input type="checkbox" value={t.id} bind:group={chosen} /> {t.name}</label>
       {/each}
     </div>
   </fieldset>
-  <div class="formrow">
+  <div class="rescan__go">
     <label class="field">
-      <span>Window</span>
+      <span class="label">Window</span>
       <select bind:value={window_}>
         <option value="week">This boss week</option>
         <option value="since_reset">Since the last reset</option>
@@ -72,6 +76,7 @@
     </label>
     <button class="btn btn--primary" type="submit" disabled={job?.state === 'running'}>Re-read</button>
     {#if job?.state === 'running'}<button class="btn" type="button" onclick={() => void cancel()}>Cancel</button>{/if}
+    <span class="rescan__note">One re-read at a time.</span>
   </div>
   <p class="field__error" role="alert">{error}</p>
   <p class="rescan__status" role="status">
@@ -95,6 +100,57 @@
 </form>
 
 <style>
+  .rescan {
+    display: grid;
+    gap: 1rem;
+  }
+
+  /* Legend, then the select-all/clear pair on the same line, then the chips. */
+  .rescan__channels {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+  }
+
+  .rescan__channels legend {
+    float: left;
+    padding: 0;
+  }
+
+  .rescan__picks {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .rescan__chips {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  .rescan__go {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.625rem;
+  }
+
+  .rescan__go select {
+    min-width: 12.5rem;
+  }
+
+  .rescan__note {
+    align-self: center;
+    font-size: var(--fs-small);
+    color: var(--dim-text, var(--dim));
+  }
+
   .rescan__list {
     list-style: none;
     margin: 0;

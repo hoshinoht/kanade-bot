@@ -32,7 +32,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   the public portal), and offer Undo for 10 s. Persona splits into "Active
   persona & profiles" / "Role overrides" pill tabs and Models into "Roles" /
   "Context windows" / "Capacity"; "Use this persona" and "Post it now…" confirm
-  first.
+  first. The Context windows "In effect now" table has its own card heading
+  above the table, and Re-read spaces its channel chips and Window row like
+  B_CfgReread, with a "Channels · n of m" count, Select all / Clear and a
+  one-at-a-time note.
 
 - v5 admin Inbox items now carry `thread`: the stored channel messages around
   a proposal's evidence (oldest first, at most 37, the extractor's context plus
