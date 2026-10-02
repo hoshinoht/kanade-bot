@@ -4,6 +4,7 @@
 
 pub mod bosses;
 pub mod config;
+mod consequence;
 pub mod fixed;
 pub mod history;
 pub mod inbox;

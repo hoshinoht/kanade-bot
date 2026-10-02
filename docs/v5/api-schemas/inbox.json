@@ -107,6 +107,7 @@
           }
         },
         "preview": { "$ref": "#/$defs/ProposalPreview" },
+        "consequence": { "$ref": "common.json#/$defs/NullableString" },
         "expires_at": { "$ref": "common.json#/$defs/NullableString" },
         "choices": {
           "anyOf": [

@@ -155,6 +155,11 @@
   </p>
 {/snippet}
 
+{#snippet consequence()}
+  <!-- What approving does beyond the change itself (VarRail2), only when the API says. -->
+  {#if p.consequence}<p class="proposal__consequence" data-fid="decision-consequence">{p.consequence}</p>{/if}
+{/snippet}
+
 {#snippet would()}
   <!-- What would change: one card (mockup `.scard`); in the wide Extractor decision card, its head. -->
   <div class="proposal__would" data-fid="inbox-change">
@@ -195,7 +200,10 @@
     {/if}
     {#if p.preview.no_effect}<p class="note">Already in effect: approving would change nothing.</p>{/if}
     {#if p.public_summary}<p class="note">The member sees: “{p.public_summary}”{#if p.expires_at} · expires <span class="mono">{p.expires_at}</span>{/if}</p>{/if}
+    <!-- Outside the decision card the change card holds it, never bare text on the ground. -->
+    {#if !stacked}{@render consequence()}{/if}
   </div>
+  {#if stacked}{@render consequence()}{/if}
 
 {/snippet}
 

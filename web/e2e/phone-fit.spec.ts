@@ -170,3 +170,61 @@ for (const size of SIZES) {
     expect(faults.out).toEqual([]);
   });
 }
+
+// The decision's optional consequence line (VarRail2): the API's words under the
+// change, nothing at all when it sends null, wrapped (never cut) on a phone.
+const CONSEQUENCE = 'Party unchanged · 3 reminders will move';
+
+test('Inbox: the consequence line sits between the change and Approve, and is absent when null', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/inbox?tab=extractor&item=p-bm-move&sw=off`);
+  const card = page.getByRole('complementary', { name: 'Decide this change' });
+  const line = card.locator('.proposal__consequence');
+  await expect(line).toHaveText(CONSEQUENCE);
+  const [change, said, approve] = await Promise.all([card.locator('.proposal__would'), line, card.locator('.decision__approve')].map((l) => l.boundingBox()));
+  expect(said!.y).toBeGreaterThanOrEqual(change!.y + change!.height - 0.5);
+  expect(approve!.y).toBeGreaterThanOrEqual(said!.y + said!.height - 0.5);
+  for (const id of ['p-fa-request', 'p-kalos-expired', 'p-limbo-new']) {
+    // All three are member requests (conflicted, expired, nothing to say).
+    await page.goto(`${ADMIN}/inbox?tab=self_service&item=${id}&sw=off`);
+    await expect(page.locator(`[data-item="${id}"]`)).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('.proposal__title')).toBeVisible();
+    await expect(page.locator('.proposal__consequence')).toHaveCount(0);
+  }
+});
+
+for (const size of SIZES) {
+  for (const text of [CONSEQUENCE, 'Party unchanged · 2 reminders will move, 1 will be added · Supercalifragilisticexpialidocious replaces Bobby']) {
+    test(`Inbox: the consequence line fits at ${size.width}×${size.height}${text === CONSEQUENCE ? '' : ' when long'}`, async ({ page }) => {
+      await page.setViewportSize(size);
+      if (text !== CONSEQUENCE) {
+        await page.route(/\/api\/admin\/inbox(\?.*)?$/, async (route) => {
+          const res = await route.fetch();
+          const items = (await res.json()) as { id: string; consequence: string | null }[];
+          await route.fulfill({ response: res, json: items.map((item) => (item.id === 'p-bm-move' ? { ...item, consequence: text } : item)) });
+        });
+      }
+      await page.goto(`${ADMIN}/inbox?tab=extractor&item=p-bm-move&sw=off`);
+      const line = page.locator('.proposal__consequence');
+      await expect(line).toHaveText(text);
+      await page.evaluate(() => document.fonts.ready);
+      await line.scrollIntoViewIfNeeded();
+      const faults = await line.evaluate((el) => {
+        const out: string[] = [];
+        const box = el.getBoundingClientRect();
+        const pane = el.parentElement!.getBoundingClientRect();
+        if (document.documentElement.scrollWidth > window.innerWidth) out.push('the page scrolls sideways');
+        if (el.scrollWidth > el.clientWidth + 0.5) out.push('the line is cut');
+        if (box.left < pane.left - 0.5 || box.right > pane.right + 0.5) out.push('the line leaves its panel');
+        if (box.left < 0 || box.right > window.innerWidth) out.push('the line leaves the screen');
+        // It stacks under the change, never squeezing it into a column beside it.
+        const change = el.parentElement!.querySelector('.proposal__changes');
+        if (change && box.top < change.getBoundingClientRect().bottom - 0.5) out.push('the line sits beside the change');
+        const bar = document.querySelector('.decision-card')!.getBoundingClientRect();
+        if (box.bottom > bar.top + 0.5) out.push('the line sits under the action bar');
+        return out;
+      });
+      expect(faults).toEqual([]);
+    });
+  }
+}

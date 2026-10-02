@@ -374,6 +374,16 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
   conflict line), `expired`, `requester_frozen` (always false until a freeze
   store exists), `requester_unauthorised` (the requester may no longer have
   it approved), `no_effect` (the merge would write no row at all).
+  `consequence` is one line read off the current schedule and the merge's
+  preview snapshot, parts joined by ` · `: the party of the live runs whose
+  time, bosses, channel or party change (`Party unchanged`, `Adds <name>`,
+  `Removes <name>`, `<new> replaces <old>`, else `Party +n −m`), or `Party of
+  <n>` for new runs of one size (cancelled runs say nothing); then the
+  upcoming (queued or due) reminders, matched by run and kind, that `will
+  move`, `will be dropped` or `will be added`, comma-joined with only the
+  first count naming the noun (`2 reminders will move, 1 will be added`;
+  sent and stale ones are never counted). `null` with any conflict, `expired`, `no_effect`, no preview, or
+  nothing to say.
   `choices` (`change_fixed` only, else `null`) lists exactly the amended runs
   the edit would move (`amended: true`); other runs follow the timing, and
   the listed preview assumes `update` for each. `expires_at`: the earlier of

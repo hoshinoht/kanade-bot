@@ -1456,3 +1456,50 @@ async fn proposal_approvals_enqueue_their_merge_notices() {
         );
     }
 }
+
+#[tokio::test]
+async fn items_carry_a_one_line_consequence_from_the_preview() {
+    let inbox = seeded().await;
+    let ids = &inbox.ids;
+    let store = inbox.reads.store.clone();
+    let dir = directory(&store).await;
+    let mut now = service(&store, utc(9, 29, 4, 0));
+    // r-kalos (Tue 21:00 KL) to 22:00 the same day: T-1h and T-15m are
+    // queued and move; the morning card was already sent and is not counted.
+    let same_day = propose(
+        &mut now,
+        change(ChangeKind::Move, "r-kalos", Some(utc(9, 29, 14, 0))),
+        ProposalSource::Extraction,
+        &dir,
+    )
+    .await;
+    let cancel = propose(
+        &mut now,
+        change(ChangeKind::Cancel, "r-kalos", None),
+        ProposalSource::Chat,
+        &dir,
+    )
+    .await;
+    let items = inbox.list().await;
+    let of = |id: &str| items.iter().find(|item| item["id"] == id).unwrap()["consequence"].clone();
+    assert_eq!(of(&same_day), "Party unchanged · 2 reminders will move");
+    // Wednesday needs a new morning card; the sent Tuesday one stays.
+    assert_eq!(
+        of(&ids.moved),
+        "Party unchanged · 2 reminders will move, 1 will be added"
+    );
+    assert_eq!(of(&cancel), "2 reminders will be dropped", "no party part");
+    assert_eq!(of(&ids.join), "Adds Finn");
+    assert_eq!(of(&ids.leave), "Removes Bobby");
+    // Conflicts, refusals and expiry say nothing.
+    for id in [
+        &ids.swap,
+        &ids.unauthorised,
+        &ids.expired_request,
+        &ids.expired_chat,
+    ] {
+        assert_eq!(of(id), Value::Null, "{id}");
+    }
+    // n-star has no reminders and its cancel changes no party: nothing to say.
+    assert_eq!(of(&ids.cancel_chat), Value::Null);
+}

@@ -508,6 +508,8 @@ export interface Proposal {
   version: number;
   flags: ProposalFlag[];
   preview: ProposalPreview;
+  /** One line on what approving does, e.g. "Party unchanged · 3 reminders will move"; null with conflicts, no effect, expiry or nothing to say. */
+  consequence: string | null;
   expires_at: string | null;
   choices: ProposalChoice[] | null;
   /** The generated one-line summary the member sees in the public app. */

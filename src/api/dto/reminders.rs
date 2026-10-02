@@ -71,12 +71,12 @@ pub fn upcoming(ctx: &Context<'_>, snapshot: &ScheduleSnapshot) -> usize {
         .count()
 }
 
-fn is_upcoming(state: &str) -> bool {
+pub(super) fn is_upcoming(state: &str) -> bool {
     matches!(state, "queued" | "due")
 }
 
 /// Each listable reminder with its run, card label and row state.
-fn classified<'s>(
+pub(super) fn classified<'s>(
     ctx: &Context<'_>,
     snapshot: &'s ScheduleSnapshot,
 ) -> impl Iterator<Item = (&'s Reminder, &'s Run, &'static str, &'static str)> {

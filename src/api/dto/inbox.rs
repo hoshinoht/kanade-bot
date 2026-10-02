@@ -7,7 +7,9 @@ use chrono::{DateTime, NaiveTime, Utc, Weekday};
 use serde::Serialize;
 
 use super::{
-    Boss, Named, dow, hhmm,
+    Boss, Named,
+    consequence::consequence,
+    dow, hhmm,
     week::{Context, WeekFrame},
     when,
 };
@@ -99,6 +101,9 @@ pub struct ProposalDto {
     pub version: u64,
     pub flags: Vec<&'static str>,
     pub preview: Preview,
+    /// One line on what approving does (party, upcoming reminders); `None`
+    /// with conflicts, no effect, or nothing to say.
+    pub consequence: Option<String>,
     pub expires_at: Option<String>,
     pub choices: Option<Vec<Choice>>,
     pub public_summary: Option<String>,
@@ -408,6 +413,20 @@ fn preview_of(
     }
 }
 
+/// The consequence line of a clean, effective, unexpired preview.
+fn consequence_of(
+    ctx: &Context<'_>,
+    current: &ScheduleSnapshot,
+    analysis: &MergeAnalysis,
+    shown: &Preview,
+    expired: bool,
+) -> Option<String> {
+    if expired || shown.no_effect || !shown.conflicts.is_empty() {
+        return None;
+    }
+    consequence(ctx, current, analysis.preview.as_ref()?)
+}
+
 /// What every item shares.
 pub struct Common<'a> {
     pub ctx: &'a Context<'a>,
@@ -520,6 +539,9 @@ pub fn proposal(
         ),
     };
     shown.conflicts.dedup();
+    let consequence = preview.as_ref().ok().and_then(|preview| {
+        consequence_of(ctx, common.current, &preview.analysis, &shown, expired)
+    });
     let details = card.map(|card| &card.details);
     let run = subject
         .run_id
@@ -568,6 +590,7 @@ pub fn proposal(
         version: draft.version,
         flags: flags(&shown, expired, false, false),
         preview: shown,
+        consequence,
         expires_at: Some(super::when(deadline, ctx.zone)),
         choices: None,
         public_summary: None,
@@ -630,6 +653,10 @@ pub fn request(
     };
     let expires_week = draft.scope.expires_week();
     let expired = expires_week.is_some_and(|week| week < common.frames[0].start);
+    let consequence = preview
+        .as_ref()
+        .ok()
+        .and_then(|preview| consequence_of(ctx, current, &preview.analysis, &shown, expired));
     let mut bosses = Vec::new();
     let mut when = None;
     let mut from_when = None;
@@ -689,6 +716,7 @@ pub fn request(
         version: draft.version,
         flags: flags(&shown, expired, frozen, unauthorised),
         preview: shown,
+        consequence,
         expires_at: expires_week
             .and_then(|week| common.deadline(week))
             .map(|at| super::when(at, ctx.zone)),

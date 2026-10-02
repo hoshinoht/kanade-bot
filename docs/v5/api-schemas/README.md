@@ -111,3 +111,6 @@ Pointers are `<file>#/$defs/<Name>`.
   `extractions.json` `Extraction.messages[].author_id`; `chat.json`
   `ChatRow`/`ChatDetail` `member_id`. All optional in the schema so earlier
   responses stay valid; the server always sends them.
+- Consequence: `inbox.json` `Proposal.consequence` (one line on what
+  approving does, or `null`). Optional in the schema so earlier responses
+  stay valid; the server always sends it.

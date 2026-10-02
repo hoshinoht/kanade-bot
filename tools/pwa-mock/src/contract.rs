@@ -950,6 +950,11 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     for kind in ["new_fixed", "change_fixed", "join", "leave", "swap"] {
         assert!(items.iter().any(|p| p["kind"] == kind), "{kind}");
     }
+    assert_eq!(
+        item("p-bm-move")["consequence"],
+        "Party unchanged · 3 reminders will move"
+    );
+    assert_eq!(item("p-fa-request")["consequence"], Value::Null);
     assert!(items.iter().any(|p| {
         p["flags"]
             .as_array()

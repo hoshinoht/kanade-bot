@@ -92,6 +92,9 @@ pub struct Proposal {
     pub timing: Option<(&'static str, u8, &'static str)>,
     /// Bumped by every edit; approve and reject may name the version they saw.
     pub version: u32,
+    /// The server's one-line consequence; served only while the item has no
+    /// conflict, expiry or no-effect flag, as the server does.
+    pub consequence: Option<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -137,6 +140,7 @@ pub struct ProposalDto {
     /// Badges: `conflict`, `expired`, `requester_unauthorised`, `no_effect`.
     pub flags: Vec<&'static str>,
     pub preview: Preview,
+    pub consequence: Option<&'static str>,
     pub expires_at: Option<String>,
     /// Weekly-timing changes: each open run of the timing needs update or keep.
     pub choices: Option<Vec<Choice>>,
@@ -229,6 +233,7 @@ pub fn seed() -> Vec<Proposal> {
         request: None,
         timing: None,
         version: 1,
+        consequence: None,
     };
     vec![
         Proposal {
@@ -242,6 +247,7 @@ pub fn seed() -> Vec<Proposal> {
             confidence: Some(0.86),
             channel: "bm-trio",
             summary: "Minato asks to push Black Mage to Wednesday; Kaito agrees.",
+            consequence: Some("Party unchanged · 3 reminders will move"),
             evidence: vec![
                 ("1012", "tue cannot, wed same time ok?", 125, Some("m1")),
                 ("1009", "wed ok for me", 126, Some("m2")),
@@ -271,6 +277,7 @@ pub fn seed() -> Vec<Proposal> {
             channel: "limbo-trio",
             read_at_hour: 124,
             summary: "Mika floats a Normal Limbo run on Saturday; nobody has confirmed.",
+            consequence: Some("Party of 2 · 3 reminders will be added"),
             evidence: vec![("1003", "nlimbo sat 9pm anyone?", 123, Some("m3"))],
             thread: Some(vec![
                 Line::Other("1007", "finally cleared hlimbo prequest", 122),
@@ -292,6 +299,7 @@ pub fn seed() -> Vec<Proposal> {
             channel: "jupiter-trio",
             read_at_hour: 128,
             summary: "Minato asked Kanade to move HJupiter to Wednesday 21:00.",
+            consequence: Some("Party unchanged · 2 reminders will move, 1 will be added"),
             evidence: vec![(
                 "1012",
                 "@Kanade can jupiter be wed 9pm instead?",
@@ -314,6 +322,7 @@ pub fn seed() -> Vec<Proposal> {
             channel: "hstar-party",
             read_at_hour: 110,
             summary: "Can I fill in this week?",
+            consequence: Some("Adds Nagi"),
             request: Some(request(
                 "1007",
                 "Can I fill in this week?",
@@ -332,6 +341,8 @@ pub fn seed() -> Vec<Proposal> {
             channel: "fa-night",
             read_at_hour: 112,
             summary: "Something came up on Monday.",
+            // Served as null: the conflict suppresses it.
+            consequence: Some("Removes Hotaru"),
             request: Some(Request {
                 base: Some((4, Some("19:30"))),
                 ..request(
@@ -394,6 +405,7 @@ pub fn seed() -> Vec<Proposal> {
             channel: "kalos-four",
             read_at_hour: 111,
             summary: "Saturdays suit everyone better.",
+            consequence: Some("Party unchanged · 4 reminders will move"),
             request: Some(Request {
                 expires_hour: None,
                 ..request(
@@ -728,6 +740,11 @@ impl Store {
                     source: if member { "self_service" } else { p.source },
                     tab: if member { "self_service" } else { "extractor" },
                     version: p.version,
+                    consequence: p.consequence.filter(|_| {
+                        !flags
+                            .iter()
+                            .any(|f| matches!(*f, "conflict" | "expired" | "no_effect"))
+                    }),
                     flags,
                     preview,
                     expires_at: self.expires_hour(p).map(|h| Self::when(Self::at_hour(h))),
@@ -1263,6 +1280,14 @@ mod tests {
         assert!(choices.iter().all(|c| c.amended));
         assert!(by("p-bm-move").choices.is_none() && by("p-limbo-new").choices.is_none());
         assert!(by("p-bm-move").expires_at.is_some());
+        assert_eq!(
+            by("p-bm-move").consequence,
+            Some("Party unchanged · 3 reminders will move")
+        );
+        // Conflicts and expiry suppress it; a weekly-only request has none.
+        for id in ["p-fa-request", "p-kalos-expired", "p-limbo-new"] {
+            assert_eq!(by(id).consequence, None, "{id}");
+        }
     }
 
     #[test]

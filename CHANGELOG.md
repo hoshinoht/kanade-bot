@@ -6,6 +6,14 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin Inbox items carry an optional one-line `consequence` read off the
+  merge preview (e.g. "Party unchanged · 2 reminders will move", "Adds Finn",
+  "2 reminders will be dropped"): party joins and leaves of the changed runs
+  and the upcoming reminders that move, drop or appear; `null` with
+  conflicts, expiry, no effect or nothing to say. Served by the pwa-mock and
+  typed in `@kanade/api-types`; the decision card shows it before Approve
+  (inside the change card on phones).
+
 - v5 admin API reads and changes a weekly timing's owner: `FixedRow` adds
   `owner_id`, and `POST`/`PATCH /api/admin/fixed` accept an optional `owner_id`
   (a rostered, non-bot member, not necessarily in the party; else `422 invalid`).
