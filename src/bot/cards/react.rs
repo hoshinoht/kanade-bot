@@ -9,7 +9,7 @@ use crate::bot::events::RsvpAnswer;
 use crate::bot::transport::DiscordTransport;
 use crate::domain::drafts::{ProposalSource, ProposalStore};
 use crate::domain::notify::DeliveryJournal;
-use crate::domain::proposals::ProposalCardStore;
+use crate::domain::proposals::{ProposalCardStore, StoredCard};
 use crate::domain::schedule::Notice;
 use crate::domain::scheduler::{
     DraftError, IdSource, ProposalApproved, ProposalError, ScheduleStore,
@@ -171,13 +171,25 @@ where
         if !added {
             return CardReaction::Ignored;
         }
+        self.answer_cards(message_id, user_id, answer, &cards).await
+    }
+
+    /// Live and replayed answers share the same scheduler calls and refreshes;
+    /// replay can select one proposal on a grouped card without deciding its siblings.
+    pub(super) async fn answer_cards(
+        &self,
+        message_id: &str,
+        user_id: &str,
+        answer: RsvpAnswer,
+        cards: &[StoredCard],
+    ) -> CardReaction {
         let approver = self.authority.approver(user_id);
         let now = self.now();
         let mut service = self.service(now);
         match answer {
             RsvpAnswer::No => {
                 let mut rejected = Vec::new();
-                for card in &cards {
+                for card in cards {
                     match service.reject_proposal(&card.proposal_id, &approver).await {
                         Ok(_) => rejected.push(card.proposal_id.clone()),
                         // Member-facing refusals (e.g. an expired card) are
@@ -202,7 +214,7 @@ where
                 let mut approved: Vec<ProposalApproved> = Vec::new();
                 let mut problems: Vec<String> = Vec::new();
                 let mut stale = false;
-                for card in &cards {
+                for card in cards {
                     let error = match service
                         .approve_proposal(
                             &card.proposal_id,

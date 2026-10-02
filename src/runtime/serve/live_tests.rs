@@ -321,6 +321,10 @@ impl Harness {
     }
 
     async fn start(&self) -> (Discord, Ctx) {
+        self.start_with_clock(Arc::new(auth::system_now)).await
+    }
+
+    async fn start_with_clock(&self, clock: auth::Clock) -> (Discord, Ctx) {
         let store = store::open(&self.config.store).await.unwrap();
         let prepared = discord::prepare(&self.config, TICK);
         let connection = prepared.probe.connection.clone();
@@ -335,7 +339,7 @@ impl Harness {
         let wiring = Wiring {
             source,
             transport: Arc::clone(&self.fake),
-            clock: Arc::new(auth::system_now),
+            clock,
             tick: TICK,
             extraction: self.timing,
         };
@@ -1343,3 +1347,4 @@ async fn retained_commands_and_their_autocomplete_dispatch_through_the_registry(
 
 mod extraction;
 mod outage;
+mod replay;

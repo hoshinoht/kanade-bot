@@ -522,6 +522,31 @@ impl DiscordTransport for TwilightTransport {
         .await
     }
 
+    async fn reaction_users(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+        emoji: &str,
+        kind: twilight_model::channel::message::ReactionType,
+        after: Option<Id<UserMarker>>,
+        limit: u16,
+    ) -> Outcome<Vec<Id<UserMarker>>> {
+        let emoji = RequestReactionType::Unicode { name: emoji };
+        let mut request = self
+            .client
+            .reactions(channel, message, &emoji)
+            .kind(kind)
+            .limit(limit);
+        if let Some(after) = after {
+            request = request.after(after);
+        }
+        self.fetch(request)
+            .await
+            .map(|users: Vec<twilight_model::user::User>| {
+                users.into_iter().map(|user| user.id).collect()
+            })
+    }
+
     async fn list_members(
         &self,
         guild: Id<GuildMarker>,

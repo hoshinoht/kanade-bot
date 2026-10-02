@@ -50,16 +50,19 @@ fn every_default_bodied_method_is_delegated() {
         [
             "create_flagged_message",
             "trigger_typing",
+            "reaction_users",
             "followup",
             "autocomplete",
             "current_user"
         ],
         "update `defaults_reach_discord` for new default-bodied methods"
     );
-    let late = include_str!("late.rs");
+    let late = include_str!("late.rs")
+        .split_whitespace()
+        .collect::<String>();
     for name in &names {
         assert!(
-            late.contains(&format!("delegate!(self, {name}(")),
+            late.contains(&format!("delegate!(self,{name}(")),
             "LateTransport does not delegate `{name}`"
         );
     }
@@ -159,12 +162,24 @@ async fn defaults_reach_discord_once_ready_and_are_refused_unsent_before() {
             .failure_label(),
     );
     not_invalid(late.trigger_typing(channel).await.failure_label());
+    not_invalid(
+        late.reaction_users(
+            channel,
+            Id::new(123),
+            "✅",
+            twilight_model::channel::message::ReactionType::Normal,
+            None,
+            100,
+        )
+        .await
+        .failure_label(),
+    );
     not_invalid(late.followup(&interaction, &reply).await.failure_label());
     not_invalid(late.autocomplete(&interaction, &[]).await.failure_label());
     not_invalid(late.current_user().await.failure_label());
     assert_eq!(
         seen.load(Ordering::SeqCst),
-        5,
+        6,
         "every default-bodied call was sent"
     );
 }

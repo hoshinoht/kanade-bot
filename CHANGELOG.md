@@ -11,6 +11,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   strategy, facts, provenance and seasonal availability, with this week's linked
   timings alongside. Phone navigation moves from the catalog into a backable detail.
 
+- v5 replays offline ✅/❌ on pending proposal cards after startup and fresh
+  gateway READY, using current approver roles; conflicting answers stay pending
+  with a visible note, and stale chat rejection follow-ups are not sent.
+
 - v5 model logs retain Kanata reasoning text (64 KiB, visibly truncated) and
   reported reasoning tokens; admin Chat/Extractions show collapsed reasoning
   and token counts, and copied chat transcripts include both. Oversized counts

@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use tokio::sync::Notify;
 use twilight_model::application::command::{Command, CommandOptionChoice};
 use twilight_model::channel::message::MessageFlags;
+use twilight_model::channel::message::ReactionType;
 use twilight_model::channel::{Channel, Message};
 use twilight_model::guild::Member;
 use twilight_model::id::{
@@ -40,6 +41,7 @@ pub enum Op {
     ChannelMessages,
     GuildChannels,
     Typing,
+    ReactionUsers,
 }
 
 /// A scripted result for the next call of one [`Op`]. Unscripted calls
@@ -59,6 +61,15 @@ pub enum Step {
 /// One recorded call with the outcome returned to the caller.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Call {
+    ReactionUsers {
+        channel: ChannelId,
+        message: MessageId,
+        emoji: String,
+        kind: ReactionType,
+        after: Option<Id<UserMarker>>,
+        limit: u16,
+        outcome: Outcome<Vec<Id<UserMarker>>>,
+    },
     Create {
         channel: ChannelId,
         message: OutgoingMessage,
@@ -147,6 +158,7 @@ pub enum Call {
 impl Call {
     pub fn op(&self) -> Op {
         match self {
+            Self::ReactionUsers { .. } => Op::ReactionUsers,
             Self::Create { .. } => Op::Create,
             Self::Edit { .. } => Op::Edit,
             Self::Delete { .. } => Op::Delete,
@@ -217,6 +229,7 @@ struct State {
     members: BTreeMap<Id<GuildMarker>, Vec<Member>>,
     history: BTreeMap<ChannelId, Vec<Message>>,
     channels: BTreeMap<Id<GuildMarker>, Vec<Channel>>,
+    reactions: BTreeMap<(MessageId, String, u8), Vec<Id<UserMarker>>>,
 }
 
 /// First id handed out; large enough to look like a real snowflake.
@@ -349,6 +362,19 @@ impl FakeDiscord {
     /// Pretend a message already exists (e.g. posted before a restart).
     pub fn seed_message(&self, channel: ChannelId, message: MessageId) {
         self.state().messages.insert(message, channel);
+    }
+
+    /// Replace the reactors for one emoji on an existing message.
+    pub fn seed_reactions(
+        &self,
+        message: MessageId,
+        emoji: &str,
+        kind: ReactionType,
+        users: Vec<Id<UserMarker>>,
+    ) {
+        self.state()
+            .reactions
+            .insert((message, emoji.to_owned(), kind.into()), users);
     }
 
     /// Members [`DiscordTransport::list_members`] pages through.
@@ -638,6 +664,54 @@ impl DiscordTransport for FakeDiscord {
         state.calls.push(Call::Register {
             guild,
             commands: commands.to_vec(),
+            outcome: outcome.clone(),
+        });
+        outcome
+    }
+
+    async fn reaction_users(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+        emoji: &str,
+        kind: ReactionType,
+        after: Option<Id<UserMarker>>,
+        limit: u16,
+    ) -> Outcome<Vec<Id<UserMarker>>> {
+        self.gate(Op::ReactionUsers).await;
+        let mut state = self.state();
+        let exists = state.messages.get(&message) == Some(&channel);
+        let outcome = state.read(
+            Op::ReactionUsers,
+            (1..=super::MAX_REACTIONS_PAGE).contains(&limit),
+            |state| {
+                let mut users: Vec<_> = state
+                    .reactions
+                    .get(&(message, emoji.to_owned(), kind.into()))
+                    .into_iter()
+                    .flatten()
+                    .copied()
+                    .filter(|user| after.is_none_or(|after| *user > after))
+                    .collect();
+                users.sort();
+                users.dedup();
+                users.truncate(usize::from(limit));
+                users
+            },
+        );
+        let outcome = match outcome {
+            Outcome::Delivered(_) if !exists => {
+                Outcome::DefinitelyRejected(RejectionKind::UnknownMessage)
+            }
+            outcome => outcome,
+        };
+        state.calls.push(Call::ReactionUsers {
+            channel,
+            message,
+            emoji: emoji.to_owned(),
+            kind,
+            after,
+            limit,
             outcome: outcome.clone(),
         });
         outcome

@@ -4,8 +4,8 @@
 //! stored details and its proposals' states, so it can be refreshed after a
 //! restart; allowed mentions are empty (names only).
 
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use chrono::{DateTime, Timelike, Utc};
 use chrono_tz::Tz;
@@ -78,6 +78,8 @@ pub struct CardDesk<S, T, I, A> {
     pub(super) decline_retraction: Option<DeclineRetraction>,
     throttle: AlertThrottle,
     pub(super) settings: CardSettings,
+    /// Rebuilt from HTTP on each fresh session; retained across other refreshes.
+    pub(super) replay_conflicts: Mutex<BTreeSet<String>>,
 }
 
 impl<S, T, I, A> std::fmt::Debug for CardDesk<S, T, I, A> {
@@ -175,6 +177,7 @@ where
             decline_retraction: deps.decline_retraction,
             throttle: AlertThrottle::new(),
             settings,
+            replay_conflicts: Mutex::default(),
         }
     }
 
@@ -523,11 +526,23 @@ where
             return false;
         };
         let mut notices: Vec<String> = Vec::new();
+        let mut conflict = false;
         for card in &cards {
             let Ok(Some((loaded, _))) = self.store.load_proposal(&card.proposal_id).await else {
                 continue;
             };
             let draft = &loaded.draft;
+            {
+                let mut conflicts = self
+                    .replay_conflicts
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
+                if draft.status != DraftStatus::Submitted {
+                    conflicts.remove(&card.proposal_id);
+                } else {
+                    conflict |= conflicts.contains(&card.proposal_id);
+                }
+            }
             let notice = match draft.status {
                 DraftStatus::Merged => applied_notice(&self.actor_name(draft.closed_by.as_ref())),
                 DraftStatus::Rejected => {
@@ -541,6 +556,9 @@ where
             if !notices.contains(&notice) {
                 notices.push(notice);
             }
+        }
+        if conflict {
+            notices.push(super::replay::OFFLINE_CONFLICT_NOTICE.to_owned());
         }
         for line in extra {
             if !notices.iter().any(|notice| notice == line) {

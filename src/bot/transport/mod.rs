@@ -14,6 +14,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use twilight_model::application::command::{Command, CommandOptionChoice};
+use twilight_model::channel::message::ReactionType;
 use twilight_model::channel::message::{AllowedMentions, Embed, MessageFlags};
 use twilight_model::channel::{Channel, Message};
 use twilight_model::guild::Member;
@@ -33,6 +34,7 @@ pub use fake::{Call, FakeDiscord, Hold, Op, Step};
 /// (`RejectionKind::Invalid`).
 pub const MAX_MEMBERS_PAGE: u16 = 1000;
 pub const MAX_MESSAGES_PAGE: u16 = 100;
+pub const MAX_REACTIONS_PAGE: u16 = 100;
 
 /// The only flags Discord accepts on a created message; any other bit is
 /// refused unsent (`RejectionKind::Invalid`).
@@ -214,6 +216,20 @@ pub trait DiscordTransport: Send + Sync {
         message: MessageId,
         emoji: &str,
     ) -> impl Future<Output = Outcome<()>> + Send;
+
+    /// One page of reactors, after a user id. No new gateway intent is needed.
+    fn reaction_users(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+        emoji: &str,
+        kind: ReactionType,
+        after: Option<Id<UserMarker>>,
+        limit: u16,
+    ) -> impl Future<Output = Outcome<Vec<Id<UserMarker>>>> + Send {
+        let _ = (channel, message, emoji, kind, after, limit);
+        async { Outcome::DefinitelyRejected(RejectionKind::Invalid) }
+    }
 
     fn remove_own_reaction(
         &self,

@@ -357,6 +357,29 @@ fn subject_of(loaded: &LoadedDraft) -> ProposalResult<ProposalSubject> {
 }
 
 impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S, I, C> {
+    /// Read-only authority check for unordered offline reactions. Decisions
+    /// still recheck the same rule in `live_proposal` and at merge time.
+    pub async fn proposal_answer_authority(
+        &self,
+        id: &str,
+        approvers: &[Approver],
+    ) -> ProposalResult<Vec<bool>> {
+        let (loaded, _) = self
+            .store
+            .load_proposal(id)
+            .await?
+            .ok_or_else(|| DraftError::UnknownDraft(id.to_owned()))?;
+        let subject = subject_of(&loaded)?;
+        let snapshot = self.store.load(&Scope::All).await?;
+        Ok(approvers
+            .iter()
+            .map(|approver| {
+                loaded.draft.status == DraftStatus::Submitted
+                    && allowed(&subject, approver, &snapshot)
+            })
+            .collect())
+    }
+
     /// Stage a proposal. The change is translated and dry-run on the current
     /// schedule; one that cannot apply (or would change nothing) is refused
     /// with v4's reason and nothing is written (`D-PROPOSE-REFUSES`).

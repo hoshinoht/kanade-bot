@@ -570,6 +570,79 @@ rollback. Do not start the old image against an already-upgraded store.
   history records, both attributed to the member on the Discord surface);
   backlog drops as `AdminAlert::BacklogDropped`.
 
+### Offline proposal reactions (named v5 difference)
+
+`cards/replay.rs` reconciles pending (`submitted`), message-bound extraction
+and chat cards at startup and after each fresh gateway READY. It waits for
+that generation's guild availability and successful roster reconciliation,
+including the refreshed live roles/owner/Administrator snapshot. RESUMED
+starts no pass: Discord replays its missed gateway events itself.
+`ConnectionStatus` publishes one coalescing watch request after reconciliation;
+the sequential `Reactions` worker runs it alongside live decisions, never
+concurrently with another pass or a queued gateway reaction.
+Once reconciled, that generation's HTTP replay remains eligible across
+gateway close and RESUMED: HTTP reads/edits do not need a connected gateway.
+Only shutdown, fatal closure or a newer READY cancels it. Cancelled or
+unlistable passes log `proposal_replay_aborted`, never `proposal_replay_complete`.
+
+For each distinct message, HTTP GET
+`/channels/{channel}/messages/{message}/reactions/{emoji}` reads ✅ and ❌,
+both normal and super reactions, in pages of 100 with `after`. Each emoji/type
+is capped at 100 pages. Both sides must be complete before any decision:
+404/deleted messages, definite rejections, ambiguous reads, invalid cursors
+and a full page cap skip that card with `proposal_replay_skipped`, never the
+remaining cards. Calls keep the existing transport deadlines; cancellation
+stops the old pass between calls and effects.
+No intent or permission is added (existing channel access/history permissions
+suffice; reading does not need Manage Messages).
+
+The bot's own id from READY is excluded before authority checks. The scheduler's
+read-only `proposal_answer_authority` checks the same rule used by live decisions:
+Approvers are built once per message, then each proposal and full schedule
+snapshot are loaded once per card, not once per unauthorised reactor.
+Unauthorised users are silent. For a proposal with only one authorised side,
+the lowest user snowflake on that side is selected deterministically (HTTP
+cannot recover reaction order), then `react.rs::answer_cards` uses the same
+`approve_proposal`/`reject_proposal` and refresh path as live reactions. TTL,
+refusals, idempotency and superseding remain scheduler-owned. **Replayed ❌
+decisions never invoke the chat driver's rejection follow-up**: that question
+would be stale. Normal card refreshes and scheduler notice outboxes still apply.
+Chosen proposals on a grouped message are answered together per `(user, answer)`
+so apply-problem notices are combined like the live path. Stale warnings from
+any group survive later group/conflict-note refreshes within the pass.
+
+The worker drains a snapshot of queued live events before reading a message,
+after its HTTP reads, after authority preflight and before each decision group.
+Those events use the ordinary live path, including eligible chat rejection
+follow-ups. If they touch the message, replay restarts its HTTP read and
+authority preflight, with at most three retries after the initial attempt.
+Non-deciding events (unauthorised reactions or removals) therefore do not
+discard an offline answer. A proposal closed by a live decision is no longer
+Submitted at preflight and cannot be consumed as replay. Exhausted retries
+skip and log `live_reaction_retry_cap`; continuously arriving events cannot
+make either a queue drain or a card retry loop unbounded.
+
+If both sides have an authorised user for the same proposal, replay decides
+neither side, logs `proposal_replay_conflict`, and appends this no-mentions line
+to the card content:
+
+> ⚠️ Both ✅ and ❌ were added while Kanade was offline. An approver should remove and re-add the intended one.
+
+Conflict proposal ids are held in the shared desk's in-memory set and rebuilt
+from HTTP on each pass, not written into immutable stored card details. Other
+refreshes preserve the note while a conflicted proposal is pending; a committed
+live/API decision or normal superseding removes it at refresh. A later complete
+pass with no conflict clears it too. A failed edit is logged and retried on a
+later pass. This is a **named v5 addition to the rendered card**, outside
+`format.rs`: without a conflict, frozen `vectors/extract/cards.json` output is
+unchanged.
+
+Regression coverage: `tests/discord/cards/replay.rs` (both sources, decisions,
+authority batching/attribution, self exclusion, conflicts, grouped refusals,
+live follow-ups, aborted passes, paging/caps, per-card read failures),
+the loopback HTTP transport test, and `runtime::serve::live_tests::replay`
+(startup/current-roster gate, second READY, close/RESUMED during HTTP, coalescing).
+
 ## Serve wiring
 
 `runtime::serve::discord` composes the adapter (details and shutdown order:

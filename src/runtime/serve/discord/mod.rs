@@ -458,7 +458,7 @@ where
         roster,
         roster_jobs,
         reaction_jobs,
-        connection,
+        connection.clone(),
         Box::new(move |application| ready_transport.application_ready(application)),
         guild_ready,
         Arc::clone(&wiring.clock),
@@ -515,7 +515,7 @@ where
                 decline_retraction: composition.admin.state.decline_retraction.clone(),
                 clock: Arc::clone(&wiring.clock),
             }
-            .run(reaction_queue),
+            .run_with_replay(reaction_queue, connection.clone(), stopped.clone()),
         ),
     ];
     let refresh_stop = stopped.clone();

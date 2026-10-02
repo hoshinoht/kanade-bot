@@ -163,6 +163,21 @@ impl DiscordTransport for LateTransport {
         delegate!(self, register_guild_commands(guild, commands))
     }
 
+    async fn reaction_users(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+        emoji: &str,
+        kind: twilight_model::channel::message::ReactionType,
+        after: Option<Id<UserMarker>>,
+        limit: u16,
+    ) -> Outcome<Vec<Id<UserMarker>>> {
+        delegate!(
+            self,
+            reaction_users(channel, message, emoji, kind, after, limit)
+        )
+    }
+
     async fn list_members(
         &self,
         guild: Id<GuildMarker>,

@@ -786,6 +786,67 @@ async fn members_are_paged_after_a_user_id() {
 }
 
 #[tokio::test]
+async fn reactors_use_encoded_emoji_type_limit_and_after_and_classify_deleted_cards() {
+    use twilight_model::channel::message::ReactionType;
+    let (stub, addr) = Stub::start(vec![
+        json_reply(200, json!([user_json(ALICE, "alice", None, false)])),
+        json_reply(404, json!({"code": 10008, "message": "Unknown Message"})),
+    ])
+    .await;
+    let transport = quick(addr);
+    assert_eq!(
+        transport
+            .reaction_users(
+                Id::new(CHANNEL),
+                Id::new(123),
+                "❌",
+                ReactionType::Burst,
+                Some(Id::new(1000)),
+                100
+            )
+            .await,
+        Outcome::Delivered(vec![Id::new(ALICE)])
+    );
+    let line = &stub.seen()[0].request_line;
+    assert!(
+        line.starts_with(&format!(
+            "GET /api/v10/channels/{CHANNEL}/messages/123/reactions/%E2%9D%8C?"
+        )),
+        "{line}"
+    );
+    for query in ["after=1000", "limit=100", "type=1"] {
+        assert!(line.contains(query), "{line}");
+    }
+    assert_eq!(
+        transport
+            .reaction_users(
+                Id::new(CHANNEL),
+                Id::new(123),
+                "✅",
+                ReactionType::Normal,
+                None,
+                100
+            )
+            .await,
+        Outcome::DefinitelyRejected(RejectionKind::UnknownMessage)
+    );
+    assert_eq!(
+        transport
+            .reaction_users(
+                Id::new(CHANNEL),
+                Id::new(123),
+                "✅",
+                ReactionType::Normal,
+                None,
+                101
+            )
+            .await,
+        Outcome::DefinitelyRejected(RejectionKind::Invalid)
+    );
+    assert_eq!(stub.seen().len(), 2, "invalid limit is never sent");
+}
+
+#[tokio::test]
 async fn history_pages_carry_their_cursor() {
     let page = json!([
         message_json(12, CHANNEL, Some(GUILD), "newer"),

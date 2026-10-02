@@ -6,6 +6,7 @@ mod desk;
 pub mod format;
 mod outbox;
 mod react;
+mod replay;
 
 pub use desk::{Authority, CardDesk, CardSettings, DeskDeps};
 pub use format::{
@@ -15,3 +16,5 @@ pub use format::{
 };
 pub use outbox::CardOutbox;
 pub use react::{CardFollowUp, CardReaction, FollowUpCard};
+pub(crate) use replay::ReplayLive;
+pub use replay::{OFFLINE_CONFLICT_NOTICE, ReplayReport};

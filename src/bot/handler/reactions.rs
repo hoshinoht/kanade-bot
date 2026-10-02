@@ -5,13 +5,14 @@
 use std::sync::Arc;
 
 use serde_json::json;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 use crate::api::auth::Clock;
 use crate::api::state::DeclineRetraction;
-use crate::bot::cards::{CardDesk, CardReaction};
+use crate::bot::cards::{CardDesk, CardReaction, ReplayLive, ReplayReport};
 use crate::bot::delivery::AlertSink;
 use crate::bot::events::{CardIndex, ReactionRouter, ReactionSink, RsvpReaction};
+use crate::bot::gateway::ConnectionStatus;
 use crate::bot::ids::id_text;
 use crate::bot::transport::DiscordTransport;
 use crate::chat::driver::{FollowUpCard, FollowUpRequest, RejectionFollowUp};
@@ -20,6 +21,7 @@ use crate::domain::notify::DeliveryJournal;
 use crate::domain::proposals::ProposalCardStore;
 use crate::domain::scheduler::{IdSource, ScheduleStore};
 use crate::runtime::logging;
+use twilight_model::id::{Id, marker::UserMarker};
 
 /// What one reaction did, for tests and logs.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -127,5 +129,90 @@ where
         while let Some(reaction) = reactions.recv().await {
             self.apply(&reaction).await;
         }
+    }
+
+    /// Queued live reactions retain their ordinary follow-ups, even when HTTP
+    /// observes them during replay. Touched cards get a bounded fresh HTTP read.
+    pub async fn replay(
+        &mut self,
+        self_id: Id<UserMarker>,
+        current: impl Fn() -> bool + Send + Sync,
+        reactions: &mut mpsc::UnboundedReceiver<RsvpReaction>,
+    ) -> ReplayReport {
+        let desk = Arc::clone(&self.desk);
+        desk.replay_reactions_with(self_id, current, &mut (self, reactions))
+            .await
+    }
+
+    /// Replay and live events share one worker, so neither two passes nor a
+    /// queued gateway decision can race. Watch keeps only the latest READY.
+    pub(crate) async fn run_with_replay(
+        mut self,
+        mut reactions: mpsc::UnboundedReceiver<RsvpReaction>,
+        connection: ConnectionStatus,
+        mut stop: watch::Receiver<bool>,
+    ) {
+        let mut replays = connection.reaction_replays();
+        loop {
+            let request = *replays.borrow_and_update();
+            if let Some(request) = request
+                && !*stop.borrow()
+                && connection.reaction_replay_allowed(request.generation)
+            {
+                self.replay(
+                    request.self_id,
+                    || !*stop.borrow() && connection.reaction_replay_allowed(request.generation),
+                    &mut reactions,
+                )
+                .await;
+            }
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = stop.changed() => {
+                        self.run(reactions).await;
+                        return;
+                    }
+                    _ = replays.changed() => break,
+                    reaction = reactions.recv() => {
+                        let Some(reaction) = reaction else { return; };
+                        self.apply(&reaction).await;
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl<S, T, I, A, X, K> ReplayLive
+    for (
+        &mut Reactions<S, T, I, A, X, K>,
+        &mut mpsc::UnboundedReceiver<RsvpReaction>,
+    )
+where
+    S: ScheduleStore
+        + crate::domain::notify::DeclineNoticeStore
+        + ProposalStore
+        + ProposalCardStore
+        + DeliveryJournal
+        + Send
+        + Sync,
+    T: DiscordTransport,
+    I: IdSource + Clone + Send + Sync,
+    A: AlertSink,
+    X: CardIndex,
+    K: ReactionSink,
+{
+    async fn drain(&mut self, message_id: &str) -> bool {
+        let mut touched = false;
+        // Drain a snapshot, not an unbounded stream that could starve replay.
+        for _ in 0..self.1.len() {
+            let Ok(reaction) = self.1.try_recv() else {
+                break;
+            };
+            touched |= id_text(reaction.message_id) == message_id;
+            self.0.apply(&reaction).await;
+        }
+        touched
     }
 }

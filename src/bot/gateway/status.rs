@@ -4,7 +4,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 #[cfg(test)]
 use std::{future::Future, pin::Pin};
 
+use tokio::sync::watch;
 use twilight_gateway::Event;
+use twilight_model::id::{Id, marker::UserMarker};
 
 /// Where the session stands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,6 +50,7 @@ struct State {
     readiness: Readiness,
     guild_generation: Option<u64>,
     roster_generation: Option<u64>,
+    self_id: Option<Id<UserMarker>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -67,13 +70,26 @@ impl Default for State {
             readiness: Readiness::Pending,
             guild_generation: None,
             roster_generation: None,
+            self_id: None,
         }
     }
 }
 
 /// A cloneable handle the runner updates from raw gateway events.
-#[derive(Clone, Debug, Default)]
-pub struct ConnectionStatus(Arc<Mutex<State>>);
+#[derive(Clone, Debug)]
+pub struct ConnectionStatus(Arc<Mutex<State>>, watch::Sender<Option<ReplayReady>>);
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ReplayReady {
+    pub generation: u64,
+    pub self_id: Id<UserMarker>,
+}
+
+impl Default for ConnectionStatus {
+    fn default() -> Self {
+        Self(Arc::default(), watch::Sender::new(None))
+    }
+}
 
 #[cfg(test)]
 type ClaimResultHook = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
@@ -303,9 +319,27 @@ impl ConnectionStatus {
         if state.readiness == Readiness::Fresh
             && state.generation == generation
             && state.guild_generation == Some(generation)
+            && state.roster_generation != Some(generation)
         {
             state.roster_generation = Some(generation);
+            if let Some(self_id) = state.self_id {
+                self.1.send_replace(Some(ReplayReady {
+                    generation,
+                    self_id,
+                }));
+            }
         }
+    }
+
+    pub(crate) fn reaction_replays(&self) -> watch::Receiver<Option<ReplayReady>> {
+        self.1.subscribe()
+    }
+
+    pub(crate) fn reaction_replay_allowed(&self, generation: u64) -> bool {
+        let state = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        state.connection != Connection::Closed
+            && state.generation == generation
+            && state.roster_generation == Some(generation)
     }
 
     pub(crate) fn is_current_fresh_generation(&self, generation: u64) -> bool {
@@ -319,13 +353,14 @@ impl ConnectionStatus {
     pub(super) fn observe(&self, event: &Event) {
         let mut state = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         match event {
-            Event::Ready(_) if state.connection != Connection::Closed => {
+            Event::Ready(ready) if state.connection != Connection::Closed => {
                 state.connection = Connection::Ready;
                 state.generation = state.generation.wrapping_add(1);
                 state.admission_epoch = state.admission_epoch.wrapping_add(1);
                 state.readiness = Readiness::Fresh;
                 state.guild_generation = None;
                 state.roster_generation = None;
+                state.self_id = Some(ready.user.id);
             }
             Event::Resumed if state.connection != Connection::Closed => {
                 state.connection = Connection::Ready;
@@ -454,6 +489,36 @@ mod tests {
 
         assert!(unwind.is_err());
         assert!(status.delivery_eligibility().is_some());
+    }
+
+    #[test]
+    fn reaction_replay_survives_close_resume_but_not_a_new_generation_or_fatal_close() {
+        let status = ConnectionStatus::new();
+        let mut requests = status.reaction_replays();
+        status.observe(&ready());
+        let generation = status.guild_available().unwrap();
+        assert!(!status.reaction_replay_allowed(generation));
+        status.roster_reconciled(generation);
+        assert_eq!(requests.borrow_and_update().unwrap().generation, generation);
+        status.observe(&Event::GatewayClose(None));
+        assert!(!status.delivery_claims_allowed());
+        assert!(
+            status.reaction_replay_allowed(generation),
+            "HTTP does not need the gateway"
+        );
+        status.observe(&Event::Resumed);
+        assert!(status.reaction_replay_allowed(generation));
+        assert!(
+            !requests.has_changed().unwrap(),
+            "resume never creates another pass"
+        );
+        status.observe(&ready());
+        assert!(!status.reaction_replay_allowed(generation));
+        let next = status.guild_available().unwrap();
+        status.roster_reconciled(next);
+        assert!(status.reaction_replay_allowed(next));
+        status.closed();
+        assert!(!status.reaction_replay_allowed(next));
     }
 
     #[test]

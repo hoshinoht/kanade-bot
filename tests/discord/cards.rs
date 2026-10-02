@@ -3,6 +3,8 @@
 //! replayed; refused sends reposted with the next card), ✅/❌ through the
 //! scheduler's approval rules, card refreshes and chat answers.
 
+mod replay;
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
