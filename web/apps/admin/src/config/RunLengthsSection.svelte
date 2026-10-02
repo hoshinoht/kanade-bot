@@ -7,12 +7,14 @@
 -->
 <script lang="ts">
   import type { BossRow, ConfigView, Difficulty } from '@kanade/api-types';
-  import { PendingLabel } from '@kanade/ui';
   import { tick } from 'svelte';
+  import { changes } from './dirty';
   import { Resource } from '../resource.svelte';
   import MinutesField from './MinutesField.svelte';
   import { check, DEFAULT_RANGE, draftOf, OVERRIDE_RANGE } from './runLengths';
   import type { Save } from './save';
+  import SaveBar from './SaveBar.svelte';
+  import SettingsPanel from './SettingsPanel.svelte';
 
   let {
     runLengths,
@@ -32,6 +34,24 @@
   let saving = $state(false);
   let list: HTMLUListElement | undefined = $state();
   let addButton: HTMLButtonElement | undefined = $state();
+
+  const pending = $derived(
+    changes([
+      { label: 'Each boss', from: runLengths.default_minutes, to: draft.default_minutes, show: (v) => `${v ?? '—'} min` },
+      {
+        label: 'Overrides',
+        from: draftOf(runLengths).overrides,
+        to: draft.overrides,
+        show: (v) => `${(v as unknown[]).length}`,
+      },
+    ]),
+  );
+
+  function discard() {
+    draft = draftOf(runLengths);
+    error = '';
+    bad = null;
+  }
 
   const bossOf = (key: string) => bosses.data?.find((b) => b.key === key);
   const difficultiesOf = (key: string) => bossOf(key)?.difficulties ?? [];
@@ -76,19 +96,19 @@
   }
 </script>
 
-<h3 class="settings__title" id="{uid}-h">Run lengths</h3>
-<p class="note">
-  How long one boss takes. A run lasts the sum of its bosses' lengths: dropping a run on the planner starts it right after the run above, and the
-  arrow keys move a picked-up run by the default.
+<SettingsPanel title="Run lengths">
+  {#snippet lead()}How long one boss takes; a run lasts the sum of its bosses' lengths.{/snippet}
+<p class="settings__box">
+  Dropping a run on the planner starts it right after the run above, and the arrow keys move a picked-up run by the default.
 </p>
-<form onsubmit={submit} aria-labelledby="{uid}-h" novalidate>
-  <fieldset class="settings__role">
-    <legend>Default</legend>
+<form class="runlen" id="{uid}-form" onsubmit={submit} aria-label="Run lengths" novalidate>
+  <fieldset class="settings__card" data-fid="cfg-card">
+    <legend class="settings__cardtitle">Default</legend>
     <MinutesField label="Each boss" bind:value={draft.default_minutes} min={DEFAULT_RANGE.min} max={DEFAULT_RANGE.max} invalid={bad === 'default'} />
   </fieldset>
 
-  <fieldset class="settings__role">
-    <legend>Overrides</legend>
+  <fieldset class="settings__card" data-fid="cfg-card">
+    <legend class="settings__cardtitle">Overrides</legend>
     <p class="note">A boss and difficulty that takes longer (or shorter) than the default.</p>
     {#if draft.overrides.length}
       <ul class="runlen__list" bind:this={list}>
@@ -138,14 +158,29 @@
       <button type="button" class="btn" bind:this={addButton} onclick={add} disabled={!bosses.data}>Add an override</button>
     </div>
   </fieldset>
-
-  <div class="settings__actions">
-    <button class="btn btn--primary" type="submit"><PendingLabel pending={saving} label="Saving…">Save run lengths</PendingLabel></button>
-  </div>
 </form>
-<p class="field__error" role="alert">{error}</p>
+{#if error}<p class="field__error" role="alert">{error}</p>{/if}
+  {#snippet bar()}
+    <SaveBar form="{uid}-form" label="Save run lengths" changes={pending} {saving} ondiscard={discard} />
+  {/snippet}
+</SettingsPanel>
 
 <style>
+  .runlen {
+    display: grid;
+    gap: 0.875rem;
+  }
+
+  .runlen legend {
+    float: left;
+    width: 100%;
+    padding: 0;
+  }
+
+  .runlen legend + * {
+    clear: both;
+  }
+
   .runlen__list {
     display: grid;
     gap: 0.5rem;

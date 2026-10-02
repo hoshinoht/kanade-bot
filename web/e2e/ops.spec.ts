@@ -588,62 +588,69 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   await page.getByRole('tab', { name: 'Pings' }).click();
   const time = panel.getByRole('textbox', { name: 'Morning ping' });
   await time.fill('whenever');
-  await panel.getByRole('button', { name: 'Save', exact: true }).click();
+  await panel.getByRole('button', { name: 'Save pings', exact: true }).click();
   await expect(panel.getByRole('alert')).toContainText('HH:MM');
   await expect(time).toHaveValue('whenever');
   await expect(time).toHaveAttribute('aria-invalid', 'true');
   await expect(panel.getByRole('textbox', { name: 'Countdowns (minutes)' })).toHaveAttribute('aria-invalid', 'false');
   await time.fill('08:30');
   await panel.getByRole('textbox', { name: 'Countdowns (minutes)' }).fill('45, 10');
-  await panel.getByRole('button', { name: 'Save', exact: true }).click();
+  await panel.getByRole('button', { name: 'Save pings', exact: true }).click();
   // The server applies pings on restart; the toast says so rather than claiming a re-place.
   await expect(toast(page, 'Pings saved; they take effect when the bot restarts.')).toBeVisible();
   await expect(panel.getByRole('textbox', { name: 'Morning ping' })).toHaveValue('08:30');
 
-  // Watching toggles flip and stay.
+  // Watching switches apply at once; turning one off asks first.
   await page.getByRole('tab', { name: 'Chat watching' }).click();
-  await page.getByRole('button', { name: 'Pause watching' }).click();
+  const watching = panel.getByRole('switch', { name: /^Watching/ });
+  await watching.click();
+  await page.getByRole('dialog', { name: 'Pause watching?' }).getByRole('button', { name: 'Pause watching' }).click();
   await expect(toast(page, 'Watching paused.')).toBeVisible();
-  await expect(panel.getByText(/Watching is/)).toContainText('Watching is paused');
-  await page.getByRole('button', { name: 'Resume watching' }).click();
+  await expect(watching).toHaveAttribute('aria-checked', 'false');
+  await expect(panel.getByText('paused', { exact: true })).toBeVisible();
+  await watching.click();
   await expect(toast(page, 'Watching resumed.')).toBeVisible();
-  await expect(panel.getByText(/Watching is/)).toContainText('Watching is on');
-  await expect(page.getByRole('button', { name: 'Pause watching' })).toBeVisible();
+  await expect(watching).toHaveAttribute('aria-checked', 'true');
   expect(((await (await page.request.get(`${ADMIN}/api/admin/config`)).json()) as { watching: { paused: boolean } }).watching.paused).toBe(false);
 
   // Chatbot rate save.
   await page.getByRole('tab', { name: 'Chatbot' }).click();
   await panel.getByRole('spinbutton', { name: 'Answers per person' }).fill('5');
-  await panel.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(panel.getByText(/1 unsaved change · Per person answers/)).toBeVisible();
+  await panel.getByRole('button', { name: 'Save chatbot', exact: true }).click();
   await expect(toast(page, /Answer limits saved/)).toBeVisible();
 
   // Persona catalog, profile visibility, reload, role order.
-  await page.getByRole('tab', { name: 'Persona' }).click();
+  await page.getByRole('tab', { name: /^Persona/ }).click();
   await expect(panel.getByText(/Effective:.*Kanade/)).toBeVisible();
   await panel.getByRole('combobox', { name: 'Active persona' }).selectOption('plain');
   await panel.getByRole('button', { name: 'Use this persona', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: /^Use (?!this)/ }).click();
   await expect(toast(page, /Plain/)).toBeVisible();
   await panel.getByRole('combobox', { name: 'Active persona' }).selectOption('kanade');
   await panel.getByRole('button', { name: 'Use this persona', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Use Kanade' }).click();
   await expect(panel.getByText(/Effective:.*Kanade/)).toBeVisible();
   // Reply profiles: label, voice as written, a one-line plain-text prompt preview, visibility.
   const profiles = panel.getByRole('table', { name: 'Reply profiles' });
-  await expect(profiles.getByRole('columnheader')).toHaveText(['Profile', 'Voice', 'Prompt', 'Visibility']);
-  const kanade = profiles.getByRole('row', { name: /^Kanade/ });
-  await expect(kanade.getByRole('cell').first()).toHaveText('comedy.');
+  await expect(profiles.getByRole('columnheader')).toHaveText(['', 'Profile', 'Voice', 'Prompt', 'Visibility', 'Change visibility']);
+  const kanade = profiles.getByRole('row', { name: /^Select Kanade\b/ });
+  // Cells after the selection box: voice first.
+  await expect(kanade.getByRole('cell').nth(1)).toHaveText('comedy.');
   await expect(kanade).toContainText('Kanade Teases lightly');
   await expect(kanade).not.toContainText('**');
   await expect(profiles).not.toContainText('config/personas/profiles/kanade');
   // Visibility is editable and profile text stays file-backed.
-  const sparkly = profiles.getByRole('row', { name: /^Sparkly/ });
+  const sparkly = profiles.getByRole('row', { name: /^Select Sparkly\b/ });
   await expect(sparkly).toContainText('private');
   await expect(sparkly.getByRole('button', { name: 'Publish' })).toBeVisible();
   // Role assignments use the current named guild directory; IDs are not picker input.
+  await panel.getByRole('tab', { name: /^Role overrides/ }).click();
   const roleAssignments = panel.getByRole('list', { name: 'Role assignments in precedence order' });
   await expect(roleAssignments.getByRole('listitem')).toHaveCount(2);
   await expect(roleAssignments.getByRole('listitem').nth(0)).toContainText('@staff');
   await expect(panel.getByRole('combobox', { name: 'New assignment role' })).toBeEnabled();
-  await expect(panel.getByText(/The first matching readable role.*overrides a member's saved reply style/)).toBeVisible();
+  await expect(panel.getByText(/The first matching role.*overrides a member's saved reply style/)).toBeVisible();
   const published = await page.request.patch(`${ADMIN}/api/admin/config`, {
     headers: await csrf(page.request),
     data: { persona: { visibility: [{ key: 'sparkly', public: true }] } },
@@ -658,6 +665,7 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   expect([published.status(), publicState(publishedView)]).toEqual([200, true]);
   expect([restored.status(), publicState(restoredView)]).toEqual([200, false]);
   // Reload re-reads the files.
+  await panel.getByRole('tab', { name: 'Active persona & profiles' }).click();
   await panel.getByRole('button', { name: 'Reload profiles' }).click();
   await expect(toast(page, /Reloaded 4 reply profiles/)).toBeVisible();
 
@@ -665,8 +673,10 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   await page.getByRole('tab', { name: 'Models' }).click();
   // The server's own startup check is shown; the saved seed passes it.
   await expect(page.getByRole('tab', { name: 'Models' }).locator('.settings__flag')).toHaveCount(0);
+  await panel.getByRole('tab', { name: 'Capacity' }).click();
   await expect(panel.locator('.settings__checks .tone--danger')).toHaveCount(0);
   await expect(panel.getByRole('list', { name: 'Startup check' }).getByRole('listitem').first()).toBeVisible();
+  await panel.getByRole('tab', { name: 'Roles' }).click();
   const models = panel.getByRole('combobox', { name: /^Model/ });
   const reasonings = panel.getByRole('combobox', { name: /^Reasoning/ });
   await models.first().selectOption('kanata/chat-cloud');
@@ -718,25 +728,31 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
 
   // Notifications.
   await page.getByRole('tab', { name: 'Notifications' }).click();
-  await page.getByRole('button', { name: 'Turn quiet mode on' }).click();
+  const quiet = panel.getByRole('switch', { name: /^Quiet mode/ });
+  await quiet.click();
   await expect(toast(page, 'Quiet mode is on.')).toBeVisible();
-  await expect(panel.getByText(/marked 🔕 in Discord/)).toBeVisible();
-  await page.getByRole('button', { name: 'Turn quiet mode off' }).click();
+  await expect(panel.getByText(/marked 🔕 in/)).toBeVisible();
+  await quiet.click();
+  await page.getByRole('dialog', { name: 'Turn quiet mode off?' }).getByRole('button', { name: 'Turn quiet mode off' }).click();
+  await expect(quiet).toHaveAttribute('aria-checked', 'false');
 
   // Self-service: link-first saves, and closing the portal forces cards-only.
   await page.getByRole('tab', { name: 'Self-service' }).click();
-  await expect(panel.getByText(/pre-filled link to the public portal/)).toBeVisible();
+  await expect(panel.getByText('How self-service works')).toBeVisible();
   await page.getByText('Link first', { exact: true }).click();
-  await panel.getByRole('button', { name: 'Save', exact: true }).click();
+  await panel.getByRole('button', { name: 'Save self-service', exact: true }).click();
   await expect(toast(page, /link first/)).toBeVisible();
-  await page.getByRole('button', { name: 'Close the public portal' }).click();
+  // Closing applies at once (only opening asks).
+  await panel.getByRole('switch', { name: /^Public portal/ }).click();
+  await expect(toast(page, 'The public portal is closed.')).toBeVisible();
   await expect(panel.getByText(/serves only the app shell/)).toBeVisible();
   await expect(panel.getByText(/cards-only applies/)).toBeVisible();
 
   // Digest posts.
   await page.getByRole('tab', { name: 'Weekly digest' }).click();
   await panel.getByRole('combobox', { name: 'Channel' }).selectOption('fa-night');
-  await panel.getByRole('button', { name: 'Post it now' }).click();
+  await panel.getByRole('button', { name: 'Post it now…' }).click();
+  await page.getByRole('dialog', { name: /digest to #?fa-night/ }).getByRole('button', { name: 'Post it now' }).click();
   await expect(toast(page, /Posted this week's digest in #fa-night/)).toBeVisible();
 
   // Read-only table: values, reasons, and no inputs at all.
@@ -821,7 +837,7 @@ test('config on a phone: the section strip scrolls itself, never the frame', asy
   await expect(tab).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('tablist', { name: 'Settings sections' })).toHaveAttribute('aria-orientation', 'horizontal');
   await expect(tab).toBeInViewport({ ratio: 1 });
-  // The selected tab is marked by an underline as well as its border colour.
+  // The selected tab is marked by an underline as well as its fill.
   await expect(tab).toHaveCSS('text-decoration-line', 'underline');
   const scrolled = await page.evaluate(() => ({
     doc: document.scrollingElement!.scrollTop + document.scrollingElement!.scrollLeft,
@@ -876,7 +892,7 @@ test('models: extraction to High resets an inheriting chat to Off, saved and res
 test('persona: Reload profiles re-reads the config, so voice and summary follow the files', async ({ page }) => {
   await go(page, '/config?section=persona');
   const panel = page.locator('.settings__panel:not([hidden])');
-  await expect(panel.getByRole('row', { name: /^Kanade/ }).getByRole('cell').first()).toHaveText('comedy.');
+  await expect(panel.getByRole('row', { name: /^Select Kanade\b/ }).getByRole('cell').nth(1)).toHaveText('comedy.');
   // After the reload the files say something new (served through the config read).
   let reloaded = false;
   await page.route(`${ADMIN}/api/admin/config`, async (route) => {
@@ -901,11 +917,12 @@ test('persona: Reload profiles re-reads the config, so voice and summary follow 
 test('models: capacity groups read-only, one row per group, Kanata limits in words, no variants', async ({ page }) => {
   await go(page, '/config?section=models');
   const panel = page.locator('.settings__panel:not([hidden])');
+  await panel.getByRole('tab', { name: 'Capacity' }).click();
   // Default source: one gateway group over the role models.
   const groups = panel.getByRole('table', { name: /Every model shares one group of 1 permit \(models.permits in kanade.toml\)/ });
   await expect(groups.getByRole('row')).toHaveCount(2);
   const gateway = groups.getByRole('row', { name: /gateway/ });
-  await expect(gateway.locator('.chip')).toHaveText(['kanata/extract', 'kanata/chat', 'kanata/rewrite-small']);
+  await expect(gateway.locator('.capchip')).toHaveText(['kanata/extract', 'kanata/chat', 'kanata/rewrite-small']);
   await expect(panel.getByRole('button', { name: /Add a row|Save groups/ })).toHaveCount(0);
   // The server's verdicts, each once; no client-side key or ungrouped warnings.
   const checks = panel.getByRole('list', { name: 'Startup check' }).getByRole('listitem');
@@ -918,6 +935,7 @@ test('models: capacity groups read-only, one row per group, Kanata limits in wor
   await expect(panel.getByRole('table', { name: 'What Kanata admits for every listed model' })).not.toContainText(':');
   await expect(panel.getByText("Kanata publishes no limit for this key; it is shared with the owner's other clients.")).toHaveCount(1);
   // The picker lists base models only; `off` is hidden where reasoning is required.
+  await panel.getByRole('tab', { name: 'Roles' }).click();
   const models = panel.getByRole('combobox', { name: /^Model/ });
   await expect(models.first().locator('option[value*=":"]')).toHaveCount(0);
   await models.first().selectOption('kanata/think');
@@ -946,11 +964,13 @@ test('models: config-declared groups, uniform limits, a stored variant, an unset
   });
   await go(page, '/config?section=models');
   const panel = page.locator('.settings__panel:not([hidden])');
+  await panel.getByRole('tab', { name: 'Capacity' }).click();
   const groups = panel.getByRole('table', { name: 'Set in kanade.toml under [[models.groups]]; restart to apply.' });
-  await expect(groups.getByRole('row', { name: /local/ }).locator('.chip')).toHaveText(['kanata/extract', 'kanata/chat']);
+  await expect(groups.getByRole('row', { name: /local/ }).locator('.capchip')).toHaveText(['kanata/extract', 'kanata/chat']);
   await expect(panel.getByRole('list', { name: 'Startup check' }).locator('.tone--warning')).toHaveCount(1);
   await expect(panel.getByText('Kanata admits 3 calls at a time per model.')).toBeVisible();
   await expect(panel.getByRole('table', { name: /models in use/ })).toHaveCount(0);
+  await panel.getByRole('tab', { name: 'Roles' }).click();
   const models = panel.getByRole('combobox', { name: /^Model/ });
   // The stored variant shows as "<base> (fixed: <level>)"; no other variant is offered.
   await expect(models.nth(1).locator('option:checked')).toHaveText('kanata/chat (fixed: high)');

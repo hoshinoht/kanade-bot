@@ -68,6 +68,71 @@ const PAIRS: Pair[] = [
     path: '/inbox?tab=extractor&item=p-bm-move',
     ready: (page) => expect(page.getByRole('heading', { level: 2, name: /Move — Black Mage/ })).toBeVisible(),
   },
+  {
+    name: 'cfg',
+    board: 'B_Config',
+    path: '/config?section=chatbot',
+    // The board shows one unsaved change in the save bar.
+    ready: async (page) => {
+      await page.getByRole('spinbutton', { name: 'Answers per person' }).fill('2');
+      await expect(page.getByText('1 unsaved change')).toBeVisible();
+    },
+  },
+  {
+    name: 'cfg-persona',
+    board: 'B_CfgPersona',
+    path: '/config?section=persona',
+    // The board shows two reply profiles selected for a bulk change.
+    ready: async (page) => {
+      const picks = page.getByRole('table', { name: 'Reply profiles' }).locator('tbody').getByRole('checkbox');
+      await picks.nth(0).check();
+      await picks.nth(1).check();
+      await expect(page.getByText('2 profiles selected.')).toBeVisible();
+    },
+  },
+  {
+    name: 'cfg-models',
+    board: 'B_CfgModels',
+    path: '/config?section=models',
+    // The board shows one unsaved change: Chat's reasoning level.
+    ready: async (page) => {
+      const chat = page.getByRole('group', { name: 'Chat' }).getByRole('combobox', { name: 'Reasoning' });
+      const current = await chat.inputValue();
+      const values = await chat.locator('option').evaluateAll((options) => options.map((o) => (o as HTMLOptionElement).value));
+      await chat.selectOption(values.find((v) => v !== current && v !== '') ?? values[0]!);
+      await expect(page.getByText('1 unsaved change')).toBeVisible();
+    },
+  },
+  {
+    name: 'cfg-roles',
+    board: 'B_CfgRoles',
+    path: '/config?section=persona',
+    ready: async (page) => {
+      await page.getByRole('tab', { name: /^Role overrides/ }).click();
+      await expect(page.getByText('Current guild roles are loaded.', { exact: false })).toBeVisible();
+      // The board shows a reordered draft.
+      await page.getByRole('list', { name: 'Role assignments in precedence order' }).getByRole('button', { name: 'Move down' }).first().click();
+      await expect(page.getByText('1 unsaved change')).toBeVisible();
+    },
+  },
+  ...(
+    [
+      ['cfg-pings', 'B_CfgPings', 'pings', 'Pings'],
+      ['cfg-watch', 'B_CfgWatch', 'watching', 'Chat watching'],
+      ['cfg-self', 'B_CfgSelf', 'self-service', 'Self-service'],
+      ['cfg-notify', 'B_CfgNotify', 'notifications', 'Notifications'],
+      ['cfg-digest', 'B_CfgDigest', 'digest', 'Weekly digest'],
+      ['cfg-reread', 'B_CfgReread', 'rescan', 'Re-read the party channels'],
+      ['cfg-access', 'B_CfgAccess', 'access', 'Channel access'],
+      ['cfg-theme', 'B_CfgTheme', 'theme', 'Theme'],
+      ['cfg-env', 'B_CfgEnv', 'env', 'Set in the environment'],
+    ] as const
+  ).map(([name, board, section, heading]) => ({
+    name,
+    board,
+    path: `/config?section=${section}`,
+    ready: (page: Page) => expect(page.getByRole('heading', { level: 3, name: heading })).toBeVisible(),
+  })),
 ];
 
 test.describe('layout fidelity', () => {

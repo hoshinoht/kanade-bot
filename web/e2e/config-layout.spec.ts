@@ -31,7 +31,10 @@ test("config: direct-load keeps the grouped contents pane beside a scrolling det
         toc.getBoundingClientRect().right <=
         detail.getBoundingClientRect().left + 1,
       tocScroll: getComputedStyle(toc).overflowY,
-      detailScroll: getComputedStyle(detail).overflowY,
+      // The cards scroll inside the open section; its save bar stays put (B_Config).
+      detailScroll: getComputedStyle(
+        detail.querySelector<HTMLElement>(".settings__panel:not([hidden]) .settings__scroll")!,
+      ).overflowY,
       bodyHeight: element.getBoundingClientRect().height,
       detailHeight: detail.getBoundingClientRect().height,
       documentScroll: documentScroll.scrollHeight - documentScroll.clientHeight,
@@ -144,7 +147,9 @@ test("config on a phone: the chip stays, the strip scrolls sideways and only the
   ).toBeVisible();
   const metrics = await page.evaluate(() => {
     const toc = document.querySelector<HTMLElement>(".settings__toc")!;
-    const detail = document.querySelector<HTMLElement>(".settings__detail")!;
+    const detail = document.querySelector<HTMLElement>(
+      ".settings__panel:not([hidden]) .settings__scroll",
+    )!;
     const doc = document.scrollingElement!;
     return {
       tocX: getComputedStyle(toc).overflowX,

@@ -11,7 +11,7 @@
   import type { ConfigView, Role, RoleProfileWrite } from '@kanade/api-types';
   import { COLORWAYS, currentColorway, Icon, ThemePicker, Toaster } from '@kanade/ui';
   import { tick } from 'svelte';
-  import { SvelteSet } from 'svelte/reactivity';
+  import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { directory } from '../names/directory.svelte';
   import { Resource, send } from '../resource.svelte';
   import AccessSection from './AccessSection.svelte';
@@ -22,9 +22,11 @@
   import PersonaSection from './PersonaSection.svelte';
   import PingsSection from './PingsSection.svelte';
   import RunLengthsSection from './RunLengthsSection.svelte';
-  import type { ConfigPatch, RoleProfileSave } from './save';
+  import type { ConfigPatch, RoleProfileSave, Undo } from './save';
+  import SectionScope from './SectionScope.svelte';
   import SelfServiceSection from './SelfServiceSection.svelte';
-  import Toggle from './Toggle.svelte';
+  import SettingsPanel from './SettingsPanel.svelte';
+  import SwitchCard from './SwitchCard.svelte';
   import RescanPanel from '../extractions/RescanPanel.svelte';
   import type { Channel } from '@kanade/api-types';
 
@@ -88,7 +90,7 @@
   const tabs: Record<string, HTMLButtonElement> = {};
   // Unsaved edits live in the section components; keeping visited sections
   // mounted keeps those edits across tab switches.
-  const visited = new SvelteSet<Key>(['pings']);
+  const visited = new SvelteSet<Key>();
   $effect.pre(() => {
     visited.add(selected);
   });
@@ -191,6 +193,14 @@
     tabs[shown[0]!.key]?.focus();
   }
 
+  // Save bars report here (`section/form`); a section with any dirty form gets a dot in the list.
+  const dirtyForms = new SvelteMap<string, boolean>();
+  const reportDirty = (id: string, dirty: boolean) => {
+    if (dirty) dirtyForms.set(id, true);
+    else dirtyForms.delete(id);
+  };
+  const isDirty = (key: Key) => [...dirtyForms.keys()].some((id) => id.startsWith(`${key}/`));
+
   function hint(item: Key): string {
     const c = config.data;
     if (!c) return '';
@@ -198,22 +208,38 @@
       case 'pings': return c.pings.day_of_ping_time;
       case 'watching': return c.watching.paused ? 'paused' : 'on';
       case 'chatbot': return c.chatbot.enabled ? 'on' : 'off';
-      case 'persona': return c.persona.active;
-      case 'models': return `${c.models.catalog.length}`;
+      case 'persona': return c.persona.personas.find((p) => p.key === c.persona.active)?.name ?? c.persona.active;
+      // The roles that have a model, as on the board ("3").
+      case 'models': return `${Object.values(c.models.roles).filter((r) => r.alias).length}`;
       case 'self-service': return c.self_service.public_portal ? 'open' : 'closed';
-      case 'theme': return colorway;
+      case 'theme': return colorway.toLowerCase();
       case 'env': return `${c.env.length}`;
       default: return '';
     }
   }
 
-  async function save(patch: ConfigPatch, done: string): Promise<string> {
+  async function save(patch: ConfigPatch, done: string, undo?: Undo): Promise<string> {
     const result = await send((c) => c.patch<ConfigView>('/api/admin/config', patch));
+    // A refusal stays inline, next to the fields or switch that caused it.
     if (!result.ok) return result.message;
     config.data = result.value;
     const notes = result.value.notices ?? [];
-    toaster.show({ message: notes.length ? `${done} ${notes.join(' ')}` : done, tone: 'ok' });
+    const message = notes.length ? `${done} ${notes.join(' ')}` : done;
+    // Switches and visibility apply at once: their toast offers Undo for 10 s.
+    if (undo)
+      toaster.show({
+        message,
+        tone: 'ok',
+        timeoutMs: 10_000,
+        action: { label: 'Undo', run: () => void undoChange(undo) },
+      });
+    else toaster.show({ message, tone: 'ok' });
     return '';
+  }
+
+  async function undoChange(undo: Undo) {
+    const error = await save(undo.patch, undo.done);
+    if (error) toaster.show({ message: `Couldn't undo: ${error}`, tone: 'error' });
   }
 
   async function saveRoleProfiles(assignments: RoleProfileWrite[], digest: string): Promise<RoleProfileSave> {
@@ -262,18 +288,18 @@
           await tick();
           tabs.access?.focus();
         }}
-        ><span aria-hidden="true">⚠</span><span class="settings__problem-text"
-          >Manage Messages missing in {missingManage.length} channel{missingManage.length === 1 ? '' : 's'}<span class="settings__problem-fix">&nbsp;· fix in Channel access</span></span
+        ><Icon name="alert-triangle" /><span class="settings__problem-text"
+          ><b>Manage Messages missing in {missingManage.length} channel{missingManage.length === 1 ? '' : 's'}</b><span class="settings__problem-fix">&nbsp;· fix in Channel access</span></span
         ></a
       >
     {/if}
   {/snippet}
 </PageLine>
 
-<section class="card settings window-fill" aria-labelledby="{uid}-w">
-  <div class="card__head settings__head">
+<section class="card settings window-fill" data-fid="window" aria-labelledby="{uid}-w">
+  <div class="card__head settings__head" data-fid="window-bar">
     <h2 class="card__title" id="{uid}-w">Settings</h2>
-    <div class="settings__search" role="search">
+    <div class="settings__search" data-fid="window-search" role="search">
       <label class="vh" for="{uid}-search">Find a setting</label>
       <input
         id="{uid}-search"
@@ -290,7 +316,7 @@
     </div>
   </div>
   <div class="settings__body">
-    <div class="settings__toc" id="{uid}-toc" bind:this={toc} role="tablist" aria-label="Settings sections" aria-orientation={narrow ? 'horizontal' : 'vertical'}>
+    <div class="settings__toc" data-fid="cfg-toc" id="{uid}-toc" bind:this={toc} role="tablist" aria-label="Settings sections" aria-orientation={narrow ? 'horizontal' : 'vertical'}>
       {#each GROUPS as group (group)}
         <div class="settings__group" role="presentation" hidden={!shown.some((item) => item.group === group)}>
           <p class="cap" aria-hidden="true">{group}</p>
@@ -300,6 +326,7 @@
               type="button"
               role="tab"
               class="settings__tab"
+              data-fid="cfg-item"
               id="{uid}-tab-{item.key}"
               aria-selected={selected === item.key}
               aria-controls="{uid}-panel-{item.key}"
@@ -310,6 +337,7 @@
               onkeydown={(event) => onKeydown(event, index)}
             >
               <span class="settings__label">{item.label}</span>
+              {#if isDirty(item.key)}<span class="settings__dirty"><span class="vh">, unsaved changes</span></span>{/if}
               {#if hint(item.key)}<span class="settings__hint">{hint(item.key)}</span>{/if}
               {#if item.key === 'access' && missingManage.length}<span class="settings__flag"
                   ><span aria-hidden="true">⚠ {missingManage.length}</span><span class="vh">, {missingManage.length} need attention</span></span
@@ -321,7 +349,7 @@
       {/each}
       {#if !shown.length}<p class="settings__none" aria-hidden="true">No settings match “{query}”.</p>{/if}
     </div>
-    <div class="settings__detail">
+    <div class="settings__detail" data-fid="cfg-detail">
       {#if config.error}<p class="flash flash--error" role="status">{config.error}</p>{/if}
       {#each SECTIONS as item (item.key)}
         {#if visited.has(item.key)}
@@ -333,16 +361,20 @@
             tabindex="0"
             hidden={selected !== item.key}
           >
+            <SectionScope section={item.key} report={reportDirty}>
             {#if item.key === 'theme'}
-              <h3 class="settings__title">Theme</h3>
-              <ThemePicker />
-              <p class="note">Kept in this browser only.</p>
+              <SettingsPanel title="Theme">
+                {#snippet lead()}Kept in this browser only; nothing is sent to the server.{/snippet}
+                <div class="settings__card" data-fid="cfg-card"><ThemePicker /></div>
+              </SettingsPanel>
             {:else if item.key === 'digest'}
               <DigestSection {toaster} />
             {:else if item.key === 'rescan'}
-              <h3 class="settings__title">Re-read the party channels</h3>
-              <RescanPanel targets={targets.data ?? []} />
-              <p class="note">Progress and past runs are also on <a href="/extractions">Extractions</a>.</p>
+              <SettingsPanel title="Re-read the party channels">
+                {#snippet lead()}Runs the extractor again over stored messages.{/snippet}
+                <div class="settings__card" data-fid="cfg-card"><RescanPanel targets={targets.data ?? []} /></div>
+                <p class="settings__cardnote">Progress and past runs are also on <a href="/extractions">Extractions</a>.</p>
+              </SettingsPanel>
             {:else if item.key === 'access'}
               <AccessSection {toaster} />
             {:else if config.data}
@@ -352,15 +384,35 @@
               {:else if item.key === 'run-lengths'}
                 <RunLengthsSection runLengths={c.run_lengths} {save} onsaved={onrunlengths} />
               {:else if item.key === 'watching'}
-                <h3 class="settings__title">Chat watching</h3>
-                <div class="settings__actions">
-                  <Toggle on={!c.watching.paused} onLabel="Pause watching" offLabel="Resume watching" apply={(on) => save({ watching: { paused: !on } }, on ? 'Watching resumed.' : 'Watching paused.')} />
-                  <Toggle on={c.watching.extract_enabled} onLabel="Turn the extractor off" offLabel="Turn the extractor on" apply={(on) => save({ watching: { extract_enabled: on } }, on ? 'The extractor is on.' : 'The extractor is off.')} />
-                </div>
-                <p class="note">
-                  Watching is <strong>{c.watching.paused ? 'paused' : 'on'}</strong> · extractor <strong>{c.watching.extract_enabled ? 'on' : 'off'}</strong>.
-                  Messages are stored either way, so a rescan can catch up later.
-                </p>
+                <SettingsPanel title="Chat watching">
+                  {#snippet lead()}What the bot reads in the party channels.{/snippet}
+                  <SwitchCard
+                    title={() => 'Watching'}
+                    on={!c.watching.paused}
+                    stateOff="paused"
+                    confirm="Pause watching?"
+                    action={(next) => (next ? 'Resume watching' : 'Pause watching')}
+                    apply={(on) =>
+                      save({ watching: { paused: !on } }, on ? 'Watching resumed.' : 'Watching paused.', {
+                        patch: { watching: { paused: on } },
+                        done: on ? 'Watching paused again.' : 'Watching resumed again.',
+                      })}>Reads new messages in the watched channels and categories (set in the environment).</SwitchCard
+                  >
+                  <SwitchCard
+                    title={() => 'Extractor'}
+                    on={c.watching.extract_enabled}
+                    confirm="Turn the extractor off?"
+                    action={(next) => (next ? 'Turn the extractor on' : 'Turn the extractor off')}
+                    apply={(on) =>
+                      save({ watching: { extract_enabled: on } }, on ? 'The extractor is on.' : 'The extractor is off.', {
+                        patch: { watching: { extract_enabled: !on } },
+                        done: on ? 'The extractor is off again.' : 'The extractor is on again.',
+                      })}
+                    >Proposes schedule changes from what it reads. With the extractor off, messages are still stored, so a re-read can catch up later.</SwitchCard
+                  >
+                  <p class="settings__box">Switches apply at once and offer Undo for 10 s. Turning either off asks first.</p>
+                  <p class="settings__cardnote">Catch up later from <a href="/config?section=rescan">Re-read</a> · progress is on <a href="/extractions">Extractions</a>.</p>
+                </SettingsPanel>
               {:else if item.key === 'chatbot'}
                 <ChatbotSection chatbot={c.chatbot} {save} />
               {:else if item.key === 'persona'}
@@ -380,20 +432,29 @@
               {:else if item.key === 'self-service'}
                 <SelfServiceSection selfService={c.self_service} {save} />
               {:else if item.key === 'notifications'}
-                <h3 class="settings__title">Notifications</h3>
-                <div class="settings__actions">
-                  <Toggle on={c.notifications.quiet_mode} onLabel="Turn quiet mode off" offLabel="Turn quiet mode on" apply={(on) => save({ notifications: { quiet_mode: on } }, on ? 'Quiet mode is on.' : 'Quiet mode is off.')} />
-                </div>
-                <p class="note">
-                  Quiet mode is <strong>{c.notifications.quiet_mode ? 'on' : 'off'}</strong>. While it is on the bot posts everything as usual but
-                  notifies nobody — names still show, no pings go out, and each message is marked 🔕 in Discord.
-                </p>
+                <SettingsPanel title="Notifications">
+                  <SwitchCard
+                    title={() => 'Quiet mode'}
+                    on={c.notifications.quiet_mode}
+                    confirm="Turn quiet mode off?"
+                    action={(next) => (next ? 'Turn quiet mode on' : 'Turn quiet mode off')}
+                    apply={(on) =>
+                      save({ notifications: { quiet_mode: on } }, on ? 'Quiet mode is on.' : 'Quiet mode is off.', {
+                        patch: { notifications: { quiet_mode: !on } },
+                        done: on ? 'Quiet mode is off again.' : 'Quiet mode is on again.',
+                      })}
+                    >While on, the bot posts everything as usual but notifies nobody: names still show, no pings go out, and each message is marked 🔕 in
+                    Discord.</SwitchCard
+                  >
+                  <p class="settings__box">Applies at once, with Undo for 10 s.</p>
+                </SettingsPanel>
               {:else}
                 <EnvSection env={c.env} />
               {/if}
             {:else if config.loading}
-              <p class="note" role="status">Loading the settings…</p>
+              <p class="note settings__loading" role="status">Loading the settings…</p>
             {/if}
+            </SectionScope>
           </div>
         {/if}
       {/each}

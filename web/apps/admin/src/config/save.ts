@@ -25,7 +25,14 @@ export interface ConfigPatch {
   run_lengths?: Partial<ConfigView['run_lengths']>;
 }
 
-export type Save = (patch: ConfigPatch, done: string) => Promise<string>;
+/** The opposite change, offered as Undo on the success toast (switches and visibility). */
+export interface Undo {
+  patch: ConfigPatch;
+  done: string;
+}
+
+/** Saves one section; resolves to '' or the refusal to show inline. */
+export type Save = (patch: ConfigPatch, done: string, undo?: Undo) => Promise<string>;
 
 export type RoleProfileSave =
   | { ok: true; value: ConfigView }

@@ -7,14 +7,28 @@
 -->
 <script lang="ts">
   import type { ConfigView, ContextSettings, ModelInfo, ModelRole } from '@kanade/api-types';
-  import { Icon, PendingLabel } from '@kanade/ui';
+  import { Icon } from '@kanade/ui';
   import { tick } from 'svelte';
   import { ROLES } from './capacity';
   import { clampNotes, isLocal, LOCAL_WARNING, MAX_CONTEXT_TOKENS, overrideMax, SOURCE_LABELS, tokens } from './context';
+  import { changes as listChanges, type Change } from './dirty';
   import type { Save } from './save';
   import TokenSlider from './TokenSlider.svelte';
 
-  let { models, save }: { models: ConfigView['models']; save: Save } = $props();
+  let {
+    models,
+    save,
+    form,
+    changes = $bindable([]),
+    saving = $bindable(false),
+  }: {
+    models: ConfigView['models'];
+    save: Save;
+    /** The id the Models save bar submits. */
+    form: string;
+    changes?: Change[];
+    saving?: boolean;
+  } = $props();
   const uid = $props.id();
 
   type RoleDraft = { reserve: number | null; cap: number | null; capped: boolean };
@@ -38,7 +52,34 @@
   // svelte-ignore state_referenced_locally
   let draft = $state(fromSaved(models.context));
   let error = $state('');
-  let saving = $state(false);
+
+  // The save bar's summary, field by field against the saved settings.
+  $effect(() => {
+    const was = fromSaved(models.context);
+    const show = (v: unknown) => (v === null ? 'none' : typeof v === 'number' ? tokens(v) : String(v));
+    const cap = (r: RoleDraft) => (r.capped ? r.cap : null);
+    const overrides = (d: Draft) => Object.fromEntries(d.overrides.map((o) => [o.alias, o.window]));
+    changes = listChanges([
+      { label: 'Cloud default', from: was.cloud, to: draft.cloud, show },
+      { label: 'Local default', from: was.local, to: draft.local, show },
+      ...ROLES.flatMap(({ id, name }) => [
+        { label: `${name} reserve`, from: was.roles[id].reserve, to: draft.roles[id].reserve, show },
+        { label: `${name} cap`, from: cap(was.roles[id]), to: cap(draft.roles[id]), show },
+      ]),
+      {
+        label: 'Overrides',
+        from: overrides(was),
+        to: overrides(draft),
+        show: (v) => `${Object.keys(v as object).length}`,
+      },
+    ]);
+  });
+
+  /** The save bar's Discard: back to the saved settings. */
+  export function discard() {
+    draft = fromSaved(models.context);
+    error = '';
+  }
   let adding = $state('');
   let addSelect: HTMLSelectElement | undefined = $state();
   let overrideList: HTMLUListElement | undefined = $state();
@@ -93,15 +134,14 @@
   }
 </script>
 
-<h4 class="settings__subtitle" id="{uid}-h">Context windows</h4>
-<p class="note">
+<p class="settings__box" id="{uid}-h">
   A call's window holds the prompt and the reply: the reserve is kept for the reply, and the rest is the prompt budget. Saved values apply from each
   role's next call.
 </p>
 
-<div class="table-wrap ctx__effective">
-  <table>
-    <caption>In effect now</caption>
+<div class="settings__card ctx__effective" data-fid="cfg-card">
+  <table class="settings__table">
+    <caption class="settings__cardtitle">In effect now</caption>
     <thead>
       <tr>
         <th scope="col">Role</th>
@@ -138,12 +178,12 @@
   </table>
 </div>
 {#if anyLocalWarning}
-  <p class="settings__warn"><Icon name="alert-triangle" /><span>{LOCAL_WARNING}</span></p>
+  <p class="settings__box settings__box--warn settings__warn"><Icon name="alert-triangle" /><span>{LOCAL_WARNING}</span></p>
 {/if}
 
-<form onsubmit={submit} aria-labelledby="{uid}-h">
-  <fieldset class="settings__role">
-    <legend>Defaults</legend>
+<form class="ctx__form" id={form} onsubmit={submit} aria-label="Context windows">
+  <fieldset class="settings__card">
+    <legend class="settings__cardtitle">Defaults</legend>
     <p class="note">Used when Kanata publishes no window for a model and it has no override.</p>
     <TokenSlider label="Cloud default" bind:value={draft.cloud} max={MAX_CONTEXT_TOKENS} disabled={!models.reachable} />
     <TokenSlider label="Local default" bind:value={draft.local} max={MAX_CONTEXT_TOKENS} local disabled={!models.reachable} />
@@ -151,8 +191,8 @@
 
   {#each ROLES as role (role.id)}
     {@const r = draft.roles[role.id]}
-    <fieldset class="settings__role">
-      <legend>{role.name} limits</legend>
+    <fieldset class="settings__card">
+      <legend class="settings__cardtitle">{role.name} limits</legend>
       <TokenSlider label="{role.name} reply reserve" bind:value={r.reserve} max={MAX_CONTEXT_TOKENS} disabled={!models.reachable} />
       <label class="ctx__check">
         <input type="checkbox" checked={r.capped} disabled={!models.reachable} onchange={(e) => toggleCap(role.id, e.currentTarget.checked)} />
@@ -164,8 +204,8 @@
     </fieldset>
   {/each}
 
-  <fieldset class="settings__role">
-    <legend>Per-model overrides</legend>
+  <fieldset class="settings__card">
+    <legend class="settings__cardtitle">Per-model overrides</legend>
     <p class="note">Replaces the published or default window for one exact alias; it cannot exceed what Kanata publishes.</p>
     {#if draft.overrides.length}
       <ul class="ctx__overrides" bind:this={overrideList}>
@@ -202,19 +242,32 @@
       <button type="button" class="btn" onclick={addOverride} disabled={!models.reachable || !adding}>Add override</button>
     </div>
   </fieldset>
-
-  <div class="settings__actions">
-    <button class="btn btn--primary" type="submit" disabled={!models.reachable}
-      ><PendingLabel pending={saving} label="Saving…">Save context windows</PendingLabel></button
-    >
-  </div>
 </form>
-<p class="field__error" role="alert">{error}</p>
+{#if error}<p class="field__error" role="alert">{error}</p>{/if}
 
 <style>
-  .ctx__effective table {
-    width: auto;
-    min-width: 18rem;
+  .ctx__effective {
+    overflow-x: auto;
+  }
+
+  .ctx__form {
+    display: grid;
+    gap: 0.875rem;
+  }
+
+  .ctx__form > fieldset {
+    margin: 0;
+    border: 0;
+  }
+
+  .ctx__form legend {
+    float: left;
+    width: 100%;
+    padding: 0;
+  }
+
+  .ctx__form legend + * {
+    clear: both;
   }
 
   .ctx__note {

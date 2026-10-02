@@ -16,7 +16,7 @@ test('models config warns when raw member data leaves the homelab', async ({ pag
 
   await page.goto(`${ADMIN}/config?section=models&sw=off`);
   const panel = page.getByRole('tabpanel', { name: 'Models' });
-  await expect(panel.getByRole('heading', { name: 'Capacity groups' })).toBeVisible();
+  await expect(panel.getByRole('tab', { name: 'Roles', selected: true })).toBeVisible();
 
   const extraction = panel.getByRole('group', { name: 'Extraction' });
   await expect(extraction.getByRole('list', { name: 'What kanata/extract can do' }).getByText('homelab')).toBeVisible();

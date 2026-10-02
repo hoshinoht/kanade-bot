@@ -9,7 +9,8 @@ const toast = (page: Page, text: string | RegExp) => page.getByRole('group', { n
 async function open(page: Page) {
   await page.goto(`${ADMIN}/config?section=models&sw=off`);
   const panel = page.getByRole('tabpanel', { name: 'Models' });
-  await expect(panel.getByRole('heading', { name: 'Context windows' })).toBeVisible();
+  await panel.getByRole('tab', { name: 'Context windows' }).click();
+  await expect(panel.getByRole('table', { name: 'In effect now' })).toBeVisible();
   return panel;
 }
 
@@ -73,6 +74,7 @@ test('context windows: slider and exact field, keyboard, local warning, save and
   await expect(effective.getByRole('row', { name: /^Chat/ })).toContainText('past 16k on a local model');
 
   await page.reload();
+  await page.getByRole('tab', { name: 'Context windows' }).click();
   const again = page.getByRole('tabpanel', { name: 'Models' }).getByRole('group', { name: 'Defaults' });
   await expect(again.getByRole('spinbutton', { name: 'Local default' })).toHaveValue('24576');
   await expect(again.getByRole('spinbutton', { name: 'Cloud default' })).toHaveValue('100000');

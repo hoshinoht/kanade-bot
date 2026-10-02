@@ -2,6 +2,7 @@
   import { tick } from 'svelte';
   import type { ConfigView, ReplyProfile, Role, RoleProfileWrite } from '@kanade/api-types';
   import { PendingLabel } from '@kanade/ui';
+  import type { Change } from './dirty';
   import type { SaveRoleProfiles } from './save';
 
   let {
@@ -14,6 +15,10 @@
     refresh,
     refreshRoles,
     saveRoleProfiles,
+    form,
+    changes = $bindable([]),
+    saving = $bindable(false),
+    blocked = $bindable(false),
   }: {
     profiles: ReplyProfile[];
     assignments: ConfigView['persona']['role_profiles'];
@@ -24,6 +29,12 @@
     refresh: () => Promise<ConfigView | null>;
     refreshRoles: () => Promise<void>;
     saveRoleProfiles: SaveRoleProfiles;
+    /** The id the Persona save bar submits. */
+    form: string;
+    /** For the save bar: the draft's changes, a save in flight, and whether saving is blocked. */
+    changes?: Change[];
+    saving?: boolean;
+    blocked?: boolean;
   } = $props();
   const uid = $props.id();
 
@@ -39,7 +50,6 @@
   let roleRecovering = $state(false);
   let roleConflict = $state(false);
   let roleSearchInput: HTMLInputElement | undefined = $state();
-  let roleSaveButton: HTMLButtonElement | undefined = $state();
   let roleReloadButton: HTMLButtonElement | undefined = $state();
   let roleStatusElement: HTMLParagraphElement | undefined = $state();
   let roleRemoveButtons: (HTMLButtonElement | undefined)[] = [];
@@ -70,6 +80,33 @@
   const roleDraftAllowed = $derived(
     roleDraft.every((assignment, index) => roleDraft.findIndex((item) => item.role_id === assignment.role_id) === index),
   );
+
+  const profileName = (key: string) => profiles.find((p) => p.key === key)?.name ?? key;
+  const label = (id: string) => roleIdentity(id).label;
+  // The save bar's summary: added, removed and re-profiled roles, else the new order.
+  $effect(() => {
+    const before = new Map(savedRoleAssignments.map((a) => [a.role_id, a.profile]));
+    const after = new Map(roleDraft.map((a) => [a.role_id, a.profile]));
+    const list: Change[] = [];
+    for (const [id, profile] of after) {
+      if (!before.has(id)) list.push({ label: label(id), from: 'none', to: profileName(profile) });
+      else if (before.get(id) !== profile) list.push({ label: label(id), from: profileName(before.get(id)!), to: profileName(profile) });
+    }
+    for (const [id, profile] of before) if (!after.has(id)) list.push({ label: label(id), from: profileName(profile), to: 'removed' });
+    if (!list.length && roleDraftChanged)
+      list.push({ label: 'Order', from: savedRoleAssignments.map((a) => label(a.role_id)).join(' › '), to: roleDraft.map((a) => label(a.role_id)).join(' › ') });
+    changes = list;
+  });
+  $effect(() => {
+    saving = roleSaving;
+    blocked = !canSaveRoleDraft || !roleDraftAllowed;
+  });
+
+  /** The save bar's Discard: back to the saved assignments. */
+  export function discard() {
+    if (roleSaving || roleRecovering) return;
+    adoptRoleAssignments(assignments, digest);
+  }
 
   $effect(() => {
     if (!profiles.some((profile) => profile.key === addProfile))
@@ -204,9 +241,6 @@
       if (roleConflict) {
         await tick();
         roleReloadButton?.focus();
-      } else {
-        await tick();
-        roleSaveButton?.focus();
       }
       return;
     }
@@ -239,14 +273,14 @@
 </script>
 
 <section class="role-profile" aria-labelledby="{uid}-heading">
-  <h4 id="{uid}-heading" class="settings__subtitle">Reply profile per Discord role</h4>
-  <p class="note">
-    The first matching readable role in this order overrides a member's saved reply style. Role assignments do not grant chatbot access.
+  <h4 id="{uid}-heading" class="vh">Reply profile per Discord role</h4>
+  <p class="settings__box">
+    The first matching role in this order overrides a member's saved reply style. Role assignments never grant chatbot access.
   </p>
   {#if rolesLoading}
     <p class="note" role="status">Loading the current guild roles…</p>
   {:else if rolesError}
-    <div class="role-profile__directory-error">
+    <div class="settings__box settings__box--risk role-profile__directory-error">
       <p class="field__error" role="alert">Couldn't load current guild roles: {rolesError} Saved role names are temporarily unknown; you can still remove or reorder assignments.</p>
       <button class="btn" type="button" disabled={roleSaving || roleRecovering} onclick={() => void retryRoleDirectory()}>Retry current guild roles</button>
     </div>
@@ -258,105 +292,116 @@
     <p class="note" role="status">Current guild roles are loaded. New and changed assignments use this list.</p>
   {/if}
 
-  <form class="role-profile__add" onsubmit={addRoleAssignment}>
-    <label class="field role-profile__search">
-      <span>Search current guild roles</span>
-      <input bind:this={roleSearchInput} type="search" bind:value={roleSearch} disabled={rolesLoading || !!rolesError || roles === null} placeholder="role name" />
-    </label>
-    <label class="field">
-      <span>New assignment role</span>
-      <select bind:value={addRoleId} disabled={rolesLoading || !!rolesError || roles === null || availableRoles.length === 0}>
-        <option value="">Choose a role…</option>
-        {#each availableRoles as role (role.id)}<option value={role.id}>{roleName(role)}</option>{/each}
-      </select>
-    </label>
-    <label class="field">
-      <span>Reply profile</span>
-      <select bind:value={addProfile} disabled={!profiles.length || rolesLoading || !!rolesError || roles === null || roles.length === 0}>
-        {#each profiles as profile (profile.key)}<option value={profile.key}>{profile.name}</option>{/each}
-      </select>
-    </label>
-    <button class="btn btn--primary" type="submit" disabled={roleSaving || roleRecovering || roleConflict || !addRoleId || rolesLoading || !!rolesError || !roles?.length}>Add assignment</button>
-  </form>
-
-  <ol class="role-profile__list" aria-label="Role assignments in precedence order">
-    {#each roleDraft as assignment, index (assignment.role_id)}
-      {@const currentRole = findRole(assignment.role_id)}
-      {@const identity = roleIdentity(assignment.role_id)}
-      {@const canEdit = !!currentRole && !rolesLoading && !rolesError && !roleSaving && !roleRecovering && !roleConflict}
-      <li class="role-profile__row">
-        <div class="role-profile__identity">
+  <div class="settings__card role-profile__card" data-fid="cfg-card">
+    <div class="role-profile__cols cap" aria-hidden="true"><span>#</span><span>Discord role</span><span>Reply profile</span><span>Order</span><span></span></div>
+    <ol class="role-profile__list" aria-label="Role assignments in precedence order">
+      {#each roleDraft as assignment, index (assignment.role_id)}
+        {@const currentRole = findRole(assignment.role_id)}
+        {@const identity = roleIdentity(assignment.role_id)}
+        {@const canEdit = !!currentRole && !rolesLoading && !rolesError && !roleSaving && !roleRecovering && !roleConflict}
+        <li class="role-profile__row" class:role-profile__row--missing={!currentRole && !rolesLoading}>
           <span class="role-profile__position">{index + 1}</span>
-          <div>
-            <strong>{identity.label}</strong>
-            {#if identity.detail}<code class="role-profile__id">{identity.detail}</code>{/if}
-            {#if !currentRole && !rolesLoading}
-              <span class="note role-profile__identity-note">{rolesError ? 'Temporarily unknown; this saved assignment can only be removed or reordered.' : 'Not in the current guild role list; this saved assignment can only be removed or reordered.'}</span>
-            {/if}
-          </div>
-        </div>
-        <label class="field">
-          <span>Discord role</span>
           {#if currentRole}
-            <select
-              class="role-profile__select"
-              value={assignment.role_id}
-              disabled={!canEdit}
-              onchange={(event) => changeRole(index, event.currentTarget.value)}
-            >
-              {#each roleOptionsFor(index) as role (role.id)}<option value={role.id}>{roleName(role)}</option>{/each}
-            </select>
+            <span class="role-profile__identity">
+              <strong class="vh">{identity.label}</strong>
+              <select
+                class="role-profile__select"
+                aria-label="Discord role"
+                value={assignment.role_id}
+                disabled={!canEdit}
+                onchange={(event) => changeRole(index, event.currentTarget.value)}
+              >
+                {#each roleOptionsFor(index) as role (role.id)}<option value={role.id}>{roleName(role)}</option>{/each}
+              </select>
+            </span>
           {:else}
-            <select class="role-profile__select" disabled aria-label="Discord role">
-              <option>{rolesLoading ? 'Checking current roles…' : rolesError ? 'Role status unknown' : 'Unavailable role — cannot change'}</option>
-            </select>
+            <span class="role-profile__identity role-profile__identity--missing">
+              <span class="role-profile__bang" aria-hidden="true">!</span>
+              <span
+                ><strong>{identity.label}</strong>
+                {#if identity.detail}<code class="role-profile__id">{identity.detail}</code>{/if}
+                {#if !rolesLoading}
+                  <span class="role-profile__identity-note"
+                    >{rolesError ? 'Temporarily unknown; this saved assignment can only be removed or reordered.' : 'No longer in the guild; this saved assignment can only be removed or reordered.'}</span
+                  >
+                {/if}</span
+              >
+            </span>
           {/if}
-        </label>
-        <label class="field">
-          <span>Reply profile</span>
-          <select value={assignment.profile} disabled={!canEdit} onchange={(event) => changeRoleProfile(index, event.currentTarget.value)}>
+          <select aria-label="Reply profile" value={assignment.profile} disabled={!canEdit} onchange={(event) => changeRoleProfile(index, event.currentTarget.value)}>
             {#each profiles as profile (profile.key)}<option value={profile.key}>{profile.name}</option>{/each}
           </select>
-        </label>
-        <div class="role-profile__actions" aria-label="Assignment order and removal">
-          <button class="btn" type="button" disabled={index === 0 || roleSaving || roleRecovering || roleConflict} onclick={() => moveRoleAssignment(index, -1)}>Move up</button>
-          <button class="btn" type="button" disabled={index === roleDraft.length - 1 || roleSaving || roleRecovering || roleConflict} onclick={() => moveRoleAssignment(index, 1)}>Move down</button>
+          <span class="role-profile__order">
+            <button class="btn role-profile__icon" type="button" aria-label="Move up" disabled={index === 0 || roleSaving || roleRecovering || roleConflict} onclick={() => moveRoleAssignment(index, -1)}
+              ><span aria-hidden="true">↑</span></button
+            >
+            <button
+              class="btn role-profile__icon"
+              type="button"
+              aria-label="Move down"
+              disabled={index === roleDraft.length - 1 || roleSaving || roleRecovering || roleConflict}
+              onclick={() => moveRoleAssignment(index, 1)}><span aria-hidden="true">↓</span></button
+            >
+          </span>
           <button
-            class="btn btn--ghost"
+            class="btn btn--ghost role-profile__icon role-profile__remove"
             type="button"
             bind:this={roleRemoveButtons[index]}
             aria-label="Remove {identity.label} assignment"
             disabled={roleSaving || roleRecovering || roleConflict}
-            onclick={() => void removeRoleAssignment(index)}>Remove</button
+            onclick={() => void removeRoleAssignment(index)}><span aria-hidden="true">×</span></button
           >
-        </div>
-      </li>
-    {:else}
-      <li class="note role-profile__empty">No role assignments; member selections and the persona default apply.</li>
-    {/each}
-  </ol>
+        </li>
+      {:else}
+        <li class="note role-profile__empty">No role assignments; member selections and the persona default apply.</li>
+      {/each}
+    </ol>
+
+    <form class="role-profile__add" onsubmit={addRoleAssignment} aria-label="Add an assignment">
+      <input
+        class="role-profile__search"
+        bind:this={roleSearchInput}
+        type="search"
+        bind:value={roleSearch}
+        aria-label="Search current guild roles"
+        disabled={rolesLoading || !!rolesError || roles === null}
+        placeholder="find a role…"
+      />
+      <select aria-label="New assignment role" bind:value={addRoleId} disabled={rolesLoading || !!rolesError || roles === null || availableRoles.length === 0}>
+        <option value="">Choose a role…</option>
+        {#each availableRoles as role (role.id)}<option value={role.id}>{roleName(role)}</option>{/each}
+      </select>
+      <select aria-label="Reply profile" bind:value={addProfile} disabled={!profiles.length || rolesLoading || !!rolesError || roles === null || roles.length === 0}>
+        {#each profiles as profile (profile.key)}<option value={profile.key}>{profile.name}</option>{/each}
+      </select>
+      <button class="btn" type="submit" disabled={roleSaving || roleRecovering || roleConflict || !addRoleId || rolesLoading || !!rolesError || !roles?.length}>Add assignment</button>
+    </form>
+  </div>
+  <!-- The Persona save bar submits this (form=); the rows above are the draft. -->
+  <form id={form} class="vh" aria-hidden="true" onsubmit={(event) => { event.preventDefault(); void saveRoleAssignments(); }}></form>
 
   {#if roleError}<p class="field__error" role="alert">{roleError}</p>{/if}
   {#if roleConflict}
-    <div class="role-profile__recovery">
+    <div class="settings__box settings__box--warn role-profile__recovery">
       <p class="note">Reloading replaces this unsaved draft with the latest saved assignments. Your draft remains unchanged until the reload succeeds.</p>
       <button class="btn" type="button" bind:this={roleReloadButton} disabled={roleRecovering} onclick={() => void reloadLatestRoleAssignments()}>
         <PendingLabel pending={roleRecovering} label="Reloading…">Reload latest assignments</PendingLabel>
       </button>
     </div>
   {/if}
-  {#if roleDraftChanged}
-    <div class="settings__actions role-profile__save">
-      <button class="btn btn--primary" type="button" bind:this={roleSaveButton} disabled={!canSaveRoleDraft || !roleDraftAllowed} onclick={() => void saveRoleAssignments()}>
-        <PendingLabel pending={roleSaving} label="Saving…">Save role assignments</PendingLabel>
-      </button>
-      {#if !roleConflict}<button class="btn btn--ghost" type="button" disabled={roleSaving || roleRecovering} onclick={() => adoptRoleAssignments(assignments, digest)}>Discard draft</button>{/if}
-    </div>
-  {/if}
   <p class="note role-profile__status" role="status" aria-live="polite" tabindex="-1" bind:this={roleStatusElement}>{roleStatus}</p>
 </section>
 
 <style>
+  .role-profile {
+    display: grid;
+    gap: 0.875rem;
+  }
+
+  .role-profile > .note {
+    margin: 0;
+  }
+
   .role-profile__directory-error,
   .role-profile__recovery {
     display: flex;
@@ -371,109 +416,131 @@
     margin: 0;
   }
 
+  .role-profile__card {
+    gap: 0.5rem;
+  }
+
+  /* Board B_CfgRoles: # · Discord role · Reply profile · Order · remove. */
+  .role-profile__cols,
+  .role-profile__row,
   .role-profile__add {
     display: grid;
-    grid-template-columns: minmax(10rem, 1.2fr) minmax(10rem, 1fr) minmax(10rem, 1fr) auto;
-    align-items: end;
-    gap: 0.5rem 0.65rem;
-    margin: 0.75rem 0;
+    grid-template-columns: 1.75rem minmax(0, 1fr) 12.5rem 6rem 2.25rem;
+    align-items: center;
+    gap: 0.625rem;
   }
 
-  .role-profile__add .field {
-    min-width: 0;
-    margin: 0;
-  }
-
-  .role-profile__add input,
-  .role-profile__add select,
-  .role-profile__row select {
-    width: 100%;
-    min-width: 0;
+  .role-profile__cols {
+    padding: 0 0.5rem;
   }
 
   .role-profile__list {
     display: grid;
-    gap: 0.15rem;
+    gap: 0.125rem;
     margin: 0;
     padding: 0;
     list-style: none;
   }
 
   .role-profile__row {
-    display: grid;
-    grid-template-columns: minmax(9rem, 1.35fr) minmax(9rem, 1fr) minmax(9rem, 1fr) auto;
-    align-items: end;
-    gap: 0.55rem 0.7rem;
-    padding: 0.7rem 0;
-    border-bottom: 1px solid var(--line-soft);
+    padding: 0.375rem 0.5rem;
+    border-radius: 6px;
+    background: var(--row);
+  }
+
+  .role-profile__row--missing {
+    background: color-mix(in srgb, var(--risk) 7%, var(--row));
+  }
+
+  .role-profile__row select,
+  .role-profile__add select,
+  .role-profile__add input {
+    width: 100%;
+    min-width: 0;
   }
 
   .role-profile__identity {
     display: flex;
     min-width: 0;
-    align-items: flex-start;
-    gap: 0.55rem;
-    align-self: center;
+    align-items: center;
+    gap: 0.5rem;
   }
 
-  .role-profile__identity > div {
-    min-width: 0;
+  .role-profile__identity select {
+    flex: 1 1 auto;
   }
 
-  .role-profile__identity strong {
-    display: block;
+  .role-profile__bang {
+    flex: none;
+    color: color-mix(in srgb, var(--risk-text) 80%, var(--ink));
+    font-weight: 700;
   }
 
   .role-profile__position {
-    flex: none;
-    min-width: 1.6rem;
-    color: var(--dim-text);
     font-family: var(--mono);
     font-weight: 700;
-    text-align: right;
   }
 
   .role-profile__id,
   .role-profile__identity-note {
-    display: block;
-    margin-top: 0.2rem;
-    color: var(--dim-text);
-    font-size: var(--fs-small);
+    color: color-mix(in srgb, var(--risk-text) 80%, var(--ink));
+    font-size: var(--fs-mini);
   }
 
-  .role-profile__identity-note {
-    line-height: 1.35;
+  .role-profile__identity-note::before {
+    content: "· ";
   }
 
-  .role-profile__actions {
+  .role-profile__order {
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
+    gap: 0.25rem;
   }
 
-  .role-profile__actions .btn,
-  .role-profile__add > .btn,
-  .role-profile__save .btn,
-  .role-profile__directory-error .btn,
-  .role-profile__recovery .btn {
-    min-height: 2.75rem;
-    white-space: nowrap;
+  .role-profile__icon {
+    justify-content: center;
+    width: 2rem;
+    min-width: 2rem;
+    min-height: 2rem;
+    padding: 0;
+  }
+
+  .role-profile__remove {
+    color: color-mix(in srgb, var(--risk-text) 80%, var(--ink));
+  }
+
+  .role-profile__add {
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) 12.5rem auto;
+    margin-top: 0.375rem;
+    padding: 0.375rem 0.5rem;
+    border-radius: 16px;
+    box-shadow: inset 0 0 0 1.5px var(--line);
   }
 
   .role-profile__empty {
-    padding: 0.7rem 0;
-    border-bottom: 1px solid var(--line-soft);
-  }
-
-  .role-profile__save {
-    margin: 0.7rem 0 0;
+    padding: 0.5rem;
   }
 
   .role-profile__status:empty {
     display: none;
   }
 
-  @media (max-width: 1099px) {
+  @media (max-width: 899px) {
+    .role-profile__cols {
+      display: none;
+    }
+
+    .role-profile__row {
+      grid-template-columns: 1.5rem minmax(0, 1fr) auto auto;
+    }
+
+    .role-profile__row > .role-profile__identity {
+      grid-column: 2 / -1;
+    }
+
+    .role-profile__row > select {
+      grid-column: 2;
+    }
+
     .role-profile__add {
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }
@@ -483,29 +550,8 @@
       grid-column: 1 / -1;
     }
 
-    .role-profile__row {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    }
-
-    .role-profile__identity,
-    .role-profile__actions {
-      grid-column: 1 / -1;
-    }
-  }
-
-  @media (max-width: 599px) {
-    .role-profile__row {
-      column-gap: 0.45rem;
-    }
-
-    .role-profile__actions {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-
-    .role-profile__actions .btn {
-      padding-inline: 0.35rem;
-      white-space: normal;
+    .role-profile__add > .btn {
+      min-height: 2.75rem;
     }
   }
 </style>

@@ -49,15 +49,16 @@ for (const [colorway, theme] of LOOKS) {
     await expect(page.getByRole('heading', { level: 1, name: 'Config' })).toBeVisible();
     await serious(page, 'admin config');
     await page.getByRole('tab', { name: 'Models' }).click();
+    await page.getByRole('tab', { name: 'Capacity' }).click();
     await expect(page.getByRole('heading', { name: 'Capacity groups' })).toBeVisible();
     await serious(page, 'admin config models');
     await page.getByRole('tab', { name: 'Channel access' }).click();
     await expect(page.getByRole('table', { name: "The bot's permissions in each channel" })).toBeVisible();
     await serious(page, 'admin config access');
     await page.getByRole('tab', { name: 'Self-service' }).click();
-    await expect(page.getByText(/pre-filled link to the public portal/)).toBeVisible();
+    await expect(page.getByRole('switch', { name: /Public portal/ })).toBeVisible();
     await serious(page, 'admin config self-service');
-    await page.getByRole('tab', { name: 'Persona' }).click();
+    await page.getByRole('tab', { name: /^Persona/ }).click();
     await expect(page.getByText(/Reload profiles/)).toBeVisible();
     await serious(page, 'admin config persona');
     await page.getByRole('tab', { name: 'Pings' }).click();
@@ -67,6 +68,7 @@ for (const [colorway, theme] of LOOKS) {
     await expect(page.getByRole('row', { name: /Watched categories/ })).toBeVisible();
     await serious(page, 'admin config env');
     await page.getByRole('tab', { name: 'Models' }).click();
+    await page.getByRole('tab', { name: 'Roles' }).click();
     await page.getByRole('combobox', { name: /^Model/ }).first().selectOption('kanata/chat-cloud');
     await expect(page.getByText(/raw member names, IDs, messages, and URLs leave the homelab/i)).toBeVisible();
     await serious(page, 'admin config cloud warning');

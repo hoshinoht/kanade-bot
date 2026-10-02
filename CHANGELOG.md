@@ -24,6 +24,16 @@ Notable changes to the Boss Scheduler Bot, newest first.
   "See the card" beside Reject; Extractor list rows lead with the boss art
   and say how much of the thread was used.
 
+- v5 admin Config sections now follow their M3E boards: each section has a
+  heading and lead, settings cards that scroll, and a save bar that stays put
+  (dirty dot, "field old → new", Discard, Save <section>; disabled when clean,
+  and the contents list marks a section with unsaved changes). On/off settings
+  are switch cards that apply at once, ask before turning off (before opening
+  the public portal), and offer Undo for 10 s. Persona splits into "Active
+  persona & profiles" / "Role overrides" pill tabs and Models into "Roles" /
+  "Context windows" / "Capacity"; "Use this persona" and "Post it now…" confirm
+  first.
+
 - v5 admin Inbox items now carry `thread`: the stored channel messages around
   a proposal's evidence (oldest first, at most 37, the extractor's context plus
   a burst), each marked `used` when the proposal cites it. It is read from the

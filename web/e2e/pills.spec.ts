@@ -24,5 +24,6 @@ test('pill profiles: chat, extractions, inbox, planner sheet and config share on
   await page.keyboard.press('Escape');
 
   await page.goto(`${ADMIN}/config?section=models&sw=off`);
+  await page.getByRole('tab', { name: 'Capacity' }).click();
   await expect(page.getByRole('list', { name: 'Startup check' }).locator('.tone--success')).toHaveCount(1);
 });

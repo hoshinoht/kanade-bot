@@ -10,7 +10,11 @@
   import { CHECK_TONE, Icon } from '@kanade/ui';
   import { groupRows, isReasoningValid, kanataLimits, keyLine, modelOptions, reasoningChoices, resetStrandedInheritors, ROLES } from './capacity';
   import ContextWindows from './ContextWindows.svelte';
+  import { changes, type Change } from './dirty';
+  import PillTabs from './PillTabs.svelte';
   import type { Save } from './save';
+  import SaveBar from './SaveBar.svelte';
+  import SettingsPanel from './SettingsPanel.svelte';
 
   let { models, save }: { models: ConfigView['models']; save: Save } = $props();
   const uid = $props.id();
@@ -18,6 +22,26 @@
   // svelte-ignore state_referenced_locally
   let roles = $state<Record<ModelRole, RoleModel>>(structuredClone($state.snapshot(models.roles)));
   let rolesError = $state('');
+  let saving = $state(false);
+  let tab = $state('roles');
+  let contextEditor: { discard: () => void } | undefined = $state();
+  let contextChanges = $state<Change[]>([]);
+  let contextSaving = $state(false);
+  const level = (role: ModelRole, value: string) => (value === '' ? (role === 'extraction' ? 'Off' : 'Same as extraction') : value);
+  const pending = $derived(
+    changes(
+      ROLES.flatMap(({ id, name }) => [
+        { label: `${name} model`, from: models.roles[id].alias || 'none', to: roles[id].alias || 'none' },
+        { label: `${name} reasoning`, from: level(id, models.roles[id].reasoning), to: level(id, roles[id].reasoning) },
+      ]),
+    ),
+  );
+
+  function discard() {
+    roles = structuredClone($state.snapshot(models.roles));
+    resetNote = '';
+    rolesError = '';
+  }
   // Said in the section, next to the fields: which inheriting role was reset and why.
   let resetNote = $state('');
 
@@ -64,7 +88,9 @@
     const body = Object.fromEntries(
       ROLES.map(({ id }) => [id, roles[id].alias ? { alias: roles[id].alias, reasoning: roles[id].reasoning } : { reasoning: roles[id].reasoning }]),
     ) as Record<ModelRole, { alias?: string; reasoning: string }>;
+    saving = true;
     rolesError = await save({ models: { roles: body } }, 'Models saved; the next question uses them.');
+    saving = false;
     // The server's answer is the truth (it may reset stranded levels): resync.
     if (!rolesError) {
       roles = structuredClone($state.snapshot(models.roles));
@@ -73,160 +99,221 @@
   }
 </script>
 
-<h3 class="settings__title">Models</h3>
-{#if !models.reachable}
-  <p class="flash flash--error" role="alert">Kanata's model list is unreachable, so the saved choices are shown but cannot be changed.</p>
-{/if}
-<form onsubmit={saveRoles}>
-  {#each ROLES as role (role.id)}
-    {@const chosen = info(roles[role.id].alias)}
-    {@const unset = !roles[role.id].alias}
-    {@const fixed = roles[role.id].variant_of ? roles[role.id].fixed_effort : undefined}
-    {@const unlisted = !chosen}
-    <fieldset class="settings__role" aria-describedby="{uid}-{role.id}-job">
-      <legend>{role.name}</legend>
-      <p class="note" id="{uid}-{role.id}-job">{role.job}</p>
-      <div class="filters">
-        <label class="field"
-          ><span>Model</span>
-          <select value={roles[role.id].alias} onchange={(e) => pick(role.id, e.currentTarget.value)} disabled={!models.reachable}>
-            {#each modelOptions(role.id, roles[role.id], models.catalog) as o (o.value)}<option value={o.value} disabled={o.disabled}>{o.label}</option>{/each}
-          </select>
-        </label>
-        <label class="field"
-          ><span>Reasoning</span>
-          {#if fixed}
-            <!-- A variant bakes its level in; it wins over any choice here. -->
-            <select disabled><option>Fixed: {fixed}</option></select>
-          {:else}
-            <select value={roles[role.id].reasoning} onchange={(e) => setReasoning(role.id, e.currentTarget.value)} disabled={!models.reachable || unlisted}>
-              {#each reasoningChoices(role.id, chosen, roles.extraction.reasoning, roles[role.id].reasoning) as c (c.value)}<option value={c.value}>{c.label}</option>{/each}
+<SettingsPanel title="Models">
+  {#snippet lead()}Three roles, each a base model from Kanata’s live list.{/snippet}
+  {#snippet tabs()}
+    <PillTabs
+      id={uid}
+      label="Models"
+      bind:selected={tab}
+      tabs={[
+        { key: 'roles', label: 'Roles' },
+        { key: 'context', label: 'Context windows' },
+        { key: 'capacity', label: 'Capacity' },
+      ]}
+    />
+  {/snippet}
+  {#if !models.reachable}
+    <p class="settings__box settings__box--risk" role="alert">Kanata's model list is unreachable, so the saved choices are shown but cannot be changed.</p>
+  {/if}
+  <div class="settings__tabpanel" role="tabpanel" id="{uid}-panel-roles" aria-labelledby="{uid}-tab-roles" hidden={tab !== 'roles'}>
+    <form class="models__roles" id="{uid}-roles" data-fid="cfg-roles" onsubmit={saveRoles}>
+      {#each ROLES as role (role.id)}
+        {@const chosen = info(roles[role.id].alias)}
+        {@const unset = !roles[role.id].alias}
+        {@const fixed = roles[role.id].variant_of ? roles[role.id].fixed_effort : undefined}
+        {@const unlisted = !chosen}
+        {@const saved = models.roles[role.id]}
+        <fieldset class="settings__card models__role" data-fid="cfg-role" aria-describedby="{uid}-{role.id}-job">
+          <legend class="settings__cardtitle">{role.name}</legend>
+          <p class="settings__cardnote" id="{uid}-{role.id}-job">{role.job}</p>
+          <label class="field"
+            ><span>Model</span>
+            <select
+              value={roles[role.id].alias}
+              class:settings__changed={roles[role.id].alias !== saved.alias}
+              onchange={(e) => pick(role.id, e.currentTarget.value)}
+              disabled={!models.reachable}
+            >
+              {#each modelOptions(role.id, roles[role.id], models.catalog) as o (o.value)}<option value={o.value} disabled={o.disabled}>{o.label}</option>{/each}
             </select>
-          {/if}
-        </label>
-      </div>
-      {#if chosen}
-        <!-- Treat unknown trust metadata and the -cloud suffix as external for data-flow warnings. -->
-        {@const unzoned = chosen.trust_zone !== 'homelab' && chosen.trust_zone !== 'external'}
-        {@const untrusted = chosen.leaves_homelab || chosen.trust_zone !== 'homelab' || chosen.id.endsWith('-cloud')}
-        {#if untrusted}
-          <p class="settings__warn">
-            <Icon name="alert-triangle" />
-            <span>
-              {#if unzoned}
-                <strong>{chosen.id}</strong> publishes no trust zone, so it is treated as an external route.
+          </label>
+          <label class="field"
+            ><span>Reasoning</span>
+            {#if fixed}
+              <!-- A variant bakes its level in; it wins over any choice here. -->
+              <select disabled><option>Fixed: {fixed}</option></select>
+            {:else}
+              <select
+                value={roles[role.id].reasoning}
+                class:settings__changed={roles[role.id].reasoning !== saved.reasoning}
+                onchange={(e) => setReasoning(role.id, e.currentTarget.value)}
+                disabled={!models.reachable || unlisted}
+              >
+                {#each reasoningChoices(role.id, chosen, roles.extraction.reasoning, roles[role.id].reasoning) as c (c.value)}<option value={c.value}>{c.label}</option>{/each}
+              </select>
+            {/if}
+          </label>
+          {#if chosen}
+            <!-- Treat unknown trust metadata and the -cloud suffix as external for data-flow warnings. -->
+            {@const unzoned = chosen.trust_zone !== 'homelab' && chosen.trust_zone !== 'external'}
+            {@const untrusted = chosen.leaves_homelab || chosen.trust_zone !== 'homelab' || chosen.id.endsWith('-cloud')}
+            <ul class="settings__caps" aria-label="What {chosen.id} can do">
+              <li class="capchip capchip--{untrusted ? 'ext' : 'home'}">
+                {unzoned ? 'trust zone unknown' : untrusted ? 'leaves the homelab' : 'homelab'}
+              </li>
+              <li class="capchip">{chosen.function_tools ? 'calls tools' : 'no tools'}</li>
+              <li class="capchip">{chosen.structured_output ? 'structured output' : 'free text only'}</li>
+              <li class="capchip">{chosen.sampling_controls ? 'sampling' : 'fixed sampling'}</li>
+              <li class="capchip">
+                {chosen.reasoning_efforts === null ? 'reasoning: any level' : chosen.reasoning_efforts.length ? `reasoning: ${chosen.reasoning_efforts.join(', ')}` : 'no reasoning control'}
+              </li>
+              {#if chosen.admission}
+                <li class="capchip capchip--mono">admits {chosen.admission.max_in_flight}{chosen.admission.adapter_max_in_flight != null ? ` (adapter ${chosen.admission.adapter_max_in_flight})` : ''}</li>
               {:else}
-                Requests to <strong>{chosen.id}</strong> go to an external provider.
+                <li class="capchip capchip--mono">no published limit</li>
               {/if}
-              Raw member names, IDs, messages, and URLs leave the homelab with every request.
-            </span>
-          </p>
-        {/if}
-        <ul class="settings__caps" aria-label="What {chosen.id} can do">
-          <li class="tone tone--{untrusted ? 'danger' : 'success'}">
-            {unzoned ? 'trust zone unknown' : untrusted ? 'leaves the homelab' : 'homelab'}
-          </li>
-          <li class="chip">{chosen.function_tools ? 'calls tools' : 'no tools'}</li>
-          <li class="chip">{chosen.structured_output ? 'structured output' : 'free text only'}</li>
-          <li class="chip">{chosen.sampling_controls ? 'sampling controls' : 'fixed sampling'}</li>
-          <li class="chip">
-            {chosen.reasoning_efforts === null ? 'reasoning: any level' : chosen.reasoning_efforts.length ? `reasoning: ${chosen.reasoning_efforts.join(', ')}` : 'no reasoning control'}
-          </li>
-          {#if chosen.admission}
-            <li class="chip chip--mono">admits {chosen.admission.max_in_flight}{chosen.admission.adapter_max_in_flight != null ? ` (adapter ${chosen.admission.adapter_max_in_flight})` : ''}</li>
+            </ul>
+            {#if untrusted}
+              <p class="settings__box settings__box--warn settings__box--small settings__warn">
+                <Icon name="alert-triangle" />
+                <span>
+                  {#if unzoned}
+                    <strong>{chosen.id}</strong> publishes no trust zone, so it is treated as an external route.
+                  {:else}
+                    Requests to <strong>{chosen.id}</strong> go to an external provider.
+                  {/if}
+                  Raw member names, IDs, messages, and URLs leave the homelab with every request.
+                </span>
+              </p>
+            {:else}
+              <p class="settings__box settings__box--small"><Icon name="check" /><span>Stays in the homelab.</span></p>
+            {/if}
+          {:else if unset}
+            <p class="settings__box settings__box--small">Not configured: this role has no model, so its work is skipped.</p>
           {:else}
-            <li class="chip chip--mono">no published limit</li>
+            <p class="settings__box settings__box--warn settings__box--small settings__warn">
+              <Icon name="alert-triangle" />
+              <span>
+                <strong>{roles[role.id].alias}</strong> is not in Kanata's list, so its availability is unknown and it is treated as external. If
+                routed, raw member names, IDs, messages, and URLs are sent outside the homelab; requests may fail if the alias is unavailable.
+              </span>
+            </p>
           {/if}
-        </ul>
-      {:else if unset}
-        <p class="note">Not configured: this role has no model, so its work is skipped.</p>
-      {:else}
-        <p class="settings__warn">
-          <Icon name="alert-triangle" />
-          <span>
-            <strong>{roles[role.id].alias}</strong> is not in Kanata's list, so its availability is unknown and it is treated as external. If
-            routed, raw member names, IDs, messages, and URLs are sent outside the homelab; requests may fail if the alias is unavailable.
-          </span>
-        </p>
-      {/if}
-    </fieldset>
-  {/each}
-  {#if resetNote}<p class="settings__warn" role="status"><Icon name="alert-circle" /><span>{resetNote}</span></p>{/if}
-  <div class="settings__actions">
-    <button class="btn btn--primary" type="submit" disabled={!models.reachable}>Save models</button>
-  </div>
-</form>
-<p class="field__error" role="alert">{rolesError}</p>
-
-<ContextWindows {models} {save} />
-
-<h4 class="settings__subtitle">Capacity groups</h4>
-<p class="note">Each group shares its permits among its models, held to the least Kanata admits for any of them.</p>
-<div class="table-wrap settings__groups">
-  <table>
-    <caption>
-      {models.groups_source === 'config'
-        ? 'Set in kanade.toml under [[models.groups]]; restart to apply.'
-        : `Every model shares one group of ${permitsTotal} permit${permitsTotal === 1 ? '' : 's'} (models.permits in kanade.toml).`}
-    </caption>
-    <thead><tr><th scope="col">Group</th><th scope="col" class="num">Permits</th><th scope="col">Models</th></tr></thead>
-    <tbody>
-      {#each groups as g (g.group)}
-        <tr>
-          <th scope="row" class="mono">{g.group}</th>
-          <td class="num">{g.permits ?? '—'}</td>
-          <td><span class="chips">{#each g.models as m (m)}<span class="chip chip--mono">{m}</span>{/each}</span></td>
-        </tr>
-      {:else}
-        <tr><td colspan="3" class="note">No model has a group, so no calls can run.</td></tr>
+        </fieldset>
       {/each}
-    </tbody>
-  </table>
-</div>
-{#if verdicts.length}
-  <ul class="settings__checks" aria-label="Startup check">
-    {#each verdicts as c, i (i)}
-      <li><span class="tone tone--{TONE[c.level]}"><Icon name={MARK[c.level]} label={c.level} /></span><span>{c.message}</span></li>
-    {/each}
-  </ul>
-{/if}
-{#if limits.uniform !== null}
-  <p class="note">Kanata admits {limits.uniform} call{limits.uniform === 1 ? '' : 's'} at a time per model.</p>
-{:else if limits.all.length}
-  <div class="table-wrap settings__groups">
-    <table>
-      <caption>What Kanata admits for the models in use</caption>
-      <thead><tr><th scope="col">Model</th><th scope="col" class="num">Calls at a time</th></tr></thead>
-      <tbody>
-        {#each limits.inUse as l (l.alias)}
-          <tr><th scope="row" class="mono">{l.alias}</th><td class="num">{l.max}{l.declared ? ' (declared)' : ''}</td></tr>
-        {/each}
-      </tbody>
-    </table>
+    </form>
+    {#if resetNote}<p class="settings__box settings__box--warn settings__warn" role="status"><Icon name="alert-circle" /><span>{resetNote}</span></p>{/if}
+    {#if rolesError}<p class="field__error" role="alert">{rolesError}</p>{/if}
   </div>
-  {#if limits.all.length > limits.inUse.length}
-    <details class="settings__more">
-      <summary>Show all models</summary>
-      <div class="table-wrap settings__groups">
-        <table>
-          <caption class="vh">What Kanata admits for every listed model</caption>
+  <div class="settings__tabpanel" role="tabpanel" id="{uid}-panel-context" aria-labelledby="{uid}-tab-context" hidden={tab !== 'context'}>
+    <ContextWindows bind:this={contextEditor} bind:changes={contextChanges} bind:saving={contextSaving} form="{uid}-context" {models} {save} />
+  </div>
+  <div class="settings__tabpanel" role="tabpanel" id="{uid}-panel-capacity" aria-labelledby="{uid}-tab-capacity" hidden={tab !== 'capacity'}>
+    <section class="settings__card" data-fid="cfg-card" aria-labelledby="{uid}-groups">
+      <div class="settings__cardhead">
+        <h4 class="settings__cardtitle" id="{uid}-groups">Capacity groups</h4>
+        <span class="settings__cardnote">Each group shares its permits, held to the least Kanata admits for any of its models.</span>
+      </div>
+      <table class="settings__table models__groups">
+        <caption class="settings__cardnote">
+          {models.groups_source === 'config'
+            ? 'Set in kanade.toml under [[models.groups]]; restart to apply.'
+            : `Every model shares one group of ${permitsTotal} permit${permitsTotal === 1 ? '' : 's'} (models.permits in kanade.toml).`}
+        </caption>
+        <thead><tr><th scope="col">Group</th><th scope="col" class="num">Permits</th><th scope="col">Models</th></tr></thead>
+        <tbody>
+          {#each groups as g (g.group)}
+            <tr>
+              <th scope="row" class="mono">{g.group}</th>
+              <td class="num mono">{g.permits ?? '—'}</td>
+              <td><span class="settings__caps">{#each g.models as m (m)}<span class="capchip capchip--mono">{m}</span>{/each}</span></td>
+            </tr>
+          {:else}
+            <tr><td colspan="3" class="note">No model has a group, so no calls can run.</td></tr>
+          {/each}
+        </tbody>
+      </table>
+      {#if verdicts.length}
+        <ul class="settings__checks" aria-label="Startup check">
+          {#each verdicts as c, i (i)}
+            <li><span class="tone tone--{TONE[c.level]}"><Icon name={MARK[c.level]} label={c.level} /></span><span>{c.message}</span></li>
+          {/each}
+        </ul>
+      {/if}
+      {#if limits.uniform !== null}
+        <p class="settings__cardnote">Kanata admits {limits.uniform} call{limits.uniform === 1 ? '' : 's'} at a time per model.</p>
+      {:else if limits.all.length}
+        <table class="settings__table models__groups">
+          <caption class="settings__cardnote">What Kanata admits for the models in use</caption>
           <thead><tr><th scope="col">Model</th><th scope="col" class="num">Calls at a time</th></tr></thead>
           <tbody>
-            {#each limits.all as l (l.alias)}
+            {#each limits.inUse as l (l.alias)}
               <tr><th scope="row" class="mono">{l.alias}</th><td class="num">{l.max}{l.declared ? ' (declared)' : ''}</td></tr>
             {/each}
           </tbody>
         </table>
-      </div>
-    </details>
-  {/if}
-{/if}
-<p class="note">{keyLine(models.key_limits)}</p>
+        {#if limits.all.length > limits.inUse.length}
+          <details class="settings__more">
+            <summary>Show all models</summary>
+            <table class="settings__table models__groups">
+              <caption class="vh">What Kanata admits for every listed model</caption>
+              <thead><tr><th scope="col">Model</th><th scope="col" class="num">Calls at a time</th></tr></thead>
+              <tbody>
+                {#each limits.all as l (l.alias)}
+                  <tr><th scope="row" class="mono">{l.alias}</th><td class="num">{l.max}{l.declared ? ' (declared)' : ''}</td></tr>
+                {/each}
+              </tbody>
+            </table>
+          </details>
+        {/if}
+      {/if}
+      <p class="settings__cardnote">{keyLine(models.key_limits)}</p>
+    </section>
+  </div>
+  {#snippet bar()}
+    {#if tab === 'roles'}
+      <SaveBar form="{uid}-roles" label="Save models" changes={pending} {saving} disabled={!models.reachable} ondiscard={discard} />
+    {:else if tab === 'context'}
+      <SaveBar form="{uid}-context" label="Save context windows" changes={contextChanges} saving={contextSaving} disabled={!models.reachable} ondiscard={() => contextEditor?.discard()} />
+    {/if}
+  {/snippet}
+</SettingsPanel>
 
 <style>
-  .settings__groups table {
-    width: auto;
-    min-width: 18rem;
+  /* Board B_CfgModels: three role cards side by side. */
+  .models__roles {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin: 0;
+  }
+
+  .models__role {
+    gap: 0.5rem;
+    min-width: 0;
+    margin: 0;
+    padding: 0.75rem 0.875rem;
+    border: 0;
+  }
+
+  .models__role > legend {
+    float: left;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  .models__role > legend + * {
+    clear: both;
+  }
+
+  .models__role select {
+    width: 100%;
+  }
+
+  .models__groups {
+    width: 100%;
   }
 
   .settings__more summary {
@@ -236,9 +323,9 @@
     min-height: 1.5rem;
   }
 
-  .settings__checks li {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.45rem;
+  @media (max-width: 1099px) {
+    .models__roles {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 </style>

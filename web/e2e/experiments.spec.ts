@@ -32,13 +32,18 @@ async function startRescan(page: Page, on: boolean) {
 }
 
 const pings = (page: Page) => page.locator('.settings__panel:not([hidden])');
+/** The save bar's key is enabled only with a change to save. */
+async function change(page: Page) {
+  await pings(page).getByRole('textbox', { name: 'Morning ping' }).fill('08:45');
+}
 
 test('A: a Config save shows the loading indicator in its button, then returns', async ({ page }) => {
   const release = await holdSaves(page);
   await go(page, '/config?section=pings');
   await expect(page.locator('html')).toHaveAttribute('data-experiments', 'on');
   const panel = pings(page);
-  await panel.getByRole('button', { name: 'Save', exact: true }).click();
+  await change(page);
+  await panel.getByRole('button', { name: 'Save pings', exact: true }).click();
   const pending = panel.getByRole('button', { name: 'Saving…' });
   await expect(pending).toBeVisible();
   await expect(pending.locator('.xp-loading[role="status"][aria-label="Saving…"]')).toBeVisible();
@@ -47,7 +52,7 @@ test('A: a Config save shows the loading indicator in its button, then returns',
   await pending.locator('.xp-loading').screenshot({ path: `${OUT}/A-indicator-closeup.png` });
   await panel.locator('form').first().screenshot({ path: `${OUT}/A-after-config-save-pending.png` });
   release();
-  const idle = panel.getByRole('button', { name: 'Save', exact: true });
+  const idle = panel.getByRole('button', { name: 'Save pings', exact: true });
   await expect(idle).toBeVisible();
   await expect(idle.locator('.xp-loading')).toHaveCount(0);
   expect((await idle.boundingBox())?.width).toBeCloseTo(box!.width, 0);
@@ -58,9 +63,10 @@ test('A off: a pending Config save keeps today\'s plain button', async ({ page }
   await go(page, '/config?section=pings', false);
   await expect(page.locator('html')).toHaveAttribute('data-experiments', 'off');
   const panel = pings(page);
-  await panel.getByRole('button', { name: 'Save', exact: true }).click();
+  await change(page);
+  await panel.getByRole('button', { name: 'Save pings', exact: true }).click();
   await page.waitForTimeout(300);
-  await expect(panel.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Save pings', exact: true })).toBeVisible();
   await expect(page.locator('.xp-loading')).toHaveCount(0);
   await panel.locator('form').first().screenshot({ path: `${OUT}/A-before-config-save-pending.png` });
   release();
@@ -70,7 +76,8 @@ test('A: reduced motion shows a still shape', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const release = await holdSaves(page);
   await go(page, '/config?section=pings');
-  await pings(page).getByRole('button', { name: 'Save', exact: true }).click();
+  await change(page);
+  await pings(page).getByRole('button', { name: 'Save pings', exact: true }).click();
   const shape = page.locator('.xp-loading__shape');
   await expect(shape).toBeVisible();
   const names = await page.evaluate(() => {

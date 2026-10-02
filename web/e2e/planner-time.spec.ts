@@ -249,7 +249,7 @@ test('Config Run lengths: overrides from the catalog save whole; bad values are 
     },
   });
   await expect(page.getByText(/Run lengths saved/)).toBeVisible();
-  await expect(panel.getByRole('alert')).toHaveText('');
+  await expect(panel.getByRole('alert')).toHaveCount(0);
 
   // Remove returns focus to "Add an override".
   await panel.getByRole('button', { name: /^Remove the Carling override/ }).click();
