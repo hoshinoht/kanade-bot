@@ -6,8 +6,8 @@
   split), Reject (with a reason for member requests).
 -->
 <script lang="ts">
-  import type { ApproveRequest, Evidence, Proposal } from '@kanade/api-types';
-  import { BossTag, DecisionCard, Icon, PendingLabel, Portrait, ThreadPanel } from '@kanade/ui';
+  import type { ApproveRequest, Evidence, Proposal, RunStatus } from '@kanade/api-types';
+  import { BossTag, DecisionCard, Icon, PendingLabel, Portrait, RUN_TONE, STATUS_WORDS, StatusChip, ThreadPanel } from '@kanade/ui';
   import { directory } from '../names/directory.svelte';
   import Mentions from '../names/Mentions.svelte';
   import Name from '../names/Name.svelte';
@@ -56,6 +56,13 @@
   // What each change field is called on screen ("Would change · participants").
   const FIELD: Record<string, string> = { slot: 'slot', participants: 'participants', day_time: 'weekly time', new_fixed: 'new weekly timing', new_run: 'new run' };
   const fieldName = (field: string) => FIELD[field] ?? field.replaceAll('_', ' ');
+  /** A run status as its word and chip tone ("at_risk" → "At risk", risk); unknown values stay as sent. */
+  const CHIP_TONE = { success: 'ok', danger: 'risk', warning: 'warn', info: 'neutral', neutral: 'neutral' } as const;
+  function statusChip(value: string) {
+    const known = value in STATUS_WORDS ? (value as RunStatus) : null;
+    const word = known ? STATUS_WORDS[known] : value.replaceAll('_', ' ');
+    return { word: word.charAt(0).toUpperCase() + word.slice(1), tone: known ? CHIP_TONE[RUN_TONE[known]] : ('neutral' as const) };
+  }
   /** A participants change as chips: kept, removed (struck) and added names, from the two lists. */
   function roster(from: string, to: string) {
     const list = (text: string) => text.split(',').map((n) => n.trim()).filter((n) => n && n !== '—');
@@ -165,6 +172,12 @@
                   {:else if person.state === 'added'}<ins class="proposal__person proposal__person--in">{person.name}<span class="vh"> (joins)</span></ins>
                   {:else}<span class="proposal__person">{person.name}</span>{/if}
                 {/each}
+              </span>
+            {:else if change.field === 'status'}
+              <!-- A status change as two chips in the run-status words, never the raw value. -->
+              <span class="proposal__status">
+                {#if change.from && change.from !== '—'}<del class="proposal__wasstatus"><StatusChip tone="neutral">{statusChip(change.from).word}</StatusChip></del> <span aria-hidden="true">→</span><span class="vh">to</span>{/if}
+                <StatusChip tone={statusChip(change.to).tone}>{statusChip(change.to).word}</StatusChip>
               </span>
             {:else}
               <span class="proposal__slot">

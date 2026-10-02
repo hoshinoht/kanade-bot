@@ -406,6 +406,18 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
 
 .proposal__to { font-size: var(--fs-brand); font-weight: 700; }
 
+// A status change: the old status chip struck, the new one in its tone.
+.proposal__status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--dim-text);
+}
+
+.proposal__wasstatus { text-decoration: none; }
+.proposal__wasstatus .status-chip { color: var(--dim-text); text-decoration: line-through; }
+
 // What changed since: a tonal risk box (mockup `.riskbox`).
 .proposal__conflicts {
   display: flex;
@@ -543,7 +555,9 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
 .decision-card .decision__reject { gap: 8px; }
 .decision__foot { margin: 0; color: var(--dim-text); font-size: var(--fs-mini); }
 .decision-card .proposal__edit { display: flex; align-items: flex-end; gap: 0.4rem; }
-.decision-card .proposal__edit .field { flex: 1 1 auto; }
+.decision-card .proposal__edit .field { flex: 1 1 auto; min-width: 0; }
+// The label may run over the button column: the button sits level with the input.
+.decision-card .proposal__edit .field > span { white-space: nowrap; }
 .decision-card .proposal__edit input { width: 100%; }
 
 // Wide Extractor items (VarRail2): the header across the top, then the
@@ -623,6 +637,9 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
 .proposal--stacked .decision-card { flex: none; width: 300px; overflow-y: auto; }
 .decision-card .proposal__would { gap: 12px; padding: 0; border-radius: 0; background: none; box-shadow: none; }
 .decision-card .proposal__would .proposal__cap { color: var(--select-ink); }
+// Each field's name on its own line above its value, so a second change lines up under the first.
+.decision-card .proposal__changes { gap: 14px; }
+.decision-card .proposal__field { display: block; min-width: 0; margin-bottom: 6px; font-family: var(--mono); font-size: var(--fs-mini); letter-spacing: 0.06em; text-transform: uppercase; }
 .decision-card .proposal__slot { flex-direction: column; align-items: flex-start; gap: 12px; }
 .decision-card .proposal__slot > [aria-hidden="true"] { display: none; }
 .decision-card .was { font-size: var(--fs-body-sm); }

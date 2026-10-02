@@ -854,6 +854,31 @@ test('inbox: a cited message that is gone still shows in the thread, as used', a
   await expect(thread.locator('.msg--used')).toHaveCount(n);
 });
 
+// A status change in the decision card reads in run-status words, as chips
+// under its own field name -- never the raw value beside the slot.
+test('inbox: a status change shows as status chips under its field name', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.route(/\/api\/admin\/inbox$/, async (route) => {
+    const response = await route.fetch();
+    const json = (await response.json()) as { id: string; preview: { changes: { target: string; field: string; from: string; to: string }[] } }[];
+    const item = json.find((p) => p.id === 'p-bm-move')!;
+    const slot = item.preview.changes[0]!;
+    item.preview.changes.push({ target: slot.target, field: 'status', from: 'at_risk', to: 'planned' });
+    await route.fulfill({ response, json });
+  });
+  await page.goto(`${ADMIN}/inbox?tab=extractor&item=p-bm-move&sw=off`);
+  const change = page.locator('.decision-card .proposal__would');
+  await expect(change.locator('.proposal__field')).toHaveText(['slot', 'status']);
+  const status = change.locator('.proposal__status');
+  await expect(status.locator('del .status-chip')).toHaveText('At risk');
+  await expect(status.locator('.status-chip--warn')).toHaveText('Unconfirmed');
+  await expect(change).not.toContainText('at_risk');
+  // The field name sits above its value, not beside it.
+  const [label, value] = await Promise.all([change.locator('.proposal__field').nth(1).boundingBox(), status.boundingBox()]);
+  expect(value!.y).toBeGreaterThanOrEqual(label!.y + label!.height - 1);
+  if (process.env.KANADE_CAPTURE) await page.screenshot({ path: process.env.KANADE_CAPTURE });
+});
+
 // Review-2 finding 4: page chunks no longer re-import the M3E primitives, so a
 // later page load cannot reorder the cascade under History's filter pills.
 test('history filter pills keep their size after visiting the Inbox', async ({ page }) => {

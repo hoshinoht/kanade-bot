@@ -781,6 +781,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 admin Inbox shows a proposed status change as status chips under its
+  field name (old struck, new toned, e.g. At risk → Unconfirmed) instead of
+  raw `at_risk`/`planned` text pushed into a side column.
+
 - v5 extraction refuses hints naming only done or cancelled runs for kinds
   that act on existing runs; Add/Fix keep v4 behaviour. Dayless RSVP/Sub
   answers stay in their evidence message's boss week without escaping a
