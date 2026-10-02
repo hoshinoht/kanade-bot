@@ -3,6 +3,9 @@
 // Area budget: detail > list > tabs. List and detail scroll on their own;
 // the window never does.
 
+// The cookie shape of boss art (mockup `.cookie`).
+$cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 11.7%, 85.9% 17.7%, 87.7% 24.6%, 90.9% 30.1%, 95.9% 35.1%, 99.2% 41.3%, 98.2% 48.3%, 95.2% 54.8%, 94.1% 61%, 94.8% 68.1%, 93.3% 75%, 88% 79.7%, 81.6% 82.7%, 76.7% 86.8%, 72.7% 92.6%, 67.1% 97%, 60% 97.2%, 53.2% 95.4%, 46.8% 95.4%, 40% 97.2%, 32.9% 97%, 27.3% 92.6%, 23.3% 86.8%, 18.4% 82.7%, 12% 79.7%, 6.7% 75%, 5.2% 68.1%, 5.9% 61%, 4.8% 54.8%, 1.8% 48.3%, 0.8% 41.3%, 4.1% 35.1%, 9.1% 30.1%, 12.3% 24.6%, 14.1% 17.7%, 17.9% 11.7%, 24.4% 9.1%, 31.5% 8.5%, 37.5% 6.3%, 43.3% 2.2%);
+
 .inbox {
   display: flex;
   flex-direction: column;
@@ -62,6 +65,39 @@
   line-height: 1.35;
   cursor: pointer;
 }
+
+// The lines of a row: a column of their own, so an Extractor row can lead with the art.
+.inbox__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+// Extractor rows (VarRail2 `.li2`): the 44 px cookie portrait, then the lines.
+.inbox__option--art {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  line-height: 1.25;
+}
+
+.inbox__option--art .inbox__lines { gap: 1px; }
+.inbox__option.inbox__option--art[aria-selected="true"] { border-radius: 24px; }
+
+.inbox__art { flex: none; display: block; line-height: 0; }
+.inbox__art .portrait {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 0;
+  clip-path: $cookie;
+  font-size: var(--fs-mini);
+}
+
+.inbox__count { color: var(--dim-text); font-size: var(--fs-mini); }
+.inbox__option[aria-selected="true"] .inbox__count { color: var(--select-ink); }
 
 .inbox__option:hover {
   background: var(--row-hover);
@@ -155,15 +191,18 @@
 .proposal {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
-  grid-template-rows: auto 1fr;
-  gap: 12px 14px;
+  gap: 14px;
   min-height: 100%;
 }
 
-.proposal > .proposal__head { grid-column: 1; grid-row: 1; }
-.proposal__workspace { display: contents; }
-.proposal .thread-panel { grid-column: 1; grid-row: 2; }
-.proposal .decision-card { grid-column: 2; grid-row: 1 / -1; align-self: auto; }
+.proposal__main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.proposal .decision-card { align-self: auto; }
 
 // Header: the boss art in the cookie shape, the title, one line of facts.
 .proposal__head {
@@ -173,14 +212,14 @@
   min-width: 0;
 }
 
-.proposal__art { flex: none; display: block; }
+.proposal__art { flex: none; display: block; line-height: 0; }
 
 .proposal__art .portrait {
   width: 52px;
   height: 52px;
   border: 0;
   border-radius: 0;
-  clip-path: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 11.7%, 85.9% 17.7%, 87.7% 24.6%, 90.9% 30.1%, 95.9% 35.1%, 99.2% 41.3%, 98.2% 48.3%, 95.2% 54.8%, 94.1% 61%, 94.8% 68.1%, 93.3% 75%, 88% 79.7%, 81.6% 82.7%, 76.7% 86.8%, 72.7% 92.6%, 67.1% 97%, 60% 97.2%, 53.2% 95.4%, 46.8% 95.4%, 40% 97.2%, 32.9% 97%, 27.3% 92.6%, 23.3% 86.8%, 18.4% 82.7%, 12% 79.7%, 6.7% 75%, 5.2% 68.1%, 5.9% 61%, 4.8% 54.8%, 1.8% 48.3%, 0.8% 41.3%, 4.1% 35.1%, 9.1% 30.1%, 12.3% 24.6%, 14.1% 17.7%, 17.9% 11.7%, 24.4% 9.1%, 31.5% 8.5%, 37.5% 6.3%, 43.3% 2.2%);
+  clip-path: $cookie;
   font-size: var(--fs-small);
 }
 
@@ -197,7 +236,7 @@
   flex-wrap: nowrap;
   max-width: 100%;
   align-items: center;
-  gap: 4px 10px;
+  gap: 10px;
   margin: 0;
   font-family: var(--display);
   font-size: var(--fs-brand);
@@ -211,7 +250,7 @@
   margin: 0;
   line-height: 1.75;
   color: var(--dim-text);
-  font-size: var(--fs-small);
+  font-size: var(--fs-mini);
 }
 
 .proposal__fact::before {
@@ -228,13 +267,21 @@
   border-color: transparent;
   background: var(--chip-fill);
   color: var(--ink);
-  font-size: var(--fs-small);
+  font-size: var(--fs-mini);
   font-weight: 400;
 }
 
 .proposal__meta .conf {
   background: var(--surface);
   font-size: var(--fs-mini);
+}
+
+// What Kanade read, in one italic line (boards Inbox, VarRail2).
+.proposal__summary {
+  margin: 0;
+  font-size: var(--fs-body-sm);
+  font-style: italic;
+  line-height: 1.4;
 }
 
 // The thread panel on a wide screen is no box of its own: its cards sit on
@@ -263,6 +310,7 @@
   padding: 12px 16px;
   border-radius: 20px 20px 20px 6px;
   background: color-mix(in srgb, var(--ok) 10%, var(--surface));
+  font-size: var(--fs-body-sm);
 }
 
 .proposal__bubble .cap { color: var(--ok-text); }
@@ -491,10 +539,101 @@
 .decision__why { margin: 0; color: var(--ink); font-size: var(--fs-small); line-height: 1.45; }
 .decision__spacer { flex: 1 1 auto; }
 .decision-card .decision__reject { justify-content: center; }
+.decision-card .decision__approve,
+.decision-card .decision__reject { gap: 8px; }
 .decision__foot { margin: 0; color: var(--dim-text); font-size: var(--fs-mini); }
 .decision-card .proposal__edit { display: flex; align-items: flex-end; gap: 0.4rem; }
 .decision-card .proposal__edit .field { flex: 1 1 auto; }
 .decision-card .proposal__edit input { width: 100%; }
+
+// Wide Extractor items (VarRail2): the header across the top, then the
+// thread panel (flex, scrolling on its own) beside a 300 px decision card
+// that holds the change. Never applies at <= 899 px (InboxDetail `bar`).
+.proposal--stacked {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.proposal--stacked .proposal__main { flex: 1 1 auto; gap: 14px; min-height: 0; }
+.proposal--stacked .proposal__head { flex: none; gap: 14px; }
+.proposal--stacked .proposal__art .portrait { width: 56px; height: 56px; }
+.proposal--stacked .proposal__headtext { flex: 1 1 auto; align-items: stretch; gap: 5px; }
+.proposal--stacked .proposal__summary { font-size: var(--fs-small); }
+
+// The confidence as the burst badge, tinted by band; the number in words for screen readers.
+.proposal__burst {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: 52px;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+  clip-path: polygon(50% 0%, 61% 12%, 75% 7%, 78% 22%, 93% 25%, 88% 40%, 100% 50%, 88% 60%, 93% 75%, 78% 78%, 75% 93%, 61% 88%, 50% 100%, 39% 88%, 25% 93%, 22% 78%, 7% 75%, 12% 60%, 0% 50%, 12% 40%, 7% 25%, 22% 22%, 25% 7%, 39% 12%);
+  background: var(--ok-text);
+  color: var(--surface);
+  font-size: var(--fs-mini);
+}
+
+.proposal__burst .mono { font-size: var(--fs-small); font-weight: 700; }
+
+.proposal__burst--mid { background: var(--warn); }
+.proposal__burst--low,
+.proposal__burst--unknown { background: var(--dim-text); }
+
+.proposal__row {
+  flex: 1 1 auto;
+  display: flex;
+  gap: 14px;
+  min-height: 0;
+}
+
+.proposal--stacked .thread-panel { flex: 1 1 auto; min-width: 0; }
+.proposal--stacked .proposal__thread { flex: 1 1 auto; min-height: 0; border-radius: 24px; }
+.proposal--stacked .proposal__threadhead { min-height: 46px; gap: 10px; padding: 0 12px 0 16px; }
+.proposal--stacked .proposal__threadtitle { flex: none; }
+.proposal__threadfact { flex: none; font-size: var(--fs-small); white-space: nowrap; }
+.proposal__threadspan { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--dim-text); font-size: var(--fs-mini); text-overflow: ellipsis; white-space: nowrap; }
+.proposal--stacked .proposal__threadhead .seg { flex: none; margin-left: auto; }
+.proposal--stacked .proposal__threadhead .seg button { white-space: nowrap; }
+.proposal--stacked .evidence { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 10px 12px; }
+.proposal--stacked .msg { padding: 7px 10px; }
+.proposal--stacked .msg__av { width: 28px; height: 28px; font-size: var(--fs-mini); }
+.proposal--stacked .msg__body { flex: 1 1 auto; }
+.msg__used { margin-left: auto; color: var(--select-ink); }
+
+// The thread's foot: the facts, then where it is in Discord.
+.proposal__threadfoot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 16px;
+  border-top: 1.5px solid var(--line);
+  font-size: var(--fs-small);
+}
+
+.proposal__threadfoot .proposal__meta { flex: 1 1 auto; min-width: 0; overflow: hidden; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+.proposal__threadfoot .proposal__meta .chip { min-height: 20px; }
+.proposal__discord { flex: none; color: var(--ink); }
+
+// The decision card holds the change: the old value struck, the new one large.
+.proposal--stacked .decision-card { flex: none; width: 300px; overflow-y: auto; }
+.decision-card .proposal__would { gap: 12px; padding: 0; border-radius: 0; background: none; box-shadow: none; }
+.decision-card .proposal__would .proposal__cap { color: var(--select-ink); }
+.decision-card .proposal__slot { flex-direction: column; align-items: flex-start; gap: 12px; }
+.decision-card .proposal__slot > [aria-hidden="true"] { display: none; }
+.decision-card .was { font-size: var(--fs-body-sm); }
+.decision-card .proposal__to { font-size: var(--fs-clock); line-height: 1.05; }
+// The new time under its date, as the board sets it.
+.decision-card .proposal__todate { display: block; }
+.decision__footrow { display: flex; align-items: center; justify-content: space-between; font-size: var(--fs-small); }
+// Reject keeps the button's own fill: risk text on the card's --select fails contrast in some faces.
+.decision-card .decision__footrow .decision__reject { min-height: 40px; margin-left: auto; justify-content: normal; }
+// Links on the card and the thread pane take the ink of their surface (accent text is too light there).
+.decision__footrow .proposal__card { color: var(--select-ink); }
 
 // The edit toggle only exists on phones (the action bar's pencil).
 .proposal__edit-toggle { display: none; }
@@ -508,6 +647,13 @@
 // Phones and narrow frames: one column; the list, or the detail with the
 // decision as an action bar under the one scrolling thread.
 @media (max-width: 899px) {
+  // Phones keep the plain rows (B_PhoneInbox list): no art, no thread count.
+  .inbox__option--art { flex-direction: column; align-items: normal; gap: 3px; padding: 9px 12px; line-height: 1.35; }
+  .inbox__option--art .inbox__lines { gap: 3px; }
+  .inbox__option.inbox__option--art[aria-selected="true"] { border-radius: 18px; }
+  .inbox__art,
+  .inbox__count { display: none; }
+
   .inbox__body {
     grid-template-columns: minmax(0, 1fr);
     margin: 0 -0.7rem;
@@ -533,25 +679,20 @@
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
+    gap: 0;
+    min-height: 0;
+  }
+
+  .proposal__main {
+    flex: 1 1 auto;
     gap: 8px;
     min-height: 0;
   }
 
-  .proposal__workspace {
-    display: grid;
-    flex: 1 1 auto;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) auto;
-    min-height: 0;
-  }
-
-  .proposal .thread-panel,
-  .proposal .decision-card {
-    grid-column: auto;
-    grid-row: auto;
-  }
+  .proposal .decision-card { flex: none; }
 
   .proposal .thread-panel {
+    flex: 1 1 auto;
     gap: 8px;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -618,16 +759,16 @@
 
 .frame--phone .inbox--compact > .tabs__strip { display: none; }
 .frame--phone .inbox--compact .inbox__detail { padding: 0; }
-.frame--phone .inbox--compact .proposal__head { gap: 10px; padding: 4px max(14px, env(safe-area-inset-left)) 0; }
+.frame--phone .inbox--compact .proposal__main { padding: 0 max(10px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left)); }
+.frame--phone .inbox--compact .proposal__head { gap: 10px; padding: 4px 4px 0; }
 .frame--phone .inbox--compact .proposal__art .portrait { width: 44px; height: 44px; }
-.frame--phone .inbox--compact .proposal__title { column-gap: 6px; color: var(--ground-ink); font-size: var(--fs-lg); white-space: nowrap; }
-.frame--phone .inbox--compact .proposal__headtext { position: relative; overflow: hidden; }
+.frame--phone .inbox--compact .proposal__title { gap: 6px; color: var(--ground-ink); font-size: var(--fs-lg); white-space: nowrap; }
+.frame--phone .inbox--compact .proposal__headtext { position: relative; gap: 2px; overflow: hidden; }
 
 // One line of facts, cut at the edge; the machine id and read time stay
 // for screen readers only.
-.frame--phone .inbox--compact .proposal__meta { max-width: 100%; overflow: hidden; color: var(--ground-ink); white-space: nowrap; }
-.frame--phone .inbox--compact .proposal__fact.mono,
-.frame--phone .inbox--compact .proposal__fact:has(.mono) {
+.frame--phone .inbox--compact .proposal__meta { max-width: 100%; overflow: hidden; color: var(--ground-ink); line-height: 1.5; white-space: nowrap; }
+.frame--phone .inbox--compact .proposal__fact--aside {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -637,9 +778,7 @@
 }
 
 .frame--phone .inbox--compact .proposal__card { color: var(--ground-ink); }
-.frame--phone .inbox--compact .proposal__meta .chip,
-.frame--phone .inbox--compact .proposal__meta .conf { font-size: var(--fs-mini); }
-.frame--phone .inbox--compact .thread-panel { padding: 0 max(10px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left)); }
+.frame--phone .inbox--compact .proposal__meta .chip { min-height: 20px; }
 .frame--phone .inbox--compact .proposal__would { padding: 10px 14px; border-radius: 18px; background: var(--select); box-shadow: none; }
 // The change as one line (B_PhoneInbox): was → now on the baseline; notes, when an item has them, stack.
 .frame--phone .inbox--compact .proposal__would:not(:has(> .note)) { flex-direction: row; align-items: baseline; }

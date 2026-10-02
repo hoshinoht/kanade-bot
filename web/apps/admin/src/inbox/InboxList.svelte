@@ -7,7 +7,7 @@
 <script lang="ts">
   import type { Proposal } from '@kanade/api-types';
   import { tick } from 'svelte';
-  import { ListPane, StatusChip } from '@kanade/ui';
+  import { ListPane, Portrait, StatusChip } from '@kanade/ui';
   import { FLAG_LABEL, FLAG_TONE, title, who } from './flags';
 
   let {
@@ -80,6 +80,7 @@
     {#each items as p (p.id)}
       <li
         class="inbox__option"
+        class:inbox__option--art={p.tab === 'extractor' && Boolean(p.bosses[0])}
         data-fid="inbox-row"
         class:inbox__option--active={!follow && p.id === current}
         id="{uid}-{p.id}"
@@ -87,14 +88,23 @@
         aria-selected={p.id === selected}
         data-item={p.id}
       >
-        <span class="inbox__what">{title(p)}</span>
-        <span class="inbox__meta"><span>{who(p)}</span> · <span class="mono">{p.when}</span></span>
-        {#if p.flags.length || p.is_question}
-          <span class="inbox__badges">
-            {#each p.flags as flag (flag)}<StatusChip tone={FLAG_TONE[flag] === 'danger' ? 'risk' : 'warn'} legacyTone={FLAG_TONE[flag]}>{FLAG_LABEL[flag]}</StatusChip>{/each}
-            {#if p.is_question}<StatusChip tone="warn">still a question</StatusChip>{/if}
-          </span>
+        {#if p.tab === 'extractor' && p.bosses[0]}
+          <!-- Extractor rows (VarRail2): the boss art, then the lines; how much of the thread was used. -->
+          <span class="inbox__art" aria-hidden="true"><Portrait boss={p.bosses[0]} size="md" /></span>
         {/if}
+        <span class="inbox__lines">
+          <span class="inbox__what">{title(p)}</span>
+          <span class="inbox__meta"><span>{who(p)}</span> · <span class="mono">{p.when}</span></span>
+          {#if p.tab === 'extractor' && p.thread?.length}
+            <span class="inbox__count">{p.thread.length} message{p.thread.length === 1 ? '' : 's'} · {p.thread.filter((m) => m.used).length} used</span>
+          {/if}
+          {#if p.flags.length || p.is_question}
+            <span class="inbox__badges">
+              {#each p.flags as flag (flag)}<StatusChip tone={FLAG_TONE[flag] === 'danger' ? 'risk' : 'warn'} legacyTone={FLAG_TONE[flag]}>{FLAG_LABEL[flag]}</StatusChip>{/each}
+              {#if p.is_question}<StatusChip tone="warn">still a question</StatusChip>{/if}
+            </span>
+          {/if}
+        </span>
       </li>
     {/each}
   </ListPane>

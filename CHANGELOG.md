@@ -11,6 +11,19 @@ Notable changes to the Boss Scheduler Bot, newest first.
   and token counts, and copied chat transcripts include both. Oversized counts
   stay unknown, and retries keep a single truncation marker.
 
+- v5 admin Inbox items read closer to their boards: the header and thread
+  panel form one column beside the decision pane, a proposal shows Kanade's
+  one-line italic summary under its header on wide screens, the facts line
+  is smaller with the read time in body type, the phone header is tighter,
+  and the "Can't approve" line appears only when Approve is held back. Wide
+  Extractor items follow VarRail2: the header (larger art, summary, a
+  confidence burst) runs across the top, the thread fills the height beside
+  a 300 px decision card that holds the change (the new time large, under
+  its date), with the thread's channel and time span in its bar, the facts
+  and "Open in Discord" at its foot, used messages marked "used", and
+  "See the card" beside Reject; Extractor list rows lead with the boss art
+  and say how much of the thread was used.
+
 - v5 admin Inbox items now carry `thread`: the stored channel messages around
   a proposal's evidence (oldest first, at most 37, the extractor's context plus
   a burst), each marked `used` when the proposal cites it. It is read from the
