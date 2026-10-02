@@ -7,7 +7,8 @@
     rows,
     selected = $bindable([]),
     readonly = false,
-  }: { rows: BossRow[]; selected?: string[]; readonly?: boolean } = $props();
+    active = '',
+  }: { rows: BossRow[]; selected?: string[]; readonly?: boolean; active?: string } = $props();
 
   // The grid wants a Boss; rows carry the same art fields.
   const asBoss = (row: BossRow) => ({
@@ -25,29 +26,30 @@
   function toggle(token: string, on: boolean) {
     selected = on ? [...selected, token] : selected.filter((t) => t !== token);
   }
+
+  const TICK: Record<string, string> = { e: 'EASY', n: 'NORM', h: 'HARD', c: 'CHAOS', x: 'EXT' };
 </script>
 
 <!-- v4 macros.boss_grid: each difficulty a pill; checked = filled with a tick, so state is not colour alone. -->
-<div class="grid-bosses" role="group" aria-label="Bosses">
+<div class="grid-bosses" role={readonly ? 'listbox' : 'group'} aria-label="Bosses">
   {#each rows as row (row.key)}
     {@const on = readonly ? row.difficulties.some((d) => d.in_use) : row.difficulties.some((d) => selected.includes(d.token))}
-    <div class="bossrow" data-fid="fixed-boss-row" class:bossrow--on={on}>
-      <div class="bossrow__id">
-        <Portrait boss={asBoss(row)} size="md" />
-        <span>
-          {#if readonly}<a class="bossrow__name" href="/bosses/{row.key}/knowledge">{row.name}</a>
-          {:else}<span class="bossrow__name">{row.name}</span>{/if}
-          <span class="bossrow__lv">Lv. {row.level}</span>
-        </span>
+    {@const remaining = row.difficulties.filter((option) => !option.in_use).length}
+    {#if readonly}
+      <div class="bossrow" data-fid="boss-row" class:bossrow--on={on} class:bossrow--active={row.key === active} role="option" aria-selected={row.key === active}>
+        <div class="bossrow__id"><Portrait boss={asBoss(row)} size="md" /><span><a class="bossrow__name" href="/bosses/{row.key}/knowledge">{row.name}</a><span class="bossrow__lv">Lv. {row.level}</span></span></div>
+        <div class="bossrow__pills" role="group" aria-label="{row.name} difficulties">
+          {#each row.difficulties.filter((option) => option.in_use) as option (option.token)}
+            <span class="boss-tick boss-tick--{option.letter}">{TICK[option.letter]}<span class="vh"> (has a weekly timing)</span></span>
+          {/each}
+          {#if remaining}<span class="boss-tick boss-tick--more">+{remaining}<span class="vh"> untracked difficulties</span></span>{/if}
+        </div>
       </div>
-      <div class="bossrow__pills" role="group" aria-label="{row.name} difficulties">
-        {#each row.difficulties as option (option.token)}
-          {#if readonly}
-            <span class="pill-toggle pill-toggle--{option.letter}" class:pill-toggle--on={option.in_use}>
-              <span class="pill-toggle__tick" aria-hidden="true">✓</span>{option.name.toUpperCase()}
-              <span class="vh">{option.in_use ? '(has a weekly timing)' : '(not run)'}</span>
-            </span>
-          {:else}
+    {:else}
+      <div class="bossrow" data-fid="fixed-boss-row" class:bossrow--on={on}>
+        <div class="bossrow__id"><Portrait boss={asBoss(row)} size="md" /><span><span class="bossrow__name">{row.name}</span><span class="bossrow__lv">Lv. {row.level}</span></span></div>
+        <div class="bossrow__pills" role="group" aria-label="{row.name} difficulties">
+          {#each row.difficulties as option (option.token)}
             <label class="pill-toggle pill-toggle--{option.letter}">
               <input
                 type="checkbox"
@@ -58,9 +60,9 @@
               />
               <span class="pill-toggle__tick" aria-hidden="true">✓</span>{option.name.toUpperCase()}
             </label>
-          {/if}
-        {/each}
+          {/each}
+        </div>
       </div>
-    </div>
+    {/if}
   {/each}
 </div>

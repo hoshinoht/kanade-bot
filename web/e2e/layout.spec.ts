@@ -67,7 +67,7 @@ for (const size of SIZES) {
     const failures: string[] = [];
     for (const [app, origin, path] of SCREENS) {
       await page.goto(`${origin}${path}${path.includes('?') ? '&' : '?'}sw=off`);
-      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      await expect(page.getByRole('heading').first()).toBeVisible();
       await page.waitForTimeout(250);
       const got = await area(page);
       const need = budget(size.height);

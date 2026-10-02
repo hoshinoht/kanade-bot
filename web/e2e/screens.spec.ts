@@ -460,11 +460,11 @@ test('bosses: the in-game list, ticked by timings, with knowledge pages', async 
   await go(page, '/bosses');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(/^11 bosses, \d+ difficulties$/);
   const star = page.locator('.bossrow', { hasText: 'Radiant Malefic Star' });
-  await expect(star.locator('.pill-toggle--on')).toHaveText(/HARD/);
-  await expect(star.getByText('(has a weekly timing)')).toHaveCount(1);
+  await expect(star.locator('.boss-tick--h')).toContainText('HARD');
+  await expect(star.locator('.boss-tick--more')).toContainText(/^\+\d+/);
   await page.getByRole('link', { name: 'Radiant Malefic Star' }).click();
   await expect(page).toHaveURL(`${ADMIN}/bosses/MaleficStar/knowledge`);
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('Radiant Malefic Star');
+  await expect(page.getByRole('heading', { level: 2, name: 'Radiant Malefic Star' })).toBeVisible();
   await expect(page.getByText('boss/knowledge/maleficstar.yaml')).toBeVisible();
   await page.goto(`${ADMIN}/bosses/Nobody/knowledge?sw=off`);
   await expect(page.getByRole('alert')).toContainText('No knowledge for “Nobody”');

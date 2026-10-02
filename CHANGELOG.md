@@ -6,6 +6,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin Bosses now uses the M3E catalog and checked-in knowledge workspace:
+  level-ordered boss rows keep weekly difficulty ticks visible beside the selected
+  strategy, facts, provenance and seasonal availability, with this week's linked
+  timings alongside. Phone navigation moves from the catalog into a backable detail.
+
 - v5 model logs retain Kanata reasoning text (64 KiB, visibly truncated) and
   reported reasoning tokens; admin Chat/Extractions show collapsed reasoning
   and token counts, and copied chat transcripts include both. Oversized counts

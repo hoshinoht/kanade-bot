@@ -48,6 +48,12 @@ const PAIRS: Pair[] = [
     },
   },
   {
+    name: 'bosses',
+    board: 'B_Bosses',
+    path: '/bosses/MaleficStar/knowledge',
+    ready: (page) => expect(page.getByRole('heading', { level: 2, name: 'Radiant Malefic Star' })).toBeVisible(),
+  },
+  {
     name: 'phone-inbox',
     board: 'B_PhoneInbox',
     path: '/inbox?tab=extractor&item=p-bm-move',
