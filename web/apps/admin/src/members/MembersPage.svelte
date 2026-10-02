@@ -1,41 +1,54 @@
 <script lang="ts">
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/members.scss';
-  import type { MemberRow, Persona } from '@kanade/api-types';
+  import type { MemberRow, Persona, PingLevel, Week } from '@kanade/api-types';
   import Pager from '../pages/Pager.svelte';
   import { paged } from '../pages/paging';
   import { memberLabel } from '../names/directory.svelte';
   import { Resource } from '../resource.svelte';
   import MemberSheet from './MemberSheet.svelte';
+  import { memberRuns, orderMembers, runCounts, type MemberOrder } from './runs';
 
   const members = new Resource<MemberRow[]>('/api/admin/members');
   const personas = new Resource<Persona[]>('/api/admin/personas');
+  // The detail's "This week" list reads the runs the member is on.
+  const week = new Resource<Week>('/api/admin/week?week=this');
   $effect(() => {
     void members.load();
     void personas.load();
+    void week.load();
   });
+  const PING: Record<PingLevel, string> = { essential: 'Essential', all: 'All', off: 'Off' };
 
   let query = $state('');
   let openId = $state<string | null>(null);
   let wide = $state(false);
-  let ascending = $state(true);
+  // The board's default: most runs this week first.
+  let order = $state<MemberOrder>('runs');
   let restore = '';
 
   const q = $derived(query.trim().toLowerCase());
+  // Counted from the week the run list already loads; the roster's own count until it arrives.
+  const counts = $derived(week.data ? runCounts(week.data) : null);
   const rows = $derived(
-    (members.data ?? [])
-      .filter((m) => !q || [m.name, m.nickname ?? '', ...m.aliases].some((t) => t.toLowerCase().includes(q)))
-      .toSorted((a, b) => ascending ? memberLabel(members.data ?? [], a.id).localeCompare(memberLabel(members.data ?? [], b.id)) : memberLabel(members.data ?? [], b.id).localeCompare(memberLabel(members.data ?? [], a.id))),
+    orderMembers(
+      (members.data ?? []).filter((m) => !q || [m.name, m.nickname ?? '', ...m.aliases].some((t) => t.toLowerCase().includes(q))),
+      order,
+      (m) => memberLabel(members.data ?? [], m.id),
+      (m) => (counts ? (counts.get(m.id) ?? 0) : m.runs_this_week),
+    ),
   );
   let page = $state(1);
   // A new search starts at page one (v4 dropped `page` from the search form).
   $effect(() => {
     void q;
+    void order;
     page = 1;
   });
   const shown = $derived(paged(rows, page));
   const bossers = $derived((members.data ?? []).filter((m) => m.bossing).length);
   const current = $derived(members.data?.find((m) => m.id === openId) ?? null);
+  const currentRuns = $derived(current && week.data ? memberRuns(week.data, current.id) : null);
 
   $effect(() => {
     const query = window.matchMedia('(min-width: 840px)');
@@ -59,19 +72,23 @@
   <h1>{#if members.data}<span class="pageline__num">{bossers}</span> bosser{bossers === 1 ? '' : 's'}{:else}Members{/if}</h1>
   <p class="pageline__context">synced from the bossing role</p>
 </PageLine>
-<section class="card members-window window-fill" aria-labelledby="members-roster-title">
-  <div class="card__head members-window__head">
+<section data-fid="window" class="card members-window window-fill" aria-labelledby="members-roster-title">
+  <div class="card__head members-window__head" data-fid="window-bar">
     <h2 class="card__title" id="members-roster-title">Roster</h2>
-    <div class="members-window__search" role="search">
+    <div class="members-window__search" data-fid="window-search" role="search">
       <label class="vh" for="members-search">Search members</label>
       <input id="members-search" type="search" bind:value={query} placeholder="name, nickname, alias…" autocomplete="off" spellcheck="false" />
     </div>
-    <button class="btn members-window__sort" type="button" aria-pressed={!ascending} onclick={() => (ascending = !ascending)}>
-      Sort {ascending ? 'A–Z' : 'Z–A'}
-    </button>
+    <label class="btn members-window__sort" data-fid="members-sort">
+      <span class="members-window__sort-label">Sort</span>
+      <select bind:value={order} aria-label="Sort members">
+        <option value="runs">runs</option>
+        <option value="name">A–Z</option>
+      </select>
+    </label>
   </div>
   <div class="members-window__body">
-    <div class="members-roster">
+    <div class="members-roster" data-fid="members-list">
       {#if members.error}
         <p class="flash flash--error" role="alert">{members.error}</p>
       {:else if members.data && rows.length === 0}
@@ -79,12 +96,13 @@
           <strong>Nothing matches “{query}”.</strong>The search reads the Discord name, the server nickname and the chat aliases.
         </div>
       {:else}
+        <div class="memberlist__columns" data-fid="members-head" aria-hidden="true"><span>Member</span><span>This wk</span><span>@mentions</span><span>Reply style</span></div>
         <div class="memberlist" role="list" aria-label="Members">
-          <div class="memberlist__columns" role="presentation" aria-hidden="true"><span>Member</span><span>This wk</span><span>@mentions</span><span>Reply style</span></div>
           {#each shown.rows as member (member.id)}
             <div role="listitem">
               <button
                 class="memberlist__row"
+                data-fid="members-row"
                 class:memberlist__row--active={member.id === openId}
                 type="button"
                 aria-current={member.id === openId ? 'true' : undefined}
@@ -96,13 +114,13 @@
               >
                 <span class="memberlist__name">
                   <strong>{memberLabel(members.data ?? [], member.id)}</strong>
-                  {#if member.nickname}<span class="id">{member.nickname}</span>{:else if member.aliases.length}<span class="id">{member.aliases.join(', ')}</span>{/if}
+                  {#if member.nickname}<span class="id">{member.nickname}</span>{:else if member.aliases.length}<span class="id">{member.aliases.join(' · ')}</span>{/if}
                   {#if !member.bossing}<span class="chip chip--waiting">chat only</span>{/if}
                 </span>
-                <span class="memberlist__stat mono">{member.runs_this_week} run{member.runs_this_week === 1 ? '' : 's'}</span>
-                <span class="memberlist__preference">{member.ping_level}</span>
-                <span class="memberlist__style mono">{member.persona ?? 'default'}</span>
-                {#if member.id === openId}<span class="memberlist__open cap">open</span>{/if}
+                <span class="memberlist__stat mono"><span class="vh">, runs this week: </span>{member.runs_this_week}</span>
+                <span class="memberlist__preference"><span class="vh">, @mentions: </span>{PING[member.ping_level]}</span>
+                <span class="memberlist__style mono"><span class="vh">, reply style: </span>{member.persona ?? 'default'}</span>
+                {#if member.id === openId}<span class="vh">, open</span>{/if}
               </button>
             </div>
           {/each}
@@ -111,7 +129,7 @@
       {/if}
     </div>
     {#if current}
-      <MemberSheet wide={wide} member={current} personas={personas.data ?? []} onchange={replace} onclose={close} />
+      <MemberSheet wide={wide} member={current} runs={currentRuns} personas={personas.data ?? []} onchange={replace} onclose={close} />
     {/if}
   </div>
 </section>

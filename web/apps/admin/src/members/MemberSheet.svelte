@@ -1,17 +1,19 @@
 <script lang="ts">
   import type { MemberPatch, MemberRow, Persona, PingLevel } from '@kanade/api-types';
-  import { Modal, SidePane } from '@kanade/ui';
+  import { Icon, Modal } from '@kanade/ui';
   import { send } from '../resource.svelte';
   import { directory } from '../names/directory.svelte';
   import Name from '../names/Name.svelte';
+  import { ANSWER_WORDS, type MemberWeek } from './runs';
 
   let {
     wide,
     member,
+    runs,
     personas,
     onchange,
     onclose,
-  }: { wide: boolean; member: MemberRow; personas: Persona[]; onchange: (row: MemberRow) => void; onclose: () => void } = $props();
+  }: { wide: boolean; member: MemberRow; runs: MemberWeek | null; personas: Persona[]; onchange: (row: MemberRow) => void; onclose: () => void } = $props();
 
   const uid = $props.id();
   const LEVELS: { key: PingLevel; label: string; hint: string }[] = [
@@ -74,22 +76,27 @@
      dialog below the approved 840px breakpoint. -->
 {#snippet content()}
   <div class="membersheet__content">
-    <dl class="membersheet__grid">
-      <dt>Discord account</dt>
-      <dd><Name kind="member" id={member.id} name={member.name} /> <span class="note">(select to copy the ID)</span></dd>
+    <dl class="membersheet__grid" data-fid="members-facts">
+      {#if !wide}
+        <dt>Discord account</dt>
+        <dd><Name kind="member" id={member.id} name={member.name} /> <span class="note">· select to copy the ID</span></dd>
+      {/if}
       <dt>Server nickname</dt>
       <dd>{member.nickname ?? '—'}</dd>
       <dt>Runs this week</dt>
-      <dd class="mono">{member.runs_this_week}</dd>
+      <dd>
+        <span class="membersheet__count mono">{member.runs_this_week}</span>
+        {#if runs?.next}<span class="note">· next {runs.next.when} {runs.next.title}</span>{/if}
+      </dd>
       <dt>Bossing role</dt>
       <dd>{member.bossing ? 'Yes — on the roster' : 'No — not on the roster'}</dd>
       <dt>Chatbot</dt>
       <dd>{ACCESS[member.access]}</dd>
     </dl>
 
-    <div class="membersheet__section">
+    <div class="membersheet__section" data-fid="members-mentions">
       <p class="membersheet__label" id="{uid}-ping">@mentions</p>
-      <div class="seg seg--answer" role="group" aria-labelledby="{uid}-ping">
+      <div class="seg" role="group" aria-labelledby="{uid}-ping">
         {#each LEVELS as level (level.key)}
           <button
             type="button"
@@ -105,7 +112,7 @@
       <p class="note">{LEVELS.find((l) => l.key === member.ping_level)?.hint}</p>
     </div>
 
-    <div class="membersheet__section">
+    <div class="membersheet__section" data-fid="members-style">
       <label class="field">
         <span>Reply style</span>
         <select
@@ -128,33 +135,51 @@
       {/if}
     </div>
 
-    <div class="membersheet__section">
+    <div class="membersheet__section" data-fid="members-aliases">
       <p class="membersheet__label">Chat aliases</p>
       <div class="membersheet__aliases">
-        {#each member.aliases as name (name)}<span class="chip chip--mono">{name}</span>{:else}<span class="id">none</span>{/each}
+        {#each member.aliases as name (name)}<span class="membersheet__alias">{name}</span>{:else}<span class="id">none</span>{/each}
       </div>
       <form class="membersheet__alias-form" onsubmit={addAlias}>
         <input bind:value={alias} placeholder="New alias" size="12" required aria-label="New alias for {member.name}" />
         <button class="btn" type="submit" disabled={busy}>Add</button>
       </form>
     </div>
+    {#if runs}
+      <section class="membersheet__section" data-fid="members-runs" aria-labelledby="{uid}-week">
+        <h3 class="membersheet__label" id="{uid}-week">This week</h3>
+        {#if runs.runs.length}
+          <ul class="membersheet__runs">
+            {#each runs.runs as run (run.id)}
+              <li class="membersheet__run" data-fid="members-run" class:membersheet__run--past={!run.upcoming}>
+                <span class="mono membersheet__when">{run.when}</span>
+                <span class="membersheet__title">{run.title}</span>
+                <span class="membersheet__answer membersheet__answer--{run.answer}">{ANSWER_WORDS[run.answer]}</span>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="note">Not on a run this week.</p>
+        {/if}
+      </section>
+    {/if}
     <p class="membersheet__notice" class:field__error={notice && !notice.ok} role="status">{notice?.message ?? ''}</p>
   </div>
 {/snippet}
 
 {#if wide}
-  <SidePane label="Member details">
-    <header class="membersheet__head">
+  <aside class="side-pane" aria-label="Member details" data-fid="members-pane">
+    <header class="membersheet__head" data-fid="members-pane-head">
       <span class="membersheet__avatar" aria-hidden="true">{member.name.slice(0, 1)}</span>
-      <div>
+      <div class="membersheet__who">
         <p class="cap">{member.bossing ? 'Member' : 'Chat access only'}</p>
         <h2>{directory.label('member', member.id, member.name)}</h2>
-        <Name kind="member" id={member.id} name={member.name} />
+        <p class="membersheet__handle"><Name kind="member" id={member.id} name={member.name} /> · select to copy the ID</p>
       </div>
-      <button class="btn btn--ghost membersheet__close" type="button" aria-label="Close member details" onclick={onclose}>×</button>
+      <button class="btn btn--ghost membersheet__close" data-fid="members-close" type="button" aria-label="Close member details" onclick={onclose}><Icon name="x" /></button>
     </header>
     {@render content()}
-  </SidePane>
+  </aside>
 {:else}
   <Modal open title={directory.label('member', member.id, member.name)} eyebrow={member.bossing ? 'Member' : 'Chat access only'} narrow className="membersheet" onclose={onclose}>
     {@render content()}

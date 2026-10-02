@@ -53,6 +53,15 @@ const PAIRS: Pair[] = [
     path: '/inbox?tab=extractor&item=p-bm-move',
     ready: (page) => expect(page.getByRole('heading', { level: 2, name: /Move — Black Mage/ })).toBeVisible(),
   },
+  {
+    name: 'members',
+    board: 'B_Members',
+    path: '/members',
+    ready: async (page) => {
+      await page.getByRole('button', { name: /^Mika/ }).click();
+      await expect(page.getByRole('complementary', { name: 'Member details' })).toBeVisible();
+    },
+  },
 ];
 
 test.describe('layout fidelity', () => {

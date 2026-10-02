@@ -507,6 +507,33 @@ test('members: roster side pane edits for pings, reply style and aliases', async
   await expect(page.getByRole('complementary', { name: 'Member details' }).getByText('is no longer offered')).toBeVisible();
 });
 
+test('members: "Sort: runs" orders by runs this week, A–Z between equals, and switches to A–Z', async ({ page }) => {
+  await go(page, '/members');
+  const sort = page.getByRole('combobox', { name: 'Sort members' });
+  await expect(page.locator('.members-window__sort')).toHaveText(/^\s*Sort\s*runs\s*A–Z\s*$/);
+  await expect(sort).toHaveValue('runs');
+  await expect(sort.locator('option:checked')).toHaveText('runs');
+  const list = page.getByRole('list', { name: 'Members' });
+  const roster = () =>
+    list.locator('.memberlist__row').evaluateAll((rows) =>
+      rows.map((row) => ({ name: row.querySelector('.memberlist__name strong')!.textContent!, runs: Number(row.querySelector('.memberlist__stat')!.lastChild!.textContent) })),
+    );
+  const byRuns = await roster();
+  expect(byRuns.length).toBeGreaterThan(5);
+  expect(byRuns[0]).toEqual({ name: 'Asahi', runs: 4 });
+  for (let i = 1; i < byRuns.length; i++) {
+    const [a, b] = [byRuns[i - 1]!, byRuns[i]!];
+    expect(a.runs > b.runs || (a.runs === b.runs && a.name.localeCompare(b.name) <= 0), `${a.name} before ${b.name}`).toBe(true);
+  }
+  expect(byRuns.at(-1)!.runs).toBe(0);
+
+  await sort.selectOption('name');
+  await expect(sort.locator('option:checked')).toHaveText('A–Z');
+  const names = (await roster()).map((r) => r.name);
+  expect(names).toEqual(names.toSorted((a, b) => a.localeCompare(b)));
+  expect(names).not.toEqual(byRuns.map((r) => r.name));
+});
+
 test('members: phone uses a full-screen sheet and restores the roster row', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await go(page, '/members');
