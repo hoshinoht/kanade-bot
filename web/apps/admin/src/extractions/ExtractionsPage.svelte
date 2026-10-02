@@ -71,7 +71,7 @@
 </script>
 
 <PageLine title={view ? 'Extractions' : ''}>
-  <h1>{view ? (filtered ? `${rows.length} of ${view.total} model calls` : `${view.total} model calls`) : 'Extractions'}</h1>
+  <h1>{#if view}{#if filtered}<span class="pageline__num">{rows.length}</span> of <span class="pageline__num">{view.total}</span>{:else}<span class="pageline__num">{view.total}</span>{/if} model calls{:else}Extractions{/if}</h1>
   <p class="pageline__context">for prompt tuning</p>
   {#snippet side()}
     {#if view}<span class="chip chip--mono">{view.model}</span>{/if}

@@ -9,6 +9,18 @@ export interface Chrome {
   readonly updated: string;
   readonly timezone: string;
   palette(): void;
+  /**
+   * Phone frame: a page's own back step in the top bar (an open Inbox item:
+   * "‹ Inbox"), shown in place of the menu and title; `null` clears it.
+   */
+  back(step: BackStep | null): void;
+}
+
+/** A back step for the top bar: its visible label and accessible name. */
+export interface BackStep {
+  readonly label: string;
+  readonly name: string;
+  go(): void;
 }
 
 const KEY = Symbol('kanade-chrome');

@@ -27,7 +27,7 @@ const week = (version: number, day = 0): Week => ({
   reset: 'Thu 00:00',
   days: [],
   runs: [run('r1', day)],
-  generated_at: `2026-09-24T12:00:0${version}Z`,
+  generated_at: `2026-09-24T12:0${version}:00Z`, // minutes apart: the Live chip shows HH:MM
   version,
 });
 const stats: Stats = { per_day: [] };

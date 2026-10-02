@@ -164,20 +164,44 @@
   }
 </script>
 
+<!-- One timeline row (B_History `.ev`): a dot, then the facts line over the summary. -->
+{#snippet rowBody(record: ChangeRecord, isActive: boolean)}
+  {@const lines = describe(record, names, tz)}
+  {@const count = `${record.rows.length} row${record.rows.length === 1 ? '' : 's'}`}
+  <span class="history-row__dot" aria-hidden="true"></span>
+  <span class="history-row__text">
+    <span class="history-row__head"><span class="mono history-row__seq">#{record.seq}</span><strong class="history-row__actor">{actorName(record.actor, names, known)}</strong><span class="chip chip--mono">{SURFACE_LABELS[record.surface] ?? record.surface}</span>{#if record.refs.length}<span class="chip">reverts {record.refs.map((ref) => `#${ref.seq}`).join(', ')}</span>{/if}<span class="history-row__time mono">{localAt(record.at, tz)}</span><span class="history-row__rows mono">{count}</span>{#if isActive}<span class="history-row__open cap">open</span>{/if}</span>
+    <span class="history-row__summary">{lines.length ? lines.join(' · ') : `${count} changed`}</span>
+  </span>
+{/snippet}
+
+<!-- Revert everything one member changed (B_History: the box at the foot of the change pane). -->
+{#snippet memberRevert()}
+  <form class="history-member" data-fid="history-revert-member" onsubmit={revertMember}>
+    <h3 class="cap">Revert a member's changes…</h3>
+    <div class="history-member__fields">
+      <label class="history-member__who"><span class="vh">Member</span><select bind:value={who} required><option value="">choose…</option>{#each members as member (member.id)}<option value="member:{member.id}">{names(member.id)}</option>{/each}</select></label>
+      <label class="history-member__since"><span class="vh">Since</span><input class="mono" type="date" bind:value={since} /></label>
+    </div>
+    <button class="btn" type="submit" disabled={!who}>Preview</button>
+  </form>
+{/snippet}
+
 <PageLine title="History">
-  <h1>{total.toLocaleString('en')} change{total === 1 ? '' : 's'}</h1>
+  <h1><span class="pageline__num">{total.toLocaleString('en')}</span> change{total === 1 ? '' : 's'}</h1>
   {#if head}<p class="pageline__context">head #{head.seq} · <span class="mono">{head.hash.slice(0, 12)}</span></p>{/if}
 </PageLine>
 
-<section class="card history-window window-fill" aria-labelledby="history-title">
-  <header class="card__head tabs__strip history-window__head">
+<section data-fid="window" class="card history-window window-fill" aria-labelledby="history-title">
+  <header class="card__head tabs__strip history-window__head" data-fid="window-bar">
     <h2 class="vh" id="history-title">History</h2>
-    <div class="tabs__tabs" role="tablist" aria-label="History">
+    <div class="tabs__tabs" role="tablist" aria-label="History" data-fid="window-tabs">
       {#each TABS as t, index (t.id)}
         <button class="tabs__tab" role="tab" type="button" id="history-tab-{t.id}" aria-selected={tab === t.id} aria-controls="history-{t.id}" tabindex={tab === t.id ? 0 : -1} onclick={() => (tab = t.id)} onkeydown={(event) => tabKey(event, index)}>{t.label}{#if t.id === 'timeline'}<span class="tabs__count">{total}</span>{/if}</button>
       {/each}
     </div>
-    <div class="history-window__filters" role="search" aria-label="Filter the history">
+    <!-- The filters only apply to the Timeline. -->
+    <div class="history-window__filters" data-fid="window-filters" hidden={tab !== 'timeline'} role="search" aria-label="Filter the history">
       <label class="btn history-filter"><span class="history-filter__label">Week</span><select bind:value={week}><option value="">every week</option>{#if store.week}<option value={store.week.starts}>this boss week ({weekStartLabel(store.week.starts)})</option>{/if}</select></label>
       <label class="btn history-filter"><span class="history-filter__label">Who</span><select bind:value={actor}><option value="">everyone</option>{#each admins as admin (admin.id)}<option value="admin:{admin.id}">{admin.label}{admin.id.startsWith('discord:') && known(admin.id.slice(8)) ? ' (as admin)' : ''}</option>{/each}<option value="system:delivery">system (delivery)</option>{#each members as member (member.id)}<option value="member:{member.id}">{names(member.id)}</option>{/each}</select></label>
     </div>
@@ -186,26 +210,28 @@
   {#if tab === 'timeline'}
     <div class="history-window__body" id="history-timeline" role="tabpanel" aria-labelledby="history-tab-timeline">
       <div class="history-list-region">
-        <div class="history-list-region__scroll">
-          <details class="history__member">
-            <summary class="btn">Revert a member's changes…</summary>
-            <form class="formrow" onsubmit={revertMember}>
-              <label class="field"><span>Member</span><select bind:value={who} required><option value="">choose…</option>{#each members as member (member.id)}<option value="member:{member.id}">{names(member.id)}</option>{/each}</select></label>
-              <label class="field"><span>Since</span><input type="date" bind:value={since} /></label>
-              <button class="btn" type="submit" disabled={!who}>Preview</button>
-            </form>
-          </details>
+        <div class="history-list-region__scroll" data-fid="history-list">
+          <!-- B_History: with a change open on a wide screen, this tool sits at the foot of its pane. -->
+          {#if !(wide && selected)}
+            <details class="history__member">
+              <summary class="btn">Revert a member's changes…</summary>
+              <form class="formrow" onsubmit={revertMember}>
+                <label class="field"><span>Member</span><select bind:value={who} required><option value="">choose…</option>{#each members as member (member.id)}<option value="member:{member.id}">{names(member.id)}</option>{/each}</select></label>
+                <label class="field"><span>Since</span><input type="date" bind:value={since} /></label>
+                <button class="btn" type="submit" disabled={!who}>Preview</button>
+              </form>
+            </details>
+          {/if}
           {#if error}<p class="flash flash--error" role="alert">{error}</p>{/if}
           {#each groups as group (group.week)}
             {#if group.records.length}
               <section class="history__week" aria-labelledby="history-week-{weekDate(group.week, tz)}">
-                <h3 class="pane__section" id="history-week-{weekDate(group.week, tz)}">{group.week ? `Boss week of ${weekLabel(group.week)}` : 'Changes'}</h3>
+                <h3 class="pane__section" data-fid="history-group" id="history-week-{weekDate(group.week, tz)}">{group.week ? `Boss week of ${weekLabel(group.week)}` : 'Changes'}</h3>
                 <ol class="history-timeline">
                   {#each group.records as record (record.seq)}
                     <li>
-                      <button class="history-row" class:history-row--active={active(record, group.week)} type="button" aria-current={active(record, group.week) ? 'true' : undefined} data-history={record.seq} data-history-week={group.week} onclick={(event) => open(record, event, group.week)}>
-                        <span class="history-row__head"><span class="mono">#{record.seq}</span><strong class="history-row__actor">{actorName(record.actor, names, known)}</strong><span class="chip chip--mono">{SURFACE_LABELS[record.surface] ?? record.surface}</span>{#if record.refs.length}<span class="chip">reverts {record.refs.map((ref) => `#${ref.seq}`).join(', ')}</span>{/if}<span class="history-row__time mono">{localAt(record.at, tz)}</span>{#if active(record, group.week)}<span class="history-row__open cap">open</span>{/if}</span>
-                        <span class="history-row__summary">{#each describe(record, names, tz) as line, index (index)}<span>{line}</span>{:else}<span>{record.rows.length} row{record.rows.length === 1 ? '' : 's'} changed</span>{/each}</span>
+                      <button class="history-row" data-fid="history-row" class:history-row--active={active(record, group.week)} type="button" aria-current={active(record, group.week) ? 'true' : undefined} data-history={record.seq} data-history-week={group.week} onclick={(event) => open(record, event, group.week)}>
+                        {@render rowBody(record, active(record, group.week))}
                       </button>
                     </li>
                   {/each}
@@ -213,19 +239,25 @@
               </section>
             {/if}
           {/each}
-          {#if loose.length && weeks.length}<section class="history__week" aria-labelledby="history-week-none"><h3 class="pane__section" id="history-week-none">Weekly timings and other changes</h3><ol class="history-timeline">{#each loose as record (record.seq)}<li><button class="history-row" class:history-row--active={active(record, '')} type="button" aria-current={active(record, '') ? 'true' : undefined} data-history={record.seq} data-history-week="" onclick={(event) => open(record, event, '')}><span class="history-row__head"><span class="mono">#{record.seq}</span><strong class="history-row__actor">{actorName(record.actor, names, known)}</strong><span class="chip chip--mono">{SURFACE_LABELS[record.surface] ?? record.surface}</span><span class="history-row__time mono">{localAt(record.at, tz)}</span></span><span class="history-row__summary">{describe(record, names, tz)[0] ?? `${record.rows.length} rows changed`}</span></button></li>{/each}</ol></section>{/if}
+          {#if loose.length && weeks.length}<section class="history__week" aria-labelledby="history-week-none"><h3 class="pane__section" data-fid="history-group" id="history-week-none">Weekly timings and other changes</h3><ol class="history-timeline">{#each loose as record (record.seq)}<li><button class="history-row" class:history-row--active={active(record, '')} type="button" aria-current={active(record, '') ? 'true' : undefined} data-history={record.seq} data-history-week="" onclick={(event) => open(record, event, '')}>{@render rowBody(record, active(record, ''))}</button></li>{/each}</ol></section>{/if}
           {#if !loading && records.length === 0}<div class="empty"><strong>No changes match.</strong></div>{/if}
         </div>
         {#if nextBefore !== null}<div class="history-list-region__pager"><button class="btn" type="button" disabled={loading} onclick={() => void load(true)}>Older changes</button></div>{/if}
       </div>
-      {#if selected}<HistoryDetail wide={wide} record={selected} week={selectedWeek} timezone={tz} {names} onclose={closeDetail} onrevert={revert} onrestore={restoreWeek} onraw={showRaw} />{/if}
+      {#if selected}<HistoryDetail wide={wide} member={memberRevert} record={selected} week={selectedWeek} timezone={tz} {names} onclose={closeDetail} onrevert={revert} onrestore={restoreWeek} onraw={showRaw} />{/if}
     </div>
   {:else}
     <div class="history-window__body" id="history-checkpoints" role="tabpanel" aria-labelledby="history-tab-checkpoints">
       <div class="history-list-region"><div class="history-list-region__scroll">
         {#if checkpoints.data}
           <p class="flash {checkpoints.data.verified.ok ? 'flash--ok' : 'flash--error'}" role="status">{checkpoints.data.verified.ok ? 'Chain verified' : 'Chain broken'}: {checkpoints.data.verified.checked} records, head #{checkpoints.data.verified.head.seq}.</p>
+          {#if !checkpoints.data.backups.length}
+            <div class="empty history-checkpoints__empty">
+              <strong>No backups recorded yet</strong>No backup directory is configured on this server, so no checkpoint anchors the history.
+            </div>
+          {:else}
           <table><caption class="vh">Backups anchoring the history</caption><thead><tr><th scope="col">Backup</th><th scope="col">Taken</th><th scope="col">History head</th><th scope="col" class="num">Revision</th><th scope="col">Anchored</th></tr></thead><tbody>{#each checkpoints.data.backups as backup (backup.file)}<tr><th scope="row" class="mono">{backup.file}</th><td class="mono">{localAt(backup.created_at, tz)}</td><td class="mono">#{backup.history_head.seq} · {backup.history_head.hash.slice(0, 12)}</td><td class="num">{backup.revision}</td><td>{backup.anchored ? 'yes — a truncated history is refused' : 'no'}</td></tr>{/each}</tbody></table>
+          {/if}
         {:else}<p class="note" aria-busy="true">Loading checkpoints…</p>{/if}
       </div></div>
     </div>

@@ -1,9 +1,10 @@
 <script lang="ts">
   import PageLine from '../shell/PageLine.svelte';
   import type { BossRow, FixedRow } from '@kanade/api-types';
-  import { BossTag, Modal, Toaster } from '@kanade/ui';
+  import { BossTag, Icon, Modal, Toaster } from '@kanade/ui';
   import '@kanade/ui/styles/fixed.scss';
   import Name from '../names/Name.svelte';
+  import { directory } from '../names/directory.svelte';
   import { Resource, send } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
   import FixedEditor from './FixedEditor.svelte';
@@ -33,6 +34,22 @@
   let retiring = $state<FixedRow | null>(null);
   let retireError = $state('');
   let retireFocus = $state(false);
+
+  /**
+   * The whole row card answers a pointer (B_Fixed) without a positioned
+   * overlay -- WebKit (bug 240961) lets a `::after` on a row escape to the
+   * frame. Clicks that land on another control (a name's copy button) stay
+   * theirs; the keyboard keeps using the row's button.
+   */
+  function forwardRowClicks(body: HTMLElement) {
+    const onclick = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target || target.closest('button, a, input, select, textarea, label')) return;
+      target.closest('tr')?.querySelector<HTMLButtonElement>('.fixed-list__open')?.click();
+    };
+    body.addEventListener('click', onclick);
+    return () => body.removeEventListener('click', onclick);
+  }
 
   const title = (row: FixedRow) => `${row.weekday_name} ${row.time} — ${row.bosses.map((b) => b.token).join(' + ')}`;
   const q = $derived(query.trim().toLowerCase());
@@ -100,19 +117,19 @@
 </script>
 
 <PageLine title={fixed.rows ? 'Fixed' : ''}>
-  <h1>{fixed.rows ? `${fixed.rows.length} weekly timing${fixed.rows.length === 1 ? '' : 's'}` : 'Weekly timings'}</h1>
+  <h1>{#if fixed.rows}<span class="pageline__num">{fixed.rows.length}</span> weekly timing{fixed.rows.length === 1 ? '' : 's'}{:else}Weekly timings{/if}</h1>
   <p class="pageline__context">the baseline, materialised into runs for this week and next</p>
   {#snippet side()}
     <div class="page-head__side">
-      <button class="btn btn--primary" type="button" data-fixed-add bind:this={addTrigger} onclick={(event) => open(null, event.currentTarget)}>Add a weekly timing</button>
+      <button class="btn btn--primary" type="button" data-fid="fixed-add" data-fixed-add bind:this={addTrigger} onclick={(event) => open(null, event.currentTarget)}><Icon name="plus" />Add a weekly timing</button>
     </div>
   {/snippet}
 </PageLine>
 
-<section class="card fixed-window window-fill" aria-labelledby="fixed-title">
-  <div class="card__head fixed-window__head">
+<section data-fid="window" class="card fixed-window window-fill" aria-labelledby="fixed-title">
+  <div class="card__head fixed-window__head" data-fid="window-bar">
     <h2 class="card__title" id="fixed-title">Weekly timings</h2>
-    <div class="fixed-window__search" role="search">
+    <div class="fixed-window__search" data-fid="window-search" role="search">
       <label class="vh" for="fixed-search">Search weekly timings</label>
       <input id="fixed-search" type="search" bind:value={query} placeholder="boss, day, party, channel…" autocomplete="off" spellcheck="false" />
     </div>
@@ -126,44 +143,57 @@
       {:else}<strong>No baseline yet.</strong>Add one with the button above, or run <code>/fixed add</code> inside a party channel.{/if}
     </div>
   {:else if fixed.rows}
-    <div class="fixed-list">
+    <div class="fixed-list" data-fid="fixed-list">
       <div class="fixed-list__table">
-      <table>
-        <caption class="vh">Weekly timings, by weekday</caption>
-        <thead>
-          <tr>
-            <th scope="col">When</th>
-            <th scope="col">Bosses</th>
-            <th scope="col">Party</th>
+      <!-- B_Fixed lays the rows out as grid cards; the explicit roles keep the
+           table semantics that a non-table display would drop. -->
+      <!-- svelte-ignore a11y_no_redundant_roles -->
+      <table role="table" aria-labelledby="fixed-caption">
+        <caption class="vh" id="fixed-caption">Weekly timings, by weekday</caption>
+        <!-- svelte-ignore a11y_no_redundant_roles -->
+        <thead role="rowgroup">
+          <!-- svelte-ignore a11y_no_redundant_roles -->
+          <tr role="row" data-fid="fixed-head">
+            <th role="columnheader" scope="col">When</th>
+            <th role="columnheader" scope="col">Bosses</th>
+            <th role="columnheader" scope="col">Party</th>
           </tr>
         </thead>
-        <tbody>
+        <!-- svelte-ignore a11y_no_redundant_roles -->
+        <tbody role="rowgroup" {@attach forwardRowClicks}>
           {#each rows as row (row.id)}
             {@const changed = row.runs.filter((r) => r.amended).length}
-            <tr class:fixed-list__row--active={editorOpen && editing?.id === row.id}>
-               <!-- v4 order: the time leads; the bosses stay the row's header. -->
-               <td>
+            <!-- svelte-ignore a11y_no_redundant_roles -->
+            <tr role="row" data-fid="fixed-row" class:fixed-list__row--active={editorOpen && editing?.id === row.id}>
+               <!-- v4 order: the time leads; the bosses stay the row's header. The
+                    button is the row's one control; a pointer anywhere else on
+                    the row is forwarded to it (`forwardRowClicks`); the party's
+                    names are plain text here (the editor copies ids). -->
+               <td role="cell">
                 <button
                   class="fixed-list__open"
-                  class:fixed-list__open--active={editorOpen && editing?.id === row.id}
                   type="button"
                   aria-current={editorOpen && editing?.id === row.id ? 'true' : undefined}
                   aria-label="Edit {title(row)}"
                   data-fixed={row.id}
                   onclick={(event) => open(row, event.currentTarget)}
                 >
-                  <span class="fixed-list__when"><strong>{row.weekday_name}</strong> <span class="mono">{row.time}</span></span>
+                  <span class="fixed-list__when"><span class="fixed-list__day">{row.weekday_name}</span> <span class="mono fixed-list__time">{row.time}</span></span>
                   {#if editorOpen && editing?.id === row.id}<span class="cap">open</span>{/if}
                 </button>
-                <div class="id">#{row.short_id}</div>
-                {#if changed}<div class="status status--planned">{changed} run{changed === 1 ? '' : 's'} amended</div>{/if}
+                <!-- The machine id is for search and the editor's head, not the scan (B_Fixed). -->
+                <span class="vh">#{row.short_id}</span>
                </td>
-              <th scope="row" class="fixed-list__bosses">
-                <ul class="bosslist">{#each row.bosses as boss (boss.token)}<li><BossTag {boss} portrait /></li>{/each}</ul>
+              <th role="rowheader" scope="row" class="fixed-list__bosses">
+                <!-- B_Fixed: the bosses, then the row's flags inline in quiet mono words. -->
+                <div class="fixed-list__bossline">
+                  <ul class="bosslist">{#each row.bosses as boss (boss.token)}<li><BossTag {boss} portrait /></li>{/each}</ul>
+                  {#if changed}<span class="status status--planned">{changed} run{changed === 1 ? '' : 's'} amended</span>{/if}
+                  {#if !row.channel_watched}<span class="status status--at_risk">not watched</span>{/if}
+                </div>
                 {#if row.note}<span class="note">{row.note}</span>{/if}
-                {#if !row.channel_watched}<div class="status status--at_risk">not watched</div>{/if}
               </th>
-              <td class="fixed-list__party"><span class="chips">{#each row.participants as person (person.id)}<span class="chip"><Name kind="member" id={person.id} name={person.name} /></span>{/each}</span></td>
+              <td role="cell" class="fixed-list__party" title={row.participants.map((person) => directory.label('member', person.id, person.name)).join(' · ')}><span class="chips">{#each row.participants as person (person.id)}<span class="chip"><Name kind="member" id={person.id} name={person.name} plain /></span>{/each}</span></td>
              </tr>
           {/each}
         </tbody>

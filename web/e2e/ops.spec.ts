@@ -201,6 +201,23 @@ test('inbox on a phone: the list, then the detail with a back action', async ({ 
   await list.getByRole('option', { name: /HCarling/ }).click();
   await expect(list).toBeHidden();
   await expect(page.locator('.inbox__detail').getByRole('heading', { level: 2 })).toContainText('Carling');
+  // B_PhoneInbox: "‹ Inbox" replaces the menu and title; no page line or tabs;
+  // the decision is a bottom action bar with the pencil opening the edit field.
+  const back = page.locator('.topbar').getByRole('button', { name: 'Back to the list (Inbox)' });
+  await expect(back).toHaveText('Inbox');
+  await expect(page.getByRole('button', { name: 'Open the navigation' })).toHaveCount(0);
+  await expect(page.getByRole('tablist', { name: 'Inbox' })).toBeHidden();
+  await expect(page.locator('.pageline')).toHaveClass(/pageline--echo/);
+  const bar = page.locator('.inbox__detail').getByRole('complementary', { name: 'Decide this change' });
+  const barBox = (await bar.boundingBox())!;
+  expect(barBox.y + barBox.height).toBeGreaterThan(844 - 2);
+  const pencil = bar.getByRole('button', { name: 'Show the edit field' });
+  if (await pencil.count()) {
+    await expect(bar.getByRole('textbox', { name: 'Edit, then approve' })).toBeHidden();
+    await pencil.click();
+    await expect(pencil).toHaveAttribute('aria-expanded', 'true');
+    await expect(bar.getByRole('textbox', { name: 'Edit, then approve' })).toBeVisible();
+  }
   await page.getByRole('button', { name: /Back to the list/ }).click();
   await expect(list).toBeVisible();
   await expect(page).not.toHaveURL(/item=/);
@@ -216,6 +233,30 @@ test('inbox on a phone: the list, then the detail with a back action', async ({ 
   expect(await page.evaluate(() => document.documentElement.scrollTop || document.body.scrollTop)).toBe(0);
   await page.getByRole('button', { name: /Back to the list/ }).click();
   await expect(list).toBeVisible();
+});
+
+test('inbox on a phone: the action bar is focused in the order it is seen', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await go(page, '/inbox?tab=extractor&item=p-bm-move');
+  const bar = page.locator('.inbox__detail').getByRole('complementary', { name: 'Decide this change' });
+  const pencil = bar.getByRole('button', { name: 'Show the edit field' });
+  const reject = bar.getByRole('button', { name: 'Reject…' });
+  const approve = bar.getByRole('button', { name: 'Approve', exact: true });
+  // Seen left to right: pencil, Reject…, Approve.
+  const xs = await Promise.all([pencil, reject, approve].map(async (b) => (await b.boundingBox())!.x));
+  expect(xs).toEqual([...xs].sort((a, b) => a - b));
+  // Tab follows the same order (review-2 finding 2: no CSS `order` on controls).
+  await pencil.focus();
+  await page.keyboard.press('Tab');
+  await expect(reject).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(approve).toBeFocused();
+  // The edit field opens above the bar and comes before the pencil.
+  await pencil.click();
+  await expect(bar.getByRole('textbox', { name: 'Edit, then approve' })).toBeVisible();
+  await pencil.focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(bar.getByRole('button', { name: 'Move & approve' })).toBeFocused();
 });
 
 test('inbox on a phone by keyboard: arrows move the active option, Enter opens, Back restores it', async ({ page }) => {
@@ -241,7 +282,9 @@ test('inbox on a phone by keyboard: arrows move the active option, Enter opens, 
   await expect(page).toHaveURL(new RegExp(`item=${items[1]}`));
   await expect(detail).toBeFocused();
   // Back by keyboard returns focus to the list, the opened option still active.
-  await page.keyboard.press('Tab');
+  // On a phone the back step is the top bar's "‹ Inbox", before the page (and the Inbox link).
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Shift+Tab');
   await expect(page.getByRole('button', { name: /Back to the list/ })).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(list).toBeFocused();

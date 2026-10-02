@@ -74,22 +74,32 @@
   --win-soft: color-mix(in srgb, var(--win) 30%, transparent);
 
   /* M3E depth-2 surfaces (docs/v5/m3e-rail-design-spec.md "Tokens"): the
-     selected-item container and its ring and ink, the list pane, the week
+     selected-item container and its edge and ink, the list pane, the week
      board, contained rows, tonal chips and unselected connected-group
      buttons. `--row-lift` is what a row is lifted toward: white by day, a
      touch of ink at night (white would glow on a dark surface). `--pageline`
      fills the page line's title shape in every face (user decision
      2026-10-01: ink on the bare ground read washed out, 4.59:1 on blossom). */
   --select: color-mix(in srgb, var(--accent) 14%, var(--surface));
-  --select-ring: color-mix(in srgb, var(--accent) 45%, var(--surface));
+  /* The light 1.5 px edge of a selected list item (mockup `.lrow.sel`): a
+     finish on the tonal fill, not the state cue -- the fill, the rounder
+     shape and the bolder title carry that (fidelity audit 2026-10-02). */
+  --select-edge: color-mix(in srgb, var(--accent) 45%, var(--surface));
   --select-ink: var(--accent-text);
   --pane: var(--raise);
   --board: color-mix(in srgb, var(--ink) 3%, var(--surface));
   --row-lift: white;
   --row: color-mix(in srgb, var(--row-lift) 45%, var(--surface));
+  /* Hover on a row (M3 state layer, 8% of the accent over the resting row):
+     apart from the pane, the row and `--select` (the old `--raise` hover was
+     the pane colour itself). Dark faces use an ink layer (_contrast.scss). */
+  --row-hover: color-mix(in srgb, var(--accent) 8%, var(--row));
   --chip-fill: color-mix(in srgb, var(--ink) 8%, var(--surface));
   --seg-fill: color-mix(in srgb, var(--ink) 11%, var(--surface));
   --pageline: var(--surface);
+  /* Text on the bare ground (the unboxed page line): ink, deepened per face
+     in _contrast.scss where ink on the ground is under 4.5:1. */
+  --ground-ink: var(--ink);
 
   /* Difficulty pills, keyed to the in-game boss list rather than to this
      page's palette: teal Normal, magenta Hard, black-and-gold Chaos,

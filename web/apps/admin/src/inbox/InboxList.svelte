@@ -80,6 +80,7 @@
     {#each items as p (p.id)}
       <li
         class="inbox__option"
+        data-fid="inbox-row"
         class:inbox__option--active={!follow && p.id === current}
         id="{uid}-{p.id}"
         role="option"

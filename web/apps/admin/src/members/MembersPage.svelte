@@ -1,7 +1,6 @@
 <script lang="ts">
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/members.scss';
-  import '@kanade/ui/styles/m3e-primitives.scss';
   import type { MemberRow, Persona } from '@kanade/api-types';
   import Pager from '../pages/Pager.svelte';
   import { paged } from '../pages/paging';
@@ -57,11 +56,8 @@
 </script>
 
 <PageLine title={members.data ? 'Members' : ''}>
-  <h1>{members.data ? `${bossers} bosser${bossers === 1 ? '' : 's'}` : 'Members'}</h1>
+  <h1>{#if members.data}<span class="pageline__num">{bossers}</span> bosser{bossers === 1 ? '' : 's'}{:else}Members{/if}</h1>
   <p class="pageline__context">synced from the bossing role</p>
-  {#snippet about()}
-    <p>Aliases are what the extractor matches names against in chat.</p>
-  {/snippet}
 </PageLine>
 <section class="card members-window window-fill" aria-labelledby="members-roster-title">
   <div class="card__head members-window__head">

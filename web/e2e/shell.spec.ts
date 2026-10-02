@@ -163,6 +163,10 @@ test('phone: the drawer carries the account and the time zone', async ({ page })
   await page.getByRole('button', { name: 'Open the navigation' }).click();
   const drawer = page.getByRole('dialog', { name: 'Navigation' });
   await expect(drawer.getByText('Asia/Kuala_Lumpur')).toBeVisible();
+  // B_PhoneNav: the palette's keys in the foot, and Week's run count beside it.
+  await expect(drawer.getByText('Ctrl K', { exact: true })).toBeVisible();
+  const heading = (await page.getByRole('heading', { level: 1 }).textContent()) ?? '';
+  await expect(drawer.getByRole('link', { name: 'Week', exact: true }).locator('.navlist__count')).toHaveText(heading.split(' ')[0]!);
   await drawer.getByRole('button', { name: /Account: Asahi/ }).click();
   await expect(drawer.getByRole('menu', { name: 'Account' }).getByRole('menuitem', { name: 'Sign out' })).toBeVisible();
 });
@@ -230,7 +234,7 @@ test('phone: a swipe in from the left edge opens the drawer; a vertical stroke d
   await expect(page.getByRole('button', { name: 'Open the navigation' })).toBeFocused();
 });
 
-test('page line: on the ground, with only the title group in a 12 px outlined surface shape', async ({ page }) => {
+test('page line: unboxed on the ground, the count a bold mono numeral, Live HH:MM', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('colorway', 'blossom');
     localStorage.setItem('theme', 'light');
@@ -246,35 +250,36 @@ test('page line: on the ground, with only the title group in a 12 px outlined su
       const line = page.locator('.pageline');
       const head = line.locator('.pageline__head');
       const look = await line.evaluate((el) => {
-        const shape = el.querySelector('.pageline__head')!;
-        const probe = document.createElement('i');
-        probe.style.setProperty('color', 'var(--surface)');
-        document.body.append(probe);
-        const surface = getComputedStyle(probe).color;
-        probe.remove();
+        const shape = getComputedStyle(el.querySelector('.pageline__head')!);
         const line = getComputedStyle(el);
-        const cs = getComputedStyle(shape);
         return {
           lineBg: line.backgroundColor,
           lineBorder: line.borderTopWidth,
-          bg: cs.backgroundColor,
-          surface,
-          border: `${cs.borderTopWidth} ${cs.borderTopStyle}`,
-          radius: cs.borderTopLeftRadius,
+          bg: shape.backgroundColor,
+          border: shape.borderTopWidth,
         };
       });
-      // The line itself is bare; the title group is the one contained shape.
+      // Neither the line nor its title group is a contained shape (mockup `.top`).
       expect(look.lineBg, path).toBe('rgba(0, 0, 0, 0)');
       expect(look.lineBorder, path).toBe('0px');
-      expect(look.bg, path).toBe(look.surface);
-      expect(look.border, path).toBe('2px solid');
-      expect(look.radius, path).toBe('12px');
+      expect(look.bg, path).toBe('rgba(0, 0, 0, 0)');
+      expect(look.border, path).toBe('0px');
       await expect(head.getByRole('heading', { level: 1 })).toBeVisible();
-      // The status, Commands and the page's own controls stay outside it.
+      // A section's count: the numeral bold in the mono face.
+      const num = head.locator('.pageline__num').first();
+      if (await num.count()) {
+        await expect(num).toHaveCSS('font-weight', '700');
+        expect(await num.evaluate((el) => getComputedStyle(el).fontFamily)).toMatch(/mono/i);
+      }
+      // No ⓘ: the mockups have none.
+      await expect(line.locator('details')).toHaveCount(0);
+      // The status, Commands and the page's own controls stay outside the title group.
       await expect(head.getByRole('group', { name: 'Status' })).toHaveCount(0);
       await expect(head.locator('.btn, .mchip, .seg, select')).toHaveCount(0);
-      await expect(line.getByRole('group', { name: 'Status' })).toBeVisible();
-      expect((await head.boundingBox())!.height, `${path} at ${size.width}`).toBeLessThanOrEqual(36.5);
+      const status = line.getByRole('group', { name: 'Status' });
+      await expect(status).toBeVisible();
+      // Live HH:MM, no seconds.
+      await expect(status.locator('.fresh__time')).toHaveText(/^\d\d:\d\d$/);
       expect((await line.boundingBox())!.height, `${path} at ${size.width}`).toBeLessThanOrEqual(36.5);
     }
   }
@@ -340,7 +345,7 @@ test('chat page line on a phone: the strip under the top bar, the table within t
   await page.goto(`${ADMIN}/chat?sw=off`);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('13 interactions');
   const line = page.locator('.pageline');
-  await expect(line.locator('.pageline__head')).toHaveCSS('border-top-width', '2px');
+  await expect(line.locator('.pageline__head')).toHaveCSS('border-top-width', '0px');
   await line.getByRole('button', { name: /models · 4 errors$/ }).click();
   const panel = page.locator('.modelstats__panel');
   await expect(panel).toBeVisible();
@@ -348,4 +353,37 @@ test('chat page line on a phone: the strip under the top bar, the table within t
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(390);
   expect(await page.evaluate(() => document.scrollingElement!.scrollHeight - innerHeight)).toBeLessThanOrEqual(0);
+});
+
+// Round 5 (user report: the dots sat low on the live build): in every tabbed
+// title bar the three window dots are centred on the tabs. The dots are the
+// title bar's `::before` flex item; its centre follows from the bar's content
+// box, the item's own alignment and margins.
+test('window dots sit on the tab strip centre line in tabbed title bars', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  for (const path of ['/history', '/inbox', '/limits', '/chat/c-move']) {
+    await page.goto(`${ADMIN}${path}?sw=off`);
+    const strip = page.locator('.card__head.tabs__strip').first();
+    await expect(strip.getByRole('tab').first()).toBeVisible();
+    const { dot, tabs } = await strip.evaluate((head) => {
+      const box = head.getBoundingClientRect();
+      const cs = getComputedStyle(head);
+      const top = box.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop);
+      const bottom = box.bottom - parseFloat(cs.borderBottomWidth) - parseFloat(cs.paddingBottom);
+      const before = getComputedStyle(head, '::before');
+      const h = parseFloat(before.height);
+      const mt = parseFloat(before.marginTop);
+      const mb = parseFloat(before.marginBottom);
+      const align = before.alignSelf === 'auto' || before.alignSelf === 'normal' ? cs.alignItems : before.alignSelf;
+      const dot =
+        align === 'flex-end' || align === 'end'
+          ? bottom - mb - h / 2
+          : align === 'flex-start' || align === 'start'
+            ? top + mt + h / 2
+            : (top + mt + bottom - mb) / 2;
+      const list = head.querySelector('[role="tablist"]')!.getBoundingClientRect();
+      return { dot, tabs: (list.top + list.bottom) / 2 };
+    });
+    expect(Math.abs(dot - tabs), `${path}: dots at ${dot.toFixed(1)}, tabs at ${tabs.toFixed(1)}`).toBeLessThanOrEqual(1);
+  }
 });

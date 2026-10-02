@@ -12,7 +12,7 @@
   {#if state === 'loading'}
     <Icon name="refresh-cw" /> Loading…
   {:else if state === 'live'}
-    <Icon name="check" /> <span><span class="fresh__state">Live</span>{#if updated}<span class="fresh__words">&nbsp;· updated</span>&nbsp;{updated}{/if}</span>
+    <Icon name="check" /> <span><span class="fresh__state">Live</span>{#if updated}<span class="fresh__words">&nbsp;· updated</span>&nbsp;<span class="fresh__time">{updated}</span>{/if}</span>
   {:else if state === 'closed'}
     <Icon name="clock" /> Closed{#if updated}&nbsp;· checked {updated}{/if}
   {:else if state === 'stale'}

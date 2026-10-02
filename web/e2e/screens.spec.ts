@@ -206,13 +206,26 @@ test('fixed: direct wide load gives the editor pane its own width and scroll own
   await page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' }).click();
   const pane = page.getByRole('complementary', { name: 'Weekly timing details' });
   await expect(pane).toBeVisible();
+  // The editor's fields scroll inside the pane; its head and foot (Retire,
+  // Save) stay put and never sit over a field.
   const paneMetrics = await pane.evaluate((element) => {
+    const fields = element.querySelector<HTMLElement>('.fixedsheet__content')!;
     const filler = document.createElement('div');
     filler.style.height = '2000px';
-    element.append(filler);
-    element.scrollTop = 1;
-    const style = getComputedStyle(element);
-    const result = { width: element.getBoundingClientRect().width, overflowY: style.overflowY, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight, scrollTop: element.scrollTop };
+    fields.append(filler);
+    fields.scrollTop = 1;
+    const style = getComputedStyle(fields);
+    const foot = element.querySelector('.fixedsheet__foot')!.getBoundingClientRect();
+    const box = element.getBoundingClientRect();
+    const result = {
+      width: box.width,
+      overflowY: style.overflowY,
+      scrollHeight: fields.scrollHeight,
+      clientHeight: fields.clientHeight,
+      scrollTop: fields.scrollTop,
+      footInside: foot.bottom <= box.bottom + 0.5,
+      paneScrolls: element.scrollHeight > element.clientHeight,
+    };
     filler.remove();
     return result;
   });
@@ -221,6 +234,8 @@ test('fixed: direct wide load gives the editor pane its own width and scroll own
   expect(paneMetrics.overflowY).toBe('auto');
   expect(paneMetrics.scrollHeight).toBeGreaterThan(paneMetrics.clientHeight);
   expect(paneMetrics.scrollTop).toBe(1);
+  expect(paneMetrics.footInside).toBe(true);
+  expect(paneMetrics.paneScrolls).toBe(false);
 });
 
 test('history: direct wide load keeps its timeline and change pane as aligned scroll-owning siblings', async ({ page }) => {
@@ -561,4 +576,256 @@ test('reminders: queued, due, sent and stale, all runs or one', async ({ page })
   for (const row of await queued.locator('tbody tr').all()) await expect(row).toContainText('#630b3544');
   await page.getByRole('link', { name: 'Show every run' }).click();
   await expect(page).toHaveURL(`${ADMIN}/reminders`);
+});
+
+// User feedback 2026-10-02: a hovered row took the pane's colour and seemed
+// to vanish. The row state layer must differ from the resting row, the pane
+// and the selected fill (and leave the selected row as it is).
+for (const [path, rows, pane, active] of [
+  ['/history', '.history-row', '.history-list-region', '.history-row--active'],
+  ['/members', '.memberlist__row', '.memberlist', '.memberlist__row--active'],
+] as const) {
+  test(`${path}: a hovered row stands apart from the row, the pane and the selection`, async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('colorway', 'blossom');
+      localStorage.setItem('theme', 'light');
+    });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${ADMIN}${path}?sw=off`);
+    await page.locator(rows).first().click();
+    const selected = page.locator(active);
+    await expect(selected).toHaveCount(1);
+    const bg = (selector: string, nth = 0) => page.locator(selector).nth(nth).evaluate((el) => getComputedStyle(el).backgroundColor);
+    const target = page.locator(`${rows}:not(${active})`).nth(1);
+    const resting = await target.evaluate((el) => getComputedStyle(el).backgroundColor);
+    const selectedBg = await bg(active);
+    const paneBg = await bg(pane);
+    await target.hover();
+    await expect.poll(() => target.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(resting);
+    const hovered = await target.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(hovered).not.toBe(paneBg);
+    expect(hovered).not.toBe(selectedBg);
+    // Hovering the selected row keeps its selected fill.
+    await selected.hover();
+    await expect.poll(() => bg(active)).toBe(selectedBg);
+  });
+}
+
+// Fidelity (B_Fixed): the whole row is the card -- one grid row whose own
+// fill shows selection and hover, its cells drawing none -- with one button
+// per row; flags in their own case; Add has its plus.
+test('fixed: whole-row selection and hover, quiet flags, the Add key with its plus', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('colorway', 'blossom');
+    localStorage.setItem('theme', 'light');
+  });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/fixed?sw=off`);
+  await expect(page.locator('[data-fixed-add] svg[data-icon="plus"]')).toHaveCount(1);
+  const rows = page.locator('.fixed-list tbody tr');
+  await expect(rows.first()).toBeVisible();
+  // Still a table to assistive tech, laid out as grid rows (B_Fixed).
+  await expect(page.getByRole('table', { name: 'Weekly timings, by weekday' })).toBeVisible();
+  await expect(rows.first()).toHaveCSS('display', 'grid');
+  // One control per row.
+  await expect(rows.first().getByRole('button', { name: /^Edit / })).toHaveCount(1);
+  const rowBg = (row: ReturnType<typeof rows.nth>) => row.evaluate((el) => getComputedStyle(el).backgroundColor);
+  const cellBgs = (row: ReturnType<typeof rows.nth>) => row.locator(':scope > *').evaluateAll((cells) => cells.map((c) => getComputedStyle(c).backgroundColor));
+  const resting = await rowBg(rows.nth(2));
+  // A click past the party (not on a name), on the row's own edge, opens the row: the hit area spans it.
+  const party = rows.nth(0).locator('.fixed-list__party');
+  const box = (await party.boundingBox())!;
+  await page.mouse.click(box.x + box.width + 6, box.y + box.height / 2);
+  await expect(page.getByRole('complementary', { name: 'Weekly timing details' })).toBeVisible();
+  const selected = await rowBg(rows.nth(0));
+  expect(selected).not.toBe(resting);
+  expect(new Set(await cellBgs(rows.nth(0)))).toEqual(new Set(['rgba(0, 0, 0, 0)']));
+  await rows.nth(2).locator('td').first().hover({ position: { x: 40, y: 30 } });
+  await expect.poll(() => rowBg(rows.nth(2))).not.toBe(resting);
+  const hovered = await rowBg(rows.nth(2));
+  expect(hovered).not.toBe(selected);
+  expect(new Set(await cellBgs(rows.nth(2)))).toEqual(new Set(['rgba(0, 0, 0, 0)']));
+  // Hovering the selected row keeps its selected fill (review finding 1), and
+  // its day and time are bold -- the non-colour cue (finding 5).
+  await rows.nth(0).locator('td').first().hover({ position: { x: 40, y: 20 } });
+  await expect.poll(() => rowBg(rows.nth(0))).toBe(selected);
+  await expect(rows.nth(0).locator('.fixed-list__day')).toHaveCSS('font-weight', '700');
+  await expect(page.locator('.fixed-list .status').first()).toHaveCSS('text-transform', 'none');
+});
+
+// Fidelity (B_History): "Week: every week" in one pill; no "History" header row in the change pane.
+test('history: filter pills read label: value, and the change pane has no extra header row', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/history?sw=off`);
+  const label = page.locator('.history-filter__label').first();
+  await expect(label).toHaveText('Week');
+  expect(await label.evaluate((el) => getComputedStyle(el, '::after').content)).toBe('":"');
+  await page.locator('.history-row').nth(1).click();
+  const pane = page.getByRole('complementary', { name: 'Change details' });
+  await expect(pane).toBeVisible();
+  await expect(pane.locator('.cap').first()).toContainText(/^Change #/);
+  await expect(pane.getByText('History', { exact: true })).toHaveCount(0);
+  await expect(pane.getByRole('button', { name: 'Close change details' })).toBeVisible();
+});
+
+// Fidelity (B_InboxSelf): mono overlines for "Would change" and the conflict, a tonal source chip.
+test('inbox: overline section labels and a tonal source chip', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/inbox?tab=self_service&item=p-fa-request&sw=off`);
+  const detail = page.locator('.inbox__detail');
+  for (const name of [/^Would change/, /^Changed since the member asked$/]) {
+    const heading = detail.getByRole('heading', { name });
+    await expect(heading).toHaveCSS('text-transform', 'uppercase');
+    expect(await heading.evaluate((el) => getComputedStyle(el).fontFamily)).toMatch(/mono/i);
+  }
+  const chip = detail.locator('.proposal__head .chip', { hasText: 'Member request' });
+  await expect(chip).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
+  expect(await chip.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
+});
+
+// B_Fixed picker: each boss's difficulties sit on one line in a compact row;
+// an existing timing shows its own bosses until "All n bosses…".
+test('fixed editor: one line of difficulty pills per boss, own bosses first', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/fixed?sw=off`);
+  await page.getByRole('button', { name: /^Edit Wednesday/ }).first().click();
+  const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
+  const rows = editor.locator('.bossrow');
+  await expect(rows).toHaveCount(1);
+  await editor.getByRole('button', { name: /^All \d+ bosses…$/ }).click();
+  expect(await rows.count()).toBeGreaterThan(1);
+  for (const row of (await rows.all()).slice(0, 6)) {
+    const tops = await row.locator('.pill-toggle').evaluateAll((pills) => pills.map((p) => Math.round(p.getBoundingClientRect().top)));
+    expect(new Set(tops).size, await row.innerText()).toBe(1);
+    expect((await row.boundingBox())!.height).toBeLessThanOrEqual(48);
+  }
+});
+
+// B_InboxSelf / B_PhoneInbox: the boss art beside the title; the thread's
+// rows with no stray "open" links (the time opens the message instead).
+test('inbox: boss art, and a thread without stray open links', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/inbox?tab=extractor&item=p-bm-move&sw=off`);
+  const detail = page.locator('.inbox__detail');
+  await expect(detail.locator('.proposal__head .proposal__art .portrait')).toHaveCount(1);
+  const thread = detail.getByLabel('Evidence');
+  await expect(thread.getByRole('link', { name: 'open', exact: true })).toHaveCount(0);
+  await expect(thread.getByRole('link', { name: /open in Discord/ }).first()).toBeVisible();
+  await expect(thread.locator('.msg--used').first()).toBeVisible();
+  await expect(detail.getByRole('heading', { name: /^Thread · \d+ messages?$/ })).toBeVisible();
+  // The decision pane runs the detail's height, Reject at its foot.
+  const decision = detail.getByRole('complementary', { name: 'Decide this change' });
+  const reject = (await decision.getByRole('button', { name: 'Reject…' }).boundingBox())!;
+  const box = (await decision.boundingBox())!;
+  expect(box.y + box.height - (reject.y + reject.height)).toBeLessThan(80);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  // The phone frame takes over after the resize: wait for the compact item.
+  await expect(page.locator('.inbox--compact')).toHaveCount(1);
+  await expect(detail.locator('.proposal__head .proposal__art .portrait')).toHaveCount(1);
+  // The facts stay on one line (cut at the edge, never wrapped).
+  const meta = detail.locator('.proposal__meta');
+  await expect.poll(async () => (await meta.boundingBox())!.height).toBeLessThanOrEqual(30);
+});
+
+// The Inbox thread from the API's `thread` (each message marked `used`): the
+// Used/All toggle starts on Used; All adds the context, used rows lifted.
+test('inbox: thread toggle shows the used messages, then all of them', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/inbox?tab=extractor&item=p-bm-move&sw=off`);
+  const items = (await (await page.request.get(`${ADMIN}/api/admin/inbox`)).json()) as {
+    id: string;
+    thread: { id: string; used: boolean }[] | null;
+    evidence: { id: string; missing: boolean }[];
+  }[];
+  const item = items.find((p) => p.id === 'p-bm-move')!;
+  // Cited messages that are gone are left out of the thread but shown (used).
+  const gone = item.evidence.filter((e) => e.missing && !item.thread!.some((m) => m.id === e.id)).length;
+  const thread = [...item.thread!, ...Array.from({ length: gone }, () => ({ used: true }))];
+  const used = thread.filter((m) => m.used).length;
+  expect(used).toBeGreaterThan(0);
+  expect(used).toBeLessThan(thread.length);
+  const detail = page.locator('.inbox__detail');
+  await expect(detail.getByRole('heading', { name: `Thread · ${thread.length} messages` })).toBeVisible();
+  const toggle = detail.getByRole('group', { name: 'Messages shown' });
+  const usedButton = toggle.getByRole('button', { name: `Used ${used}` });
+  await expect(usedButton).toHaveAttribute('aria-pressed', 'true');
+  const messages = detail.getByLabel('Evidence').getByRole('listitem');
+  await expect(messages).toHaveCount(used);
+  await toggle.getByRole('button', { name: 'All' }).click();
+  await expect(messages).toHaveCount(thread.length);
+  await expect(detail.locator('.msg--used')).toHaveCount(used);
+  await usedButton.click();
+  await expect(messages).toHaveCount(used);
+});
+
+// Round 5: with no backups yet (no backup directory on the server), the
+// Checkpoints tab says so instead of an empty table; the Timeline's Week/Who
+// filters are hidden there.
+test('history checkpoints: empty state without backups, and no timeline filters', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.route(/\/api\/admin\/history\/checkpoints$/, async (route) => {
+    const response = await route.fetch();
+    const json = (await response.json()) as { backups: unknown[] };
+    json.backups = [];
+    await route.fulfill({ response, json });
+  });
+  await page.goto(`${ADMIN}/history?sw=off`);
+  const filters = page.getByRole('search', { name: 'Filter the history' });
+  await expect(filters).toBeVisible();
+  await page.getByRole('tab', { name: 'Checkpoints' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Chain verified' })).toBeVisible();
+  await expect(page.getByText('No backups recorded yet')).toBeVisible();
+  await expect(page.getByText(/No backup directory is configured on this server/)).toBeVisible();
+  await expect(page.getByRole('table', { name: /Backups/ })).toHaveCount(0);
+  await expect(filters).toBeHidden();
+  await page.getByRole('tab', { name: 'Timeline' }).click();
+  await expect(filters).toBeVisible();
+});
+
+// Review-2 finding 1: a cited message deleted from Discord is left out of the
+// thread by the server while the evidence marks it missing. The Inbox merges
+// it back in (used, in time order) instead of dropping it.
+test('inbox: a cited message that is gone still shows in the thread, as used', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.route(/\/api\/admin\/inbox$/, async (route) => {
+    const response = await route.fetch();
+    type Line = { id: string; author: string; at: string; content: string | null; url: string | null; missing: boolean; used?: boolean };
+    const json = (await response.json()) as { id: string; evidence: Line[]; thread: Line[] | null }[];
+    const item = json.find((p) => p.id === 'p-bm-move')!;
+    // The first cited message: deleted since -- missing in the evidence, absent from the thread.
+    const cited = item.thread!.find((m) => m.used)!;
+    item.thread = item.thread!.filter((m) => m.id !== cited.id);
+    item.evidence = item.evidence.map((e) => (e.id === cited.id ? { ...e, content: null, url: null, missing: true } : e));
+    await route.fulfill({ response, json });
+  });
+  await page.goto(`${ADMIN}/inbox?tab=extractor&item=p-bm-move&sw=off`);
+  const detail = page.locator('.inbox__detail');
+  const thread = detail.getByLabel('Evidence');
+  const goneRows = thread.locator('.msg--gone');
+  await expect(goneRows.first()).toBeVisible();
+  await expect(goneRows.first()).toContainText('This message is no longer stored.');
+  await expect(goneRows.first()).toHaveClass(/msg--used/);
+  // Counted in Used, and shown while the toggle is on Used.
+  const usedButton = detail.getByRole('group', { name: 'Messages shown' }).getByRole('button', { name: /^Used \d+$/ });
+  await expect(usedButton).toHaveAttribute('aria-pressed', 'true');
+  const n = Number((await usedButton.innerText()).replace(/\D/g, ''));
+  await expect(thread.getByRole('listitem')).toHaveCount(n);
+  await expect(thread.locator('.msg--used')).toHaveCount(n);
+});
+
+// Review-2 finding 4: page chunks no longer re-import the M3E primitives, so a
+// later page load cannot reorder the cascade under History's filter pills.
+test('history filter pills keep their size after visiting the Inbox', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/history?sw=off`);
+  const pill = page.locator('.history-filter').first();
+  const size = () => pill.evaluate((el) => { const c = getComputedStyle(el); return [c.minHeight, c.paddingLeft, c.paddingRight, c.borderRadius].join(' '); });
+  await expect(pill).toBeVisible();
+  const before = await size();
+  await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: /^Inbox/ }).click();
+  await expect(page.locator('.inbox__detail')).toBeVisible();
+  await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'History' }).click();
+  await expect(pill).toBeVisible();
+  expect(await size()).toBe(before);
 });

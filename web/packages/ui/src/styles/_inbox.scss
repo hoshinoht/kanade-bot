@@ -12,14 +12,19 @@
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(14rem, 19rem) minmax(0, 1fr);
+  grid-template-columns: 300px minmax(0, 1fr);
   margin: 0 -1.1rem;
 }
 
 .inbox__list {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
-  border-right: 2px solid var(--line);
+  border-right: 1.5px solid var(--line);
+  background: var(--pane);
 }
+
+.inbox__list > .list-pane { flex: 1 1 auto; }
 
 // An empty tab: its explanation takes the whole window, not a side column.
 .inbox__body--empty {
@@ -36,7 +41,7 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0.3rem 1.1rem 1.1rem;
+  padding: 16px 20px;
 }
 
 .inbox__detail:focus {
@@ -47,23 +52,27 @@
   outline-offset: -3px;
 }
 
+// List rows (mockup `.crow`): card surfaces, the title, who and when, flags.
 .inbox__option {
-  display: grid;
-  gap: 0.1rem;
-  padding: 0.4rem 0.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 12px;
   border-radius: 6px;
+  line-height: 1.35;
   cursor: pointer;
 }
 
 .inbox__option:hover {
-  background: var(--surface);
+  background: var(--row-hover);
+  box-shadow: inset 0 0 0 1.5px var(--line);
 }
 
 // Selected: the surface, a bar and weight -- not colour alone.
 .inbox__option[aria-selected="true"] {
   border-radius: 18px;
   background: var(--select);
-  box-shadow: inset 0 0 0 1.5px var(--select-ring);
+  box-shadow: inset 0 0 0 1.5px var(--select-edge);
 }
 
 // Phones: the keyboard's active option (not yet opened) gets the focus ring.
@@ -77,7 +86,8 @@
 }
 
 .inbox__what {
-  font-weight: 600;
+  font-size: var(--fs-body-sm);
+  font-weight: 700;
 }
 
 .inbox__meta {
@@ -88,11 +98,17 @@
 .inbox__badges {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: 4px;
 }
 
 .inbox__badges .chip {
   font-size: var(--fs-mini);
+}
+
+// The flags as the board's small tonal words (mockup `.err2`, 1 px tall padding).
+.inbox__badges .status-chip {
+  min-height: 18px;
+  padding: 0 8px;
 }
 
 .inbox__empty {
@@ -132,26 +148,154 @@
   margin: 0.3rem 0 0.2rem -0.4rem;
 }
 
+/* ── one item (boards B_InboxSelf, B_PhoneInbox) ───────────────────────── */
+
+// Wide: the item's column (header, the member's words, the change, the
+// thread) beside the 280 px decision pane, which runs the detail's height.
+.proposal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-rows: auto 1fr;
+  gap: 12px 14px;
+  min-height: 100%;
+}
+
+.proposal > .proposal__head { grid-column: 1; grid-row: 1; }
+.proposal__workspace { display: contents; }
+.proposal .thread-panel { grid-column: 1; grid-row: 2; }
+.proposal .decision-card { grid-column: 2; grid-row: 1 / -1; align-self: auto; }
+
+// Header: the boss art in the cookie shape, the title, one line of facts.
 .proposal__head {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 0.35rem 0.6rem;
+  gap: 12px;
+  min-width: 0;
+}
+
+.proposal__art { flex: none; display: block; }
+
+.proposal__art .portrait {
+  width: 52px;
+  height: 52px;
+  border: 0;
+  border-radius: 0;
+  clip-path: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 11.7%, 85.9% 17.7%, 87.7% 24.6%, 90.9% 30.1%, 95.9% 35.1%, 99.2% 41.3%, 98.2% 48.3%, 95.2% 54.8%, 94.1% 61%, 94.8% 68.1%, 93.3% 75%, 88% 79.7%, 81.6% 82.7%, 76.7% 86.8%, 72.7% 92.6%, 67.1% 97%, 60% 97.2%, 53.2% 95.4%, 46.8% 95.4%, 40% 97.2%, 32.9% 97%, 27.3% 92.6%, 23.3% 86.8%, 18.4% 82.7%, 12% 79.7%, 6.7% 75%, 5.2% 68.1%, 5.9% 61%, 4.8% 54.8%, 1.8% 48.3%, 0.8% 41.3%, 4.1% 35.1%, 9.1% 30.1%, 12.3% 24.6%, 14.1% 17.7%, 17.9% 11.7%, 24.4% 9.1%, 31.5% 8.5%, 37.5% 6.3%, 43.3% 2.2%);
+  font-size: var(--fs-small);
+}
+
+.proposal__headtext {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
 }
 
 .proposal__title {
-  margin: 0.3rem 0 0;
-  font-family: var(--display);
-  font-size: var(--fs-lg);
-  display: inline-flex;
-  flex-wrap: wrap;
+  display: flex;
+  flex-wrap: nowrap;
+  max-width: 100%;
   align-items: center;
-  gap: 0.35rem;
+  gap: 4px 10px;
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--fs-brand);
+  font-weight: 800;
+  line-height: 1.2;
 }
+
+// One line of facts as running text (the board's `span`): chips and words wrap together.
+.proposal__meta {
+  display: block;
+  margin: 0;
+  line-height: 1.75;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+.proposal__fact::before {
+  content: "· ";
+}
+
+.proposal__card { color: var(--accent-text); }
+.proposal__title .boss { min-width: 0; }
+
+// The source as a tonal chip (mockup `.tonal2`), the confidence on a surface.
+.proposal__meta .chip {
+  min-height: 22px;
+  padding: 0 10px;
+  border-color: transparent;
+  background: var(--chip-fill);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  font-weight: 400;
+}
+
+.proposal__meta .conf {
+  background: var(--surface);
+  font-size: var(--fs-mini);
+}
+
+// The thread panel on a wide screen is no box of its own: its cards sit on
+// the window, and the detail is the one scroller.
+.proposal .thread-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.proposal .thread-panel > * { margin: 0; }
+
+// The member's words: a speech bubble (mockup `.bub2`).
+.proposal__bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 100%;
+  padding: 12px 16px;
+  border-radius: 20px 20px 20px 6px;
+  background: color-mix(in srgb, var(--ok) 10%, var(--surface));
+}
+
+.proposal__bubble .cap { color: var(--ok-text); }
+.proposal__said { margin: 0; font-size: var(--fs-body-sm); line-height: 1.4; }
+
+// A name's 24 px copy target overhangs its line instead of growing it (the
+// bubble's overline, a thread message's author): the rows keep the board's height.
+.proposal__bubble .name--copy,
+.msg__who .name--copy {
+  margin-block: -4px;
+}
+
+// Section labels inside an item are the mono overlines.
+.proposal .proposal__cap { margin: 0; }
+.proposal__capfield { margin-left: 0.5em; }
+
+// What would change: one card (mockup `.scard`).
+.proposal__would {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.proposal__would > * { margin: 0; }
+.proposal__would .note { color: var(--dim-text); font-size: var(--fs-mini); line-height: 1.4; }
 
 .proposal__changes {
   display: grid;
-  gap: 0.25rem;
+  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -164,31 +308,76 @@
   color: var(--dim-text);
 }
 
-.proposal__conflicts {
-  margin-top: 0.7rem;
-  padding: 0.5rem 0.75rem;
-  border: 2px solid var(--line);
-  border-left: 4px solid var(--risk);
-  border-radius: var(--r-sm);
-  background: var(--raise);
-}
-
-.proposal__conflicts ul {
-  margin: 0.2rem 0 0.4rem;
-  padding-left: 1.1rem;
-}
-
-.proposal__force {
-  display: flex;
+.proposal__people {
+  display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem;
-  font-weight: 600;
+  gap: 5px;
 }
+
+// Names as chips (mockup `.alias`): kept outlined, leaving struck on the
+// risk tint, joining on the ok tint -- each also said in words.
+.proposal__person {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: 13px;
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.proposal__person--out {
+  background: color-mix(in srgb, var(--risk) 10%, var(--surface));
+  box-shadow: none;
+  color: var(--risk-text);
+  text-decoration: line-through;
+}
+
+.proposal__person--in {
+  background: color-mix(in srgb, var(--ok) 10%, var(--surface));
+  box-shadow: none;
+  color: var(--ok-text);
+}
+
+.proposal__slot {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.proposal .was {
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+  text-decoration: line-through;
+}
+
+.proposal__to { font-size: var(--fs-brand); font-weight: 700; }
+
+// What changed since: a tonal risk box (mockup `.riskbox`).
+.proposal__conflicts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--risk) 10%, var(--surface));
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--risk) 35%, var(--surface));
+  font-size: var(--fs-small);
+  line-height: 1.45;
+}
+
+.proposal__conflicts > * { margin: 0; }
+.proposal__conflicts > .proposal__cap { color: var(--risk-text); }
 
 .proposal__choices {
   display: grid;
   gap: 0.5rem;
-  margin: 0.8rem 0 0;
   padding: 0;
   border: 0;
 }
@@ -205,63 +394,126 @@
   gap: 0.3rem 0.9rem;
 }
 
-.proposal__actions {
+// The thread (B_PhoneInbox): a pane card with its head, then one row per
+// message -- the author's initial, name and time on one line, the words
+// under them; messages the extractor used are lifted onto the select fill.
+.proposal__thread {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.5rem;
-  margin-top: 0.9rem;
+  flex-direction: column;
+  border-radius: 20px;
+  background: var(--pane);
+  overflow: hidden;
 }
 
-.proposal__workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(15rem, 18.75rem);
-  gap: 0.85rem;
-  min-height: 0;
-}
-
-.proposal__workspace .thread-panel {
-  max-height: 30rem;
-}
-
-.decision-card .proposal__actions {
-  display: grid;
-  align-items: stretch;
-}
-
-.decision-card .btn--primary { min-height: 2.75rem; }
-.decision-card .note { color: var(--ink); }
-
-// Ghost links sit on the selected surface rather than the regular window.
-// Use the approved selected-surface ink so they remain readable in every face.
-.decision-card .btn--ghost { color: var(--ink); }
-
-.proposal__edit {
+.proposal__threadhead {
+  flex: none;
   display: flex;
-  align-items: flex-end;
-  gap: 0.4rem;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 10px 0 14px;
+  border-bottom: 1.5px solid var(--line);
 }
 
-.proposal .was {
-  text-decoration: line-through;
+.proposal__threadtitle {
+  flex: 1 1 auto;
+  margin: 0;
+  font-family: var(--body);
+  font-size: var(--fs-body-sm);
+  font-weight: 700;
+}
+
+.proposal__threadtitle .mono {
   color: var(--dim-text);
+  font-size: var(--fs-mini);
+  font-weight: 400;
 }
+
+.proposal .evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 6px 8px;
+  border: 0;
+  list-style: none;
+}
+
+.msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+
+.msg--used {
+  --dim: var(--dim-text);
+  border-radius: 16px;
+  background: var(--select);
+  box-shadow: inset 0 0 0 1.5px var(--select-edge);
+}
+
+.msg__av {
+  flex: none;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  clip-path: polygon(50% 0%, 75% 7%, 93% 25%, 100% 50%, 93% 75%, 75% 93%, 50% 100%, 25% 93%, 7% 75%, 0% 50%, 7% 25%, 25% 7%);
+  background: var(--win);
+  color: var(--win-ink);
+  font-family: var(--display);
+  font-size: var(--fs-micro);
+  font-weight: 700;
+}
+
+.msg__body { min-width: 0; }
+.msg__line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; margin: 0; line-height: 1.3; }
+.msg__who { font-size: var(--fs-small); font-weight: 700; }
+
+.msg__at {
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  text-decoration-style: dotted;
+}
+
+.msg__text { margin: 0; font-size: var(--fs-small); line-height: 1.3; overflow-wrap: anywhere; }
+.msg--gone .msg__av { background: var(--off); }
+.msg--gone .msg__who, .msg--gone .msg__text { color: var(--dim-text); font-style: italic; }
+
+// The decision pane (mockup Inbox aside): Approve as the 56 px key, why it
+// is blocked under it, then Reject at the foot with what it does.
+.decision-card { padding: 18px; }
+.decision-card .decision__approve { justify-content: center; min-height: 56px; border-radius: 28px; font-size: var(--fs-body); }
+.decision-card .decision__approve .icon { width: 20px; height: 20px; }
+.decision__why { margin: 0; color: var(--ink); font-size: var(--fs-small); line-height: 1.45; }
+.decision__spacer { flex: 1 1 auto; }
+.decision-card .decision__reject { justify-content: center; }
+.decision__foot { margin: 0; color: var(--dim-text); font-size: var(--fs-mini); }
+.decision-card .proposal__edit { display: flex; align-items: flex-end; gap: 0.4rem; }
+.decision-card .proposal__edit .field { flex: 1 1 auto; }
+.decision-card .proposal__edit input { width: 100%; }
+
+// The edit toggle only exists on phones (the action bar's pencil).
+.proposal__edit-toggle { display: none; }
 
 .proposal .field__error:empty,
-.proposal .note:empty {
+.proposal .note:empty,
+.decision__why:empty {
   display: none;
 }
 
-// Phones: one column; the list, or the detail with its back action.
+// Phones and narrow frames: one column; the list, or the detail with the
+// decision as an action bar under the one scrolling thread.
 @media (max-width: 899px) {
   .inbox__body {
     grid-template-columns: minmax(0, 1fr);
     margin: 0 -0.7rem;
   }
 
-  .inbox__list {
-    border-right: 0;
-  }
+  .inbox__list { border-right: 0; }
 
   .inbox__detail {
     display: flex;
@@ -275,13 +527,13 @@
     display: none;
   }
 
-  // The detail frame is deliberately split: stationary identity/back context,
-  // one owned thread scroller, then the decision footer. Letting the outer
-  // detail scroll would let the primary actions disappear below the viewport.
+  // Stationary identity, one owned scroller, then the action bar: letting the
+  // outer detail scroll would let the primary actions leave the viewport.
   .proposal {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
+    gap: 8px;
     min-height: 0;
   }
 
@@ -293,13 +545,120 @@
     min-height: 0;
   }
 
-  .proposal__workspace .thread-panel { max-height: none; }
-  .decision-card {
-    position: static;
-    border-radius: 20px 20px 0 0;
-    padding-bottom: max(0.85rem, env(safe-area-inset-bottom));
+  .proposal .thread-panel,
+  .proposal .decision-card {
+    grid-column: auto;
+    grid-row: auto;
   }
 
-  .decision-card .btn,
+  .proposal .thread-panel {
+    gap: 8px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .proposal__thread { flex: 1 0 auto; }
+
+  // The action bar (B_PhoneInbox): one row -- pencil, Reject…, Approve -- with
+  // the reason Approve is blocked, the edit field and an error as full-width
+  // lines above or below it only when they show.
+  .proposal .decision-card {
+    position: static;
+    display: flex;
+    flex-flow: row nowrap;
+    gap: 8px;
+    align-items: center;
+    padding: 10px 12px max(14px, env(safe-area-inset-bottom));
+    border-radius: 20px 20px 0 0;
+  }
+
+  .proposal .decision-card:has(> .decision__why:not(:empty), > .proposal__edit--open, > .field__error:not(:empty)) { flex-wrap: wrap; }
+
+  .decision-card > .cap,
+  .decision-card .decision__spacer,
+  .decision-card .decision__foot { display: none; }
+  // The DOM is already in the bar's order (InboxDetail `bar`): no `order` here,
+  // so focus follows what is seen.
+  .decision-card .decision__why { flex: 1 0 100%; }
+  .decision-card .proposal__edit { flex: 1 0 100%; }
+  .decision-card .decision__reject { flex: none; min-height: 48px; justify-content: normal; }
+  .decision-card .decision__approve { flex: 1 1 auto; min-height: 52px; border-radius: 26px; }
+  .decision-card .field__error { flex: 1 0 100%; }
+  .decision-card .proposal__edit:not(.proposal__edit--open) { display: none; }
   .decision-card .proposal__edit > .btn { min-height: 2.75rem; }
+
+  .decision-card .proposal__edit-toggle {
+    display: inline-flex;
+    flex: none;
+    justify-content: center;
+    width: 48px;
+    min-height: 48px;
+    padding: 0;
+    border-radius: 16px;
+  }
+
+  .decision-card .proposal__edit-toggle[aria-expanded="true"] { background: var(--select); border-color: var(--select-edge); }
 }
+
+// The phone frame's open item (B_PhoneInbox): no window chrome or tabs; a
+// compact header on the ground, the change, the thread as the one scrolling
+// panel, and the action bar flush with the screen's foot. The shell's side
+// and foot margins go to the bar; the rest keeps 10 px.
+.frame--phone .shell:has(> .inbox--compact) {
+  padding-right: 0;
+  padding-bottom: 0;
+  padding-left: 0;
+}
+
+.frame--phone .inbox--compact.card {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.frame--phone .inbox--compact > .tabs__strip { display: none; }
+.frame--phone .inbox--compact .inbox__detail { padding: 0; }
+.frame--phone .inbox--compact .proposal__head { gap: 10px; padding: 4px max(14px, env(safe-area-inset-left)) 0; }
+.frame--phone .inbox--compact .proposal__art .portrait { width: 44px; height: 44px; }
+.frame--phone .inbox--compact .proposal__title { column-gap: 6px; color: var(--ground-ink); font-size: var(--fs-lg); white-space: nowrap; }
+.frame--phone .inbox--compact .proposal__headtext { position: relative; overflow: hidden; }
+
+// One line of facts, cut at the edge; the machine id and read time stay
+// for screen readers only.
+.frame--phone .inbox--compact .proposal__meta { max-width: 100%; overflow: hidden; color: var(--ground-ink); white-space: nowrap; }
+.frame--phone .inbox--compact .proposal__fact.mono,
+.frame--phone .inbox--compact .proposal__fact:has(.mono) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.frame--phone .inbox--compact .proposal__card { color: var(--ground-ink); }
+.frame--phone .inbox--compact .proposal__meta .chip,
+.frame--phone .inbox--compact .proposal__meta .conf { font-size: var(--fs-mini); }
+.frame--phone .inbox--compact .thread-panel { padding: 0 max(10px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left)); }
+.frame--phone .inbox--compact .proposal__would { padding: 10px 14px; border-radius: 18px; background: var(--select); box-shadow: none; }
+// The change as one line (B_PhoneInbox): was → now on the baseline; notes, when an item has them, stack.
+.frame--phone .inbox--compact .proposal__would:not(:has(> .note)) { flex-direction: row; align-items: baseline; }
+.frame--phone .inbox--compact .proposal__would > .proposal__cap {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.frame--phone .inbox--compact .decision-card {
+  margin: 0;
+  padding: 10px max(12px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  border-top: 1.5px solid var(--line);
+  background: var(--surface);
+  box-shadow: 0 -8px 20px -14px rgb(0 0 0 / 35%);
+}
+
+.frame--phone .inbox--compact .proposal__slot { flex-wrap: nowrap; }
+.frame--phone .inbox--compact .proposal__to { font-size: var(--fs-lg); white-space: nowrap; }

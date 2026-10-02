@@ -74,10 +74,11 @@
 }
 
 .memberlist [role='listitem'] + [role='listitem'] { margin-top: 0.18rem; }
-.memberlist__row:hover { background: var(--raise); }
-.memberlist__row--active {
+.memberlist__row:hover { background: var(--row-hover); box-shadow: inset 0 0 0 1.5px var(--line); }
+.memberlist__row--active,
+.memberlist__row--active:hover {
   border-radius: 16px;
-  box-shadow: inset 0 0 0 1.5px var(--select-ring);
+  box-shadow: inset 0 0 0 1.5px var(--select-edge);
   background: var(--select);
 }
 .memberlist__row--active .memberlist__name strong { font-weight: 700; }
@@ -111,7 +112,7 @@
 .membersheet__grid dt { color: var(--dim); font-size: var(--fs-small); font-weight: 600; }
 .membersheet__grid dd { display: flex; gap: 0.4rem; min-width: 0; margin: 0; }
 .membersheet__section { margin-top: 0.9rem; padding-top: 0.7rem; border-top: 1px solid var(--line-soft); }
-.membersheet__label { margin: 0 0 0.3rem; color: var(--dim); font-size: var(--fs-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.membersheet__label { margin: 0 0 0.3rem; color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; }
 .membersheet__aliases { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.4rem; }
 .membersheet__alias-form { display: flex; gap: 0.4rem; margin: 0; }
 .membersheet__alias-form input { min-width: 0; font-size: var(--fs-small); }

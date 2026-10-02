@@ -88,10 +88,11 @@ export function sortRuns<R extends PublicRun>(runs: R[]): R[] {
   return [...runs].sort((a, b) => a.day - b.day || (a.time ?? '99').localeCompare(b.time ?? '99') || a.id.localeCompare(b.id));
 }
 
-export function clockTime(iso: string, timeZone: string): string {
+/** HH:MM:SS in `timeZone`; HH:MM with `seconds: false` (the admin Live chip). */
+export function clockTime(iso: string, timeZone: string, seconds = true): string {
   try {
-    return new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(iso));
+    return new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', ...(seconds ? { second: '2-digit' } : {}) }).format(new Date(iso));
   } catch {
-    return iso.slice(11, 19);
+    return iso.slice(11, seconds ? 19 : 16);
   }
 }

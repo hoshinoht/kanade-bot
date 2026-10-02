@@ -6,7 +6,7 @@
   import Planner from '../planner/Planner.svelte';
   import PageLine from '../shell/PageLine.svelte';
   import type { Slot } from '../planner/keyboardMove';
-  import type { AdminWeek } from '../store.svelte';
+  import { isPast, type AdminWeek } from '../store.svelte';
   import Filters from '../week/Filters.svelte';
   import NowTiles from '../week/NowTiles.svelte';
   import { applyFilter, filtering, NO_FILTER, type WeekFilter } from '../week/filters';
@@ -42,11 +42,10 @@
   // v4: past (done) and cancelled runs are hidden until asked for.
   let showPast = $state(false);
   let helpOpen = $state(false);
-  const PAST = ['done', 'cancelled'];
   const matching = $derived(store.week ? applyFilter(store.week.runs, filter) : []);
-  const hidden = $derived(showPast ? 0 : matching.filter((r) => PAST.includes(r.status)).length);
+  const hidden = $derived(showPast ? 0 : matching.filter(isPast).length);
   const shown = $derived(
-    store.week ? { ...store.week, runs: showPast ? matching : matching.filter((r) => !PAST.includes(r.status)) } : null,
+    store.week ? { ...store.week, runs: showPast ? matching : matching.filter((r) => !isPast(r)) } : null,
   );
   const filtered = $derived(filtering(filter));
   const count = $derived(shown?.runs.length ?? 0);
@@ -91,7 +90,7 @@
 <!-- v4 week.html's header row as the page line, carrying v5's view switch and
   help: the board sits directly under the filters with no window chrome around it. -->
 <PageLine title={shown ? 'Week' : ''} class="week-head">
-  <h1>{shown ? `${count} run${count === 1 ? '' : 's'}${filtered ? ', filtered' : ''}` : 'Week'}</h1>
+  <h1>{#if shown}<span class="pageline__num">{count}</span> run{count === 1 ? '' : 's'}{filtered ? ', filtered' : ''}{:else}Week{/if}</h1>
   {#if hidden}
     <p class="note week-head__past">
       {hidden} hidden ·

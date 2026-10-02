@@ -48,6 +48,37 @@
   color: var(--select-ink);
 }
 
+// A page's own back step (an open Inbox item: "‹ Inbox", B_PhoneInbox) in
+// place of the menu and the title.
+.topbar__back {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+  padding: 0 10px 0 4px;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.topbar__back .icon {
+  width: 22px;
+  height: 22px;
+}
+
+.topbar__back:hover {
+  background: var(--raise);
+}
+
+.topbar__spacer {
+  flex: 1 1 auto;
+}
+
 .topbar__title {
   flex: 1 1 auto;
   min-width: 0;
@@ -235,15 +266,21 @@ dialog.drawer[open]::backdrop {
   display: block;
 }
 
+// B_PhoneNav `.xr`: 14 px semibold labels, 12 px gaps; 44 px for touch.
 .drawer .navlist__item {
   width: auto;
   min-height: 44px;
   flex-direction: row;
-  gap: 14px;
-  padding: 0 16px;
+  gap: 12px;
+  padding: 0 14px;
   border-radius: 22px;
-  font-size: var(--fs-body);
+  font-size: var(--fs-body-sm);
+  font-weight: 600;
   text-align: left;
+}
+
+.drawer .navlist__item[aria-current="page"] {
+  font-weight: 700;
 }
 
 .drawer .navlist__ind {
@@ -264,6 +301,7 @@ dialog.drawer[open]::backdrop {
   background: none;
 }
 
+.drawer .navlist__count,
 .drawer .navlist__badge {
   position: static;
   margin-left: auto;
@@ -276,9 +314,10 @@ dialog.drawer[open]::backdrop {
 .drawer__foot {
   flex: none;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 2px 8px;
   margin-top: 8px;
   padding-top: 10px;
   border-top: 1.5px solid var(--line);
@@ -306,10 +345,21 @@ dialog.drawer[open]::backdrop {
   left: 0;
 }
 
+// The palette's keys (B_PhoneNav), and the guild time zone on a line of its own.
+.drawer__keys,
 .drawer__tz {
   font-family: var(--mono);
   font-size: var(--fs-mini);
   color: var(--dim-text);
+}
+
+.drawer__keys {
+  padding-right: 8px;
+}
+
+.drawer__tz {
+  flex: 1 0 100%;
+  padding-left: 4px;
 }
 
 // Phone landscape: tighter rows so most of the list shows at once.

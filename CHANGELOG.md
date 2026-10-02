@@ -610,6 +610,50 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- v5 admin shared M3E furniture now follows the mockups: an unboxed page line
+  (display title, bold mono count, serif context, no ⓘ), a "Live HH:MM" chip
+  and "Ctrl K" pill, 48 px window title bars with pill search and pill
+  controls, panes flush to their window with list items as card surfaces and
+  a tonal selection, mono overlines, pill and connected buttons, tonal status
+  chips, an icon Approve key with Reject taking the risk fill when Approve is
+  blocked, no visible "open" on selected rows, and the phone drawer's Week
+  count and Ctrl K hint. A hovered list row now gets its own state layer
+  (`--row-hover`) instead of turning the pane's colour.
+- v5 admin Fixed, History and Inbox follow their mockups more closely: a
+  Fixed timing's whole row is the selectable card (one button per row) at
+  the mockup's density (weekday over time, 28 px portraits, flags inline, the
+  party as one line of names), its flags read in lower case and Add carries
+  a plus; History's filters read
+  "Week: every week" and the change pane drops its extra header row; Inbox
+  section labels are mono overlines with tonal header chips, and an item
+  opened on a phone has "‹ Inbox" in the top bar, a compact header and a
+  bottom action bar (pencil, Reject…, Approve).
+- v5 admin Fixed's boss picker shows each boss's difficulties on one line in
+  compact rows (an existing timing lists its own bosses until "All n
+  bosses…"), with 40 px fields and name-chip party picks; the Inbox item
+  shows the boss art, the member's words as a speech bubble, participant
+  changes as chips, the thread as rows with initials and used messages
+  lifted (ready for a per-message `used` mark and a Used/All toggle), the
+  message time opening Discord instead of an "open" link, and a decision
+  pane that explains a blocked Approve and what Reject does.
+- v5 admin Inbox threads come from the item's `thread` (the channel messages
+  around the evidence, each marked used) with a Used/All toggle starting on
+  Used; Fixed rows open from anywhere on the row without a positioned overlay
+  (WebKit-safe) and keep their fill when hovered; selected Fixed and History
+  rows also go bold; the phone's back step returns focus after the drawer.
+- v5 admin History's Checkpoints tab says "No backups recorded yet" (no
+  backup directory configured) instead of an empty table and hides the
+  Timeline's filters; tabbed title bars centre their window dots on the tabs.
+- v5 admin History rows carry the mockup's dot, a facts line with the row
+  count and a one-line summary; a change's fields read one per line, and on
+  wide screens "Revert a member's changes…" sits at the foot of the open
+  change. Fixed timings lay out as grid rows (still one table, one button per
+  row), with Home channel on its own line in the editor.
+- v5 admin Inbox threads keep cited messages that were deleted (merged back
+  in as used, "no longer stored") and start on All when none is used; the
+  phone action bar is focused pencil → Reject… → Approve as it is seen; Fixed
+  rows show the party as plain text (full list in the tooltip) and ring a
+  focused row inside its card.
 - v5 admin planner drops set the time as well as the day: a run dropped
   between runs starts right after the one above (its start + run length), at
   the top of a day it ends right before the run below, an empty day keeps its

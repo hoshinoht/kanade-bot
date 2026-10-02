@@ -35,7 +35,10 @@
     | 'menu'
     | 'info'
     | 'chevrons-left'
-    | 'chevrons-right';
+    | 'chevrons-right'
+    | 'chevron-left'
+    | 'plus'
+    | 'edit';
 </script>
 
 <script lang="ts">
@@ -68,6 +71,12 @@
     <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
   {:else if name === 'chevron-right'}
     <polyline points="9 18 15 12 9 6" />
+  {:else if name === 'chevron-left'}
+    <polyline points="15 18 9 12 15 6" />
+  {:else if name === 'plus'}
+    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+  {:else if name === 'edit'}
+    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
   {:else if name === 'refresh-cw'}
     <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
     <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />

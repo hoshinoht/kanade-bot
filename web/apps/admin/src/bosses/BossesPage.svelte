@@ -21,11 +21,8 @@
 </script>
 
 <PageLine title={bosses.data ? 'Bosses' : ''}>
-  <h1>{bosses.data ? `${rows.length} bosses, ${total} difficulties` : 'Bosses'}</h1>
+  <h1>{#if bosses.data}<span class="pageline__num">{rows.length}</span> bosses, <span class="pageline__num">{total}</span> difficulties{:else}Bosses{/if}</h1>
   {#if bosses.data}<p class="pageline__context"><strong>{inUse}</strong> ticked with a weekly timing</p>{/if}
-  {#snippet about()}
-    <p>Every boss in <code>boss/bosses.yaml</code>, in level order; the ticked ones have a weekly timing.</p>
-  {/snippet}
 </PageLine>
 <PaneWindow title="The in-game list">
   {#if bosses.error}

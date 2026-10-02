@@ -1,0 +1,48 @@
+// M3E pill buttons for the admin app (mockup `.btn`, `.key`). Loaded right
+// after `_buttons.scss` in admin.scss -- not with the other M3E primitives --
+// so later partials' own button rules (the run sheet's Answers summary, the
+// Week help, History's filter pills) still win at the same specificity.
+.btn {
+  min-height: 32px;
+  padding: 0 14px;
+  border-width: 1.5px;
+  border-radius: 999px;
+}
+
+// The key action (mockup `.key`): accent-filled pill, no outline.
+.btn--primary,
+.btn--primary:hover {
+  border-color: transparent;
+  background: var(--accent-fill);
+  color: var(--accent-ink);
+}
+
+.btn--primary:hover {
+  background: color-mix(in srgb, var(--accent-fill) 88%, var(--ink));
+}
+
+.btn--danger {
+  border-color: color-mix(in srgb, var(--risk) 40%, var(--line));
+  color: var(--risk-text);
+}
+
+// Risk as the key action (Reject when Approve is blocked, Revert): risk fill.
+.btn--risk,
+.btn--risk:hover {
+  border-color: transparent;
+  background: var(--risk-text);
+  color: var(--surface);
+}
+
+.btn--key {
+  min-height: 44px;
+  padding: 0 22px;
+  font-size: var(--fs-body-sm);
+  font-weight: 700;
+}
+
+.btn--key .icon {
+  width: 20px;
+  height: 20px;
+}
+

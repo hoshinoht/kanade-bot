@@ -1,30 +1,17 @@
 // The page line (docs/v5/m3e-rail-design-spec.md "Frame", gate G2) in place
-// of the page-head card. It sits on the ground; only the title group is
-// contained (user decision 2026-10-01: "make it over the title only"):
+// of the page-head card. Unboxed on the ground, as in every mockup board
+// (docs/research/2026-09-28-m3e-mockups/B_*.dc.html `.top`; fidelity audit
+// 2026-10-02 replaced the 2026-10-01 contained title shape):
 //
-//   title shape -- page title, the heading (h1: the count or state) and the
-//     short context, or on detail pages the breadcrumb and the h1 -- then the
-//     page's own controls, the ⓘ, and at the end the Live chip and Commands,
-//     each already its own chip, button or field.
+//   display title (20/800) -- the heading (h1: a bold mono numeral and a
+//   serif noun, or the state) -- " · " and the short context in the body
+//   face; then the page's own controls, and at the end the Live chip and
+//   Commands, each its own pill.
 //
-// The title shape (M3 Expressive, docs/v5/m3-expressive-verification.md
-// "Shape" and "tactics"):
-// - Corner: Medium, 12 px (`--r`), from the M3 corner scale. Every control
-//   beside it is Full (pill/circle) and the window below is Large increased
-//   (20 px, `--r-win`): tactic 1, "break from the surrounding shape style to
-//   draw attention" -- the one rectangle in a row of pills reads as the
-//   line's primary element, and 12 inside the window's 20 keeps the nesting
-//   order (inner corner smaller than outer).
-// - Container: a filled `--pageline` (= `--surface`) container with the
-//   chips' 2px `--line` outline. Tactic 4, "contain content for emphasis":
-//   the group is one object; the fill is what gives its small context text
-//   4.5:1 (ink on the bare ground is 2.5-4.6:1 by day). The outline matches
-//   the chips' border language, so the emphasis comes from shape and type
-//   (display 800 title, mono 700 count), not from a new colour (tactic 2
-//   restraint: no accent fill on a label).
-// - Static: the press shape-morph (Exp D) is for buttons only.
+// Text on the ground is `--ground-ink` (ink, deepened per face to 4.5:1 in
+// `_contrast.scss`); quieter greys never sit on the bare ground.
 //
-// Height: 36 px including the shape's border; its content gets 32 px.
+// Height: 36 px; controls 32 px, the Live chip 28.
 
 .pageline {
   flex: none;
@@ -38,7 +25,7 @@
   background: none;
   border: 0;
   box-shadow: none;
-  color: var(--ink);
+  color: var(--ground-ink);
 }
 
 // Week's open help and filter panel take a row of their own, as do
@@ -51,15 +38,12 @@
 .pageline__head {
   flex: 0 1 auto;
   display: flex;
-  align-items: center;
-  gap: 4px 10px;
+  align-items: baseline;
+  gap: 4px 12px;
   min-width: 0;
-  min-height: 36px;
-  padding: 0 14px 0 12px;
+  padding: 0 4px;
   overflow: hidden;
-  background: var(--pageline);
-  border: 2px solid var(--line);
-  border-radius: var(--r);
+  white-space: nowrap;
 }
 
 .pageline__head > * {
@@ -87,7 +71,7 @@
 
 .pageline .pageline__title {
   margin: 0;
-  color: var(--ink);
+  color: var(--ground-ink);
   font-family: var(--display);
   font-size: var(--fs-brand);
   font-weight: 800;
@@ -104,13 +88,20 @@
   line-height: 1.2;
 }
 
-// With one, the h1 is the page's emphasized count in the mono face.
+// With one, the h1 is the count: its numeral bold in the mono face, the
+// noun in the body face (mockup `.top`: 17/700 mono + 14 serif).
 .pageline--titled h1 {
+  font-family: var(--body);
+  font-size: var(--fs-body-sm);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.pageline__num {
   font-family: var(--mono);
   font-size: var(--fs-lg);
   font-weight: 700;
   letter-spacing: -0.01em;
-  white-space: nowrap;
 }
 
 // What used to be the card's eyebrow, now the context after the count (or,
@@ -119,11 +110,24 @@
 .pageline .note,
 .pageline .pageline__context {
   margin: 0;
-  color: var(--ink);
+  color: var(--ground-ink);
   font-family: var(--body);
-  font-size: var(--fs-small);
+  font-size: var(--fs-body-sm);
   letter-spacing: 0;
   text-transform: none;
+}
+
+// After a count the context reads on as one phrase: "20 bossers · synced…".
+.pageline--titled h1 + .pageline__context::before {
+  content: "· ";
+}
+
+.pageline--titled .pageline__head {
+  column-gap: 0.3em;
+}
+
+.pageline--titled .pageline__title {
+  margin-right: calc(12px - 0.3em);
 }
 
 // The context gives way first: the title shape shrinks to fit the line and
@@ -139,7 +143,7 @@
 .pageline .note a,
 .pageline .linklike,
 .pageline .pageline__context a {
-  color: var(--ink);
+  color: var(--ground-ink);
   text-decoration-color: currentcolor;
 }
 
@@ -225,63 +229,39 @@
   margin-left: 0;
 }
 
-.pageline__end .mchip {
+// The Live chip (mockup `.chip`): a 28 px pill, "Live" in the ok ink and
+// the time bold in the mono face.
+.pageline__end .mchip--status {
+  min-height: 28px;
+  padding: 0 10px;
+  border-width: 1.5px;
   border-radius: 999px;
-}
-
-.pageline__commands {
-  gap: 0.4rem;
-}
-
-/* ── ⓘ: the one-time explanation the head card used to print ────────────── */
-
-.pageline__about {
-  position: relative;
-}
-
-.pageline__about-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border: 2px solid var(--line);
-  border-radius: 50%;
-  background: var(--surface);
-  color: var(--ink);
-  list-style: none;
-  cursor: pointer;
-}
-
-.pageline__about-btn::-webkit-details-marker {
-  display: none;
-}
-
-.pageline__about[open] > .pageline__about-btn {
-  border-color: var(--accent);
-}
-
-.pageline__about-body {
-  position: absolute;
-  top: calc(100% + 0.4rem);
-  left: 0;
-  z-index: 30;
-  width: max-content;
-  max-width: min(26rem, 80vw);
-  padding: 0.6rem 0.8rem;
-  border: 2px solid var(--win);
-  border-radius: var(--r);
-  background: var(--surface);
-  box-shadow: var(--shadow);
+  font-family: var(--body);
   font-size: var(--fs-small);
 }
 
-.pageline__about-body p {
-  margin: 0;
+.pageline__end .fresh--live {
+  color: var(--ok-text);
 }
 
-.pageline__about-body p + p {
-  margin-top: 0.4rem;
+.pageline__end .fresh__time {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-weight: 700;
+}
+
+// Commands (VarRail): a 32 px outlined pill, the glyph and "Ctrl K".
+.pageline__commands {
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-width: 1.5px;
+  border-radius: 999px;
+}
+
+.pageline__kbd {
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
 }
 
 /* ── width: the status and the Week controls shrink before the line wraps ─ */
@@ -298,7 +278,7 @@
   border: 0;
 }
 
-// The Live chip says "Live 12:00:00", as the spec's; "· updated" stays for
+// The Live chip says "Live 12:00", as the mockups'; "· updated" stays for
 // screen readers. Week's Undo, Refresh and move help keep their glyphs, a
 // tooltip and their accessible names (the spec's title-bar icon buttons).
 .pageline__end .fresh__words,
@@ -309,8 +289,7 @@
 // Below the expanded rail's width: the time zone moves into the status
 // chip's tooltip (and the footnote), the palette to its glyph.
 @media (max-width: 1439px) {
-  .pageline__end .masthead__tz,
-  .pageline__commands .kbd {
+  .pageline__end .masthead__tz {
     @include hide-visually;
   }
 }
@@ -327,6 +306,7 @@
   }
 
   .pageline__end .fresh__state,
+  .pageline__kbd,
   .frame--rail:not(.frame--phone) .week-head__wk {
     @include hide-visually;
   }
@@ -336,10 +316,6 @@
 
 .frame--phone .pageline {
   gap: 4px 8px;
-}
-
-.frame--phone .pageline__head {
-  padding: 0 12px 0 10px;
 }
 
 .frame--phone .pageline h1 {

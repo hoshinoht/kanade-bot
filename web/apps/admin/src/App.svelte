@@ -27,7 +27,7 @@
   import type { default as PaletteType } from '@kanade/ui/palette';
   import AccountMenu from './shell/AccountMenu.svelte';
   import EdgeSwipe from './shell/EdgeSwipe.svelte';
-  import { PHONE_QUERY, setChrome } from './shell/chrome';
+  import { PHONE_QUERY, setChrome, type BackStep } from './shell/chrome';
   import NavDrawer from './shell/NavDrawer.svelte';
   import Rail from './shell/Rail.svelte';
   import TopBar from './shell/TopBar.svelte';
@@ -90,6 +90,9 @@
   const sheetRun = $derived(sheetRunId ? (store.run(sheetRunId) ?? null) : null);
   const title = $derived(route?.key === 'login' ? 'Sign in' : (detail?.title ?? section?.title ?? 'Not found'));
 
+  // A page's back step for the phone's top bar (an open Inbox item).
+  let pageBack = $state<BackStep | null>(null);
+
   // What the page line needs from the shell (shell/PageLine.svelte).
   setChrome({
     get phone() {
@@ -105,6 +108,7 @@
       return store.week?.timezone ?? '';
     },
     palette: () => void togglePalette(true),
+    back: (step) => (pageBack = step),
   });
 
   // The Discord callback reports failures at `/?login_error=<code>`: show them on the sign-in page.
@@ -417,6 +421,7 @@
         updated={store.updated}
         timezone={store.week?.timezone ?? ''}
         drawerId="nav-drawer"
+        back={pageBack}
         bind:menu={menuButton}
         onmenu={() => (drawerOpen = true)}
       />
@@ -427,6 +432,7 @@
         avatar={store.identity ? artUrl(store.identity.avatar, store.identity) : null}
         active={section?.key ?? ''}
         inbox={store.summary?.inbox ?? 0}
+        counts={store.openRuns === null ? {} : { week: store.openRuns }}
         timezone={store.week?.timezone ?? ''}
         returnTo={menuButton}
         {account}

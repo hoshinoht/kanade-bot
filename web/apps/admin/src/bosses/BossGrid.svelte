@@ -31,7 +31,7 @@
 <div class="grid-bosses" role="group" aria-label="Bosses">
   {#each rows as row (row.key)}
     {@const on = readonly ? row.difficulties.some((d) => d.in_use) : row.difficulties.some((d) => selected.includes(d.token))}
-    <div class="bossrow" class:bossrow--on={on}>
+    <div class="bossrow" data-fid="fixed-boss-row" class:bossrow--on={on}>
       <div class="bossrow__id">
         <Portrait boss={asBoss(row)} size="md" />
         <span>

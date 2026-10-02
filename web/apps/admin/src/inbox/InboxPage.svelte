@@ -10,7 +10,6 @@
   import '@kanade/ui/styles/panes.scss';
   import '@kanade/ui/styles/evidence.scss';
   import '@kanade/ui/styles/inbox.scss';
-  import '@kanade/ui/styles/m3e-primitives.scss';
   import type { ApproveRequest, InboxTab, Proposal } from '@kanade/api-types';
   import { Icon, Modal, PendingLabel, Toaster } from '@kanade/ui';
   import { tick } from 'svelte';
@@ -20,6 +19,7 @@
   import { isProposal, REASON_MAX, reasonProblem, refusalText, title } from './flags';
   import InboxDetail from './InboxDetail.svelte';
   import InboxList from './InboxList.svelte';
+  import { getChrome } from '../shell/chrome';
 
   let {
     store,
@@ -59,6 +59,16 @@
   // Wide screens always show a detail (the first item by default); phones
   // show the list until an item is picked.
   const chosen = $derived(items.find((p) => p.id === item) ?? (phone ? undefined : items[0]));
+
+  // The phone frame's open item (B_PhoneInbox): no page line, tabs or window
+  // chrome; "‹ Inbox" in the top bar; the decision as a bottom action bar.
+  const chrome = getChrome();
+  const compact = $derived(phone && Boolean(chosen) && Boolean(chrome?.phone));
+  $effect(() => {
+    if (!compact || !chrome) return;
+    chrome.back({ label: 'Inbox', name: 'Back to the list (Inbox)', go: () => leaveDetail() });
+    return () => chrome.back(null);
+  });
 
   let busy = $state(false);
   let error = $state('');
@@ -179,17 +189,13 @@
   }
 </script>
 
-<PageLine title={inbox.data ? 'Inbox' : ''}>
-  <h1>{inbox.data ? `${inbox.data.length} change${inbox.data.length === 1 ? '' : 's'} waiting` : 'Inbox'}</h1>
-  <p class="pageline__context">from the party chat and the members</p>
-  {#snippet about()}
-    <p>Approving here is the same as reacting ✅ on the card in Discord: it applies the change and edits the card.</p>
-  {/snippet}
+<PageLine title={inbox.data ? 'Inbox' : ''} class={compact ? 'pageline--echo' : ''}>
+  <h1>{#if inbox.data}<span class="pageline__num">{inbox.data.length}</span> change{inbox.data.length === 1 ? '' : 's'} waiting{:else}Inbox{/if}</h1>
 </PageLine>
 
-<section class="card tabs inbox window-fill" aria-label="Inbox">
-  <div class="card__head tabs__strip">
-    <div class="tabs__tabs" role="tablist" aria-label="Inbox">
+<section data-fid="window" class="card tabs inbox window-fill" class:inbox--compact={compact} aria-label="Inbox">
+  <div class="card__head tabs__strip" data-fid="window-bar">
+    <div class="tabs__tabs" role="tablist" aria-label="Inbox" data-fid="window-tabs">
       {#each TABS as t, index (t.id)}
         <button
           type="button"
@@ -213,7 +219,7 @@
     {:else if !inbox.data}
       <p class="note" aria-busy="true">Loading the inbox…</p>
     {:else}
-      <div class="inbox__list" hidden={phone && Boolean(chosen)}>
+      <div class="inbox__list" data-fid="inbox-list" hidden={phone && Boolean(chosen)}>
         <InboxList
           bind:this={list}
           {items}
@@ -226,7 +232,7 @@
       </div>
       <div class="inbox__detail" hidden={!chosen} tabindex="-1" bind:this={detailEl}>
         {#if chosen}
-          {#if phone}
+          {#if phone && !compact}
             <button type="button" class="btn btn--ghost inbox__back" onclick={leaveDetail}>
               <span aria-hidden="true">←</span> Back to the list
             </button>
@@ -234,6 +240,7 @@
           {#key chosen.id}
             <InboxDetail
               p={chosen}
+              bar={phone}
               {busy}
               locked={store.proposalsLocked}
               {error}

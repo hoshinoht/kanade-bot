@@ -5,52 +5,85 @@
 .history-window { display: flex; flex-direction: column; overflow: clip; }
 // Title bar = the shared window tab strip (Inbox) plus compact filter buttons.
 .history-window__head.tabs__strip { align-items: flex-end; }
-.history-window__filters { display: flex; gap: 0.4rem; margin-left: auto; padding-bottom: 0.3rem; }
-.history-filter { gap: 0.3rem; min-height: 2rem; padding: 0 0.2rem 0 0.7rem; border-radius: 1rem; cursor: default; }
-.history-filter__label { color: var(--dim); font-weight: 600; }
-.history-filter select { max-width: 11rem; min-height: 0; padding: 0.2rem 0.3rem; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
+.history-window__filters { display: flex; align-items: center; gap: 0.4rem; margin-left: auto; }
+// One pill reads "Week: every week" (mockup `.tbtn`): the label, a colon and
+// the select's value, the select only as wide as its value.
+.history-window__filters .history-filter { gap: 0.25rem; min-height: 2rem; padding: 0 0.35rem 0 0.75rem; border-radius: 1rem; cursor: pointer; }
+.history-filter__label { font-weight: 600; }
+.history-filter__label::after { content: ":"; }
+.history-filter select { field-sizing: content; max-width: 11rem; min-height: 0; padding: 0.2rem 0.1rem; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+.history-filter select:focus { box-shadow: none; }
+.history-filter:focus-within { outline: 2px solid var(--win-ink); outline-offset: 1px; }
 
 .history-window__body { display: flex; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 .history-list-region { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; background: var(--pane); }
-.history-list-region__scroll { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 0.7rem; }
+// B_History: one column of week labels and rows, 4 px apart.
+.history-list-region__scroll { display: flex; flex: 1 1 auto; flex-direction: column; gap: 4px; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 12px 14px; }
 .history-list-region__pager { flex: none; padding: 0.5rem 0.7rem; border-top: 1.5px solid var(--line); }
-.history-list-region .flash, .history-list-region .empty { margin: 0.3rem; }
-.history__member { margin: 0.1rem 0 0.65rem; }
+.history-list-region .flash, .history-list-region .empty { margin: 0; }
+.history__member { flex: none; margin: 0 0 0.4rem; }
 .history__member summary { width: fit-content; }
 .history__member .formrow { margin-top: 0.5rem; }
-.history__week + .history__week { margin-top: 0.9rem; }
-.history__week h3 { margin: 0 0 0.35rem; }
-.history-timeline { display: grid; gap: 0.2rem; margin: 0; padding: 0; list-style: none; }
-.history-row { width: 100%; padding: 0.55rem 0.7rem; border: 0; border-radius: 6px; background: var(--row); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
-.history-row:hover { background: var(--raise); }
-.history-row--active { border-radius: 18px; box-shadow: inset 0 0 0 1.5px var(--select-ring); background: var(--select); }
-.history-row__head { display: flex; flex-wrap: wrap; gap: 0.2rem 0.45rem; align-items: baseline; min-width: 0; }
-.history-row__actor { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.history-row__time { margin-left: auto; color: var(--dim); font-size: var(--fs-mini); white-space: nowrap; }
+.history__week, .history-timeline { display: flex; flex: none; flex-direction: column; gap: 4px; }
+.history__week h3 { margin: 0; padding: 8px 6px 4px; font-size: var(--fs-body-sm); }
+.history-timeline { margin: 0; padding: 0; list-style: none; }
+// A row (mockup `.ev`): the dot, then the facts line over the one-line summary.
+.history-row { display: flex; gap: 12px; align-items: flex-start; width: 100%; padding: 10px 14px; border: 0; border-radius: 6px; background: var(--row); color: var(--ink); font: inherit; line-height: 1.35; text-align: left; cursor: pointer; }
+.history-row__dot { flex: none; width: 10px; height: 10px; margin-top: 4px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--win); }
+.history-row--active .history-row__dot { background: var(--accent); box-shadow: none; }
+.history-row__text { display: flex; flex: 1 1 auto; flex-direction: column; gap: 3px; min-width: 0; }
+// Hover: the row state layer plus a neutral edge -- apart from the pane, the
+// resting row and the selected fill (whose edge is the accent and corners rounder).
+.history-row:hover { background: var(--row-hover); box-shadow: inset 0 0 0 1.5px var(--line); }
+// The non-colour cue: the selected row's actor goes bold (review finding 5).
+.history-row--active .history-row__actor { font-weight: 800; }
+.history-row--active, .history-row--active:hover { border-radius: 18px; box-shadow: inset 0 0 0 1.5px var(--select-edge); background: var(--select); }
+.history-row__head { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; min-width: 0; }
+.history-row__seq { font-size: var(--fs-small); font-weight: 700; }
+.history-row__head .chip { min-height: 0; padding: 1px 8px; border: 0; border-radius: 9px; background: var(--chip-fill); color: var(--ink); font-size: var(--fs-mini); font-weight: 500; }
+.history-row__actor { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-row__time, .history-row__rows { color: var(--dim); font-size: var(--fs-mini); white-space: nowrap; }
+.history-row__rows { margin-left: auto; }
 .history-row__open { margin-left: auto; color: var(--select-ink); }
-.history-row__summary { display: grid; gap: 0.1rem; margin: 0.25rem 0 0; color: var(--dim); font-size: var(--fs-small); }
+.history-row__summary { font-size: var(--fs-small); }
 
-.history-detail__head { display: flex; min-height: 2.75rem; align-items: center; justify-content: space-between; padding: 0.4rem 0.75rem; border-bottom: 1.5px solid var(--line); }
-.history-detail__close { min-width: 2rem; min-height: 2rem; font-size: var(--fs-lg); }
-.history-detail__content { padding: 0.85rem 1rem 1.1rem; }
-.history-detail__content > .cap, .history-detail__content h2, .history-detail__content h3 { margin-top: 0; }
-.history-detail__content h2 { font-family: var(--display); font-size: var(--fs-brand); }
-.history-detail__meta { color: var(--dim); font-size: var(--fs-small); }
-.history-detail__rows { margin-top: 1rem; }
-.history-diff { margin-top: 0.45rem; padding: 0.65rem; border: 1.5px solid var(--line); border-radius: 14px; background: var(--row); }
-.history-diff > p { margin: 0 0 0.35rem; font-size: var(--fs-mini); overflow-wrap: anywhere; }
-.history-diff__fields { display: grid; gap: 0.15rem; margin: 0; }
-// Field name on its own line; was → now wrap so a long value (e.g. a roster of
-// IDs) still shows what changed in the 400 px pane.
-.history-diff__field { display: grid; grid-template-columns: minmax(0, 1fr) 14px minmax(0, 1fr); gap: 0.1rem 0.35rem; align-items: baseline; font-size: var(--fs-small); }
+// The change pane (B_History): the head on its own band, then one column of
+// the rows' diffs, the raw link, the actions and, at the foot, the
+// member-revert box.
+.history-detail__head { display: flex; flex: none; flex-direction: column; gap: 3px; }
+.history-detail__head > * { margin: 0; }
+.history-detail__top { display: flex; align-items: flex-start; gap: 8px; }
+.history-detail__top > .cap { flex: 1 1 auto; min-width: 0; }
+// The close overhangs the overline's line rather than growing the head.
+.history-detail__close { flex: none; min-width: 2rem; min-height: 2rem; margin: -0.5rem -0.5rem -0.5rem 0; padding: 0; justify-content: center; font-size: var(--fs-lg); }
+.history-detail__head h2 { font-family: var(--display); font-size: var(--fs-lg); line-height: 1.25; }
+.history-detail__meta { color: var(--dim); font-size: var(--fs-small); line-height: 1.35; }
+.history-detail__body { display: flex; flex-direction: column; gap: 10px; margin-top: 1rem; }
+.side-pane--history .history-detail__head { padding: 12px 16px; border-bottom: 1.5px solid var(--line); }
+.side-pane--history .history-detail__body { flex: 1 0 auto; margin-top: 0; padding: 12px 16px; }
+.history-detail__rows { display: flex; flex-direction: column; gap: 10px; }
+.history-detail__rows > h3 { margin: 0; }
+.history-diff { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 14px; background: var(--row); box-shadow: inset 0 0 0 1.5px var(--line); }
+.history-diff > p { margin: 0; color: var(--dim); font-size: var(--fs-mini); line-height: 1.35; overflow-wrap: anywhere; }
+// One line per field (mockup `.drow`): the name, was → now; long values (a
+// roster of IDs, a timestamp) wrap inside their own column.
+.history-diff__fields { display: grid; grid-template-columns: minmax(64px, max-content) minmax(0, 1fr) 14px minmax(0, 1fr); gap: 4px 8px; margin: 0; }
+.history-diff__field { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: baseline; font-size: var(--fs-small); line-height: 1.35; }
 .history-diff__field dt, .history-diff__field dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-.history-diff__field dt { grid-column: 1 / -1; }
-.history-diff__field dt { color: var(--dim); font-size: var(--fs-mini); }
+.history-diff__field dt { color: var(--dim); font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
 .history-diff__was { color: var(--dim); }
 .history-diff__arrow { color: var(--dim); text-align: center; }
 .history-diff__now { font-weight: 700; }
-.history-detail__raw { margin-top: 0.8rem; font-size: var(--fs-small); }
-.history-detail__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+.history-detail__raw { font-size: var(--fs-small); text-align: start; }
+.history-detail__actions { display: flex; gap: 8px; margin-top: 4px; }
+// Revert a member's changes (B_History): a tonal box pinned to the pane's foot.
+.history-member { display: flex; flex-direction: column; gap: 8px; margin-top: auto; padding: 12px; border-radius: 18px; background: var(--pane); }
+.history-member > h3 { margin: 0; }
+.history-member__fields { display: flex; gap: 6px; }
+.history-member__who { flex: 1 1 auto; min-width: 0; }
+.history-member__who select { width: 100%; }
+.history-member__since input { width: 9.5rem; }
+.history-member .btn { align-self: flex-start; }
 
 @media (max-width: 839px) {
   dialog.modal--narrow.history-detail { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; }

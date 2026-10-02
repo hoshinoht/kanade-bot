@@ -26,6 +26,9 @@ export const STATUS_LABELS: Record<Exclude<RunStatus, 'at_risk'>, string> = {
 };
 
 /** Admin week: bounded polling plus optimistic, server-confirmed moves with one-step undo. */
+/** Done and cancelled runs: the Week hides them until asked, and does not count them. */
+export const isPast = (run: Run) => run.status === 'done' || run.status === 'cancelled';
+
 export class AdminWeek {
   week = $state<Week | null>(null);
   stats = $state<Stats | null>(null);
@@ -129,7 +132,7 @@ export class AdminWeek {
     else if (this.week) this.week.generated_at = week.generated_at;
     if (JSON.stringify(this.stats) !== JSON.stringify(stats)) this.stats = stats;
     // "Updated" names the data on screen, not the last response received.
-    this.updated = clockTime(week.generated_at, week.timezone);
+    this.updated = clockTime(week.generated_at, week.timezone, false);
   }
 
   #flush() {
@@ -194,6 +197,11 @@ export class AdminWeek {
 
   refresh(): Promise<void> {
     return this.#poller.refresh();
+  }
+
+  /** The loaded week's (This or Next) runs still to come, unfiltered: the drawer's Week count. */
+  get openRuns(): number | null {
+    return this.week ? this.week.runs.filter((r) => !isPast(r)).length : null;
   }
 
   run(id: string): Run | undefined {

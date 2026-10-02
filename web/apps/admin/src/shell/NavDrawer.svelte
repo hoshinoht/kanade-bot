@@ -18,6 +18,7 @@
     avatar = null,
     active,
     inbox = 0,
+    counts = {},
     timezone = '',
     returnTo,
     account,
@@ -28,6 +29,7 @@
     avatar?: string | null;
     active: string;
     inbox?: number;
+    counts?: Partial<Record<string, number>>;
     timezone?: string;
     /** Where focus goes when the drawer closes without navigating. */
     returnTo?: HTMLElement;
@@ -108,9 +110,10 @@
         </a>
         <button type="button" class="drawer__close" onclick={() => (open = false)}><Icon name="x" label="Close the navigation" /></button>
       </div>
-      <NavList {active} {inbox} onnavigate={follow} />
+      <NavList {active} {inbox} {counts} onnavigate={follow} />
       <div class="drawer__foot">
         {@render account()}
+        <span class="drawer__keys" title="Commands: Ctrl K (Cmd K on a Mac)">Ctrl K</span>
         {#if timezone}<span class="drawer__tz" title="Guild timezone — every time here is in it">{timezone}</span>{/if}
       </div>
     </div>

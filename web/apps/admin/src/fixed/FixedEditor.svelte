@@ -5,7 +5,7 @@
 -->
 <script lang="ts">
   import type { Boss, BossRow, Channel, FixedRequest, FixedRow, MemberRow, ValidateResult } from '@kanade/api-types';
-  import { BossTag, Modal, SidePane, dayLabel } from '@kanade/ui';
+  import { BossTag, Modal, dayLabel } from '@kanade/ui';
   import '@kanade/ui/styles/fixed.scss';
   import BossGrid from '../bosses/BossGrid.svelte';
   import { send } from '../resource.svelte';
@@ -54,6 +54,10 @@
   let note = $state('');
   let party = $state<string[]>([]);
   let selected = $state<string[]>([]);
+  // A timing that already has bosses shows only theirs until asked for the rest.
+  let allBosses = $state(false);
+  let ownKeys = $state<string[]>([]);
+  const shownBosses = $derived(allBosses ? bosses : bosses.filter((b) => ownKeys.includes(b.key)));
   let typed = $state('');
   let check = $state<{ bosses: Boss[] } | { error: string } | null>(null);
   let error = $state('');
@@ -75,6 +79,8 @@
       note = row?.note ?? '';
       party = row?.participants.map((p) => p.id) ?? [];
       selected = row?.bosses.map((b) => b.token) ?? [];
+      allBosses = !row;
+      ownKeys = row?.bosses.map((b) => b.key) ?? [];
       typed = '';
       check = null;
       error = '';
@@ -162,7 +168,15 @@
     <div class="fixedsheet__content">
     {#if step === 'edit'}
       <p class="eyebrow">Bosses — tap the difficulties this party runs</p>
-      <div class="fixedsheet__bosses"><BossGrid rows={bosses} bind:selected /></div>
+      <!-- B_Fixed: an existing timing shows its own bosses; "All n bosses…" opens the full list. -->
+      <div class="fixedsheet__bosses" data-fid="fixed-bosses">
+        <BossGrid rows={shownBosses} bind:selected />
+        {#if row}
+          <button type="button" class="linklike fixedsheet__all" aria-expanded={allBosses} onclick={() => (allBosses = !allBosses)}
+            >{allBosses ? 'Only the picked bosses' : `All ${bosses.length} bosses…`}</button
+          >
+        {/if}
+      </div>
       <label class="field fixedsheet__typed">
           <span>…or type them</span>
           <input bind:value={typed} placeholder="hstar, hfa" aria-describedby="{uid}-check" />
@@ -171,7 +185,7 @@
         {#if check && 'error' in check}<span class="status status--at_risk">{check.error}</span>
         {:else if check}{#each check.bosses as boss (boss.token)}<BossTag {boss} />{/each}{/if}
       </span>
-      <div class="fixedsheet__fields">
+      <div class="fixedsheet__fields" data-fid="fixed-fields">
         <label class="field">
           <span>Day</span>
           <select bind:value={weekday}>
@@ -179,17 +193,18 @@
           </select>
         </label>
         <label class="field"><span>Time</span><input bind:value={time} placeholder="21:30" size="6" class="mono" /></label>
-        <label class="field">
-          <span>Home channel</span>
-          <select bind:value={channel}>
-            {#each channels as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
-          </select>
-        </label>
       </div>
+      <!-- B_Fixed: the home channel on its own line under the day and time. -->
+      <label class="field fixedsheet__channel" data-fid="fixed-channel">
+        <span>Home channel</span>
+        <select bind:value={channel}>
+          {#each channels as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
+        </select>
+      </label>
       <label class="field fixedsheet__note"><span>Note</span><input bind:value={note} /></label>
       <fieldset class="field">
-        <legend class="label">Party</legend>
-        <div class="run__people">
+        <legend class="label">Party · {party.length} of {roster.length}</legend>
+        <div class="run__people" data-fid="fixed-party">
           {#each roster as member (member.id)}
             <label class="chip">
               <input type="checkbox" value={member.id} bind:group={party} />
@@ -220,7 +235,7 @@
     <p class="field__error" role="alert">{error}</p>
     </div>
     {#if wide}
-      <footer class="fixedsheet__foot">
+      <footer class="fixedsheet__foot" data-fid="fixed-editor-foot">
         {#if row && step === 'edit'}<button class="btn btn--danger" type="button" onclick={() => onretire(row)}>Retire…</button>{/if}
         {#if step === 'choose'}
           <button class="btn" type="button" onclick={() => (step = 'edit')}>Back</button>
@@ -236,16 +251,17 @@
 {/snippet}
 
 {#if wide}
-  <SidePane label="Weekly timing details" className="side-pane--fixed">
-    <header class="fixedsheet__head">
-      <div>
+  <!-- A native aside (not SidePane) so the board's region name sits on the pane itself. -->
+  <aside class="side-pane side-pane--fixed" aria-label="Weekly timing details" data-fid="fixed-editor">
+    <header class="fixedsheet__head" data-fid="fixed-editor-head">
+      <div class="fixedsheet__title">
         <p class="cap">{row ? `#${row.short_id} · edit` : 'Baseline · new'}</p>
         <h2>{row ? `${row.weekday_name} ${row.time} — ${row.bosses.map((b) => b.token).join(' + ')}` : 'New weekly timing'}</h2>
       </div>
       <button class="btn btn--ghost fixedsheet__close" type="button" aria-label="Close weekly timing details" onclick={onclose}>×</button>
     </header>
     {@render formBody()}
-  </SidePane>
+  </aside>
 {:else}
   <Modal bind:open title={row ? `${row.weekday_name} ${row.time} — ${row.bosses.map((b) => b.token).join(' + ')}` : 'Add a weekly timing'} eyebrow={row ? `#${row.short_id} · ${row.channel_name}` : 'Baseline'} narrow className="fixedsheet" onclose={onclose}>
     {@render formBody()}

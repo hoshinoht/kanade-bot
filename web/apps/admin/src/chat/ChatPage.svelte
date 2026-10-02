@@ -68,7 +68,7 @@
 </script>
 
 <PageLine title={view ? 'Chat' : ''}>
-  <h1>{view ? (filtered ? `${rows.length} of ${view.total} interactions` : `${view.total} interactions`) : 'Chat'}</h1>
+  <h1>{#if view}{#if filtered}<span class="pageline__num">{rows.length}</span> of <span class="pageline__num">{view.total}</span>{:else}<span class="pageline__num">{view.total}</span>{/if} interactions{:else}Chat{/if}</h1>
   {#snippet side()}
     {#if view && view.summary.length}<ModelStats summary={view.summary} />{/if}
   {/snippet}

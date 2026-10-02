@@ -229,6 +229,16 @@
   text-align: center;
 }
 
+// A glance count (the drawer's Week): mono, trailing the label.
+.navlist__count {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.navrail .navlist__count {
+  display: none;
+}
+
 /* ── the account at the rail's foot ──────────────────────────────────────── */
 
 .navrail .account__chip {

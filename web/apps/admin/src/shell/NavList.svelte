@@ -11,8 +11,16 @@
   let {
     active,
     inbox = 0,
+    counts = {},
     onnavigate,
-  }: { active: string; inbox?: number; /** A link was followed (the drawer closes). */ onnavigate?: (event: MouseEvent) => void } = $props();
+  }: {
+    active: string;
+    inbox?: number;
+    /** Glance counts trailing a destination where there is room (the drawer); the page says them in words. */
+    counts?: Partial<Record<string, number>>;
+    /** A link was followed (the drawer closes). */
+    onnavigate?: (event: MouseEvent) => void;
+  } = $props();
 </script>
 
 <nav class="navlist" aria-label="Sections">
@@ -25,7 +33,8 @@
           aria-label={section.key === 'inbox' && inbox > 0 ? `Inbox ${inbox} waiting` : undefined}
           onclick={onnavigate}
           ><span class="navlist__ind"><Icon name={section.icon} /></span><span class="navlist__label">{section.label}</span
-          >{#if section.key === 'inbox' && inbox > 0}<span class="navlist__badge">{inbox}<span class="vh"> waiting</span></span>{/if}</a
+          >{#if section.key === 'inbox' && inbox > 0}<span class="navlist__badge">{inbox}<span class="vh"> waiting</span></span
+          >{:else if counts[section.key] !== undefined}<span class="navlist__count" aria-hidden="true">{counts[section.key]}</span>{/if}</a
         >
       {/each}
     </div>

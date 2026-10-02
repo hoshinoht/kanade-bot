@@ -42,11 +42,6 @@
   // blossom and coral accents are 3.5-3.6:1 against cream and their ink.
   --accent-text: color-mix(in srgb, var(--accent) 55%, var(--ink));
   --accent-fill: color-mix(in srgb, var(--accent) 60%, var(--ink));
-
-  // M3E active-row ring (1.5px, non-text, 3:1 against --select inside it):
-  // the spec's accent 45% over surface is 1.4-2.0:1 in every face; the
-  // accent fill is 3.9:1 (coral) to 5.9:1.
-  --select-ring: var(--accent-fill);
 }
 
 // M3E --select-ink (labels on --select): accent-text is 4.37 (blossom) and
@@ -57,8 +52,26 @@
   --select-ink: color-mix(in srgb, var(--accent) 35%, var(--ink));
 }
 
+// Text on the bare ground (the unboxed page line, fidelity audit 2026-10-02):
+// ink is 3.89 (periwinkle), 2.91 (coral) and 2.51:1 (twilight) on the light
+// grounds; a share of black takes it to 7.0, 5.4 and 4.9. Dark faces reset it
+// below (ink on their grounds is already 4.5:1 or more).
+[data-colorway="periwinkle"],
+[data-colorway="coral"] {
+  --ground-ink: color-mix(in srgb, var(--ink) 50%, black);
+}
+
+[data-colorway="twilight"] {
+  --ground-ink: color-mix(in srgb, var(--ink) 35%, black);
+}
+
 // Dark faces: --dim on --surface/--raise, pills back to v4 night values.
 @mixin night {
+  --ground-ink: var(--ink);
+  // Row hover: an accent layer lands on --select at night (dE ~2); an ink
+  // layer stays apart from pane, row and select while --dim-text and
+  // --accent-text keep 4.5:1 on it.
+  --row-hover: color-mix(in srgb, var(--ink) 7%, var(--row));
   --dim: #b4ae9a; // #b0ab97 4.48 -> 4.65
   --pill-n-bg: #3aa7c9;
   --pill-h-bg: #e8579a;

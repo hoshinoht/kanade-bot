@@ -53,7 +53,7 @@
 </script>
 
 <PageLine title={reminders.data ? 'Reminders' : ''}>
-  <h1>{reminders.data ? `${reminders.data.upcoming.length} queued, ${reminders.data.sent.length} sent` : 'Reminders'}</h1>
+  <h1>{#if reminders.data}<span class="pageline__num">{reminders.data.upcoming.length}</span> queued, <span class="pageline__num">{reminders.data.sent.length}</span> sent{:else}Reminders{/if}</h1>
   <p class="pageline__context">every message the bot will post, or already posted</p>
   {#snippet side()}
     {#if run}
