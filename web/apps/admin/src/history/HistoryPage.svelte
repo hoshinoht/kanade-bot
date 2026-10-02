@@ -7,7 +7,7 @@
   import type { ChangeRecord, Checkpoints, HistoryPage, RevertPlan } from '@kanade/api-types';
   import { createClient } from '@kanade/client';
   import { SvelteSet } from 'svelte/reactivity';
-  import { Toaster, weekStartLabel } from '@kanade/ui';
+  import { RowContent, Toaster, weekStartLabel } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
   import { SURFACE_LABELS, actorName, describe, localAt, weekDate } from './describe';
@@ -169,10 +169,13 @@
   {@const lines = describe(record, names, tz)}
   {@const count = `${record.rows.length} row${record.rows.length === 1 ? '' : 's'}`}
   <span class="history-row__dot" aria-hidden="true"></span>
-  <span class="history-row__text">
+  <RowContent expanded={isActive}>
+    {#snippet compact()}<span class="mono history-row__seq">#{record.seq}</span> <strong class="history-row__actor">{actorName(record.actor, names, known)}</strong> · <span class="history-row__summary">{lines.length ? lines.join(' · ') : `${count} changed`}</span> · {SURFACE_LABELS[record.surface] ?? record.surface} · {localAt(record.at, tz)} · {count}{#if record.refs.length} · reverts {record.refs.map((ref) => `#${ref.seq}`).join(', ')}{/if}{/snippet}
+    <span class="history-row__text">
     <span class="history-row__head"><span class="mono history-row__seq">#{record.seq}</span><strong class="history-row__actor">{actorName(record.actor, names, known)}</strong><span class="chip chip--mono">{SURFACE_LABELS[record.surface] ?? record.surface}</span>{#if record.refs.length}<span class="chip">reverts {record.refs.map((ref) => `#${ref.seq}`).join(', ')}</span>{/if}<span class="history-row__time mono">{localAt(record.at, tz)}</span><span class="history-row__rows mono">{count}</span>{#if isActive}<span class="history-row__open cap">open</span>{/if}</span>
     <span class="history-row__summary">{lines.length ? lines.join(' · ') : `${count} changed`}</span>
-  </span>
+    </span>
+  </RowContent>
 {/snippet}
 
 <!-- Revert everything one member changed (B_History: the box at the foot of the change pane). -->
@@ -230,7 +233,7 @@
                 <ol class="history-timeline">
                   {#each group.records as record (record.seq)}
                     <li>
-                      <button class="history-row" data-fid="history-row" class:history-row--active={active(record, group.week)} type="button" aria-current={active(record, group.week) ? 'true' : undefined} data-history={record.seq} data-history-week={group.week} onclick={(event) => open(record, event, group.week)}>
+                       <button class="history-row expandable-row" data-fid="history-row" class:history-row--active={active(record, group.week)} type="button" aria-current={active(record, group.week) ? 'true' : undefined} data-history={record.seq} data-history-week={group.week} onclick={(event) => open(record, event, group.week)}>
                         {@render rowBody(record, active(record, group.week))}
                       </button>
                     </li>
@@ -239,7 +242,7 @@
               </section>
             {/if}
           {/each}
-          {#if loose.length && weeks.length}<section class="history__week" aria-labelledby="history-week-none"><h3 class="pane__section" data-fid="history-group" id="history-week-none">Weekly timings and other changes</h3><ol class="history-timeline">{#each loose as record (record.seq)}<li><button class="history-row" class:history-row--active={active(record, '')} type="button" aria-current={active(record, '') ? 'true' : undefined} data-history={record.seq} data-history-week="" onclick={(event) => open(record, event, '')}>{@render rowBody(record, active(record, ''))}</button></li>{/each}</ol></section>{/if}
+           {#if loose.length && weeks.length}<section class="history__week" aria-labelledby="history-week-none"><h3 class="pane__section" data-fid="history-group" id="history-week-none">Weekly timings and other changes</h3><ol class="history-timeline">{#each loose as record (record.seq)}<li><button class="history-row expandable-row" class:history-row--active={active(record, '')} type="button" aria-current={active(record, '') ? 'true' : undefined} data-history={record.seq} data-history-week="" onclick={(event) => open(record, event, '')}>{@render rowBody(record, active(record, ''))}</button></li>{/each}</ol></section>{/if}
           {#if !loading && records.length === 0}<div class="empty"><strong>No changes match.</strong></div>{/if}
         </div>
         {#if nextBefore !== null}<div class="history-list-region__pager"><button class="btn" type="button" disabled={loading} onclick={() => void load(true)}>Older changes</button></div>{/if}

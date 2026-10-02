@@ -1,7 +1,7 @@
 <script lang="ts">
   import PageLine from '../shell/PageLine.svelte';
   import type { BossRow, FixedRow } from '@kanade/api-types';
-  import { BossTag, Icon, Modal, Toaster } from '@kanade/ui';
+  import { BossStack, BossTag, Icon, Modal, RowContent, Toaster } from '@kanade/ui';
   import '@kanade/ui/styles/fixed.scss';
   import Name from '../names/Name.svelte';
   import { directory } from '../names/directory.svelte';
@@ -99,7 +99,7 @@
     editing = null;
     if (!restoreFocus) return;
     requestAnimationFrame(() => {
-      (restoreElement?.isConnected ? restoreElement : addTrigger)?.focus();
+      (restoreElement?.isConnected ? restoreElement : addTrigger)?.focus({ preventScroll: true });
     });
   }
 
@@ -180,8 +180,9 @@
         <tbody role="rowgroup" {@attach forwardRowClicks}>
           {#each rows as row (row.id)}
             {@const changed = row.runs.filter((r) => r.amended).length}
+            {@const expanded = editorOpen && editing?.id === row.id}
             <!-- svelte-ignore a11y_no_redundant_roles -->
-            <tr role="row" data-fid="fixed-row" class:fixed-list__row--active={editorOpen && editing?.id === row.id}>
+            <tr role="row" class="expandable-row" data-fid="fixed-row" class:fixed-list__row--active={expanded}>
                <!-- v4 order: the time leads; the bosses stay the row's header. The
                     button is the row's one control; a pointer anywhere else on
                     the row is forwarded to it (`forwardRowClicks`); the party's
@@ -202,13 +203,23 @@
                 <span class="vh">#{row.short_id}</span>
                </td>
               <th role="rowheader" scope="row" class="fixed-list__bosses">
-                <!-- B_Fixed: the bosses, then the row's flags inline in quiet mono words. -->
-                <div class="fixed-list__bossline">
-                  <ul class="bosslist">{#each row.bosses as boss (boss.token)}<li><BossTag {boss} portrait /></li>{/each}</ul>
+                {#snippet flags()}
                   {#if changed}<span class="status status--planned">{changed} run{changed === 1 ? '' : 's'} amended</span>{/if}
                   {#if !row.channel_watched}<span class="status status--at_risk">not watched</span>{/if}
-                </div>
-                {#if row.note}<span class="note">{row.note}</span>{/if}
+                {/snippet}
+                {#snippet fullBosses()}
+                  <div class="fixed-list__bossline">
+                    <ul class="bosslist">{#each row.bosses as boss (boss.token)}<li><BossTag {boss} portrait /></li>{/each}</ul>
+                    {@render flags()}
+                  </div>
+                  {#if row.note}<span class="note">{row.note}</span>{/if}
+                {/snippet}
+                {#if row.bosses.length > 1}
+                  <RowContent {expanded}>
+                    {#snippet compact()}<BossStack bosses={row.bosses}>{#snippet suffix()}<span class="fixed-list__flags">{@render flags()}{#if row.note}<span class="note">{row.note}</span>{/if}</span>{/snippet}</BossStack>{/snippet}
+                    <span class="fixed-list__expanded">{@render fullBosses()}</span>
+                  </RowContent>
+                {:else}{@render fullBosses()}{/if}
               </th>
               <td role="cell" class="fixed-list__party" title={row.participants.map((person) => directory.label('member', person.id, person.name)).join(' · ')}><span class="chips">{#each row.participants as person (person.id)}<span class="chip"><Name kind="member" id={person.id} name={person.name} plain /></span>{/each}</span></td>
              </tr>

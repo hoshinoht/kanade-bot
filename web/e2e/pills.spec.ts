@@ -15,7 +15,9 @@ test('pill profiles: chat, extractions, inbox, planner sheet and config share on
 
   await page.goto(`${ADMIN}/inbox?tab=self_service&sw=off`);
   const list = page.getByRole('listbox', { name: 'Self-service items' });
+  await list.locator('[data-item="p-fa-request"]').click();
   await expect(list.locator('.tone--danger', { hasText: 'conflict' })).toBeVisible();
+  await list.locator('[data-item="p-kalos-expired"]').click();
   await expect(list.locator('.tone--neutral', { hasText: 'expired' })).toBeVisible();
 
   await page.goto(`${ADMIN}/?sw=off`);

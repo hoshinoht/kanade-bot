@@ -44,8 +44,20 @@ test('admin: SW serves the shell offline and the app shows its own offline state
   await offline(context, page);
   await expect(page.getByRole('heading', { name: "You're offline" })).toBeVisible();
   await expect(page.getByText('Nothing private is stored on this device.')).toBeVisible();
+  // Reconnecting starts an automatic poll. Hold its response so the retry
+  // control cannot disappear between the online event and the click.
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  await page.route('**/api/admin/week?*', async (route) => {
+    await gate;
+    await route.continue();
+  });
   await context.setOffline(false);
-  await page.getByRole('button', { name: 'Try again' }).click();
+  try {
+    await page.getByRole('button', { name: 'Try again' }).click();
+  } finally {
+    release();
+  }
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(HEADING.admin);
 });
 

@@ -14,6 +14,10 @@
 .bosses-list .portrait--md { width: 34px; height: 34px; border-radius: 10px; }
 .bosses-list .bossrow__name { display: block; overflow: hidden; font-size: var(--fs-small); font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .bosses-list .bossrow__pills { flex-wrap: nowrap; gap: 3px; overflow: hidden; }
+.bosses-list .bossrow > .row-content { flex: 0 1 46%; width: auto; }
+.bosses-list .bossrow--active .bossrow__name { white-space: normal; }
+.bossrow__difficulties { display: flex; flex-direction: column; gap: 4px; padding-block: 8px; }
+.bossrow__tracked { color: var(--dim-text); font-size: var(--fs-micro); }
 .boss-tick { display: inline-flex; flex: none; align-items: center; min-height: 18px; padding: 0 6px; border-radius: 9px; color: var(--pill-n-fg); font-family: var(--mono); font-size: var(--fs-micro); font-weight: 700; letter-spacing: .04em; }
 .boss-tick--e { background: var(--pill-e-bg); color: var(--pill-e-fg); }
 .boss-tick--n { background: var(--pill-n-bg); color: var(--pill-n-fg); }
@@ -30,9 +34,12 @@
 .bosses-events a { display: flex; flex: 1 1 auto; align-items: center; gap: 8px; min-width: 0; color: var(--ink); text-decoration: none; }
 .bosses-events .portrait--md { width: 34px; height: 34px; border-radius: 10px; }
 .bosses-events strong { overflow: hidden; font-size: var(--fs-small); text-overflow: ellipsis; white-space: nowrap; }
+.bosses-events .row-content__full strong { overflow: visible; white-space: normal; }
+.bosses-events .row-content__full .note { color: var(--dim-text); }
 .bosses-events .status-chip abbr, .knowledge-hero .status-chip abbr { text-decoration: none; }
 // The season label gives way (ellipsis) before the name; the list never scrolls sideways.
-.bosses-events a { flex: 0 1 auto; }
+.bosses-events a { flex: 0 0 auto; max-width: 50%; }
+.bosses-events li > .row-content { flex: 1 1 0; width: auto; }
 .bosses-events .status-chip { display: block; flex: 0 1 auto; min-width: 0; min-height: 18px; margin-left: auto; overflow: hidden; padding: 0 6px; font-size: var(--fs-micro); line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
 .knowledge-detail { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; overflow: clip; background: var(--surface); }
 .knowledge-hero { position: relative; flex: none; min-height: 150px; overflow: hidden; border-bottom: 1.5px solid var(--line); }

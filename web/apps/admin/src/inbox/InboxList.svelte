@@ -7,7 +7,7 @@
 <script lang="ts">
   import type { Proposal } from '@kanade/api-types';
   import { tick } from 'svelte';
-  import { ListPane, Portrait, StatusChip } from '@kanade/ui';
+  import { ListPane, Portrait, RowContent, StatusChip } from '@kanade/ui';
   import { FLAG_LABEL, FLAG_TONE, title, who } from './flags';
 
   let {
@@ -37,7 +37,7 @@
   export async function focusOn(id: string) {
     active = id;
     await tick();
-    listEl?.focus();
+    listEl?.focus({ preventScroll: true });
     if (current) reveal(current);
   }
 
@@ -79,7 +79,7 @@
   >
     {#each items as p (p.id)}
       <li
-        class="inbox__option"
+        class="inbox__option expandable-row"
         class:inbox__option--art={p.tab === 'extractor' && Boolean(p.bosses[0])}
         data-fid="inbox-row"
         class:inbox__option--active={!follow && p.id === current}
@@ -92,7 +92,9 @@
           <!-- Extractor rows (VarRail2): the boss art, then the lines; how much of the thread was used. -->
           <span class="inbox__art" aria-hidden="true"><Portrait boss={p.bosses[0]} size="md" /></span>
         {/if}
-        <span class="inbox__lines">
+        <RowContent expanded={p.id === selected}>
+          {#snippet compact()}<span class="inbox__what">{title(p)}</span> <span class="inbox__meta">· {who(p)} · {p.when}</span>{#if p.thread?.length}<span class="inbox__count"> · {p.thread.length} messages · {p.thread.filter((m) => m.used).length} used</span>{/if}{#each p.flags as flag (flag)} · {FLAG_LABEL[flag]}{/each}{#if p.is_question} · still a question{/if}{/snippet}
+          <span class="inbox__lines">
           <span class="inbox__what">{title(p)}</span>
           <span class="inbox__meta"><span>{who(p)}</span> · <span class="mono">{p.when}</span></span>
           {#if p.tab === 'extractor' && p.thread?.length}
@@ -104,7 +106,8 @@
               {#if p.is_question}<StatusChip tone="warn">still a question</StatusChip>{/if}
             </span>
           {/if}
-        </span>
+          </span>
+        </RowContent>
       </li>
     {/each}
   </ListPane>

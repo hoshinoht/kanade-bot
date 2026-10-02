@@ -27,7 +27,7 @@ test.describe('event bosses', () => {
     await expect(kai.locator('.status-chip abbr')).toHaveAttribute('title', 'Challengers World Season 3');
     // No fixture art for event keys: the monogram holds the same box.
     await expect(kai.locator('.portrait--mono')).toHaveText('Ka');
-    await expect(page.getByRole('listbox', { name: 'Bosses' })).not.toContainText('Seasonal boss');
+    await expect(page.getByRole('list', { name: 'Bosses', exact: true })).not.toContainText('Seasonal boss');
     // Event art resolves only through the declared, exact-case key.
     expect((await page.request.get(`${ADMIN}/art/portraits/kai`)).status()).toBe(404);
   });
@@ -68,14 +68,17 @@ test('bosses: phone opens a selected knowledge detail and returns to the catalog
   await page.getByRole('link', { name: 'Radiant Malefic Star' }).click();
   await expect(page.getByRole('heading', { level: 2, name: 'Radiant Malefic Star' })).toBeVisible();
   await page.getByRole('button', { name: 'Back to the catalog (Bosses)' }).click();
-  await expect(page.getByRole('listbox', { name: 'Bosses' })).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Bosses', exact: true })).toBeVisible();
 });
 
-test('bosses: board rows and detail keep compact timing and fact content', async ({ page }) => {
+test('bosses: selected rows reveal every difficulty and detail keeps timing and fact content', async ({ page }) => {
   await go(page, '/bosses/MaleficStar/knowledge');
   const star = page.locator('.bossrow', { hasText: 'Radiant Malefic Star' });
-  await expect(star.locator('.boss-tick--h')).toContainText('HARD');
-  await expect(star.locator('.boss-tick--more')).toContainText(/^\+\d+/);
+  await expect(star.locator('.row-content__full .boss-tick--h')).toHaveText('HARD');
+  await expect(star.locator('.row-content__full .boss-tick--h')).toBeVisible();
+  await expect(star.locator('.boss-tick--more')).toBeHidden();
+  const catalog = await (await page.request.get(`${ADMIN}/api/admin/bosses`)).json() as { key: string; difficulties: unknown[] }[];
+  await expect(star.locator('.row-content__full .boss-tick')).toHaveCount(catalog.find((boss) => boss.key === 'MaleficStar')!.difficulties.length);
   const facts = page.locator('.knowledge-facts');
   await expect(facts).toContainText('HP (total)');
   await expect(facts).not.toContainText('Recommended');
@@ -94,7 +97,7 @@ test('bosses: a whole catalog row selects its boss, not only the name', async ({
   const box = (await other.boundingBox())!;
   await page.mouse.click(box.x + box.width - 4, box.y + box.height / 2);
   await expect(page.getByRole('heading', { level: 2, name })).toBeVisible();
-  await expect(other).toHaveAttribute('aria-selected', 'true');
+  await expect(other.getByRole('link')).toHaveAttribute('aria-current', 'true');
 });
 
 test('bosses: a weekly timing opens that timing in Fixed', async ({ page }) => {

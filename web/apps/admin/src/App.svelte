@@ -38,11 +38,12 @@
 
   // Route-level code splitting: only the Week page (and the run sheet it
   // opens) is in the initial bundle; every other page loads on first visit.
+  const loadBosses = () => import('./bosses/BossWorkspace.svelte');
   const PAGES = {
     login: () => import('./pages/LoginPage.svelte'),
     fixed: () => import('./fixed/FixedPage.svelte'),
-    bosses: () => import('./bosses/BossesPage.svelte'),
-    'boss-knowledge': () => import('./bosses/KnowledgePage.svelte'),
+    bosses: loadBosses,
+    'boss-knowledge': loadBosses,
     inbox: () => import('./inbox/InboxPage.svelte'),
     extractions: () => import('./extractions/ExtractionsPage.svelte'),
     extraction: () => import('./extractions/ExtractionPage.svelte'),
@@ -210,7 +211,7 @@
           },
         };
       case 'boss-knowledge':
-        return { key: params.boss ?? '', difficulty: router.query.get('difficulty') ?? '' };
+        return { selectedKey: params.boss ?? '', difficulty: router.query.get('difficulty') ?? '' };
       case 'extraction':
       case 'chat-interaction':
         return { id: params.id ?? '', timeZone: store.week?.timezone ?? 'Asia/Kuala_Lumpur', toaster };
@@ -233,7 +234,7 @@
     const path = router.path;
     if (path === lastPath) return;
     lastPath = path;
-    void tick().then(() => document.getElementById('main')?.focus());
+    void tick().then(() => document.getElementById('main')?.focus({ preventScroll: true }));
   });
 
   const reloadToast = (message: string) =>
@@ -455,6 +456,7 @@
           {store}
           {which}
           bind:tab={weekTab}
+          selectedRun={sheetOpen ? sheetRunId : null}
           onmove={(runId, to) => void move(runId, to)}
           onswap={(runId, withId) => void swap(runId, withId)}
           onopen={openSheet}
@@ -463,7 +465,7 @@
           busyChannels={rereading}
         />
       {:else if loader && route}
-        {#key `${route.key} ${JSON.stringify(route.params)}`}<Lazy {loader} props={pageProps(route.key, route.params)} />{/key}
+        {#key route.key === 'bosses' || route.key === 'boss-knowledge' ? 'boss-workspace' : `${route.key} ${JSON.stringify(route.params)}`}<Lazy {loader} props={pageProps(route.key, route.params)} />{/key}
       {:else}
         <NotFoundPage path={router.path} />
       {/if}

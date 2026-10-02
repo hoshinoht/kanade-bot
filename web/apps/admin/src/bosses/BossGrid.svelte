@@ -1,7 +1,7 @@
 <script lang="ts">
   import '@kanade/ui/styles/boss-grid.scss';
   import type { BossRow } from '@kanade/api-types';
-  import { Portrait } from '@kanade/ui';
+  import { Portrait, RowContent } from '@kanade/ui';
 
   let {
     rows,
@@ -46,19 +46,22 @@
 </script>
 
 <!-- v4 macros.boss_grid: each difficulty a pill; checked = filled with a tick, so state is not colour alone. -->
-<div class="grid-bosses" role={readonly ? 'listbox' : 'group'} aria-label="Bosses" {@attach (grid) => (readonly ? forwardRowClicks(grid) : undefined)}>
+<div class="grid-bosses" role={readonly ? 'list' : 'group'} aria-label="Bosses" {@attach (grid) => (readonly ? forwardRowClicks(grid) : undefined)}>
   {#each rows as row (row.key)}
     {@const on = readonly ? row.difficulties.some((d) => d.in_use) : row.difficulties.some((d) => selected.includes(d.token))}
     {@const remaining = row.difficulties.filter((option) => !option.in_use).length}
     {#if readonly}
-      <div class="bossrow" data-fid="boss-row" class:bossrow--on={on} class:bossrow--active={row.key === active} role="option" aria-selected={row.key === active}>
-        <div class="bossrow__id"><Portrait boss={asBoss(row)} size="md" /><span><a class="bossrow__name" href="/bosses/{row.key}/knowledge">{row.name}</a><span class="bossrow__lv">Lv. {row.level}</span></span></div>
-        <div class="bossrow__pills" role="group" aria-label="{row.name} difficulties">
+      <div class="bossrow expandable-row" data-fid="boss-row" class:bossrow--on={on} class:bossrow--active={row.key === active} role="listitem">
+        <div class="bossrow__id"><Portrait boss={asBoss(row)} size="md" /><span><a class="bossrow__name" href="/bosses/{row.key}/knowledge" aria-current={row.key === active ? 'true' : undefined}>{row.name}</a><span class="bossrow__lv">Lv. {row.level}</span></span></div>
+        <RowContent expanded={row.key === active}>
+          {#snippet compact()}<span class="bossrow__pills" role="group" aria-label="{row.name} difficulties">
           {#each row.difficulties.filter((option) => option.in_use) as option (option.token)}
             <span class="boss-tick boss-tick--{option.letter}">{TICK[option.letter]}<span class="vh"> (has a weekly timing)</span></span>
           {/each}
           {#if remaining}<span class="boss-tick boss-tick--more">+{remaining}<span class="vh"> untracked difficulties</span></span>{/if}
-        </div>
+          </span>{/snippet}
+          <span class="bossrow__difficulties" role="group" aria-label="{row.name} difficulties">{#each row.difficulties as option (option.token)}<span><span class="boss-tick boss-tick--{option.letter}">{option.name.toUpperCase()}</span>{#if option.in_use}<span class="bossrow__tracked"> ✓ weekly timing</span>{/if}</span>{/each}</span>
+        </RowContent>
       </div>
     {:else}
       <div class="bossrow" data-fid="fixed-boss-row" class:bossrow--on={on}>

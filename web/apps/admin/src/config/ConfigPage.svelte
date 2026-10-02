@@ -9,7 +9,7 @@
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/settings.scss';
   import type { ConfigView, Role, RoleProfileWrite } from '@kanade/api-types';
-  import { COLORWAYS, currentColorway, Icon, ThemePicker, Toaster } from '@kanade/ui';
+  import { COLORWAYS, currentColorway, Icon, RowContent, ThemePicker, Toaster } from '@kanade/ui';
   import { tick } from 'svelte';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { directory } from '../names/directory.svelte';
@@ -168,7 +168,7 @@
     const item = shown[(index + shown.length) % shown.length];
     if (!item) return;
     onsection?.(item.key);
-    tabs[item.key]?.focus();
+    tabs[item.key]?.focus({ preventScroll: true });
   }
 
   function onKeydown(event: KeyboardEvent, index: number) {
@@ -190,7 +190,7 @@
     if (event.key !== 'Enter' || !shown.length) return;
     event.preventDefault();
     onsection?.(shown[0]!.key);
-    tabs[shown[0]!.key]?.focus();
+    tabs[shown[0]!.key]?.focus({ preventScroll: true });
   }
 
   // Save bars report here (`section/form`); a section with any dirty form gets a dot in the list.
@@ -215,6 +215,26 @@
       case 'theme': return colorway.toLowerCase();
       case 'env': return `${c.env.length}`;
       default: return '';
+    }
+  }
+
+  function summary(item: Key): string {
+    const c = config.data;
+    if (!c) return '';
+    switch (item) {
+      case 'pings': return `${c.pings.day_of_ping_time} · countdowns ${c.pings.countdown_minutes.join(', ')} min`;
+      case 'run-lengths': return `${c.run_lengths.default_minutes} min default · ${c.run_lengths.overrides.length} overrides`;
+      case 'watching': return `${c.watching.paused ? 'Watching paused' : 'Watching on'} · extractor ${c.watching.extract_enabled ? 'on' : 'off'}`;
+      case 'chatbot': return `${c.chatbot.enabled ? 'On' : 'Off'} · ${c.chatbot.member_rate.count} answers / ${c.chatbot.member_rate.window_s}s per person`;
+      case 'persona': return `${hint(item)} · ${c.persona.profiles.length} reply profiles · ${c.persona.role_profiles.length} role overrides`;
+      case 'models': return Object.entries(c.models.roles).map(([role, model]) => `${role}: ${model.alias ?? 'unset'}`).join(' · ');
+      case 'self-service': return `Portal ${hint(item)} · ${c.self_service.effective_mode.replaceAll('_', ' ')}`;
+      case 'notifications': return `Quiet mode ${c.notifications.quiet_mode ? 'on' : 'off'}`;
+      case 'digest': return 'Weekly post · channel and preview';
+      case 'rescan': return `${targets.data?.length ?? 0} available channels`;
+      case 'access': return `${missingManage.length} channels missing Manage Messages`;
+      case 'theme': return `${colorway} · kept in this browser`;
+      case 'env': return c.env.map((setting) => setting.label).join(' · ');
     }
   }
 
@@ -286,7 +306,7 @@
           onsection?.('access');
           // A search may have hidden the tab; focus once it is shown again.
           await tick();
-          tabs.access?.focus();
+           tabs.access?.focus({ preventScroll: true });
         }}
         ><Icon name="alert-triangle" /><span class="settings__problem-text"
           ><b>Manage Messages missing in {missingManage.length} channel{missingManage.length === 1 ? '' : 's'}</b><span class="settings__problem-fix">&nbsp;· fix in Channel access</span></span
@@ -325,7 +345,7 @@
             <button
               type="button"
               role="tab"
-              class="settings__tab"
+              class="settings__tab expandable-row"
               data-fid="cfg-item"
               id="{uid}-tab-{item.key}"
               aria-selected={selected === item.key}
@@ -336,9 +356,11 @@
               onclick={() => onsection?.(item.key)}
               onkeydown={(event) => onKeydown(event, index)}
             >
-              <span class="settings__label">{item.label}</span>
+              <RowContent expanded={selected === item.key}>
+                {#snippet compact()}<span class="settings__scan"><span class="settings__label">{item.label}</span>{#if hint(item.key)}<span class="settings__hint">{hint(item.key)}</span>{/if}</span>{/snippet}
+                <span class="settings__expanded"><span class="settings__label">{item.label}</span><span class="settings__summary">{summary(item.key)}</span></span>
+              </RowContent>
               {#if isDirty(item.key)}<span class="settings__dirty"><span class="vh">, unsaved changes</span></span>{/if}
-              {#if hint(item.key)}<span class="settings__hint">{hint(item.key)}</span>{/if}
               {#if item.key === 'access' && missingManage.length}<span class="settings__flag"
                   ><span aria-hidden="true">⚠ {missingManage.length}</span><span class="vh">, {missingManage.length} need attention</span></span
                 >

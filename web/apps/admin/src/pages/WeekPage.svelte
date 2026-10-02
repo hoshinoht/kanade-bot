@@ -23,6 +23,7 @@
     onundo,
     onreread,
     busyChannels,
+    selectedRun = null,
   }: {
     store: AdminWeek;
     which: WeekKey;
@@ -34,6 +35,7 @@
     onundo: () => void;
     onreread: (run: Run) => void;
     busyChannels: Set<string>;
+    selectedRun?: string | null;
   } = $props();
 
   const uid = $props.id();
@@ -171,6 +173,7 @@
       <Planner
         week={shown}
         {helpId}
+        {selectedRun}
         {onmove}
         {onswap}
         onopen={(run: Run) => onopen(run.id)}

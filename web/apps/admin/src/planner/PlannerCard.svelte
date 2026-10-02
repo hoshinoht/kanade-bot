@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Run, Week } from '@kanade/api-types';
-  import { Icon, RunCardBody, runAccessibleName, runTitle } from '@kanade/ui';
+  import { BossTag, Icon, RowContent, RunCardBody, runAccessibleName, runTitle } from '@kanade/ui';
   import { PICK_KEY } from './keyboardMove';
 
   let {
@@ -18,6 +18,7 @@
     clash = null,
     dropMark = null,
     swapTarget = false,
+    selected = false,
   }: {
     run: Run;
     week: Week;
@@ -37,6 +38,7 @@
     dropMark?: 'before' | 'after' | null;
     /** A pointer drop here would swap the two runs' slots. */
     swapTarget?: boolean;
+    selected?: boolean;
   } = $props();
 
   const movable = $derived(run.status !== 'done' && run.status !== 'cancelled');
@@ -52,7 +54,8 @@
   press on touch), so a click or tap still opens the sheet. The grip only
   says so; M on the focused card is the keyboard move. -->
 <li
-  class="runcard runcard--{run.status} plan-card"
+  class="runcard runcard--{run.status} plan-card expandable-row"
+  class:plan-card--selected={selected}
   class:plan-card--movable={movable}
   class:plan-card--reread={onreread !== undefined}
   class:plan-card--lifted={lifted || dragging}
@@ -66,6 +69,7 @@
     type="button"
     class="plan-card__open"
     data-handle={run.id}
+    aria-current={selected ? 'true' : undefined}
     aria-label="{run.time ?? 'own time'} {runTitle(run)}: {runAccessibleName(week, run)}.{clash ? ` Clash: ${clash}.` : ''} Open details"
     aria-describedby={movable ? helpId : undefined}
     aria-keyshortcuts={movable ? PICK_KEY : undefined}
@@ -73,7 +77,16 @@
     onkeydown={movable ? (event) => onkey(event, run) : undefined}
     onblur={() => onblur(run)}
   >
-    <span class="runcard__visual" aria-hidden="true"><RunCardBody {run} /></span>
+    <span class="runcard__visual" aria-hidden="true"><RunCardBody {run}>
+      {#snippet bosses()}
+        <RowContent expanded={selected}>
+          {#snippet compact()}<span class="plan-card__summary">{run.bosses.map((boss) => boss.token).join(' + ')}</span>{/snippet}
+          <span class="runcard__bosses">{#each run.bosses as boss (boss.token)}<BossTag {boss} short={!selected} portrait={selected} />{/each}</span>
+          <span class="plan-card__party">{run.participants.map((person) => person.name).join(' · ')}</span>
+          <span class="plan-card__channel">{run.channel}</span>
+        </RowContent>
+      {/snippet}
+    </RunCardBody></span>
     {#if clash}
       <!-- Icon and words, never colour alone; the full text is in the accessible name and the tooltip. -->
       <span class="plan-clash plan-card__clash" aria-hidden="true" title="Clash: {clash}"><Icon name="alert-triangle" /> Clash</span>
@@ -108,6 +121,16 @@
     align-items: stretch;
     padding: 0;
   }
+
+  .plan-card--selected, .plan-card--selected:hover {
+    --card-face: var(--select);
+    border-radius: 18px;
+    box-shadow: inset 0 0 0 1.5px var(--select-edge);
+  }
+
+  .plan-card__summary { font-size: var(--fs-small); font-weight: 600; }
+  .plan-card__party, .plan-card__channel { display: block; margin-top: 4px; color: var(--dim-text); font-size: var(--fs-mini); }
+  .plan-card__channel { font-family: var(--mono); }
 
   .plan-card__open {
     flex: 1 1 auto;
@@ -177,7 +200,8 @@
   .plan-card--movable {
     transition:
       transform 0.12s ease-out,
-      box-shadow 0.12s ease-out;
+      box-shadow 0.12s ease-out,
+      border-radius 220ms ease;
   }
 
   @media (hover: hover) and (pointer: fine) {

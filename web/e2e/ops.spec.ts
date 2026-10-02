@@ -15,10 +15,12 @@ test('knowledge: opens on the difficulty the guild runs, switches, credits sourc
   await go(page, '/bosses/MaleficStar/knowledge');
   const switcher = page.getByRole('group', { name: 'Difficulty' });
   await expect(switcher.getByRole('button', { name: /^Hard/ })).toHaveAttribute('aria-pressed', 'true');
-  const facts = page.getByRole('table', { name: 'Hard facts' });
-  await expect(facts.getByRole('row', { name: /Sacred force/ })).toContainText('550');
+  const force = page.locator('.knowledge-facts > div').filter({ has: page.getByText('Sacred force', { exact: true }) });
+  await expect(page.getByRole('heading', { name: 'Hard facts' })).toBeAttached();
+  await expect(force.locator('dd')).toHaveText('550');
   await switcher.getByRole('button', { name: /^Normal/ }).click();
-  await expect(page.getByRole('table', { name: 'Normal facts' }).getByRole('row', { name: /Sacred force/ })).toContainText('400');
+  await expect(page.getByRole('heading', { name: 'Normal facts' })).toBeAttached();
+  await expect(force.locator('dd')).toHaveText('400');
   await expect(page.getByText(/by iSIingGunz · guide · fetched \d{4}-\d{2}-\d{2}/).first()).toBeVisible();
 
   await go(page, '/bosses/MaleficStar/knowledge?difficulty=n');
@@ -26,9 +28,10 @@ test('knowledge: opens on the difficulty the guild runs, switches, credits sourc
 
   await go(page, '/bosses');
   await page.getByRole('link', { name: 'Kai' }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('Seasonal boss · Challengers World Season 3');
+  await expect(page.getByRole('heading', { level: 2, name: 'Kai', exact: true })).toBeVisible();
+  await expect(page.locator('.knowledge-hero .status-chip')).toHaveText('Seasonal boss · CW3');
   await expect(page.getByText('Event boss.')).toBeVisible();
-  await expect(page.getByRole('table', { name: /facts$/ }).getByRole('row', { name: /Party/ })).toContainText('Solo only');
+  await expect(page.locator('.knowledge-facts > div').filter({ has: page.getByText('Party', { exact: true }) }).locator('dd')).toHaveText('Solo only');
 });
 
 test('inbox: extractor tab — list and detail, edit then approve, reject, a chat proposal', async ({ page }) => {
@@ -838,7 +841,7 @@ test('config on a phone: the section strip scrolls itself, never the frame', asy
   await expect(page.getByRole('tablist', { name: 'Settings sections' })).toHaveAttribute('aria-orientation', 'horizontal');
   await expect(tab).toBeInViewport({ ratio: 1 });
   // The selected tab is marked by an underline as well as its fill.
-  await expect(tab).toHaveCSS('text-decoration-line', 'underline');
+  await expect(tab.locator('.row-content__full .settings__label')).toHaveCSS('text-decoration-line', 'underline');
   const scrolled = await page.evaluate(() => ({
     doc: document.scrollingElement!.scrollTop + document.scrollingElement!.scrollLeft,
     shell: document.querySelector('.shell')!.scrollLeft,

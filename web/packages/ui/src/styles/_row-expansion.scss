@@ -1,0 +1,22 @@
+// Selection-led disclosure; grid tracks animate intrinsic height in every engine.
+.expandable-row { transition: border-radius 220ms ease; overflow-anchor: none; }
+.row-content { display: grid; min-width: 0; width: 100%; text-align: inherit; }
+.row-content__compact, .row-content__reveal { grid-area: 1 / 1; min-width: 0; }
+.row-content__compact { display: block; align-self: center; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.row-content__reveal { display: grid; grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows 220ms ease; }
+.row-content__clip { min-height: 0; overflow: clip; }
+.row-content__full { display: block; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.row-content--expanded > .row-content__compact { visibility: hidden; }
+.row-content--expanded > .row-content__reveal { grid-template-rows: 1fr; visibility: visible; }
+
+.boss-stack { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.boss-stack__portraits { display: flex; flex: none; isolation: isolate; }
+.boss-stack__portraits .portrait { width: 28px; height: 28px; border-width: 1.5px; border-radius: 8px; }
+.boss-stack__portraits .portrait + .portrait { margin-inline-start: -10px; }
+.boss-stack__names { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.boss-stack__pills { display: flex; flex: none; gap: 3px; }
+.boss-stack__pills .pill { padding: 0 5px; font-size: var(--fs-micro); letter-spacing: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .expandable-row, .row-content__reveal { transition: none !important; }
+}

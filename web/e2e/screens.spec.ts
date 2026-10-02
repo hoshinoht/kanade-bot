@@ -250,6 +250,7 @@ test('history: direct wide load keeps its timeline and change pane as aligned sc
     const fill = (element: HTMLElement) => {
       const filler = document.createElement('div');
       filler.style.height = '2000px';
+      filler.style.flexShrink = '0';
       element.append(filler);
       element.scrollTop = 1;
       const result = { overflow: getComputedStyle(element).overflowY, scrollTop: element.scrollTop, scrollHeight: element.scrollHeight, clientHeight: element.clientHeight };
@@ -460,12 +461,12 @@ test('bosses: the in-game list, ticked by timings, with knowledge pages', async 
   await go(page, '/bosses');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(/^11 bosses, \d+ difficulties$/);
   const star = page.locator('.bossrow', { hasText: 'Radiant Malefic Star' });
-  await expect(star.locator('.boss-tick--h')).toContainText('HARD');
-  await expect(star.locator('.boss-tick--more')).toContainText(/^\+\d+/);
+  await expect(star.locator('.row-content__compact .boss-tick--h')).toContainText('HARD');
+  await expect(star.locator('.row-content__compact .boss-tick--more')).toContainText(/^\+\d+/);
   await page.getByRole('link', { name: 'Radiant Malefic Star' }).click();
   await expect(page).toHaveURL(`${ADMIN}/bosses/MaleficStar/knowledge`);
   await expect(page.getByRole('heading', { level: 2, name: 'Radiant Malefic Star' })).toBeVisible();
-  await expect(page.getByText('boss/knowledge/maleficstar.yaml')).toBeVisible();
+  await expect(page.getByText('boss/knowledge/MaleficStar.yaml')).toBeVisible();
   await page.goto(`${ADMIN}/bosses/Nobody/knowledge?sw=off`);
   await expect(page.getByRole('alert')).toContainText('No knowledge for “Nobody”');
 });

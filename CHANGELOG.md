@@ -656,6 +656,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- v5 admin selected list rows smoothly grow to reveal their full content across
+  Fixed, Week, Inbox, History, Members, Bosses and Config; compact multi-boss
+  timings use overlapping portraits, and planner days always keep one card column.
+
 - v5 chat reuses another channel's live proposal for the same run change,
   pointing to its existing card (or saying it is still being posted) instead
   of creating a duplicate, while retaining normal retirement and card

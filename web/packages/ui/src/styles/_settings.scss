@@ -8,7 +8,7 @@
   display: flex;
   flex-direction: column;
   padding: 0;
-  overflow: hidden;
+  overflow: clip;
 }
 
 .settings > .card__head {
@@ -126,7 +126,14 @@
 
 .settings__label {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+.settings__scan { display: flex; gap: 8px; min-width: 0; }
+.settings__expanded { display: flex; flex-direction: column; gap: 4px; padding-block: 8px; }
+.settings__expanded .settings__label { white-space: normal; }
+.settings__summary { color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-micro); font-weight: 400; }
 
 .settings__tab .settings__flag {
   margin-left: 6px;
@@ -779,6 +786,7 @@
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: thin;
+    align-items: flex-start;
   }
 
   .settings__group {
@@ -797,6 +805,7 @@
     box-shadow: inset 0 0 0 1.5px var(--line);
     font-size: var(--fs-small);
     white-space: nowrap;
+    width: 10rem;
   }
 
   .settings__tab .settings__hint {
@@ -804,7 +813,7 @@
   }
 
   // Not the fill alone: the selected name is underlined too.
-  .settings__tab[aria-selected="true"] {
+  .settings__tab[aria-selected="true"] .settings__label {
     text-decoration: underline;
     text-underline-offset: 3px;
     text-decoration-thickness: 2px;

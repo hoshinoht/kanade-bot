@@ -22,6 +22,7 @@
 @use "topbar"; // M3E phone frame: top bar + drawer (G7)
 @use "page-line"; // M3E page line (G2)
 @use "m3e-primitives"; // Shared list, detail and decision-pane bases for every admin route.
+@use "row-expansion";
 @use "stats-tables";
 @use "theme-picker";
 @use "modal";

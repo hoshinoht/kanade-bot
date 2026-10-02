@@ -1,10 +1,11 @@
 <script lang="ts">
   import type { PublicRun } from '@kanade/api-types';
+  import type { Snippet } from 'svelte';
   import BossTag from './BossTag.svelte';
   import StatusMark from './StatusMark.svelte';
   import { tally } from '../format';
 
-  let { run }: { run: PublicRun } = $props();
+  let { run, bosses }: { run: PublicRun; bosses?: Snippet } = $props();
   const count = $derived(tally(run));
   // The lead boss's entry art only; the sheet has room for two (v4 board.html).
   const art = $derived(run.bosses.find((b) => b.art)?.art ?? null);
@@ -18,6 +19,6 @@
     <span class="runcard__tally">{count.on}/{count.total}</span>
   </span>
 </span>
-<span class="runcard__bosses">
+{#if bosses}{@render bosses()}{:else}<span class="runcard__bosses">
   {#each run.bosses as boss (boss.token)}<BossTag {boss} short />{/each}
-</span>
+</span>{/if}

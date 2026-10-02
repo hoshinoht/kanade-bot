@@ -3,7 +3,7 @@
 .members-window {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: clip;
 }
 
 .members-window__head { flex-wrap: nowrap; gap: 0.55rem; }
@@ -20,7 +20,7 @@
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
+  overflow: clip;
 }
 
 .members-window__body > .flash,
@@ -96,6 +96,9 @@
 .memberlist__name strong { font-size: var(--fs-small); font-weight: 700; }
 .memberlist__name .id { color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-mini); }
 .memberlist__name .chip { align-self: center; }
+.memberlist__identity { display: flex; flex-direction: column; gap: 3px; padding-block: 8px; font-size: var(--fs-small); }
+.memberlist__identity .id { color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-mini); }
+.memberlist__identity .chip { align-self: flex-start; }
 .memberlist__stat { font-size: var(--fs-small); font-weight: 600; white-space: nowrap; }
 .memberlist__preference,
 .memberlist__style { overflow: hidden; font-size: var(--fs-small); text-overflow: ellipsis; white-space: nowrap; }

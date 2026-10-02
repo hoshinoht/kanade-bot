@@ -1,5 +1,7 @@
 export { default as AnswerChip } from './components/AnswerChip.svelte';
 export { default as BossTag } from './components/BossTag.svelte';
+export { default as BossStack } from './components/BossStack.svelte';
+export { default as RowContent } from './components/RowContent.svelte';
 export { default as CommandPalette, filterCommands, type Command } from './components/CommandPalette.svelte';
 export { default as DayColumn } from './components/DayColumn.svelte';
 export { default as Freshness, type FreshState } from './components/Freshness.svelte';

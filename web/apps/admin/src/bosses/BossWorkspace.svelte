@@ -2,7 +2,7 @@
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
   import type { Boss, BossRow, Difficulty, DifficultyFacts, EventBoss, FixedRow, Knowledge, Run, Week } from '@kanade/api-types';
-  import { DIFFICULTY_WORDS, Portrait, StatusChip, dayLabel } from '@kanade/ui';
+  import { DIFFICULTY_WORDS, Portrait, RowContent, StatusChip, dayLabel } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import BossGrid from './BossGrid.svelte';
   import { eventAsBoss, seasonTag } from './event';
@@ -130,7 +130,7 @@
           <h3 class="cap bosses-list__event-title">Event bosses</h3>
           <ul class="bosses-events" aria-label="Event bosses" {@attach forwardEventClicks}>
             {#each eventRows as boss (boss.key)}
-              <li data-fid="boss-row" class:bosses-events__active={boss.key === activeKey}><a href="/bosses/{boss.key}/knowledge"><Portrait boss={eventAsBoss(boss)} size="md" /><strong>{boss.key}</strong></a><StatusChip>Seasonal boss · <abbr title={boss.event.name}>{seasonTag(boss.event)}</abbr></StatusChip></li>
+              <li class="expandable-row" data-fid="boss-row" class:bosses-events__active={boss.key === activeKey}><a href="/bosses/{boss.key}/knowledge" aria-current={boss.key === activeKey ? 'true' : undefined}><Portrait boss={eventAsBoss(boss)} size="md" /><strong>{boss.key}</strong></a><RowContent expanded={boss.key === activeKey}>{#snippet compact()}<StatusChip>Seasonal boss · <abbr title={boss.event.name}>{seasonTag(boss.event)}</abbr></StatusChip>{/snippet}<span class="bossrow__difficulties"><strong>{boss.event.name}</strong><span class="note">{boss.event.availability}</span></span></RowContent></li>
             {/each}
           </ul>
         {/if}

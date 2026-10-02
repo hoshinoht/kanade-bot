@@ -20,6 +20,7 @@
     saving = false,
     step = 30,
     allRuns,
+    selectedRun = null,
   }: {
     week: Week;
     /** The week header's move instructions: every movable card is described by them. */
@@ -37,6 +38,7 @@
     step?: number;
     /** Every run of the week, filtered out or not: a clash with a hidden run is still a clash. */
     allRuns?: Run[];
+    selectedRun?: string | null;
   } = $props();
 
   let lift = $state<LiftState>(IDLE);
@@ -401,6 +403,7 @@
               {run}
               {week}
               {helpId}
+              selected={run.id === selectedRun}
               lifted={lift.kind === 'lifted' && lift.runId === run.id}
               dragging={dragging === run.id}
               clash={cardClash.get(run.id) ?? null}

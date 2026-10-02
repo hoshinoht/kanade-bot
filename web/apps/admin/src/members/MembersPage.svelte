@@ -2,6 +2,7 @@
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/members.scss';
   import type { MemberRow, Persona, PingLevel, Week } from '@kanade/api-types';
+  import { RowContent } from '@kanade/ui';
   import Pager from '../pages/Pager.svelte';
   import { paged } from '../pages/paging';
   import { memberLabel } from '../names/directory.svelte';
@@ -64,7 +65,7 @@
 
   function close() {
     openId = null;
-    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-member="${restore}"]`)?.focus());
+    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-member="${restore}"]`)?.focus({ preventScroll: true }));
   }
 </script>
 
@@ -101,7 +102,7 @@
           {#each shown.rows as member (member.id)}
             <div role="listitem">
               <button
-                class="memberlist__row"
+                class="memberlist__row expandable-row"
                 data-fid="members-row"
                 class:memberlist__row--active={member.id === openId}
                 type="button"
@@ -112,11 +113,14 @@
                 }}
                 data-member={member.id}
               >
-                <span class="memberlist__name">
+                <RowContent expanded={member.id === openId}>
+                  {#snippet compact()}<span class="memberlist__name">
                   <strong>{memberLabel(members.data ?? [], member.id)}</strong>
                   {#if member.nickname}<span class="id">{member.nickname}</span>{:else if member.aliases.length}<span class="id">{member.aliases.join(' · ')}</span>{/if}
                   {#if !member.bossing}<span class="chip chip--waiting">chat only</span>{/if}
-                </span>
+                  </span>{/snippet}
+                  <span class="memberlist__identity"><strong>{memberLabel(members.data ?? [], member.id)}</strong>{#if member.name !== memberLabel(members.data ?? [], member.id)}<span class="id">{member.name}</span>{/if}{#if member.nickname && member.nickname !== memberLabel(members.data ?? [], member.id)}<span class="id">{member.nickname}</span>{/if}{#if member.aliases.length}<span class="id">{member.aliases.join(' · ')}</span>{/if}{#if !member.bossing}<span class="chip chip--waiting">chat only</span>{/if}</span>
+                </RowContent>
                 <span class="memberlist__stat mono"><span class="vh">, runs this week: </span>{member.runs_this_week}</span>
                 <span class="memberlist__preference"><span class="vh">, @mentions: </span>{PING[member.ping_level]}</span>
                 <span class="memberlist__style mono"><span class="vh">, reply style: </span>{member.persona ?? 'default'}</span>
