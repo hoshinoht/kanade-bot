@@ -6,6 +6,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin Inbox items now carry `thread`: the stored channel messages around
+  a proposal's evidence (oldest first, at most 37, the extractor's context plus
+  a burst), each marked `used` when the proposal cites it. It is read from the
+  watched-message cache, so deleted or pruned messages never reappear; member
+  requests and proposals without a card have `thread: null`.
 - v5 Discord chat now answers boss strategy questions from the checked-in boss
   knowledge (`KANADE_KNOWLEDGE_DIR`), without sources, as v4 did; without a
   knowledge directory the strategy tools are not offered at all.

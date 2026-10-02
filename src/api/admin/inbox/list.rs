@@ -10,26 +10,26 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 
-use super::super::{
-    context::{context, frames, roster},
-    write::{Refusal, state, write_context},
+use super::{
+    super::{
+        context::{context, frames, roster},
+        write::{Refusal, state, write_context},
+    },
+    messages::said,
 };
 use crate::{
     api::{
         auth::AdminSession,
         dto::{
-            inbox::{self, Choice, Common, Evidence, message_url},
-            iso_date,
-            week::Context,
-            when,
+            inbox::{self, Choice, Common},
+            iso_date, when,
         },
         error::ApiError,
         listeners::Site,
-        state::ApiState,
     },
     domain::{
         drafts::{DraftOp, LoadedDraft, Target},
-        proposals::{ProposalSubject, StoredCard},
+        proposals::ProposalSubject,
         schedule::{
             AmendedRunChoice, Draft, FixedEditChoices, ScheduleSnapshot, preview_fixed_edit,
         },
@@ -39,61 +39,6 @@ use crate::{
 
 fn unavailable<T>(_: T) -> Refusal {
     ApiError::UNAVAILABLE.into()
-}
-
-/// Discord's epoch in Unix milliseconds.
-const DISCORD_EPOCH_MS: i64 = 1_420_070_400_000;
-
-/// When Discord created the object with this snowflake id.
-fn snowflake_time(id: &str) -> Option<DateTime<Utc>> {
-    let id: u64 = id.parse().ok()?;
-    DateTime::from_timestamp_millis(i64::try_from(id >> 22).ok()? + DISCORD_EPOCH_MS)
-}
-
-/// The card's evidence from the watched-message cache; a pruned or deleted
-/// message is `missing`.
-async fn evidence(
-    state: &ApiState,
-    ctx: &Context<'_>,
-    card: Option<&StoredCard>,
-) -> Result<Vec<Evidence>, Refusal> {
-    let Some(card) = card else {
-        return Ok(Vec::new());
-    };
-    let ids = &card.details.evidence_message_ids;
-    let messages = match ids.iter().filter_map(|id| snowflake_time(id)).min() {
-        Some(since) => state
-            .store
-            .messages(card.channel_id.clone(), since)
-            .await
-            .map_err(unavailable)?,
-        None => Vec::new(),
-    };
-    Ok(ids
-        .iter()
-        .map(
-            |id| match messages.iter().find(|message| &message.id == id) {
-                Some(message) => Evidence {
-                    id: id.clone(),
-                    author: ctx.name(&message.author_id),
-                    author_id: Some(message.author_id.clone()),
-                    at: when(message.created_at, ctx.zone),
-                    content: Some(message.content.clone()),
-                    url: message_url(ctx, &message.channel_id, id),
-                    missing: false,
-                },
-                None => Evidence {
-                    id: id.clone(),
-                    author: "someone".into(),
-                    author_id: None,
-                    at: snowflake_time(id).map_or_else(String::new, |at| when(at, ctx.zone)),
-                    content: None,
-                    url: None,
-                    missing: true,
-                },
-            },
-        )
-        .collect())
 }
 
 /// A backend failure fails the list; anything else only blocks its item.
@@ -215,7 +160,7 @@ pub async fn list(
             Ok(preview) => Ok(preview),
             Err(error) => Err(proposal_reason(error)?),
         };
-        let evidence = evidence(state, &ctx, card).await?;
+        let said = said(state, &ctx, card, loaded.draft.created_at).await?;
         items.push(inbox::proposal(
             &common,
             &loaded,
@@ -223,7 +168,7 @@ pub async fn list(
             &subject,
             card,
             preview,
-            evidence,
+            said,
         ));
     }
 

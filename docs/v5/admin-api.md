@@ -386,6 +386,17 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
   `evidence: []`, `card_url: null`, `summary` and `self_service.note` = the
   member's title (admin-only), `self_service.via` = `request`,
   `public_summary` = the generated `member request: <type> <subject>`.
+- **Thread.** `thread` (always sent) is the card channel's cached messages
+  around `evidence`, oldest first, each an `Evidence` shape plus `used`
+  (true when the card cites it; `missing` is always false). It holds up to
+  25 messages before the first cited one (within 48 h, as the extractor's
+  context), every message between the first and last cited, and up to 12
+  after the last, stopped at the proposal's creation; past 37 the oldest
+  uncited ones go first. The "after" edge is approximate: the extraction
+  burst's own end is not stored, so it can include messages the extractor
+  never read. Read from the watched-message cache only (never Discord), so
+  deleted or retention-pruned messages are absent. `null` for requests and
+  for proposals without a card or cited ids.
 - **Approve** `{version?, choices?, day?, time?}` (`choices`: amended run id
   → `update` | `keep`). Requests need `version` (422 `version_required`)
   and, for `change_fixed`, `choices` (send `{}` when none are listed); they

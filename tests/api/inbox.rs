@@ -656,6 +656,87 @@ async fn the_inbox_lists_both_proposal_sources_and_every_request_type() {
     assert_eq!(reply.json().as_array().unwrap().len(), 14);
 }
 
+async fn cache(store: &SqliteStore, channel: &str, at: DateTime<Utc>, content: &str) -> String {
+    let id = snowflake(at);
+    store
+        .upsert_message(WatchedMessage {
+            id: id.clone(),
+            channel_id: channel.into(),
+            author_id: "1002".into(),
+            created_at: at,
+            edited_at: None,
+            content: content.into(),
+            processed_at: None,
+        })
+        .await
+        .unwrap();
+    id
+}
+
+#[tokio::test]
+async fn proposals_carry_the_bounded_thread_around_their_evidence() {
+    let inbox = seeded().await;
+    let ids = &inbox.ids;
+    let store = &inbox.reads.store;
+    let said = snowflake(utc(9, 29, 3, 30));
+    let gone = snowflake(utc(9, 29, 3, 31));
+
+    // Only the cited message is cached so far.
+    let moved = inbox.item(&ids.moved).await;
+    let thread = moved["thread"].as_array().unwrap();
+    assert_eq!(thread.len(), 1);
+    assert_eq!(
+        (&thread[0]["id"], &thread[0]["used"], &thread[0]["author"]),
+        (&json!(said), &json!(true), &json!("Alice"))
+    );
+
+    // 30 messages of context before the evidence (the extractor reads 25),
+    // 15 after it before the proposal was made (a burst holds 12).
+    let mut context = Vec::new();
+    for minute in 0..30 {
+        let at = utc(9, 29, 2, 0) + chrono::TimeDelta::minutes(minute);
+        context.push(cache(store, "kalos-four", at, &format!("context {minute}")).await);
+    }
+    let mut after = Vec::new();
+    for second in 0..15 {
+        let at = utc(9, 29, 3, 32) + chrono::TimeDelta::seconds(second * 60 + 1);
+        after.push(cache(store, "kalos-four", at, &format!("after {second}")).await);
+    }
+    // Deleted from Discord (or pruned): forgotten by the cache.
+    let deleted = cache(store, "kalos-four", utc(9, 29, 3, 32), "oops").await;
+    assert!(store.delete_message(&deleted).await.unwrap());
+    let late = cache(store, "kalos-four", utc(9, 29, 4, 30), "said after").await;
+    let elsewhere = cache(store, "n-star", utc(9, 29, 3, 35), "other channel").await;
+
+    let moved = inbox.item(&ids.moved).await;
+    let thread = moved["thread"].as_array().unwrap();
+    let listed: Vec<&str> = thread.iter().map(|m| m["id"].as_str().unwrap()).collect();
+    assert_eq!(listed.len(), 37, "context + burst bound");
+    // Oldest first; the last 25 of the context, less the oldest unused one
+    // the bound drops, then the evidence, then the first 12 after it.
+    let mut expected: Vec<&str> = context[6..].iter().map(String::as_str).collect();
+    expected.push(&said);
+    expected.extend(after[..12].iter().map(String::as_str));
+    assert_eq!(listed, expected);
+    let used: Vec<&str> = thread
+        .iter()
+        .filter(|m| m["used"] == true)
+        .map(|m| m["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(used, [said.as_str()]);
+    for absent in [&gone, &deleted, &late, &elsewhere] {
+        assert!(!listed.contains(&absent.as_str()), "{absent}");
+    }
+    assert!(thread.iter().all(|m| m["missing"] == false));
+    // `evidence` is unchanged: the gone message stays listed as missing.
+    assert_eq!(moved["evidence"][1]["missing"], true);
+
+    // No card, or a member request: no thread.
+    for id in [&ids.cancel_chat, &ids.join, &ids.change] {
+        assert_eq!(inbox.item(id).await["thread"], Value::Null, "{id}");
+    }
+}
+
 #[tokio::test]
 async fn member_requests_are_decided_by_any_admin_session_with_every_refusal() {
     let inbox = seeded().await;

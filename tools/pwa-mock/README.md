@@ -57,7 +57,8 @@ message (`422 idempotency_mismatch` if it differs).
 
 Names: `GET /api/admin/roles` (three guild roles, one colourless),
 `Identity.bot_user_id` (`1543532497948909578` on the admin origin, null on
-the public one), `author_id` on inbox evidence and extraction messages, and
+the public one), `author_id` on inbox evidence and extraction messages, inbox
+`thread` (cited messages `used`, gone ones absent; null for requests), and
 chat `member_id`. Config models mirror the server's capacity report: the
 default source runs one `gateway` group of `models.permits` over the role
 aliases (`groups_source: "default"`; `declared_groups` in the store switches

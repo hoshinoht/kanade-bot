@@ -36,6 +36,22 @@ pub struct Evidence {
     pub missing: bool,
 }
 
+/// A message of the thread around a card's evidence; `used` when the card
+/// cites it.
+#[derive(Clone, Debug, Serialize)]
+pub struct ThreadMessage {
+    #[serde(flatten)]
+    pub message: Evidence,
+    pub used: bool,
+}
+
+/// What a proposal's card cites, and the thread around it (`None` without
+/// a card or any evidence to anchor it).
+pub struct Said {
+    pub evidence: Vec<Evidence>,
+    pub thread: Option<Vec<ThreadMessage>>,
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct FieldChange {
     pub field: String,
@@ -97,6 +113,8 @@ pub struct ProposalDto {
     pub read_at: String,
     pub summary: String,
     pub evidence: Vec<Evidence>,
+    /// The channel thread around `evidence`; `None` when there is none.
+    pub thread: Option<Vec<ThreadMessage>>,
     pub card_url: Option<String>,
     pub self_service: Option<SelfService>,
     /// Sort key (oldest first).
@@ -480,7 +498,7 @@ pub fn proposal(
     subject: &ProposalSubject,
     card: Option<&StoredCard>,
     preview: Result<&ProposalPreview, String>,
-    evidence: Vec<Evidence>,
+    said: Said,
 ) -> ProposalDto {
     let ctx = common.ctx;
     let draft = &loaded.draft;
@@ -565,7 +583,8 @@ pub fn proposal(
         summary: details
             .and_then(|details| details.summary.clone())
             .unwrap_or_else(|| draft.title.clone()),
-        evidence,
+        evidence: said.evidence,
+        thread: said.thread,
         card_url: card
             .and_then(|card| message_url(ctx, &card.channel_id, card.message_id.as_deref()?)),
         self_service: None,
@@ -686,6 +705,7 @@ pub fn request(
         read_at: super::when(draft.created_at, ctx.zone),
         summary: draft.title.clone(),
         evidence: Vec::new(),
+        thread: None,
         card_url: None,
         self_service: Some(SelfService {
             member: ctx.named(&requester),

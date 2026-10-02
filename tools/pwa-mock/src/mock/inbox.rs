@@ -22,6 +22,22 @@ pub struct Evidence {
     pub missing: bool,
 }
 
+/// A message of the thread around the evidence; `used` when it is cited.
+#[derive(Clone, Serialize)]
+pub struct ThreadMessage {
+    #[serde(flatten)]
+    pub message: Evidence,
+    pub used: bool,
+}
+
+/// A thread fixture line: the evidence at this index (cited), or another
+/// stored message `(author, text, hour)`.
+#[derive(Clone, Copy)]
+pub enum Line {
+    Said(usize),
+    Other(&'static str, &'static str, i64),
+}
+
 #[derive(Clone, Serialize)]
 pub struct SelfService {
     pub member: Named,
@@ -67,6 +83,8 @@ pub struct Proposal {
     pub read_at_hour: i64,
     pub summary: &'static str,
     pub evidence: Vec<(&'static str, &'static str, i64, Option<&'static str>)>,
+    /// The channel thread, oldest first; `None` serves `thread: null`.
+    pub thread: Option<Vec<Line>>,
     pub request: Option<Request>,
     /// `change_fixed`: the weekly timing and its new weekday (0 = Monday) and
     /// time; `new_fixed`: an empty id and the new timing's slot. `swap`
@@ -134,6 +152,8 @@ pub struct ProposalDto {
     pub read_at: String,
     pub summary: &'static str,
     pub evidence: Vec<Evidence>,
+    /// The stored channel messages around `evidence` (deleted ones absent).
+    pub thread: Option<Vec<ThreadMessage>>,
     pub card_url: Option<String>,
     pub self_service: Option<SelfService>,
 }
@@ -205,6 +225,7 @@ pub fn seed() -> Vec<Proposal> {
         read_at_hour: 126,
         summary: "",
         evidence: vec![],
+        thread: None,
         request: None,
         timing: None,
         version: 1,
@@ -226,6 +247,15 @@ pub fn seed() -> Vec<Proposal> {
                 ("1009", "wed ok for me", 126, Some("m2")),
                 ("1008", "", 126, None),
             ],
+            // The missing evidence (index 2) is gone from the thread too.
+            thread: Some(vec![
+                Line::Other("1009", "bm still tue this week?", 124),
+                Line::Other("1008", "should be", 124),
+                Line::Said(0),
+                Line::Other("1008", "brb dinner", 125),
+                Line::Said(1),
+                Line::Other("1012", "ty, will ask kanade", 126),
+            ]),
             ..base.clone()
         },
         Proposal {
@@ -242,6 +272,11 @@ pub fn seed() -> Vec<Proposal> {
             read_at_hour: 124,
             summary: "Mika floats a Normal Limbo run on Saturday; nobody has confirmed.",
             evidence: vec![("1003", "nlimbo sat 9pm anyone?", 123, Some("m3"))],
+            thread: Some(vec![
+                Line::Other("1007", "finally cleared hlimbo prequest", 122),
+                Line::Said(0),
+                Line::Other("1007", "maybe, will check", 124),
+            ]),
             ..base.clone()
         },
         // Asked of the chatbot rather than read from the party channel.
@@ -263,6 +298,10 @@ pub fn seed() -> Vec<Proposal> {
                 128,
                 Some("m9"),
             )],
+            thread: Some(vec![
+                Line::Other("1012", "wed works better for me this week", 127),
+                Line::Said(0),
+            ]),
             ..base.clone()
         },
         Proposal {
@@ -387,6 +426,22 @@ pub fn seed() -> Vec<Proposal> {
             ..base
         },
     ]
+}
+
+/// A message as the server shows it; empty `text` is a gone message.
+fn evidence(id: String, who: &str, text: &str, hour: i64, link: Option<&str>) -> Evidence {
+    Evidence {
+        author: seed::member_name(who).map_or("someone", |m| m.1).into(),
+        author_id: (!text.is_empty()).then(|| who.to_owned()),
+        at: Store::when(Store::at_hour(hour)),
+        content: (!text.is_empty()).then(|| text.to_owned()),
+        url: link
+            .map(str::to_owned)
+            .or_else(|| (!text.is_empty()).then(|| id.clone()))
+            .map(|l| format!("https://discord.com/channels/0/0/{l}")),
+        missing: text.is_empty(),
+        id,
+    }
 }
 
 /// As the server's `kind_label`.
@@ -697,16 +752,41 @@ impl Store {
                         .evidence
                         .iter()
                         .enumerate()
-                        .map(|(i, (who, text, hour, link))| Evidence {
-                            id: format!("{}-{i}", p.short_id),
-                            author: seed::member_name(who).map_or("someone", |m| m.1).into(),
-                            author_id: (!text.is_empty()).then(|| (*who).to_owned()),
-                            at: Self::when(Self::at_hour(*hour)),
-                            content: (!text.is_empty()).then(|| (*text).to_owned()),
-                            url: link.map(|l| format!("https://discord.com/channels/0/0/{l}")),
-                            missing: text.is_empty(),
+                        .map(|(i, &(who, text, hour, link))| {
+                            evidence(format!("{}-{i}", p.short_id), who, text, hour, link)
                         })
                         .collect(),
+                    thread: p.thread.as_ref().map(|lines| {
+                        lines
+                            .iter()
+                            .enumerate()
+                            .map(|(j, line)| match *line {
+                                Line::Said(i) => {
+                                    let (who, text, hour, link) = p.evidence[i];
+                                    ThreadMessage {
+                                        message: evidence(
+                                            format!("{}-{i}", p.short_id),
+                                            who,
+                                            text,
+                                            hour,
+                                            link,
+                                        ),
+                                        used: true,
+                                    }
+                                }
+                                Line::Other(who, text, hour) => ThreadMessage {
+                                    message: evidence(
+                                        format!("{}-t{j}", p.short_id),
+                                        who,
+                                        text,
+                                        hour,
+                                        None,
+                                    ),
+                                    used: false,
+                                },
+                            })
+                            .collect()
+                    }),
                     card_url: (!member)
                         .then(|| format!("https://discord.com/channels/0/0/card-{}", p.short_id)),
                     self_service: p.request.as_ref().map(|q| SelfService {
@@ -1182,6 +1262,37 @@ mod tests {
         assert!(choices.iter().all(|c| c.amended));
         assert!(by("p-bm-move").choices.is_none() && by("p-limbo-new").choices.is_none());
         assert!(by("p-bm-move").expires_at.is_some());
+    }
+
+    #[test]
+    fn threads_mark_cited_messages_oldest_first_without_gone_ones() {
+        let s = store();
+        let inbox = s.inbox();
+        let by = |id: &str| inbox.iter().find(|p| p.id == id).unwrap();
+        for id in ["p-bm-move", "p-limbo-add", "p-jupiter-chat"] {
+            let p = by(id);
+            let thread = p.thread.as_ref().unwrap();
+            assert!(thread.iter().any(|m| m.used) && thread.iter().any(|m| !m.used));
+            assert!(thread.iter().all(|m| !m.message.missing), "{id}");
+            for m in thread.iter().filter(|m| m.used) {
+                assert!(p.evidence.iter().any(|e| e.id == m.message.id), "{id}");
+            }
+        }
+        // Oldest first: the cited Tue message sits between Monday chatter.
+        let bm: Vec<_> = by("p-bm-move")
+            .thread
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|m| m.used)
+            .collect();
+        assert_eq!(bm, [false, false, true, false, true, false]);
+        // The deleted evidence stays listed as evidence only.
+        assert!(by("p-bm-move").evidence[2].missing);
+        // Member requests have no channel thread, as on the server.
+        for p in inbox.iter().filter(|p| p.self_service.is_some()) {
+            assert!(p.thread.is_none() && p.evidence.is_empty(), "{}", p.id);
+        }
     }
 
     #[test]

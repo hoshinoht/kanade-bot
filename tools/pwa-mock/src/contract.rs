@@ -901,6 +901,16 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     for source in ["extraction", "chat", "self_service"] {
         assert!(items.iter().any(|p| p["source"] == source), "{source}");
     }
+    let used: Vec<Value> = item("p-bm-move")["thread"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["used"].clone())
+        .collect();
+    assert!(used.contains(&json!(true)) && used.contains(&json!(false)));
+    for id in ["p-carling-link", "p-fa-request"] {
+        assert_eq!(item(id)["thread"], Value::Null, "{id}");
+    }
     for kind in ["new_fixed", "change_fixed", "join", "leave", "swap"] {
         assert!(items.iter().any(|p| p["kind"] == kind), "{kind}");
     }

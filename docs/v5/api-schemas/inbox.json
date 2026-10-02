@@ -17,6 +17,22 @@
         "missing": { "type": "boolean" }
       }
     },
+    "ThreadMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A cached channel message around the evidence (deleted or pruned ones are absent); `used` when the proposal cites it as evidence.",
+      "required": ["id", "author", "author_id", "at", "content", "url", "missing", "used"],
+      "properties": {
+        "id": { "type": "string" },
+        "author": { "type": "string" },
+        "author_id": { "$ref": "common.json#/$defs/NullableString" },
+        "at": { "type": "string" },
+        "content": { "$ref": "common.json#/$defs/NullableString" },
+        "url": { "$ref": "common.json#/$defs/NullableString" },
+        "missing": { "type": "boolean" },
+        "used": { "type": "boolean" }
+      }
+    },
     "ProposalPreview": {
       "type": "object",
       "additionalProperties": false,
@@ -69,7 +85,7 @@
         "id", "short_id", "kind", "kind_label", "source", "tab", "version", "flags", "preview",
         "expires_at", "choices", "public_summary", "bosses", "run_id", "from_when", "when",
         "participants", "confidence", "is_question", "channel", "read_at", "summary", "evidence",
-        "card_url", "self_service"
+        "thread", "card_url", "self_service"
       ],
       "properties": {
         "id": { "type": "string" },
@@ -110,6 +126,13 @@
         "read_at": { "type": "string" },
         "summary": { "type": "string" },
         "evidence": { "type": "array", "items": { "$ref": "#/$defs/Evidence" } },
+        "thread": {
+          "description": "The channel thread around `evidence`, oldest first, at most 37 messages; null for member requests and proposals without a card or evidence.",
+          "anyOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/ThreadMessage" } },
+            { "type": "null" }
+          ]
+        },
         "card_url": { "$ref": "common.json#/$defs/NullableString" },
         "self_service": {
           "anyOf": [

@@ -438,6 +438,13 @@ export interface Evidence {
   missing: boolean;
 }
 
+/** A stored channel message around a proposal's evidence; deleted or pruned messages are absent. */
+export interface ThreadMessage extends Evidence {
+  author_id: string | null;
+  /** The proposal cites it as evidence. */
+  used: boolean;
+}
+
 export type InboxTab = 'extractor' | 'self_service';
 /** Badges an inbox item can carry; each also blocks or qualifies an action. */
 export type ProposalFlag = 'conflict' | 'expired' | 'requester_frozen' | 'requester_unauthorised' | 'no_effect';
@@ -507,6 +514,8 @@ export interface Proposal {
   read_at: string;
   summary: string;
   evidence: Evidence[];
+  /** The channel thread around `evidence`, oldest first (at most 37); null for member requests and proposals without a card or evidence. */
+  thread: ThreadMessage[] | null;
   card_url: string | null;
   /** Member requests: who asked, `via` (`request`) and their own title (admin-only). */
   self_service: { member: Member; via: string; note: string | null } | null;
