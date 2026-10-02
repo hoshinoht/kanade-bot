@@ -21,6 +21,7 @@
     bosses,
     channels,
     members,
+    self = null,
     week,
     version,
     onsaved,
@@ -36,6 +37,8 @@
     bosses: BossRow[];
     channels: Channel[];
     members: MemberRow[];
+    /** The signed-in Discord member's id, when it names one rostered member; new timings default to them. */
+    self?: string | null;
     week: Week | null;
     /** Week version `row` was read at. */
     version: number | null;
@@ -54,6 +57,8 @@
   let channel = $state('');
   let note = $state('');
   let party = $state<string[]>([]);
+  /** The owner picked by hand (or the saved one); '' = a new timing's default. */
+  let pickedOwner = $state('');
   let selected = $state<string[]>([]);
   // A timing that already has bosses shows only theirs until asked for the rest.
   let allBosses = $state(false);
@@ -65,9 +70,12 @@
   /** The party when the form opened: the preview stays put while chips are toggled. */
   let openParty = $state<string[]>([]);
   let partyChips = $state<HTMLElement>();
+  let ownerSelect = $state<HTMLSelectElement>();
   let typed = $state('');
   let check = $state<{ bosses: Boss[] } | { error: string } | null>(null);
   let error = $state('');
+  /** A 422 about the owner reads out under the Day / Time / Owner line. */
+  let ownerError = $state('');
   let busy = $state(false);
   let step = $state<'edit' | 'choose'>('edit');
   let decisions = $state<Record<string, 'update' | 'keep'>>({});
@@ -86,6 +94,8 @@
       note = row?.note ?? '';
       party = row?.participants.map((p) => p.id) ?? [];
       openParty = [...party];
+      pickedOwner = row?.owner_id ?? '';
+      ownerError = '';
       allParty = false;
       selected = row?.bosses.map((b) => b.token) ?? [];
       allBosses = !row;
@@ -115,6 +125,18 @@
 
   const amended = $derived(row?.runs.filter((r) => r.amended) ?? []);
   const roster = $derived(members.filter((m) => m.bossing));
+  /**
+   * As the server's default, made visible: a new timing is owned by the
+   * signed-in Discord member, else by the first party member picked, until
+   * the admin picks an owner by hand.
+   */
+  const owner = $derived(pickedOwner || (self && roster.some((m) => m.id === self) ? self : (party[0] ?? '')));
+  /** The roster, plus a saved owner who has since left it (kept as is unless changed). */
+  const ownerOptions = $derived.by(() => {
+    const options = roster.map((m) => ({ id: m.id, label: memberLabel(roster, m.id) }));
+    if (row && !roster.some((m) => m.id === row.owner_id)) options.unshift({ id: row.owner_id, label: `${row.owner} (off the roster)` });
+    return options;
+  });
   const shownRoster = $derived.by(() => {
     if (allParty) return roster;
     let room = PARTY_PREVIEW - roster.filter((m) => openParty.includes(m.id)).length;
@@ -147,6 +169,8 @@
       participants: party,
       channel_id: channel,
       note: note.trim() || null,
+      // Always sent once known: unchanged is no edit, and a stale one is refused like the other fields.
+      ...(owner ? { owner_id: owner } : {}),
       decisions,
     };
   }
@@ -154,6 +178,7 @@
   async function save() {
     busy = true;
     error = '';
+    ownerError = '';
     const body = request();
     const result = row
       ? await send((c) => c.patch<FixedRow>(`/api/admin/fixed/${encodeURIComponent(row.id)}`, { ...body, version: formVersion ?? undefined }))
@@ -162,8 +187,15 @@
     if (!result.ok) {
       // Only `stale` means the form is out of date; `busy` and the rest leave it valid to retry as is.
       const stale = result.code === 'stale';
-      error = stale ? `${result.message} Close and reopen this timing to edit what is saved now.` : result.message;
       step = 'edit';
+      // The 422 `invalid` carries no field name; the owner's is the one that names the owner.
+      if (result.code === 'invalid' && /\bowner\b/i.test(result.message)) {
+        ownerError = result.message;
+        await tick();
+        ownerSelect?.focus({ preventScroll: true });
+        return;
+      }
+      error = stale ? `${result.message} Close and reopen this timing to edit what is saved now.` : result.message;
       if (stale) onstale();
       return;
     }
@@ -228,6 +260,23 @@
           </select>
         </label>
         <label class="field"><span>Time</span><input bind:value={time} placeholder="21:30" size="6" class="mono" /></label>
+        <label class="field">
+          <span>Owner</span>
+          <select
+            bind:this={ownerSelect}
+            value={owner}
+            onchange={(event) => {
+              pickedOwner = event.currentTarget.value;
+              ownerError = '';
+            }}
+            aria-invalid={ownerError ? 'true' : undefined}
+            aria-describedby={ownerError ? `${uid}-owner-err` : undefined}
+          >
+            {#if !owner}<option value="" disabled>First party member</option>{/if}
+            {#each ownerOptions as option (option.id)}<option value={option.id}>{option.label}</option>{/each}
+          </select>
+        </label>
+        {#if ownerError}<p class="field__error fixedsheet__field-error" id="{uid}-owner-err" role="alert">{ownerError}</p>{/if}
       </div>
       <!-- B_Fixed: the home channel on its own line under the day and time. -->
       <label class="field fixedsheet__channel" data-fid="fixed-channel">

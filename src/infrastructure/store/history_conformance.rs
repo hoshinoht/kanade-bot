@@ -526,6 +526,7 @@ async fn reverts_amend_status_swap_and_fixed_edit<S: ScheduleStore + ChangeHisto
                     participants: None,
                     channel_id: None,
                     note: Some("moved".into()),
+                    owner_id: None,
                 };
                 act.update_fixed(&fixed[1], edit, &roster(), &policy())
                     .await
@@ -696,6 +697,7 @@ async fn week_restore_leaves_timings_and_other_weeks<S: ScheduleStore + ChangeHi
         participants: None,
         channel_id: None,
         note: None,
+        owner_id: None,
     };
     service
         .as_origin(admin())
@@ -1409,6 +1411,7 @@ async fn blame_names_the_last_change_per_field<S: ScheduleStore + ChangeHistory 
         participants: None,
         channel_id: None,
         note: None,
+        owner_id: None,
     };
     let created = all_records(service.store())
         .await

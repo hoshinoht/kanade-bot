@@ -142,6 +142,91 @@ test('fixed: a 409 busy keeps the form valid to retry, without the out-of-date a
   await expect(toast(page, 'Saved Tuesday 23:30 — XBM.')).toBeVisible();
 });
 
+test('fixed: the owner is preselected, changes by PATCH owner_id, and reads back on reopen', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await go(page, '/fixed');
+  const editButton = page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' });
+  const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
+  await editButton.click();
+  const owner = editor.getByLabel('Owner');
+  await expect(owner).toHaveValue('1012');
+  await expect(owner.locator('option:checked')).toHaveText('Minato');
+  // Only the roster is offered (Kohane has chatbot access but no bossing role).
+  await expect(owner.locator('option', { hasText: 'Kohane' })).toHaveCount(0);
+  // Owner sits on the Day / Time line, as B_Fixed draws it.
+  const tops = await editor.locator('.fixedsheet__fields > .field').evaluateAll((fields) => fields.map((f) => Math.round(f.getBoundingClientRect().top)));
+  expect(tops).toHaveLength(3);
+  expect(new Set(tops).size).toBe(1);
+
+  await owner.selectOption({ label: 'Kaito' });
+  const sent = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().includes('/api/admin/fixed/'));
+  await editor.getByRole('button', { name: 'Save changes' }).click();
+  expect((await sent).postDataJSON()).toMatchObject({ owner_id: '1009' });
+  await expect(toast(page, 'Saved Tuesday 23:30 — XBM.')).toBeVisible();
+  const rows = (await (await page.request.get(`${ADMIN}/api/admin/fixed`)).json()) as { id: string; owner_id: string; owner: string; bosses: { token: string }[] }[];
+  expect(rows.find((r) => r.bosses.some((b) => b.token === 'XBM'))).toMatchObject({ owner_id: '1009', owner: 'Kaito' });
+  // The list's search reads the owner: Kaito now finds XBM.
+  await page.getByRole('searchbox', { name: 'Search weekly timings' }).fill('kaito');
+  await expect(page.getByRole('row', { name: /Black Mage/ })).toBeVisible();
+  await page.getByRole('searchbox', { name: 'Search weekly timings' }).fill('');
+  await editButton.click();
+  await expect(owner).toHaveValue('1009');
+});
+
+test('fixed: a new timing is owned by the Discord admin, else by the first party member picked', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await go(page, '/fixed');
+  await page.getByRole('button', { name: 'Add a weekly timing' }).click();
+  const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
+  // The mock signs in with Discord as Asahi.
+  await expect(editor.getByLabel('Owner')).toHaveValue('1001');
+  await editor.getByRole('button', { name: 'Close weekly timing details' }).click();
+
+  await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'token' } });
+  await go(page, '/fixed');
+  await page.getByRole('button', { name: 'Add a weekly timing' }).click();
+  const owner = editor.getByLabel('Owner');
+  await expect(owner.locator('option:checked')).toHaveText('First party member');
+  await editor.getByRole('checkbox', { name: 'Mika' }).check();
+  await editor.getByRole('checkbox', { name: 'Nagi' }).check();
+  await expect(owner).toHaveValue('1003');
+  // Picked by hand, it stays put while the party changes.
+  await owner.selectOption({ label: 'Yuzu' });
+  await editor.getByRole('checkbox', { name: 'Mika' }).uncheck();
+  await expect(owner).toHaveValue('1004');
+  await editor.locator('.bossrow', { hasText: 'Limbo' }).locator('label', { hasText: 'HARD' }).click();
+  await editor.getByLabel('Time').fill('19:15');
+  const sent = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/api/admin/fixed'));
+  await editor.getByRole('button', { name: 'Add timing' }).click();
+  expect((await sent).postDataJSON()).toMatchObject({ owner_id: '1004', participants: ['1007'] });
+  await expect(toast(page, /Added .* 19:15 — HLimbo/)).toBeVisible();
+});
+
+test('fixed: an owner refusal (422) reads out on the Owner field and keeps the form', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await go(page, '/fixed');
+  await page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' }).click();
+  const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
+  await editor.getByLabel('Owner').selectOption({ label: 'Rin' });
+  await page.route('**/api/admin/fixed/*', (route) =>
+    route.request().method() === 'PATCH'
+      ? route.fulfill({ status: 422, contentType: 'application/json', body: '{"error":"invalid","message":"Pick an owner from the roster."}' })
+      : route.continue(),
+  );
+  await editor.getByRole('button', { name: 'Save changes' }).click();
+  const owner = editor.getByLabel('Owner');
+  await expect(owner).toHaveAttribute('aria-invalid', 'true');
+  await expect(owner).toHaveAccessibleDescription('Pick an owner from the roster.');
+  await expect(owner).toBeFocused();
+  await expect(owner).toHaveValue('1010');
+  await page.unroute('**/api/admin/fixed/*');
+  // Picking again clears the refusal; the save goes through.
+  await owner.selectOption({ label: 'Kaito' });
+  await expect(owner).not.toHaveAttribute('aria-invalid', 'true');
+  await editor.getByRole('button', { name: 'Save changes' }).click();
+  await expect(toast(page, 'Saved Tuesday 23:30 — XBM.')).toBeVisible();
+});
+
 test('admin writes: a refused CSRF token is refreshed once and the same action retried', async ({ page }) => {
   await go(page, '/fixed');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('8 weekly timings');

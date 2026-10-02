@@ -63,10 +63,27 @@ fn choice(choice: AmendedRunChoice) -> &'static str {
     }
 }
 
+/// Drafts never change a timing's owner (only admin edits do), so the
+/// stored `kanade.draft_op.v1` edit has no `owner_id` and refuses one.
+fn fixed_edit(edit: &FixedEdit) -> Result<Value, CodecError> {
+    if edit.owner_id.is_some() {
+        return Err(bad("a draft edit cannot change the owner"));
+    }
+    Ok(json!({
+        "bosses": edit.bosses,
+        "weekday": edit.weekday.map(|day| day.num_days_from_monday()),
+        "time": edit.time.map(wall),
+        "participants": edit.participants,
+        "channel_id": edit.channel_id,
+        "note": edit.note,
+    }))
+}
+
 /// Encode one operation.
 ///
 /// # Errors
-/// [`CodecError`] for an instant outside the representable years.
+/// [`CodecError`] for an instant outside the representable years, or a
+/// timing edit that changes the owner.
 pub fn encode(op: &DraftOp) -> Result<String, CodecError> {
     let mut body = match op {
         DraftOp::AddFixedRun(new) => json!({
@@ -86,14 +103,7 @@ pub fn encode(op: &DraftOp) -> Result<String, CodecError> {
             choices,
         } => json!({
             "fixed": target(fixed),
-            "edit": {
-                "bosses": edit.bosses,
-                "weekday": edit.weekday.map(|day| day.num_days_from_monday()),
-                "time": edit.time.map(wall),
-                "participants": edit.participants,
-                "channel_id": edit.channel_id,
-                "note": edit.note,
-            },
+            "edit": fixed_edit(edit)?,
             "choices": match choices {
                 FixedEditChoices::UpdateAll => json!("update_all"),
                 FixedEditChoices::PerRun(per_run) => json!({
@@ -394,6 +404,7 @@ pub fn decode(stored: &str) -> Result<DraftOp, CodecError> {
                     participants: optional_texts(edit, "participants")?,
                     channel_id: optional_text(edit, "channel_id")?,
                     note: optional_text(edit, "note")?,
+                    owner_id: None,
                 },
                 choices: read_choices(field(&value, "choices")?)?,
             }
@@ -461,4 +472,22 @@ pub fn decode(stored: &str) -> Result<DraftOp, CodecError> {
         },
         other => return Err(bad(format!("unknown operation {other}"))),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_draft_edit_cannot_carry_an_owner() {
+        let op = DraftOp::ApplyFixedEdit {
+            fixed: Target::Existing("fixed-1".into()),
+            edit: FixedEdit {
+                owner_id: Some("1002".into()),
+                ..FixedEdit::default()
+            },
+            choices: FixedEditChoices::UpdateAll,
+        };
+        assert!(encode(&op).is_err());
+    }
 }

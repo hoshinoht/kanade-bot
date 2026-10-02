@@ -8,7 +8,7 @@
       "additionalProperties": false,
       "required": [
         "id", "short_id", "weekday", "weekday_name", "time", "bosses", "participants",
-        "channel_id", "channel_name", "channel_watched", "owner", "note", "runs"
+        "channel_id", "channel_name", "channel_watched", "owner", "owner_id", "note", "runs"
       ],
       "properties": {
         "id": { "type": "string" },
@@ -21,7 +21,8 @@
         "channel_id": { "type": "string" },
         "channel_name": { "type": "string" },
         "channel_watched": { "type": "boolean" },
-        "owner": { "type": "string" },
+        "owner": { "type": "string", "description": "The owner's display name." },
+        "owner_id": { "type": "string", "description": "The owner's Discord user id; proposal approval and chat authority accept the owner." },
         "note": { "$ref": "common.json#/$defs/NullableString" },
         "runs": {
           "type": "array",
@@ -55,6 +56,10 @@
         "participants": { "type": "array", "items": { "type": "string" } },
         "channel_id": { "type": "string" },
         "note": { "type": ["string", "null"] },
+        "owner_id": {
+          "type": "string",
+          "description": "Optional. A rostered (bossing-role, non-bot) member, not necessarily in the party; otherwise 422 `invalid` \"Pick an owner from the roster.\" Omitted: POST keeps its default (the Discord session's user, else the first participant), PATCH leaves the owner unchanged."
+        },
         "decisions": {
           "type": "object",
           "additionalProperties": { "enum": ["update", "keep"] }

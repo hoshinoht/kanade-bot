@@ -138,11 +138,13 @@
 .fixedsheet__content .run__people .fixedsheet__more-party { font-family: var(--mono); cursor: pointer; }
 .fixedsheet__content .run__people .fixedsheet__more-party:hover { background: var(--row-hover); }
 .fixedsheet__content .run__people .fixedsheet__more-party:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.fixedsheet__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.fixedsheet__fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .fixedsheet__note { gap: 4px; }
-// Day and time side by side, the home channel on its own line (B_Fixed): each
-// a column of its overline 4 px over the 40 px box.
+// Day, time and owner side by side, the home channel on its own line
+// (B_Fixed): each a column of its overline 4 px over the 40 px box. An owner
+// refusal reads out under the whole line.
 .fixedsheet__fields .field, .fixedsheet__channel { gap: 4px; }
+.fixedsheet__fields .fixedsheet__field-error { grid-column: 1 / -1; margin: 0; }
 .fixedsheet__fields .field + .field { margin-top: 0; }
 .fixedsheet__channel select { width: 100%; }
 .fixedsheet__foot { display: flex; gap: 0.5rem; align-items: center; padding: 0.65rem 1rem; border-top: 1.5px solid var(--line); }

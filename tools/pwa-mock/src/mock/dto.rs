@@ -237,6 +237,7 @@ pub struct FixedRow {
     pub channel_name: &'static str,
     pub channel_watched: bool,
     pub owner: &'static str,
+    pub owner_id: &'static str,
     pub note: Option<String>,
     /// Materialised, still-live runs this week and next.
     pub runs: Vec<FixedRunLink>,
@@ -250,6 +251,10 @@ pub struct FixedRequest {
     pub participants: Vec<String>,
     pub channel_id: String,
     pub note: Option<String>,
+    /// Omitted: the first participant on create (a token sign-in names no
+    /// Discord user), unchanged on edit.
+    #[serde(default)]
+    pub owner_id: Option<String>,
     /// Per amended run: `update` (follow the new timing) or `keep` (this week only).
     #[serde(default)]
     pub decisions: std::collections::HashMap<String, String>,

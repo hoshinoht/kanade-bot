@@ -30,7 +30,7 @@ use crate::{
     },
     domain::{
         history::{Actor, BlameTarget, ChangeRecord, Origin, RowKey},
-        members::{Member, MemberProfile},
+        members::{Member, MemberProfile, Roster},
         schedule::{
             AmendedRunChoice, FixedEdit, FixedEditChoices, FixedEditRequest, NewFixedRun,
             ScheduleError, validate_channel, validate_participants,
@@ -53,6 +53,9 @@ pub struct FixedRequest {
     channel_id: String,
     #[serde(default)]
     note: Option<String>,
+    /// Omitted: today's default on create, unchanged on edit.
+    #[serde(default)]
+    owner_id: Option<String>,
     #[serde(default)]
     decisions: BTreeMap<String, String>,
     /// The week version the timing was loaded at: required to edit, ignored
@@ -72,12 +75,13 @@ struct Checked {
     participants: Vec<String>,
     channel_id: String,
     note: Option<String>,
+    owner_id: Option<String>,
 }
 
 fn checked(
     state: &ApiState,
     request: &FixedRequest,
-    directory: &crate::domain::members::Roster,
+    directory: &Roster,
 ) -> Result<Checked, Refusal> {
     let weekday = crate::domain::weeks::weekday_from_index(i64::from(request.weekday))
         .ok()
@@ -110,7 +114,23 @@ fn checked(
             .map(str::trim)
             .filter(|note| !note.is_empty())
             .map(str::to_owned),
+        owner_id: request
+            .owner_id
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_owned),
     })
+}
+
+/// The participants' roster rule (a known, non-bot member with the bossing
+/// role), but the owner need not be in the party. Checked only when the
+/// owner is set or changed, so a since-demoted owner never blocks an edit
+/// of other fields.
+fn rostered_owner(directory: &Roster, owner_id: &str) -> Result<String, Refusal> {
+    validate_participants(directory, &[owner_id.to_owned()])
+        .ok()
+        .and_then(|mut owner| owner.pop())
+        .ok_or_else(|| Refusal::invalid("Pick an owner from the roster."))
 }
 
 async fn row(
@@ -158,7 +178,7 @@ async fn recorded(state: &ApiState, origin: &Origin) -> Result<Option<ChangeReco
 /// compares the request digest, so a different request under the key is
 /// `idempotency_mismatch`.
 fn as_first_seen(ctx: &mut WriteContext, request: &FixedRequest) {
-    for id in &request.participants {
+    for id in request.participants.iter().chain(&request.owner_id) {
         let id = id.trim();
         if ctx
             .directory
@@ -203,12 +223,16 @@ pub async fn create(
         as_first_seen(&mut ctx, &request);
     }
     let timing = checked(state, &request, &ctx.directory)?;
-    // Discord sessions own what they create; other sign-ins name no Discord user.
-    let owner_id = match &session.actor {
-        Actor::Admin { id } => id.strip_prefix("discord:").map(str::to_owned),
-        _ => None,
-    }
-    .unwrap_or_else(|| timing.participants[0].clone());
+    // An explicit owner wins; otherwise Discord sessions own what they create,
+    // and other sign-ins (naming no Discord user) hand it to the first member.
+    let owner_id = match &timing.owner_id {
+        Some(owner_id) => rostered_owner(&ctx.directory, owner_id)?,
+        None => match &session.actor {
+            Actor::Admin { id } => id.strip_prefix("discord:").map(str::to_owned),
+            _ => None,
+        }
+        .unwrap_or_else(|| timing.participants[0].clone()),
+    };
     let new = NewFixedRun {
         owner_id,
         channel_id: Some(timing.channel_id),
@@ -308,6 +332,10 @@ pub async fn update(
     if current.note != timing.note {
         edit.note = Some(timing.note.unwrap_or_default());
         fields.push("note");
+    }
+    if let Some(owner_id) = timing.owner_id.filter(|owner| *owner != current.owner_id) {
+        edit.owner_id = Some(rostered_owner(&ctx.directory, &owner_id)?);
+        fields.push("owner");
     }
     if fields.is_empty() {
         return row(&site, state, &fixed_id, &profiles).await;

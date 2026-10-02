@@ -42,6 +42,15 @@ pub fn apply_timing(run: &mut Rec, timing: &Fixed) {
         .collect();
 }
 
+/// As the server: a rostered member (bossing role), not necessarily in the party.
+fn roster_owner(id: &str) -> Result<&'static str, MoveError> {
+    seed::members()
+        .into_iter()
+        .find(|m| m.id == id.trim() && m.bossing)
+        .map(|m| m.id)
+        .ok_or(MoveError::invalid("Pick an owner from the roster."))
+}
+
 impl Store {
     fn fixed_row(&self, f: &Fixed) -> FixedRow {
         let (channel_id, channel_name, watched) =
@@ -65,7 +74,8 @@ impl Store {
             channel_id,
             channel_name,
             channel_watched: watched,
-            owner: f.owner,
+            owner: seed::member_name(f.owner_id).map_or(f.owner_id, |m| m.1),
+            owner_id: f.owner_id,
             note: f.note.clone(),
             runs: self
                 .runs
@@ -112,6 +122,8 @@ impl Store {
         if participants.is_empty() {
             return Err(MoveError::invalid("A timing needs at least one member."));
         }
+        // The server's default for a sign-in that names no Discord user.
+        let owner_id = participants[0];
         Ok(Fixed {
             id: String::new(),
             short_id: String::new(),
@@ -121,7 +133,7 @@ impl Store {
             participants,
             channel,
             note: req.note.clone().filter(|n| !n.trim().is_empty()),
-            owner: "admin token",
+            owner_id,
             retired: false,
         })
     }
@@ -129,6 +141,9 @@ impl Store {
     /// A new timing materialises a run this week (if its day is still ahead) and next week.
     pub fn create_fixed(&mut self, req: FixedRequest) -> Result<FixedRow, MoveError> {
         let mut timing = Self::validated(&req)?;
+        if let Some(owner) = &req.owner_id {
+            timing.owner_id = roster_owner(owner)?;
+        }
         let (id, short_id) = self.fresh_id("f");
         timing.id = id;
         timing.short_id = short_id;
@@ -178,6 +193,11 @@ impl Store {
             .position(|f| f.id == id && !f.retired)
             .ok_or(MoveError::NotFound)?;
         let old = &self.fixed[index];
+        // Omitted keeps the owner; checked against the roster only when it changes.
+        timing.owner_id = match req.owner_id.as_deref().map(str::trim) {
+            Some(owner) if owner != old.owner_id => roster_owner(owner)?,
+            _ => old.owner_id,
+        };
         // As the server: each field the form changes must not have moved since `version`.
         let changed = [
             ("weekday", old.weekday != timing.weekday),
@@ -186,6 +206,7 @@ impl Store {
             ("participants", old.participants != timing.participants),
             ("channel_id", old.channel != timing.channel),
             ("note", old.note != timing.note),
+            ("owner_id", old.owner_id != timing.owner_id),
         ];
         // Nothing differs: the server answers 200 without writing, before any other check.
         if changed.iter().all(|(_, differs)| !differs) {
@@ -222,7 +243,6 @@ impl Store {
         let old = &self.fixed[index];
         timing.id = old.id.clone();
         timing.short_id = old.short_id.clone();
-        timing.owner = old.owner;
         for run in self
             .runs
             .iter_mut()
@@ -292,6 +312,7 @@ mod tests {
             participants: vec!["1001".into(), "1002".into(), "1005".into(), "1006".into()],
             channel_id: "kalos-four".into(),
             note: None,
+            owner_id: None,
             decisions: decisions
                 .iter()
                 .map(|(a, b)| ((*a).into(), (*b).into()))
@@ -414,6 +435,37 @@ mod tests {
             edit(&mut s, request("20:00", &[], Some(loaded))),
             Err(MoveError::Stale)
         ));
+    }
+
+    #[test]
+    fn owners_are_rostered_settable_and_conflict_per_field() {
+        let mut s = store();
+        let mut create = request("19:00", &[], None);
+        create.owner_id = Some("1012".into());
+        let row = s.create_fixed(create).ok().unwrap();
+        assert_eq!((row.owner_id, row.owner), ("1012", "Minato"));
+        let loaded = s.version;
+        let edit = |s: &mut Store, req: FixedRequest| {
+            s.tracked(Actor::admin(), "admin_portal", |s| {
+                s.update_fixed("f-kalos", req)
+            })
+        };
+        let keep = [("r-kalos", "keep")];
+        let mut bad = request("21:30", &keep, Some(loaded));
+        bad.owner_id = Some("1014".into());
+        assert!(matches!(edit(&mut s, bad), Err(MoveError::Invalid(_))));
+        let mut owned = request("21:30", &keep, Some(loaded));
+        owned.owner_id = Some("1004".into());
+        let row = edit(&mut s, owned).ok().unwrap();
+        assert_eq!(row.owner_id, "1004");
+        // Omitted keeps it; another owner from the old form is stale.
+        let row = edit(&mut s, request("21:30", &keep, Some(loaded)))
+            .ok()
+            .unwrap();
+        assert_eq!(row.owner_id, "1004");
+        let mut stale = request("21:30", &keep, Some(loaded));
+        stale.owner_id = Some("1001".into());
+        assert!(matches!(edit(&mut s, stale), Err(MoveError::Stale)));
     }
 
     #[test]

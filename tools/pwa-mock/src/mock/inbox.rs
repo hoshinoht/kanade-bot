@@ -1117,6 +1117,7 @@ impl Store {
                     participants: p.participants.iter().map(|m| (*m).to_owned()).collect(),
                     channel_id: p.channel.into(),
                     note: None,
+                    owner_id: None,
                     decisions: Default::default(),
                     version: None,
                 })?;

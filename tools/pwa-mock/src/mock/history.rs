@@ -163,18 +163,6 @@ fn static_status(s: &str) -> &'static str {
     .unwrap_or("planned")
 }
 
-/// A timing's owner as a member id (the mock stores names).
-fn owner_id(name: &str) -> &'static str {
-    seed::members()
-        .into_iter()
-        .find(|m| m.name == name)
-        .map_or("token", |m| m.id)
-}
-
-fn owner(id: &str) -> &'static str {
-    seed::member_name(id).map_or("admin token", |m| m.1)
-}
-
 /// UTC instant text for an absolute guild-local minute.
 fn instant(local_minute: i64) -> String {
     iso(local_minute * 60 - TZ_OFFSET_SECS)
@@ -271,7 +259,7 @@ impl Store {
             let key = json!({ "table": "fixed_runs", "id": f.id });
             let value = json!({
                 "id": f.id,
-                "owner_id": owner_id(f.owner),
+                "owner_id": f.owner_id,
                 "channel_id": f.channel,
                 "bosses": f.bosses.iter().map(|b| b.token.clone()).collect::<Vec<_>>(),
                 "weekday": f.weekday,
@@ -545,7 +533,8 @@ impl Store {
                 f.channel = seed::channel(value["channel_id"].as_str().unwrap_or_default())
                     .map_or(f.channel, |c| c.0);
                 f.note = text(&value["note"]);
-                f.owner = owner(value["owner_id"].as_str().unwrap_or_default());
+                f.owner_id = seed::member_name(value["owner_id"].as_str().unwrap_or_default())
+                    .map_or(f.owner_id, |m| m.0);
                 f.retired = false;
             }
             // Reminders follow their run's slot.

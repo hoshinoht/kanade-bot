@@ -121,7 +121,8 @@ pub struct Fixed {
     pub participants: Vec<&'static str>,
     pub channel: &'static str,
     pub note: Option<String>,
-    pub owner: &'static str,
+    /// The owner's member id (proposal approval and chat authority accept them).
+    pub owner_id: &'static str,
     pub retired: bool,
 }
 
@@ -164,7 +165,7 @@ fn fixed(
     tokens: &str,
     members: &[&'static str],
     channel: &'static str,
-    owner: &'static str,
+    owner_id: &'static str,
 ) -> Fixed {
     Fixed {
         id: id.into(),
@@ -175,7 +176,7 @@ fn fixed(
         participants: members.to_vec(),
         channel,
         note: None,
-        owner,
+        owner_id,
         retired: false,
     }
 }
@@ -190,7 +191,7 @@ pub fn fixed_runs() -> Vec<Fixed> {
             "NBaldrix",
             &["1001", "1002", "1003", "1004"],
             "baldrix-crew",
-            "Asahi",
+            "1001",
         ),
         // Runs at 22:00 this week: an amended run.
         fixed(
@@ -201,7 +202,7 @@ pub fn fixed_runs() -> Vec<Fixed> {
             "XKalos",
             &["1001", "1002", "1005", "1006"],
             "kalos-four",
-            "Ren",
+            "1002",
         ),
         fixed(
             "f-limbo",
@@ -211,7 +212,7 @@ pub fn fixed_runs() -> Vec<Fixed> {
             "HLimbo",
             &["1003", "1007", "1008"],
             "limbo-trio",
-            "Mika",
+            "1003",
         ),
         fixed(
             "f-fa",
@@ -221,7 +222,7 @@ pub fn fixed_runs() -> Vec<Fixed> {
             "HFA",
             &["1009", "1004", "1010", "1011"],
             "fa-night",
-            "Kaito",
+            "1009",
         ),
         fixed(
             "f-jupiter",
@@ -231,7 +232,7 @@ pub fn fixed_runs() -> Vec<Fixed> {
             "HJupiter",
             &["1012", "1001", "1008"],
             "jupiter-trio",
-            "Minato",
+            "1012",
         ),
         fixed(
             "f-carling",
@@ -241,7 +242,7 @@ pub fn fixed_runs() -> Vec<Fixed> {
             "HCarling HStar",
             &["1001", "1002", "1003", "1004", "1005", "1011"],
             "hstar-party",
-            "Asahi",
+            "1001",
         ),
         fixed(
             "f-bm",
@@ -251,7 +252,7 @@ pub fn fixed_runs() -> Vec<Fixed> {
             "XBM",
             &["1012", "1009", "1008"],
             "bm-trio",
-            "Minato",
+            "1012",
         ),
         fixed(
             "f-seren",
@@ -261,7 +262,7 @@ pub fn fixed_runs() -> Vec<Fixed> {
             "HSeren",
             &["1010", "1007", "1006"],
             "seren-trio",
-            "Rin",
+            "1010",
         ),
     ]
 }

@@ -56,6 +56,13 @@
     return () => body.removeEventListener('click', onclick);
   }
 
+  /** The session carries no user id: a Discord sign-in names its member when exactly one rostered member has that name. */
+  const self = $derived.by(() => {
+    if (store.session?.method !== 'discord') return null;
+    const matches = store.members.filter((m) => m.bossing && m.name === store.session?.display);
+    return matches.length === 1 ? matches[0]!.id : null;
+  });
+
   const title = (row: FixedRow) => `${row.weekday_name} ${row.time} — ${row.bosses.map((b) => b.token).join(' + ')}`;
   const q = $derived(query.trim().toLowerCase());
   const rows = $derived(
@@ -240,6 +247,7 @@
         bosses={bosses.data ?? []}
         channels={store.channels}
         members={store.members}
+        {self}
         week={store.week}
         version={fixed.version}
         onsaved={saved}

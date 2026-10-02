@@ -37,6 +37,7 @@ pub struct FixedRow {
     pub channel_name: String,
     pub channel_watched: bool,
     pub owner: String,
+    pub owner_id: String,
     pub note: Option<String>,
     pub runs: Vec<FixedRunLink>,
 }
@@ -99,6 +100,7 @@ fn row(
             .is_some_and(|channel| channel.watched),
         channel_id,
         owner: ctx.name(&fixed.owner_id),
+        owner_id: fixed.owner_id.clone(),
         note: fixed.note.clone(),
         runs,
     }

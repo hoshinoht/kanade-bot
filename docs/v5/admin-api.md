@@ -83,8 +83,8 @@ whole; unknown or read-only keys are refused with 422.
   re-derives the status (roster, answers) changes `status` too.
 - **Weekly timings (user decision 2026-09-25):** `PATCH /api/admin/fixed/{id}`
   requires `version` (missing: `422 version_required`); it declares every
-  timing field (`day`, `time`, `bosses`, `participants`, `channel`, `note`)
-  whose value differs from the stored row and goes through the same check.
+  timing field (`day`, `time`, `bosses`, `participants`, `channel`, `note`,
+  and `owner` when `owner_id` is sent) whose value differs from the stored row and goes through the same check.
   The body is the whole form, so a form loaded before someone else's edit
   resends the old value of that field and is `409 stale` rather than
   reverting it. The admin app and `tools/pwa-mock` must send `version` on
@@ -150,8 +150,8 @@ whole; unknown or read-only keys are refused with 422.
 | Method & path | Request | Response | Notes |
 |---|---|---|---|
 | `GET /api/admin/fixed` | — | `FixedRow[]` | **Implemented**; `runs` lists live runs this and next week. |
-| `POST /api/admin/fixed` | `FixedRequest` | `FixedRow` | `decisions` maps amended-run ids to `update`/`keep`. **Implemented**: `201`; the timing's runs are materialised for the current and next two boss weeks; members need the bossing role and the channel must be watched (422). |
-| `PATCH /api/admin/fixed/{id}` | `FixedRequest` | `FixedRow` | Same `decisions` for the update-or-keep step. **Implemented**: only fields that differ are edited; an amended run the edit would move needs a decision (`422 choices_required`), a decision for another run is `422 choices_not_applicable`; `version` required (`422 version_required`), `expect`/`override` as for runs (see "Weekly timings" above). |
+| `POST /api/admin/fixed` | `FixedRequest` | `FixedRow` | `decisions` maps amended-run ids to `update`/`keep`. **Implemented**: `201`; the timing's runs are materialised for the current and next two boss weeks; members need the bossing role and the channel must be watched (422); optional `owner_id` names the owner (a rostered, non-bot member, not necessarily in the party, else `422 invalid` "Pick an owner from the roster."), omitted = the Discord session's user, else the first participant. |
+| `PATCH /api/admin/fixed/{id}` | `FixedRequest` | `FixedRow` | Same `decisions` for the update-or-keep step. **Implemented**: only fields that differ are edited; an amended run the edit would move needs a decision (`422 choices_required`), a decision for another run is `422 choices_not_applicable`; `version` required (`422 version_required`), `expect`/`override` as for runs (see "Weekly timings" above); `owner_id` omitted leaves the owner unchanged, and is validated as on create only when it changes (runs carry no owner, so nothing is pushed onto them). |
 | `DELETE /api/admin/fixed/{id}` | — | `{cancelled}` | Retire; names how many upcoming runs cancel. **Implemented** (live runs in the three materialised weeks). |
 | `POST /api/admin/validate/bosses` | `{text}` | `ValidateResult` | Debounced bosscheck. **Implemented** (catalog parser; refusals are `422 invalid` with the parser's message). |
 | `GET /api/admin/bosses` | — | `BossRow[]` | **Implemented**; keys are catalog short names (`MaleficStar`, exact case, as `/art/*` keys); hue from the catalog guide colour. |

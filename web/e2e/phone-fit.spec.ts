@@ -131,3 +131,42 @@ for (const touch of [false, true]) {
     });
   });
 }
+
+// The weekly timing sheet's Day / Time / Owner stack one per line on phones:
+// each box stays inside the dialog, none meets another, and the owner's name
+// is not cut.
+for (const size of SIZES) {
+  test(`Fixed editor: Day, Time and Owner fit without overlap at ${size.width}×${size.height}`, async ({ page }) => {
+    await page.setViewportSize(size);
+    await page.goto(`${ADMIN}/fixed?open=f-bm&sw=off`);
+    const sheet = page.getByRole('dialog', { name: 'Tuesday 23:30 — XBM' });
+    await expect(sheet.getByLabel('Owner')).toHaveValue('1012');
+    const faults = await sheet.locator('.fixedsheet__fields').evaluate((grid) => {
+      const meets = (a: DOMRect, b: DOMRect) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+      const bound = grid.closest('dialog')!.getBoundingClientRect();
+      const out: string[] = [];
+      if (document.documentElement.scrollWidth > window.innerWidth) out.push('the page scrolls sideways');
+      if (grid.scrollWidth > grid.clientWidth) out.push('the fields scroll sideways');
+      const boxes = [...grid.querySelectorAll<HTMLElement>('.field')].map((field) => ({
+        name: field.querySelector('span')!.textContent!.trim(),
+        box: field.querySelector('select, input')!.getBoundingClientRect(),
+      }));
+      boxes.forEach(({ name, box }, i) => {
+        if (box.left < bound.left - 0.5 || box.right > bound.right + 0.5) out.push(`${name} leaves the sheet`);
+        if (box.width < 120) out.push(`${name} is only ${Math.round(box.width)}px wide`);
+        for (const other of boxes.slice(i + 1)) if (meets(box, other.box)) out.push(`${name} meets ${other.name}`);
+      });
+      const owner = grid.querySelector<HTMLSelectElement>('.field:nth-child(3) select')!;
+      const text = document.createElement('span');
+      text.textContent = owner.selectedOptions[0]!.textContent;
+      text.style.font = getComputedStyle(owner).font;
+      document.body.append(text);
+      const needed = text.getBoundingClientRect().width;
+      text.remove();
+      if (needed > owner.clientWidth - 24) out.push('the owner name is cut');
+      return { count: boxes.length, out };
+    });
+    expect(faults.count).toBe(3);
+    expect(faults.out).toEqual([]);
+  });
+}

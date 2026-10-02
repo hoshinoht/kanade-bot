@@ -216,6 +216,7 @@ fn edit_from(changes: &Value, table: &BossTable) -> Result<FixedEdit, String> {
         participants: changes.get("participants").map(strings),
         channel_id: field("channel_id").map(Into::into),
         note: field("note").map(Into::into),
+        owner_id: None,
     })
 }
 

@@ -23,8 +23,8 @@ use crate::domain::members::Directory;
 use crate::domain::weeks::slot_in_week;
 
 /// Requested weekly-timing fields; `None` leaves a field alone. Bosses, day
-/// and time arrive parsed; participants and channel are validated here.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// and time arrive parsed; participants, channel and owner are validated here.
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct FixedEdit {
     pub bosses: Option<Vec<String>>,
     pub weekday: Option<Weekday>,
@@ -32,6 +32,27 @@ pub struct FixedEdit {
     pub participants: Option<Vec<String>>,
     pub channel_id: Option<String>,
     pub note: Option<String>,
+    /// v5: who owns the timing (proposal approval and chat authority read
+    /// it); runs carry no owner, so nothing is pushed onto them.
+    pub owner_id: Option<String>,
+}
+
+/// The derived shape, with `owner_id` only when set: idempotency digests
+/// hash this text, so requests without an owner keep their pinned digests.
+impl std::fmt::Debug for FixedEdit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut out = f.debug_struct("FixedEdit");
+        out.field("bosses", &self.bosses)
+            .field("weekday", &self.weekday)
+            .field("time", &self.time)
+            .field("participants", &self.participants)
+            .field("channel_id", &self.channel_id)
+            .field("note", &self.note);
+        if let Some(owner_id) = &self.owner_id {
+            out.field("owner_id", owner_id);
+        }
+        out.finish()
+    }
 }
 
 /// A live run of the timing that was moved off its weekly slot this week and
@@ -195,6 +216,12 @@ pub fn apply_fixed_edit(
         patch.note = Some(note.clone());
         fields.push(FixedField::Note);
     }
+    if let Some(owner) = &edit.owner_id {
+        // Same roster rule as participants; the owner need not be in the party.
+        let mut owner = validate_participants(directory, std::slice::from_ref(owner))?;
+        patch.owner_id = owner.pop();
+        fields.push(FixedField::OwnerId);
+    }
     if fields.is_empty() {
         return Err(ScheduleError::NothingToChange);
     }
@@ -347,4 +374,27 @@ pub fn apply_party_delta(
         },
         notices: vec![intent],
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_names_the_owner_only_when_set() {
+        let plain = FixedEdit {
+            note: Some("n".into()),
+            ..FixedEdit::default()
+        };
+        assert_eq!(
+            format!("{plain:?}"),
+            "FixedEdit { bosses: None, weekday: None, time: None, participants: None, \
+             channel_id: None, note: Some(\"n\") }"
+        );
+        let owned = FixedEdit {
+            owner_id: Some("1002".into()),
+            ..plain
+        };
+        assert!(format!("{owned:?}").ends_with("note: Some(\"n\"), owner_id: \"1002\" }"));
+    }
 }

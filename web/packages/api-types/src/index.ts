@@ -180,7 +180,10 @@ export interface FixedRow {
   channel_id: string;
   channel_name: string;
   channel_watched: boolean;
+  /** The owner's display name. */
   owner: string;
+  /** The owner's member id; proposal approval and chat authority accept the owner. */
+  owner_id: string;
   note: string | null;
   /** Live runs materialised from it, this week and next. */
   runs: { run_id: string; short_id: string; week: WeekKey; day: number; time: string | null; status: RunStatus; amended: boolean }[];
@@ -194,6 +197,8 @@ export interface FixedRequest {
   participants: string[];
   channel_id: string;
   note: string | null;
+  /** A rostered member (bossing role, not a bot), not necessarily in the party (else 422 `invalid`). Omitted: POST keeps its default, PATCH leaves the owner unchanged. */
+  owner_id?: string;
   /** For each amended run of the timing: follow the new timing, or keep this week's change. */
   decisions?: Record<string, 'update' | 'keep'>;
   /** Week version the form was loaded at: required by PATCH (else 422 `version_required`), ignored by POST. */

@@ -808,13 +808,31 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     )
     .await;
     edit["version"] = json!(head);
-    h.ok(
+    // Owner: defaults to the first participant; a role-less member is refused.
+    assert_eq!(created["owner_id"], json!(participants[0]));
+    let mut unrostered = edit.clone();
+    unrostered["owner_id"] = json!("1014");
+    h.refused(
         "PATCH",
         &fixed_path,
-        Some(edit),
-        "fixed.json#/$defs/FixedRow",
+        unrostered,
+        &token,
+        (StatusCode::UNPROCESSABLE_ENTITY, "invalid"),
     )
     .await;
+    edit["owner_id"] = json!("1012");
+    let edited = h
+        .ok(
+            "PATCH",
+            &fixed_path,
+            Some(edit),
+            "fixed.json#/$defs/FixedRow",
+        )
+        .await;
+    assert_eq!(
+        (&edited["owner_id"], &edited["owner"]),
+        (&json!("1012"), &json!("Minato"))
+    );
     h.ok(
         "DELETE",
         &fixed_path,

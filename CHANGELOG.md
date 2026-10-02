@@ -6,6 +6,16 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin API reads and changes a weekly timing's owner: `FixedRow` adds
+  `owner_id`, and `POST`/`PATCH /api/admin/fixed` accept an optional `owner_id`
+  (a rostered, non-bot member, not necessarily in the party; else `422 invalid`).
+  An owner change is blamed as `owner`, conflicts like other timing fields and
+  survives idempotent replay after the owner loses the bossing role. The admin
+  PWA Fixed editor shows an Owner select beside Day and Time (stacked on
+  phones), preselects the saved owner, defaults a new timing to the signed-in
+  Discord member or else the first party member picked, and reads an owner
+  refusal out on the field.
+
 - v5 admin phone navigation drawer shows Members and Reminders counts beside
   Week: `GET /api/admin/summary` adds `members` (bossing roster) and
   `reminders` (upcoming cards), derived as the Members and Reminders pages count.

@@ -1494,3 +1494,205 @@ async fn retire_replays_by_record() {
         (422, "idempotency_mismatch".into())
     );
 }
+
+impl Reads {
+    async fn demote(&self, user: &str) {
+        let mut profile = self.store.load_member(user).await.unwrap().unwrap();
+        profile.member.has_role = false;
+        self.store.put_member(profile).await.unwrap();
+    }
+}
+
+/// A timing's owner is read as `owner_id`, set on create, changed by PATCH
+/// (blamed as `owner`), validated against the roster only when it changes,
+/// and conflicts like any other timing field.
+#[tokio::test]
+async fn timing_owner_is_set_changed_validated_and_blamed() {
+    let reads = Reads::new().await;
+    let (_, row) = reads.rows().await;
+    assert_eq!(
+        (row["owner_id"].clone(), row["owner"].clone()),
+        ("1001".into(), "Alice".into())
+    );
+
+    // Create: an owner outside the party.
+    let create = json!({
+        "weekday": 3, "time": "21:00", "bosses": "hstar", "participants": ["1001", "1002"],
+        "channel_id": "kalos-four", "note": null, "owner_id": "1004"
+    });
+    assert_valid("fixed.json#/$defs/FixedRequest", "create", &create);
+    let created = reads
+        .ok(
+            "POST",
+            "/api/admin/fixed",
+            create.clone(),
+            "fixed.json#/$defs/FixedRow",
+        )
+        .await;
+    assert_eq!(
+        (created["owner_id"].clone(), created["owner"].clone()),
+        ("1004".into(), "Dan".into())
+    );
+
+    // Unknown, role-less, bot and malformed owners are refused, nothing written.
+    reads.drop_cara().await;
+    let v = reads.version().await;
+    for owner in ["9999", "1003", "1005", "abc", ""] {
+        let mut bad = create.clone();
+        bad["owner_id"] = owner.into();
+        let reply = reads.call("POST", "/api/admin/fixed", bad, &[]).await;
+        assert_eq!(
+            (reply.status, reply.api_error()),
+            (422, "invalid".into()),
+            "{owner}"
+        );
+        assert_eq!(reply.json()["message"], "Pick an owner from the roster.");
+        let mut bad = timing(v, "22:00", "bring pots");
+        bad["owner_id"] = owner.into();
+        assert_eq!(
+            reads
+                .refused("PATCH", "/api/admin/fixed/f-kalos", bad)
+                .await,
+            (422, "invalid".into()),
+            "{owner}"
+        );
+    }
+    assert_eq!(reads.version().await, v);
+
+    // Update: only the owner differs, so only `owner` is edited and blamed.
+    let mut edit = timing(v, "22:00", "bring pots");
+    edit["owner_id"] = "1002".into();
+    let row = reads
+        .ok(
+            "PATCH",
+            "/api/admin/fixed/f-kalos",
+            edit,
+            "fixed.json#/$defs/FixedRow",
+        )
+        .await;
+    assert_eq!(row["owner_id"], "1002");
+    let record = reads.store.load_change(v + 1).await.unwrap().unwrap();
+    // Runs carry no owner: the timing row alone changes.
+    let blamed: Vec<_> = changed_fields(&record).into_iter().collect();
+    assert_eq!(
+        blamed,
+        [(BlameTarget::FixedRun("f-kalos".into()), "owner".to_owned())]
+    );
+
+    // A form loaded at `v` resending another owner is stale; one leaving
+    // the owner out (or resending the current one) edits other fields freely.
+    let mut stale = timing(v, "22:00", "bring pots");
+    stale["owner_id"] = "1001".into();
+    assert_eq!(
+        reads
+            .refused("PATCH", "/api/admin/fixed/f-kalos", stale)
+            .await,
+        (409, "stale".into())
+    );
+    let row = reads
+        .ok(
+            "PATCH",
+            "/api/admin/fixed/f-kalos",
+            timing(v, "22:00", "bring elixirs"),
+            "fixed.json#/$defs/FixedRow",
+        )
+        .await;
+    assert_eq!(
+        (row["owner_id"].clone(), row["note"].clone()),
+        ("1002".into(), "bring elixirs".into())
+    );
+
+    // A since-demoted current owner (outside the party) never blocks an
+    // edit of other fields.
+    let mut form = timing(reads.version().await, "22:00", "bring elixirs");
+    form["owner_id"] = "1004".into();
+    reads
+        .ok(
+            "PATCH",
+            "/api/admin/fixed/f-kalos",
+            form,
+            "fixed.json#/$defs/FixedRow",
+        )
+        .await;
+    reads.demote("1004").await;
+    let mut form = timing(reads.version().await, "22:00", "bring pots");
+    form["owner_id"] = "1004".into();
+    let row = reads
+        .ok(
+            "PATCH",
+            "/api/admin/fixed/f-kalos",
+            form,
+            "fixed.json#/$defs/FixedRow",
+        )
+        .await;
+    assert_eq!(
+        (row["owner_id"].clone(), row["note"].clone()),
+        ("1004".into(), "bring pots".into())
+    );
+}
+
+/// An owner who lost the bossing role since the first attempt must not turn
+/// a replay into a 422; a fresh key is validated as usual.
+#[tokio::test]
+async fn timing_owner_replays_survive_a_lost_role() {
+    let reads = Reads::new().await;
+    reads.drop_cara().await;
+    let create = json!({
+        "weekday": 3, "time": "21:00", "bosses": "hstar", "participants": ["1001"],
+        "channel_id": "kalos-four", "note": null, "owner_id": "1004"
+    });
+    let created = reads
+        .call(
+            "POST",
+            "/api/admin/fixed",
+            create.clone(),
+            &[("Idempotency-Key", "own-c")],
+        )
+        .await;
+    assert_eq!(created.status, 201, "{}", created.text());
+    let mut edit = timing(reads.version().await, "22:00", "bring pots");
+    edit["owner_id"] = "1004".into();
+    let edited = reads
+        .call(
+            "PATCH",
+            "/api/admin/fixed/f-kalos",
+            edit.clone(),
+            &[("Idempotency-Key", "own-e")],
+        )
+        .await;
+    assert_eq!(edited.status, 200, "{}", edited.text());
+    let v = reads.version().await;
+
+    reads.demote("1004").await;
+    let replay = reads
+        .call(
+            "POST",
+            "/api/admin/fixed",
+            create.clone(),
+            &[("Idempotency-Key", "own-c")],
+        )
+        .await;
+    assert_eq!(replay.status, 201, "{}", replay.text());
+    assert_eq!(replay.json()["id"], created.json()["id"]);
+    let replay = reads
+        .call(
+            "PATCH",
+            "/api/admin/fixed/f-kalos",
+            edit,
+            &[("Idempotency-Key", "own-e")],
+        )
+        .await;
+    assert_eq!(replay.status, 200, "{}", replay.text());
+    assert_eq!(replay.json()["owner_id"], "1004");
+    assert_eq!(reads.version().await, v, "nothing applied twice");
+
+    let fresh = reads
+        .call(
+            "POST",
+            "/api/admin/fixed",
+            create,
+            &[("Idempotency-Key", "own-c2")],
+        )
+        .await;
+    assert_eq!((fresh.status, fresh.api_error()), (422, "invalid".into()));
+}
