@@ -1,7 +1,7 @@
 //! Reply finishing after the loop (v4 `_finalize_write_reply`,
 //! `_finalize_read_claim` and `generate`'s shaping).
 
-use super::Generation;
+use super::{Generation, RoundOutcome};
 use crate::chat::sanitize::{
     claims_new_card, looks_like_clarification, member_facing, shape_reply, strip_false_card_claim,
     tidy,
@@ -15,13 +15,21 @@ pub(super) const POSTED_UNFINISHED: &str =
 
 /// A write claim must never outlive the write it claims: the last write call
 /// decides, and a refused one overwrites the reply unless it already asks.
-fn finalize_write_reply(generation: &mut Generation) {
-    let Some(last) = generation
+fn last_write(generation: &Generation) -> Option<&RoundOutcome> {
+    generation
         .outcomes
         .iter()
         .rev()
         .find(|o| ToolName::parse(&o.outcome.name).is_some_and(ToolName::is_write))
-    else {
+}
+
+/// The last write call succeeded and posted its card.
+fn posted_card(generation: &Generation) -> bool {
+    last_write(generation).is_some_and(|last| last.outcome.ok && !last.posted.is_empty())
+}
+
+fn finalize_write_reply(generation: &mut Generation) {
+    let Some(last) = last_write(generation) else {
         return;
     };
     let posted = !last.posted.is_empty();
@@ -57,10 +65,17 @@ fn finalize_read_claim(generation: &mut Generation) {
     }
 }
 
+/// `D-GROUND-WRITE`: a turn whose last write posted a card keeps the model's
+/// card reply; v4 regrounded it, so a time in it pulled in the lookup listing.
 pub(super) fn finish(generation: &mut Generation) {
     finalize_write_reply(generation);
     finalize_read_claim(generation);
     if !generation.reply.is_empty() {
-        generation.reply = shape_reply(&generation.reply, &generation.tool_outcomes());
+        let outcomes = if posted_card(generation) {
+            Vec::new()
+        } else {
+            generation.tool_outcomes()
+        };
+        generation.reply = shape_reply(&generation.reply, &outcomes);
     }
 }

@@ -10,6 +10,7 @@ use kanade::chat::answer::{
     AnswerDeps, AnswerFailure, CARD_NOT_POSTED, Generation, Question, answer, chat_outcome,
     interaction,
 };
+use kanade::chat::sanitize::shape_reply;
 use kanade::chat::tools::bundles::{Bundle, NO_ROUND_LEFT, ToolOffer};
 use kanade::chat::tools::propose::Proposer;
 use kanade::chat::tools::{REFUSED, ToolContext, UNKNOWN};
@@ -534,6 +535,36 @@ async fn an_undelivered_card_is_reported_to_the_model_as_not_posted() {
             .starts_with("The requested card was not posted.")
     );
     assert_eq!(chat_outcome(generation), ChatOutcome::Refused);
+}
+
+/// `D-GROUND-WRITE`: a lookup then a posted move keeps the model's card
+/// reply; v4's regrounding swapped its time line for the whole listing.
+#[tokio::test(start_paused = true)]
+async fn a_posted_card_reply_is_not_regrounded_into_the_lookup() {
+    let said = "The **Hard Star** move is up for *Thu 22:00*. It still needs a ✅ before anything changes.\n\nParty: Alvin tan.";
+    let run = run(
+        vec![
+            wants(&[("s1", "get_schedule", json!({"scope": "all"}))]),
+            wants(&[(
+                "m1",
+                "propose_move",
+                json!({"run_query": "hstar", "to_when": "thu 22:00"}),
+            )]),
+            words(said),
+        ],
+        ToolOffer::full_set(false),
+        V4_TOOL_ROUNDS,
+        "move hstar to thu 22:00",
+        &Passthrough,
+        &Ports::default(),
+    )
+    .await;
+    let generation = &run.generation;
+    assert!(generation.outcomes[0].outcome.ok, "the lookup listed runs");
+    assert_eq!(generation.posted.len(), 1, "the card was posted");
+    let regrounded = shape_reply(said, &generation.tool_outcomes());
+    assert_ne!(regrounded, said, "v4 regrounding would swap in the listing");
+    assert_eq!(generation.reply, said);
 }
 
 #[tokio::test(start_paused = true)]

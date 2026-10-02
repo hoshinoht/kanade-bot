@@ -143,7 +143,11 @@ are C3. Serve wiring is `chat::driver` (below).
   at the first real run. With no run named, v4's full listing stands (a
   reply with code but no schedule text keeps its text, listing appended).
   Grounding matches v4 exactly only for a reply without fenced code or
-  invented record lines that names every run or none. Over the
+  invented record lines that names every run or none. `D-GROUND-WRITE`
+  (user decision 2026-10-02): a turn whose last write call posted its card
+  is not regrounded at all, so the model's "card is up, needs a ✅" reply
+  posts as written; v4 regrounded it, and a time such as `22:00` in that
+  reply pulled in the turn's earlier `get_schedule` listing instead. Over the
   member bound (`MAX_MEMBER_REPLY`, 1200 characters) runs that already
   happened leave the listing (counted in `*(and N more)*`) while an upcoming
   one remains; nothing else is cut (v4 kept the listing and dropped the text

@@ -739,6 +739,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 Discord chat: after a schedule lookup, a reply announcing a posted card
+  (e.g. a move proposal waiting for ✅) is no longer replaced by the lookup's
+  run listing; the card reply posts as the model wrote it.
 - v5 admin History: the window no longer scrolls away when a row opens, only
   the clicked row of a multi-week change is marked open, tabs and Week/Who
   filters match the other M3E title bars, a change shows compact field diffs
