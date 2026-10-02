@@ -654,14 +654,14 @@ Notable changes to the Boss Scheduler Bot, newest first.
   phone action bar is focused pencil → Reject… → Approve as it is seen; Fixed
   rows show the party as plain text (full list in the tooltip) and ring a
   focused row inside its card.
-- v5 admin planner drops set the time as well as the day: a run dropped
-  between runs starts right after the one above (its start + run length), at
-  the top of a day it ends right before the run below, an empty day keeps its
 - v5 admin Fixed's editor follows B_Fixed's spacing: sections 12 px apart,
   "All n bosses…" and the typed bosses on one line under the rows, the note
   after the party, and the party showing its picks and the first few others
   with a "+n" chip for the rest; the list head lines up with the rows, and on
   phones the party sits under the bosses with no sideways scroll.
+- v5 admin planner drops set the time as well as the day: a run dropped
+  between runs starts right after the one above (its start + run length), at
+  the top of a day it ends right before the run below, an empty day keeps its
   time and own-time runs stay untimed, held within 00:00–23:59. The drag shows
   and announces the resulting time ("→ 23:00"); an overlap that double-books
   a member shows a clash warning (icon and words) on the indicator and both
