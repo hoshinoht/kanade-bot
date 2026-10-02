@@ -11,6 +11,7 @@ pub async fn run_suite<S: MemberStore>(make: impl AsyncFn() -> S) {
     aliases_are_unique_and_one_word(make().await).await;
     gateway_and_portal_writes_own_their_fields(make().await).await;
     interleaved_gateway_and_portal_writes_lose_nothing(make().await).await;
+    portal_alias_removal_releases_the_alias(make().await).await;
 }
 
 fn gateway(user_id: &str, name: &str, roles: &[&str]) -> GatewayMember {
@@ -45,6 +46,7 @@ async fn gateway_and_portal_writes_own_their_fields<S: MemberStore>(store: S) {
                 ping_level: Some(PingLevel::Off),
                 reply_style: Some(Some("terse".into())),
                 add_alias: Some("ali".into()),
+                remove_alias: None,
             },
         )
         .await
@@ -140,6 +142,98 @@ async fn interleaved_gateway_and_portal_writes_lose_nothing<S: MemberStore>(stor
     assert_eq!(row.member.ping_level, PingLevel::All);
     assert_eq!(row.member.display_name.as_deref(), Some("Cara 12"));
     assert_eq!(row.roles, ["20"]);
+}
+
+fn remove(alias: &str) -> PortalEdit {
+    PortalEdit {
+        remove_alias: Some(alias.into()),
+        ..PortalEdit::default()
+    }
+}
+
+/// Removal keeps the other aliases in order and frees the alias for anyone;
+/// a missing alias is a no-op and a missing row is `None`.
+async fn portal_alias_removal_releases_the_alias<S: MemberStore>(store: S) {
+    assert_eq!(
+        store
+            .apply_portal("200", remove("ali"))
+            .await
+            .expect("no row"),
+        None
+    );
+    let mut alice = profile("200", "Alice");
+    // `v4.name` is a stored v4 alias the portal input rule would refuse.
+    alice.aliases = vec!["ali".into(), "v4.name".into(), "al".into()];
+    alice.roles = vec!["20".into()];
+    alice.member.ping_level = PingLevel::Off;
+    store.put_member(alice.clone()).await.expect("put");
+    store.put_member(profile("100", "Bob")).await.expect("put");
+
+    for alias in ["v4.name", "ali"] {
+        let edited = store
+            .apply_portal("200", remove(alias))
+            .await
+            .expect("remove")
+            .expect("row");
+        assert!(!edited.aliases.iter().any(|held| held == alias), "{alias}");
+    }
+    let row = store.load_member("200").await.expect("load").expect("row");
+    assert_eq!(row.aliases, ["al"], "the rest keep their order");
+    assert_eq!(
+        (row.roles.clone(), row.member.ping_level),
+        (alice.roles.clone(), PingLevel::Off),
+        "other fields untouched"
+    );
+
+    let unchanged = store
+        .apply_portal("200", remove("ali"))
+        .await
+        .expect("idempotent")
+        .expect("row");
+    assert_eq!(unchanged, row, "an alias not held is a no-op");
+    // Bob's alias is not Alice's to remove.
+    let bob = store
+        .apply_portal(
+            "100",
+            PortalEdit {
+                add_alias: Some("ali".into()),
+                ..PortalEdit::default()
+            },
+        )
+        .await
+        .expect("a released alias is free again")
+        .expect("row");
+    assert_eq!(bob.aliases, ["ali"]);
+    store
+        .apply_portal("200", remove("ali"))
+        .await
+        .expect("remove")
+        .expect("row");
+    let bob = store.load_member("100").await.expect("load").expect("row");
+    assert_eq!(bob.aliases, ["ali"]);
+    // The uniqueness index followed the removal: Alice cannot take it back.
+    let taken = store
+        .apply_portal(
+            "200",
+            PortalEdit {
+                add_alias: Some("ali".into()),
+                ..PortalEdit::default()
+            },
+        )
+        .await;
+    assert!(matches!(taken, Err(StoreError::Constraint(_))));
+    let bob = store
+        .apply_portal(
+            "100",
+            PortalEdit {
+                add_alias: Some("v4.name".into()),
+                ..PortalEdit::default()
+            },
+        )
+        .await
+        .expect("the removed v4 alias is free too")
+        .expect("row");
+    assert_eq!(bob.aliases, ["ali", "v4.name"]);
 }
 
 pub fn profile(user_id: &str, name: &str) -> MemberProfile {

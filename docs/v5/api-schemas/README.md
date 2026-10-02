@@ -39,6 +39,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/admin/members` | `members.json#/$defs/MemberRows` |
 | `PATCH /api/admin/members/{id}` | `members.json#/$defs/MemberRow` |
 | `POST /api/admin/members/{id}/aliases` | `members.json#/$defs/MemberRow` |
+| `DELETE /api/admin/members/{id}/aliases/{alias}` | `members.json#/$defs/MemberRow` |
 | `GET /api/admin/personas` | `members.json#/$defs/Personas` |
 | `GET /api/admin/channels` | `common.json#/$defs/Channels` |
 | `GET /api/admin/roles` | `common.json#/$defs/Roles` |

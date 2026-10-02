@@ -101,6 +101,9 @@ impl MemberStore for super::MemoryScheduleStore {
         {
             profile.aliases.push(alias);
         }
+        if let Some(alias) = edit.remove_alias {
+            profile.aliases.retain(|held| *held != alias);
+        }
         Ok(Some(profile.clone()))
     }
 }

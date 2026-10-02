@@ -14,7 +14,7 @@ use std::sync::Arc;
 use axum::{
     Router,
     http::HeaderMap,
-    routing::{patch, post},
+    routing::{delete, patch, post},
 };
 
 use super::context::{roster, unavailable};
@@ -48,6 +48,10 @@ pub fn routes() -> Router<Arc<Site>> {
         .route("/api/admin/validate/bosses", post(fixed::validate_bosses))
         .route("/api/admin/members/{id}", patch(members::update))
         .route("/api/admin/members/{id}/aliases", post(members::add_alias))
+        .route(
+            "/api/admin/members/{id}/aliases/{alias}",
+            delete(members::remove_alias),
+        )
 }
 
 pub const IDEMPOTENCY_KEY: &str = "idempotency-key";

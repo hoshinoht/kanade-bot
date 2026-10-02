@@ -131,6 +131,13 @@ pub async fn add_alias(
     outcome(app.store.lock().await.add_alias(&id, &req.alias))
 }
 
+pub async fn remove_alias(
+    State(app): State<App>,
+    Path((id, alias)): Path<(String, String)>,
+) -> Response {
+    outcome(app.store.lock().await.remove_alias(&id, &alias))
+}
+
 pub async fn fixed(State(app): State<App>) -> Response {
     Json(app.store.lock().await.fixed_rows()).into_response()
 }

@@ -508,6 +508,44 @@ test('members: roster side pane edits for pings, reply style and aliases', async
   await expect(page.getByRole('complementary', { name: 'Member details' }).getByText('is no longer offered')).toBeVisible();
 });
 
+test('members: an alias chip’s × removes it from the sheet and the roster, by keyboard, focus following', async ({ page }) => {
+  await go(page, '/members');
+  const row = page.locator('[data-member="1003"]');
+  await expect(row).toContainText('mika · mk');
+  await row.click();
+  const sheet = page.getByRole('complementary', { name: 'Member details' });
+  const aliases = sheet.locator('.membersheet__aliases');
+  const notice = sheet.locator('[role="status"]:not(.vh)');
+  const first = sheet.getByRole('button', { name: 'Remove alias mika from Mika' });
+  const second = sheet.getByRole('button', { name: 'Remove alias mk from Mika' });
+  const input = sheet.getByRole('textbox', { name: 'New alias for Mika' });
+
+  // Reachable in tab order: the add field is one Shift+Tab past the last ×.
+  await input.focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(second).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(first).toBeFocused();
+  const box = (await first.boundingBox())!;
+  expect(box.width).toBeGreaterThanOrEqual(24);
+  expect(box.height).toBeGreaterThanOrEqual(24);
+
+  await page.keyboard.press('Enter');
+  await expect(notice).toHaveText('Alias “mika” removed.');
+  await expect(aliases).not.toContainText('mika');
+  await expect(row).toContainText('mk');
+  await expect(row).not.toContainText('mika ·');
+  // Focus moves to the chip that took its place.
+  await expect(second).toBeFocused();
+
+  await page.keyboard.press('Space');
+  await expect(notice).toHaveText('Alias “mk” removed.');
+  await expect(aliases).toHaveText('none');
+  await expect(row).not.toContainText('mk');
+  // The last one gone: focus goes to the add field.
+  await expect(input).toBeFocused();
+});
+
 test('members: "Sort: runs" orders by runs this week, A–Z between equals, and switches to A–Z', async ({ page }) => {
   await go(page, '/members');
   const sort = page.getByRole('combobox', { name: 'Sort members' });

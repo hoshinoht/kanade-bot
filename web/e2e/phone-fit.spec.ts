@@ -94,3 +94,40 @@ for (const size of SIZES) {
     });
   }
 }
+
+// The sheet's alias chips and their × stay inside the full-screen dialog, with a
+// finger-sized × where the pointer is coarse.
+for (const touch of [false, true]) {
+  test.describe(`Members sheet aliases at 390×844${touch ? ' on touch' : ''}`, () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: touch });
+    test('chips and × buttons fit the dialog, never clipped', async ({ page }) => {
+      await page.goto(`${ADMIN}/members?sw=off`);
+      await page.getByRole('button', { name: /^Mika/ }).click();
+      const sheet = page.getByRole('dialog');
+      const input = sheet.getByRole('textbox', { name: 'New alias for Mika' });
+      // The longest alias the server takes (32 characters).
+      await input.fill('quitealongaliasthatfillsthechip1');
+      await sheet.getByRole('button', { name: 'Add' }).click();
+      await expect(sheet.getByRole('button', { name: 'Remove alias quitealongaliasthatfillsthechip1 from Mika' })).toBeVisible();
+      const faults = await sheet.locator('.membersheet__aliases').evaluate((list) => {
+        const bound = list.getBoundingClientRect();
+        const out: string[] = [];
+        if (list.scrollWidth > list.clientWidth) out.push('the chip row scrolls sideways');
+        if (document.documentElement.scrollWidth > window.innerWidth) out.push('the page scrolls sideways');
+        for (const chip of list.querySelectorAll<HTMLElement>('.membersheet__alias')) {
+          const box = chip.getBoundingClientRect();
+          const button = chip.querySelector('button')!.getBoundingClientRect();
+          const name = chip.textContent!.trim();
+          if (box.left < bound.left - 0.5 || box.right > bound.right + 0.5) out.push(`${name} leaves the row`);
+          if (button.right > box.right + 0.5 || button.top < box.top - 0.5 || button.bottom > box.bottom + 0.5) out.push(`${name}: the × leaves its chip`);
+          if (chip.scrollWidth > chip.clientWidth) out.push(`${name}: the chip is cut`);
+          if (button.width < 24 || button.height < 24) out.push(`${name}: the × is under 24px`);
+        }
+        return out;
+      });
+      expect(faults).toEqual([]);
+      const size = (await sheet.locator('.membersheet__alias-remove').first().boundingBox())!;
+      expect(Math.min(size.width, size.height)).toBeGreaterThanOrEqual(touch ? 44 : 24);
+    });
+  });
+}

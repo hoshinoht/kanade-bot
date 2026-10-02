@@ -93,4 +93,12 @@ impl Store {
         self.members[index].aliases.push(alias);
         Ok(self.member_row(index))
     }
+
+    /// Idempotent, like the server: an alias not held leaves the row as it is.
+    pub fn remove_alias(&mut self, id: &str, alias: &str) -> Result<MemberRow, MoveError> {
+        let index = self.member_index(id)?;
+        let alias = alias.trim().to_lowercase();
+        self.members[index].aliases.retain(|held| *held != alias);
+        Ok(self.member_row(index))
+    }
 }

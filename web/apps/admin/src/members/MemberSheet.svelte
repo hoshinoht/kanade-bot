@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import type { MemberPatch, MemberRow, Persona, PingLevel } from '@kanade/api-types';
   import { Icon, Modal } from '@kanade/ui';
   import { send } from '../resource.svelte';
@@ -60,6 +61,31 @@
     } else {
       notice = { ok: false, message: result.message };
     }
+  }
+
+  let aliasList = $state<HTMLElement>();
+  let aliasInput = $state<HTMLInputElement>();
+
+  // No confirmation: an alias is one word and re-adding it is one step.
+  async function removeAlias(name: string) {
+    if (!member) return;
+    busy = true;
+    const id = member.id;
+    const index = member.aliases.indexOf(name);
+    const result = await send((c) => c.delete<MemberRow>(`/api/admin/members/${encodeURIComponent(id)}/aliases/${encodeURIComponent(name)}`));
+    busy = false;
+    if (result.ok) {
+      notice = { ok: true, message: `Alias “${name}” removed.` };
+      onchange(result.value);
+    } else {
+      notice = { ok: false, message: result.message };
+    }
+    await tick();
+    if (member?.id !== id) return;
+    // The disabled button lost focus: land on the chip that took its place, else the add field.
+    const buttons = aliasList?.querySelectorAll<HTMLButtonElement>('.membersheet__alias-remove') ?? [];
+    const target = result.ok ? (buttons[index] ?? aliasInput) : buttons[index];
+    target?.focus({ preventScroll: true });
   }
 </script>
 
@@ -137,11 +163,20 @@
 
     <div class="membersheet__section" data-fid="members-aliases">
       <p class="membersheet__label">Chat aliases</p>
-      <div class="membersheet__aliases">
-        {#each member.aliases as name (name)}<span class="membersheet__alias">{name}</span>{:else}<span class="id">none</span>{/each}
+      <div class="membersheet__aliases" bind:this={aliasList}>
+        {#each member.aliases as name (name)}<span class="membersheet__alias"
+            >{name}<button
+              type="button"
+              class="membersheet__alias-remove"
+              aria-label="Remove alias {name} from {member.name}"
+              title="Remove alias"
+              disabled={busy}
+              onclick={() => void removeAlias(name)}><Icon name="x" /></button
+            ></span
+          >{:else}<span class="id">none</span>{/each}
       </div>
       <form class="membersheet__alias-form" onsubmit={addAlias}>
-        <input bind:value={alias} placeholder="New alias" size="12" required aria-label="New alias for {member.name}" />
+        <input bind:this={aliasInput} bind:value={alias} placeholder="New alias" size="12" required aria-label="New alias for {member.name}" />
         <button class="btn" type="submit" disabled={busy}>Add</button>
       </form>
     </div>

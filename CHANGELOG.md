@@ -9,6 +9,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - v5 admin phone navigation drawer shows Members and Reminders counts beside
   Week: `GET /api/admin/summary` adds `members` (bossing roster) and
   `reminders` (upcoming cards), derived as the Members and Reminders pages count.
+- v5 admin API removes a chat alias: `DELETE /api/admin/members/{id}/aliases/{alias}`
+  drops it from the member (others keep their order) and frees it for anyone;
+  removing an alias the member does not hold returns the unchanged row. The admin
+  PWA Members sheet gives each alias chip a × that removes it in place.
+
 
 - v5 admin Bosses now uses the M3E catalog and checked-in knowledge workspace:
   level-ordered boss rows keep weekly difficulty ticks visible beside the selected

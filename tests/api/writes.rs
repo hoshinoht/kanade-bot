@@ -1265,6 +1265,82 @@ async fn member_edits_and_aliases() {
     }
 }
 
+#[tokio::test]
+async fn alias_removal_is_idempotent_and_keeps_order() {
+    let reads = Reads::new().await;
+    for alias in ["bobby", "rob", "bob-2"] {
+        reads
+            .ok(
+                "POST",
+                "/api/admin/members/1002/aliases",
+                json!({ "alias": alias }),
+                "members.json#/$defs/MemberRow",
+            )
+            .await;
+    }
+    // The path alias is percent-decoded, trimmed and lowercased.
+    let row = reads
+        .ok(
+            "DELETE",
+            "/api/admin/members/1002/aliases/%20Rob%20",
+            json!({}),
+            "members.json#/$defs/MemberRow",
+        )
+        .await;
+    assert_eq!(row["aliases"], json!(["bobby", "bob-2"]));
+    let again = reads
+        .ok(
+            "DELETE",
+            "/api/admin/members/1002/aliases/rob",
+            json!({}),
+            "members.json#/$defs/MemberRow",
+        )
+        .await;
+    assert_eq!(again, row, "an alias not held leaves the row unchanged");
+    let stored = reads.store.load_member("1002").await.unwrap().unwrap();
+    assert_eq!(stored.aliases, ["bobby", "bob-2"]);
+    // Another member's alias is not this member's to drop.
+    reads
+        .ok(
+            "DELETE",
+            "/api/admin/members/1002/aliases/ali",
+            json!({}),
+            "members.json#/$defs/MemberRow",
+        )
+        .await;
+    let alice = reads.store.load_member("1001").await.unwrap().unwrap();
+    assert_eq!(alice.aliases, ["ali"]);
+    // Released: another member may take it.
+    let row = reads
+        .ok(
+            "POST",
+            "/api/admin/members/1001/aliases",
+            json!({"alias": "rob"}),
+            "members.json#/$defs/MemberRow",
+        )
+        .await;
+    assert_eq!(row["aliases"], json!(["ali", "rob"]));
+
+    assert_eq!(
+        reads
+            .refused("DELETE", "/api/admin/members/9999/aliases/rob", json!({}))
+            .await,
+        (404, "not_found".into())
+    );
+    let no_csrf = send(
+        reads.admin,
+        "DELETE",
+        ADMIN_HOST,
+        "/api/admin/members/1002/aliases/bobby",
+        &[("Cookie", reads.cookie.as_str()), ORIGIN],
+        None,
+    )
+    .await;
+    assert_eq!((no_csrf.status, no_csrf.api_error()), (403, "csrf".into()));
+    let stored = reads.store.load_member("1002").await.unwrap().unwrap();
+    assert_eq!(stored.aliases, ["bobby", "bob-2"], "nothing written");
+}
+
 /// With a 05:00 reset, day 0 (Thursday) before 05:00 is the previous boss
 /// week: a move there is refused, not silently re-weeked.
 #[tokio::test]

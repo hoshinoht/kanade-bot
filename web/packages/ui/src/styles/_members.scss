@@ -153,7 +153,17 @@
 .membersheet__section .seg { display: inline-flex; align-self: flex-start; }
 .membersheet__section .seg .seg__btn { min-height: 34px; padding: 0 14px; }
 .membersheet__aliases { display: flex; flex-wrap: wrap; gap: 5px; }
-.membersheet__alias { display: inline-flex; align-items: center; min-height: 26px; padding: 0 10px; border-radius: 13px; background: var(--seg-fill); font-family: var(--mono); font-size: var(--fs-mini); font-weight: 500; }
+.membersheet__alias { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 1px 0 10px; border-radius: 13px; background: var(--seg-fill); font-family: var(--mono); font-size: var(--fs-mini); font-weight: 500; }
+// The board's "×": a 24px round target inside the chip, 44px where the pointer is a finger.
+.membersheet__alias-remove { display: inline-grid; place-items: center; width: 24px; height: 24px; min-height: 0; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--dim-text); font-size: 13px; cursor: pointer; }
+.membersheet__alias-remove:hover:not(:disabled) { background: var(--row-hover); color: var(--ink); }
+.membersheet__alias-remove:focus-visible { border-radius: 50%; outline-offset: 0; }
+.membersheet__alias-remove:disabled { cursor: default; opacity: 0.5; }
+@media (pointer: coarse) {
+  .membersheet__aliases { gap: 6px; }
+  .membersheet__alias { min-height: 44px; padding-left: 14px; border-radius: 22px; }
+  .membersheet__alias-remove { width: 44px; height: 44px; }
+}
 .membersheet__alias-form { display: flex; gap: 6px; margin: 0; }
 .membersheet__alias-form input { flex: 1 1 auto; min-width: 0; font-size: var(--fs-small); }
 

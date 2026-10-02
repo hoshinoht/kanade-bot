@@ -190,6 +190,13 @@ async fn portal(
         profile.aliases.push(alias.clone());
         added = Some(alias);
     }
+    let mut removed = None;
+    if let Some(alias) = &edit.remove_alias
+        && let Some(at) = profile.aliases.iter().position(|held| held == alias)
+    {
+        profile.aliases.remove(at);
+        removed = Some(alias);
+    }
     sqlx::query(
         "UPDATE members SET ping_level = ?1, reply_style = ?2, aliases = ?3 WHERE user_id = ?4",
     )
@@ -202,6 +209,14 @@ async fn portal(
     .map_err(store_error)?;
     if let Some(alias) = added {
         sqlx::query("INSERT INTO member_aliases (alias, user_id) VALUES (?1, ?2)")
+            .bind(alias)
+            .bind(user_id)
+            .execute(&mut *conn)
+            .await
+            .map_err(store_error)?;
+    }
+    if let Some(alias) = removed {
+        sqlx::query("DELETE FROM member_aliases WHERE alias = ?1 AND user_id = ?2")
             .bind(alias)
             .bind(user_id)
             .execute(&mut *conn)

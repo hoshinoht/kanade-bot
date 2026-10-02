@@ -724,6 +724,24 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "members.json#/$defs/MemberRow",
     )
     .await;
+    for _ in 0..2 {
+        let row = h
+            .ok(
+                "DELETE",
+                &format!("/api/admin/members/{m}/aliases/%20ContractAlias"),
+                None,
+                "members.json#/$defs/MemberRow",
+            )
+            .await;
+        assert!(
+            !row["aliases"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|a| a == "contractalias"),
+            "removed, and removing again is a no-op"
+        );
+    }
 
     // Weekly timings.
     let row = &fixed[0];

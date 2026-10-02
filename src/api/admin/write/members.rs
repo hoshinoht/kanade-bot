@@ -107,7 +107,7 @@ pub async fn update(
         PortalEdit {
             ping_level,
             reply_style,
-            add_alias: None,
+            ..PortalEdit::default()
         },
     )
     .await
@@ -144,6 +144,25 @@ pub async fn add_alias(
         user_id,
         PortalEdit {
             add_alias: Some(alias),
+            ..PortalEdit::default()
+        },
+    )
+    .await
+}
+
+/// Idempotent: an alias the member does not hold leaves the row as it is.
+/// Matched against any stored alias (v4 rows too), not the portal input rule.
+pub async fn remove_alias(
+    State(site): State<Arc<Site>>,
+    _: AdminSession,
+    UrlPath((user_id, alias)): UrlPath<(String, String)>,
+) -> Reply {
+    let state = state(&site)?;
+    apply(
+        state,
+        user_id,
+        PortalEdit {
+            remove_alias: Some(alias.trim().to_lowercase()),
             ..PortalEdit::default()
         },
     )

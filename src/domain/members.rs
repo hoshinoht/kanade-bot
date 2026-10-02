@@ -223,6 +223,8 @@ pub struct PortalEdit {
     pub reply_style: Option<Option<String>>,
     /// Appended when not already held.
     pub add_alias: Option<String>,
+    /// Dropped when held (exact match); the other aliases keep their order.
+    pub remove_alias: Option<String>,
 }
 
 /// A shared store is a member store (the API holds stores behind `Arc`).
