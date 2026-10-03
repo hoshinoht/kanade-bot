@@ -220,8 +220,26 @@ async fn the_context_family_replays_exactly() {
             ),
         )],
     };
+    let voiced_card = Named {
+        name: "D-VOICED-CARD",
+        entries: vec![dev(
+            "request-budget-trims-prior-history",
+            "/steps/3/error/message",
+            json!(
+                "chat request estimate 9764 exceeds context budget 6144 with completion reserve 1024"
+            ),
+            json!(
+                "chat request estimate 9838 exceeds context budget 6144 with completion reserve 1024"
+            ),
+        )],
+    };
     assert_eq!(
-        check_family("context", &[reserve, seasonal_list, auto_forward], replay).await,
+        check_family(
+            "context",
+            &[reserve, seasonal_list, auto_forward, voiced_card],
+            replay
+        )
+        .await,
         (6, 58)
     );
 }

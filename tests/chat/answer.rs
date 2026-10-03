@@ -575,6 +575,35 @@ async fn a_posted_card_reply_is_not_regrounded_into_the_lookup() {
     assert_eq!(generation.reply, said);
 }
 
+/// `D-PERSONAL-CONTEXT` (review note 7): a card-posting turn is not
+/// regrounded, but a copied model-only context line never reaches members.
+#[tokio::test(start_paused = true)]
+async fn a_posted_card_reply_never_carries_copied_context() {
+    let said = "The **Hard Star** move is up for *Thu 22:00*. It still needs a ✅ before anything changes.";
+    let copied = format!(
+        "{said}\nContext (hidden from members): in 2 days · you haven't answered\nin 2 days · you said yes"
+    );
+    let run = run(
+        vec![
+            wants(&[("s1", "get_schedule", json!({"scope": "all"}))]),
+            wants(&[(
+                "m1",
+                "propose_move",
+                json!({"run_query": "hstar", "to_when": "thu 22:00"}),
+            )]),
+            words(&copied),
+        ],
+        ToolOffer::full_set(false),
+        V4_TOOL_ROUNDS,
+        "move hstar to thu 22:00",
+        &Passthrough,
+        &Ports::default(),
+    )
+    .await;
+    assert_eq!(run.generation.posted.len(), 1, "the card was posted");
+    assert_eq!(run.generation.reply, said);
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_content_filter_spends_the_clean_retry_then_blocks() {
     let answered = run(

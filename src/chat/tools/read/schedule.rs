@@ -8,7 +8,7 @@ use chrono::{DateTime, Datelike, NaiveDate, NaiveTime, TimeDelta, Utc, Weekday};
 use serde_json::{Map, Value};
 
 use super::ToolWorld;
-use super::format::{day_label, is_over, local, run_line};
+use super::format::{day_label, is_over, local, run_context, run_line};
 use super::participants::py_text;
 use super::resolve::RELATIVE_DAYS;
 use super::roster::{bossers, resolve_participant_text};
@@ -602,7 +602,18 @@ pub fn get_schedule(
     } else {
         String::new()
     };
-    Ok(bounded(&heading, &records, &footer))
+    let mut listing = bounded(&heading, &records, &footer);
+    // D-PERSONAL-CONTEXT: added after bounding so members' records and the
+    // omission count are exactly the group rendering's.
+    if participant.is_some() {
+        let asker = for_me.then_some(ctx.author_id.as_str());
+        for (run, record) in runs.iter().zip(&records) {
+            if let Some(context) = run_context(world, run, asker, now) {
+                listing = listing.replacen(record.as_str(), &format!("{record}\n{context}"), 1);
+            }
+        }
+    }
+    Ok(listing)
 }
 
 /// Python `str.capitalize()`.

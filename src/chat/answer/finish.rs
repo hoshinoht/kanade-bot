@@ -3,8 +3,8 @@
 
 use super::{Generation, RoundOutcome};
 use crate::chat::sanitize::{
-    claims_new_card, looks_like_clarification, member_facing, shape_reply, strip_false_card_claim,
-    tidy,
+    claims_new_card, looks_like_clarification, member_facing, shape_reply, strip_context_copies,
+    strip_false_card_claim, tidy,
 };
 use crate::chat::tools::{REFUSED, ToolName};
 use crate::domain::catalog::BossTable;
@@ -73,11 +73,13 @@ pub(super) fn finish(generation: &mut Generation, catalog: &BossTable) {
     finalize_write_reply(generation);
     finalize_read_claim(generation);
     if !generation.reply.is_empty() {
-        let outcomes = if posted_card(generation) {
-            Vec::new()
+        let outcomes = generation.tool_outcomes();
+        if posted_card(generation) {
+            // Not regrounded, but a copied model-only context line still goes.
+            let reply = strip_context_copies(&generation.reply, &outcomes);
+            generation.reply = shape_reply(&reply, &[], catalog);
         } else {
-            generation.tool_outcomes()
-        };
-        generation.reply = shape_reply(&generation.reply, &outcomes, catalog);
+            generation.reply = shape_reply(&generation.reply, &outcomes, catalog);
+        }
     }
 }

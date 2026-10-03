@@ -29,6 +29,16 @@ const V4_WEEK_DESCRIPTION: &str = "Use 'this' or 'next' for calendar Monday-Sund
 /// upcoming runs left in this boss week.
 const V5_WEEK_DESCRIPTION: &str = "Use 'this' or 'next' for calendar Monday-Sunday weeks. Use 'this_boss' or 'next_boss' only when the member explicitly says boss week. Use 'auto' for a bare weekday or today, tonight, or tomorrow. For 'next run' or 'when is my next' asks, use 'auto' and omit day: it lists the upcoming runs left in this boss week, earliest first. For 'next week', set week to 'next' and omit day.";
 
+/// D-AUTO-FORWARD's estimated-token cost on the full-set and read-only surfaces.
+const FORWARD_TOKENS: [u64; 2] = [47, 48];
+const V4_SCHEDULE_DESCRIPTION: &str = "Runs for a calendar or boss week: day, time, bosses, status and RSVP count. Use for schedule questions; never offer past runs as next or upcoming.";
+/// D-VOICED-CARD / D-PERSONAL-CONTEXT (user decisions 2026-10-03): the model
+/// cites runs by id instead of retelling the records shown under its reply,
+/// and may voice a personal result's model-only context.
+const V5_SCHEDULE_DESCRIPTION: &str = "Runs for a calendar or boss week: day, time, bosses, status and RSVP count. Use for schedule questions; never offer past runs as next or upcoming. Each run's record is shown under your reply: cite a run by its [id] and never retell its day, time, status, RSVP count or channel. A personal result's 'Context (hidden from members)' line is for you: say its phrases in your own words, never copy the line.";
+const V4_SCOPE_DESCRIPTION: &str = "Use 'channel' only for explicit 'this channel'/'here'/'our runs'. Bare dates ask the whole group: use 'all' (default). The bot @mention is not a qualifier. When answering from 'all', say each run's channel.";
+const V5_SCOPE_DESCRIPTION: &str = "Use 'channel' only for explicit 'this channel'/'here'/'our runs'. Bare dates ask the whole group: use 'all' (default). The bot @mention is not a qualifier.";
+
 fn surface(read_only: bool) -> Value {
     let offer = ToolOffer::full_set(read_only);
     let tools = offer.tools();
@@ -93,6 +103,20 @@ fn auto_forward_text(seasonal_text: &str) -> String {
     seasonal_text.replacen(&old, &new, 1)
 }
 
+fn voiced_text(forward_text: &str) -> String {
+    let mut text = forward_text.to_owned();
+    for (v4, v5) in [
+        (V4_SCHEDULE_DESCRIPTION, V5_SCHEDULE_DESCRIPTION),
+        (V4_SCOPE_DESCRIPTION, V5_SCOPE_DESCRIPTION),
+    ] {
+        let old = format!("\"description\":\"{v4}\"");
+        let new = format!("\"description\":\"{v5}\"");
+        assert_eq!(text.matches(&old).count(), 1, "frozen schema text");
+        text = text.replacen(&old, &new, 1);
+    }
+    text
+}
+
 fn named() -> Vec<Named> {
     let vector = load("tool_schemas.json");
     let steps = vector["cases"][0]["expected"]["steps"].as_array().unwrap();
@@ -100,6 +124,7 @@ fn named() -> Vec<Named> {
     let read_only = surface(true);
     let mut seasonal_entries = Vec::new();
     let mut forward_entries = Vec::new();
+    let mut voiced_entries = Vec::new();
     for (step, actual) in [(0, &full), (1, &read_only)] {
         let v4_tokens = steps[step]["value"]["tokens"].as_u64().expect("tokens");
         let seasonal_tokens = v4_tokens + SEASONAL_TOKENS;
@@ -146,13 +171,42 @@ fn named() -> Vec<Named> {
                 "surface",
                 format!("/steps/{step}/value/tokens"),
                 json!(seasonal_tokens),
-                actual["tokens"].clone(),
+                json!(seasonal_tokens + FORWARD_TOKENS[step]),
             ),
             dev(
                 "surface",
                 format!("/steps/{step}/value/text"),
                 json!(seasonal_text),
                 json!(auto_forward_text(&seasonal_text)),
+            ),
+        ]);
+        let forward_text = auto_forward_text(&seasonal_text);
+        voiced_entries.extend([
+            dev(
+                "surface",
+                format!("/steps/{step}/value/tools/0/function/description"),
+                json!(V4_SCHEDULE_DESCRIPTION),
+                json!(V5_SCHEDULE_DESCRIPTION),
+            ),
+            dev(
+                "surface",
+                format!(
+                    "/steps/{step}/value/tools/0/function/parameters/properties/scope/description"
+                ),
+                json!(V4_SCOPE_DESCRIPTION),
+                json!(V5_SCOPE_DESCRIPTION),
+            ),
+            dev(
+                "surface",
+                format!("/steps/{step}/value/tokens"),
+                json!(seasonal_tokens + FORWARD_TOKENS[step]),
+                actual["tokens"].clone(),
+            ),
+            dev(
+                "surface",
+                format!("/steps/{step}/value/text"),
+                json!(forward_text),
+                json!(voiced_text(&forward_text)),
             ),
         ]);
     }
@@ -174,6 +228,10 @@ fn named() -> Vec<Named> {
         Named {
             name: "D-AUTO-FORWARD",
             entries: forward_entries,
+        },
+        Named {
+            name: "D-VOICED-CARD",
+            entries: voiced_entries,
         },
     ]
 }

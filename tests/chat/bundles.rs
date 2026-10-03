@@ -155,8 +155,8 @@ fn a_read_question_costs_far_less_prompt_than_v4s_surface() {
     let full_read_only = ToolOffer::full_set(true).estimated_tokens();
     let read = ToolOffer::dynamic([], false).estimated_tokens();
     // D-SEASONAL-LIST adds 49 estimated tokens to each full-set surface and
-    // D-AUTO-FORWARD 47 (48 on the read-only one).
-    assert_eq!((full, full_read_only), (3143, 1142));
+    // D-AUTO-FORWARD 47 (48 on the read-only one), D-VOICED-CARD 74 (73).
+    assert_eq!((full, full_read_only), (3217, 1215));
     assert!(
         read * 2 < full,
         "{read} tokens for a read question vs {full}"

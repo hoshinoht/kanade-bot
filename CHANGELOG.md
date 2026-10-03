@@ -6,6 +6,13 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 chat answers schedule questions in the persona's own words: the model
+  cites runs by id, grounding shows each cited id as the run's boss name and
+  puts the run's card under that paragraph without the listing heading, and
+  personal results give the model hidden context (time until the run, the
+  asker's own answer, who has not answered) that members never see raw. A
+  citing line that states any schedule fact beyond that context becomes the
+  card; the rule is deliberately simple and will be tuned from live traces.
 - v5 admin Config: Pings countdowns are chips with × to remove and an Add
   field (a duplicate is skipped); Re-read uses channel checkbox chips and a
   running-job card (progress, what it found, Cancel), also on Extractions;

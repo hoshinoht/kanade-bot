@@ -1,14 +1,16 @@
 //! Keep listed schedule facts in the tool's canonical rendering (v4
 //! `_ground_schedule_reply`).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
 use regex::Regex;
 
+use super::cite::{states_fact, voiced};
 use super::dated::{named_by_date, records};
 use super::fence::fenced;
 use super::listing::Block;
+use super::personal::{split, strip_context_copies};
 use super::tidy::SCHEDULE_RUN_LINE;
 use super::{pattern, pattern_i, splitlines};
 use crate::chat::tools::{ToolName, ToolOutcome};
@@ -133,14 +135,20 @@ fn invented(line: &str, outcomes: &[ToolOutcome]) -> bool {
 /// no schedule text keeps it with the listing appended. Only a reply with
 /// none of these (no
 /// code, no invented lines or such sentences, every run named or none)
-/// grounds exactly as v4.
+/// grounds exactly as v4. `D-VOICED-CARD`: a cited id reads as the run's
+/// label, and records under a kept sentence come without the listing's
+/// heading. `D-PERSONAL-CONTEXT`: context lines never reach the reply.
 pub(super) fn ground(reply: &str, outcomes: &[ToolOutcome], catalog: &BossTable) -> Grounded {
-    let Some(schedule) = canonical_schedule_output(outcomes) else {
+    let reply = strip_context_copies(reply, outcomes);
+    let reply = reply.as_str();
+    let Some(raw) = canonical_schedule_output(outcomes) else {
         return Grounded {
             text: reply.to_owned(),
             block: None,
         };
     };
+    let (schedule, contexts) = split(raw);
+    let schedule = schedule.as_str();
     let full = |text: String| Grounded {
         text,
         block: Some(Block::full(schedule)),
@@ -161,11 +169,18 @@ pub(super) fn ground(reply: &str, outcomes: &[ToolOutcome], catalog: &BossTable)
     let mut guesses: Vec<(usize, usize)> = Vec::new();
     let mut named: BTreeSet<String> = BTreeSet::new();
     let mut sentences: Vec<usize> = Vec::new();
+    // Kept sentences citing ids, as members see them.
+    let mut cited: BTreeMap<usize, String> = BTreeMap::new();
+    // The runs whose records go at each kept sentence's paragraph end.
+    let mut introduces: BTreeMap<usize, BTreeSet<String>> = BTreeMap::new();
     // Id-less sentences that name runs by date and time (`dated`), used
     // only when no other id-less fact line goes unchecked.
     let dated = records(schedule);
     let mut by_date: Vec<(usize, BTreeSet<String>)> = Vec::new();
     let mut stray = false;
+    // Id-less lines stating a fact under the closed rule; dropped beside a
+    // kept voiced line, whose cards they would only retell.
+    let mut factual: BTreeSet<usize> = BTreeSet::new();
     // A kept sentence: an empty span at its paragraph's end takes the records.
     let after_paragraph = |at: usize| {
         let mut end = at + 1;
@@ -195,17 +210,25 @@ pub(super) fn ground(reply: &str, outcomes: &[ToolOutcome], catalog: &BossTable)
             named.extend(named_ids(next.unwrap_or_default(), &ids));
             spans.push((index, index + 2));
             index += 2;
-        } else if known(line) && has_schedule_facts(line) {
+        } else if known(line) {
             named.extend(named_ids(line, &ids));
-            if is_sentence(line) {
-                spans.push(after_paragraph(index));
-                sentences.push(index);
-            } else {
-                spans.push((index, index + 1));
+            match voiced(line, &ids, &dated, &contexts) {
+                Some(text) => {
+                    let span = after_paragraph(index);
+                    introduces
+                        .entry(span.0)
+                        .or_default()
+                        .extend(named_ids(line, &ids));
+                    spans.push(span);
+                    sentences.push(index);
+                    cited.insert(index, text);
+                }
+                // A line stating a fact: its runs' cards instead.
+                None => spans.push((index, index + 1)),
             }
             index += 1;
         } else if let Some(found) = (is_sentence(line) && has_schedule_facts(line))
-            .then(|| named_by_date(line, &dated, catalog))
+            .then(|| named_by_date(line, &dated, &contexts, catalog))
             .flatten()
         {
             by_date.push((index, found));
@@ -222,26 +245,30 @@ pub(super) fn ground(reply: &str, outcomes: &[ToolOutcome], catalog: &BossTable)
             index = end;
         } else {
             // An unchecked fact line keeps the reply on the rules above.
-            stray |= has_schedule_facts(line) && !known(line);
+            stray |= has_schedule_facts(line);
+            if states_fact(line) {
+                factual.insert(index);
+            }
             index += 1;
         }
     }
+    if cited.is_empty() {
+        factual.clear();
+    }
     if !stray {
         for (at, found) in by_date {
+            let span = after_paragraph(at);
+            introduces.entry(span.0).or_default().extend(found.clone());
             named.extend(found);
-            spans.push(after_paragraph(at));
+            spans.push(span);
             sentences.push(at);
         }
     }
 
     if !spans.is_empty() {
-        let partial = named != ids;
-        let block = if partial {
-            Block::only(schedule, &named).filter(|block| !block.text.is_empty())
-        } else {
-            None
-        };
-        let partial = block.is_some();
+        // Only kept sentences (no retold records): each paragraph gets the
+        // records of the runs it introduces.
+        let only_sentences = spans.iter().all(|(start, end)| start == end);
         // `(start, end, real)`: the listing goes at the first real run.
         let mut tagged: Vec<(usize, usize, bool)> = spans
             .into_iter()
@@ -266,6 +293,15 @@ pub(super) fn ground(reply: &str, outcomes: &[ToolOutcome], catalog: &BossTable)
                 first_real = Some(blocks.len() - 1);
             }
         }
+        // Records placed under a kept sentence: the sentence introduces them,
+        // so no listing heading repeats it (`D-VOICED-CARD`).
+        let introduced = first_real.is_some_and(|number| inserted[number]);
+        let block = if named != ids || introduced {
+            Block::only(schedule, &named).filter(|block| !block.text.is_empty())
+        } else {
+            None
+        };
+        let partial = block.is_some();
         for (block, &inserted) in blocks.iter_mut().zip(&inserted) {
             let mut heading = block[0];
             while heading > 0 && blank(heading - 1) {
@@ -290,23 +326,45 @@ pub(super) fn ground(reply: &str, outcomes: &[ToolOutcome], catalog: &BossTable)
             }
         }
         let block = block.unwrap_or_else(|| Block::full(schedule));
+        let mut pieces: Vec<Option<String>> = vec![None; blocks.len()];
+        if let Some(first) = first_real {
+            pieces[first] = Some(block.text.clone());
+        }
+        if partial && introduced && only_sentences {
+            let mut placed: BTreeSet<String> = BTreeSet::new();
+            for (piece, [start, end]) in pieces.iter_mut().zip(&blocks) {
+                let runs: BTreeSet<String> = introduces
+                    .range(*start..=*end)
+                    .flat_map(|(_, runs)| runs.iter().cloned())
+                    .filter(|run| placed.insert(run.clone()))
+                    .collect();
+                *piece = Block::only(schedule, &runs)
+                    .map(|block| block.text)
+                    .filter(|text| !text.is_empty());
+            }
+        }
+        let shown: Vec<Option<&str>> = (0..lines.len())
+            .map(|at| {
+                (!factual.contains(&at)).then(|| cited.get(&at).map_or(lines[at], String::as_str))
+            })
+            .collect();
         let mut rebuilt: Vec<&str> = Vec::new();
         let mut cursor = 0;
         for (number, [start, end]) in blocks.iter().copied().enumerate() {
-            rebuilt.extend_from_slice(&lines[cursor..start]);
-            if Some(number) == first_real {
+            rebuilt.extend(shown[cursor..start].iter().flatten());
+            if let Some(piece) = &pieces[number] {
                 // Set off from the sentence above and whatever follows.
                 if inserted[number] {
                     rebuilt.push("");
                 }
-                rebuilt.extend(splitlines(&block.text));
+                rebuilt.extend(splitlines(piece));
                 if inserted[number] && end < lines.len() && !blank(end) {
                     rebuilt.push("");
                 }
             }
             cursor = end;
         }
-        rebuilt.extend_from_slice(&lines[cursor..]);
+        rebuilt.extend(shown[cursor..].iter().flatten());
         return Grounded {
             text: strip(&rebuilt.join("\n")).to_owned(),
             block: Some(block),

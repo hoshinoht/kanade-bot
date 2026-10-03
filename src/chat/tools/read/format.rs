@@ -151,6 +151,75 @@ pub fn run_line(
     )
 }
 
+/// Opens the model-only context line under a personal `get_schedule` record
+/// (`D-PERSONAL-CONTEXT`); grounding strips it before members see anything.
+pub const CONTEXT_LABEL: &str = "Context (hidden from members): ";
+
+/// How far off a run is, in the small vocabulary grounding accepts: a day
+/// phrase (`today`, `tonight` from 18:00, `tomorrow`, `in N days`) and,
+/// within 12 hours, `in N minutes`/`in N hours` (rounded to the nearest).
+fn time_until(run: &Run, now: DateTime<Utc>, zone: Tz) -> Vec<String> {
+    let (wall, today) = (local(&run.datetime, zone), local(&now, zone).date());
+    let days = (wall.date() - today).num_days();
+    let day = match days {
+        0 if wall.hour() >= 18 => "tonight".to_owned(),
+        0 => "today".to_owned(),
+        1 => "tomorrow".to_owned(),
+        _ => format!("in {days} days"),
+    };
+    let mut phrases = vec![day];
+    let minutes = (run.datetime - now).num_minutes().max(1);
+    let unit =
+        |count: i64, one: &str| format!("in {count} {one}{}", if count == 1 { "" } else { "s" });
+    if minutes < 60 {
+        phrases.push(unit(minutes, "minute"));
+    } else if minutes < 12 * 60 {
+        phrases.push(unit((minutes + 30) / 60, "hour"));
+    }
+    phrases
+}
+
+/// `A`, `A and B`, `A, B and C`.
+fn names_list(names: &[String]) -> String {
+    match names {
+        [] => String::new(),
+        [only] => only.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+/// The model-only context for one upcoming run in a personal listing: time
+/// until it from the turn clock, the asker's own answer when `asker` is set
+/// (the listing is theirs), and the party members without an answer.
+pub fn run_context(
+    world: &ToolWorld<'_>,
+    run: &Run,
+    asker: Option<&str>,
+    now: DateTime<Utc>,
+) -> Option<String> {
+    if is_over(run, now) {
+        return None;
+    }
+    let answers = rsvps(world, &run.id);
+    let mut phrases = time_until(run, now, world.zone);
+    if let Some(asker) = asker {
+        phrases.push(match answers.get(asker) {
+            Some(state) => format!("you said {state}"),
+            None => "you haven't answered".to_owned(),
+        });
+    }
+    let waiting: Vec<String> = run
+        .participants
+        .iter()
+        .filter(|uid| Some(uid.as_str()) != asker && !answers.contains_key(uid.as_str()))
+        .map(|uid| member_name(world.directory, uid))
+        .collect();
+    if !waiting.is_empty() {
+        phrases.push(format!("no answer yet from {}", names_list(&waiting)));
+    }
+    Some(format!("{CONTEXT_LABEL}{}", phrases.join(" · ")))
+}
+
 /// The full view of one run.
 pub fn run_detail(world: &ToolWorld<'_>, run: &Run) -> String {
     let wall = local(&run.datetime, world.zone);

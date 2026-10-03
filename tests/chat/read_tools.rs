@@ -8,7 +8,7 @@ use kanade::infrastructure::llm::identity::PassthroughSession;
 use serde_json::{Value, json};
 
 use crate::common::{instant, text};
-use crate::support::{check_family, load, unknown_op, value};
+use crate::support::{Named, check_family, dev, load, unknown_op, value};
 use crate::world::World;
 
 /// v4 `host.outcome`; `posted` is the cards the call handed over for posting.
@@ -42,9 +42,45 @@ async fn replay(case: Value) -> Vec<Value> {
     out
 }
 
+/// `D-PERSONAL-CONTEXT` (user decision 2026-10-03): a personal listing's
+/// upcoming records carry a model-only context line (grounding strips it).
+fn personal_context() -> Named {
+    let vectors = load("read_tools.json");
+    let case = vectors["cases"]
+        .as_array()
+        .expect("cases")
+        .iter()
+        .find(|case| case["case_id"] == "schedule-scope-and-people")
+        .expect("case");
+    let entries = [
+        (3, "tonight · in 10 hours · you haven't answered"),
+        (4, "tonight · in 10 hours · no answer yet from kanon"),
+        (7, "in 3 days · you said no · no answer yet from Mei"),
+    ]
+    .into_iter()
+    .map(|(step, context)| {
+        let v4 = text(&case["expected"]["steps"][step]["value"]["output"]).to_owned();
+        let v5 = format!("{v4}\nContext (hidden from members): {context}");
+        dev(
+            "schedule-scope-and-people",
+            format!("/steps/{step}/value/output"),
+            json!(v4),
+            json!(v5),
+        )
+    })
+    .collect();
+    Named {
+        name: "D-PERSONAL-CONTEXT",
+        entries,
+    }
+}
+
 #[tokio::test]
 async fn the_read_tools_family_replays_exactly() {
-    assert_eq!(check_family("read_tools", &[], replay).await, (7, 74));
+    assert_eq!(
+        check_family("read_tools", &[personal_context()], replay).await,
+        (7, 74)
+    );
 }
 
 #[tokio::test]
@@ -260,6 +296,10 @@ fn strategy_guides_render_tracked_knowledge_in_the_v4_shape() {
 /// planned runs on Mon 5 and Tue 6 Oct (this boss week, next calendar week)
 /// and Fri 9 Oct (next boss week); member 44's only run is done.
 async fn forward_world() -> World {
+    forward_world_with(json!([])).await
+}
+
+async fn forward_world_with(rsvps: Value) -> World {
     let vectors = load("read_tools.json");
     let mut input = vectors["cases"][0]["input"].clone();
     input["clock"] = json!("2026-10-03T16:24:00+08:00");
@@ -281,7 +321,7 @@ async fn forward_world() -> World {
         "2026-10-08T00:00:00+08:00",
     );
     input["world"]["fixed"] = json!([]);
-    input["world"]["rsvps"] = json!([]);
+    input["world"]["rsvps"] = rsvps;
     input["world"]["runs"] = json!([
         run(
             "d1d1d1d1-0000-4000-8000-000000000001",
@@ -420,20 +460,24 @@ async fn auto_without_a_day_reads_what_is_left_of_this_boss_week() {
     };
     let mine = json!({"participant": "<@11>", "week": "auto"});
 
-    // The live shape: a singular "next run" is just Mon 5 Oct.
+    // The live shape: a singular "next run" is just Mon 5 Oct, with the
+    // model-only context line (D-PERSONAL-CONTEXT).
     let next = run("11", "700", mine.clone(), "<@5000> when is my next run?").await;
     assert_eq!(
         next,
         "**Your next run · All channels**\n\n\
-         `[e1e1e1e1]` **Hard MaleficStar + Hard FA**\n*Mon 05 Oct · 21:00* · `planned` · `0/2 yes` · <#900>"
+         `[e1e1e1e1]` **Hard MaleficStar + Hard FA**\n*Mon 05 Oct · 21:00* · `planned` · `0/2 yes` · <#900>\n\
+         Context (hidden from members): in 2 days · you haven't answered · no answer yet from kanon"
     );
     // A plural ask lists this boss week's rest, never Fri 9 Oct (next boss week).
     let plural = run("11", "700", mine.clone(), "<@5000> when are my next runs?").await;
     assert_eq!(
         plural,
         "**Your 2 upcoming runs this boss week · All channels**\n\n\
-         `[e1e1e1e1]` **Hard MaleficStar + Hard FA**\n*Mon 05 Oct · 21:00* · `planned` · `0/2 yes` · <#900>\n\n\
-         `[e2e2e2e2]` **Hard Baldrix**\n*Tue 06 Oct · 22:00* · `planned` · `0/1 yes` · <#700>"
+         `[e1e1e1e1]` **Hard MaleficStar + Hard FA**\n*Mon 05 Oct · 21:00* · `planned` · `0/2 yes` · <#900>\n\
+         Context (hidden from members): in 2 days · you haven't answered · no answer yet from kanon\n\n\
+         `[e2e2e2e2]` **Hard Baldrix**\n*Tue 06 Oct · 22:00* · `planned` · `0/1 yes` · <#700>\n\
+         Context (hidden from members): in 3 days · you haven't answered"
     );
     // Forward from now whatever the question said; earlier done runs never show.
     assert_eq!(run("11", "700", mine.clone(), "my schedule").await, plural);
@@ -475,7 +519,8 @@ async fn auto_without_a_day_reads_what_is_left_of_this_boss_week() {
     assert_eq!(
         run("11", "700", here.clone(), "my upcoming runs in here").await,
         "**Your 1 upcoming run this boss week · This channel**\n\n\
-         `[e2e2e2e2]` **Hard Baldrix**\n*Tue 06 Oct · 22:00* · `planned` · `0/1 yes`"
+         `[e2e2e2e2]` **Hard Baldrix**\n*Tue 06 Oct · 22:00* · `planned` · `0/1 yes`\n\
+         Context (hidden from members): in 3 days · you haven't answered"
     );
     assert_eq!(
         run("11", "703", here, "my upcoming runs in here").await,
@@ -542,4 +587,75 @@ async fn auto_without_a_day_reads_what_is_left_of_this_boss_week() {
         run(done).await,
         "**No upcoming runs for you this boss week.**"
     );
+}
+
+/// D-PERSONAL-CONTEXT (user decision 2026-10-03): the context vocabulary is
+/// relative to the turn clock in the guild zone; the asker's own answer
+/// shows only on their own listing, and group listings carry no context.
+#[tokio::test]
+async fn personal_listings_carry_a_model_only_context_line() {
+    let answers = json!([
+        {"run_id": "e1e1e1e1-0000-4000-8000-000000000006", "state": "yes", "user_id": "11"},
+    ]);
+    let mut world = forward_world_with(answers).await;
+    let mut session = PassthroughSession;
+    let label = "Context (hidden from members): ";
+    let cases = [
+        // Mon 5 Oct 19:30: Hard MaleficStar + Hard FA at 21:00 tonight.
+        (
+            "2026-10-05T19:30:00+08:00",
+            "11",
+            json!({"participant": "me", "week": "auto"}),
+            vec![
+                "tonight · in 2 hours · you said yes · no answer yet from kanon",
+                "tomorrow · you haven't answered",
+            ],
+        ),
+        (
+            "2026-10-05T20:40:00+08:00",
+            "11",
+            json!({"participant": "me", "week": "auto"}),
+            vec![
+                "tonight · in 20 minutes · you said yes · no answer yet from kanon",
+                "tomorrow · you haven't answered",
+            ],
+        ),
+        (
+            "2026-10-05T09:00:00+08:00",
+            "11",
+            json!({"participant": "me", "week": "auto"}),
+            vec![
+                // Twelve hours out is past the hour phrase's reach.
+                "tonight · you said yes · no answer yet from kanon",
+                "tomorrow · you haven't answered",
+            ],
+        ),
+        // Another member's listing: no own answer, the asker not singled out.
+        (
+            "2026-10-05T19:30:00+08:00",
+            "22",
+            json!({"participant": "<@11>", "week": "auto"}),
+            vec![
+                "tonight · in 2 hours · no answer yet from kanon",
+                "tomorrow · no answer yet from Alvin tan",
+            ],
+        ),
+        // A group listing has none.
+        (
+            "2026-10-05T19:30:00+08:00",
+            "11",
+            json!({"week": "auto"}),
+            vec![],
+        ),
+    ];
+    for (clock, author, arguments, expected) in cases {
+        world.clock.set(instant(&json!(clock)));
+        let step = schedule_step(author, "700", arguments, "my runs");
+        let output = world.run_tool(&step, &mut session).await.output;
+        let contexts: Vec<&str> = output
+            .lines()
+            .filter_map(|line| line.strip_prefix(label))
+            .collect();
+        assert_eq!(contexts, expected, "{clock} {output}");
+    }
 }

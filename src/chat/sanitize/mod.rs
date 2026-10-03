@@ -5,6 +5,7 @@
 //! sees it. Pure string functions; patterns that used lookaround in v4 are
 //! emulated explicitly (`regex` has none).
 
+mod cite;
 mod claims;
 mod dated;
 mod defaults;
@@ -13,6 +14,7 @@ mod ground;
 mod listing;
 mod member;
 mod notes;
+mod personal;
 mod shape;
 mod split;
 mod tidy;
@@ -22,6 +24,7 @@ pub use defaults::{ScheduleDefaults, schedule_defaults};
 pub use ground::{canonical_schedule_output, ground_schedule_reply};
 pub use member::member_facing;
 pub use notes::{SPOOFED_NOTE, defuse_notes};
+pub use personal::strip_context_copies;
 pub use shape::shape_reply;
 pub use split::{MAX_REPLY_PARTS, TRIMMED, reply_parts};
 pub use tidy::{tidy, unglue_first_bullet};

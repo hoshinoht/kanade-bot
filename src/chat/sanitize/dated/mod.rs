@@ -1,7 +1,8 @@
 //! Fact-check an id-less sentence against the listing's records by date and
 //! time (`D-GROUND-FILTERED`, user decisions 2026-10-03). Fail-closed: the
 //! sentence is kept only when every fact-like token in it was read and
-//! matches the one run it picks; anything left over falls back.
+//! matches the one run it picks; anything left over falls back. Lines that
+//! cite runs by id use `cite`'s closed rule instead.
 
 mod boss;
 
@@ -10,7 +11,8 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use super::{pattern, pattern_i};
+use super::personal::Contexts;
+use super::{is_word, pattern, pattern_i};
 use crate::domain::catalog::BossTable;
 use boss::bosses_match;
 
@@ -54,18 +56,22 @@ static SAID_STATUS: LazyLock<Regex> = LazyLock::new(|| {
 });
 static SAID_CHANNEL: LazyLock<Regex> = LazyLock::new(|| pattern(r"<#([0-9]+)>|\[#([0-9]+)\]"));
 /// Facts no check reads, so their presence alone falls back: a relative day
-/// (grounding has no clock), a negation, an am/pm marker, a `#name` channel
+/// or time (grounding has no clock; only a run's own context phrases are
+/// blanked out first), a negation, an RSVP answer claim, an am/pm marker, a `#name` channel
 /// (the listing has only `<#id>`), a bare 8-hex run id, and counts, dates
 /// and statuses in words that no check reads (number words, ordinals,
 /// quantifiers, `un`-statuses and status synonyms).
 static UNREAD: LazyLock<Regex> = LazyLock::new(|| {
     pattern_i(concat!(
-        r"\b(?:today|tonight|tonite|tomorrow|tmrw?|tmw|yesterday|(?:this|next|last|coming)\s+(?:week|weekend|month|morning|afternoon|evening|night|mon|tue|wed|thu|fri|sat|sun)[a-z]*|in\s+[0-9]+\s+(?:days?|weeks?)|day\s+after)\b",
+        r"\b(?:today|tonight|tonite|tomorrow|tmrw?|tmw|yesterday|(?:this|next|last|coming)\s+(?:week|weekend|month|morning|afternoon|evening|night|mon|tue|wed|thu|fri|sat|sun)[a-z]*|in\s+[0-9]+\s+(?:days?|weeks?|hours?|minutes?|mins?)|day\s+after)\b",
+        r"|\bin\s+(?:an?|a\s+few|a\s+couple(?:\s+of)?|few|couple(?:\s+of)?)\s+(?:hours?|minutes?|mins?|days?|weeks?)\b",
+        r"|\b(?:maybe|skip(?:s|ped|ping)?)\b",
+        r"|\bsaid\s+(?:no|maybe)\b|\bno\s+(?:answers?|repl(?:y|ies)|responses?|rsvps?)\b",
         r"|\b(?:not|never|cannot|no\s+longer)\b|n['’]t\b",
         r"|\b[ap]\.\s?m\b|\bpm\b|[0-9]\s*am\b",
         r"|(?:^|[^<\[\w])#[a-z_][\w-]*",
         r"|\b[0-9a-f]{8}\b",
-        r"|\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|dozen|half|both|couple|several|few)\b",
+        r"|\b(?:zero|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|dozen|half|both|couple|several|few)\b",
         // An ordinal only where it can be a date: after `the` or a month, or
         // before `of` or a month; "its first ✅" is flavour, not a fact.
         r"|(?:\bthe|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?)\s+(?:(?:twenty|thirty)[\s-]?)?(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|thirtieth)\b",
@@ -76,9 +82,29 @@ static UNREAD: LazyLock<Regex> = LazyLock::new(|| {
     ))
 });
 
+static ONE: LazyLock<Regex> = LazyLock::new(|| pattern(r"\bone\b"));
+/// Words before `one` that make it a pronoun ("your next one"), not a count.
+const PRONOUN_ONE: [&str; 10] = [
+    "next", "this", "that", "which", "each", "every", "the", "last", "other", "another",
+];
+
+/// `one` as a count; after a determiner it is a pronoun and reads nothing.
+fn counts_one(lowered: &str) -> bool {
+    ONE.find_iter(lowered).any(|found| {
+        let before = lowered[..found.start()].trim_end();
+        let word = before
+            .rsplit(|c: char| !c.is_ascii_alphanumeric())
+            .next()
+            .unwrap_or_default();
+        !PRONOUN_ONE.contains(&word)
+    })
+}
+
 /// One listed run's checkable facts.
 pub(super) struct Dated {
-    id: String,
+    pub(super) id: String,
+    /// The record's bold boss label as written.
+    pub(super) label: String,
     boss: String,
     weekday: String,
     day: u32,
@@ -98,6 +124,10 @@ pub(super) fn records(schedule: &str) -> Vec<Dated> {
             let when = WHEN.captures(paragraph)?;
             Some(Dated {
                 id,
+                label: BOSS
+                    .captures(paragraph)
+                    .map(|found| found[1].to_owned())
+                    .unwrap_or_default(),
                 boss: BOSS
                     .captures(paragraph)
                     .map(|found| found[1].to_lowercase())
@@ -162,28 +192,117 @@ fn dates(lowered: &str) -> Vec<((u32, String), (usize, usize))> {
     found
 }
 
+/// `line` and its ASCII lowering with each of the run's context phrases
+/// (`D-PERSONAL-CONTEXT`) blanked out between non-word characters, so a
+/// phrase that is that run's context is read and anything else is not.
+pub(super) fn blank_context(line: &str, phrases: &[String]) -> (String, String) {
+    let mut masked = line.to_owned();
+    let mut lowered = line.to_ascii_lowercase();
+    for phrase in phrases {
+        let phrase = phrase.to_ascii_lowercase();
+        if phrase.is_empty() {
+            continue;
+        }
+        let mut from = 0;
+        while let Some(found) = lowered[from..].find(&phrase) {
+            let (start, end) = (from + found, from + found + phrase.len());
+            let bounded = !lowered[..start].chars().next_back().is_some_and(is_word)
+                && !lowered[end..].chars().next().is_some_and(is_word);
+            if bounded {
+                let spaces = " ".repeat(end - start);
+                masked.replace_range(start..end, &spaces);
+                lowered.replace_range(start..end, &spaces);
+            }
+            from = end;
+        }
+    }
+    (masked, lowered)
+}
+
+/// Whether every fact-like token in `line` was read and matches `run`: each
+/// time, date, weekday, tally, status, channel, catalog boss, difficulty and
+/// bold span, with no relative day, negation, am/pm, `#name` or id beyond
+/// the run's own context phrases, and no digit left unread.
+fn states_only(line: &str, run: &Dated, phrases: &[String], catalog: &BossTable) -> bool {
+    let (masked, lowered) = blank_context(line, phrases);
+    if UNREAD.is_match(&lowered) || counts_one(&lowered) {
+        return false;
+    }
+    let mut read = Read(vec![false; lowered.len()]);
+    for c in TIME.captures_iter(&lowered) {
+        let said: Option<(u32, u32)> = c[1].parse().ok().zip(c[2].parse().ok());
+        let Some(span) = c.get(0).filter(|_| said == Some(run.time)) else {
+            return false;
+        };
+        read.mark(span.start(), span.end());
+    }
+    for ((day, month), (start, end)) in &dates(&lowered) {
+        if (*day, month.as_str()) != (run.day, run.month.as_str()) {
+            return false;
+        }
+        read.mark(*start, *end);
+    }
+    if WEEKDAY
+        .captures_iter(&lowered)
+        .any(|c| c[1] != *run.weekday)
+    {
+        return false;
+    }
+    for c in SAID_TALLY.captures_iter(&lowered) {
+        let Some(span) = c
+            .get(0)
+            .filter(|_| c[1].parse().ok().zip(c[2].parse().ok()) == run.tally)
+        else {
+            return false;
+        };
+        read.mark(span.start(), span.end());
+    }
+    if SAID_ANSWER
+        .find_iter(&lowered)
+        .any(|m| !read.covers(m.start(), m.end()))
+    {
+        return false;
+    }
+    for c in SAID_STATUS.captures_iter(&lowered) {
+        let said = c[1]
+            .split(|c: char| c.is_whitespace() || c == '_' || c == '-')
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join("_");
+        let said = match said.as_str() {
+            "own_time" => "otot".to_owned(),
+            cancel if cancel.starts_with("cancel") => "cancelled".to_owned(),
+            _ => said,
+        };
+        if run.status.as_deref() != Some(said.as_str()) {
+            return false;
+        }
+    }
+    for c in SAID_CHANNEL.captures_iter(&lowered) {
+        let said = c.get(1).or(c.get(2)).map(|m| m.as_str());
+        let Some(span) = c.get(0).filter(|_| run.channel.as_deref() == said) else {
+            return false;
+        };
+        read.mark(span.start(), span.end());
+    }
+    !read.digit_left(&lowered) && bosses_match(&lowered, &masked, &run.boss, catalog)
+}
+
 /// The id of the run a sentence identifies by its one time (narrowed by a
 /// stated date, else weekday, else unique, else the boss it names), when
-/// every fact-like token in it was read and matches that run: time, date,
-/// weekday, tally, status, channel, catalog boss, difficulty and bold span,
-/// with no relative day, negation, am/pm, `#name` or id, and no digit left
-/// unread. `None` (fall back) otherwise.
+/// it states only that run's facts ([`states_only`]). `None` (fall back)
+/// otherwise.
 pub(super) fn named_by_date(
     line: &str,
     records: &[Dated],
+    contexts: &Contexts,
     catalog: &BossTable,
 ) -> Option<BTreeSet<String>> {
     // ASCII lowering keeps byte offsets shared with `line`.
     let lowered = line.to_ascii_lowercase();
-    if UNREAD.is_match(&lowered) {
-        return None;
-    }
-    let mut read = Read(vec![false; lowered.len()]);
     let mut times: BTreeSet<(u32, u32)> = BTreeSet::new();
     for c in TIME.captures_iter(&lowered) {
         times.insert((c[1].parse().ok()?, c[2].parse().ok()?));
-        let span = c.get(0)?;
-        read.mark(span.start(), span.end());
     }
     let [time] = times.into_iter().collect::<Vec<_>>()[..] else {
         return None;
@@ -207,51 +326,6 @@ pub(super) fn named_by_date(
         found.retain(|r| bosses_match(&lowered, line, &r.boss, catalog));
     }
     let [run] = found[..] else { return None };
-    for ((day, month), (start, end)) in &dates {
-        if (*day, month.as_str()) != (run.day, run.month.as_str()) {
-            return None;
-        }
-        read.mark(*start, *end);
-    }
-    if weekdays.iter().any(|weekday| *weekday != run.weekday) {
-        return None;
-    }
-    for c in SAID_TALLY.captures_iter(&lowered) {
-        if c[1].parse().ok().zip(c[2].parse().ok()) != run.tally {
-            return None;
-        }
-        let span = c.get(0)?;
-        read.mark(span.start(), span.end());
-    }
-    if SAID_ANSWER
-        .find_iter(&lowered)
-        .any(|m| !read.covers(m.start(), m.end()))
-    {
-        return None;
-    }
-    for c in SAID_STATUS.captures_iter(&lowered) {
-        let said = c[1]
-            .split(|c: char| c.is_whitespace() || c == '_' || c == '-')
-            .filter(|part| !part.is_empty())
-            .collect::<Vec<_>>()
-            .join("_");
-        let said = match said.as_str() {
-            "own_time" => "otot".to_owned(),
-            cancel if cancel.starts_with("cancel") => "cancelled".to_owned(),
-            _ => said,
-        };
-        if run.status.as_deref() != Some(said.as_str()) {
-            return None;
-        }
-    }
-    for c in SAID_CHANNEL.captures_iter(&lowered) {
-        let said = c.get(1).or(c.get(2)).map(|m| m.as_str());
-        if run.channel.as_deref() != said {
-            return None;
-        }
-        let span = c.get(0)?;
-        read.mark(span.start(), span.end());
-    }
-    (!read.digit_left(&lowered) && bosses_match(&lowered, line, &run.boss, catalog))
-        .then(|| BTreeSet::from([run.id.clone()]))
+    let phrases = contexts.get(&run.id).map_or(&[][..], Vec::as_slice);
+    states_only(line, run, phrases, catalog).then(|| BTreeSet::from([run.id.clone()]))
 }

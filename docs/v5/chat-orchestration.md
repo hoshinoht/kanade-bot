@@ -167,6 +167,32 @@ are C3. Serve wiring is `chat::driver` (below).
   estimated tokens on the full-set surface, +48 read-only). Explicit
   `this`/`next`, `this_boss`/`next_boss` and `auto` with a day keep their
   periods.
+- `get_schedule` personal context (`D-PERSONAL-CONTEXT`, user decision
+  2026-10-03): when a participant is resolved (headings "Your …" or
+  "Name's …"), each upcoming record in the model's tool result gains a third
+  line `Context (hidden from members): <phrase> · <phrase> …`, added after
+  the reply bound so the records and omission count members see are
+  unchanged. Phrases, from the turn clock in the guild timezone: a day phrase
+  (`today`, `tonight` for a run at 18:00 or later, `tomorrow`, `in N days`
+  by local date) and, under 12 hours away, `in N minutes` (under an hour) or
+  `in N hours` (rounded to the nearest); on the asker's own listing
+  `you said yes`/`you said no`/`you said maybe` or `you haven't answered`;
+  then `no answer yet from A, B and C` for party members (other than the
+  asker) with no RSVP row. Runs already over and group listings get none.
+  Grounding splits these lines off the canonical listing before anything
+  else (members never see them) and drops copied lines from the reply,
+  code fences included: every line carrying the label however dressed (any
+  case, markup, brackets or separator, matched on "hidden from members");
+  every line holding only vocabulary phrases (bullets included, anywhere in
+  the reply, so a lone `**Tonight**` line goes too) or a bare `Context:`
+  heading; any line holding two or more phrases joined by `·`/`•`/`|` (so a
+  citing line that copies them falls back to its cards); and any line that
+  is a copied multi-phrase body from the turn's `get_schedule` results. On
+  a card-posting turn, which is not regrounded, the same stripping still
+  runs. A line citing a run may voice that run's phrases verbatim
+  (`D-VOICED-CARD`); an id-less dated sentence may too, its phrases blanked
+  before the `dated` check, where `said no`/`maybe`, `skip`, `no answer` and
+  word-form relative times (`in an hour`) are unread facts.
 - Clean retry (reserved request): a malformed, empty or undecodable answer
   (including a reply the runner rejects as unreadable) or a content-filtered
   one (`ContentFiltered`) is
@@ -254,7 +280,42 @@ are C3. Serve wiring is `chat::driver` (below).
   reply with code but no schedule text keeps its text, listing appended).
   Grounding matches v4 exactly only for a reply without fenced code,
   invented record lines or run-naming sentences that names every run or
-  none. `D-GROUND-WRITE`
+  none. `D-VOICED-CARD` (user decision 2026-10-03, "Voiced line + card"):
+  the `get_schedule` description asks the model to cite runs by `[id]`
+  instead of retelling day, time, status, RSVP count or channel (and drops
+  v4's "say each run's channel" scope note; +74 estimated tokens on the
+  full-set surface, +73 read-only). One closed rule decides every line that
+  names a listed id in any form (`[id]`, `` `id` ``, bare, `` `[id]` ``,
+  any case), whatever its shape or ending, record heads (`` `[id]` **Boss**
+  … ``) included; only a full two-line retold record or `**day — boss**`
+  pair takes the record path. Blank out the line's ids, the glue "your next
+  one/run", and the exact context phrases (`D-PERSONAL-CONTEXT`) of the runs
+  it cites; if what remains states no schedule fact, the line is kept as
+  voicing with each id read as the run's bold label (an id right beside the
+  label, or a parenthesised id in a line that names it, is dropped
+  instead). A fact is any digit (any script), a weekday or month name or
+  abbreviation (not `may`), a relative-time or comparison word (`today`,
+  `tonight`, `tomorrow`, `week`, `day(s)`, `hour(s)`, `same`, `too`,
+  `also`, `before`, `after`, `later`, `soon`, `then`, `next`, `last`,
+  `first`, `now`, `already`…), an answer or status word (`yes`, `said`,
+  `answered`, `rsvp`, `replied`, `declined`, `maybe`, `skip`, `planned`,
+  `confirmed`, `at risk`, `otot`, `own time`, `done`, `cancelled`,
+  `postponed`…), a channel (`<#id>`, `#name`) or a member mention
+  (`<@id>`, `@name`). Otherwise the line is replaced by the cards of the runs
+  it cites, even when every retold fact is right. Beside a kept voiced
+  line, any id-less prose line stating such a fact (and not a passing dated
+  sentence) is dropped in favour of the cards. The rule is deliberately
+  simple and will be tuned from live traces; known gaps: a line citing
+  several runs may use any of their phrases, so one can attach to the wrong
+  run (`[a] is in 3 days and [b] in 2 days` is kept when swapped); boss
+  names, member names and other words outside the lists are not facts
+  (`[a] is a Kalos run` is kept); `no` as an answer is not read (`you said
+  no` is caught by `said`); and harmless words on the lists (`first`,
+  `then`, `soon`, `too`) send a correct line to the cards. Records
+  placed after a kept line's paragraph come without the listing's heading
+  (and its `*(and N more)*`); when only kept lines name runs, each
+  paragraph gets the records of the runs it introduces, each run once, at
+  its first paragraph. `D-GROUND-WRITE`
   (user decision 2026-10-02): a turn whose last write call posted its card
   is not regrounded at all, so the model's "card is up, needs a ✅" reply
   posts as written; v4 regrounded it, and a time such as `22:00` in that

@@ -300,6 +300,7 @@ fn named() -> Vec<Named> {
     let mut reserve = Vec::new();
     let mut seasonal_list = Vec::new();
     let mut auto_forward = Vec::new();
+    let mut voiced_card = Vec::new();
     for case in file["cases"].as_array().expect("cases") {
         let case_id = *CASES
             .iter()
@@ -420,6 +421,12 @@ fn named() -> Vec<Named> {
                         json!("ContextBudgetError: chat request estimate 18662 exceeds context budget 8192 with completion reserve 1024"),
                         json!("ContextBudgetError: chat request estimate 18709 exceeds context budget 8192 with completion reserve 1024"),
                     ));
+                    voiced_card.push(dev(
+                        case_id,
+                        format!("{pointer}/error"),
+                        json!("ContextBudgetError: chat request estimate 18709 exceeds context budget 8192 with completion reserve 1024"),
+                        json!("ContextBudgetError: chat request estimate 18783 exceeds context budget 8192 with completion reserve 1024"),
+                    ));
                 }
                 ("missing-model-alias", 0) => {
                     failures.push(error("role is not configured"));
@@ -475,6 +482,10 @@ fn named() -> Vec<Named> {
         Named {
             name: "D-AUTO-FORWARD",
             entries: auto_forward,
+        },
+        Named {
+            name: "D-VOICED-CARD",
+            entries: voiced_card,
         },
     ]
 }
