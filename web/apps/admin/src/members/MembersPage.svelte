@@ -2,7 +2,7 @@
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/members.scss';
   import type { MemberRow, Persona, PingLevel, Week } from '@kanade/api-types';
-  import { RowContent } from '@kanade/ui';
+  import { Presence, RowContent } from '@kanade/ui';
   import Pager from '../pages/Pager.svelte';
   import { paged } from '../pages/paging';
   import { memberLabel } from '../names/directory.svelte';
@@ -49,7 +49,12 @@
   const shown = $derived(paged(rows, page));
   const bossers = $derived((members.data ?? []).filter((m) => m.bossing).length);
   const current = $derived(members.data?.find((m) => m.id === openId) ?? null);
-  const currentRuns = $derived(current && week.data ? memberRuns(week.data, current.id) : null);
+  // The pane outlives the selection by its exit animation.
+  const pane = new Presence<MemberRow>();
+  $effect(() => pane.set(current));
+  // While open the sheet reads the live member (the presence copy lags an effect behind).
+  const paneMember = $derived(current ?? pane.shown);
+  const paneRuns = $derived(paneMember && week.data ? memberRuns(week.data, paneMember.id) : null);
 
   $effect(() => {
     const query = window.matchMedia('(min-width: 840px)');
@@ -132,8 +137,8 @@
         <div class="members-roster__pager"><Pager bind:page pages={shown.pages} total={rows.length} noun="member" /></div>
       {/if}
     </div>
-    {#if current}
-      <MemberSheet wide={wide} member={current} runs={currentRuns} personas={personas.data ?? []} onchange={replace} onclose={close} />
+    {#if pane.shown}
+      <MemberSheet wide={wide} member={paneMember ?? pane.shown} runs={paneRuns} personas={personas.data ?? []} onchange={replace} onclose={close} leaving={pane.leaving} onleft={(event) => pane.done(event)} />
     {/if}
   </div>
 </section>

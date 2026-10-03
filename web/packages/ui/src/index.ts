@@ -7,6 +7,7 @@ export { default as DayColumn } from './components/DayColumn.svelte';
 export { default as Freshness, type FreshState } from './components/Freshness.svelte';
 export { default as Icon, type IconName } from './components/Icon.svelte';
 export { default as LiveRegion } from './components/LiveRegion.svelte';
+export { default as LoadingState } from './components/LoadingState.svelte';
 export { default as Masthead } from './components/Masthead.svelte';
 export { default as Modal } from './components/Modal.svelte';
 export { default as NapArt } from './components/NapArt.svelte';
@@ -33,7 +34,13 @@ export { applyColorway, applyMode, COLORWAYS, currentColorway, currentMode, THEM
 export type { Colorway, ThemeMode } from './theme/theme';
 export { registerServiceWorker, serviceWorkerDisabled } from './sw/register';
 // Design experiments (pwa-design-guidelines "Experiments"); revert as a unit.
-export { experiments, initExperiments, setExperiments } from './experiments/experiments.svelte';
+export { experiments, initExperiments, setExperiments, setOvershoot } from './experiments/experiments.svelte';
 export { default as LoadingIndicator } from './components/LoadingIndicator.svelte';
 export { default as PendingLabel } from './components/PendingLabel.svelte';
 export { default as WavyProgress } from './components/WavyProgress.svelte';
+// M3E motion (m3e-rail-design-spec "Motion and loading"): CSP-safe helpers.
+export { enter, enterFrames, type Direction } from './motion/enter';
+export { flip, measure, deltas, type Point } from './motion/flip';
+export { Presence, EXIT_FALLBACK_MS } from './motion/presence.svelte';
+export { Delay, LOADING_DELAY_MS } from './motion/delay.svelte';
+export { reducedMotion, SPRING, SPRING_BOUNCY, SPRING_BOUNCY_MS, SPRING_MS, STANDARD } from './motion/easing';

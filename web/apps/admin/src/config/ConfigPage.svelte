@@ -9,7 +9,7 @@
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/settings.scss';
   import type { ConfigView, Role, RoleProfileWrite } from '@kanade/api-types';
-  import { COLORWAYS, currentColorway, Icon, LiveRegion, RowContent, Toaster } from '@kanade/ui';
+  import { COLORWAYS, currentColorway, Icon, LiveRegion, LoadingState, RowContent, Toaster } from '@kanade/ui';
   import { tick } from 'svelte';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { directory } from '../names/directory.svelte';
@@ -511,7 +511,7 @@
                 <EnvSection env={c.env} {toaster} />
               {/if}
             {:else if config.loading}
-              <p class="note settings__loading" role="status">Loading the settings…</p>
+              <LoadingState text="Loading the settings…" />
             {/if}
             </SectionScope>
           </div>

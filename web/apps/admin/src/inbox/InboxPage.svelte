@@ -11,8 +11,8 @@
   import '@kanade/ui/styles/evidence.scss';
   import '@kanade/ui/styles/inbox.scss';
   import type { ApproveRequest, InboxTab, Proposal } from '@kanade/api-types';
-  import { Icon, Modal, PendingLabel, Toaster } from '@kanade/ui';
-  import { tick } from 'svelte';
+  import { Icon, LoadingState, Modal, PendingLabel, Toaster, enter } from '@kanade/ui';
+  import { tick, untrack } from 'svelte';
   import { Resource, send } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
   import { parseEdit } from './edit';
@@ -96,6 +96,18 @@
   // Whether the phone's detail entry came from a pick here (so leaving it pops
   // it) or a deep link; read from the entry itself so Forward/Back agree.
   const pushedHere = () => (history.state as { inboxDetail?: boolean } | null)?.inboxDetail === true;
+  // Phones swap list and detail: the detail comes in forward, and the list
+  // comes back backward when the detail closes (by Back or history).
+  let returns = $state(0);
+  // A primitive key: a refreshed copy of the same item must not replay the enter.
+  const chosenId = $derived(chosen?.id ?? null);
+  let detailWasOpen = false;
+  $effect(() => {
+    const open = phone && Boolean(chosen);
+    if (detailWasOpen && !open && phone) untrack(() => returns++);
+    detailWasOpen = open;
+  });
+
   function leaveDetail() {
     if (phone && pushedHere()) history.back();
     else onselect?.(current, '', false);
@@ -115,7 +127,7 @@
     if (!phone || key === was || !was.startsWith(`${current}/`)) return;
     const wasId = was.slice(current.length + 1);
     if (chosen && !wasId) {
-      void tick().then(() => detailEl?.focus());
+      void tick().then(() => detailEl?.focus({ preventScroll: true }));
     } else if (!chosen && wasId) {
       void list?.focusOn(restore || wasId);
       restore = '';
@@ -217,9 +229,9 @@
     {#if inbox.error}
       <p class="flash flash--error" role="alert">{inbox.error}</p>
     {:else if !inbox.data}
-      <p class="note" aria-busy="true">Loading the inbox…</p>
+      <LoadingState text="Loading the inbox…" />
     {:else}
-      <div class="inbox__list" data-fid="inbox-list" hidden={phone && Boolean(chosen)}>
+      <div class="inbox__list" data-fid="inbox-list" hidden={phone && Boolean(chosen)} {@attach enter(returns || null, 'backward')}>
         <InboxList
           bind:this={list}
           {items}
@@ -230,7 +242,7 @@
           onpick={pick}
         />
       </div>
-      <div class="inbox__detail" hidden={!chosen} tabindex="-1" bind:this={detailEl}>
+      <div class="inbox__detail" hidden={!chosen} tabindex="-1" bind:this={detailEl} {@attach enter(chosenId)}>
         {#if chosen}
           {#if phone && !compact}
             <button type="button" class="btn btn--ghost inbox__back" onclick={leaveDetail}>

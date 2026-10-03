@@ -7,7 +7,7 @@
   import type { ChangeRecord, Checkpoints, HistoryPage, RevertPlan } from '@kanade/api-types';
   import { createClient } from '@kanade/client';
   import { SvelteSet } from 'svelte/reactivity';
-  import { RowContent, Toaster, weekStartLabel } from '@kanade/ui';
+  import { Presence, RowContent, Toaster, weekStartLabel } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
   import { SURFACE_LABELS, actorName, describe, localAt, weekDate } from './describe';
@@ -110,6 +110,10 @@
   const seenAdmins = new SvelteSet<string>();
   const admins = $derived([...seenAdmins].map((id) => ({ id, label: actorName({ kind: 'admin', id }, names, known) })).sort((a, b) => a.label.localeCompare(b.label)));
   const selected = $derived(records.find((record) => record.seq === selectedSeq) ?? null);
+  // The pane outlives the selection by its exit animation; while open it reads
+  // the live record (the presence copy lags an effect behind).
+  const pane = new Presence<{ record: ChangeRecord; week: string }>();
+  $effect(() => pane.set(selected ? { record: selected, week: selectedWeek } : null));
   // A change spanning several boss weeks is listed once per week: only the row
   // that was opened is active.
   const active = (record: ChangeRecord, group: string) => record.seq === selectedSeq && group === selectedWeek;
@@ -245,7 +249,7 @@
         </div>
         {#if nextBefore !== null}<div class="history-list-region__pager"><button class="btn" type="button" disabled={loading} onclick={() => void load(true)}>Older changes</button></div>{/if}
       </div>
-      {#if selected}<HistoryDetail wide={wide} member={memberRevert} record={selected} week={selectedWeek} timezone={tz} {names} onclose={closeDetail} onrevert={revert} onrestore={restoreWeek} onraw={showRaw} />{/if}
+      {#if pane.shown}<HistoryDetail wide={wide} member={memberRevert} record={selected ?? pane.shown.record} week={selected ? selectedWeek : pane.shown.week} timezone={tz} {names} onclose={closeDetail} onrevert={revert} onrestore={restoreWeek} onraw={showRaw} leaving={pane.leaving} onleft={(event) => pane.done(event)} />{/if}
     </div>
   {:else}
     <div class="history-window__body" id="history-checkpoints" role="tabpanel" aria-labelledby="history-tab-checkpoints">

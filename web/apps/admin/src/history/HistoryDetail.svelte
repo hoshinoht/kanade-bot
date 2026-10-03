@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ChangeRecord } from '@kanade/api-types';
-  import { Modal } from '@kanade/ui';
+  import { enter, Modal } from '@kanade/ui';
   import type { Snippet } from 'svelte';
   import { SURFACE_LABELS, describe, localAt, type Names } from './describe';
 
@@ -15,6 +15,8 @@
     onrevert,
     onrestore,
     onraw,
+    leaving = false,
+    onleft,
   }: {
     wide: boolean;
     /** The "revert a member's changes" tool, at the wide pane's foot (B_History). */
@@ -27,7 +29,12 @@
     onrevert: (record: ChangeRecord) => void;
     onrestore: (week: string, record: ChangeRecord) => void;
     onraw: (record: ChangeRecord) => void;
+    /** Closed, playing its exit (HistoryPage's Presence): inert, and the phone dialog closes. */
+    leaving?: boolean;
+    onleft?: (event: AnimationEvent) => void;
   } = $props();
+  // A primitive key: a reloaded copy of the same change must not replay the enter.
+  const seq = $derived(record.seq);
 
   const label = (record: ChangeRecord) => `Change #${record.seq}`;
 
@@ -48,7 +55,7 @@
   onkeydown={(event) => {
     // A confirmation dialog owns Escape while it is open; otherwise the wide
     // pane closes like the other M3E side panes.
-    if (wide && event.key === 'Escape' && !document.querySelector('dialog[open]')) {
+    if (wide && !leaving && event.key === 'Escape' && !document.querySelector('dialog[open]')) {
       event.preventDefault();
       onclose();
     }
@@ -101,11 +108,11 @@
 
 {#if wide}
   <!-- A native aside (not SidePane) so the board's region name sits on the pane itself. -->
-  <aside class="side-pane side-pane--history" aria-label="Change details" data-fid="history-pane">
+  <aside class="side-pane side-pane--history" class:is-leaving={leaving} inert={leaving} aria-label="Change details" data-fid="history-pane" onanimationend={onleft} {@attach enter(seq)}>
     {@render content()}
   </aside>
 {:else}
-  <Modal open title={label(record)} eyebrow="History" narrow className="history-detail" onclose={onclose}>
+  <Modal open={!leaving} title={label(record)} eyebrow="History" narrow className="history-detail" onclose={onclose}>
     {@render content()}
     {#snippet footer(close)}
       <button class="btn" type="button" onclick={close}>Close</button>

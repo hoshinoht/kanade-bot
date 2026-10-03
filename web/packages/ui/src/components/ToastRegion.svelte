@@ -3,11 +3,12 @@
   import ToastItem from './ToastItem.svelte';
 
   let { toaster }: { toaster: Toaster } = $props();
+  const isLeaving = (id: number) => toaster.leaving.some((t) => t.id === id);
 </script>
 
 <!-- Present from first paint so screen readers register the live region before it changes. -->
 <section class="toasts" aria-label="Notifications" aria-live="polite" aria-relevant="additions text">
-  {#each toaster.items as toast (toast.id)}
-    <ToastItem {toast} {toaster} />
+  {#each toaster.shown as toast (toast.id)}
+    <ToastItem {toast} {toaster} leaving={isLeaving(toast.id)} />
   {/each}
 </section>

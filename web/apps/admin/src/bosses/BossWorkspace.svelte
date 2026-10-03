@@ -2,7 +2,7 @@
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
   import type { Boss, BossRow, Difficulty, DifficultyFacts, EventBoss, FixedRow, Knowledge, Run, Week } from '@kanade/api-types';
-  import { DIFFICULTY_WORDS, Portrait, RowContent, StatusChip, dayLabel } from '@kanade/ui';
+  import { DIFFICULTY_WORDS, LoadingState, Portrait, RowContent, StatusChip, dayLabel, enter } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import BossGrid from './BossGrid.svelte';
   import StrategyList from './StrategyList.svelte';
@@ -35,6 +35,8 @@
   const total = $derived(catalog.reduce((n, row) => n + row.difficulties.length, 0));
   const inUse = $derived(catalog.reduce((count, row) => count + row.difficulties.filter((difficulty) => difficulty.in_use).length, 0));
   const doc = $derived(knowledge.data?.doc);
+  // The boss whose knowledge is on screen: its pane content enters when it changes.
+  const shownKey = $derived(doc && knowledge.data ? knowledge.data.key : null);
   const facts = $derived(doc?.difficulties ?? []);
   const lists = $derived<[string, string[]][]>(doc ? [['Core', doc.core], ['Danger', doc.danger], ['Tips', doc.tips]] : []);
   const LETTER: Record<string, Difficulty> = { Easy: 'e', Normal: 'n', Hard: 'h', Chaos: 'c', Extreme: 'x' };
@@ -135,9 +137,9 @@
             {/each}
           </ul>
         {/if}
-      {:else}<p class="note" aria-busy="true">Loading the boss list…</p>{/if}
+      {:else}<LoadingState text="Loading the boss list…" />{/if}
     </nav>
-    <article data-fid="knowledge-detail" class="knowledge-detail" class:knowledge-detail--hidden={!selectedKey && phone} tabindex="-1">
+    <article data-fid="knowledge-detail" class="knowledge-detail" class:knowledge-detail--hidden={!selectedKey && phone} tabindex="-1" {@attach enter(shownKey)}>
       {#if knowledge.error}<div class="empty" role="alert"><strong>No knowledge for “{activeKey}”.</strong>{knowledge.error}</div>
       {:else if doc && knowledge.data}
         <header data-fid="knowledge-head" class="knowledge-hero">
@@ -161,7 +163,7 @@
           </div>
           <aside data-fid="knowledge-aside" aria-label="Weekly timings"><h2 class="cap">Weekly timings</h2>{#if relatedFixed.length}<ul>{#each relatedFixed as timing (timing.id)}{@const boss = timingBoss(timing)}{@const others = otherBosses(timing)}<li><a href="/fixed?open={encodeURIComponent(timing.id)}"><strong>{timing.weekday_name.slice(0, 3)} {timing.time}</strong>{#if boss}<span class="pill pill--{boss.difficulty}">{DIFFICULTY_WORDS[boss.difficulty].toUpperCase()}</span>{/if}{#if others.length}<span class="knowledge-aside__others">+ {others.join(' · ')}</span>{/if}</a></li>{/each}</ul>{:else}<p class="note">No weekly timing uses this boss.</p>{/if}<h2 class="cap">This week</h2><p class="knowledge-aside__count">{relatedRuns.length} run{relatedRuns.length === 1 ? '' : 's'}{#if nextRun} · next <strong>{runWhen(nextRun)}</strong>{/if}</p></aside>
         </div>
-      {:else}<p class="note" aria-busy="true">Loading checked-in knowledge…</p>{/if}
+      {:else}<LoadingState text="Loading checked-in knowledge…" />{/if}
     </article>
   </div>
 </section>

@@ -2,7 +2,7 @@
   import type { Toast, Toaster } from './toaster.svelte';
   import Icon from './Icon.svelte';
 
-  let { toast, toaster }: { toast: Toast; toaster: Toaster } = $props();
+  let { toast, toaster, leaving = false }: { toast: Toast; toaster: Toaster; leaving?: boolean } = $props();
 
   // Plain, not $state: only the timer reads it.
   let remaining = 0;
@@ -10,7 +10,7 @@
 
   // Timer pauses while pointer or focus is on the toast (WCAG 2.2.1 timing adjustable).
   $effect(() => {
-    if (toast.timeoutMs === null || paused) return;
+    if (toast.timeoutMs === null || paused || leaving) return;
     remaining ||= toast.timeoutMs;
     const started = Date.now();
     const timer = setTimeout(() => toaster.dismiss(toast.id), remaining);
@@ -21,10 +21,17 @@
   });
 </script>
 
+<!-- A dismissed toast stays for its exit animation only: inert and hidden from assistive tech. -->
 <div
   class="toast toast--{toast.tone}"
+  class:is-leaving={leaving}
   role="group"
   aria-label="Notification"
+  aria-hidden={leaving ? 'true' : undefined}
+  inert={leaving}
+  onanimationend={(event) => {
+    if (leaving && event.target === event.currentTarget) toaster.gone(toast.id);
+  }}
   onpointerenter={() => (paused = true)}
   onpointerleave={() => (paused = false)}
   onfocusin={() => (paused = true)}

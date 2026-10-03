@@ -6,6 +6,12 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin M3E static motion: buttons morph on press, selected rows spring
+  their corners, side panes (Members, History, Fixed, Inbox, Bosses) slide in
+  and out, dialogs and toasts fade out, the phone Inbox moves forward and back
+  between list and detail, loading indicators appear after 200 ms, and your
+  own Week moves glide into place (other admins' changes do not); planner
+  overshoot is opt-in with `?overshoot=on`. Reduced motion stays instant.
 - v5 chat answers schedule questions in the persona's own words: the model
   cites runs by id, grounding shows each cited id as the run's boss name and
   puts the run's card under that paragraph without the listing heading, and

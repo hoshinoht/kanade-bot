@@ -2,7 +2,7 @@
 
 <script lang="ts">
   import type { Run, WeekKey } from '@kanade/api-types';
-  import { Icon, NapWindow, RunTable } from '@kanade/ui';
+  import { experiments, flip, Icon, LoadingState, NapWindow, RunTable, SPRING_BOUNCY, SPRING_BOUNCY_MS } from '@kanade/ui';
   import Planner from '../planner/Planner.svelte';
   import PageLine from '../shell/PageLine.svelte';
   import type { Slot } from '../planner/keyboardMove';
@@ -57,6 +57,17 @@
     { id: 'answers', label: 'Answers' },
   ];
   const viewTabs: Record<string, HTMLButtonElement> = {};
+
+  // Own moves glide (FLIP): the store calls this just before the admin's own
+  // change lands, so each card animates from where it was. Polls never do.
+  $effect(() => {
+    store.beforeChange = () => {
+      if (tab !== 'planner') return;
+      const bouncy = experiments.overshoot ? { easing: SPRING_BOUNCY, duration: SPRING_BOUNCY_MS } : {};
+      void flip(document.querySelector('.board.planner'), { selector: '[data-run]', key: (el) => el.dataset.run, ...bouncy });
+    };
+    return () => (store.beforeChange = null);
+  });
 
   // Area follows importance: on phones and short frames the filter card folds
   // into a "Filters (n)" button in this header (docs/v5/pwa-design-guidelines.md).
@@ -201,8 +212,9 @@
     {/if}
   </div>
 {:else if store.fresh === 'loading'}
-  <section class="card window-fill" aria-busy="true" aria-labelledby="loading-title">
-    <div class="card__head"><h2 class="card__title" id="loading-title">Loading the week…</h2></div>
+  <section class="card window-fill" aria-labelledby="loading-title">
+    <div class="card__head"><h2 class="card__title" id="loading-title">Week</h2></div>
+    <LoadingState text="Loading the week…" />
   </section>
 {:else}
   <NapWindow title={store.fresh === 'offline' ? "You're offline" : "Kanade can't be reached"}>

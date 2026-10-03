@@ -1,7 +1,7 @@
 import { createRawSnippet } from 'svelte';
 import { render } from 'svelte/server';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { experiments, initExperiments, setExperiments } from '../src/experiments/experiments.svelte';
+import { experiments, initExperiments, setExperiments, setOvershoot } from '../src/experiments/experiments.svelte';
 import LoadingIndicator from '../src/components/LoadingIndicator.svelte';
 import PendingLabel from '../src/components/PendingLabel.svelte';
 import WavyProgress from '../src/components/WavyProgress.svelte';
@@ -26,6 +26,7 @@ afterEach(() => {
   delete (globalThis as { localStorage?: unknown }).localStorage;
   delete (globalThis as { document?: unknown }).document;
   experiments.on = true;
+  experiments.overshootChosen = false;
 });
 
 const save = createRawSnippet(() => ({ render: () => '<span>Save</span>' }));
@@ -43,6 +44,19 @@ describe('experiments switch', () => {
     expect(initExperiments('')).toBe(false);
     expect(initExperiments('?experiments=on')).toBe(true);
     expect(store.get('kanade.experiments')).toBe('on');
+  });
+
+  it('E (overshoot) is off by default, opt-in by query or palette, and needs the switch on', () => {
+    initExperiments('');
+    expect([experiments.overshoot, html.dataset.overshoot]).toEqual([false, 'off']);
+    initExperiments('?overshoot=on');
+    expect([experiments.overshoot, html.dataset.overshoot]).toEqual([true, 'on']);
+    expect(store.get('kanade.overshoot')).toBe('on');
+    setExperiments(false);
+    expect(experiments.overshoot).toBe(false);
+    setExperiments(true);
+    setOvershoot(false);
+    expect([experiments.overshoot, html.dataset.overshoot]).toEqual([false, 'off']);
   });
 
   it('ignores unknown query values', () => {

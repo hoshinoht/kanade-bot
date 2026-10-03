@@ -9,6 +9,7 @@
     registerServiceWorker,
     runFullTitle,
     setExperiments,
+    setOvershoot,
     ToastRegion,
     Toaster,
     whenLabel,
@@ -313,7 +314,8 @@
     // card's handle instead of the document body, as does the page-head button,
     // which disables itself. Ctrl/Cmd-Z elsewhere keeps focus where it was.
     await tick();
-    const kept = prior instanceof HTMLElement && prior.isConnected && prior !== document.body && !prior.matches(':disabled');
+    // A dismissed toast stays a moment for its exit, inert: its button no longer counts.
+    const kept = prior instanceof HTMLElement && prior.isConnected && prior !== document.body && !prior.matches(':disabled') && !prior.closest('[inert]');
     if (kept) return;
     const handle = runId ? document.querySelector<HTMLElement>(`[data-handle="${CSS.escape(runId)}"]`) : null;
     (handle ?? document.getElementById('main'))?.focus();
@@ -381,6 +383,13 @@
       group: 'Theme',
       keywords: 'experiments loading indicator wavy progress',
       run: () => setExperiments(!experiments.on),
+    },
+    {
+      id: 'overshoot',
+      label: experiments.overshootChosen ? 'Turn planner overshoot off' : 'Turn planner overshoot on (experiment E)',
+      group: 'Theme',
+      keywords: 'experiments overshoot spring bounce planner motion',
+      run: () => setOvershoot(!experiments.overshootChosen),
     },
   ]);
 

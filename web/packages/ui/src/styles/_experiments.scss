@@ -2,10 +2,7 @@
 // morphing LoadingIndicator (A) and WavyProgress (B). Components only render
 // these classes while the experiments switch is on.
 
-// M3 Expressive standard spatial spring (damping 0.9, stiffness 700), sampled.
-// Used for shape changes only; colour and opacity never overshoot.
-$spring: linear(0, 0.049, 0.16, 0.295, 0.429, 0.552, 0.658, 0.745, 0.814, 0.868, 0.908, 0.938, 0.959, 0.974, 0.985, 0.992, 0.996,
-    0.999, 1, 1.001, 1.001, 1.002, 1.001, 1.001, 1);
+@use "easing" as *;
 
 // Shapes come from our own radius language: circle, pill (like the chips) and
 // a rounded square (like --r on a window). A pill is a squashed square whose
@@ -115,6 +112,35 @@ $spring: linear(0, 0.049, 0.16, 0.295, 0.429, 0.552, 0.658, 0.745, 0.814, 0.868,
 
 .xp-wavy__track {
   stroke: color-mix(in srgb, var(--accent) 22%, var(--line));
+}
+
+// Experiment E (opt-in, off by default; `?overshoot=on` with the switch on):
+// the picked-up card (keyboard lift or the pointer ghost) pops with a small
+// overshoot; the landing FLIP uses the expressive spring (motion/easing.ts).
+// `scale` is its own property, so the ghost's CSSOM `translate` is untouched.
+@keyframes xp-pickup {
+  0% {
+    scale: 1;
+  }
+
+  35% {
+    scale: 1.05;
+  }
+
+  70% {
+    scale: 0.995;
+  }
+
+  100% {
+    scale: 1;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-experiments="on"][data-overshoot="on"] .plan-card--lifted,
+  [data-experiments="on"][data-overshoot="on"] .dnd-ghost--on {
+    animation: xp-pickup 320ms $standard;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

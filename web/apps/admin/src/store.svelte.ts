@@ -4,6 +4,7 @@ import { clockTime, runTitle, whenLabel, type FreshState } from '@kanade/ui';
 import { directory } from './names/directory.svelte';
 import type { Slot } from './planner/keyboardMove';
 import { swapSlots } from './planner/dropTime';
+import { tick } from 'svelte';
 
 const POLL_MS = 15_000;
 
@@ -228,9 +229,30 @@ export class AdminWeek {
     this.#replaceAll([run]);
   }
 
+  /**
+   * Called just before the admin's own change lands on the board (optimistic
+   * move or swap, its confirmation or rollback, a sheet edit), so the board
+   * can measure its cards for the FLIP. Polled weeks never call it.
+   */
+  beforeChange: (() => void) | null = null;
+
+  /**
+   * Ends a write. The board's FLIP measures "after" on the next tick, so a
+   * buffered poll (another admin's change) waits until then: flushed sooner
+   * it would land inside the FLIP window and glide as if it were our move.
+   * The write still counts as pending meanwhile, so polls and a released
+   * hold keep buffering.
+   */
+  async #settle(): Promise<void> {
+    await tick();
+    this.#pendingMoves -= 1;
+    this.#flush();
+  }
+
   /** Several runs in one assignment, so a swap never shows half-done. */
   #replaceAll(runs: Run[]) {
     if (!this.week) return;
+    this.beforeChange?.();
     this.week = { ...this.week, runs: this.week.runs.map((r) => runs.find((n) => n.id === r.id) ?? r) };
   }
 
@@ -260,8 +282,7 @@ export class AdminWeek {
       if (error instanceof ApiRequestError && error.status === 409) void this.refresh();
       return { ok: false, message: `Couldn't move ${runTitle(run)}: ${reason}` };
     } finally {
-      this.#pendingMoves -= 1;
-      this.#flush();
+      await this.#settle();
     }
   }
 
@@ -296,8 +317,7 @@ export class AdminWeek {
       if (error instanceof ApiRequestError && error.status === 409) void this.refresh();
       return { ok: false, message: `Couldn't swap ${runTitle(a)} with ${runTitle(b)}: ${reason}` };
     } finally {
-      this.#pendingMoves -= 1;
-      this.#flush();
+      await this.#settle();
     }
   }
 
@@ -327,8 +347,7 @@ export class AdminWeek {
       if (error instanceof ApiRequestError && error.status === 409) void this.refresh();
       return { ok: false, message: `Couldn't update ${runTitle(run)}: ${reason}` };
     } finally {
-      this.#pendingMoves -= 1;
-      this.#flush();
+      await this.#settle();
     }
   }
 

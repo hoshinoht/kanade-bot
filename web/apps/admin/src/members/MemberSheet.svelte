@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { MemberPatch, MemberRow, Persona, PingLevel } from '@kanade/api-types';
-  import { Icon, initial, Modal } from '@kanade/ui';
+  import { enter, Icon, initial, Modal } from '@kanade/ui';
   import { send } from '../resource.svelte';
   import { directory } from '../names/directory.svelte';
   import Name from '../names/Name.svelte';
@@ -14,7 +14,21 @@
     personas,
     onchange,
     onclose,
-  }: { wide: boolean; member: MemberRow; runs: MemberWeek | null; personas: Persona[]; onchange: (row: MemberRow) => void; onclose: () => void } = $props();
+    leaving = false,
+    onleft,
+  }: {
+    wide: boolean;
+    member: MemberRow;
+    runs: MemberWeek | null;
+    personas: Persona[];
+    onchange: (row: MemberRow) => void;
+    onclose: () => void;
+    /** Closed, playing its exit (MembersPage's Presence): inert, and the phone dialog closes. */
+    leaving?: boolean;
+    onleft?: (event: AnimationEvent) => void;
+  } = $props();
+  // A primitive key: an edited copy of the same member must not replay the enter.
+  const memberId = $derived(member.id);
 
   const uid = $props.id();
   const LEVELS: { key: PingLevel; label: string; hint: string }[] = [
@@ -91,7 +105,7 @@
 
 <svelte:window
   onkeydown={(event) => {
-    if (wide && event.key === 'Escape') {
+    if (wide && !leaving && event.key === 'Escape') {
       event.preventDefault();
       onclose();
     }
@@ -203,7 +217,7 @@
 {/snippet}
 
 {#if wide}
-  <aside class="side-pane" aria-label="Member details" data-fid="members-pane">
+  <aside class="side-pane" class:is-leaving={leaving} inert={leaving} aria-label="Member details" data-fid="members-pane" onanimationend={onleft} {@attach enter(memberId)}>
     <header class="membersheet__head" data-fid="members-pane-head">
       <span class="membersheet__avatar" aria-hidden="true">{initial(member.name)}</span>
       <div class="membersheet__who">
@@ -216,7 +230,7 @@
     {@render content()}
   </aside>
 {:else}
-  <Modal open title={directory.label('member', member.id, member.name)} eyebrow={member.bossing ? 'Member' : 'Chat access only'} narrow className="membersheet" onclose={onclose}>
+  <Modal open={!leaving} title={directory.label('member', member.id, member.name)} eyebrow={member.bossing ? 'Member' : 'Chat access only'} narrow className="membersheet" onclose={onclose}>
     {@render content()}
     {#snippet footer(close)}
       <button class="btn" type="button" onclick={close}>Close</button>

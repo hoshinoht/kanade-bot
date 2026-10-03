@@ -1,5 +1,8 @@
 // Selection-led disclosure; grid tracks animate intrinsic height in every engine.
-.expandable-row { transition: border-radius 220ms ease; overflow-anchor: none; }
+// Selected-row containment: the row's corners spring to the selected shape.
+@use "easing" as *;
+
+.expandable-row { transition: border-radius $spring-ms $spring; overflow-anchor: none; }
 .row-content { display: grid; min-width: 0; width: 100%; text-align: inherit; }
 .row-content__compact, .row-content__reveal { grid-area: 1 / 1; min-width: 0; }
 .row-content__compact { display: block; align-self: center; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }

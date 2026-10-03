@@ -4,6 +4,7 @@
   deep-linked through this page's query string.
 -->
 <script lang="ts">
+  import { LoadingState } from '@kanade/ui';
   import TokenUsage from '../logs/TokenUsage.svelte';
   import PageLine from '../shell/PageLine.svelte';
   import ModelStats from './ModelStats.svelte';
@@ -107,7 +108,7 @@
       <Pager bind:page pages={shown.pages} total={rows.length} noun="interaction" />
     {/if}
   {:else if !chat.error}
-    <p class="note" aria-busy="true">Loading interactions…</p>
+    <LoadingState text="Loading interactions…" />
   {/if}
 </PaneWindow>
 

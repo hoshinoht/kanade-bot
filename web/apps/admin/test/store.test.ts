@@ -1,3 +1,4 @@
+import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Run, Stats, Week } from '@kanade/api-types';
 import { AdminWeek } from '../src/store.svelte';
@@ -114,6 +115,65 @@ describe('AdminWeek: a drop during a held drag', () => {
     // The buffered week then applies (the conflict also re-reads it).
     await store.refresh();
     expect(store.week?.version).toBe(5);
+  });
+});
+
+describe('AdminWeek: the FLIP hook', () => {
+  it('runs before each own change lands (optimistic, then confirmed), never for a poll', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = url.split('?')[0]!;
+        if (init?.method === 'POST') return new Response(JSON.stringify({ run: run('r1', 3), version: 2 }), { status: 200 });
+        const body = path.endsWith('/stats') ? stats : path.endsWith('/week') ? week(1) : [];
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    );
+    const store = new AdminWeek();
+    const seen: (number | undefined)[] = [];
+    store.beforeChange = () => seen.push(store.week?.runs[0]?.day);
+    await store.refresh();
+    expect(seen).toEqual([]);
+    const moving = store.move('r1', { day: 3, time: '21:00' });
+    // Measured on the board as it was, before the optimistic move.
+    expect(seen).toEqual([0]);
+    await moving;
+    expect(seen).toEqual([0, 3]);
+    await store.refresh();
+    expect(seen).toEqual([0, 3]);
+  });
+});
+
+describe('AdminWeek: the FLIP window', () => {
+  it('a buffered poll is not applied until the rollback has been measured, so it never glides as our move', async () => {
+    const other = (day: number): Run => ({ ...run('r2', day), time: '23:00' });
+    const v1: Week = { ...week(1), runs: [run('r1', 0), other(3)] };
+    const v5: Week = { ...week(5), runs: [run('r1', 0), other(6)] };
+    const weeks = [v1, v5];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = url.split('?')[0]!;
+        if (init?.method === 'POST') return new Response(JSON.stringify({ error: 'stale', message: 'The week changed since it was loaded.' }), { status: 409 });
+        const body = path.endsWith('/stats') ? stats : path.endsWith('/week') ? (weeks.shift() ?? v5) : [];
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    );
+    const store = new AdminWeek();
+    await store.refresh();
+    store.holding = true;
+    await store.refresh(); // another admin moved r2: buffered
+    // What the board's FLIP sees when it measures "after" (one tick after each own change).
+    const measured: Promise<number | undefined>[] = [];
+    store.beforeChange = () => measured.push(tick().then(() => store.week?.runs.find((r) => r.id === 'r2')?.day));
+    const moving = store.move('r1', { day: 2, time: '21:00' });
+    store.holding = false;
+    expect(await moving).toMatchObject({ ok: false });
+    // Optimistic move and its rollback were both measured before the buffered week landed.
+    expect(await Promise.all(measured)).toEqual([3, 3]);
+    // Then the buffered week applies, outside any FLIP window.
+    expect(store.week?.version).toBe(5);
+    expect(store.week?.runs.find((r) => r.id === 'r2')?.day).toBe(6);
   });
 });
 

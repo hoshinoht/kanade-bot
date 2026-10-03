@@ -1,7 +1,7 @@
 <script lang="ts">
   import PageLine from '../shell/PageLine.svelte';
   import type { BossRow, FixedRow } from '@kanade/api-types';
-  import { BossStack, BossTag, Icon, Modal, RowContent, Toaster } from '@kanade/ui';
+  import { BossStack, BossTag, Icon, LoadingState, Modal, Presence, RowContent, Toaster } from '@kanade/ui';
   import '@kanade/ui/styles/fixed.scss';
   import Name from '../names/Name.svelte';
   import { directory } from '../names/directory.svelte';
@@ -32,6 +32,11 @@
   let query = $state('');
   let editing = $state<FixedRow | null>(null);
   let editorOpen = $state(false);
+  // The editor outlives its closing by its exit animation. While open it reads
+  // the live row: the presence copy updates an effect later, too late for a
+  // reopen during the exit, which would seed the form from the old row.
+  const pane = new Presence<{ row: FixedRow | null }>();
+  $effect(() => pane.set(editorOpen ? { row: editing } : null));
   let wide = $state(false);
   let restoreElement: HTMLButtonElement | null = null;
   let addTrigger: HTMLButtonElement;
@@ -236,14 +241,16 @@
       </div>
     </div>
   {:else}
-    <p class="note" aria-busy="true">Loading the weekly timings…</p>
+    <LoadingState text="Loading the weekly timings…" />
   {/if}
-    {#if editorOpen}
+    {#if pane.shown}
       <FixedEditor
         bind:open={editorOpen}
         {wide}
         modalOpen={retireOpen}
-        row={editing}
+        row={editorOpen ? editing : pane.shown.row}
+        leaving={pane.leaving}
+        onleft={(event) => pane.done(event)}
         bosses={bosses.data ?? []}
         channels={store.channels}
         members={store.members}

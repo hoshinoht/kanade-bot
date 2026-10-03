@@ -9,7 +9,7 @@
   import '@kanade/ui/styles/evidence.scss';
   import type { Limits } from '@kanade/api-types';
   import { ApiRequestError, createClient, createPoller } from '@kanade/client';
-  import { Tabs, Toaster, type TabItem } from '@kanade/ui';
+  import { LoadingState, Tabs, Toaster, type TabItem } from '@kanade/ui';
   import { errorText, send } from '../resource.svelte';
   import { directory } from '../names/directory.svelte';
   import Name from '../names/Name.svelte';
@@ -164,7 +164,7 @@
     </div>
   </PaneWindow>
 {:else}
-  <section class="card window-fill" aria-busy="true"><div class="card__head"><h2 class="card__title">Loading the limits…</h2></div></section>
+  <section class="card window-fill"><div class="card__head"><h2 class="card__title">Limits</h2></div><LoadingState text="Loading the limits…" /></section>
 {/if}
 
 <style>

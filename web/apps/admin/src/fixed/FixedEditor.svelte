@@ -5,7 +5,7 @@
 -->
 <script lang="ts">
   import type { Boss, BossRow, Channel, FixedRequest, FixedRow, MemberRow, ValidateResult } from '@kanade/api-types';
-  import { BossTag, Modal, dayLabel } from '@kanade/ui';
+  import { BossTag, Modal, dayLabel, enter } from '@kanade/ui';
   import '@kanade/ui/styles/fixed.scss';
   import { tick } from 'svelte';
   import BossGrid from '../bosses/BossGrid.svelte';
@@ -28,6 +28,8 @@
     onstale,
     onclose,
     onretire,
+    leaving = false,
+    onleft,
   }: {
     open: boolean;
     wide: boolean;
@@ -47,7 +49,12 @@
     onstale: () => void;
     onclose: () => void;
     onretire: (row: FixedRow) => void;
+    /** Closed, playing its exit (FixedPage's Presence): inert, and the phone dialog closes. */
+    leaving?: boolean;
+    onleft?: (event: AnimationEvent) => void;
   } = $props();
+  // A primitive key: the pane's content enters again only for another timing (or a new one).
+  const rowKey = $derived(row?.id ?? 'new');
 
   const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const uid = $props.id();
@@ -221,7 +228,7 @@
 </script>
 
 <svelte:window onkeydown={(event) => {
-  if (wide && !modalOpen && event.key === 'Escape') {
+  if (wide && !leaving && !modalOpen && event.key === 'Escape') {
     event.preventDefault();
     onclose();
   }
@@ -340,7 +347,7 @@
 
 {#if wide}
   <!-- A native aside (not SidePane) so the board's region name sits on the pane itself. -->
-  <aside class="side-pane side-pane--fixed" aria-label="Weekly timing details" data-fid="fixed-editor">
+  <aside class="side-pane side-pane--fixed" class:is-leaving={leaving} inert={leaving} aria-label="Weekly timing details" data-fid="fixed-editor" onanimationend={onleft} {@attach enter(rowKey)}>
     <header class="fixedsheet__head" data-fid="fixed-editor-head">
       <div class="fixedsheet__title">
         <p class="cap">{row ? `#${row.short_id} · edit` : 'Baseline · new'}</p>

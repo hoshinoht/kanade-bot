@@ -4,6 +4,7 @@
   through this page's query string.
 -->
 <script lang="ts">
+  import { LoadingState } from '@kanade/ui';
   import TokenUsage from '../logs/TokenUsage.svelte';
   import PageLine from '../shell/PageLine.svelte';
   import Name from '../names/Name.svelte';
@@ -118,7 +119,7 @@
       <Pager bind:page pages={shown.pages} total={rows.length} noun="call" />
     {/if}
   {:else if !extractions.error}
-    <p class="note" aria-busy="true">Loading calls…</p>
+    <LoadingState text="Loading calls…" />
   {/if}
 </PaneWindow>
 
