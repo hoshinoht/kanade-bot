@@ -6,6 +6,13 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin and public theme pickers group colourways into collapsible sets:
+  Base (Otonose, Nazuna, Sumire, Hinano), Blue Archive (Hoshino, Mika, Seia,
+  Hina, Aris), Terminal (Catppuccin, Tokyo Night and GitHub, from their
+  official light and dark palettes, nudged only where contrast checks failed)
+  and Dynamic (a palette from the bot's avatar, falling back to Otonose). The
+  current colourway's set starts open. Coral is retired and a stored choice
+  falls back to Otonose; Ctrl-K still finds colourways by their stored keys.
 - v5 admin Inbox has a read-only **Past** tab listing closed proposals and
   member requests newest first, each with its outcome, who decided and when,
   the reason, cited Discord messages and links to the card, its History record

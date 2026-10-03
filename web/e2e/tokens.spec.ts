@@ -1,3 +1,4 @@
+import { COLORWAYS } from '../packages/tokens/src/colorways';
 import { ADMIN, expect, test } from './support';
 
 // The M3E tokens' contrast in every colourway and face, read from the real
@@ -6,9 +7,9 @@ import { ADMIN, expect, test } from './support';
 // checklist"); a selected row's state cue is its fill, shape and bold title,
 // not its light edge. Overrides live in packages/tokens/_contrast.scss.
 
-const LOOKS = (['marigold', 'blossom', 'periwinkle', 'coral', 'twilight'] as const).flatMap((c) =>
-  (['light', 'dark'] as const).map((t) => [c, t] as const),
-);
+// Every colourway (keys from @kanade/tokens/colorways); dynamic is the
+// palette derived from the mock's avatar, checked once it has been applied.
+const LOOKS = COLORWAYS.map((way) => way.key).flatMap((c) => (['light', 'dark'] as const).map((t) => [c, t] as const));
 
 /** [foreground, background, minimum ratio]; a transparent background falls back to the ground. */
 const PAIRS: [string, string, number][] = [
@@ -54,6 +55,7 @@ for (const [colorway, theme] of LOOKS) {
     );
     await page.goto(`${ADMIN}/?sw=off`);
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    if (colorway === 'dynamic') await expect(page.locator('html')).toHaveAttribute('data-dynamic', 'avatar');
     const ratios = await page.evaluate(([pairs, apart]) => {
       // The computed colour of a probe painted with the token, as sRGB 0-1.
       const probe = document.createElement('i');
@@ -104,3 +106,20 @@ for (const [colorway, theme] of LOOKS) {
     expect([...low, ...close]).toEqual([]);
   });
 }
+
+test('tokens: a stored retired colourway (coral) falls back to marigold before first paint', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem('seeded')) {
+      localStorage.setItem('colorway', 'coral');
+      sessionStorage.setItem('seeded', '1');
+    }
+  });
+  await page.goto(`${ADMIN}/?sw=off`);
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  const html = page.locator('html');
+  await expect(html).not.toHaveAttribute('data-colorway', /./);
+  expect(await page.evaluate(() => localStorage.getItem('colorway'))).toBeNull();
+  // Marigold's ground, from :root.
+  const ground = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--ground').trim());
+  expect(ground.toLowerCase()).toMatch(/^#eec75f$|^#232735$/);
+});

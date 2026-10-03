@@ -385,7 +385,8 @@
       id: `colorway-${way.key}`,
       label: `Colourway: ${way.name}`,
       group: 'Theme',
-      keywords: 'theme colour color',
+      // The stored key too, so older names (twilight, blossom…) still match.
+      keywords: `theme colour color ${way.key}`,
       run: () => applyColorway(way.key),
     })),
     ...(['system', 'light', 'dark'] as const).map((mode) => ({

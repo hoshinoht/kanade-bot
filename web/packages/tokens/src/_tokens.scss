@@ -24,8 +24,8 @@
  * times, ids, latencies, table numbers. Slab against slab against slab: the
  * contrast is weight and width rather than serif against sans.
  *
- * Colour is five user-chosen colourways, each with a daytime and an after-hours
- * face. Both choices are the browser's own: `@kanade/ui/theme-boot.js`
+ * Colour is a user-chosen colourway (sets and names: `colorways.ts`), each with
+ * a daytime and an after-hours face. Both choices are the browser's own: `@kanade/ui/theme-boot.js`
  * stamps `data-colorway` and `data-theme` on <html> from localStorage before the
  * first paint, and a page with neither attribute -- nothing stored, or no
  * JavaScript -- wears marigold and lets `prefers-color-scheme` decide the hour.
@@ -213,20 +213,6 @@
   --risk: #c04a55;
 }
 
-[data-colorway="coral"] {
-  --ground: #e87d85;
-  --surface: #f7f0e1;
-  --ink: #57504a;
-  --dim: #6b6459;
-  --line: #ddcfb8;
-  --win: #8d857c;
-  --win-ink: #f7f0e1;
-  --accent: #d95965;
-  --accent-ink: #fff6ee;
-  --ok: #35906c;
-  --risk: #c04a55;
-}
-
 [data-colorway="twilight"] {
   --ground: #8b7ad2;
   --surface: #f5f1ec;
@@ -239,6 +225,154 @@
   --accent-ink: #f4effc;
   --ok: #35906c;
   --risk: #c04a55;
+}
+
+/* Hoshino: pink ground, deep-teal accent; at night pink takes over. */
+[data-colorway="hoshino"] {
+  --ground: #f3bdca;
+  --surface: #fff5f6;
+  --ink: #393c43;
+  --dim: #60646e;
+  --line: #ead9de;
+  --win: #6d3646;
+  --win-ink: #fedee6;
+  --accent: #095366;
+  --accent-ink: #c8effe;
+  --ok: #2e7a55;
+  --risk: #b3404a;
+}
+
+/* Mika: rose-pink ground, magenta accent; gold at night. Light surface
+   #fcf5f8 -> #ece9ec for tokens.spec's hover ΔE (2.3 -> 3.6). */
+[data-colorway="mika"] {
+  --ground: #eaa6d2;
+  --surface: #ece9ec;
+  --ink: #45384a;
+  --dim: #6e5a6c;
+  --line: #ecd6e2;
+  --win: #4a4f86;
+  --win-ink: #ece9ec;
+  --accent: #a0306d;
+  --accent-ink: #fff4f9;
+  --ok: #2b7a57;
+  --risk: #b3343f;
+}
+
+/* Seia: peach ground, raspberry accent. */
+[data-colorway="seia"] {
+  --ground: #f0c9a8;
+  --surface: #fbf8f1;
+  --ink: #4a4339;
+  --dim: #6d6458;
+  --line: #e7dcc4;
+  --win: #6e5d48;
+  --win-ink: #fbf8f1;
+  --accent: #a8456a;
+  --accent-ink: #fff5f8;
+  --ok: #2b7a57;
+  --risk: #b3343f;
+}
+
+/* Hina: silver ground, plum accent (not twilight's violet). */
+[data-colorway="hina"] {
+  --ground: #cfcbdb;
+  --surface: #f6f7f8;
+  --ink: #2c2932;
+  --dim: #5c5766;
+  --line: #dcd8e3;
+  --win: #2f2a36;
+  --win-ink: #f6f7f8;
+  --accent: #6b2f86;
+  --accent-ink: #f7f6f9;
+  --ok: #2b7a57;
+  --risk: #b5232f;
+}
+
+/* Aris: sky ground, cobalt accent; cyan at night. Light surface
+   #f4f7f9 -> #ebeff0 for tokens.spec's hover ΔE (2.9 -> 3.6). */
+[data-colorway="aris"] {
+  --ground: #6cc4e4;
+  --surface: #ebeff0;
+  --ink: #1f2630;
+  --dim: #4f5966;
+  --line: #d2dde4;
+  --win: #1f2630;
+  --win-ink: #ebeff0;
+  --accent: #0d62a6;
+  --accent-ink: #f1f7fd;
+  --ok: #2b7a57;
+  --risk: #b3343f;
+}
+
+/* Catppuccin (terminal): Latte by day, Mocha at night -- crust ground, base
+   surface, mantle chrome, mauve accent. Latte's --dim is subtext1, not subtext0
+   (tokens.spec: dim-text on --select 4.03); its green #40a02b -> #3c9628
+   (axe: ok status chip 4.49). */
+[data-colorway="catppuccin"] {
+  --ground: #dce0e8;
+  --surface: #eff1f5;
+  --ink: #4c4f69;
+  --dim: #5c5f77;
+  --line: #ccd0da;
+  --win: #e6e9ef;
+  --win-ink: #4c4f69;
+  --accent: #8839ef;
+  --accent-ink: #eff1f5;
+  --ok: #3c9628;
+  --risk: #d20f39;
+}
+
+/* Tokyo Night (terminal): Day by day, Night at night -- bg_dark1 ground, bg
+   surface, bg_dark/bg_highlight chrome, blue accent. Nudged for AA (README):
+   Day bg #e1e2e7 -> #efeff2, fg #3760bf -> #213a73, dark5 #68709a -> #5c6287;
+   Night dark5 #737aa2 -> #888eb0. */
+[data-colorway="tokyonight"] {
+  --ground: #c1c9df;
+  --surface: #efeff2;
+  --ink: #213a73;
+  --dim: #5c6287;
+  --line: #a8aecb;
+  --win: #d0d5e3;
+  --win-ink: #213a73;
+  --accent: #2e7de9;
+  --accent-ink: #efeff2;
+  --ok: #587539;
+  --risk: #c64343;
+}
+
+/* GitHub (terminal): Light Default / Dark Default from Primer's functional
+   colours -- muted/inset ground, default surface, emphasis/muted chrome,
+   accent blue. */
+[data-colorway="github"] {
+  --ground: #f6f8fa;
+  --surface: #ffffff;
+  --ink: #1f2328;
+  --dim: #59636e;
+  --line: #d1d9e0;
+  --win: #25292e;
+  --win-ink: #ffffff;
+  --accent: #0969da;
+  --accent-ink: #ffffff;
+  --ok: #1a7f37;
+  --risk: #d1242f;
+}
+
+/* Dynamic: a palette from the bot's avatar (@kanade/tokens/dynamic), set as
+   `--dyn-*` properties on <html> by theme.ts (and from its cache by
+   theme-boot.js). Until then, or if it fails its checks, it is marigold. */
+[data-colorway="dynamic"] {
+  --ground: var(--dyn-ground-l, #eec75f);
+  --surface: var(--dyn-surface-l, #fbf6e8);
+  --ink: var(--dyn-ink-l, #4a4a58);
+  --dim: var(--dyn-dim-l, #6c6961);
+  --line: var(--dyn-line-l, #e3d8b8);
+  --win: var(--dyn-win-l, #5f6579);
+  --win-ink: var(--dyn-win-ink-l, #fbf6e8);
+  --accent: var(--dyn-accent-l, #4d5c9e);
+  --accent-ink: var(--dyn-accent-ink-l, #f2f4fc);
+  --ok: var(--dyn-ok-l, #35906c);
+  --risk: var(--dyn-risk-l, #c4444a);
+  --ground-ink: var(--dyn-ground-ink-l, var(--ink));
 }
 
 /* ── after hours ────────────────────────────────────────────────────────────
@@ -335,20 +469,6 @@
     --risk: #ef8f93;
   }
 
-  :root:not([data-theme="light"])[data-colorway="coral"] {
-    --ground: #322a2e;
-    --surface: #453d39;
-    --ink: #ece1cf;
-    --dim: #ab9f90;
-    --line: #5c5249;
-    --win: #6e655c;
-    --win-ink: #ece1cf;
-    --accent: #ef939b;
-    --accent-ink: #402226;
-    --ok: #8cccab;
-    --risk: #e2828a;
-  }
-
   :root:not([data-theme="light"])[data-colorway="twilight"] {
     --ground: #2a2436;
     --surface: #383045;
@@ -361,6 +481,132 @@
     --accent-ink: #241a3a;
     --ok: #86c9a8;
     --risk: #ef8b95;
+  }
+
+  :root:not([data-theme="light"])[data-colorway="hoshino"] {
+    --ground: #171a22;
+    --surface: #2a2d35;
+    --ink: #ffffff;
+    --dim: #aaacb7;
+    --line: #484a54;
+    --win: #383b44;
+    --win-ink: #e6e9f2;
+    --accent: #ffb8d1;
+    --accent-ink: #171a22;
+    --ok: #9be6b5;
+    --risk: #ff8f9a;
+  }
+
+  :root:not([data-theme="light"])[data-colorway="mika"] {
+    --ground: #1f1a24;
+    --surface: #2e2834;
+    --ink: #f1e6ee;
+    --dim: #b3a1ae;
+    --line: #4a3f50;
+    --win: #3f4370;
+    --win-ink: #f1e6ee;
+    --accent: #f3c75f;
+    --accent-ink: #2c2208;
+    --ok: #8fdcab;
+    --risk: #ff8e9e;
+  }
+
+  :root:not([data-theme="light"])[data-colorway="seia"] {
+    --ground: #1c1a1f;
+    --surface: #2c2a31;
+    --ink: #f2ece0;
+    --dim: #b8ae9e;
+    --line: #48443f;
+    --win: #514a42;
+    --win-ink: #f2ece0;
+    --accent: #f6c39f;
+    --accent-ink: #2e2510;
+    --ok: #8fd6a6;
+    --risk: #ff9098;
+  }
+
+  :root:not([data-theme="light"])[data-colorway="hina"] {
+    --ground: #141217;
+    --surface: #232029;
+    --ink: #ece9f1;
+    --dim: #ada6b9;
+    --line: #3d3846;
+    --win: #3a3242;
+    --win-ink: #ece9f1;
+    --accent: #d9a6ec;
+    --accent-ink: #2a1233;
+    --ok: #8fd6a6;
+    --risk: #ff8a8f;
+  }
+
+  :root:not([data-theme="light"])[data-colorway="aris"] {
+    --ground: #111419;
+    --surface: #1e232b;
+    --ink: #e8eef4;
+    --dim: #a7b2bf;
+    --line: #36404c;
+    --win: #2e3742;
+    --win-ink: #e8eef4;
+    --accent: #6fd0f5;
+    --accent-ink: #04222f;
+    --ok: #8fd6a6;
+    --risk: #ff9098;
+  }
+
+  :root:not([data-theme="light"])[data-colorway="catppuccin"] {
+    --ground: #11111b;
+    --surface: #1e1e2e;
+    --ink: #cdd6f4;
+    --dim: #9399b2;
+    --line: #313244;
+    --win: #181825;
+    --win-ink: #cdd6f4;
+    --accent: #cba6f7;
+    --accent-ink: #11111b;
+    --ok: #a6e3a1;
+    --risk: #f38ba8;
+  }
+
+  :root:not([data-theme="light"])[data-colorway="tokyonight"] {
+    --ground: #0c0e14;
+    --surface: #1a1b26;
+    --ink: #c0caf5;
+    --dim: #888eb0;
+    --line: #3b4261;
+    --win: #292e42;
+    --win-ink: #c0caf5;
+    --accent: #7aa2f7;
+    --accent-ink: #16161e;
+    --ok: #9ece6a;
+    --risk: #f7768e;
+  }
+
+  :root:not([data-theme="light"])[data-colorway="github"] {
+    --ground: #010409;
+    --surface: #0d1117;
+    --ink: #f0f6fc;
+    --dim: #9198a1;
+    --line: #3d444d;
+    --win: #151b23;
+    --win-ink: #f0f6fc;
+    --accent: #4493f8;
+    --accent-ink: #0d1117;
+    --ok: #3fb950;
+    --risk: #f85149;
+  }
+
+  :root:not([data-theme="light"])[data-colorway="dynamic"] {
+    --ground: var(--dyn-ground-d, #232735);
+    --surface: var(--dyn-surface-d, #303648);
+    --ink: var(--dyn-ink-d, #ece4cd);
+    --dim: var(--dyn-dim-d, #b4ae9a);
+    --line: var(--dyn-line-d, #454b60);
+    --win: var(--dyn-win-d, #4f5871);
+    --win-ink: var(--dyn-win-ink-d, #ece4cd);
+    --accent: var(--dyn-accent-d, #e9c25e);
+    --accent-ink: var(--dyn-accent-ink-d, #2a2410);
+    --ok: var(--dyn-ok-d, #7cc79f);
+    --risk: var(--dyn-risk-d, #ef8b8b);
   }
 }
 
@@ -450,20 +696,6 @@
   --risk: #ef8f93;
 }
 
-:root[data-theme="dark"][data-colorway="coral"] {
-  --ground: #322a2e;
-  --surface: #453d39;
-  --ink: #ece1cf;
-  --dim: #ab9f90;
-  --line: #5c5249;
-  --win: #6e655c;
-  --win-ink: #ece1cf;
-  --accent: #ef939b;
-  --accent-ink: #402226;
-  --ok: #8cccab;
-  --risk: #e2828a;
-}
-
 :root[data-theme="dark"][data-colorway="twilight"] {
   --ground: #2a2436;
   --surface: #383045;
@@ -476,5 +708,131 @@
   --accent-ink: #241a3a;
   --ok: #86c9a8;
   --risk: #ef8b95;
+}
+
+:root[data-theme="dark"][data-colorway="hoshino"] {
+  --ground: #171a22;
+  --surface: #2a2d35;
+  --ink: #ffffff;
+  --dim: #aaacb7;
+  --line: #484a54;
+  --win: #383b44;
+  --win-ink: #e6e9f2;
+  --accent: #ffb8d1;
+  --accent-ink: #171a22;
+  --ok: #9be6b5;
+  --risk: #ff8f9a;
+}
+
+:root[data-theme="dark"][data-colorway="mika"] {
+  --ground: #1f1a24;
+  --surface: #2e2834;
+  --ink: #f1e6ee;
+  --dim: #b3a1ae;
+  --line: #4a3f50;
+  --win: #3f4370;
+  --win-ink: #f1e6ee;
+  --accent: #f3c75f;
+  --accent-ink: #2c2208;
+  --ok: #8fdcab;
+  --risk: #ff8e9e;
+}
+
+:root[data-theme="dark"][data-colorway="seia"] {
+  --ground: #1c1a1f;
+  --surface: #2c2a31;
+  --ink: #f2ece0;
+  --dim: #b8ae9e;
+  --line: #48443f;
+  --win: #514a42;
+  --win-ink: #f2ece0;
+  --accent: #f6c39f;
+  --accent-ink: #2e2510;
+  --ok: #8fd6a6;
+  --risk: #ff9098;
+}
+
+:root[data-theme="dark"][data-colorway="hina"] {
+  --ground: #141217;
+  --surface: #232029;
+  --ink: #ece9f1;
+  --dim: #ada6b9;
+  --line: #3d3846;
+  --win: #3a3242;
+  --win-ink: #ece9f1;
+  --accent: #d9a6ec;
+  --accent-ink: #2a1233;
+  --ok: #8fd6a6;
+  --risk: #ff8a8f;
+}
+
+:root[data-theme="dark"][data-colorway="aris"] {
+  --ground: #111419;
+  --surface: #1e232b;
+  --ink: #e8eef4;
+  --dim: #a7b2bf;
+  --line: #36404c;
+  --win: #2e3742;
+  --win-ink: #e8eef4;
+  --accent: #6fd0f5;
+  --accent-ink: #04222f;
+  --ok: #8fd6a6;
+  --risk: #ff9098;
+}
+
+:root[data-theme="dark"][data-colorway="catppuccin"] {
+  --ground: #11111b;
+  --surface: #1e1e2e;
+  --ink: #cdd6f4;
+  --dim: #9399b2;
+  --line: #313244;
+  --win: #181825;
+  --win-ink: #cdd6f4;
+  --accent: #cba6f7;
+  --accent-ink: #11111b;
+  --ok: #a6e3a1;
+  --risk: #f38ba8;
+}
+
+:root[data-theme="dark"][data-colorway="tokyonight"] {
+  --ground: #0c0e14;
+  --surface: #1a1b26;
+  --ink: #c0caf5;
+  --dim: #888eb0;
+  --line: #3b4261;
+  --win: #292e42;
+  --win-ink: #c0caf5;
+  --accent: #7aa2f7;
+  --accent-ink: #16161e;
+  --ok: #9ece6a;
+  --risk: #f7768e;
+}
+
+:root[data-theme="dark"][data-colorway="github"] {
+  --ground: #010409;
+  --surface: #0d1117;
+  --ink: #f0f6fc;
+  --dim: #9198a1;
+  --line: #3d444d;
+  --win: #151b23;
+  --win-ink: #f0f6fc;
+  --accent: #4493f8;
+  --accent-ink: #0d1117;
+  --ok: #3fb950;
+  --risk: #f85149;
+}
+
+:root[data-theme="dark"][data-colorway="dynamic"] {
+  --ground: var(--dyn-ground-d, #232735);
+  --surface: var(--dyn-surface-d, #303648);
+  --ink: var(--dyn-ink-d, #ece4cd);
+  --dim: var(--dyn-dim-d, #b4ae9a);
+  --line: var(--dyn-line-d, #454b60);
+  --win: var(--dyn-win-d, #4f5871);
+  --win-ink: var(--dyn-win-ink-d, #ece4cd);
+  --accent: var(--dyn-accent-d, #e9c25e);
+  --accent-ink: var(--dyn-accent-ink-d, #2a2410);
+  --ok: var(--dyn-ok-d, #7cc79f);
+  --risk: var(--dyn-risk-d, #ef8b8b);
 }
 

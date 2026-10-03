@@ -1,6 +1,8 @@
 // Ported from v4 portal/_theme-picker.scss. v4 fed each lozenge its colours
 // through an inline `style` attribute; v5 names them per colourway instead.
 
+@use "easing" as *;
+
 .swatches {
   display: flex;
   flex-wrap: wrap;
@@ -89,11 +91,239 @@
   --sw-ground: #9fb0e4;
   --sw-accent: #4a5fae;
 }
-.swatch__dots--coral {
-  --sw-ground: #e87d85;
-  --sw-accent: #d95965;
-}
 .swatch__dots--twilight {
   --sw-ground: #8b7ad2;
   --sw-accent: #6446ab;
+}
+
+// A set of colourways (Base, Blue Archive, Terminal, Dynamic) inside the one
+// Colourway radio group: a disclosure button in the legend (its label names the
+// group), mini swatches while collapsed, then the set's swatches.
+.swatches__set {
+  min-width: 0;
+  margin: 0 0 0.2rem;
+  padding: 0;
+  border: 0;
+}
+
+.swatches__label {
+  font-size: var(--fs-mini);
+  font-weight: 700;
+}
+
+.swatches__note {
+  margin: 0.1rem 0 0;
+  font-size: var(--fs-mini);
+  color: var(--dim-text);
+}
+
+.swatches__set .swatches {
+  margin: 0.3rem 0 0.5rem;
+}
+
+// The set's disclosure, shared by both pickers.
+.setbar {
+  padding: 0;
+}
+
+.setbar__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  margin: 0;
+  padding: 2px 10px 2px 4px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.setbar__toggle:hover {
+  background: var(--chip-fill);
+}
+
+.setbar__toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+// A CSS chevron: right while collapsed, down while open.
+.setbar__chev {
+  width: 7px;
+  height: 7px;
+  margin: 0 4px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+.setbar__toggle[aria-expanded="true"] .setbar__chev {
+  transform: rotate(45deg);
+}
+
+.setbar__minis {
+  display: inline-flex;
+  gap: 3px;
+}
+
+// A colourway's ground with its accent as a dot: the lozenge, in miniature.
+.setbar__mini {
+  position: relative;
+  width: 18px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--sw-ground);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sw-accent) 40%, var(--line));
+}
+
+.setbar__mini::after {
+  content: "";
+  position: absolute;
+  inset: 2px auto 2px 2px;
+  width: 8px;
+  border-radius: 50%;
+  background: var(--sw-accent);
+}
+
+// Collapsed: no height and hidden, so its radios leave the tab order, the
+// arrow-key ring and the accessibility tree. Open: one row grows to fit.
+.setbody {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+}
+
+.setbody--open {
+  grid-template-rows: 1fr;
+  visibility: visible;
+}
+
+.setbody__inner {
+  min-height: 0;
+  overflow: clip;
+  // Room for the focus ring and the selected tile's ring at the clip edge.
+  overflow-clip-margin: 6px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .setbody {
+    transition:
+      grid-template-rows $exit-ms $exit,
+      visibility 0s linear $exit-ms;
+  }
+
+  .setbody--open {
+    transition:
+      grid-template-rows $enter-ms $standard,
+      visibility 0s;
+  }
+
+  .setbar__chev {
+    transition: transform $enter-ms $standard;
+  }
+}
+
+// Colourways added 2026-10-04, for both pickers: the public lozenge
+// (--sw-*) and Config's tile preview (--tm-*, _settings.scss), light faces.
+.swatch__dots--hoshino,
+.tile__mini--hoshino {
+  --sw-ground: #f3bdca;
+  --sw-accent: #095366;
+  --tm-ground: #f3bdca;
+  --tm-pane: #fff5f6;
+  --tm-bar: #6d3646;
+}
+.swatch__dots--mika,
+.tile__mini--mika {
+  --sw-ground: #eaa6d2;
+  --sw-accent: #a0306d;
+  --tm-ground: #eaa6d2;
+  --tm-pane: #ece9ec;
+  --tm-bar: #4a4f86;
+}
+.swatch__dots--seia,
+.tile__mini--seia {
+  --sw-ground: #f0c9a8;
+  --sw-accent: #a8456a;
+  --tm-ground: #f0c9a8;
+  --tm-pane: #fbf8f1;
+  --tm-bar: #6e5d48;
+}
+.swatch__dots--hina,
+.tile__mini--hina {
+  --sw-ground: #cfcbdb;
+  --sw-accent: #6b2f86;
+  --tm-ground: #cfcbdb;
+  --tm-pane: #f6f7f8;
+  --tm-bar: #2f2a36;
+}
+.swatch__dots--aris,
+.tile__mini--aris {
+  --sw-ground: #6cc4e4;
+  --sw-accent: #0d62a6;
+  --tm-ground: #6cc4e4;
+  --tm-pane: #ebeff0;
+  --tm-bar: #1f2630;
+}
+.swatch__dots--catppuccin,
+.tile__mini--catppuccin {
+  --sw-ground: #dce0e8;
+  --sw-accent: #8839ef;
+  --tm-ground: #dce0e8;
+  --tm-pane: #eff1f5;
+  --tm-bar: #e6e9ef;
+}
+.swatch__dots--tokyonight,
+.tile__mini--tokyonight {
+  --sw-ground: #c1c9df;
+  --sw-accent: #2e7de9;
+  --tm-ground: #c1c9df;
+  --tm-pane: #efeff2;
+  --tm-bar: #d0d5e3;
+}
+.swatch__dots--github,
+.tile__mini--github {
+  --sw-ground: #f6f8fa;
+  --sw-accent: #0969da;
+  --tm-ground: #f6f8fa;
+  --tm-pane: #ffffff;
+  --tm-bar: #25292e;
+}
+// Dynamic previews the palette theme.ts derived (marigold until it has one).
+.swatch__dots--dynamic,
+.tile__mini--dynamic {
+  --sw-ground: var(--dyn-ground-l, #eec75f);
+  --sw-accent: var(--dyn-accent-l, #4d5c9e);
+  --tm-ground: var(--dyn-ground-l, #eec75f);
+  --tm-pane: var(--dyn-surface-l, #fbf6e9);
+  --tm-bar: var(--dyn-win-l, #5f657a);
+}
+
+// Config's tiles (_settings.scss) grouped the same way. Its `.tiles__set
+// legend` float also takes these legends into the flex flow.
+.tiles__group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.tiles__label {
+  font-size: var(--fs-small);
+  font-weight: 700;
+}
+
+.tiles__note {
+  margin: 0 0 6px;
+  font-size: var(--fs-mini);
+  color: var(--dim-text);
+}
+
+.tiles__group .tiles {
+  padding: 6px 0 10px;
 }

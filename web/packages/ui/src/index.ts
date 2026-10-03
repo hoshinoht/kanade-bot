@@ -30,7 +30,19 @@ export * from './format';
 export { initial } from './initial';
 export { PHONE_QUERY } from './media';
 export { CHECK_TONE, RUN_TONE, type Tone } from './tone';
-export { applyColorway, applyMode, COLORWAYS, currentColorway, currentMode, THEME_MODES } from './theme/theme';
+export {
+  applyColorway,
+  applyMode,
+  COLORWAY_GROUPS,
+  COLORWAYS,
+  currentColorway,
+  currentMode,
+  openColorwaySets,
+  refreshDynamic,
+  rememberColorwaySet,
+  setOf,
+  THEME_MODES,
+} from './theme/theme';
 export type { Colorway, ThemeMode } from './theme/theme';
 export { registerServiceWorker, serviceWorkerDisabled } from './sw/register';
 // Design experiments (pwa-design-guidelines "Experiments"); revert as a unit.

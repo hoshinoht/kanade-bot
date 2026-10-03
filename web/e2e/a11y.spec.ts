@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
+import { COLORWAYS } from '../packages/tokens/src/colorways';
 import { ADMIN, PUBLIC, csrf, expect, test } from './support';
 
 async function serious(page: Page, label: string) {
@@ -11,10 +12,8 @@ async function serious(page: Page, label: string) {
   return result.violations.length;
 }
 
-// All five colourways in both faces.
-const LOOKS = (['marigold', 'blossom', 'periwinkle', 'coral', 'twilight'] as const).flatMap((c) =>
-  (['light', 'dark'] as const).map((t) => [c, t] as const),
-);
+// Every colourway in both faces.
+const LOOKS = COLORWAYS.map((way) => way.key).flatMap((c) => (['light', 'dark'] as const).map((t) => [c, t] as const));
 
 for (const [colorway, theme] of LOOKS) {
   test(`axe: public and admin views, ${colorway} ${theme}`, async ({ page }) => {
@@ -27,6 +26,8 @@ for (const [colorway, theme] of LOOKS) {
 
     await page.goto(`${PUBLIC}/?sw=off`);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 runs');
+    // Dynamic: wait for the avatar's palette; later pages paint it from the cache.
+    if (colorway === 'dynamic') await expect(page.locator('html')).toHaveAttribute('data-dynamic', 'avatar');
     await serious(page, 'public week');
     await page.getByRole('tab', { name: /List/ }).click();
     await serious(page, 'public list');

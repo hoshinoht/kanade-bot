@@ -22,7 +22,20 @@ test('public: board, list and theme switching', async ({ page }) => {
   await expect(page.getByRole('rowheader').first()).toContainText('Baldrix');
 
   await page.getByRole('tab', { name: 'Appearance' }).click();
-  await page.getByText('Blossom', { exact: true }).click();
+  // Colourways come in labelled sets, by character name.
+  const ways = page.getByRole('group', { name: 'Colourway' });
+  for (const set of ['Base', 'Blue Archive', 'Terminal', 'Dynamic']) await expect(ways.getByRole('group', { name: set })).toBeVisible();
+  // Sets collapse; a collapsed one opens from its label and its choice applies at once.
+  const terminal = ways.getByRole('button', { name: 'Terminal', exact: true });
+  await expect(terminal).toHaveAttribute('aria-expanded', 'false');
+  await terminal.click();
+  await ways.getByText('Tokyo Night', { exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-colorway', 'tokyonight');
+  // Leaving the tab and coming back keeps the sets as they were (memory, this page only).
+  await page.getByRole('tab', { name: /List/ }).click();
+  await page.getByRole('tab', { name: 'Appearance' }).click();
+  await expect(terminal).toHaveAttribute('aria-expanded', 'true');
+  await page.getByText('Nazuna', { exact: true }).click();
   await page.getByText('Dark', { exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-colorway', 'blossom');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
@@ -89,6 +102,7 @@ test('admin: command palette searches and runs commands', async ({ page }) => {
   await expect(palette).toBeVisible();
   const search = palette.getByRole('combobox', { name: 'Search commands' });
   await expect(search).toBeFocused();
+  // The stored key still finds Hinano.
   await search.fill('twilight');
   await expect(palette.getByRole('option')).toHaveCount(1);
   await page.keyboard.press('Enter');

@@ -1,6 +1,7 @@
 // v5 contrast corrections: the only deliberate departures from the v4 token
 // values, each needed for WCAG 2.2 AA (4.5:1) on small text as measured by axe
-// across all ten faces. Kept apart so the change set is one reviewable file;
+// across every face (new colourways since 2026-10-04 were tuned to pass
+// without entries here; see ../README.md). Kept apart so the change set is one reviewable file;
 // ratios are v4 -> v5 against the worst background the token sits on.
 
 // Window chrome behind 13px tab labels (on --win-ink).
@@ -11,10 +12,6 @@
 [data-colorway="periwinkle"] {
   --win: #646c86; // #6d7692 4.03 -> 4.66
   --dim: #616776; // #656b7a 4.36 -> 4.63 on --raise
-}
-
-[data-colorway="coral"] {
-  --win: #726b64; // #8d857c 3.20 -> 4.62
 }
 
 // Marigold is the unattributed default, so it is named both ways.
@@ -39,25 +36,22 @@
   --own-text: color-mix(in srgb, var(--own) 80%, var(--ink));
   --warn-text: color-mix(in srgb, var(--warn) 85%, var(--ink));
   // Accent as link text, and as a fill under --accent-ink (seg buttons, pips):
-  // blossom and coral accents are 3.5-3.6:1 against cream and their ink.
+  // the blossom accent is 3.5:1 against cream and its ink.
   --accent-text: color-mix(in srgb, var(--accent) 55%, var(--ink));
   --accent-fill: color-mix(in srgb, var(--accent) 60%, var(--ink));
 }
 
-// M3E --select-ink (labels on --select): accent-text is 4.37 (blossom) and
-// 4.05 (coral) by day; a deeper share of ink gives 5.14 and 4.71, and stays
-// 5.3-6.2:1 in their dark faces.
-[data-colorway="blossom"],
-[data-colorway="coral"] {
+// M3E --select-ink (labels on --select): accent-text is 4.37 (blossom) by
+// day; a deeper share of ink gives 5.14, and stays 5.3-6.2:1 at night.
+[data-colorway="blossom"] {
   --select-ink: color-mix(in srgb, var(--accent) 35%, var(--ink));
 }
 
 // Text on the bare ground (the unboxed page line, fidelity audit 2026-10-02):
-// ink is 3.89 (periwinkle), 2.91 (coral) and 2.51:1 (twilight) on the light
-// grounds; a share of black takes it to 7.0, 5.4 and 4.9. Dark faces reset it
-// below (ink on their grounds is already 4.5:1 or more).
-[data-colorway="periwinkle"],
-[data-colorway="coral"] {
+// ink is 3.89 (periwinkle) and 2.51:1 (twilight) on the light grounds; a
+// share of black takes it to 7.0 and 4.9. Dark faces reset it below (ink on
+// their grounds is already 4.5:1 or more).
+[data-colorway="periwinkle"] {
   --ground-ink: color-mix(in srgb, var(--ink) 50%, black);
 }
 
@@ -85,11 +79,6 @@
   --dim: #b0b7c6; // #9aa3b5 3.67 -> 4.63
 }
 
-@mixin night-coral {
-  --win: #6b625a; // #6e655c 4.41 -> 4.61
-  --dim: #c4b8a8; // #ab9f90 3.50 -> 4.66
-}
-
 @mixin night-twilight {
   --dim: #b1a8be; // #a49bb3 4.00 -> 4.66
 }
@@ -105,9 +94,6 @@
   :root:not([data-theme="light"])[data-colorway="periwinkle"] {
     @include night-periwinkle;
   }
-  :root:not([data-theme="light"])[data-colorway="coral"] {
-    @include night-coral;
-  }
   :root:not([data-theme="light"])[data-colorway="twilight"] {
     @include night-twilight;
   }
@@ -121,9 +107,6 @@
 }
 :root[data-theme="dark"][data-colorway="periwinkle"] {
   @include night-periwinkle;
-}
-:root[data-theme="dark"][data-colorway="coral"] {
-  @include night-coral;
 }
 :root[data-theme="dark"][data-colorway="twilight"] {
   @include night-twilight;

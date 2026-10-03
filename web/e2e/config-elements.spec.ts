@@ -125,26 +125,44 @@ test('theme: colourway tiles and the mode group apply at once and persist', asyn
   });
   await page.goto(`${ADMIN}/config?section=theme&sw=off`);
   const ways = panel(page).getByRole('group', { name: 'Colourway' });
-  await expect(ways.getByRole('radio')).toHaveCount(5);
-  await expect(ways.getByRole('radio', { name: 'Blossom' })).toBeChecked();
-  await ways.getByRole('radio', { name: 'Twilight' }).click();
+  // Labelled sets inside the one radio group; character names, stored keys unchanged.
+  for (const set of ['Base', 'Blue Archive', 'Terminal', 'Dynamic']) await expect(ways.getByRole('group', { name: set })).toBeVisible();
+  const toggle = (set: string) => ways.getByRole('button', { name: set, exact: true });
+  // Only the current colourway's set starts open; collapsed sets hide their radios.
+  await expect(toggle('Base')).toHaveAttribute('aria-expanded', 'true');
+  for (const set of ['Blue Archive', 'Terminal', 'Dynamic']) await expect(toggle(set)).toHaveAttribute('aria-expanded', 'false');
+  await expect(ways.getByRole('radio')).toHaveCount(4);
+  await expect(ways.getByRole('radio', { name: 'Nazuna' })).toBeChecked();
+  await ways.getByRole('radio', { name: 'Hinano' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-colorway', 'twilight');
-  // Arrow keys move the choice (native radios), which applies at once.
-  await ways.getByRole('radio', { name: 'Twilight' }).focus();
-  await page.keyboard.press('ArrowLeft');
-  await expect(page.locator('html')).toHaveAttribute('data-colorway', 'coral');
+  // Arrow keys skip collapsed sets: from the last open radio they wrap to the first.
+  await ways.getByRole('radio', { name: 'Hinano' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('html')).toHaveAttribute('data-colorway', 'marigold');
+  // Expanded, a set joins the ring; choosing in it leaves both sets open.
+  await toggle('Blue Archive').click();
+  await expect(toggle('Blue Archive')).toHaveAttribute('aria-expanded', 'true');
+  await expect(ways.getByRole('group', { name: 'Blue Archive' }).getByRole('radio')).toHaveCount(5);
+  await ways.getByRole('radio', { name: 'Hinano' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('html')).toHaveAttribute('data-colorway', 'hoshino');
+  await expect(toggle('Base')).toHaveAttribute('aria-expanded', 'true');
+  await expect(ways.getByRole('radio')).toHaveCount(9);
   const modes = panel(page).getByRole('group', { name: 'Mode' });
   await expect(modes.getByRole('radio', { name: 'System' })).toBeChecked();
   await modes.getByRole('radio', { name: 'Dark' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   // The contents list follows, and the choice outlives a reload.
-  await expect(page.getByRole('tab', { name: /^Theme/ })).toContainText('coral');
+  await expect(page.getByRole('tab', { name: /^Theme/ })).toContainText('hoshino');
   await page.reload();
-  await expect(page.locator('html')).toHaveAttribute('data-colorway', 'coral');
+  await expect(page.locator('html')).toHaveAttribute('data-colorway', 'hoshino');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await expect(panel(page).getByRole('group', { name: 'Colourway' }).getByRole('radio', { name: 'Coral' })).toBeChecked();
+  await expect(panel(page).getByRole('group', { name: 'Colourway' }).getByRole('radio', { name: 'Hoshino' })).toBeChecked();
+  // Expanded sets are not stored: after a reload only the current set is open.
+  await expect(panel(page).getByRole('button', { name: 'Base', exact: true })).toHaveAttribute('aria-expanded', 'false');
+  await expect(panel(page).getByRole('button', { name: 'Blue Archive', exact: true })).toHaveAttribute('aria-expanded', 'true');
   await expect(panel(page).getByRole('group', { name: 'Mode' }).getByRole('radio', { name: 'Dark' })).toBeChecked();
-  expect(await page.evaluate(() => [localStorage.getItem('colorway'), localStorage.getItem('theme')])).toEqual(['coral', 'dark']);
+  expect(await page.evaluate(() => [localStorage.getItem('colorway'), localStorage.getItem('theme')])).toEqual(['hoshino', 'dark']);
 });
 
 test('find a setting: Enter jumps to the matching card, rings it and focuses its field', async ({ page }) => {
