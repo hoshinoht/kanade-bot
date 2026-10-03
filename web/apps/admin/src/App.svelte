@@ -512,6 +512,7 @@
           onmove={(runId, to) => void move(runId, to)}
           onswap={(runId, withId) => void swap(runId, withId)}
           onopen={openSheet}
+          onclose={sheetWide ? closePane : undefined}
           onundo={() => void undo()}
           onreread={(run) => void rereadFromBoard(run)}
           busyChannels={rereading}

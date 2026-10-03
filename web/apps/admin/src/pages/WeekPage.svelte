@@ -30,6 +30,7 @@
     onreread,
     busyChannels,
     selectedRun = null,
+    onclose,
     pane,
   }: {
     store: AdminWeek;
@@ -44,6 +45,8 @@
     busyChannels: Set<string>;
     /** The run open in the side pane (wide screens) or the sheet. */
     selectedRun?: string | null;
+    /** Close the side pane: clicking the selected run's card or row again. */
+    onclose?: () => void;
     /** The run pane, rendered beside the board when a run is open on a wide screen (gate G4). */
     pane?: Snippet;
   } = $props();
@@ -111,6 +114,8 @@
     const last = days[days.length - 1];
     return first && last ? `${first.dow} ${dayNumber(first.date)} – ${last.dow} ${longDate(last.date)}` : '';
   });
+  // A second click on the open run closes its side pane.
+  const toggle = (run: Run) => (run.id === selectedRun && onclose ? onclose() : onopen(run.id));
   const glance = $derived(roomy.current && !phone && !selectedRun && tab === 'planner');
   const VIEWS: { id: WeekTab; label: string }[] = [
     { id: 'planner', label: 'Planner' },
@@ -250,7 +255,7 @@
             {selectedRun}
             {onmove}
             {onswap}
-            onopen={(run: Run) => onopen(run.id)}
+            onopen={toggle}
             onhold={(h) => (store.holding = h)}
             saving={store.mutating}
             {onreread}
@@ -259,7 +264,7 @@
             allRuns={store.week?.runs}
           />
         {:else if tab === 'runs'}
-          <RunsTable week={shown} selected={selectedRun} onopen={(run) => onopen(run.id)} />
+          <RunsTable week={shown} selected={selectedRun} onopen={toggle} />
         {:else}
           <!-- Loaded with its tab. -->
           {#await import('../week/AnswersView.svelte') then view}

@@ -751,6 +751,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- v5 admin Week: clicking the open run's card or Runs row again closes its
+  side pane.
 - v5 admin Week: At a glance shows the next run's party with each member's
   answer, waiting first; the run side pane is wider (about 410-480 px from
   1000 px) and can pop out to the larger run sheet on the same tab.

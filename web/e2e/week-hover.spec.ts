@@ -324,6 +324,25 @@ test('the run pane grows with the window', async ({ page }) => {
   }
 });
 
+test('clicking the open run again closes its pane; another run switches it', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openWeek(page);
+  const card = page.locator('[data-run="r-kalos"]');
+  const pane = page.getByRole('complementary', { name: 'XKalos' });
+  await card.locator('.plan-card__open').click();
+  await expect(pane).toBeVisible();
+  await card.locator('.plan-card__open').click();
+  await expect(pane).toHaveCount(0);
+  await expect(card).not.toHaveClass(/plan-card--selected/);
+  await expect(card.locator('.plan-card__open')).toBeFocused();
+  // Another run still switches the pane instead of closing it.
+  await card.locator('.plan-card__open').click();
+  await page.locator('[data-run="r-carling"] .plan-card__open').click();
+  await expect(page.getByRole('complementary', { name: 'HCarling + HStar' })).toBeVisible();
+  await page.locator('[data-run="r-carling"] .plan-card__open').click();
+  await expect(page.locator('aside.week-pane')).toHaveCount(0);
+});
+
 test('the pane pops out to the full sheet on the same tab and comes back to the pane', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await openWeek(page);
