@@ -287,6 +287,7 @@ impl ConfigDesk {
         channels: &[ChannelEntry],
         roles: &[RoleEntry],
         notices: Vec<String>,
+        last_digest: Option<dto::LastDigest>,
     ) -> ConfigView {
         let missing_env = self.missing_env(settings);
         let choices = self.profile_choices_for(settings);
@@ -359,6 +360,7 @@ impl ConfigDesk {
             },
             notices,
             env: self.env(settings, channels),
+            last_digest,
         }
     }
 
@@ -395,6 +397,8 @@ impl ConfigDesk {
                 .collect::<Vec<_>>()
                 .join(", ")
         };
+        // The env form of an id list (`guild::list`); unset when empty.
+        let ids = |ids: &[String]| (!ids.is_empty()).then(|| ids.join(","));
         let posting: Vec<String> = settings.posting.channel_id.iter().cloned().collect();
         vec![
             EnvRow {
@@ -402,6 +406,7 @@ impl ConfigDesk {
                 label: "Timezone",
                 value: facts.timezone.clone(),
                 reason: "Every stored time is converted with it; a change needs a restart.",
+                copy: Some(facts.timezone.clone()).filter(|zone| !zone.is_empty()),
             },
             EnvRow {
                 key: "KANADE_BOSS_WEEK_RESET_WEEKDAY",
@@ -412,6 +417,10 @@ impl ConfigDesk {
                     crate::api::dto::hhmm(settings.schedule.reset_time)
                 ),
                 reason: "Defines the boss-week boundaries of every stored run.",
+                // `mon`..`sun`; the reset time is KANADE_BOSS_WEEK_RESET_TIME.
+                copy: Some(
+                    crate::api::dto::dow(settings.schedule.reset_weekday).to_ascii_lowercase(),
+                ),
             },
             EnvRow {
                 key: "KANADE_POST_CHANNEL_ID",
@@ -422,36 +431,42 @@ impl ConfigDesk {
                     named(&posting)
                 },
                 reason: "Set with the guild's channel layout.",
+                copy: ids(&posting),
             },
             EnvRow {
                 key: "KANADE_WATCH_CHANNEL_IDS",
                 label: "Watched channels",
                 value: named(&settings.watching.channel_ids),
                 reason: "Watching a new channel is a deliberate deploy.",
+                copy: ids(&settings.watching.channel_ids),
             },
             EnvRow {
                 key: "KANADE_WATCH_CATEGORY_IDS",
                 label: "Watched categories",
                 value: named(&settings.watching.category_ids),
                 reason: "Watching a whole category is a deliberate deploy, like channels.",
+                copy: ids(&settings.watching.category_ids),
             },
             EnvRow {
                 key: "KANADE_CHAT_CATEGORY_IDS",
                 label: "Chat categories",
                 value: named(&settings.chatbot.category_ids),
                 reason: "The chatbot answers in every channel of these categories; set with the channel layout.",
+                copy: ids(&settings.chatbot.category_ids),
             },
             EnvRow {
                 key: "KANADE_CHAT_PILOT_ROLE_ID",
                 label: "Chat pilot role",
                 value: set(facts.chat_pilot_role_id.as_ref()),
                 reason: "Who may talk to the chatbot is a deployment decision.",
+                copy: facts.chat_pilot_role_id.clone(),
             },
             EnvRow {
                 key: "KANADE_MODEL_BASE_URL",
                 label: "Model gateway",
                 value: set(facts.model_gateway.as_ref()),
                 reason: "Repointing the gateway would redirect the bearer key, so only the operator changes it.",
+                copy: facts.model_gateway.clone(),
             },
             if facts.model_groups.is_empty() {
                 EnvRow {
@@ -459,6 +474,7 @@ impl ConfigDesk {
                     label: "Model permits",
                     value: facts.model_permits.to_string(),
                     reason: "One capacity group shared by every model role; kanade.toml [[models.groups]] replaces it after a restart.",
+                    copy: Some(facts.model_permits.to_string()),
                 }
             } else {
                 EnvRow {
@@ -466,6 +482,7 @@ impl ConfigDesk {
                     label: "Model capacity groups",
                     value: groups_summary(&facts.model_groups),
                     reason: "Set in kanade.toml ([[models.groups]]); restart to apply.",
+                    copy: None,
                 }
             },
         ]

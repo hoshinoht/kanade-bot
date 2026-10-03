@@ -3,17 +3,21 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use chrono::{DateTime, Timelike, Utc};
+use chrono_tz::Tz;
 use ring::digest::{SHA256, digest};
 use serde::Serialize;
 
 use crate::{
-    api::state::RoleEntry,
+    api::state::{ChannelEntry, RoleEntry},
     chat::persona::{PersonaSnapshot, ProfileId},
+    domain::notify::WeeklyDigest,
     domain::settings::{
         ContextRole as StoredContextRole, Rate as StoredRate, RoleModel as StoredRole,
         RoleProfileAssignment as StoredRoleProfile, RunLengthOverride as StoredRunLengthOverride,
         RunLengths as StoredRunLengths, RuntimeSettings,
     },
+    domain::time::ZonedDateTime,
     infrastructure::llm::{
         TrustZone,
         governor::Role,
@@ -36,6 +40,8 @@ pub struct ConfigView {
     pub manage_messages: ManageMessages,
     pub notices: Vec<String>,
     pub env: Vec<EnvRow>,
+    /// `null` when no digest is active or the journal could not be read.
+    pub last_digest: Option<LastDigest>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -327,6 +333,9 @@ pub struct KeyLimits {
 pub struct CapacityCheck {
     pub level: &'static str,
     pub message: String,
+    /// The capacity group the check is about (`models.groups[].group`);
+    /// `null` for checks that span groups.
+    pub group: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -355,6 +364,59 @@ pub struct EnvRow {
     pub label: &'static str,
     pub value: String,
     pub reason: &'static str,
+    /// The raw value to paste into the deployment env for `key`; `null` when
+    /// unset or when the row has no single env value. Never a secret.
+    pub copy: Option<String>,
+}
+
+/// The most recent active weekly digest card.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct LastDigest {
+    /// RFC 3339 in the guild's offset, whole seconds.
+    pub posted_at: String,
+    /// Guild-local boss-week start date (`YYYY-MM-DD`).
+    pub week_start: String,
+    pub this_week: bool,
+    pub channel_id: String,
+    pub channel_name: Option<String>,
+    pub url: Option<String>,
+}
+
+/// The newest non-retired digest by `posted_at`, in the guild's zone;
+/// `current_week` is the running boss week's start instant.
+pub fn last_digest(
+    digests: &[WeeklyDigest],
+    zone: Tz,
+    current_week: DateTime<Utc>,
+    channels: &[ChannelEntry],
+    guild_id: Option<&str>,
+) -> Option<LastDigest> {
+    let digest = digests
+        .iter()
+        .filter(|digest| digest.retired_at.is_none())
+        .max_by_key(|digest| (digest.posted_at, digest.week_start))?;
+    let posted = digest
+        .posted_at
+        .with_nanosecond(0)
+        .unwrap_or(digest.posted_at);
+    let posted_at = ZonedDateTime::from_instant(&posted, zone).ok()?.isoformat();
+    let week = ZonedDateTime::from_instant(&digest.week_start, zone).ok()?;
+    Some(LastDigest {
+        posted_at,
+        week_start: super::iso_date(week.wall().date()),
+        this_week: digest.week_start == current_week,
+        channel_name: channels
+            .iter()
+            .find(|channel| channel.id == digest.channel_id)
+            .map(|channel| channel.name.clone()),
+        url: guild_id.map(|guild| {
+            format!(
+                "https://discord.com/channels/{guild}/{}/{}",
+                digest.channel_id, digest.message_id
+            )
+        }),
+        channel_id: digest.channel_id.clone(),
+    })
 }
 
 pub fn pings(settings: &RuntimeSettings) -> Pings {
@@ -521,7 +583,54 @@ fn summary(prompt: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::summary;
+    use chrono::TimeZone;
+
+    use super::*;
+
+    fn digest(week: u32, posted: (u32, u32, u32), retired: bool) -> WeeklyDigest {
+        let at = |day, hour, minute| Utc.with_ymd_and_hms(2026, 9, day, hour, minute, 0).unwrap();
+        WeeklyDigest {
+            week_start: at(week, 16, 0),
+            channel_id: "11".into(),
+            message_id: format!("m{week}"),
+            posted_at: at(posted.0, posted.1, posted.2) + chrono::Duration::microseconds(250),
+            retired_at: retired.then(|| at(30, 0, 0)),
+        }
+    }
+
+    #[test]
+    fn last_digest_is_the_newest_active_card_in_guild_time() {
+        let zone: Tz = "Asia/Kuala_Lumpur".parse().unwrap();
+        // Boss weeks start Thu 00:00 +08:00 (Wed 16:00 UTC).
+        let digests = [
+            digest(16, (16, 16, 15), false),
+            digest(23, (23, 16, 15), false),
+            digest(30, (30, 16, 15), true),
+        ];
+        let channels = [ChannelEntry {
+            id: "11".into(),
+            name: "boss-chat".into(),
+            watched: false,
+        }];
+        let current = Utc.with_ymd_and_hms(2026, 9, 23, 16, 0, 0).unwrap();
+        let last = last_digest(&digests, zone, current, &channels, Some("9")).unwrap();
+        assert_eq!(
+            last,
+            LastDigest {
+                posted_at: "2026-09-24T00:15:00+08:00".into(),
+                week_start: "2026-09-24".into(),
+                this_week: true,
+                channel_id: "11".into(),
+                channel_name: Some("boss-chat".into()),
+                url: Some("https://discord.com/channels/9/11/m23".into()),
+            }
+        );
+        let earlier = Utc.with_ymd_and_hms(2026, 9, 30, 16, 0, 0).unwrap();
+        let last = last_digest(&digests[..1], zone, earlier, &[], None).unwrap();
+        assert!(!last.this_week);
+        assert_eq!((last.channel_name, last.url), (None, None));
+        assert_eq!(last_digest(&digests[2..], zone, current, &[], None), None);
+    }
 
     #[test]
     fn summaries_take_the_first_line_and_cut_long_ones() {

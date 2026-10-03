@@ -1005,6 +1005,33 @@ export interface KeyLimits {
 export interface CapacityCheck {
   level: 'ok' | 'warning' | 'error';
   message: string;
+  /** The capacity group it is about (`models.groups[].group`); null for checks spanning groups. */
+  group?: string | null;
+}
+
+/** The newest active weekly digest card (Config → Digest "Last posted"). */
+export interface LastDigest {
+  /** RFC 3339 in the guild's offset, whole seconds. */
+  posted_at: string;
+  /** Guild-local boss-week start date, `YYYY-MM-DD`. */
+  week_start: string;
+  /** `week_start` is the current boss week. */
+  this_week: boolean;
+  channel_id: string;
+  /** Null when the channel is not in the guild's channel list. */
+  channel_name: string | null;
+  /** Discord message link; null while the guild id is unknown. */
+  url: string | null;
+}
+
+/** A setting only the deployment can change. */
+export interface EnvRow {
+  key: string;
+  label: string;
+  value: string;
+  reason: string;
+  /** The raw value to paste into the env for `key`; null when unset or not a single env value. Never a secret. */
+  copy?: string | null;
 }
 
 export interface RoleProfile {
@@ -1084,7 +1111,9 @@ export interface ConfigView {
   /** Present on PATCH responses that reset a stranded reasoning level. */
   notices?: string[];
   /** Settings only the deployment can change, each with the reason. */
-  env: { key: string; label: string; value: string; reason: string }[];
+  env: EnvRow[];
+  /** Null or absent when no digest is active (or the journal could not be read). */
+  last_digest?: LastDigest | null;
 }
 
 /** `GET /api/admin/access`: the bot's role permissions per channel (v4 access.html). */

@@ -271,6 +271,29 @@ the A4 table.
   off. Links carry the run id and proposed time only — no secret; members
   sign in with Discord and the server re-validates everything.
 - Capacity: see `limits-contract.md` (per-alias admission rule and DTOs).
+  Each `capacity_check` entry carries `group`: the `models.groups[].group`
+  it is about (`gateway` for the default group), or `null` for checks that
+  span groups (a role model in no declared group, Kanata unreachable). An
+  alias Kanata does not list is reported once, under the first group (in
+  `models.groups` order) naming it.
+- `env[].copy` (**Implemented**) is the raw value an operator pastes into the
+  deployment env for `key`: the timezone, the reset weekday as
+  `KANADE_BOSS_WEEK_RESET_WEEKDAY` takes it (`mon`..`sun`; the reset time is
+  the separate `KANADE_BOSS_WEEK_RESET_TIME`), comma-joined channel/category
+  ids, the pilot role id, the gateway base URL, the permits number. It is
+  `null` when the setting is unset (empty id lists included) and for the
+  combined `KANADE_MODEL_PERMITS / kanade.toml [[models.groups]]` row. Never
+  a secret (no key or key-file contents).
+- `last_digest` (**Implemented**) is the newest non-retired weekly digest by
+  posted time, or `null`: `{posted_at, week_start, this_week, channel_id,
+  channel_name, url}`. `posted_at` is RFC 3339 in the guild's offset, whole
+  seconds (`2026-09-24T00:15:00+08:00`); `week_start` is the guild-local
+  boss-week start date; `this_week` is whether that is the current boss week;
+  `channel_name` is `null` when the channel is not in the guild's channel
+  list; `url` is the Discord message link, `null` while the guild id is
+  unknown. PATCH answers carry it too. A delivery-journal read failure leaves
+  it `null` (logged as `config_digest_unreadable`) rather than failing the
+  page.
 
 ### Reply profile visibility
 

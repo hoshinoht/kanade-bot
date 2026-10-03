@@ -6,6 +6,13 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin Config API adds three read-only fields for the Config page:
+  `models.capacity_check[].group` names the capacity group each check is about
+  (null for cross-group checks), `env[].copy` gives the raw value to paste into
+  the deployment env (null when unset), and `last_digest` reports the newest
+  active weekly digest (guild-offset `posted_at`, boss-week start, whether it
+  is this week, channel name and message link).
+
 - v5 admin Inbox items carry an optional one-line `consequence` read off the
   merge preview (e.g. "Party unchanged · 2 reminders will move", "Adds Finn",
   "2 reminders will be dropped"): party joins and leaves of the changed runs

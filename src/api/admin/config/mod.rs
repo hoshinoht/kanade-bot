@@ -100,7 +100,7 @@ fn put(settings: &mut RuntimeSettings, section: Section) {
     }
 }
 
-fn answer(
+async fn answer(
     state: &ApiState,
     desk: &ConfigDesk,
     settings: &RuntimeSettings,
@@ -112,14 +112,37 @@ fn answer(
     } else {
         Vec::new()
     };
-    let view = desk.view(
-        settings,
-        catalog,
-        &state.channels.channels(),
-        &roles,
-        notices,
-    );
+    let channels = state.channels.channels();
+    let last_digest = last_digest(state, &channels).await;
+    let view = desk.view(settings, catalog, &channels, &roles, notices, last_digest);
     Ok(Json(view).into_response())
+}
+
+/// A failed journal read leaves the field empty rather than failing the page.
+async fn last_digest(
+    state: &ApiState,
+    channels: &[crate::api::state::ChannelEntry],
+) -> Option<crate::api::dto::config::LastDigest> {
+    let digests = match state.store.digests().await {
+        Ok(digests) => digests,
+        // Store error text may carry paths, so only the event is logged.
+        Err(_) => {
+            crate::runtime::logging::event(
+                "WARN",
+                "config_digest_unreadable",
+                serde_json::json!({}),
+            );
+            return None;
+        }
+    };
+    let current = state.policy.week_of(&state.now()).ok()?.to_fixed().to_utc();
+    crate::api::dto::config::last_digest(
+        &digests,
+        state.policy.zone(),
+        current,
+        channels,
+        state.guild_id.as_deref(),
+    )
 }
 
 async fn read(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
@@ -127,7 +150,7 @@ async fn read(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
     let desk = desk(state)?;
     let settings = desk.settings().await;
     let catalog = desk.catalog().await;
-    answer(state, desk, &settings, &catalog, Vec::new())
+    answer(state, desk, &settings, &catalog, Vec::new()).await
 }
 
 async fn update(
@@ -154,7 +177,7 @@ async fn update(
         let settings = current.clone();
         drop(current);
         let catalog = desk.catalog().await;
-        return answer(state, desk, &settings, &catalog, entry.notices);
+        return answer(state, desk, &settings, &catalog, entry.notices).await;
     }
 
     let (name, fields) = patch::section(&body)?;
@@ -344,7 +367,7 @@ async fn update(
         Some(catalog) => catalog,
         None => desk.catalog().await,
     };
-    answer(state, desk, &next, &catalog, notices)
+    answer(state, desk, &next, &catalog, notices).await
 }
 
 fn name_of(section: &str) -> &'static str {

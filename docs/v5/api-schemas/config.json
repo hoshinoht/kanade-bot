@@ -174,7 +174,21 @@
       "required": ["level", "message"],
       "properties": {
         "level": { "enum": ["ok", "warning", "error"] },
-        "message": { "type": "string" }
+        "message": { "type": "string" },
+        "group": { "type": ["string", "null"], "description": "The capacity group (models.groups[].group) the check is about; null for checks spanning groups (a role in no group, Kanata unreachable). An alias Kanata does not list is reported once, under the first group naming it." }
+      }
+    },
+    "LastDigest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["posted_at", "week_start", "this_week", "channel_id", "channel_name", "url"],
+      "properties": {
+        "posted_at": { "type": "string", "format": "date-time", "description": "RFC 3339 in the guild's offset, whole seconds." },
+        "week_start": { "type": "string", "format": "date", "description": "Guild-local boss-week start date." },
+        "this_week": { "type": "boolean", "description": "week_start is the current boss week's start." },
+        "channel_id": { "type": "string" },
+        "channel_name": { "type": ["string", "null"], "description": "null when the channel is not in the guild's current channel list." },
+        "url": { "type": ["string", "null"], "description": "Discord message link; null while the guild id is unknown." }
       }
     },
     "RoleProfile": {
@@ -325,9 +339,14 @@
               "key": { "type": "string" },
               "label": { "type": "string" },
               "value": { "type": "string" },
-              "reason": { "type": "string" }
+              "reason": { "type": "string" },
+              "copy": { "type": ["string", "null"], "description": "The raw env value for key (ids comma-joined, weekday mon..sun); null when unset or the row has no single env value. Never a secret." }
             }
           }
+        },
+        "last_digest": {
+          "description": "The newest active weekly digest by posted_at; null (or absent) when none or the journal is unreadable.",
+          "oneOf": [{ "$ref": "#/$defs/LastDigest" }, { "type": "null" }]
         }
       }
     },

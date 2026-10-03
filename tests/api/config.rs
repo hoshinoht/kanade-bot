@@ -516,7 +516,7 @@ async fn get_shows_settings_models_personas_and_env_facts() {
     );
     assert_eq!(
         models["capacity_check"],
-        json!([{"level": "ok", "message": "Group gateway: 2 permits, matching Kanata's limit."}])
+        json!([{"level": "ok", "message": "Group gateway: 2 permits, matching Kanata's limit.", "group": "gateway"}])
     );
 
     let env = |key: &str| {
@@ -538,6 +538,21 @@ async fn get_shows_settings_models_personas_and_env_facts() {
     assert_eq!(env("KANADE_TIMEZONE"), "Asia/Kuala_Lumpur");
     assert_eq!(env("KANADE_MODEL_PERMITS"), "2");
     assert_eq!(env("KANADE_BOSS_WEEK_RESET_WEEKDAY"), "Thu 00:00");
+    let copy = |key: &str| {
+        env_rows
+            .iter()
+            .find(|row| row["key"] == key)
+            .unwrap_or_else(|| panic!("{key}"))["copy"]
+            .clone()
+    };
+    assert_eq!(copy("KANADE_TIMEZONE"), "Asia/Kuala_Lumpur");
+    assert_eq!(copy("KANADE_BOSS_WEEK_RESET_WEEKDAY"), "thu");
+    assert_eq!(copy("KANADE_MODEL_PERMITS"), "2");
+    assert_eq!(copy("KANADE_MODEL_BASE_URL"), "https://kanata.test/v1");
+    assert_eq!(copy("KANADE_CHAT_PILOT_ROLE_ID"), "30");
+    assert_eq!(copy("KANADE_CHAT_CATEGORY_IDS"), Value::Null, "unset");
+    assert_eq!(copy("KANADE_POST_CHANNEL_ID"), Value::Null, "unset");
+    assert_eq!(view["last_digest"], Value::Null, "no digest posted yet");
 
     let persona = &view["persona"];
     let keys: Vec<&str> = persona["personas"]
@@ -1764,6 +1779,66 @@ const ACCESS: &str = "/api/admin/access";
 const RECHECK: &str = "/api/admin/access/recheck";
 
 #[tokio::test]
+async fn the_last_posted_digest_is_shown_with_its_channel_and_link() {
+    use chrono::{TimeZone, Utc};
+    use kanade::domain::notify::{
+        Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, NotificationIntent,
+        Receipt,
+    };
+
+    let config = Config::new().await;
+    let store = &config.reads.store;
+    // The pinned clock is Tue 29 Sep 12:00 KL; this boss week began Thu 24 Sep.
+    let week = Utc.with_ymd_and_hms(2026, 9, 23, 16, 0, 0).unwrap();
+    let posted = Utc.with_ymd_and_hms(2026, 9, 23, 16, 15, 0).unwrap();
+    let lease = store
+        .begin_lease("config-test", "delivery", posted)
+        .await
+        .unwrap();
+    let intent = NotificationIntent {
+        effect: EffectKind::Digest,
+        effect_context: Vec::new(),
+        channel_id: "star".into(),
+        targets: vec![DeliveryTarget::Digest(week)],
+        mentions: Vec::new(),
+        content: IntentContent::Digest {
+            week_start: week,
+            inclusion: Default::default(),
+        },
+        warnings: Vec::new(),
+    };
+    let Ok(Claim::Fresh(attempt)) = store.claim(&lease, &intent, None, posted).await else {
+        panic!("digest claim");
+    };
+    let receipt = Receipt {
+        channel_id: "star".into(),
+        message_id: "5150".into(),
+    };
+    store
+        .bind(&lease, &attempt, &receipt, None, posted)
+        .await
+        .unwrap();
+    store.end_lease(&lease, posted).await.unwrap();
+
+    assert_eq!(
+        config.get().await["last_digest"],
+        json!({
+            "posted_at": "2026-09-24T00:15:00+08:00",
+            "week_start": "2026-09-24",
+            "this_week": true,
+            "channel_id": "star",
+            "channel_name": "#star",
+            "url": "https://discord.com/channels/900/star/5150",
+        })
+    );
+    // PATCH answers carry it too.
+    let saved = config
+        .patch(json!({"notifications": {"quiet_mode": true}}))
+        .await;
+    assert_eq!(saved["last_digest"]["channel_id"], "star");
+}
+
+#[tokio::test]
 async fn access_reports_watched_and_digest_channels() {
     let mut digest = settings();
     // Not watched: listed as the digest channel only.
@@ -1993,9 +2068,9 @@ async fn declared_groups_are_listed_checked_per_group_and_summarised() {
     assert_eq!(
         models["capacity_check"],
         json!([
-            {"level": "warning", "message": "The rewrite model kanata/rewrite-small is in no capacity group; its calls are refused."},
-            {"level": "ok", "message": "Group local: 2 permits, matching Kanata's limit."},
-            {"level": "warning", "message": "Group spare uses 3 of the 8 permits Kanata admits."},
+            {"level": "warning", "message": "The rewrite model kanata/rewrite-small is in no capacity group; its calls are refused.", "group": null},
+            {"level": "ok", "message": "Group local: 2 permits, matching Kanata's limit.", "group": "local"},
+            {"level": "warning", "message": "Group spare uses 3 of the 8 permits Kanata admits.", "group": "spare"},
         ])
     );
     let row = view["env"]
@@ -2006,6 +2081,7 @@ async fn declared_groups_are_listed_checked_per_group_and_summarised() {
         .unwrap()
         .clone();
     assert_eq!(row["value"], "2 groups: local 2, spare 3");
+    assert_eq!(row["copy"], Value::Null, "no single env value");
     assert_eq!(
         row["reason"],
         "Set in kanade.toml ([[models.groups]]); restart to apply."
@@ -2038,7 +2114,7 @@ async fn a_declared_group_over_kanata_limit_refuses_the_save() {
     let view = config.get().await;
     assert_eq!(
         view["models"]["capacity_check"],
-        json!([{"level": "error", "message": "Group local declares 2 permits but Kanata admits at most 1 (capped by kanata/tiny); the bot refuses to start."}])
+        json!([{"level": "error", "message": "Group local declares 2 permits but Kanata admits at most 1 (capped by kanata/tiny); the bot refuses to start.", "group": "local"}])
     );
     // A pre-existing error never blocks an unrelated save.
     config

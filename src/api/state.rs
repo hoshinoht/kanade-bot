@@ -29,7 +29,7 @@ use crate::{
             ChatFilter, ChatInteraction, ExtractionFilter, ExtractionLog, LogFacets, LogPage,
             MaskedTurn, ModelLogStore, WatchedMessage,
         },
-        notify::DeliveryJournal,
+        notify::{DeliveryJournal, WeeklyDigest},
         proposals::{ProposalCardStore, StoredCard},
         schedule::{SchedulePolicy, ScheduleSnapshot},
         scheduler::{ScheduleStore, Scope, StoreError},
@@ -146,6 +146,8 @@ pub trait ReadStore: Send + Sync {
     fn chat_log_facets(&self) -> ReadFuture<'_, LogFacets>;
     /// The Model view stored with a masked chat turn.
     fn masked_chat(&self, id: String) -> ReadFuture<'_, Option<MaskedTurn>>;
+    /// Every weekly digest card, active or retired (the Config page's last post).
+    fn digests(&self) -> ReadFuture<'_, Vec<WeeklyDigest>>;
 }
 
 /// One history page: records and whether older ones exist.
@@ -373,6 +375,15 @@ where
 
     fn masked_chat(&self, id: String) -> ReadFuture<'_, Option<MaskedTurn>> {
         Box::pin(async move { self.load_masked_chat(&id).await })
+    }
+
+    fn digests(&self) -> ReadFuture<'_, Vec<WeeklyDigest>> {
+        Box::pin(async move {
+            self.load_digests()
+                .await
+                .map(|log| log.digests)
+                .map_err(|error| StoreError::Backend(error.to_string()))
+        })
     }
 }
 
