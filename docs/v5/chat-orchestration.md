@@ -218,7 +218,8 @@ are C3. Serve wiring is `chat::driver` (below).
   (`9:00 pm`, `a.m.`; 12-hour times are not converted), any `#name` channel
   (the listing has only `<#id>`), any bare 8-hex id, and any count, date
   or status in words: number words (`one`…`twenty`, tens, `hundred`,
-  `half`, `both`, `few`…), ordinals (`first`…`thirty-first`), quantifiers
+  `half`, `both`, `few`…), ordinals (`first`…`thirty-first`) where they can be a date (after `the`
+  or a month, or before `of` or a month; "its first ✅" is kept), quantifiers
   (`all`, `everyone`, `nobody`, `no one`, `none`…), `un`-statuses
   (`unconfirmed`…) and status synonyms (`called off`, `postponed`,
   `rescheduled`, `moved`, `finished`, `completed`, `cleared`, `over`,

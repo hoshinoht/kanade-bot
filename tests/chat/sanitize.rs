@@ -575,6 +575,9 @@ fn a_dated_sentence_with_the_right_plain_name_is_kept() {
         // The run's difficulty as a letter or `hm`-style shorthand.
         "Your next run is H Carling on Mon 05 Oct at 21:00.",
         "Your next run is HM Carling on Mon 05 Oct at 21:00.",
+        // An ordinal that cannot be a date is flavour (live 2026-10-03 shape).
+        "Papa~ Your next run is **Hard Carling** on *Mon 05 Oct · 21:00* — `planned`, `0/3 yes`, in <#4245>. The lobby’s waiting on its first ✅.",
+        "Carling on Mon 05 Oct at 21:00 is your first run, Papa.",
     ] {
         if ground_schedule_reply(sentence, &outcomes) != format!("{sentence}\n\n{}", next_carling())
         {
@@ -643,6 +646,9 @@ fn a_dated_sentence_with_facts_in_words_falls_back() {
     for sentence in [
         "Hard Lotus is on Tue 06 Oct at 20:00 and is at-risk.",
         "Hard Lotus is on October seventh at 20:00.",
+        "Hard Lotus is on the seventh at 20:00.",
+        "Hard Lotus is on the seventh of October at 20:00.",
+        "Hard Lotus is on seventh Oct at 20:00.",
         "Hard Lotus on ０７ Oct at 20:00.",
     ] {
         check(UPCOMING, sentence);

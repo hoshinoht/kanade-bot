@@ -66,8 +66,10 @@ static UNREAD: LazyLock<Regex> = LazyLock::new(|| {
         r"|(?:^|[^<\[\w])#[a-z_][\w-]*",
         r"|\b[0-9a-f]{8}\b",
         r"|\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|dozen|half|both|couple|several|few)\b",
-        r"|\b(?:(?:twenty|thirty)[\s-]?)?(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)\b",
-        r"|\b(?:tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|thirtieth)\b",
+        // An ordinal only where it can be a date: after `the` or a month, or
+        // before `of` or a month; "its first ✅" is flavour, not a fact.
+        r"|(?:\bthe|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?)\s+(?:(?:twenty|thirty)[\s-]?)?(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|thirtieth)\b",
+        r"|\b(?:(?:twenty|thirty)[\s-]?)?(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|thirtieth)\s+(?:of\b|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b)",
         r"|\b(?:everyone|everybody|nobody|no[\s-]?one|none|all|anyone|anybody|someone|somebody)\b",
         r"|\bun(?:confirmed|planned|scheduled|decided|answered)\b",
         r"|\b(?:call(?:ed|ing)?\s+off|postponed?|rescheduled?|moved|finished|completed?|cleared|over|happened|ended|delayed|pushed\s+back|scrapped|tentative|pending|wrapped)\b",
