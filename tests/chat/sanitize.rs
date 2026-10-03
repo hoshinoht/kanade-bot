@@ -1,63 +1,15 @@
 //! `sanitize.json`: note defusing, member-facing rewrites, false-claim
 //! stripping, trusted defaults, tidy bounds and schedule regrounding.
 
-use std::sync::LazyLock;
-
 use kanade::chat::sanitize::{
-    self, defuse_notes, looks_like_clarification, member_facing, reply_parts, schedule_defaults,
-    strip_false_card_claim, tidy,
+    self, defuse_notes, ground_schedule_reply, looks_like_clarification, member_facing,
+    reply_parts, schedule_defaults, shape_reply, strip_false_card_claim, tidy,
 };
 use kanade::chat::tools::ToolOutcome;
-use kanade::domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec};
 use serde_json::{Map, Value, json};
 
 use crate::common::text;
 use crate::support::{Named, check_family, dev, unknown_op, value};
-
-/// The fixtures' boss catalog (aliases included); `will` is an ordinary word.
-static CATALOG: LazyLock<BossTable> = LazyLock::new(|| {
-    let difficulty = |prefix: &str, label: &str| DifficultySpec {
-        prefix: prefix.to_owned(),
-        label: label.to_owned(),
-    };
-    let boss = |short: &str, aliases: &[&str]| BossSpec {
-        short: short.to_owned(),
-        aliases: aliases.iter().map(|alias| (*alias).to_owned()).collect(),
-        ..BossSpec::default()
-    };
-    BossTable::from_spec(&CatalogSpec {
-        difficulties: vec![
-            difficulty("e", "Easy"),
-            difficulty("n", "Normal"),
-            difficulty("h", "Hard"),
-            difficulty("c", "Chaos"),
-            difficulty("x", "Extreme"),
-        ],
-        bosses: vec![
-            boss("Lotus", &["lotus", "lot"]),
-            boss("Vellum", &["vellum"]),
-            boss("Magnus", &["magnus"]),
-            boss("Lucid", &["lucid"]),
-            boss("Kalos", &["kalos", "gatekeeper"]),
-            boss("Carling", &["carling", "karling", "kaling", "carl", "karl"]),
-            boss("Will", &["will"]),
-            BossSpec {
-                full: Some("Radiant Malefic Star".to_owned()),
-                ..boss("MaleficStar", &["star", "malefic"])
-            },
-            boss("FA", &["fa"]),
-        ],
-    })
-    .expect("fixture catalog is valid")
-});
-
-fn ground_schedule_reply(reply: &str, outcomes: &[ToolOutcome]) -> String {
-    sanitize::ground_schedule_reply(reply, outcomes, &CATALOG)
-}
-
-fn shape_reply(reply: &str, outcomes: &[ToolOutcome]) -> String {
-    sanitize::shape_reply(reply, outcomes, &CATALOG)
-}
 
 /// The vectors' outcome descriptors as tool outcomes.
 fn outcomes(raw: &Value) -> Vec<ToolOutcome> {
@@ -124,35 +76,48 @@ fn replay(case: &Value) -> Vec<Value> {
         .collect()
 }
 
+const MALEFIC: &str =
+    "`[9004eab0]` **Hard MaleficStar**\n*Tue 08 Sep · 00:00* · `planned` · `2/3 yes`";
+const KALOS_09: &str =
+    "`[9004eab1]` **Extreme Kalos**\n*Wed 09 Sep · 00:00* · `planned` · `2/3 yes`";
+
+fn two_runs() -> String {
+    format!("**2 runs this week · All channels**\n\n{MALEFIC}\n\n{KALOS_09}")
+}
+
 /// `D-GROUND-FILTERED`: a reply naming one of two listed runs gets that
-/// run's record, not the whole listing.
+/// run's record, not the whole listing; a reply naming none keeps its
+/// wording with the listing after it (user decision 2026-10-03).
 fn named() -> Vec<Named> {
     vec![
         Named {
             name: "D-GROUND-FILTERED",
-            entries: vec![dev(
-                "schedule-grounding",
-                "/steps/8/value",
-                json!(
-                    "**2 runs this week · All channels**\n\n`[9004eab0]` **Hard MaleficStar**\n*Tue 08 Sep · 00:00* · `planned` · `2/3 yes`\n\n`[9004eab1]` **Extreme Kalos**\n*Wed 09 Sep · 00:00* · `planned` · `2/3 yes`"
+            entries: vec![
+                dev(
+                    "schedule-grounding",
+                    "/steps/6/value",
+                    json!(two_runs()),
+                    json!(format!("Nothing about ids here.\n\n{}", two_runs())),
                 ),
-                json!(
-                    "`[9004eab1]` **Extreme Kalos**\n*Wed 09 Sep · 00:00* · `planned` · `2/3 yes`"
+                dev(
+                    "schedule-grounding",
+                    "/steps/8/value",
+                    json!(two_runs()),
+                    json!(format!(
+                        "Latest listing wins: **Extreme Kalos** at 00:00\n\n{KALOS_09}"
+                    )),
                 ),
-            )],
+            ],
         },
         voiced_card(),
     ]
 }
 
-/// `D-VOICED-CARD` (user decision 2026-10-03): a line citing a listed id and
-/// stating no fact reads the id as the run's label, records placed under it
-/// come without the listing heading, and one stating a fact (`later`) is
-/// replaced by the cards.
+/// `D-VOICED-CARD` (user decision 2026-10-03): a line citing a listed id is
+/// kept with the id read as the run's label, and records placed under it
+/// come without the listing heading; a retold record of the same run is
+/// not shown twice.
 fn voiced_card() -> Named {
-    let malefic = "`[9004eab0]` **Hard MaleficStar**\n*Tue 08 Sep · 00:00* · `planned` · `2/3 yes`";
-    let kalos = "`[9004eab1]` **Extreme Kalos**\n*Wed 09 Sep · 00:00* · `planned` · `2/3 yes`";
-    let two = format!("**2 runs this week · All channels**\n\n{malefic}\n\n{kalos}");
     Named {
         name: "D-VOICED-CARD",
         entries: vec![
@@ -160,17 +125,20 @@ fn voiced_card() -> Named {
                 "schedule-grounding",
                 "/steps/3/value",
                 json!(format!(
-                    "I saved 9004eab0 for later.\n\n**1 run this week · All channels**\n\n{malefic}\n\n9004eab0 is still the reference for the card."
+                    "I saved 9004eab0 for later.\n\n**1 run this week · All channels**\n\n{MALEFIC}\n\n9004eab0 is still the reference for the card."
                 )),
                 json!(format!(
-                    "**1 run this week · All channels**\n\n{malefic}\n\n**Hard MaleficStar** is still the reference for the card."
+                    "I saved **Hard MaleficStar** for later.\n\n{MALEFIC}\n\n**Hard MaleficStar** is still the reference for the card."
                 )),
             ),
             dev(
                 "schedule-grounding",
                 "/steps/4/value",
-                json!(format!("{two}\n\nKeep 9004eab0 handy.")),
-                json!(format!("{two}\n\nKeep **Hard MaleficStar** handy.")),
+                json!(format!("{}\n\nKeep 9004eab0 handy.", two_runs())),
+                json!(format!(
+                    "{}\n\nKeep **Hard MaleficStar** handy.",
+                    two_runs()
+                )),
             ),
         ],
     }
@@ -379,317 +347,6 @@ const LOTUS: &str =
 const VELLUM: &str =
     "`[c0ffee02]` **Chaos Vellum**\n*Wed 07 Oct · 21:30* · `planned` · `2/4 yes` · <#4243>";
 
-/// `D-VOICED-CARD` (closed rule, user decision 2026-10-03): a line citing a
-/// run that retells any fact (date, time, status, tally, channel, `first`)
-/// is replaced by the card; a fact-free citing line in the same reply stays.
-#[test]
-fn a_citing_line_that_retells_facts_becomes_the_card() {
-    let sentence = "Mama~ Your next run is **Hard Lotus** on *Tue 06 Oct at 20:00* — `planned`, `0/4 yes`, in <#4242>. `c0ffee01`—first on the board, so no hiding from the ready check!";
-    let outcomes = [schedule_outcome(UPCOMING)];
-    assert_eq!(ground_schedule_reply(sentence, &outcomes), LOTUS);
-    let reply = format!("{sentence}\nBring potions.\n\nSee you at `c0ffee01`, ok?\n\nBye!");
-    assert_eq!(
-        ground_schedule_reply(&reply, &outcomes),
-        format!("{LOTUS}\nBring potions.\n\nSee you at **Hard Lotus**, ok?\n\nBye!")
-    );
-    // A retold record and a retelling sentence both become cards, once each.
-    let reply = "Your next run is Hard Lotus at 20:00 (`c0ffee01`)!\n\n`[c0ffee02]` **Chaos Vellum**\n*Wed 07 Oct · 22:00* · `planned`\n\nSee you!";
-    assert_eq!(
-        ground_schedule_reply(reply, &outcomes),
-        format!("{LOTUS}\n\n{VELLUM}\n\nSee you!")
-    );
-}
-
-/// Record-shaped and list-style retellings are still replaced whole.
-#[test]
-fn record_shaped_retellings_are_still_replaced() {
-    let outcomes = [schedule_outcome(UPCOMING)];
-    for retold in [
-        "`[c0ffee02]` **Chaos Vellum** · 22:00",
-        "Chaos Vellum - 22:00 - run ID 'c0ffee02' (2/4)",
-    ] {
-        let reply = format!("Tonight:\n\n{retold}\n\nBye!");
-        assert_eq!(
-            ground_schedule_reply(&reply, &outcomes),
-            format!("Tonight:\n\n{VELLUM}\n\nBye!")
-        );
-    }
-}
-
-/// The live id-less shape, with an invented fixture.
-const DATED_SENTENCE: &str = "Mama~ Your next run is **Hard Lotus** on *Tue 06 Oct at 20:00* · `planned` · `0/4 yes` · <#4242>. Be sure to check the card before queueing in.";
-
-/// `D-GROUND-FILTERED` (user decision 2026-10-03, "fact-check prose in
-/// place"): a sentence naming a run by its date and time, with every fact
-/// it states matching, is kept and the record goes under it.
-#[test]
-fn a_sentence_naming_a_run_by_date_and_time_is_kept() {
-    // `D-VOICED-CARD`: the sentence introduces the record; no heading.
-    let next = format!("**Your next run · All channels**\n\n{LOTUS}");
-    assert_eq!(
-        ground_schedule_reply(DATED_SENTENCE, &[schedule_outcome(&next)]),
-        format!("{DATED_SENTENCE}\n\n{LOTUS}")
-    );
-    assert_eq!(
-        ground_schedule_reply(DATED_SENTENCE, &[schedule_outcome(UPCOMING)]),
-        format!("{DATED_SENTENCE}\n\n{LOTUS}")
-    );
-    let shaped = shape_reply(DATED_SENTENCE, &[schedule_outcome(UPCOMING)]);
-    assert!(shaped.starts_with("Mama~ Your next run is"), "{shaped}");
-    assert!(shaped.ends_with(LOTUS), "{shaped}");
-    // A unique time needs no date; a weekday alone is enough too.
-    for sentence in [
-        "Hard Lotus starts at 20:00, be on time!",
-        "See you Tuesday at 20:00 for Lotus!",
-    ] {
-        assert_eq!(
-            ground_schedule_reply(sentence, &[schedule_outcome(UPCOMING)]),
-            format!("{sentence}\n\n{LOTUS}")
-        );
-    }
-}
-
-/// A time, date, tally or status that no listed run has falls back to the
-/// listing, as does a list-style retelling that is not a sentence.
-#[test]
-fn an_unmatched_dated_sentence_falls_back_to_the_listing() {
-    let outcomes = [schedule_outcome(UPCOMING)];
-    for reply in [
-        "Your next run is **Hard Lotus** on *Tue 06 Oct at 20:30*. Be ready!",
-        "Your next run is **Hard Lotus** on *Wed 07 Oct at 20:00*. Be ready!",
-        "Your next run is **Hard Lotus** at 20:00, `3/4 yes` so far. Be ready!",
-        "Your next run is **Hard Lotus** at 20:00, already `confirmed`. Be ready!",
-        "Your next run is **Hard Lotus** at 20:00 in <#4243>. Be ready!",
-        "Hard Lotus - Tue 06 Oct - 20:00 - 0/4",
-    ] {
-        assert_eq!(ground_schedule_reply(reply, &outcomes), UPCOMING, "{reply}");
-    }
-    // One unchecked fact line keeps the whole reply on the fallback.
-    let reply = format!("{DATED_SENTENCE}\n\nAlso Chaos Vellum at 23:00!");
-    assert_eq!(ground_schedule_reply(&reply, &outcomes), UPCOMING);
-}
-
-/// Two runs at the same time on different days: the date picks one, and
-/// without a date the sentence is ambiguous and falls back.
-#[test]
-fn the_date_resolves_runs_at_the_same_time() {
-    let vellum =
-        "`[c0ffee02]` **Chaos Vellum**\n*Thu 08 Oct · 20:00* · `planned` · `2/4 yes` · <#4243>";
-    let listing =
-        format!("**Your 2 upcoming runs this boss week · All channels**\n\n{LOTUS}\n\n{vellum}");
-    let outcomes = [schedule_outcome(&listing)];
-    let sentence = "Chaos Vellum is on Thu 08 Oct at 20:00 with `2/4 yes`.";
-    assert_eq!(
-        ground_schedule_reply(sentence, &outcomes),
-        format!("{sentence}\n\n{vellum}")
-    );
-    assert_eq!(
-        ground_schedule_reply("The run is at 20:00, see you!", &outcomes),
-        listing
-    );
-}
-
-/// Wrong facts never survive in prose: a boss, relative day, extra time or
-/// status the picked run does not have falls back to the listing.
-#[test]
-fn a_dated_sentence_with_any_wrong_fact_falls_back() {
-    let outcomes = [schedule_outcome(UPCOMING)];
-    let mut kept = Vec::new();
-    for reply in [
-        // A boss the picked run is not (bold or plain).
-        "Your next run is **Hard Lucid** on *Tue 06 Oct at 20:00*. Be ready!",
-        "Your next run is Hard Lucid on Tue 06 Oct at 20:00. Be ready!",
-        "Chaos Vellum is on Tue 06 Oct at 20:00. Be ready!",
-        // A relative day grounding cannot check without a clock.
-        "Hard Lotus is tonight at 20:00, don't be late!",
-        "Hard Lotus is tomorrow at 20:00, don't be late!",
-        "Hard Lotus is next Tuesday at 20:00, don't be late!",
-        // A status the run does not have.
-        "Your Lotus at 20:00 is done already.",
-        "Your Lotus at 20:00 is at risk.",
-        // A plain boss name the listing does not carry.
-        "Your next run is Lucid on Tue 06 Oct at 20:00. Be ready!",
-        // A tally in words the run does not have.
-        "Hard Lotus is on Tue 06 Oct at 20:00, 3 of 4 have said yes.",
-        // Fail-closed: a day number, date or capitalised alias left unread.
-        "Hard Lotus is on the 7th at 20:00.",
-        "Hard Lotus is on 2026-10-07 at 20:00.",
-        "Karl is on Tue 06 Oct at 20:00.",
-    ] {
-        if ground_schedule_reply(reply, &outcomes) != UPCOMING {
-            kept.push(reply);
-        }
-    }
-    // More than one time cannot bind its facts to one run.
-    let vellum =
-        "`[c0ffee02]` **Chaos Vellum**\n*Thu 08 Oct · 21:00* · `planned` · `2/4 yes` · <#4243>";
-    let listing = format!("**Your 2 upcoming runs · All channels**\n\n{LOTUS}\n\n{vellum}");
-    let swapped =
-        "Lotus is Thu 08 Oct at 20:00 and Vellum is Tue 06 Oct at 21:00, `2/4` and `0/4`.";
-    if ground_schedule_reply(swapped, &[schedule_outcome(&listing)]) != listing {
-        kept.push(swapped);
-    }
-    // A one-record "next run" listing: another catalog boss, in any case or
-    // place, falls back.
-    for other in [
-        "Your next run is Kalos on Mon 05 Oct at 21:00.",
-        "Kalos is on Mon 05 Oct at 21:00, 0 of 3 have said yes so far.",
-        "Papa~ Kalos is on Mon 05 Oct at 21:00.",
-        "Your next run: Kalos on Mon 05 Oct at 21:00.",
-        "Heads up! Lucid starts Mon 05 Oct at 21:00.",
-        "your next run is kalos on Mon 05 Oct at 21:00.",
-        "The gatekeeper fight is on Mon 05 Oct at 21:00.",
-        "Your next run is Hard Will on Mon 05 Oct at 21:00.",
-        // Fail-closed: another difficulty, a count, a negation, an unread
-        // status phrase or a channel name.
-        "Your next run is Normal Carling on Mon 05 Oct at 21:00.",
-        "Your next run is **Normal Carling** on Mon 05 Oct at 21:00.",
-        "Your next run is ncarling on Mon 05 Oct at 21:00.",
-        "Carling is on Mon 05 Oct at 21:00 and all 3 have said yes.",
-        "Carling is on Mon 05 Oct at 21:00, on your own time.",
-        "Carling is on Mon 05 Oct at 21:00 in #hard-runs.",
-    ] {
-        if ground_schedule_reply(other, &[schedule_outcome(&next_carling())]) != next_carling() {
-            kept.push(other);
-        }
-    }
-    let confirmed = next_carling().replace("`planned`", "`confirmed`");
-    let negated = "Carling on Mon 05 Oct at 21:00 isn't confirmed yet.";
-    if ground_schedule_reply(negated, &[schedule_outcome(&confirmed)]) != confirmed {
-        kept.push(negated);
-    }
-    let morning = next_carling().replace("21:00", "09:00");
-    let evening = "Carling is on Mon 05 Oct at 9:00 pm.";
-    if ground_schedule_reply(evening, &[schedule_outcome(&morning)]) != morning {
-        kept.push(evening);
-    }
-    assert!(kept.is_empty(), "kept wrong facts: {kept:#?}");
-}
-
-/// A one-record "next run" listing (invented fixture).
-fn next_carling() -> String {
-    format!("**Your next run · All channels**\n\n{CARLING}")
-}
-
-const CARLING: &str =
-    "`[c0ffee05]` **Hard Carling**\n*Mon 05 Oct · 21:00* · `planned` · `0/3 yes` · <#4245>";
-
-/// The run's own plain name, or a matching tally in words, is still kept.
-#[test]
-fn a_dated_sentence_with_the_right_plain_name_is_kept() {
-    let outcomes = [schedule_outcome(&next_carling())];
-    let mut lost = Vec::new();
-    for sentence in [
-        "Your next run is Carling on Mon 05 Oct at 21:00.",
-        "Papa~ Your next run is **Hard Carling** on *Mon 05 Oct at 21:00* · `planned` · `0/3 yes` · <#4245>. Be sure to check the card before queueing in.",
-        "Carling is on Mon 05 Oct at 21:00, 0 of 3 have said yes so far.",
-        // Possessives, member/persona names, timezones and ordinary words.
-        "Carling's party is on Mon 05 Oct at 21:00.",
-        "Check the card, Papa. Carling is Mon 05 Oct at 21:00.",
-        "Alvin will lead Carling on Mon 05 Oct at 21:00 MYT, it's a lot of fun!",
-        // An alias of the run's boss.
-        "Your next run is Karling on Mon 05 Oct at 21:00.",
-        "Your next run is **Hard Kaling** on Mon 05 Oct at 21:00.",
-        // The run's difficulty as a letter or `hm`-style shorthand.
-        "Your next run is H Carling on Mon 05 Oct at 21:00.",
-        "Your next run is HM Carling on Mon 05 Oct at 21:00.",
-        // An ordinal that cannot be a date is flavour (live 2026-10-03 shape).
-        "Papa~ Your next run is **Hard Carling** on *Mon 05 Oct · 21:00* — `planned`, `0/3 yes`, in <#4245>. The lobby’s waiting on its first ✅.",
-        "Carling on Mon 05 Oct at 21:00 is your first run, Papa.",
-    ] {
-        if ground_schedule_reply(sentence, &outcomes) != format!("{sentence}\n\n{CARLING}") {
-            lost.push(sentence);
-        }
-    }
-    // A multi-word name and a `+`-joined label resolve through the catalog.
-    let pair = "**Your next run · All channels**\n\n`[c0ffee07]` **Hard MaleficStar + Hard FA**\n*Wed 07 Oct · 22:00* · `planned` · `1/4 yes` · <#4246>";
-    for sentence in [
-        "Hard Radiant Malefic Star is on Wed 07 Oct at 22:00.",
-        "Your Hard Star and FA run is on Wed 07 Oct at 22:00, 1 of 4 said yes.",
-    ] {
-        let record = pair.split_once("\n\n").expect("heading").1;
-        if ground_schedule_reply(sentence, &[schedule_outcome(pair)])
-            != format!("{sentence}\n\n{record}")
-        {
-            lost.push(sentence);
-        }
-    }
-    // A hyphenated status that matches the run.
-    for (status, sentence) in [
-        ("at_risk", "Carling on Mon 05 Oct at 21:00 is at-risk."),
-        (
-            "otot",
-            "Carling on Mon 05 Oct at 21:00 is on your own-time.",
-        ),
-    ] {
-        let listing = next_carling().replace("`planned`", &format!("`{status}`"));
-        let record = CARLING.replace("`planned`", &format!("`{status}`"));
-        if ground_schedule_reply(sentence, &[schedule_outcome(&listing)])
-            != format!("{sentence}\n\n{record}")
-        {
-            lost.push(sentence);
-        }
-    }
-    assert!(lost.is_empty(), "lost right sentences: {lost:#?}");
-}
-
-/// Fail-closed: shorthand difficulties, tallies and statuses in words,
-/// spelled-out dates and non-ASCII digits are facts too.
-#[test]
-fn a_dated_sentence_with_facts_in_words_falls_back() {
-    let mut kept = Vec::new();
-    let mut check = |listing: &str, sentence: &'static str| {
-        if ground_schedule_reply(sentence, &[schedule_outcome(listing)]) != listing {
-            kept.push(sentence);
-        }
-    };
-    for sentence in [
-        "Your next run is N Carling on Mon 05 Oct at 21:00.",
-        "Your next run is N-Carling on Mon 05 Oct at 21:00.",
-        "Your next run is NM Carling on Mon 05 Oct at 21:00.",
-        "Carling is on Mon 05 Oct at 21:00 and everyone has said yes.",
-        "Carling is on Mon 05 Oct at 21:00 and all three said yes.",
-        "Carling is on Mon 05 Oct at 21:00 and nobody has answered.",
-        "Carling is on Mon 05 Oct at 21:00 and no one has answered.",
-        "Carling is on Mon 05 Oct at 21:00 and one of 3 said yes.",
-        "Carling is on Mon 05 Oct at 21:00 and you said no.",
-        "Carling is on Mon 05 Oct at 21:00, no answer from Alvin yet.",
-        "Carling is on Mon 05 Oct at 21:00 and Alvin said yes.",
-        "Carling on Mon 05 Oct at 21:00 was called off.",
-        "Carling on Mon 05 Oct at 21:00 is finished.",
-        "Carling on Mon 05 Oct at 21:00 was postponed.",
-    ] {
-        check(&next_carling(), sentence);
-    }
-    let confirmed = next_carling().replace("`planned`", "`confirmed`");
-    check(
-        &confirmed,
-        "Carling on Mon 05 Oct at 21:00 is still unconfirmed.",
-    );
-    for sentence in [
-        "Hard Lotus is on Tue 06 Oct at 20:00 and is at-risk.",
-        "Hard Lotus is on October seventh at 20:00.",
-        "Hard Lotus is on the seventh at 20:00.",
-        "Hard Lotus is on the seventh of October at 20:00.",
-        "Hard Lotus is on seventh Oct at 20:00.",
-        "Hard Lotus on ０７ Oct at 20:00.",
-    ] {
-        check(UPCOMING, sentence);
-    }
-    assert!(kept.is_empty(), "kept wrong facts: {kept:#?}");
-}
-
-/// Known gap (documented in `D-GROUND-FILTERED`): a lowercase everyday-word
-/// alias is not read as a boss, so this wrong boss is kept.
-#[test]
-fn a_lowercase_everyday_alias_is_a_documented_gap() {
-    let sentence = "star is on tue 06 oct at 20:00.";
-    assert_eq!(
-        ground_schedule_reply(sentence, &[schedule_outcome(UPCOMING)]),
-        format!("{sentence}\n\n{LOTUS}")
-    );
-}
-
 /// A personal two-run listing with model-only context lines (invented).
 const MINE_CARLING: &str =
     "`[b0a7c0de]` **Hard Carling**\n*Mon 05 Oct · 21:00* · `planned` · `0/3 yes` · <#4245>";
@@ -715,13 +372,101 @@ fn mine_both_seen() -> String {
     )
 }
 
-/// `D-VOICED-CARD` (closed rule, user decision 2026-10-03): a citing line
-/// that states no fact beyond its ids and the cited run's exact context
-/// phrases is kept, each id read as the run's label, with the card under
-/// its paragraph and no listing heading. Every id form the model emits is
-/// read.
+/// `D-GROUND-FILTERED` (user decision 2026-10-03, "keep wording, card
+/// under"): the live shape, with invented ids, is kept word for word, a
+/// curly apostrophe and the trailing channel mention included, with the
+/// run's card under it and no listing heading.
 #[test]
-fn a_fact_free_citing_line_is_kept_with_the_card_below() {
+fn the_live_shape_is_kept_word_for_word_with_the_card_under() {
+    let outcomes = [schedule_outcome(&mine_next())];
+    let reply = "Papa~ Your next run is **Hard Carling** on *Mon 05 Oct · 21:00* — `planned`, `0/3 yes`. You haven’t answered yet; go claim your spot with ✅. <#4245>";
+    assert_eq!(
+        shape_reply(reply, &outcomes),
+        format!("{reply}\n\n{MINE_CARLING}")
+    );
+    // The mention on its own line stays in the paragraph above the card.
+    let split = reply.replace(" <#4245>", "\n<#4245>");
+    assert_eq!(
+        shape_reply(&split, &outcomes),
+        format!("{split}\n\n{MINE_CARLING}")
+    );
+}
+
+/// Accepted gap (documented in `D-GROUND-FILTERED`): only times, dates and
+/// ids are checked, so a kept line naming the run by its time may carry a
+/// wrong count, status, boss or member name above the correct card.
+#[test]
+fn a_wrong_count_status_or_boss_beside_the_right_time_is_an_accepted_gap() {
+    let outcomes = [schedule_outcome(&mine_next())];
+    for reply in [
+        "Your next run is **Hard Carling** on Mon 05 Oct at 21:00, `3/3 yes` already!",
+        "Your next run is **Hard Carling** at 21:00 and it's `confirmed`.",
+        "Your next run is **Hard Lucid** on Monday at 21:00.",
+        "Carling at 21:00 Monday, Alvin said yes!",
+        "Papa~ [b0a7c0de] is a Kalos run!",
+    ] {
+        let shown = reply.replace("[b0a7c0de]", "**Hard Carling**");
+        assert_eq!(
+            shape_reply(reply, &outcomes),
+            format!("{shown}\n\n{MINE_CARLING}"),
+            "{reply}"
+        );
+    }
+}
+
+/// A time no listed run has replaces the line: by the cards of the runs it
+/// names, or by the full listing when it names none.
+#[test]
+fn a_line_with_a_time_no_listed_run_has_is_replaced() {
+    let outcomes = [schedule_outcome(UPCOMING)];
+    let wrong = "Your next run is **Hard Lotus** on *Tue 06 Oct at 20:30*. Be ready!";
+    assert_eq!(ground_schedule_reply(wrong, &outcomes), UPCOMING);
+    assert_eq!(
+        ground_schedule_reply(&format!("Hi Papa!\n\n{wrong}\n\nSee you~"), &outcomes),
+        format!("Hi Papa!\n\n{UPCOMING}\n\nSee you~")
+    );
+    // A cited run with a wrong time: its card instead of the line.
+    assert_eq!(
+        ground_schedule_reply("Hi!\n\n[c0ffee01] is at 20:30!\n\nBye!", &outcomes),
+        format!("Hi!\n\n{LOTUS}\n\nBye!")
+    );
+}
+
+/// A date no listed run has replaces the line too.
+#[test]
+fn a_line_with_a_date_no_listed_run_has_is_replaced() {
+    let outcomes = [schedule_outcome(UPCOMING)];
+    for reply in [
+        "Hard Lotus is on 09 Oct at 20:00, be ready!",
+        "Hard Lotus is on Oct 9th, be ready!",
+    ] {
+        assert_eq!(ground_schedule_reply(reply, &outcomes), UPCOMING, "{reply}");
+    }
+}
+
+/// An id no tool returned replaces the line, whether record-shaped or
+/// cited in a sentence.
+#[test]
+fn an_unlisted_id_is_replaced() {
+    let outcomes = [schedule_outcome(UPCOMING)];
+    for reply in [
+        "Your next run is `[deadbeef]`, see you!",
+        "Your next run is `deadbeef`!",
+    ] {
+        assert_eq!(ground_schedule_reply(reply, &outcomes), UPCOMING, "{reply}");
+    }
+    let reply = "Tonight:\n\n`[deadbeef]` **Hard Seren**\n*Tue 06 Oct · 20:00*\n\nBye!";
+    assert_eq!(
+        ground_schedule_reply(reply, &outcomes),
+        format!("Tonight:\n\n{UPCOMING}\n\nBye!")
+    );
+}
+
+/// `D-VOICED-CARD`: a line citing a listed run in any id form is kept with
+/// the id read as the run's label (dropped beside the label), its card
+/// under its paragraph and no listing heading.
+#[test]
+fn a_citing_line_reads_the_id_as_the_label_with_the_card_below() {
     let outcomes = [schedule_outcome(&mine_next())];
     for id in [
         "[b0a7c0de]",
@@ -731,26 +476,21 @@ fn a_fact_free_citing_line_is_kept_with_the_card_below() {
         "[B0A7C0DE]",
     ] {
         let reply = format!(
-            "Papa~ your next one is {id}, in 2 days and you haven't answered yet, don't leave them waiting!"
+            "Papa~ your next one is {id}, in 2 days and you haven’t answered yet, don't leave them waiting!"
         );
         assert_eq!(
             shape_reply(&reply, &outcomes),
             format!(
-                "Papa~ your next one is **Hard Carling**, in 2 days and you haven't answered yet, don't leave them waiting!\n\n{MINE_CARLING}"
+                "Papa~ your next one is **Hard Carling**, in 2 days and you haven’t answered yet, don't leave them waiting!\n\n{MINE_CARLING}"
             ),
             "{id}"
         );
     }
     for (reply, shown) in [
         (
-            "[b0a7c0de] is waiting for you, Papa~",
-            "**Hard Carling** is waiting for you, Papa~",
+            "[b0a7c0de] is at 21:00 on Monday, Papa~",
+            "**Hard Carling** is at 21:00 on Monday, Papa~",
         ),
-        (
-            "Still no answer yet from Rook and Wren for [b0a7c0de] 🎉",
-            "Still no answer yet from Rook and Wren for **Hard Carling** 🎉",
-        ),
-        // An id beside its label is dropped rather than doubled.
         (
             "Your next one is **Hard Carling** `[b0a7c0de]`, see you there!",
             "Your next one is **Hard Carling**, see you there!",
@@ -768,69 +508,10 @@ fn a_fact_free_citing_line_is_kept_with_the_card_below() {
     }
 }
 
-/// A citing line stating any fact is replaced by the cited run's card: a
-/// retold date, time, status, tally or channel (even when correct), a
-/// weekday, relative or comparison word, an answer word, a mention, or a
-/// context phrase that is not verbatim or belongs to another run.
+/// Two runs named in their own paragraphs, by id or by time: each card
+/// goes under its own paragraph.
 #[test]
-fn a_citing_line_stating_any_fact_becomes_the_card() {
-    let outcomes = [schedule_outcome(&mine_both())];
-    let mut kept = Vec::new();
-    for reply in [
-        "Papa~ Your next run is **Hard Carling** on *Mon 05 Oct at 21:00* — `b0a7c0de`, `planned`, `0/3 yes`, in <#4245>.",
-        "Papa~ [b0a7c0de] is at 21:00!",
-        "Papa~ [b0a7c0de] is on Monday!",
-        "Papa~ [b0a7c0de] is tomorrow!",
-        "Papa~ [b0a7c0de] is tonight~",
-        "Papa~ [b0a7c0de] starts in an hour!",
-        "Papa~ [b0a7c0de] is in a few days!",
-        "Papa~ [b0a7c0de] is `confirmed`!",
-        "Papa~ [b0a7c0de] is done already!",
-        "Papa~ [b0a7c0de] is in #hard-runs!",
-        "Papa~ [b0a7c0de] is with @Rook!",
-        "Papa~ you're a maybe for [b0a7c0de]!",
-        "Papa~ you said yes to [b0a7c0de]!",
-        // Another run's phrase, or a variant of the run's own.
-        "Papa~ [b0a7c0de] is in 3 days!",
-        "Papa~ you haven't RSVP'd to [b0a7c0de]!",
-        "Papa~ nobody answered [b0a7c0de] yet!",
-        // Review input: a record-head line has no exemption.
-        "`[f00dfeed]` **Chaos Vellum** is on Sunday, you said no!",
-        // Review input: a comparison between two runs.
-        "[f00dfeed] is at 22:00, same time as [b0a7c0de]!",
-    ] {
-        let shaped = shape_reply(reply, &outcomes);
-        let only_cards = shaped
-            .split("\n\n")
-            .all(|part| [MINE_CARLING, MINE_VELLUM].contains(&part) || part.starts_with("**Your"));
-        if !only_cards {
-            kept.push((reply, shaped));
-        }
-    }
-    assert!(kept.is_empty(), "kept a fact: {kept:#?}");
-}
-
-/// Review input: an id-less fact line beside a kept citing line is dropped
-/// in favour of the card already shown.
-#[test]
-fn an_id_less_fact_line_beside_a_kept_citing_line_is_dropped() {
-    let outcomes = [schedule_outcome(&mine_both())];
-    for stray in [
-        "Chaos Vellum is tomorrow and you said no.",
-        "It starts at 23:00 in <#4246>.",
-    ] {
-        let reply = format!("Papa~ your next one is [b0a7c0de]!\n{stray}\n\nSee you~");
-        assert_eq!(
-            shape_reply(&reply, &outcomes),
-            format!("Papa~ your next one is **Hard Carling**!\n\n{MINE_CARLING}\n\nSee you~"),
-            "{stray}"
-        );
-    }
-}
-
-/// Two citing lines in their own paragraphs: each card goes under its own.
-#[test]
-fn a_reply_citing_two_runs_places_both_records() {
+fn a_two_run_reply_places_each_card_after_its_own_paragraph() {
     let outcomes = [schedule_outcome(&mine_both())];
     let reply =
         "Papa~ [b0a7c0de] is in 2 days!\n\nAnd [f00dfeed] is in 3 days, you said yes.\n\nSee you~";
@@ -840,33 +521,86 @@ fn a_reply_citing_two_runs_places_both_records() {
             "Papa~ **Hard Carling** is in 2 days!\n\n{MINE_CARLING}\n\nAnd **Chaos Vellum** is in 3 days, you said yes.\n\n{MINE_VELLUM}\n\nSee you~"
         )
     );
-}
-
-/// Known gap (documented in `D-VOICED-CARD`): a line citing several runs may
-/// use any of their phrases, so a phrase can attach to the wrong one; a boss
-/// name is not a fact under the closed rule.
-#[test]
-fn shared_phrases_and_boss_names_are_documented_gaps() {
-    let outcomes = [schedule_outcome(&mine_both())];
+    let reply =
+        "Carling is Monday at 21:00!\nBring potions.\n\nVellum is Tuesday at 22:00.\n\nSee you~";
     assert_eq!(
-        shape_reply(
-            "Papa~ [b0a7c0de] is in 3 days and [f00dfeed] in 2 days!",
-            &outcomes
-        ),
+        shape_reply(reply, &outcomes),
         format!(
-            "Papa~ **Hard Carling** is in 3 days and **Chaos Vellum** in 2 days!\n\n{MINE_CARLING}\n\n{MINE_VELLUM}"
+            "Carling is Monday at 21:00!\nBring potions.\n\n{MINE_CARLING}\n\nVellum is Tuesday at 22:00.\n\n{MINE_VELLUM}\n\nSee you~"
         )
     );
+}
+
+/// Two runs at the same time on different days: the date picks one, and
+/// without one the line names neither, so the listing goes after it.
+#[test]
+fn the_date_resolves_runs_at_the_same_time() {
+    let vellum =
+        "`[c0ffee02]` **Chaos Vellum**\n*Thu 08 Oct · 20:00* · `planned` · `2/4 yes` · <#4243>";
+    let listing =
+        format!("**Your 2 upcoming runs this boss week · All channels**\n\n{LOTUS}\n\n{vellum}");
+    let outcomes = [schedule_outcome(&listing)];
+    let sentence = "Chaos Vellum is on Thu 08 Oct at 20:00 with `2/4 yes`.";
     assert_eq!(
-        shape_reply("Papa~ [b0a7c0de] is a Kalos run!", &outcomes),
-        format!("Papa~ **Hard Carling** is a Kalos run!\n\n{MINE_CARLING}")
+        ground_schedule_reply(sentence, &outcomes),
+        format!("{sentence}\n\n{vellum}")
     );
+    let vague = "The run is at 20:00, see you!";
+    assert_eq!(
+        ground_schedule_reply(vague, &outcomes),
+        format!("{vague}\n\n{listing}")
+    );
+}
+
+/// Record-shaped retellings are replaced by the canonical record, and a
+/// kept line naming the same run never shows its card twice.
+#[test]
+fn record_shaped_retellings_are_still_replaced() {
+    let outcomes = [schedule_outcome(UPCOMING)];
+    for retold in [
+        "`[c0ffee02]` **Chaos Vellum** · 22:00",
+        "`[c0ffee02]` **Chaos Vellum** · 21:30 · `2/4 yes`",
+        "`[c0ffee02]` **Chaos Vellum**\n*Wed 07 Oct · 21:30* · `planned`",
+        "Chaos Vellum - 22:00 - run ID 'c0ffee02' (2/4)",
+        "Chaos Vellum - 21:30 - run ID 'c0ffee02' (2/4)",
+    ] {
+        let reply = format!("Tonight:\n\n{retold}\n\nBye!");
+        assert_eq!(
+            ground_schedule_reply(&reply, &outcomes),
+            format!("Tonight:\n\n{VELLUM}\n\nBye!"),
+            "{retold}"
+        );
+    }
+    let outcomes = [schedule_outcome(&mine_next())];
+    let reply = format!("Papa~ your next one is [b0a7c0de]!\n\n{MINE_CARLING}\n\nSee you~");
+    assert_eq!(
+        shape_reply(&reply, &outcomes),
+        format!("Papa~ your next one is **Hard Carling**!\n\n{MINE_CARLING}\n\nSee you~")
+    );
+}
+
+/// A reply naming no run and stating no hard fact keeps its wording, with
+/// the full listing after it (v4 replaced the prose between hint lines).
+#[test]
+fn a_reply_naming_no_run_gets_the_listing_after_it() {
+    let outcomes = [schedule_outcome(UPCOMING)];
+    for reply in [
+        "Here's your week, Papa~ Don't skip anything!",
+        "Ara~ busy week!\n\nYou said yes to most of them.\n\nSee you there~",
+    ] {
+        assert_eq!(
+            ground_schedule_reply(reply, &outcomes),
+            format!("{reply}\n\n{UPCOMING}"),
+            "{reply}"
+        );
+    }
 }
 
 /// `D-PERSONAL-CONTEXT`: no copy of the context line reaches a member: the
 /// label in any dress, its phrases as bullets after it (with or without a
-/// blank line), under a plain `Context:` heading, inline with separators,
-/// inside a code fence, or the whole tool output copied.
+/// blank line), under a plain `Context:` heading, inline with separators
+/// (straight or curly apostrophes), inside a code fence, or the whole tool
+/// output copied.
 #[test]
 fn the_context_line_never_reaches_the_reply() {
     let outcomes = [schedule_outcome(&mine_both())];
@@ -875,11 +609,11 @@ fn the_context_line_never_reaches_the_reply() {
         format!("Papa~ [b0a7c0de] is in 2 days!\n{CARLING_CONTEXT}"),
         "Papa~ [b0a7c0de] is in 2 days!\n**Context (hidden from members)**: in 2 days · you haven't answered".to_owned(),
         "Papa~ [b0a7c0de] is in 2 days!\n[Context: HIDDEN FROM MEMBERS]".to_owned(),
-        // Review input: bullets after the label and a blank line.
         "Papa~ [b0a7c0de] is in 2 days!\n\nContext (hidden from members):\n\n- in 2 days\n- you haven't answered\n- no answer yet from Rook and Wren".to_owned(),
-        // Review input: bullets under a plain heading.
         "Papa~ [b0a7c0de] is in 2 days!\n\nContext:\n- in 3 days\n- you said yes".to_owned(),
         "Papa~ [b0a7c0de] is in 2 days!\nin 2 days · you haven't answered · no answer yet from Rook and Wren".to_owned(),
+        "Papa~ [b0a7c0de] is in 2 days!\nin 2 days · you haven’t answered · no answer yet from Rook and Wren".to_owned(),
+        "Papa~ [b0a7c0de] is in 2 days!\nYou haven’t answered.".to_owned(),
     ] {
         let shaped = shape_reply(&reply, &outcomes);
         assert_eq!(shaped, voiced, "{reply:?}");
@@ -890,7 +624,7 @@ fn the_context_line_never_reaches_the_reply() {
         &outcomes,
     );
     assert_eq!(fenced, format!("{voiced}\n\n```\n```"));
-    // Inline with separators: the line goes, so the reply falls back.
+    // Inline with separators: the line goes, leaving only the listing.
     let inline =
         "Papa~ [b0a7c0de] is in 2 days · you haven't answered · no answer yet from Rook and Wren!";
     assert_eq!(shape_reply(inline, &outcomes), mine_both_seen());
@@ -901,7 +635,7 @@ fn the_context_line_never_reaches_the_reply() {
     // Without any outcome (a card-posting turn), the vocabulary alone strips.
     assert_eq!(
         sanitize::strip_context_copies(
-            "The card is up!\nin 2 days · you haven't answered\n- tonight\nContext (hidden from members): in 2 days",
+            "The card is up!\nin 2 days · you haven’t answered\n- tonight\nContext (hidden from members): in 2 days",
             &[]
         ),
         "The card is up!"

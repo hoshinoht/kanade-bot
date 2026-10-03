@@ -877,6 +877,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 chat keeps the persona's schedule wording and puts the run's card under
+  it; it replaces a line only when it names a run id, time or date the
+  schedule lookup did not return, instead of falling back on any word the
+  checks could not read.
 - v5 chat "when is my next run" lists every upcoming run from now across boss
   and calendar weeks: `get_schedule` with `week:"auto"` and no day no longer
   stops at Sunday, so runs early next calendar week (still this boss week) are

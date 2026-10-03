@@ -1,19 +1,17 @@
 //! `D-PERSONAL-CONTEXT`: the model-only context line under a personal
 //! `get_schedule` record is split off before grounding, so the canonical
 //! listing members see never carries it, and a copy of it in a reply is
-//! removed. Its exact phrases are what a line citing that run may voice.
+//! removed.
 
-use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
 use regex::Regex;
 
-use super::{pattern, pattern_i};
+use super::pattern_i;
 use crate::chat::tools::read::format::CONTEXT_LABEL;
 use crate::chat::tools::{ToolName, ToolOutcome};
 use crate::domain::pytext::strip;
 
-static RUN_ID: LazyLock<Regex> = LazyLock::new(|| pattern(r"\[([0-9a-fA-F]{8})\]"));
 /// The label however a reply dresses it: any case, markup, brackets or
 /// separator, with or without the leading `Context`.
 static LABEL: LazyLock<Regex> =
@@ -30,38 +28,21 @@ static ONLY_PHRASES: LazyLock<Regex> =
 static HEADING: LazyLock<Regex> = LazyLock::new(|| pattern_i(r"^context\s*:?$"));
 const SEPARATOR: &str = " · ";
 
-/// Each listed run's context phrases, by lowercase short id.
-pub(super) type Contexts = BTreeMap<String, Vec<String>>;
-
-/// The listing without its context lines, and each run's phrases.
-pub(super) fn split(raw: &str) -> (String, Contexts) {
-    let mut contexts = Contexts::new();
+/// The listing without its context lines.
+pub(super) fn split(raw: &str) -> String {
     if !raw.contains(CONTEXT_LABEL) {
-        return (raw.to_owned(), contexts);
+        return raw.to_owned();
     }
-    let paragraphs: Vec<String> = raw
-        .split("\n\n")
-        .map(|paragraph| {
-            let id = RUN_ID
-                .captures(paragraph)
-                .map(|found| found[1].to_lowercase());
-            let mut kept: Vec<&str> = Vec::new();
-            for line in paragraph.split('\n') {
-                match (line.strip_prefix(CONTEXT_LABEL), &id) {
-                    (Some(body), Some(id)) => {
-                        contexts
-                            .entry(id.clone())
-                            .or_default()
-                            .extend(body.split(SEPARATOR).map(str::to_owned));
-                    }
-                    (Some(_), None) => {}
-                    (None, _) => kept.push(line),
-                }
-            }
-            kept.join("\n")
-        })
-        .collect();
-    (paragraphs.join("\n\n"), contexts)
+    raw.split('\n')
+        .filter(|line| !line.starts_with(CONTEXT_LABEL))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Lowercase with curly apostrophes read as straight ones, so a copied
+/// phrase matches however the model typed it.
+fn folded(text: &str) -> String {
+    text.to_lowercase().replace('’', "'")
 }
 
 /// Every multi-phrase context body any successful `get_schedule` call
@@ -73,7 +54,7 @@ fn bodies(outcomes: &[ToolOutcome]) -> Vec<String> {
         .flat_map(|outcome| outcome.output.lines())
         .filter_map(|line| line.strip_prefix(CONTEXT_LABEL))
         .filter(|body| body.contains(SEPARATOR))
-        .map(|body| body.trim().to_lowercase())
+        .map(|body| folded(body.trim()))
         .collect()
 }
 
@@ -96,7 +77,7 @@ pub fn strip_context_copies(reply: &str, outcomes: &[ToolOutcome]) -> String {
             || JOINED.is_match(line)
             || (!plain.is_empty() && ONLY_PHRASES.is_match(plain))
             || HEADING.is_match(plain)
-            || bodies.contains(&plain.to_lowercase())
+            || bodies.contains(&folded(plain))
     };
     if !reply.split('\n').any(copied) {
         return reply.to_owned();

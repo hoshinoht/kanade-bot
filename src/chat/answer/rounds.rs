@@ -524,7 +524,7 @@ where
     }
     let mut generation = state.generation;
     generation.requests = session.requests_used();
-    finish(&mut generation, guild.catalog);
+    finish(&mut generation);
     generation.blocked = generation.reply.is_empty()
         && (filtered || generation.failure == Some(AnswerFailure::ContentBlocked));
     generation

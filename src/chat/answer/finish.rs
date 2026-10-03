@@ -7,7 +7,6 @@ use crate::chat::sanitize::{
     strip_false_card_claim, tidy,
 };
 use crate::chat::tools::{REFUSED, ToolName};
-use crate::domain::catalog::BossTable;
 
 /// A posted card whose question then failed: the change is recorded, so the
 /// member must not be invited to ask again.
@@ -68,8 +67,7 @@ fn finalize_read_claim(generation: &mut Generation) {
 
 /// `D-GROUND-WRITE`: a turn whose last write posted a card keeps the model's
 /// card reply; v4 regrounded it, so a time in it pulled in the lookup listing.
-/// The catalog lets grounding check boss names in a kept sentence.
-pub(super) fn finish(generation: &mut Generation, catalog: &BossTable) {
+pub(super) fn finish(generation: &mut Generation) {
     finalize_write_reply(generation);
     finalize_read_claim(generation);
     if !generation.reply.is_empty() {
@@ -77,9 +75,9 @@ pub(super) fn finish(generation: &mut Generation, catalog: &BossTable) {
         if posted_card(generation) {
             // Not regrounded, but a copied model-only context line still goes.
             let reply = strip_context_copies(&generation.reply, &outcomes);
-            generation.reply = shape_reply(&reply, &[], catalog);
+            generation.reply = shape_reply(&reply, &[]);
         } else {
-            generation.reply = shape_reply(&generation.reply, &outcomes, catalog);
+            generation.reply = shape_reply(&generation.reply, &outcomes);
         }
     }
 }

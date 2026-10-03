@@ -186,13 +186,12 @@ are C3. Serve wiring is `chat::driver` (below).
   every line holding only vocabulary phrases (bullets included, anywhere in
   the reply, so a lone `**Tonight**` line goes too) or a bare `Context:`
   heading; any line holding two or more phrases joined by `·`/`•`/`|` (so a
-  citing line that copies them falls back to its cards); and any line that
+  citing line that copies them is dropped); and any line that
   is a copied multi-phrase body from the turn's `get_schedule` results. On
   a card-posting turn, which is not regrounded, the same stripping still
-  runs. A line citing a run may voice that run's phrases verbatim
-  (`D-VOICED-CARD`); an id-less dated sentence may too, its phrases blanked
-  before the `dated` check, where `said no`/`maybe`, `skip`, `no answer` and
-  word-form relative times (`in an hour`) are unread facts.
+  runs. Curly and straight apostrophes compare as the same character.
+  Context phrases voiced in a kept line are not checked against their run
+  (`D-GROUND-FILTERED`).
 - Clean retry (reserved request): a malformed, empty or undecodable answer
   (including a reply the runner rejects as unreadable) or a content-filtered
   one (`ContentFiltered`) is
@@ -210,112 +209,48 @@ are C3. Serve wiring is `chat::driver` (below).
   (text inside paired ```` ``` ```` fences skips scrubbing and blank-line
   tidying, so code keeps its indentation), `D-ELLIPSIS` (runs of three or
   more dots are kept; v4 turned `Mou...` into `Mou..`) and
-  `D-GROUND-FILTERED` (user decision 2026-09-27). Regrounding never reads
-  or replaces fenced code, even when every run is named. A reply naming
-  only some of the listing's runs (by id) gets just those runs' canonical
-  records at the first named run, under its own heading; naming all of them
-  inserts the tool's full listing as v4 did. A conversational sentence that
-  names a run by id with a schedule fact (not a `[id]` record line or
-  `**day — boss**` pair, and ending a sentence with `.`, `!`, `?` or `…`;
-  user decision 2026-10-03) is kept as written and the records go after its
-  paragraph, set off by blank lines; when several sentences or retold
-  records name runs, the records still appear once, at the first of them,
-  and retold record lines are replaced as before. List-style retellings
-  without sentence punctuation (`Boss - 21:30 - run ID 'id'`) are replaced
-  as v4 did. A sentence without a listed id is kept the same way when it
-  names a run by date and time (user decisions 2026-10-03, "fact-check prose
-  in place" and "Fail-closed rewrite"): the sentence is kept only when every
-  fact-like token in it was read and matches the one run it picks; anything
-  left over falls back, so more persona prose is lost rather than a wrong
-  fact kept. It must state exactly one `HH:MM`, which must pick exactly one
-  listed run, narrowed by a stated `DD Mon`/`Mon DD` date, else by a stated
-  weekday, else unique among the listed times, else by the boss it states.
-  Read and compared with that run: the time, every date and weekday, every
-  tally (`n/m`, `n of m`, `n out of m`, with a following `have said yes`),
-  every status (including bare `done`, `at risk`/`at-risk`, and
-  `own time`/`own-time` as `otot`) and every `<#id>`/`[#id]` channel. Any
-  digit in any script that no check read falls back (`the 7th`,
-  `2026-10-07`, `all 3 said yes`, a full-width `０７`), as does an answer
-  word (`yes`, `rsvp`, `answered`, `declined`, `signed up`…) outside a read
-  tally, and so does any relative day (`today`, `tonight`,
-  `tomorrow`/`tmr`/`tmrw`, `yesterday`, `this`/`next`/`last`/`coming` week,
-  weekend, weekday or part of day, `in N days`; grounding has no clock), any
-  negation (`not`, `n't`, `never`, `cannot`, `no longer`), any am/pm marker
-  (`9:00 pm`, `a.m.`; 12-hour times are not converted), any `#name` channel
-  (the listing has only `<#id>`), any bare 8-hex id, and any count, date
-  or status in words: number words (`one`…`twenty`, tens, `hundred`,
-  `half`, `both`, `few`…), ordinals (`first`…`thirty-first`) where they can be a date (after `the`
-  or a month, or before `of` or a month; "its first ✅" is kept), quantifiers
-  (`all`, `everyone`, `nobody`, `no one`, `none`…), `un`-statuses
-  (`unconfirmed`…) and status synonyms (`called off`, `postponed`,
-  `rescheduled`, `moved`, `finished`, `completed`, `cleared`, `over`,
-  `happened`, `ended`, `delayed`, `pending`…). Bosses are checked
-  against the guild's boss catalog (`GuildView::catalog`, handed to
-  `shape_reply`; user decision 2026-10-03 "Use the boss list"): every boss
-  the sentence names, in any case, by short or full name, alias or prefixed
-  form, must be one of the run's bosses (a `+`-joined or multi-word label is
-  read through the catalog); every difficulty word must start a
-  `difficulty + boss` phrase, and every difficulty letter or `hm`-style
-  shorthand before a boss (`N Carling`, `N-Carling`, `HM Carling`) and every
-  prefixed token (`ncarling`) must be the run's difficulty for that boss (`Normal Carling` on a Hard Carling run
-  falls back, and so does `hard to say`); every `**bold**` span must be in
-  the run's label or name only its bosses. Catalog aliases that are everyday
-  words or names (`will`, `lot`, `star`, `bell`, `bella`, `carl`, `karl`,
-  and `climb`/`clot` as prefixed forms) are bosses when capitalised, after
-  a difficulty word, in bold or inside a longer name, so `Karl` or
-  `Hard Will` is a boss while lowercase "will" or "a lot" is not. Member and
-  persona names, possessives and timezones are not facts and stay. Known
-  gaps, where a wrong fact can still be kept: a plain, non-bold name of a
-  boss that is not in the catalog; a lowercase everyday-word alias, which is
-  not read as a boss (`star is on tue 06 oct at 20:00.` is kept on a Lotus
-  run); who is on the run (member names are not compared with the roster);
-  and any status, count or channel phrased in words outside the lists above
-  (`scrubbed`, `in the carling channel`). A failing sentence, an ambiguous or repeated time, or any other
-  id-less fact line in the reply leaves the reply on v4's hint rule (the
-  span from the first to the last hint line is replaced by the full
-  listing). A record-shaped line whose
-  `[id]` no tool output carries is dropped (never with a real run's line)
-  whenever real runs are named, all of them included; the listing then goes
-  at the first real run. With no run named, v4's full listing stands (a
-  reply with code but no schedule text keeps its text, listing appended).
-  Grounding matches v4 exactly only for a reply without fenced code,
-  invented record lines or run-naming sentences that names every run or
-  none. `D-VOICED-CARD` (user decision 2026-10-03, "Voiced line + card"):
-  the `get_schedule` description asks the model to cite runs by `[id]`
-  instead of retelling day, time, status, RSVP count or channel (and drops
-  v4's "say each run's channel" scope note; +74 estimated tokens on the
-  full-set surface, +73 read-only). One closed rule decides every line that
-  names a listed id in any form (`[id]`, `` `id` ``, bare, `` `[id]` ``,
-  any case), whatever its shape or ending, record heads (`` `[id]` **Boss**
-  … ``) included; only a full two-line retold record or `**day — boss**`
-  pair takes the record path. Blank out the line's ids, the glue "your next
-  one/run", and the exact context phrases (`D-PERSONAL-CONTEXT`) of the runs
-  it cites; if what remains states no schedule fact, the line is kept as
-  voicing with each id read as the run's bold label (an id right beside the
-  label, or a parenthesised id in a line that names it, is dropped
-  instead). A fact is any digit (any script), a weekday or month name or
-  abbreviation (not `may`), a relative-time or comparison word (`today`,
-  `tonight`, `tomorrow`, `week`, `day(s)`, `hour(s)`, `same`, `too`,
-  `also`, `before`, `after`, `later`, `soon`, `then`, `next`, `last`,
-  `first`, `now`, `already`…), an answer or status word (`yes`, `said`,
-  `answered`, `rsvp`, `replied`, `declined`, `maybe`, `skip`, `planned`,
-  `confirmed`, `at risk`, `otot`, `own time`, `done`, `cancelled`,
-  `postponed`…), a channel (`<#id>`, `#name`) or a member mention
-  (`<@id>`, `@name`). Otherwise the line is replaced by the cards of the runs
-  it cites, even when every retold fact is right. Beside a kept voiced
-  line, any id-less prose line stating such a fact (and not a passing dated
-  sentence) is dropped in favour of the cards. The rule is deliberately
-  simple and will be tuned from live traces; known gaps: a line citing
-  several runs may use any of their phrases, so one can attach to the wrong
-  run (`[a] is in 3 days and [b] in 2 days` is kept when swapped); boss
-  names, member names and other words outside the lists are not facts
-  (`[a] is a Kalos run` is kept); `no` as an answer is not read (`you said
-  no` is caught by `said`); and harmless words on the lists (`first`,
-  `then`, `soon`, `too`) send a correct line to the cards. Records
-  placed after a kept line's paragraph come without the listing's heading
-  (and its `*(and N more)*`); when only kept lines name runs, each
-  paragraph gets the records of the runs it introduces, each run once, at
-  its first paragraph. `D-GROUND-WRITE`
+  `D-GROUND-FILTERED` (user decision 2026-09-27; rule replaced 2026-10-03,
+  "keep wording, card under"). Regrounding never reads or replaces fenced
+  code. The model's wording is kept, and every listed run the reply names
+  gets its canonical record once, after the paragraph that first names it,
+  set off by blank lines. A line names a run by its id in any form (`[id]`,
+  `` `id` ``, bare, `` `[id]` ``, any case), or by an `HH:MM` time that,
+  narrowed by a stated `DD Mon`/`Mon DD` date (else a stated weekday),
+  picks out exactly one listed run. A line is replaced only when it is a
+  retold record (a two-line `[id] **Boss**` record or `**day — boss**`
+  pair, a one-line `` `[id]` **Boss** `` head carrying a time, tally or
+  channel, or a list line with `run ID` and such a fact) or carries a hard
+  fact the `get_schedule` result does not have: an id (bracketed or
+  backticked) no tool returned, a time no listed run has, or a date no
+  listed run has. Times and dates are checked only against the set of
+  listed times and dates, with no pairing between them. A replaced line
+  becomes the records of the runs it names, or the full listing when it
+  names none. A record-shaped line whose `[id]` no tool output carries is
+  dropped (with its facts line, never a real run's line); the listing then
+  goes at the first real run. A reply that names only some of the listing's
+  runs gets just their records; naming all of them through retold records
+  inserts the tool's full listing as v4 did, with a model heading line
+  above it absorbed. A reply that names no run and has no hard fact keeps
+  its wording with the full listing (heading included) after it; v4
+  replaced the span between its first and last hint lines with the listing.
+  Nothing else is read: the fail-closed word lists, the boss and difficulty
+  check against the catalog, the unread-digit check and the per-run tally,
+  status and channel comparisons are gone. Accepted gap: a wrong count,
+  status, boss, channel or member name in a kept line sits above the
+  correct card (`your **Hard Lucid** at 21:00` on a Hard Carling run is kept
+  with the Carling card under it). `D-VOICED-CARD` (user decision
+  2026-10-03, "Voiced line + card", simplified the same day): the
+  `get_schedule` description asks the model to cite runs by `[id]` instead
+  of retelling day, time, status, RSVP count or channel (and drops v4's
+  "say each run's channel" scope note; +74 estimated tokens on the full-set
+  surface, +73 read-only). In a kept line each standalone cited id reads as
+  the run's bold label; an id right beside the label, or a parenthesised id
+  in a line that names it, is dropped instead. Records placed after a kept
+  line's paragraph come without the listing's heading (and its
+  `*(and N more)*`); when only kept lines name runs, each paragraph gets
+  the records of the runs it introduces, each run once, at its first
+  paragraph; when retold records are also replaced, all named records
+  appear once, at the first of them. `D-GROUND-WRITE`
   (user decision 2026-10-02): a turn whose last write call posted its card
   is not regrounded at all, so the model's "card is up, needs a ✅" reply
   posts as written; v4 regrounded it, and a time such as `22:00` in that
@@ -662,5 +597,5 @@ reserve: `… with completion reserve 1024`, in `loop` `context-budget` step 1
 and `context` `request-budget-trims-prior-history` step 3) and
 `D-GROUND-FILTERED` (`read-then-grounded-answer` step 0's
 reply shows only the run the model named; also `sanitize` case
-`schedule-grounding` step 8). Tools-withheld rounds, the read-only turn and unoffered calls
+`schedule-grounding` steps 6 and 8, and `D-VOICED-CARD` steps 3 and 4). Tools-withheld rounds, the read-only turn and unoffered calls
 replay as v4.
