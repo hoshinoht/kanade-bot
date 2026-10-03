@@ -75,7 +75,9 @@ function profileState(row: Locator, state: 'public' | 'private') {
 test('reply profiles: search, visibility and pages, kept across Reload', async ({ page }) => {
   await manyProfiles(page);
   const table = await persona(page);
-  await expect(table.locator('tbody tr')).toHaveCount(10);
+  // Ten profiles a page, after the synthesized default voice on page 1.
+  await expect(table.locator('tbody tr')).toHaveCount(11);
+  await expect(table.getByRole('rowheader').first()).toHaveText('Default voice');
   await expect(page.getByText('1–10 of 24 profiles')).toBeVisible();
   await page.getByRole('button', { name: 'Next →' }).click();
   await expect(page.getByText('11–20 of 24 profiles')).toBeVisible();

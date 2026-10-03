@@ -8,6 +8,8 @@ import {
   modelOptions,
   reasoningChoices,
   resetStrandedInheritors,
+  rowCheckText,
+  splitChecks,
 } from '../src/config/capacity';
 import type { ModelInfo } from '@kanade/api-types';
 
@@ -147,3 +149,23 @@ describe('capacity summary', () => {
   });
 });
 
+describe('startup checks', () => {
+  it('puts each group check on its row and keeps cross-group ones for the list, each once', () => {
+    const over = { level: 'error' as const, message: 'Group over declares 3 permits but Kanata admits at most 2 (capped by a); the bot refuses to start.', group: 'over' };
+    const gone = { level: 'error' as const, message: 'Kanata does not list gone.', group: 'over' };
+    const ungrouped = { level: 'warning' as const, message: 'The chat model b is in no capacity group; its calls are refused.', group: null };
+    const legacy = { level: 'warning' as const, message: 'Kanata is unreachable; capacity is checked again once it lists its models.' };
+    const stray = { level: 'ok' as const, message: 'Group elsewhere: 1 permits.', group: 'elsewhere' };
+    const split = splitChecks([ungrouped, over, gone, over, legacy, stray], ['over', 'open']);
+    expect(split.byGroup.get('over')).toEqual([over, gone]);
+    expect(split.byGroup.has('open')).toBe(false);
+    expect(split.rest).toEqual([ungrouped, legacy, stray]);
+  });
+
+  it('drops the group name the row already says', () => {
+    expect(rowCheckText("Group gateway: 4 permits, matching Kanata's limit.", 'gateway')).toBe("4 permits, matching Kanata's limit.");
+    expect(rowCheckText('Group local uses 2 of the 4 permits Kanata admits.', 'local')).toBe('Uses 2 of the 4 permits Kanata admits.');
+    expect(rowCheckText('Kanata does not list gone.', 'local')).toBe('Kanata does not list gone.');
+    expect(rowCheckText('Group locality: 1 permits.', 'local')).toBe('Group locality: 1 permits.');
+  });
+});

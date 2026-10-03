@@ -280,6 +280,11 @@
   color: var(--select-ink);
 }
 
+// The scrolling strip clips anything outside the pill, so the ring sits inside.
+.settings__pill:focus-visible {
+  outline-offset: -2px;
+}
+
 .settings__pillcount {
   font-family: var(--mono);
   font-size: var(--fs-mini);

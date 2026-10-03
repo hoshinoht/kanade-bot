@@ -66,6 +66,9 @@ to `config`), `key_limits.max_in_flight` is null, `capacity_check` holds only
 the server's per-group verdicts (and ungrouped-role warnings with declared
 groups), the catalog lists `model:level` variants (`variant_of`,
 `fixed_effort`) and `kanata/think` requires reasoning (`off_allowed: false`).
+Each check names its `group` (null for ungrouped-role warnings), env rows
+carry `copy` values, and `last_digest` is the current boss week's Thursday
+00:15 post in `#boss-schedule` until a manual digest post replaces it.
 
 History records carry domain rows as the server encodes them (run instants
 in UTC, `rsvps.state`, weekly timings with Monday = 0, unsent `reminders`

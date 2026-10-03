@@ -11,7 +11,14 @@ Notable changes to the Boss Scheduler Bot, newest first.
   (null for cross-group checks), `env[].copy` gives the raw value to paste into
   the deployment env (null when unset), and `last_digest` reports the newest
   active weekly digest (guild-offset `posted_at`, boss-week start, whether it
-  is this week, channel name and message link).
+  is this week, channel name and message link). Mirrored in the dev mock.
+  The admin PWA shows them: Models → Capacity puts each group's verdict in a
+  Startup check column (cross-group checks stay listed under the table),
+  Weekly digest gains a "Last posted" card (guild time, week, channel, a
+  Discord link when known; omitted without a digest), and each env row with a
+  raw value gets a "Copy KANADE_…" button. Persona's reply profiles lead with a
+  fixed "Default voice" row (the active persona as written; never selected or
+  saved). The dev mock's env rows now use the server's keys, labels and order.
 
 - v5 admin Inbox items carry an optional one-line `consequence` read off the
   merge preview (e.g. "Party unchanged · 2 reminders will move", "Adds Finn",

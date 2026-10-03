@@ -677,8 +677,8 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   // The server's own startup check is shown; the saved seed passes it.
   await expect(page.getByRole('tab', { name: 'Models' }).locator('.settings__flag')).toHaveCount(0);
   await panel.getByRole('tab', { name: 'Capacity' }).click();
-  await expect(panel.locator('.settings__checks .tone--danger')).toHaveCount(0);
-  await expect(panel.getByRole('list', { name: 'Startup check' }).getByRole('listitem').first()).toBeVisible();
+  await expect(panel.locator('.models__groups .tone--danger')).toHaveCount(0);
+  await expect(panel.getByRole('row', { name: /gateway/ }).locator('.models__check .tone').first()).toBeVisible();
   await panel.getByRole('tab', { name: 'Roles' }).click();
   const models = panel.getByRole('combobox', { name: /^Model/ });
   const reasonings = panel.getByRole('combobox', { name: /^Reasoning/ });
@@ -762,7 +762,7 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   await page.getByRole('tab', { name: 'Set in the environment' }).click();
   await expect(panel.getByRole('row', { name: /Timezone/ })).toContainText('Asia/Kuala_Lumpur');
   await expect(panel.getByRole('row', { name: /Timezone/ })).toContainText('a change needs a restart');
-  await expect(panel.getByRole('row', { name: /Watched categories/ })).toContainText('KANADE_WATCHED_CATEGORIES');
+  await expect(panel.getByRole('row', { name: /Watched categories/ })).toContainText('KANADE_WATCH_CATEGORY_IDS');
   await expect(panel.getByRole('row', { name: /Watched categories/ })).toContainText('deliberate deploy');
   await expect(panel.getByRole('row', { name: /Model gateway/ })).not.toContainText('secret');
   await expect(panel.locator('input, select')).toHaveCount(0);
@@ -925,12 +925,16 @@ test('models: capacity groups read-only, one row per group, Kanata limits in wor
   // Default source: one gateway group over the role models.
   const groups = panel.getByRole('table', { name: /Every model shares one group of 1 permit \(models.permits in kanade.toml\)/ });
   await expect(groups.getByRole('row')).toHaveCount(2);
+  await expect(groups.getByRole('columnheader')).toHaveText(['Group', 'Permits', 'Models', 'Startup check']);
   const gateway = groups.getByRole('row', { name: /gateway/ });
   await expect(gateway.locator('.capchip')).toHaveText(['kanata/extract', 'kanata/chat', 'kanata/rewrite-small']);
   await expect(panel.getByRole('button', { name: /Add a row|Save groups/ })).toHaveCount(0);
-  // The server's verdicts, each once; no client-side key or ungrouped warnings.
-  const checks = panel.getByRole('list', { name: 'Startup check' }).getByRole('listitem');
-  await expect(checks).toHaveText([/Group gateway: 1 permits, matching Kanata's limit\.$/]);
+  // The server's verdict sits on its group's row, without repeating the group's name;
+  // nothing spans groups, so no list under the table and no client-side warnings.
+  await expect(gateway.locator('.models__check')).toContainText("1 permits, matching Kanata's limit.");
+  await expect(gateway.locator('.models__check')).not.toContainText('Group gateway');
+  await expect(gateway.locator('.models__check .tone--success')).toHaveCount(1);
+  await expect(panel.getByRole('list', { name: 'Startup checks across groups' })).toHaveCount(0);
   await expect(panel).not.toContainText('size its limits for both');
   // Mixed Kanata limits: the models in use, a disclosure for the rest, never a `model:level` variant.
   const inUse = panel.getByRole('table', { name: 'What Kanata admits for the models in use' });
@@ -958,8 +962,8 @@ test('models: config-declared groups, uniform limits, a stored variant, an unset
       { model: 'kanata/chat:high', group: 'local', permits: 1 },
     ];
     body.models.capacity_check = [
-      { level: 'warning', message: 'The rewrite model kanata/rewrite-small is in no capacity group; its calls are refused.' },
-      { level: 'ok', message: "Group local: 1 permits, matching Kanata's limit." },
+      { level: 'warning', message: 'The rewrite model kanata/rewrite-small is in no capacity group; its calls are refused.', group: null },
+      { level: 'ok', message: "Group local: 1 permits, matching Kanata's limit.", group: 'local' },
     ];
     for (const limit of body.models.alias_limits) limit.max_in_flight = 3;
     body.models.roles.chat = { alias: 'kanata/chat:high', reasoning: '', variant_of: 'kanata/chat', fixed_effort: 'high' };
@@ -970,8 +974,13 @@ test('models: config-declared groups, uniform limits, a stored variant, an unset
   const panel = page.locator('.settings__panel:not([hidden])');
   await panel.getByRole('tab', { name: 'Capacity' }).click();
   const groups = panel.getByRole('table', { name: 'Set in kanade.toml under [[models.groups]]; restart to apply.' });
-  await expect(groups.getByRole('row', { name: /local/ }).locator('.capchip')).toHaveText(['kanata/extract', 'kanata/chat']);
-  await expect(panel.getByRole('list', { name: 'Startup check' }).locator('.tone--warning')).toHaveCount(1);
+  const local = groups.getByRole('row', { name: /local/ });
+  await expect(local.locator('.capchip')).toHaveText(['kanata/extract', 'kanata/chat']);
+  await expect(local.locator('.models__check')).toContainText("1 permits, matching Kanata's limit.");
+  // A role in no group is about no one row: it stays listed under the table.
+  const across = panel.getByRole('list', { name: 'Startup checks across groups' });
+  await expect(across.getByRole('listitem')).toHaveText([/kanata\/rewrite-small is in no capacity group/]);
+  await expect(across.locator('.tone--warning')).toHaveCount(1);
   await expect(panel.getByText('Kanata admits 3 calls at a time per model.')).toBeVisible();
   await expect(panel.getByRole('table', { name: /models in use/ })).toHaveCount(0);
   await panel.getByRole('tab', { name: 'Roles' }).click();
@@ -983,4 +992,97 @@ test('models: config-declared groups, uniform limits, a stored variant, an unset
   await expect(panel.getByRole('combobox', { name: /^Reasoning/ }).nth(1)).toBeDisabled();
   // An unset role reads "Not configured".
   await expect(models.nth(2).locator('option:checked')).toHaveText('Not configured');
+});
+
+test('persona: the default voice leads the profiles, fixed and never selectable', async ({ page }) => {
+  await go(page, '/config?section=persona');
+  const panel = page.locator('.settings__panel:not([hidden])');
+  const profiles = panel.getByRole('table', { name: 'Reply profiles' });
+  const rows = profiles.locator('tbody tr');
+  const first = rows.first();
+  await expect(first.getByRole('rowheader')).toHaveText('Default voice');
+  await expect(first).toContainText('Kanade as written');
+  await expect(first).toContainText("(the persona's own voice)");
+  await expect(first).toContainText('public');
+  await expect(first.locator('.cap')).toHaveText('default');
+  // Synthesized from the active persona: no selection box, no visibility action, no prompt to open.
+  await expect(first.getByRole('checkbox')).toHaveCount(0);
+  await expect(first.getByRole('button')).toHaveCount(0);
+  // Selecting the page selects real profiles only.
+  const real = (await page.request.get(`${ADMIN}/api/admin/config`).then((r) => r.json())) as { persona: { profiles: unknown[] } };
+  await panel.getByRole('checkbox', { name: 'Select all reply profiles on this page' }).check();
+  const n = Math.min(real.persona.profiles.length, 10);
+  await expect(panel.getByText(`${n} profile${n === 1 ? '' : 's'} selected.`)).toBeVisible();
+  await panel.getByRole('button', { name: 'Clear' }).click();
+  // It reads as public: the Private filter hides it, a search for it keeps it alone.
+  await panel.getByRole('button', { name: /^Private/ }).click();
+  await expect(profiles.getByRole('rowheader', { name: /^Default voice/ })).toHaveCount(0);
+  await panel.getByRole('button', { name: /^All/ }).click();
+  await panel.getByRole('searchbox', { name: 'Search' }).fill('default voice');
+  await expect(rows).toHaveCount(1);
+  await expect(first.getByRole('rowheader')).toHaveText('Default voice');
+});
+
+test('digest: the last posted card follows the API, and is omitted without one', async ({ page }) => {
+  type Last = { posted_at: string; this_week: boolean; channel_id: string; channel_name: string | null; url: string | null };
+  const view = (await page.request.get(`${ADMIN}/api/admin/config`).then((r) => r.json())) as { last_digest: Last | null };
+  const last = view.last_digest!;
+  expect(last).toBeTruthy();
+  await go(page, '/config?section=digest');
+  const card = page.getByRole('region', { name: 'Last posted' });
+  // Guild time straight from the offset-carrying instant: "Thu 24 Sep 00:15".
+  await expect(card.locator('b')).toHaveText(new RegExp(`^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \\d{1,2} [A-Z][a-z]{2} ${last.posted_at.slice(11, 16)}$`));
+  await expect(card).toContainText(last.this_week ? '· this week ·' : '· week of ');
+  await expect(card).toContainText(last.channel_name ?? last.channel_id);
+  const link = card.getByRole('link', { name: /open in Discord/ });
+  await expect(link).toHaveAttribute('href', last.url!);
+  await expect(link).toHaveAttribute('target', '_blank');
+  await expect(link).toHaveAttribute('rel', /noopener/);
+
+  // An unknown channel name falls back to its id; no link without a URL; an older week says which.
+  await page.route(`${ADMIN}/api/admin/config`, async (route) => {
+    const res = await route.fetch();
+    const body = await res.json();
+    body.last_digest = { ...body.last_digest, channel_name: null, url: null, this_week: false };
+    await route.fulfill({ response: res, json: body });
+  });
+  await go(page, '/config?section=digest');
+  await expect(card).toContainText(last.channel_id);
+  await expect(card).toContainText('· week of ');
+  await expect(card.getByRole('link')).toHaveCount(0);
+  await page.unroute(`${ADMIN}/api/admin/config`);
+
+  await page.route(`${ADMIN}/api/admin/config`, async (route) => {
+    const res = await route.fetch();
+    const body = await res.json();
+    body.last_digest = null;
+    await route.fulfill({ response: res, json: body });
+  });
+  await go(page, '/config?section=digest');
+  await expect(page.getByRole('button', { name: 'Post it now…' })).toBeVisible();
+  await expect(card).toHaveCount(0);
+  await page.unroute(`${ADMIN}/api/admin/config`);
+});
+
+test('env: copy buttons write the raw env value; none where it is unset', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: ADMIN });
+  await go(page, '/config?section=env');
+  const panel = page.locator('.settings__panel:not([hidden])');
+  // The row shows the human value; the copy is the env form.
+  await expect(panel.getByRole('row', { name: /Boss week starts/ })).toContainText('Thu 00:00');
+  await panel.getByRole('button', { name: 'Copy KANADE_BOSS_WEEK_RESET_WEEKDAY' }).click();
+  await expect(toast(page, 'Copied KANADE_BOSS_WEEK_RESET_WEEKDAY.')).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('thu');
+  await panel.getByRole('button', { name: 'Copy KANADE_WATCH_CHANNEL_IDS' }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/^[^,\s]+(,[^,\s]+)+$/);
+  // Unset values have nothing to copy.
+  await expect(panel.getByRole('row', { name: /Watched categories/ }).getByRole('button')).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Copy KANADE_WATCH_CATEGORY_IDS' })).toHaveCount(0);
+
+  // Without a clipboard the toast says the value instead.
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.reject(new Error('denied')) }, configurable: true });
+  });
+  await panel.getByRole('button', { name: 'Copy KANADE_TIMEZONE' }).click();
+  await expect(toast(page, "Couldn't copy here; KANADE_TIMEZONE is Asia/Kuala_Lumpur")).toBeVisible();
 });

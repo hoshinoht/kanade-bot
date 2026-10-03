@@ -1,10 +1,14 @@
 <script lang="ts">
-  import type { Channel } from '@kanade/api-types';
-  import { Modal, type Toaster } from '@kanade/ui';
+  import type { Channel, LastDigest } from '@kanade/api-types';
+  import { Icon, Modal, weekStartLabel, type Toaster } from '@kanade/ui';
   import SettingsPanel from './SettingsPanel.svelte';
   import { Resource, send } from '../resource.svelte';
 
-  let { toaster }: { toaster: Toaster } = $props();
+  let {
+    toaster,
+    last = null,
+    onposted,
+  }: { toaster: Toaster; last?: LastDigest | null; onposted?: () => unknown } = $props();
   const uid = $props.id();
 
   const channels = new Resource<Channel[]>('/api/admin/channels');
@@ -17,6 +21,9 @@
   let error = $state('');
   let asking = $state(false);
   const channelName = $derived(channel ? (channels.data?.find((c) => c.id === channel)?.name ?? channel) : 'the digest channel');
+  // `posted_at` already carries the guild's offset, so its own date and clock are guild time.
+  const lastAt = $derived(last ? `${weekStartLabel(last.posted_at)} ${last.posted_at.slice(11, 16)}` : '');
+  const lastWeek = $derived(last ? (last.this_week ? 'this week' : `week of ${weekStartLabel(last.week_start)}`) : '');
 
   function ask(event: SubmitEvent) {
     event.preventDefault();
@@ -29,7 +36,10 @@
     const result = await send((c) => c.post<{ message: string }>('/api/admin/digest', { week, channel_id: channel || null }));
     busy = false;
     error = result.ok ? '' : result.message;
-    if (result.ok) toaster.show({ message: result.value.message, tone: 'ok' });
+    if (result.ok) {
+      toaster.show({ message: result.value.message, tone: 'ok' });
+      void onposted?.();
+    }
   }
 </script>
 
@@ -56,6 +66,18 @@
   <p class="settings__box">
     It follows clears and answers through the week and replaces an earlier digest for the same week. “Post it now…” asks first.
   </p>
+  {#if last}
+    <section class="settings__card digest__last" data-fid="cfg-card" aria-labelledby="{uid}-last">
+      <h4 class="cap" id="{uid}-last">Last posted</h4>
+      <p class="digest__lastline">
+        <b class="mono">{lastAt}</b> · {lastWeek} · {last.channel_name ?? last.channel_id}{last.url ? ' · ' : ''}{#if last.url}<a
+            href={last.url}
+            target="_blank"
+            rel="noopener noreferrer">open in Discord<Icon name="external-link" /><span class="vh"> (opens in a new tab)</span></a
+          >{/if}
+      </p>
+    </section>
+  {/if}
 </SettingsPanel>
 
 <Modal bind:open={asking} title="Post {week === 'this' ? "this week's" : "next week's"} digest to {channelName}?" narrow>
@@ -80,5 +102,24 @@
 
   .digest__channel select {
     width: 100%;
+  }
+
+  .digest__last {
+    gap: 6px;
+  }
+
+  .digest__last h4 {
+    margin: 0;
+  }
+
+  .digest__lastline {
+    margin: 0;
+    font-size: var(--fs-body);
+  }
+
+  .digest__lastline a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
   }
 </style>

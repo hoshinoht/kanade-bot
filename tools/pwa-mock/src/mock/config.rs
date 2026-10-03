@@ -10,6 +10,7 @@
 //! key-level max_in_flight while the deployment shares its key.
 
 use super::catalog::valid_run_length_override;
+use super::clock;
 use super::model_context::{self, Route};
 use super::seed;
 use super::{MoveError, Store};
@@ -244,6 +245,101 @@ fn variant(id: &str) -> Option<(&'static str, &'static str)> {
         .map(|(_, base, effort)| (*base, *effort))
 }
 
+/// The server's env rows (`src/api/admin/config/desk.rs`): same keys, labels
+/// and reasons; `copy` is the raw env form (ids comma-joined, lowercase
+/// weekday), null when unset.
+fn env_rows(c: &Config) -> Vec<Value> {
+    let row = |key: &str, label: &str, value: String, reason: &str, copy: Option<String>| json!({ "key": key, "label": label, "value": value, "reason": reason, "copy": copy });
+    let watched: Vec<_> = seed::CHANNELS.iter().filter(|c| c.2).collect();
+    let mut groups: Vec<(&str, u32)> = Vec::new();
+    for g in c.declared_groups.iter().flatten() {
+        if !groups.iter().any(|(name, _)| *name == g.group) {
+            groups.push((&g.group, g.permits));
+        }
+    }
+    let capacity = if groups.is_empty() {
+        row(
+            "KANADE_MODEL_PERMITS",
+            "Model permits",
+            c.permits.to_string(),
+            "One capacity group shared by every model role; kanade.toml [[models.groups]] replaces it after a restart.",
+            Some(c.permits.to_string()),
+        )
+    } else {
+        let each: Vec<String> = groups
+            .iter()
+            .map(|(name, permits)| format!("{name} {permits}"))
+            .collect();
+        let noun = if groups.len() == 1 { "group" } else { "groups" };
+        row(
+            "KANADE_MODEL_PERMITS / kanade.toml [[models.groups]]",
+            "Model capacity groups",
+            format!("{} {noun}: {}", groups.len(), each.join(", ")),
+            "Set in kanade.toml ([[models.groups]]); restart to apply.",
+            None,
+        )
+    };
+    vec![
+        row(
+            "KANADE_TIMEZONE",
+            "Timezone",
+            "Asia/Kuala_Lumpur".into(),
+            "Every stored time is converted with it; a change needs a restart.",
+            Some("Asia/Kuala_Lumpur".into()),
+        ),
+        row(
+            "KANADE_BOSS_WEEK_RESET_WEEKDAY",
+            "Boss week starts",
+            "Thu 00:00".into(),
+            "Defines the boss-week boundaries of every stored run.",
+            Some("thu".into()),
+        ),
+        row(
+            "KANADE_POST_CHANNEL_ID",
+            "Digest channel",
+            "#boss-schedule".into(),
+            "Set with the guild's channel layout.",
+            Some("boss-schedule".into()),
+        ),
+        row(
+            "KANADE_WATCH_CHANNEL_IDS",
+            "Watched channels",
+            watched.iter().map(|c| c.1).collect::<Vec<_>>().join(", "),
+            "Watching a new channel is a deliberate deploy.",
+            Some(watched.iter().map(|c| c.0).collect::<Vec<_>>().join(",")),
+        ),
+        row(
+            "KANADE_WATCH_CATEGORY_IDS",
+            "Watched categories",
+            "none".into(),
+            "Watching a whole category is a deliberate deploy, like channels.",
+            None,
+        ),
+        row(
+            "KANADE_CHAT_CATEGORY_IDS",
+            "Chat categories",
+            "none".into(),
+            "The chatbot answers in every channel of these categories; set with the channel layout.",
+            None,
+        ),
+        row(
+            "KANADE_CHAT_PILOT_ROLE_ID",
+            "Chat pilot role",
+            "not set".into(),
+            "Who may talk to the chatbot is a deployment decision.",
+            None,
+        ),
+        row(
+            "KANADE_MODEL_BASE_URL",
+            "Model gateway",
+            "https://kanata.example.internal".into(),
+            "Repointing the gateway would redirect the bearer key, so only the operator changes it.",
+            Some("https://kanata.example.internal".into()),
+        ),
+        capacity,
+    ]
+}
+
 /// The groups the governor runs: `kanade.toml` groups, or one `gateway` group
 /// of `models.permits` over the distinct role aliases.
 pub fn effective_groups(c: &Config) -> Vec<Group> {
@@ -411,7 +507,7 @@ pub fn capacity_check(c: &Config) -> Vec<Value> {
             ("rewrite", &c.rewrite),
         ] {
             if !m.alias.is_empty() && !groups.iter().any(|g| g.model == m.alias) {
-                out.push(json!({ "level": "warning", "message": format!("The {role} model {} is in no capacity group; its calls are refused.", m.alias) }));
+                out.push(json!({ "level": "warning", "message": format!("The {role} model {} is in no capacity group; its calls are refused.", m.alias), "group": null }));
             }
         }
     }
@@ -421,30 +517,37 @@ pub fn capacity_check(c: &Config) -> Vec<Value> {
             names.push(&g.group);
         }
     }
+    // An unlisted alias is reported once, under the first group naming it.
+    let mut unlisted: Vec<&str> = Vec::new();
     for name in names {
         let rows: Vec<&Group> = groups.iter().filter(|g| g.group == name).collect();
         let permits = rows[0].permits;
         let mut cap: Option<(u32, &str)> = None;
         for g in &rows {
             match model(&g.model) {
-                None => out.push(json!({ "level": "error", "message": format!("Kanata does not list {}.", g.model) })),
+                None => {
+                    if !unlisted.contains(&g.model.as_str()) {
+                        unlisted.push(&g.model);
+                        out.push(json!({ "level": "error", "message": format!("Kanata does not list {}.", g.model), "group": name }));
+                    }
+                }
                 Some(info) => match info.cap() {
                     Some(each) => {
                         if cap.is_none_or(|(least, _)| each < least) {
                             cap = Some((each, &g.model));
                         }
                     }
-                    None => out.push(json!({ "level": "warning", "message": format!("Kanata publishes no limit for {}; its calls queue at the gateway.", g.model) })),
+                    None => out.push(json!({ "level": "warning", "message": format!("Kanata publishes no limit for {}; its calls queue at the gateway.", g.model), "group": name })),
                 },
             }
         }
         if let Some((cap, by)) = cap {
             out.push(if permits > cap {
-                json!({ "level": "error", "message": format!("Group {name} declares {permits} permits but Kanata admits at most {cap} (capped by {by}); the bot refuses to start.") })
+                json!({ "level": "error", "message": format!("Group {name} declares {permits} permits but Kanata admits at most {cap} (capped by {by}); the bot refuses to start."), "group": name })
             } else if permits < cap {
-                json!({ "level": "warning", "message": format!("Group {name} uses {permits} of the {cap} permits Kanata admits.") })
+                json!({ "level": "warning", "message": format!("Group {name} uses {permits} of the {cap} permits Kanata admits."), "group": name })
             } else {
-                json!({ "level": "ok", "message": format!("Group {name}: {permits} permits, matching Kanata's limit.") })
+                json!({ "level": "ok", "message": format!("Group {name}: {permits} permits, matching Kanata's limit."), "group": name })
             });
         }
     }
@@ -622,16 +725,8 @@ impl Store {
             },
             "run_lengths": c.run_lengths,
             "manage_messages": { "missing": missing_manage },
-            "env": [
-                { "key": "KANADE_TIMEZONE", "label": "Timezone", "value": "Asia/Kuala_Lumpur", "reason": "Every stored time is converted with it; a change needs a restart." },
-                { "key": "KANADE_RESET", "label": "Boss week starts", "value": "Thu 00:00", "reason": "Defines boss-week boundaries for every stored run." },
-                { "key": "KANATA_BASE_URL", "label": "Model gateway", "value": "https://kanata.example.internal", "reason": "The gateway address is deployment wiring; repointing it would redirect the bearer key, so only the operator changes it." },
-                { "key": "KANADE_MODEL_GROUPS", "label": "Capacity groups", "value": if c.declared_groups.is_some() { "declared in kanade.toml" } else { "default: one gateway group" }, "reason": "Set in kanade.toml ([[models.groups]]); restart to apply." },
-                { "key": "KANADE_MIN_CONFIDENCE", "label": "Minimum confidence", "value": "0.6", "reason": "Tuned with the extraction vectors, not at runtime." },
-                { "key": "KANADE_DIGEST_CHANNEL", "label": "Digest channel", "value": "#boss-schedule", "reason": "Set with the guild's channel layout." },
-                { "key": "KANADE_WATCHED", "label": "Watched channels", "value": seed::CHANNELS.iter().filter(|c| c.2).map(|c| c.1).collect::<Vec<_>>().join(", "), "reason": "Watching a new channel is a deliberate deploy." },
-                { "key": "KANADE_WATCHED_CATEGORIES", "label": "Watched categories", "value": "none", "reason": "Watching a whole category is a deliberate deploy, like channels." },
-            ],
+            "env": env_rows(c),
+            "last_digest": self.last_digest(),
             "notices": Vec::<String>::new(),
         })
     }
@@ -1068,6 +1163,32 @@ impl Store {
         )
     }
 
+    /// The newest digest card: a manual post from this session, else the
+    /// seeded Thursday 00:15 post of the current boss week in `#boss-schedule`.
+    fn last_digest(&self) -> Value {
+        let (today, minute) = clock::local_now();
+        let this_week = clock::week_start(today);
+        let (week, day, minute) = match self.digest_week {
+            Some(next) => (this_week + if next { 7 } else { 0 }, today, minute),
+            None => (this_week, this_week, 15),
+        };
+        let posted_at = format!(
+            "{}T{:02}:{:02}:00+08:00",
+            clock::iso_date(day),
+            minute / 60,
+            minute % 60
+        );
+        let message = format!("digest-{}", clock::iso_date(week));
+        json!({
+            "posted_at": posted_at,
+            "week_start": clock::iso_date(week),
+            "this_week": week == this_week,
+            "channel_id": "boss-schedule",
+            "channel_name": "#boss-schedule",
+            "url": format!("https://discord.com/channels/0/boss-schedule/{message}"),
+        })
+    }
+
     /// v4 access.html: the bot's role permissions per channel.
     pub fn access(&self) -> Value {
         let rows: Vec<Value> = seed::CHANNELS
@@ -1258,6 +1379,47 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn config_view_names_check_groups_env_copies_and_the_last_digest() {
+        let mut s = store();
+        let view = s.config_view();
+        for check in view["models"]["capacity_check"].as_array().unwrap() {
+            assert_eq!(check["group"], "gateway", "{check}");
+        }
+        let copy = |view: &serde_json::Value, key: &str| {
+            view["env"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["key"] == key)
+                .unwrap()["copy"]
+                .clone()
+        };
+        assert_eq!(copy(&view, "KANADE_BOSS_WEEK_RESET_WEEKDAY"), "thu");
+        assert_eq!(copy(&view, "KANADE_WATCH_CATEGORY_IDS"), json!(null));
+        assert_eq!(copy(&view, "KANADE_MODEL_PERMITS"), "1");
+        // Pinned at Tue 29 Sep 12:00: the boss week began Thu 24 Sep.
+        assert_eq!(
+            view["last_digest"],
+            json!({
+                "posted_at": "2026-09-24T00:15:00+08:00",
+                "week_start": "2026-09-24",
+                "this_week": true,
+                "channel_id": "boss-schedule",
+                "channel_name": "#boss-schedule",
+                "url": "https://discord.com/channels/0/boss-schedule/digest-2026-09-24",
+            })
+        );
+        assert!(s.post_digest("next", None).is_ok());
+        let view = s.config_view();
+        assert_eq!(view["last_digest"]["week_start"], "2026-10-01");
+        assert_eq!(view["last_digest"]["this_week"], false);
+        assert_eq!(
+            view["last_digest"]["posted_at"],
+            "2026-09-29T12:00:00+08:00"
         );
     }
 

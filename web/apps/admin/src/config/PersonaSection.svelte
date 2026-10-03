@@ -98,6 +98,15 @@
   let promptOf = $state<ReplyProfile | null>(null);
   let promptOpen = $state(false);
   const current = $derived(persona.personas.find((p) => p.key === persona.active));
+  // No profile is the default: with no role or member choice the bot speaks in
+  // the active persona's own voice. Shown as a fixed first row, never selected,
+  // edited or sent; it follows the filters like a public profile would.
+  const DEFAULT_LABEL = 'Default voice';
+  const DEFAULT_PROMPT = "(the persona's own voice)";
+  const defaultVoice = $derived(`${current?.name ?? persona.active} as written`);
+  const showDefault = $derived(
+    page === 1 && visibility !== 'private' && (!needle || [DEFAULT_LABEL, defaultVoice, DEFAULT_PROMPT].some((t) => t.toLowerCase().includes(needle))),
+  );
 
   $effect(() => {
     if (pageCheckbox) pageCheckbox.indeterminate = pagePartlySelected && !pageSelected;
@@ -285,6 +294,16 @@
             </tr>
           </thead>
           <tbody>
+            {#if showDefault}
+              <tr class="profiles__default">
+                <td class="profiles__pick"></td>
+                <th scope="row" class="profiles__name" aria-label="{DEFAULT_LABEL}, public, the default">{DEFAULT_LABEL}</th>
+                <td class="profiles__voice">{defaultVoice}</td>
+                <td class="profile__prompt profile__prompt--default">{DEFAULT_PROMPT}</td>
+                <td class="profiles__vis"><span class="status-chip status-chip--ok profile__state-wide">public</span></td>
+                <td class="profiles__act"><span class="cap">default</span></td>
+              </tr>
+            {/if}
             {#each shown.rows as p (p.key)}
               <tr>
                 <td class="profiles__pick">
@@ -310,7 +329,7 @@
                 </td>
               </tr>
             {:else}
-              <tr><td colspan="6" class="note">{profiles.length ? 'No profile matches.' : 'No reply profiles.'}</td></tr>
+              {#if !showDefault || !profiles.length}<tr><td colspan="6" class="note">{profiles.length ? 'No profile matches.' : 'No reply profiles.'}</td></tr>{/if}
             {/each}
           </tbody>
         </table>
@@ -457,6 +476,13 @@
 
   .profile__prompt {
     max-width: 1px;
+  }
+
+  .profile__prompt--default {
+    overflow: hidden;
+    color: var(--dim-text);
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 
   .profile__visibility {

@@ -293,6 +293,12 @@
     config.error = '';
     return result.value;
   }
+
+  // After a successful post a failed re-read must not look like a page fault.
+  async function refreshQuietly(): Promise<void> {
+    const result = await send((client) => client.get<ConfigView>('/api/admin/config'));
+    if (result.ok) config.data = result.value;
+  }
 </script>
 
 <!-- v4 config.html: no page head; the window is the page, titled in its own
@@ -399,7 +405,7 @@
                 <div class="settings__card" data-fid="cfg-card"><ThemePicker /></div>
               </SettingsPanel>
             {:else if item.key === 'digest'}
-              <DigestSection {toaster} />
+              <DigestSection {toaster} last={config.data?.last_digest ?? null} onposted={refreshQuietly} />
             {:else if item.key === 'rescan'}
               <SettingsPanel title="Re-read the party channels">
                 {#snippet lead()}Runs the extractor again over stored messages.{/snippet}
@@ -480,7 +486,7 @@
                   <p class="settings__box">Applies at once, with Undo for 10 s.</p>
                 </SettingsPanel>
               {:else}
-                <EnvSection env={c.env} />
+                <EnvSection env={c.env} {toaster} />
               {/if}
             {:else if config.loading}
               <p class="note settings__loading" role="status">Loading the settings…</p>

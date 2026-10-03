@@ -8,7 +8,18 @@
 <script lang="ts">
   import type { ConfigView, ModelInfo, ModelRole, RoleModel } from '@kanade/api-types';
   import { CHECK_TONE, Icon } from '@kanade/ui';
-  import { groupRows, isReasoningValid, kanataLimits, keyLine, modelOptions, reasoningChoices, resetStrandedInheritors, ROLES } from './capacity';
+  import {
+    groupRows,
+    isReasoningValid,
+    kanataLimits,
+    keyLine,
+    modelOptions,
+    reasoningChoices,
+    resetStrandedInheritors,
+    ROLES,
+    rowCheckText,
+    splitChecks,
+  } from './capacity';
   import ContextWindows from './ContextWindows.svelte';
   import { changes, type Change } from './dirty';
   import PillTabs from './PillTabs.svelte';
@@ -46,13 +57,14 @@
   let resetNote = $state('');
 
   const info = (alias: string): ModelInfo | undefined => models.catalog.find((m) => m.id === alias);
-  // The server runs the startup check on every read and save; it is the truth.
-  const checks = $derived(models.capacity_check);
   const MARK = { ok: 'check', warning: 'alert-circle', error: 'alert-triangle' } as const;
   const TONE = CHECK_TONE;
-  // Each server verdict once, even if two groups report the same words.
-  const verdicts = $derived(checks.filter((c, i) => checks.findIndex((o) => o.level === c.level && o.message === c.message) === i));
   const groups = $derived(groupRows(models));
+  // The server runs the startup check on every read and save; it is the truth.
+  // Groups are read-only (kanade.toml), so no unsaved edit changes them and the
+  // saved verdicts are the whole story: each sits on its group's row, and
+  // cross-group ones (a role in no group, Kanata unreachable) under the table.
+  const checks = $derived(splitChecks(models.capacity_check, groups.map((g) => g.group)));
   const limits = $derived(kanataLimits(models));
   const permitsTotal = $derived(groups[0]?.permits ?? 0);
   function pick(role: ModelRole, alias: string) {
@@ -215,28 +227,41 @@
         <h4 class="settings__cardtitle" id="{uid}-groups">Capacity groups</h4>
         <span class="settings__cardnote">Each group shares its permits, held to the least Kanata admits for any of its models.</span>
       </div>
-      <table class="settings__table models__groups">
-        <caption class="settings__cardnote">
-          {models.groups_source === 'config'
-            ? 'Set in kanade.toml under [[models.groups]]; restart to apply.'
-            : `Every model shares one group of ${permitsTotal} permit${permitsTotal === 1 ? '' : 's'} (models.permits in kanade.toml).`}
-        </caption>
-        <thead><tr><th scope="col">Group</th><th scope="col" class="num">Permits</th><th scope="col">Models</th></tr></thead>
-        <tbody>
-          {#each groups as g (g.group)}
-            <tr>
-              <th scope="row" class="mono">{g.group}</th>
-              <td class="num mono">{g.permits ?? '—'}</td>
-              <td><span class="settings__caps">{#each g.models as m (m)}<span class="capchip capchip--mono">{m}</span>{/each}</span></td>
-            </tr>
-          {:else}
-            <tr><td colspan="3" class="note">No model has a group, so no calls can run.</td></tr>
-          {/each}
-        </tbody>
-      </table>
-      {#if verdicts.length}
-        <ul class="settings__checks" aria-label="Startup check">
-          {#each verdicts as c, i (i)}
+      <div class="models__wrap">
+        <table class="settings__table models__groups">
+          <caption class="settings__cardnote">
+            {models.groups_source === 'config'
+              ? 'Set in kanade.toml under [[models.groups]]; restart to apply.'
+              : `Every model shares one group of ${permitsTotal} permit${permitsTotal === 1 ? '' : 's'} (models.permits in kanade.toml).`}
+          </caption>
+          <thead
+            ><tr
+              ><th scope="col">Group</th><th scope="col" class="num">Permits</th><th scope="col">Models</th><th scope="col" class="models__check">Startup check</th></tr
+            ></thead
+          >
+          <tbody>
+            {#each groups as g (g.group)}
+              <tr>
+                <th scope="row" class="mono">{g.group}</th>
+                <td class="num mono">{g.permits ?? '—'}</td>
+                <td><span class="settings__caps">{#each g.models as m (m)}<span class="capchip capchip--mono">{m}</span>{/each}</span></td>
+                <td class="models__check">
+                  {#each checks.byGroup.get(g.group) ?? [] as c, i (i)}
+                    <span class="models__verdict"><span class="tone tone--{TONE[c.level]}"><Icon name={MARK[c.level]} label={c.level} /></span><span>{rowCheckText(c.message, g.group)}</span></span>
+                  {:else}
+                    <span class="note">—<span class="vh"> no check reported</span></span>
+                  {/each}
+                </td>
+              </tr>
+            {:else}
+              <tr><td colspan="4" class="note">No model has a group, so no calls can run.</td></tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+      {#if checks.rest.length}
+        <ul class="settings__checks" aria-label="Startup checks across groups">
+          {#each checks.rest as c, i (i)}
             <li><span class="tone tone--{TONE[c.level]}"><Icon name={MARK[c.level]} label={c.level} /></span><span>{c.message}</span></li>
           {/each}
         </ul>
@@ -316,6 +341,43 @@
     width: 100%;
   }
 
+  /* Phones scroll the groups table sideways rather than clip its verdicts. */
+  .models__wrap {
+    min-width: 0;
+    overflow-x: auto;
+  }
+
+  /* Board B_CfgModels: the group's verdict beside its models. */
+  .models__check {
+    width: 18rem;
+  }
+
+  td.models__check {
+    padding-block: 0.4rem;
+  }
+
+  .models__verdict {
+    display: flex;
+    gap: 0.45rem;
+    align-items: flex-start;
+    line-height: 1.35;
+  }
+
+  .models__verdict + .models__verdict {
+    margin-top: 0.25rem;
+  }
+
+  /* The board's bare ✓: the mark in its tone's colour, no chip around it. */
+  .models__verdict .tone {
+    flex: none;
+    min-height: 0;
+    margin-top: 0.1rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+  }
+
   .settings__more summary {
     cursor: pointer;
     font-size: var(--fs-small);
@@ -326,6 +388,13 @@
   @media (max-width: 1099px) {
     .models__roles {
       grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  @media (max-width: 599px) {
+    .models__check {
+      width: auto;
+      min-width: 11rem;
     }
   }
 </style>

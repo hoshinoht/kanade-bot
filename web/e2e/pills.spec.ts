@@ -27,5 +27,5 @@ test('pill profiles: chat, extractions, inbox, planner sheet and config share on
 
   await page.goto(`${ADMIN}/config?section=models&sw=off`);
   await page.getByRole('tab', { name: 'Capacity' }).click();
-  await expect(page.getByRole('list', { name: 'Startup check' }).locator('.tone--success')).toHaveCount(1);
+  await expect(page.getByRole('table', { name: /Every model shares one group/ }).locator('.models__check .tone--success')).toHaveCount(1);
 });

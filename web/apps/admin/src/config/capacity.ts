@@ -1,4 +1,4 @@
-import type { ConfigView, ModelInfo, ModelRole, RoleModel } from '@kanade/api-types';
+import type { CapacityCheck, ConfigView, ModelInfo, ModelRole, RoleModel } from '@kanade/api-types';
 
 export const ROLES: { id: ModelRole; name: string; job: string }[] = [
   { id: 'extraction', name: 'Extraction', job: 'Reads the party channels and proposes schedule changes.' },
@@ -121,6 +121,42 @@ export function groupRows(models: ConfigView['models']): GroupRow[] {
     if (!row.models.includes(base)) row.models.push(base);
   }
   return rows;
+}
+
+export interface SplitChecks {
+  /** Each group row's own checks, keyed by group name. */
+  byGroup: Map<string, CapacityCheck[]>;
+  /** Checks spanning groups (no `group`), or naming a group no row shows. */
+  rest: CapacityCheck[];
+}
+
+/** The server's startup checks placed on their group rows; each verdict once. */
+export function splitChecks(checks: CapacityCheck[], groups: string[]): SplitChecks {
+  const byGroup = new Map<string, CapacityCheck[]>();
+  const rest: CapacityCheck[] = [];
+  const seen = new Set<string>();
+  for (const check of checks) {
+    const key = `${check.group ?? ''}\n${check.level}\n${check.message}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (check.group && groups.includes(check.group)) {
+      const own = byGroup.get(check.group) ?? [];
+      own.push(check);
+      byGroup.set(check.group, own);
+    } else rest.push(check);
+  }
+  return { byGroup, rest };
+}
+
+/** A check in its group's row: the row already names the group, so "Group local: …" reads "…". */
+export function rowCheckText(message: string, group: string): string {
+  for (const lead of [`Group ${group}: `, `Group ${group} `]) {
+    if (message.startsWith(lead)) {
+      const rest = message.slice(lead.length);
+      return rest.charAt(0).toUpperCase() + rest.slice(1);
+    }
+  }
+  return message;
 }
 
 export interface KanataLimits {
