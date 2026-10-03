@@ -76,7 +76,9 @@ rows derived from each run's cards), name weeks by their starting RFC 3339
 instant (the `week` query also takes the local start date), blame under the
 domain's field names, and answer a strict rollback conflict with `rows: []`
 and every selected seq in `reverts` (revert, restore-week and revert-actor).
-The hash is still a stand-in.
+The hash is still a stand-in. Checkpoints report a configured backup
+directory with one backup in each anchor state (`matches`, `mismatch`,
+`older_schema`), newest first.
 
 `cargo test` also walks every endpoint the PWAs call and validates each
 response against `docs/v5/api-schemas` (`src/contract.rs`).

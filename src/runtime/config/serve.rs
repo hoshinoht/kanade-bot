@@ -2,6 +2,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
     time::Duration,
 };
 
@@ -25,6 +26,8 @@ pub struct ServeConfig {
     pub tick: Duration,
     pub instance_id: String,
     pub seeds: SettingSeeds,
+    /// `KANADE_BACKUP_DIR`, listed read only by History checkpoints.
+    pub backup_dir: Option<PathBuf>,
 }
 
 /// Initial runtime settings; applied only where the store has none yet.
@@ -65,6 +68,7 @@ impl ServeConfig {
             )?),
             instance_id: instance_id(values)?,
             seeds: SettingSeeds::from_mapping(values)?,
+            backup_dir: super::backup::optional_dir(values)?,
         })
     }
 }

@@ -234,7 +234,165 @@ async fn checkpoints_report_the_verified_chain() {
     assert_eq!(checkpoints["verified"]["ok"], true);
     assert_eq!(checkpoints["verified"]["checked"], 3, "genesis, seed, move");
     assert_eq!(checkpoints["verified"]["head"]["seq"], 2);
+    assert_eq!(checkpoints["backup_dir_configured"], true);
     assert_eq!(checkpoints["backups"], json!([]));
+}
+
+const CHECKPOINTS: &str = "history.json#/$defs/Checkpoints";
+
+/// A hand-written snapshot and manifest, as an older build or a damaged
+/// directory would leave them.
+fn write_backup(dir: &std::path::Path, file: &str, manifest: &str) {
+    std::fs::write(dir.join(file), b"snapshot").unwrap();
+    std::fs::write(dir.join(format!("{file}.manifest.json")), manifest).unwrap();
+}
+
+fn manifest(seq: u64, hash: &str, schema: i64, created_at: Option<&str>) -> String {
+    let mut value = json!({
+        "format": "kanade.backup.v1",
+        "history_head": {"seq": seq, "hash": hash},
+        "revision": 7,
+        "schema_version": schema,
+    });
+    if let Some(at) = created_at {
+        value["created_at"] = json!(at);
+    }
+    value.to_string()
+}
+
+#[tokio::test]
+async fn checkpoints_list_backups_newest_first_with_their_anchor() {
+    let reads = Reads::new().await;
+    let dir = reads.backup_dir.clone().expect("configured");
+    let seed = reads.store.history_head().await.unwrap();
+    let schema = reads.store.schema_version().await.unwrap();
+    // A real backup: its head is the current head.
+    reads
+        .store
+        .backup(&dir.join("kanade-real.sqlite"))
+        .await
+        .unwrap();
+    reads.move_kalos(6, "21:00").await;
+    write_backup(
+        &dir,
+        "kanade-forked.sqlite",
+        &manifest(
+            seed.seq,
+            &"0".repeat(64),
+            schema,
+            Some("2026-09-02T00:00:00+00:00"),
+        ),
+    );
+    write_backup(
+        &dir,
+        "kanade-old.sqlite",
+        &manifest(
+            seed.seq,
+            &seed.hash,
+            schema - 1,
+            Some("2026-09-01T00:00:00Z"),
+        ),
+    );
+    // No created_at (an older manifest): the snapshot's mtime stands in.
+    write_backup(
+        &dir,
+        "kanade-legacy.sqlite",
+        &manifest(seed.seq, &seed.hash, schema, None),
+    );
+    let legacy = std::fs::File::options()
+        .write(true)
+        .open(dir.join("kanade-legacy.sqlite"))
+        .unwrap();
+    legacy
+        .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_785_542_400))
+        .unwrap();
+    drop(legacy);
+    // Skipped: unreadable, foreign format, snapshot gone; ignored: a tarball,
+    // a staging directory, a manifest-less snapshot.
+    write_backup(&dir, "kanade-bad.sqlite", "not json");
+    write_backup(&dir, "kanade-foreign.sqlite", r#"{"format":"other.v9"}"#);
+    std::fs::write(
+        dir.join("kanade-gone.sqlite.manifest.json"),
+        manifest(seed.seq, &seed.hash, schema, Some("2026-09-03T00:00:00Z")),
+    )
+    .unwrap();
+    std::fs::write(dir.join("kanade_v5_data-pre-abc.tar.gz"), b"tar").unwrap();
+    std::fs::create_dir(dir.join(".kanade-x.sqlite.partial-1")).unwrap();
+    std::fs::write(dir.join("kanade-bare.sqlite"), b"snapshot").unwrap();
+    // Symlinks are never followed: neither a linked manifest nor a linked
+    // snapshot is listed, even when the target is a valid one.
+    let outside = dir.parent().unwrap().join("outside");
+    std::fs::create_dir(&outside).unwrap();
+    let valid = manifest(seed.seq, &seed.hash, schema, Some("2026-09-04T00:00:00Z"));
+    std::fs::write(outside.join("m.json"), &valid).unwrap();
+    std::fs::write(outside.join("s.sqlite"), b"snapshot").unwrap();
+    std::fs::write(dir.join("kanade-linked-manifest.sqlite"), b"snapshot").unwrap();
+    std::os::unix::fs::symlink(
+        outside.join("m.json"),
+        dir.join("kanade-linked-manifest.sqlite.manifest.json"),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("kanade-linked-snapshot.sqlite.manifest.json"),
+        &valid,
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(
+        outside.join("s.sqlite"),
+        dir.join("kanade-linked-snapshot.sqlite"),
+    )
+    .unwrap();
+
+    let checkpoints = reads
+        .read("/api/admin/history/checkpoints", CHECKPOINTS)
+        .await;
+    assert_eq!(checkpoints["verified"]["ok"], true);
+    let backups = checkpoints["backups"].as_array().unwrap();
+    let summary: Vec<(&str, &str, bool)> = backups
+        .iter()
+        .map(|backup| {
+            (
+                backup["file"].as_str().unwrap(),
+                backup["anchor"].as_str().unwrap(),
+                backup["anchored"].as_bool().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        summary,
+        [
+            ("kanade-real.sqlite", "matches", true),
+            ("kanade-forked.sqlite", "mismatch", false),
+            ("kanade-old.sqlite", "older_schema", true),
+            ("kanade-legacy.sqlite", "matches", true),
+        ]
+    );
+    let real = &backups[0];
+    assert_eq!(real["history_head"]["seq"], seed.seq);
+    assert_eq!(real["history_head"]["hash"], seed.hash.as_str());
+    assert_eq!(real["schema_version"], schema);
+    assert_eq!(real["format"], "kanade.backup.v1");
+    assert!(real["created_at"].as_str().unwrap().ends_with('Z'));
+    assert_eq!(backups[2]["created_at"], "2026-09-01T00:00:00Z");
+    assert_eq!(backups[3]["created_at"], "2026-08-01T00:00:00Z");
+
+    // Each read looks again: a removed snapshot drops out.
+    std::fs::remove_file(dir.join("kanade-forked.sqlite")).unwrap();
+    let again = reads
+        .read("/api/admin/history/checkpoints", CHECKPOINTS)
+        .await;
+    assert_eq!(again["backups"].as_array().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn checkpoints_say_when_no_backup_dir_is_configured() {
+    let reads = Reads::without_backup_dir().await;
+    let checkpoints = reads
+        .read("/api/admin/history/checkpoints", CHECKPOINTS)
+        .await;
+    assert_eq!(checkpoints["backup_dir_configured"], false);
+    assert_eq!(checkpoints["backups"], json!([]));
+    assert_eq!(checkpoints["verified"]["ok"], true);
 }
 
 #[tokio::test]

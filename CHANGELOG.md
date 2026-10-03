@@ -6,6 +6,17 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 `kanade backup [--name FILE]` snapshots the stopped store (`VACUUM INTO`,
+  0600) into `KANADE_BACKUP_DIR` with its manifest, which now records
+  `created_at`; it refuses while the bot owns the store and never overwrites.
+  `GET /api/admin/history/checkpoints` lists those manifests newest first,
+  re-checking each head against the chain on every request (`anchor`:
+  `matches`, `older_schema` or `mismatch`) and reporting
+  `backup_dir_configured`. Compose mounts the backups directory read-only into
+  the bot and adds a `backup` tool service; the deploy runbook takes the
+  snapshot after stopping the bot, beside the volume tarball. Mirrored in the
+  dev mock and API types.
+
 - v5 admin Config API adds three read-only fields for the Config page:
   `models.capacity_check[].group` names the capacity group each check is about
   (null for cross-group checks), `env[].copy` gives the raw value to paste into

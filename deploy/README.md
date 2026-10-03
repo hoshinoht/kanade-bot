@@ -36,6 +36,7 @@ resolve from it.
 | Catalog | `boss/bosses.yaml` | Tracked; mounted read-only at `/app/boss/bosses.yaml` (the image carries only `boss/knowledge`). |
 | Boss art | `boss/portraits/`, `boss/artwork/` | Private, mounted read-only over `/app/boss/*`. |
 | Store | Docker volume `kanade_v5_data` | Created by Compose, mounted at `/data`. Not a bind mount (SQLite on macOS file sharing is unsafe). The database is `/data/db/kanade.sqlite` with its owner lock dir `/data/run`; serve creates both directories `0700` on first start. The bot's cached avatar and banner live in `/data/identity` (`KANADE_IDENTITY_DIR`), created `0700` by the gateway side and refreshed from Discord's CDN after each `READY`; deleting it only brings back the monogram and wash until the next refresh. |
+| Backups | `${KANADE_BACKUP_HOST_DIR:-$HOME/.config/kanade/v5/backups}` | Must exist (Compose does not create it, and the bot then fails to start). Bind mounted **read-only** into `bot` at `/backups` (`KANADE_BACKUP_DIR`, listed by History → Checkpoints) and read-write only into the `backup` tool service. Docker Desktop's file sharing writes as the host user, so a `0700` directory you own works for uid 65532; on a Linux host it must be writable by uid 65532 (e.g. an ACL `setfacl -m u:65532:rwx`). The volume tarballs below live here too; the listing ignores them. |
 | Edge network | `kanade_edge` (external, `192.168.97.0/24`) | Created by the v4 stack; it must exist. v5 takes `192.168.97.10` with the alias `kanade-bot`. If the network is ever recreated with another subnet, update the addresses in `compose.yaml`. |
 
 ## Build
@@ -85,6 +86,75 @@ loop cannot burn the shared token's IDENTIFY budget; fix the cause, then
 restart it. `discord.gateway = false` runs the admin
 API alone (no gateway, no tick); for the old shell-only mode set
 `command: ["serve", "--offline"]`.
+
+## Deploy an update
+
+Snapshots go into the backups directory twice: a `kanade backup` SQLite
+snapshot with its manifest (it anchors the history and shows up in History →
+Checkpoints) and the whole-volume tarball (the rollback fallback).
+
+```sh
+SHA=$(git rev-parse --short HEAD)                 # what is being deployed
+# 1. Keep the running image for rollback (name it by the commit it was built from).
+docker tag kanade-v5:local kanade-v5:rollback-<old-sha>
+# 2. Build. With uncommitted work in the tree, build from the commit instead:
+#    git archive HEAD | docker build -f deploy/Dockerfile -t kanade-v5:local -
+docker compose -f deploy/compose.yaml build
+# 3. Stop the bot (it owns the store).
+docker compose -f deploy/compose.yaml stop bot
+# 4. Whole-volume tarball (fallback), 0600: first, since it never changes the store.
+STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+BACKUPS="${KANADE_BACKUP_HOST_DIR:-$HOME/.config/kanade/v5/backups}"
+docker run --rm -v kanade_v5_data:/data:ro -v "$BACKUPS:/backups" \
+  alpine sh -c "tar -C /data -czf /backups/kanade_v5_data-$STAMP-pre-$SHA.tar.gz . && chmod 600 /backups/kanade_v5_data-$STAMP-pre-$SHA.tar.gz"
+# 5. SQLite snapshot + manifest, taken with the image that last served the
+#    store: opening the store applies pending migrations, so a newer image
+#    would snapshot an already-migrated store.
+KANADE_BACKUP_IMAGE=kanade-v5:rollback-<old-sha> docker compose -f deploy/compose.yaml \
+  --profile backup run --rm backup backup --name kanade-$STAMP-pre-$SHA.sqlite
+# 6. Start and check.
+docker compose -f deploy/compose.yaml up -d
+docker exec kanade-v5 /usr/local/bin/kanade healthcheck
+```
+
+`kanade backup` refuses (exit 69, "stop the bot first") while the bot owns
+the store, refuses an existing name (exit 78) and never creates a store.
+`docker compose run` (not `docker exec`) is right here: the `backup` service
+has no network, so the bot's fixed address does not clash.
+
+The first time, the rollback image predates `kanade backup`, so step 5 can
+only use the new image (`KANADE_BACKUP_IMAGE` unset). That is safe only when
+the release adds no store migration. Migrations are the
+`src/infrastructure/store/sqlite/migrations/*.sql` files registered in
+`MIGRATIONS` in `src/infrastructure/store/sqlite/migrate.rs`; check with:
+
+```sh
+git diff --stat <old-sha> HEAD -- src/infrastructure/store/sqlite/migrations src/infrastructure/store/sqlite/migrate.rs
+```
+
+If it lists changes, do not run `kanade backup` with the new image before
+the deploy: skip step 5 (the tarball from step 4 is the pre-migration copy),
+or take the snapshot after the new bot has started (stop it again, run step
+5 without `KANADE_BACKUP_IMAGE`, start it). Before the first real deploy, a
+dry run of step 5 against the real bind mount (`--name dry-run.sqlite`, then
+delete the pair) confirms the container can write there.
+
+Restore a SQLite snapshot (instead of the whole tarball): with the bot
+stopped, move the live database and any `-wal`/`-shm` files aside, copy the
+snapshot in as `/data/db/kanade.sqlite` owned by `65532:65532` with mode
+`0600`, then start the image whose schema matches the manifest's
+`schema_version` (a newer image migrates it forward; an older one refuses a
+newer schema):
+
+```sh
+docker run --rm -v kanade_v5_data:/data -v "${KANADE_BACKUP_HOST_DIR:-$HOME/.config/kanade/v5/backups}:/backups:ro" alpine sh -c '
+  mkdir /data/replaced-<stamp> && mv /data/db/kanade.sqlite* /data/replaced-<stamp>/ &&
+  cp /backups/kanade-<stamp>-pre-<sha>.sqlite /data/db/kanade.sqlite &&
+  chown 65532:65532 /data/db/kanade.sqlite && chmod 600 /data/db/kanade.sqlite'
+```
+
+The restored store's history ends at the manifest's `history_head`, so later
+backups show `mismatch` in Checkpoints until they are removed.
 
 ## Stop and roll back
 

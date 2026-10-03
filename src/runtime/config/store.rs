@@ -23,7 +23,7 @@ impl StoreSettings {
     }
 }
 
-fn absolute(values: &BTreeMap<String, String>, key: &str) -> Result<PathBuf, Error> {
+pub(super) fn absolute(values: &BTreeMap<String, String>, key: &str) -> Result<PathBuf, Error> {
     let path = PathBuf::from(
         non_empty(values, key).ok_or_else(|| Error::Configuration(format!("{key} is required")))?,
     );

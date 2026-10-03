@@ -21,7 +21,7 @@ use crate::{
             staff::{GuildStaffGate, StoreGuildMembers},
         },
         server::LiveAdmin,
-        state::{ApiState, ChannelList, GuildAccess},
+        state::{ApiState, BackupDir, ChannelList, GuildAccess},
         write::{ApiClock, SchedulerWriter},
     },
     bot::commands::AccessPolicy,
@@ -194,6 +194,11 @@ pub async fn compose(
         }),
     });
 
+    // Fixed for the process: the store was migrated when it opened.
+    let schema_version = store
+        .schema_version()
+        .await
+        .map_err(|_| Error::Startup("store schema version could not be read".into()))?;
     let clock: Clock = Arc::new(auth::system_now);
     let writer = SchedulerWriter::new(
         SchedulerService::new(store.clone(), RandomIds, ApiClock(clock.clone()))
@@ -220,6 +225,10 @@ pub async fn compose(
         proposal_refresh: None,
         decline_retraction: None,
         digest_post: None,
+        backups: BackupDir {
+            dir: config.backup_dir.clone(),
+            schema_version,
+        },
     };
     Ok(Composition {
         admin: LiveAdmin {

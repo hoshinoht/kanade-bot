@@ -120,7 +120,7 @@
     "Checkpoints": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["verified", "backups"],
+      "required": ["verified", "backup_dir_configured", "backups"],
       "properties": {
         "verified": {
           "type": "object",
@@ -132,12 +132,17 @@
             "head": { "$ref": "common.json#/$defs/Head" }
           }
         },
+        "backup_dir_configured": {
+          "type": "boolean",
+          "description": "`KANADE_BACKUP_DIR` is set; false means no directory, not no backups."
+        },
         "backups": {
           "type": "array",
+          "description": "Manifests in the backup directory beside an existing snapshot, newest first (at most 100); unreadable or foreign ones are skipped.",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["file", "format", "created_at", "history_head", "revision", "schema_version", "anchored"],
+            "required": ["file", "format", "created_at", "history_head", "revision", "schema_version", "anchored", "anchor"],
             "properties": {
               "file": { "type": "string" },
               "format": { "const": "kanade.backup.v1" },
@@ -145,7 +150,11 @@
               "history_head": { "$ref": "common.json#/$defs/Head" },
               "revision": { "type": "integer", "minimum": 0 },
               "schema_version": { "type": "integer", "minimum": 0 },
-              "anchored": { "type": "boolean" }
+              "anchored": { "type": "boolean", "description": "The chain still contains `history_head`." },
+              "anchor": {
+                "enum": ["matches", "older_schema", "mismatch"],
+                "description": "`mismatch`: the head is not in the chain (truncated or forked history); `older_schema`: anchored, but the backup's schema is older than the store's; otherwise `matches`."
+              }
             }
           }
         }

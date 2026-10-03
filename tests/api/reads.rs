@@ -22,8 +22,8 @@ use kanade::{
         listeners::Site,
         rescan::RescanDesk,
         state::{
-            ApiState, ChannelEntry, ChannelGrants, ChannelList, DeclineRetraction, GuildAccess,
-            ProposalCardRefresh, RoleEntry, StaticChannels,
+            ApiState, BackupDir, ChannelEntry, ChannelGrants, ChannelList, DeclineRetraction,
+            GuildAccess, ProposalCardRefresh, RoleEntry, StaticChannels,
         },
         write::{ApiClock, SchedulerWriter},
     },
@@ -175,6 +175,8 @@ pub struct Reads {
     pub decline_retractions: Arc<Mutex<Vec<(String, String)>>>,
     pub chat: Arc<FakeChat>,
     pub digest_posts: Arc<Mutex<Vec<kanade::api::state::DigestPostRequest>>>,
+    /// `KANADE_BACKUP_DIR`, an empty directory unless built `without_backup_dir`.
+    pub backup_dir: Option<PathBuf>,
     _fixture: Fixture,
     _dir: TempDir,
 }
@@ -440,41 +442,62 @@ impl Reads {
 
     /// Boss weeks reset Thursday at `reset` (KL) instead of midnight.
     pub async fn with_reset(reset: NaiveTime) -> Self {
-        Self::build(reset, false, None, true, true).await
+        Self::build(reset, false, None, true, true, true).await
     }
 
     pub async fn with_role_directory_connected(connected: bool) -> Self {
-        Self::build(NaiveTime::MIN, false, None, connected, true).await
+        Self::build(NaiveTime::MIN, false, None, connected, true, true).await
     }
 
     /// With the config API over the seeded store.
     pub async fn with_config(
         make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
     ) -> Self {
-        Self::build(NaiveTime::MIN, false, Some(Box::new(make)), true, true).await
+        Self::build(
+            NaiveTime::MIN,
+            false,
+            Some(Box::new(make)),
+            true,
+            true,
+            true,
+        )
+        .await
     }
 
     pub async fn with_config_role_directory_connected(
         make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
         connected: bool,
     ) -> Self {
-        Self::build(NaiveTime::MIN, false, Some(Box::new(make)), connected, true).await
+        Self::build(
+            NaiveTime::MIN,
+            false,
+            Some(Box::new(make)),
+            connected,
+            true,
+            true,
+        )
+        .await
     }
 
     pub async fn with_config_and_logins(
         make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
     ) -> Self {
-        Self::build(NaiveTime::MIN, true, Some(Box::new(make)), true, true).await
+        Self::build(NaiveTime::MIN, true, Some(Box::new(make)), true, true, true).await
     }
 
     /// Also Discord sign-in and Tailscale sign-in through a trusted edge
     /// (the test client, 127.0.0.1, carrying `EDGE_AUTH`).
     pub async fn with_logins() -> Self {
-        Self::build(NaiveTime::MIN, true, None, true, true).await
+        Self::build(NaiveTime::MIN, true, None, true, true, true).await
     }
 
     pub async fn without_digest_delivery() -> Self {
-        Self::build(NaiveTime::MIN, false, None, true, false).await
+        Self::build(NaiveTime::MIN, false, None, true, false, true).await
+    }
+
+    /// No `KANADE_BACKUP_DIR`: checkpoints list no backups.
+    pub async fn without_backup_dir() -> Self {
+        Self::build(NaiveTime::MIN, false, None, true, true, false).await
     }
 
     async fn build(
@@ -483,8 +506,14 @@ impl Reads {
         config: Option<ConfigMaker>,
         role_directory_connected: bool,
         digest_delivery: bool,
+        backup_dir: bool,
     ) -> Self {
         let dir = TempDir::new();
+        let backup_dir = backup_dir.then(|| {
+            let path = dir.0.join("backups");
+            std::fs::create_dir(&path).unwrap();
+            path
+        });
         let store = Arc::new(
             SqliteStore::open(&SqliteStoreConfig {
                 db_path: dir.0.join("kanade.sqlite3"),
@@ -625,6 +654,10 @@ impl Reads {
             proposal_refresh: Some(proposal_refresh),
             decline_retraction: Some(decline_retraction),
             digest_post: digest_delivery.then_some(digest_post),
+            backups: BackupDir {
+                dir: backup_dir.clone(),
+                schema_version: store.schema_version().await.unwrap(),
+            },
         };
         let mut http = fixture.http();
         if logins {
@@ -661,6 +694,7 @@ impl Reads {
             decline_retractions,
             chat,
             digest_posts,
+            backup_dir,
             _fixture: fixture,
             _dir: dir,
         }

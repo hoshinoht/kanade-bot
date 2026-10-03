@@ -11,6 +11,7 @@ use chrono_tz::Tz;
 use super::error::Error;
 
 mod admin_auth;
+mod backup;
 mod context;
 mod discord;
 mod file;
@@ -23,6 +24,7 @@ mod serve;
 mod store;
 
 pub use admin_auth::{AdminAuthSettings, DiscordOAuthSettings};
+pub use backup::BackupConfig;
 pub use discord::DiscordSettings;
 pub use file::{Resolved, resolve};
 pub use files::FileSettings;

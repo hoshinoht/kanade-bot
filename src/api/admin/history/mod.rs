@@ -3,6 +3,7 @@
 //! Reads use the store's readers; rollbacks and their previews go through
 //! the one scheduler writer.
 
+mod backups;
 pub(super) mod parse;
 mod rollback;
 
@@ -184,12 +185,24 @@ async fn record(
     Ok(Json(encoded(dto::record(&record))?).into_response())
 }
 
-/// The chain check and the backup manifests. No backup directory is
-/// configured yet, so `backups` is empty (A5-9); named checkpoints await a
-/// schema extension.
+/// The chain check and the backup manifests in `KANADE_BACKUP_DIR` (A5-9),
+/// both redone on every request; named checkpoints await a schema extension.
 async fn checkpoints(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
     let state = state(&site)?;
     let verification = state.store.verify_history().await.map_err(unavailable)?;
+    let found = match state.backups.dir.clone() {
+        Some(dir) => backups::list(dir).await,
+        None => Vec::new(),
+    };
+    let mut listed = Vec::with_capacity(found.len());
+    for backup in &found {
+        let anchored = state
+            .store
+            .contains_anchor(backup.manifest.history_head.clone())
+            .await
+            .map_err(unavailable)?;
+        listed.push(backups::row(backup, anchored, state.backups.schema_version));
+    }
     let head = verification.head.clone().unwrap_or(ChangeRef {
         seq: 0,
         hash: crate::domain::history::GENESIS_PREV_HASH.to_owned(),
@@ -200,7 +213,8 @@ async fn checkpoints(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
             "checked": verification.records,
             "head": head_json(&head),
         },
-        "backups": [],
+        "backup_dir_configured": state.backups.dir.is_some(),
+        "backups": listed,
     }))
     .into_response())
 }

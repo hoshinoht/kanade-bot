@@ -15,9 +15,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{ConnectOptions, Connection, Row, SqliteConnection};
 
+use chrono::{DateTime, Utc};
+
 use super::owner::{self, StoreOwner};
 use super::{SqliteStore, SqliteStoreConfig, SqliteStoreError, migrate};
 use crate::domain::history::ChangeRef;
+use crate::domain::time::{from_iso, to_iso};
 
 /// A private sibling directory holding one staged file; removed on drop.
 struct Staging {
@@ -167,6 +170,7 @@ impl SqliteStore {
             .to_owned();
         let readers = self.readers.clone();
         let dest = dest.to_owned();
+        let created_at = now_seconds();
         let abandoned = Arc::new(AtomicBool::new(false));
         let _abandon_on_drop = AbandonOnDrop(Arc::clone(&abandoned));
         let task = tokio::spawn(async move {
@@ -180,7 +184,8 @@ impl SqliteStore {
             if abandoned.load(Ordering::SeqCst) {
                 return Ok(());
             }
-            let manifest = read_manifest(&staged).await?;
+            let mut manifest = read_manifest(&staged).await?;
+            manifest.created_at = Some(created_at);
             let staged_manifest = staging.dir.join("manifest.json");
             fs::write(&staged_manifest, manifest.to_json())
                 .map_err(SqliteStoreError::io(&staged_manifest))?;
@@ -239,6 +244,9 @@ pub struct BackupManifest {
     pub history_head: ChangeRef,
     pub revision: u64,
     pub schema_version: i64,
+    /// When the snapshot was taken (whole seconds). Manifests written before
+    /// this field existed have none; readers fall back to the file's mtime.
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 pub const BACKUP_MANIFEST_FORMAT: &str = "kanade.backup.v1";
@@ -251,13 +259,16 @@ impl BackupManifest {
     }
 
     fn to_json(&self) -> String {
-        serde_json::json!({
+        let mut value = serde_json::json!({
             "format": BACKUP_MANIFEST_FORMAT,
             "history_head": {"seq": self.history_head.seq, "hash": self.history_head.hash},
             "revision": self.revision,
             "schema_version": self.schema_version,
-        })
-        .to_string()
+        });
+        if let Some(at) = self.created_at.as_ref().and_then(|at| to_iso(at).ok()) {
+            value["created_at"] = serde_json::Value::String(at);
+        }
+        value.to_string()
     }
 
     /// Read a manifest written by [`SqliteStore::backup`].
@@ -290,8 +301,26 @@ impl BackupManifest {
             schema_version: value["schema_version"]
                 .as_i64()
                 .ok_or_else(|| invalid("schema_version"))?,
+            // Additive in v1: absent in older manifests, refused when malformed.
+            created_at: match &value["created_at"] {
+                serde_json::Value::Null => None,
+                at => Some(
+                    at.as_str()
+                        .and_then(|at| from_iso(at).ok())
+                        .ok_or_else(|| invalid("created_at"))?,
+                ),
+            },
         })
     }
+}
+
+/// The wall clock in whole seconds (chrono's `clock` feature is off).
+fn now_seconds() -> DateTime<Utc> {
+    let since = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    DateTime::from_timestamp(i64::try_from(since.as_secs()).unwrap_or(0), 0)
+        .unwrap_or(DateTime::UNIX_EPOCH)
 }
 
 /// The history head, revision and schema version of a staged snapshot.
@@ -317,6 +346,7 @@ async fn read_manifest(staged: &Path) -> Result<BackupManifest, SqliteStoreError
             },
             revision: u64::try_from(revision).unwrap_or_default(),
             schema_version: meta.try_get("schema_version")?,
+            created_at: None,
         })
     }
     .await;

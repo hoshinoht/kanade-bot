@@ -336,6 +336,28 @@ fn fixed_run() -> kanade::domain::schedule::NewFixedRun {
     }
 }
 
+#[test]
+fn manifests_without_created_at_still_read_and_bad_ones_are_refused() {
+    let dir = TempDir::new();
+    let path = dir.path().join("legacy.sqlite3.manifest.json");
+    let body = |extra: &str| {
+        format!(
+            r#"{{"format":"kanade.backup.v1","history_head":{{"seq":3,"hash":"ab"}},"revision":5,"schema_version":20{extra}}}"#
+        )
+    };
+    std::fs::write(&path, body("")).unwrap();
+    let legacy = BackupManifest::read(&path).expect("an older manifest reads");
+    assert_eq!(legacy.created_at, None);
+    assert_eq!(legacy.schema_version, 20);
+    std::fs::write(&path, body(r#","created_at":"2026-10-03T07:09:00+00:00""#)).unwrap();
+    assert_eq!(
+        BackupManifest::read(&path).unwrap().created_at,
+        Some(chrono::TimeZone::with_ymd_and_hms(&chrono::Utc, 2026, 10, 3, 7, 9, 0).unwrap())
+    );
+    std::fs::write(&path, body(r#","created_at":"yesterday""#)).unwrap();
+    assert!(BackupManifest::read(&path).is_err());
+}
+
 #[tokio::test]
 async fn backups_anchor_the_history_and_truncation_is_detected() {
     let dir = TempDir::new();
@@ -348,6 +370,10 @@ async fn backups_anchor_the_history_and_truncation_is_detected() {
     let manifest = BackupManifest::read(&BackupManifest::path_for(&backup)).expect("manifest");
     assert_eq!(manifest.history_head, head, "the manifest anchors the head");
     assert_eq!(manifest.schema_version, 21);
+    assert!(
+        manifest.created_at.is_some(),
+        "new manifests carry created_at"
+    );
     history(&store, 2).await;
     store.close().await.expect("close");
 

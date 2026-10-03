@@ -12,6 +12,7 @@ pub enum Command {
     Serve { offline: bool },
     Healthcheck { url: Option<String> },
     ImportV4(ImportV4Args),
+    Backup(BackupArgs),
     Models(models::Args),
     Reserved { name: &'static str },
 }
@@ -27,6 +28,7 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Command, Err
         "models" => models::parse(&arguments[1..]).map(Command::Models),
         "ctl" if arguments.len() == 1 => Ok(Command::Reserved { name: "ctl" }),
         "import" => parse_import(&arguments[1..]),
+        "backup" => parse_backup(&arguments[1..]),
         "export" if arguments.len() == 1 => Ok(Command::Reserved { name: "export" }),
         _ => Err(usage()),
     }
@@ -103,8 +105,43 @@ fn parse_import(arguments: &[String]) -> Result<Command, Error> {
     }))
 }
 
+/// `backup [--name FILE]`: a snapshot named `FILE` (a plain file name) in
+/// `KANADE_BACKUP_DIR`, or a timestamped default name.
+#[derive(Debug, PartialEq, Eq)]
+pub struct BackupArgs {
+    pub name: Option<String>,
+}
+
+/// The longest accepted `--name`, leaving room for `.manifest.json`.
+const MAX_BACKUP_NAME: usize = 200;
+
+fn parse_backup(arguments: &[String]) -> Result<Command, Error> {
+    match arguments {
+        [] => Ok(Command::Backup(BackupArgs { name: None })),
+        [flag, name] if flag == "--name" => {
+            let plain = !name.is_empty()
+                && name.len() <= MAX_BACKUP_NAME
+                && !name.starts_with('.')
+                && !name.ends_with(".manifest.json")
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte));
+            if !plain {
+                return Err(Error::Usage(
+                    "--name must be a plain file name ([A-Za-z0-9._-], not hidden, not *.manifest.json)"
+                        .into(),
+                ));
+            }
+            Ok(Command::Backup(BackupArgs {
+                name: Some(name.clone()),
+            }))
+        }
+        _ => Err(usage()),
+    }
+}
+
 fn usage() -> Error {
-    Error::Usage("usage: kanade {serve [--offline]|healthcheck [--url http://127.0.0.1:8080/healthz]|models check [--probe]|import v4 --from PATH [--since YYYY-MM-DD] [--refresh-logs] [--apply]|ctl|export}".into())
+    Error::Usage("usage: kanade {serve [--offline]|healthcheck [--url http://127.0.0.1:8080/healthz]|models check [--probe]|import v4 --from PATH [--since YYYY-MM-DD] [--refresh-logs] [--apply]|backup [--name FILE]|ctl|export}".into())
 }
 
 #[cfg(test)]
@@ -122,6 +159,32 @@ mod tests {
 
     fn args(text: &str) -> Result<Command, Error> {
         parse(text.split(' ').map(str::to_owned))
+    }
+
+    #[test]
+    fn backup_takes_an_optional_plain_file_name() {
+        assert_eq!(
+            args("backup").unwrap(),
+            Command::Backup(BackupArgs { name: None })
+        );
+        assert_eq!(
+            args("backup --name kanade-20261003T070900Z-pre-98c2b31.sqlite").unwrap(),
+            Command::Backup(BackupArgs {
+                name: Some("kanade-20261003T070900Z-pre-98c2b31.sqlite".into())
+            })
+        );
+        for bad in [
+            "backup --name",
+            "backup --name ../x.sqlite",
+            "backup --name a/b.sqlite",
+            "backup --name .hidden.sqlite",
+            "backup --name x.sqlite.manifest.json",
+            "backup --name x y",
+            "backup --other",
+        ] {
+            assert!(args(bad).is_err(), "{bad}");
+        }
+        assert!(parse(["backup".into(), "--name".into(), String::new()]).is_err());
     }
 
     #[test]

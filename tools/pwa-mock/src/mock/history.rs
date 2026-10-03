@@ -834,27 +834,43 @@ impl Store {
     }
 
     pub fn checkpoints(&self) -> Value {
+        const SCHEMA_VERSION: i64 = 21;
         let at = |seq: u64| {
             self.history
                 .get(seq as usize)
                 .map(|r| (r.revision, r.hash.clone(), r.at.clone()))
         };
-        let backup = |seq: u64| {
+        // One of each anchor state the server reports.
+        let backup = |seq: u64, anchor: &str| {
             at(seq).map(|(revision, hash, when)| {
+                let (hash, schema) = match anchor {
+                    "mismatch" => ("0".repeat(64), SCHEMA_VERSION),
+                    "older_schema" => (hash, SCHEMA_VERSION - 1),
+                    _ => (hash, SCHEMA_VERSION),
+                };
                 json!({
-                    "file": format!("kanade-{}.sqlite", &when[..10]),
+                    "file": format!("kanade-{}-{anchor}.sqlite", &when[..10]),
                     "format": "kanade.backup.v1",
                     "created_at": when,
                     "history_head": { "seq": seq, "hash": hash },
                     "revision": revision,
-                    "schema_version": 1,
-                    "anchored": true,
+                    "schema_version": schema,
+                    "anchored": anchor != "mismatch",
+                    "anchor": anchor,
                 })
             })
         };
-        let backups: Vec<Value> = [backup(3), backup(1)].into_iter().flatten().collect();
+        let backups: Vec<Value> = [
+            backup(3, "matches"),
+            backup(2, "mismatch"),
+            backup(1, "older_schema"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
         json!({
             "verified": { "ok": true, "checked": self.history.len(), "head": self.head() },
+            "backup_dir_configured": true,
             "backups": backups,
         })
     }

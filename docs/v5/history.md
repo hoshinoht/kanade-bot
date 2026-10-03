@@ -103,7 +103,12 @@ so it is anchored outside the database:
 
 - every backup gets `<backup>.manifest.json` (`format`
   `kanade.backup.v1`, `history_head {seq, hash}`, `revision`,
-  `schema_version`) describing the snapshot;
+  `schema_version`, and `created_at` (RFC 3339 UTC) since A5-9; readers
+  accept manifests without it) describing the snapshot. `kanade backup`
+  writes them into `KANADE_BACKUP_DIR` at deploy time; History checkpoints
+  re-read that directory and re-check each head with `contains_anchor` on
+  every request (`matches`, `older_schema` when the backup's schema predates
+  the store's, `mismatch` when the chain no longer holds the head);
 - `ChangeHistory::history_head` exposes the current head for a periodic
   structured log line (wiring pending);
 - `SqliteStore::open_with_anchor(config, anchor)` (and

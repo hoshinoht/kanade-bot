@@ -866,8 +866,14 @@ export interface RollbackMode {
   request_id?: string;
 }
 
+/** `matches`: the chain holds the backup's head; `older_schema`: it does, but the backup predates the store's schema; `mismatch`: the head is not in the chain (truncated or forked history). */
+export type BackupAnchor = 'matches' | 'older_schema' | 'mismatch';
+
 export interface Checkpoints {
   verified: { ok: boolean; checked: number; head: { seq: number; hash: string } };
+  /** `KANADE_BACKUP_DIR` is set: false means no directory, not no backups. */
+  backup_dir_configured: boolean;
+  /** Newest first (at most 100); re-read and re-checked on every request. */
   backups: {
     file: string;
     format: 'kanade.backup.v1';
@@ -875,7 +881,9 @@ export interface Checkpoints {
     history_head: { seq: number; hash: string };
     revision: number;
     schema_version: number;
+    /** The chain still contains `history_head`. */
     anchored: boolean;
+    anchor: BackupAnchor;
   }[];
 }
 

@@ -133,6 +133,8 @@ pub trait ReadStore: Send + Sync {
     fn history_total(&self, filter: ChangeFilter) -> ReadFuture<'_, u64>;
     fn change(&self, seq: u64) -> ReadFuture<'_, Option<ChangeRecord>>;
     fn verify_history(&self) -> ReadFuture<'_, HistoryVerification>;
+    /// Whether the chain still holds `anchor` (a backup manifest's head).
+    fn contains_anchor(&self, anchor: ChangeRef) -> ReadFuture<'_, bool>;
     fn blame(&self, target: BlameTarget) -> ReadFuture<'_, Option<Blame>>;
     /// Reminders unresolved delivery attempts hold (rollbacks keep them).
     fn held_reminders(&self) -> ReadFuture<'_, BTreeSet<String>>;
@@ -335,6 +337,10 @@ where
 
     fn verify_history(&self) -> ReadFuture<'_, HistoryVerification> {
         Box::pin(ChangeHistory::verify_history(self))
+    }
+
+    fn contains_anchor(&self, anchor: ChangeRef) -> ReadFuture<'_, bool> {
+        Box::pin(async move { ChangeHistory::contains_anchor(self, &anchor).await })
     }
 
     fn blame(&self, target: BlameTarget) -> ReadFuture<'_, Option<Blame>> {
@@ -552,6 +558,15 @@ impl GuildAccess {
     }
 }
 
+/// Where `kanade backup` writes (History checkpoints read it, never write).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BackupDir {
+    /// `KANADE_BACKUP_DIR`; `None` lists no backups.
+    pub dir: Option<PathBuf>,
+    /// The open store's schema version: older backups are flagged.
+    pub schema_version: i64,
+}
+
 /// Everything the admin read routes compose.
 pub struct ApiState {
     pub store: Arc<dyn ReadStore>,
@@ -583,6 +598,7 @@ pub struct ApiState {
     pub decline_retraction: Option<DeclineRetraction>,
     /// The delivery-owned manual digest port, absent while Discord is offline.
     pub digest_post: Option<DigestPost>,
+    pub backups: BackupDir,
 }
 
 impl std::fmt::Debug for ApiState {

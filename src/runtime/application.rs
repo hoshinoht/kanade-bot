@@ -9,7 +9,7 @@ use crate::{
 };
 
 use super::{
-    config::{self, HealthcheckConfig, ImportConfig, RuntimeConfig, ServeConfig},
+    config::{self, BackupConfig, HealthcheckConfig, ImportConfig, RuntimeConfig, ServeConfig},
     error::Error,
     serve,
 };
@@ -56,6 +56,12 @@ async fn dispatch(command: Command, environment: &BTreeMap<String, String>) -> R
                     }
                     _ => Error::Configuration(format!("import v4: {error}")),
                 })?;
+            print!("{report}");
+            Ok(())
+        }
+        Command::Backup(args) => {
+            let config = BackupConfig::from_mapping(environment)?;
+            let report = super::backup::run(args.name, &config, import::v4::system_now()).await?;
             print!("{report}");
             Ok(())
         }

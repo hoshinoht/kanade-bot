@@ -39,6 +39,8 @@ services:
       KANADE_OWNER_LOCK_DIR: /data/run
       # The bot's avatar/banner, refreshed after each READY (rootfs is read-only).
       KANADE_IDENTITY_DIR: /data/identity
+      # Listed by History checkpoints; only the `backup` service writes here.
+      KANADE_BACKUP_DIR: /backups
       KANADE_DISCORD_TOKEN_FILE: /run/secrets/kanade_discord_token
       KANADE_ADMIN_TOKEN_FILE: /run/secrets/kanade_admin_token
       KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE: /run/secrets/kanade_discord_client_secret
@@ -71,6 +73,14 @@ services:
       # Private art (git-ignored) stays on the host.
       - ../boss/portraits:/app/boss/portraits:ro
       - ../boss/artwork:/app/boss/artwork:ro
+      # `kanade backup` snapshots and manifests (and the volume tarballs).
+      # Compose does not expand `~`; the directory must already exist.
+      - type: bind
+        source: ${KANADE_BACKUP_HOST_DIR:-${HOME}/.config/kanade/v5/backups}
+        target: /backups
+        read_only: true
+        bind:
+          create_host_path: false
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -93,6 +103,38 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # Deploy-time store snapshot; never started by `up` (profile). Run it only
+  # while `bot` is stopped (the owner lock refuses otherwise), with the image
+  # that last served the store so no migration runs first:
+  #   KANADE_BACKUP_IMAGE=kanade-v5:rollback-<sha> docker compose -f deploy/compose.yaml \
+  #     --profile backup run --rm backup backup --name kanade-<stamp>-pre-<sha>.sqlite
+  backup:
+    image: ${KANADE_BACKUP_IMAGE:-kanade-v5:local}
+    profiles: [backup]
+    command: ["backup"]
+    # Store paths and the backup dir only: no settings file, secrets or network.
+    environment:
+      KANADE_DB_PATH: /data/db/kanade.sqlite
+      KANADE_OWNER_LOCK_DIR: /data/run
+      KANADE_BACKUP_DIR: /backups
+    network_mode: none
+    volumes:
+      - data:/data
+      - type: bind
+        source: ${KANADE_BACKUP_HOST_DIR:-${HOME}/.config/kanade/v5/backups}
+        target: /backups
+        bind:
+          create_host_path: false
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=16m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 1.0
+    mem_limit: 512m
+    pids_limit: 128
 
 networks:
   # Created by the v4 stack (legacy/python/deploy/compose.yaml); the edge joins it.

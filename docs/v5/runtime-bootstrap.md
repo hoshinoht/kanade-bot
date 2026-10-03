@@ -109,6 +109,7 @@ lists are comma-separated.
 | `KANADE_ADMIN_ROLE_ID`, `KANADE_CHAT_PILOT_ROLE_ID` | unset | Snowflakes. |
 | `KANADE_DEBUG_USER_IDS` | empty | Snowflake list. |
 | `KANADE_DB_PATH`, `KANADE_OWNER_LOCK_DIR` | required | Absolute paths without `..`. The lock directory and the database's directory are created `0700` when absent (existing ones are never re-moded); ownership, symlink and mode checks run when the store opens. A second process on the same store is refused. |
+| `KANADE_BACKUP_DIR` | unset | Absolute path without `..`. Serve only reads it: History checkpoints (`GET /api/admin/history/checkpoints`) list the `kanade backup` manifests there on every request; unset reports `backup_dir_configured: false`. Compose mounts it read-only at `/backups`. |
 | `KANADE_CATALOG_FILE` | `boss/bosses.yaml` | Boss catalog. |
 | `KANADE_KNOWLEDGE_DIR` | unset | Boss knowledge root. |
 | `KANADE_PERSONA_DIR` | `config/personas` | Persona layout root. |
@@ -576,7 +577,16 @@ extraction and the delivery tick, chat and extraction each behind its
 settings switch (see "Live serve"). `ctl` and `export`
 are reserved commands that return a nonzero not-implemented result.
 `import v4` is the one-off testing import from a v4 snapshot
-(`v4-import.md`). `serve --offline` wires no scheduler, persistence,
+(`v4-import.md`). `backup [--name FILE]` is the deploy-time snapshot:
+it needs only `KANADE_DB_PATH`, `KANADE_OWNER_LOCK_DIR` and
+`KANADE_BACKUP_DIR`, refuses when no store exists (it never creates one) and,
+through the owner lock, while serve owns the store (exit `69`, "stop the bot
+first"); it writes `FILE` (a plain `[A-Za-z0-9._-]` name; default
+`kanade-<YYYYMMDDTHHMMSSZ>.sqlite`) with `VACUUM INTO` (0600) plus
+`FILE.manifest.json` (`created_at` added to `kanade.backup.v1`), never
+overwriting either (exit `78`), and prints the history head, revision and
+schema. Opening the store runs pending migrations, so run it with the image
+that last served the store. `serve --offline` wires no scheduler, persistence,
 Discord, import/export, admin API or mutation route.
 
 The runtime installs Rustls' `ring` provider before command processing. SQLx
@@ -645,6 +655,8 @@ JSON lines on stderr (`level`, `event`, fields). None carries question or reply 
 
 | Event | Level | Fields | When |
 | --- | --- | --- | --- |
+| `backup_dir_unreadable` | WARN | no additional fields | checkpoints could not list `KANADE_BACKUP_DIR` (it lists no backups) |
+| `backup_manifests_skipped` | WARN | `unreadable`, `missing_snapshot` (counts), `truncated` (more than 4096 entries) | checkpoints skipped unreadable or foreign manifests or ones whose snapshot is gone |
 | `persona_selected` | INFO; WARN on a fallback source, any candidate issue, unreadable profiles or `profiles_issue` | `configured`, `effective`, `source` (`configured`/`catalog_default`/`tracked_fallback`), `bundle_file`, `profiles`, `profile_ids`, `unreadable_profiles` [{`file`,`error`}], `profiles_issue`, `issues` [{`candidate`,`error`}] | serve startup, after the persona files load |
 | `persona_unavailable` | ERROR | `configured`, `issues` | serve startup when no persona validates (chat stays off) |
 | `settings_changed` | INFO | `revision`, `section`, `keys` (stored keys), `values` {key: {`from`,`to`}}, `actor` (`kind:id`), `surface` (`admin_portal`) | every saved config `PATCH` that changed something |
