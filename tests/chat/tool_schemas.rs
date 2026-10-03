@@ -22,6 +22,12 @@ const V4_LIST_BOSSES_DESCRIPTION: &str =
 const V5_LIST_BOSSES_DESCRIPTION: &str = "The bosses this guild runs, with their difficulties, plus seasonal event bosses that only have a guide. Use it to check a name or to say which guides exist.";
 const V4_GET_BOSS_STRATEGY_DESCRIPTION: &str = "Source-backed local strategy notes for one boss. Use this for boss mechanics, phases, dangers, and strategy facts; it returns only checked-in guide content.";
 const V5_GET_BOSS_STRATEGY_DESCRIPTION: &str = "Source-backed local strategy notes for one boss. Use this for boss mechanics, phases, dangers, and strategy facts; it returns only checked-in guide content. Also covers seasonal event bosses listed by list_bosses.";
+/// D-SEASONAL-LIST's estimated-token cost on each full-set surface.
+const SEASONAL_TOKENS: u64 = 49;
+const V4_WEEK_DESCRIPTION: &str = "Use 'this' or 'next' for calendar Monday-Sunday weeks. Use 'this_boss' or 'next_boss' only when the member explicitly says boss week. Use 'auto' for a bare weekday or today, tonight, or tomorrow. For 'next week', set week to 'next' and omit day.";
+/// D-AUTO-FORWARD (user decision 2026-10-03): `auto` without a day reads
+/// every upcoming run from now.
+const V5_WEEK_DESCRIPTION: &str = "Use 'this' or 'next' for calendar Monday-Sunday weeks. Use 'this_boss' or 'next_boss' only when the member explicitly says boss week. Use 'auto' for a bare weekday or today, tonight, or tomorrow. For 'next run' or 'when is my next' asks, use 'auto' and omit day: it lists upcoming runs from now across weeks, earliest first. For 'next week', set week to 'next' and omit day.";
 
 fn surface(read_only: bool) -> Value {
     let offer = ToolOffer::full_set(read_only);
@@ -80,13 +86,23 @@ fn seasonal_schema_text(v4_text: &str) -> String {
     text
 }
 
+fn auto_forward_text(seasonal_text: &str) -> String {
+    let old = format!("\"description\":\"{V4_WEEK_DESCRIPTION}\"");
+    let new = format!("\"description\":\"{V5_WEEK_DESCRIPTION}\"");
+    assert_eq!(seasonal_text.matches(&old).count(), 1, "frozen schema text");
+    seasonal_text.replacen(&old, &new, 1)
+}
+
 fn named() -> Vec<Named> {
     let vector = load("tool_schemas.json");
     let steps = vector["cases"][0]["expected"]["steps"].as_array().unwrap();
     let full = surface(false);
     let read_only = surface(true);
     let mut seasonal_entries = Vec::new();
+    let mut forward_entries = Vec::new();
     for (step, actual) in [(0, &full), (1, &read_only)] {
+        let v4_tokens = steps[step]["value"]["tokens"].as_u64().expect("tokens");
+        let seasonal_tokens = v4_tokens + SEASONAL_TOKENS;
         seasonal_entries.extend([
             dev(
                 "surface",
@@ -103,19 +119,42 @@ fn named() -> Vec<Named> {
             dev(
                 "surface",
                 format!("/steps/{step}/value/tokens"),
-                steps[step]["value"]["tokens"].clone(),
-                actual["tokens"].clone(),
+                json!(v4_tokens),
+                json!(seasonal_tokens),
             ),
         ]);
         let v4_text = steps[step]["value"]["text"]
             .as_str()
             .expect("frozen tool schema text");
+        let seasonal_text = seasonal_schema_text(v4_text);
         seasonal_entries.push(dev(
             "surface",
             format!("/steps/{step}/value/text"),
             json!(v4_text),
-            json!(seasonal_schema_text(v4_text)),
+            json!(seasonal_text),
         ));
+        forward_entries.extend([
+            dev(
+                "surface",
+                format!(
+                    "/steps/{step}/value/tools/0/function/parameters/properties/week/description"
+                ),
+                json!(V4_WEEK_DESCRIPTION),
+                json!(V5_WEEK_DESCRIPTION),
+            ),
+            dev(
+                "surface",
+                format!("/steps/{step}/value/tokens"),
+                json!(seasonal_tokens),
+                actual["tokens"].clone(),
+            ),
+            dev(
+                "surface",
+                format!("/steps/{step}/value/text"),
+                json!(seasonal_text),
+                json!(auto_forward_text(&seasonal_text)),
+            ),
+        ]);
     }
     vec![
         Named {
@@ -131,6 +170,10 @@ fn named() -> Vec<Named> {
         Named {
             name: "D-SEASONAL-LIST",
             entries: seasonal_entries,
+        },
+        Named {
+            name: "D-AUTO-FORWARD",
+            entries: forward_entries,
         },
     ]
 }

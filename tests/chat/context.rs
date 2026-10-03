@@ -207,8 +207,21 @@ async fn the_context_family_replays_exactly() {
             ),
         )],
     };
+    let auto_forward = Named {
+        name: "D-AUTO-FORWARD",
+        entries: vec![dev(
+            "request-budget-trims-prior-history",
+            "/steps/3/error/message",
+            json!(
+                "chat request estimate 9717 exceeds context budget 6144 with completion reserve 1024"
+            ),
+            json!(
+                "chat request estimate 9763 exceeds context budget 6144 with completion reserve 1024"
+            ),
+        )],
+    };
     assert_eq!(
-        check_family("context", &[reserve, seasonal_list], replay).await,
+        check_family("context", &[reserve, seasonal_list, auto_forward], replay).await,
         (6, 58)
     );
 }

@@ -1,5 +1,6 @@
 //! `get_schedule`: one calendar or boss week, optionally narrowed by
-//! channel, member or day (v4 `tools/get_schedule.py`).
+//! channel, member or day (v4 `tools/get_schedule.py`), or every upcoming
+//! run from now for `auto` without a day (`D-AUTO-FORWARD`).
 
 use std::collections::BTreeSet;
 
@@ -307,7 +308,6 @@ pub fn get_schedule(
             }
         )));
     }
-    let upcoming_only = ctx.upcoming_only;
     let participant = if ctx.force_group_schedule {
         None
     } else {
@@ -337,6 +337,10 @@ pub fn get_schedule(
         let end = week_end(&start, world.zone).map_err(failed)?;
         (start, end)
     };
+    // `auto` without a day answers "when is my next run": every stored
+    // upcoming run from now, whatever its week (D-AUTO-FORWARD).
+    let forward = week == "auto"
+        && !matches!(args.get("day"), Some(Value::String(day)) if !strip(day).is_empty());
     let (start, end, selected) = schedule_interval(world, args, (start, end), now, &week)?;
     let buckets = intersecting_buckets(world, &start, &end)?;
     let date_label = selected.as_ref().map(|dates| {
@@ -350,18 +354,32 @@ pub fn get_schedule(
     let (start_utc, end_utc) = (utc(&start)?, utc(&end)?);
     let mut seen = BTreeSet::new();
     let mut everything: Vec<&Run> = Vec::new();
-    for bucket in &buckets {
-        for run in world
-            .snapshot
-            .runs
-            .iter()
-            .filter(|run| run.week_start == *bucket)
-        {
-            if !seen.insert(run.id.as_str()) {
-                continue;
-            }
-            if start_utc <= run.datetime && run.datetime < end_utc {
+    if forward {
+        // From the earlier of this calendar week and this boss week, so runs
+        // already done this week still back the "already done" note.
+        let boss_start = utc(
+            &week_start(&now, world.zone, world.reset_weekday, world.reset_time).map_err(failed)?,
+        )?;
+        let since = start_utc.min(boss_start);
+        for run in &world.snapshot.runs {
+            if run.datetime >= since && seen.insert(run.id.as_str()) {
                 everything.push(run);
+            }
+        }
+    } else {
+        for bucket in &buckets {
+            for run in world
+                .snapshot
+                .runs
+                .iter()
+                .filter(|run| run.week_start == *bucket)
+            {
+                if !seen.insert(run.id.as_str()) {
+                    continue;
+                }
+                if start_utc <= run.datetime && run.datetime < end_utc {
+                    everything.push(run);
+                }
             }
         }
     }
@@ -387,6 +405,8 @@ pub fn get_schedule(
         runs.retain(|run| has(run, who));
     }
     let matching = runs.clone();
+    // A forward read lists only what is still ahead, whatever the question said.
+    let upcoming_only = ctx.upcoming_only || forward;
     if upcoming_only {
         runs.retain(|run| !is_over(run, now));
     }
@@ -400,8 +420,9 @@ pub fn get_schedule(
     if runs.is_empty() {
         if upcoming_only {
             let period = match &date_label {
-                Some(label) => format!("on {label}"),
-                None => format!("in {week_label}"),
+                Some(label) => format!(" on {label}"),
+                None if forward => String::new(),
+                None => format!(" in {week_label}"),
             };
             if let Some(who) = &participant {
                 let subject = if for_me {
@@ -414,7 +435,7 @@ pub fn get_schedule(
                 } else {
                     ""
                 };
-                let mut answer = format!("**No upcoming runs for {subject}{where_} {period}.**");
+                let mut answer = format!("**No upcoming runs for {subject}{where_}{period}.**");
                 let away: Vec<&&Run> = dated
                     .iter()
                     .filter(|run| !in_here(run) && has(run, who) && !is_over(run, now))
@@ -442,7 +463,7 @@ pub fn get_schedule(
                 return Ok(answer);
             }
             if scope == "channel" {
-                let mut answer = format!("**No upcoming runs in this channel {period}.**");
+                let mut answer = format!("**No upcoming runs in this channel{period}.**");
                 let away = dated
                     .iter()
                     .filter(|run| !in_here(run) && !is_over(run, now))
@@ -460,12 +481,17 @@ pub fn get_schedule(
                 return Ok(answer);
             }
             if !matching.is_empty() && all_over(&matching) {
+                if forward {
+                    return Ok(format!(
+                        "**No runs left · {scope_label}**\n\nEverything scheduled is already done."
+                    ));
+                }
                 return Ok(format!(
                     "**No runs left {} · {scope_label}**\n\nEverything scheduled in this period is already done.",
                     date_label.as_deref().unwrap_or(&week_label)
                 ));
             }
-            return Ok(format!("**No upcoming runs {period} · {scope_label}.**"));
+            return Ok(format!("**No upcoming runs{period} · {scope_label}.**"));
         }
         let period = match &date_label {
             Some(label) => format!("on {label}"),
@@ -531,9 +557,17 @@ pub fn get_schedule(
         .iter()
         .map(|run| run_line(world, run, with_channel, now))
         .collect();
-    let run_count = plural(runs.len(), "run", "runs");
-    let remaining = if upcoming_only { " left" } else { "" };
-    let period = date_label.clone().unwrap_or_else(|| week_label.clone());
+    let (run_count, period) = if forward {
+        let count = plural(runs.len(), "upcoming run", "upcoming runs");
+        (count, String::new())
+    } else {
+        let remaining = if upcoming_only { " left" } else { "" };
+        let period = date_label.clone().unwrap_or_else(|| week_label.clone());
+        (
+            plural(runs.len(), "run", "runs"),
+            format!("{remaining} {period}"),
+        )
+    };
     let heading = match &participant {
         Some(_) => {
             let owner = if for_me {
@@ -541,9 +575,9 @@ pub fn get_schedule(
             } else {
                 format!("{}'s", participant_name.clone().unwrap_or_default())
             };
-            format!("**{owner} {run_count}{remaining} {period} · {scope_label}**")
+            format!("**{owner} {run_count}{period} · {scope_label}**")
         }
-        None => format!("**{run_count}{remaining} {period} · {scope_label}**"),
+        None => format!("**{run_count}{period} · {scope_label}**"),
     };
     let footer = if all_over(&runs) {
         let period = match &date_label {

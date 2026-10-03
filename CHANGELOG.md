@@ -857,6 +857,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 chat "when is my next run" lists every upcoming run from now across boss
+  and calendar weeks: `get_schedule` with `week:"auto"` and no day no longer
+  stops at Sunday, so runs early next calendar week (still this boss week) are
+  found instead of "No upcoming runs for you in this week".
 - v5 avatar initials (Members sheet, inbox transcript, rail, drawer, account
   menu, sign-in and public masthead) show the first readable letter of a name,
   skipping emoji and symbols: "🥔猫铃薯🥔" shows "猫" instead of a broken half

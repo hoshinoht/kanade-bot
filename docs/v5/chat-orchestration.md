@@ -146,6 +146,16 @@ are C3. Serve wiring is `chat::driver` (below).
   path, and a recognized other member remains that member. This fallback is
   confined to the read tool's trusted self-only path and does not relax member
   access or write-tool validation.
+- `get_schedule` forward read (`D-AUTO-FORWARD`, user decision 2026-10-03):
+  `week:"auto"` with no `day` lists every stored non-cancelled run that is not
+  over, from now and across all boss-week buckets, earliest first, under the
+  usual `MAX_RUNS`/reply bounds, whether or not the question asked for
+  upcoming runs. Its headings and empty replies name no week ("Your 3
+  upcoming runs", "No upcoming runs for you."); the "already done" note reads
+  the member's runs since the earlier of this calendar week and this boss
+  week. The `week` description tells the model to use it for "next run" asks
+  (+46 estimated tokens per full-set surface). Explicit `this`/`next`,
+  `this_boss`/`next_boss` and `auto` with a day are unchanged.
 - Clean retry (reserved request): a malformed, empty or undecodable answer
   (including a reply the runner rejects as unreadable) or a content-filtered
   one (`ContentFiltered`) is
