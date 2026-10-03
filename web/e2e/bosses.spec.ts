@@ -52,6 +52,28 @@ test.describe('event bosses', () => {
     await expect.poll(() => img.evaluate((i) => (i as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   });
 
+  test('a selected event row reveals its difficulties below the name, like catalog rows', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await go(page, '/bosses/Kai/knowledge');
+    const kai = page
+      .getByRole('list', { name: 'Event bosses' })
+      .getByRole('listitem')
+      .filter({ has: page.getByRole('link', { name: 'Kai', exact: true }) });
+    const ticks = kai.locator('.row-content__full .boss-tick');
+    await expect(ticks).toHaveText(['NORMAL', 'HARD']);
+    await expect(kai.locator('.row-content__full .bossrow__difficulties > span')).toHaveText(['NORMAL Lv. 270', 'HARD Lv. 280']);
+    await expect(kai.locator('.row-content__full .boss-tick--h')).toBeVisible();
+    // Let the reveal transition settle before measuring.
+    await expect.poll(async () => (await kai.locator('.row-content__clip').boundingBox())!.height, { intervals: [100, 100, 250] }).toBeGreaterThan(20);
+    const row = (await kai.boundingBox())!;
+    const link = (await kai.locator('a').boundingBox())!;
+    for (const tick of await ticks.all()) {
+      const part = (await tick.boundingBox())!;
+      expect(part.y, 'ticks sit below the name line').toBeGreaterThanOrEqual(link.y + link.height - 1);
+      expect(part.x + part.width, 'ticks stay inside the row').toBeLessThanOrEqual(row.x + row.width + 0.5);
+    }
+  });
+
   test('an event knowledge page carries the season label; a catalog one does not', async ({ page }) => {
     await go(page, '/bosses/Meilin/knowledge');
     await expect(page.locator('.knowledge-hero .status-chip')).toHaveText(SEASON_4);

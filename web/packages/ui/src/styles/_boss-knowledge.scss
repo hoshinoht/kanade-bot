@@ -41,13 +41,17 @@
 .bosses-events a { display: flex; flex: 1 1 auto; align-items: center; gap: 8px; min-width: 0; color: var(--ink); text-decoration: none; }
 .bosses-events .portrait--md { width: 34px; height: 34px; border-radius: 10px; }
 .bosses-events strong { overflow: hidden; font-size: var(--fs-small); text-overflow: ellipsis; white-space: nowrap; }
-.bosses-events .row-content__full strong { overflow: visible; white-space: normal; }
-.bosses-events .row-content__full .note { color: var(--dim-text); }
 .bosses-events .status-chip abbr, .knowledge-hero .status-chip abbr { text-decoration: none; }
 // The season label gives way (ellipsis) before the name; the list never scrolls sideways.
 .bosses-events a { flex: 0 0 auto; max-width: 50%; }
 .bosses-events li > .row-content { flex: 1 1 0; width: auto; }
 .bosses-events .status-chip { display: block; flex: 0 1 auto; min-width: 0; min-height: 18px; margin-left: auto; overflow: hidden; padding: 0 6px; font-size: var(--fs-micro); line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+// Selected and grown, like catalog rows: the name keeps its own line and the
+// difficulty ticks sit below it, indented past the smaller event portrait.
+.bosses-events li:has(> .row-content--expanded) { flex-wrap: wrap; }
+.bosses-events li:has(> .row-content--expanded) > a { min-height: 52px; max-width: 100%; }
+.bosses-events li > .row-content--expanded { flex-basis: 100%; }
+.bosses-events .row-content__full .bossrow__difficulties { padding-left: 42px; }
 .knowledge-detail { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; overflow: clip; background: var(--surface); }
 .knowledge-hero { position: relative; flex: none; min-height: 150px; overflow: hidden; border-bottom: 1.5px solid var(--line); }
 .knowledge-hero > * { position: relative; }

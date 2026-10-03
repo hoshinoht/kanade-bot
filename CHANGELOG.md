@@ -877,6 +877,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   still gets the listing. Not caught: a plain name of a boss outside the
   catalog, a lowercase everyday-word alias ("star"), member names, and facts
   phrased in words outside the checked lists.
+- v5 admin Bosses event rows, when selected, show the boss's difficulties and
+  levels below the name like catalog rows, instead of an unwrapped availability
+  note that ran past the row.
 - v5 avatar initials (Members sheet, inbox transcript, rail, drawer, account
   menu, sign-in and public masthead) show the first readable letter of a name,
   skipping emoji and symbols: "🥔猫铃薯🥔" shows "猫" instead of a broken half
