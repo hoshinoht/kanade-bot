@@ -146,16 +146,27 @@ are C3. Serve wiring is `chat::driver` (below).
   path, and a recognized other member remains that member. This fallback is
   confined to the read tool's trusted self-only path and does not relax member
   access or write-tool validation.
-- `get_schedule` forward read (`D-AUTO-FORWARD`, user decision 2026-10-03):
-  `week:"auto"` with no `day` lists every stored non-cancelled run that is not
-  over, from now and across all boss-week buckets, earliest first, under the
-  usual `MAX_RUNS`/reply bounds, whether or not the question asked for
-  upcoming runs. Its headings and empty replies name no week ("Your 3
-  upcoming runs", "No upcoming runs for you."); the "already done" note reads
-  the member's runs since the earlier of this calendar week and this boss
-  week. The `week` description tells the model to use it for "next run" asks
-  (+46 estimated tokens per full-set surface). Explicit `this`/`next`,
-  `this_boss`/`next_boss` and `auto` with a day are unchanged.
+- `get_schedule` forward read (`D-AUTO-FORWARD`, user decisions 2026-10-03):
+  `week:"auto"` with no `day` lists the non-cancelled runs that are not over,
+  from now to the end of the current boss week (so early next calendar week
+  counts, the next boss week does not), earliest first, under the usual
+  `MAX_RUNS`/reply bounds, whether or not the question asked for upcoming
+  runs. Headings and empty replies say "this boss week" ("Your 2 upcoming
+  runs this boss week", "No upcoming runs for you this boss week."); the
+  "already done" note reads the member's runs since the earlier of this
+  calendar week and this boss week. A plain singular "next run" question
+  (`ScheduleDefaults::next_only`: the trusted question holds
+  `\bnext\s+(?:boss\s+)?run\b` and, besides it and "for me", only words from
+  a small whitelist such as when/what's/is/my/our/the/in here/this channel;
+  any boss, day, "after", "and", count, mention, other name or punctuation
+  opts out, because `get_schedule` cannot filter by them, and "next runs" or
+  "next week" never match) keeps only the soonest upcoming run
+  after scope and participant filtering, headed "Your next run" ("Next run"
+  for the group; an explicit period is named, e.g. "next boss week"). The
+  `week` description tells the model to use it for "next run" asks (+47
+  estimated tokens on the full-set surface, +48 read-only). Explicit
+  `this`/`next`, `this_boss`/`next_boss` and `auto` with a day keep their
+  periods.
 - Clean retry (reserved request): a malformed, empty or undecodable answer
   (including a reply the runner rejects as unreadable) or a content-filtered
   one (`ContentFiltered`) is
@@ -185,8 +196,57 @@ are C3. Serve wiring is `chat::driver` (below).
   records name runs, the records still appear once, at the first of them,
   and retold record lines are replaced as before. List-style retellings
   without sentence punctuation (`Boss - 21:30 - run ID 'id'`) are replaced
-  as v4 did. A sentence with a time but no listed id still falls under v4's
-  hint rule (replaced by the full listing). A record-shaped line whose
+  as v4 did. A sentence without a listed id is kept the same way when it
+  names a run by date and time (user decisions 2026-10-03, "fact-check prose
+  in place" and "Fail-closed rewrite"): the sentence is kept only when every
+  fact-like token in it was read and matches the one run it picks; anything
+  left over falls back, so more persona prose is lost rather than a wrong
+  fact kept. It must state exactly one `HH:MM`, which must pick exactly one
+  listed run, narrowed by a stated `DD Mon`/`Mon DD` date, else by a stated
+  weekday, else unique among the listed times, else by the boss it states.
+  Read and compared with that run: the time, every date and weekday, every
+  tally (`n/m`, `n of m`, `n out of m`, with a following `have said yes`),
+  every status (including bare `done`, `at risk`/`at-risk`, and
+  `own time`/`own-time` as `otot`) and every `<#id>`/`[#id]` channel. Any
+  digit in any script that no check read falls back (`the 7th`,
+  `2026-10-07`, `all 3 said yes`, a full-width `０７`), as does an answer
+  word (`yes`, `rsvp`, `answered`, `declined`, `signed up`…) outside a read
+  tally, and so does any relative day (`today`, `tonight`,
+  `tomorrow`/`tmr`/`tmrw`, `yesterday`, `this`/`next`/`last`/`coming` week,
+  weekend, weekday or part of day, `in N days`; grounding has no clock), any
+  negation (`not`, `n't`, `never`, `cannot`, `no longer`), any am/pm marker
+  (`9:00 pm`, `a.m.`; 12-hour times are not converted), any `#name` channel
+  (the listing has only `<#id>`), any bare 8-hex id, and any count, date
+  or status in words: number words (`one`…`twenty`, tens, `hundred`,
+  `half`, `both`, `few`…), ordinals (`first`…`thirty-first`), quantifiers
+  (`all`, `everyone`, `nobody`, `no one`, `none`…), `un`-statuses
+  (`unconfirmed`…) and status synonyms (`called off`, `postponed`,
+  `rescheduled`, `moved`, `finished`, `completed`, `cleared`, `over`,
+  `happened`, `ended`, `delayed`, `pending`…). Bosses are checked
+  against the guild's boss catalog (`GuildView::catalog`, handed to
+  `shape_reply`; user decision 2026-10-03 "Use the boss list"): every boss
+  the sentence names, in any case, by short or full name, alias or prefixed
+  form, must be one of the run's bosses (a `+`-joined or multi-word label is
+  read through the catalog); every difficulty word must start a
+  `difficulty + boss` phrase, and every difficulty letter or `hm`-style
+  shorthand before a boss (`N Carling`, `N-Carling`, `HM Carling`) and every
+  prefixed token (`ncarling`) must be the run's difficulty for that boss (`Normal Carling` on a Hard Carling run
+  falls back, and so does `hard to say`); every `**bold**` span must be in
+  the run's label or name only its bosses. Catalog aliases that are everyday
+  words or names (`will`, `lot`, `star`, `bell`, `bella`, `carl`, `karl`,
+  and `climb`/`clot` as prefixed forms) are bosses when capitalised, after
+  a difficulty word, in bold or inside a longer name, so `Karl` or
+  `Hard Will` is a boss while lowercase "will" or "a lot" is not. Member and
+  persona names, possessives and timezones are not facts and stay. Known
+  gaps, where a wrong fact can still be kept: a plain, non-bold name of a
+  boss that is not in the catalog; a lowercase everyday-word alias, which is
+  not read as a boss (`star is on tue 06 oct at 20:00.` is kept on a Lotus
+  run); who is on the run (member names are not compared with the roster);
+  and any status, count or channel phrased in words outside the lists above
+  (`scrubbed`, `in the carling channel`). A failing sentence, an ambiguous or repeated time, or any other
+  id-less fact line in the reply leaves the reply on v4's hint rule (the
+  span from the first to the last hint line is replaced by the full
+  listing). A record-shaped line whose
   `[id]` no tool output carries is dropped (never with a real run's line)
   whenever real runs are named, all of them included; the listing then goes
   at the first real run. With no run named, v4's full listing stands (a

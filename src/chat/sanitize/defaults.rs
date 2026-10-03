@@ -16,6 +16,8 @@ pub struct ScheduleDefaults {
     /// The asker's question is unambiguously about their own schedule.
     pub self_schedule_requested: bool,
     pub upcoming_only: bool,
+    /// A singular "next run" question (v5, D-AUTO-FORWARD): one run, not a list.
+    pub next_only: bool,
 }
 
 static TRAILING_PUNCTUATION: LazyLock<Regex> = LazyLock::new(|| pattern(r"[?!.,]+\s*\z"));
@@ -46,6 +48,38 @@ static UPCOMING: LazyLock<Regex> = LazyLock::new(|| {
         r"\b(?:what(?:'s|’s| is)\s+left|runs?\s+left|remaining\s+runs?|upcoming\s+runs?|next\s+runs?)\b",
     )
 });
+
+/// Singular only: "next runs" and "next week" stay list reads.
+static NEXT_RUN: LazyLock<Regex> = LazyLock::new(|| pattern_i(r"\bnext\s+(?:boss\s+)?run\b"));
+static FOR_ME: LazyLock<Regex> = LazyLock::new(|| pattern_i(r"\bfor\s+me\b"));
+
+/// Words a plain "next run" question may carry besides the phrase itself;
+/// anything else (a boss, a day, "after", "and", a count) may narrow the
+/// answer in ways `get_schedule` cannot, so the full list comes back.
+const NEXT_RUN_WORDS: &[&str] = &[
+    "when", "when's", "when’s", "whens", "what", "what's", "what’s", "whats", "is", "show", "tell",
+    "me", "my", "our", "the", "in", "here", "this", "channel", "all", "channels", "do", "i",
+    "have", "please",
+];
+
+/// A plain singular "next run" question ("when is my next run", "my next
+/// boss run?", "when's our next run in here"); mentions and other words opt out.
+fn singular_next_run(text: &str) -> bool {
+    if !NEXT_RUN.is_match(text) {
+        return false;
+    }
+    let remaining = NEXT_RUN.replace_all(text, " ");
+    let remaining = FOR_ME.replace_all(&remaining, " ");
+    if !remaining
+        .chars()
+        .all(|ch| ch.is_ascii_alphabetic() || ch.is_ascii_whitespace() || ch == '\'' || ch == '’')
+    {
+        return false;
+    }
+    remaining
+        .split_whitespace()
+        .all(|word| NEXT_RUN_WORDS.contains(&word.to_lowercase().as_str()))
+}
 
 fn names_a_person(text: &str) -> bool {
     FOR.find_iter(text).any(|found| {
@@ -154,5 +188,6 @@ pub fn schedule_defaults(
         force_group_schedule: (complete_question || whole_group) && !explicit_person,
         self_schedule_requested: self_only_schedule(cleaned) && !whole_group,
         upcoming_only: UPCOMING.is_match(cleaned),
+        next_only: singular_next_run(cleaned),
     }
 }

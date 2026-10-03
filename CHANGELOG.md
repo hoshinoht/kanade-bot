@@ -865,6 +865,18 @@ Notable changes to the Boss Scheduler Bot, newest first.
   found instead of "No upcoming runs for you in this week".
 - v5 chat keeps a persona sentence that mentions a run and puts the run's
   record under it, instead of replacing the whole sentence with the record.
+- v5 chat "when is my next run?" answers with just the soonest run, and
+  `get_schedule` `week:"auto"` without a day stops at the end of this boss
+  week instead of listing every later week; plural or qualified asks ("my next
+  runs", "next run for hard lucid") still list this boss week's remaining runs.
+- v5 chat also keeps a persona sentence that names a run by its date and time
+  (no id) only when every fact in it was read and matches the run (fail-closed),
+  with the run's record under it; another catalog boss or difficulty, a wrong
+  or unread number, date, tally, status or channel (also in words), a
+  negation, am/pm, a relative day such as "tonight", or more than one time
+  still gets the listing. Not caught: a plain name of a boss outside the
+  catalog, a lowercase everyday-word alias ("star"), member names, and facts
+  phrased in words outside the checked lists.
 - v5 avatar initials (Members sheet, inbox transcript, rail, drawer, account
   menu, sign-in and public masthead) show the first readable letter of a name,
   skipping emoji and symbols: "🥔猫铃薯🥔" shows "猫" instead of a broken half

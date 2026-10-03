@@ -6,6 +6,7 @@
 //! emulated explicitly (`regex` has none).
 
 mod claims;
+mod dated;
 mod defaults;
 mod fence;
 mod ground;

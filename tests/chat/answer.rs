@@ -2,6 +2,7 @@
 //! `request_tools`, card delivery failure, the clean retry on a content
 //! filter, identity encoding across rounds, and the chat-log row.
 
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -19,6 +20,7 @@ use kanade::domain::model_log::{ChatOutcome, ModelLogStore};
 use kanade::domain::proposals::{ChangeKind, ProposedChange};
 use kanade::domain::scheduler::Clock;
 use kanade::domain::scheduler::{ProposalRequest, SchedulerService, Supersede};
+use kanade::infrastructure::files::load_catalog;
 use kanade::infrastructure::llm::governor::{DEFAULT_TOOL_ROUNDS, Governor};
 use kanade::infrastructure::llm::identity::Passthrough;
 use kanade::infrastructure::llm::{
@@ -566,7 +568,9 @@ async fn a_posted_card_reply_is_not_regrounded_into_the_lookup() {
     let generation = &run.generation;
     assert!(generation.outcomes[0].outcome.ok, "the lookup listed runs");
     assert_eq!(generation.posted.len(), 1, "the card was posted");
-    let regrounded = shape_reply(said, &generation.tool_outcomes());
+    let catalog = load_catalog(&Path::new(env!("CARGO_MANIFEST_DIR")).join("boss/bosses.yaml"))
+        .expect("shipped catalog");
+    let regrounded = shape_reply(said, &generation.tool_outcomes(), &catalog);
     assert_ne!(regrounded, said, "v4 regrounding would swap in the listing");
     assert_eq!(generation.reply, said);
 }

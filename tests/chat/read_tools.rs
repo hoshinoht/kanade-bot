@@ -359,21 +359,59 @@ async fn forward_world() -> World {
     World::new(&input).await
 }
 
-fn schedule_step(author: &str, channel: &str, arguments: Value, upcoming_only: bool) -> Value {
+fn schedule_step(author: &str, channel: &str, arguments: Value, question: &str) -> Value {
+    let defaults = schedule_defaults(question, Some("5000"), None);
     json!({
         "op": "run", "tool": "get_schedule", "author_id": author, "channel_id": channel,
-        "arguments": arguments, "upcoming_only": upcoming_only,
+        "arguments": arguments, "upcoming_only": defaults.upcoming_only,
+        "next_only": defaults.next_only,
     })
 }
 
+#[test]
+fn only_a_singular_next_run_question_asks_for_one_run() {
+    let next_only = |question: &str| schedule_defaults(question, Some("5000"), None).next_only;
+    for singular in [
+        "<@5000> when is my next run?",
+        "my next boss run?",
+        "When's the NEXT RUN",
+        "what is our next run in here",
+        "what's my next run",
+        "when's our next run in here?",
+        "<@5000> what’s my next run for me in this channel",
+    ] {
+        assert!(next_only(singular), "{singular}");
+    }
+    // Anything that may narrow the answer beyond what `get_schedule` filters
+    // gets the full list back.
+    for listing in [
+        "when's the next run for hard lucid?",
+        "my next run after Tuesday",
+        "the next run and the one after",
+        "next run times this week",
+        "my next run this week",
+        "when is my next run on friday",
+        "when is <@123>'s next run",
+        "when is kanon's next run",
+        "<@5000> when are my next runs?",
+        "what's for me next week?",
+        "my runs left",
+        "upcoming runs",
+        "next boss runs",
+        "runs next week",
+    ] {
+        assert!(!next_only(listing), "{listing}");
+    }
+}
+
 #[tokio::test]
-async fn auto_without_a_day_lists_upcoming_runs_from_now_across_weeks() {
+async fn auto_without_a_day_reads_what_is_left_of_this_boss_week() {
     let mut world = forward_world().await;
     let mut session = PassthroughSession;
-    let mut run = async |author: &str, channel: &str, arguments: Value, upcoming: bool| {
+    let mut run = async |author: &str, channel: &str, arguments: Value, question: &str| {
         let outcome = world
             .run_tool(
-                &schedule_step(author, channel, arguments, upcoming),
+                &schedule_step(author, channel, arguments, question),
                 &mut session,
             )
             .await;
@@ -382,27 +420,45 @@ async fn auto_without_a_day_lists_upcoming_runs_from_now_across_weeks() {
     };
     let mine = json!({"participant": "<@11>", "week": "auto"});
 
-    // The live bug: Mon 5 Oct comes first, across both boss weeks.
-    let forward = run("11", "700", mine.clone(), true).await;
+    // The live shape: a singular "next run" is just Mon 5 Oct.
+    let next = run("11", "700", mine.clone(), "<@5000> when is my next run?").await;
     assert_eq!(
-        forward,
-        "**Your 3 upcoming runs · All channels**\n\n\
-         `[e1e1e1e1]` **Hard MaleficStar + Hard FA**\n*Mon 05 Oct · 21:00* · `planned` · `0/2 yes` · <#900>\n\n\
-         `[e2e2e2e2]` **Hard Baldrix**\n*Tue 06 Oct · 22:00* · `planned` · `0/1 yes` · <#700>\n\n\
-         `[e3e3e3e3]` **Extreme Kalos**\n*Fri 09 Oct · 21:00* · `planned` · `0/2 yes` · <#901>"
+        next,
+        "**Your next run · All channels**\n\n\
+         `[e1e1e1e1]` **Hard MaleficStar + Hard FA**\n*Mon 05 Oct · 21:00* · `planned` · `0/2 yes` · <#900>"
     );
-    // Forward from now whatever the question said.
-    assert_eq!(run("11", "700", mine.clone(), false).await, forward);
+    // A plural ask lists this boss week's rest, never Fri 9 Oct (next boss week).
+    let plural = run("11", "700", mine.clone(), "<@5000> when are my next runs?").await;
+    assert_eq!(
+        plural,
+        "**Your 2 upcoming runs this boss week · All channels**\n\n\
+         `[e1e1e1e1]` **Hard MaleficStar + Hard FA**\n*Mon 05 Oct · 21:00* · `planned` · `0/2 yes` · <#900>\n\n\
+         `[e2e2e2e2]` **Hard Baldrix**\n*Tue 06 Oct · 22:00* · `planned` · `0/1 yes` · <#700>"
+    );
+    // Forward from now whatever the question said; earlier done runs never show.
+    assert_eq!(run("11", "700", mine.clone(), "my schedule").await, plural);
+    // Next boss week only when asked for explicitly.
+    let next_boss = json!({"participant": "<@11>", "week": "next_boss"});
+    assert!(
+        run("11", "700", next_boss.clone(), "my runs next boss week")
+            .await
+            .starts_with("**Your 1 run next boss week · All channels**\n\n`[e3e3e3e3]`")
+    );
+    assert!(
+        run("11", "700", next_boss, "when is my next run")
+            .await
+            .starts_with("**Your next run next boss week · All channels**\n\n`[e3e3e3e3]`")
+    );
     // A calendar week keeps its meaning and still excludes Mon 5 Oct.
     let calendar = json!({"participant": "<@11>", "week": "this"});
     assert_eq!(
-        run("11", "700", calendar, true).await,
+        run("11", "700", calendar, "my runs left this week").await,
         "**No upcoming runs for you in this week.** Your matching scheduled runs are already done."
     );
     // `auto` with a day keeps its single-day meaning.
     let monday = json!({"participant": "<@11>", "week": "auto", "day": "monday"});
     assert!(
-        run("11", "700", monday, true)
+        run("11", "700", monday, "my runs left on monday")
             .await
             .starts_with("**Your 1 run left Mon 05 Oct · All channels**")
     );
@@ -410,59 +466,80 @@ async fn auto_without_a_day_lists_upcoming_runs_from_now_across_weeks() {
     // Everything this member had is done.
     let done = json!({"participant": "me", "week": "auto"});
     assert_eq!(
-        run("44", "700", done, true).await,
-        "**No upcoming runs for you.** Your matching scheduled runs are already done."
+        run("44", "700", done.clone(), "when is my next run").await,
+        "**No upcoming runs for you this boss week.** Your matching scheduled runs are already done."
     );
 
     // Channel scope, with the away note.
     let here = json!({"participant": "<@11>", "week": "auto", "scope": "channel"});
     assert_eq!(
-        run("11", "700", here.clone(), true).await,
-        "**Your 1 upcoming run · This channel**\n\n\
+        run("11", "700", here.clone(), "my upcoming runs in here").await,
+        "**Your 1 upcoming run this boss week · This channel**\n\n\
          `[e2e2e2e2]` **Hard Baldrix**\n*Tue 06 Oct · 22:00* · `planned` · `0/1 yes`"
     );
     assert_eq!(
-        run("11", "703", here, true).await,
-        "**No upcoming runs for you in this channel.** You have 3 upcoming runs in other channels."
+        run("11", "703", here, "my upcoming runs in here").await,
+        "**No upcoming runs for you in this channel this boss week.** You have 2 upcoming runs in other channels."
     );
     let group_here = json!({"week": "auto", "scope": "channel"});
     assert_eq!(
-        run("22", "703", group_here, false).await,
-        "**No upcoming runs in this channel.** The group has 4 upcoming runs in other channels."
+        run("22", "703", group_here, "upcoming runs in here").await,
+        "**No upcoming runs in this channel this boss week.** The group has 3 upcoming runs in other channels."
     );
     let group = json!({"week": "auto"});
     assert!(
-        run("22", "700", group.clone(), false)
+        run("22", "700", group.clone(), "upcoming runs")
             .await
-            .starts_with("**4 upcoming runs · All channels**\n\n`[0a0a0a0a]`")
+            .starts_with("**3 upcoming runs this boss week · All channels**\n\n`[0a0a0a0a]`")
+    );
+    assert!(
+        run("22", "700", group.clone(), "when is the next run")
+            .await
+            .starts_with("**Next run · All channels**\n\n`[0a0a0a0a]`")
+    );
+    // The tool has no boss filter: a boss-qualified ask keeps the whole list.
+    let boss_ask = run(
+        "22",
+        "700",
+        group.clone(),
+        "when's the next run for hard baldrix?",
+    )
+    .await;
+    assert!(
+        boss_ask.starts_with("**3 upcoming runs this boss week · All channels**")
+            && boss_ask.contains("`[e2e2e2e2]` **Hard Baldrix**"),
+        "{boss_ask}"
     );
 
-    // Everything stored is over: done this week, then nothing at all.
+    // Everything in reach is over: done this boss week, then nothing at all.
     world
         .clock
         .set(instant(&json!("2026-10-10T12:00:00+08:00")));
     let mut run = async |arguments: Value| {
-        let step = schedule_step("22", "700", arguments, false);
+        let step = schedule_step("22", "700", arguments, "when is my next run");
         world.run_tool(&step, &mut session).await.output
     };
     assert_eq!(
         run(group.clone()).await,
-        "**No runs left · All channels**\n\nEverything scheduled is already done."
+        "**No runs left this boss week · All channels**\n\nEverything scheduled this boss week is already done."
     );
     assert_eq!(
-        run(json!({"participant": "me", "week": "auto"})).await,
-        "**No upcoming runs for you.** Your matching scheduled runs are already done."
+        run(done.clone()).await,
+        "**No upcoming runs for you this boss week.** Your matching scheduled runs are already done."
     );
     world
         .clock
         .set(instant(&json!("2026-10-20T12:00:00+08:00")));
     let mut run = async |arguments: Value| {
-        let step = schedule_step("22", "700", arguments, false);
+        let step = schedule_step("22", "700", arguments, "when is my next run");
         world.run_tool(&step, &mut session).await.output
     };
-    assert_eq!(run(group).await, "**No upcoming runs · All channels.**");
     assert_eq!(
-        run(json!({"participant": "me", "week": "auto"})).await,
-        "**No upcoming runs for you.**"
+        run(group).await,
+        "**No upcoming runs this boss week · All channels.**"
+    );
+    assert_eq!(
+        run(done).await,
+        "**No upcoming runs for you this boss week.**"
     );
 }

@@ -95,6 +95,8 @@ pub struct ToolContext {
     pub force_group_schedule: bool,
     pub self_schedule_requested: bool,
     pub upcoming_only: bool,
+    /// A singular "next run" question: `get_schedule` keeps only the soonest.
+    pub next_only: bool,
     /// The answer's single clock reading.
     pub now: DateTime<Utc>,
 }
@@ -122,6 +124,7 @@ impl ToolContext {
             force_group_schedule: false,
             self_schedule_requested: false,
             upcoming_only: false,
+            next_only: false,
             now,
         }
     }

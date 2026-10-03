@@ -216,7 +216,7 @@ async fn the_context_family_replays_exactly() {
                 "chat request estimate 9717 exceeds context budget 6144 with completion reserve 1024"
             ),
             json!(
-                "chat request estimate 9763 exceeds context budget 6144 with completion reserve 1024"
+                "chat request estimate 9764 exceeds context budget 6144 with completion reserve 1024"
             ),
         )],
     };

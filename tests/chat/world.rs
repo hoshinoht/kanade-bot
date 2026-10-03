@@ -418,6 +418,7 @@ impl World {
         ctx.force_group_schedule = flag("force_group_schedule");
         ctx.self_schedule_requested = flag("self_schedule_requested");
         ctx.upcoming_only = flag("upcoming_only");
+        ctx.next_only = flag("next_only");
         ctx
     }
 }

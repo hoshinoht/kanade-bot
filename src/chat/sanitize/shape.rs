@@ -4,14 +4,15 @@ use super::ground::ground;
 use super::member::member_facing;
 use super::tidy::{normalise, tidy_whole};
 use crate::chat::tools::ToolOutcome;
+use crate::domain::catalog::BossTable;
 
 /// v4 bounded an over-long grounded reply by keeping the listing and dropping
 /// the model's text around it, and cut any other reply at the bound.
 /// `D-GROUND-FILTERED`: over the bound, runs that already happened leave the
 /// listing; a reply still over it is kept whole and posted as follow-ups
 /// (`reply_parts`).
-pub fn shape_reply(reply: &str, outcomes: &[ToolOutcome]) -> String {
-    let grounded = ground(reply, outcomes);
+pub fn shape_reply(reply: &str, outcomes: &[ToolOutcome], catalog: &BossTable) -> String {
+    let grounded = ground(reply, outcomes, catalog);
     let Some(block) = &grounded.block else {
         return normalise(&member_facing(&grounded.text));
     };

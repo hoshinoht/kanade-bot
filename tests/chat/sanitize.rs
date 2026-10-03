@@ -1,15 +1,63 @@
 //! `sanitize.json`: note defusing, member-facing rewrites, false-claim
 //! stripping, trusted defaults, tidy bounds and schedule regrounding.
 
+use std::sync::LazyLock;
+
 use kanade::chat::sanitize::{
-    defuse_notes, ground_schedule_reply, looks_like_clarification, member_facing, reply_parts,
-    schedule_defaults, shape_reply, strip_false_card_claim, tidy,
+    self, defuse_notes, looks_like_clarification, member_facing, reply_parts, schedule_defaults,
+    strip_false_card_claim, tidy,
 };
 use kanade::chat::tools::ToolOutcome;
+use kanade::domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec};
 use serde_json::{Map, Value, json};
 
 use crate::common::text;
 use crate::support::{Named, check_family, dev, unknown_op, value};
+
+/// The fixtures' boss catalog (aliases included); `will` is an ordinary word.
+static CATALOG: LazyLock<BossTable> = LazyLock::new(|| {
+    let difficulty = |prefix: &str, label: &str| DifficultySpec {
+        prefix: prefix.to_owned(),
+        label: label.to_owned(),
+    };
+    let boss = |short: &str, aliases: &[&str]| BossSpec {
+        short: short.to_owned(),
+        aliases: aliases.iter().map(|alias| (*alias).to_owned()).collect(),
+        ..BossSpec::default()
+    };
+    BossTable::from_spec(&CatalogSpec {
+        difficulties: vec![
+            difficulty("e", "Easy"),
+            difficulty("n", "Normal"),
+            difficulty("h", "Hard"),
+            difficulty("c", "Chaos"),
+            difficulty("x", "Extreme"),
+        ],
+        bosses: vec![
+            boss("Lotus", &["lotus", "lot"]),
+            boss("Vellum", &["vellum"]),
+            boss("Magnus", &["magnus"]),
+            boss("Lucid", &["lucid"]),
+            boss("Kalos", &["kalos", "gatekeeper"]),
+            boss("Carling", &["carling", "karling", "kaling", "carl", "karl"]),
+            boss("Will", &["will"]),
+            BossSpec {
+                full: Some("Radiant Malefic Star".to_owned()),
+                ..boss("MaleficStar", &["star", "malefic"])
+            },
+            boss("FA", &["fa"]),
+        ],
+    })
+    .expect("fixture catalog is valid")
+});
+
+fn ground_schedule_reply(reply: &str, outcomes: &[ToolOutcome]) -> String {
+    sanitize::ground_schedule_reply(reply, outcomes, &CATALOG)
+}
+
+fn shape_reply(reply: &str, outcomes: &[ToolOutcome]) -> String {
+    sanitize::shape_reply(reply, outcomes, &CATALOG)
+}
 
 /// The vectors' outcome descriptors as tool outcomes.
 fn outcomes(raw: &Value) -> Vec<ToolOutcome> {
@@ -349,4 +397,266 @@ fn record_shaped_retellings_are_still_replaced() {
             format!("Tonight:\n\n{VELLUM}\n\nBye!")
         );
     }
+}
+
+/// The live id-less shape, with an invented fixture.
+const DATED_SENTENCE: &str = "Mama~ Your next run is **Hard Lotus** on *Tue 06 Oct at 20:00* · `planned` · `0/4 yes` · <#4242>. Be sure to check the card before queueing in.";
+
+/// `D-GROUND-FILTERED` (user decision 2026-10-03, "fact-check prose in
+/// place"): a sentence naming a run by its date and time, with every fact
+/// it states matching, is kept and the record goes under it.
+#[test]
+fn a_sentence_naming_a_run_by_date_and_time_is_kept() {
+    let next = format!("**Your next run · All channels**\n\n{LOTUS}");
+    assert_eq!(
+        ground_schedule_reply(DATED_SENTENCE, &[schedule_outcome(&next)]),
+        format!("{DATED_SENTENCE}\n\n{next}")
+    );
+    assert_eq!(
+        ground_schedule_reply(DATED_SENTENCE, &[schedule_outcome(UPCOMING)]),
+        format!("{DATED_SENTENCE}\n\n{LOTUS}")
+    );
+    let shaped = shape_reply(DATED_SENTENCE, &[schedule_outcome(UPCOMING)]);
+    assert!(shaped.starts_with("Mama~ Your next run is"), "{shaped}");
+    assert!(shaped.ends_with(LOTUS), "{shaped}");
+    // A unique time needs no date; a weekday alone is enough too.
+    for sentence in [
+        "Hard Lotus starts at 20:00, be on time!",
+        "See you Tuesday at 20:00 for Lotus!",
+    ] {
+        assert_eq!(
+            ground_schedule_reply(sentence, &[schedule_outcome(UPCOMING)]),
+            format!("{sentence}\n\n{LOTUS}")
+        );
+    }
+}
+
+/// A time, date, tally or status that no listed run has falls back to the
+/// listing, as does a list-style retelling that is not a sentence.
+#[test]
+fn an_unmatched_dated_sentence_falls_back_to_the_listing() {
+    let outcomes = [schedule_outcome(UPCOMING)];
+    for reply in [
+        "Your next run is **Hard Lotus** on *Tue 06 Oct at 20:30*. Be ready!",
+        "Your next run is **Hard Lotus** on *Wed 07 Oct at 20:00*. Be ready!",
+        "Your next run is **Hard Lotus** at 20:00, `3/4 yes` so far. Be ready!",
+        "Your next run is **Hard Lotus** at 20:00, already `confirmed`. Be ready!",
+        "Your next run is **Hard Lotus** at 20:00 in <#4243>. Be ready!",
+        "Hard Lotus - Tue 06 Oct - 20:00 - 0/4",
+    ] {
+        assert_eq!(ground_schedule_reply(reply, &outcomes), UPCOMING, "{reply}");
+    }
+    // One unchecked fact line keeps the whole reply on the fallback.
+    let reply = format!("{DATED_SENTENCE}\n\nAlso Chaos Vellum at 23:00!");
+    assert_eq!(ground_schedule_reply(&reply, &outcomes), UPCOMING);
+}
+
+/// Two runs at the same time on different days: the date picks one, and
+/// without a date the sentence is ambiguous and falls back.
+#[test]
+fn the_date_resolves_runs_at_the_same_time() {
+    let vellum =
+        "`[c0ffee02]` **Chaos Vellum**\n*Thu 08 Oct · 20:00* · `planned` · `2/4 yes` · <#4243>";
+    let listing =
+        format!("**Your 2 upcoming runs this boss week · All channels**\n\n{LOTUS}\n\n{vellum}");
+    let outcomes = [schedule_outcome(&listing)];
+    let sentence = "Chaos Vellum is on Thu 08 Oct at 20:00 with `2/4 yes`.";
+    assert_eq!(
+        ground_schedule_reply(sentence, &outcomes),
+        format!("{sentence}\n\n{vellum}")
+    );
+    assert_eq!(
+        ground_schedule_reply("The run is at 20:00, see you!", &outcomes),
+        listing
+    );
+}
+
+/// Wrong facts never survive in prose: a boss, relative day, extra time or
+/// status the picked run does not have falls back to the listing.
+#[test]
+fn a_dated_sentence_with_any_wrong_fact_falls_back() {
+    let outcomes = [schedule_outcome(UPCOMING)];
+    let mut kept = Vec::new();
+    for reply in [
+        // A boss the picked run is not (bold or plain).
+        "Your next run is **Hard Lucid** on *Tue 06 Oct at 20:00*. Be ready!",
+        "Your next run is Hard Lucid on Tue 06 Oct at 20:00. Be ready!",
+        "Chaos Vellum is on Tue 06 Oct at 20:00. Be ready!",
+        // A relative day grounding cannot check without a clock.
+        "Hard Lotus is tonight at 20:00, don't be late!",
+        "Hard Lotus is tomorrow at 20:00, don't be late!",
+        "Hard Lotus is next Tuesday at 20:00, don't be late!",
+        // A status the run does not have.
+        "Your Lotus at 20:00 is done already.",
+        "Your Lotus at 20:00 is at risk.",
+        // A plain boss name the listing does not carry.
+        "Your next run is Lucid on Tue 06 Oct at 20:00. Be ready!",
+        // A tally in words the run does not have.
+        "Hard Lotus is on Tue 06 Oct at 20:00, 3 of 4 have said yes.",
+        // Fail-closed: a day number, date or capitalised alias left unread.
+        "Hard Lotus is on the 7th at 20:00.",
+        "Hard Lotus is on 2026-10-07 at 20:00.",
+        "Karl is on Tue 06 Oct at 20:00.",
+    ] {
+        if ground_schedule_reply(reply, &outcomes) != UPCOMING {
+            kept.push(reply);
+        }
+    }
+    // More than one time cannot bind its facts to one run.
+    let vellum =
+        "`[c0ffee02]` **Chaos Vellum**\n*Thu 08 Oct · 21:00* · `planned` · `2/4 yes` · <#4243>";
+    let listing = format!("**Your 2 upcoming runs · All channels**\n\n{LOTUS}\n\n{vellum}");
+    let swapped =
+        "Lotus is Thu 08 Oct at 20:00 and Vellum is Tue 06 Oct at 21:00, `2/4` and `0/4`.";
+    if ground_schedule_reply(swapped, &[schedule_outcome(&listing)]) != listing {
+        kept.push(swapped);
+    }
+    // A one-record "next run" listing: another catalog boss, in any case or
+    // place, falls back.
+    for other in [
+        "Your next run is Kalos on Mon 05 Oct at 21:00.",
+        "Kalos is on Mon 05 Oct at 21:00, 0 of 3 have said yes so far.",
+        "Papa~ Kalos is on Mon 05 Oct at 21:00.",
+        "Your next run: Kalos on Mon 05 Oct at 21:00.",
+        "Heads up! Lucid starts Mon 05 Oct at 21:00.",
+        "your next run is kalos on Mon 05 Oct at 21:00.",
+        "The gatekeeper fight is on Mon 05 Oct at 21:00.",
+        "Your next run is Hard Will on Mon 05 Oct at 21:00.",
+        // Fail-closed: another difficulty, a count, a negation, an unread
+        // status phrase or a channel name.
+        "Your next run is Normal Carling on Mon 05 Oct at 21:00.",
+        "Your next run is **Normal Carling** on Mon 05 Oct at 21:00.",
+        "Your next run is ncarling on Mon 05 Oct at 21:00.",
+        "Carling is on Mon 05 Oct at 21:00 and all 3 have said yes.",
+        "Carling is on Mon 05 Oct at 21:00, on your own time.",
+        "Carling is on Mon 05 Oct at 21:00 in #hard-runs.",
+    ] {
+        if ground_schedule_reply(other, &[schedule_outcome(&next_carling())]) != next_carling() {
+            kept.push(other);
+        }
+    }
+    let confirmed = next_carling().replace("`planned`", "`confirmed`");
+    let negated = "Carling on Mon 05 Oct at 21:00 isn't confirmed yet.";
+    if ground_schedule_reply(negated, &[schedule_outcome(&confirmed)]) != confirmed {
+        kept.push(negated);
+    }
+    let morning = next_carling().replace("21:00", "09:00");
+    let evening = "Carling is on Mon 05 Oct at 9:00 pm.";
+    if ground_schedule_reply(evening, &[schedule_outcome(&morning)]) != morning {
+        kept.push(evening);
+    }
+    assert!(kept.is_empty(), "kept wrong facts: {kept:#?}");
+}
+
+/// A one-record "next run" listing (invented fixture).
+fn next_carling() -> String {
+    format!("**Your next run · All channels**\n\n{CARLING}")
+}
+
+const CARLING: &str =
+    "`[c0ffee05]` **Hard Carling**\n*Mon 05 Oct · 21:00* · `planned` · `0/3 yes` · <#4245>";
+
+/// The run's own plain name, or a matching tally in words, is still kept.
+#[test]
+fn a_dated_sentence_with_the_right_plain_name_is_kept() {
+    let outcomes = [schedule_outcome(&next_carling())];
+    let mut lost = Vec::new();
+    for sentence in [
+        "Your next run is Carling on Mon 05 Oct at 21:00.",
+        "Papa~ Your next run is **Hard Carling** on *Mon 05 Oct at 21:00* · `planned` · `0/3 yes` · <#4245>. Be sure to check the card before queueing in.",
+        "Carling is on Mon 05 Oct at 21:00, 0 of 3 have said yes so far.",
+        // Possessives, member/persona names, timezones and ordinary words.
+        "Carling's party is on Mon 05 Oct at 21:00.",
+        "Check the card, Papa. Carling is Mon 05 Oct at 21:00.",
+        "Alvin will lead Carling on Mon 05 Oct at 21:00 MYT, it's a lot of fun!",
+        // An alias of the run's boss.
+        "Your next run is Karling on Mon 05 Oct at 21:00.",
+        "Your next run is **Hard Kaling** on Mon 05 Oct at 21:00.",
+        // The run's difficulty as a letter or `hm`-style shorthand.
+        "Your next run is H Carling on Mon 05 Oct at 21:00.",
+        "Your next run is HM Carling on Mon 05 Oct at 21:00.",
+    ] {
+        if ground_schedule_reply(sentence, &outcomes) != format!("{sentence}\n\n{}", next_carling())
+        {
+            lost.push(sentence);
+        }
+    }
+    // A multi-word name and a `+`-joined label resolve through the catalog.
+    let pair = "**Your next run · All channels**\n\n`[c0ffee07]` **Hard MaleficStar + Hard FA**\n*Wed 07 Oct · 22:00* · `planned` · `1/4 yes` · <#4246>";
+    for sentence in [
+        "Hard Radiant Malefic Star is on Wed 07 Oct at 22:00.",
+        "Your Hard Star and FA run is on Wed 07 Oct at 22:00, 1 of 4 said yes.",
+    ] {
+        if ground_schedule_reply(sentence, &[schedule_outcome(pair)])
+            != format!("{sentence}\n\n{pair}")
+        {
+            lost.push(sentence);
+        }
+    }
+    // A hyphenated status that matches the run.
+    for (status, sentence) in [
+        ("at_risk", "Carling on Mon 05 Oct at 21:00 is at-risk."),
+        (
+            "otot",
+            "Carling on Mon 05 Oct at 21:00 is on your own-time.",
+        ),
+    ] {
+        let listing = next_carling().replace("`planned`", &format!("`{status}`"));
+        if ground_schedule_reply(sentence, &[schedule_outcome(&listing)])
+            != format!("{sentence}\n\n{listing}")
+        {
+            lost.push(sentence);
+        }
+    }
+    assert!(lost.is_empty(), "lost right sentences: {lost:#?}");
+}
+
+/// Fail-closed: shorthand difficulties, tallies and statuses in words,
+/// spelled-out dates and non-ASCII digits are facts too.
+#[test]
+fn a_dated_sentence_with_facts_in_words_falls_back() {
+    let mut kept = Vec::new();
+    let mut check = |listing: &str, sentence: &'static str| {
+        if ground_schedule_reply(sentence, &[schedule_outcome(listing)]) != listing {
+            kept.push(sentence);
+        }
+    };
+    for sentence in [
+        "Your next run is N Carling on Mon 05 Oct at 21:00.",
+        "Your next run is N-Carling on Mon 05 Oct at 21:00.",
+        "Your next run is NM Carling on Mon 05 Oct at 21:00.",
+        "Carling is on Mon 05 Oct at 21:00 and everyone has said yes.",
+        "Carling is on Mon 05 Oct at 21:00 and all three said yes.",
+        "Carling is on Mon 05 Oct at 21:00 and nobody has answered.",
+        "Carling is on Mon 05 Oct at 21:00 and Alvin said yes.",
+        "Carling on Mon 05 Oct at 21:00 was called off.",
+        "Carling on Mon 05 Oct at 21:00 is finished.",
+        "Carling on Mon 05 Oct at 21:00 was postponed.",
+    ] {
+        check(&next_carling(), sentence);
+    }
+    let confirmed = next_carling().replace("`planned`", "`confirmed`");
+    check(
+        &confirmed,
+        "Carling on Mon 05 Oct at 21:00 is still unconfirmed.",
+    );
+    for sentence in [
+        "Hard Lotus is on Tue 06 Oct at 20:00 and is at-risk.",
+        "Hard Lotus is on October seventh at 20:00.",
+        "Hard Lotus on ０７ Oct at 20:00.",
+    ] {
+        check(UPCOMING, sentence);
+    }
+    assert!(kept.is_empty(), "kept wrong facts: {kept:#?}");
+}
+
+/// Known gap (documented in `D-GROUND-FILTERED`): a lowercase everyday-word
+/// alias is not read as a boss, so this wrong boss is kept.
+#[test]
+fn a_lowercase_everyday_alias_is_a_documented_gap() {
+    let sentence = "star is on tue 06 oct at 20:00.";
+    assert_eq!(
+        ground_schedule_reply(sentence, &[schedule_outcome(UPCOMING)]),
+        format!("{sentence}\n\n{LOTUS}")
+    );
 }

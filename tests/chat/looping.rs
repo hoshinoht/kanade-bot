@@ -418,7 +418,7 @@ fn named() -> Vec<Named> {
                         case_id,
                         format!("{pointer}/error"),
                         json!("ContextBudgetError: chat request estimate 18662 exceeds context budget 8192 with completion reserve 1024"),
-                        json!("ContextBudgetError: chat request estimate 18708 exceeds context budget 8192 with completion reserve 1024"),
+                        json!("ContextBudgetError: chat request estimate 18709 exceeds context budget 8192 with completion reserve 1024"),
                     ));
                 }
                 ("missing-model-alias", 0) => {

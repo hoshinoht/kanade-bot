@@ -25,9 +25,9 @@ const V5_GET_BOSS_STRATEGY_DESCRIPTION: &str = "Source-backed local strategy not
 /// D-SEASONAL-LIST's estimated-token cost on each full-set surface.
 const SEASONAL_TOKENS: u64 = 49;
 const V4_WEEK_DESCRIPTION: &str = "Use 'this' or 'next' for calendar Monday-Sunday weeks. Use 'this_boss' or 'next_boss' only when the member explicitly says boss week. Use 'auto' for a bare weekday or today, tonight, or tomorrow. For 'next week', set week to 'next' and omit day.";
-/// D-AUTO-FORWARD (user decision 2026-10-03): `auto` without a day reads
-/// every upcoming run from now.
-const V5_WEEK_DESCRIPTION: &str = "Use 'this' or 'next' for calendar Monday-Sunday weeks. Use 'this_boss' or 'next_boss' only when the member explicitly says boss week. Use 'auto' for a bare weekday or today, tonight, or tomorrow. For 'next run' or 'when is my next' asks, use 'auto' and omit day: it lists upcoming runs from now across weeks, earliest first. For 'next week', set week to 'next' and omit day.";
+/// D-AUTO-FORWARD (user decisions 2026-10-03): `auto` without a day reads the
+/// upcoming runs left in this boss week.
+const V5_WEEK_DESCRIPTION: &str = "Use 'this' or 'next' for calendar Monday-Sunday weeks. Use 'this_boss' or 'next_boss' only when the member explicitly says boss week. Use 'auto' for a bare weekday or today, tonight, or tomorrow. For 'next run' or 'when is my next' asks, use 'auto' and omit day: it lists the upcoming runs left in this boss week, earliest first. For 'next week', set week to 'next' and omit day.";
 
 fn surface(read_only: bool) -> Value {
     let offer = ToolOffer::full_set(read_only);

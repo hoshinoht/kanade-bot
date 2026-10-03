@@ -1,6 +1,6 @@
 //! `get_schedule`: one calendar or boss week, optionally narrowed by
-//! channel, member or day (v4 `tools/get_schedule.py`), or every upcoming
-//! run from now for `auto` without a day (`D-AUTO-FORWARD`).
+//! channel, member or day (v4 `tools/get_schedule.py`), or the upcoming runs
+//! left in this boss week for `auto` without a day (`D-AUTO-FORWARD`).
 
 use std::collections::BTreeSet;
 
@@ -337,8 +337,8 @@ pub fn get_schedule(
         let end = week_end(&start, world.zone).map_err(failed)?;
         (start, end)
     };
-    // `auto` without a day answers "when is my next run": every stored
-    // upcoming run from now, whatever its week (D-AUTO-FORWARD).
+    // `auto` without a day answers "when is my next run": the upcoming runs
+    // left in this boss week, across calendar weeks (D-AUTO-FORWARD).
     let forward = week == "auto"
         && !matches!(args.get("day"), Some(Value::String(day)) if !strip(day).is_empty());
     let (start, end, selected) = schedule_interval(world, args, (start, end), now, &week)?;
@@ -356,13 +356,14 @@ pub fn get_schedule(
     let mut everything: Vec<&Run> = Vec::new();
     if forward {
         // From the earlier of this calendar week and this boss week, so runs
-        // already done this week still back the "already done" note.
-        let boss_start = utc(
-            &week_start(&now, world.zone, world.reset_weekday, world.reset_time).map_err(failed)?,
-        )?;
-        let since = start_utc.min(boss_start);
+        // already done this week still back the "already done" note, to the
+        // end of this boss week (user decision 2026-10-03).
+        let boss_week =
+            week_start(&now, world.zone, world.reset_weekday, world.reset_time).map_err(failed)?;
+        let since = start_utc.min(utc(&boss_week)?);
+        let until = utc(&week_end(&boss_week, world.zone).map_err(failed)?)?;
         for run in &world.snapshot.runs {
-            if run.datetime >= since && seen.insert(run.id.as_str()) {
+            if since <= run.datetime && run.datetime < until && seen.insert(run.id.as_str()) {
                 everything.push(run);
             }
         }
@@ -405,10 +406,14 @@ pub fn get_schedule(
         runs.retain(|run| has(run, who));
     }
     let matching = runs.clone();
-    // A forward read lists only what is still ahead, whatever the question said.
-    let upcoming_only = ctx.upcoming_only || forward;
+    // A forward read lists only what is still ahead, whatever the question
+    // said; a singular "next run" question gets just the soonest one.
+    let upcoming_only = ctx.upcoming_only || ctx.next_only || forward;
     if upcoming_only {
         runs.retain(|run| !is_over(run, now));
+    }
+    if ctx.next_only {
+        runs.truncate(1);
     }
     let all_over = |list: &[&Run]| list.iter().all(|run| is_over(run, now));
     let scope_label = if scope == "channel" {
@@ -421,7 +426,7 @@ pub fn get_schedule(
         if upcoming_only {
             let period = match &date_label {
                 Some(label) => format!(" on {label}"),
-                None if forward => String::new(),
+                None if forward => " this boss week".to_owned(),
                 None => format!(" in {week_label}"),
             };
             if let Some(who) = &participant {
@@ -483,7 +488,7 @@ pub fn get_schedule(
             if !matching.is_empty() && all_over(&matching) {
                 if forward {
                     return Ok(format!(
-                        "**No runs left · {scope_label}**\n\nEverything scheduled is already done."
+                        "**No runs left this boss week · {scope_label}**\n\nEverything scheduled this boss week is already done."
                     ));
                 }
                 return Ok(format!(
@@ -557,9 +562,17 @@ pub fn get_schedule(
         .iter()
         .map(|run| run_line(world, run, with_channel, now))
         .collect();
-    let (run_count, period) = if forward {
+    let (run_count, period) = if ctx.next_only {
+        // A forward read is this boss week's next run; otherwise name the period.
+        let period = match (&date_label, forward) {
+            (Some(label), _) => format!(" {label}"),
+            (None, true) => String::new(),
+            (None, false) => format!(" {week_label}"),
+        };
+        ("next run".to_owned(), period)
+    } else if forward {
         let count = plural(runs.len(), "upcoming run", "upcoming runs");
-        (count, String::new())
+        (count, " this boss week".to_owned())
     } else {
         let remaining = if upcoming_only { " left" } else { "" };
         let period = date_label.clone().unwrap_or_else(|| week_label.clone());
@@ -577,6 +590,7 @@ pub fn get_schedule(
             };
             format!("**{owner} {run_count}{period} · {scope_label}**")
         }
+        None if ctx.next_only => format!("**Next run{period} · {scope_label}**"),
         None => format!("**{run_count}{period} · {scope_label}**"),
     };
     let footer = if all_over(&runs) {
