@@ -7,7 +7,7 @@
   inert, so results and Undo must live inside it. Failed input stays in its field.
 -->
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import type { Member, Participant, Run, RunStatus, Week } from '@kanade/api-types';
   import { AnswerChip, BossTag, enter, Icon, Modal, StatusMark, dayLabel, runTitle, sortRuns, whenLabel } from '@kanade/ui';
   import { swapSlots } from './planner/dropTime';
@@ -74,6 +74,30 @@
   // The pane's pill tabs (Run / Answers / Changes); the sheet stacks them.
   let paneTab = $state<'run' | 'answers' | 'changes'>('run');
   const paneTabs: Record<string, HTMLButtonElement> = {};
+  // The pane's pop-out: the same run in the full sheet (the modal used below
+  // 840 px), with the pane gone meanwhile. Closing it returns to the pane on
+  // the same tab, focus on the pop-out button; the run stays selected.
+  let popped = $state(false);
+  let popButton = $state<HTMLButtonElement>();
+  let sheetBody = $state<HTMLElement>();
+
+  async function popOut() {
+    popped = true;
+    await tick();
+    // The pane's tab is the sheet's open section: bring it into view.
+    if (paneTab !== 'run') requestAnimationFrame(() => sheetBody?.querySelector(paneTab === 'answers' ? '.run__answers' : '.blame')?.scrollIntoView({ block: 'nearest' }));
+  }
+
+  // Back from the pop-out (the sheet unmounts with its branch, so no close
+  // event to hang this on): focus returns to the pane's pop-out button.
+  let wasPopped = false;
+  $effect(() => {
+    if (popped) wasPopped = true;
+    else if (wasPopped) {
+      wasPopped = false;
+      if (untrack(() => open)) void tick().then(() => popButton?.focus({ preventScroll: true }));
+    }
+  });
 
   // "Swap timing with…": pick another live run of this boss week, review
   // where both land, then confirm. Undo comes with the toast like a move.
@@ -106,7 +130,10 @@
       swapWith = '';
       paneTab = 'run';
     }
-    if (!open) seeded = null;
+    if (!open) {
+      seeded = null;
+      popped = false;
+    }
   });
 
   const counts = $derived.by(() => {
@@ -196,7 +223,7 @@
 <svelte:window
   onkeydown={(event) => {
     // Escape closes the pane unless something nearer used it (a planner lift, a popover, a dialog).
-    if (!wide || !open || event.key !== 'Escape' || event.defaultPrevented || document.querySelector('dialog[open]')) return;
+    if (!wide || popped || !open || event.key !== 'Escape' || event.defaultPrevented || document.querySelector('dialog[open]')) return;
     event.preventDefault();
     onclose?.();
   }}
@@ -417,7 +444,7 @@
   {/each}
 {/snippet}
 
-{#if wide}
+{#if wide && !popped}
   {#if open && run}
     {@const tabs = [
       { id: 'run', label: 'Run', count: null },
@@ -450,6 +477,31 @@
             >
           {/each}
         </div>
+        <button
+          type="button"
+          class="btn btn--ghost week-pane__close week-pane__popout"
+          aria-label="Open in a larger view"
+          title="Open in a larger view"
+          bind:this={popButton}
+          onclick={() => void popOut()}
+          ><svg
+            class="icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+            ><polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line
+              x1="3"
+              y1="21"
+              x2="10"
+              y2="14"
+            /></svg
+          ></button
+        >
         <button type="button" class="btn btn--ghost week-pane__close" aria-label="Close {runTitle(run)}" onclick={() => onclose?.()}><Icon name="x" /></button>
       </div>
       <div class="week-pane__panel" role="tabpanel" id="{uid}-ppanel" aria-labelledby="{uid}-ptab-{paneTab}">
@@ -490,7 +542,7 @@
           </div>
         {:else}
           <div class="week-pane__body">
-            {#key run.id}<BlamePanel runId={run.id} {members} timezone={week.timezone} open />{/key}
+            {#key run.id}<BlamePanel runId={run.id} {members} timezone={week.timezone} channel={{ id: run.channel_id, name: run.channel }} open />{/key}
           </div>
         {/if}
       </div>
@@ -500,9 +552,16 @@
   <!-- A backdrop click closes it unless something is still unsaved: a typed Move
        target or an open swap picker (everything else saves on press), or a
        change still on its way. Escape and × close it as before. -->
-  <Modal bind:open title={run ? runTitle(run) : 'Run'} wide flush lightDismiss={!dirty && !busy}>
+  <!-- Below 840 px the sheet itself; from 840 px the pane's pop-out, whose close goes back to the pane. -->
+  <Modal
+    bind:open={() => (wide ? popped && open : open), (value) => (wide ? (popped = value) : (open = value))}
+    title={run ? runTitle(run) : 'Run'}
+    wide
+    flush
+    lightDismiss={!dirty && !busy}
+  >
     {#if run}
-      <article class="run run--{run.status}">
+      <article class="run run--{run.status}" bind:this={sheetBody}>
         {@render arts()}
         <div class="run__time">
           {run.status === 'otot' || !run.time ? 'own time' : run.time}
@@ -540,11 +599,11 @@
         {@render status(run)}
         {@render notes()}
 
-        <details class="answers">
+        <details class="answers run__answers" open={popped && paneTab === 'answers'}>
           <summary class="btn answers__summary"><Icon name="chevron-right" /> Answers — set who’s in or out</summary>
           <div class="answers__body">{@render answerRows(run)}</div>
         </details>
-        {#key run.id}<BlamePanel runId={run.id} {members} timezone={week.timezone} />{/key}
+        {#key run.id}<BlamePanel runId={run.id} {members} timezone={week.timezone} channel={{ id: run.channel_id, name: run.channel }} open={popped && paneTab === 'changes'} />{/key}
       </article>
     {/if}
   </Modal>

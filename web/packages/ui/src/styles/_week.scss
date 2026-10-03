@@ -3,6 +3,8 @@
 // table, or the Answers cards) beside a supporting pane, and a status footer.
 // Admin only; values from the boards, sizes on the type-scale tokens.
 
+@use "easing" as *;
+
 .week-window {
   display: flex;
   flex-direction: column;
@@ -338,8 +340,12 @@ a.week-foot__item:hover,
   }
 }
 
-/* Run cards (mockup `.card`): a 4 px status stripe, the clock, the bosses, the party. */
+/* Run cards (mockup `.card`): a 4 px status stripe, the clock, the bosses, the party.
+   The card clips to its own rounded shape, so the entry art, its wash and the
+   stripe follow the corners at any radius (selected, grown, phone) instead of
+   squaring off past them. Focus rings move to the card itself (below). */
 .week-window .runcard {
+  overflow: clip;
   border: 1.5px solid var(--line);
   border-left: 0;
   border-radius: 10px;
@@ -351,8 +357,22 @@ a.week-foot__item:hover,
   position: absolute;
   inset: 0 auto 0 0;
   width: 4px;
-  border-radius: 10px 0 0 10px;
   background: var(--stripe, var(--off));
+}
+
+// The face's own ring would be clipped by the card: ring the card instead,
+// unless a lift or a swap target already draws its outline there.
+.week-window .plan-card__open:focus-visible {
+  outline: none;
+}
+
+.week-window .plan-card:not(.plan-card--lifted, .plan-card--swap-target):has(> .plan-card__open:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.week-window .plan-card__reread:focus-visible {
+  outline-offset: -2px;
 }
 
 .week-window .runcard--planned { --stripe: var(--warn); }
@@ -428,10 +448,6 @@ a.week-foot__item:hover,
     0 0 0 0.5px var(--accent-fill),
     0 0 0 3.5px var(--select);
   --card-face: var(--row);
-}
-
-.week-window .plan-card--selected::before {
-  border-radius: 12px 0 0 12px;
 }
 
 /* ── side panes: at a glance, and the run ──────────────────────────── */
@@ -516,11 +532,15 @@ a.week-foot__item:hover,
   margin: 0 0 6px;
 }
 
-.week-glance__total {
-  color: var(--ink);
-  font-size: var(--fs-body);
-  font-weight: 700;
-  letter-spacing: 0;
+.week-glance__hint {
+  margin: 0 0 6px;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+.week-glance__hint--warn {
+  color: var(--warn-text);
+  font-weight: 600;
 }
 
 .week-glance__rows {
@@ -531,30 +551,44 @@ a.week-foot__item:hover,
   list-style: none;
 }
 
+// The next run's party, one row a member: the name, then the answer in words.
 .week-glance__row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 40px;
+  gap: 8px;
+  min-height: 34px;
   padding: 0 12px;
   border-radius: 4px;
   background: var(--row);
   box-shadow: inset 0 0 0 1.5px var(--line);
-  font-weight: 700;
 }
 
 .week-glance__row:first-child { border-radius: 16px 16px 4px 4px; }
 .week-glance__row:last-child { border-radius: 4px 4px 16px 16px; }
 .week-glance__row:only-child { border-radius: 16px; }
 
-.week-glance__more {
-  margin-top: 8px;
+.week-glance__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.week-glance__answer {
+  flex: none;
+  color: var(--dim-text);
   font-size: var(--fs-small);
 }
 
-.week-glance__none {
-  color: var(--dim-text);
-  font-size: var(--fs-small);
+.week-glance__row--waiting {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 55%, var(--line));
+}
+
+.week-glance__row--waiting .week-glance__answer {
+  color: var(--warn-text);
+  font-weight: 700;
 }
 
 .week-glance__foot {
@@ -598,8 +632,17 @@ a.week-foot__item:hover,
 
 /* The run pane (B_WeekSel): pill tabs, the art header, then the run's controls. */
 .side-pane.week-pane {
-  flex: 0 0 340px;
+  // Grows with the window (about 410 px at 1280, 480 px from 1500); the
+  // board beside it keeps its sideways scroll for busy weeks.
+  flex: 0 0 clamp(380px, 32vw, 480px);
   overflow: hidden;
+}
+
+// 840-999 px: a 380 px pane would leave the board under two columns.
+@media (max-width: 999px) {
+  .side-pane.week-pane {
+    flex-basis: 340px;
+  }
 }
 
 .week-pane__head {
@@ -652,6 +695,11 @@ a.week-foot__item:hover,
   min-height: 32px;
   padding: 0;
   justify-content: center;
+}
+
+// The pop-out sits just before close, both at the head's end.
+.week-pane__popout + .week-pane__close {
+  margin-left: 0;
 }
 
 // The pane's scrolling panel. It holds the run's entry art (`_runs.scss` .run__art, unchanged), as
@@ -1321,27 +1369,18 @@ a.week-foot__item:hover,
 /* ── hover grow (planner cards) ───────────────────────────────────────── */
 
 // A card grows on hover (fine pointers) and on keyboard focus, never on a
-// click (PlannerCard sets plan-card--grown and freezes its rest height). The
-// face lifts out of the flow as an overlay, so the column and its neighbours
-// never move; the reveal's grid track still animates its height.
-.week-window .board .plan-card--grown {
-  z-index: 6;
-  overflow: visible;
+// click (PlannerCard sets plan-card--grown). It grows in flow, downwards: its
+// top stays under the pointer and the cards below in its day move down while
+// it is open, so it never covers them (an overlay hid the next card's clock).
+// The reveal's grid track animates the height both ways; after a press, an M
+// lift or a drag (plan-card--settle) it returns at once, so nothing moves
+// under a drag. Reduced motion is instant (_row-expansion).
+.week-window .board .plan-card .row-content__reveal {
+  transition: grid-template-rows $enter-ms $standard;
 }
 
-.week-window .board .plan-card--grown > .plan-card__open {
-  position: absolute;
-  inset: -1.5px -1.5px auto 0;
-  isolation: isolate;
-  min-height: calc(100% + 3px);
-  border: 1.5px solid;
-  border-color: inherit;
-  border-left: 0;
-  border-radius: inherit;
-  background: var(--card-face);
-  box-shadow:
-    inset 4px 0 0 var(--stripe, var(--off)),
-    var(--shadow);
+.week-window .board .plan-card--settle .row-content__reveal {
+  transition: none;
 }
 
 .week-window .board .plan-card--grown .row-content > .row-content__compact {
@@ -1351,9 +1390,4 @@ a.week-foot__item:hover,
 .week-window .board .plan-card--grown .row-content > .row-content__reveal {
   grid-template-rows: 1fr;
   visibility: visible;
-}
-
-// Back to rest at once: a collapsing in-flow reveal would push the neighbours.
-.week-window .board .plan-card:not(.plan-card--grown) .row-content__reveal {
-  transition: none;
 }

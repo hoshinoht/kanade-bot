@@ -1,38 +1,36 @@
 <!--
   The Week window's "at a glance" pane while no run is open (WeekRail1, gate
-  G3): what is next, who still owes answers, then the Inbox and the model.
-  From 1200 px wide only; below that the footer carries the same facts (O5).
+  G3): the next run and its party's answers, then the Inbox and the model.
+  The week-wide "still waiting" list lives in the Answers tab and the footer's
+  unanswered count (user decision 2026-10-04). From 1200 px wide only; below
+  that the footer carries the same facts (O5).
 -->
 <script lang="ts">
-  import type { Run, Summary, Week } from '@kanade/api-types';
-  import { BossTag, weekStartLabel } from '@kanade/ui';
-  import type { Owed } from './waiting';
+  import type { Answer, Run, Summary, Week } from '@kanade/api-types';
+  import { ANSWER_MARKS, BossTag, weekStartLabel } from '@kanade/ui';
+  import { memberLabel } from '../names/directory.svelte';
   import { openPlaces } from './waiting';
 
   let {
     summary,
     week,
-    owed,
-    waiting,
     onopen,
-    onanswers,
   }: {
     summary: Summary | null;
     week: Week;
-    owed: Owed[];
-    /** Answers still owed this week (the Answers tab's count). */
-    waiting: number | null;
     onopen: (runId: string) => void;
-    /** Shows the Answers tab, where every waiting member is listed. */
-    onanswers: () => void;
   } = $props();
 
-  const SHOWN = 4;
+  // Who still owes an answer first, then maybe, on and out; board order within each.
+  const ORDER: Answer[] = ['waiting', 'maybe', 'yes', 'no'];
+  const WORD: Record<Answer, string> = { waiting: 'waiting', maybe: 'maybe', yes: 'on', no: 'out' };
   const next = $derived(summary?.next ?? null);
   // The next run's own facts when it is on the week shown.
   const run = $derived<Run | null>(next ? (week.runs.find((r) => r.id === next.run_id) ?? null) : null);
   const art = $derived(run?.bosses.find((b) => b.art)?.art ?? null);
   const maybe = $derived(run ? run.participants.filter((p) => p.answer === 'maybe').length : 0);
+  const party = $derived(run ? ORDER.flatMap((answer) => run.participants.filter((p) => p.answer === answer)) : []);
+  const unanswered = $derived(party.filter((p) => p.answer === 'waiting').length);
 </script>
 
 <aside class="side-pane week-glance" aria-label="At a glance">
@@ -61,26 +59,23 @@
       </section>
     {/if}
 
-    <section class="week-glance__waiting" aria-labelledby="week-glance-waiting">
-      <h2 class="cap week-glance__head" id="week-glance-waiting">
-        Waiting on answers {#if waiting !== null}<span class="week-glance__total mono">{waiting}</span>{/if}
-      </h2>
-      {#if owed.length}
+    {#if run && party.length}
+      <section class="week-glance__party" aria-labelledby="week-glance-party">
+        <h2 class="cap week-glance__head" id="week-glance-party">Party · {run.time ?? 'own time'}</h2>
+        <p class="week-glance__hint" class:week-glance__hint--warn={unanswered > 0}>
+          {unanswered ? `${unanswered} ${unanswered === 1 ? "hasn't" : "haven't"} answered · ping from the sheet` : 'Everyone has answered'}
+        </p>
         <ul class="week-glance__rows">
-          {#each owed.slice(0, SHOWN) as member (member.id)}
-            <li class="week-glance__row">
-              <span class="week-glance__name">{member.name}</span>
-              <span class="week-count mono" aria-label="{member.runs.length} unanswered">{member.runs.length}</span>
+          {#each party as person (person.id)}
+            <li class="week-glance__row week-glance__row--{person.answer}">
+              <span class="week-glance__name">{memberLabel(run.participants, person.id)}</span>
+              <!-- Words beside the mark, never colour alone. -->
+              <span class="week-glance__answer"><span aria-hidden="true">{ANSWER_MARKS[person.answer].mark}</span> {WORD[person.answer]}</span>
             </li>
           {/each}
         </ul>
-        {#if owed.length > SHOWN}
-          <button type="button" class="linklike week-glance__more" onclick={onanswers}>+{owed.length - SHOWN} more in Answers</button>
-        {/if}
-      {:else}
-        <p class="week-glance__none">Everybody has answered every run ahead.</p>
-      {/if}
-    </section>
+      </section>
+    {/if}
   </div>
 
   {#if summary}

@@ -51,9 +51,10 @@
     drag ? (card: HTMLElement) => drag(card, card.querySelector<HTMLElement>('[data-handle]'), run.id, movable) : NOOP,
   );
 
-  // Grow on hover (fine pointers) and on keyboard focus, never on click: the
-  // full face overlays the column from a frozen rest height, so neighbours
-  // never move. A press quiets it until the pointer leaves.
+  // Grow on hover (fine pointers) and on keyboard focus, never on click. The
+  // full face grows in flow (the cards below move down rather than being
+  // covered); a press, a lift or a drag settles it at once (plan-card--settle)
+  // and a press keeps it quiet until the pointer leaves.
   let card = $state<HTMLLIElement>();
   let hovered = $state(false);
   let keyFocus = $state(false);
@@ -70,13 +71,8 @@
     const li = card;
     const was = untrack(() => grown);
     if (!li) return;
-    if (want && !was && canGrow(li)) {
-      li.style.height = `${li.getBoundingClientRect().height}px`;
-      grown = true;
-    } else if (!want && was) {
-      li.style.removeProperty('height');
-      grown = false;
-    }
+    if (want && !was && canGrow(li)) grown = true;
+    else if (!want && was) grown = false;
   });
 </script>
 
@@ -94,6 +90,7 @@
   class:plan-card--swap-target={swapTarget}
   data-run={run.id}
   class:plan-card--grown={grown}
+  class:plan-card--settle={quiet || lifted || dragging}
   data-fid="week-card"
   bind:this={card}
   {@attach dragAttach}

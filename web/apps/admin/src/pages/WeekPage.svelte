@@ -65,13 +65,43 @@
   );
   const filtered = $derived(filtering(filter));
   const count = $derived(shown?.runs.length ?? 0);
-  // Who still owes answers: every run of the week, whatever the filters show.
-  const owed = $derived(store.week ? owedByMember(sortRuns(store.week.runs), runTitle) : []);
+  // The Answers view follows the filters: who still owes answers on the
+  // matching runs (past ones too), and its per-day counts recomputed from them
+  // the way the server counts (any answer is answered, none is waiting).
+  const owed = $derived(owedByMember(sortRuns(matching), runTitle));
+  const answerStats = $derived.by(() => {
+    if (!store.stats || !filtered) return store.stats;
+    const per_day = store.stats.per_day.map((d) => ({ day: d.day, answered: 0, waiting: 0 }));
+    for (const run of matching) {
+      const stat = per_day.find((d) => d.day === run.day);
+      if (!stat) continue;
+      for (const p of run.participants) {
+        if (p.answer === 'waiting') stat.waiting += 1;
+        else stat.answered += 1;
+      }
+    }
+    return { per_day };
+  });
   const waiting = $derived(store.stats ? store.stats.per_day.reduce((n, d) => n + d.waiting, 0) : null);
+  // The channel filter offers only the shown week's party channels (not every
+  // guild channel), named as the runs name them, else the directory, else the id.
+  const partyChannels = $derived.by(() => {
+    const out: { id: string; name: string }[] = [];
+    for (const run of store.week?.runs ?? []) {
+      if (!run.channel_id || out.some((c) => c.id === run.channel_id)) continue;
+      out.push({ id: run.channel_id, name: run.channel || store.channels.find((c) => c.id === run.channel_id)?.name || run.channel_id });
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+  });
+  // A channel with no run in the newly shown week would filter to nothing
+  // behind a select that cannot show it: fall back to all channels.
+  $effect(() => {
+    if (store.week && filter.channel && !partyChannels.some((c) => c.id === filter.channel)) filter.channel = '';
+  });
   const chips = $derived(
     activeFilters(
       filter,
-      (id) => directory.label('channel', id, store.channels.find((c) => c.id === id)?.name ?? ''),
+      (id) => directory.label('channel', id, partyChannels.find((c) => c.id === id)?.name ?? ''),
       (id) => memberLabel(store.members, id),
     ),
   );
@@ -163,7 +193,7 @@
             <a href="/?week=next" aria-current={which === 'next' ? 'page' : undefined}>Next week</a>
           </nav>
         {/if}
-        <Filters bind:filter channels={store.channels} members={store.members} count={chips.length} icon={phone} />
+        <Filters bind:filter channels={partyChannels} members={store.members} count={chips.length} icon={phone} />
         {#if !phone}
           {#if tab === 'planner'}
             <button
@@ -233,7 +263,7 @@
         {:else}
           <!-- Loaded with its tab. -->
           {#await import('../week/AnswersView.svelte') then view}
-            {#if store.stats}<view.default stats={store.stats} week={store.week!} {owed} onmember={showMember} />{/if}
+            {#if answerStats}<view.default stats={answerStats} week={store.week!} {owed} onmember={showMember} />{/if}
           {:catch}
             <!-- After a deploy the old chunk name is gone; only a reload fetches the new one. -->
             <div class="empty" role="alert">
@@ -247,7 +277,7 @@
       {#if selectedRun && pane}
         {@render pane()}
       {:else if glance}
-        <Glance summary={store.summary} week={store.week!} {owed} {waiting} {onopen} onanswers={() => (tab = 'answers')} />
+        <Glance summary={store.summary} week={store.week!} {onopen} />
       {/if}
     </div>
     <footer class="week-window__foot" data-fid="week-foot">

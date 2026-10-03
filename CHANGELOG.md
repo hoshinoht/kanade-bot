@@ -751,6 +751,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- v5 admin Week: At a glance shows the next run's party with each member's
+  answer, waiting first; the run side pane is wider (about 410-480 px from
+  1000 px) and can pop out to the larger run sheet on the same tab.
 - v5 admin selected list rows smoothly grow to reveal their full content across
   Fixed, Week, Inbox, History, Members, Bosses and Config; compact multi-boss
   timings use overlapping portraits, and planner days always keep one card column.
@@ -894,6 +897,15 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 admin Week: the selected run card keeps its artwork and status bar inside
+  its rounded corners, and a hovered card grows in place and pushes the runs
+  below it down instead of covering them.
+- v5 admin Week: the channel filter now filters (it compared the channel id
+  with the channel name the API sends as `party`) and lists only the shown
+  week's party channels.
+- v5 admin run pane: the Changes tab stacks each change so nothing is cut off
+  at the pane edge, and the home channel shows its name; full boss tags no
+  longer repeat their name in a tooltip.
 - v5 chat keeps the persona's schedule wording and puts the run's card under
   it; it replaces a line only when it names a run id, time or date the
   schedule lookup did not return, instead of falling back on any word the

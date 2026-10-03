@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
   import { tick } from 'svelte';
-  import type { Channel, Member } from '@kanade/api-types';
+  import type { Member } from '@kanade/api-types';
   import { Icon } from '@kanade/ui';
   import { filtering, NO_FILTER, type WeekFilter } from './filters';
   import { directory, memberLabel } from '../names/directory.svelte';
@@ -17,7 +17,14 @@
     members,
     count,
     icon = false,
-  }: { filter: WeekFilter; channels: Channel[]; members: Member[]; count: number; icon?: boolean } = $props();
+  }: {
+    filter: WeekFilter;
+    /** The shown week's party channels only. */
+    channels: { id: string; name: string }[];
+    members: Member[];
+    count: number;
+    icon?: boolean;
+  } = $props();
   const uid = $props.id();
   let open = $state(false);
   let button = $state<HTMLButtonElement>();
@@ -76,7 +83,7 @@
       <label class="field"
         ><span>Channel</span>
         <select bind:value={filter.channel}>
-          <option value="">every party</option>
+          <option value="">All channels</option>
           {#each channels as channel (channel.id)}<option value={channel.id}>{directory.label('channel', channel.id, channel.name)}</option>{/each}
         </select>
       </label>

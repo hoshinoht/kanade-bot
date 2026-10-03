@@ -17,7 +17,8 @@ export function applyFilter(runs: Run[], filter: WeekFilter): Run[] {
   const boss = filter.boss.trim().toLowerCase();
   return runs.filter(
     (run) =>
-      (!filter.channel || run.party === filter.channel) &&
+      // The channel id: `party` is the legacy handle, the channel's name in the real API.
+      (!filter.channel || run.channel_id === filter.channel) &&
       (!filter.member || run.participants.some((p) => p.id === filter.member)) &&
       (!boss || run.bosses.some((b) => [b.token, b.key, b.name].some((t) => t.toLowerCase().includes(boss)))),
   );

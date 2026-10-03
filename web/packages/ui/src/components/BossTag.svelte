@@ -13,7 +13,8 @@
 </script>
 
 <!-- v4 macros.boss_line: portrait, name (token on compact cards), pill, level. -->
-<span class="boss" title="{full}{boss.level ? ` · Lv. ${boss.level}` : ''}">
+<!-- Tooltip only when the name is shortened to its token; a full tag already reads it. -->
+<span class="boss" title={short ? `${full}${boss.level ? ` · Lv. ${boss.level}` : ''}` : undefined}>
   {#if portrait}<Portrait {boss} />{/if}
   {#if short}
     <span class="boss__name" aria-hidden="true">{boss.token}</span><span class="vh">{full}</span>

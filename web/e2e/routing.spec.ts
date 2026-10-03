@@ -71,7 +71,7 @@ test('admin: this week / next week toggle, filters, the glance pane and the foot
   // Pinned clock: Tue 29 Sep 12:00, so the next run is tonight's HCarling + HStar.
   await expect(glance).toContainText('10 h');
   await expect(glance.locator('.week-glance__time')).toHaveText('22:00');
-  await expect(glance.getByRole('heading', { name: /Waiting on answers/ })).toBeVisible();
+  await expect(glance.getByRole('heading', { name: /^Party/ })).toBeVisible();
   await expect(glance.getByRole('link', { name: /Inbox/ })).toHaveAttribute('href', '/inbox');
   await expect(glance.getByRole('link', { name: /Model/ })).toContainText('busy');
   await glance.getByRole('button', { name: 'Open sheet' }).click();
