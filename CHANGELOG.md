@@ -6,6 +6,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin Inbox has a read-only **Past** tab listing closed proposals and
+  member requests newest first, each with its outcome, who decided and when,
+  the reason, cited Discord messages and links to the card, its History record
+  and the log entry that staged it; older items load on request.
 - v5 admin API `GET /api/admin/inbox/past` lists closed proposals and member
   requests newest first (outcome, who decided and when, reason, source with
   message links, History record for approvals), paged by `before`/`limit`;

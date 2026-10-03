@@ -79,6 +79,9 @@ for (const [colorway, theme] of LOOKS) {
     await page.getByRole('option', { name: /HFA/ }).click();
     await expect(page.getByText('Changed since the member asked')).toBeVisible();
     await serious(page, 'admin inbox self-service');
+    await page.getByRole('tab', { name: 'Past' }).click();
+    await expect(page.locator('.inbox__detail .past__sentence')).toBeVisible();
+    await serious(page, 'admin inbox past');
     await page.getByRole('link', { name: 'Extractions' }).click();
     await page.getByText('Re-read the party channels').click();
     await serious(page, 'admin extractions');

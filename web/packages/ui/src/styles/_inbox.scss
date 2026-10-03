@@ -668,9 +668,109 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
   display: none;
 }
 
+/* ── Past: closed items, read-only ─────────────────────────────────────── */
+
+// A row leads with the outcome chip (word + mark), then the summary.
+.past__rowhead {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.past__summary { min-width: 0; overflow-wrap: anywhere; }
+.past__outcome-chip { flex: none; display: inline-flex; }
+.past__outcome-chip .status-chip { gap: 4px; }
+.past__outcome-chip .icon { width: 12px; height: 12px; }
+
+// "Load older items" sits under the list's scroller, never inside the listbox.
+.past__more {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  padding: 8px 12px 12px;
+}
+
+.past__more-error { margin: 0 12px 8px; }
+
+.past {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 760px;
+}
+
+.past__head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.past__head > * { margin: 0; }
+.past__title { overflow-wrap: anywhere; }
+
+// Each part of a closed item is a card on the window (mockup `.scard`).
+.past__card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 18px;
+  border-radius: 20px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.past__card > * { margin: 0; }
+
+.past__sentence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: var(--fs-body-sm);
+  font-weight: 700;
+}
+
+.past__reason,
+.past__asked { font-size: var(--fs-small); line-height: 1.45; overflow-wrap: anywhere; }
+.past__reason .cap { margin-right: 0.5em; }
+
+// The evidence is as tall as its messages (the live thread fills the phone's detail; this one does not).
+.past .past__thread { flex: none; }
+
+.past .evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 6px 8px;
+  border: 0;
+  list-style: none;
+}
+
+.past__links {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: var(--fs-small);
+}
+
+.past__links a { display: inline-flex; align-items: center; min-height: 24px; color: var(--ink); }
+
 // Phones and narrow frames: one column; the list, or the detail with the
 // decision as an action bar under the one scrolling thread.
 @media (max-width: 899px) {
+  // Past has no action bar: the item itself is the detail's one scroller.
+  .past {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-width: none;
+    padding-bottom: 12px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
   // Phones keep the plain rows (B_PhoneInbox list): no art, no thread count.
   .inbox__option--art { flex-direction: column; align-items: normal; gap: 3px; padding: 9px 12px; line-height: 1.35; }
   .inbox__option--art .inbox__lines { gap: 3px; }
@@ -823,5 +923,10 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
   box-shadow: 0 -8px 20px -14px rgb(0 0 0 / 35%);
 }
 
+.frame--phone .inbox--compact .past { padding: 4px max(10px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
+// The closed item's header sits on the ground; its cards keep their surface.
+.frame--phone .inbox--compact .past__head,
+.frame--phone .inbox--compact .past__head .cap { color: var(--ground-ink); }
+.frame--phone .inbox--compact .past__title { white-space: normal; }
 .frame--phone .inbox--compact .proposal__slot { flex-wrap: nowrap; }
 .frame--phone .inbox--compact .proposal__to { font-size: var(--fs-lg); white-space: nowrap; }
