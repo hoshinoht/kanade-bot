@@ -12,15 +12,15 @@ use axum::{
 /// present and batches Reporting API deliveries for up to a minute, which
 /// would make "zero reports" unobservable in the e2e suite.
 pub const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; \
-font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; \
-form-action 'self'; frame-ancestors 'none'; report-uri /csp-report";
+media-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; \
+base-uri 'none'; form-action 'self'; frame-ancestors 'none'; report-uri /csp-report";
 
 /// Same policy in report-only mode, adding Trusted Types. `trusted-types kanade-sw`
 /// allow-lists the one policy the apps create, so any pass-through policy a
 /// dependency registers is reported too.
 pub const CSP_REPORT_ONLY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; \
-img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; \
-base-uri 'none'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; \
+img-src 'self' data:; media-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; \
+worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; \
 trusted-types kanade-sw; report-uri /csp-report";
 
 fn cache_policy(path: &str) -> &'static str {
@@ -95,5 +95,12 @@ mod tests {
         }
         assert_eq!(cache_policy("/api/admin/week"), "no-store");
         assert_eq!(cache_policy("/art/entry/Carling"), "public, max-age=3600");
+    }
+
+    #[test]
+    fn both_policies_allow_same_origin_media() {
+        for policy in [super::CSP, super::CSP_REPORT_ONLY] {
+            assert!(policy.contains("; media-src 'self';"), "{policy}");
+        }
     }
 }

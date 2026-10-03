@@ -479,7 +479,7 @@ CORS headers are ever sent.
 | `GET /api/identity`, `/identity/{avatar,banner}` | yes | yes |
 | `GET /api/public/status` | 404 | `{portal: "closed"}` |
 | `/api/public/*`, `/art/*` | 404 / art | `503 closed` |
-| `GET /art/{portraits,icons,entry}/{key}` | file or 404 | `503 closed` |
+| `GET /art/{portraits,icons,entry,animated}/{key}` (`animated` honours a single byte `Range`) | file or 404 | `503 closed` |
 | other `GET`/`HEAD` | the app's static files; extensionless paths get `index.html`, missing files 404 | same, public app |
 
 Admin API handlers take the `AdminSession` extractor (`src/api/auth/`);

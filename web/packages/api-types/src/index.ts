@@ -291,6 +291,8 @@ export interface Knowledge {
   /** null for event bosses outside the catalog. */
   level: number | null;
   portrait: string | null;
+  /** Looping MP4 (`/art/animated/{key}`, byte ranges); null where the deployment has none. Poster: the still entry art. */
+  animated: string | null;
   hue: number;
   researched_as_of: string | null;
   path: string;
@@ -309,6 +311,8 @@ export interface EventBoss {
   /** The icon, else the portrait. */
   portrait_sm: string | null;
   art: string | null;
+  /** Looping MP4 named by the key; null where the deployment has none. */
+  animated: string | null;
 }
 
 /** A card the bot will post or posted: `queued` later, `due` now, `sent`, `stale` (retired unposted). */

@@ -155,8 +155,9 @@ whole; unknown or read-only keys are refused with 422.
 | `DELETE /api/admin/fixed/{id}` | — | `{cancelled}` | Retire; names how many upcoming runs cancel. **Implemented** (live runs in the three materialised weeks). |
 | `POST /api/admin/validate/bosses` | `{text}` | `ValidateResult` | Debounced bosscheck. **Implemented** (catalog parser; refusals are `422 invalid` with the parser's message). |
 | `GET /api/admin/bosses` | — | `BossRow[]` | **Implemented**; keys are catalog short names (`MaleficStar`, exact case, as `/art/*` keys); hue from the catalog guide colour. |
-| `GET /api/admin/bosses/events` | — | `EventBoss[]` | New in v5. **Implemented**. |
-| `GET /api/admin/bosses/{key}/knowledge` | — | `Knowledge` | Schema v2, served from `boss/knowledge/*.yaml`. **Implemented**; unknown or non-alphanumeric keys are 404. |
+| `GET /api/admin/bosses/events` | — | `EventBoss[]` | New in v5. **Implemented**; `animated` as on `Knowledge`. |
+| `GET /api/admin/bosses/{key}/knowledge` | — | `Knowledge` | Schema v2, served from `boss/knowledge/*.yaml`. **Implemented**; unknown or non-alphanumeric keys are 404. `animated` (additive, nullable) is `/art/animated/{key}` when the deployment has the boss's MP4, else `null`; clients play it muted with the still `art`/entry image as its poster. |
+| `GET /art/{portraits,icons,entry,animated}/{key}` | — | file | Admin origin (public: `503 closed`). Catalog keys (exact case, through the portrait basename) or event keys; still kinds serve png/webp/jpg/jpeg only, `animated` serves `boss/artwork/animated/{basename}.mp4` (`video/mp4`) only. `animated` answers `Accept-Ranges: bytes`, a strong `ETag` (`If-None-Match` → 304, a stale `If-Range` → whole file), one `bytes=a-b`/`a-`/`-n` range as `206` with `Content-Range`, and a range past the end as `416` with `Content-Range: bytes */len`; multi-range or malformed `Range` headers are ignored (`200`, whole file). Absent art is `404`. |
 
 ## Kanade (inbox, extractions, chat, limits)
 

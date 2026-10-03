@@ -13,12 +13,12 @@ use axum::{
 use crate::api::listeners::{Origin, Site};
 
 pub const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; \
-font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; \
-form-action 'self'; frame-ancestors 'none'";
+media-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; \
+base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
 pub const CSP_REPORT_ONLY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; \
-img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; \
-base-uri 'none'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; \
+img-src 'self' data:; media-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; \
+worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; \
 trusted-types kanade-sw";
 
 pub const HSTS: &str = "max-age=31536000; includeSubDomains";

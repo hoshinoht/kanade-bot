@@ -14,6 +14,12 @@ unset serves generated stand-ins), `KANADE_BOT_NAME`, `ADMIN_PORT`,
 `PUBLIC_PORT`, and `KANADE_MOCK_NOW` (RFC 3339 UTC instant, e.g.
 `2026-09-29T12:00:00Z`) to pin the clock for tests.
 
+Art is `/art/{portraits,icons,entry}/{key}` (png/webp/jpg/jpeg) and
+`/art/animated/{key}` (`artwork/animated/{key}.mp4`, `video/mp4`), which, like
+the Rust API, answers single byte ranges (`206`, `416` past the end; multi-range
+or malformed `Range` gets the whole file) with `Accept-Ranges`, an ETag and
+`If-Range`.
+
 Admin writes follow the server's API-5 contract (`src/writes.rs`): every
 `POST`/`PATCH`/`DELETE` under `/api/admin/` (except the e2e `reset`) needs the
 `X-Kanade-CSRF` token that `GET /api/admin/session` answers with (`403 csrf`),

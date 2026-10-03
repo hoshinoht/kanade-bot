@@ -1,7 +1,10 @@
 //! Boss knowledge from the tracked `boss/knowledge/*.yaml` (schema v2). The
 //! files are public, so the mock serves them as they are.
 
-use super::{MoveError, Store, catalog::Catalog};
+use super::{
+    MoveError, Store,
+    catalog::{Catalog, Kind},
+};
 use serde::Serialize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -12,6 +15,8 @@ pub struct Knowledge {
     pub name: String,
     pub level: Option<u16>,
     pub portrait: Option<String>,
+    /// The looping MP4 (`/art/animated/{key}`); null where the deployment has none.
+    pub animated: Option<String>,
     pub hue: u16,
     pub researched_as_of: Option<String>,
     pub path: String,
@@ -28,6 +33,7 @@ pub struct EventBoss {
     pub portrait: Option<String>,
     pub portrait_sm: Option<String>,
     pub art: Option<String>,
+    pub animated: Option<String>,
 }
 
 fn read(path: &Path) -> Option<Value> {
@@ -80,6 +86,7 @@ impl KnowledgeDir {
                 let key = doc.get("boss")?.as_str()?.to_owned();
                 let (portrait, portrait_sm, art) = catalog.event_art(&key);
                 Some(EventBoss {
+                    animated: catalog.event_url(Kind::Animated, &key),
                     key,
                     event,
                     summary: doc.get("summary").cloned().unwrap_or(Value::Null),
@@ -103,10 +110,13 @@ impl Store {
             .unwrap_or(key)
             .to_owned();
         let row = self.boss_rows().into_iter().find(|r| r.key == key);
-        let portrait = match &row {
-            Some(r) => r.portrait.clone(),
-            None if doc.get("event").is_some() => self.catalog().event_art(&key).0,
-            None => None,
+        let (portrait, animated) = match &row {
+            Some(r) => (r.portrait.clone(), self.catalog().url(Kind::Animated, &key)),
+            None if doc.get("event").is_some() => (
+                self.catalog().event_url(Kind::Portrait, &key),
+                self.catalog().event_url(Kind::Animated, &key),
+            ),
+            None => (None, None),
         };
         Ok(Knowledge {
             name: row
@@ -114,6 +124,7 @@ impl Store {
                 .map_or_else(|| key.clone(), |r| r.name.to_owned()),
             level: row.as_ref().map(|r| r.level),
             portrait,
+            animated,
             hue: row.as_ref().map_or(0, |r| r.hue),
             in_use: row
                 .map(|r| {
@@ -167,8 +178,8 @@ mod tests {
         let kai = events.iter().find(|e| e.key == "Kai").unwrap();
         // No art in this deployment: null, never a broken URL.
         assert_eq!(
-            (&kai.portrait, &kai.portrait_sm, &kai.art),
-            (&None, &None, &None)
+            (&kai.portrait, &kai.portrait_sm, &kai.art, &kai.animated),
+            (&None, &None, &None, &None)
         );
     }
 
@@ -191,6 +202,9 @@ mod tests {
                 ("boss/portraits/StarWyrm.png", "art"),
                 ("boss/portraits/icon/StarWyrm.png", "art"),
                 ("boss/artwork/entry/StarWyrm.png", "art"),
+                ("boss/artwork/animated/StarWyrm.mp4", "art"),
+                ("boss/portraits/ReelWyrm.mp4", "art"),
+                ("boss/artwork/animated/StillWyrm.png", "art"),
                 ("boss/portraits/PlainWyrm.png", "art"),
             ] {
                 let path = root.join(path);
@@ -219,6 +233,10 @@ mod tests {
         assert_eq!(wyrm.portrait.as_deref(), Some("/art/portraits/StarWyrm"));
         assert_eq!(wyrm.portrait_sm.as_deref(), Some("/art/icons/StarWyrm"));
         assert_eq!(wyrm.art.as_deref(), Some("/art/entry/StarWyrm"));
+        assert_eq!(wyrm.animated.as_deref(), Some("/art/animated/StarWyrm"));
+        // Still kinds never serve video, and `animated` never serves stills.
+        assert!(catalog.event_file(Kind::Portrait, "ReelWyrm").is_none());
+        assert!(catalog.event_file(Kind::Animated, "StillWyrm").is_none());
 
         assert!(dir.is_event("StarWyrm"));
         for key in ["starwyrm", "STARWYRM", "MoonWyrm", "PlainWyrm", "../etc"] {
@@ -232,6 +250,7 @@ mod tests {
             .ok()
             .unwrap();
         assert_eq!(k.portrait.as_deref(), Some("/art/portraits/StarWyrm"));
+        assert_eq!(k.animated.as_deref(), Some("/art/animated/StarWyrm"));
         let plain = Store::new(Catalog::new(fixture.0.join("boss")))
             .knowledge_v2(&dir, "PlainWyrm")
             .ok()

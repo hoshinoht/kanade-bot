@@ -138,12 +138,13 @@
     "Knowledge": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["key", "name", "level", "portrait", "hue", "researched_as_of", "path", "in_use", "doc"],
+      "required": ["key", "name", "level", "portrait", "animated", "hue", "researched_as_of", "path", "in_use", "doc"],
       "properties": {
         "key": { "type": "string" },
         "name": { "type": "string" },
         "level": { "type": ["integer", "null"] },
         "portrait": { "$ref": "common.json#/$defs/NullableString" },
+        "animated": { "$ref": "common.json#/$defs/NullableString" },
         "hue": { "type": "integer", "minimum": 0, "maximum": 359 },
         "researched_as_of": { "$ref": "common.json#/$defs/NullableString" },
         "path": { "type": "string" },
@@ -154,14 +155,15 @@
     "EventBoss": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["key", "event", "summary", "portrait", "portrait_sm", "art"],
+      "required": ["key", "event", "summary", "portrait", "portrait_sm", "art", "animated"],
       "properties": {
         "key": { "type": "string" },
         "event": { "$ref": "#/$defs/EventInfo" },
         "summary": { "type": "string" },
         "portrait": { "$ref": "common.json#/$defs/NullableString" },
         "portrait_sm": { "$ref": "common.json#/$defs/NullableString" },
-        "art": { "$ref": "common.json#/$defs/NullableString" }
+        "art": { "$ref": "common.json#/$defs/NullableString" },
+        "animated": { "$ref": "common.json#/$defs/NullableString" }
       }
     },
     "EventBosses": { "type": "array", "items": { "$ref": "#/$defs/EventBoss" } }

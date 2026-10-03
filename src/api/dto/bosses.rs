@@ -88,6 +88,8 @@ pub struct Knowledge {
     pub name: String,
     pub level: Option<u64>,
     pub portrait: Option<String>,
+    /// The looping MP4 (`/art/animated/{key}`); null where the deployment has none.
+    pub animated: Option<String>,
     pub hue: u16,
     pub researched_as_of: Option<String>,
     pub path: String,
@@ -107,16 +109,19 @@ pub fn knowledge(
     let key = doc.get("boss").and_then(Value::as_str)?.to_owned();
     let boss = catalog.boss(&key);
     let in_use = in_use_tokens(fixed);
-    let portrait = match boss {
-        Some(boss) => art.url("portraits", &key, boss.portrait().unwrap_or(&key)),
-        // Event bosses' art is named by their key (`/art` resolves them the same way).
-        None if doc.get("event").is_some() => art.url("portraits", &key, &key),
+    // Event bosses' art is named by their key (`/art` resolves them the same way).
+    let basename = match boss {
+        Some(boss) => Some(boss.portrait().unwrap_or(&key)),
+        None if doc.get("event").is_some() => Some(key.as_str()),
         None => None,
     };
+    let url = |kind| basename.and_then(|basename| art.url(kind, &key, basename));
+    let (portrait, animated) = (url("portraits"), url("animated"));
     Some(Knowledge {
         name: boss.map_or_else(|| key.clone(), |boss| boss.full().to_owned()),
         level: boss.and_then(|boss| boss.level()),
         portrait,
+        animated,
         hue: boss.map_or(0, |boss| hue(boss.guide_colour())),
         researched_as_of: read_yaml(&dir.join("_meta.yaml"))
             .and_then(|meta| meta.get("researched_as_of")?.as_str().map(str::to_owned)),
@@ -143,6 +148,7 @@ pub struct EventBoss {
     pub portrait: Option<String>,
     pub portrait_sm: Option<String>,
     pub art: Option<String>,
+    pub animated: Option<String>,
 }
 
 /// Whether an event document declares exactly `key` (case-sensitive), so
@@ -183,6 +189,7 @@ pub fn events(dir: &Path, art: &Art<'_>) -> Vec<EventBoss> {
                 portrait_sm: art.url("icons", &key, &key).or_else(|| portrait.clone()),
                 portrait,
                 art: art.url("entry", &key, &key),
+                animated: art.url("animated", &key, &key),
                 key,
             })
         })

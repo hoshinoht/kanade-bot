@@ -527,6 +527,7 @@ impl Reads {
         let fixture = Fixture::new();
         // Mixed case on purpose: Linux CI is case-sensitive.
         write(&fixture.root, "boss/portraits/MaleficStar.png");
+        write(&fixture.root, "boss/artwork/animated/MaleficStar.mp4");
         write(&fixture.root, "boss/portraits/icon/Kalos.png");
         write(&fixture.root, "boss/artwork/entry/Kalos.webp");
         // An invented event boss outside the catalog, with all three kinds of art.
@@ -534,6 +535,7 @@ impl Reads {
         write(&fixture.root, "boss/portraits/StarWyrm.png");
         write(&fixture.root, "boss/portraits/icon/StarWyrm.png");
         write(&fixture.root, "boss/artwork/entry/StarWyrm.png");
+        write(&fixture.root, "boss/artwork/animated/StarWyrm.mp4");
 
         let access = Arc::new(GuildAccess::new(
             AccessPolicy {
@@ -1125,6 +1127,7 @@ async fn bosses_events_and_knowledge() {
         .await;
     assert_eq!(star["name"], "Radiant Malefic Star");
     assert_eq!(star["path"], "boss/knowledge/maleficstar.yaml");
+    assert_eq!(star["animated"], "/art/animated/MaleficStar");
     let kalos = reads
         .read(
             "/api/admin/bosses/Kalos/knowledge",
@@ -1132,6 +1135,7 @@ async fn bosses_events_and_knowledge() {
         )
         .await;
     assert_eq!(kalos["in_use"], serde_json::json!(["x"]));
+    assert_eq!(kalos["animated"], Value::Null, "absent animation is null");
     for path in [
         "/api/admin/bosses/Nobody/knowledge",
         "/api/admin/bosses/..%2F..%2Fetc/knowledge",
@@ -1161,6 +1165,7 @@ async fn event_bosses_carry_and_serve_their_art() {
     assert_eq!(wyrm["portrait"], "/art/portraits/StarWyrm");
     assert_eq!(wyrm["portrait_sm"], "/art/icons/StarWyrm");
     assert_eq!(wyrm["art"], "/art/entry/StarWyrm");
+    assert_eq!(wyrm["animated"], "/art/animated/StarWyrm");
     // Absent art stays null.
     let kai = events
         .as_array()
@@ -1169,8 +1174,13 @@ async fn event_bosses_carry_and_serve_their_art() {
         .find(|event| event["key"] == "Kai")
         .expect("tracked event");
     assert_eq!(
-        (&kai["portrait"], &kai["portrait_sm"], &kai["art"]),
-        (&Value::Null, &Value::Null, &Value::Null)
+        (
+            &kai["portrait"],
+            &kai["portrait_sm"],
+            &kai["art"],
+            &kai["animated"]
+        ),
+        (&Value::Null, &Value::Null, &Value::Null, &Value::Null)
     );
 
     let knowledge = reads
@@ -1180,11 +1190,13 @@ async fn event_bosses_carry_and_serve_their_art() {
         )
         .await;
     assert_eq!(knowledge["portrait"], "/art/portraits/StarWyrm");
+    assert_eq!(knowledge["animated"], "/art/animated/StarWyrm");
 
     for path in [
         "/art/portraits/StarWyrm",
         "/art/icons/StarWyrm",
         "/art/entry/StarWyrm",
+        "/art/animated/StarWyrm",
     ] {
         let reply = request(reads.admin, "GET", ADMIN_HOST, path, &[]).await;
         assert_eq!(reply.status, 200, "{path}");
@@ -1195,6 +1207,7 @@ async fn event_bosses_carry_and_serve_their_art() {
         "/art/portraits/starwyrm",
         "/art/portraits/STARWYRM",
         "/art/icons/starWyrm",
+        "/art/animated/starwyrm",
         // Unknown key.
         "/art/portraits/MoonWyrm",
         // A document without `event`, outside the catalog, whose art file exists.
@@ -1238,7 +1251,24 @@ async fn every_read_needs_a_session_and_art_uses_catalog_keys() {
     )
     .await;
     assert_eq!(art.status, 200);
-    for path in ["/art/portraits/maleficstar", "/art/portraits/Lucid"] {
+    let animated = request(
+        reads.admin,
+        "GET",
+        ADMIN_HOST,
+        "/art/animated/MaleficStar",
+        &[("Range", "bytes=1-")],
+    )
+    .await;
+    assert_eq!(
+        (animated.status, animated.body.as_slice()),
+        (206, &b"rt"[..])
+    );
+    for path in [
+        "/art/portraits/maleficstar",
+        "/art/portraits/Lucid",
+        "/art/animated/maleficstar",
+        "/art/animated/Lucid",
+    ] {
         let reply = request(reads.admin, "GET", ADMIN_HOST, path, &[]).await;
         assert_eq!(reply.status, 404, "{path}: exact catalog keys only");
     }

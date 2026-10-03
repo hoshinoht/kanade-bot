@@ -197,3 +197,10 @@ async fn slow_handlers_time_out_with_a_generic_error() {
     assert_eq!(reply.status, 503);
     assert_eq!(reply.api_error(), "timeout");
 }
+
+#[test]
+fn both_policies_allow_same_origin_media() {
+    for policy in [headers::CSP, headers::CSP_REPORT_ONLY] {
+        assert!(policy.contains("; media-src 'self';"), "{policy}");
+    }
+}

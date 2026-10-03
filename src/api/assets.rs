@@ -20,6 +20,8 @@ use serde::Serialize;
 use super::{dto::bosses::is_event, error::ApiError, listeners::Site};
 
 const ART_SUFFIXES: [&str; 4] = ["png", "webp", "jpg", "jpeg"];
+/// The `animated` kind only; still kinds never serve video.
+const VIDEO_SUFFIXES: [&str; 1] = ["mp4"];
 /// Cached identity art, in lookup order (`bot::identity` writes these).
 pub const IDENTITY_SUFFIXES: [&str; 5] = ["png", "webp", "jpg", "jpeg", "gif"];
 
@@ -158,10 +160,11 @@ pub async fn banner(State(site): State<Arc<Site>>, headers: HeaderMap) -> Respon
     identity_image(&site, "banner", &headers).await
 }
 
-/// `/art/{portraits,icons,entry}/{key}`; absent art is a plain 404 ("absent means absent").
+/// `/art/{portraits,icons,entry,animated}/{key}`; absent art is a plain 404 ("absent means absent").
 pub async fn art(
     State(site): State<Arc<Site>>,
     path: Result<UrlPath<(String, String)>, PathRejection>,
+    request: HeaderMap,
 ) -> Response {
     let Ok(UrlPath((kind, key))) = path else {
         return ApiError::NOT_FOUND.into_response();
@@ -183,18 +186,20 @@ pub async fn art(
         None => key,
     };
     match art_file(site.boss_dir.as_deref(), &kind, &basename) {
+        Some(path) if kind == "animated" => send_ranged(&path, &request).await,
         Some(path) => send(&path).await,
         None => ApiError::NOT_FOUND.into_response(),
     }
 }
 
-/// The art file for `kind` (`portraits`, `icons`, `entry`) and a basename, if present.
+/// The art file for `kind` (`portraits`, `icons`, `entry`, `animated`) and a basename, if present.
 /// Basenames are plain (mixed case allowed, as catalog keys like `MaleficStar`).
 pub fn art_file(root: Option<&Path>, kind: &str, basename: &str) -> Option<PathBuf> {
-    let dir = match kind {
-        "portraits" => "portraits",
-        "icons" => "portraits/icon",
-        "entry" => "artwork/entry",
+    let (dir, suffixes): (&str, &[&str]) = match kind {
+        "portraits" => ("portraits", &ART_SUFFIXES),
+        "icons" => ("portraits/icon", &ART_SUFFIXES),
+        "entry" => ("artwork/entry", &ART_SUFFIXES),
+        "animated" => ("artwork/animated", &VIDEO_SUFFIXES),
         _ => return None,
     };
     let plain = (1..=64).contains(&basename.len())
@@ -202,9 +207,125 @@ pub fn art_file(root: Option<&Path>, kind: &str, basename: &str) -> Option<PathB
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-');
     let root = root.filter(|_| plain)?;
-    ART_SUFFIXES
+    suffixes
         .iter()
         .find_map(|suffix| contained(root, &Path::new(dir).join(format!("{basename}.{suffix}"))))
+}
+
+/// The byte range a `Range` header asks of a `len`-byte body (RFC 9110 §14).
+#[derive(Debug, PartialEq, Eq)]
+enum ByteRange {
+    /// No usable range: absent, another unit, malformed or multi-range (all ignored, so 200).
+    Full,
+    /// Inclusive `first..=last`, already clamped to the body.
+    Part(u64, u64),
+    /// A valid single range wholly past the end (416).
+    Unsatisfiable,
+}
+
+fn byte_range(header: Option<&str>, len: u64) -> ByteRange {
+    let digits = |text: &str| {
+        (!text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()))
+            .then(|| text.parse::<u64>().ok())
+            .flatten()
+    };
+    let Some(spec) = header.map(str::trim).and_then(|value| {
+        let (unit, spec) = (value.get(..6)?, value.get(6..)?);
+        unit.eq_ignore_ascii_case("bytes=").then(|| spec.trim())
+    }) else {
+        return ByteRange::Full;
+    };
+    let Some((first, last)) = spec.split_once('-').filter(|_| !spec.contains(',')) else {
+        return ByteRange::Full;
+    };
+    let (first, last) = (first.trim(), last.trim());
+    if first.is_empty() {
+        return match digits(last) {
+            None => ByteRange::Full,
+            Some(0) => ByteRange::Unsatisfiable,
+            Some(_) if len == 0 => ByteRange::Unsatisfiable,
+            Some(suffix) => ByteRange::Part(len.saturating_sub(suffix), len - 1),
+        };
+    }
+    let Some(first) = digits(first) else {
+        return ByteRange::Full;
+    };
+    let last = match last {
+        "" => u64::MAX,
+        text => match digits(text) {
+            Some(last) if last >= first => last,
+            _ => return ByteRange::Full,
+        },
+    };
+    if first >= len {
+        ByteRange::Unsatisfiable
+    } else {
+        ByteRange::Part(first, last.min(len - 1))
+    }
+}
+
+/// A strong validator from size and mtime, so `If-Range` can resume a download.
+fn file_etag(meta: &std::fs::Metadata) -> String {
+    let modified = meta
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map_or(0, |since| since.as_nanos());
+    format!("\"{:x}-{modified:x}\"", meta.len())
+}
+
+/// Video with byte ranges: Safari (and iOS PWAs) will not play media without `206`.
+async fn send_ranged(path: &Path, request: &HeaderMap) -> Response {
+    let (Ok(meta), Ok(bytes)) = (tokio::fs::metadata(path).await, tokio::fs::read(path).await)
+    else {
+        return ApiError::NOT_FOUND.into_response();
+    };
+    ranged(content_type(path), file_etag(&meta), bytes, request)
+}
+
+fn ranged(
+    content_type: &'static str,
+    etag: String,
+    bytes: Vec<u8>,
+    request: &HeaderMap,
+) -> Response {
+    let text = |name| request.get(name).and_then(|value| value.to_str().ok());
+    let fresh = text(header::IF_NONE_MATCH)
+        .is_some_and(|tags| tags.split(',').any(|tag| tag.trim() == etag));
+    if fresh {
+        return (StatusCode::NOT_MODIFIED, [(header::ETAG, etag)]).into_response();
+    }
+    // An `If-Range` that no longer matches (or is a date: no Last-Modified is sent) asks for the whole file.
+    let current = text(header::IF_RANGE).is_none_or(|tag| tag.trim() == etag);
+    let len = bytes.len() as u64;
+    let range = if current {
+        byte_range(text(header::RANGE), len)
+    } else {
+        ByteRange::Full
+    };
+    let common = [
+        (header::CONTENT_TYPE, content_type.to_owned()),
+        (header::ACCEPT_RANGES, "bytes".to_owned()),
+        (header::ETAG, etag),
+    ];
+    match range {
+        ByteRange::Full => (StatusCode::OK, common, bytes).into_response(),
+        ByteRange::Part(first, last) => (
+            StatusCode::PARTIAL_CONTENT,
+            common,
+            [(header::CONTENT_RANGE, format!("bytes {first}-{last}/{len}"))],
+            bytes[first as usize..=last as usize].to_vec(),
+        )
+            .into_response(),
+        ByteRange::Unsatisfiable => (
+            StatusCode::RANGE_NOT_SATISFIABLE,
+            [
+                (header::ACCEPT_RANGES, "bytes".to_owned()),
+                (header::CONTENT_RANGE, format!("bytes */{len}")),
+            ],
+        )
+            .into_response(),
+    }
 }
 
 /// Paths owned by the server (in any case, or after a doubled slash): never the SPA shell.
@@ -296,6 +417,7 @@ fn content_type(path: &Path) -> &'static str {
         Some("jpg" | "jpeg") => "image/jpeg",
         Some("gif") => "image/gif",
         Some("ico") => "image/x-icon",
+        Some("mp4") => "video/mp4",
         Some("woff2") => "font/woff2",
         Some("woff") => "font/woff",
         Some("txt") => "text/plain; charset=utf-8",
@@ -305,7 +427,36 @@ fn content_type(path: &Path) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{relative, reserved};
+    use super::{ByteRange, byte_range, relative, reserved};
+
+    #[test]
+    fn single_byte_ranges_parse_and_everything_else_is_ignored_or_unsatisfiable() {
+        use ByteRange::{Full, Part, Unsatisfiable};
+        for (header, expected) in [
+            ("bytes=0-9", Part(0, 9)),
+            ("bytes=2-", Part(2, 99)),
+            ("bytes=90-500", Part(90, 99)),
+            ("bytes=-10", Part(90, 99)),
+            ("bytes=-500", Part(0, 99)),
+            ("Bytes= 5-5 ", Part(5, 5)),
+            ("bytes=100-", Unsatisfiable),
+            ("bytes=100-200", Unsatisfiable),
+            ("bytes=-0", Unsatisfiable),
+            ("bytes=0-1,5-6", Full),
+            ("bytes=5-3", Full),
+            ("bytes=+1-2", Full),
+            ("bytes=x-", Full),
+            ("bytes=-", Full),
+            ("bytes=", Full),
+            ("items=0-1", Full),
+            ("bytés=0-1", Full),
+        ] {
+            assert_eq!(byte_range(Some(header), 100), expected, "{header}");
+        }
+        assert_eq!(byte_range(None, 100), Full);
+        assert_eq!(byte_range(Some("bytes=0-"), 0), Unsatisfiable);
+        assert_eq!(byte_range(Some("bytes=-1"), 0), Unsatisfiable);
+    }
 
     #[test]
     fn only_plain_segments_reach_the_filesystem() {

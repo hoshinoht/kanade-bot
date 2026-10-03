@@ -5,6 +5,8 @@ use super::dto::Boss;
 use std::path::{Path, PathBuf};
 
 pub const SUFFIXES: [&str; 4] = ["png", "webp", "jpg", "jpeg"];
+/// `animated` only; still kinds never serve video.
+const VIDEO_SUFFIXES: [&str; 1] = ["mp4"];
 
 struct Def {
     key: &'static str,
@@ -227,6 +229,7 @@ pub enum Kind {
     Portrait,
     Icon,
     Entry,
+    Animated,
 }
 
 impl Kind {
@@ -235,6 +238,7 @@ impl Kind {
             "portraits" => Some(Self::Portrait),
             "icons" => Some(Self::Icon),
             "entry" => Some(Self::Entry),
+            "animated" => Some(Self::Animated),
             _ => None,
         }
     }
@@ -244,6 +248,14 @@ impl Kind {
             Self::Portrait => "portraits",
             Self::Icon => "portraits/icon",
             Self::Entry => "artwork/entry",
+            Self::Animated => "artwork/animated",
+        }
+    }
+
+    fn suffixes(self) -> &'static [&'static str] {
+        match self {
+            Self::Animated => &VIDEO_SUFFIXES,
+            _ => &SUFFIXES,
         }
     }
 
@@ -252,6 +264,7 @@ impl Kind {
             Self::Portrait => "/art/portraits/",
             Self::Icon => "/art/icons/",
             Self::Entry => "/art/entry/",
+            Self::Animated => "/art/animated/",
         }
     }
 }
@@ -284,22 +297,25 @@ impl Catalog {
 
     fn named(&self, kind: Kind, basename: &str) -> Option<PathBuf> {
         let dir = self.root.join(kind.dir());
-        SUFFIXES
+        kind.suffixes()
             .iter()
             .map(|s| dir.join(format!("{basename}.{s}")))
             .find(|p| p.is_file())
     }
 
-    fn url(&self, kind: Kind, key: &str) -> Option<String> {
+    pub fn url(&self, kind: Kind, key: &str) -> Option<String> {
         self.file(kind, key).map(|_| format!("{}{key}", kind.url()))
+    }
+
+    /// An event boss's art URL, named by its key.
+    pub fn event_url(&self, kind: Kind, key: &str) -> Option<String> {
+        self.event_file(kind, key)
+            .map(|_| format!("{}{key}", kind.url()))
     }
 
     /// An event boss's `(portrait, portrait_sm, art)` URLs, as on `Boss`.
     pub fn event_art(&self, key: &str) -> (Option<String>, Option<String>, Option<String>) {
-        let url = |kind: Kind| {
-            self.event_file(kind, key)
-                .map(|_| format!("{}{key}", kind.url()))
-        };
+        let url = |kind: Kind| self.event_url(kind, key);
         let portrait = url(Kind::Portrait);
         (
             portrait.clone(),
@@ -360,6 +376,7 @@ pub fn content_type(path: &Path) -> &'static str {
         Some("jpg" | "jpeg") => "image/jpeg",
         Some("svg") => "image/svg+xml",
         Some("gif") => "image/gif",
+        Some("mp4") => "video/mp4",
         _ => "image/png",
     }
 }

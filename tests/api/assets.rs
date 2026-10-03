@@ -237,3 +237,126 @@ async fn public_identity_shows_the_live_name_but_never_the_bot_id() {
     let avatar = get(public, PUBLIC_HOST, "/identity/avatar").await;
     assert!(avatar.text().contains(">Y</text>"));
 }
+
+/// Ten invented bytes; never the private art.
+const CLIP: &[u8] = b"0123456789";
+
+fn with_clip(fixture: &Fixture) {
+    let dir = fixture.path("boss/artwork/animated");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("Carling.mp4"), CLIP).unwrap();
+}
+
+#[tokio::test]
+async fn animated_art_serves_mp4_with_byte_ranges() {
+    let fixture = Fixture::new();
+    with_clip(&fixture);
+    let admin = support::admin(&fixture.http()).await;
+    let path = "/art/animated/Carling";
+
+    let full = get(admin, ADMIN_HOST, path).await;
+    assert_eq!(full.status, 200);
+    assert_eq!(full.body, CLIP);
+    assert_eq!(full.header("content-type"), Some("video/mp4"));
+    assert_eq!(full.header("accept-ranges"), Some("bytes"));
+    assert_eq!(full.header("content-length"), Some("10"));
+    assert_eq!(full.header("cache-control"), Some("public, max-age=3600"));
+    let etag = full.header("etag").unwrap().to_owned();
+
+    for (range, status, content_range, body) in [
+        ("bytes=2-5", 206, Some("bytes 2-5/10"), &b"2345"[..]),
+        ("bytes=7-", 206, Some("bytes 7-9/10"), b"789"),
+        ("bytes=-3", 206, Some("bytes 7-9/10"), b"789"),
+        ("bytes=8-99", 206, Some("bytes 8-9/10"), b"89"),
+        ("bytes=10-", 416, Some("bytes */10"), b""),
+        ("bytes=-0", 416, Some("bytes */10"), b""),
+        // Multi-range and malformed headers are ignored: the whole file.
+        ("bytes=0-1,4-5", 200, None, CLIP),
+        ("bytes=5-2", 200, None, CLIP),
+        ("lines=0-1", 200, None, CLIP),
+    ] {
+        let reply = request(admin, "GET", ADMIN_HOST, path, &[("Range", range)]).await;
+        assert_eq!(reply.status, status, "{range}");
+        assert_eq!(reply.header("content-range"), content_range, "{range}");
+        assert_eq!(reply.body, body, "{range}");
+        assert_eq!(reply.header("accept-ranges"), Some("bytes"), "{range}");
+        assert_eq!(
+            reply.header("content-length"),
+            Some(body.len().to_string().as_str()),
+            "{range}"
+        );
+        if status == 416 {
+            assert_eq!(reply.header("cache-control"), Some("no-store"));
+        } else {
+            assert_eq!(reply.header("content-type"), Some("video/mp4"));
+        }
+    }
+
+    // A stale `If-Range` validator gets the whole (changed) file; a current one gets the range.
+    let stale = request(
+        admin,
+        "GET",
+        ADMIN_HOST,
+        path,
+        &[("Range", "bytes=0-1"), ("If-Range", "\"old\"")],
+    )
+    .await;
+    assert_eq!((stale.status, stale.body.as_slice()), (200, CLIP));
+    let current = request(
+        admin,
+        "GET",
+        ADMIN_HOST,
+        path,
+        &[("Range", "bytes=0-1"), ("If-Range", &etag)],
+    )
+    .await;
+    assert_eq!((current.status, current.body.as_slice()), (206, &b"01"[..]));
+    let revalidated = request(admin, "GET", ADMIN_HOST, path, &[("If-None-Match", &etag)]).await;
+    assert_eq!(revalidated.status, 304);
+    assert!(revalidated.body.is_empty());
+
+    let head = request(admin, "HEAD", ADMIN_HOST, path, &[("Range", "bytes=0-3")]).await;
+    assert_eq!(head.status, 206);
+    assert_eq!(head.header("content-range"), Some("bytes 0-3/10"));
+    assert!(head.body.is_empty());
+}
+
+#[tokio::test]
+async fn still_kinds_never_serve_video_and_animated_never_serves_stills() {
+    let fixture = Fixture::new();
+    with_clip(&fixture);
+    for (relative, body) in [
+        ("boss/portraits/Reel.mp4", CLIP),
+        ("boss/portraits/icon/Reel.mp4", CLIP),
+        ("boss/artwork/entry/Reel.mp4", CLIP),
+        ("boss/artwork/animated/Still.png", b"\x89PNG still"),
+    ] {
+        let path = fixture.path(relative);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, body).unwrap();
+    }
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(
+        fixture.path("secret.txt"),
+        fixture.path("boss/artwork/animated/Escape.mp4"),
+    )
+    .unwrap();
+    let admin = support::admin(&fixture.http()).await;
+    for path in [
+        "/art/portraits/Reel",
+        "/art/icons/Reel",
+        "/art/entry/Reel",
+        "/art/animated/Still",
+        "/art/animated/Carling.mp4",
+        "/art/animated/Escape",
+        "/art/animated/..%2f..%2fsecret",
+        "/art/animated/%2e%2e",
+        "/art/Animated/Carling",
+        "/art/animated/Ca.rling",
+    ] {
+        let reply = request(admin, "GET", ADMIN_HOST, path, &[("Range", "bytes=0-1")]).await;
+        assert_eq!(reply.status, 404, "{path}");
+        assert_eq!(reply.api_error(), "not_found", "{path}");
+        assert!(!reply.text().contains(SECRET), "{path}");
+    }
+}
