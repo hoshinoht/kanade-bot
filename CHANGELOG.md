@@ -6,6 +6,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin Bosses knowledge pages show each boss's strategies (when to use it,
+  risk, damage needed, payoff and steps) when its document has them.
 - v5 `kanade backup [--name FILE]` snapshots the stopped store (`VACUUM INTO`,
   0600) into `KANADE_BACKUP_DIR` with its manifest, which now records
   `created_at`; it refuses while the bot owns the store and never overwrites.

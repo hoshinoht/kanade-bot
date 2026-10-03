@@ -254,6 +254,19 @@ export interface KnowledgeSource {
   updated?: string;
 }
 
+export type StrategyLevel = 'low' | 'medium' | 'high';
+
+/** One way to run the fight; `damage` is the damage it asks of the party. */
+export interface Strategy {
+  name: string;
+  when: string;
+  risk: StrategyLevel;
+  damage: StrategyLevel;
+  payoff: string;
+  /** 1–6 ordered steps. */
+  steps: string[];
+}
+
 /** A tracked `boss/knowledge/<key>.yaml` document, as validated against its schema. */
 export interface KnowledgeDoc {
   boss: string;
@@ -266,6 +279,8 @@ export interface KnowledgeDoc {
   /** Seasonal/event bosses outside the catalog (e.g. Kai). */
   event?: { name: string; availability: string };
   difficulties?: DifficultyFacts[];
+  /** 1–4 strategies; absent on most documents. */
+  strategies?: Strategy[];
   sources: KnowledgeSource[];
 }
 

@@ -5,6 +5,7 @@
   import { DIFFICULTY_WORDS, Portrait, RowContent, StatusChip, dayLabel } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import BossGrid from './BossGrid.svelte';
+  import StrategyList from './StrategyList.svelte';
   import { eventAsBoss, seasonTag } from './event';
   import '@kanade/ui/styles/boss-knowledge.scss';
 
@@ -154,6 +155,7 @@
             {#if doc.event}<p class="flash flash--ok"><strong>Event boss.</strong> {doc.event.availability}</p>{/if}
             {#if selected}<section aria-labelledby="facts-heading"><h2 class="vh" id="facts-heading">{DIFFICULTY_WORDS[letter!]} facts</h2><dl class="knowledge-facts">{#each factRows as [label, value] (label)}<div><dt class="cap">{label}</dt><dd>{value}</dd></div>{/each}</dl>{#if selected.recommended_spec}<section class="knowledge-recommended"><h3 class="cap">Recommended · hexa-converted stat</h3><p>{selected.recommended_spec.text}</p></section>{/if}{#each phaseHp as hp (hp.phase)}<p class="knowledge__detail"><strong>HP phase {hp.phase}:</strong> {hp.value}</p>{/each}{#if note || selected.notes?.length}<section class="knowledge-callouts" aria-labelledby="difficulty-notes-heading"><h3 class="cap" id="difficulty-notes-heading">{selected.name} notes</h3><ul>{#if note}<li>{note}</li>{/if}{#each selected.notes ?? [] as item (item)}<li>{item}</li>{/each}</ul></section>{/if}</section>{/if}
             {#each lists as [title, items] (title)}{#if items.length}<section class="knowledge-notes"><h2 class="cap">{title}</h2><ul>{#each items as item (item)}<li>{item}</li>{/each}</ul></section>{/if}{/each}
+            {#if doc.strategies?.length}<StrategyList strategies={doc.strategies} />{/if}
             {#if doc.notes?.length}<section class="knowledge-notes"><h2 class="cap">Notes</h2><ul>{#each doc.notes as item (item)}<li>{item}</li>{/each}</ul></section>{/if}
             <section class="knowledge-notes"><h2 class="cap">Sources</h2><ul class="knowledge-sources">{#each doc.sources as source (source.url)}<li><a href={source.url} rel="noopener noreferrer" target="_blank">{source.title}</a><span>by {source.author} · {source.kind} · fetched {source.fetched}{#if source.updated} · updated {source.updated}{/if}</span></li>{/each}</ul><p class="note">Our own paraphrase of these sources; the authors are credited above.</p></section>
           </div>

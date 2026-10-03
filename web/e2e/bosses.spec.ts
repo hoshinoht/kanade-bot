@@ -89,6 +89,35 @@ test('bosses: selected rows reveal every difficulty and detail keeps timing and 
   await expect(page.locator('.knowledge-aside__count')).toContainText('next');
 });
 
+test('bosses: knowledge strategies render when the document has them and not otherwise', async ({ page }) => {
+  const knowledge = await (await page.request.get(`${ADMIN}/api/admin/bosses/Lotus/knowledge`)).json() as { doc: { strategies?: { name: string; risk: string; damage: string; when: string; payoff: string; steps: string[] }[] } };
+  const expected = knowledge.doc.strategies ?? [];
+  expect(expected.length).toBeGreaterThan(0);
+  await go(page, '/bosses/Lotus/knowledge');
+  const section = page.getByRole('region', { name: 'Strategies' });
+  await expect(section).toBeVisible();
+  const cards = section.locator('.strategy');
+  await expect(cards).toHaveCount(expected.length);
+  for (const [index, strategy] of expected.entries()) {
+    const card = cards.nth(index);
+    await expect(card.getByRole('heading', { level: 3 })).toHaveText(strategy.name);
+    await expect(card.locator('.status-chip')).toHaveText([`Risk: ${strategy.risk}`, `Damage needed: ${strategy.damage}`]);
+    await expect(card.locator('dd')).toHaveText([strategy.when, strategy.payoff]);
+    await expect(card.getByRole('list', { name: `Steps for ${strategy.name}` }).getByRole('listitem')).toHaveCount(strategy.steps.length);
+  }
+  // Strategies sit between Tips and Notes/Sources.
+  const headings = await page.locator('.knowledge-detail__main h2.cap').allTextContents();
+  expect(headings.indexOf('Strategies')).toBeGreaterThan(headings.indexOf('Tips'));
+  expect(headings.indexOf('Strategies')).toBeLessThan(headings.indexOf('Sources'));
+
+  // Kai's document declares no strategies.
+  const kai = await (await page.request.get(`${ADMIN}/api/admin/bosses/Kai/knowledge`)).json() as { doc: { strategies?: unknown[] } };
+  expect(kai.doc.strategies ?? []).toHaveLength(0);
+  await go(page, '/bosses/Kai/knowledge');
+  await expect(page.getByRole('heading', { level: 2, name: 'Sources' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Strategies' })).toHaveCount(0);
+});
+
 test('bosses: a whole catalog row selects its boss, not only the name', async ({ page }) => {
   await go(page, '/bosses/MaleficStar/knowledge');
   const other = page.locator('.bosses-list .bossrow').filter({ hasNotText: 'Radiant Malefic Star' }).first();
