@@ -13,6 +13,7 @@
   import { SURFACE_LABELS, actorName, describe, localAt, weekDate } from './describe';
   import RevertDialog from './RevertDialog.svelte';
   import HistoryDetail from './HistoryDetail.svelte';
+  import CheckpointsPanel from './CheckpointsPanel.svelte';
   import TextModal from '../shared/TextModal.svelte';
   import { memberLabel } from '../names/directory.svelte';
 
@@ -99,9 +100,6 @@
     tab = next.id;
     document.getElementById(`history-tab-${next.id}`)?.focus({ preventScroll: true });
   }
-  $effect(() => {
-    if (tab === 'checkpoints') void checkpoints.load();
-  });
   const names = (id: string) => memberLabel(store.members, id);
   const tz = $derived(store.week?.timezone ?? 'Asia/Kuala_Lumpur');
   const weeks = $derived([...new Set(records.flatMap((r) => r.weeks))].sort().reverse());
@@ -200,7 +198,7 @@
     <h2 class="vh" id="history-title">History</h2>
     <div class="tabs__tabs" role="tablist" aria-label="History" data-fid="window-tabs">
       {#each TABS as t, index (t.id)}
-        <button class="tabs__tab" role="tab" type="button" id="history-tab-{t.id}" aria-selected={tab === t.id} aria-controls="history-{t.id}" tabindex={tab === t.id ? 0 : -1} onclick={() => (tab = t.id)} onkeydown={(event) => tabKey(event, index)}>{t.label}{#if t.id === 'timeline'}<span class="tabs__count">{total}</span>{/if}</button>
+        <button class="tabs__tab" role="tab" type="button" id="history-tab-{t.id}" aria-selected={tab === t.id} aria-controls="history-{t.id}" tabindex={tab === t.id ? 0 : -1} onclick={() => (tab = t.id)} onkeydown={(event) => tabKey(event, index)}>{t.label}{#if t.id === 'timeline'}<span class="tabs__count">{total}</span>{:else if checkpoints.data}<span class="tabs__count">{checkpoints.data.backups.length}</span>{/if}</button>
       {/each}
     </div>
     <!-- The filters only apply to the Timeline. -->
@@ -251,18 +249,7 @@
     </div>
   {:else}
     <div class="history-window__body" id="history-checkpoints" role="tabpanel" aria-labelledby="history-tab-checkpoints">
-      <div class="history-list-region"><div class="history-list-region__scroll">
-        {#if checkpoints.data}
-          <p class="flash {checkpoints.data.verified.ok ? 'flash--ok' : 'flash--error'}" role="status">{checkpoints.data.verified.ok ? 'Chain verified' : 'Chain broken'}: {checkpoints.data.verified.checked} records, head #{checkpoints.data.verified.head.seq}.</p>
-          {#if !checkpoints.data.backups.length}
-            <div class="empty history-checkpoints__empty">
-              <strong>No backups recorded yet</strong>No backup directory is configured on this server, so no checkpoint anchors the history.
-            </div>
-          {:else}
-          <table><caption class="vh">Backups anchoring the history</caption><thead><tr><th scope="col">Backup</th><th scope="col">Taken</th><th scope="col">History head</th><th scope="col" class="num">Revision</th><th scope="col">Anchored</th></tr></thead><tbody>{#each checkpoints.data.backups as backup (backup.file)}<tr><th scope="row" class="mono">{backup.file}</th><td class="mono">{localAt(backup.created_at, tz)}</td><td class="mono">#{backup.history_head.seq} · {backup.history_head.hash.slice(0, 12)}</td><td class="num">{backup.revision}</td><td>{backup.anchored ? 'yes — a truncated history is refused' : 'no'}</td></tr>{/each}</tbody></table>
-          {/if}
-        {:else}<p class="note" aria-busy="true">Loading checkpoints…</p>{/if}
-      </div></div>
+      <div class="history-list-region"><CheckpointsPanel {checkpoints} timezone={tz} /></div>
     </div>
   {/if}
 </section>

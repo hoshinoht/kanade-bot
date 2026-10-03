@@ -39,6 +39,15 @@ const PAIRS: Pair[] = [
     },
   },
   {
+    name: 'history-ck',
+    board: 'B_HistoryCk',
+    path: '/history',
+    ready: async (page) => {
+      await page.getByRole('tab', { name: 'Checkpoints' }).click();
+      await expect(page.getByRole('table', { name: /Backups/ })).toBeVisible();
+    },
+  },
+  {
     name: 'fixed',
     board: 'B_Fixed',
     path: '/fixed',

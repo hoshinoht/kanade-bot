@@ -542,8 +542,23 @@ test('history: seeded timeline, strict revert, conflicts and force', async ({ pa
   await expect(toast(page, 'Reverted as #11.')).toBeVisible();
 
   await page.getByRole('tab', { name: 'Checkpoints' }).click();
-  await expect(page.getByRole('status').filter({ hasText: 'Chain verified' })).toBeVisible();
-  await expect(page.getByRole('table', { name: /Backups/ }).locator('tbody tr')).toHaveCount(2);
+  await expect(page.getByRole('status').filter({ hasText: 'Chain verified' })).toHaveText(/Chain verified: \d+ records, head #\d+\./);
+  await expect(page.getByRole('tab', { name: 'Checkpoints' })).toHaveAccessibleName('Checkpoints 3');
+  const backups = page.getByRole('table', { name: /Backups/ });
+  await expect(backups.locator('tbody tr')).toHaveCount(3);
+  // One row per anchor state, each named in words, not colour alone.
+  await expect(backups.getByRole('row', { name: /matches — the history still holds this head/ })).toHaveCount(1);
+  await expect(backups.getByRole('row', { name: /older schema — restore it with the image of that schema/ })).toHaveCount(1);
+  await expect(backups.getByRole('row', { name: /mismatch — the history no longer holds this head/ })).toHaveCount(1);
+  await expect(page.getByText(/checked just now/)).toBeVisible();
+
+  // Verify again refetches the endpoint (read only) and announces the result.
+  const refetch = page.waitForRequest(/\/api\/admin\/history\/checkpoints$/);
+  const again = page.getByRole('button', { name: 'Verify again' });
+  await again.click();
+  await refetch;
+  await expect(again).toBeEnabled();
+  await expect(page.getByRole('status').filter({ hasText: 'Chain verified' })).toHaveText(/Chain verified: \d+ records/);
 });
 
 test('history: restore a week to a point, revert a member, and blame in the run sheet', async ({ page }) => {

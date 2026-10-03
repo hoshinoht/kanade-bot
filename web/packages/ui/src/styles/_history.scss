@@ -86,7 +86,47 @@
 .history-member__since input { width: 9.5rem; }
 .history-member .btn { align-self: flex-start; }
 
+// Checkpoints (B_HistoryCk): the verification card over the backups table.
+// The card stays put; the table region scrolls (both ways on narrow screens).
+.history-checkpoints { display: flex; flex: 1 1 auto; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 14px 18px; }
+.history-checkpoints > * { flex: none; margin: 0; }
+.history-checkpoints__error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.history-verify { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-radius: 20px; background: color-mix(in srgb, var(--ok) 10%, var(--surface)); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ok) 45%, var(--surface)); }
+.history-verify--risk { background: color-mix(in srgb, var(--risk) 10%, var(--surface)); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--risk) 45%, var(--surface)); }
+// The mockups' cookie shape (as `$cookie` in _inbox).
+.history-verify__glyph { display: grid; flex: none; width: 40px; height: 40px; place-items: center; background: var(--ok-text); color: var(--surface); clip-path: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 11.7%, 85.9% 17.7%, 87.7% 24.6%, 90.9% 30.1%, 95.9% 35.1%, 99.2% 41.3%, 98.2% 48.3%, 95.2% 54.8%, 94.1% 61%, 94.8% 68.1%, 93.3% 75%, 88% 79.7%, 81.6% 82.7%, 76.7% 86.8%, 72.7% 92.6%, 67.1% 97%, 60% 97.2%, 53.2% 95.4%, 46.8% 95.4%, 40% 97.2%, 32.9% 97%, 27.3% 92.6%, 23.3% 86.8%, 18.4% 82.7%, 12% 79.7%, 6.7% 75%, 5.2% 68.1%, 5.9% 61%, 4.8% 54.8%, 1.8% 48.3%, 0.8% 41.3%, 4.1% 35.1%, 9.1% 30.1%, 12.3% 24.6%, 14.1% 17.7%, 17.9% 11.7%, 24.4% 9.1%, 31.5% 8.5%, 37.5% 6.3%, 43.3% 2.2%); }
+.history-verify--risk .history-verify__glyph { background: var(--risk-text); }
+.history-verify__glyph .icon { width: 20px; height: 20px; }
+.history-verify__text { display: flex; flex: 1 1 16rem; flex-direction: column; gap: 2px; min-width: 0; margin: 0; font-size: var(--fs-small); line-height: 1.4; }
+.history-verify__text strong { font-size: var(--fs-body); }
+.history-verify--risk .history-verify__text strong { color: var(--risk-text); }
+.history-verify__again[aria-disabled="true"] { cursor: progress; opacity: 0.75; }
+
+// The table (mockup `.tbl3`): mono overline headings stuck to the top, rows
+// as 44 px `--row` strips; the backup name stays in view when scrolled sideways.
+.history-backups__wrap { flex: 0 1 auto; min-height: 8rem; overflow: auto; overscroll-behavior: contain; }
+.history-backups { width: 100%; border-collapse: separate; border-spacing: 0 2px; font-size: var(--fs-small); }
+.history-backups th, .history-backups td { padding: 0 10px; border: 0; vertical-align: middle; white-space: nowrap; }
+.history-backups thead th { position: sticky; top: 0; z-index: 1; padding: 8px 10px; background: var(--pane); color: var(--dim-text); font-family: var(--mono); letter-spacing: 0.1em; }
+.history-backups tbody th, .history-backups td { height: 44px; background: var(--row); }
+.history-backups tbody th { position: sticky; left: 0; font-weight: 400; }
+.history-backups thead th:first-child { left: 0; z-index: 2; }
+.history-backups tbody th { border-radius: 6px 0 0 6px; }
+.history-backups td:last-child { border-radius: 0 6px 6px 0; }
+.history-anchor { gap: 4px; }
+.history-anchor .icon { width: 13px; height: 13px; stroke-width: 3; }
+// Older schema: still anchored, but only restorable with that schema's image -- an outline, dashed.
+.history-anchor--older_schema { background: transparent; box-shadow: none; border: 1.5px dashed color-mix(in srgb, var(--warn) 55%, var(--surface)); color: color-mix(in srgb, var(--warn-text) 85%, var(--ink)); }
+.history-anchor__ring { width: 7px; height: 7px; border: 1.5px solid currentColor; border-radius: 50%; }
+.history-backups__note { display: flex; gap: 10px; align-items: flex-start; padding: 4px 14px; color: var(--dim-text); font-size: var(--fs-small); line-height: 1.45; }
+.history-backups__note .icon { flex: none; width: 16px; height: 16px; margin-top: 2px; }
+.history-backups__note strong { color: var(--ink); }
+
 @media (max-width: 839px) {
+  .history-checkpoints { padding: 12px; }
+  .history-verify { flex-wrap: wrap; padding: 12px 14px; }
+  // The pinned name wraps so the other columns keep room to scroll past it.
+  .history-backups tbody th { width: 11rem; min-width: 11rem; max-width: 11rem; padding: 6px 10px; white-space: normal; overflow-wrap: anywhere; }
   dialog.modal--narrow.history-detail { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; }
   dialog.history-detail .modal__panel { min-height: 100dvh; }
   .history-window__head.tabs__strip { flex-wrap: wrap; padding-top: 0.5rem; }

@@ -101,6 +101,9 @@ for (const [colorway, theme] of LOOKS) {
     await expect(page.getByRole('dialog', { name: 'Revert #8?' })).toBeVisible();
     await serious(page, 'admin revert dialog');
     await page.keyboard.press('Escape');
+    await page.getByRole('tab', { name: 'Checkpoints' }).click();
+    await expect(page.getByRole('table', { name: /Backups/ })).toBeVisible();
+    await serious(page, 'admin history checkpoints');
     await page.goto(`${ADMIN}/bosses/Kai/knowledge?sw=off`);
     await expect(page.getByText('Event boss.')).toBeVisible();
     await serious(page, 'admin event knowledge');

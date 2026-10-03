@@ -15,7 +15,13 @@ Notable changes to the Boss Scheduler Bot, newest first.
   `backup_dir_configured`. Compose mounts the backups directory read-only into
   the bot and adds a `backup` tool service; the deploy runbook takes the
   snapshot after stopping the bot, beside the volume tarball. Mirrored in the
-  dev mock and API types.
+  dev mock and API types. The admin History → Checkpoints tab (B_HistoryCk)
+  shows a verification card ("Chain verified · n records · head · checked
+  just now", or "Chain check failed" in the risk wash) with **Verify again**
+  (a read-only re-check, announced politely) over a backups table whose
+  Anchored column reads ✓ matches, ○ older schema or ✗ mismatch in words;
+  with no backups it says none were taken yet, or that this server has no
+  backup directory.
 
 - v5 admin Config API adds three read-only fields for the Config page:
   `models.capacity_check[].group` names the capacity group each check is about

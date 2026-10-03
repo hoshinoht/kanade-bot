@@ -923,15 +923,18 @@ test('inbox: thread toggle shows the used messages, then all of them', async ({ 
   await expect(messages).toHaveCount(used);
 });
 
-// Round 5: with no backups yet (no backup directory on the server), the
-// Checkpoints tab says so instead of an empty table; the Timeline's Week/Who
-// filters are hidden there.
-test('history checkpoints: empty state without backups, and no timeline filters', async ({ page }) => {
+// Round 5 / B_HistoryCk: with no backups the Checkpoints tab keeps the
+// verification card and says why instead of an empty table -- none taken yet,
+// or no backup directory on this server; the Timeline's Week/Who filters are
+// hidden there.
+test('history checkpoints: empty states without backups, and no timeline filters', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
+  let configured = true;
   await page.route(/\/api\/admin\/history\/checkpoints$/, async (route) => {
     const response = await route.fetch();
-    const json = (await response.json()) as { backups: unknown[] };
+    const json = (await response.json()) as { backups: unknown[]; backup_dir_configured: boolean };
     json.backups = [];
+    json.backup_dir_configured = configured;
     await route.fulfill({ response, json });
   });
   await page.goto(`${ADMIN}/history?sw=off`);
@@ -940,11 +943,36 @@ test('history checkpoints: empty state without backups, and no timeline filters'
   await page.getByRole('tab', { name: 'Checkpoints' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Chain verified' })).toBeVisible();
   await expect(page.getByText('No backups recorded yet')).toBeVisible();
-  await expect(page.getByText(/No backup directory is configured on this server/)).toBeVisible();
+  await expect(page.getByText('Backups taken with the deploy script appear here.')).toBeVisible();
   await expect(page.getByRole('table', { name: /Backups/ })).toHaveCount(0);
   await expect(filters).toBeHidden();
+
+  configured = false;
+  await page.getByRole('button', { name: 'Verify again' }).click();
+  await expect(page.getByText(/This server has no backup directory configured/)).toBeVisible();
+  await expect(page.getByText('No backups recorded yet')).toHaveCount(0);
+  await expect(page.getByText('Chain verified', { exact: true })).toBeVisible();
+
   await page.getByRole('tab', { name: 'Timeline' }).click();
   await expect(filters).toBeVisible();
+});
+
+// B_HistoryCk: a failed check turns the card to the risk wash and says so in
+// words; the API names no first bad record, so neither does the card.
+test('history checkpoints: a failed chain check', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.route(/\/api\/admin\/history\/checkpoints$/, async (route) => {
+    const response = await route.fetch();
+    const json = (await response.json()) as { verified: { ok: boolean } };
+    json.verified.ok = false;
+    await route.fulfill({ response, json });
+  });
+  await page.goto(`${ADMIN}/history?sw=off`);
+  await page.getByRole('tab', { name: 'Checkpoints' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Chain check failed' })).toBeAttached();
+  await expect(page.getByText('Chain check failed', { exact: true })).toBeVisible();
+  await expect(page.getByText(/The history no longer matches its hash chain/).first()).toBeVisible();
+  await expect(page.locator('.history-verify--risk')).toBeVisible();
 });
 
 // Review-2 finding 1: a cited message deleted from Discord is left out of the
