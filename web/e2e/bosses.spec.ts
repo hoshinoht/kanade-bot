@@ -176,10 +176,12 @@ test('bosses: real catalog portraits and detail art load from the declared asset
   }
   const hero = page.locator('.knowledge-hero');
   const portrait = hero.locator('img.portrait');
-  const art = hero.locator('img.knowledge-hero__art');
+  const art = hero.locator('video.knowledge-hero__art');
   await expect(portrait).toHaveAttribute('src', '/art/portraits/MaleficStar');
-  await expect(art).toHaveAttribute('src', '/art/entry/MaleficStar');
-  for (const image of [portrait, art]) await expect.poll(() => image.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  await expect(art).toHaveAttribute('src', '/art/animated/MaleficStar');
+  await expect(art).toHaveAttribute('poster', '/art/entry/MaleficStar');
+  await expect.poll(() => portrait.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  await expect.poll(() => art.evaluate((element) => (element as HTMLVideoElement).videoWidth)).toBeGreaterThan(0);
   const kai = page.getByRole('list', { name: 'Event bosses' }).getByRole('listitem').filter({ has: page.getByRole('link', { name: 'Kai', exact: true }) }).locator('img.portrait');
   await kai.scrollIntoViewIfNeeded();
   await expect(kai).toHaveAttribute('src', '/art/portraits/Kai');
@@ -214,4 +216,91 @@ test('capture event bosses with real art', async ({ page }) => {
   await expect(hero.locator('img.portrait')).toBeVisible();
   await settle();
   await page.screenshot({ path: 'e2e/.captures/real/knowledge-meilin-blossom-light.png', animations: 'disabled' });
+});
+
+// Synthetic fixtures: MaleficStar has an invented 1-second solid-colour MP4
+// (e2e/fixtures/boss/artwork/animated); Kalos has entry art only.
+test.describe('animated knowledge hero', () => {
+  test.skip(REAL_ART, 'fixture-specific assertions');
+
+  test('a boss with animated art plays a muted, looping, decorative video over its still poster', async ({ page }) => {
+    await go(page, '/bosses/MaleficStar/knowledge');
+    const hero = page.locator('.knowledge-hero');
+    const video = hero.locator('video.knowledge-hero__art');
+    await expect(video).toHaveAttribute('src', '/art/animated/MaleficStar');
+    await expect(video).toHaveAttribute('poster', '/art/entry/MaleficStar');
+    await expect(video).toHaveAttribute('aria-hidden', 'true');
+    await expect(video).toHaveAttribute('preload', 'metadata');
+    await expect(hero.locator('img.knowledge-hero__art')).toHaveCount(0);
+    expect(await video.evaluate((v: HTMLVideoElement) => ({ muted: v.muted, loop: v.loop, playsInline: v.playsInline, controls: v.controls }))).toEqual({ muted: true, loop: true, playsInline: true, controls: false });
+    await expect.poll(() => video.evaluate((v: HTMLVideoElement) => !v.paused && v.currentTime > 0)).toBe(true);
+    // The video takes the still's place exactly: the same box as the image.
+    await page.route(/\/api\/admin\/bosses\/MaleficStar\/knowledge$/, async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), animated: null } });
+    });
+    // Layout boxes (offset*), so the pane's enter transform cannot skew them.
+    const layout = (element: HTMLElement) => [element.offsetLeft, element.offsetTop, element.offsetWidth, element.offsetHeight];
+    const box = await video.evaluate(layout);
+    await go(page, '/bosses/MaleficStar/knowledge');
+    const still = hero.locator('img.knowledge-hero__art');
+    await expect(still).toHaveAttribute('src', '/art/entry/MaleficStar');
+    expect(await still.evaluate(layout)).toEqual(box);
+  });
+
+  test('reduced motion shows the still and never an autoplaying video', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await go(page, '/bosses/MaleficStar/knowledge');
+    const hero = page.locator('.knowledge-hero');
+    const still = hero.locator('img.knowledge-hero__art');
+    await expect(still).toHaveAttribute('src', '/art/entry/MaleficStar');
+    await expect(still).toHaveAttribute('alt', '');
+    await expect.poll(() => still.evaluate((i: HTMLImageElement) => i.naturalWidth)).toBeGreaterThan(0);
+    await expect(hero.locator('video')).toHaveCount(0);
+    // Asking for motion again brings the video back without a reload.
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await expect(hero.locator('video.knowledge-hero__art')).toHaveAttribute('src', '/art/animated/MaleficStar');
+  });
+
+  test('a boss without animated art keeps the still image, and switching drops the previous video', async ({ page }) => {
+    await go(page, '/bosses/MaleficStar/knowledge');
+    const hero = page.locator('.knowledge-hero');
+    await expect(hero.locator('video.knowledge-hero__art')).toHaveCount(1);
+    await page.locator('.bosses-list a.bossrow__name', { hasText: /Kalos/ }).click();
+    await expect(page.getByRole('heading', { level: 2, name: /Kalos/ })).toBeVisible();
+    await expect(hero.locator('img.knowledge-hero__art')).toHaveAttribute('src', '/art/entry/Kalos');
+    await expect(hero.locator('video')).toHaveCount(0);
+    expect((await (await page.request.get(`${ADMIN}/api/admin/bosses/Kalos/knowledge`)).json()).animated).toBeNull();
+  });
+
+  test('a failing video falls back to the still; a failing still leaves the plain hero', async ({ page }) => {
+    await page.route(/\/art\/animated\/MaleficStar$/, (route) => route.fulfill({ status: 404 }));
+    await go(page, '/bosses/MaleficStar/knowledge');
+    const hero = page.locator('.knowledge-hero');
+    await expect(hero.locator('img.knowledge-hero__art')).toHaveAttribute('src', '/art/entry/MaleficStar');
+    await expect(hero.locator('video')).toHaveCount(0);
+
+    await page.route(/\/art\/entry\/MaleficStar$/, (route) => route.fulfill({ status: 404 }));
+    await go(page, '/bosses/MaleficStar/knowledge');
+    await expect(page.getByRole('heading', { level: 2, name: 'Radiant Malefic Star' })).toBeVisible();
+    await expect(hero.locator('.knowledge-hero__art')).toHaveCount(0);
+  });
+
+  test('the admin service worker leaves animated art (and its byte ranges) to the network', async ({ page }) => {
+    await page.goto(`${ADMIN}/`);
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.reload();
+    await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
+    const fetched = async (path: string, headers: Record<string, string> = {}) => {
+      const [response] = await Promise.all([page.waitForResponse((r) => r.url().endsWith(path) && r.request().resourceType() === 'fetch' && !r.request().serviceWorker()), page.evaluate(([url, h]) => fetch(url, { headers: h }).then(() => undefined), [path, headers] as const)]);
+      return response;
+    };
+    // Control: the worker does answer other same-origin art.
+    expect((await fetched('/art/entry/MaleficStar')).fromServiceWorker()).toBe(true);
+    const ranged = await fetched('/art/animated/MaleficStar', { Range: 'bytes=0-9' });
+    expect(ranged.status()).toBe(206);
+    expect(ranged.fromServiceWorker()).toBe(false);
+    const cached = await page.evaluate(async () => (await Promise.all((await caches.keys()).map(async (name) => (await (await caches.open(name)).keys()).map((r) => r.url)))).flat());
+    expect(cached.filter((url) => url.includes('/art/animated/'))).toEqual([]);
+  });
 });

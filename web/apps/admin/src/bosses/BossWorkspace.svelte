@@ -7,6 +7,8 @@
   import BossGrid from './BossGrid.svelte';
   import StrategyList from './StrategyList.svelte';
   import { eventAsBoss, seasonTag } from './event';
+  import { heroArt } from './heroArt';
+  import { prefersReducedMotion } from 'svelte/motion';
   import '@kanade/ui/styles/boss-knowledge.scss';
 
   let { selectedKey = '', difficulty = '' }: { selectedKey?: string; difficulty?: string } = $props();
@@ -71,12 +73,14 @@
   });
 
   let artFailed = $state(false);
+  let videoFailed = $state(false);
   $effect(() => {
     void activeKey;
     artFailed = false;
+    videoFailed = false;
     chosen = null;
   });
-  const art = $derived(artFailed ? null : `/art/entry/${encodeURIComponent(activeKey)}`);
+  const art = $derived(heroArt({ key: activeKey, animated: knowledge.data?.animated ?? null, reducedMotion: prefersReducedMotion.current, videoFailed, stillFailed: artFailed }));
   const asBoss = (row: BossRow): Boss => ({ token: row.key, key: row.key, name: row.name, difficulty: 'n', level: row.level, portrait: row.portrait, portrait_sm: row.portrait, art: null, hue: row.hue });
   const activePortrait = $derived(knowledge.data ? { token: knowledge.data.key, key: knowledge.data.key, name: knowledge.data.name, difficulty: 'n' as const, level: knowledge.data.level, portrait: knowledge.data.portrait, portrait_sm: knowledge.data.portrait, art: null, hue: knowledge.data.hue } : activeBoss ? asBoss(activeBoss) : activeEvent ? eventAsBoss(activeEvent) : null);
   function rows(fact: DifficultyFacts): [string, string][] {
@@ -143,7 +147,11 @@
       {#if knowledge.error}<div class="empty" role="alert"><strong>No knowledge for “{activeKey}”.</strong>{knowledge.error}</div>
       {:else if doc && knowledge.data}
         <header data-fid="knowledge-head" class="knowledge-hero">
-          {#if art}<img class="knowledge-hero__art" src={art} alt="" onerror={() => (artFailed = true)} />{/if}
+          <!-- Keyed by source: a boss switch builds a fresh element, never showing the previous boss's frame. -->
+          {#key art?.src}
+            {#if art?.kind === 'video'}<video class="knowledge-hero__art" src={art.src} poster={art.poster} muted autoplay loop playsinline preload="metadata" disablepictureinpicture disableremoteplayback aria-hidden="true" onerror={() => (videoFailed = true)}></video>
+            {:else if art}<img class="knowledge-hero__art" src={art.src} alt="" onerror={() => (artFailed = true)} />{/if}
+          {/key}
           <div class="knowledge-hero__identity">
             {#if activePortrait}<Portrait boss={activePortrait} size="md" />{/if}
             <div><p class="cap">Checked-in boss knowledge</p><h2>{knowledge.data.name}</h2><p class="knowledge-hero__meta">{knowledge.data.level ? `Lv. ${knowledge.data.level} · ` : ''}researched {knowledge.data.researched_as_of ?? 'undated'} · <code>{knowledge.data.path}</code></p></div>

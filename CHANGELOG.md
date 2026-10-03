@@ -11,6 +11,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   boss knowledge and event bosses carry a nullable `animated` URL, and the
   content security policy allows same-origin media. Discord cards keep the
   still art.
+- v5 admin Bosses knowledge hero plays the boss's looping MP4 muted over its
+  still entry art; under reduced motion, or if the video fails, the still
+  shows instead. The admin service worker leaves `/art/animated/` to the
+  network so byte-range playback works.
 - v5 admin M3E static motion: buttons morph on press, selected rows spring
   their corners, side panes (Members, History, Fixed, Inbox, Bosses) slide in
   and out, dialogs and toasts fade out, the phone Inbox moves forward and back

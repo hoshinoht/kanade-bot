@@ -21,8 +21,16 @@ sw.addEventListener('message', (event) => {
   if ((event.data as { type?: string } | null)?.type === 'SKIP_WAITING') void sw.skipWaiting();
 });
 
+// Animated art goes straight to the network: its Range requests need the
+// server's 206 replies, and a worker answering or caching them breaks Safari playback.
 function bypass(url: URL): boolean {
-  return url.origin !== sw.location.origin || url.pathname.startsWith('/api/') || url.pathname.startsWith('/__mock/') || url.pathname === '/csp-report';
+  return (
+    url.origin !== sw.location.origin ||
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/__mock/') ||
+    url.pathname.startsWith('/art/animated/') ||
+    url.pathname === '/csp-report'
+  );
 }
 
 sw.addEventListener('fetch', (event) => {
