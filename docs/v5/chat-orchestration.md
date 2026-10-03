@@ -177,13 +177,23 @@ are C3. Serve wiring is `chat::driver` (below).
   or replaces fenced code, even when every run is named. A reply naming
   only some of the listing's runs (by id) gets just those runs' canonical
   records at the first named run, under its own heading; naming all of them
-  inserts the tool's full listing as v4 did. A record-shaped line whose
+  inserts the tool's full listing as v4 did. A conversational sentence that
+  names a run by id with a schedule fact (not a `[id]` record line or
+  `**day — boss**` pair, and ending a sentence with `.`, `!`, `?` or `…`;
+  user decision 2026-10-03) is kept as written and the records go after its
+  paragraph, set off by blank lines; when several sentences or retold
+  records name runs, the records still appear once, at the first of them,
+  and retold record lines are replaced as before. List-style retellings
+  without sentence punctuation (`Boss - 21:30 - run ID 'id'`) are replaced
+  as v4 did. A sentence with a time but no listed id still falls under v4's
+  hint rule (replaced by the full listing). A record-shaped line whose
   `[id]` no tool output carries is dropped (never with a real run's line)
   whenever real runs are named, all of them included; the listing then goes
   at the first real run. With no run named, v4's full listing stands (a
   reply with code but no schedule text keeps its text, listing appended).
-  Grounding matches v4 exactly only for a reply without fenced code or
-  invented record lines that names every run or none. `D-GROUND-WRITE`
+  Grounding matches v4 exactly only for a reply without fenced code,
+  invented record lines or run-naming sentences that names every run or
+  none. `D-GROUND-WRITE`
   (user decision 2026-10-02): a turn whose last write call posted its card
   is not regrounded at all, so the model's "card is up, needs a ✅" reply
   posts as written; v4 regrounded it, and a time such as `22:00` in that

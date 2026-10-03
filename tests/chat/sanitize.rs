@@ -287,3 +287,66 @@ fn a_long_answer_is_not_cut() {
     let reply = format!("Here:\n\n{code}\n\n{CLOSING}");
     assert_eq!(shape_reply(&reply, &[]), reply);
 }
+
+/// Three upcoming runs and more beyond (wholly invented fixture).
+const UPCOMING: &str = "**Your 8 upcoming runs · All channels**\n\n`[c0ffee01]` **Hard Lotus**\n*Tue 06 Oct · 20:00* · `planned` · `0/4 yes` · <#4242>\n\n`[c0ffee02]` **Chaos Vellum**\n*Wed 07 Oct · 21:30* · `planned` · `2/4 yes` · <#4243>\n\n`[c0ffee03]` **Normal Magnus**\n*Thu 08 Oct · 19:00* · `planned` · `1/4 yes` · <#4244>\n\n*(and 5 more)*";
+const LOTUS: &str =
+    "`[c0ffee01]` **Hard Lotus**\n*Tue 06 Oct · 20:00* · `planned` · `0/4 yes` · <#4242>";
+const VELLUM: &str =
+    "`[c0ffee02]` **Chaos Vellum**\n*Wed 07 Oct · 21:30* · `planned` · `2/4 yes` · <#4243>";
+
+/// `D-GROUND-FILTERED` (user decision 2026-10-03): a persona sentence that
+/// names a run stays as written and the run's record goes under it (the
+/// live case replaced the whole sentence with the record).
+#[test]
+fn a_sentence_naming_a_run_keeps_its_words_with_the_record_below() {
+    let sentence = "Mama~ Your next run is **Hard Lotus** on *Tue 06 Oct at 20:00* — `planned`, `0/4 yes`, in <#4242>. `c0ffee01`—first on the board, so no hiding from the ready check!";
+    let outcomes = [schedule_outcome(UPCOMING)];
+    assert_eq!(
+        ground_schedule_reply(sentence, &outcomes),
+        format!("{sentence}\n\n{LOTUS}")
+    );
+    // The card goes after the sentence's paragraph, once, however many
+    // sentences name the run.
+    let reply = format!("{sentence}\nBring potions.\n\nAgain: `c0ffee01` at 20:00, ok?\n\nBye!");
+    assert_eq!(
+        ground_schedule_reply(&reply, &outcomes),
+        format!("{sentence}\nBring potions.\n\n{LOTUS}\n\nAgain: `c0ffee01` at 20:00, ok?\n\nBye!")
+    );
+    let shaped = shape_reply(sentence, &outcomes);
+    assert!(shaped.starts_with("Mama~ Your next run is"), "{shaped}");
+    assert!(
+        shaped.ends_with("*Tue 06 Oct · 20:00* · `planned` · `0/4 yes` · <#4242>"),
+        "{shaped}"
+    );
+}
+
+/// A sentence and a record-shaped retelling in one reply: the sentence
+/// stays, the retold record is replaced, and each record shows once.
+#[test]
+fn a_sentence_and_a_retold_record_share_one_card() {
+    let sentence = "Your next run is Hard Lotus at 20:00 (`c0ffee01`)!";
+    let reply = format!(
+        "{sentence}\n\n`[c0ffee02]` **Chaos Vellum**\n*Wed 07 Oct · 22:00* · `planned`\n\nSee you!"
+    );
+    assert_eq!(
+        ground_schedule_reply(&reply, &[schedule_outcome(UPCOMING)]),
+        format!("{sentence}\n\n{LOTUS}\n\n{VELLUM}\n\nSee you!")
+    );
+}
+
+/// Record-shaped and list-style retellings are still replaced whole.
+#[test]
+fn record_shaped_retellings_are_still_replaced() {
+    let outcomes = [schedule_outcome(UPCOMING)];
+    for retold in [
+        "`[c0ffee02]` **Chaos Vellum** · 22:00",
+        "Chaos Vellum - 22:00 - run ID 'c0ffee02' (2/4)",
+    ] {
+        let reply = format!("Tonight:\n\n{retold}\n\nBye!");
+        assert_eq!(
+            ground_schedule_reply(&reply, &outcomes),
+            format!("Tonight:\n\n{VELLUM}\n\nBye!")
+        );
+    }
+}

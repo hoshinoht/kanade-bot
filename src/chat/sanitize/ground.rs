@@ -28,6 +28,9 @@ static TALLY: LazyLock<Regex> = LazyLock::new(|| pattern_i(r"\b\d+/\d+\s*(?:yes)
 static OMISSION: LazyLock<Regex> = LazyLock::new(|| pattern_i(r"^\s*\*?\(and \d+ more\)\*?\s*$"));
 static FOOTER: LazyLock<Regex> =
     LazyLock::new(|| pattern_i(r"^\s*\*?Every run listed has already happened"));
+/// Sentence-ending punctuation (closing markup allowed) before a space or
+/// the line's end; list retellings like `Boss - 21:30 - run ID 'id'` lack it.
+static SENTENCE_END: LazyLock<Regex> = LazyLock::new(|| pattern(r#"[.!?…][*_`)\]"']*(?:\s|$)"#));
 
 /// The latest successful `get_schedule` listing with record ids, if any.
 pub fn canonical_schedule_output(outcomes: &[ToolOutcome]) -> Option<&str> {
@@ -59,6 +62,12 @@ fn mentions_id(line: &str, ids: &BTreeSet<String>) -> bool {
 
 fn has_schedule_facts(line: &str) -> bool {
     TIME.is_match(line) || TALLY.is_match(line) || CHANNEL_DUMP.is_match(line)
+}
+
+/// A conversational sentence, not a record-shaped retelling; it is kept and
+/// its runs' records go after its paragraph.
+fn is_sentence(line: &str) -> bool {
+    !SCHEDULE_RUN_LINE.is_match(line) && !PRIMARY_LINE.is_match(line) && SENTENCE_END.is_match(line)
 }
 
 fn is_hint(line: &str) -> bool {
@@ -116,9 +125,11 @@ fn invented(line: &str, outcomes: &[ToolOutcome]) -> bool {
 /// fenced code is never read as schedule text or replaced, invented record
 /// lines go (at the first real run's place) when real runs are named, a
 /// reply naming only some listed runs gets just their canonical records
-/// under its own heading, and a reply with code but no schedule text keeps
-/// it with the listing appended. Only a reply with none of these (no code,
-/// no invented lines, every run named or none) grounds exactly as v4.
+/// under its own heading, a sentence naming a run by id is kept with the
+/// records after its paragraph, and a reply with code but no schedule text
+/// keeps it with the listing appended. Only a reply with none of these (no
+/// code, no invented lines or such sentences, every run named or none)
+/// grounds exactly as v4.
 pub(super) fn ground(reply: &str, outcomes: &[ToolOutcome]) -> Grounded {
     let Some(schedule) = canonical_schedule_output(outcomes) else {
         return Grounded {
@@ -145,6 +156,7 @@ pub(super) fn ground(reply: &str, outcomes: &[ToolOutcome]) -> Grounded {
     let mut spans: Vec<(usize, usize)> = Vec::new();
     let mut guesses: Vec<(usize, usize)> = Vec::new();
     let mut named: BTreeSet<String> = BTreeSet::new();
+    let mut sentences: Vec<usize> = Vec::new();
     let mut index = 0;
     while index < lines.len() {
         if !prose(index) {
@@ -168,7 +180,17 @@ pub(super) fn ground(reply: &str, outcomes: &[ToolOutcome]) -> Grounded {
             index += 2;
         } else if known(line) && has_schedule_facts(line) {
             named.extend(named_ids(line, &ids));
-            spans.push((index, index + 1));
+            if is_sentence(line) {
+                // Kept; an empty span at its paragraph's end takes the records.
+                let mut end = index + 1;
+                while prose(end) && !strip(lines[end]).is_empty() {
+                    end += 1;
+                }
+                spans.push((end, end));
+                sentences.push(index);
+            } else {
+                spans.push((index, index + 1));
+            }
             index += 1;
         } else if invented(line, outcomes)
             && (has_schedule_facts(line) || next.is_some_and(has_schedule_facts))
@@ -201,23 +223,33 @@ pub(super) fn ground(reply: &str, outcomes: &[ToolOutcome]) -> Grounded {
             .collect();
         tagged.sort_unstable();
         let blank = |at: usize| strip(lines[at]).is_empty();
+        // `inserted` blocks start after a kept sentence's paragraph.
         let mut blocks: Vec<[usize; 2]> = Vec::new();
+        let mut inserted: Vec<bool> = Vec::new();
         let mut first_real = None;
         for (start, end, real) in tagged {
             match blocks.last_mut() {
-                Some(block) if (block[1]..start).all(blank) => block[1] = end,
-                _ => blocks.push([start, end]),
+                Some(block) if (block[1]..start).all(blank) => block[1] = block[1].max(end),
+                _ => {
+                    blocks.push([start, end]);
+                    inserted.push(start == end);
+                }
             }
             if real && first_real.is_none() {
                 first_real = Some(blocks.len() - 1);
             }
         }
-        for block in &mut blocks {
+        for (block, &inserted) in blocks.iter_mut().zip(&inserted) {
             let mut heading = block[0];
             while heading > 0 && blank(heading - 1) {
                 heading -= 1;
             }
-            if !partial && heading > 0 && prose(heading - 1) && HEADING.is_match(lines[heading - 1])
+            if !partial
+                && !inserted
+                && heading > 0
+                && !sentences.contains(&(heading - 1))
+                && prose(heading - 1)
+                && HEADING.is_match(lines[heading - 1])
             {
                 block[0] = heading - 1;
             }
@@ -236,7 +268,14 @@ pub(super) fn ground(reply: &str, outcomes: &[ToolOutcome]) -> Grounded {
         for (number, [start, end]) in blocks.iter().copied().enumerate() {
             rebuilt.extend_from_slice(&lines[cursor..start]);
             if Some(number) == first_real {
+                // Set off from the sentence above and whatever follows.
+                if inserted[number] {
+                    rebuilt.push("");
+                }
                 rebuilt.extend(splitlines(&block.text));
+                if inserted[number] && end < lines.len() && !blank(end) {
+                    rebuilt.push("");
+                }
             }
             cursor = end;
         }
