@@ -18,7 +18,10 @@ use crate::{
     bot::commands::{AccessPolicy, Invoker},
     domain::{
         catalog::BossTable,
-        drafts::{DraftKind, DraftStatus, LoadedDraft, ProposalStore, StoredProposal},
+        drafts::{
+            DraftKind, DraftStatus, LoadedDraft, ProposalInfo, ProposalStore, StoredDraft,
+            StoredProposal,
+        },
         history::{
             Actor, Blame, BlameIndex, BlameTarget, ChangeFilter, ChangeHistory, ChangeQuery,
             ChangeRecord, ChangeRef, HeldReminders, HistoryVerification, JournalHeld, blame,
@@ -91,6 +94,8 @@ pub trait ReadStore: Send + Sync {
     fn live_proposals(&self) -> ReadFuture<'_, Vec<StoredProposal>>;
     /// Submitted member requests with their operations, oldest first.
     fn submitted_requests(&self) -> ReadFuture<'_, Vec<LoadedDraft>>;
+    /// Closed proposals and member requests, rows only (no operations).
+    fn closed_inbox(&self) -> ReadFuture<'_, Vec<ClosedItem>>;
     /// Any draft (admin, request or proposal) with its operations.
     fn draft(&self, id: String) -> ReadFuture<'_, Option<LoadedDraft>>;
     fn cards(&self, proposal_ids: Vec<String>) -> ReadFuture<'_, Vec<StoredCard>>;
@@ -150,6 +155,15 @@ pub trait ReadStore: Send + Sync {
     fn masked_chat(&self, id: String) -> ReadFuture<'_, Option<MaskedTurn>>;
     /// Every weekly digest card, active or retired (the Config page's last post).
     fn digests(&self) -> ReadFuture<'_, Vec<WeeklyDigest>>;
+}
+
+/// A closed Inbox item: a proposal (with its stored facts) or a member
+/// request.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClosedItem {
+    pub draft: StoredDraft,
+    /// `None` for member requests.
+    pub proposal: Option<ProposalInfo>,
 }
 
 /// One history page: records and whether older ones exist.
@@ -217,6 +231,32 @@ where
                 }
             }
             Ok(requests)
+        })
+    }
+
+    fn closed_inbox(&self) -> ReadFuture<'_, Vec<ClosedItem>> {
+        Box::pin(async move {
+            let mut items: Vec<ClosedItem> = self
+                .list_proposals(false)
+                .await?
+                .into_iter()
+                .filter(|stored| !stored.draft.status.is_live())
+                .map(|stored| ClosedItem {
+                    draft: stored.draft,
+                    proposal: Some(stored.info),
+                })
+                .collect();
+            items.extend(
+                self.list_drafts(None)
+                    .await?
+                    .into_iter()
+                    .filter(|draft| draft.kind == DraftKind::Request && !draft.status.is_live())
+                    .map(|draft| ClosedItem {
+                        draft,
+                        proposal: None,
+                    }),
+            );
+            Ok(items)
         })
     }
 

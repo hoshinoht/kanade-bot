@@ -60,6 +60,10 @@ decided only by a Discord session (`403 discord_session_required`), as the
 approving member (`extraction_approval` / `chat_approval`); requests by any
 session (`request_merge`). Repeating a decision answers 200 with the first
 message (`422 idempotency_mismatch` if it differs).
+`GET /api/admin/inbox/past?before=&limit=` serves ten invented closed items
+(every outcome, both kinds, newest closed first; the approved proposal links
+History record 3), paged by the last id shown as the server does; decisions
+made in the mock session do not join it.
 
 Names: `GET /api/admin/roles` (three guild roles, one colourless),
 `Identity.bot_user_id` (`1543532497948909578` on the admin origin, null on

@@ -967,6 +967,69 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
             .filter(|p| p["tab"] == "self_service")
             .all(|p| p["self_service"]["via"] == "request")
     );
+
+    // Past: closed items, newest first, every outcome, paged by the last id.
+    let past = h
+        .ok(
+            "GET",
+            "/api/admin/inbox/past",
+            None,
+            "inbox.json#/$defs/PastPage",
+        )
+        .await;
+    let closed = past["items"].as_array().unwrap().clone();
+    assert_eq!(past["next_before"], Value::Null);
+    for outcome in [
+        "approved",
+        "rejected",
+        "superseded",
+        "discarded",
+        "withdrawn",
+        "expired",
+    ] {
+        assert!(closed.iter().any(|p| p["outcome"] == outcome), "{outcome}");
+    }
+    for tab in ["extractor", "self_service"] {
+        assert!(closed.iter().any(|p| p["tab"] == tab), "{tab}");
+    }
+    let first = h
+        .ok(
+            "GET",
+            "/api/admin/inbox/past?limit=4",
+            None,
+            "inbox.json#/$defs/PastPage",
+        )
+        .await;
+    let cursor = s(&first["next_before"]).to_owned();
+    assert_eq!(first["items"][3]["id"], cursor.as_str());
+    let second = h
+        .ok(
+            "GET",
+            &format!("/api/admin/inbox/past?limit=4&before={cursor}"),
+            None,
+            "inbox.json#/$defs/PastPage",
+        )
+        .await;
+    assert_eq!(second["items"][0], closed[4]);
+    for bad in ["?limit=0", "?limit=201", "?before=nope"] {
+        h.refused(
+            "GET",
+            &format!("/api/admin/inbox/past{bad}"),
+            json!({}),
+            &[],
+            (StatusCode::UNPROCESSABLE_ENTITY, "invalid_query"),
+        )
+        .await;
+    }
+    h.expect(
+        true,
+        "GET",
+        "/api/admin/inbox/past",
+        None,
+        StatusCode::NOT_FOUND,
+        "",
+    )
+    .await;
     let csrf = h.csrf.clone();
     let token = [("x-kanade-csrf", csrf.as_str())];
     h.refused(

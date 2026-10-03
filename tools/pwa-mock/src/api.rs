@@ -9,6 +9,7 @@ use crate::{
         extractions::RescanRequest,
         history::{Actor, Mode},
         inbox::ApproveRequest,
+        past,
     },
 };
 use axum::{
@@ -312,6 +313,40 @@ pub async fn events(State(app): State<App>) -> Response {
 
 pub async fn inbox(State(app): State<App>) -> Response {
     Json(app.store.lock().await.inbox()).into_response()
+}
+
+#[derive(Deserialize)]
+pub struct PastQuery {
+    before: Option<String>,
+    limit: Option<String>,
+}
+
+/// As the server: `limit` 1-200 (default 50); a bad value or an unknown
+/// `before` is `422 invalid_query`.
+pub async fn inbox_past(State(app): State<App>, Query(q): Query<PastQuery>) -> Response {
+    let invalid = || {
+        error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_query",
+            "Unknown or malformed query parameter.",
+        )
+    };
+    let limit = match q.limit.as_deref() {
+        None => past::DEFAULT_LIMIT,
+        Some(text) => match text.parse::<usize>() {
+            Ok(limit @ 1..=past::MAX_LIMIT) => limit,
+            _ => return invalid(),
+        },
+    };
+    if q.before.as_deref() == Some("") {
+        return invalid();
+    }
+    outcome(
+        app.store
+            .lock()
+            .await
+            .inbox_past(q.before.as_deref(), limit),
+    )
 }
 
 pub async fn approve(

@@ -100,6 +100,23 @@ pub async fn said(
     })
 }
 
+/// A closed proposal's cited messages from `cached` (read by id, so no
+/// thread). Unlike live evidence, an uncached message keeps its Discord link:
+/// the cache forgets old messages by retention, not only by deletion.
+pub fn cited(ctx: &Context<'_>, card: &StoredCard, cached: &[WatchedMessage]) -> Vec<Evidence> {
+    card.details
+        .evidence_message_ids
+        .iter()
+        .map(|id| match cached.iter().find(|message| &message.id == id) {
+            Some(message) => present(ctx, message),
+            None => Evidence {
+                url: message_url(ctx, &card.channel_id, id),
+                ..gone(ctx, id)
+            },
+        })
+        .collect()
+}
+
 fn gone(ctx: &Context<'_>, id: &str) -> Evidence {
     Evidence {
         id: id.to_owned(),

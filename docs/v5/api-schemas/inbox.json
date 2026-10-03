@@ -152,6 +152,68 @@
         }
       }
     },
-    "Proposals": { "type": "array", "items": { "$ref": "#/$defs/Proposal" } }
+    "Proposals": { "type": "array", "items": { "$ref": "#/$defs/Proposal" } },
+    "Decider": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Who closed the item. `name` is ready to show: members and Discord admins by their roster name, other admins as `Admin (…)`, system actors (expiry, superseding) as `Kanade`.",
+      "required": ["kind", "id", "name"],
+      "properties": {
+        "kind": { "enum": ["member", "admin", "system"] },
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "PastItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A closed proposal or member request (Inbox Past tab).",
+      "required": [
+        "id", "short_id", "kind", "kind_label", "tab", "source", "source_id", "summary", "channel",
+        "requester", "outcome", "decided_by", "decided_at", "reason", "created_at", "history_seq",
+        "evidence", "card_url"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "short_id": { "type": "string" },
+        "kind": {
+          "enum": [
+            "move", "add", "cancel", "split", "otot", "sub", "rsvp", "fix",
+            "new_fixed", "change_fixed", "join", "leave", "swap", "change"
+          ]
+        },
+        "kind_label": { "type": "string" },
+        "tab": { "enum": ["extractor", "self_service"], "description": "`extractor` for proposals, `self_service` for member requests." },
+        "source": { "enum": ["extraction", "chat", "self_service"] },
+        "source_id": { "$ref": "common.json#/$defs/NullableString", "description": "The extraction log or chat interaction that staged a proposal; null for requests." },
+        "summary": { "type": "string" },
+        "channel": { "$ref": "common.json#/$defs/NullableString" },
+        "requester": {
+          "description": "The member who asked; null for proposals.",
+          "anyOf": [{ "$ref": "common.json#/$defs/Member" }, { "type": "null" }]
+        },
+        "outcome": { "enum": ["approved", "rejected", "superseded", "discarded", "withdrawn", "expired"] },
+        "decided_by": { "anyOf": [{ "$ref": "#/$defs/Decider" }, { "type": "null" }] },
+        "decided_at": { "type": "string", "description": "RFC 3339 UTC instant it closed." },
+        "reason": { "$ref": "common.json#/$defs/NullableString" },
+        "created_at": { "type": "string", "description": "RFC 3339 UTC instant it was made." },
+        "history_seq": { "type": ["integer", "null"], "minimum": 1, "description": "The History record an approval wrote." },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Evidence" },
+          "description": "A proposal card's cited messages; an uncached one is `missing` but keeps its Discord `url`."
+        },
+        "card_url": { "$ref": "common.json#/$defs/NullableString" }
+      }
+    },
+    "PastPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items", "next_before"],
+      "properties": {
+        "items": { "type": "array", "items": { "$ref": "#/$defs/PastItem" } },
+        "next_before": { "$ref": "common.json#/$defs/NullableString", "description": "Pass as `before` for the next (older) page; null on the last page." }
+      }
+    }
   }
 }

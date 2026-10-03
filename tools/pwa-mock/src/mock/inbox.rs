@@ -457,7 +457,7 @@ fn evidence(id: String, who: &str, text: &str, hour: i64, link: Option<&str>) ->
 }
 
 /// As the server's `kind_label`.
-fn label(kind: &str) -> &'static str {
+pub(super) fn label(kind: &str) -> &'static str {
     match kind {
         "move" => "Move",
         "add" => "New run",

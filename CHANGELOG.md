@@ -6,6 +6,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin API `GET /api/admin/inbox/past` lists closed proposals and member
+  requests newest first (outcome, who decided and when, reason, source with
+  message links, History record for approvals), paged by `before`/`limit`;
+  the dev mock serves invented closed items for the coming Inbox Past tab.
 - v5 admin Week matches the M3E boards: one Week window (Planner / Runs /
   Answers tabs, This/Next, a Filters popover and a status footer), an
   at-a-glance pane from 1200 px, the run as a side pane from 840 px (Run /

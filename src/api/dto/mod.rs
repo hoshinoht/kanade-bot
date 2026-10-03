@@ -8,6 +8,7 @@ mod consequence;
 pub mod fixed;
 pub mod history;
 pub mod inbox;
+pub mod inbox_past;
 pub mod logs;
 pub mod members;
 pub mod reminders;

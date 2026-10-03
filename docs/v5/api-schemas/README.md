@@ -52,6 +52,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/admin/bosses/{key}/knowledge` | `bosses.json#/$defs/Knowledge` |
 | `GET /api/admin/reminders` | `reminders.json#/$defs/Reminders` |
 | `GET /api/admin/inbox` | `inbox.json#/$defs/Proposals` |
+| `GET /api/admin/inbox/past?before=&limit=` | `inbox.json#/$defs/PastPage` (422 `invalid_query`) |
 | `POST /api/admin/inbox/{id}/approve`, `/reject` | `common.json#/$defs/Message` |
 | `GET /api/admin/extractions?…` | `extractions.json#/$defs/Extractions` (422 `invalid_filter`) |
 | `GET /api/admin/extractions/{id}` | `extractions.json#/$defs/Extraction` |

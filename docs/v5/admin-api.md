@@ -164,6 +164,7 @@ whole; unknown or read-only keys are refused with 422.
 | Method & path | Request | Response | Notes |
 |---|---|---|---|
 | `GET /api/admin/inbox` | — | `Proposal[]` | Extractor/chat proposals and member requests together. **Implemented (A6)**, see "Inbox (A6)". |
+| `GET /api/admin/inbox/past?before=&limit=` | — | `PastPage` | Closed proposals and member requests, newest closed first (read-only Past tab). **Implemented**, see "Inbox (A6)" "Past". |
 | `POST /api/admin/inbox/{id}/approve` | `{version?, choices?, day?, time?}` | `{message}` | **Implemented (A6)**; `day`/`time` edit a proposal's time before approving; no `force`. |
 | `POST /api/admin/inbox/{id}/reject` | `{version?, reason?}` | `{message}` | **Implemented (A6)**; `reason` required for member requests only. |
 | `GET /api/admin/extractions` | — | `Extractions` | Paged client-side. **Implemented (A7)**, see "Logs and rescans (A7)". |
@@ -432,6 +433,32 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
   never read. Read from the watched-message cache only (never Discord), so
   deleted or retention-pruned messages are absent. `null` for requests and
   for proposals without a card or cited ids.
+- **Past.** `GET /api/admin/inbox/past?before=&limit=` (any admin session,
+  admin listener only) lists closed proposals and member requests as
+  `{items, next_before}`, newest closed first (ties by id, descending).
+  `limit` is 1–200 (default 50); `before` is the `id` of the last item shown
+  (`next_before`, `null` on the last page). Closed drafts never change, so the
+  cursor is stable; a `before` naming no closed item, a bad `limit` or
+  any other parameter is 422 `invalid_query`. Each item: `id`, `short_id`,
+  `kind`/`kind_label` (as the live list; `change` when the stored subject
+  cannot be read), `tab` (`extractor` for proposals, `self_service` for
+  requests), `source` (`extraction` | `chat` | `self_service`), `source_id`
+  (the extraction log or chat interaction that staged a proposal, else
+  `null`), `summary` (card summary, else the draft title; the member's title
+  for requests), `channel`, `requester` (requests only), `outcome`
+  (`approved` = merged, `rejected`, `superseded` = discarded with reason
+  `superseded`, `discarded`, `withdrawn`, `expired`), `decided_by` (`{kind,
+  id, name}`: members and Discord admins by roster name, `Admin (token)`,
+  `Admin (<tailscale login>)`, `Admin (Discord <id>)` when not in the roster,
+  system actors (expiry, superseding) as `Kanade`), `decided_at` (the
+  draft's last update, which is its close; RFC 3339 UTC), `reason` (the close
+  reason; `null` for superseded and when none was given), `created_at`,
+  `history_seq` (the merge record for `approved`, else `null`), `evidence`
+  and `card_url` (proposals with a stored card; cited messages read by id
+  from the cache, an uncached one `missing` but still linked by `url`). No
+  merge preview, thread or schedule lookup: a closed item never applies
+  again. Only the page's cards and cited messages are read; the closed rows
+  themselves are read whole (no operations) and sorted in memory.
 - **Approve** `{version?, choices?, day?, time?}` (`choices`: amended run id
   → `update` | `keep`). Requests need `version` (422 `version_required`)
   and, for `change_fixed`, `choices` (send `{}` when none are listed); they
@@ -695,7 +722,7 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
 | `POST /api/public/requests` | `{run_id \| fixed_id, change, note?}` + `Idempotency-Key` | `MemberRequest` | Signed-in member; a replayed key returns the first result. |
 | `POST /api/public/requests/{id}/withdraw` | `{}` | `MemberRequest` | Own requests only. |
 | `GET /api/public/requests/mine` | — | `MemberRequest[]` | |
-| `GET /api/admin/requests?state=` | — | `MemberRequest[]` | Folded into `GET /api/admin/inbox` (A6); closed-request history deferred. |
+| `GET /api/admin/requests?state=` | — | `MemberRequest[]` | Folded into `GET /api/admin/inbox` (A6); closed requests are served by `GET /api/admin/inbox/past`. |
 | `GET /api/admin/requests/{id}/preview` | — | `{version, preview, choices?}` | Folded into the inbox item (A6). |
 | `PATCH /api/admin/requests/{id}` | edit ops `[{op, field, value}]` + `version` | `MemberRequest` | Deferred (A6): needs an op-edit contract. |
 | `POST /api/admin/requests/{id}/approve` | `{version, choices?}` | `{message}` | Folded into `POST /api/admin/inbox/{id}/approve` (A6). |

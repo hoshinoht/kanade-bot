@@ -551,6 +551,51 @@ export interface Proposal {
   self_service: { member: Member; via: string; note: string | null } | null;
 }
 
+/** How a closed Inbox item ended: `approved` = merged, `superseded` = replaced by a newer proposal. */
+export type PastOutcome = 'approved' | 'rejected' | 'superseded' | 'discarded' | 'withdrawn' | 'expired';
+
+/** Who closed an item; `name` is ready to show (system actors read as `Kanade`). */
+export interface PastDecider {
+  kind: 'member' | 'admin' | 'system';
+  id: string;
+  name: string;
+}
+
+/** A closed proposal or member request (Inbox Past tab). Instants are RFC 3339 UTC. */
+export interface PastItem {
+  id: string;
+  short_id: string;
+  /** As `Proposal.kind`; `change` when the stored subject cannot be read. */
+  kind: Proposal['kind'] | 'change';
+  kind_label: string;
+  /** `extractor` for proposals, `self_service` for member requests. */
+  tab: InboxTab;
+  source: Proposal['source'];
+  /** The extraction log or chat interaction that staged a proposal; null for requests. */
+  source_id: string | null;
+  summary: string;
+  channel: string | null;
+  /** The member who asked; null for proposals. */
+  requester: Member | null;
+  outcome: PastOutcome;
+  decided_by: PastDecider | null;
+  decided_at: string;
+  reason: string | null;
+  created_at: string;
+  /** The History record an approval wrote. */
+  history_seq: number | null;
+  /** A proposal card's cited messages; an uncached one is `missing` but keeps its `url`. */
+  evidence: Evidence[];
+  card_url: string | null;
+}
+
+/** `GET /api/admin/inbox/past?before=&limit=`: newest closed first. */
+export interface PastPage {
+  items: PastItem[];
+  /** Pass as `before` for the next (older) page; null on the last page. */
+  next_before: string | null;
+}
+
 // ── Extractions and rescans ───────────────────────────────────────────────
 
 /** `identity_leak`: pseudonymization's boundary scanner refused the request; nothing was sent. */

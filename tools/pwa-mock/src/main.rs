@@ -172,6 +172,7 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         .route("/api/admin/bosses/{key}/knowledge", get(api::knowledge_v2))
         .route("/api/admin/bosses/events", get(api::events))
         .route("/api/admin/inbox", get(api::inbox))
+        .route("/api/admin/inbox/past", get(api::inbox_past))
         .route("/api/admin/inbox/{id}/approve", post(api::approve))
         .route("/api/admin/inbox/{id}/reject", post(api::reject))
         .route("/api/admin/extractions", get(api::extractions))
