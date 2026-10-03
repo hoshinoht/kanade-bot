@@ -3,9 +3,11 @@ import { busyWeek } from './busy-week';
 import { ADMIN, expect, test } from './support';
 
 // The planner card's grip owns its own column: no difficulty pill runs under
-// it, whatever the boss count, and populated days keep v4's 230 px track.
+// it, whatever the boss count, and populated days keep the M3E board's
+// floor (B_WeekSel: busy days beside the pane are about 190 px; boss names
+// may wrap, which the spec accepts; busier weeks scroll sideways).
 
-const TRACK_PX = 230;
+const TRACK_PX = 184;
 
 async function overlaps(page: Page) {
   return page.evaluate(() =>
@@ -57,7 +59,7 @@ for (const size of [
   });
 }
 
-test('planner: populated days keep the 230 px track and the busy board scrolls sideways, keyboard included', async ({ page }) => {
+test('planner: populated days keep the 184 px floor and the busy board scrolls sideways, keyboard included', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await busyWeek(page);
   await page.goto(`${ADMIN}/?sw=off`);
@@ -66,13 +68,10 @@ test('planner: populated days keep the 230 px track and the busy board scrolls s
   expect(widths).toHaveLength(7);
   for (const w of widths) expect(w).toBeGreaterThanOrEqual(TRACK_PX - 0.5);
   const cards = await page.locator('.board__col .plan-card').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().width));
-  // One card per row in a minimum-width column, filling it (v4's 13rem card track).
-  for (const w of cards) expect(w).toBeGreaterThanOrEqual(208);
-  // At that width "NMaleficStar NORMAL" keeps its pill on the name's line, beside the grip.
-  const wrapped = await page.locator('.plan-card .runcard__bosses .boss').evaluateAll((bosses) =>
-    bosses.filter((b) => b.querySelector('.pill')!.getBoundingClientRect().top >= b.querySelector('.boss__name')!.getBoundingClientRect().bottom).length,
-  );
-  expect(wrapped).toBe(0);
+  // One card per row in a minimum-width column, filling it (the column less its 8 px padding).
+  for (const w of cards) expect(w).toBeGreaterThanOrEqual(TRACK_PX - 20);
+  // A pill may drop under its name at that width, but never under the grip or past the card.
+  expect(await overlaps(page)).toEqual([]);
 
   const board = page.locator('.board');
   const scroll = await board.evaluate((el) => ({ width: el.scrollWidth, client: el.clientWidth }));

@@ -82,7 +82,8 @@ test('Fixed: the reveal produces intermediate heights, not just an animated-look
   expect(samples.some((sample) => sample > first + 1 && sample < last - 1)).toBe(true);
 });
 
-test('Week: opening its sheet expands only that card and closing collapses it', async ({ page }) => {
+test('Week: opening a run keeps its card at rest (the ring marks it), and closing leaves it so', async ({ page }) => {
+  // Cards grow on hover and keyboard focus only (e2e/week-hover.spec.ts), never on a click.
   await page.goto(`${ADMIN}/?sw=off`);
   const card = page.locator('[data-run="r-carling"]');
   const neighbor = page.locator('[data-run="r-bm"]');
@@ -91,8 +92,11 @@ test('Week: opening its sheet expands only that card and closing collapses it', 
   const otherHeight = await height(neighbor);
   await card.locator('.plan-card__open').click();
   await expect(card.locator('.plan-card__open')).toHaveAttribute('aria-current', 'true');
-  await expect.poll(() => height(card)).toBeGreaterThan(before + 10);
+  await expect(card).toHaveClass(/plan-card--selected/);
+  await page.waitForTimeout(300);
+  expect(await height(card)).toBe(before);
   expect(await height(neighbor)).toBe(otherHeight);
+  await expect(card.locator('.row-content__compact')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect.poll(() => height(card)).toBe(before);
 });

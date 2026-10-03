@@ -26,10 +26,10 @@ test('admin board: entry art under the veil only where the deployment has it', a
   await noBrokenImages(page);
 });
 
-test('admin run sheet: portraits, levels, split artwork, monogram fallback', async ({ page }) => {
+test('admin run pane: portraits, levels, split artwork, monogram fallback', async ({ page }) => {
   await page.goto(`${ADMIN}/?sw=off`);
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
-  const sheet = page.getByRole('dialog', { name: 'HCarling + HStar' });
+  const sheet = page.getByRole('complementary', { name: 'HCarling + HStar' });
   await expect(sheet.locator('img.run__art--lead')).toHaveAttribute('src', '/art/entry/Carling');
   await expect(sheet.locator('img.run__art--second')).toHaveAttribute('src', '/art/entry/MaleficStar');
   await expect(sheet.locator('img.portrait')).toHaveCount(2);
@@ -41,13 +41,13 @@ test('admin run sheet: portraits, levels, split artwork, monogram fallback', asy
   await page.keyboard.press('Escape');
 
   await page.locator('[data-run="r-limbo"] .plan-card__open').click();
-  const limbo = page.getByRole('dialog', { name: 'HLimbo' });
+  const limbo = page.getByRole('complementary', { name: 'HLimbo' });
   await expect(limbo.locator('img.portrait')).toHaveAttribute('src', '/art/portraits/Limbo');
   await expect(limbo.locator('img.run__art')).toHaveCount(0);
   await page.keyboard.press('Escape');
 
   await page.locator('[data-run="r-jupiter"] .plan-card__open').click();
-  const jupiter = page.getByRole('dialog', { name: 'HJupiter' });
+  const jupiter = page.getByRole('complementary', { name: 'HJupiter' });
   const mono = jupiter.locator('.portrait--mono');
   await expect(mono).toHaveText('Ju');
   // The hue arrives through CSSOM, not a style attribute.

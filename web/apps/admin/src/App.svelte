@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import { SvelteSet } from 'svelte/reactivity';
+  import { MediaQuery, SvelteSet } from 'svelte/reactivity';
   import {
     applyColorway,
     applyMode,
@@ -75,6 +75,9 @@
   const phoneQuery = window.matchMedia(PHONE_QUERY);
   let phone = $state(phoneQuery.matches);
   let drawerOpen = $state(false);
+  // Gate G4: from 840 px the run sheet is a side pane in the Week window; below, a full-screen sheet.
+  const paneQuery = new MediaQuery('(min-width: 840px)', true);
+  const sheetWide = $derived(paneQuery.current && !phone);
   let menuButton = $state<HTMLButtonElement>();
   $effect(() => {
     const update = () => {
@@ -264,8 +267,23 @@
   async function openSheet(runId: string) {
     if (!store.run(runId)) return;
     RunSheet ??= (await import('./RunSheet.svelte')).default;
+    // The pane lives in the Week window: the palette can open a run from any page.
+    if (route?.key !== 'week') router.go(which === 'next' ? '/?week=next' : '/');
     sheetRunId = runId;
     sheetOpen = true;
+  }
+
+  // Closing the pane returns focus to the run it came from (a board card or a Runs row).
+  function closePane() {
+    const id = sheetRunId;
+    sheetOpen = false;
+    void tick().then(() => {
+      const back = id
+        ? (document.querySelector<HTMLElement>(`[data-handle="${CSS.escape(id)}"]`) ??
+          document.querySelector<HTMLElement>(`[data-row="${CSS.escape(id)}"] .week-runs__open`))
+        : null;
+      (back ?? document.getElementById('main'))?.focus({ preventScroll: true });
+    });
   }
 
   function report(outcome: MoveOutcome, undo?: () => void) {
@@ -402,7 +420,7 @@
     if (mod && event.key.toLowerCase() === 'k') {
       event.preventDefault();
       void togglePalette();
-    } else if (mod && event.key.toLowerCase() === 'z' && !event.shiftKey && !typing(event.target) && !paletteOpen && !sheetOpen) {
+    } else if (mod && event.key.toLowerCase() === 'z' && !event.shiftKey && !typing(event.target) && !paletteOpen && !(sheetOpen && !sheetWide)) {
       if (store.lastMove) {
         event.preventDefault();
         void undo();
@@ -410,6 +428,31 @@
     }
   }
 </script>
+
+{#snippet sheet(wide: boolean)}
+  {#if store.week && RunSheet}
+    <RunSheet
+      bind:open={sheetOpen}
+      run={sheetRun}
+      week={store.week}
+      members={store.members}
+      {wide}
+      countdown={store.summary?.next?.run_id === sheetRunId ? store.summary.next.countdown : null}
+      onclose={closePane}
+      onmove={(runId, to) => move(runId, to)}
+      onswap={(runId, withId) => swap(runId, withId)}
+      onstatus={(runId, status) => store.setStatus(runId, status)}
+      onrsvp={(runId, memberId, answer) => store.rsvp(runId, memberId, answer)}
+      onroster={(runId, change) => store.roster(runId, change)}
+      onreset={(runId) => store.resetToFixed(runId)}
+      onping={(runId) => store.ping(runId)}
+      onreread={rereadChannel}
+      saving={store.mutating}
+    />
+  {/if}
+{/snippet}
+
+{#snippet runPane()}{@render sheet(true)}{/snippet}
 
 <svelte:window onkeydown={onKeydown} />
 
@@ -465,13 +508,14 @@
           {store}
           {which}
           bind:tab={weekTab}
-          selectedRun={sheetOpen ? sheetRunId : null}
+          selectedRun={sheetOpen && sheetRun ? sheetRunId : null}
           onmove={(runId, to) => void move(runId, to)}
           onswap={(runId, withId) => void swap(runId, withId)}
           onopen={openSheet}
           onundo={() => void undo()}
           onreread={(run) => void rereadFromBoard(run)}
           busyChannels={rereading}
+          pane={sheetWide && RunSheet && store.week ? runPane : undefined}
         />
       {:else if loader && route}
         {#key route.key === 'bosses' || route.key === 'boss-knowledge' ? 'boss-workspace' : `${route.key} ${JSON.stringify(route.params)}`}<Lazy {loader} props={pageProps(route.key, route.params)} />{/key}
@@ -485,23 +529,7 @@
         <span>Moves apply to the week on screen only.</span>
       </p>
     </main>
-    {#if store.week && RunSheet}
-      <RunSheet
-        bind:open={sheetOpen}
-        run={sheetRun}
-        week={store.week}
-        members={store.members}
-        onmove={(runId, to) => move(runId, to)}
-        onswap={(runId, withId) => swap(runId, withId)}
-        onstatus={(runId, status) => store.setStatus(runId, status)}
-        onrsvp={(runId, memberId, answer) => store.rsvp(runId, memberId, answer)}
-        onroster={(runId, change) => store.roster(runId, change)}
-        onreset={(runId) => store.resetToFixed(runId)}
-        onping={(runId) => store.ping(runId)}
-        onreread={rereadChannel}
-        saving={store.mutating}
-      />
-    {/if}
+    {#if store.week && RunSheet && !sheetWide}{@render sheet(false)}{/if}
     {#if Palette}<Palette bind:open={paletteOpen} {commands} />{/if}
   </div>
 {/if}

@@ -580,8 +580,9 @@ test('history: restore a week to a point, revert a member, and blame in the run 
 
   await page.getByRole('link', { name: 'Week' }).click();
   await page.locator('[data-run="r-kalos"] .plan-card__open').click();
-  const sheet = page.getByRole('dialog', { name: 'XKalos' });
-  await sheet.getByText('Who changed this').click();
+  const sheet = page.getByRole('complementary', { name: 'XKalos' });
+  // The pane's Changes tab opens the blame already expanded.
+  await sheet.getByRole('tab', { name: 'Changes' }).click();
   await expect(sheet.getByRole('row', { name: /^Day and time/ })).toContainText('via extraction approval');
   await expect(sheet.getByRole('row', { name: /^Day and time/ })).toContainText('Fri 25 22:00');
   await expect(sheet.getByRole('row', { name: /^Day and time/ })).toContainText('Asahi');
@@ -843,7 +844,7 @@ test('week and sheet: per-channel re-read from the board and the sheet', async (
   // The sheet's channel button reports in the sheet itself.
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
-  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'HCarling + HStar' })).toBeVisible();
   await page.getByRole('button', { name: 'Re-read #hstar-party from Discord and propose any changes' }).click();
   const notice = page.locator('.sheet__notice');
   await expect(notice).toContainText('Re-reading #hstar-party…');

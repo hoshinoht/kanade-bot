@@ -96,13 +96,16 @@
   height: 18px;
   padding: 0 5px;
   border-radius: 9px;
-  background: color-mix(in srgb, var(--win-ink) 22%, transparent);
+  // A ring, no wash: any wash of the bar ink left the count under 4.5:1 on marigold.
+  background: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--win-ink) 40%, transparent);
   font-size: var(--fs-micro);
   font-weight: 600;
 }
 
 .tabs__tab[aria-selected="true"] .tabs__count {
   background: var(--select);
+  box-shadow: none;
 }
 
 // Title-bar controls (mockup `.tbtn`): outlined pills on the bar.

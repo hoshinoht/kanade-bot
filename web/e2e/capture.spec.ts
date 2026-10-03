@@ -59,7 +59,8 @@ for (const vp of VIEWPORTS) {
       }
 
       await page.locator('[data-run="r-carling"] .plan-card__open').click();
-      await expect(page.getByRole('dialog', { name: 'HCarling + HStar' })).toBeVisible();
+      // Wide screens open the run in the Week window's side pane (gate G4).
+      await expect(page.getByRole(vp.name === 'wide' ? 'complementary' : 'dialog', { name: 'HCarling + HStar' })).toBeVisible();
       await shot(page, `admin-sheet-${tag}`);
       await page.keyboard.press('Escape');
 
@@ -356,7 +357,7 @@ test('capture planner swap', async ({ page }) => {
     await page.setViewportSize({ width: vp.width, height: vp.height });
     await page.goto(`${ADMIN}/?sw=off`);
     await page.locator('[data-run="r-fa"] .plan-card__open').click();
-    const sheet = page.getByRole('dialog', { name: 'HFA' });
+    const sheet = page.getByRole(vp.name === 'wide' ? 'complementary' : 'dialog', { name: 'HFA' });
     await sheet.getByRole('button', { name: 'Swap timing with…' }).click();
     await sheet.getByRole('combobox', { name: 'Swap with' }).selectOption({ label: 'Tue 29 23:30 · XBM' });
     await expect(sheet.getByText('HFA → Tue 29 23:30')).toBeVisible();

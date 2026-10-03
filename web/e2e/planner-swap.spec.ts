@@ -21,6 +21,22 @@ async function slots(page: Page, ...ids: string[]) {
   return { version: week.version, runs: ids.map((id) => week.runs.find((r) => r.id === id)!).map((r) => ({ id: r.id, day: r.day, time: r.time })) };
 }
 
+/** Waits out the FLIP glide (and an emptied day collapsing) so boxes are final. */
+async function settled(page: Page, ...ids: string[]) {
+  let last = '';
+  await expect
+    .poll(
+      async () => {
+        const now = JSON.stringify(await Promise.all(ids.map((id) => page.locator(`[data-run="${id}"]`).boundingBox())));
+        const same = now === last;
+        last = now;
+        return same;
+      },
+      { intervals: [150] },
+    )
+    .toBe(true);
+}
+
 /** The middle of a card: a drop there swaps with it. */
 async function onCard(page: Page, runId: string) {
   const box = (await page.locator(`[data-run="${runId}"]`).boundingBox())!;
@@ -71,6 +87,7 @@ test('a later move retires the earlier swap toast undo; its own undo only revert
   await pointerDrag(page, 'r-fa', await onCard(page, 'r-bm'));
   const swapped = 'Swapped HFA to Tue 29 23:30, XBM to Mon 28 20:00.';
   await expect(page.getByText(swapped)).toBeVisible();
+  await settled(page, 'r-fa', 'r-carling');
 
   const carling = (await page.locator('[data-run="r-carling"]').boundingBox())!;
   await pointerDrag(page, 'r-fa', { x: carling.x + carling.width / 2, y: carling.y + carling.height * 0.1 });
@@ -153,7 +170,7 @@ test('keyboard: S on another run’s slot swaps; S with nobody there says so', a
 test('run sheet: "Swap timing with…" picks a run, previews both slots, confirms and saves', async ({ page }) => {
   await openAdmin(page);
   await page.locator('[data-run="r-fa"] .plan-card__open').click();
-  const sheet = page.getByRole('dialog', { name: 'HFA' });
+  const sheet = page.getByRole('complementary', { name: 'HFA' });
   const toggle = sheet.getByRole('button', { name: 'Swap timing with…' });
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -170,7 +187,8 @@ test('run sheet: "Swap timing with…" picks a run, previews both slots, confirm
   await toggle.click();
   await picker.selectOption({ label: 'Tue 29 23:30 · XBM' });
   await sheet.getByRole('button', { name: 'Swap', exact: true }).click();
-  await expect(sheet).toBeHidden();
+  // The pane stays on the run; the picker folds away.
+  await expect(group).toBeHidden();
   await expect(page.getByText('Swapped HFA to Tue 29 23:30, XBM to Mon 28 20:00.')).toBeVisible();
   expect((await slots(page, 'r-fa', 'r-bm')).runs).toEqual([
     { id: 'r-fa', day: 5, time: '23:30' },

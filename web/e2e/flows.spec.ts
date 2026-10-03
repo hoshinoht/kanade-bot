@@ -53,12 +53,12 @@ test('public: arrow keys move between tabs and only the panel scrolls', async ({
   expect(metrics.overflow).toBe('auto');
 });
 
-test('admin: modal opens from a card and restores focus on Escape', async ({ page }) => {
+test('admin: the run pane opens from a card and restores focus on Escape', async ({ page }) => {
   await openAdmin(page);
   const open = page.locator('[data-run="r-carling"] .plan-card__open');
   await open.focus();
   await page.keyboard.press('Enter');
-  const dialog = page.getByRole('dialog', { name: 'HCarling + HStar' });
+  const dialog = page.getByRole('complementary', { name: 'HCarling + HStar' });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText('Radiant Malefic Star')).toBeVisible();
   await page.keyboard.press('Escape');
@@ -69,7 +69,7 @@ test('admin: modal opens from a card and restores focus on Escape', async ({ pag
 test('admin: run sheet Move field moves a run and keeps input after a rejected time', async ({ page }) => {
   await openAdmin(page);
   await page.locator('[data-run="r-limbo"] .plan-card__open').click();
-  const dialog = page.getByRole('dialog', { name: 'HLimbo' });
+  const dialog = page.getByRole('complementary', { name: 'HLimbo' });
   const field = dialog.getByRole('textbox', { name: /Move HLimbo/ });
   await field.fill('25:99');
   await dialog.getByRole('button', { name: 'Move', exact: true }).click();
@@ -77,7 +77,8 @@ test('admin: run sheet Move field moves a run and keeps input after a rejected t
   await expect(field).toHaveValue('25:99');
   await field.fill('sat 20:30');
   await dialog.getByRole('button', { name: 'Move', exact: true }).click();
-  await expect(dialog).toBeHidden();
+  // The pane stays open on the moved run with a fresh field.
+  await expect(field).toHaveValue('');
   await expect(column(page, 'Sat').locator('[data-run="r-limbo"]')).toContainText('20:30');
 });
 
@@ -97,14 +98,15 @@ test('admin: command palette searches and runs commands', async ({ page }) => {
   await page.keyboard.press('ControlOrMeta+k');
   await search.fill('open kalos');
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('dialog', { name: 'XKalos' })).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'XKalos' })).toBeVisible();
   await page.keyboard.press('Escape');
 
   await page.keyboard.press('ControlOrMeta+k');
   await search.fill('show answers');
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('tab', { name: 'Answers' })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.locator('.chart__canvas canvas')).toBeVisible();
+  await expect(page.getByRole('tab', { name: /^Answers/ })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.week-answers__bars')).toBeVisible();
+  await page.getByRole('button', { name: 'Show as table' }).click();
   await expect(page.getByRole('table', { name: 'Answers by day' })).toContainText('Answered');
 });
 
@@ -224,7 +226,7 @@ test('admin: a click on a card opens it; it does not start a drag', async ({ pag
   await openAdmin(page);
   await expect(page.locator('.board[data-hydrated]')).toBeVisible();
   await page.locator('[data-run="r-limbo"] .plan-card__open').click();
-  await expect(page.getByRole('dialog', { name: 'HLimbo' })).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'HLimbo' })).toBeVisible();
   await expect(page.locator('.dnd-ghost--on')).toHaveCount(0);
 });
 
@@ -235,7 +237,7 @@ test.describe('touch', () => {
     await openAdmin(page);
     await expect(page.locator('.board[data-hydrated]')).toBeVisible();
     await page.locator('[data-run="r-limbo"] .plan-card__open').tap();
-    await expect(page.getByRole('dialog', { name: 'HLimbo' })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'HLimbo' })).toBeVisible();
     await page.keyboard.press('Escape');
 
     const cdp = await page.context().newCDPSession(page);
@@ -272,7 +274,7 @@ test('admin: a rejected move rolls back and says why', async ({ page }) => {
 });
 
 test('admin: a lazy chunk that fails after a deploy offers a reload', async ({ page }) => {
-  await page.route('**/assets/AnswersChart-*', (route) => route.abort());
+  await page.route('**/assets/AnswersView-*', (route) => route.abort());
   await openAdmin(page);
   await page.getByRole('tab', { name: 'Answers' }).click();
   const alert = page.getByRole('alert').filter({ hasText: "The chart didn't load" });
@@ -283,7 +285,7 @@ test('admin: a lazy chunk that fails after a deploy offers a reload', async ({ p
 test('admin: duplicate display names each render, keyed by member id', async ({ page }) => {
   await openAdmin(page);
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
-  const dialog = page.getByRole('dialog', { name: 'HCarling + HStar' });
+  const dialog = page.getByRole('complementary', { name: 'HCarling + HStar' });
   await expect(dialog.locator('.run__people .chip', { hasText: 'Ren' })).toHaveCount(2);
   await page.keyboard.press('Escape');
   await page.getByRole('tab', { name: /Runs/ }).click();

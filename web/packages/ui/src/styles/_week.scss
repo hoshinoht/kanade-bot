@@ -1,0 +1,1359 @@
+// The Week window (gate G3; boards B_WeekSel, B_WeekRuns, B_WeekAnswers,
+// B_PhoneWeek, WeekRail1): title-bar tabs and actions, the board (or the Runs
+// table, or the Answers cards) beside a supporting pane, and a status footer.
+// Admin only; values from the boards, sizes on the type-scale tokens.
+
+.week-window {
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+}
+
+/* ── title bar ───────────────────────────────────────────────────────── */
+
+.week-window__bar {
+  flex-wrap: nowrap;
+}
+
+.week-window__bar .tabs__tabs {
+  flex: none;
+}
+
+.week-window__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+// This week / Next week on the bar (mockup `.tgrp`): one outlined pill, the chosen half filled.
+.week-which:not(.week-which--phone) {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1.5px solid color-mix(in srgb, var(--win-ink) 45%, transparent);
+  border-radius: 16px;
+}
+
+.week-which:not(.week-which--phone) a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 11px;
+  color: var(--win-ink);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.week-which:not(.week-which--phone) a:hover {
+  background: color-mix(in srgb, var(--win-ink) 12%, transparent);
+}
+
+.week-which:not(.week-which--phone) a[aria-current="page"] {
+  background: var(--win-ink);
+  color: var(--win);
+}
+
+.week-which a:focus-visible {
+  outline: 2px solid var(--win-ink);
+  outline-offset: -3px;
+}
+
+.card__head .btn.week-window__icon,
+.card__head .week-filters__toggle--icon {
+  justify-content: center;
+  width: 30px;
+  min-width: 30px;
+  padding: 0;
+}
+
+.card__head .btn.week-window__icon:disabled {
+  opacity: 0.45;
+}
+
+/* Filters: the title-bar button and its popover. */
+.week-filters {
+  position: relative;
+}
+
+.card__head .week-filters__toggle {
+  gap: 6px;
+}
+
+.week-filters__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  width: max-content;
+  max-width: min(36rem, calc(100vw - 2rem));
+  margin: 0;
+  padding: 12px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+}
+
+/* Move help: a contained card over the board's top edge while open. */
+.week-help {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 15;
+  max-width: min(36rem, calc(100% - 24px));
+  margin: 0;
+  padding: 0.6rem 0.85rem;
+  border: 2px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+
+/* ── body: the surface beside the pane ───────────────────────────────── */
+
+.week-window__body {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.week-surface {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--board);
+}
+
+.week-surface:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.week-surface--runs {
+  background: var(--pane);
+}
+
+.week-window .board {
+  gap: 8px;
+  min-height: 100%;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+/* ── footer: the week's status line ─────────────────────────────────── */
+
+.week-window__foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  min-height: 30px;
+  padding: 0 14px;
+  border-top: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+.week-window__foot > * + *:not(.week-foot__tz)::before {
+  content: "·" / "";
+  margin-right: 12px;
+  color: var(--dim-text);
+}
+
+.week-window__foot b {
+  color: var(--ink);
+}
+
+.week-foot__runs {
+  color: var(--ink);
+}
+
+.week-foot__runs b {
+  font-size: var(--fs-body);
+}
+
+.week-foot__item {
+  white-space: nowrap;
+}
+
+a.week-foot__item {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.week-foot__item:hover,
+.week-foot__next:hover {
+  text-decoration: underline;
+}
+
+.week-foot__item--warn,
+.week-foot__item--warn b {
+  color: var(--warn-text);
+}
+
+.week-foot__next {
+  color: inherit;
+  font-size: inherit;
+}
+
+.week-foot__chip {
+  min-height: 22px;
+  font-size: var(--fs-mini);
+  cursor: pointer;
+}
+
+.week-foot__tz {
+  margin-left: auto;
+}
+
+/* ── the board inside the window ─────────────────────────────────────── */
+
+.week-window .board__col {
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: none;
+  overflow: clip;
+}
+
+.week-window .board__col--today {
+  border: 2px solid var(--accent);
+}
+
+.week-window .board__col--empty {
+  flex: 0 0 40px;
+  align-items: center;
+  gap: 4px;
+  padding-top: 10px;
+  box-sizing: border-box;
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 35%, var(--line));
+  background: color-mix(in srgb, var(--ground) 18%, var(--board));
+}
+
+.week-window .board__head {
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: normal;
+  white-space: nowrap;
+  min-height: 36px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border-bottom: 1.5px solid var(--line);
+  border-radius: 0;
+  background: var(--raise);
+}
+
+.week-window .board__col--today .board__head {
+  background: var(--select);
+}
+
+.week-window .board__col:not(.board__col--empty) .board__dow,
+.week-window .board__col:not(.board__col--empty) .board__date {
+  font-family: var(--display);
+  font-size: var(--fs-small);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.week-window .board__col:not(.board__col--empty) .board__date {
+  margin: 0 auto 0 0.3em;
+}
+
+.week-window .board__col--today:not(.board__col--empty) .board__date::after {
+  content: " · today" / "";
+}
+
+.week-window .board__count {
+  font-size: var(--fs-mini);
+  color: var(--dim-text);
+}
+
+.week-window .board__count::after {
+  content: " runs" / "";
+}
+
+.week-window .board__count--one::after {
+  content: " run" / "";
+}
+
+.week-window .board__col--empty .board__head {
+  gap: 4px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.week-window .board__col--empty .board__dow {
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+}
+
+.week-window .board__col--empty .board__date {
+  font-size: var(--fs-body-sm);
+  font-weight: 600;
+}
+
+.week-window .board__col--empty .board__reset {
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 0;
+  text-decoration: underline;
+}
+
+.week-window .board__col--empty .board__runs {
+  display: none;
+}
+
+.week-window .board__runs {
+  gap: 8px;
+  padding: 8px;
+}
+
+// The busy board's floor (B_WeekSel: three busy days beside a 340 px pane are
+// about 190 px wide; boss names may wrap). Busier weeks scroll sideways.
+@media (min-width: 900px) {
+  .week-window .board__col:not(.board__col--empty) {
+    min-width: 11.5rem;
+  }
+}
+
+/* Run cards (mockup `.card`): a 4 px status stripe, the clock, the bosses, the party. */
+.week-window .runcard {
+  border: 1.5px solid var(--line);
+  border-left: 0;
+  border-radius: 10px;
+  --card-face: var(--row);
+}
+
+.week-window .runcard::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  border-radius: 10px 0 0 10px;
+  background: var(--stripe, var(--off));
+}
+
+.week-window .runcard--planned { --stripe: var(--warn); }
+.week-window .runcard--confirmed { --stripe: var(--ok); }
+.week-window .runcard--at_risk { --stripe: var(--risk); }
+.week-window .runcard--otot { --stripe: var(--own); }
+.week-window .runcard--done,
+.week-window .runcard--cancelled { --stripe: var(--faint); }
+
+.week-window .plan-card__open {
+  container-type: inline-size;
+  box-sizing: border-box;
+  width: 100%;
+  gap: 5px;
+  padding: 8px 10px 9px 14px;
+}
+
+.week-window .runcard__top {
+  flex-wrap: nowrap;
+}
+
+// Too narrow for the clock, the mark, the tally and "1 open" on one line: the places go first.
+@container (max-width: 9.5rem) {
+  .week-window .runcard__places {
+    display: none;
+  }
+}
+
+.week-window .runcard__time {
+  font-size: var(--fs-clock-narrow);
+}
+
+.week-window .runcard__meta {
+  font-size: var(--fs-mini);
+}
+
+.week-window .runcard__tally {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.runcard__places {
+  font-family: var(--mono);
+  color: var(--dim);
+}
+
+.week-window .plan-card__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.week-window .plan-card__summary .boss {
+  gap: 6px;
+}
+
+.plan-card__party--line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// Selected (B_WeekSel): a 2 px accent border, 14 px corners and a select halo.
+// The border keeps its 1.5 px box and a 0.5 px ring makes up the 2 px, so
+// selecting a card never changes its height (row-expansion.spec).
+.week-window .plan-card--selected,
+.week-window .plan-card--selected:hover {
+  border-color: var(--accent-fill);
+  border-radius: 14px;
+  box-shadow:
+    0 0 0 0.5px var(--accent-fill),
+    0 0 0 3.5px var(--select);
+  --card-face: var(--row);
+}
+
+.week-window .plan-card--selected::before {
+  border-radius: 12px 0 0 12px;
+}
+
+/* ── side panes: at a glance, and the run ──────────────────────────── */
+
+.side-pane.week-glance {
+  flex: 0 0 280px;
+  justify-content: space-between;
+  overflow: auto;
+}
+
+.week-glance__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 10px;
+}
+
+.week-glance p {
+  margin: 0;
+}
+
+.week-glance__next {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  overflow: hidden;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--select);
+  box-shadow: inset 0 0 0 1.5px var(--select-edge);
+}
+
+.week-glance__art {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: -1;
+  width: 70%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
+  opacity: 0.5;
+  mask-image: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 95%) 80%);
+  pointer-events: none;
+}
+
+.week-glance__cap {
+  color: var(--select-ink);
+}
+
+.week-glance__time {
+  font-size: var(--fs-clock);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.week-glance__date {
+  font-size: var(--fs-body-sm);
+}
+
+.week-glance__bosses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-weight: 600;
+}
+
+.week-glance__fill {
+  font-size: var(--fs-small);
+}
+
+.week-glance__open {
+  margin-top: 6px;
+}
+
+.week-glance__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0 0 6px;
+}
+
+.week-glance__total {
+  color: var(--ink);
+  font-size: var(--fs-body);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.week-glance__rows {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.week-glance__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 4px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  font-weight: 700;
+}
+
+.week-glance__row:first-child { border-radius: 16px 16px 4px 4px; }
+.week-glance__row:last-child { border-radius: 4px 4px 16px 16px; }
+.week-glance__row:only-child { border-radius: 16px; }
+
+.week-glance__more {
+  margin-top: 8px;
+  font-size: var(--fs-small);
+}
+
+.week-glance__none {
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+.week-glance__foot {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+}
+
+.week-glance__fact {
+  display: flex;
+  justify-content: space-between;
+  min-height: 34px;
+  align-items: center;
+  padding: 0 12px;
+  border-radius: 17px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.week-glance__fact--warn {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 55%, var(--line));
+}
+
+// A warn count chip (mockup `.un`).
+.week-count {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--warn) 30%, var(--surface));
+  color: var(--warn-text);
+  font-size: var(--fs-mini);
+  font-weight: 600;
+}
+
+/* The run pane (B_WeekSel): pill tabs, the art header, then the run's controls. */
+.side-pane.week-pane {
+  flex: 0 0 340px;
+  overflow: hidden;
+}
+
+.week-pane__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1.5px solid var(--line);
+}
+
+.week-pane__tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.ptab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 15px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ptab:hover {
+  background: var(--row-hover);
+}
+
+.ptab[aria-selected="true"] {
+  background: var(--select);
+  color: var(--select-ink);
+}
+
+.ptab__count {
+  font-size: var(--fs-micro);
+}
+
+.week-pane__close {
+  margin-left: auto;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  justify-content: center;
+}
+
+// The pane's scrolling panel. It holds the run's entry art (`_runs.scss` .run__art, unchanged), as
+// the sheet's card does: something to be absolute against, and a stacking
+// context of its own so the art's z-index -1 stays above the pane's surface.
+.week-pane__panel {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.week-pane__art {
+  position: relative;
+  flex: none;
+  border-bottom: 1.5px solid var(--line);
+}
+
+.week-pane__lead {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.week-pane__art p,
+.week-pane__art ul {
+  margin: 0;
+}
+
+.week-pane__when {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.week-pane__time {
+  font-size: var(--fs-clock);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.week-pane__day {
+  color: var(--ink);
+}
+
+.week-pane__bosses {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.week-pane__bosses .boss {
+  gap: 8px;
+  font-family: var(--display);
+  font-size: var(--fs-body-sm);
+  font-weight: 700;
+}
+
+.week-pane__bosses .portrait {
+  width: 30px;
+  height: 30px;
+}
+
+.week-pane__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.week-pane__chips > * {
+  min-height: 26px;
+}
+
+.week-pane__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.week-pane__body > form {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.week-pane__body > form input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 40px;
+  border-radius: 20px;
+  font-family: var(--mono);
+}
+
+.week-pane__body > form .btn {
+  min-height: 40px;
+  border-radius: 20px;
+}
+
+.week-pane__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+// One row of 32 px pills (B_WeekSel `.btn`, radius 16).
+.week-pane__actions .btn {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 16px;
+  font-size: var(--fs-small);
+}
+
+.week-pane .week-pane__week {
+  gap: 0 5px;
+  font-family: var(--body);
+  color: var(--dim-text);
+}
+
+.week-pane__week .run__cards-label {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: inherit;
+}
+
+.week-pane__week .cardlink {
+  font-family: var(--mono);
+}
+
+.week-pane__label {
+  margin-top: 4px;
+}
+
+.week-pane__label .chanmark {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.week-pane .run__people {
+  gap: 5px;
+}
+
+// Party chips in the pane (mockup `.alias`): 26 px, mono names.
+.week-pane .run__people .chip,
+.week-pane .run__people .chip__add {
+  min-height: 26px;
+  padding: 0 6px 0 10px;
+  border-radius: 13px;
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+}
+
+.week-pane .run__cards,
+.week-pane .run__meta {
+  margin: 0;
+  font-size: var(--fs-small);
+}
+
+.week-pane .statusbar {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.week-pane .seg--status {
+  flex-wrap: nowrap;
+}
+
+.week-pane .seg--status .seg__btn {
+  min-height: 34px;
+  padding: 0 9px;
+}
+
+.week-pane .sheet__notice:empty,
+.week-pane .run__error:empty {
+  display: none;
+}
+
+/* ── Runs tab (B_WeekRuns) ────────────────────────────────────────────── */
+
+.week-runs {
+  min-height: 100%;
+  padding: 0 10px 10px;
+  box-sizing: border-box;
+}
+
+.week-runs__table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 2px;
+  font-size: var(--fs-body-sm);
+}
+
+.week-runs__table th[scope="col"] {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 10px;
+  border: 0;
+  background: var(--pane);
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-transform: uppercase;
+  box-shadow: none;
+}
+
+.week-runs__table tbody th,
+.week-runs__table td {
+  height: 44px;
+  padding: 0 10px;
+  border: 0;
+  background: var(--row);
+  white-space: nowrap;
+  font-weight: inherit;
+  text-align: left;
+}
+
+.week-runs__row > :first-child { border-radius: 6px 0 0 6px; }
+.week-runs__row > :last-child { border-radius: 0 6px 6px 0; }
+
+.week-runs__row {
+  cursor: pointer;
+}
+
+.week-runs__row:hover > * {
+  background: var(--row-hover);
+  --dim: var(--dim-text);
+}
+
+.week-runs__row--active > *,
+.week-runs__row--active:hover > * {
+  background: var(--select);
+  box-shadow: inset 0 1.5px 0 var(--select-edge), inset 0 -1.5px 0 var(--select-edge);
+  --dim: var(--dim-text);
+}
+
+.week-runs__row--active > :first-child {
+  border-radius: 18px 0 0 18px;
+  box-shadow: inset 1.5px 1.5px 0 var(--select-edge), inset 0 -1.5px 0 var(--select-edge);
+}
+
+.week-runs__row--active > :last-child {
+  border-radius: 0 18px 18px 0;
+  box-shadow: inset -1.5px 1.5px 0 var(--select-edge), inset 0 -1.5px 0 var(--select-edge);
+}
+
+.week-runs__open {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.week-runs__open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.week-runs__boss {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.week-runs__boss .portrait {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.week-runs__name {
+  font-weight: 700;
+}
+
+.week-runs__when {
+  width: 110px;
+  font-weight: 600;
+}
+
+.week-runs__state {
+  width: 140px;
+}
+
+.week-runs__state .status {
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.week-runs__on {
+  width: 50px;
+  font-weight: 700;
+}
+
+.week-runs__party {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.week-runs__channel {
+  width: 130px;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+/* ── Answers tab (B_WeekAnswers) ──────────────────────────────────────── */
+
+.week-answers {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100%;
+  padding: 14px 18px;
+  box-sizing: border-box;
+}
+
+.week-answers__card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.week-answers__card--fill {
+  flex: 1 0 auto;
+  gap: 8px;
+}
+
+.week-answers__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+
+.week-answers__head p {
+  margin: 0;
+}
+
+.week-answers__title {
+  margin: 0;
+  font-family: var(--body);
+  font-size: var(--fs-body);
+  font-weight: 700;
+}
+
+.week-answers__sum {
+  font-size: var(--fs-small);
+}
+
+.week-answers__sub {
+  margin: 0;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+.week-answers__head .week-answers__legend {
+  display: flex;
+  gap: 12px;
+  margin-left: auto;
+  font-size: var(--fs-small);
+}
+
+.week-answers__toggle {
+  font-size: var(--fs-small);
+}
+
+.week-answers__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 230px;
+  margin: 0;
+  padding: 0 20px;
+  list-style: none;
+}
+
+.week-answers__day {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  height: 100%;
+}
+
+.week-answers__pair {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 180px;
+}
+
+.week-bar {
+  display: inline-block;
+  width: 26px;
+  min-height: 0;
+  border-radius: 6px 6px 0 0;
+}
+
+.week-bar--answered {
+  background: var(--ok);
+}
+
+// Waiting: outlined and hatched, so it differs from answered without colour.
+.week-bar--waiting {
+  box-shadow: inset 0 0 0 2px var(--warn-text);
+  background: repeating-linear-gradient(135deg, transparent 0 4px, color-mix(in srgb, var(--warn-text) 18%, transparent) 4px 6px);
+}
+
+.week-bar--key {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
+.week-answers__dow {
+  font-size: var(--fs-mini);
+}
+
+.week-answers__nums {
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+}
+
+.week-answers__a { color: var(--ok-text); }
+.week-answers__w { color: var(--warn-text); }
+
+.week-answers__members {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.week-answers__member {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--row);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.week-answers__member:hover {
+  background: var(--row-hover);
+}
+
+.week-answers__name {
+  font-family: var(--display);
+  font-weight: 700;
+}
+
+.week-answers__runs {
+  overflow: hidden;
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.week-answers__member .week-count {
+  margin-left: auto;
+}
+
+@media (max-width: 1100px) {
+  .week-answers__members {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 599px) {
+  .week-answers {
+    padding: 10px;
+  }
+
+  .week-answers__members {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .week-answers__bars {
+    padding: 0;
+  }
+
+  .week-bar {
+    width: 14px;
+  }
+}
+
+/* ── phones (B_PhoneWeek) ─────────────────────────────────────────────── */
+
+.frame--rail .shell > .card.week-window--phone > .card__head.week-window__bar {
+  gap: 0;
+  padding: 0 6px 0 10px;
+}
+
+.week-window--phone .tabs__tab {
+  min-height: 36px;
+  padding: 0 9px;
+}
+
+.card__head .week-window--phone .week-filters__toggle--icon,
+.week-window--phone .card__head .week-filters__toggle--icon {
+  width: 36px;
+  min-height: 34px;
+  border-radius: 17px;
+}
+
+.week-window__phonehead {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1.5px solid var(--line);
+}
+
+.week-which--phone a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.week-window__count {
+  margin-left: auto;
+}
+
+.week-window__count h1 {
+  margin: 0;
+  font-family: var(--body);
+  font-size: var(--fs-body);
+  font-weight: 400;
+}
+
+.week-window__count .pageline__num {
+  font-family: var(--mono);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+.week-window--phone .board {
+  gap: 6px;
+  padding: 8px;
+}
+
+.week-window--phone .week-filters__panel {
+  position: fixed;
+  top: 112px;
+  right: 10px;
+  left: 10px;
+  max-width: none;
+}
+
+.week-window--phone .week-window__foot:not(:has(> *)) {
+  display: none;
+}
+
+// The board's cards are blocks; the phone's re-read button sits beside the face.
+@media (min-width: 900px) {
+  .week-window .board .plan-card {
+    display: block;
+    gap: normal;
+  }
+}
+
+.week-window .board__none > [aria-hidden="true"] {
+  display: none;
+}
+
+// A phone card is one grid row (B_PhoneWeek): the clock | bosses and party | the tally and places.
+.week-window.week-window--phone .board .plan-card__open {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: 10px;
+  row-gap: 2px;
+  align-items: start;
+  padding: 8px 10px 8px 13px;
+}
+
+.week-window.week-window--phone .board .plan-card__party {
+  margin-top: 2px;
+}
+
+.week-window.week-window--phone .board .plan-card__open .runcard__top {
+  display: contents;
+}
+
+.week-window.week-window--phone .board .runcard__time {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 3.4em;
+  font-size: var(--fs-lg);
+}
+
+.week-window.week-window--phone .board .row-content {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.week-window.week-window--phone .board .runcard__meta {
+  display: grid;
+  grid-column: 3;
+  // The tally over "1 open", beside the clock and the grip (B_PhoneWeek: two lines a card).
+  grid-row: 1 / span 2;
+  grid-template-columns: auto auto;
+  align-content: start;
+  justify-items: end;
+  column-gap: 4px;
+  row-gap: 2px;
+}
+
+.week-window.week-window--phone .board .runcard__places {
+  grid-column: 1 / -1;
+}
+
+.week-window.week-window--phone .board .plan-card__grip {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: start;
+  align-self: end;
+}
+
+.week-window.week-window--phone .board .plan-card__clash {
+  grid-column: 1 / -1;
+}
+
+/* ── hover grow (planner cards) ───────────────────────────────────────── */
+
+// A card grows on hover (fine pointers) and on keyboard focus, never on a
+// click (PlannerCard sets plan-card--grown and freezes its rest height). The
+// face lifts out of the flow as an overlay, so the column and its neighbours
+// never move; the reveal's grid track still animates its height.
+.week-window .board .plan-card--grown {
+  z-index: 6;
+  overflow: visible;
+}
+
+.week-window .board .plan-card--grown > .plan-card__open {
+  position: absolute;
+  inset: -1.5px -1.5px auto 0;
+  isolation: isolate;
+  min-height: calc(100% + 3px);
+  border: 1.5px solid;
+  border-color: inherit;
+  border-left: 0;
+  border-radius: inherit;
+  background: var(--card-face);
+  box-shadow:
+    inset 4px 0 0 var(--stripe, var(--off)),
+    var(--shadow);
+}
+
+.week-window .board .plan-card--grown .row-content > .row-content__compact {
+  visibility: hidden;
+}
+
+.week-window .board .plan-card--grown .row-content > .row-content__reveal {
+  grid-template-rows: 1fr;
+  visibility: visible;
+}
+
+// Back to rest at once: a collapsing in-flow reveal would push the neighbours.
+.week-window .board .plan-card:not(.plan-card--grown) .row-content__reveal {
+  transition: none;
+}

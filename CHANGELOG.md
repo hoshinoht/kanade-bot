@@ -6,6 +6,14 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin Week matches the M3E boards: one Week window (Planner / Runs /
+  Answers tabs, This/Next, a Filters popover and a status footer), an
+  at-a-glance pane from 1200 px, the run as a side pane from 840 px (Run /
+  Answers / Changes), a Runs table, HTML answer bars with a table toggle and
+  two-line phone run cards. Planner cards grow on hover or keyboard focus
+  (not on touch), a click opens the run, and clicking outside the run sheet
+  closes it unless an edit is in progress.
+
 - v5 boss animations: `/art/animated/{key}` serves the boss's MP4 from
   `boss/artwork/animated/` with byte ranges (so Safari and iOS can play it),
   boss knowledge and event bosses carry a nullable `animated` URL, and the

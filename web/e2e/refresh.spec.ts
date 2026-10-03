@@ -2,8 +2,8 @@ import type { Page } from '@playwright/test';
 import { ADMIN, expect, test } from './support';
 
 // A poll cycle must update in place: no page content remounted, no scroll
-// reset, the Answers chart's canvas kept (it was destroyed and redrawn on
-// every 15 s poll — the "random refresh with a flash").
+// reset, the Answers bars kept (the old canvas chart was destroyed and
+// redrawn on every 15 s poll — the "random refresh with a flash").
 
 /** Each poll's week reads as newer, as on a live server. */
 async function livelyWeek(page: Page) {
@@ -54,7 +54,7 @@ async function survived(page: Page) {
 for (const [name, path, selector, setup] of [
   ['week planner', '/', '[data-run]', null],
   ['week runs', '/', 'main table tbody tr', 'Runs'],
-  ['week answers', '/', '.chart__canvas canvas', 'Answers'],
+  ['week answers', '/', '.week-answers__day', 'Answers'],
   ['chat log', '/chat', 'main table tbody tr', null],
   ['reminders', '/reminders', 'main table tbody tr', null],
   ['config', '/config', '.settings__panel', null],

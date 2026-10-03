@@ -72,8 +72,8 @@ test('chat turn: mention tokens render as copyable names', async ({ page }) => {
 test('run sheet, history and member sheet name people without their ids', async ({ page }) => {
   await page.goto(`${ADMIN}/?sw=off`);
   await page.locator('[data-run="r-kalos"] .plan-card__open').click();
-  const sheet = page.getByRole('dialog', { name: 'XKalos' });
-  await sheet.getByText('Answers — set who’s in or out').click();
+  const sheet = page.getByRole('complementary', { name: 'XKalos' });
+  await sheet.getByRole('tab', { name: /^Answers/ }).click();
   const tsubame = sheet.locator('.answers__who').getByRole('button', { name: 'Tsubame' });
   await tsubame.click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('1005');

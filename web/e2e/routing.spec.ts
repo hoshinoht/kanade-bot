@@ -63,16 +63,31 @@ test('admin: deep links, detail routes and unknown paths', async ({ page }) => {
 
 // Phones (top bar + navigation drawer) and the rail's states: e2e/shell.spec.ts.
 
-test('admin: this week / next week toggle, filters and tiles', async ({ page }) => {
+test('admin: this week / next week toggle, filters, the glance pane and the footer', async ({ page }) => {
   await page.goto(`${ADMIN}/?sw=off`);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(HEADING.admin);
-  const tiles = page.getByRole('group', { name: 'Right now' });
+  // From 1200 px the at-a-glance pane sits beside the board (WeekRail1).
+  const glance = page.getByRole('complementary', { name: 'At a glance' });
   // Pinned clock: Tue 29 Sep 12:00, so the next run is tonight's HCarling + HStar.
-  await expect(tiles.getByRole('button', { name: /Next/ })).toContainText('in 10 h');
-  await expect(tiles.getByRole('button', { name: /Next/ })).toContainText('HCarling + HStar · Tue 29 Sep 22:00');
-  await expect(tiles.getByText('Unanswered')).toBeVisible();
-  await expect(tiles.getByRole('link', { name: /Inbox/ })).toHaveAttribute('href', '/inbox');
-  await expect(tiles.getByRole('link', { name: /Model/ })).toContainText('busy');
+  await expect(glance).toContainText('10 h');
+  await expect(glance.locator('.week-glance__time')).toHaveText('22:00');
+  await expect(glance.getByRole('heading', { name: /Waiting on answers/ })).toBeVisible();
+  await expect(glance.getByRole('link', { name: /Inbox/ })).toHaveAttribute('href', '/inbox');
+  await expect(glance.getByRole('link', { name: /Model/ })).toContainText('busy');
+  await glance.getByRole('button', { name: 'Open sheet' }).click();
+  await expect(page.getByRole('complementary', { name: 'HCarling + HStar' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(glance).toBeVisible();
+
+  // Narrower, the footer carries the same facts (O5).
+  await page.setViewportSize({ width: 1100, height: 800 });
+  await expect(glance).toHaveCount(0);
+  const foot = page.locator('.week-window__foot');
+  await expect(foot.getByRole('button', { name: /^Next/ })).toContainText('10 h');
+  await expect(foot).toContainText('unanswered');
+  await expect(foot.getByRole('link', { name: /Inbox/ })).toHaveAttribute('href', '/inbox');
+  await expect(foot.getByRole('link', { name: /Model/ })).toContainText('busy');
+  await page.setViewportSize({ width: 1280, height: 800 });
 
   await page.getByRole('link', { name: 'Next week' }).click();
   await expect(page).toHaveURL(`${ADMIN}/?week=next`);
@@ -81,6 +96,7 @@ test('admin: this week / next week toggle, filters and tiles', async ({ page }) 
   await page.goBack();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(HEADING.admin);
 
+  await page.getByRole('button', { name: 'Filters (0)' }).click();
   const filters = page.getByRole('search', { name: 'Filter the week' });
   await filters.getByLabel('Member').selectOption({ label: 'Sora' });
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('3 runs, filtered');

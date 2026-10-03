@@ -7,7 +7,12 @@
   import { send } from '../resource.svelte';
   import { blameField, blameValue } from './blame';
 
-  let { runId, members, timezone }: { runId: string; members: Member[]; timezone: string } = $props();
+  let {
+    runId,
+    members,
+    timezone,
+    open = false,
+  }: { runId: string; members: Member[]; timezone: string; /** Already open (the run pane's Changes tab). */ open?: boolean } = $props();
 
   let entries = $state<BlameEntry[] | null>(null);
   let error = $state('');
@@ -16,16 +21,19 @@
   const field = (f: string) => blameField(f, names);
   const value = (f: string, v: unknown) => blameValue(f, v, timezone);
 
-  async function load(event: Event) {
-    if (!(event.currentTarget as HTMLDetailsElement).open || entries) return;
+  async function load(event?: Event) {
+    if ((event && !(event.currentTarget as HTMLDetailsElement).open) || entries) return;
     const result = await send((c) => c.get<BlameEntry[]>(`/api/admin/runs/${encodeURIComponent(runId)}/blame`));
     if (result.ok) entries = result.value;
     else error = result.message;
   }
+  $effect(() => {
+    if (open) void load();
+  });
 </script>
 
 <!-- Blame: who last changed each part of this run, from the change history. -->
-<details class="answers blame" ontoggle={load}>
+<details class="answers blame" {open} ontoggle={load}>
   <summary class="btn answers__summary"><Icon name="chevron-right" /> Who changed this</summary>
   <div class="answers__body">
     {#if error}<p class="field__error">{error}</p>

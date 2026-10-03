@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import type { Run, Week } from '@kanade/api-types';
   import { BossTag, Icon, RowContent, RunCardBody, runAccessibleName, runTitle } from '@kanade/ui';
   import { PICK_KEY } from './keyboardMove';
+  import { openPlaces } from '../week/waiting';
 
   let {
     run,
@@ -48,6 +50,34 @@
   const dragAttach = $derived(
     drag ? (card: HTMLElement) => drag(card, card.querySelector<HTMLElement>('[data-handle]'), run.id, movable) : NOOP,
   );
+
+  // Grow on hover (fine pointers) and on keyboard focus, never on click: the
+  // full face overlays the column from a frozen rest height, so neighbours
+  // never move. A press quiets it until the pointer leaves.
+  let card = $state<HTMLLIElement>();
+  let hovered = $state(false);
+  let keyFocus = $state(false);
+  let quiet = $state(false);
+  let grown = $state(false);
+  const HOVER = '(hover: hover) and (pointer: fine)';
+
+  function canGrow(li: HTMLElement) {
+    return matchMedia('(min-width: 900px)').matches && !li.closest('.week-window--phone');
+  }
+
+  $effect(() => {
+    const want = (hovered || keyFocus) && !quiet && !lifted && !dragging;
+    const li = card;
+    const was = untrack(() => grown);
+    if (!li) return;
+    if (want && !was && canGrow(li)) {
+      li.style.height = `${li.getBoundingClientRect().height}px`;
+      grown = true;
+    } else if (!want && was) {
+      li.style.removeProperty('height');
+      grown = false;
+    }
+  });
 </script>
 
 <!-- The whole card is the drag source (after a small movement, or a long
@@ -63,7 +93,13 @@
   class:plan-card--drop-after={dropMark === 'after'}
   class:plan-card--swap-target={swapTarget}
   data-run={run.id}
+  class:plan-card--grown={grown}
+  data-fid="week-card"
+  bind:this={card}
   {@attach dragAttach}
+  onpointerenter={(event) => (hovered = event.pointerType === 'mouse' && matchMedia(HOVER).matches)}
+  onpointerleave={() => (hovered = quiet = false)}
+  onpointerdown={() => (quiet = true)}
 >
   <button
     type="button"
@@ -73,15 +109,26 @@
     aria-label="{run.time ?? 'own time'} {runTitle(run)}: {runAccessibleName(week, run)}.{clash ? ` Clash: ${clash}.` : ''} Open details"
     aria-describedby={movable ? helpId : undefined}
     aria-keyshortcuts={movable ? PICK_KEY : undefined}
-    onclick={() => onopen(run)}
+    onclick={() => {
+      quiet = true;
+      onopen(run);
+    }}
     onkeydown={movable ? (event) => onkey(event, run) : undefined}
-    onblur={() => onblur(run)}
+    onfocus={(event) => (keyFocus = event.currentTarget.matches(':focus-visible'))}
+    onblur={() => {
+      keyFocus = false;
+      // A keyboard open leaves no pointer behind; a pointer press stays quiet until it leaves.
+      if (!hovered) quiet = false;
+      onblur(run);
+    }}
   >
-    <span class="runcard__visual" aria-hidden="true"><RunCardBody {run}>
+    <span class="runcard__visual" aria-hidden="true"><RunCardBody {run} places={openPlaces(run)}>
       {#snippet bosses()}
-        <RowContent expanded={selected}>
-          {#snippet compact()}<span class="plan-card__summary">{run.bosses.map((boss) => boss.token).join(' + ')}</span>{/snippet}
-          <span class="runcard__bosses">{#each run.bosses as boss (boss.token)}<BossTag {boss} short={!selected} portrait={selected} />{/each}</span>
+        <!-- The full face shows on hover and keyboard focus only (CSS, plan-card--grown); selection keeps the ring. -->
+        <RowContent expanded={false}>
+          {#snippet compact()}<span class="plan-card__summary">{#each run.bosses as boss (boss.token)}<BossTag {boss} short />{/each}</span
+            ><span class="plan-card__party plan-card__party--line">{run.participants.map((person) => person.name).join(' · ')}</span>{/snippet}
+          <span class="runcard__bosses">{#each run.bosses as boss (boss.token)}<BossTag {boss} short={!grown} portrait={grown} />{/each}</span>
           <span class="plan-card__party">{run.participants.map((person) => person.name).join(' · ')}</span>
           <span class="plan-card__channel">{run.channel}</span>
         </RowContent>

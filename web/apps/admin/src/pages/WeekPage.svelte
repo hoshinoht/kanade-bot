@@ -1,15 +1,21 @@
 <script lang="ts" module></script>
 
 <script lang="ts">
+  import type { Snippet } from 'svelte';
+  import { MediaQuery } from 'svelte/reactivity';
   import type { Run, WeekKey } from '@kanade/api-types';
-  import { experiments, flip, Icon, LoadingState, NapWindow, RunTable, SPRING_BOUNCY, SPRING_BOUNCY_MS } from '@kanade/ui';
+  import { dayNumber, experiments, flip, Icon, LoadingState, longDate, NapWindow, SPRING_BOUNCY, SPRING_BOUNCY_MS, runTitle, sortRuns } from '@kanade/ui';
   import Planner from '../planner/Planner.svelte';
   import PageLine from '../shell/PageLine.svelte';
+  import { getChrome } from '../shell/chrome';
   import type { Slot } from '../planner/keyboardMove';
   import { isPast, type AdminWeek } from '../store.svelte';
+  import { directory, memberLabel } from '../names/directory.svelte';
   import Filters from '../week/Filters.svelte';
-  import NowTiles from '../week/NowTiles.svelte';
-  import { applyFilter, filtering, NO_FILTER, type WeekFilter } from '../week/filters';
+  import Glance from '../week/Glance.svelte';
+  import RunsTable from '../week/RunsTable.svelte';
+  import { activeFilters, applyFilter, filtering, NO_FILTER, type FilterKey, type WeekFilter } from '../week/filters';
+  import { owedByMember } from '../week/waiting';
 
   export type WeekTab = 'planner' | 'runs' | 'answers';
 
@@ -24,6 +30,7 @@
     onreread,
     busyChannels,
     selectedRun = null,
+    pane,
   }: {
     store: AdminWeek;
     which: WeekKey;
@@ -35,11 +42,18 @@
     onundo: () => void;
     onreread: (run: Run) => void;
     busyChannels: Set<string>;
+    /** The run open in the side pane (wide screens) or the sheet. */
     selectedRun?: string | null;
+    /** The run pane, rendered beside the board when a run is open on a wide screen (gate G4). */
+    pane?: Snippet;
   } = $props();
 
   const uid = $props.id();
   const helpId = `${uid}-help`;
+  const chrome = getChrome();
+  const phone = $derived(chrome?.phone ?? false);
+  // O5: the at-a-glance pane from 1200 px; below that the footer carries its facts.
+  const roomy = new MediaQuery('(min-width: 1200px)', true);
   let filter = $state<WeekFilter>({ ...NO_FILTER });
   // v4: past (done) and cancelled runs are hidden until asked for.
   let showPast = $state(false);
@@ -51,6 +65,23 @@
   );
   const filtered = $derived(filtering(filter));
   const count = $derived(shown?.runs.length ?? 0);
+  // Who still owes answers: every run of the week, whatever the filters show.
+  const owed = $derived(store.week ? owedByMember(sortRuns(store.week.runs), runTitle) : []);
+  const waiting = $derived(store.stats ? store.stats.per_day.reduce((n, d) => n + d.waiting, 0) : null);
+  const chips = $derived(
+    activeFilters(
+      filter,
+      (id) => directory.label('channel', id, store.channels.find((c) => c.id === id)?.name ?? ''),
+      (id) => memberLabel(store.members, id),
+    ),
+  );
+  const range = $derived.by(() => {
+    const days = store.week?.days ?? [];
+    const first = days[0];
+    const last = days[days.length - 1];
+    return first && last ? `${first.dow} ${dayNumber(first.date)} – ${last.dow} ${longDate(last.date)}` : '';
+  });
+  const glance = $derived(roomy.current && !phone && !selectedRun && tab === 'planner');
   const VIEWS: { id: WeekTab; label: string }[] = [
     { id: 'planner', label: 'Planner' },
     { id: 'runs', label: 'Runs' },
@@ -69,26 +100,6 @@
     return () => (store.beforeChange = null);
   });
 
-  // Area follows importance: on phones and short frames the filter card folds
-  // into a "Filters (n)" button in this header (docs/v5/pwa-design-guidelines.md).
-  let compact = $state(false);
-  // Phone landscape: the summary line joins the header row instead of taking its own.
-  let landscape = $state(false);
-  $effect(() => {
-    const query = window.matchMedia('(max-height: 500px)');
-    const update = () => (landscape = query.matches);
-    update();
-    query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
-  });
-  $effect(() => {
-    const query = window.matchMedia('(max-width: 899px), (max-height: 700px)');
-    const update = () => (compact = query.matches);
-    update();
-    query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
-  });
-
   function viewKey(event: KeyboardEvent, index: number) {
     const moves: Record<string, number> = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: VIEWS.length - 1 };
     const target = moves[event.key];
@@ -98,119 +109,178 @@
     tab = next.id;
     viewTabs[next.id]?.focus();
   }
+
+  function clearOne(key: FilterKey) {
+    filter = { ...filter, [key]: '' };
+  }
+
+  // Still waiting → that member's runs.
+  function showMember(id: string) {
+    filter = { ...filter, member: id };
+    tab = 'runs';
+  }
 </script>
 
-<!-- v4 week.html's header row as the page line, carrying v5's view switch and
-  help: the board sits directly under the filters with no window chrome around it. -->
-<PageLine title={shown ? 'Week' : ''} class="week-head">
+{#snippet heading()}
   <h1>{#if shown}<span class="pageline__num">{count}</span> run{count === 1 ? '' : 's'}{filtered ? ', filtered' : ''}{:else}Week{/if}</h1>
-  {#if hidden}
-    <p class="note week-head__past">
-      {hidden} hidden ·
-      <button type="button" class="linklike" onclick={() => (showPast = true)}>Show {hidden > 1 ? 'them' : 'it'}</button>
-    </p>
-  {:else if showPast}
-    <p class="note week-head__past">
-      Past shown · <button type="button" class="linklike" onclick={() => (showPast = false)}>Hide the past</button>
-    </p>
-  {/if}
-  {#snippet side()}
-    <nav class="seg week-head__week" aria-label="Which week">
-      <a href="/" aria-current={which === 'this' ? 'page' : undefined}>This <span class="week-head__wk">week</span></a>
-      <a href="/?week=next" aria-current={which === 'next' ? 'page' : undefined}>Next <span class="week-head__wk">week</span></a>
-    </nav>
-    <div class="seg week-head__views" role="tablist" aria-label="Week views">
-      {#each VIEWS as view, index (view.id)}
-        <button
-          type="button"
-          role="tab"
-          id="{uid}-tab-{view.id}"
-          aria-selected={tab === view.id}
-          aria-controls="{uid}-panel"
-          tabindex={tab === view.id ? 0 : -1}
-          bind:this={viewTabs[view.id]}
-          onclick={() => (tab = view.id)}
-          onkeydown={(event) => viewKey(event, index)}
-          >{view.label}{#if view.id === 'runs' && shown}<span class="seg__count">{count}</span>{/if}</button
-        >
-      {/each}
-    </div>
-    {#if tab === 'planner'}
-      <button
-        type="button"
-        class="btn btn--ghost week-head__help"
-        title="How to move runs"
-        aria-expanded={helpOpen}
-        aria-controls={helpId}
-        onclick={() => (helpOpen = !helpOpen)}
-      >
-        <Icon name="info" /> <span class="week-head__label">How to move runs</span>
-      </button>
-    {/if}
-    {#if landscape && store.summary}<NowTiles summary={store.summary} {onopen} inline />{/if}
-    {#if compact}<Filters bind:filter channels={store.channels} members={store.members} compact />{/if}
-    <div class="page-head__side">
-      <button type="button" class="btn" disabled={!store.lastMove} onclick={onundo} aria-keyshortcuts="Control+Z Meta+Z" title={store.lastMove?.kind === 'swap' ? 'Undo swap' : 'Undo move'}>
-        <Icon name="rotate-ccw" /> <span class="week-head__label">{store.lastMove?.kind === 'swap' ? 'Undo swap' : 'Undo move'}</span>
-      </button>
-      <button type="button" class="btn" onclick={() => store.refresh()} title="Refresh"
-        ><Icon name="refresh-cw" /> <span class="week-head__label">Refresh</span></button
-      >
-    </div>
-    <!-- Always in the DOM: every movable card's aria-describedby points here. -->
-    <!-- Planner-only help: its toggle leaves with the Planner, so the text does too. -->
-    <p class="week-head__helptext" id={helpId} hidden={!helpOpen || tab !== 'planner'}>
-      Drag a run to another day or between runs (on touch, press and hold first): it starts right after the run above, or ends right before
-      the run below. Drop it on another run to swap their times. Or focus a run and press <kbd class="kbd">M</kbd>: arrow keys move it,
-      <kbd class="kbd">Shift</kbd> with up puts it just after the run before, with down just before the run after, <kbd class="kbd">S</kbd> on
-      another run's slot swaps, Enter drops it, Escape cancels. Its sheet has a Move field for an exact time and Swap timing with….
-    </p>
-  {/snippet}
-</PageLine>
+{/snippet}
 
-{#if store.summary && !landscape}<NowTiles summary={store.summary} {onopen} />{/if}
-{#if !compact}<Filters bind:filter channels={store.channels} members={store.members} />{/if}
+<!-- On phones the top bar names the page and the window's head row carries the count (B_PhoneWeek). -->
+{#if !phone || !shown}
+  <PageLine title={shown ? 'Week' : ''} class="week-line">
+    {@render heading()}
+    {#if range}<p class="pageline__context week-line__range mono">{range}</p>{/if}
+  </PageLine>
+{/if}
 
 {#if shown}
-  <div
-    class="week-surface"
-    class:week-surface--sheet={tab !== 'planner'}
-    role="tabpanel"
-    id="{uid}-panel"
-    aria-labelledby="{uid}-tab-{tab}"
-    tabindex="0"
-  >
-    {#if tab === 'planner'}
-      <Planner
-        week={shown}
-        {helpId}
-        {selectedRun}
-        {onmove}
-        {onswap}
-        onopen={(run: Run) => onopen(run.id)}
-        onhold={(h) => (store.holding = h)}
-        saving={store.mutating}
-        {onreread}
-        {busyChannels}
-        step={store.runStep}
-        allRuns={store.week?.runs}
-      />
-    {:else if tab === 'runs'}
-      <RunTable week={shown} onopen={(run) => onopen(run.id)} />
-    {:else}
-      <!-- uPlot loads with its view, keeping it out of the initial bundle. -->
-      {#await import('../AnswersChart.svelte') then chart}
-        {#if store.stats}<chart.default stats={store.stats} week={store.week!} />{/if}
-      {:catch}
-        <!-- After a deploy the old chunk name is gone; only a reload fetches the new one. -->
-        <div class="empty" role="alert">
-          <strong>The chart didn't load</strong>
-          Kanade Admin has probably been updated since this page opened.
-          <br /><button type="button" class="btn btn--primary" onclick={() => location.reload()}>Reload</button>
-        </div>
-      {/await}
+  <!-- Gate G3: the week in one window, a supporting pane beside the board. -->
+  <section class="card week-window window-fill" class:week-window--phone={phone} data-fid="window" aria-label="Week">
+    <div class="card__head tabs__strip week-window__bar" data-fid="window-bar">
+      <div class="tabs__tabs" role="tablist" aria-label="Week views" data-fid="window-tabs">
+        {#each VIEWS as view, index (view.id)}
+          <button
+            type="button"
+            role="tab"
+            class="tabs__tab"
+            id="{uid}-tab-{view.id}"
+            aria-selected={tab === view.id}
+            aria-controls="{uid}-panel"
+            tabindex={tab === view.id ? 0 : -1}
+            bind:this={viewTabs[view.id]}
+            onclick={() => (tab = view.id)}
+            onkeydown={(event) => viewKey(event, index)}
+            >{view.label}{#if view.id === 'runs'}<span class="tabs__count">{count}</span>{:else if view.id === 'answers' && waiting !== null}<span
+                class="tabs__count">{waiting}</span
+              >{/if}</button
+          >
+        {/each}
+      </div>
+      <div class="week-window__actions" data-fid="week-actions">
+        {#if !phone}
+          <nav class="week-which" aria-label="Which week">
+            <a href="/" aria-current={which === 'this' ? 'page' : undefined}>This week</a>
+            <a href="/?week=next" aria-current={which === 'next' ? 'page' : undefined}>Next week</a>
+          </nav>
+        {/if}
+        <Filters bind:filter channels={store.channels} members={store.members} count={chips.length} icon={phone} />
+        {#if !phone}
+          {#if tab === 'planner'}
+            <button
+              type="button"
+              class="btn week-window__icon"
+              aria-label="How to move runs"
+              title="How to move runs"
+              aria-expanded={helpOpen}
+              aria-controls={helpId}
+              onclick={() => (helpOpen = !helpOpen)}><Icon name="info" /></button
+            >
+            <button
+              type="button"
+              class="btn week-window__icon"
+              disabled={!store.lastMove}
+              onclick={onundo}
+              aria-keyshortcuts="Control+Z Meta+Z"
+              aria-label={store.lastMove?.kind === 'swap' ? 'Undo swap' : 'Undo move'}
+              title={store.lastMove?.kind === 'swap' ? 'Undo swap' : 'Undo move'}><Icon name="rotate-ccw" /></button
+            >
+          {/if}
+          <button type="button" class="btn week-window__icon" onclick={() => store.refresh()} aria-label="Refresh" title="Refresh"><Icon name="refresh-cw" /></button>
+        {/if}
+      </div>
+    </div>
+    {#if phone}
+      <div class="week-window__phonehead" data-fid="week-phone-head">
+        <nav class="seg week-which week-which--phone" aria-label="Which week">
+          <a href="/" aria-current={which === 'this' ? 'page' : undefined}>This week</a>
+          <a href="/?week=next" aria-current={which === 'next' ? 'page' : undefined}>Next</a>
+        </nav>
+        <div class="week-window__count">{@render heading()}</div>
+      </div>
     {/if}
-  </div>
+    <div class="week-window__body">
+      <!-- Always in the DOM: every movable card's aria-describedby points here. Planner-only. -->
+      <p class="week-help" id={helpId} hidden={!helpOpen || tab !== 'planner'}>
+        Drag a run to another day or between runs (on touch, press and hold first): it starts right after the run above, or ends right before
+        the run below. Drop it on another run to swap their times. Or focus a run and press <kbd class="kbd">M</kbd>: arrow keys move it,
+        <kbd class="kbd">Shift</kbd> with up puts it just after the run before, with down just before the run after, <kbd class="kbd">S</kbd> on
+        another run's slot swaps, Enter drops it, Escape cancels. Its pane has a Move field for an exact time and Swap timing with….
+      </p>
+      <div
+        class="week-surface week-surface--{tab}"
+        role="tabpanel"
+        id="{uid}-panel"
+        aria-labelledby="{uid}-tab-{tab}"
+        tabindex="0"
+      >
+        {#if tab === 'planner'}
+          <Planner
+            week={shown}
+            {helpId}
+            {selectedRun}
+            {onmove}
+            {onswap}
+            onopen={(run: Run) => onopen(run.id)}
+            onhold={(h) => (store.holding = h)}
+            saving={store.mutating}
+            {onreread}
+            {busyChannels}
+            step={store.runStep}
+            allRuns={store.week?.runs}
+          />
+        {:else if tab === 'runs'}
+          <RunsTable week={shown} selected={selectedRun} onopen={(run) => onopen(run.id)} />
+        {:else}
+          <!-- Loaded with its tab. -->
+          {#await import('../week/AnswersView.svelte') then view}
+            {#if store.stats}<view.default stats={store.stats} week={store.week!} {owed} onmember={showMember} />{/if}
+          {:catch}
+            <!-- After a deploy the old chunk name is gone; only a reload fetches the new one. -->
+            <div class="empty" role="alert">
+              <strong>The chart didn't load</strong>
+              Kanade Admin has probably been updated since this page opened.
+              <br /><button type="button" class="btn btn--primary" onclick={() => location.reload()}>Reload</button>
+            </div>
+          {/await}
+        {/if}
+      </div>
+      {#if selectedRun && pane}
+        {@render pane()}
+      {:else if glance}
+        <Glance summary={store.summary} week={store.week!} {owed} {waiting} {onopen} onanswers={() => (tab = 'answers')} />
+      {/if}
+    </div>
+    <footer class="week-window__foot" data-fid="week-foot">
+      {#if !phone}<span class="week-foot__runs"><b class="mono">{count}</b> run{count === 1 ? '' : 's'}{which === 'next' ? ' next week' : ''}</span>{/if}
+      {#if hidden}
+        <span class="week-foot__item"
+          >{hidden} hidden · <button type="button" class="linklike" onclick={() => (showPast = true)}>Show {hidden > 1 ? 'them' : 'it'}</button></span
+        >
+      {:else if showPast}
+        <span class="week-foot__item">Past shown · <button type="button" class="linklike" onclick={() => (showPast = false)}>Hide the past</button></span>
+      {/if}
+      {#each chips as chip (chip.key)}
+        <button type="button" class="chip week-foot__chip" onclick={() => clearOne(chip.key)}
+          >{chip.label}<span aria-hidden="true"> ×</span><span class="vh"> — remove</span></button
+        >
+      {/each}
+      {#if !glance && store.summary}
+        {#if store.summary.next}
+          <button type="button" class="linklike week-foot__item week-foot__next" onclick={() => onopen(store.summary!.next!.run_id)}
+            >Next <b class="mono">{store.summary.next.countdown}</b><span class="vh">: {store.summary.next.bosses}</span></button
+          >
+        {/if}
+        {#if waiting !== null}<span class="week-foot__item" class:week-foot__item--warn={waiting > 0}><b class="mono">{waiting}</b> unanswered</span>{/if}
+        {#if !phone}
+          <a class="week-foot__item" class:week-foot__item--warn={store.summary.inbox > 0} href="/inbox">Inbox {store.summary.inbox}</a>
+          <a class="week-foot__item" class:week-foot__item--warn={store.summary.model.busy} href="/limits">Model {store.summary.model.busy ? 'busy' : 'free'}</a>
+        {/if}
+      {/if}
+      {#if !phone && store.week}
+        <span class="week-foot__tz mono" title="Every time here is {store.week.timezone}; the boss week starts {store.week.reset}">{store.week.timezone}</span>
+      {/if}
+    </footer>
+  </section>
 {:else if store.fresh === 'loading'}
   <section class="card window-fill" aria-labelledby="loading-title">
     <div class="card__head"><h2 class="card__title" id="loading-title">Week</h2></div>

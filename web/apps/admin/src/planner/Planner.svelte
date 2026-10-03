@@ -384,7 +384,7 @@
 
 <WeekRail days={week.days} runs={week.runs} />
 
-<div class="board planner" class:planner--dragging={dragging !== null} data-hydrated={engine ? "" : null} bind:this={board} {@attach warmUp}>
+<div class="board planner" data-fid="week-board" class:planner--dragging={dragging !== null} data-hydrated={engine ? "" : null} bind:this={board} {@attach warmUp}>
   {#each week.days as day (day.index)}
     {@const runs = byDay[day.index] ?? []}
     <PlannerColumn

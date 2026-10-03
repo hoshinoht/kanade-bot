@@ -80,7 +80,7 @@ for (const size of SIZES) {
 
 // v4's board at 1280×800 starts at y≈378 (v4-live/v4-week-wide.png), so it
 // shows ≈422 px; the same stack at 1000×670 leaves it ≈292 px.
-test('week: the board sits under the filters and beats v4 at 1280×800 and 1000×670', async ({ page }) => {
+test('week: the board sits under the window title bar and beats v4 at 1280×800 and 1000×670', async ({ page }) => {
   for (const [size, v4] of [
     [{ width: 1280, height: 800 }, 422],
     [{ width: 1000, height: 670 }, 292],
@@ -90,10 +90,13 @@ test('week: the board sits under the filters and beats v4 at 1280×800 and 1000�
     await expect(page.locator('[data-run="r-carling"]')).toBeVisible();
     const board = (await page.locator('.week-surface').boundingBox())!;
     expect(board.height).toBeGreaterThanOrEqual(Math.max(v4, budget(size.height)));
-    // No window chrome between the filters (or the header) and the board.
-    expect(await page.locator('.week-surface').evaluate((el) => el.closest('.card'))).toBeNull();
-    // The header is one row: every visible control shares a line (nothing wraps below).
-    const rows = await page.locator('.week-head').evaluate((head) => {
+    // B_WeekSel (gate G3): the board is the Week window's body, straight under its 48 px title bar.
+    const bar = (await page.locator('.week-window__bar').boundingBox())!;
+    expect(await page.locator('.week-surface').evaluate((el) => el.closest('.card')?.classList.contains('week-window'))).toBe(true);
+    expect(bar.height).toBeLessThanOrEqual(48.5);
+    expect(Math.abs(board.y - (bar.y + bar.height))).toBeLessThanOrEqual(2);
+    // The title bar is one row: every visible control shares a line (nothing wraps below).
+    const rows = await page.locator('.week-window__bar').evaluate((head) => {
       const items = [...head.children].flatMap((c) => (getComputedStyle(c).display === 'contents' ? [...c.children] : [c]));
       const rects = items.map((c) => c.getBoundingClientRect()).filter((r) => r.height > 0);
       return { lowestTop: Math.max(...rects.map((r) => r.top)), highestBottom: Math.min(...rects.map((r) => r.bottom)) };

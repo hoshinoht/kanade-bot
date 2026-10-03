@@ -130,6 +130,40 @@ const PAIRS: Pair[] = [
       await expect(page.getByText('1 unsaved change')).toBeVisible();
     },
   },
+  {
+    name: 'week-sel',
+    board: 'B_WeekSel',
+    path: '/',
+    // The board shows today's first run selected in the side pane.
+    ready: async (page) => {
+      await page.locator('[data-run="r-carling"] .plan-card__open').click();
+      await expect(page.getByRole('complementary', { name: 'HCarling + HStar' })).toBeVisible();
+    },
+  },
+  {
+    name: 'week-runs',
+    board: 'B_WeekRuns',
+    path: '/?week=next',
+    ready: async (page) => {
+      await page.getByRole('tab', { name: /^Runs/ }).click();
+      await expect(page.getByRole('table', { name: /Every run/ })).toBeVisible();
+    },
+  },
+  {
+    name: 'week-answers',
+    board: 'B_WeekAnswers',
+    path: '/?week=next',
+    ready: async (page) => {
+      await page.getByRole('tab', { name: /^Answers/ }).click();
+      await expect(page.getByRole('heading', { name: 'Still waiting' })).toBeVisible();
+    },
+  },
+  {
+    name: 'phone-week',
+    board: 'B_PhoneWeek',
+    path: '/',
+    ready: (page) => expect(page.locator('[data-run="r-carling"]')).toBeVisible(),
+  },
   ...(
     [
       ['cfg-pings', 'B_CfgPings', 'pings', 'Pings'],

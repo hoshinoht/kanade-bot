@@ -22,7 +22,7 @@ test('pill profiles: chat, extractions, inbox, planner sheet and config share on
 
   await page.goto(`${ADMIN}/?sw=off`);
   await page.locator('[data-run="r-kalos"] .plan-card__open').click();
-  await expect(page.getByRole('dialog', { name: 'XKalos' }).locator('.tone--danger', { hasText: 'At risk' }).first()).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'XKalos' }).locator('.tone--danger', { hasText: 'At risk' }).first()).toBeVisible();
   await page.keyboard.press('Escape');
 
   await page.goto(`${ADMIN}/config?section=models&sw=off`);

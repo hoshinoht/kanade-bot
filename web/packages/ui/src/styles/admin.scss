@@ -11,12 +11,12 @@
 @use "m3e-buttons"; // M3E pills; before the partials that refine them
 @use "chips-status";
 @use "bosses";
-@use "now";
 @use "runs";
 @use "card-window";
 @use "tabs";
 @use "board";
 @use "week-head";
+@use "week"; // the Week window (G3)
 @use "week-rail"; // the phone's shape of the week (v4 partials/rail.html)
 @use "nav-rail"; // M3E rail frame (G1, G6)
 @use "topbar"; // M3E phone frame: top bar + drawer (G7)

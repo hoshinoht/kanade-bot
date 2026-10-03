@@ -523,17 +523,16 @@ test('fixed: Add and Retire restore focus, while Escape leaves the editor behind
 test('run sheet: this-week roster line and reset to fixed', async ({ page }) => {
   await go(page, '/');
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
-  const sheet = page.getByRole('dialog', { name: 'HCarling + HStar' });
-  await expect(sheet.getByText('this week: +Ren')).toBeVisible();
-  // An amended run shows every action (Move, Swap, Preview ping, Reset to
-  // fixed); they sit on their own row under the details instead of squeezing them.
-  const details = await sheet.locator('.run__bosses').boundingBox();
-  const actions = await sheet.locator('.run__actions').boundingBox();
-  expect(details!.width).toBeGreaterThan(400);
-  expect(actions!.y).toBeGreaterThan(details!.y);
+  const sheet = page.getByRole('complementary', { name: 'HCarling + HStar' });
+  // B_WeekSel: one line, "This week: +Ren · cards …".
+  await expect(sheet.locator('.week-pane__week')).toContainText(/^\s*This week: \+Ren\s*·\s*cards\s+morning/);
+  // An amended run shows every action (Swap, Preview ping, Reset to fixed) on one row of pills.
+  const tops = await sheet.locator('.week-pane__actions .btn').evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
+  expect(tops).toHaveLength(3);
+  expect(new Set(tops).size).toBe(1);
   await sheet.getByRole('button', { name: 'Reset to fixed' }).click();
   await expect(sheet.locator('.sheet__notice')).toContainText('HCarling + HStar is back on its weekly timing.');
-  await expect(sheet.getByText(/this week:/)).toHaveCount(0);
+  await expect(sheet.getByText(/this week:/i)).toHaveCount(0);
   await expect(sheet.getByRole('button', { name: 'Reset to fixed' })).toHaveCount(0);
   await expect(sheet.locator('.run__people .chip', { hasText: 'Ren' })).toHaveCount(1);
   await expect(sheet.getByRole('button', { name: 'Reset to fixed' })).toHaveCount(0);

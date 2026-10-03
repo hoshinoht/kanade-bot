@@ -22,3 +22,18 @@ export function applyFilter(runs: Run[], filter: WeekFilter): Run[] {
       (!boss || run.bosses.some((b) => [b.token, b.key, b.name].some((t) => t.toLowerCase().includes(boss)))),
   );
 }
+
+export type FilterKey = 'channel' | 'member' | 'boss';
+
+/** The active filters as removable chips, in field order. */
+export function activeFilters(
+  filter: WeekFilter,
+  channelLabel: (id: string) => string,
+  memberLabel: (id: string) => string,
+): { key: FilterKey; label: string }[] {
+  const out: { key: FilterKey; label: string }[] = [];
+  if (filter.channel) out.push({ key: 'channel', label: `Channel: ${channelLabel(filter.channel)}` });
+  if (filter.member) out.push({ key: 'member', label: `Member: ${memberLabel(filter.member)}` });
+  if (filter.boss.trim()) out.push({ key: 'boss', label: `Boss: ${filter.boss.trim()}` });
+  return out;
+}

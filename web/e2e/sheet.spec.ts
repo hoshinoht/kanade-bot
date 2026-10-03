@@ -1,10 +1,10 @@
 import { ADMIN, expect, test } from './support';
 
-test('admin run sheet: status, answers, roster and preview ping', async ({ page }) => {
+test('admin run pane: status, answers, roster and preview ping', async ({ page }) => {
   await page.goto(`${ADMIN}/?sw=off`);
   await page.locator('[data-run="r-limbo"] .plan-card__open').click();
-  const sheet = page.getByRole('dialog', { name: 'HLimbo' });
-  // Results show in the sheet's own status line: the modal makes the page's toasts inert.
+  // Gate G4: on a wide screen the run opens in the Week window's side pane.
+  const sheet = page.getByRole('complementary', { name: 'HLimbo' });
   const notice = sheet.locator('.sheet__notice');
 
   const status = sheet.getByRole('group', { name: 'Status' });
@@ -15,10 +15,11 @@ test('admin run sheet: status, answers, roster and preview ping', async ({ page 
   await notice.getByRole('button', { name: 'Undo' }).click();
   await expect(status.getByRole('button', { name: 'Planned' })).toHaveAttribute('aria-pressed', 'true');
 
-  await sheet.getByText('Answers — set who’s in or out').click();
+  await sheet.getByRole('tab', { name: /^Answers/ }).click();
   const sora = sheet.getByRole('group', { name: 'Answer for Sora on HLimbo' });
   await sora.getByRole('button', { name: 'Out' }).click();
   await expect(sora.getByRole('button', { name: 'Out' })).toHaveAttribute('aria-pressed', 'true');
+  await sheet.getByRole('tab', { name: 'Run' }).click();
   await expect(sheet.locator('.chip--no', { hasText: 'Sora' })).toBeVisible();
   await expect(sheet.getByText('someone said no')).toBeVisible();
 
@@ -29,4 +30,25 @@ test('admin run sheet: status, answers, roster and preview ping', async ({ page 
 
   await sheet.getByRole('button', { name: 'Preview ping' }).click();
   await expect(notice).toContainText('Posted the morning card for HLimbo in #limbo-trio as a TEST message.');
+});
+
+test('admin run sheet below 840 px: status, answers and roster in one modal', async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 800 });
+  await page.goto(`${ADMIN}/?sw=off`);
+  await page.locator('[data-run="r-limbo"] .plan-card__open').click();
+  const sheet = page.getByRole('dialog', { name: 'HLimbo' });
+  // Results show in the sheet's own status line: the modal makes the page's toasts inert.
+  const notice = sheet.locator('.sheet__notice');
+
+  const status = sheet.getByRole('group', { name: 'Status' });
+  await status.getByRole('button', { name: 'Confirmed' }).click();
+  await expect(notice).toContainText('HLimbo is now confirmed.');
+  await notice.getByRole('button', { name: 'Undo' }).click();
+  await expect(status.getByRole('button', { name: 'Planned' })).toHaveAttribute('aria-pressed', 'true');
+
+  await sheet.getByText('Answers — set who’s in or out').click();
+  const sora = sheet.getByRole('group', { name: 'Answer for Sora on HLimbo' });
+  await sora.getByRole('button', { name: 'Out' }).click();
+  await expect(sheet.locator('.chip--no', { hasText: 'Sora' })).toBeVisible();
+  await expect(sheet.getByText('someone said no')).toBeVisible();
 });
