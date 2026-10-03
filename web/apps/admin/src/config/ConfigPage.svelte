@@ -9,7 +9,7 @@
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/settings.scss';
   import type { ConfigView, Role, RoleProfileWrite } from '@kanade/api-types';
-  import { COLORWAYS, currentColorway, Icon, RowContent, ThemePicker, Toaster } from '@kanade/ui';
+  import { COLORWAYS, currentColorway, Icon, LiveRegion, RowContent, Toaster } from '@kanade/ui';
   import { tick } from 'svelte';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { directory } from '../names/directory.svelte';
@@ -27,6 +27,8 @@
   import SelfServiceSection from './SelfServiceSection.svelte';
   import SettingsPanel from './SettingsPanel.svelte';
   import SwitchCard from './SwitchCard.svelte';
+  import { findSetting, settleFrames } from './find';
+  import ThemeTiles from './ThemeTiles.svelte';
   import RescanPanel from '../extractions/RescanPanel.svelte';
   import type { Channel } from '@kanade/api-types';
 
@@ -43,19 +45,20 @@
     onrunlengths?: (defaultMinutes: number) => void;
   } = $props();
 
+  // `terms` hold the cards' own titles too, so a search names a setting, not only a section.
   const SECTIONS = [
-    { key: 'pings', label: 'Pings', group: 'Bot', terms: 'morning countdown reminder' },
-    { key: 'run-lengths', label: 'Run lengths', group: 'Bot', terms: 'duration boss default' },
-    { key: 'watching', label: 'Chat watching', group: 'Bot', terms: 'extractor messages pause' },
-    { key: 'chatbot', label: 'Chatbot', group: 'Bot', terms: 'answer rate cap limits' },
-    { key: 'persona', label: 'Persona', group: 'Bot', terms: 'profiles roles reply visibility' },
-    { key: 'models', label: 'Models', group: 'Bot', terms: 'reasoning context capacity kanata extraction rewrite' },
-    { key: 'self-service', label: 'Self-service', group: 'Members', terms: 'public portal cards links' },
+    { key: 'pings', label: 'Pings', group: 'Bot', terms: 'morning ping time countdowns reminder' },
+    { key: 'run-lengths', label: 'Run lengths', group: 'Bot', terms: 'duration boss default overrides' },
+    { key: 'watching', label: 'Chat watching', group: 'Bot', terms: 'watching extractor messages pause' },
+    { key: 'chatbot', label: 'Chatbot', group: 'Bot', terms: 'answer rate cap limits how often it answers per person' },
+    { key: 'persona', label: 'Persona', group: 'Bot', terms: 'active persona reply profiles visibility roles role overrides assignments' },
+    { key: 'models', label: 'Models', group: 'Bot', terms: 'roles reasoning context windows capacity groups kanata extraction rewrite' },
+    { key: 'self-service', label: 'Self-service', group: 'Members', terms: 'public portal cards links how members are answered' },
     { key: 'notifications', label: 'Notifications', group: 'Members', terms: 'quiet mode pings' },
     { key: 'digest', label: 'Weekly digest', group: 'Members', terms: 'post channel week' },
     { key: 'rescan', label: 'Re-read', group: 'Server', terms: 'channels extractor running' },
     { key: 'access', label: 'Channel access', group: 'Server', terms: 'manage messages permissions check' },
-    { key: 'theme', label: 'Theme', group: 'Server', terms: 'colourway mode light dark' },
+    { key: 'theme', label: 'Theme', group: 'Server', terms: 'colourway colorway mode system light dark' },
     { key: 'env', label: 'Set in the environment', group: 'Read-only', terms: 'environment variables timezone categories' },
   ] as const;
   type Key = (typeof SECTIONS)[number]['key'];
@@ -186,11 +189,29 @@
     select(target);
   }
 
-  function searchKeydown(event: KeyboardEvent) {
+  // Enter opens the first matching section; when one of its settings matches
+  // too, the panel scrolls to it, rings it briefly and focuses its control.
+  let found = $state('');
+  let jump = 0;
+  async function searchKeydown(event: KeyboardEvent) {
     if (event.key !== 'Enter' || !shown.length) return;
     event.preventDefault();
-    onsection?.(shown[0]!.key);
-    tabs[shown[0]!.key]?.focus({ preventScroll: true });
+    const item = shown[0]!;
+    const asked = search;
+    const request = ++jump;
+    found = '';
+    onsection?.(item.key);
+    await tick();
+    const panel = document.getElementById(`${uid}-panel-${item.key}`);
+    // Sections load their own data; wait (bounded) for a matching card to render.
+    const hit = panel ? await settleFrames(() => findSetting(panel, asked), 90) : null;
+    if (request !== jump) return;
+    if (!hit) {
+      tabs[item.key]?.focus({ preventScroll: true });
+      return;
+    }
+    await hit.reveal();
+    found = `${item.label}: ${hit.title}`;
   }
 
   // Save bars report here (`section/form`); a section with any dirty form gets a dot in the list.
@@ -348,6 +369,7 @@
       />
       <span class="vh" id="{uid}-matches" role="status">{search ? `${shown.length} section${shown.length === 1 ? '' : 's'} match; Enter opens the first` : ''}</span>
     </div>
+    <LiveRegion message={found ? `Found ${found}` : ''} />
   </div>
   <div class="settings__body">
     <div class="settings__toc" data-fid="cfg-toc" id="{uid}-toc" bind:this={toc} role="tablist" aria-label="Settings sections" aria-orientation={narrow ? 'horizontal' : 'vertical'}>
@@ -402,15 +424,15 @@
             {#if item.key === 'theme'}
               <SettingsPanel title="Theme">
                 {#snippet lead()}Kept in this browser only; nothing is sent to the server.{/snippet}
-                <div class="settings__card" data-fid="cfg-card"><ThemePicker /></div>
+                <div class="settings__card" data-fid="cfg-card"><ThemeTiles /></div>
+                <p class="settings__box"><Icon name="info" />Changes apply at once, with no save step. The command palette (Ctrl K) has the same choices.</p>
               </SettingsPanel>
             {:else if item.key === 'digest'}
               <DigestSection {toaster} last={config.data?.last_digest ?? null} onposted={refreshQuietly} />
             {:else if item.key === 'rescan'}
               <SettingsPanel title="Re-read the party channels">
                 {#snippet lead()}Runs the extractor again over stored messages.{/snippet}
-                <div class="settings__card" data-fid="cfg-card"><RescanPanel targets={targets.data ?? []} /></div>
-                <p class="settings__cardnote">Progress and past runs are also on <a href="/extractions">Extractions</a>.</p>
+                <RescanPanel targets={targets.data ?? []} details />
               </SettingsPanel>
             {:else if item.key === 'access'}
               <AccessSection {toaster} />

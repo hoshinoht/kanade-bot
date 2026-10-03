@@ -610,9 +610,12 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   await expect(panel.getByRole('alert')).toContainText('HH:MM');
   await expect(time).toHaveValue('whenever');
   await expect(time).toHaveAttribute('aria-invalid', 'true');
-  await expect(panel.getByRole('textbox', { name: 'Countdowns (minutes)' })).toHaveAttribute('aria-invalid', 'false');
+  await expect(panel.getByRole('textbox', { name: 'Add a countdown (minutes)' })).toHaveAttribute('aria-invalid', 'false');
   await time.fill('08:30');
-  await panel.getByRole('textbox', { name: 'Countdowns (minutes)' }).fill('45, 10');
+  const removes = panel.getByRole('list', { name: 'Countdowns' }).getByRole('button', { name: /^Remove the/ });
+  while ((await removes.count()) > 0) await removes.first().click();
+  // A typed, un-added value is part of the draft, as the comma field was.
+  await panel.getByRole('textbox', { name: 'Add a countdown (minutes)' }).fill('45, 10');
   await panel.getByRole('button', { name: 'Save pings', exact: true }).click();
   // The server applies pings on restart; the toast says so rather than claiming a re-place.
   await expect(toast(page, 'Pings saved; they take effect when the bot restarts.')).toBeVisible();

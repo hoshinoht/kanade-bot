@@ -6,6 +6,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin Config: Pings countdowns are chips with × to remove and an Add
+  field (a duplicate is skipped); Re-read uses channel checkbox chips and a
+  running-job card (progress, what it found, Cancel), also on Extractions;
+  Theme uses colourway tiles and a Light/Dark/System group; Enter in "Find a
+  setting" jumps to the matching card, opening its sub-tab, and outlines it.
 - v5 admin Bosses knowledge pages show each boss's strategies (when to use it,
   risk, damage needed, payoff and steps) when its document has them.
 - v5 `kanade backup [--name FILE]` snapshots the stopped store (`VACUUM INTO`,
