@@ -65,7 +65,9 @@ function roleRows(list: Locator) {
 }
 
 function profileRow(table: Locator, name: string) {
-  return table.getByRole('rowheader').filter({ hasText: name }).locator('xpath=..');
+  // Exact name: "Default" must not also match the synthesized "Default voice" row.
+  const exact = new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+  return table.getByRole('rowheader').filter({ hasText: exact }).locator('xpath=..');
 }
 
 function profileState(row: Locator, state: 'public' | 'private') {
