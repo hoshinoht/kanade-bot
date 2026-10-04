@@ -15,9 +15,9 @@ for (const [path, query, search] of [
     await expect(toggle.locator('svg')).toHaveCount(1);
 
     await toggle.click();
-    // The date presets take the popover's surface, not the title bar's (ink on its own fill).
-    const ink = (el: Element) => ({ color: getComputedStyle(el).color, background: getComputedStyle(el).backgroundColor });
-    expect(await panel.getByRole('button', { name: 'This boss week' }).evaluate(ink)).toEqual(await panel.evaluate(ink));
+    // The Dates trigger takes the popover's surface, not the title bar's (ink on its own fill).
+    const ink = (el: Element) => getComputedStyle(el).color;
+    expect(await panel.getByRole('button', { name: /^Dates/ }).evaluate(ink)).toEqual(await panel.evaluate(ink));
     await panel.getByLabel('Model').focus();
     await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();

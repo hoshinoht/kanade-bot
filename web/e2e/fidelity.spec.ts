@@ -305,6 +305,46 @@ const PAIRS: Pair[] = [
       await expect(page.getByRole('dialog', { name: 'HCarling + HStar' })).toBeVisible();
     },
   },
+  // The date picker (picker boards, KANADE_MOCKUPS=…/2026-10-04-picker-mockups): Chat's
+  // range popover with an applied range reopened, History's "Since", and the phone sheet.
+  {
+    name: 'dates-range',
+    board: 'P_Dates',
+    path: '/chat',
+    ready: async (page) => {
+      await page.getByRole('button', { name: /^Filters/ }).click();
+      const trigger = page.getByRole('group', { name: 'Filters' }).getByRole('button', { name: /^Dates/ });
+      await trigger.click();
+      await page.getByRole('dialog', { name: 'Date range' }).getByRole('button', { name: 'Last 7 days' }).click();
+      await page.getByRole('dialog', { name: 'Date range' }).getByRole('button', { name: 'Apply' }).click();
+      await trigger.click();
+      await expect(page.getByRole('dialog', { name: 'Date range' }).getByRole('grid')).toBeVisible();
+    },
+  },
+  {
+    name: 'dates-since',
+    board: 'P_DatesSpec',
+    path: '/history',
+    ready: async (page) => {
+      const trigger = page.getByRole('complementary', { name: 'Change details' }).getByRole('button', { name: /^Since/ });
+      await trigger.click();
+      await page.getByRole('dialog', { name: 'Since' }).getByRole('button', { name: /^Last reset/ }).click();
+      await trigger.click();
+      await expect(page.getByRole('dialog', { name: 'Since' }).getByRole('grid')).toBeVisible();
+    },
+  },
+  {
+    name: 'dates-phone',
+    board: 'P_DatesPhone',
+    path: '/chat',
+    ready: async (page) => {
+      await page.getByRole('button', { name: /^Filters/ }).click();
+      await page.getByRole('group', { name: 'Filters' }).getByRole('button', { name: /^Dates/ }).click();
+      const sheet = page.getByRole('dialog', { name: 'Dates' });
+      await sheet.getByRole('button', { name: 'Last boss week' }).click();
+      await sheet.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+    },
+  },
 ];
 
 test.describe('layout fidelity', () => {

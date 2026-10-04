@@ -4,11 +4,12 @@
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/evidence.scss';
   import '@kanade/ui/styles/history.scss';
+  import '@kanade/ui/styles/date-picker.scss';
   import type { ChangeRecord, Checkpoints, HistoryPage, RevertPlan } from '@kanade/api-types';
   import { createClient } from '@kanade/client';
   import { SvelteSet } from 'svelte/reactivity';
   import { onMount } from 'svelte';
-  import { Icon, Presence, RowContent, Toaster, weekStartLabel } from '@kanade/ui';
+  import { DatePicker, Icon, Presence, RowContent, serverClock, Toaster, weekStartLabel } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
   import { SURFACE_LABELS, actorName, describe, localAt, weekDate } from './describe';
@@ -148,6 +149,8 @@
   }
   let who = $state('');
   let since = $state('');
+  // "Since" is the start of a guild-local day; today and boss weeks are the server's.
+  const clock = $derived(serverClock(store.week));
   function revertMember(event: SubmitEvent) {
     event.preventDefault();
     if (!who) return;
@@ -213,7 +216,7 @@
     <h3 class="cap">Revert a member's changes…</h3>
     <div class="history-member__fields">
       <label class="history-member__who"><span class="vh">Member</span><select bind:value={who} required><option value="">choose…</option>{#each members as member (member.id)}<option value="member:{member.id}">{names(member.id)}</option>{/each}</select></label>
-      <label class="history-member__since"><span class="vh">Since</span><input class="mono" type="date" bind:value={since} /></label>
+      <div class="history-member__since"><DatePicker mode="single" label="Since" lead="Changes since" {clock} value={since} onpick={(day) => (since = day)} /></div>
     </div>
     <button class="btn" type="submit" disabled={!who}>Preview</button>
   </form>
@@ -249,7 +252,7 @@
               <summary class="btn">Revert a member's changes…</summary>
               <form class="formrow" onsubmit={revertMember}>
                 <label class="field"><span>Member</span><select bind:value={who} required><option value="">choose…</option>{#each members as member (member.id)}<option value="member:{member.id}">{names(member.id)}</option>{/each}</select></label>
-                <label class="field"><span>Since</span><input type="date" bind:value={since} /></label>
+                <div class="field"><DatePicker mode="single" label="Since" lead="Changes since" {clock} value={since} onpick={(day) => (since = day)} /></div>
                 <button class="btn" type="submit" disabled={!who}>Preview</button>
               </form>
             </details>

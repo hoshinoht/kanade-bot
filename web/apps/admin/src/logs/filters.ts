@@ -2,7 +2,7 @@ import type { Tone } from '@kanade/ui';
 /**
  * Chat and Extractions log filters (user request 2026-09-25): server-side,
  * deep-linked through the page's query string, combinable. Pure, so the
- * parse/serialise round trip and the date presets are unit-tested.
+ * parse/serialise round trip is unit-tested. Dates are guild-local YYYY-MM-DD.
  */
 
 export interface LogFilter {
@@ -47,23 +47,6 @@ export function toSearch(filter: LogFilter): string {
 /** How many filters are on (text search included). */
 export function activeCount(filter: LogFilter): number {
   return KEYS.filter((k) => filter[k].trim()).length + (filter.outcome.length ? 1 : 0);
-}
-
-function shift(iso: string, days: number): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  return new Date(Date.UTC(y!, m! - 1, d! + days)).toISOString().slice(0, 10);
-}
-
-export type Preset = 'today' | 'week' | '7d';
-
-/** Guild-timezone date presets from the week the server sent (its dates are guild-local). */
-export function preset(which: Preset, week: { days: { date: string; is_today: boolean }[] }): { from: string; to: string } | null {
-  const today = week.days.find((d) => d.is_today)?.date;
-  const first = week.days[0]?.date;
-  const last = week.days[week.days.length - 1]?.date;
-  if (which === 'week') return first && last ? { from: first, to: last } : null;
-  if (!today) return null;
-  return which === 'today' ? { from: today, to: today } : { from: shift(today, -6), to: today };
 }
 
 export const OUTCOME_LABEL: Record<string, string> = {

@@ -1,12 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activeCount, NO_LOG_FILTER, parseFilter, preset, toSearch } from '../src/logs/filters';
-
-const week = {
-  days: ['2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27', '2026-09-28', '2026-09-29', '2026-09-30'].map((date) => ({
-    date,
-    is_today: date === '2026-09-29',
-  })),
-};
+import { activeCount, NO_LOG_FILTER, parseFilter, toSearch } from '../src/logs/filters';
 
 describe('log filters', () => {
   it('round-trips through the query string, outcomes as one list', () => {
@@ -25,11 +18,5 @@ describe('log filters', () => {
     expect(filter.min_ms).toBe('');
     expect(activeCount(filter)).toBe(1);
     expect(toSearch(filter)).toBe('?outcome=proposed');
-  });
-
-  it('computes guild-timezone presets from the week the server sent', () => {
-    expect(preset('today', week)).toEqual({ from: '2026-09-29', to: '2026-09-29' });
-    expect(preset('week', week)).toEqual({ from: '2026-09-24', to: '2026-09-30' });
-    expect(preset('7d', week)).toEqual({ from: '2026-09-23', to: '2026-09-29' });
   });
 });

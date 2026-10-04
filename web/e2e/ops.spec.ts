@@ -424,8 +424,11 @@ test('chat filters: deep-linked, combinable, summarised, cleared', async ({ page
   await page.getByRole('group', { name: 'Filters' }).getByLabel('Tool used').selectOption('schedule.read');
   // Includes the withheld turn: its tool name shows even though its traffic does not.
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('4 of 13 interactions');
-  await page.getByRole('group', { name: 'Filters' }).getByRole('button', { name: 'This boss week' }).click();
-  await expect(page).toHaveURL(/from=2026-09-24&to=2026-09-30/);
+  await page.getByRole('group', { name: 'Filters' }).getByRole('button', { name: /^Dates/ }).click();
+  const dates = page.getByRole('dialog', { name: 'Date range' });
+  await dates.getByRole('button', { name: 'This boss week' }).click();
+  await dates.getByRole('button', { name: 'Apply' }).click();
+  await expect(page).toHaveURL(/from=2026-09-24&to=2026-09-29/);
   await page.getByRole('searchbox', { name: 'Search interactions' }).fill('carling');
   await expect(page).toHaveURL(/q=carling/);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 of 13 interactions');

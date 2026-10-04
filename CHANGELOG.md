@@ -8,6 +8,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 - v5 admin sign-in page shows tonight's next run (time, bosses and the yes
   tally; no names) from a new sessionless `GET /api/admin/auth/tonight`.
+- v5 admin date picker: Chat and Extractions date filters and History's
+  "Since" use a Thursday-first month grid (a boss week is one row) with quick
+  picks, typed From/To with errors, keyboard control and a phone sheet; today
+  comes from the server clock.
 - v5 admin Reminders follows its M3E board: Queued / Sent / Stale & other
   tabs in one window, a Filters (n) popover, one day-grouped table with an
   "In" column and party chips, and a footer naming the next card. Only the

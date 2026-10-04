@@ -6,9 +6,10 @@
 -->
 <script lang="ts">
   import type { LogFacets, Member, Week } from '@kanade/api-types';
-  import { activeCount, NO_LOG_FILTER, OUTCOME_LABEL, preset, type LogFilter, type Preset } from './filters';
+  import '@kanade/ui/styles/date-picker.scss';
+  import { activeCount, NO_LOG_FILTER, OUTCOME_LABEL, type LogFilter } from './filters';
   import { directory, memberLabel } from '../names/directory.svelte';
-  import { Icon } from '@kanade/ui';
+  import { DatePicker, dayOf, Icon, rangeWords, serverClock } from '@kanade/ui';
 
   let {
     filter,
@@ -58,7 +59,7 @@
     if (filter.from || filter.to)
       out.push({
         key: 'dates',
-        label: filter.from === filter.to ? `On ${filter.from}` : `${filter.from || '…'} → ${filter.to || '…'}`,
+        label: `Dates: ${rangeWords(dayOf(filter.from), dayOf(filter.to)) || `${filter.from || '…'} → ${filter.to || '…'}`}`,
         clear: { from: '', to: '' },
       });
     if (filter.outcome.length)
@@ -70,10 +71,8 @@
     return out;
   });
 
-  function usePreset(which: Preset) {
-    const range = week ? preset(which, week) : null;
-    if (range) set(range);
-  }
+  // Today and the boss week come from the server's clock, never the browser's.
+  const clock = $derived(serverClock(week));
 
   function toggleOutcome(outcome: string, on: boolean) {
     set({ outcome: on ? [...filter.outcome, outcome] : filter.outcome.filter((o) => o !== outcome) });
@@ -113,15 +112,8 @@
           {#each facets?.models ?? [] as m (m)}<option value={m}>{m}</option>{/each}
         </select>
       </label>
-      <label class="field"><span>From</span><input type="date" value={filter.from} onchange={(e) => set({ from: e.currentTarget.value })} /></label>
-      <label class="field"><span>To</span><input type="date" value={filter.to} onchange={(e) => set({ to: e.currentTarget.value })} /></label>
-      <div class="field">
-        <span id="{uid}-presets">Dates ({week?.timezone ?? 'guild time'})</span>
-        <div class="logfilters__presets" role="group" aria-labelledby="{uid}-presets">
-          <button type="button" class="btn" onclick={() => usePreset('today')}>Today</button>
-          <button type="button" class="btn" onclick={() => usePreset('week')}>This boss week</button>
-          <button type="button" class="btn" onclick={() => usePreset('7d')}>7 days</button>
-        </div>
+      <div class="field logfilters__dates">
+        <DatePicker label="Dates" {clock} from={filter.from} to={filter.to} onrange={(from, to) => set({ from, to })} />
       </div>
       <label class="field"
         ><span>Channel</span>

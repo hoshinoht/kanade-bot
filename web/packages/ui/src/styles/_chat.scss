@@ -83,13 +83,6 @@
   color: var(--ink);
 }
 
-// The date presets are the popover surface's buttons, not the title bar's.
-.card__head .chat__filters .logfilters__panel .btn {
-  border-color: var(--line);
-  background: var(--surface);
-  color: var(--ink);
-}
-
 /* ── body: list beside the turn ─────────────────────────────────────────── */
 
 .chat__body {

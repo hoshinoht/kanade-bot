@@ -63,3 +63,7 @@ export { reducedMotion, SPRING, SPRING_BOUNCY, SPRING_BOUNCY_MS, SPRING_MS, STAN
 // M3E empty and failed panes (B_Empty, B_States).
 export { default as StateNote } from './components/StateNote.svelte';
 export { default as LoadError } from './components/LoadError.svelte';
+// The date picker (P_Dates boards): Thursday-first month, range and "Since" modes, server-clock today.
+export { default as DatePicker } from './components/DatePicker.svelte';
+export { default as MonthGrid } from './components/MonthGrid.svelte';
+export { dayOf, rangeWords, serverClock, type ServerClock } from './components/calendar';

@@ -96,7 +96,8 @@
 .history-member__fields { display: flex; gap: 6px; }
 .history-member__who { flex: 1 1 auto; min-width: 0; }
 .history-member__who select { width: 100%; }
-.history-member__since input { width: 9.5rem; }
+.history-member__fields { align-items: center; }
+.history-member__since { flex: none; }
 .history-member .btn { align-self: flex-start; }
 
 // Checkpoints (B_HistoryCk): the verification card over the backups table.

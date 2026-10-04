@@ -83,13 +83,6 @@
   box-shadow: var(--shadow);
 }
 
-// Inside the popover the buttons are the surface's, not the title bar's.
-.card__head .logfilters__panel .btn {
-  border-color: var(--line);
-  background: var(--surface);
-  color: var(--ink);
-}
-
 .extract-window__body {
   position: relative;
   flex: 1 1 auto;
