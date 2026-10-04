@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { ConfigView } from '@kanade/api-types';
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, expect, settle, test } from './support';
 
 const WARNING = 'Context past 16k may result in degraded performance on local models.';
 const toast = (page: Page, text: string | RegExp) => page.getByRole('group', { name: 'Notification' }).filter({ hasText: text });
@@ -15,7 +15,7 @@ async function open(page: Page) {
 }
 
 async function axe(page: Page) {
-  await page.waitForTimeout(350);
+  await settle(page);
   const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
   const serious = result.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical' || v.id === 'target-size');
   expect(serious.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);

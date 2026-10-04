@@ -1,6 +1,6 @@
 import type { FixedRow } from '@kanade/api-types';
 import type { Locator, Page } from '@playwright/test';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, expect, settle, test } from './support';
 
 const MULTI = 'Edit Tuesday 22:00 — HCarling + HStar';
 const height = (row: Locator) => row.evaluate((el) => Math.round(el.getBoundingClientRect().height));
@@ -63,7 +63,7 @@ test('Fixed: the reveal produces intermediate heights, not just an animated-look
   await page.goto(`${ADMIN}/fixed?sw=off`);
   await expect(page.locator('[data-fixed="f-carling"]')).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(300);
+  await settle(page);
   const samples = await page.evaluate(async () => {
     const button = document.querySelector<HTMLButtonElement>('[data-fixed="f-carling"]')!;
     const row = button.closest('tr')!;
@@ -93,7 +93,7 @@ test('Week: opening a run keeps its card at rest (the ring marks it), and closin
   await card.locator('.plan-card__open').click();
   await expect(card.locator('.plan-card__open')).toHaveAttribute('aria-current', 'true');
   await expect(card).toHaveClass(/plan-card--selected/);
-  await page.waitForTimeout(300);
+  await settle(page);
   expect(await height(card)).toBe(before);
   expect(await height(neighbor)).toBe(otherHeight);
   await expect(card.locator('.row-content__compact')).toBeVisible();
@@ -214,12 +214,12 @@ for (const size of [{ width: 390, height: 844 }, { width: 844, height: 390 }]) {
       await trigger.scrollIntoViewIfNeeded();
       await expect(row).toBeVisible();
       await page.evaluate(() => document.fonts.ready);
-      await page.waitForTimeout(300);
+      await settle(page);
       const before = await height(row);
       const listWidth = await row.evaluate((element) => element.closest('.inbox__list, .bosses-list')?.getBoundingClientRect().width ?? 0);
       await trigger.click();
       await expect(trigger).toHaveAttribute(screen.state, 'true');
-      await page.waitForTimeout(300);
+      await settle(page);
       expect(await selectedHeight(row, listWidth)).toBe(before);
       await expect(row.locator('.row-content--expanded')).toHaveCount(0);
       if (await row.locator('.row-content').count()) {
@@ -240,7 +240,7 @@ for (const width of [600, 899]) {
     const before = await height(models);
     await models.click();
     await expect(models).toHaveAttribute('aria-selected', 'true');
-    await page.waitForTimeout(300);
+    await settle(page);
     expect(await height(models)).toBe(before);
     await expect(models.locator('.row-content--expanded')).toHaveCount(0);
     await expect(models.locator('.row-content__compact')).toBeVisible();

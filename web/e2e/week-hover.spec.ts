@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, expect, settle, test } from './support';
 
 // Week mini cards grow on hover (fine pointers) and keyboard focus, in flow:
 // the cards below in that day move down rather than being covered (an
@@ -28,7 +28,7 @@ test('hover grows a card in flow: it stays put, the card below moves down and ba
   await expect(card).toHaveClass(/plan-card--grown/);
   await expect(card.locator('.row-content__full .portrait').first()).toBeVisible();
   await expect.poll(async () => (await box(page, '[data-run="r-carling"]')).h).toBeGreaterThan(rest.h + 10);
-  await page.waitForTimeout(400);
+  await settle(page);
   // The hovered card's top stays under the pointer; the card below makes room
   // (its top at or below the grown card's bottom) instead of being covered.
   const grown = await box(page, '[data-run="r-carling"]');
@@ -73,7 +73,7 @@ test('the selected card clips its art, wash and status mark to its rounded shape
     if (grow) {
       await card.locator('.plan-card__open').hover();
       await expect(card).toHaveClass(/plan-card--grown/);
-      await page.waitForTimeout(400);
+      await settle(page);
     }
     const geo = await card.evaluate((li) => {
       const c = li.getBoundingClientRect();

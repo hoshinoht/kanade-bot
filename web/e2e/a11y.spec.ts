@@ -1,33 +1,87 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { COLORWAYS } from '../packages/tokens/src/colorways';
-import { ADMIN, PUBLIC, csrf, expect, test } from './support';
+import { ADMIN, PUBLIC, csrf, expect, settle, test } from './support';
 
-async function serious(page: Page, label: string) {
+// Every test is independent (the fixture resets the mock), so the looks spread across workers.
+test.describe.configure({ mode: 'parallel' });
+
+async function serious(page: Page, label: string, rules?: string[]) {
   // Let entry animations finish; axe reads mid-fade opacity as low contrast.
-  await page.waitForTimeout(350);
-  const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
+  await settle(page);
+  const axe = new AxeBuilder({ page });
+  if (rules) axe.withRules(rules);
+  else axe.withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']);
+  const result = await axe.analyze();
   const bad = result.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
   expect(bad.map((v) => `${label}: ${v.id} (${v.impact}) ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
   return result.violations.length;
 }
 
-// Every colourway in both faces.
-const LOOKS = COLORWAYS.map((way) => way.key).flatMap((c) => (['light', 'dark'] as const).map((t) => [c, t] as const));
+async function look(page: Page, colorway: string, theme: string) {
+  await page.addInitScript(([c, t]) => {
+    localStorage.setItem('colorway', c!);
+    localStorage.setItem('theme', t!);
+  }, [colorway, theme]);
+}
 
-for (const [colorway, theme] of LOOKS) {
-  test(`axe: public and admin views, ${colorway} ${theme}`, async ({ page }) => {
-    // Forty-odd scans per face: well past the default 30 s on a busy machine.
-    test.setTimeout(120_000);
-    await page.addInitScript(([c, t]) => {
-      localStorage.setItem('colorway', c!);
-      localStorage.setItem('theme', t!);
-    }, [colorway, theme]);
+/** The default colourway gets the full walk (all rules, every screen) in both faces. */
+const FULL = 'marigold';
+const THEMES = ['light', 'dark'] as const;
+// Every other colourway only changes colours: colour contrast on representative screens.
+const CONTRAST_LOOKS = COLORWAYS.map((way) => way.key)
+  .filter((c) => c !== FULL)
+  .flatMap((c) => THEMES.map((t) => [c, t] as const));
 
+for (const [colorway, theme] of CONTRAST_LOOKS) {
+  test(`axe: colour contrast on representative views, ${colorway} ${theme}`, async ({ page }) => {
+    const contrast = (label: string) => serious(page, label, ['color-contrast']);
+    await look(page, colorway, theme);
     await page.goto(`${PUBLIC}/?sw=off`);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 runs');
     // Dynamic: wait for the avatar's palette; later pages paint it from the cache.
     if (colorway === 'dynamic') await expect(page.locator('html')).toHaveAttribute('data-dynamic', 'avatar');
+    await contrast('public week');
+
+    await page.goto(`${ADMIN}/?sw=off`);
+    await expect(page.locator('[data-run="r-carling"]')).toBeVisible();
+    await contrast('admin planner');
+    await page.locator('[data-run="r-carling"] .plan-card__open').click();
+    await expect(page.getByRole('complementary', { name: 'HCarling + HStar' })).toBeVisible();
+    await contrast('admin run pane');
+    await page.keyboard.press('Escape');
+    await page.getByRole('link', { name: 'Config' }).click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Config' })).toBeVisible();
+    await contrast('admin config');
+    await page.getByRole('link', { name: /^Inbox/ }).click();
+    await expect(page.getByRole('listbox', { name: 'Extractor items' })).toBeVisible();
+    await contrast('admin inbox extractor');
+    await page.goto(`${ADMIN}/history?sw=off`);
+    await expect(page.locator('.history-row--active .row-content__full').getByText('reverts #8')).toBeVisible();
+    await page.locator('[data-history="8"]').click();
+    await expect(page.getByRole('complementary', { name: 'Change details' })).toBeVisible();
+    await contrast('admin history');
+    await page.getByRole('link', { name: 'Bosses' }).click();
+    await expect(page.locator('.bossrow').first()).toBeVisible();
+    await page.getByRole('link', { name: 'Carling' }).click();
+    await expect(page.getByRole('heading', { name: 'Sources' })).toBeVisible();
+    await contrast('admin knowledge');
+    await page.getByRole('link', { name: 'Members' }).click();
+    await page.getByRole('button', { name: /^Asahi/ }).click();
+    await expect(page.getByRole('complementary', { name: 'Member details' })).toBeVisible();
+    await contrast('admin member sheet');
+  });
+}
+
+for (const theme of THEMES) {
+  const colorway = FULL;
+  test(`axe: public and admin views, ${colorway} ${theme}`, async ({ page }) => {
+    // Forty-odd scans per face: well past the default 30 s on a busy machine.
+    test.setTimeout(120_000);
+    await look(page, colorway, theme);
+
+    await page.goto(`${PUBLIC}/?sw=off`);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 runs');
     await serious(page, 'public week');
     await page.getByRole('tab', { name: /List/ }).click();
     await serious(page, 'public list');

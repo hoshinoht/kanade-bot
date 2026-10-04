@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { busyWeek } from './busy-week';
-import { ADMIN, PUBLIC, REAL_ART, expect, test } from './support';
+import { ADMIN, PUBLIC, REAL_ART, expect, settle as settleMotion, test } from './support';
 
 // Reference captures for the v4 comparison, both git-ignored. Default: the
 // synthetic placeholder art (fixtures, not the game's art) into
@@ -18,6 +18,10 @@ const LOOKS = [
   // The face the user reviews the live site in.
   { name: 'blossom-light', colorway: 'blossom', theme: 'light' },
 ];
+
+// Each capture is independent (own files, fresh mock), and this file is the
+// suite's longest: spread its tests across workers.
+test.describe.configure({ mode: 'parallel' });
 
 async function settle(page: Page) {
   await page.evaluate(async () => {
@@ -163,7 +167,7 @@ for (const look of LOOKS) {
     };
     await crop(`admin-week-grip-rest-wide-${look.name}`);
     await card.hover();
-    await page.waitForTimeout(200);
+    await settleMotion(page);
     await shot(page, `admin-week-grip-hover-wide-${look.name}`);
     await crop(`admin-week-grip-hover-wide-${look.name}`);
     await page.mouse.move(2, 2);
@@ -171,7 +175,7 @@ for (const look of LOOKS) {
     await page.keyboard.press('Shift+Tab');
     await page.keyboard.press('Tab');
     await expect(page.locator('[data-handle="r-carling"]')).toBeFocused();
-    await page.waitForTimeout(200);
+    await settleMotion(page);
     await shot(page, `admin-week-grip-focus-wide-${look.name}`);
     await crop(`admin-week-grip-focus-wide-${look.name}`);
   });
@@ -255,7 +259,7 @@ for (const vp of [
     for (const [name, path] of COMPARE) {
       await page.goto(`${ADMIN}${path}${path.includes('?') ? '&' : '?'}sw=off`);
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-      await page.waitForTimeout(250);
+      await settleMotion(page);
       await shot(page, `compare/v5-${name}-${vp.name}`);
     }
     await page.goto(`${ADMIN}/?sw=off`);

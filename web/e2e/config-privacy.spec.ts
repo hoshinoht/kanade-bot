@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { ConfigView } from '@kanade/api-types';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, expect, settle, test } from './support';
 
 test('models config warns when raw member data leaves the homelab', async ({ page }) => {
   await page.route('**/api/admin/config', async (route) => {
@@ -44,7 +44,7 @@ test('models config warns when raw member data leaves the homelab', async ({ pag
   await page.keyboard.press('Tab');
   await expect(chat.getByRole('combobox', { name: 'Reasoning' })).toBeFocused();
 
-  await page.waitForTimeout(350);
+  await settle(page);
   const axe = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'])
     .analyze();

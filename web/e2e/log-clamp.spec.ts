@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, expect, settle, test } from './support';
 
 // Live bug: a pasted multi-line problem statement made one Chat log row fill
 // the screen. Free text in a log row is a two-line preview; the turn page keeps it whole.
@@ -74,7 +74,7 @@ for (const [label, width, height] of [
     expect(rowHeight).toBeLessThan(height * 0.2);
 
     // Wait for the shell's entry transform before measuring CSS-pixel targets.
-    await page.waitForTimeout(350);
+    await settle(page);
     // The small copy affordances meet WCAG 2.2 without widening the dense table.
     const targets = await table.locator('.log__who button.name--copy').evaluateAll((buttons) =>
       buttons.map((button) => {

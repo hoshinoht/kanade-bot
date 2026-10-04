@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, REAL_ART, expect, test } from './support';
+import { ADMIN, REAL_ART, expect, settle, test } from './support';
 
 const OUT = `e2e/.captures/${REAL_ART ? 'real' : 'synthetic'}/row-expansion`;
 
@@ -9,7 +9,7 @@ async function shot(page: Page, name: string) {
     const images = [...document.images].filter((image) => image.getBoundingClientRect().top < innerHeight && image.checkVisibility());
     await Promise.race([Promise.all(images.map((image) => image.decode().catch(() => {}))), new Promise((resolve) => setTimeout(resolve, 3000))]);
   });
-  await page.waitForTimeout(300);
+  await settle(page);
   await page.screenshot({ path: `${OUT}/${name}.png`, animations: 'disabled' });
 }
 

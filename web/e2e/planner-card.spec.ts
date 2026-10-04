@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { busyWeek } from './busy-week';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, expect, settle, test } from './support';
 
 // The planner card's grip owns its own column: no difficulty pill runs under
 // it, whatever the boss count, and populated days keep the M3E board's
@@ -50,7 +50,7 @@ for (const size of [
     // Hover and focus scale the grip up; it still clears the pills.
     if (size.width >= 900) {
       await page.locator('[data-run="busy-0-2"]').hover();
-      await page.waitForTimeout(200);
+      await settle(page);
       expect(await overlaps(page)).toEqual([]);
     }
     // The board scrolls sideways (or stacks); the document never does.

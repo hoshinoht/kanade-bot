@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import type { ChatTurn } from '@kanade/api-types';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, expect, settle, test } from './support';
 
 // Chat turn facts (persona, reply profile, per-round model/effort/route/latency,
 // calls grouped by round), the collapsed admin-only Model view of a masked turn,
@@ -12,7 +12,7 @@ async function go(page: Page, path: string) {
 }
 
 async function serious(page: Page, label: string) {
-  await page.waitForTimeout(350);
+  await settle(page);
   const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
   const bad = result.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical' || v.id === 'target-size');
   expect(bad.map((v) => `${label}: ${v.id} (${v.impact}) ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);

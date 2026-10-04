@@ -1,7 +1,16 @@
 import { expect, test as base, type APIRequestContext, type Page } from '@playwright/test';
 
-export const ADMIN = process.env.KANADE_E2E_ADMIN ?? 'http://127.0.0.1:4373';
-export const PUBLIC = process.env.KANADE_E2E_PUBLIC ?? 'http://127.0.0.1:4374';
+/**
+ * This worker's own mock (see the port scheme in `playwright.config.ts`):
+ * admin on base + 2 × parallel index, public one above. Workers set
+ * TEST_PARALLEL_INDEX before any test file loads.
+ */
+function origins(): { admin: string; public: string } {
+  const port = Number(process.env.KANADE_E2E_ORIGIN_BASE ?? '4373') + 2 * Number(process.env.TEST_PARALLEL_INDEX ?? '0');
+  return { admin: `http://127.0.0.1:${port}`, public: `http://127.0.0.1:${port + 1}` };
+}
+export const ADMIN = origins().admin;
+export const PUBLIC = origins().public;
 /** Must match `playwright.config.ts`; the fixture refuses a mock pinned elsewhere. */
 export const PINNED_NOW = '2026-09-29T04:00:00Z';
 export const REAL_ART = process.env.KANADE_REAL_ART === '1';
@@ -54,13 +63,24 @@ export async function resetWeek(): Promise<void> {
   await fetch(`${ADMIN}/api/admin/reset`, { method: 'POST' });
 }
 
+interface Sink {
+  violations: Violation[];
+  console: string[];
+  /** Set by any document of the page, including ones navigated away from. */
+  seen: boolean;
+}
+
 /** Every page records `securitypolicyviolation` events (enforced and report-only). */
-async function watch(page: Page, sink: { violations: Violation[]; console: string[] }) {
+async function watch(page: Page, sink: Sink) {
+  await page.exposeFunction('__kanadeCspSeen', () => {
+    sink.seen = true;
+  });
   await page.addInitScript(() => {
-    const w = window as unknown as { __csp: unknown[] };
+    const w = window as unknown as { __csp: unknown[]; __kanadeCspSeen?: () => void };
     w.__csp = [];
     document.addEventListener('securitypolicyviolation', (e) => {
       w.__csp.push({ directive: e.violatedDirective, blocked: e.blockedURI, disposition: e.disposition, sample: e.sample });
+      w.__kanadeCspSeen?.();
     });
   });
   page.on('console', (msg) => {
@@ -78,7 +98,24 @@ export async function collect(page: Page): Promise<Violation[]> {
   }
 }
 
-export const test = base.extend<{ cspControl: boolean; csp: { violations: Violation[]; console: string[] } }>({
+/**
+ * Waits for running finite animations and transitions (bounded), after two
+ * frames so ones started by the last action have begun. Infinite ones never
+ * finish and are skipped.
+ */
+export async function settle(page: Page, timeout = 2_000): Promise<void> {
+  await page.evaluate(async (ms) => {
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const finite = document.getAnimations().filter((a) => a.effect?.getComputedTiming().endTime !== Infinity);
+    await Promise.race([Promise.all(finite.map((a) => a.finished.catch(() => {}))), new Promise((resolve) => setTimeout(resolve, ms))]);
+  }, timeout);
+}
+
+async function serverReports(): Promise<unknown[]> {
+  return [...(await reports(ADMIN)), ...(await reports(PUBLIC))];
+}
+
+export const test = base.extend<{ cspControl: boolean; csp: Sink }>({
   /** Positive control: a test that deliberately violates the policy sets this. */
   cspControl: [false, { option: true }],
   csp: [
@@ -86,13 +123,19 @@ export const test = base.extend<{ cspControl: boolean; csp: { violations: Violat
       await verifyMock();
       await resetWeek();
       await clearReports();
-      const sink = { violations: [] as Violation[], console: [] as string[] };
+      const sink: Sink = { violations: [], console: [], seen: false };
       await watch(page, sink);
       await use(sink);
       sink.violations.push(...(await collect(page)));
-      // report-uri POSTs are sent asynchronously; give them a moment to land.
-      await page.waitForTimeout(400);
-      const server = [...(await reports(ADMIN)), ...(await reports(PUBLIC))];
+      // report-uri POSTs land asynchronously. Only a page that saw a violation
+      // waits for them; a clean page reads the store at once (any report that
+      // already landed, e.g. from a worker, still fails the test below).
+      if (sink.seen || sink.violations.length > 0 || sink.console.length > 0) {
+        const landed = (text: string) => (cspControl ? text.includes('style-src-attr') && text.includes('require-trusted-types-for') : text !== '[]');
+        for (let waited = 0; waited < 3_000 && !landed(JSON.stringify(await serverReports())); waited += 100)
+          await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      const server = await serverReports();
       if (cspControl) {
         // The server must have received both kinds of report the control provoked.
         const text = JSON.stringify(server);

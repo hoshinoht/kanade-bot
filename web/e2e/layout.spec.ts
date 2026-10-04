@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, PUBLIC, expect, test } from './support';
+import { ADMIN, PUBLIC, expect, settle, test } from './support';
 
 // docs/v5/pwa-design-guidelines.md "Area follows importance" (user rule): the
 // one scrolling area keeps ≥ 55% of the viewport height and never less than
@@ -68,7 +68,7 @@ for (const size of SIZES) {
     for (const [app, origin, path] of SCREENS) {
       await page.goto(`${origin}${path}${path.includes('?') ? '&' : '?'}sw=off`);
       await expect(page.getByRole('heading').first()).toBeVisible();
-      await page.waitForTimeout(250);
+      await settle(page);
       const got = await area(page);
       const need = budget(size.height);
       if (got.scrolled !== 0) failures.push(`${app}${path}: the document scrolled`);
