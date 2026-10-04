@@ -214,30 +214,14 @@ dialog.runsheet--narrow .modal__head {
   gap: 10px;
 }
 
-.runsheet__side form {
-  padding: 8px;
-  border: 1.5px solid var(--line);
-  border-radius: 26px;
-  background: color-mix(in srgb, var(--surface) 94%, transparent);
-}
-
-.runsheet__hero form {
+.runsheet__movekey {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.runsheet__hero form input {
-  width: 120px;
-  min-width: 0;
-  min-height: 40px;
-  padding: 0 12px;
-  border-radius: 20px;
-  font-family: var(--mono);
-}
-
-.runsheet__hero form .btn--key {
-  min-height: 40px;
+.runsheet__movekey .btn--primary {
+  gap: 8px;
 }
 
 .runsheet__acts {
@@ -531,19 +515,12 @@ dialog.runsheet--narrow .modal__head {
   min-height: 26px;
 }
 
-.runsheet__moverow form {
+.runsheet__moverow .runsheet__movekey {
   gap: 6px;
 }
 
-.runsheet__moverow form input {
+.runsheet__moverow .runsheet__movekey .btn--primary {
   flex: 1 1 auto;
-  width: auto;
-  min-height: 44px;
-  border-radius: 22px;
-}
-
-.runsheet__moverow form .btn--key {
-  min-height: 44px;
 }
 
 .runsheet__more-btn {
@@ -633,4 +610,115 @@ dialog.runsheet--narrow .modal__head {
   min-width: 0;
   min-height: 38px;
   padding: 0 4px;
+}
+
+/* ── the Move view (P_MovePhone; HeroSheet's window on a laptop) ────────── */
+
+.runsheet__movewin .runsheet__bar {
+  align-items: center;
+  gap: 10px;
+}
+
+.runsheet__movewin .runsheet__bar::before {
+  align-self: center;
+  margin-bottom: 0;
+}
+
+.runsheet__movetitle {
+  flex: 1 1 auto;
+  margin: 0;
+  color: var(--win-ink);
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.runsheet__movewin .runsheet__back {
+  border-color: color-mix(in srgb, var(--win-ink) 45%, transparent);
+  background: transparent;
+  color: var(--win-ink);
+}
+
+.runsheet__back {
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 12px 0 8px;
+}
+
+.runsheet__panel--move {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  overflow: hidden;
+}
+
+.runsheet__panel--move .movepick {
+  width: min(100%, 560px);
+}
+
+.runsheet--narrow .runsheet__move {
+  gap: 0;
+  padding: 0;
+  background: var(--surface);
+}
+
+.runsheet__moveid {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 16px 6px 6px;
+  border-bottom: 1.5px solid var(--line);
+  background: var(--raise);
+}
+
+// The board's bar arrow: an icon-only back step, 44 px to touch.
+.runsheet__moveid .runsheet__back {
+  flex: none;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  justify-content: center;
+}
+
+.runsheet__moveid .runsheet__back .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.runsheet__movetime {
+  flex: none;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.runsheet__movename {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--display);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runsheet__moveparty {
+  flex: none;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--dim-text);
+}
+
+.runsheet__move > .run__error {
+  margin: 0;
+  padding: 0 16px 8px;
+}
+
+.runsheet__move > .run__error:empty {
+  display: none;
+}
+
+.runsheet__moverow .runsheet__movekey .btn--primary {
+  justify-content: center;
 }

@@ -138,7 +138,7 @@
 .fixedsheet__content .run__people .fixedsheet__more-party { font-family: var(--mono); cursor: pointer; }
 .fixedsheet__content .run__people .fixedsheet__more-party:hover { background: var(--row-hover); }
 .fixedsheet__content .run__people .fixedsheet__more-party:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.fixedsheet__fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.fixedsheet__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .fixedsheet__note { gap: 4px; }
 // Day, time and owner side by side, the home channel on its own line
 // (B_Fixed): each a column of its overline 4 px over the 40 px box. An owner
@@ -177,3 +177,6 @@
 .frame--phone .fixed-list thead th:nth-child(3) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .frame--phone .fixed-list__party { grid-column: 2; }
 .frame--phone .fixed-list__bossline { flex-wrap: wrap; row-gap: 2px; }
+// The weekday strip (P_MoveStates "Reuse") takes the line; time and owner share the next.
+.fixedsheet__fields .fixedsheet__day { grid-column: 1 / -1; }
+.fixedsheet__day .daystrip { max-width: 22rem; }

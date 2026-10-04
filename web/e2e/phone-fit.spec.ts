@@ -149,7 +149,8 @@ for (const size of SIZES) {
       if (grid.scrollWidth > grid.clientWidth) out.push('the fields scroll sideways');
       const boxes = [...grid.querySelectorAll<HTMLElement>('.field')].map((field) => ({
         name: field.querySelector('span')!.textContent!.trim(),
-        box: field.querySelector('select, input')!.getBoundingClientRect(),
+        // The Day is the weekday strip (P_MoveStates "Reuse"), a box like the others.
+        box: field.querySelector('select, input, .daystrip')!.getBoundingClientRect(),
       }));
       boxes.forEach(({ name, box }, i) => {
         if (box.left < bound.left - 0.5 || box.right > bound.right + 0.5) out.push(`${name} leaves the sheet`);

@@ -6,12 +6,16 @@
   split), Reject (with a reason for member requests).
 -->
 <script lang="ts">
-  import type { ApproveRequest, Evidence, Proposal, RunStatus } from '@kanade/api-types';
+  import { tick } from 'svelte';
+  import type { ApproveRequest, Evidence, Proposal, RunStatus, Week } from '@kanade/api-types';
   import { BossTag, DecisionCard, Icon, initial, PendingLabel, Portrait, RUN_TONE, STATUS_WORDS, StatusChip, ThreadPanel, WavyProgress } from '@kanade/ui';
   import { directory } from '../names/directory.svelte';
   import Mentions from '../names/Mentions.svelte';
   import Name from '../names/Name.svelte';
-  import { editable } from './edit';
+  import type { Slot } from '../planner/keyboardMove';
+  import MovePicker from '../sheet/MovePicker.svelte';
+  import { liveRuns, namesIn } from '../sheet/move';
+  import { editable, editText, editWeek, isoToday } from './edit';
   import { proposalExpiry } from './expiry';
   import { blocked, DISCORD_ONLY, isProposal, SOURCE_LABEL } from './flags';
 
@@ -26,6 +30,8 @@
     bar = false,
     now = '',
     timeZone = 'Asia/Kuala_Lumpur',
+    week = null,
+    step = 30,
   }: {
     p: Proposal;
     busy: boolean;
@@ -33,7 +39,7 @@
     locked: boolean;
     error: string;
     onapprove: (body: ApproveRequest) => void;
-    /** "Move & approve": the typed slot, parsed by the page. */
+    /** "Edit, then approve": the picked slot as text ("wed 22:30"), parsed by the page. */
     onmove: (text: string) => void;
     onreject: () => void;
     /** Narrow frames (≤ 899 px): the decision is the bottom action bar. */
@@ -41,11 +47,16 @@
     /** The server's clock (`Week.generated_at`) for the expiry bar; empty hides it. */
     now?: string;
     timeZone?: string;
+    /** The week on screen: dates, other runs and clashes for the edit picker when the proposal falls in it. */
+    week?: Week | null;
+    /** The edit picker's time step: Config → Run lengths default minutes. */
+    step?: number;
   } = $props();
   const uid = $props.id();
 
-  let edit = $state('');
   let editOpen = $state(false);
+  let picked = $state<Slot>();
+  let editBlocked = $state(true);
   // Which action the shared `busy` belongs to, so only that button shows it.
   let via = $state<'approve' | 'move'>('approve');
   let choices = $state<Record<string, 'update' | 'keep'>>({});
@@ -57,6 +68,30 @@
   const stacked = $derived(!bar && isProposal(p));
   const expiry = $derived(proposalExpiry(p, now, timeZone));
   const confText = $derived(p.confidence === null ? 'no score' : `${p.confidence.toFixed(2)} confident`);
+  /** The edit picker's boss week; null when the proposed time cannot be read. */
+  const editing = $derived(editOpen && editable(p) && !stop);
+  const editAt = $derived(editable(p) ? editWeek(p, week, week?.days[0]?.dow ?? week?.reset ?? 'Thu', isoToday(now, timeZone)) : null);
+  const editField = $derived(editAt ? liveRuns(editAt.runs) : []);
+  const editNames = $derived(namesIn(editAt?.runs ?? []));
+  /** The run being moved (its length and who plays), or the proposed party for a new run. */
+  const editSubject = $derived.by(() => {
+    const run = editField.find((r) => r.id === p.run_id);
+    const slot = editAt?.slot ?? { day: 0, time: null };
+    return run ?? { id: p.run_id ?? '', title: '', day: slot.day, time: slot.time, minutes: step, members: p.participants.map((m) => m.id) };
+  });
+  let editButton = $state<HTMLButtonElement>();
+  let toggleButton = $state<HTMLButtonElement>();
+
+  // Cancel edit or Escape: the picker closes and focus returns to what opened it.
+  async function closeEdit() {
+    editOpen = false;
+    await tick();
+    (bar ? toggleButton : editButton)?.focus({ preventScroll: true });
+  }
+  const pickedLabel = $derived.by(() => {
+    const day = picked && editAt?.days[picked.day];
+    return picked && day ? `${day.dow}${day.date ? ` ${day.date.slice(8, 10)}` : ''} ${picked.time ?? ''}`.trim() : '';
+  });
   /** The reason Approve is held back, when it is: describes the actions. */
   const whyId = $derived(refused || stop ? `${uid}-why` : undefined);
 
@@ -133,6 +168,12 @@
       out.splice(at < 0 ? out.length : at, 0, line);
     }
     return out;
+  }
+
+  function approveEdit() {
+    if (!picked || !editAt || editBlocked) return;
+    via = 'move';
+    onmove(editText(picked, editAt.days));
   }
 
   function approve() {
@@ -230,9 +271,16 @@
 {/snippet}
 
   {#snippet approveKey()}
-    <button class="btn btn--primary btn--key decision__approve" data-fid="decision-approve" type="button" disabled={busy || Boolean(stop) || refused} aria-describedby={whyId} onclick={approve}
-      ><Icon name="check" /><PendingLabel pending={busy && via === 'approve'} label="Approving…">Approve</PendingLabel></button
-    >
+    {#if editing}
+      <!-- While editing, the key approves the picked slot and names it (P_MoveWidths). -->
+      <button class="btn btn--primary btn--key decision__approve" data-fid="decision-approve" type="button" disabled={busy || refused || editBlocked} aria-describedby={whyId} onclick={approveEdit}
+        ><Icon name="check" /><PendingLabel pending={busy && via === 'move'} label="Approving…">Approve · <span class="mono">{pickedLabel}</span></PendingLabel></button
+      >
+    {:else}
+      <button class="btn btn--primary btn--key decision__approve" data-fid="decision-approve" type="button" disabled={busy || Boolean(stop) || refused} aria-describedby={whyId} onclick={approve}
+        ><Icon name="check" /><PendingLabel pending={busy && via === 'approve'} label="Approving…">Approve</PendingLabel></button
+      >
+    {/if}
   {/snippet}
   {#snippet why()}
     <!-- Only when Approve is held back (refused or blocked). -->
@@ -244,25 +292,33 @@
     {/if}
   {/snippet}
   {#snippet editForm()}
-    {#if editable(p) && !stop}
-      <form
-        id="{uid}-edit"
-        class:proposal__edit--open={editOpen}
-        class="proposal__edit"
-        onsubmit={(event) => {
-          event.preventDefault();
-          via = 'move';
-          onmove(edit);
-        }}
-      >
-        <label class="field">
-          <span>Edit, then approve</span>
-          <input class="mono" bind:value={edit} placeholder="wed 21:30" size="10" aria-invalid={error ? 'true' : undefined} aria-describedby="{uid}-err" />
-        </label>
-        <button class="btn" type="submit" disabled={busy || refused} aria-describedby={whyId}
-          ><PendingLabel pending={busy && via === 'move'} label="Approving…">Move &amp; approve</PendingLabel></button
-        >
-      </form>
+    {#if editable(p) && !stop && editAt}
+      <div id="{uid}-edit" class:proposal__edit--open={editOpen} class="proposal__edit">
+        {#if editOpen}
+          <MovePicker
+            days={editAt.days}
+            subject={editSubject}
+            own={editAt.own}
+            initial={editAt.slot}
+            field={editField}
+            names={editNames}
+            {step}
+            variant="card"
+            legend="Edit, then approve"
+            clashTail="Approving still works."
+            busy={busy || refused}
+            bind:value={picked}
+            bind:blocked={editBlocked}
+            autofocus
+            onsubmit={approveEdit}
+            oncancel={() => void closeEdit()}
+          />
+        {:else if !bar}
+          <button class="btn proposal__edit-open" type="button" bind:this={editButton} disabled={busy || refused} aria-describedby={whyId} onclick={() => (editOpen = true)}
+            ><Icon name="edit" />Edit, then approve</button
+          >
+        {/if}
+      </div>
     {/if}
   {/snippet}
   {#snippet rejectKey()}
@@ -380,12 +436,19 @@
       {@render panel()}
       <DecisionCard label="Decide this change" overline="">
         {@render would()}
-        {@render approveKey()}
-        {@render why()}
-        {@render editForm()}
+        {#if editing}
+          {@render editForm()}
+          {@render approveKey()}
+          {@render why()}
+        {:else}
+          {@render approveKey()}
+          {@render why()}
+          {@render editForm()}
+        {/if}
         <span class="decision__spacer" aria-hidden="true"></span>
         <div class="decision__footrow" data-fid="decision-foot">
-          {#if p.card_url}<a class="proposal__card" href={p.card_url} target="_blank" rel="noopener noreferrer">See the card</a>{/if}
+          {#if editing}<button class="btn btn--ghost proposal__edit-cancel" type="button" onclick={() => void closeEdit()}>Cancel edit</button>
+          {:else if p.card_url}<a class="proposal__card" href={p.card_url} target="_blank" rel="noopener noreferrer">See the card</a>{/if}
           {@render rejectKey()}
         </div>
         <p class="field__error" id="{uid}-err" role="alert">{error}</p>
@@ -401,10 +464,11 @@
     {#if bar}
       {@render why()}
       {@render editForm()}
-      {#if editable(p) && !stop}
-        <!-- The pencil opens the edit field above the bar. -->
+      {#if editable(p) && !stop && editAt}
+        <!-- The pencil opens the edit picker above the bar; Approve then approves the picked slot. -->
         <button
           class="btn proposal__edit-toggle"
+          bind:this={toggleButton}
           type="button"
           aria-label="Show the edit field"
           aria-expanded={editOpen}

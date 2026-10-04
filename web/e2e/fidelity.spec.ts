@@ -345,6 +345,46 @@ const PAIRS: Pair[] = [
       await sheet.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
     },
   },
+  // The Move picker (KANADE_MOCKUPS=docs/research/2026-10-04-picker-mockups). Next week
+  // has a clash to show: HCarling + HStar on Monday at HFA's 20:00.
+  {
+    name: 'move-pane',
+    board: 'Main',
+    path: '/?week=next',
+    ready: async (page) => {
+      await page.locator('[data-run="n-carling"] .plan-card__open').click();
+      const pane = page.getByRole('complementary', { name: 'HCarling + HStar' });
+      await pane.getByRole('radio', { name: /^Mon 05/ }).click();
+      await pane.getByRole('textbox', { name: 'Type a day and time' }).fill('20:00');
+      await expect(pane.getByRole('status').filter({ hasText: 'Clash:' })).toBeVisible();
+    },
+  },
+  {
+    name: 'move-widths',
+    board: 'P_MoveWidths',
+    path: '/',
+    // The board's first pane: a typed day that has passed.
+    ready: async (page) => {
+      await page.locator('[data-run="r-bm"] .plan-card__open').click();
+      const typed = page.getByRole('complementary', { name: 'XBM' }).getByRole('textbox', { name: 'Type a day and time' });
+      await typed.fill('sat 21:30');
+      await typed.press('Enter');
+      await expect(page.getByText('Sat 26 has passed.', { exact: false })).toBeVisible();
+    },
+  },
+  {
+    name: 'move-phone',
+    board: 'P_MovePhone',
+    path: '/?week=next',
+    ready: async (page) => {
+      await page.locator('[data-run="n-carling"] .plan-card__open').click();
+      await page.getByRole('dialog', { name: 'HCarling + HStar' }).getByRole('button', { name: 'Move HCarling + HStar…' }).click();
+      const view = page.getByRole('dialog', { name: 'Move HCarling + HStar' });
+      await view.getByRole('radio', { name: /^Mon 05/ }).click();
+      await view.getByRole('textbox', { name: 'Or type a day and time' }).fill('20:00');
+      await expect(view.getByRole('status').filter({ hasText: 'Clash:' })).toBeVisible();
+    },
+  },
 ];
 
 test.describe('layout fidelity', () => {

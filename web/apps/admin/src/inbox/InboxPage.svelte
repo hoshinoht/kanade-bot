@@ -324,6 +324,8 @@
               p={chosen}
               bar={phone}
               now={store.week?.generated_at ?? ''}
+              week={store.week}
+              step={store.runStep}
               {timeZone}
               {busy}
               locked={store.proposalsLocked}

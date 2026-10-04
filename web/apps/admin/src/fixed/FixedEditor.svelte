@@ -5,8 +5,9 @@
 -->
 <script lang="ts">
   import type { Boss, BossRow, Channel, FixedRequest, FixedRow, MemberRow, ValidateResult } from '@kanade/api-types';
-  import { BossTag, Modal, dayLabel, enter } from '@kanade/ui';
+  import { BossTag, DayStrip, Modal, dayLabel, enter } from '@kanade/ui';
   import '@kanade/ui/styles/fixed.scss';
+  import '@kanade/ui/styles/move-picker.scss';
   import { tick } from 'svelte';
   import BossGrid from '../bosses/BossGrid.svelte';
   import { send } from '../resource.svelte';
@@ -58,6 +59,11 @@
 
   const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const uid = $props.id();
+  // The weekday strip runs in boss-week order from the reset day (P_MoveStates "Reuse").
+  const resetDay = $derived(Math.max(0, WEEKDAYS.findIndex((d) => d.startsWith(week?.days[0]?.dow ?? 'Thu'))));
+  const weekdayStrip = $derived(
+    WEEKDAYS.map((_, i) => (resetDay + i) % 7).map((value) => ({ value, dow: WEEKDAYS[value]!.slice(0, 3), label: WEEKDAYS[value]! })),
+  );
 
   let weekday = $state(0);
   let time = $state('');
@@ -260,12 +266,10 @@
         </div>
       </div>
       <div class="fixedsheet__fields" data-fid="fixed-fields">
-        <label class="field">
+        <div class="field fixedsheet__day">
           <span>Day</span>
-          <select bind:value={weekday}>
-            {#each WEEKDAYS as name, index (name)}<option value={index}>{name}</option>{/each}
-          </select>
-        </label>
+          <DayStrip days={weekdayStrip} value={Number(weekday)} label="Day" compact onpick={(value) => (weekday = value)} />
+        </div>
         <label class="field"><span>Time</span><input bind:value={time} placeholder="21:30" size="6" class="mono" /></label>
         <label class="field">
           <span>Owner</span>

@@ -167,16 +167,17 @@ test.describe('run sheet backdrop', () => {
     await expect(sheet).toBeHidden();
     await expect(open).toBeFocused();
 
-    // A typed Move target is unsaved: the backdrop leaves it open.
+    // The open Move view is unsaved: the backdrop leaves it open.
     await open.click();
     await expect(sheet).toBeVisible();
     at = await backdrop(page);
-    const field = sheet.getByRole('textbox', { name: /Move HLimbo/ });
-    await field.fill('sat 20:30');
+    await sheet.getByRole('button', { name: 'Move HLimbo…' }).click();
+    const move = page.getByRole('dialog', { name: 'Move HLimbo' });
+    await expect(move.getByRole('radiogroup', { name: 'Day' })).toBeVisible();
     await page.mouse.click(at.x, at.y);
-    await expect(sheet).toBeVisible();
-    await expect(field).toHaveValue('sat 20:30');
-    await field.fill('');
+    await expect(move).toBeVisible();
+    await move.getByRole('button', { name: 'Back to the run' }).click();
+    await expect(sheet.getByRole('button', { name: 'Move HLimbo…' })).toBeFocused();
 
     // So is an open swap picker (behind the sheet's More actions).
     await sheet.getByRole('button', { name: 'More actions' }).click();

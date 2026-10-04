@@ -6,6 +6,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin Move picker: a boss-week day strip and a time stepper (Run lengths
+  step) with the typed "wed 21:30" shortcut, suggestions and clash warnings,
+  in the run pane, the run sheet and the Inbox's "Edit, then approve"; the
+  Fixed editor's Day is a weekday strip.
 - v5 admin sign-in page shows tonight's next run (time, bosses and the yes
   tally; no names) from a new sessionless `GET /api/admin/auth/tonight`.
 - v5 admin date picker: Chat and Extractions date filters and History's

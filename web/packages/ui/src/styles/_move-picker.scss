@@ -1,0 +1,645 @@
+// The Move picker (boards P_MoveStates, Main, P_MoveWidths, P_MovePhone):
+// DayStrip, TimeStepper and the admin's sheet/MovePicker.svelte, plus the
+// weekday-only strip in the Fixed editor. Imported by the components' users.
+@use "easing";
+
+/* ── the day strip: one connected group, Thu-first ───────────────────────── */
+
+.daystrip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.daystrip__day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  height: 60px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: var(--seg-fill);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background-color 150ms linear,
+    border-radius 300ms easing.$spring,
+    box-shadow 150ms linear,
+    color 150ms linear;
+}
+
+.daystrip__day:first-child {
+  border-radius: 18px 6px 6px 18px;
+}
+
+.daystrip__day:last-child {
+  border-radius: 6px 18px 18px 6px;
+}
+
+.daystrip__dow {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.daystrip__date {
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.daystrip__tag {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 11px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.daystrip__tag i {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentcolor;
+}
+
+.daystrip__day--reset .daystrip__tag {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.daystrip__day:hover:not(.daystrip__day--past, .daystrip__day--on) {
+  background: color-mix(in srgb, var(--accent-text) 12%, var(--seg-fill));
+}
+
+.daystrip .daystrip__day:active:not(.daystrip__day--past, .daystrip__day--on) {
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent-text) 20%, var(--seg-fill));
+}
+
+.daystrip__day--today {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.daystrip__day--from {
+  border: 1.5px dashed var(--accent-text);
+}
+
+// Selected: accent fill and a full pill (the connected-group rule).
+.daystrip .daystrip__day--on {
+  border: 0;
+  border-radius: 18px;
+  background: var(--accent-fill);
+  color: var(--accent-ink);
+}
+
+.daystrip__day--on.daystrip__day--today {
+  box-shadow:
+    inset 0 0 0 2px var(--accent-fill),
+    inset 0 0 0 3.5px var(--accent-ink);
+}
+
+.daystrip__day--past {
+  border: 1.5px dashed var(--line);
+  background: transparent;
+  color: var(--off);
+  cursor: default;
+}
+
+.daystrip__day--past .daystrip__date {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+
+// The weekday-only strip (Fixed editor): 44 px, no dates.
+.daystrip--compact .daystrip__day {
+  height: 44px;
+}
+
+/* ── the time: one spinbutton between two chevrons ───────────────────────── */
+
+.timestep {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 44px;
+  padding: 0 4px;
+  border-radius: 22px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.timestep:has(.timestep__value:focus-visible) {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.timestep--bad,
+.timestep--bad:has(.timestep__value:focus-visible) {
+  box-shadow: inset 0 0 0 2px var(--risk);
+}
+
+.timestep--off {
+  opacity: 0.5;
+}
+
+.timestep__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    background-color 150ms linear,
+    border-radius 300ms easing.$spring;
+}
+
+.timestep__btn .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.timestep__btn:hover:not(:disabled) {
+  background: var(--row-hover);
+}
+
+.timestep__btn:active:not(:disabled) {
+  border-radius: 10px;
+  background: var(--select);
+}
+
+.timestep__btn:disabled {
+  cursor: default;
+}
+
+// The pill carries the focus ring.
+.timestep__value {
+  width: 64px;
+  font-size: 19px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.timestep__value:focus-visible {
+  outline: none;
+}
+
+/* ── the picker ──────────────────────────────────────────────────────────── */
+
+.movepick {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.movepick__set {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px 16px;
+  border: 0;
+}
+
+// Floated, the legend is an ordinary flex item: the fieldset's padding and gap apply to it.
+.movepick__legend {
+  float: left;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+}
+
+.movepick .movepick__title {
+  color: var(--ink);
+}
+
+.movepick .movepick__title--sub {
+  margin-top: 2px;
+  color: var(--dim-text);
+}
+
+.movepick__from {
+  font-size: 12px;
+  color: var(--dim-text);
+}
+
+.movepick__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.movepick__own {
+  min-height: 36px;
+}
+
+.movepick__or {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim-text);
+}
+
+.movepick__typed {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 22px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  color: var(--dim-text);
+}
+
+.movepick__typed .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.movepick__typed:focus-within {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.movepick__typed--bad,
+.movepick__typed--bad:focus-within {
+  box-shadow: inset 0 0 0 2px var(--risk);
+}
+
+.movepick__typed input,
+.movepick__typed input:focus {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.movepick__typed input::placeholder {
+  color: var(--dim-text);
+  opacity: 1;
+}
+
+.movepick__hint {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--dim-text);
+}
+
+.movepick__reads {
+  color: var(--ink);
+}
+
+.movepick__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--risk-text);
+}
+
+.movepick__error .icon {
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+}
+
+.movepick__ideas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.movepick__idea {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--chip-fill);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 150ms linear,
+    border-radius 300ms easing.$spring,
+    box-shadow 150ms linear;
+}
+
+.movepick__idea b {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.movepick__idea .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.movepick__idea:hover {
+  background: color-mix(in srgb, var(--accent-text) 12%, var(--chip-fill));
+}
+
+.movepick__idea:active {
+  border-radius: 8px;
+}
+
+.movepick__idea--clash {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 60%, var(--surface));
+}
+
+.movepick__idea--clash .icon {
+  color: var(--warn-text);
+}
+
+.movepick__idea--on,
+.movepick__idea--on:hover {
+  background: var(--select);
+  box-shadow: inset 0 0 0 1.5px var(--select-edge);
+  color: var(--select-ink);
+  font-weight: 700;
+}
+
+// The clash in words: a warning, never a block.
+.movepick__clash {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--warn) 13%, var(--surface));
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 50%, var(--surface));
+  font-size: 13px;
+  line-height: 1.45;
+  animation: movepick-in easing.$enter-ms easing.$standard both;
+}
+
+.movepick__clash .icon {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--warn-text);
+}
+
+.movepick__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 16px 12px;
+  border-top: 1.5px solid var(--line);
+}
+
+.movepick__result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+}
+
+.movepick__to {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.movepick__was {
+  font-size: 12.5px;
+  color: var(--dim-text);
+}
+
+.movepick__acts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.movepick__acts .btn:not(.btn--key) {
+  min-height: 40px;
+  padding: 0 16px;
+}
+
+.movepick__go {
+  justify-content: center;
+  margin-left: auto;
+  gap: 8px;
+  border: 0;
+  transition:
+    background-color 150ms linear,
+    border-radius 300ms easing.$spring;
+}
+
+.movepick__go .icon {
+  width: 16px;
+  height: 16px;
+}
+
+// Pressed morphs the key 22 → 12 px.
+.movepick__go:active:not(:disabled) {
+  border-radius: 12px;
+}
+
+.movepick__go:disabled,
+.movepick__go:disabled:hover {
+  background: var(--seg-fill);
+  color: var(--dim-text);
+  opacity: 1;
+}
+
+/* ── the Inbox decision card (340 px, on --select) ──────────────────────── */
+
+.movepick--card .movepick__set {
+  padding: 0;
+}
+
+.movepick--card .movepick__legend {
+  margin-bottom: -2px;
+}
+
+.movepick--card .movepick__title {
+  color: var(--select-ink);
+}
+
+
+.movepick--card .daystrip__day:not(.daystrip__day--on, .daystrip__day--past) {
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+
+.movepick--card .daystrip__day--past {
+  border-color: var(--select-edge);
+}
+
+/* ── the phone sheet's Move view (390 px) ────────────────────────────────── */
+
+.movepick--phone .movepick__set {
+  gap: 12px;
+}
+
+.movepick--phone .movepick__legend {
+  margin-bottom: 4px;
+}
+
+.movepick--phone .daystrip__day {
+  height: 64px;
+}
+
+.movepick--phone .daystrip__date {
+  font-size: 17px;
+}
+
+.movepick--phone .movepick__row {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.movepick--phone .timestep {
+  justify-content: space-between;
+  height: 52px;
+  border-radius: 26px;
+}
+
+.movepick--phone .timestep__btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+}
+
+.movepick--phone .timestep__btn .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.movepick--phone .timestep__value {
+  width: 90px;
+  font-size: 24px;
+}
+
+// 16 px keeps phones from zooming into the field.
+.movepick--phone .movepick__typed input {
+  font-size: 16px;
+}
+
+.movepick--phone .movepick__ideas {
+  gap: 8px;
+}
+
+.movepick--phone .movepick__idea {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 20px;
+  font-size: 13.5px;
+}
+
+.movepick--phone .movepick__idea b {
+  font-size: 13.5px;
+}
+
+.movepick--phone .movepick__clash {
+  font-size: 13.5px;
+}
+
+.movepick--phone .movepick__error {
+  font-size: 13px;
+}
+
+.movepick--phone .movepick__foot {
+  padding: 10px 16px 16px;
+}
+
+.movepick--phone .movepick__to {
+  font-size: 22px;
+}
+
+.movepick--phone .movepick__acts .btn--key {
+  flex: 1 1 auto;
+}
+
+@keyframes movepick-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes movepick-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+// Reduced motion: no morph and no travel; fills change at once; the clash box
+// still fades in over 120 ms (it outranks motion.scss's global cut on purpose).
+@media (prefers-reduced-motion: reduce) {
+  .daystrip__day,
+  .timestep__btn,
+  .movepick__idea,
+  .movepick__go {
+    transition: none;
+  }
+
+  .movepick__clash {
+    animation: movepick-fade 120ms linear both !important;
+  }
+}
+
+// In a view of its own (the sheet's Move view): the choices scroll, the foot stays put.
+.movepick--fill {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.movepick--fill .movepick__set {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.movepick--fill .movepick__foot {
+  flex: none;
+}

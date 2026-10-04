@@ -614,11 +614,11 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
 .decision-card .decision__approve,
 .decision-card .decision__reject { gap: 8px; }
 .decision__foot { margin: 0; color: var(--dim-text); font-size: var(--fs-mini); }
-.decision-card .proposal__edit { display: flex; align-items: flex-end; gap: 0.4rem; }
-.decision-card .proposal__edit .field { flex: 1 1 auto; min-width: 0; }
-// The label may run over the button column: the button sits level with the input.
-.decision-card .proposal__edit .field > span { white-space: nowrap; }
-.decision-card .proposal__edit input { width: 100%; }
+// "Edit, then approve" (P_MoveWidths): a button, then the Move picker under a rule.
+.decision-card .proposal__edit { display: flex; flex-direction: column; gap: 10px; }
+.decision-card .proposal__edit--open { padding-top: 12px; border-top: 1.5px solid var(--select-edge); }
+.decision-card .proposal__edit-open { align-self: flex-start; gap: 6px; min-height: 40px; }
+.decision-card .proposal__edit-cancel { min-height: 40px; background: transparent; color: var(--select-ink); }
 
 // Wide Extractor items (VarRail2): the header across the top, then the
 // thread panel (flex, scrolling on its own) beside a 300 px decision card
@@ -903,7 +903,6 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
   .decision-card .decision__approve { flex: 1 1 auto; min-height: 52px; border-radius: 26px; }
   .decision-card .field__error { flex: 1 0 100%; }
   .decision-card .proposal__edit:not(.proposal__edit--open) { display: none; }
-  .decision-card .proposal__edit > .btn { min-height: 2.75rem; }
 
   .decision-card .proposal__edit-toggle {
     display: inline-flex;
@@ -1001,3 +1000,6 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
   color: var(--warn-text);
   font-weight: 600;
 }
+
+// Editing takes the board's 340 px card (P_MoveWidths) so the day strip's tags fit.
+.proposal--stacked .decision-card:has(.proposal__edit--open) { width: 340px; }

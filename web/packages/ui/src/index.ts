@@ -67,3 +67,6 @@ export { default as LoadError } from './components/LoadError.svelte';
 export { default as DatePicker } from './components/DatePicker.svelte';
 export { default as MonthGrid } from './components/MonthGrid.svelte';
 export { dayOf, rangeWords, serverClock, type ServerClock } from './components/calendar';
+// The Move picker's day strip and time stepper (P_MoveStates), and the weekday-only strip.
+export { default as DayStrip, type StripDay } from './components/DayStrip.svelte';
+export { default as TimeStepper } from './components/TimeStepper.svelte';

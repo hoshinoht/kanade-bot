@@ -79,20 +79,35 @@ test('admin: the run pane opens from a card and restores focus on Escape', async
   await expect(open).toBeFocused();
 });
 
-test('admin: run sheet Move field moves a run and keeps input after a rejected time', async ({ page }) => {
+test('admin: the run pane Move picker moves a run; a typed error stands until fixed', async ({ page }) => {
   await openAdmin(page);
-  await page.locator('[data-run="r-limbo"] .plan-card__open').click();
-  const dialog = page.getByRole('complementary', { name: 'HLimbo' });
-  const field = dialog.getByRole('textbox', { name: /Move HLimbo/ });
-  await field.fill('25:99');
-  await dialog.getByRole('button', { name: 'Move', exact: true }).click();
-  await expect(dialog.getByRole('alert')).toHaveText(/Times run from|Give minutes|Write a day/);
-  await expect(field).toHaveValue('25:99');
-  await field.fill('sat 20:30');
-  await dialog.getByRole('button', { name: 'Move', exact: true }).click();
-  // The pane stays open on the moved run with a fresh field.
-  await expect(field).toHaveValue('');
-  await expect(column(page, 'Sat').locator('[data-run="r-limbo"]')).toContainText('20:30');
+  await page.locator('[data-run="r-bm"] .plan-card__open').click();
+  const pane = page.getByRole('complementary', { name: 'XBM' });
+  const typed = pane.getByRole('textbox', { name: 'Type a day and time' });
+  const move = pane.getByRole('button', { name: 'Move', exact: true });
+  // Unchanged: nothing to move to yet.
+  await expect(move).toBeDisabled();
+  // Errors show on Enter (or blur), keep the text, and hold Move back.
+  await typed.fill('25:99');
+  await expect(pane.getByRole('alert').filter({ hasText: /Times run from/ })).toHaveCount(0);
+  await typed.press('Enter');
+  await expect(pane.getByRole('alert').filter({ hasText: 'Times run from 00:00 to 23:59.' })).toBeVisible();
+  await expect(typed).toHaveValue('25:99');
+  await expect(typed).toHaveAttribute('aria-invalid', 'true');
+  await expect(move).toBeDisabled();
+  await typed.fill('sat 20:30');
+  await typed.press('Enter');
+  await expect(pane.getByRole('alert').filter({ hasText: 'Sat 26 has passed. Pick Tue 29 (today) or later.' })).toBeVisible();
+  // A valid entry reads live and moves the strip and the time with it.
+  await typed.fill('wed 20:30');
+  await expect(pane.getByText('reads as Wed 30 20:30')).toBeVisible();
+  await expect(pane.getByRole('radio', { name: /^Wed 30/ })).toHaveAttribute('aria-checked', 'true');
+  await expect(pane.getByRole('spinbutton', { name: 'Time' })).toHaveAttribute('aria-valuetext', '20:30');
+  await move.click();
+  // The pane stays open on the moved run with a fresh picker.
+  await expect(column(page, 'Wed').locator('[data-run="r-bm"]')).toContainText('20:30');
+  await expect(typed).toHaveValue('');
+  await expect(move).toBeDisabled();
 });
 
 test('admin: command palette searches and runs commands', async ({ page }) => {

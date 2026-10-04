@@ -55,12 +55,20 @@ test('inbox: extractor tab — list and detail, edit then approve, reject, a cha
   await page.keyboard.press('ArrowUp');
 
   // One approval at a corrected time: day and HH:MM in the proposal's own boss week.
-  await detail.getByRole('textbox', { name: 'Edit, then approve' }).fill('soon');
-  await detail.getByRole('button', { name: 'Move & approve' }).click();
-  await expect(detail.getByRole('alert')).toContainText('Write a day');
+  await detail.getByRole('button', { name: 'Edit, then approve' }).click();
+  const picker = detail.getByRole('group', { name: 'Edit, then approve' });
+  // It opens on the proposed slot, focused, with the run's own day marked.
+  await expect(picker.getByRole('radio', { name: /^Wed 30/ })).toBeFocused();
+  await expect(picker.getByRole('radio', { name: /^Tue 29/ })).toContainText('today');
+  const typed = picker.getByRole('textbox', { name: 'Or type a day and time' });
+  await typed.fill('soon');
+  await typed.press('Enter');
+  await expect(picker.getByRole('alert')).toContainText('Write a day');
+  await expect(detail.getByRole('button', { name: /^Approve · / })).toBeDisabled();
   const sent = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/api/admin/inbox/p-bm-move/approve'));
-  await detail.getByRole('textbox', { name: 'Edit, then approve' }).fill('wed 22:30');
-  await detail.getByRole('button', { name: 'Move & approve' }).click();
+  await typed.fill('22:30');
+  await expect(picker.getByText('reads as Wed 30 22:30')).toBeVisible();
+  await detail.getByRole('button', { name: 'Approve · Wed 30 22:30' }).click();
   expect((await sent).postDataJSON()).toEqual({ version: 1, day: 6, time: '22:30' });
   await expect(toast(page, 'Approved: move #a7c1e9d2.')).toBeVisible();
   await expect(list.getByRole('option')).toHaveCount(2);
@@ -99,7 +107,7 @@ test('inbox: a token or Tailscale session cannot decide proposals, but can decid
   // The session says how it signed in: proposal decisions are off before any attempt.
   await expect(detail.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled();
   await expect(detail.getByRole('button', { name: 'Reject…' })).toBeDisabled();
-  await expect(detail.getByRole('button', { name: 'Move & approve' })).toBeDisabled();
+  await expect(detail.getByRole('button', { name: 'Edit, then approve' })).toBeDisabled();
   await expect(detail).toContainText("Sign in with Discord to approve or reject Kanade's proposals. Members' requests can still be decided here.");
   expect(approvals).toEqual([]);
   const list = page.getByRole('listbox', { name: 'Extractor items' });
@@ -147,7 +155,7 @@ test('inbox: self-service tab — request types, badges, conflicts, choices, rea
   await expect(detail).toContainText('Sent by Nagi as a member request.');
   await expect(detail).toContainText('The member sees: “member request: join HCarling + HStar Tue 29 Sep 22:00”');
   await expect(detail.locator('.proposal__changes')).toContainText('Nagi');
-  await expect(detail.getByRole('textbox', { name: 'Edit, then approve' })).toHaveCount(0);
+  await expect(detail.getByRole('button', { name: 'Edit, then approve' })).toHaveCount(0);
 
   // A conflict always blocks: no "approve anyway", only reject.
   await list.getByRole('option', { name: /HFA/ }).click();
@@ -217,10 +225,10 @@ test('inbox on a phone: the list, then the detail with a back action', async ({ 
   expect(barBox.y + barBox.height).toBeGreaterThan(844 - 2);
   const pencil = bar.getByRole('button', { name: 'Show the edit field' });
   if (await pencil.count()) {
-    await expect(bar.getByRole('textbox', { name: 'Edit, then approve' })).toBeHidden();
+    await expect(bar.getByRole('group', { name: 'Edit, then approve' })).toHaveCount(0);
     await pencil.click();
     await expect(pencil).toHaveAttribute('aria-expanded', 'true');
-    await expect(bar.getByRole('textbox', { name: 'Edit, then approve' })).toBeVisible();
+    await expect(bar.getByRole('group', { name: 'Edit, then approve' })).toBeVisible();
   }
   await page.getByRole('button', { name: /Back to the list/ }).click();
   await expect(list).toBeVisible();
@@ -255,12 +263,15 @@ test('inbox on a phone: the action bar is focused in the order it is seen', asyn
   await expect(reject).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(approve).toBeFocused();
-  // The edit field opens above the bar and comes before the pencil.
+  // The edit picker opens above the bar, takes focus on the proposed day, and comes before the pencil.
   await pencil.click();
-  await expect(bar.getByRole('textbox', { name: 'Edit, then approve' })).toBeVisible();
+  const picker = bar.getByRole('group', { name: 'Edit, then approve' });
+  await expect(picker.getByRole('radio', { name: /^Wed 30/ })).toBeFocused();
   await pencil.focus();
   await page.keyboard.press('Shift+Tab');
-  await expect(bar.getByRole('button', { name: 'Move & approve' })).toBeFocused();
+  await expect(picker.getByRole('button', { name: 'same time 23:30' })).toBeFocused();
+  // While editing, Approve names the picked slot.
+  await expect(bar.getByRole('button', { name: 'Approve · Wed 30 23:30' })).toBeVisible();
 });
 
 test('inbox on a phone by keyboard: arrows move the active option, Enter opens, Back restores it', async ({ page }) => {

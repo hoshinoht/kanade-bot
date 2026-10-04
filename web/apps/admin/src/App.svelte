@@ -459,6 +459,7 @@
       run={sheetRun}
       week={store.week}
       members={store.members}
+      step={store.runStep}
       {wide}
       countdown={store.summary?.next?.run_id === sheetRunId ? store.summary.next.countdown : null}
       onclose={closePane}

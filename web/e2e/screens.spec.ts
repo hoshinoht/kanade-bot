@@ -25,7 +25,11 @@ test('fixed: table, bosscheck, add a timing, and its runs reach the board', asyn
   // The pill's input is visually hidden (v4 pill-toggle); a pointer presses the pill itself.
   await editor.locator('.bossrow', { hasText: 'Limbo' }).locator('label', { hasText: 'HARD' }).click();
   await expect(editor.getByRole('checkbox', { name: 'Hard Limbo' })).toBeChecked();
-  await editor.getByLabel('Day').selectOption({ label: 'Wednesday' });
+  // The weekday strip runs in boss-week order from the reset day.
+  const days = editor.getByRole('radiogroup', { name: 'Day' }).getByRole('radio');
+  await expect(days.first()).toHaveAccessibleName('Thursday');
+  await editor.getByRole('radio', { name: 'Wednesday' }).click();
+  await expect(editor.getByRole('radio', { name: 'Wednesday' })).toHaveAttribute('aria-checked', 'true');
   await editor.getByLabel('Time').fill('20:30');
   await editor.getByLabel('Home channel').selectOption({ label: '#limbo-trio' });
   await editor.getByRole('checkbox', { name: 'Mika' }).check();
@@ -156,10 +160,12 @@ test('fixed: the owner is preselected, changes by PATCH owner_id, and reads back
   await expect(owner.locator('option:checked')).toHaveText('Minato');
   // Only the roster is offered (Kohane has chatbot access but no bossing role).
   await expect(owner.locator('option', { hasText: 'Kohane' })).toHaveCount(0);
-  // Owner sits on the Day / Time line, as B_Fixed draws it.
+  // The weekday strip takes its own line (P_MoveStates "Reuse"); Owner sits on the Time line.
   const tops = await editor.locator('.fixedsheet__fields > .field').evaluateAll((fields) => fields.map((f) => Math.round(f.getBoundingClientRect().top)));
   expect(tops).toHaveLength(3);
-  expect(new Set(tops).size).toBe(1);
+  expect(tops[0]).toBeLessThan(tops[1]!);
+  expect(tops[1]).toBe(tops[2]);
+  await expect(editor.getByRole('radio', { name: 'Tuesday' })).toHaveAttribute('aria-checked', 'true');
 
   await owner.selectOption({ label: 'Kaito' });
   const sent = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().includes('/api/admin/fixed/'));

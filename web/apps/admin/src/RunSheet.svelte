@@ -15,7 +15,8 @@
   import { directory, memberLabel } from './names/directory.svelte';
   import Name from './names/Name.svelte';
   import RunLog from './sheet/RunLog.svelte';
-  import { parseWhen } from './sheet/parseWhen';
+  import MovePicker from './sheet/MovePicker.svelte';
+  import { liveRuns, namesIn, pickerRun } from './sheet/move';
   import { runCountdown } from './week/progress';
   import { STATUS_LABELS, type MoveOutcome } from './store.svelte';
   import type { Slot } from './planner/keyboardMove';
@@ -36,6 +37,7 @@
     saving = false,
     wide = false,
     countdown = null,
+    step = 30,
     onclose,
   }: {
     open: boolean;
@@ -56,6 +58,8 @@
     wide?: boolean;
     /** "10 h" when this run is the next one up. */
     countdown?: string | null;
+    /** The Move picker's time step: Config → Run lengths default minutes. */
+    step?: number;
     /** The pane's close button and Escape. */
     onclose?: () => void;
   } = $props();
@@ -68,7 +72,6 @@
   const uid = $props.id();
   // The pane's status group is one row (B_WeekSel); each short word sits inside its full name.
   const SHORT: Record<string, string> = { otot: 'Own', cancelled: 'Cancel' };
-  let to = $state('');
   let error = $state('');
   let busy = $state(false);
   let notice = $state<{ ok: boolean; message: string; undo?: () => void } | null>(null);
@@ -89,6 +92,11 @@
   let popButton = $state<HTMLButtonElement>();
   // Short status words in the pane and the phone sheet; the laptop sheet spells them out.
   const short = $derived(!wide || !popped);
+  // The sheet's Move view (HeroSheet's window, P_MovePhone's screen); the pane shows the picker inline.
+  let moving = $state(false);
+  let moveButton = $state<HTMLButtonElement>();
+  const field = $derived(liveRuns(week.runs));
+  const names = $derived(namesIn(week.runs));
 
   function popOut() {
     // The pane's tab opens the matching window tab.
@@ -131,7 +139,7 @@
   $effect(() => {
     if (open && run && seeded !== run.id) {
       seeded = run.id;
-      to = '';
+      moving = false;
       error = '';
       notice = null;
       swapping = false;
@@ -143,6 +151,7 @@
     if (!open) {
       seeded = null;
       popped = false;
+      moving = false;
     }
   });
 
@@ -151,8 +160,8 @@
     const count = (answer: Participant['answer']) => all.filter((p) => p.answer === answer).length;
     return { on: count('yes'), out: count('no'), maybe: count('maybe'), waiting: count('waiting'), total: all.length };
   });
-  // Unsaved input: the Move field holds a target, or the swap picker is open.
-  const dirty = $derived(to.trim() !== '' || swapping);
+  // Unsaved input: the Move view or the swap picker is open.
+  const dirty = $derived(moving || swapping);
   const artBosses = $derived(run ? run.bosses.filter((b) => b.art) : []);
   // The pane's countdown to a run still ahead: waves over its final 24 h only.
   const until = $derived(run && wide ? runCountdown(run, week) : null);
@@ -186,20 +195,35 @@
     void act(() => onstatus(id, status), before === 'at_risk' ? undefined : () => onstatus(id, before));
   }
 
-  async function move(event: SubmitEvent) {
-    event.preventDefault();
+  async function move(slot: Slot) {
     if (!run || saving) return;
-    const parsed = parseWhen(to, week.days, { day: run.day, time: run.time });
-    if (!parsed.ok) {
-      error = parsed.message;
-      return;
-    }
     const id = run.id;
+    error = '';
     busy = true;
-    const outcome = await onmove(id, parsed.slot).finally(() => (busy = false));
+    const outcome = await onmove(id, slot).finally(() => (busy = false));
     if (!outcome.ok) error = outcome.message;
-    else if (wide) to = '';
+    else if (wide) closeMove();
     else open = false;
+  }
+
+  function openMove() {
+    moving = true;
+    error = '';
+  }
+
+  // Escape anywhere in the Move view (outside the picker, which handles its own) goes back.
+  function backKey(event: KeyboardEvent) {
+    if (event.key !== 'Escape' || event.defaultPrevented) return;
+    event.preventDefault();
+    void closeMove();
+  }
+
+  // Back from the Move view: focus returns to the Move… key.
+  async function closeMove() {
+    if (!moving) return;
+    moving = false;
+    await tick();
+    moveButton?.focus({ preventScroll: true });
   }
 
   async function openSwap() {
@@ -326,17 +350,45 @@
       {/each}
 {/snippet}
 
-{#snippet moveForm(run: Run, more = false)}
-  <form onsubmit={move} novalidate data-fid="week-move">
-    <input
-      bind:value={to}
-      placeholder="wed 21:30"
-      size="10"
-      aria-label="Move {runTitle(run)} to a new day and time"
-      aria-invalid={error ? 'true' : undefined}
-      aria-describedby="{uid}-error"
+{#snippet picker(run: Run, variant: 'pane' | 'phone', view = false)}
+  {@const own = { day: run.day, time: run.status === 'otot' ? null : run.time }}
+  <!-- A fresh pick per run and slot; a failed move keeps it. -->
+  {#key `${run.id}@${run.day}@${own.time}`}
+    <MovePicker
+      days={week.days}
+      subject={pickerRun(run)}
+      {own}
+      {field}
+      {names}
+      {step}
+      {variant}
+      legend={variant === 'phone' ? 'Day' : 'Move to'}
+      aside={variant === 'phone'
+        ? `boss week · ${dayLabel(week, 0)} – ${dayLabel(week, week.days.length - 1)}`
+        : `from ${dayLabel(week, run.day)} · ${own.time ?? 'own time'}`}
+      busy={busy || saving}
+      foot
+      fill={view}
+      autofocus={view}
+      onsubmit={(slot) => void move(slot)}
+      oncancel={view ? () => void closeMove() : undefined}
     />
-    <button class="btn btn--primary" class:btn--key={!wide || popped} type="submit" disabled={busy || saving}>Move</button>
+  {/key}
+{/snippet}
+
+{#snippet moveKey(run: Run, more = false)}
+  <div class="runsheet__movekey" data-fid="week-move">
+    <button
+      type="button"
+      class="btn btn--primary btn--key"
+      bind:this={moveButton}
+      aria-label="Move {runTitle(run)}…"
+      disabled={busy || saving}
+      onclick={openMove}
+      ><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"
+        ><path d="M5 12h14M13 6l6 6-6 6" /></svg
+      >Move…</button
+    >
     {#if more}
       <button
         type="button"
@@ -351,7 +403,7 @@
         ></button
       >
     {/if}
-  </form>
+  </div>
 {/snippet}
 
 {#snippet actions(run: Run)}
@@ -568,7 +620,7 @@
             </div>
           </header>
           <div class="week-pane__body">
-            {@render moveForm(run)}
+            {@render picker(run, 'pane')}
             <div class="week-pane__actions">{@render actions(run)}</div>
             {@render swapBox(run)}
             <p class="cap week-pane__label">Party · {@render channel(run)} <span class="id">#{run.short_id}</span></p>
@@ -598,7 +650,7 @@
        pane's pop-out (HeroSheet), whose close goes back to the pane. -->
   <Modal
     bind:open={() => (wide ? popped && open : open), (value) => (wide ? (popped = value) : (open = value))}
-    title={run ? runTitle(run) : 'Run'}
+    title={run ? (moving && !wide ? `Move ${runTitle(run)}` : runTitle(run)) : 'Run'}
     wide
     flush
     lightDismiss={!dirty && !busy}
@@ -611,6 +663,23 @@
         { id: 'cards', label: 'Cards', count: run.cards.length || null },
         { id: 'changes', label: wide ? 'Who changed this' : 'Changes', count: null },
       ] as const}
+      {#if moving && !wide}
+        <!-- P_MovePhone: the sheet becomes the Move screen; Back (or Escape) returns to the run. -->
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+        <article class="runsheet__body runsheet__move runsheet--{run.status}" aria-label="Move {runTitle(run)}" onkeydown={backKey}>
+          <div class="runsheet__moveid" data-fid="move-head">
+            <button type="button" class="btn btn--ghost runsheet__back" aria-label="Back to the run" title="Back to the run" onclick={() => void closeMove()}
+              ><Icon name="chevron-left" /></button
+            >
+            <span class="mono runsheet__movetime">{run.status === 'otot' || !run.time ? 'own time' : run.time}</span>
+            <span class="cap">{dayLabel(week, run.day)}</span>
+            <b class="runsheet__movename">{runTitle(run)}</b>
+            <span class="runsheet__moveparty">{counts.total} in party</span>
+          </div>
+          {@render picker(run, 'phone', true)}
+          <p class="field__error run__error" role="alert">{error}</p>
+        </article>
+      {:else}
       <article class="runsheet__body runsheet--{run.status}" data-fid="sheet">
         <header class="runsheet__hero" data-fid="sheet-hero">
           {@render arts()}
@@ -636,13 +705,13 @@
           </div>
           {#if wide}
             <div class="runsheet__side" data-fid="sheet-actions">
-              {@render moveForm(run)}
+              {@render moveKey(run)}
               <div class="runsheet__acts">{@render actions(run)}</div>
               {@render status(run)}
             </div>
           {:else}
             <div class="runsheet__moverow">
-              {@render moveForm(run, true)}
+              {@render moveKey(run, true)}
               {#if moreOpen}<div class="runsheet__acts" id="{uid}-more">{@render actions(run)}</div>{/if}
             </div>
           {/if}
@@ -650,6 +719,17 @@
           {@render notes()}
         </header>
 
+        {#if moving}
+          <!-- HeroSheet's window turns into the Move picker; Back (or Escape) returns to the tabs. -->
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <section class="card runsheet__win runsheet__movewin" data-fid="sheet-window" aria-labelledby="{uid}-movetitle" onkeydown={backKey}>
+            <div class="card__head runsheet__bar">
+              <h3 class="runsheet__movetitle" id="{uid}-movetitle">Move {runTitle(run)}</h3>
+              <button type="button" class="btn runsheet__back" onclick={() => void closeMove()}><Icon name="chevron-left" />Back to the run</button>
+            </div>
+            <div class="runsheet__panel runsheet__panel--move">{@render picker(run, 'pane', true)}</div>
+          </section>
+        {:else}
         <section class="card runsheet__win" data-fid="sheet-window" aria-label="Run details">
           <div class="card__head tabs__strip runsheet__bar">
             <div class="tabs__tabs" role="tablist" aria-label="Run details" data-fid="sheet-tabs">
@@ -720,7 +800,9 @@
             <div class="runsheet__foot" data-fid="sheet-foot">{@render status(run)}</div>
           {/if}
         </section>
+        {/if}
       </article>
+      {/if}
     {/if}
   </Modal>
 {/if}
