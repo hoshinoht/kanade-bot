@@ -444,11 +444,11 @@ impl Reads {
 
     /// Boss weeks reset Thursday at `reset` (KL) instead of midnight.
     pub async fn with_reset(reset: NaiveTime) -> Self {
-        Self::build(reset, false, None, true, true, true).await
+        Self::build(reset, false, None, true, true, true, None).await
     }
 
     pub async fn with_role_directory_connected(connected: bool) -> Self {
-        Self::build(NaiveTime::MIN, false, None, connected, true, true).await
+        Self::build(NaiveTime::MIN, false, None, connected, true, true, None).await
     }
 
     /// With the config API over the seeded store.
@@ -462,6 +462,24 @@ impl Reads {
             true,
             true,
             true,
+            None,
+        )
+        .await
+    }
+
+    /// With the config API and live governor snapshots.
+    pub async fn with_config_and_model_limits(
+        make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
+        model_limits: kanade::api::state::ModelLimits,
+    ) -> Self {
+        Self::build(
+            NaiveTime::MIN,
+            false,
+            Some(Box::new(make)),
+            true,
+            true,
+            true,
+            Some(model_limits),
         )
         .await
     }
@@ -477,6 +495,7 @@ impl Reads {
             connected,
             true,
             true,
+            None,
         )
         .await
     }
@@ -484,22 +503,31 @@ impl Reads {
     pub async fn with_config_and_logins(
         make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
     ) -> Self {
-        Self::build(NaiveTime::MIN, true, Some(Box::new(make)), true, true, true).await
+        Self::build(
+            NaiveTime::MIN,
+            true,
+            Some(Box::new(make)),
+            true,
+            true,
+            true,
+            None,
+        )
+        .await
     }
 
     /// Also Discord sign-in and Tailscale sign-in through a trusted edge
     /// (the test client, 127.0.0.1, carrying `EDGE_AUTH`).
     pub async fn with_logins() -> Self {
-        Self::build(NaiveTime::MIN, true, None, true, true, true).await
+        Self::build(NaiveTime::MIN, true, None, true, true, true, None).await
     }
 
     pub async fn without_digest_delivery() -> Self {
-        Self::build(NaiveTime::MIN, false, None, true, false, true).await
+        Self::build(NaiveTime::MIN, false, None, true, false, true, None).await
     }
 
     /// No `KANADE_BACKUP_DIR`: checkpoints list no backups.
     pub async fn without_backup_dir() -> Self {
-        Self::build(NaiveTime::MIN, false, None, true, true, false).await
+        Self::build(NaiveTime::MIN, false, None, true, true, false, None).await
     }
 
     async fn build(
@@ -509,6 +537,7 @@ impl Reads {
         role_directory_connected: bool,
         digest_delivery: bool,
         backup_dir: bool,
+        model_limits: Option<kanade::api::state::ModelLimits>,
     ) -> Self {
         let dir = TempDir::new();
         let backup_dir = backup_dir.then(|| {
@@ -653,7 +682,7 @@ impl Reads {
             rescans: Some(Arc::new(RescanDesk::new(rescans.clone()))),
             config: config.map(|make| make(store.clone())),
             chat: Some(chat_handle),
-            model_limits: None,
+            model_limits,
             limits: Arc::new(LimitsDesk::default()),
             proposal_refresh: Some(proposal_refresh),
             decline_retraction: Some(decline_retraction),

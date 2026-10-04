@@ -24,6 +24,12 @@ describe('WavyProgress', () => {
     expect(out).toContain('wavy--inline');
     expect(out).toContain('role="progressbar"');
   });
+
+  it('accepts fullWave on a full bar without changing its semantics', () => {
+    const out = render(WavyProgress, { props: { value: 4, max: 4, label: 'Permits in use', fullWave: true } }).body;
+    expect(out).toContain('aria-valuenow="4"');
+    expect(out).not.toContain('wavy--flat');
+  });
 });
 
 describe('answers bar', () => {

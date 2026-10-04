@@ -147,7 +147,7 @@ for (const theme of THEMES) {
     await page.getByRole('tab', { name: /Tool trace/ }).click();
     await serious(page, 'admin chat turn');
     await page.goto(`${ADMIN}/limits?sw=off`);
-    await expect(page.getByRole('heading', { name: /^extract · / })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^gateway · / })).toBeVisible();
     await serious(page, 'admin limits');
     await page.getByRole('tab', { name: /Admission/ }).click();
     await serious(page, 'admin limits admission');

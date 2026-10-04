@@ -25,41 +25,56 @@ impl Store {
                 })
             })
             .collect();
+        // The groups Config's capacity table names (`live_groups`), each with
+        // the seeded state of its position: full and queueing, half-open, open.
+        let groups: Vec<Value> = super::config::live_groups(&self.config)
+            .into_iter()
+            .enumerate()
+            .map(|(i, g)| {
+                let mut group = json!({
+                    "name": g.name, "backend": "Kanata", "models": g.models,
+                    "permits": { "in_use": g.in_use, "total": g.total },
+                });
+                let state = match i {
+                    0 => json!({
+                        "queue": [
+                            { "position": 1, "kind": "rescan", "who": "admin token", "waiting_s": 42 },
+                            { "position": 2, "kind": "extraction", "who": "#hstar-party burst", "waiting_s": 8 },
+                        ],
+                        "rate": { "available": 9, "capacity": 12, "refill_per_min": 2 },
+                        "retry": { "remaining": 5, "capacity": 5 },
+                        "breaker": { "state": "closed", "failures": 0, "since": ago(600) },
+                    }),
+                    1 => json!({
+                        "queue": [],
+                        "rate": { "available": 1, "capacity": 20, "refill_per_min": 4 },
+                        "retry": { "remaining": 2, "capacity": 5 },
+                        "breaker": { "state": "half_open", "failures": 3, "since": ago(4) },
+                    }),
+                    _ => json!({
+                        "queue": [],
+                        "rate": { "available": 6, "capacity": 6, "refill_per_min": 1 },
+                        "retry": { "remaining": 0, "capacity": 3 },
+                        "breaker": { "state": "open", "failures": 5, "since": ago(12), "retry_at": Self::when(minute + 3) },
+                    }),
+                };
+                group.as_object_mut().unwrap().extend(state.as_object().unwrap().clone());
+                group
+            })
+            .collect();
+        let named = |i: usize| {
+            groups
+                .get(i)
+                .or(groups.first())
+                .map_or(json!("gateway"), |g| g["name"].clone())
+        };
         json!({
-            "groups": [
-                {
-                    "name": "extract", "backend": "Kanata", "models": ["kanata/extract"],
-                    "permits": { "in_use": 1, "total": 1 },
-                    "queue": [
-                        { "position": 1, "kind": "rescan", "who": "admin token", "waiting_s": 42 },
-                        { "position": 2, "kind": "extraction", "who": "#hstar-party burst", "waiting_s": 8 },
-                    ],
-                    "rate": { "available": 9, "capacity": 12, "refill_per_min": 2 },
-                    "retry": { "remaining": 5, "capacity": 5 },
-                    "breaker": { "state": "closed", "failures": 0, "since": ago(600) },
-                },
-                {
-                    "name": "chat", "backend": "Kanata", "models": ["kanata/chat"],
-                    "permits": { "in_use": 2, "total": 4 },
-                    "queue": [],
-                    "rate": { "available": 1, "capacity": 20, "refill_per_min": 4 },
-                    "retry": { "remaining": 2, "capacity": 5 },
-                    "breaker": { "state": "half_open", "failures": 3, "since": ago(4) },
-                },
-                {
-                    "name": "rewrite", "backend": "Kanata", "models": ["kanata/rewrite"],
-                    "permits": { "in_use": 0, "total": 1 },
-                    "queue": [],
-                    "rate": { "available": 6, "capacity": 6, "refill_per_min": 1 },
-                    "retry": { "remaining": 0, "capacity": 3 },
-                    "breaker": { "state": "open", "failures": 5, "since": ago(12), "retry_at": Self::when(minute + 3) },
-                },
-            ],
+            "groups": groups,
             "admission": {
                 "window": "last hour",
                 "refusals": [
-                    { "kind": "rate", "scope": "group", "target": "chat", "count": 3, "last_at": ago(6) },
-                    { "kind": "concurrency", "scope": "group", "target": "extract", "count": 1, "last_at": ago(41) },
+                    { "kind": "rate", "scope": "group", "target": named(1), "count": 3, "last_at": ago(6) },
+                    { "kind": "concurrency", "scope": "group", "target": named(0), "count": 1, "last_at": ago(41) },
                     { "kind": "quota", "scope": "key", "target": "gateway key …7f2a", "count": 1, "last_at": ago(22) },
                     { "kind": "key_rate", "scope": "key", "target": "gateway key …7f2a", "count": 2, "last_at": ago(9) },
                 ],

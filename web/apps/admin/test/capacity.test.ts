@@ -114,9 +114,9 @@ describe('capacity summary', () => {
     catalog: [...catalog, { ...catalog[1]!, id: 'c:high', variant_of: 'c', fixed_effort: 'high' }] as ModelInfo[],
     roles,
     groups: [
-      { model: 'x', group: 'gateway', permits: 2 },
-      { model: 'c', group: 'gateway', permits: 2 },
-      { model: 'c:high', group: 'gateway', permits: 2 },
+      { model: 'x', group: 'gateway', permits: 2, in_use: 1 },
+      { model: 'c', group: 'gateway', permits: 2, in_use: 1 },
+      { model: 'c:high', group: 'gateway', permits: 2, in_use: 1 },
     ],
     groups_source: 'default' as const,
     alias_limits: [
@@ -131,7 +131,7 @@ describe('capacity summary', () => {
   };
 
   it('folds a group into one row with base models only', () => {
-    expect(groupRows(models)).toEqual([{ group: 'gateway', permits: 2, models: ['x', 'c'] }]);
+    expect(groupRows(models)).toEqual([{ group: 'gateway', permits: 2, inUse: 1, models: ['x', 'c'] }]);
   });
 
   it('says one line when every base model admits the same, and never lists variants', () => {

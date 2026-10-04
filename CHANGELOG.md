@@ -6,6 +6,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Config › Models › Capacity reports each group's in-flight permits
+  (`models.groups[].in_use`, `null` when the governor does not run that group),
+  and its bar waves while calls run. The Limits permit bar keeps waving when
+  every permit is held by calls in flight (still at most two waves per screen).
+  The mock's Config and Limits now name the same model groups.
 - v5 admin PWA progress bars for everyone: the boss-week day in the Week
   footer, run countdowns (wavy over the final 24 h, with T-1h/T-15m marks),
   answer bars on run cards and the run pane, proposal expiry in the Inbox

@@ -334,6 +334,8 @@ impl ConfigDesk {
                             model: alias.clone(),
                             group: group.name.clone(),
                             permits: Some(group.permits),
+                            // Filled from the live governor by the handler.
+                            in_use: None,
                         })
                     })
                     .collect(),

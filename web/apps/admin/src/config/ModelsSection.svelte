@@ -20,6 +20,7 @@
     ROLES,
     rowCheckText,
     splitChecks,
+    wavingRows,
   } from './capacity';
   import ContextWindows from './ContextWindows.svelte';
   import { changes, type Change } from './dirty';
@@ -61,6 +62,8 @@
   const MARK = { ok: 'check', warning: 'alert-circle', error: 'alert-triangle' } as const;
   const TONE = CHECK_TONE;
   const groups = $derived(groupRows(models));
+  // Bars wave while calls hold the group's permits, two at most (as on Limits).
+  const waving = $derived(wavingRows(groups));
   // The server runs the startup check on every read and save; it is the truth.
   // Groups are read-only (kanade.toml), so no unsaved edit changes them and the
   // saved verdicts are the whole story: each sits on its group's row, and
@@ -247,15 +250,16 @@
                 <th scope="row" class="mono">{g.group}</th>
                 <td class="num mono"
                   >{g.permits ?? '—'}{#if cap !== null && g.permits !== null}
-                    <!-- Flat: Config has no in-flight counts (those wave on Limits). -->
+                    <!-- Usually full (permits match Kanata), so a busy bar keeps waving at 100%. -->
                     <WavyProgress
                       class="wavy--inline models__cap"
                       value={Math.min(g.permits, cap)}
                       max={cap}
-                      wavy={false}
+                      wavy={waving.has(g.group)}
+                      fullWave
                       tone={g.permits > cap ? 'warn' : 'accent'}
                       label="{g.group} permits of what Kanata admits"
-                      text="{g.permits} of the {cap} Kanata admits"
+                      text="{g.permits} of the {cap} Kanata admits{g.inUse ? `, ${g.inUse} in flight` : ''}"
                     />{/if}</td
                 >
                 <td><span class="settings__caps">{#each g.models as m (m)}<span class="capchip capchip--mono">{m}</span>{/each}</span></td>

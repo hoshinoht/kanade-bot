@@ -3,8 +3,9 @@
   part is a gentle sine wave drifting forward while `wavy`, else a flat stroke;
   the rest is a flat track after a small gap. Paths are recomputed per frame
   (attributes, not styles, so CSP-safe) so both ends keep round caps; the wave
-  flattens at 100% and under reduced motion, and a flat bar stops drawing once
-  its fill has settled. `ticks` mark fractions of the track (a countdown's
+  flattens at 100% (unless `fullWave`: a full bar of live work keeps moving)
+  and under reduced motion, and a flat bar stops drawing once its fill has
+  settled. `ticks` mark fractions of the track (a countdown's
   T-1h and T-15m); `tone="warn"` takes the warning colour.
 -->
 <script lang="ts">
@@ -14,6 +15,7 @@
     label,
     text = '',
     wavy = true,
+    fullWave = false,
     ticks = [],
     tone = 'accent',
     class: extra = '',
@@ -24,6 +26,8 @@
     text?: string;
     /** The drifting wave; a flat bar keeps the same track, gap and caps. */
     wavy?: boolean;
+    /** Keep waving at 100% (permits all held by calls in flight). */
+    fullWave?: boolean;
     /** Marks along the track, each a fraction 0–1 of its length. */
     ticks?: number[];
     tone?: 'accent' | 'warn';
@@ -73,6 +77,7 @@
     const goal = target;
     const w = width;
     const moving = wavy;
+    const holdFull = fullWave;
     if (!w) return;
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
       shown = goal;
@@ -88,8 +93,8 @@
       // Critically damped approach: progress never overshoots its value.
       shown += (goal - shown) * (1 - Math.exp(-dt * 9));
       if (Math.abs(goal - shown) < 0.0005) shown = goal;
-      // Short fills, a finished bar and a flat bar lose the wave; a long fill carries it fully.
-      const want = !moving || goal >= 1 ? 0 : AMP * Math.min(1, (shown * w) / WAVELENGTH);
+      // Short fills, a finished bar (unless held) and a flat bar lose the wave; a long fill carries it fully.
+      const want = !moving || (goal >= 1 && !holdFull) ? 0 : AMP * Math.min(1, (shown * w) / WAVELENGTH);
       amp += (want - amp) * (1 - Math.exp(-dt * 6));
       phase = (phase + (dt * WAVELENGTH) / DRIFT_S) % WAVELENGTH;
       draw(w);

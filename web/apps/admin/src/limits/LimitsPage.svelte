@@ -100,6 +100,7 @@
                 value={g.permits.in_use}
                 max={g.permits.total}
                 wavy={waving.has(g.name)}
+                fullWave
                 label="{g.name} permits in use"
                 text="{g.permits.in_use} of {g.permits.total} in use{g.permits.in_use ? ', requests in flight' : ''}"
               />

@@ -362,6 +362,36 @@ pub fn effective_groups(c: &Config) -> Vec<Group> {
         .collect()
 }
 
+/// One governor group as Limits shows it: its aliases, its permits, and the
+/// synthetic permits in flight (by position: the first full, the second
+/// half-used, the rest idle). Config's `in_use` reads the same numbers.
+pub struct LiveGroup {
+    pub name: String,
+    pub models: Vec<String>,
+    pub total: u32,
+    pub in_use: u32,
+}
+
+pub fn live_groups(c: &Config) -> Vec<LiveGroup> {
+    let mut out: Vec<LiveGroup> = Vec::new();
+    for g in effective_groups(c) {
+        match out.iter_mut().find(|live| live.name == g.group) {
+            Some(live) => live.models.push(g.model),
+            None => out.push(LiveGroup {
+                in_use: match out.len() {
+                    0 => g.permits,
+                    1 => g.permits / 2,
+                    _ => 0,
+                },
+                name: g.group,
+                models: vec![g.model],
+                total: g.permits,
+            }),
+        }
+    }
+    out
+}
+
 /// `leaves_homelab`, failing closed: external trust, an unknown zone, or the
 /// `-cloud` alias suffix all count as leaving.
 fn leaves_homelab(id: &str, trust: &str) -> bool {
@@ -629,6 +659,14 @@ impl Store {
 
     pub fn config_view(&self) -> Value {
         let c = &self.config;
+        let live = live_groups(c);
+        let groups: Vec<Value> = effective_groups(c)
+            .into_iter()
+            .map(|g| {
+                let in_use = live.iter().find(|l| l.name == g.group).map(|l| l.in_use);
+                json!({ "model": g.model, "group": g.group, "permits": g.permits, "in_use": in_use })
+            })
+            .collect();
         let entry = |id: &str, m: &ModelInfo| {
             let mut entry = json!({
                 "id": id, "trust_zone": m.trust, "leaves_homelab": leaves_homelab(id, m.trust),
@@ -709,7 +747,7 @@ impl Store {
                 "reachable": true,
                 "catalog": models,
                 "roles": { "extraction": role("extraction", &c.extraction), "chat": role("chat", &c.chat), "rewrite": role("rewrite", &c.rewrite) },
-                "groups": effective_groups(c),
+                "groups": groups,
                 "groups_source": if c.declared_groups.is_some() { "config" } else { "default" },
                 // Variants are listed too, as the server does; the app shows base models only.
                 "alias_limits": MODELS.iter().map(|m| (m.id, m)).chain(VARIANTS.iter().filter_map(|(id, base, _)| model(base).map(|m| (*id, m)))).filter_map(|(id, m)| m.cap().map(|max| {
@@ -1782,6 +1820,44 @@ mod tests {
             ] } }),
         ] {
             assert!(s.patch_config(&patch).is_err(), "accepted {patch}");
+        }
+    }
+
+    #[test]
+    fn config_and_limits_name_the_same_groups_and_load() {
+        let mut s = store();
+        for declared in [false, true] {
+            if declared {
+                s.config.declared_groups = Some(vec![
+                    super::Group {
+                        model: "kanata/extract".into(),
+                        group: "local".into(),
+                        permits: 1,
+                    },
+                    super::Group {
+                        model: "kanata/chat".into(),
+                        group: "chat".into(),
+                        permits: 4,
+                    },
+                ]);
+            }
+            let config = s.config_view();
+            let limits = s.limits();
+            let rows = config["models"]["groups"].as_array().unwrap();
+            let groups = limits["groups"].as_array().unwrap();
+            for g in groups {
+                for row in rows.iter().filter(|r| r["group"] == g["name"]) {
+                    assert_eq!(row["in_use"], g["permits"]["in_use"], "{row}");
+                    assert_eq!(row["permits"], g["permits"]["total"], "{row}");
+                }
+            }
+            let mut named: Vec<&serde_json::Value> = rows.iter().map(|r| &r["group"]).collect();
+            named.dedup();
+            assert_eq!(named, groups.iter().map(|g| &g["name"]).collect::<Vec<_>>());
+            assert!(
+                rows.iter().any(|r| r["in_use"].as_u64() > Some(0)),
+                "something is in flight"
+            );
         }
     }
 

@@ -4,13 +4,19 @@ import { ADMIN, expect, test } from './support';
 // M3E progress bars, always on (user decision 2026-10-04): the boss week in
 // the Week footer, run countdowns (wavy only over the final 24 h, marks at
 // T-1h and T-15m), answers as a segmented bar, proposal expiry in the Inbox,
-// and model permits on Limits and Config. At most two bars wave on a screen.
+// and model permits on Limits and Config, which wave (even when full) while
+// calls are in flight (user decision 2026-10-04). At most two bars wave on a screen.
 // Captures for review go to the git-ignored e2e/.captures/progress/.
 const OUT = 'e2e/.captures/progress';
 
 const ys = (d: string) => [...d.matchAll(/[ML][\d.]+ ([\d.]+)/g)].map((m) => m[1]!);
 /** The bars that may move: not flat and not finished. */
 const waves = (page: Page) => page.locator('.wavy:not(.wavy--flat)');
+
+/** A moving bar's fill swings between different heights (the drift has started). */
+async function isWaving(bar: Locator) {
+  await expect.poll(async () => new Set(ys((await bar.locator('.wavy__wave').getAttribute('d')) ?? '')).size).toBeGreaterThan(1);
+}
 
 /** An empty bar draws no fill at all; any other fill must be one straight line. */
 async function isFlat(bar: Locator) {
@@ -107,19 +113,46 @@ test('Limits: one permit bar per group, waving only with requests in flight, two
     const busy = Number(await bar.getAttribute('aria-valuenow')) > 0;
     if (!busy) await expect(bar).toHaveClass(/wavy--flat/);
   }
+  // Every permit held: the full bar keeps waving while its calls run.
+  const full = page.getByRole('progressbar', { name: 'gateway permits in use' });
+  await expect(full).toHaveAttribute('aria-valuenow', (await full.getAttribute('aria-valuemax'))!);
+  await isWaving(full);
   expect(await waves(page).count()).toBeGreaterThan(0);
   expect(await waves(page).count()).toBeLessThanOrEqual(2);
   await page.locator('.stats').screenshot({ path: `${OUT}/limits.png` });
 });
 
-test('Config: each capacity group shows its permits against what Kanata admits, flat', async ({ page }) => {
+test('Config: each capacity group shows its permits against what Kanata admits, waving while calls run', async ({ page }) => {
   await page.goto(`${ADMIN}/config?section=models&sw=off`);
   await page.getByRole('tab', { name: 'Capacity' }).click();
-  const bar = page.getByRole('progressbar', { name: /permits of what Kanata admits$/ }).first();
+  const bar = page.getByRole('progressbar', { name: 'gateway permits of what Kanata admits' });
   await expect(bar).toBeVisible();
-  await expect(bar).toHaveAttribute('aria-valuetext', /^\d+ of the \d+ Kanata admits$/);
-  await expect(bar).toHaveClass(/wavy--flat/);
-  expect(await waves(page).count()).toBe(0);
+  // The mock's gateway group has a call in flight: its full bar waves.
+  await expect(bar).toHaveAttribute('aria-valuetext', /^\d+ of the \d+ Kanata admits, \d+ in flight$/);
+  await expect(bar).not.toHaveClass(/wavy--flat/);
+  await isWaving(bar);
+  expect(await waves(page).count()).toBeLessThanOrEqual(2);
+});
+
+test('Config: idle groups stay flat, and at most two of the busy ones wave', async ({ page }) => {
+  await page.route(`${ADMIN}/api/admin/config`, async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const res = await route.fetch();
+    const body = await res.json();
+    body.models.groups_source = 'config';
+    body.models.groups = [
+      { model: 'kanata/extract', group: 'a', permits: 1, in_use: 1 },
+      { model: 'kanata/chat', group: 'b', permits: 1, in_use: 0 },
+      { model: 'kanata/legacy', group: 'c', permits: 1, in_use: 1 },
+      { model: 'kanata/rewrite-small', group: 'd', permits: 1, in_use: 1 },
+    ];
+    await route.fulfill({ response: res, json: body });
+  });
+  await page.goto(`${ADMIN}/config?section=models&sw=off`);
+  await page.getByRole('tab', { name: 'Capacity' }).click();
+  await expect(page.getByRole('progressbar', { name: /permits of what Kanata admits$/ }).first()).toBeVisible();
+  await expect(page.getByRole('progressbar', { name: 'b permits of what Kanata admits' })).toHaveClass(/wavy--flat/);
+  expect(await waves(page).count()).toBe(2);
 });
 
 test('reduced motion: countdowns and permits draw flat and still', async ({ page }) => {

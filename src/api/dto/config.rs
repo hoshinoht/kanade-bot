@@ -347,6 +347,9 @@ pub struct CapacityGroup {
     pub model: String,
     pub group: String,
     pub permits: Option<u32>,
+    /// The group's permits held by calls in flight, from the governor's
+    /// snapshot; `null` while model serving is not composed.
+    pub in_use: Option<u32>,
 }
 
 #[derive(Clone, Debug, Serialize)]

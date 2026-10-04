@@ -293,7 +293,12 @@ export type ContextRole = { reserve: number, cap: number | null, };
 
 export type ContextSettings = { cloud_default: number, local_default: number, chat: ContextRole, extraction: ContextRole, rewrite: ContextRole, overrides: { [key in string]: number }, };
 
-export type CapacityGroup = { model: string, group: string, permits: number | null, };
+export type CapacityGroup = { model: string, group: string, permits: number | null, 
+/**
+ * The group's permits held by calls in flight, from the governor's
+ * snapshot; `null` while model serving is not composed.
+ */
+in_use: number | null, };
 
 export type AliasLimit = { alias: string, max_in_flight: number, adapter_max_in_flight?: number, source: 'published' | 'declared', };
 

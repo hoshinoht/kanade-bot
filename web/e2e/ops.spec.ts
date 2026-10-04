@@ -460,7 +460,20 @@ test('extraction filters: outcome, model and member, deep-linked', async ({ page
 });
 
 test('limits: backends, queue, admission by kind and an allowance reset', async ({ page }) => {
+  // The mock runs Config's one gateway group; two more groups show the other breaker states.
+  await page.route(`${ADMIN}/api/admin/limits`, async (route) => {
+    const res = await route.fetch();
+    const body = await res.json();
+    const since = body.groups[0].breaker.since;
+    const idle = { queue: [], rate: { available: 1, capacity: 20, refill_per_min: 4 }, retry: { remaining: 2, capacity: 5 } };
+    body.groups.push(
+      { ...idle, name: 'chat', backend: 'Kanata', models: ['kanata/chat'], permits: { in_use: 2, total: 4 }, breaker: { state: 'half_open', failures: 3, since } },
+      { ...idle, name: 'rewrite', backend: 'Kanata', models: ['kanata/rewrite-small'], permits: { in_use: 0, total: 1 }, breaker: { state: 'open', failures: 5, since, retry_at: since } },
+    );
+    await route.fulfill({ response: res, json: body });
+  });
   await go(page, '/limits');
+  await expect(page.getByRole('region', { name: /^gateway · / })).toContainText('closed');
   const chat = page.getByRole('region', { name: /^chat · / });
   await expect(chat).toContainText('half-open — probing');
   await expect(page.getByRole('region', { name: /^rewrite · / })).toContainText('open — calls refused');

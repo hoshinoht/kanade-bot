@@ -1,4 +1,5 @@
 import type { CapacityCheck, ConfigView, ModelInfo, ModelRole, RoleModel } from '@kanade/api-types';
+import { wavingGroups } from '../limits/permits';
 
 export const ROLES: { id: ModelRole; name: string; job: string }[] = [
   { id: 'extraction', name: 'Extraction', job: 'Reads the party channels and proposes schedule changes.' },
@@ -107,6 +108,8 @@ export function modelOptions(role: ModelRole, stored: RoleModel, catalog: ModelI
 export interface GroupRow {
   group: string;
   permits: number | null;
+  /** Permits held by calls in flight; null when the server has no governor. */
+  inUse: number | null;
   /** Base aliases, each once. */
   models: string[];
 }
@@ -116,11 +119,18 @@ export function groupRows(models: ConfigView['models']): GroupRow[] {
   const rows: GroupRow[] = [];
   for (const g of models.groups) {
     let row = rows.find((r) => r.group === g.group);
-    if (!row) rows.push((row = { group: g.group, permits: g.permits, models: [] }));
+    if (!row) rows.push((row = { group: g.group, permits: g.permits, inUse: g.in_use, models: [] }));
     const base = baseOf(models.catalog, g.model);
     if (!row.models.includes(base)) row.models.push(base);
   }
   return rows;
+}
+
+/** Rows whose bar waves: calls in flight, the fullest first, at most two (as on Limits). */
+export function wavingRows(rows: readonly GroupRow[]): Set<string> {
+  return wavingGroups(
+    rows.flatMap((r) => (r.permits === null || r.inUse === null ? [] : [{ name: r.group, permits: { in_use: r.inUse, total: r.permits } }])),
+  );
 }
 
 /**

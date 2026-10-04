@@ -117,8 +117,24 @@ async fn answer(
     };
     let channels = state.channels.channels();
     let last_digest = last_digest(state, &channels).await;
-    let view = desk.view(settings, catalog, &channels, &roles, notices, last_digest);
+    let mut view = desk.view(settings, catalog, &channels, &roles, notices, last_digest);
+    fill_in_use(state, &mut view.models.groups);
     Ok(Json(view).into_response())
+}
+
+/// Each row's in-flight permits from the governor snapshot the Limits page
+/// reads; rows stay `null` without model serving or a group it does not run.
+fn fill_in_use(state: &ApiState, groups: &mut [crate::api::dto::config::CapacityGroup]) {
+    let Some(limits) = &state.model_limits else {
+        return;
+    };
+    let live: std::collections::BTreeMap<String, u32> = limits(state.now())
+        .into_iter()
+        .map(|group| (group.name, group.permits.in_use))
+        .collect();
+    for row in groups {
+        row.in_use = live.get(&row.group).copied();
+    }
 }
 
 /// A failed journal read leaves the field empty rather than failing the page.

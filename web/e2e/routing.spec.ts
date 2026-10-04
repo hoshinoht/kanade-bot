@@ -33,7 +33,7 @@ test('admin: grouped nav has every v4 section as a real route', async ({ page })
     ['Inbox', '9 changes waiting'],
     ['Extractions', '34 model calls'],
     ['Chat', '13 interactions'],
-    ['Limits', 'extract is at capacity'],
+    ['Limits', 'gateway is at capacity'],
   ] as const) {
     await nav.getByRole('link', { name: label }).click();
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(heading);

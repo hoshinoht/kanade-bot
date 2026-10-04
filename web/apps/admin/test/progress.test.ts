@@ -1,6 +1,6 @@
 import type { ConfigView, Week } from '@kanade/api-types';
 import { describe, expect, it } from 'vitest';
-import { groupCap } from '../src/config/capacity';
+import { groupCap, wavingRows, type GroupRow } from '../src/config/capacity';
 import { EXPIRY_WARN, proposalExpiry } from '../src/inbox/expiry';
 import { MAX_WAVES, wavingGroups } from '../src/limits/permits';
 import { dateMinutes, spanWords, wallMinutes, whenMinutes } from '../src/shared/wall';
@@ -121,6 +121,13 @@ describe('permit bars', () => {
     expect(MAX_WAVES).toBe(2);
     expect(wavingGroups([g('a', 1, 4), g('b', 0, 1), g('c', 1, 1), g('d', 3, 4)])).toEqual(new Set(['c', 'd']));
     expect(wavingGroups([g('a', 0, 1), g('b', 0, 0)]).size).toBe(0);
+  });
+
+  it('wave on Config while calls hold a group, the fullest first, at most two', () => {
+    const row = (group: string, inUse: number | null, permits: number | null): GroupRow => ({ group, permits, inUse, models: [] });
+    expect(wavingRows([row('a', 1, 4), row('b', 0, 1), row('c', 1, 1), row('d', 3, 4)])).toEqual(new Set(['c', 'd']));
+    // No governor (null) or no permits: flat.
+    expect(wavingRows([row('a', null, 1), row('b', 1, null)]).size).toBe(0);
   });
 
   it('measure Config permits against the least Kanata admits in the group', () => {

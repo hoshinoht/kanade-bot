@@ -119,11 +119,12 @@
     "CapacityGroup": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["model", "group", "permits"],
+      "required": ["model", "group", "permits", "in_use"],
       "properties": {
         "model": { "type": "string" },
         "group": { "type": "string" },
-        "permits": { "type": ["integer", "null"] }
+        "permits": { "type": ["integer", "null"] },
+        "in_use": { "type": ["integer", "null"], "minimum": 0, "description": "The group's permits held by calls in flight (the governor snapshot Limits reads); null while model serving is not composed or the governor runs no such group." }
       }
     },
     "AliasLimit": {

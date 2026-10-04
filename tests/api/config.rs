@@ -14,6 +14,7 @@ use kanade::{
         CatalogRead, ConfigDesk, ConfigFacts, ConfigFuture, ConfigInputs, ModelCatalog,
         PersonaFiles,
     },
+    api::state::ModelLimits,
     chat::persona::{
         PersonaId, PersonaRoot, PersonaSnapshot, PersonaStore, ProfileId, ProfileQuery,
         ProfileSource,
@@ -274,7 +275,7 @@ impl Config {
         settings: RuntimeSettings,
         two_admins: bool,
     ) -> Self {
-        Self::with_role_directory(gateway, groups, settings, two_admins, true).await
+        Self::with_role_directory(gateway, groups, settings, two_admins, true, None).await
     }
 
     async fn with_role_directory(
@@ -283,6 +284,7 @@ impl Config {
         settings: RuntimeSettings,
         two_admins: bool,
         role_directory_connected: bool,
+        model_limits: Option<ModelLimits>,
     ) -> Self {
         let dir = PersonaDir::new();
         let root = PersonaRoot::open(&dir.0).unwrap();
@@ -324,7 +326,9 @@ impl Config {
                 slot.set(desk.clone()).ok().unwrap();
                 desk
             };
-            if two_admins {
+            if let Some(limits) = model_limits {
+                Reads::with_config_and_model_limits(make, limits).await
+            } else if two_admins {
                 Reads::with_config_and_logins(make).await
             } else if role_directory_connected {
                 Reads::with_config(make).await
@@ -497,9 +501,9 @@ async fn get_shows_settings_models_personas_and_env_facts() {
     assert_eq!(
         models["groups"],
         json!([
-            {"model": "kanata/chat", "group": "gateway", "permits": 2},
-            {"model": "kanata/extract", "group": "gateway", "permits": 2},
-            {"model": "kanata/rewrite-small", "group": "gateway", "permits": 2},
+            {"model": "kanata/chat", "group": "gateway", "permits": 2, "in_use": null},
+            {"model": "kanata/extract", "group": "gateway", "permits": 2, "in_use": null},
+            {"model": "kanata/rewrite-small", "group": "gateway", "permits": 2, "in_use": null},
         ])
     );
     assert_eq!(models["groups_source"], "default");
@@ -668,7 +672,8 @@ async fn stale_role_profile_reorder_conflicts_between_admins() {
             profile: "calm".into(),
         },
     ];
-    let config = Config::with_role_directory(true, Vec::new(), initial_settings, true, true).await;
+    let config =
+        Config::with_role_directory(true, Vec::new(), initial_settings, true, true, None).await;
     let (cookie_a, csrf_a) = config.reads.tailscale_session_as("ops@example.com").await;
     let (cookie_b, csrf_b) = config
         .reads
@@ -848,7 +853,7 @@ async fn unavailable_role_directory_keeps_missing_rows_editable_only_by_reorder_
         },
     ];
     let config =
-        Config::with_role_directory(true, Vec::new(), initial_settings, false, false).await;
+        Config::with_role_directory(true, Vec::new(), initial_settings, false, false, None).await;
     let initial = config.get().await;
     assert_eq!(
         initial["persona"]["role_profiles"][0]["role_name"],
@@ -2056,9 +2061,9 @@ async fn declared_groups_are_listed_checked_per_group_and_summarised() {
     assert_eq!(
         models["groups"],
         json!([
-            {"model": "kanata/extract", "group": "local", "permits": 2},
-            {"model": "kanata/chat", "group": "local", "permits": 2},
-            {"model": "kanata/legacy", "group": "spare", "permits": 3},
+            {"model": "kanata/extract", "group": "local", "permits": 2, "in_use": null},
+            {"model": "kanata/chat", "group": "local", "permits": 2, "in_use": null},
+            {"model": "kanata/legacy", "group": "spare", "permits": 3, "in_use": null},
         ])
     );
     assert_eq!(
@@ -2092,6 +2097,60 @@ async fn declared_groups_are_listed_checked_per_group_and_summarised() {
     assert_eq!(
         message,
         "models.groups cannot be changed here: it is set in kanade.toml ([[models.groups]]); restart to apply."
+    );
+}
+
+#[tokio::test]
+async fn groups_carry_the_governors_in_flight_permits() {
+    use kanade::infrastructure::llm::governor::{
+        BreakerState, BreakerView, Counters, GroupSnapshot, PermitUsage, RateLevel, RetryLevel,
+    };
+    let snapshot = |name: &str, in_use: u32| GroupSnapshot {
+        name: name.into(),
+        backend: "Kanata".into(),
+        models: Vec::new(),
+        permits: PermitUsage { in_use, total: 2 },
+        queue: Vec::new(),
+        holders: Vec::new(),
+        rate: RateLevel {
+            available: 1,
+            capacity: 1,
+            refill_per_min: 1,
+        },
+        retry: RetryLevel {
+            remaining: 1,
+            capacity: 1,
+        },
+        breaker: BreakerView {
+            state: BreakerState::Closed,
+            failures: 0,
+            since: chrono::DateTime::UNIX_EPOCH,
+            retry_at: None,
+        },
+        counters: Counters::default(),
+    };
+    // `spare` is not running (a restart is pending): its rows stay null.
+    let limits: ModelLimits = Arc::new(move |_| vec![snapshot("local", 1), snapshot("old", 2)]);
+    let config = Config::with_role_directory(
+        true,
+        vec![
+            group("local", 2, &["kanata/extract", "kanata/chat"]),
+            group("spare", 3, &["kanata/legacy"]),
+        ],
+        settings(),
+        false,
+        true,
+        Some(limits),
+    )
+    .await;
+    let view = config.get().await;
+    assert_eq!(
+        view["models"]["groups"],
+        json!([
+            {"model": "kanata/extract", "group": "local", "permits": 2, "in_use": 1},
+            {"model": "kanata/chat", "group": "local", "permits": 2, "in_use": 1},
+            {"model": "kanata/legacy", "group": "spare", "permits": 3, "in_use": null},
+        ])
     );
 }
 
