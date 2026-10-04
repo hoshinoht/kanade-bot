@@ -11,7 +11,7 @@ test('pill profiles: chat, extractions, inbox, planner sheet and config share on
   await expect(chat.locator('.status')).toHaveCount(0);
 
   await page.goto(`${ADMIN}/extractions?sw=off`);
-  await expect(page.locator('table .tone--danger', { hasText: 'failed' }).first()).toBeVisible();
+  await expect(page.getByRole('listbox', { name: /Extraction calls/ }).locator('.tone--danger', { hasText: 'failed' }).first()).toBeVisible();
 
   await page.goto(`${ADMIN}/inbox?tab=self_service&sw=off`);
   const list = page.getByRole('listbox', { name: 'Self-service items' });

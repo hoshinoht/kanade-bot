@@ -354,19 +354,31 @@ test('extractions: pager, detail tabs and a rescan job', async ({ page }) => {
   await expect(page.getByText(/Page 2 of 2/)).toBeVisible();
   await page.getByRole('button', { name: '← Newer' }).click();
 
-  await page.getByText('Re-read the party channels').click();
+  await page.getByRole('button', { name: 'Re-read channels' }).click();
   await page.getByRole('checkbox', { name: '#limbo-trio' }).check();
   await page.getByRole('checkbox', { name: '#fa-night' }).check();
-  await page.getByRole('button', { name: 'Re-read' }).click();
+  await page.getByRole('button', { name: 'Re-read', exact: true }).click();
   await expect(page.locator('.rescan__status')).toHaveText(/Done: 2 channels read/, { timeout: 10_000 });
+  // Escape folds the popover back to its button; the job card stays for the next open.
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Re-read channels' })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Re-read channels' })).toHaveAttribute('aria-expanded', 'false');
 
-  await page.getByRole('link', { name: 'Open call c5d6e7f8' }).click();
-  await expect(page).toHaveURL(`${ADMIN}/extractions/x-kalos`);
-  await expect(page.getByRole('row', { name: /move/ })).toContainText('0.93');
-  await page.getByRole('tab', { name: /Chat read/ }).click();
+  // Wide: the newest call is open beside the list; choosing another keeps the list.
+  await expect(page.getByRole('option', { selected: true })).toContainText('#bm-trio');
+  await page.getByRole('option').filter({ hasText: 'kalos-four' }).filter({ hasText: '1 change' }).click();
+  await expect(page).toHaveURL(`${ADMIN}/extractions?call=x-kalos`);
+  await expect(page.getByRole('option', { selected: true })).toContainText('#kalos-four');
   await expect(page.getByText('kalos 10pm instead?')).toBeVisible();
-  await page.getByRole('tab', { name: 'Prompt as sent' }).click();
-  await expect(page.locator('pre')).toContainText('Messages:');
+  await page.getByRole('tab', { name: /^Changes/ }).click();
+  await expect(page.getByRole('row', { name: /move/ })).toContainText('0.93');
+  await page.getByRole('tab', { name: 'Prompt' }).click();
+  await expect(page.getByRole('tabpanel', { name: 'Prompt' }).locator('pre')).toContainText('Messages:');
+  // Arrows move the selection; the chosen tab stays.
+  await page.getByRole('listbox', { name: /Extraction calls/ }).focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(page).not.toHaveURL(/call=x-kalos/);
+  await expect(page.getByRole('tab', { name: 'Prompt' })).toHaveAttribute('aria-selected', 'true');
 });
 
 test('chat: interactions and one interaction in detail', async ({ page }) => {
@@ -441,7 +453,7 @@ test('chat filters: deep-linked, combinable, summarised, cleared', async ({ page
 test('extraction filters: outcome, model and member, deep-linked', async ({ page }) => {
   await go(page, '/extractions?outcome=proposed');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('3 of 34 model calls');
-  await expect(page.getByRole('row', { name: /bm-trio/ })).toContainText('proposed');
+  await expect(page.getByRole('option', { name: /bm-trio/ })).toContainText('1 change');
   await page.getByRole('button', { name: 'Filters (1)' }).click();
   const panel = page.getByRole('group', { name: 'Filters' });
   await panel.getByRole('checkbox', { name: 'failed' }).check();

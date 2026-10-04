@@ -807,6 +807,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
   the open turn (`/chat/:id`), with Copy transcript, pill tabs, conversation
   bubbles and per-round Model trace cards; phones show the list, then the turn
   with "‹ Chat".
+- v5 admin Extractions follows its M3E boards: one Calls window lists calls
+  beside the open call (Changes / Chat read / Prompt / Raw tabs, an outcome
+  card, and a code viewer with find, Wrap and Copy), with Filters and Re-read
+  on its title bar. `/extractions/:id` links open that call in the list.
 - v5 admin Limits: when the server has not mounted the limits route, the page
   shows its M3E board's unavailable state: one window with a centred glyph, a
   short explanation and an **Open Config → Models** link.

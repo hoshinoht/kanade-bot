@@ -132,9 +132,9 @@ test('extractions: the identity-leak outcome filters to the refused calls', asyn
   await page.getByRole('group', { name: 'Filters' }).getByRole('checkbox', { name: 'identity leak blocked' }).check();
   await expect(page).toHaveURL(/outcome=identity_leak/);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('3 of 34 model calls');
-  const body = page.getByRole('table').locator('tbody');
-  await expect(body.getByRole('row')).toHaveCount(3);
-  await expect(body.getByText('identity leak blocked')).toHaveCount(3);
+  const calls = page.getByRole('listbox', { name: /Extraction calls/ });
+  await expect(calls.getByRole('option')).toHaveCount(3);
+  await expect(calls.getByText('identity leak blocked')).toHaveCount(3);
   await serious(page, 'extractions identity leak');
 });
 

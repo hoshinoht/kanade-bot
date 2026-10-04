@@ -26,10 +26,10 @@ async function holdSaves(page: Page) {
 
 async function startRescan(page: Page, on: boolean) {
   await go(page, '/extractions', on);
-  await page.getByText('Re-read the party channels').click();
+  await page.getByRole('button', { name: 'Re-read channels' }).click();
   const boxes = page.getByRole('group', { name: 'Channels' }).getByRole('checkbox');
   for (const box of await boxes.all()) await box.check();
-  await page.getByRole('button', { name: 'Re-read' }).click();
+  await page.getByRole('button', { name: 'Re-read', exact: true }).click();
 }
 
 const pings = (page: Page) => page.locator('.settings__panel:not([hidden])');

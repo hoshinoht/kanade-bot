@@ -1,33 +1,40 @@
 <!--
-  v4 extractions.html: the extractor's model calls. v5 adds server-side
-  filters (model, dates, outcome, channel, member, text), deep-linked
-  through this page's query string.
+  v4 extractions.html as list-detail (M3E B_Extract, gate G5): one "Calls"
+  window with search, "Filters (n)" and "Re-read channels" on its title bar,
+  the calls as a listbox beside the chosen call. Server-side filters (model,
+  dates, outcome, channel, member, text) and the chosen call (`call`) are
+  deep-linked through the query string. Phones show the list, then the call
+  with "‹ Extractions" in the top bar — one scrolling panel either way.
 -->
 <script lang="ts">
-  import { LoadingState } from '@kanade/ui';
-  import TokenUsage from '../logs/TokenUsage.svelte';
-  import PageLine from '../shell/PageLine.svelte';
-  import Name from '../names/Name.svelte';
+  import '@kanade/ui/styles/panes.scss';
+  import '@kanade/ui/styles/extract.scss';
+  import { Icon, LoadingState } from '@kanade/ui';
   import type { Channel, Extractions } from '@kanade/api-types';
-  import { activeCount, OUTCOME_LABEL, outcomeTone, parseFilter, toSearch, type LogFilter } from '../logs/filters';
+  import { tick, untrack } from 'svelte';
+  import { activeCount, parseFilter, toSearch, type LogFilter } from '../logs/filters';
   import LogFilters from '../logs/LogFilters.svelte';
   import Pager from '../pages/Pager.svelte';
-  import PaneWindow from '../pages/PaneWindow.svelte';
-  import { paged } from '../pages/paging';
+  import { PAGE_SIZE, paged } from '../pages/paging';
   import { Resource } from '../resource.svelte';
-  import LogTime from '../logs/LogTime.svelte';
-  import { duration } from '../logs/format';
+  import { getChrome } from '../shell/chrome';
+  import PageLine from '../shell/PageLine.svelte';
   import type { AdminWeek } from '../store.svelte';
+  import CallList from './CallList.svelte';
+  import { callOf, withCall } from './code';
+  import ExtractionDetail from './ExtractionDetail.svelte';
   import RescanPanel from './RescanPanel.svelte';
 
   let { store, search = '', onsearch }: { store: AdminWeek; search?: string; onsearch?: (search: string) => void } = $props();
+  const uid = $props.id();
   const tz = $derived(store.week?.timezone ?? 'Asia/Kuala_Lumpur');
 
   const filter = $derived(parseFilter(search, { chat: false }));
+  const call = $derived(callOf(search));
   // A pasted Chat link's tool/latency keys leave the URL rather than linger as dead chips.
   $effect(() => {
     const clean = toSearch(filter);
-    if (clean !== toSearch(parseFilter(search))) onsearch?.(clean);
+    if (clean !== toSearch(parseFilter(search))) onsearch?.(withCall(clean, call));
   });
   const extractions = $derived(new Resource<Extractions>(`/api/admin/extractions${toSearch(filter)}`));
   const targets = new Resource<Channel[]>('/api/admin/rescan/targets');
@@ -41,7 +48,7 @@
   const view = $derived(extractions.error ? null : last);
 
   function apply(next: LogFilter) {
-    onsearch?.(toSearch(next));
+    onsearch?.(withCall(toSearch(next), call));
   }
 
   // svelte-ignore state_referenced_locally
@@ -62,90 +69,146 @@
     if (q.trim() !== query.trim()) query = q;
   });
 
-  let page = $state(1);
-  $effect(() => {
-    void search;
-    page = 1;
-  });
   const rows = $derived(view?.rows ?? []);
+  let page = $state(1);
+  // Each new result set starts at the first page, or at the chosen call's page (a deep link).
+  let landed: Extractions | null = null;
+  $effect(() => {
+    const data = extractions.data;
+    if (!data || data === landed) return;
+    landed = data;
+    const at = data.rows.findIndex((r) => r.id === untrack(() => call));
+    page = at >= 0 ? Math.floor(at / PAGE_SIZE) + 1 : 1;
+  });
   const shown = $derived(paged(rows, page));
   const filtered = $derived(activeCount(filter) > 0);
+
+  let phone = $state(false);
+  $effect(() => {
+    const media = window.matchMedia('(max-width: 899px)');
+    const update = () => (phone = media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  });
+  // Wide: a call is always open (the first one on the page until one is chosen).
+  const chosen = $derived(call || (phone ? '' : (shown.rows[0]?.id ?? '')));
+
+  const chrome = getChrome();
+  const compact = $derived(phone && Boolean(call) && Boolean(chrome?.phone));
+  $effect(() => {
+    if (!compact || !chrome) return;
+    chrome.back({ label: 'Extractions', name: 'Back to the list (Extractions)', go: () => pick('', false) });
+    return () => chrome.back(null);
+  });
+
+  let list = $state<{ focusOn: (id: string) => Promise<void> }>();
+  let detail = $state<{ focus: () => void }>();
+  function pick(id: string, open: boolean) {
+    const was = call;
+    onsearch?.(withCall(toSearch(filter), id));
+    if (!phone) return;
+    if (id && open) void tick().then(() => detail?.focus());
+    else if (!id && was) void tick().then(() => list?.focusOn(was));
+  }
+
+  // Re-read: a title-bar popover that stays mounted, so a running job keeps its card and progress.
+  let rereadOpen = $state(false);
+  // Mounted on first open, then kept: the panel's cards are not the window's until asked for.
+  let rereadMounted = $state(false);
+  let rereadButton = $state<HTMLButtonElement>();
+  let rereadPanel = $state<HTMLDivElement>();
+  let rescan = $state<{ choose: (ids: string[]) => void }>();
+  async function openReread(channel?: string) {
+    rereadMounted = true;
+    rereadOpen = true;
+    await tick();
+    if (channel) rescan?.choose([channel]);
+    rereadPanel?.querySelector<HTMLElement>(channel ? 'button[type="submit"]' : 'input')?.focus({ preventScroll: true });
+  }
+  function closeReread(refocus: boolean) {
+    rereadOpen = false;
+    if (refocus) rereadButton?.focus({ preventScroll: true });
+  }
+  $effect(() => {
+    if (!rereadOpen) return;
+    const away = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!rereadPanel?.contains(target) && !rereadButton?.contains(target)) closeReread(false);
+    };
+    document.addEventListener('pointerdown', away, true);
+    return () => document.removeEventListener('pointerdown', away, true);
+  });
+  const canReread = (channel: string) => Boolean(channel) && (targets.data ?? []).some((t) => t.id === channel);
 </script>
 
-<PageLine title={view ? 'Extractions' : ''}>
+<PageLine title={view ? 'Extractions' : ''} class={compact ? 'pageline--echo' : ''}>
   <h1>{#if view}{#if filtered}<span class="pageline__num">{rows.length}</span> of <span class="pageline__num">{view.total}</span>{:else}<span class="pageline__num">{view.total}</span>{/if} model calls{:else}Extractions{/if}</h1>
-  <p class="pageline__context">for prompt tuning</p>
   {#snippet side()}
-    {#if view}<span class="chip chip--mono">{view.model}</span>{/if}
+    {#if view}<span class="chip chip--mono extract-model">{view.model}</span>{/if}
   {/snippet}
 </PageLine>
 
-<PaneWindow title="Calls" bind:query searchLabel="Search calls" placeholder="message, id…">
-  <details class="rescan-box">
-    <summary class="btn">Re-read the party channels</summary>
-    <RescanPanel targets={targets.data ?? []} />
-  </details>
-  <LogFilters {filter} facets={last?.facets ?? null} members={store.members} week={store.week} onchange={apply} />
-  {#if extractions.error}
-    <p class="flash flash--error" role="alert">{extractions.error}</p>
-  {/if}
-  {#if view}
-    {#if rows.length === 0}
-      <div class="empty"><strong>Nothing matches these filters.</strong>Remove a chip above, or Clear them all.</div>
-    {:else}
-      <div class="table-wrap">
-        <table>
-          <caption class="vh">Extraction calls, newest first</caption>
-          <thead>
-            <tr><th scope="col">When</th><th scope="col">Channel</th><th scope="col">Outcome</th><th scope="col">Model</th><th scope="col" class="num">Latency</th><th scope="col" class="num">Tokens</th><th scope="col" class="num">Messages</th><th scope="col" class="num">Changes</th><th scope="col"><span class="vh">Open</span></th></tr>
-          </thead>
-          <tbody>
-            {#each shown.rows as row (row.id)}
-              <tr>
-                <th scope="row" class="mono"><LogTime at={row.at} timeZone={tz} /></th>
-                <td class="log__who">{#if row.channel_id}<Name kind="channel" id={row.channel_id} name={row.channel} clip />{:else}—{/if}</td>
-                <td><span class="tone tone--{outcomeTone(row.outcome)}">{OUTCOME_LABEL[row.outcome] ?? row.outcome}</span></td>
-                <td class="mono log__clip" title={row.model}>{row.model}</td>
-                <td class="num log__nowrap">{duration(row.latency_ms)}</td>
-                <td class="num log__nowrap"><TokenUsage prompt={row.prompt_tokens} completion={row.completion_tokens} reasoning={row.reasoning_tokens} /></td>
-                <td class="num">{row.messages}</td>
-                <td class="num">{row.changes}</td>
-                <td><a class="btn" href="/extractions/{row.id}" aria-label="Open call {row.short_id}">Open</a></td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
+<section class="card extract-window window-fill" class:extract-window--compact={compact} data-fid="window" aria-labelledby="{uid}-title">
+  <div class="card__head extract-window__head" data-fid="window-bar">
+    <h2 class="card__title" id="{uid}-title">Calls</h2>
+    <div class="extract-window__actions" data-fid="extract-actions">
+      <div class="extract-window__search" data-fid="window-search" role="search">
+        <label class="vh" for="{uid}-q">Search calls</label>
+        <input id="{uid}-q" type="search" bind:value={query} placeholder="message, id…" autocomplete="off" spellcheck="false" />
       </div>
-      <Pager bind:page pages={shown.pages} total={rows.length} noun="call" />
+      <div class="extract-window__filters" data-fid="extract-filters">
+        <LogFilters {filter} facets={last?.facets ?? null} members={store.members} week={store.week} onchange={apply} />
+      </div>
+      <button
+        type="button"
+        class="btn extract-window__reread"
+        data-fid="extract-reread"
+        aria-expanded={rereadOpen}
+        aria-controls="{uid}-reread"
+        bind:this={rereadButton}
+        onclick={() => (rereadOpen ? closeReread(false) : void openReread())}><Icon name="refresh-cw" /><span>Re-read channels</span></button
+      >
+    </div>
+  </div>
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <div
+    class="extract-reread"
+    id="{uid}-reread"
+    role="group"
+    aria-label="Re-read the party channels"
+    hidden={!rereadOpen}
+    bind:this={rereadPanel}
+    onkeydown={(event) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        closeReread(true);
+      }
+    }}
+  >
+    {#if rereadMounted}<RescanPanel targets={targets.data ?? []} bind:this={rescan} />{/if}
+  </div>
+  <div class="extract-window__body" class:extract-window__body--single={phone || !view || rows.length === 0}>
+    <div class="extract-list" data-fid="extract-list" hidden={phone && Boolean(call)}>
+      {#if extractions.error}
+        <p class="flash flash--error" role="alert">{extractions.error}</p>
+      {/if}
+      {#if view}
+        {#if rows.length === 0}
+          <div class="empty"><strong>Nothing matches these filters.</strong>Remove a chip above, or Clear them all.</div>
+        {:else}
+          <CallList bind:this={list} rows={shown.rows} selected={chosen} follow={!phone} timeZone={tz} onpick={pick} />
+          <Pager bind:page pages={shown.pages} total={rows.length} noun="call" />
+        {/if}
+      {:else if !extractions.error}
+        <LoadingState text="Loading calls…" />
+      {/if}
+    </div>
+    {#if phone && call && !compact}
+      <button type="button" class="btn extract-window__back" onclick={() => pick('', false)}>‹ All calls</button>
     {/if}
-  {:else if !extractions.error}
-    <LoadingState text="Loading calls…" />
-  {/if}
-</PaneWindow>
-
-<style>
-  /* Aliases and durations never wrap mid-word; a long alias is cut, its tooltip whole. */
-  .log__clip {
-    max-width: 14rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .log__nowrap {
-    white-space: nowrap;
-  }
-
-  .log__who {
-    max-width: 14rem;
-  }
-
-  .rescan-box {
-    margin: 0.2rem 0 0.8rem;
-  }
-
-  .rescan-box[open] {
-    padding-bottom: 0.6rem;
-    border-bottom: 2px solid var(--line-soft);
-  }
-</style>
+    {#if chosen && (!phone || call)}
+      <ExtractionDetail bind:this={detail} id={chosen} timeZone={tz} {canReread} onreread={(channel) => void openReread(channel)} />
+    {/if}
+  </div>
+</section>

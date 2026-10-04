@@ -110,9 +110,9 @@ test('reasoning: collapsed disclosures in Chat and Extractions, reported counts 
   await page.screenshot({ path: 'e2e/.captures/synthetic/reasoning-chat.png', animations: 'disabled' });
 
   await page.goto(`${ADMIN}/extractions?sw=off`);
-  const extractionRow = page.getByRole('row').filter({ has: page.locator('a[href="/extractions/x-bm"]') });
-  await expect(extractionRow).toContainText('1,820 → 64 · 24 reasoning');
+  await expect(page.getByRole('option').filter({ hasText: 'bm-trio' }).first()).toContainText('1,820 → 64 · 24 reasoning');
   await page.goto(`${ADMIN}/extractions/x-bm?sw=off`);
+  await page.getByRole('tab', { name: /^Changes/ }).click();
   const extraction = page.locator('details').filter({ has: page.locator('summary', { hasText: 'Reasoning · 24 tokens' }) });
   await expect(extraction).not.toHaveAttribute('open');
   await expect(extraction.locator('pre')).toBeHidden();
@@ -120,6 +120,8 @@ test('reasoning: collapsed disclosures in Chat and Extractions, reported counts 
   await expect(extraction.locator('pre')).toContainText('The messages agree on Wednesday');
   await page.screenshot({ path: 'e2e/.captures/synthetic/reasoning-extraction.png', animations: 'disabled' });
   await page.goto(`${ADMIN}/extractions/x-limbo?sw=off`);
+  await page.getByRole('tab', { name: /^Changes/ }).click();
+  await expect(page.getByRole('row', { name: /add/ })).toBeVisible();
   await expect(page.locator('summary', { hasText: 'Reasoning' })).toHaveCount(0);
 });
 

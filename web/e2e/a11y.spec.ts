@@ -138,11 +138,14 @@ for (const theme of THEMES) {
     await expect(page.locator('.inbox__detail .past__sentence')).toBeVisible();
     await serious(page, 'admin inbox past');
     await page.getByRole('link', { name: 'Extractions' }).click();
-    await page.getByText('Re-read the party channels').click();
+    await page.getByRole('button', { name: 'Re-read channels' }).click();
     await serious(page, 'admin extractions');
     await page.goto(`${ADMIN}/extractions/x-kalos?sw=off`);
     await expect(page.getByRole('tab', { name: /Changes/ })).toBeVisible();
     await serious(page, 'admin extraction');
+    await page.getByRole('tab', { name: 'Prompt' }).click();
+    await expect(page.getByRole('tabpanel', { name: 'Prompt' })).toBeVisible();
+    await serious(page, 'admin extraction prompt');
     await page.goto(`${ADMIN}/chat/c-move?sw=off`);
     await page.getByRole('tab', { name: /Tool trace/ }).click();
     await serious(page, 'admin chat turn');

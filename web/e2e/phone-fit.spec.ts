@@ -228,3 +228,48 @@ for (const size of SIZES) {
     });
   }
 }
+
+/** Children of `selector` that are cut or stick out of their parent's box. */
+function cut(page: Page, selector: string, parts: string) {
+  return page.locator(selector).evaluateAll((els, parts) => {
+    const out: string[] = [];
+    for (const el of els) {
+      const box = el.getBoundingClientRect();
+      for (const part of el.querySelectorAll<HTMLElement>(parts)) {
+        const p = part.getBoundingClientRect();
+        if (!p.width) continue;
+        const name = `${part.className.split(' ')[0]} "${part.textContent!.trim().slice(0, 20)}"`;
+        if (p.right > box.right + 0.5 || p.left < box.left - 0.5) out.push(`${name} leaves its row`);
+        if (part.scrollWidth > part.clientWidth + 0.5) out.push(`${name} is cut`);
+      }
+    }
+    return out;
+  }, parts);
+}
+
+for (const size of [...SIZES, { width: 1082, height: 736 }]) {
+  test(`Chat rows keep their model and outcome whole at ${size.width} px`, async ({ page }) => {
+    await page.setViewportSize(size);
+    await page.goto(`${ADMIN}/chat?sw=off`);
+    await expect(page.locator('.chat-row').first()).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    expect(await cut(page, '.chat-row', '.chat-row__model, .chat-row__outcome')).toEqual([]);
+  });
+}
+
+for (const size of SIZES) {
+  test(`Extractions title bar and prompt bar stay on screen at ${size.width} px`, async ({ page }) => {
+    await page.setViewportSize(size);
+    await page.goto(`${ADMIN}/extractions?sw=off`);
+    const reread = page.getByRole('button', { name: 'Re-read channels' });
+    await expect(reread).toBeVisible();
+    const head = await page.locator('.extract-window__head').boundingBox();
+    const btn = await reread.boundingBox();
+    expect(head!.y + head!.height - (btn!.y + btn!.height)).toBeGreaterThanOrEqual(6);
+    await page.locator('[data-call]').first().click();
+    await page.getByRole('tab', { name: 'Prompt' }).click();
+    await expect(page.locator('.extract-code__bar')).toBeVisible();
+    expect(await cut(page, '.extract-code__bar', ':scope > *')).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+}

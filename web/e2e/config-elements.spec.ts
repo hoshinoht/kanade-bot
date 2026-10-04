@@ -110,7 +110,7 @@ test('re-read: channel chips, a running job card that finishes, and Cancel', asy
 
 test('re-read on Extractions: the same panel, without the link back to itself', async ({ page }) => {
   await page.goto(`${ADMIN}/extractions?sw=off`);
-  await page.getByText('Re-read the party channels').click();
+  await page.getByRole('button', { name: 'Re-read channels' }).click();
   await page.getByRole('checkbox', { name: '#limbo-trio' }).check();
   await page.getByRole('button', { name: 'Re-read', exact: true }).click();
   const finished = page.getByRole('region', { name: 'Re-read 1 channel' });

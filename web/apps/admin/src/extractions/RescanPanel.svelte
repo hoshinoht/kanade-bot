@@ -25,6 +25,11 @@
   let go: HTMLButtonElement | undefined = $state();
   const client = createClient();
 
+  /** Pre-ticks these channels (Extractions' "Re-read this channel"); the window and Re-read stay the admin's. */
+  export function choose(ids: string[]) {
+    chosen = ids.filter((id) => targets.some((t) => t.id === id));
+  }
+
   const poller = createPoller<RescanJob>({
     task: (signal) => client.get<RescanJob>(`/api/admin/rescan/${encodeURIComponent(job!.id)}`, { signal }),
     intervalMs: 1000,

@@ -1,0 +1,744 @@
+// Extractions (mockups B_Extract, B_ExtractPrompt; spec "Extractions", gate
+// G5): one "Calls" window with search, Filters (n) and Re-read channels on the
+// title bar; a 360 px listbox of two-line calls beside the chosen call. The
+// call: eyebrow, time heading and meta with pill tabs at the end; Changes and
+// Chat read beside a 250 px outcome card, Prompt and Raw in a code viewer.
+// The list, the thread and the code body each scroll on their own.
+
+.extract-window {
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+}
+
+.extract-window__head {
+  flex-wrap: nowrap;
+}
+
+.extract-window__head .card__title {
+  flex: none;
+}
+
+.extract-window__actions {
+  display: flex;
+  align-self: center;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.extract-window__search {
+  flex: 0 1 200px;
+  min-width: 8rem;
+}
+
+.extract-window__search input {
+  width: 100%;
+  min-width: 0;
+}
+
+.card__head .extract-window__reread {
+  gap: 6px;
+  white-space: nowrap;
+}
+
+// The log filters on the title bar: "Filters (n)", its chips and Clear in a
+// row; the fields as a popover under it.
+.extract-window__filters {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.extract-window__filters .logfilters {
+  position: relative;
+  margin: 0;
+}
+
+.extract-window__filters .logfilters__row {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.extract-window__filters .logfilters__chip {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.extract-window__filters .logfilters__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: min(36rem, calc(100vw - 2rem));
+  max-height: min(70dvh, 32rem);
+  overflow: auto;
+  margin: 0;
+  border-radius: 20px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+
+// Inside the popover the buttons are the surface's, not the title bar's.
+.card__head .logfilters__panel .btn {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.extract-window__body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+}
+
+.extract-window__body--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+// Re-read: a popover over the panes that stays mounted while folded.
+.extract-reread {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 20;
+  width: min(40rem, calc(100% - 20px));
+  max-height: calc(100% - 16px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 10px;
+  border-radius: 24px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+// ── list pane (mockup `.crow`) ──
+
+.extract-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px;
+  border-right: 1.5px solid var(--line);
+  background: var(--pane);
+}
+
+.extract-window__body--single .extract-list {
+  border-right: 0;
+}
+
+.extract-list > .list-pane {
+  flex: 1 1 auto;
+}
+
+.extract-list .list-pane__options {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3px;
+  padding: 0;
+}
+
+.extract-list > .flash,
+.extract-list > .empty {
+  margin: 0 0 10px;
+}
+
+.extract-list > .pager {
+  flex-wrap: nowrap;
+  margin: 7px -10px -10px;
+  padding: 6px 10px;
+}
+
+.extract-list .pager__at {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--fs-mini);
+  text-align: center;
+}
+
+.list-pane__options > li.extract-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 12px;
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.list-pane__options > li.extract-row:hover {
+  background: var(--row-hover);
+  --dim: var(--dim-text);
+}
+
+.list-pane__options > li.extract-row--selected,
+.list-pane__options > li.extract-row--active {
+  border-radius: 18px;
+  background: var(--select);
+  box-shadow: inset 0 0 0 1.5px var(--select-edge);
+  --dim: var(--dim-text);
+}
+
+.extract-row__line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.extract-row__at {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.extract-row--selected .extract-row__at {
+  font-weight: 700;
+}
+
+// The shared state pills (`.tone--*`), at the board's row size; "no change"
+// is quieter by shape: a dashed ring, no fill.
+.tone.extract-row__out {
+  flex: none;
+  min-height: 0;
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 9px;
+  font-size: var(--fs-mini);
+  font-weight: 400;
+}
+
+.tone--neutral.extract-row__out {
+  padding: 0 6.5px;
+  border: 1.5px dashed var(--line);
+  box-shadow: none;
+  color: var(--ink);
+}
+
+.extract-row__meta {
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+}
+
+// The channel keeps a readable stub; long facts (tokens, reasoning) give way first.
+.extract-row__channel {
+  flex: 1 0 auto;
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.extract-row__facts {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// ── the chosen call ──
+
+.extract-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  overflow: clip;
+  padding: 14px 18px;
+}
+
+.extract-detail:focus {
+  outline: none;
+}
+
+.extract-detail__head {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.extract-detail__title {
+  flex: 1 1 auto;
+  line-height: 1.25;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.extract-detail__when {
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--fs-brand);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.extract-detail__meta {
+  margin: 0;
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+}
+
+// Pill tabs inside the pane (spec "Detail pane", mockup `.ptab`).
+.extract-detail__tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.extract-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 15px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.extract-tab:hover {
+  background: var(--row-hover);
+}
+
+.extract-tab[aria-selected="true"] {
+  background: var(--select);
+  color: var(--select-ink);
+}
+
+.extract-tab__count {
+  font-size: var(--fs-micro);
+}
+
+.extract-detail__body {
+  flex: 1 1 auto;
+  display: flex;
+  gap: 12px;
+  min-height: 0;
+}
+
+.extract-detail__none {
+  margin: 0;
+  color: var(--dim-text);
+}
+
+// Thread panel, one-line messages (spec "Thread panel").
+.extract-thread {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: clip;
+  border-radius: 24px;
+  background: var(--pane);
+}
+
+.extract-thread__bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 0 12px 0 16px;
+  border-bottom: 1.5px solid var(--line);
+}
+
+.extract-thread__title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--fs-body-sm);
+  font-weight: 700;
+}
+
+.extract-thread__range {
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+}
+
+.extract-thread__body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 8px 10px;
+  list-style: none;
+}
+
+.extract-thread__body:focus-visible {
+  outline-offset: -3px;
+}
+
+.extract-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 5px 10px;
+  border-radius: 6px;
+}
+
+.extract-msg--none {
+  color: var(--dim-text);
+  font-style: italic;
+}
+
+.extract-msg__av {
+  flex: none;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  clip-path: polygon(50% 0%, 75% 7%, 93% 25%, 100% 50%, 93% 75%, 75% 93%, 50% 100%, 25% 93%, 7% 75%, 0% 50%, 7% 25%, 25% 7%);
+  background: var(--win);
+  color: var(--win-ink);
+  font-family: var(--display);
+  font-size: var(--fs-micro);
+  font-weight: 700;
+}
+
+.extract-msg__line {
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  min-width: 0;
+  line-height: 1.5;
+}
+
+.extract-msg__who {
+  flex: none;
+  font-size: var(--fs-small);
+  font-weight: 700;
+}
+
+.extract-msg__at {
+  flex: none;
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+}
+
+.extract-msg__text {
+  min-width: 0;
+  font-size: var(--fs-body-sm);
+  overflow-wrap: anywhere;
+}
+
+// Changes: reasoning, the proposed changes and any error, on the pane.
+.extract-changes {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 12px 16px;
+  border-radius: 24px;
+  background: var(--pane);
+}
+
+.extract-changes:focus-visible {
+  outline-offset: -3px;
+}
+
+.extract-changes > :first-child {
+  margin-top: 0;
+}
+
+// The outcome card (mockup aside): a tonal container, no outline.
+.extract-outcome {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 250px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  border-radius: 24px;
+  background: var(--select);
+  --dim: var(--dim-text);
+}
+
+.extract-outcome .cap.extract-outcome__cap {
+  color: var(--select-ink);
+}
+
+.extract-outcome__headline {
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: 700;
+}
+
+.extract-outcome__error {
+  margin: 0;
+  color: var(--risk-text);
+  font-size: var(--fs-small);
+}
+
+.extract-outcome__change {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--surface);
+  font-size: var(--fs-small);
+  line-height: 1.3;
+}
+
+.extract-outcome__call {
+  margin-top: 6px;
+}
+
+.extract-outcome__facts {
+  margin: 0;
+  font-size: var(--fs-mini);
+  line-height: 1.5;
+}
+
+.extract-outcome__gap {
+  flex: 1 1 auto;
+}
+
+.extract-outcome__reread {
+  min-height: 34px;
+  border-radius: 16px;
+}
+
+// ── code viewer (B_ExtractPrompt) ──
+
+.extract-code {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: clip;
+  border-radius: 20px;
+  background: var(--pane);
+}
+
+.extract-code__bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 10px 0 16px;
+  border-bottom: 1.5px solid var(--line);
+}
+
+.extract-code__title {
+  margin: 0;
+  font-family: var(--body);
+  font-size: var(--fs-small);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.extract-code__chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 12px;
+  background: var(--chip-fill);
+  font-size: var(--fs-mini);
+  white-space: nowrap;
+}
+
+.extract-code__gap {
+  flex: 1 1 auto;
+}
+
+.extract-code__find {
+  flex: 0 1 170px;
+  min-width: 6rem;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 15px;
+  font-size: var(--fs-mini);
+}
+
+.extract-code__btn {
+  min-height: 30px;
+  border-radius: 15px;
+}
+
+// Its own height up to the viewer's, then it scrolls.
+.extract-code__body {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.extract-code__body--nowrap {
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.extract-code__body:focus-visible {
+  outline-offset: -3px;
+}
+
+// Each line hangs past the 28 px gutter, so a wrapped line keeps its indent.
+.extract-code__line {
+  position: relative;
+  display: block;
+  min-height: 1.65em;
+  padding-left: 28px;
+}
+
+.extract-code__ln {
+  position: absolute;
+  left: 0;
+  color: var(--dim-text);
+  user-select: none;
+}
+
+.extract-code__body mark {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--warn) 45%, var(--surface));
+  color: var(--ink);
+}
+
+.extract-window__back {
+  justify-self: start;
+  margin: 10px 18px 0;
+}
+
+// Narrower windows: a narrower list and outcome card.
+@media (max-width: 1199px) {
+  .extract-window__body {
+    grid-template-columns: 290px minmax(0, 1fr);
+  }
+
+  .extract-outcome {
+    width: 220px;
+  }
+
+  .extract-detail__head {
+    flex-wrap: wrap;
+  }
+}
+
+// Phones and narrow windows: the list, or the chosen call, alone.
+@media (max-width: 899px) {
+  .extract-window__head {
+    flex-wrap: wrap;
+    padding-block: 6px;
+  }
+
+  // The wrapped actions keep clear of the bar's floor.
+  .extract-window__actions {
+    flex-wrap: wrap;
+    gap: 8px 6px;
+    width: 100%;
+    margin-left: 0;
+    padding-bottom: 8px;
+  }
+
+  .extract-code__bar {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    padding-block: 7px;
+  }
+
+  .extract-code__gap {
+    display: none;
+  }
+
+  .extract-code__find {
+    flex: 1 1 100%;
+    order: 1;
+  }
+
+  .extract-window__search {
+    flex: 1 1 10rem;
+  }
+
+  .extract-window__body,
+  .extract-window__body--single {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .extract-window__body > .extract-list,
+  .extract-window__body > .extract-detail {
+    grid-row: 1 / -1;
+  }
+
+  .extract-window__body:has(> .extract-window__back) > .extract-detail {
+    grid-row: 2;
+  }
+
+  .extract-detail {
+    padding: 12px 14px;
+  }
+}
+
+// Phones: the call's body scrolls as one; the outcome card follows the thread.
+@media (max-width: 599px), (max-height: 499px) {
+  .extract-detail__body {
+    flex-direction: column;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .extract-thread,
+  .extract-changes,
+  .extract-code {
+    flex: none;
+    overflow: visible;
+  }
+
+  .extract-thread__body,
+  .extract-changes,
+  .extract-code__body {
+    overflow: visible;
+  }
+
+  .extract-outcome {
+    width: auto;
+    overflow: visible;
+  }
+}
+
+// A phone with a call open: the top bar's "‹ Extractions" leads back, so the
+// title bar keeps only its name.
+.extract-window--compact .extract-window__actions {
+  display: none;
+}

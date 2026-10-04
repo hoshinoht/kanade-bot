@@ -183,6 +183,22 @@ const PAIRS: Pair[] = [
     },
   },
   {
+    name: 'extract',
+    board: 'B_Extract',
+    // The board shows the newest call open on Chat read (the default tab).
+    path: '/extractions',
+    ready: (page) => expect(page.getByRole('list', { name: 'Messages read' }).getByRole('listitem').first()).toBeVisible(),
+  },
+  {
+    name: 'extract-prompt',
+    board: 'B_ExtractPrompt',
+    path: '/extractions',
+    ready: async (page) => {
+      await page.getByRole('tab', { name: 'Prompt' }).click();
+      await expect(page.getByRole('tabpanel', { name: 'Prompt' }).locator('pre')).toContainText('Messages:');
+    },
+  },
+  {
     name: 'phone-week',
     board: 'B_PhoneWeek',
     path: '/',
