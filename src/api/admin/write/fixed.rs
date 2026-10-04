@@ -439,7 +439,8 @@ pub struct ValidateRequest {
 }
 
 #[derive(Serialize)]
-struct ValidateResult {
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub(crate) struct ValidateResult {
     bosses: Vec<dto::Boss>,
 }
 

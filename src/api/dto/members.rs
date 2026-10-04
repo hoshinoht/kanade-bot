@@ -9,20 +9,24 @@ use crate::{
 };
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct MemberRow {
     pub id: String,
     pub name: String,
     pub nickname: Option<String>,
     pub aliases: Vec<String>,
     pub runs_this_week: usize,
+    #[cfg_attr(test, ts(type = "PingLevel"))]
     pub ping_level: &'static str,
     pub persona: Option<String>,
     pub persona_available: bool,
     pub bossing: bool,
+    #[cfg_attr(test, ts(type = "'staff' | 'pilot' | 'none'"))]
     pub access: &'static str,
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Persona {
     pub key: String,
     pub name: String,

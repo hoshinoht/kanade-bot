@@ -56,9 +56,11 @@ pub fn routes() -> Router<Arc<Site>> {
 }
 
 #[derive(Serialize)]
-struct SessionView {
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "Session"))]
+pub(crate) struct SessionView {
     display: String,
     /// `discord`, `tailscale` or `token`: only Discord sessions may decide proposals.
+    #[cfg_attr(test, ts(type = "SignInMethod"))]
     method: &'static str,
 }
 
@@ -150,7 +152,8 @@ async fn session(session: AdminSession) -> Response {
 }
 
 #[derive(Serialize)]
-struct Methods {
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "SignInMethods"))]
+pub(crate) struct Methods {
     discord: bool,
     /// This request carries an allow-listed identity from the authenticated edge.
     tailscale: bool,

@@ -14,7 +14,8 @@ pub struct ApiError {
 }
 
 #[derive(Serialize)]
-struct Body {
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "ApiError"))]
+pub(crate) struct Body {
     error: &'static str,
     message: &'static str,
 }

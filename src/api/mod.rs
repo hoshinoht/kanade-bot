@@ -10,3 +10,6 @@ pub mod rescan;
 pub mod server;
 pub mod state;
 pub mod write;
+
+#[cfg(test)]
+mod ts_bindings;

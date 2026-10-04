@@ -14,17 +14,21 @@ use crate::domain::{
 };
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct FixedRunLink {
     pub run_id: String,
     pub short_id: String,
+    #[cfg_attr(test, ts(type = "WeekKey"))]
     pub week: &'static str,
     pub day: u8,
     pub time: Option<String>,
+    #[cfg_attr(test, ts(type = "RunStatus"))]
     pub status: &'static str,
     pub amended: bool,
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct FixedRow {
     pub id: String,
     pub short_id: String,

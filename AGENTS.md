@@ -18,6 +18,7 @@
 - The suite is offline: fake Discord/model providers, loopback stubs, temp stores. Never read `.env`, `data/` or private `config/` from tests.
 - Only `serve --offline` and `healthcheck` run today; config comes from the process environment (`KANADE_TIMEZONE` required, `KANADE_ADMIN_BIND` and optional `KANADE_PUBLIC_BIND` loopback-only). The admin and public routers are separate: admin routes are never mounted on the public listener. See `docs/v5/runtime-bootstrap.md`.
 - Pin new dependencies exactly (`=x.y.z`) with minimal features; keep rustls on `ring` only (no aws-lc/native-tls/openssl).
+- `web/packages/api-types/src/generated.ts` is generated from the API DTOs (`#[cfg_attr(test, derive(ts_rs::TS))]`, list in `src/api/ts_bindings.rs`); after changing a DTO run `KANADE_WRITE_TS=1 cargo test --all-features --lib ts_bindings` (the plain test fails while it is stale). Hand-written leftovers live in `manual.ts`.
 
 ## v4 rollback toolchain
 

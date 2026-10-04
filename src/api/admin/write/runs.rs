@@ -43,26 +43,30 @@ use crate::{
 type Reply = Result<Response, Refusal>;
 
 #[derive(Serialize)]
-struct RunResult {
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub(crate) struct RunResult {
     run: RunDto,
     version: u64,
 }
 
 #[derive(Serialize)]
-struct Previous {
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "MovePrevious"))]
+pub(crate) struct Previous {
     day: u8,
     time: Option<String>,
 }
 
 #[derive(Serialize)]
-struct MoveResult {
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub(crate) struct MoveResult {
     run: RunDto,
     previous: Previous,
     version: u64,
 }
 
 #[derive(Serialize)]
-struct SwapResult {
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub(crate) struct SwapResult {
     runs: [RunDto; 2],
     version: u64,
 }
@@ -501,7 +505,8 @@ pub async fn reset(
 }
 
 #[derive(Serialize)]
-struct Message {
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "PingResult"))]
+pub(crate) struct Message {
     message: String,
 }
 

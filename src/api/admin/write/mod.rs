@@ -9,6 +9,12 @@ mod precondition;
 mod refusal;
 mod runs;
 
+#[cfg(test)]
+pub(crate) use {
+    fixed::ValidateResult,
+    runs::{Message, MoveResult, Previous, RunResult, SwapResult},
+};
+
 use std::sync::Arc;
 
 use axum::{

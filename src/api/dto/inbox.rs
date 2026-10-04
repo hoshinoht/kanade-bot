@@ -27,6 +27,7 @@ use crate::domain::{
 };
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Evidence {
     pub id: String,
     pub author: String,
@@ -41,6 +42,7 @@ pub struct Evidence {
 /// A message of the thread around a card's evidence; `used` when the card
 /// cites it.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ThreadMessage {
     #[serde(flatten)]
     pub message: Evidence,
@@ -55,6 +57,7 @@ pub struct Said {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct FieldChange {
     pub field: String,
     pub from: String,
@@ -62,6 +65,7 @@ pub struct FieldChange {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct FieldConflict {
     pub field: String,
     pub expected: String,
@@ -69,6 +73,7 @@ pub struct FieldConflict {
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "ProposalPreview"))]
 pub struct Preview {
     pub no_effect: bool,
     pub changes: Vec<FieldChange>,
@@ -76,6 +81,7 @@ pub struct Preview {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "ProposalChoice"))]
 pub struct Choice {
     pub run_id: String,
     pub label: String,
@@ -84,6 +90,7 @@ pub struct Choice {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "ProposalSelfService"))]
 pub struct SelfService {
     pub member: Named,
     pub via: &'static str,
@@ -91,14 +98,19 @@ pub struct SelfService {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "Proposal"))]
 pub struct ProposalDto {
     pub id: String,
     pub short_id: String,
+    #[cfg_attr(test, ts(type = "ProposalKind"))]
     pub kind: &'static str,
     pub kind_label: &'static str,
+    #[cfg_attr(test, ts(type = "ProposalSource"))]
     pub source: &'static str,
+    #[cfg_attr(test, ts(type = "InboxTab"))]
     pub tab: &'static str,
     pub version: u64,
+    #[cfg_attr(test, ts(type = "ProposalFlag[]"))]
     pub flags: Vec<&'static str>,
     pub preview: Preview,
     /// One line on what approving does (party, upcoming reminders); `None`

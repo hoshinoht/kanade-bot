@@ -25,20 +25,26 @@ use crate::{
 
 /// Who closed it; `name` is ready to show (system actors read as Kanade).
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "PastDecider"))]
 pub struct Decider {
+    #[cfg_attr(test, ts(type = "ActorKind"))]
     pub kind: &'static str,
     pub id: String,
     pub name: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct PastItem {
     pub id: String,
     pub short_id: String,
+    #[cfg_attr(test, ts(type = "ProposalKind | 'change'"))]
     pub kind: &'static str,
     pub kind_label: &'static str,
     /// `extractor` for proposals, `self_service` for member requests.
+    #[cfg_attr(test, ts(type = "InboxTab"))]
     pub tab: &'static str,
+    #[cfg_attr(test, ts(type = "ProposalSource"))]
     pub source: &'static str,
     /// The extraction log or chat interaction that staged a proposal.
     pub source_id: Option<String>,
@@ -46,6 +52,7 @@ pub struct PastItem {
     pub channel: Option<String>,
     /// The member who asked (requests only).
     pub requester: Option<Named>,
+    #[cfg_attr(test, ts(type = "PastOutcome"))]
     pub outcome: &'static str,
     pub decided_by: Option<Decider>,
     pub decided_at: String,
@@ -58,6 +65,7 @@ pub struct PastItem {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct PastPage {
     pub items: Vec<PastItem>,
     /// The `before` cursor of the next page; `None` on the last.

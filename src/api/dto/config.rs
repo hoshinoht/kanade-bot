@@ -28,6 +28,7 @@ use crate::{
 const SUMMARY_CHARS: usize = 140;
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ConfigView {
     pub pings: Pings,
     pub watching: Watching,
@@ -45,18 +46,21 @@ pub struct ConfigView {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Pings {
     pub day_of_ping_time: String,
     pub countdown_minutes: Vec<u32>,
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Watching {
     pub paused: bool,
     pub extract_enabled: bool,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Rate {
     pub count: u32,
     pub window_s: u32,
@@ -72,6 +76,7 @@ impl From<StoredRate> for Rate {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Chatbot {
     pub enabled: bool,
     pub configured: bool,
@@ -81,18 +86,22 @@ pub struct Chatbot {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Notifications {
     pub quiet_mode: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct RunLengthOverride {
     pub boss: String,
+    #[cfg_attr(test, ts(type = "Difficulty"))]
     pub difficulty: String,
     pub minutes: u32,
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct RunLengths {
     pub default_minutes: u32,
     pub overrides: Vec<RunLengthOverride>,
@@ -111,13 +120,17 @@ pub fn run_lengths(settings: &StoredRunLengths) -> RunLengths {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "SelfServiceSettings"))]
 pub struct SelfService {
+    #[cfg_attr(test, ts(type = "SelfServiceMode"))]
     pub mode: &'static str,
+    #[cfg_attr(test, ts(type = "SelfServiceMode"))]
     pub effective_mode: &'static str,
     pub public_portal: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct PersonaEntry {
     pub key: String,
     pub name: String,
@@ -125,6 +138,7 @@ pub struct PersonaEntry {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ReplyProfile {
     pub key: String,
     pub name: String,
@@ -134,6 +148,7 @@ pub struct ReplyProfile {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "RoleProfileView"))]
 pub struct RoleProfile {
     pub role_id: String,
     pub role_name: Option<String>,
@@ -141,6 +156,7 @@ pub struct RoleProfile {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "PersonaSettings"))]
 pub struct Persona {
     pub active: String,
     pub personas: Vec<PersonaEntry>,
@@ -181,15 +197,19 @@ fn role_profiles(assignments: &[StoredRoleProfile], roles: &[RoleEntry]) -> Vec<
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Admission {
     pub max_in_flight: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub adapter_max_in_flight: Option<u32>,
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ModelInfo {
     pub id: String,
+    #[cfg_attr(test, ts(type = "'homelab' | 'external' | 'unknown'"))]
     pub trust_zone: &'static str,
     pub leaves_homelab: bool,
     pub function_tools: bool,
@@ -198,41 +218,52 @@ pub struct ModelInfo {
     pub reasoning_control: bool,
     pub reasoning_efforts: Option<Vec<&'static str>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub context_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub max_output_tokens: Option<u32>,
     /// False when the alias requires reasoning (a published list without `none`).
     pub off_allowed: bool,
     pub admission: Option<Admission>,
     /// Set on a listed `<base>:<level>` alias: the picker lists the base only.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub variant_of: Option<String>,
     /// The variant's baked-in level in the `reasoning` vocabulary (`:none` is `off`).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub fixed_effort: Option<&'static str>,
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct RoleModel {
     pub alias: String,
     pub reasoning: &'static str,
     /// A stored variant alias: shown as "`variant_of` (fixed: `fixed_effort`)".
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub variant_of: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub fixed_effort: Option<&'static str>,
     /// What the role's next session opens with; absent while unrouted.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub running: Option<Running>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub context: Option<EffectiveContext>,
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct EffectiveContext {
     pub window: u32,
     pub reserve: u32,
     pub prompt_budget: u32,
+    #[cfg_attr(test, ts(type = "ContextSource"))]
     pub source: &'static str,
     pub clamped_by_published: bool,
     pub clamped_by_hard_cap: bool,
@@ -241,12 +272,14 @@ pub struct EffectiveContext {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ContextRole {
     pub reserve: u32,
     pub cap: Option<u32>,
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ContextSettings {
     pub cloud_default: u32,
     pub local_default: u32,
@@ -258,6 +291,7 @@ pub struct ContextSettings {
 
 /// The running alias and the level requests send (inherit and floors resolved).
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "RunningRole"))]
 pub struct Running {
     pub alias: String,
     pub reasoning: Option<&'static str>,
@@ -300,6 +334,7 @@ fn role_model(
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "ModelRoles"))]
 pub struct Roles {
     pub extraction: RoleModel,
     pub chat: RoleModel,
@@ -307,6 +342,7 @@ pub struct Roles {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct CapacityGroup {
     pub model: String,
     pub group: String,
@@ -314,15 +350,19 @@ pub struct CapacityGroup {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct AliasLimit {
     pub alias: String,
     pub max_in_flight: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub adapter_max_in_flight: Option<u32>,
+    #[cfg_attr(test, ts(type = "'published' | 'declared'"))]
     pub source: &'static str,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct KeyLimits {
     /// `None`: Kanata publishes no per-key limit.
     pub max_in_flight: Option<u32>,
@@ -330,7 +370,9 @@ pub struct KeyLimits {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct CapacityCheck {
+    #[cfg_attr(test, ts(type = "'ok' | 'warning' | 'error'"))]
     pub level: &'static str,
     pub message: String,
     /// The capacity group the check is about (`models.groups[].group`);
@@ -339,12 +381,14 @@ pub struct CapacityCheck {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "ModelSettings"))]
 pub struct Models {
     pub reachable: bool,
     pub catalog: Vec<ModelInfo>,
     pub roles: Roles,
     pub groups: Vec<CapacityGroup>,
     /// `default` (the one `gateway` group) or `config` (`[[models.groups]]`).
+    #[cfg_attr(test, ts(type = "'default' | 'config'"))]
     pub groups_source: &'static str,
     pub alias_limits: Vec<AliasLimit>,
     pub key_limits: KeyLimits,
@@ -354,11 +398,13 @@ pub struct Models {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ManageMessages {
     pub missing: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct EnvRow {
     pub key: &'static str,
     pub label: &'static str,
@@ -371,6 +417,7 @@ pub struct EnvRow {
 
 /// The most recent active weekly digest card.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct LastDigest {
     /// RFC 3339 in the guild's offset, whole seconds.
     pub posted_at: String,

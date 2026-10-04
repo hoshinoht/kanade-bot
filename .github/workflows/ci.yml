@@ -48,6 +48,8 @@ jobs:
               - boss/**
               - config/personas/**
               - docs/v5/vectors/**
+              # The lib test checks the generated API types against the DTOs.
+              - web/packages/api-types/**
             web:
               - .github/workflows/ci.yml
               - web/**

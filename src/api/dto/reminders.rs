@@ -13,11 +13,14 @@ use crate::domain::{
 };
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ReminderRow {
     pub id: String,
     pub run_id: String,
     pub run_short_id: String,
+    #[cfg_attr(test, ts(type = "CardKind"))]
     pub kind: &'static str,
+    #[cfg_attr(test, ts(type = "'queued' | 'due' | 'sent' | 'stale'"))]
     pub state: &'static str,
     pub at: String,
     pub bosses: Vec<Boss>,
@@ -26,6 +29,7 @@ pub struct ReminderRow {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Reminders {
     pub upcoming: Vec<ReminderRow>,
     pub sent: Vec<ReminderRow>,

@@ -12,6 +12,9 @@ mod models;
 mod patch;
 mod stack;
 
+#[cfg(test)]
+pub(crate) use access::{AccessReport, AccessRow};
+
 use std::{convert::Infallible, sync::Arc};
 
 use axum::{

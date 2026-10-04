@@ -12,6 +12,13 @@ mod logs;
 mod read;
 mod write;
 
+// Private response types the TypeScript bindings test names.
+#[cfg(test)]
+pub(crate) use {
+    auth::{Methods, SessionView},
+    write::{Message, MoveResult, Previous, RunResult, SwapResult, ValidateResult},
+};
+
 use std::sync::Arc;
 
 use axum::{

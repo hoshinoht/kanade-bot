@@ -17,7 +17,9 @@ pub fn routes() -> Router<Arc<Site>> {
 }
 
 #[derive(Serialize)]
-struct PublicStatus {
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub(crate) struct PublicStatus {
+    #[cfg_attr(test, ts(type = "'open' | 'closed'"))]
     portal: &'static str,
 }
 

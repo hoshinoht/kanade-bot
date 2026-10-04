@@ -60,6 +60,7 @@ impl Context<'_> {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct WeekDay {
     pub index: u8,
     pub date: String,
@@ -69,27 +70,34 @@ pub struct WeekDay {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Tally {
     pub on: usize,
     pub total: usize,
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Participant {
     pub id: String,
     pub name: String,
+    #[cfg_attr(test, ts(type = "Answer"))]
     pub answer: &'static str,
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ReminderCard {
+    #[cfg_attr(test, ts(type = "CardKind"))]
     pub label: &'static str,
+    #[cfg_attr(test, ts(type = "CardState"))]
     pub state: &'static str,
     pub at: String,
     pub url: Option<String>,
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct RosterChange {
     pub out: Vec<Named>,
     #[serde(rename = "in")]
@@ -97,12 +105,14 @@ pub struct RosterChange {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "Run"))]
 pub struct RunDto {
     pub id: String,
     pub day: u8,
     pub time: Option<String>,
     /// Derived from every boss even when an own-time run has no start clock.
     pub minutes: u32,
+    #[cfg_attr(test, ts(type = "RunStatus"))]
     pub status: &'static str,
     pub bosses: Vec<Boss>,
     pub tally: Tally,
@@ -118,6 +128,7 @@ pub struct RunDto {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Week {
     pub starts: String,
     pub timezone: String,
@@ -335,6 +346,7 @@ pub fn week(
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct DayStat {
     pub day: u8,
     pub answered: usize,
@@ -342,6 +354,7 @@ pub struct DayStat {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Stats {
     pub per_day: Vec<DayStat>,
 }
@@ -374,6 +387,7 @@ pub fn stats(ctx: &Context<'_>, snapshot: &ScheduleSnapshot, frame: &WeekFrame) 
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct NextRun {
     pub run_id: String,
     pub bosses: String,
@@ -384,12 +398,14 @@ pub struct NextRun {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "ModelBusy"))]
 pub struct Model {
     pub busy: bool,
     pub holder: Option<String>,
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Summary {
     pub next: Option<NextRun>,
     pub unanswered: usize,

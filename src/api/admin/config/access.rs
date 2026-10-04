@@ -18,7 +18,8 @@ use crate::api::{
 };
 
 #[derive(Debug, Serialize)]
-struct AccessReport {
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub(crate) struct AccessReport {
     connected: bool,
     /// Guild-local, e.g. `Tue 29 Sep 12:00`.
     checked_at: String,
@@ -26,7 +27,8 @@ struct AccessReport {
 }
 
 #[derive(Debug, Serialize)]
-struct AccessRow {
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub(crate) struct AccessRow {
     id: String,
     name: String,
     watched: bool,

@@ -100,10 +100,12 @@ pub fn countdown(minutes: i64) -> String {
 
 /// `common.json#/$defs/Boss`.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Boss {
     pub token: String,
     pub key: String,
     pub name: String,
+    #[cfg_attr(test, ts(type = "Difficulty"))]
     pub difficulty: String,
     pub level: Option<u64>,
     pub portrait: Option<String>,
@@ -188,6 +190,7 @@ pub fn boss(catalog: &BossTable, art: &Art<'_>, token: &str) -> Option<Boss> {
 
 /// `{id, name}` for members and channels.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "Member"))]
 pub struct Named {
     pub id: String,
     pub name: String,
@@ -195,10 +198,12 @@ pub struct Named {
 
 /// `GET /api/admin/roles` row; `color` is `#rrggbb`, absent when uncoloured.
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "Role"))]
 pub struct RoleRow {
     pub id: String,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub color: Option<String>,
 }
 

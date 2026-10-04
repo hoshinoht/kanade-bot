@@ -788,6 +788,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- The web apps' API response types are generated from the Rust DTOs with
+  ts-rs (`web/packages/api-types/src/generated.ts`, checked by a Rust unit
+  test that fails when the file is stale); vocabularies, request bodies and
+  the responses still built with `json!` stay hand-written in `manual.ts`.
 - CI runs each suite only when its inputs change: legacy Python and its
   image for `legacy/python/`, Rust for `src/`, `tests/`, Cargo files and the
   tracked data its tests read, web for `web/`, `tools/pwa-mock/`, boss

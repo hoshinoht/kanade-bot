@@ -26,6 +26,7 @@ const VIDEO_SUFFIXES: [&str; 1] = ["mp4"];
 pub const IDENTITY_SUFFIXES: [&str; 5] = ["png", "webp", "jpg", "jpeg", "gif"];
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Identity {
     name: String,
     /// Carries `?v=<version>` so a refreshed image is a new URL.

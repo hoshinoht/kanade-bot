@@ -15,7 +15,9 @@ use crate::{
 const LETTERS: [&str; 5] = ["e", "n", "h", "c", "x"];
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct DifficultyOption {
+    #[cfg_attr(test, ts(type = "Difficulty"))]
     pub letter: String,
     pub name: String,
     pub token: String,
@@ -23,6 +25,7 @@ pub struct DifficultyOption {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct BossRow {
     pub key: String,
     pub name: String,
@@ -83,6 +86,7 @@ fn stem(key: &str) -> Option<String> {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Knowledge {
     pub key: String,
     pub name: String,
@@ -93,7 +97,9 @@ pub struct Knowledge {
     pub hue: u16,
     pub researched_as_of: Option<String>,
     pub path: String,
+    #[cfg_attr(test, ts(type = "Difficulty[]"))]
     pub in_use: Vec<String>,
+    #[cfg_attr(test, ts(type = "KnowledgeDoc"))]
     pub doc: Value,
 }
 
@@ -141,9 +147,12 @@ pub fn knowledge(
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct EventBoss {
     pub key: String,
+    #[cfg_attr(test, ts(type = "{ name: string; availability: string }"))]
     pub event: Value,
+    #[cfg_attr(test, ts(type = "string"))]
     pub summary: Value,
     pub portrait: Option<String>,
     pub portrait_sm: Option<String>,
