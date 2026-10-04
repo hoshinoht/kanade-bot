@@ -6,12 +6,14 @@
 .frame {
   // Positioned so it is the containing block its overflow clips: otherwise
   // absolutely positioned descendants (visually hidden labels) escape the
-  // clip and give the document a scrollbar on phones.
+  // clip and give the document a scrollbar on phones. `clip`, not `hidden`:
+  // a hidden box is still a scroll container that focus and scrollIntoView
+  // can scroll, shifting the whole fixed shell.
   position: relative;
   height: 100dvh;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: clip;
 }
 
 .shell {

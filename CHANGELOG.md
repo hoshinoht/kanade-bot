@@ -914,6 +914,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 admin and public PWAs: the fixed frame clips instead of hiding overflow,
+  so focusing or revealing a control (opening a Config section) can no longer
+  scroll the whole shell up under the window.
 - v5 admin Week: the selected run card keeps its artwork and status bar inside
   its rounded corners, and a hovered card grows in place and pushes the runs
   below it down instead of covering them.
