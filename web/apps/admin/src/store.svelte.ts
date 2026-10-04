@@ -44,6 +44,8 @@ export class AdminWeek {
   session = $state<Session | null>(null);
   /** The planner's keyboard time step: Config → Run lengths default minutes (30 until it loads). */
   runStep = $state(30);
+  /** This boss week, polled alongside while Next week is on screen (read-only). */
+  #current = $state<Week | null>(null);
   /** A 403 `discord_session_required` arrived anyway (e.g. a session read before sign-in changed). */
   #refusedProposals = $state(false);
 
@@ -69,13 +71,16 @@ export class AdminWeek {
       task: async (signal) => {
         const which = this.which;
         const query = `?week=${which}`;
-        const [week, stats, summary] = await Promise.all([
+        const [week, stats, summary, current] = await Promise.all([
           this.#client.get<Week>(`/api/admin/week${query}`, { signal }),
           this.#client.get<Stats>(`/api/admin/stats${query}`, { signal }),
           this.#client.get<Summary>('/api/admin/summary', { signal }),
+          // Next week on screen: the Glance's next run still lives in this week.
+          which === 'next' ? this.#client.get<Week>('/api/admin/week?week=this', { signal }) : null,
         ]);
         // The tiles describe "right now", not the board, so they never wait for a hold.
         if (JSON.stringify(this.summary) !== JSON.stringify(summary)) this.summary = summary;
+        if (current && !same(this.#current, current)) this.#current = current;
         return [week, stats, which] as Snapshot;
       },
       intervalMs: POLL_MS,
@@ -218,6 +223,17 @@ export class AdminWeek {
 
   run(id: string): Run | undefined {
     return this.week?.runs.find((r) => r.id === id);
+  }
+
+  /** This boss week: the board's own week, or the copy polled while Next is shown. */
+  get thisWeek(): Week | null {
+    return this.which === 'this' ? this.week : this.#current;
+  }
+
+  /** The loaded week holding a run: the one on screen first, then this week. */
+  weekOf(id: string): Week | null {
+    if (this.run(id)) return this.week;
+    return this.thisWeek?.runs.some((r) => r.id === id) ? this.thisWeek : null;
   }
 
   describe(runId: string, slot: Slot): string {

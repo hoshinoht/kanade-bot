@@ -379,6 +379,11 @@ a.week-foot__item:hover,
   }
 }
 
+// A reset day's head holds both the run count and the "reset" mark.
+.week-window .board__count + .board__reset {
+  margin-left: 0.5rem;
+}
+
 /* Run cards (mockup `.card`): a 4 px status stripe, the clock, the bosses, the party.
    The card clips to its own rounded shape, so the entry art, its wash and the
    stripe follow the corners at any radius (selected, grown, phone) instead of
@@ -530,8 +535,24 @@ a.week-foot__item:hover,
   height: 100%;
   object-fit: cover;
   object-position: center 30%;
-  opacity: 0.5;
+  opacity: 0.75;
   mask-image: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 95%) 80%);
+  pointer-events: none;
+}
+
+// A scrim between the art and the text: the card's fill holds behind the text
+// column and thins towards the right edge, so the art still shows there.
+.week-glance__next::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    90deg,
+    var(--select) 0% 40%,
+    color-mix(in srgb, var(--select) 78%, transparent) 75%,
+    color-mix(in srgb, var(--select) 55%, transparent) 100%
+  );
   pointer-events: none;
 }
 
@@ -552,6 +573,17 @@ a.week-foot__item:hover,
 // The countdown under the clock: waves over the final 24 h, marks at T-1h and T-15m.
 .week-glance__countdown {
   margin-block: 2px 4px;
+}
+
+// Over the art the default track (accent over --line) and dim ticks wash out:
+// an opaque track mixed into the card fill and ink-coloured marks.
+.week-glance__countdown .wavy__track {
+  stroke: color-mix(in srgb, var(--accent) 32%, var(--select));
+}
+
+.week-glance__countdown .wavy__tick {
+  stroke: var(--select-ink);
+  stroke-width: 2;
 }
 
 .week-glance__bosses {

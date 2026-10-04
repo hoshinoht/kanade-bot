@@ -58,7 +58,7 @@
           <p class="week-glance__date">{weekStartLabel(week.days[run.day]?.date ?? '')}</p>
           <p class="week-glance__bosses">{#each run.bosses as boss (boss.token)}<BossTag {boss} short />{/each}</p>
           <p class="week-glance__fill mono">
-            {run.tally.on}/{run.tally.total} · {openPlaces(run)}{#if maybe} · {maybe} maybe{/if}
+            {run.tally.on}/{run.tally.total} · {openPlaces(run)}{#if maybe}{` · ${maybe} maybe`}{/if}
           </p>
         {:else}
           <p class="week-glance__bosses">{next.bosses}</p>

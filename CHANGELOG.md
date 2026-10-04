@@ -968,6 +968,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 admin Week Glance: the "Next up" card is readable over bright boss art
+  (stronger art, a scrim behind the text, a darker countdown track and ticks),
+  and the fill line keeps its space before "maybe". On Next week it still shows
+  the next run's portrait and countdown, and Open sheet switches to This week.
+  A busy reset-day column head no longer runs its count into "reset".
 - v5 admin and public PWAs: the fixed frame clips instead of hiding overflow,
   so focusing or revealing a control (opening a Config section) can no longer
   scroll the whole shell up under the window.

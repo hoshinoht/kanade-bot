@@ -265,10 +265,13 @@
   // The run sheet (and its history panel) loads on first open, not with the page.
   let RunSheet = $state<typeof RunSheetType | null>(null);
   async function openSheet(runId: string) {
-    if (!store.run(runId)) return;
+    // A this-week run opened from Next week (the Glance's next run) switches the board back.
+    const elsewhere = !store.run(runId) && which === 'next' && store.weekOf(runId) !== null;
+    if (!store.run(runId) && !elsewhere) return;
     RunSheet ??= (await import('./RunSheet.svelte')).default;
     // The pane lives in the Week window: the palette can open a run from any page.
-    if (route?.key !== 'week') router.go(which === 'next' ? '/?week=next' : '/');
+    if (elsewhere) router.go('/');
+    else if (route?.key !== 'week') router.go(which === 'next' ? '/?week=next' : '/');
     sheetRunId = runId;
     sheetOpen = true;
   }

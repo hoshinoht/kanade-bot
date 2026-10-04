@@ -118,6 +118,8 @@
   // A second click on the open run closes its side pane.
   const toggle = (run: Run) => (run.id === selectedRun && onclose ? onclose() : onopen(run.id));
   const glance = $derived(roomy.current && !phone && !selectedRun && tab === 'planner');
+  // On Next week the next run (and its art and countdown) is usually still in this week.
+  const glanceWeek = $derived(store.summary?.next ? store.weekOf(store.summary.next.run_id) : null);
   // The running boss week's day and reset, a flat bar in the footer (none for next week).
   const weekBar = $derived(store.week ? weekProgress(store.week) : null);
   const VIEWS: { id: WeekTab; label: string }[] = [
@@ -285,7 +287,7 @@
       {#if selectedRun && pane}
         {@render pane()}
       {:else if glance}
-        <Glance summary={store.summary} week={store.week!} {onopen} />
+        <Glance summary={store.summary} week={glanceWeek ?? store.week!} {onopen} />
       {/if}
     </div>
     <footer class="week-window__foot" data-fid="week-foot">
