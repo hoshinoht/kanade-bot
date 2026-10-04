@@ -2,7 +2,8 @@
 <script lang="ts">
   import { SvelteSet } from 'svelte/reactivity';
   import type { ConfigView, ReplyProfile, Role } from '@kanade/api-types';
-  import { Modal, PendingLabel, type Toaster } from '@kanade/ui';
+  import { Modal, PendingLabel, Select, type Toaster } from '@kanade/ui';
+  import '@kanade/ui/styles/select.scss';
   import { send } from '../resource.svelte';
   import Pager from '../pages/Pager.svelte';
   import { paged } from '../pages/paging';
@@ -217,12 +218,16 @@
   {/snippet}
   <div class="settings__tabpanel" role="tabpanel" id="{uid}-panel-active" aria-labelledby="{uid}-tab-active" hidden={tab !== 'active'}>
     <form class="settings__card settings__card--row persona__active" data-fid="cfg-card" onsubmit={askPersona} aria-describedby="{uid}-help">
-      <label class="field"
+      <div class="field"
         ><span>Active persona</span>
-        <select bind:value={active} class:settings__changed={active !== persona.active}>
-          {#each persona.personas as p (p.key)}<option value={p.key}>{p.name}</option>{/each}
-        </select>
-      </label>
+        <Select
+          label="Active persona"
+          bind:value={active}
+          class={active !== persona.active ? 'settings__changed' : ''}
+          options={persona.personas.map((p) => ({ value: p.key, label: p.name }))}
+          noun="personas"
+        />
+      </div>
       <button class="btn btn--primary settings__key" data-fid="cfg-persona-use" type="submit" disabled={!persona.personas.length}>Use this persona</button>
       <p class="settings__cardnote persona__effective" id="{uid}-help">
         Swaps identity, default behaviour and staging together.<br /><span role="status"
@@ -407,7 +412,7 @@
 </Modal>
 
 <style>
-  .persona__active .field select {
+  .persona__active .field {
     width: 12.5rem;
   }
 

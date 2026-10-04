@@ -7,7 +7,8 @@
 -->
 <script lang="ts">
   import type { ChangeRecord, HistoryPage, Member } from '@kanade/api-types';
-  import { initial } from '@kanade/ui';
+  import { initial, Select } from '@kanade/ui';
+  import '@kanade/ui/styles/select.scss';
   import { SvelteSet } from 'svelte/reactivity';
   import { SURFACE_LABELS, actorName, describe, localAt, relativeAt } from '../history/describe';
   import { memberLabel } from '../names/directory.svelte';
@@ -92,13 +93,13 @@
   <div class="runlog__bar">
     <h3 class="cap runlog__title" id="{uid}-title">Changes</h3>
     {#if fields.length > 1}
-      <label class="btn runlog__filter" class:runlog__filter--on={field}
-        ><span class="runlog__filter-label">By field</span>
-        <select bind:value={field}>
-          <option value="">every field</option>
-          {#each fields as f (f)}<option value={f}>{fieldLabel(f, names)}</option>{/each}
-        </select></label
-      >
+      <Select
+        size="bar"
+        label="By field"
+        bind:value={field}
+        options={[{ value: '', label: 'every field' }, ...fields.map((f) => ({ value: f, label: fieldLabel(f, names) }))]}
+        noun="fields"
+      />
     {/if}
   </div>
   {#if error}<p class="field__error" role="alert">{error}</p>{/if}
@@ -174,49 +175,6 @@
   .runlog__title {
     flex: 1 1 auto;
     margin: 0;
-  }
-
-  .runlog__filter {
-    gap: 0.25rem;
-    min-height: 2rem;
-    max-width: 100%;
-    padding: 0 0.35rem 0 0.75rem;
-    border-radius: 1rem;
-    cursor: pointer;
-  }
-
-  .runlog__filter--on {
-    background: var(--select);
-    box-shadow: inset 0 0 0 1.5px var(--select-edge);
-  }
-
-  .runlog__filter-label {
-    font-weight: 600;
-    white-space: nowrap;
-  }
-
-  .runlog__filter-label::after {
-    content: ':';
-  }
-
-  .runlog__filter select {
-    field-sizing: content;
-    min-width: 0;
-    max-width: 12rem;
-    min-height: 0;
-    padding: 0.2rem 0.1rem;
-    border: 0;
-    background: transparent;
-    box-shadow: none;
-    color: inherit;
-    font: inherit;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .runlog__filter:focus-within {
-    outline: 2px solid var(--win-ink);
-    outline-offset: 1px;
   }
 
   .runlog__list {

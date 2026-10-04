@@ -70,3 +70,7 @@ export { dayOf, rangeWords, serverClock, type ServerClock } from './components/c
 // The Move picker's day strip and time stepper (P_MoveStates), and the weekday-only strip.
 export { default as DayStrip, type StripDay } from './components/DayStrip.svelte';
 export { default as TimeStepper } from './components/TimeStepper.svelte';
+// The dropdown (P_Select boards): select-only combobox, multi-select, and the phone's native picker.
+export { default as Select } from './components/Select.svelte';
+export { default as MultiSelect } from './components/MultiSelect.svelte';
+export { countWords, filterOptions, NATIVE_QUERY, type SelectOption } from './components/select';

@@ -5,7 +5,8 @@
 -->
 <script lang="ts">
   import type { ChatTurn } from '@kanade/api-types';
-  import { LoadingState, type Toaster } from '@kanade/ui';
+  import { LoadingState, Select, type Toaster } from '@kanade/ui';
+  import '@kanade/ui/styles/select.scss';
   import LogTime from '../logs/LogTime.svelte';
   import TokenUsage from '../logs/TokenUsage.svelte';
   import { duration } from '../logs/format';
@@ -75,10 +76,16 @@
       </p>
     </div>
     <!-- For agent debugging: the whole turn as one paste. -->
-    <label class="field chat-turn__format"
-      ><span class="vh">Transcript format</span>
-      <select bind:value={format}><option value="markdown">Markdown</option><option value="json">JSON</option></select>
-    </label>
+    <div class="chat-turn__format">
+      <Select
+        label="Transcript format"
+        bind:value={() => format, (v) => (format = v as typeof format)}
+        options={[
+          { value: 'markdown', label: 'Markdown' },
+          { value: 'json', label: 'JSON' },
+        ]}
+      />
+    </div>
     <button class="btn btn--primary chat-turn__copy" data-fid="chat-copy" type="button" onclick={() => void copyTranscript()}>Copy transcript</button>
   </div>
   <div class="chat-turn__tabs" role="tablist" aria-label="Sections of this interaction" data-fid="chat-tabs">

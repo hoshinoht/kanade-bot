@@ -2,7 +2,8 @@
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/members.scss';
   import type { MemberRow, Persona, PingLevel, Week } from '@kanade/api-types';
-  import { LoadError, Presence, RowContent } from '@kanade/ui';
+  import { LoadError, Presence, RowContent, Select } from '@kanade/ui';
+  import '@kanade/ui/styles/select.scss';
   import Pager from '../pages/Pager.svelte';
   import { paged } from '../pages/paging';
   import { memberLabel } from '../names/directory.svelte';
@@ -85,13 +86,19 @@
       <label class="vh" for="members-search">Search members</label>
       <input id="members-search" type="search" bind:value={query} placeholder="name, nickname, alias…" autocomplete="off" spellcheck="false" />
     </div>
-    <label class="btn members-window__sort" data-fid="members-sort">
-      <span class="members-window__sort-label">Sort</span>
-      <select bind:value={order} aria-label="Sort members">
-        <option value="runs">runs</option>
-        <option value="name">A–Z</option>
-      </select>
-    </label>
+    <div class="members-window__sort" data-fid="members-sort">
+      <Select
+        size="tbar"
+        label="Sort"
+        fullLabel="Sort members"
+        plain
+        options={[
+          { value: 'runs', label: 'runs' },
+          { value: 'name', label: 'A–Z' },
+        ]}
+        bind:value={() => order, (v) => (order = v as MemberOrder)}
+      />
+    </div>
   </div>
   <div class="members-window__body">
     <div class="members-roster" data-fid="members-list">

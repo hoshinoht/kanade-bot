@@ -722,3 +722,45 @@ dialog.runsheet--narrow .modal__head {
 .runsheet__moverow .runsheet__movekey .btn--primary {
   justify-content: center;
 }
+
+/* ── add pickers (Select): quiet action pickers, not form fields ───────── */
+
+// The party's "+ add…" chip keeps its dashed outline; the slot's "Add someone…" stays a bare row.
+.ddw.ddw--field:has(> .chip__add) {
+  display: inline-flex;
+  width: auto;
+}
+
+.dd.dd.chip__add {
+  width: auto;
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px 0 10px;
+  border: 1.5px dashed var(--line);
+  border-radius: 13px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+}
+
+.dd.dd.slot__add {
+  min-width: 0;
+  height: 32px;
+  padding: 0 4px 0 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--fs-body-sm);
+}
+
+.dd.dd.slot__add .dd__value,
+.dd.dd.chip__add .dd__value {
+  color: inherit;
+  font-weight: 600;
+}
+
+.slot--open .ddw {
+  flex: 1 1 auto;
+  min-width: 0;
+}

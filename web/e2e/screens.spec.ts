@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, csrf, expect, test } from './support';
+import { ADMIN, csrf, expect, test, choose, expectValue, optionLabels } from './support';
 
 // Fixed, Bosses, Members, Reminders and the run sheet's weekly-timing tools,
 // against the mock pinned to Tue 29 Sep 2026 12:00 (playwright.config.ts).
@@ -31,7 +31,7 @@ test('fixed: table, bosscheck, add a timing, and its runs reach the board', asyn
   await editor.getByRole('radio', { name: 'Wednesday' }).click();
   await expect(editor.getByRole('radio', { name: 'Wednesday' })).toHaveAttribute('aria-checked', 'true');
   await editor.getByLabel('Time').fill('20:30');
-  await editor.getByLabel('Home channel').selectOption({ label: '#limbo-trio' });
+  await choose(editor.getByLabel('Home channel'), { label: '#limbo-trio' });
   await editor.getByRole('checkbox', { name: 'Mika' }).check();
   await editor.getByRole('checkbox', { name: 'Nagi' }).check();
   await editor.getByRole('button', { name: 'Add timing' }).click();
@@ -156,10 +156,10 @@ test('fixed: the owner is preselected, changes by PATCH owner_id, and reads back
   const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
   await editButton.click();
   const owner = editor.getByLabel('Owner');
-  await expect(owner).toHaveValue('1012');
-  await expect(owner.locator('option:checked')).toHaveText('Minato');
+  await expectValue(owner, '1012');
+  await expect(owner.locator('.dd__value')).toHaveText('Minato');
   // Only the roster is offered (Kohane has chatbot access but no bossing role).
-  await expect(owner.locator('option', { hasText: 'Kohane' })).toHaveCount(0);
+  expect((await optionLabels(owner)).filter((l) => l.includes('Kohane'))).toEqual([]);
   // The weekday strip takes its own line (P_MoveStates "Reuse"); Owner sits on the Time line.
   const tops = await editor.locator('.fixedsheet__fields > .field').evaluateAll((fields) => fields.map((f) => Math.round(f.getBoundingClientRect().top)));
   expect(tops).toHaveLength(3);
@@ -167,7 +167,7 @@ test('fixed: the owner is preselected, changes by PATCH owner_id, and reads back
   expect(tops[1]).toBe(tops[2]);
   await expect(editor.getByRole('radio', { name: 'Tuesday' })).toHaveAttribute('aria-checked', 'true');
 
-  await owner.selectOption({ label: 'Kaito' });
+  await choose(owner, { label: 'Kaito' });
   const sent = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().includes('/api/admin/fixed/'));
   await editor.getByRole('button', { name: 'Save changes' }).click();
   expect((await sent).postDataJSON()).toMatchObject({ owner_id: '1009' });
@@ -179,7 +179,7 @@ test('fixed: the owner is preselected, changes by PATCH owner_id, and reads back
   await expect(page.getByRole('row', { name: /Black Mage/ })).toBeVisible();
   await page.getByRole('searchbox', { name: 'Search weekly timings' }).fill('');
   await editButton.click();
-  await expect(owner).toHaveValue('1009');
+  await expectValue(owner, '1009');
 });
 
 test('fixed: a new timing is owned by the Discord admin, else by the first party member picked', async ({ page }) => {
@@ -188,21 +188,21 @@ test('fixed: a new timing is owned by the Discord admin, else by the first party
   await page.getByRole('button', { name: 'Add a weekly timing' }).click();
   const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
   // The mock signs in with Discord as Asahi.
-  await expect(editor.getByLabel('Owner')).toHaveValue('1001');
+  await expectValue(editor.getByLabel('Owner'), '1001');
   await editor.getByRole('button', { name: 'Close weekly timing details' }).click();
 
   await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'token' } });
   await go(page, '/fixed');
   await page.getByRole('button', { name: 'Add a weekly timing' }).click();
   const owner = editor.getByLabel('Owner');
-  await expect(owner.locator('option:checked')).toHaveText('First party member');
+  await expect(owner.locator('.dd__value')).toHaveText('First party member');
   await editor.getByRole('checkbox', { name: 'Mika' }).check();
   await editor.getByRole('checkbox', { name: 'Nagi' }).check();
-  await expect(owner).toHaveValue('1003');
+  await expectValue(owner, '1003');
   // Picked by hand, it stays put while the party changes.
-  await owner.selectOption({ label: 'Yuzu' });
+  await choose(owner, { label: 'Yuzu' });
   await editor.getByRole('checkbox', { name: 'Mika' }).uncheck();
-  await expect(owner).toHaveValue('1004');
+  await expectValue(owner, '1004');
   await editor.locator('.bossrow', { hasText: 'Limbo' }).locator('label', { hasText: 'HARD' }).click();
   await editor.getByLabel('Time').fill('19:15');
   const sent = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/api/admin/fixed'));
@@ -216,7 +216,7 @@ test('fixed: an owner refusal (422) reads out on the Owner field and keeps the f
   await go(page, '/fixed');
   await page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' }).click();
   const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
-  await editor.getByLabel('Owner').selectOption({ label: 'Rin' });
+  await choose(editor.getByLabel('Owner'), { label: 'Rin' });
   await page.route('**/api/admin/fixed/*', (route) =>
     route.request().method() === 'PATCH'
       ? route.fulfill({ status: 422, contentType: 'application/json', body: '{"error":"invalid","message":"Pick an owner from the roster."}' })
@@ -227,10 +227,10 @@ test('fixed: an owner refusal (422) reads out on the Owner field and keeps the f
   await expect(owner).toHaveAttribute('aria-invalid', 'true');
   await expect(owner).toHaveAccessibleDescription('Pick an owner from the roster.');
   await expect(owner).toBeFocused();
-  await expect(owner).toHaveValue('1010');
+  await expectValue(owner, '1010');
   await page.unroute('**/api/admin/fixed/*');
   // Picking again clears the refusal; the save goes through.
-  await owner.selectOption({ label: 'Kaito' });
+  await choose(owner, { label: 'Kaito' });
   await expect(owner).not.toHaveAttribute('aria-invalid', 'true');
   await editor.getByRole('button', { name: 'Save changes' }).click();
   await expect(toast(page, 'Saved Tuesday 23:30 — XBM.')).toBeVisible();
@@ -582,7 +582,7 @@ test('members: roster side pane edits for pings, reply style and aliases', async
   // The sheet's notice, not the name's copy status.
   const notice = sheet.locator('[role="status"]:not(.vh)');
   await expect(notice).toHaveText('Pings set to essential.');
-  await sheet.getByLabel('Reply style').selectOption({ label: 'Terse' });
+  await choose(sheet.getByLabel('Reply style'), { label: 'Terse' });
   await expect(notice).toHaveText('Reply style set to Terse.');
   await sheet.getByRole('textbox', { name: 'New alias for Tsubame' }).fill('swallow');
   await sheet.getByRole('button', { name: 'Add' }).click();
@@ -642,9 +642,9 @@ test('members: an alias chip’s × removes it from the sheet and the roster, by
 test('members: "Sort: runs" orders by runs this week, A–Z between equals, and switches to A–Z', async ({ page }) => {
   await go(page, '/members');
   const sort = page.getByRole('combobox', { name: 'Sort members' });
-  await expect(page.locator('.members-window__sort')).toHaveText(/^\s*Sort\s*runs\s*A–Z\s*$/);
-  await expect(sort).toHaveValue('runs');
-  await expect(sort.locator('option:checked')).toHaveText('runs');
+  await expect(page.locator('.members-window__sort')).toHaveText(/^\s*Sort\s*runs\s*$/);
+  await expectValue(sort, 'runs');
+  await expect(sort.locator('.dd__value')).toHaveText('runs');
   const list = page.getByRole('list', { name: 'Members' });
   const roster = () =>
     list.locator('.memberlist__row').evaluateAll((rows) =>
@@ -659,8 +659,8 @@ test('members: "Sort: runs" orders by runs this week, A–Z between equals, and 
   }
   expect(byRuns.at(-1)!.runs).toBe(0);
 
-  await sort.selectOption('name');
-  await expect(sort.locator('option:checked')).toHaveText('A–Z');
+  await choose(sort, 'name');
+  await expect(sort.locator('.dd__value')).toHaveText('A–Z');
   const names = (await roster()).map((r) => r.name);
   expect(names).toEqual(names.toSorted((a, b) => a.localeCompare(b)));
   expect(names).not.toEqual(byRuns.map((r) => r.name));
@@ -813,13 +813,14 @@ test('fixed: whole-row selection and hover, quiet flags, the Add key with its pl
   await expect(page.locator('.fixed-list .status').first()).toHaveCSS('text-transform', 'none');
 });
 
-// Fidelity (B_History): "Week: every week" in one pill; no "History" header row in the change pane.
-test('history: filter pills read label: value, and the change pane has no extra header row', async ({ page }) => {
+// Fidelity (B_History, P_SelectSpec): "WEEK every week" in one title-bar dropdown; no "History" header row in the change pane.
+test('history: filter dropdowns read label and value, and the change pane has no extra header row', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(`${ADMIN}/history?sw=off`);
-  const label = page.locator('.history-filter__label').first();
-  await expect(label).toHaveText('Week');
-  expect(await label.evaluate((el) => getComputedStyle(el, '::after').content)).toBe('":"');
+  const week = page.getByRole('combobox', { name: 'Week' });
+  await expect(week.locator('.dd__label')).toHaveText('Week');
+  await expect(week.locator('.dd__value')).toHaveText('every week');
+  await expect(week).toHaveCSS('height', '32px');
   await page.locator('.history-row').nth(1).click();
   const pane = page.getByRole('complementary', { name: 'Change details' });
   await expect(pane).toBeVisible();
@@ -1045,8 +1046,8 @@ test('inbox: a status change shows as status chips under its field name', async 
 test('history filter pills keep their size after visiting the Inbox', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(`${ADMIN}/history?sw=off`);
-  const pill = page.locator('.history-filter').first();
-  const size = () => pill.evaluate((el) => { const c = getComputedStyle(el); return [c.minHeight, c.paddingLeft, c.paddingRight, c.borderRadius].join(' '); });
+  const pill = page.locator('.history-window__filters .dd').first();
+  const size = () => pill.evaluate((el) => { const c = getComputedStyle(el); return [c.height, c.paddingLeft, c.paddingRight, c.borderRadius].join(' '); });
   await expect(pill).toBeVisible();
   const before = await size();
   await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: /^Inbox/ }).click();

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { ConfigView, ReplyProfile, Role, RoleProfileWrite } from '@kanade/api-types';
-  import { PendingLabel } from '@kanade/ui';
+  import { PendingLabel, Select } from '@kanade/ui';
+  import '@kanade/ui/styles/select.scss';
   import type { Change } from './dirty';
   import type { SaveRoleProfiles } from './save';
 
@@ -82,6 +83,7 @@
   );
 
   const profileName = (key: string) => profiles.find((p) => p.key === key)?.name ?? key;
+  const profileOptions = $derived(profiles.map((p) => ({ value: p.key, label: p.name })));
   const label = (id: string) => roleIdentity(id).label;
   // The save bar's summary: added, removed and re-profiled roles, else the new order.
   $effect(() => {
@@ -304,15 +306,15 @@
           {#if currentRole}
             <span class="role-profile__identity">
               <strong class="vh">{identity.label}</strong>
-              <select
+              <Select
                 class="role-profile__select"
-                aria-label="Discord role"
+                label="Discord role"
                 value={assignment.role_id}
+                options={roleOptionsFor(index).map((role) => ({ value: role.id, label: roleName(role) }))}
                 disabled={!canEdit}
-                onchange={(event) => changeRole(index, event.currentTarget.value)}
-              >
-                {#each roleOptionsFor(index) as role (role.id)}<option value={role.id}>{roleName(role)}</option>{/each}
-              </select>
+                noun="roles"
+                onchange={(id) => changeRole(index, id)}
+              />
             </span>
           {:else}
             <span class="role-profile__identity role-profile__identity--missing">
@@ -328,9 +330,7 @@
               >
             </span>
           {/if}
-          <select aria-label="Reply profile" value={assignment.profile} disabled={!canEdit} onchange={(event) => changeRoleProfile(index, event.currentTarget.value)}>
-            {#each profiles as profile (profile.key)}<option value={profile.key}>{profile.name}</option>{/each}
-          </select>
+          <Select label="Reply profile" value={assignment.profile} options={profileOptions} disabled={!canEdit} noun="profiles" onchange={(key) => changeRoleProfile(index, key)} />
           <span class="role-profile__order">
             <button class="btn role-profile__icon" type="button" aria-label="Move up" disabled={index === 0 || roleSaving || roleRecovering || roleConflict} onclick={() => moveRoleAssignment(index, -1)}
               ><span aria-hidden="true">↑</span></button
@@ -367,13 +367,21 @@
         disabled={rolesLoading || !!rolesError || roles === null}
         placeholder="find a role…"
       />
-      <select aria-label="New assignment role" bind:value={addRoleId} disabled={rolesLoading || !!rolesError || roles === null || availableRoles.length === 0}>
-        <option value="">Choose a role…</option>
-        {#each availableRoles as role (role.id)}<option value={role.id}>{roleName(role)}</option>{/each}
-      </select>
-      <select aria-label="Reply profile" bind:value={addProfile} disabled={!profiles.length || rolesLoading || !!rolesError || roles === null || roles.length === 0}>
-        {#each profiles as profile (profile.key)}<option value={profile.key}>{profile.name}</option>{/each}
-      </select>
+      <Select
+        label="New assignment role"
+        bind:value={addRoleId}
+        options={availableRoles.map((role) => ({ value: role.id, label: roleName(role) }))}
+        placeholder="Choose a role…"
+        noun="roles"
+        disabled={rolesLoading || !!rolesError || roles === null || availableRoles.length === 0}
+      />
+      <Select
+        label="Reply profile"
+        bind:value={addProfile}
+        options={profileOptions}
+        noun="profiles"
+        disabled={!profiles.length || rolesLoading || !!rolesError || roles === null || roles.length === 0}
+      />
       <button class="btn" type="submit" disabled={roleSaving || roleRecovering || roleConflict || !addRoleId || rolesLoading || !!rolesError || !roles?.length}>Add assignment</button>
     </form>
   </div>
@@ -452,8 +460,6 @@
     background: color-mix(in srgb, var(--risk) 7%, var(--row));
   }
 
-  .role-profile__row select,
-  .role-profile__add select,
   .role-profile__add input {
     width: 100%;
     min-width: 0;
@@ -466,7 +472,7 @@
     gap: 0.5rem;
   }
 
-  .role-profile__identity select {
+  .role-profile__identity :global(.ddw) {
     flex: 1 1 auto;
   }
 
@@ -537,7 +543,7 @@
       grid-column: 2 / -1;
     }
 
-    .role-profile__row > select {
+    .role-profile__row > :global(.ddw) {
       grid-column: 2;
     }
 

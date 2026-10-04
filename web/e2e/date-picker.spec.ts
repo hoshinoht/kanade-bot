@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, settle, test } from './support';
+import { ADMIN, expect, settle, test, choose } from './support';
 
 // The date picker (boards P_Dates, P_DatesSpec, P_DatesPhone): Chat and
 // Extractions' From–To range and History's "Since". The mock's clock is Tue
@@ -12,7 +12,7 @@ test.describe.configure({ mode: 'parallel' });
 async function openRange(page: Page, path = '/chat') {
   await page.goto(`${ADMIN}${path}?sw=off`);
   await page.getByRole('button', { name: /^Filters/ }).click();
-  const trigger = page.getByRole('group', { name: 'Filters' }).getByRole('button', { name: /^Dates/ });
+  const trigger = page.getByRole('button', { name: /^Dates/ });
   await expect(trigger).toHaveText(/any date/);
   await trigger.click();
   const dialog = page.getByRole('dialog', { name: /Date range|Dates/ });
@@ -62,7 +62,8 @@ test('chat range: Thursday-first grid, server today, keyboard start and end, App
   await expect(trigger).toBeFocused();
   await expect(trigger).toHaveText(/Thu 24 Sep – Tue 29 Sep/);
   await expect(trigger).toHaveClass(/datepick-trigger--set/);
-  await expect(page.getByRole('button', { name: 'Dates: Thu 24 Sep – Tue 29 Sep — remove' })).toBeVisible();
+  // The trigger shows the range in the filter row, so there is no separate Dates chip.
+  await expect(page.getByRole('button', { name: /^Dates: .* — remove$/ })).toHaveCount(0);
 
   // Escape closes the picker only: the value and the Filters popover stay.
   await trigger.click();
@@ -159,7 +160,7 @@ test('history since: picks on click, closes, and sends the start of that guild d
   await dialog.getByRole('button', { name: 'Last reset · Thu 24' }).click();
   await expect(trigger).toHaveText(/Thu 24 Sep/);
 
-  await pane.getByLabel('Member').selectOption({ label: 'Rin' });
+  await choose(pane.getByLabel('Member'), { label: 'Rin' });
   const preview = page.waitForRequest((r) => r.url().endsWith('/api/admin/history/revert-actor'));
   await pane.getByRole('button', { name: 'Preview' }).click();
   expect((await preview).postDataJSON()).toMatchObject({ since: '2026-09-24T00:00:00' });
@@ -204,7 +205,7 @@ test('motion: 180 ms drop, months cross-fade; reduced motion is a 120 ms fade on
   await page.keyboard.press('Escape');
 
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.getByRole('group', { name: 'Filters' }).getByRole('button', { name: /^Dates/ }).click();
+  await page.getByRole('button', { name: /^Dates/ }).click();
   expect(await anim('dialog.datepick')).toEqual({ name: 'datepick-fade', ms: '0.12s' });
   expect((await anim('.dp-grid')).name).toBe('none');
   // Picks change at once (the app-wide reduced-motion rule leaves 0.001 ms).

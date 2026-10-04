@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Channel, LastDigest } from '@kanade/api-types';
-  import { Icon, Modal, weekStartLabel, type Toaster } from '@kanade/ui';
+  import { Icon, Modal, Select, weekStartLabel, type Toaster } from '@kanade/ui';
+  import '@kanade/ui/styles/select.scss';
   import SettingsPanel from './SettingsPanel.svelte';
   import { Resource, send } from '../resource.svelte';
 
@@ -53,13 +54,15 @@
         <button type="button" aria-pressed={week === 'next'} onclick={() => (week = 'next')}>Next week</button>
       </div>
     </div>
-    <label class="field digest__channel"
+    <div class="field digest__channel"
       ><span>Channel</span>
-      <select bind:value={channel}>
-        <option value="">The digest channel (env)</option>
-        {#each channels.data ?? [] as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
-      </select>
-    </label>
+      <Select
+        label="Channel"
+        bind:value={channel}
+        options={[{ value: '', label: 'The digest channel (env)' }, ...(channels.data ?? []).map((c) => ({ value: c.id, label: c.name }))]}
+        noun="channels"
+      />
+    </div>
     <button class="btn btn--primary settings__key" type="submit" aria-disabled={busy}>Post it now…</button>
   </form>
   {#if error}<p class="field__error" role="alert">{error}</p>{/if}
@@ -98,10 +101,6 @@
 <style>
   .digest__channel {
     flex: 1 1 auto;
-  }
-
-  .digest__channel select {
-    width: 100%;
   }
 
   .digest__last {

@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, PINNED_NOW, test } from './support';
+import { ADMIN, expect, PINNED_NOW, test, choose, optionLabels } from './support';
 
 type Row = { id: string; party: string[]; kind: string; at: string };
 
@@ -81,22 +81,22 @@ test('queued reminders: kind, run, member and day filters narrow and clear', asy
   const filters = page.getByRole('group', { name: 'Filter reminders' });
 
   const kind = filters.getByLabel('Kind');
-  const kinds = await kind.locator('option').allTextContents();
-  await kind.selectOption(kinds[1]!);
+  const kinds = await optionLabels(kind);
+  await choose(kind, kinds[1]!);
   await expect(page.getByRole('button', { name: 'Filters (1)' })).toBeVisible();
   for (const row of await rows.all()) await expect(row.getByRole('cell').nth(2)).toHaveText(kinds[1]!);
   await filters.getByRole('button', { name: 'Clear' }).click();
   await expect(rows).toHaveCount(all);
 
   const run = filters.getByLabel('Run');
-  await run.selectOption({ index: 1 });
-  const short = (await run.locator('option').nth(1).textContent())!.split('#')[1]!;
+  const short = (await optionLabels(run))[1]!.split('#')[1]!;
+  await choose(run, { index: 1 });
   for (const row of await rows.all()) await expect(row).toContainText(`#${short}`);
   await filters.getByRole('button', { name: 'Clear' }).click();
 
   const member = filters.getByLabel('Member');
-  const who = (await member.locator('option').nth(1).textContent())!;
-  await member.selectOption(who);
+  const who = (await optionLabels(member))[1]!;
+  await choose(member, who);
   for (const row of await rows.all()) {
     const chips = await row.locator('.chip').evaluateAll((c) => c.map((e) => `${e.textContent} ${e.getAttribute('title') ?? ''}`).join(' '));
     expect(chips).toContain(who);
@@ -104,8 +104,8 @@ test('queued reminders: kind, run, member and day filters narrow and clear', asy
   await filters.getByRole('button', { name: 'Clear' }).click();
 
   const day = filters.getByLabel('Day');
-  const when = (await day.locator('option').nth(1).textContent())!;
-  await day.selectOption(when);
+  const when = (await optionLabels(day))[1]!;
+  await choose(day, when);
   for (const row of await rows.all()) await expect(row.getByRole('cell').first()).toContainText(when);
   await expect(page.getByText(`${await rows.count()} of ${all} shown`)).toBeVisible();
 

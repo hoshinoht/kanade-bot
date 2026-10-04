@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, expect, test, expectValue } from './support';
 
 // Phone clipping regressions: the Inbox heading's boss tags wrap as whole
 // units, and the Members name cell keeps its name, aliases and chip inside it.
@@ -140,7 +140,7 @@ for (const size of SIZES) {
     await page.setViewportSize(size);
     await page.goto(`${ADMIN}/fixed?open=f-bm&sw=off`);
     const sheet = page.getByRole('dialog', { name: 'Tuesday 23:30 — XBM' });
-    await expect(sheet.getByLabel('Owner')).toHaveValue('1012');
+    await expectValue(sheet.getByLabel('Owner'), '1012');
     const faults = await sheet.locator('.fixedsheet__fields').evaluate((grid) => {
       const meets = (a: DOMRect, b: DOMRect) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
       const bound = grid.closest('dialog')!.getBoundingClientRect();
@@ -150,21 +150,16 @@ for (const size of SIZES) {
       const boxes = [...grid.querySelectorAll<HTMLElement>('.field')].map((field) => ({
         name: field.querySelector('span')!.textContent!.trim(),
         // The Day is the weekday strip (P_MoveStates "Reuse"), a box like the others.
-        box: field.querySelector('select, input, .daystrip')!.getBoundingClientRect(),
+        box: field.querySelector('.dd, input, .daystrip')!.getBoundingClientRect(),
       }));
       boxes.forEach(({ name, box }, i) => {
         if (box.left < bound.left - 0.5 || box.right > bound.right + 0.5) out.push(`${name} leaves the sheet`);
         if (box.width < 120) out.push(`${name} is only ${Math.round(box.width)}px wide`);
         for (const other of boxes.slice(i + 1)) if (meets(box, other.box)) out.push(`${name} meets ${other.name}`);
       });
-      const owner = grid.querySelector<HTMLSelectElement>('.field:nth-child(3) select')!;
-      const text = document.createElement('span');
-      text.textContent = owner.selectedOptions[0]!.textContent;
-      text.style.font = getComputedStyle(owner).font;
-      document.body.append(text);
-      const needed = text.getBoundingClientRect().width;
-      text.remove();
-      if (needed > owner.clientWidth - 24) out.push('the owner name is cut');
+      // The pill draws the value (over the native select on phones); an ellipsis means it is cut.
+      const owner = grid.querySelector<HTMLElement>('.field:nth-child(3) .dd__value')!;
+      if (owner.scrollWidth > owner.clientWidth) out.push('the owner name is cut');
       return { count: boxes.length, out };
     });
     expect(faults.count).toBe(3);

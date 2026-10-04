@@ -7,7 +7,8 @@
 -->
 <script lang="ts">
   import type { ConfigView, ContextSettings, ModelInfo, ModelRole } from '@kanade/api-types';
-  import { Icon } from '@kanade/ui';
+  import { Icon, Select } from '@kanade/ui';
+  import '@kanade/ui/styles/select.scss';
   import { tick } from 'svelte';
   import { ROLES } from './capacity';
   import { clampNotes, isLocal, LOCAL_WARNING, MAX_CONTEXT_TOKENS, overrideMax, SOURCE_LABELS, tokens } from './context';
@@ -81,7 +82,7 @@
     error = '';
   }
   let adding = $state('');
-  let addSelect: HTMLSelectElement | undefined = $state();
+  let addSelect: { focus(): void } | undefined = $state();
   let overrideList: HTMLUListElement | undefined = $state();
 
   const info = (alias: string): ModelInfo | undefined => models.catalog.find((m) => m.id === alias);
@@ -236,12 +237,17 @@
       <p class="note">No overrides: every model uses its published window or a default.</p>
     {/if}
     <div class="filters ctx__add">
-      <label class="field"
+      <div class="field"
         ><span>Override model</span>
-        <select bind:value={adding} bind:this={addSelect} disabled={!models.reachable || !available.length}>
-          {#each available as m (m.id)}<option value={m.id}>{m.id}</option>{/each}
-        </select>
-      </label>
+        <Select
+          label="Override model"
+          bind:value={adding}
+          bind:this={addSelect}
+          options={available.map((m) => ({ value: m.id, label: m.id }))}
+          noun="models"
+          disabled={!models.reachable || !available.length}
+        />
+      </div>
       <button type="button" class="btn" onclick={addOverride} disabled={!models.reachable || !adding}>Add override</button>
     </div>
   </fieldset>

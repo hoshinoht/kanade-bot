@@ -313,10 +313,10 @@
   width: 120px;
 }
 
-.chat-turn__format select {
+.chat-turn__format .dd.dd {
+  min-width: 0;
   height: 36px;
-  min-height: 36px;
-  padding-block: 0;
+  border-radius: 18px;
 }
 
 .chat-turn__copy {

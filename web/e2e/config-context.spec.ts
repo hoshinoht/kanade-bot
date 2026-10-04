@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { ConfigView } from '@kanade/api-types';
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, settle, test } from './support';
+import { ADMIN, expect, settle, test, choose } from './support';
 
 const WARNING = 'Context past 16k may result in degraded performance on local models.';
 const toast = (page: Page, text: string | RegExp) => page.getByRole('group', { name: 'Notification' }).filter({ hasText: text });
@@ -89,7 +89,7 @@ test('context windows: overrides held to the published max, local vs cloud, refu
   const add = overrides.getByRole('button', { name: 'Add override' });
 
   // A local model: published 65,536; the new row's field takes focus.
-  await pick.selectOption('kanata/think');
+  await choose(pick, 'kanata/think');
   await add.click();
   const think = overrides.getByRole('listitem').filter({ has: page.getByText('kanata/think', { exact: true }) });
   const thinkField = think.getByRole('spinbutton', { name: 'kanata/think window' });
@@ -106,7 +106,7 @@ test('context windows: overrides held to the published max, local vs cloud, refu
   await expect(thinkField).toHaveValue('65536');
 
   // A cloud model: published past the hard limit, so held to 131,072; no warning.
-  await pick.selectOption('kanata/chat-cloud');
+  await choose(pick, 'kanata/chat-cloud');
   await add.click();
   const cloud = overrides.getByRole('listitem').filter({ has: page.getByText('kanata/chat-cloud', { exact: true }) });
   const cloudField = cloud.getByRole('spinbutton', { name: 'kanata/chat-cloud window' });
@@ -147,7 +147,7 @@ test('context windows: an override above the published window is refused by the 
   });
   const panel = await open(page);
   const overrides = panel.getByRole('group', { name: 'Per-model overrides' });
-  await overrides.getByRole('combobox', { name: 'Override model' }).selectOption('kanata/extract');
+  await choose(overrides.getByRole('combobox', { name: 'Override model' }), 'kanata/extract');
   await overrides.getByRole('button', { name: 'Add override' }).click();
   await overrides.getByRole('spinbutton', { name: 'kanata/extract window' }).fill('20000');
   await panel.getByRole('button', { name: 'Save context windows' }).click();

@@ -9,7 +9,8 @@
   import '@kanade/ui/styles/date-picker.scss';
   import { activeCount, NO_LOG_FILTER, OUTCOME_LABEL, type LogFilter } from './filters';
   import { directory, memberLabel } from '../names/directory.svelte';
-  import { DatePicker, dayOf, Icon, rangeWords, serverClock } from '@kanade/ui';
+  import '@kanade/ui/styles/select.scss';
+  import { DatePicker, Icon, Select, serverClock, type SelectOption } from '@kanade/ui';
 
   let {
     filter,
@@ -56,12 +57,6 @@
   const chips = $derived.by(() => {
     const out: Chip[] = [];
     if (filter.model) out.push({ key: 'model', label: `Model: ${filter.model}`, clear: { model: '' } });
-    if (filter.from || filter.to)
-      out.push({
-        key: 'dates',
-        label: `Dates: ${rangeWords(dayOf(filter.from), dayOf(filter.to)) || `${filter.from || '…'} → ${filter.to || '…'}`}`,
-        clear: { from: '', to: '' },
-      });
     if (filter.outcome.length)
       out.push({ key: 'outcome', label: `Outcome: ${filter.outcome.map((o) => OUTCOME_LABEL[o] ?? o).join(', ')}`, clear: { outcome: [] } });
     if (filter.channel) out.push({ key: 'channel', label: `Channel: ${channelName(filter.channel)}`, clear: { channel: '' } });
@@ -70,6 +65,20 @@
     if (filter.min_ms) out.push({ key: 'min_ms', label: `≥ ${filter.min_ms} ms`, clear: { min_ms: '' } });
     return out;
   });
+
+  const modelOptions = $derived<SelectOption[]>([{ value: '', label: 'any model' }, ...(facets?.models ?? []).map((m) => ({ value: m, label: m }))]);
+  const channelOptions = $derived<SelectOption[]>([
+    { value: '', label: 'every channel' },
+    ...(facets?.channels ?? []).map((c) => ({ value: c.id, label: directory.label('channel', c.id, c.name) })),
+  ]);
+  const memberOptions = $derived<SelectOption[]>([
+    { value: '', label: 'anyone', icon: 'users' },
+    ...members.map((m) => {
+      const name = memberLabel(members, m.id);
+      return { value: m.id, label: name, mono: name.slice(0, 1).toUpperCase() };
+    }),
+  ]);
+  const toolOptions = $derived<SelectOption[]>([{ value: '', label: 'any tool' }, ...(facets?.tools ?? []).map((t) => ({ value: t, label: t }))]);
 
   // Today and the boss week come from the server's clock, never the browser's.
   const clock = $derived(serverClock(week));
@@ -94,6 +103,10 @@
     <button type="button" class="btn" aria-expanded={open} aria-controls="{uid}-panel" bind:this={toggle} onclick={() => (open = !open)}
       ><Icon name="filter" /><span>Filters ({count})</span></button
     >
+    <!-- The range sits in the row beside the filters (P_Dates); its trigger shows and clears it. -->
+    <div class="logfilters__dates">
+      <DatePicker label="Dates" {clock} from={filter.from} to={filter.to} onrange={(from, to) => set({ from, to })} />
+    </div>
     {#each chips as chip (chip.key)}
       <button type="button" class="chip logfilters__chip" onclick={() => set(chip.clear)}
         >{chip.label}<span aria-hidden="true"> ×</span><span class="vh"> — remove</span></button
@@ -105,38 +118,11 @@
   </div>
   {#if open}
     <div class="filters logfilters__panel" id="{uid}-panel" role="group" aria-label="Filters">
-      <label class="field"
-        ><span>Model</span>
-        <select value={filter.model} onchange={(e) => set({ model: e.currentTarget.value })}>
-          <option value="">any model</option>
-          {#each facets?.models ?? [] as m (m)}<option value={m}>{m}</option>{/each}
-        </select>
-      </label>
-      <div class="field logfilters__dates">
-        <DatePicker label="Dates" {clock} from={filter.from} to={filter.to} onrange={(from, to) => set({ from, to })} />
-      </div>
-      <label class="field"
-        ><span>Channel</span>
-        <select value={filter.channel} onchange={(e) => set({ channel: e.currentTarget.value })}>
-          <option value="">every channel</option>
-          {#each facets?.channels ?? [] as c (c.id)}<option value={c.id}>{directory.label('channel', c.id, c.name)}</option>{/each}
-        </select>
-      </label>
-      <label class="field"
-        ><span>Member</span>
-        <select value={filter.member} onchange={(e) => set({ member: e.currentTarget.value })}>
-          <option value="">anyone</option>
-          {#each members as m (m.id)}<option value={m.id}>{memberLabel(members, m.id)}</option>{/each}
-        </select>
-      </label>
+      <Select size="bar" label="Model" options={modelOptions} value={filter.model} onchange={(model) => set({ model })} noun="models" />
+      <Select size="bar" label="Channel" options={channelOptions} value={filter.channel} onchange={(channel) => set({ channel })} noun="channels" />
+      <Select size="bar" label="Member" options={memberOptions} value={filter.member} onchange={(member) => set({ member })} noun="members" />
       {#if chat}
-        <label class="field"
-          ><span>Tool used</span>
-          <select value={filter.tool} onchange={(e) => set({ tool: e.currentTarget.value })}>
-            <option value="">any tool</option>
-            {#each facets?.tools ?? [] as t (t)}<option value={t}>{t}</option>{/each}
-          </select>
-        </label>
+        <Select size="bar" label="Tool used" options={toolOptions} value={filter.tool} onchange={(tool) => set({ tool })} noun="tools" />
         <label class="field"
           ><span>At least (ms)</span><input type="number" min="0" step="100" inputmode="numeric" value={filter.min_ms}
             onchange={(e) => set({ min_ms: e.currentTarget.value })} /></label

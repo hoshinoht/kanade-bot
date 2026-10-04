@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { COLORWAYS } from '../packages/tokens/src/colorways';
-import { ADMIN, PUBLIC, csrf, expect, settle, test } from './support';
+import { ADMIN, PUBLIC, csrf, expect, settle, test, choose } from './support';
 
 // Every test is independent (the fixture resets the mock), so the looks spread across workers.
 test.describe.configure({ mode: 'parallel' });
@@ -124,7 +124,7 @@ for (const theme of THEMES) {
     await serious(page, 'admin config env');
     await page.getByRole('tab', { name: 'Models' }).click();
     await page.getByRole('tab', { name: 'Roles' }).click();
-    await page.getByRole('combobox', { name: /^Model/ }).first().selectOption('kanata/chat-cloud');
+    await choose(page.getByRole('combobox', { name: /^Model/ }).first(), 'kanata/chat-cloud');
     await expect(page.getByText(/raw member names, IDs, messages, and URLs leave the homelab/i)).toBeVisible();
     await serious(page, 'admin config cloud warning');
     await page.getByRole('link', { name: /^Inbox/ }).click();

@@ -1,4 +1,4 @@
-import { expect, test as base, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test as base, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 
 /**
  * This worker's own mock (see the port scheme in `playwright.config.ts`):
@@ -152,3 +152,63 @@ export const test = base.extend<{ cspControl: boolean; csp: Sink }>({
 });
 
 export { expect };
+
+// The dropdown (Select): a combobox button with a listbox popover, or on phones
+// a native <select> under the pill. These drive either by value, label or index.
+type Pick = string | { label: string | RegExp } | { index: number };
+const exactly = (label: string | RegExp) => (typeof label === 'string' ? new RegExp(`^\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`) : label);
+// A label also names the open listbox (and the search box's "Filter …"): keep the trigger only.
+const trigger = (box: Locator) => box.and(box.page().locator('button.dd, select'));
+const isNative = (box: Locator) => trigger(box).evaluate((el) => el.tagName === 'SELECT');
+
+/** Opens a Select and returns its listbox. */
+export async function openList(box: Locator): Promise<Locator> {
+  box = trigger(box);
+  if ((await box.getAttribute('aria-expanded')) !== 'true') await box.click();
+  const list = box.page().locator(`[role="listbox"][id="${await box.getAttribute('aria-controls')}"]`);
+  await expect(list).toBeVisible();
+  return list;
+}
+
+/** One option of an open Select, by value, label or index. */
+export function optionIn(list: Locator, pick: Pick): Locator {
+  const options = list.getByRole('option');
+  if (typeof pick === 'string') return list.locator(`[role="option"][data-value="${pick.replace(/"/g, '\\"')}"]`);
+  if ('index' in pick) return options.nth(pick.index);
+  return options.filter({ has: list.page().locator('.dd-opt__label', { hasText: exactly(pick.label) }) });
+}
+
+/** Picks an option, as `selectOption` did for the native select. */
+export async function choose(box: Locator, pick: Pick): Promise<void> {
+  box = trigger(box);
+  if (await isNative(box)) {
+    await box.selectOption(typeof pick === 'string' ? pick : 'index' in pick ? { index: pick.index } : { label: pick.label as string });
+    return;
+  }
+  await optionIn(await openList(box), pick).click();
+  await expect(box).toHaveAttribute('aria-expanded', 'false');
+}
+
+/** The option labels in order (the Select is closed again afterwards). */
+export async function optionLabels(box: Locator): Promise<string[]> {
+  box = trigger(box);
+  if (await isNative(box)) return box.locator('option').allTextContents();
+  const list = await openList(box);
+  const labels = (await list.locator('.dd-opt__label').allTextContents()).map((t) => t.trim());
+  await box.press('Escape');
+  return labels;
+}
+
+/** Asserts the chosen value (the trigger's data-value, or the native value). */
+export async function expectValue(box: Locator, value: string): Promise<void> {
+  box = trigger(box);
+  if (await isNative(box)) await expect(box).toHaveValue(value);
+  else await expect(box).toHaveAttribute('data-value', value);
+}
+
+/** Toggles options of a multi-select by label, then closes it. */
+export async function toggleOptions(box: Locator, labels: string[]): Promise<void> {
+  const list = await openList(box);
+  for (const label of labels) await optionIn(list, { label }).click();
+  await trigger(box).press('Escape');
+}

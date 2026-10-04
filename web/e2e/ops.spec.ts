@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, csrf, expect, test } from './support';
+import { ADMIN, csrf, expect, test, choose, expectValue, optionLabels, optionIn, openList, toggleOptions } from './support';
 
 // Knowledge (tracked boss/knowledge, schema v2), Inbox, Extractions + rescan,
 // Chat, Limits, History (revert / restore / by member / checkpoints) and the
@@ -367,8 +367,7 @@ test('extractions: pager, detail tabs and a rescan job', async ({ page }) => {
   await page.getByRole('button', { name: '← Newer' }).click();
 
   await page.getByRole('button', { name: 'Re-read channels' }).click();
-  await page.getByRole('checkbox', { name: '#limbo-trio' }).check();
-  await page.getByRole('checkbox', { name: '#fa-night' }).check();
+  await toggleOptions(page.getByRole('combobox', { name: 'Channels to re-read' }), ['#limbo-trio', '#fa-night']);
   await page.getByRole('button', { name: 'Re-read', exact: true }).click();
   await expect(page.locator('.rescan__status')).toHaveText(/Done: 2 channels read/, { timeout: 10_000 });
   // Escape folds the popover back to its button; the job card stays for the next open.
@@ -418,7 +417,7 @@ test('chat filters: deep-linked, combinable, summarised, cleared', async ({ page
   // Add a model and a minimum latency through the panel; the URL follows.
   await page.getByRole('button', { name: 'Filters (1)' }).click();
   const panel = page.getByRole('group', { name: 'Filters' });
-  await panel.getByLabel('Model').selectOption('kanata/chat');
+  await choose(panel.getByLabel('Model'), 'kanata/chat');
   await expect(page).toHaveURL(/model=kanata%2Fchat/);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 of 13 interactions');
   await panel.getByLabel('At least (ms)').fill('70000');
@@ -432,10 +431,10 @@ test('chat filters: deep-linked, combinable, summarised, cleared', async ({ page
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('13 interactions');
   // The panel stays open after Clear.
   await expect(page.getByRole('button', { name: 'Filters (0)' })).toHaveAttribute('aria-expanded', 'true');
-  await page.getByRole('group', { name: 'Filters' }).getByLabel('Tool used').selectOption('schedule.read');
+  await choose(page.getByRole('group', { name: 'Filters' }).getByLabel('Tool used'), 'schedule.read');
   // Includes the withheld turn: its tool name shows even though its traffic does not.
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('4 of 13 interactions');
-  await page.getByRole('group', { name: 'Filters' }).getByRole('button', { name: /^Dates/ }).click();
+  await page.getByRole('button', { name: /^Dates/ }).click();
   const dates = page.getByRole('dialog', { name: 'Date range' });
   await dates.getByRole('button', { name: 'This boss week' }).click();
   await dates.getByRole('button', { name: 'Apply' }).click();
@@ -475,10 +474,10 @@ test('extraction filters: outcome, model and member, deep-linked', async ({ page
   await panel.getByRole('checkbox', { name: 'self-service link sent' }).check();
   await expect(page).toHaveURL(/outcome=proposed%2Cfailed%2Cself_service_link|outcome=proposed,failed,self_service_link/);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('7 of 34 model calls');
-  await panel.getByLabel('Member').selectOption({ label: 'Minato' });
+  await choose(panel.getByLabel('Member'), { label: 'Minato' });
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 of 34 model calls');
   await page.getByRole('button', { name: 'Clear' }).click();
-  await panel.getByLabel('Model').selectOption('kanata/legacy');
+  await choose(panel.getByLabel('Model'), 'kanata/legacy');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('8 of 34 model calls');
   expect((await page.request.get(`${ADMIN}/api/admin/extractions?tool=x`)).status()).toBe(422);
 
@@ -560,11 +559,11 @@ test('history: seeded timeline, strict revert, conflicts and force', async ({ pa
   await expect(moved).toContainText('XKalos: 2 reminders re-placed');
   // `admin:discord:1001` reads as the staff member's name.
   await expect(moved.locator('strong').first()).toHaveText('Asahi');
-  await page.getByLabel('Who').selectOption({ label: 'Asahi (as admin)' });
+  await choose(page.getByLabel('Who'), 'admin:discord:1001');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 change');
-  await page.getByLabel('Who').selectOption({ label: 'Admin (token)' });
+  await choose(page.getByLabel('Who'), { label: 'Admin (token)' });
   await expect(page.getByRole('listitem').filter({ hasText: '#9' }).first().locator('strong').first()).toHaveText('Admin (token)');
-  await page.getByLabel('Who').selectOption({ label: 'everyone' });
+  await choose(page.getByLabel('Who'), { label: 'everyone' });
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 changes');
 
   // Tsubame's answer (#2) was followed by an admin moving that run (#3): conflict.
@@ -621,7 +620,7 @@ test('history: restore a week to a point, revert a member, and a run’s change 
   await expect(restore).toBeHidden();
 
   await page.getByText("Revert a member's changes…").click();
-  await page.getByLabel('Member').selectOption({ label: 'Rin' });
+  await choose(page.getByLabel('Member'), { label: 'Rin' });
   await page.getByRole('button', { name: 'Preview' }).click();
   const byMember = page.getByRole('dialog', { name: /^Revert everything Rin changed/ });
   await expect(byMember.getByText('HSeren: cancelled → unconfirmed')).toBeVisible();
@@ -650,7 +649,7 @@ test('history: restore a week to a point, revert a member, and a run’s change 
   await expect(diff.locator('.runlog__field').filter({ hasText: 'Day and time' })).toContainText('Fri 25 21:30');
   await expect(diff.locator('.runlog__field').filter({ hasText: 'Day and time' })).toContainText('Fri 25 22:00');
   // By field: who last set Tsubame's answer.
-  await log.getByLabel('By field').selectOption({ label: "Tsubame's answer" });
+  await choose(log.getByLabel('By field'), { label: "Tsubame's answer" });
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText('Tsubame → out on XKalos');
   await expect(rows.first()).toContainText('#2');
@@ -712,11 +711,11 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   // Persona catalog, profile visibility, reload, role order.
   await page.getByRole('tab', { name: /^Persona/ }).click();
   await expect(panel.getByText(/Effective:.*Kanade/)).toBeVisible();
-  await panel.getByRole('combobox', { name: 'Active persona' }).selectOption('plain');
+  await choose(panel.getByRole('combobox', { name: 'Active persona' }), 'plain');
   await panel.getByRole('button', { name: 'Use this persona', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: /^Use (?!this)/ }).click();
   await expect(toast(page, /Plain/)).toBeVisible();
-  await panel.getByRole('combobox', { name: 'Active persona' }).selectOption('kanade');
+  await choose(panel.getByRole('combobox', { name: 'Active persona' }), 'kanade');
   await panel.getByRole('button', { name: 'Use this persona', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Use Kanade' }).click();
   await expect(panel.getByText(/Effective:.*Kanade/)).toBeVisible();
@@ -768,32 +767,33 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   await panel.getByRole('tab', { name: 'Roles' }).click();
   const models = panel.getByRole('combobox', { name: /^Model/ });
   const reasonings = panel.getByRole('combobox', { name: /^Reasoning/ });
-  await models.first().selectOption('kanata/chat-cloud');
+  await choose(models.first(), 'kanata/chat-cloud');
   await expect(panel.getByText(/go to an external provider/)).toBeVisible();
   await expect(panel.getByText(/raw member names, IDs, messages, and URLs leave the homelab/i)).toBeVisible();
   await expect(panel).not.toContainText(/pseudonym|provider testing|ALLOW_EXTERNAL_UNMASKED|PSEUDONYMIZE/i);
-  await models.first().selectOption('kanata/extract');
+  await choose(models.first(), 'kanata/extract');
   // An unknown trust zone is treated as external with the raw-data warning.
-  await models.nth(2).selectOption('kanata/legacy');
+  await choose(models.nth(2), 'kanata/legacy');
   await expect(panel.getByText(/publishes no trust zone/)).toBeVisible();
-  await models.nth(2).selectOption('kanata/rewrite-small');
+  await choose(models.nth(2), 'kanata/rewrite-small');
 
   // Reasoning offers only the model's published efforts: the small rewrite
   // model publishes none, and extraction runs medium, so its picker is off only.
-  await expect(reasonings.nth(2).locator('option')).toHaveText(['Off']);
+  expect(await optionLabels(reasonings.nth(2))).toEqual(['Off']);
   // `null` efforts: Kanata restricts nothing, so every level is offered.
-  await models.nth(2).selectOption('kanata/legacy');
-  await expect(reasonings.nth(2).locator('option')).toHaveText(['Same as extraction', 'Off', 'Minimal', 'Low', 'Medium', 'High', 'Xhigh', 'Max']);
+  await choose(models.nth(2), 'kanata/legacy');
+  expect(await optionLabels(reasonings.nth(2))).toEqual(['Same as extraction', 'Off', 'Minimal', 'Low', 'Medium', 'High', 'Xhigh', 'Max']);
   await expect(panel.getByText('reasoning: any level')).toBeVisible();
-  await models.nth(2).selectOption('kanata/rewrite-small');
+  await choose(models.nth(2), 'kanata/rewrite-small');
   // Inherit is offered only while the extraction effort fits the role model.
-  await expect(reasonings.nth(1).locator('option').first()).toHaveText('Same as extraction');
-  await reasonings.first().selectOption('high');
-  await expect(reasonings.nth(1).locator('option').first()).toHaveText('Off');
-  await models.first().selectOption('kanata/extract');
-  await reasonings.first().selectOption('medium');
+  expect((await optionLabels(reasonings.nth(1)))[0]).toBe('Same as extraction');
+  await choose(reasonings.first(), 'high');
+  expect((await optionLabels(reasonings.nth(1)))[0]).toBe('Off');
+  await choose(models.first(), 'kanata/extract');
+  await choose(reasonings.first(), 'medium');
   // Chat needs tools: the tool-less model is offered disabled, with why.
-  await expect(models.nth(1).locator('option[value="kanata/rewrite-small"]')).toHaveAttribute('disabled', '');
+  await expect(optionIn(await openList(models.nth(1)), 'kanata/rewrite-small')).toHaveAttribute('aria-disabled', 'true');
+  await models.nth(1).press('Escape');
   await panel.getByRole('button', { name: 'Save models' }).click();
   await expect(toast(page, /Models saved; the next question uses them\./)).toBeVisible();
 
@@ -839,7 +839,7 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
 
   // Digest posts.
   await page.getByRole('tab', { name: 'Weekly digest' }).click();
-  await panel.getByRole('combobox', { name: 'Channel' }).selectOption('fa-night');
+  await choose(panel.getByRole('combobox', { name: 'Channel' }), 'fa-night');
   await panel.getByRole('button', { name: 'Post it now…' }).click();
   await page.getByRole('dialog', { name: /digest to #?fa-night/ }).getByRole('button', { name: 'Post it now' }).click();
   await expect(toast(page, /Posted this week's digest in #fa-night/)).toBeVisible();
@@ -851,7 +851,7 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   await expect(panel.getByRole('row', { name: /Watched categories/ })).toContainText('KANADE_WATCH_CATEGORY_IDS');
   await expect(panel.getByRole('row', { name: /Watched categories/ })).toContainText('deliberate deploy');
   await expect(panel.getByRole('row', { name: /Model gateway/ })).not.toContainText('secret');
-  await expect(panel.locator('input, select')).toHaveCount(0);
+  await expect(panel.locator('input, select, [role="combobox"]')).toHaveCount(0);
 });
 
 test('config: unreachable catalog and disconnected access render fallbacks', async ({ page }) => {
@@ -947,14 +947,14 @@ test('models: extraction to High resets an inheriting chat to Off, saved and res
   const panel = page.locator('.settings__panel:not([hidden])');
   const reasonings = panel.getByRole('combobox', { name: /^Reasoning/ });
   // Seed: extraction medium, chat inherits.
-  await expect(reasonings.nth(1)).toHaveValue('');
-  await reasonings.first().selectOption('high');
+  await expectValue(reasonings.nth(1), '');
+  await choose(reasonings.first(), 'high');
   await expect(panel.getByRole('status').filter({ hasText: 'Chat reasoning reset to Off' })).toBeVisible();
-  await expect(reasonings.nth(1)).toHaveValue('off');
+  await expectValue(reasonings.nth(1), 'off');
   // A later change that resets nothing clears the note.
-  await reasonings.first().selectOption('low');
+  await choose(reasonings.first(), 'low');
   await expect(panel.getByText(/reasoning reset to Off/)).toHaveCount(0);
-  await reasonings.first().selectOption('high');
+  await choose(reasonings.first(), 'high');
   await expect(panel.getByText(/reasoning reset to Off/)).toHaveCount(0);
   await panel.getByRole('button', { name: 'Save models' }).click();
   await expect(toast(page, /Models saved; the next question uses them\./)).toBeVisible();
@@ -970,8 +970,7 @@ test('models: extraction to High resets an inheriting chat to Off, saved and res
     expect(legal, `${role} resolves to ${resolved}`).toBe(true);
   }
   // The dropdown shows a real, selected option, never a blank box.
-  const selected = await reasonings.nth(1).evaluate((s: HTMLSelectElement) => s.selectedOptions[0]?.textContent ?? '');
-  expect(selected.trim()).toBe('Off');
+  await expect(reasonings.nth(1).locator('.dd__value')).toHaveText('Off');
 
   // The server refuses an explicit inherit that would resolve illegally.
   const refused = await page.request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(page.request), data: { models: { roles: { chat: { reasoning: '' } } } } });
@@ -1031,9 +1030,10 @@ test('models: capacity groups read-only, one row per group, Kanata limits in wor
   // The picker lists base models only; `off` is hidden where reasoning is required.
   await panel.getByRole('tab', { name: 'Roles' }).click();
   const models = panel.getByRole('combobox', { name: /^Model/ });
-  await expect(models.first().locator('option[value*=":"]')).toHaveCount(0);
-  await models.first().selectOption('kanata/think');
-  await expect(panel.getByRole('combobox', { name: /^Reasoning/ }).first().locator('option')).toHaveText(['Low', 'High']);
+  await expect((await openList(models.first())).locator('[role="option"][data-value*=":"]')).toHaveCount(0);
+  await models.first().press('Escape');
+  await choose(models.first(), 'kanata/think');
+  expect(await optionLabels(panel.getByRole('combobox', { name: /^Reasoning/ }).first())).toEqual(['Low', 'High']);
 });
 
 test('models: config-declared groups, uniform limits, a stored variant, an unset role', async ({ page }) => {
@@ -1072,12 +1072,13 @@ test('models: config-declared groups, uniform limits, a stored variant, an unset
   await panel.getByRole('tab', { name: 'Roles' }).click();
   const models = panel.getByRole('combobox', { name: /^Model/ });
   // The stored variant shows as "<base> (fixed: <level>)"; no other variant is offered.
-  await expect(models.nth(1).locator('option:checked')).toHaveText('kanata/chat (fixed: high)');
-  await expect(models.nth(1).locator('option', { hasText: 'fixed' })).toHaveCount(1);
-  await expect(models.nth(1).locator('option[value="kanata/chat:low"]')).toHaveCount(0);
+  await expect(models.nth(1).locator('.dd__value')).toHaveText('kanata/chat (fixed: high)');
+  expect((await optionLabels(models.nth(1))).filter((l) => l.includes('fixed'))).toHaveLength(1);
+  await expect((await openList(models.nth(1))).locator('[role="option"][data-value="kanata/chat:low"]')).toHaveCount(0);
+  await models.nth(1).press('Escape');
   await expect(panel.getByRole('combobox', { name: /^Reasoning/ }).nth(1)).toBeDisabled();
   // An unset role reads "Not configured".
-  await expect(models.nth(2).locator('option:checked')).toHaveText('Not configured');
+  await expect(models.nth(2).locator('.dd__value')).toHaveText('Not configured');
 });
 
 test('persona: the default voice leads the profiles, fixed and never selectable', async ({ page }) => {

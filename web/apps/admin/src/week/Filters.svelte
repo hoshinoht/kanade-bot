@@ -7,7 +7,8 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { Member } from '@kanade/api-types';
-  import { Icon } from '@kanade/ui';
+  import { Icon, Select, type SelectOption } from '@kanade/ui';
+  import '@kanade/ui/styles/select.scss';
   import { filtering, NO_FILTER, type WeekFilter } from './filters';
   import { directory, memberLabel } from '../names/directory.svelte';
 
@@ -26,6 +27,17 @@
     icon?: boolean;
   } = $props();
   const uid = $props.id();
+  const channelOptions = $derived<SelectOption[]>([
+    { value: '', label: 'All channels' },
+    ...channels.map((c) => ({ value: c.id, label: directory.label('channel', c.id, c.name) })),
+  ]);
+  const memberOptions = $derived<SelectOption[]>([
+    { value: '', label: 'everyone', icon: 'users' },
+    ...members.map((m) => {
+      const name = memberLabel(members, m.id);
+      return { value: m.id, label: name, mono: name.slice(0, 1).toUpperCase() };
+    }),
+  ]);
   let open = $state(false);
   let button = $state<HTMLButtonElement>();
   let panel = $state<HTMLDivElement>();
@@ -34,7 +46,7 @@
     open = !open;
     if (!open) return;
     await tick();
-    panel?.querySelector<HTMLElement>('select, input')?.focus({ preventScroll: true });
+    panel?.querySelector<HTMLElement>('button.dd, select, input')?.focus({ preventScroll: true });
   }
 
   function close(refocus: boolean) {
@@ -80,20 +92,8 @@
         }
       }}
     >
-      <label class="field"
-        ><span>Channel</span>
-        <select bind:value={filter.channel}>
-          <option value="">All channels</option>
-          {#each channels as channel (channel.id)}<option value={channel.id}>{directory.label('channel', channel.id, channel.name)}</option>{/each}
-        </select>
-      </label>
-      <label class="field"
-        ><span>Member</span>
-        <select bind:value={filter.member}>
-          <option value="">everyone</option>
-          {#each members as member (member.id)}<option value={member.id}>{memberLabel(members, member.id)}</option>{/each}
-        </select>
-      </label>
+      <Select size="bar" label="Channel" options={channelOptions} bind:value={filter.channel} noun="channels" />
+      <Select size="bar" label="Member" options={memberOptions} bind:value={filter.member} noun="members" />
       <label class="field"><span>Boss</span><input bind:value={filter.boss} placeholder="hstar" size="10" /></label>
       {#if filtering(filter)}
         <button class="btn btn--ghost" type="button" onclick={() => (filter = { ...NO_FILTER })}>Clear</button>

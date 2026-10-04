@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, expect, test, openList, toggleOptions } from './support';
 
 // The M3E Config elements: Pings countdown chips (B_CfgPings), Re-read channel
 // chips and the job card (B_CfgReread), Theme tiles (B_CfgTheme) and "Find a
@@ -63,21 +63,24 @@ test('pings: countdown chips add and remove by keyboard, announce, and save the 
   expect(await saved(page)).toEqual(expected);
 });
 
-test('re-read: channel chips, a running job card that finishes, and Cancel', async ({ page }) => {
+test('re-read: the channels multi-select, a running job card that finishes, and Cancel', async ({ page }) => {
   await page.goto(`${ADMIN}/config?section=rescan&sw=off`);
-  const channels = panel(page).getByRole('group', { name: /^Channels/ });
-  const boxes = channels.getByRole('checkbox');
-  const total = await boxes.count();
+  const channels = panel(page).getByRole('combobox', { name: 'Channels to re-read' });
+  await expect(channels).toHaveText(/none/);
+  // Space toggles the active row and the list stays open; Enter closes it.
+  await channels.focus();
+  await page.keyboard.press('ArrowDown');
+  const list = page.getByRole('listbox', { name: 'Channels to re-read' });
+  const total = await list.getByRole('option').count();
   expect(total).toBeGreaterThan(2);
-  await expect(channels).toHaveAccessibleName(`Channels · 0 of ${total}`);
-  // Space on a focused chip toggles it, as on any checkbox.
-  await boxes.nth(0).focus();
   await page.keyboard.press('Space');
-  await boxes.nth(1).check();
-  await expect(boxes.nth(0)).toBeChecked();
-  await expect(channels).toHaveAccessibleName(`Channels · 2 of ${total}`);
-  await expect(page.locator('.rescan__chk').nth(0)).toHaveCSS('border-radius', '16px');
-  await expect(page.locator('.rescan__chk').nth(2)).toHaveCSS('border-radius', '8px');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Space');
+  await expect(list.getByRole('option', { selected: true })).toHaveCount(2);
+  await page.keyboard.press('Enter');
+  await expect(list).toBeHidden();
+  await expect(channels).toHaveText(`2 of ${total}`);
+  await expect(channels).toHaveClass(/dd--set/);
 
   const go = panel(page).getByRole('button', { name: 'Re-read', exact: true });
   await go.click();
@@ -97,8 +100,9 @@ test('re-read: channel chips, a running job card that finishes, and Cancel', asy
   await expect(finished.getByRole('link', { name: 'Extractions' })).toHaveAttribute('href', '/extractions');
 
   // A second run, cancelled at once: the card says so and the key has focus back.
-  await panel(page).getByRole('button', { name: 'Select all party channels' }).click();
-  await expect(channels).toHaveAccessibleName(`Channels · ${total} of ${total}`);
+  await (await openList(channels)).locator('..').getByRole('button', { name: 'All', exact: true }).click();
+  await channels.press('Escape');
+  await expect(channels).toHaveText(`all ${total}`);
   await go.click();
   await panel(page).getByRole('region', { name: `Re-reading ${total} channels` }).getByRole('button', { name: 'Cancel' }).click();
   const stopped = panel(page).getByRole('region', { name: `Stopped re-reading ${total} channels` });
@@ -111,7 +115,7 @@ test('re-read: channel chips, a running job card that finishes, and Cancel', asy
 test('re-read on Extractions: the same panel, without the link back to itself', async ({ page }) => {
   await page.goto(`${ADMIN}/extractions?sw=off`);
   await page.getByRole('button', { name: 'Re-read channels' }).click();
-  await page.getByRole('checkbox', { name: '#limbo-trio' }).check();
+  await toggleOptions(page.getByRole('combobox', { name: 'Channels to re-read' }), ['#limbo-trio']);
   await page.getByRole('button', { name: 'Re-read', exact: true }).click();
   const finished = page.getByRole('region', { name: 'Re-read 1 channel' });
   await expect(finished).toBeVisible({ timeout: 10_000 });

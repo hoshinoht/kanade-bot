@@ -1,4 +1,4 @@
-import { ADMIN, expect, test, HEADING } from './support';
+import { ADMIN, expect, test, HEADING, choose } from './support';
 
 const SECTIONS = {
   Schedule: ['Week', 'Fixed', 'Bosses'],
@@ -98,7 +98,7 @@ test('admin: this week / next week toggle, filters, the glance pane and the foot
 
   await page.getByRole('button', { name: 'Filters (0)' }).click();
   const filters = page.getByRole('search', { name: 'Filter the week' });
-  await filters.getByLabel('Member').selectOption({ label: 'Sora' });
+  await choose(filters.getByLabel('Member'), { label: 'Sora' });
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('3 runs, filtered');
   await filters.getByLabel('Boss').fill('bm');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 run, filtered');

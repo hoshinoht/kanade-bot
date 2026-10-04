@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { ADMIN, PUBLIC, csrf, expect, test } from './support';
+import { ADMIN, PUBLIC, csrf, expect, test, choose, expectValue, optionLabels } from './support';
 
 type Profile = { key: string; name: string; public: boolean; voice: string; prompt_summary: string };
 type ConfigResponse = { persona: { profiles: Profile[] } };
@@ -288,13 +288,14 @@ test('role profiles: add, change, reorder and remove save one ordered ID-backed 
   const add = page.locator('.role-profile__add');
   await add.getByRole('searchbox', { name: 'Search current guild roles' }).fill('boss');
   const picker = add.getByRole('combobox', { name: 'New assignment role' });
-  await expect(picker.locator('option')).toHaveText(['Choose a role…', '@bossers']);
-  await picker.selectOption('300003');
-  await add.getByRole('combobox', { name: 'Reply profile' }).selectOption('sparkly');
+  expect(await optionLabels(picker)).toEqual(['@bossers']);
+  await expect(picker).toHaveText('Choose a role…');
+  await choose(picker, '300003');
+  await choose(add.getByRole('combobox', { name: 'Reply profile' }), 'sparkly');
   await add.getByRole('button', { name: 'Add assignment' }).click();
   await expect(rows).toHaveCount(3);
 
-  await rows.nth(0).getByRole('combobox', { name: 'Reply profile' }).selectOption('kanade');
+  await choose(rows.nth(0).getByRole('combobox', { name: 'Reply profile' }), 'kanade');
   await rows.nth(2).getByRole('button', { name: 'Move up' }).click();
   await rows.nth(1).getByRole('button', { name: 'Move up' }).click();
   await expect(rows.nth(0).locator('.role-profile__identity strong')).toHaveText('@bossers');
@@ -328,7 +329,7 @@ test('role assignment order has keyboard controls and a searchable native role p
   const search = page.getByRole('searchbox', { name: 'Search current guild roles' });
   await search.fill('boss');
   const picker = page.getByRole('combobox', { name: 'New assignment role' });
-  await expect(picker.locator('option')).toHaveText(['Choose a role…', '@bossers']);
+  expect(await optionLabels(picker)).toEqual(['@bossers']);
   await search.fill('');
 
   const moveDown = rows.nth(0).getByRole('button', { name: 'Move down' });
@@ -396,17 +397,17 @@ test('role profiles: a second admin conflict preserves the draft until explicit 
   });
   expect(competitor.status()).toBe(200);
 
-  await rows.nth(0).getByRole('combobox', { name: 'Reply profile' }).selectOption('kanade');
+  await choose(rows.nth(0).getByRole('combobox', { name: 'Reply profile' }), 'kanade');
   await page.getByRole('button', { name: 'Save role overrides' }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'Role assignments changed since they were loaded' })).toContainText('Role assignments changed since they were loaded');
   await expect(page.getByRole('status').filter({ hasText: 'Your draft is still here.' })).toBeVisible();
-  await expect(rows.nth(0).getByRole('combobox', { name: 'Reply profile' })).toHaveValue('kanade');
+  await expectValue(rows.nth(0).getByRole('combobox', { name: 'Reply profile' }), 'kanade');
   await expect(page.getByRole('button', { name: 'Save role overrides' })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Reload latest assignments' })).toBeFocused();
 
   await page.getByRole('button', { name: 'Reload latest assignments' }).click();
   await expect(rows.nth(0).locator('.role-profile__identity strong')).toHaveText('@newbies');
-  await expect(rows.nth(1).getByRole('combobox', { name: 'Reply profile' })).toHaveValue('sparkly');
+  await expectValue(rows.nth(1).getByRole('combobox', { name: 'Reply profile' }), 'sparkly');
   await expect(page.getByRole('status').filter({ hasText: 'Latest saved assignments loaded.' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save role overrides' })).toBeDisabled();
   await expect(page.getByRole('searchbox', { name: 'Search current guild roles' })).toBeFocused();

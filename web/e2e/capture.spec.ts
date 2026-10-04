@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { busyWeek } from './busy-week';
-import { ADMIN, PUBLIC, REAL_ART, expect, settle as settleMotion, test } from './support';
+import { ADMIN, PUBLIC, REAL_ART, expect, settle as settleMotion, test, choose, expectValue } from './support';
 
 // Reference captures for the v4 comparison, both git-ignored. Default: the
 // synthetic placeholder art (fixtures, not the game's art) into
@@ -83,7 +83,7 @@ for (const vp of VIEWPORTS) {
       }
       // Models with the cloud warning showing.
       await page.goto(`${ADMIN}/config?section=models&sw=off`);
-      await page.getByRole('combobox', { name: /^Model/ }).first().selectOption('kanata/chat-cloud');
+      await choose(page.getByRole('combobox', { name: /^Model/ }).first(), 'kanata/chat-cloud');
       await expect(page.getByText(/raw member names, IDs, messages, and URLs leave the homelab/i)).toBeVisible();
       await shot(page, `admin-config-models-cloud-${tag}`);
 
@@ -329,7 +329,7 @@ test('capture planner time drops and run lengths', async ({ page }) => {
     await page.setViewportSize({ width: vp.width, height: vp.height });
     await page.goto(`${ADMIN}/config?section=run-lengths&sw=off`);
     await expect(page.getByRole('heading', { name: 'Run lengths' })).toBeVisible();
-    await expect(page.getByRole('combobox', { name: 'Boss' })).toHaveValue('BM');
+    await expectValue(page.getByRole('combobox', { name: 'Boss', exact: true }), 'BM');
     await shot(page, `admin-config-run-lengths-${vp.name}-marigold-light`);
   }
 });
@@ -364,7 +364,7 @@ test('capture planner swap', async ({ page }) => {
     const sheet = page.getByRole(vp.name === 'wide' ? 'complementary' : 'dialog', { name: 'HFA' });
     if (vp.name !== 'wide') await sheet.getByRole('button', { name: 'More actions' }).click();
     await sheet.getByRole('button', { name: 'Swap timing with…' }).click();
-    await sheet.getByRole('combobox', { name: 'Swap with' }).selectOption({ label: 'Tue 29 23:30 · XBM' });
+    await choose(sheet.getByRole('combobox', { name: 'Swap with' }), { label: 'Tue 29 23:30 · XBM' });
     await expect(sheet.getByText('HFA → Tue 29 23:30')).toBeVisible();
     await sheet.getByRole('group', { name: /Swap HFA's timing/ }).scrollIntoViewIfNeeded();
     await shot(page, `admin-sheet-swap-${vp.name}-marigold-light`);

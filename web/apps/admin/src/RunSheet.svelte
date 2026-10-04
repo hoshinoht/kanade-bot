@@ -10,7 +10,8 @@
   import { tick, untrack } from 'svelte';
   import type { Member, Participant, Run, RunStatus, Week } from '@kanade/api-types';
   import '@kanade/ui/styles/run-sheet.scss';
-  import { ANSWER_MARKS, AnswerBar, AnswerChip, BossTag, enter, Icon, Modal, StatusMark, WavyProgress, dayLabel, runTitle, sortRuns, whenLabel } from '@kanade/ui';
+  import '@kanade/ui/styles/select.scss';
+  import { ANSWER_MARKS, AnswerBar, AnswerChip, BossTag, enter, Icon, Modal, Select, StatusMark, WavyProgress, dayLabel, runTitle, sortRuns, whenLabel } from '@kanade/ui';
   import { swapSlots } from './planner/dropTime';
   import { directory, memberLabel } from './names/directory.svelte';
   import Name from './names/Name.svelte';
@@ -119,7 +120,8 @@
   // where both land, then confirm. Undo comes with the toast like a move.
   let swapping = $state(false);
   let swapWith = $state('');
-  let swapSelect: HTMLSelectElement | undefined = $state();
+  let swapSelect: { focus(): void } | undefined = $state();
+  let adding = $state('');
   let swapButton: HTMLButtonElement | undefined = $state();
   const swapChoices = $derived(
     run ? sortRuns(week.runs.filter((r) => r.id !== run.id && r.status !== 'done' && r.status !== 'cancelled')) : [],
@@ -248,12 +250,12 @@
     else open = false;
   }
 
-  function add(event: Event) {
-    const select = event.currentTarget as HTMLSelectElement;
-    const id = select.value;
-    select.value = '';
+  // An action picker: the pick adds the member and the picker returns to its prompt.
+  function add(id: string) {
+    adding = '';
     if (run && id) void act(() => onroster(run.id, { add: id }));
   }
+  const addOptions = $derived(addable.map((m) => ({ value: m.id, label: memberLabel(members, m.id) })));
 </script>
 
 <svelte:window
@@ -279,10 +281,16 @@
       </AnswerChip>
     {/each}
     {#if addable.length > 0}
-      <select class="chip__add" aria-label="Add someone to {runTitle(run)} for this week" onchange={add} disabled={busy}>
-        <option value="">+ add…</option>
-        {#each addable as member (member.id)}<option value={member.id}>{memberLabel(members, member.id)}</option>{/each}
-      </select>
+      <Select
+        class="chip__add"
+        label="Add someone to {runTitle(run)} for this week"
+        bind:value={adding}
+        options={addOptions}
+        placeholder="+ add…"
+        noun="members"
+        disabled={busy}
+        onchange={add}
+      />
     {/if}
   </div>
 {/snippet}
@@ -435,14 +443,17 @@
   {#if swapping}
     <div class="swap" id="{uid}-swap" role="group" aria-labelledby="{uid}-swap-title">
       <p class="swap__title" id="{uid}-swap-title">Swap {runTitle(run)}'s timing with another run this boss week</p>
-      <label class="field"
+      <div class="field"
         ><span>Swap with</span>
-        <select bind:this={swapSelect} bind:value={swapWith} disabled={busy || saving}>
-          {#each swapChoices as other (other.id)}
-            <option value={other.id}>{whenLabel(week, other.day, other.time)} · {runTitle(other)}</option>
-          {/each}
-        </select>
-      </label>
+        <Select
+          bind:this={swapSelect}
+          label="Swap with"
+          bind:value={swapWith}
+          options={swapChoices.map((other) => ({ value: other.id, label: `${whenLabel(week, other.day, other.time)} · ${runTitle(other)}` }))}
+          noun="runs"
+          disabled={busy || saving}
+        />
+      </div>
       {#if swapPreview && swapOther}
         <p class="swap__preview" aria-live="polite">
           {runTitle(run)} → <strong>{swapPreview.mine}</strong>; {runTitle(swapOther)} → <strong>{swapPreview.theirs}</strong>{swapPreview.daysOnly
@@ -778,10 +789,16 @@
                 {#if addable.length > 0}
                   <li class="slot slot--open">
                     <span class="slot__mark" aria-hidden="true">+</span>
-                    <select class="slot__add" aria-label="Add someone to {runTitle(run)} for this week" onchange={add} disabled={busy}>
-                      <option value="">Add someone…</option>
-                      {#each addable as member (member.id)}<option value={member.id}>{memberLabel(members, member.id)}</option>{/each}
-                    </select>
+                    <Select
+                      class="slot__add"
+                      label="Add someone to {runTitle(run)} for this week"
+                      bind:value={adding}
+                      options={addOptions}
+                      placeholder="Add someone…"
+                      noun="members"
+                      disabled={busy}
+                      onchange={add}
+                    />
                   </li>
                 {/if}
               </ul>

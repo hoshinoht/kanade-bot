@@ -1,5 +1,5 @@
 import type { Page, Route } from '@playwright/test';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, expect, test, openList } from './support';
 
 // Design experiments (pwa-design-guidelines "Experiments"): A, the morphing
 // loading indicator on short waits. Off (`?experiments=off`) must look and
@@ -27,8 +27,9 @@ async function holdSaves(page: Page) {
 async function startRescan(page: Page, on: boolean) {
   await go(page, '/extractions', on);
   await page.getByRole('button', { name: 'Re-read channels' }).click();
-  const boxes = page.getByRole('group', { name: 'Channels' }).getByRole('checkbox');
-  for (const box of await boxes.all()) await box.check();
+  const channels = page.getByRole('combobox', { name: 'Channels to re-read' });
+  await (await openList(channels)).locator('..').getByRole('button', { name: 'All', exact: true }).click();
+  await channels.press('Escape');
   await page.getByRole('button', { name: 'Re-read', exact: true }).click();
 }
 

@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, expect, test, choose } from './support';
 
 // Chat turn: one-line tool trace with a full-text viewer, and Copy transcript.
 
@@ -82,7 +82,7 @@ test('copy transcript: Markdown by default, JSON on request, names not ids', asy
   expect(md).toContain('- Channel: #limbo-trio');
   expect(md).not.toMatch(/Who: \d+/);
 
-  await page.getByRole('combobox', { name: 'Transcript format' }).selectOption('json');
+  await choose(page.getByRole('combobox', { name: 'Transcript format' }), 'json');
   await page.getByRole('button', { name: 'Copy transcript' }).click();
   await expect(page.getByText('Transcript copied as JSON.')).toBeVisible();
   const json = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));

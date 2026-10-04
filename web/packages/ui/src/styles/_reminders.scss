@@ -265,4 +265,25 @@ td.reminders-table__run a {
     flex: 1 1 auto;
     width: auto;
   }
+
+  // P_SelectPhone: the pills on two columns, the run (the longest value) across both.
+  .reminders-filters__panel {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: min(36rem, calc(100vw - 2rem));
+  }
+
+  .reminders-filters__panel .ddw:nth-child(2),
+  .reminders-filters__panel > .btn {
+    grid-column: 1 / -1;
+  }
+
+  .reminders-filters__panel > .btn {
+    justify-self: start;
+  }
+
+  .reminders-filters__panel .ddw,
+  .reminders-filters__panel .dd.dd {
+    width: 100%;
+  }
 }

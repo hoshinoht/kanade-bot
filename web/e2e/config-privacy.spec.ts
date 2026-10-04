@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { ConfigView } from '@kanade/api-types';
-import { ADMIN, expect, settle, test } from './support';
+import { ADMIN, expect, settle, test, choose } from './support';
 
 test('models config warns when raw member data leaves the homelab', async ({ page }) => {
   await page.route('**/api/admin/config', async (route) => {
@@ -20,12 +20,12 @@ test('models config warns when raw member data leaves the homelab', async ({ pag
 
   const extraction = panel.getByRole('group', { name: 'Extraction' });
   await expect(extraction.getByRole('list', { name: 'What kanata/extract can do' }).getByText('homelab')).toBeVisible();
-  await extraction.getByRole('combobox', { name: 'Model' }).selectOption('kanata/legacy');
+  await choose(extraction.getByRole('combobox', { name: 'Model' }), 'kanata/legacy');
   await expect(extraction.locator('.settings__warn')).toContainText(/publishes no trust zone/);
   await expect(extraction.locator('.settings__warn')).toContainText(/raw member names, IDs, messages, and URLs leave the homelab/i);
 
   const chat = panel.getByRole('group', { name: 'Chat' });
-  await chat.getByRole('combobox', { name: 'Model' }).selectOption('kanata/chat-cloud');
+  await choose(chat.getByRole('combobox', { name: 'Model' }), 'kanata/chat-cloud');
   const externalWarning = chat.locator('.settings__warn');
   await expect(externalWarning).toContainText(/go to an external provider/);
   await expect(externalWarning).toContainText(/raw member names, IDs, messages, and URLs leave the homelab/i);

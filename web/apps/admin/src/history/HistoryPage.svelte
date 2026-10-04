@@ -5,11 +5,12 @@
   import '@kanade/ui/styles/evidence.scss';
   import '@kanade/ui/styles/history.scss';
   import '@kanade/ui/styles/date-picker.scss';
+  import '@kanade/ui/styles/select.scss';
   import type { ChangeRecord, Checkpoints, HistoryPage, RevertPlan } from '@kanade/api-types';
   import { createClient } from '@kanade/client';
   import { SvelteSet } from 'svelte/reactivity';
   import { onMount } from 'svelte';
-  import { DatePicker, Icon, Presence, RowContent, serverClock, Toaster, weekStartLabel } from '@kanade/ui';
+  import { DatePicker, Icon, Presence, RowContent, Select, serverClock, Toaster, weekStartLabel, type SelectOption } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
   import { SURFACE_LABELS, actorName, describe, localAt, weekDate } from './describe';
@@ -127,6 +128,27 @@
   const known = (id: string) => store.members.some((m) => m.id === id);
   const seenAdmins = new SvelteSet<string>();
   const admins = $derived([...seenAdmins].map((id) => ({ id, label: actorName({ kind: 'admin', id }, names, known) })).sort((a, b) => a.label.localeCompare(b.label)));
+  const memberOption = (m: { id: string; name: string }, value: string, group?: string): SelectOption => {
+    const label = names(m.id);
+    return { value, label, group, mono: label.slice(0, 1).toUpperCase(), keywords: m.name };
+  };
+  const weekOptions = $derived<SelectOption[]>([
+    { value: '', label: 'every week' },
+    ...(store.week ? [{ value: store.week.starts, label: 'this boss week', sub: weekStartLabel(store.week.starts) }] : []),
+  ]);
+  const actorOptions = $derived<SelectOption[]>([
+    { value: '', label: 'everyone', icon: 'users' },
+    ...admins.map((a) => ({
+      value: `admin:${a.id}`,
+      label: a.label,
+      sub: a.id.startsWith('discord:') && known(a.id.slice(8)) ? 'as admin' : undefined,
+      group: 'Admins',
+      mono: a.label.slice(0, 1).toUpperCase(),
+    })),
+    { value: 'system:delivery', label: 'system', sub: 'delivery', group: 'System', icon: 'sliders' },
+    ...members.map((m) => memberOption(m, `member:${m.id}`, 'Members')),
+  ]);
+  const whoOptions = $derived<SelectOption[]>(members.map((m) => memberOption(m, `member:${m.id}`)));
   const selected = $derived(records.find((record) => record.seq === selectedSeq) ?? null);
   // The pane outlives the selection by its exit animation; while open it reads
   // the live record (the presence copy lags an effect behind).
@@ -215,7 +237,7 @@
   <form class="history-member" data-fid="history-revert-member" onsubmit={revertMember}>
     <h3 class="cap">Revert a member's changes…</h3>
     <div class="history-member__fields">
-      <label class="history-member__who"><span class="vh">Member</span><select bind:value={who} required><option value="">choose…</option>{#each members as member (member.id)}<option value="member:{member.id}">{names(member.id)}</option>{/each}</select></label>
+      <div class="history-member__who"><Select label="Member" options={whoOptions} bind:value={who} placeholder="choose…" noun="members" /></div>
       <div class="history-member__since"><DatePicker mode="single" label="Since" lead="Changes since" {clock} value={since} onpick={(day) => (since = day)} /></div>
     </div>
     <button class="btn" type="submit" disabled={!who}>Preview</button>
@@ -237,8 +259,8 @@
     </div>
     <!-- The filters only apply to the Timeline. -->
     <div class="history-window__filters" data-fid="window-filters" hidden={tab !== 'timeline'} role="search" aria-label="Filter the history">
-      <label class="btn history-filter"><span class="history-filter__label">Week</span><select bind:value={week}><option value="">every week</option>{#if store.week}<option value={store.week.starts}>this boss week ({weekStartLabel(store.week.starts)})</option>{/if}</select></label>
-      <label class="btn history-filter"><span class="history-filter__label">Who</span><select bind:value={actor}><option value="">everyone</option>{#each admins as admin (admin.id)}<option value="admin:{admin.id}">{admin.label}{admin.id.startsWith('discord:') && known(admin.id.slice(8)) ? ' (as admin)' : ''}</option>{/each}<option value="system:delivery">system (delivery)</option>{#each members as member (member.id)}<option value="member:{member.id}">{names(member.id)}</option>{/each}</select></label>
+      <Select size="tbar" label="Week" options={weekOptions} bind:value={week} />
+      <Select size="tbar" label="Who" options={actorOptions} bind:value={actor} noun="people" />
     </div>
   </header>
 
@@ -251,7 +273,7 @@
             <details class="history__member">
               <summary class="btn">Revert a member's changes…</summary>
               <form class="formrow" onsubmit={revertMember}>
-                <label class="field"><span>Member</span><select bind:value={who} required><option value="">choose…</option>{#each members as member (member.id)}<option value="member:{member.id}">{names(member.id)}</option>{/each}</select></label>
+                <div class="field"><span>Member</span><Select label="Member" options={whoOptions} bind:value={who} placeholder="choose…" noun="members" /></div>
                 <div class="field"><DatePicker mode="single" label="Since" lead="Changes since" {clock} value={since} onpick={(day) => (since = day)} /></div>
                 <button class="btn" type="submit" disabled={!who}>Preview</button>
               </form>

@@ -9,7 +9,8 @@
 <script lang="ts">
   import type { Channel, RescanJob } from '@kanade/api-types';
   import { createClient, createPoller } from '@kanade/client';
-  import { LiveRegion, WavyProgress } from '@kanade/ui';
+  import { LiveRegion, MultiSelect, Select, WavyProgress } from '@kanade/ui';
+  import '@kanade/ui/styles/select.scss';
   import { tick } from 'svelte';
   import { send } from '../resource.svelte';
   import { getChrome } from '../shell/chrome';
@@ -90,31 +91,23 @@
 
 <div class="rescan">
   <form class="rescan__card" data-fid="cfg-card" onsubmit={start}>
-    <fieldset class="rescan__channels">
-      <legend class="label">Channels · {chosen.length} of {targets.length}</legend>
-      <div class="rescan__picks">
-        <button class="rescan__link" type="button" disabled={targets.length === 0 || chosen.length === targets.length} onclick={() => (chosen = targets.map((t) => t.id))}
-          >Select all party channels</button
-        >
-        <button class="rescan__link" type="button" disabled={chosen.length === 0} onclick={() => (chosen = [])}>Clear</button>
-      </div>
-      <div class="rescan__chips">
-        {#each targets as t (t.id)}
-          <label class="rescan__chk"
-            ><input type="checkbox" value={t.id} bind:group={chosen} /><span class="rescan__box" aria-hidden="true">✓</span>{t.name}</label
-          >
-        {/each}
-      </div>
-    </fieldset>
     <div class="rescan__go">
-      <label class="field">
+      <div class="field">
+        <span class="label">Channels</span>
+        <MultiSelect size="field" label="Channels" fullLabel="Channels to re-read" bind:values={chosen} options={targets.map((t) => ({ value: t.id, label: t.name }))} noun="party channels" />
+      </div>
+      <div class="field">
         <span class="label">Window</span>
-        <select bind:value={window_}>
-          <option value="week">This boss week</option>
-          <option value="since_reset">Since the last reset</option>
-          <option value="two_weeks">The last two weeks</option>
-        </select>
-      </label>
+        <Select
+          label="Window"
+          bind:value={() => window_, (v) => (window_ = v as RescanJob['window'])}
+          options={[
+            { value: 'week', label: 'This boss week' },
+            { value: 'since_reset', label: 'Since the last reset' },
+            { value: 'two_weeks', label: 'The last two weeks' },
+          ]}
+        />
+      </div>
       <button class="btn btn--primary rescan__key" type="submit" aria-disabled={running} bind:this={go}>Re-read</button>
       <span class="rescan__note">One re-read at a time.</span>
     </div>
@@ -172,118 +165,6 @@
     box-shadow: inset 0 0 0 1.5px var(--line);
   }
 
-  /* Legend and the select-all/clear pair on one line, then the chips. */
-  .rescan__channels {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.625rem;
-    min-width: 0;
-    margin: 0;
-    padding: 0;
-    border: 0;
-  }
-
-  .rescan__channels legend {
-    float: left;
-    padding: 0;
-    white-space: nowrap;
-  }
-
-  /* Beside the legend while they fit, else on their own line. */
-  .rescan__picks {
-    display: flex;
-    gap: 0.75rem;
-    margin-left: auto;
-  }
-
-  .rescan__link {
-    padding: 0.25rem 0;
-    border: 0;
-    background: none;
-    color: var(--accent-text);
-    font: inherit;
-    font-size: var(--fs-small);
-    text-decoration: underline;
-    text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent);
-    text-underline-offset: 2px;
-    cursor: pointer;
-  }
-
-  .rescan__link:disabled {
-    color: var(--dim-text);
-    text-decoration: none;
-    cursor: default;
-  }
-
-  .rescan__chips {
-    flex: 1 0 100%;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-
-  /* Channel checkbox chips (the board's .chk): a square box, rounder when on. */
-  .rescan__chk {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    min-height: 32px;
-    padding: 0 12px 0 10px;
-    border-radius: 8px;
-    background: var(--row);
-    box-shadow: inset 0 0 0 1.5px var(--line);
-    font-size: var(--fs-small);
-    cursor: pointer;
-  }
-
-  .rescan__chk:hover {
-    background: var(--row-hover);
-  }
-
-  /* The native box covers the chip unseen, so the whole chip is its hit area. */
-  .rescan__chk input {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    opacity: 0;
-    cursor: pointer;
-  }
-
-  .rescan__box {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    border-radius: 4px;
-    box-shadow: inset 0 0 0 1.5px var(--dim-text);
-    color: transparent;
-    font-size: 11px;
-  }
-
-  .rescan__chk:has(input:checked) {
-    border-radius: 16px;
-    background: var(--select);
-    box-shadow: inset 0 0 0 1.5px var(--select-edge);
-    color: var(--select-ink);
-    font-weight: 600;
-  }
-
-  .rescan__chk:has(input:checked) .rescan__box {
-    background: var(--accent-fill);
-    box-shadow: none;
-    color: var(--accent-ink);
-  }
-
-  .rescan__chk:has(input:focus-visible) {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-
   .rescan__go {
     display: flex;
     flex-wrap: wrap;
@@ -296,7 +177,7 @@
     margin: 0;
   }
 
-  .rescan__go select {
+  .rescan__go .field {
     min-width: 12.5rem;
   }
 

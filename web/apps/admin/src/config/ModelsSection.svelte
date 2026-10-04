@@ -7,7 +7,8 @@
 -->
 <script lang="ts">
   import type { ConfigView, ModelInfo, ModelRole, RoleModel } from '@kanade/api-types';
-  import { CHECK_TONE, Icon, WavyProgress } from '@kanade/ui';
+  import { CHECK_TONE, Icon, Select, WavyProgress } from '@kanade/ui';
+  import '@kanade/ui/styles/select.scss';
   import {
     groupCap,
     groupRows,
@@ -143,33 +144,34 @@
         <fieldset class="settings__card models__role" data-fid="cfg-role" aria-describedby="{uid}-{role.id}-job">
           <legend class="settings__cardtitle">{role.name}</legend>
           <p class="settings__cardnote" id="{uid}-{role.id}-job">{role.job}</p>
-          <label class="field"
+          <div class="field"
             ><span>Model</span>
-            <select
+            <Select
+              label="Model"
               value={roles[role.id].alias}
-              class:settings__changed={roles[role.id].alias !== saved.alias}
-              onchange={(e) => pick(role.id, e.currentTarget.value)}
+              class={roles[role.id].alias !== saved.alias ? 'settings__changed' : ''}
+              options={modelOptions(role.id, roles[role.id], models.catalog)}
+              noun="models"
+              onchange={(alias) => pick(role.id, alias)}
               disabled={!models.reachable}
-            >
-              {#each modelOptions(role.id, roles[role.id], models.catalog) as o (o.value)}<option value={o.value} disabled={o.disabled}>{o.label}</option>{/each}
-            </select>
-          </label>
-          <label class="field"
+            />
+          </div>
+          <div class="field"
             ><span>Reasoning</span>
             {#if fixed}
               <!-- A variant bakes its level in; it wins over any choice here. -->
-              <select disabled><option>Fixed: {fixed}</option></select>
+              <Select label="Reasoning" value="fixed" options={[{ value: 'fixed', label: `Fixed: ${fixed}` }]} disabled />
             {:else}
-              <select
+              <Select
+                label="Reasoning"
                 value={roles[role.id].reasoning}
-                class:settings__changed={roles[role.id].reasoning !== saved.reasoning}
-                onchange={(e) => setReasoning(role.id, e.currentTarget.value)}
+                class={roles[role.id].reasoning !== saved.reasoning ? 'settings__changed' : ''}
+                options={reasoningChoices(role.id, chosen, roles.extraction.reasoning, roles[role.id].reasoning)}
+                onchange={(level) => setReasoning(role.id, level)}
                 disabled={!models.reachable || unlisted}
-              >
-                {#each reasoningChoices(role.id, chosen, roles.extraction.reasoning, roles[role.id].reasoning) as c (c.value)}<option value={c.value}>{c.label}</option>{/each}
-              </select>
+              />
             {/if}
-          </label>
+          </div>
           {#if chosen}
             <!-- Treat unknown trust metadata and the -cloud suffix as external for data-flow warnings. -->
             {@const unzoned = chosen.trust_zone !== 'homelab' && chosen.trust_zone !== 'external'}
@@ -349,10 +351,6 @@
 
   .models__role > legend + * {
     clear: both;
-  }
-
-  .models__role select {
-    width: 100%;
   }
 
   .models__groups {

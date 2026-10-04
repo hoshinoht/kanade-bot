@@ -5,15 +5,8 @@
 .history-window { display: flex; flex-direction: column; overflow: clip; }
 // Title bar = the shared window tab strip (Inbox) plus compact filter buttons.
 .history-window__head.tabs__strip { align-items: flex-end; }
-.history-window__filters { display: flex; align-items: center; gap: 0.4rem; margin-left: auto; }
-// One pill reads "Week: every week" (mockup `.tbtn`): the label, a colon and
-// the select's value, the select only as wide as its value.
-.history-window__filters .history-filter { gap: 0.25rem; min-height: 2rem; padding: 0 0.35rem 0 0.75rem; border-radius: 1rem; cursor: pointer; }
-.history-filter__label { font-weight: 600; }
-.history-filter__label::after { content: ":"; }
-.history-filter select { field-sizing: content; max-width: 11rem; min-height: 0; padding: 0.2rem 0.1rem; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
-.history-filter select:focus { box-shadow: none; }
-.history-filter:focus-within { outline: 2px solid var(--win-ink); outline-offset: 1px; }
+.history-window__filters { display: flex; align-self: center; align-items: center; gap: 6px; margin-left: auto; }
+.history-window__filters .dd__value { max-width: 11rem; }
 
 .history-window__body { display: flex; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 .history-list-region { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; background: var(--pane); }
@@ -95,7 +88,6 @@
 .history-member > h3 { margin: 0; }
 .history-member__fields { display: flex; gap: 6px; }
 .history-member__who { flex: 1 1 auto; min-width: 0; }
-.history-member__who select { width: 100%; }
 .history-member__fields { align-items: center; }
 .history-member__since { flex: none; }
 .history-member .btn { align-self: flex-start; }
@@ -146,6 +138,6 @@
   .history-window__head.tabs__strip { flex-wrap: wrap; padding-top: 0.5rem; }
   .history-window__head .tabs__tabs { order: 1; width: 100%; }
   .history-window__filters { width: 100%; margin-left: 0; padding-bottom: 0; }
-  .history-filter { flex: 1 1 0; min-width: 0; }
-  .history-filter select { flex: 1 1 auto; min-width: 0; max-width: none; }
+  .history-window__filters .ddw { flex: 1 1 0; }
+  .history-window__filters .dd { width: 100%; }
 }

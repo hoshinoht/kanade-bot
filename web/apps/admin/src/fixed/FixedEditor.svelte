@@ -5,7 +5,8 @@
 -->
 <script lang="ts">
   import type { Boss, BossRow, Channel, FixedRequest, FixedRow, MemberRow, ValidateResult } from '@kanade/api-types';
-  import { BossTag, DayStrip, Modal, dayLabel, enter } from '@kanade/ui';
+  import { BossTag, DayStrip, Modal, Select, dayLabel, enter } from '@kanade/ui';
+  import '@kanade/ui/styles/select.scss';
   import '@kanade/ui/styles/fixed.scss';
   import '@kanade/ui/styles/move-picker.scss';
   import { tick } from 'svelte';
@@ -83,7 +84,7 @@
   /** The party when the form opened: the preview stays put while chips are toggled. */
   let openParty = $state<string[]>([]);
   let partyChips = $state<HTMLElement>();
-  let ownerSelect = $state<HTMLSelectElement>();
+  let ownerSelect = $state<{ focus(): void }>();
   let typed = $state('');
   let check = $state<{ bosses: Boss[] } | { error: string } | null>(null);
   let error = $state('');
@@ -205,7 +206,7 @@
       if (result.code === 'invalid' && /\bowner\b/i.test(result.message)) {
         ownerError = result.message;
         await tick();
-        ownerSelect?.focus({ preventScroll: true });
+        ownerSelect?.focus();
         return;
       }
       error = stale ? `${result.message} Close and reopen this timing to edit what is saved now.` : result.message;
@@ -271,31 +272,30 @@
           <DayStrip days={weekdayStrip} value={Number(weekday)} label="Day" compact onpick={(value) => (weekday = value)} />
         </div>
         <label class="field"><span>Time</span><input bind:value={time} placeholder="21:30" size="6" class="mono" /></label>
-        <label class="field">
+        <div class="field">
           <span>Owner</span>
-          <select
+          <Select
             bind:this={ownerSelect}
+            label="Owner"
             value={owner}
-            onchange={(event) => {
-              pickedOwner = event.currentTarget.value;
+            options={ownerOptions.map((o) => ({ value: o.id, label: o.label }))}
+            placeholder="First party member"
+            noun="members"
+            invalid={Boolean(ownerError)}
+            describedby={ownerError ? `${uid}-owner-err` : undefined}
+            onchange={(id) => {
+              pickedOwner = id;
               ownerError = '';
             }}
-            aria-invalid={ownerError ? 'true' : undefined}
-            aria-describedby={ownerError ? `${uid}-owner-err` : undefined}
-          >
-            {#if !owner}<option value="" disabled>First party member</option>{/if}
-            {#each ownerOptions as option (option.id)}<option value={option.id}>{option.label}</option>{/each}
-          </select>
-        </label>
+          />
+        </div>
         {#if ownerError}<p class="field__error fixedsheet__field-error" id="{uid}-owner-err" role="alert">{ownerError}</p>{/if}
       </div>
       <!-- B_Fixed: the home channel on its own line under the day and time. -->
-      <label class="field fixedsheet__channel" data-fid="fixed-channel">
+      <div class="field fixedsheet__channel" data-fid="fixed-channel">
         <span>Home channel</span>
-        <select bind:value={channel}>
-          {#each channels as c (c.id)}<option value={c.id}>{c.name}</option>{/each}
-        </select>
-      </label>
+        <Select label="Home channel" bind:value={channel} options={channels.map((c) => ({ value: c.id, label: c.name }))} noun="channels" />
+      </div>
       <fieldset class="field fixedsheet__party">
         <legend class="label">Party · {party.length} of {roster.length}</legend>
         <div class="run__people" data-fid="fixed-party" bind:this={partyChips}>

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { MemberPatch, MemberRow, Persona, PingLevel } from '@kanade/api-types';
-  import { enter, Icon, initial, Modal } from '@kanade/ui';
+  import { enter, Icon, initial, Modal, Select } from '@kanade/ui';
+  import '@kanade/ui/styles/select.scss';
   import { send } from '../resource.svelte';
   import { directory } from '../names/directory.svelte';
   import Name from '../names/Name.svelte';
@@ -153,23 +154,23 @@
     </div>
 
     <div class="membersheet__section" data-fid="members-style">
-      <label class="field">
+      <div class="field">
         <span>Reply style</span>
-        <select
+        <Select
+          label="Reply style"
           value={member.persona ?? ''}
+          options={[
+            { value: '', label: 'Default' },
+            ...personas.filter((p) => p.key !== 'default').map((p) => ({ value: p.key, label: p.name })),
+            ...(member.persona && !member.persona_available ? [{ value: member.persona, label: member.persona, sub: 'unavailable' }] : []),
+          ]}
+          noun="styles"
           disabled={busy}
-          onchange={(event) => {
-            const key = event.currentTarget.value;
+          onchange={(key) => {
             void patch({ persona: key }, key ? `Reply style set to ${personas.find((p) => p.key === key)?.name ?? key}.` : 'Back to the default reply style.');
           }}
-        >
-          <option value="">Default</option>
-          {#each personas.filter((p) => p.key !== 'default') as persona (persona.key)}
-            <option value={persona.key}>{persona.name}</option>
-          {/each}
-          {#if member.persona && !member.persona_available}<option value={member.persona}>{member.persona} (unavailable)</option>{/if}
-        </select>
-      </label>
+        />
+      </div>
       {#if member.persona && !member.persona_available}
         <p class="status status--at_risk">“{member.persona}” is no longer offered; replies use the default.</p>
       {/if}

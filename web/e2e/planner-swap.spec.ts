@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { ADMIN, csrf, expect, test } from './support';
+import { ADMIN, csrf, expect, test, choose, optionLabels } from './support';
 
 // Workplan step planner-swap (user decisions 2026-10-01): releasing a dragged
 // run on another card's middle swaps their slots (between cards still moves);
@@ -177,15 +177,15 @@ test('run sheet: "Swap timing with…" picks a run, previews both slots, confirm
   const picker = sheet.getByRole('combobox', { name: 'Swap with' });
   await expect(picker).toBeFocused();
   // Only live runs of this week, never itself.
-  await expect(picker.locator('option', { hasText: 'HFA' })).toHaveCount(0);
-  await picker.selectOption({ label: 'Tue 29 23:30 · XBM' });
+  expect((await optionLabels(picker)).filter((l) => l.includes('HFA'))).toEqual([]);
+  await choose(picker, { label: 'Tue 29 23:30 · XBM' });
   const group = sheet.getByRole('group', { name: /Swap HFA's timing/ });
   await expect(group).toContainText('HFA → Tue 29 23:30; XBM → Mon 28 20:00.');
   // Cancel closes it and returns focus to the toggle.
   await group.getByRole('button', { name: 'Cancel' }).click();
   await expect(toggle).toBeFocused();
   await toggle.click();
-  await picker.selectOption({ label: 'Tue 29 23:30 · XBM' });
+  await choose(picker, { label: 'Tue 29 23:30 · XBM' });
   await sheet.getByRole('button', { name: 'Swap', exact: true }).click();
   // The pane stays on the run; the picker folds away.
   await expect(group).toBeHidden();

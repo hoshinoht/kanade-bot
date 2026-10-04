@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, settle, test } from './support';
+import { ADMIN, expect, settle, test, choose, openList, optionLabels } from './support';
 
 // Week mini cards grow on hover (fine pointers) and keyboard focus, in flow:
 // the cards below in that day move down rather than being covered (an
@@ -287,10 +287,11 @@ test('the channel filter offers only the week\'s party channels and narrows ever
   const party = [...new Set(runs.map((r) => r.channel_id))];
   await page.getByRole('button', { name: 'Filters (0)' }).click();
   const filters = page.getByRole('search', { name: 'Filter the week' });
-  const select = filters.getByLabel('Channel');
-  const offered = await select.locator('option').evaluateAll((options) => (options as HTMLOptionElement[]).map((o) => o.value));
+  const select = filters.getByRole('combobox', { name: 'Channel' });
+  const offered = await (await openList(select)).getByRole('option').evaluateAll((options) => options.map((o) => (o as HTMLElement).dataset.value ?? ''));
+  await select.press('Escape');
   expect(offered[0]).toBe('');
-  await expect(select.locator('option').first()).toHaveText('All channels');
+  expect((await optionLabels(select))[0]).toBe('All channels');
   expect(offered.slice(1).sort()).toEqual([...party].sort());
   // Guild channels with no run this week are not offered.
   expect(all.some((c) => !party.includes(c.id))).toBe(true);
@@ -300,7 +301,7 @@ test('the channel filter offers only the week\'s party channels and narrows ever
   const live = runs.filter((r) => r.status !== 'done' && r.status !== 'cancelled');
   const pick = party.map((id) => ({ id, n: live.filter((r) => r.channel_id === id).length })).sort((a, b) => b.n - a.n)[0]!;
   const mine = live.filter((r) => r.channel_id === pick.id).map((r) => r.id).sort();
-  await select.selectOption(pick.id);
+  await choose(select, pick.id);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(`${mine.length} run${mine.length === 1 ? '' : 's'}, filtered`);
   expect((await page.locator('.board [data-run]').evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.run!))).sort()).toEqual(mine);
   await page.keyboard.press('Escape');

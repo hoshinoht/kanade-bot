@@ -8,6 +8,8 @@
 <script lang="ts">
   import type { BossRow, ConfigView, Difficulty } from '@kanade/api-types';
   import { tick } from 'svelte';
+  import { Icon, Select } from '@kanade/ui';
+  import '@kanade/ui/styles/select.scss';
   import { changes } from './dirty';
   import { Resource } from '../resource.svelte';
   import MinutesField from './MinutesField.svelte';
@@ -67,7 +69,7 @@
   async function add() {
     draft.overrides.push({ boss: '', difficulty: '', minutes: draft.default_minutes ?? 30 });
     await tick();
-    list?.querySelector<HTMLSelectElement>('li:last-child select')?.focus();
+    list?.querySelector<HTMLElement>('li:last-child button.dd, li:last-child select')?.focus();
   }
 
   async function remove(index: number) {
@@ -115,24 +117,37 @@
         {#each draft.overrides as row, index (index)}
           {@const name = row.boss ? (bossOf(row.boss)?.name ?? row.boss) : `Override ${index + 1}`}
           <li class="runlen__row" class:runlen__row--bad={bad === index}>
-            <label class="field"
+            <div class="field"
               ><span>Boss</span>
-              <select value={row.boss} onchange={(event) => pickBoss(index, event.currentTarget.value)} aria-invalid={bad === index && !row.boss}>
-                {#if !row.boss}<option value="">Pick a boss</option>{/if}
-                {#each bosses.data ?? [] as boss (boss.key)}<option value={boss.key}>{boss.name}</option>{/each}
-                {#if row.boss && !bossOf(row.boss)}<option value={row.boss}>{row.boss}</option>{/if}
-              </select>
-            </label>
-            <label class="field"
+              <Select
+                label="Boss"
+                value={row.boss}
+                options={[
+                  ...(bosses.data ?? []).map((boss) => ({ value: boss.key, label: boss.name })),
+                  ...(row.boss && !bossOf(row.boss) ? [{ value: row.boss, label: row.boss }] : []),
+                ]}
+                placeholder="Pick a boss"
+                noun="bosses"
+                invalid={bad === index && !row.boss}
+                describedby={bad === index && (!row.boss || !row.difficulty) ? `${uid}-why-${index}` : undefined}
+                onchange={(key) => pickBoss(index, key)}
+              />
+            </div>
+            <div class="field"
               ><span>Difficulty</span>
-              <select bind:value={row.difficulty} disabled={!row.boss} aria-invalid={bad === index && !row.difficulty}>
-                {#if !row.difficulty}<option value="">—</option>{/if}
-                {#each difficultiesOf(row.boss) as d (d.letter)}<option value={d.letter as Difficulty}>{d.name}</option>{/each}
-                {#if row.difficulty && !difficultiesOf(row.boss).some((d) => d.letter === row.difficulty)}<option value={row.difficulty}
-                    >{row.difficulty}</option
-                  >{/if}
-              </select>
-            </label>
+              <Select
+                label="Difficulty"
+                bind:value={() => row.difficulty, (v) => (row.difficulty = v as Difficulty)}
+                options={[
+                  ...difficultiesOf(row.boss).map((d) => ({ value: d.letter, label: d.name })),
+                  ...(row.difficulty && !difficultiesOf(row.boss).some((d) => d.letter === row.difficulty) ? [{ value: row.difficulty, label: row.difficulty }] : []),
+                ]}
+                placeholder={row.boss ? '—' : '— pick a boss first'}
+                disabled={!row.boss}
+                invalid={bad === index && Boolean(row.boss) && !row.difficulty}
+                describedby={bad === index && (!row.boss || !row.difficulty) ? `${uid}-why-${index}` : undefined}
+              />
+            </div>
             <label class="field"
               ><span>Minutes</span>
               <input
@@ -147,6 +162,11 @@
               />
             </label>
             <button type="button" class="btn btn--ghost runlen__remove" aria-label="Remove the {name} override" onclick={() => remove(index)}>Remove</button>
+            {#if bad === index && (!row.boss || !row.difficulty)}
+              <p class="dd-error runlen__why" id="{uid}-why-{index}">
+                <Icon name="alert-circle" /><span>{row.boss ? 'Pick a difficulty' : 'Pick a boss'} before saving this length.</span>
+              </p>
+            {/if}
           </li>
         {/each}
       </ul>
@@ -214,5 +234,10 @@
 
   .runlen__remove {
     margin-left: auto;
+  }
+
+  /* The words under the row's fields, so the fields keep one baseline. */
+  .runlen__why {
+    flex: 1 0 100%;
   }
 </style>

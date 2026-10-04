@@ -15,9 +15,10 @@ for (const [path, query, search] of [
     await expect(toggle.locator('svg')).toHaveCount(1);
 
     await toggle.click();
-    // The Dates trigger takes the popover's surface, not the title bar's (ink on its own fill).
+    // The Dates trigger sits in the filter row beside "Filters (n)" (P_Dates), in the title bar's ink.
     const ink = (el: Element) => getComputedStyle(el).color;
-    expect(await panel.getByRole('button', { name: /^Dates/ }).evaluate(ink)).toEqual(await panel.evaluate(ink));
+    await expect(panel.getByRole('button', { name: /^Dates/ })).toHaveCount(0);
+    expect(await page.getByRole('button', { name: /^Dates/ }).evaluate(ink)).toEqual(await toggle.evaluate(ink));
     await panel.getByLabel('Model').focus();
     await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();

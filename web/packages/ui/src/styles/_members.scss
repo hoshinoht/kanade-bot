@@ -9,12 +9,7 @@
 .members-window__head { flex-wrap: nowrap; gap: 0.55rem; }
 .members-window__search { align-self: center; width: min(240px, 27vw); margin-left: auto; }
 .members-window__search input { width: 100%; min-width: 0; }
-.members-window__sort { flex: none; gap: 0.25rem; min-height: 2rem; padding: 0 0.35rem 0 0.75rem; border-radius: 1rem; white-space: nowrap; cursor: pointer; }
-.members-window__sort-label { font-weight: 600; }
-.members-window__sort-label::after { content: ":"; }
-.members-window__sort select { field-sizing: content; min-height: 0; padding: 0.2rem 0.1rem; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
-.members-window__sort select:focus { box-shadow: none; }
-.members-window__sort:focus-within { outline: 2px solid var(--win-ink); outline-offset: 1px; }
+.members-window__sort { display: flex; flex: none; align-self: center; }
 
 .members-window__body {
   display: flex;

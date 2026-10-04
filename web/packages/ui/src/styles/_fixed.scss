@@ -122,9 +122,8 @@
 .fixedsheet__content .fixedsheet__more .fixedsheet__typed input { flex: 1 1 auto; width: auto; min-width: 0; min-height: 32px; padding-top: 0; padding-bottom: 0; }
 
 // Fields (mockup `.fld`): 40 px, 12 px corners, the row surface.
-.fixedsheet__content input:not([type="checkbox"], [type="radio"]),
-.fixedsheet__content select { min-height: 40px; border-width: 1.5px; border-radius: 12px; background: var(--row); }
-.fixedsheet__note input, .fixedsheet__fields select, .fixedsheet__fields input { width: 100%; }
+.fixedsheet__content input:not([type="checkbox"], [type="radio"]) { min-height: 40px; border-width: 1.5px; border-radius: 12px; background: var(--row); }
+.fixedsheet__note input, .fixedsheet__fields input { width: 100%; }
 
 // The party (mockup `.pick`): outlined name chips; picked ones accent-filled
 // pills with a tick. The checkbox stays for keyboards, visually hidden.
@@ -146,7 +145,6 @@
 .fixedsheet__fields .field, .fixedsheet__channel { gap: 4px; }
 .fixedsheet__fields .fixedsheet__field-error { grid-column: 1 / -1; margin: 0; }
 .fixedsheet__fields .field + .field { margin-top: 0; }
-.fixedsheet__channel select { width: 100%; }
 .fixedsheet__foot { display: flex; gap: 0.5rem; align-items: center; padding: 0.65rem 1rem; border-top: 1.5px solid var(--line); }
 .fixedsheet__foot .btn--danger { margin-right: auto; }
 .boss-check { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }

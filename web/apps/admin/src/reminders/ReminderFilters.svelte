@@ -15,7 +15,8 @@
 
 <script lang="ts">
   import { tick } from 'svelte';
-  import { Icon } from '@kanade/ui';
+  import { Icon, Select, type SelectOption } from '@kanade/ui';
+  import '@kanade/ui/styles/select.scss';
 
   let {
     filter = $bindable(),
@@ -29,12 +30,16 @@
   let button = $state<HTMLButtonElement>();
   let panel = $state<HTMLDivElement>();
   const count = $derived(Object.values(filter).filter(Boolean).length);
+  const kindOptions = $derived<SelectOption[]>([{ value: '', label: 'every kind' }, ...kinds.map((k) => ({ value: k, label: k }))]);
+  const runOptions = $derived<SelectOption[]>([{ value: '', label: 'every run' }, ...runs.map((r) => ({ value: r.id, label: r.label }))]);
+  const memberOptions = $derived<SelectOption[]>([{ value: '', label: 'anyone', icon: 'users' }, ...people.map((p) => ({ value: p, label: p, mono: p.slice(0, 1).toUpperCase() }))]);
+  const dayOptions = $derived<SelectOption[]>([{ value: '', label: 'every day', icon: 'calendar' }, ...days.map((d) => ({ value: d, label: d }))]);
 
   async function toggle() {
     open = !open;
     if (!open) return;
     await tick();
-    panel?.querySelector<HTMLElement>('select')?.focus({ preventScroll: true });
+    panel?.querySelector<HTMLElement>('button.dd, select')?.focus({ preventScroll: true });
   }
 
   function close(refocus: boolean) {
@@ -78,18 +83,10 @@
         }
       }}
     >
-      <label class="field"><span>Kind</span>
-        <select bind:value={filter.kind}><option value="">every kind</option>{#each kinds as k (k)}<option value={k}>{k}</option>{/each}</select>
-      </label>
-      <label class="field"><span>Run</span>
-        <select bind:value={filter.run}><option value="">every run</option>{#each runs as r (r.id)}<option value={r.id}>{r.label}</option>{/each}</select>
-      </label>
-      <label class="field"><span>Member</span>
-        <select bind:value={filter.member}><option value="">anyone</option>{#each people as p (p)}<option value={p}>{p}</option>{/each}</select>
-      </label>
-      <label class="field"><span>Day</span>
-        <select bind:value={filter.day}><option value="">every day</option>{#each days as d (d)}<option value={d}>{d}</option>{/each}</select>
-      </label>
+      <Select size="bar" label="Kind" options={kindOptions} bind:value={filter.kind} noun="kinds" />
+      <Select size="bar" label="Run" options={runOptions} bind:value={filter.run} noun="runs" />
+      <Select size="bar" label="Member" options={memberOptions} bind:value={filter.member} noun="members" />
+      <Select size="bar" label="Day" options={dayOptions} bind:value={filter.day} noun="days" />
       {#if count}<button class="btn btn--ghost" type="button" onclick={() => (filter = { ...NO_FILTER })}>Clear</button>{/if}
     </div>
   {/if}

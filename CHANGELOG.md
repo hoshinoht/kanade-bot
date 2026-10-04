@@ -6,6 +6,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin dropdowns: every select is one rounded pill with keyboard
+  type-ahead, search on long lists and the phone's own picker on small
+  screens; Re-read channels is a multi-select (All · None), and the Dates
+  range sits in the Chat and Extractions filter row.
 - v5 admin Move picker: a boss-week day strip and a time stepper (Run lengths
   step) with the typed "wed 21:30" shortcut, suggestions and clash warnings,
   in the run pane, the run sheet and the Inbox's "Edit, then approve"; the

@@ -1,4 +1,4 @@
-import { ADMIN, expect, test } from './support';
+import { ADMIN, expect, test, choose } from './support';
 
 test('admin run pane: status, answers, roster and preview ping', async ({ page }) => {
   await page.goto(`${ADMIN}/?sw=off`);
@@ -23,7 +23,7 @@ test('admin run pane: status, answers, roster and preview ping', async ({ page }
   await expect(sheet.locator('.chip--no', { hasText: 'Sora' })).toBeVisible();
   await expect(sheet.getByText('someone said no')).toBeVisible();
 
-  await sheet.getByRole('combobox', { name: 'Add someone to HLimbo for this week' }).selectOption({ label: 'Hotaru' });
+  await choose(sheet.getByRole('combobox', { name: 'Add someone to HLimbo for this week' }), { label: 'Hotaru' });
   await expect(sheet.locator('.run__people .chip', { hasText: 'Hotaru' })).toBeVisible();
   await sheet.getByRole('button', { name: 'Take Hotaru off this run for this week only' }).click();
   await expect(sheet.locator('.run__people .chip', { hasText: 'Hotaru' })).toHaveCount(0);

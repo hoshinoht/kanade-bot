@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { boardExists, composite, diff, markdown, MOCKUPS, renderBoard, settle, skeleton } from './fidelity-kit';
-import { ADMIN, expect, PINNED_NOW, test } from './support';
+import { ADMIN, expect, PINNED_NOW, test, choose, openList } from './support';
 
 // Layout fidelity against the M3E boards: `bun run fidelity [pair ...] [--keep]`
 // (scripts/fidelity.ts builds with KANADE_FIDELITY=1 so the data-fid tags
@@ -112,9 +112,9 @@ const PAIRS: Pair[] = [
     // The board shows one unsaved change: Chat's reasoning level.
     ready: async (page) => {
       const chat = page.getByRole('group', { name: 'Chat' }).getByRole('combobox', { name: 'Reasoning' });
-      const current = await chat.inputValue();
-      const values = await chat.locator('option').evaluateAll((options) => options.map((o) => (o as HTMLOptionElement).value));
-      await chat.selectOption(values.find((v) => v !== current && v !== '') ?? values[0]!);
+      const current = await chat.getAttribute('data-value');
+      const values = await (await openList(chat)).getByRole('option').evaluateAll((options) => options.map((o) => (o as HTMLElement).dataset.value ?? ''));
+      await choose(chat, values.find((v) => v !== current && v !== '') ?? values[0]!);
       await expect(page.getByText('1 unsaved change')).toBeVisible();
     },
   },
@@ -313,7 +313,7 @@ const PAIRS: Pair[] = [
     path: '/chat',
     ready: async (page) => {
       await page.getByRole('button', { name: /^Filters/ }).click();
-      const trigger = page.getByRole('group', { name: 'Filters' }).getByRole('button', { name: /^Dates/ });
+      const trigger = page.getByRole('button', { name: /^Dates/ });
       await trigger.click();
       await page.getByRole('dialog', { name: 'Date range' }).getByRole('button', { name: 'Last 7 days' }).click();
       await page.getByRole('dialog', { name: 'Date range' }).getByRole('button', { name: 'Apply' }).click();
@@ -339,7 +339,7 @@ const PAIRS: Pair[] = [
     path: '/chat',
     ready: async (page) => {
       await page.getByRole('button', { name: /^Filters/ }).click();
-      await page.getByRole('group', { name: 'Filters' }).getByRole('button', { name: /^Dates/ }).click();
+      await page.getByRole('button', { name: /^Dates/ }).click();
       const sheet = page.getByRole('dialog', { name: 'Dates' });
       await sheet.getByRole('button', { name: 'Last boss week' }).click();
       await sheet.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
@@ -383,6 +383,52 @@ const PAIRS: Pair[] = [
       await view.getByRole('radio', { name: /^Mon 05/ }).click();
       await view.getByRole('textbox', { name: 'Or type a day and time' }).fill('20:00');
       await expect(view.getByRole('status').filter({ hasText: 'Clash:' })).toBeVisible();
+    },
+  },
+  // The dropdown (picker boards P_Select, P_SelectSpec, P_SelectPhone): Reminders'
+  // filters with a run chosen and the list reopened, History's searchable "Who",
+  // the Re-read multi-select, and the phone's pills over native selects.
+  {
+    name: 'select-bar',
+    board: 'P_Select',
+    path: '/reminders',
+    ready: async (page) => {
+      await page.getByRole('button', { name: /^Filters/ }).click();
+      const run = page.getByRole('combobox', { name: 'Run' });
+      await choose(run, { index: 4 });
+      await run.press('ArrowDown');
+      await page.keyboard.press('ArrowDown');
+      await expect(page.getByRole('listbox', { name: 'Run' })).toBeVisible();
+    },
+  },
+  {
+    name: 'select-search',
+    board: 'P_SelectSpec',
+    path: '/history',
+    ready: async (page) => {
+      await page.getByRole('combobox', { name: 'Who' }).click();
+      await page.getByRole('combobox', { name: 'Filter people' }).fill('yu');
+      await expect(page.getByRole('listbox', { name: 'Who' })).toBeVisible();
+    },
+  },
+  {
+    name: 'select-multi',
+    board: 'P_SelectSpec',
+    path: '/config?section=rescan',
+    ready: async (page) => {
+      const channels = page.getByRole('combobox', { name: 'Channels to re-read' });
+      const list = await openList(channels);
+      for (const i of [0, 1, 3]) await list.getByRole('option').nth(i).click();
+      await channels.press('ArrowDown');
+    },
+  },
+  {
+    name: 'select-phone',
+    board: 'P_SelectPhone',
+    path: '/reminders',
+    ready: async (page) => {
+      await page.getByRole('button', { name: /^Filters/ }).click();
+      await choose(page.getByRole('combobox', { name: 'Run' }), { index: 4 });
     },
   },
 ];

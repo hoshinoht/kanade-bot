@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { ADMIN, csrf, expect, test } from './support';
+import { ADMIN, csrf, expect, test, choose } from './support';
 
 // Workplan step planner-time-drops (user decisions 2026-10-01): a pointer drop
 // sets the time from the runs around it (Config → Run lengths), the keyboard
@@ -214,13 +214,13 @@ test('Config Run lengths: overrides from the catalog save whole; bad values are 
   await expect(panel.getByRole('heading', { name: 'Run lengths' })).toBeVisible();
   await expect(panel.getByRole('spinbutton', { name: 'Each boss' })).toHaveValue('30');
   // The seeded Hard Black Mage override.
-  await expect(panel.getByRole('combobox', { name: 'Boss' })).toHaveCount(1);
+  await expect(panel.getByRole('combobox', { name: 'Boss', exact: true })).toHaveCount(1);
 
   // Client check: out of range, nothing sent.
   await panel.getByRole('button', { name: 'Add an override' }).click();
-  const boss = panel.getByRole('combobox', { name: 'Boss' }).last();
+  const boss = panel.getByRole('combobox', { name: 'Boss', exact: true }).last();
   await expect(boss).toBeFocused();
-  await boss.selectOption({ label: 'Carling' });
+  await choose(boss, { label: 'Carling' });
   await panel.getByRole('spinbutton', { name: 'Minutes' }).last().fill('600');
   await panel.getByRole('button', { name: 'Save run lengths' }).click();
   await expect(panel.getByRole('alert')).toHaveText('Override 2: a run length is 5–480 whole minutes.');
@@ -254,5 +254,5 @@ test('Config Run lengths: overrides from the catalog save whole; bad values are 
   // Remove returns focus to "Add an override".
   await panel.getByRole('button', { name: /^Remove the Carling override/ }).click();
   await expect(panel.getByRole('button', { name: 'Add an override' })).toBeFocused();
-  await expect(panel.getByRole('combobox', { name: 'Boss' })).toHaveCount(1);
+  await expect(panel.getByRole('combobox', { name: 'Boss', exact: true })).toHaveCount(1);
 });
