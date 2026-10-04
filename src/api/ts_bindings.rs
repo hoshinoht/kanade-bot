@@ -88,6 +88,8 @@ fn bindings() -> String {
         .add::<week::NextRun>()
         .add::<week::Model>()
         .add::<week::Summary>()
+        .add::<week::TonightRun>()
+        .add::<week::Tonight>()
         .add::<admin::RunResult>()
         .add::<admin::Previous>()
         .add::<admin::MoveResult>()

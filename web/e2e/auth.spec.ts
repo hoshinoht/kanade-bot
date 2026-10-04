@@ -113,3 +113,39 @@ test('sign out ends the session and shows sign-in', async ({ page }) => {
   await page.goto(`${ADMIN}/history?sw=off`);
   await expect(page).toHaveURL(`${ADMIN}/login?next=%2Fhistory%3Fsw%3Doff`);
 });
+
+test("signed out, the sign-in page shows tonight's run without anyone's name", async ({ page }) => {
+  const week = await (await page.request.get(`${ADMIN}/api/admin/week`)).json();
+  const carling = week.runs.find((run: { id: string }) => run.id === 'r-carling');
+  const names: string[] = carling.participants.map((p: { name: string }) => p.name);
+  expect(names.length).toBeGreaterThan(0);
+  await signOutBehind(page);
+  await page.goto(`${ADMIN}/login?sw=off`);
+  const strip = page.locator('.gate__tonight');
+  await expect(strip).toHaveText(/^\s*Tonight\s*22:00\s*Carling \+ Radiant Malefic Star\s*answered yes: 4\/7\s*$/);
+  const body = (await page.locator('.gate__body').innerText()).toLowerCase();
+  for (const name of names) expect(body).not.toContain(name.toLowerCase());
+  await expect(page.locator('.gate__body')).not.toContainText('#');
+});
+
+test('the tonight strip renders nothing when the read fails or no run is today, and says Today for a daytime run', async ({ page }) => {
+  await signOutBehind(page);
+  await page.route('**/api/admin/auth/tonight', (route) => route.fulfill({ status: 503, json: { error: 'unavailable', message: 'down' } }));
+  await page.goto(`${ADMIN}/login?sw=off`);
+  await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toBeVisible();
+  await expect(page.locator('.gate__tonight')).toHaveCount(0);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+
+  await page.unroute('**/api/admin/auth/tonight');
+  await page.route('**/api/admin/auth/tonight', (route) => route.fulfill({ json: { run: null } }));
+  await page.reload();
+  await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toBeVisible();
+  await expect(page.locator('.gate__tonight')).toHaveCount(0);
+
+  await page.unroute('**/api/admin/auth/tonight');
+  await page.route('**/api/admin/auth/tonight', (route) =>
+    route.fulfill({ json: { run: { time: '09:30', bosses: ['Lucid'], tally: { on: 1, total: 6 } } } }),
+  );
+  await page.reload();
+  await expect(page.locator('.gate__tonight')).toHaveText(/^\s*Today\s*09:30\s*Lucid\s*answered yes: 1\/6\s*$/);
+});

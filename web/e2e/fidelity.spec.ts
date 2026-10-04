@@ -282,6 +282,7 @@ const PAIRS: Pair[] = [
       await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'none' } });
       await page.goto(`${ADMIN}/login?sw=off`);
       await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toBeVisible();
+      await expect(page.getByText('Carling + Radiant Malefic Star')).toBeVisible();
     },
   },
   // The run sheet: the phone's full sheet, and the pane's "larger view" on a laptop.

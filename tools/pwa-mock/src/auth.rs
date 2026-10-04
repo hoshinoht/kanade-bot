@@ -85,6 +85,11 @@ pub async fn methods() -> Response {
     Json(json!({ "discord": true, "tailscale": false, "token": true })).into_response()
 }
 
+/// Signed out like `methods`: `auth::open` covers every `/api/admin/auth/` path.
+pub async fn tonight(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.tonight()).into_response()
+}
+
 pub async fn discord_start(
     State(app): State<App>,
     Query(q): Query<HashMap<String, String>>,

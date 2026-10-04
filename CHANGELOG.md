@@ -6,6 +6,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin sign-in page shows tonight's next run (time, bosses and the yes
+  tally; no names) from a new sessionless `GET /api/admin/auth/tonight`.
 - v5 admin Reminders follows its M3E board: Queued / Sent / Stale & other
   tabs in one window, a Filters (n) popover, one day-grouped table with an
   "In" column and party chips, and a footer naming the next card. Only the

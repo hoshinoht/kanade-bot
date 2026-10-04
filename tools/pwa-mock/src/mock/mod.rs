@@ -419,6 +419,27 @@ impl Store {
         }
     }
 
+    /// The next live run when it starts later today (the server's `dto::week::tonight`).
+    pub fn tonight(&self) -> Tonight {
+        let now = Self::now_minute();
+        let run = self
+            .runs
+            .iter()
+            .filter(|r| LIVE.contains(&r.status) && r.time.is_some())
+            .filter(|r| Self::start_minute(r) > now)
+            .min_by_key(|r| Self::start_minute(r))
+            .filter(|r| Self::start_minute(r).div_euclid(1440) == now.div_euclid(1440))
+            .map(|r| {
+                let run = self.dto(r);
+                TonightRun {
+                    time: run.time.unwrap_or_default(),
+                    bosses: run.bosses.into_iter().map(|b| b.name).collect(),
+                    tally: run.tally,
+                }
+            });
+        Tonight { run }
+    }
+
     pub fn channels() -> Vec<Named> {
         seed::CHANNELS
             .iter()

@@ -1440,6 +1440,21 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "",
     )
     .await;
+    // Signed out, the sign-in strip still answers: time, boss names and tally only.
+    let tonight = h
+        .expect(
+            false,
+            "GET",
+            "/api/admin/auth/tonight",
+            None,
+            StatusCode::OK,
+            "week.json#/$defs/Tonight",
+        )
+        .await;
+    assert_eq!(
+        tonight,
+        json!({ "run": { "time": "22:00", "bosses": ["Carling", "Radiant Malefic Star"], "tally": { "on": 4, "total": 7 } } })
+    );
     let (status, headers, session) = h
         .send_with(
             false,

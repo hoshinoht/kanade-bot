@@ -152,6 +152,37 @@
   justify-content: center;
 }
 
+// HeroLogin's "Tonight" strip: today's next run, time and bosses (no names).
+.gate__body .gate__tonight {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: var(--chip-fill);
+  color: var(--ink);
+  font-size: var(--fs-body);
+}
+
+.gate__tonight-time {
+  font-family: var(--mono);
+  font-size: var(--fs-clock-narrow);
+  font-weight: 700;
+}
+
+.gate__tonight-bosses {
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.gate__tonight-tally {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+}
+
 // The key action (board: 52 px, fully rounded).
 .gate__body .gate__key {
   min-height: 52px;

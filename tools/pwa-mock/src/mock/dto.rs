@@ -154,6 +154,19 @@ pub struct Summary {
     pub model: Model,
 }
 
+/// The signed-out sign-in strip: time, boss names and the aggregate tally only.
+#[derive(Serialize)]
+pub struct TonightRun {
+    pub time: String,
+    pub bosses: Vec<String>,
+    pub tally: Tally,
+}
+
+#[derive(Serialize)]
+pub struct Tonight {
+    pub run: Option<TonightRun>,
+}
+
 #[derive(Deserialize)]
 pub struct MoveRequest {
     pub day: u8,

@@ -10,6 +10,7 @@ mod inbox;
 pub mod limits;
 mod logs;
 mod read;
+mod tonight;
 mod write;
 
 // Private response types the TypeScript bindings test names.
@@ -33,6 +34,7 @@ pub fn routes() -> Router<Arc<Site>> {
         .route("/healthz", get(health))
         .route("/art/{kind}/{key}", get(assets::art))
         .merge(auth::routes())
+        .merge(tonight::routes())
         .merge(read::routes())
         .merge(write::routes())
         .merge(history::routes())

@@ -210,6 +210,7 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         .route("/api/admin/roles", get(api::roles))
         .route("/api/admin/session", get(api::session))
         .route("/api/admin/auth/methods", get(auth::methods))
+        .route("/api/admin/auth/tonight", get(auth::tonight))
         .route("/api/admin/auth/discord/start", get(auth::discord_start))
         .route(
             "/api/admin/auth/discord/callback",

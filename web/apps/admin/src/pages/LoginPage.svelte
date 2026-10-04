@@ -1,6 +1,6 @@
 <script lang="ts">
   import '@kanade/ui/styles/gate.scss';
-  import type { Identity, Session, SignInMethods } from '@kanade/api-types';
+  import type { Identity, Session, SignInMethods, Tonight, TonightRun } from '@kanade/api-types';
   import { initial, PendingLabel } from '@kanade/ui';
   import { tick } from 'svelte';
   import { discordStart, loginErrorText } from '../auth';
@@ -23,9 +23,14 @@
   let identity = $state<Identity | null>(null);
   let methods = $state<SignInMethods | null>(null);
   let methodsError = $state('');
+  /** Today's next run, if any; the server decides "today" in the guild zone. */
+  let tonight = $state<TonightRun | null>(null);
+  const tonightLabel = $derived(tonight && tonight.time >= '17:00' ? 'Tonight' : 'Today');
   const name = $derived(identity?.name ?? 'Kanade');
   $effect(() => {
     void send((c) => c.get<Identity>('/api/identity')).then((r) => (identity = r.ok ? r.value : null));
+    // Decoration only: a failure renders nothing and never holds up sign-in.
+    void send((c) => c.get<Tonight>('/api/admin/auth/tonight')).then((r) => (tonight = r.ok ? r.value.run : null));
     void send((c) => c.get<SignInMethods>('/api/admin/auth/methods')).then((r) => {
       if (r.ok) {
         methods = r.value;
@@ -101,6 +106,14 @@
       </div>
     </div>
     <div class="gate__body" data-fid="gate-body">
+      {#if tonight}
+        <p class="gate__tonight" data-fid="gate-tonight">
+          <span class="cap">{tonightLabel}</span>
+          <span class="gate__tonight-time">{tonight.time}</span>
+          <span class="gate__tonight-bosses">{tonight.bosses.join(' + ')}</span>
+          <span class="gate__tonight-tally"><span class="vh">answered yes:</span> {tonight.tally.on}/{tonight.tally.total}</span>
+        </p>
+      {/if}
       <!-- Discord OAuth first, the tailnet identity as fallback, the admin token
            as break-glass only; each shown only when this server offers it. -->
       {#if loginError}<p class="flash flash--error" role="alert">{loginErrorText(loginError)}</p>{/if}

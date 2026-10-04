@@ -9,7 +9,8 @@ Response JSON Schemas (frozen contract, endpoint index): [`api-schemas/`](api-sc
 
 Rows marked **Implemented** are served by the Rust binary (`src/api/`);
 listener, guard and static-serving behaviour is in `runtime-bootstrap.md`.
-Unmounted `/api/admin/*` paths are `404`; every mounted admin route requires a
+Unmounted `/api/admin/*` paths are `404`; every mounted admin route except the
+sign-in reads (`auth/methods`, `auth/tonight`) and the sign-in flows requires a
 session (below) and answers `401 unauthenticated` without one.
 
 ## Sign-in and sessions (**Implemented**)
@@ -17,6 +18,7 @@ session (below) and answers `401 unauthenticated` without one.
 | Method & path | Request | Response | Notes |
 |---|---|---|---|
 | `GET /api/admin/auth/methods` | — | `{discord, tailscale, token}` booleans | `tailscale` is true only when this request carries an allow-listed identity from the trusted edge. |
+| `GET /api/admin/auth/tonight` | — | `Tonight` (`{run: {time, bosses, tally} \| null}`) | No session (the sign-in page's strip, owner decision 2026-10-04). `run` is the next live run only when it starts later today in the guild zone; `bosses` are display names and `tally` the public week's aggregate. Never names, ids, answers, party, channel or version. `no-store` like every `/api/` reply. |
 | `GET /api/admin/auth/discord/start?next=/path` | — | `303` to Discord | Sets the pre-auth cookie. `next` must be a same-origin path (else `/`; never `//…`, `\`, schemes or `/api/…`). |
 | `GET /api/admin/auth/discord/callback` | Discord's `code`, `state` | `200` HTML landing page (meta refresh + link to `next`, no script) + session cookie | Failures: `303 /?login_error=state\|denied\|forbidden\|discord\|unavailable\|rate_limited` (bad/expired/replayed state; cancelled; not staff or a bot account; code refused or a scope other than exactly `identify`; Discord (incl. its 429 cooldown) or member data unavailable; too many attempts). |
 | `POST /api/admin/auth/tailscale` | `{}` or no body | `Session` + cookie + `X-Kanade-CSRF` | 401 unless the edge vouches for an allow-listed login. |

@@ -96,6 +96,29 @@ members: number,
  */
 reminders: number, model: ModelBusy, };
 
+/**
+ * The signed-out sign-in strip: no names, ids, answers, party, channel or version.
+ */
+export type TonightRun = { 
+/**
+ * Guild-local `HH:MM`.
+ */
+time: string, 
+/**
+ * Catalog display names.
+ */
+bosses: Array<string>, 
+/**
+ * The public week's aggregate (`on`/`total`).
+ */
+tally: Tally, };
+
+export type Tonight = { 
+/**
+ * The next live run when it starts later today in the guild zone, else `null`.
+ */
+run: TonightRun | null, };
+
 export type RunResult = { run: Run, version: number, };
 
 export type MovePrevious = { day: number, time: string | null, };

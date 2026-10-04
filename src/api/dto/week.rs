@@ -454,32 +454,37 @@ fn is_ahead(run: &Run, now: DateTime<Utc>) -> bool {
     ) && run.datetime > now
 }
 
+/// The next live run after `now`: the summary's `next` and the sign-in strip.
+fn next_run(snapshot: &ScheduleSnapshot, now: DateTime<Utc>) -> Option<&Run> {
+    snapshot
+        .runs
+        .iter()
+        .filter(|run| is_ahead(run, now))
+        .min_by_key(|run| (run.datetime, &run.id))
+}
+
+fn yes_count(snapshot: &ScheduleSnapshot, run: &Run) -> usize {
+    let answers = answers(snapshot, run);
+    run.participants
+        .iter()
+        .filter(|id| answers.get(*id) == Some(&RsvpState::Yes))
+        .count()
+}
+
 pub fn summary(
     ctx: &Context<'_>,
     snapshot: &ScheduleSnapshot,
     inbox: u64,
     members: usize,
 ) -> Summary {
-    let next = snapshot
-        .runs
-        .iter()
-        .filter(|run| is_ahead(run, ctx.now))
-        .min_by_key(|run| (run.datetime, &run.id))
-        .map(|run| {
-            let answers = answers(snapshot, run);
-            NextRun {
-                run_id: run.id.clone(),
-                bosses: run.bosses.join(" + "),
-                when: super::when(run.datetime, ctx.zone),
-                countdown: super::countdown((run.datetime - ctx.now).num_minutes()),
-                on: run
-                    .participants
-                    .iter()
-                    .filter(|id| answers.get(*id) == Some(&RsvpState::Yes))
-                    .count(),
-                total: run.participants.len(),
-            }
-        });
+    let next = next_run(snapshot, ctx.now).map(|run| NextRun {
+        run_id: run.id.clone(),
+        bosses: run.bosses.join(" + "),
+        when: super::when(run.datetime, ctx.zone),
+        countdown: super::countdown((run.datetime - ctx.now).num_minutes()),
+        on: yes_count(snapshot, run),
+        total: run.participants.len(),
+    });
     let unanswered = snapshot
         .runs
         .iter()
@@ -504,4 +509,41 @@ pub fn summary(
             holder: None,
         },
     }
+}
+
+/// The signed-out sign-in strip: no names, ids, answers, party, channel or version.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TonightRun {
+    /// Guild-local `HH:MM`.
+    pub time: String,
+    /// Catalog display names.
+    pub bosses: Vec<String>,
+    /// The public week's aggregate (`on`/`total`).
+    pub tally: Tally,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct Tonight {
+    /// The next live run when it starts later today in the guild zone, else `null`.
+    pub run: Option<TonightRun>,
+}
+
+pub fn tonight(ctx: &Context<'_>, snapshot: &ScheduleSnapshot) -> Tonight {
+    let run = next_run(snapshot, ctx.now)
+        .filter(|run| ctx.local_date(run.datetime) == ctx.local_date(ctx.now))
+        .map(|run| TonightRun {
+            time: hhmm(ctx.zone.from_utc_datetime(&run.datetime.naive_utc())),
+            bosses: ctx
+                .bosses(&run.bosses)
+                .into_iter()
+                .map(|boss| boss.name)
+                .collect(),
+            tally: Tally {
+                on: yes_count(snapshot, run),
+                total: run.participants.len(),
+            },
+        });
+    Tonight { run }
 }

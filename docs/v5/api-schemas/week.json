@@ -205,6 +205,29 @@
           }
         }
       }
+    },
+    "Tonight": {
+      "description": "Signed-out sign-in strip: no names, ids, answers, party, channel or version.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run"],
+      "properties": {
+        "run": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["time", "bosses", "tally"],
+              "properties": {
+                "time": { "$ref": "#/$defs/LocalTime" },
+                "bosses": { "type": "array", "items": { "type": "string" } },
+                "tally": { "$ref": "common.json#/$defs/Tally" }
+              }
+            },
+            { "type": "null" }
+          ]
+        }
+      }
     }
   }
 }
