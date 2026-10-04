@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test';
 import { ADMIN, expect, settle, test } from './support';
 
 // Live bug: a pasted multi-line problem statement made one Chat log row fill
-// the screen. Free text in a log row is a two-line preview; the turn page keeps it whole.
+// the screen. Free text in a log row is a one-line preview; the open turn keeps it whole.
 
 const ID = 'c-move';
 const TAIL = 'Return the answer in any order, and explain the complexity.';
@@ -44,39 +44,58 @@ for (const [label, width, height] of [
   ['desktop', 1280, 800],
   ['phone', 390, 844],
 ] as const) {
-  test(`chat log: a ~2,000-character question is a two-line preview (${label})`, async ({ page }) => {
+  test(`chat log: a ~2,000-character question is a one-line preview (${label})`, async ({ page }) => {
     expect(LONG.length).toBeGreaterThan(1900);
     await page.setViewportSize({ width, height });
     await longQuestion(page);
     await page.goto(`${ADMIN}/chat?sw=off`);
-    const table = page.getByRole('table', { name: /Chatbot interactions/ });
-    const link = table.locator(`a[href="/chat/${ID}"]`);
-    await expect(link).toContainText('can you solve this leetcode problem for me 1. Two Sum');
+    const list = page.getByRole('listbox', { name: /Chatbot interactions/ });
+    const option = list.getByRole('option', { name: /^can you solve this leetcode problem for me 1\. Two Sum/ });
+    const question = option.locator('.chat-row__q');
+    await expect(question).toContainText('can you solve this leetcode problem for me 1. Two Sum');
     // Fences and newlines are gone from the preview; the tooltip keeps the whole question.
-    await expect(link).not.toContainText('```');
-    expect(await link.getAttribute('title')).toBe(LONG);
+    await expect(question).not.toContainText('```');
+    expect(await question.getAttribute('title')).toBe(LONG);
 
-    const box = await link.evaluate((el) => {
+    // B_Chat `.crow`: one line, cut with an ellipsis; the row stays at most three lines
+    // tall (a phone wraps the model and outcome to their own line).
+    const box = await question.evaluate((el) => {
       const cs = getComputedStyle(el);
       const line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.5;
-      return { height: el.getBoundingClientRect().height, line, clamp: cs.webkitLineClamp, overflow: cs.overflow, scroll: el.scrollHeight };
+      return { height: el.getBoundingClientRect().height, line, wrap: cs.whiteSpace, overflow: cs.textOverflow, scroll: el.scrollWidth, width: el.clientWidth };
     });
-    expect(box.clamp).toBe('2');
-    expect(box.overflow).toBe('hidden');
-    expect(box.height).toBeLessThanOrEqual(box.line * 2 + 1);
-    // The text runs past the two lines: the clamp is what stops it (the ellipsis).
-    expect(box.scroll).toBeGreaterThan(box.height + 1);
-
-    // The row stays bounded: the two-line preview plus cell padding.
-    const row = link.locator('xpath=ancestor::tr');
-    const rowHeight = (await row.boundingBox())!.height;
-    expect(rowHeight).toBeLessThanOrEqual(box.line * 2 + 64);
+    expect(box.wrap).toBe('nowrap');
+    expect(box.overflow).toBe('ellipsis');
+    expect(box.height).toBeLessThanOrEqual(box.line + 1);
+    expect(box.scroll).toBeGreaterThan(box.width + 1);
+    const rowHeight = (await option.boundingBox())!.height;
+    expect(rowHeight).toBeLessThanOrEqual(box.line * 3 + 32);
     expect(rowHeight).toBeLessThan(height * 0.2);
 
-    // Wait for the shell's entry transform before measuring CSS-pixel targets.
+    const documentSize = await page.evaluate(() => ({
+      width: document.documentElement.scrollWidth,
+      height: document.documentElement.scrollHeight,
+    }));
+    expect(documentSize.width).toBeLessThanOrEqual(width);
+    expect(documentSize.height).toBeLessThanOrEqual(height);
+
+    // Wait for the shell's entry transform before scanning.
     await settle(page);
-    // The small copy affordances meet WCAG 2.2 without widening the dense table.
-    const targets = await table.locator('.log__who button.name--copy').evaluateAll((buttons) =>
+    // Like a11y.spec: no serious or critical findings.
+    const scan = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
+    const bad = scan.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical' || v.id === 'target-size');
+    expect(bad.map((v) => `${v.id} ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
+
+    await option.click();
+    await expect(page).toHaveURL(new RegExp(`/chat/${ID}(\\?|$)`));
+    const asked = page.locator('.chat-bubble', { hasText: 'What they asked' }).locator('p');
+    await expect(asked).toContainText(TAIL);
+    await expect(asked).toContainText('```py');
+    await expect(asked).toContainText('Example 16:');
+
+    // The header's small copy affordances meet WCAG 2.2 without growing its lines.
+    await settle(page);
+    const targets = await page.locator('.chat-turn__head button.name--copy').evaluateAll((buttons) =>
       buttons.map((button) => {
         const { x, y, width, height } = button.getBoundingClientRect();
         return { x, y, right: x + width, bottom: y + height, width, height };
@@ -95,24 +114,5 @@ for (const [label, width, height] of [
         expect(overlaps, 'copy targets do not overlap').toBe(false);
       }
     }
-
-    const documentSize = await page.evaluate(() => ({
-      width: document.documentElement.scrollWidth,
-      height: document.documentElement.scrollHeight,
-    }));
-    expect(documentSize.width).toBeLessThanOrEqual(width);
-    expect(documentSize.height).toBeLessThanOrEqual(height);
-
-    // Like a11y.spec: no serious or critical findings.
-    const scan = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
-    const bad = scan.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical' || v.id === 'target-size');
-    expect(bad.map((v) => `${v.id} ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
-
-    await link.click();
-    await expect(page).toHaveURL(`${ADMIN}/chat/${ID}`);
-    const asked = page.locator('p').filter({ hasText: 'can you solve this leetcode problem' });
-    await expect(asked).toContainText(TAIL);
-    await expect(asked).toContainText('```py');
-    await expect(asked).toContainText('Example 16:');
   });
 }

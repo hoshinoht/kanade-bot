@@ -10,34 +10,35 @@ test.beforeEach(async ({ context }) => {
 
 test('chat log: names, never ids, and a click copies the id', async ({ page }) => {
   await page.goto(`${ADMIN}/chat?sw=off`);
-  const table = page.getByRole('table', { name: /Chatbot interactions/ });
+  const list = page.getByRole('listbox', { name: /Chatbot interactions/ });
   // Someone the lists do not know yet: neutral words, not "user 11494860" or the id.
   // Role mentions read from GET /api/admin/roles.
-  const stranger = table.getByRole('row').filter({ has: page.getByRole('link', { name: 'is @staff around tonight?' }) });
+  const stranger = list.getByRole('option', { name: /^is @staff around tonight\?/ });
   await expect(stranger).toContainText('Unknown member');
-  await expect(stranger).toContainText('#unknown-channel');
-  await expect(table).not.toContainText('user 1149');
-  await expect(table).not.toContainText('114948601234567890');
-  await expect(table).not.toContainText('999000111222333444');
+  await expect(list).not.toContainText('user 1149');
+  await expect(list).not.toContainText('114948601234567890');
+  await expect(list).not.toContainText('999000111222333444');
   // Every question is asked of Kanade: the opening bot mention is left out of the preview.
-  await expect(table.getByRole('link', { name: 'when is carling this week', exact: true })).toBeVisible();
-  await expect(table).not.toContainText('@YuukiSakuna');
-  await expect(table).not.toContainText('<@');
+  await expect(list.getByRole('option', { name: /^when is carling this week/ })).toBeVisible();
+  await expect(list).not.toContainText('@YuukiSakuna');
+  await expect(list).not.toContainText('<@');
   // Other mentions still read as names.
-  await expect(table.getByRole('link', { name: 'who is in #fa-night tonight, is @Yuzu in?' })).toBeVisible();
+  await expect(list.getByRole('option', { name: /^who is in #fa-night tonight, is @Yuzu in\?/ })).toBeVisible();
 
   // Guild-local friendly time, the full stamp in its tooltip; compact durations.
-  const when = table.getByRole('row', { name: /when is carling this week/ });
+  const when = list.getByRole('option', { name: /^when is carling this week/ });
   const time = when.locator('time');
   await expect(time).toHaveText('Mon 28 Sep · 00:00');
   await expect(time).toHaveAttribute('title', 'Mon 28 Sep 2026, 00:00:00 (Asia/Kuala_Lumpur)');
   await expect(time).toHaveAttribute('datetime', '2026-09-27T16:00:00Z');
   await expect(when).toContainText('3.4 s');
-  await expect(table).not.toContainText('2026-09-');
+  await expect(list).not.toContainText('2026-09-');
 
-  const ren = table.getByRole('row', { name: /when is carling this week/ }).getByRole('button', { name: 'Ren', exact: true });
-  // A clipped cell's tooltip leads with the whole name.
-  await expect(ren).toHaveAttribute('title', 'Ren · Member ID 1002 — click to copy');
+  // Names in the open turn's header copy their ids (the rows are options: names there are text).
+  await when.click();
+  const head = page.locator('.chat-turn__head');
+  const ren = head.getByRole('button', { name: 'Ren', exact: true });
+  await expect(ren).toHaveAttribute('title', 'Member ID 1002 — click to copy');
   // The expanded edge of the hit area still copies the same ID.
   await ren.click({ position: { x: 1, y: 1 } });
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('1002');
@@ -52,21 +53,22 @@ test('chat log: names, never ids, and a click copies the id', async ({ page }) =
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('1002');
 
   // An unknown one still copies its id.
-  await stranger.getByRole('button', { name: 'Unknown member' }).click();
+  await stranger.click();
+  await head.getByRole('button', { name: 'Unknown member' }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('114948601234567890');
-  await stranger.getByRole('button', { name: '#unknown-channel' }).click();
+  await head.getByRole('button', { name: '#unknown-channel' }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('999000111222333444');
 });
 
 test('chat turn: mention tokens render as copyable names', async ({ page }) => {
   await page.goto(`${ADMIN}/chat/c-error?sw=off`);
-  const asked = page.locator('.pane__section', { hasText: 'What they asked' }).locator('xpath=following-sibling::p[1]');
+  const asked = page.locator('.chat-bubble', { hasText: 'What they asked' }).locator('p');
   await expect(asked).toHaveText('@YuukiSakuna who is in #fa-night tonight, is @Yuzu in?');
   await asked.getByRole('button', { name: '@Yuzu' }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('1004');
   await asked.getByRole('button', { name: '#fa-night' }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('fa-night');
-  await expect(page.locator('.page-head').getByRole('button', { name: 'Yuzu' })).toBeVisible();
+  await expect(page.locator('.chat-turn__head').getByRole('button', { name: 'Yuzu' })).toBeVisible();
 });
 
 test('run sheet, history and member sheet name people without their ids', async ({ page }) => {
@@ -91,7 +93,7 @@ test('run sheet, history and member sheet name people without their ids', async 
 test('roles, the bot and message authors resolve from the server\'s ids', async ({ page }) => {
   // The bot by Identity.bot_user_id, a role by /roles (with its colour as a swatch).
   await page.goto(`${ADMIN}/chat/c-stranger?sw=off`);
-  const asked = page.locator('.pane__section', { hasText: 'What they asked' }).locator('xpath=following-sibling::p[1]');
+  const asked = page.locator('.chat-bubble', { hasText: 'What they asked' }).locator('p');
   await expect(asked).toHaveText('@YuukiSakuna is @staff around tonight?');
   const staff = asked.getByRole('button', { name: '@staff' });
   await expect(staff).toHaveAttribute('title', 'Role ID 300001 — click to copy');

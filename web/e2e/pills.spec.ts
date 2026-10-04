@@ -5,7 +5,7 @@ import { ADMIN, expect, test } from './support';
 
 test('pill profiles: chat, extractions, inbox, planner sheet and config share one colour story', async ({ page }) => {
   await page.goto(`${ADMIN}/chat?sw=off`);
-  const chat = page.getByRole('table', { name: /Chatbot interactions/ });
+  const chat = page.getByRole('listbox', { name: /Chatbot interactions/ });
   await expect(chat.locator('.tone--success', { hasText: 'answered' }).first()).toBeVisible();
   await expect(chat.locator('.tone--danger', { hasText: /timed out|timeout/i }).first()).toBeVisible();
   await expect(chat.locator('.status')).toHaveCount(0);

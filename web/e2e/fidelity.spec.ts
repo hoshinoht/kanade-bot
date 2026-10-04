@@ -206,6 +206,22 @@ const PAIRS: Pair[] = [
     path: `/config?section=${section}`,
     ready: (page: Page) => expect(page.getByRole('heading', { level: 3, name: heading })).toBeVisible(),
   })),
+  // c-when is the mock's masked turn: two rounds, one tool call and a stored Model view, as the boards show.
+  {
+    name: 'chat',
+    board: 'B_Chat',
+    path: '/chat/c-when',
+    ready: (page) => expect(page.getByRole('button', { name: 'Model view (masked)' })).toBeVisible(),
+  },
+  {
+    name: 'chat-trace',
+    board: 'B_ChatTrace',
+    path: '/chat/c-when',
+    ready: async (page) => {
+      await page.getByRole('tab', { name: /^Model trace/ }).click();
+      await expect(page.getByText('Round 2', { exact: true })).toBeVisible();
+    },
+  },
 ];
 
 test.describe('layout fidelity', () => {

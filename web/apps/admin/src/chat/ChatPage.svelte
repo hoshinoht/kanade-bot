@@ -1,28 +1,47 @@
 <!--
-  v4 chat.html: the chatbot's interactions. v5 adds server-side filters
-  (model, dates, outcome, channel, member, text, tool, minimum latency),
-  deep-linked through this page's query string.
+  Chat (M3E board B_Chat, gate G5): one "Interactions" window, the list of
+  turns beside the open turn. `/chat/:id` deep-links a turn; wide screens show
+  the first row when none is named. Server-side filters (model, dates,
+  outcome, channel, member, text, tool, minimum latency) ride in the query
+  string. Phones show the list, then the turn with a back step.
 -->
 <script lang="ts">
-  import { LoadingState } from '@kanade/ui';
-  import TokenUsage from '../logs/TokenUsage.svelte';
+  import '@kanade/ui/styles/panes.scss';
+  // Its global `pre` (prompts, raw replies, traces) styles the turn's code text.
+  import '@kanade/ui/styles/evidence.scss';
+  import '@kanade/ui/styles/chat.scss';
+  import { LoadingState, enter, type Toaster } from '@kanade/ui';
+  import { tick, untrack } from 'svelte';
   import PageLine from '../shell/PageLine.svelte';
+  import { getChrome } from '../shell/chrome';
   import ModelStats from './ModelStats.svelte';
-  import LogTime from '../logs/LogTime.svelte';
-  import { duration, preview } from '../logs/format';
-  import { mentionsText } from './transcript';
-  import Mentions from '../names/Mentions.svelte';
-  import Name from '../names/Name.svelte';
+  import ChatList from './ChatList.svelte';
+  import ChatTurn from './ChatTurn.svelte';
   import type { AdminWeek } from '../store.svelte';
   import type { Chat } from '@kanade/api-types';
-  import { activeCount, OUTCOME_LABEL, outcomeTone, parseFilter, toSearch, type LogFilter } from '../logs/filters';
+  import { activeCount, parseFilter, toSearch, type LogFilter } from '../logs/filters';
   import LogFilters from '../logs/LogFilters.svelte';
   import Pager from '../pages/Pager.svelte';
-  import PaneWindow from '../pages/PaneWindow.svelte';
   import { paged } from '../pages/paging';
   import { Resource } from '../resource.svelte';
 
-  let { store, search = '', onsearch }: { store: AdminWeek; search?: string; onsearch?: (search: string) => void } = $props();
+  let {
+    store,
+    toaster,
+    id = '',
+    search = '',
+    onsearch,
+    onselect,
+  }: {
+    store: AdminWeek;
+    toaster?: Toaster;
+    /** The open turn (`/chat/:id`); empty on `/chat`. */
+    id?: string;
+    search?: string;
+    onsearch?: (search: string) => void;
+    /** Opens a turn (empty: the list); `open` pushes a history entry (phones: Back returns to the list). */
+    onselect?: (id: string, open: boolean) => void;
+  } = $props();
   const tz = $derived(store.week?.timezone ?? 'Asia/Kuala_Lumpur');
 
   const filter = $derived(parseFilter(search));
@@ -67,65 +86,100 @@
   const rows = $derived(view?.rows ?? []);
   const shown = $derived(paged(rows, page));
   const filtered = $derived(activeCount(filter) > 0);
+
+  // Below 900 px the list and the turn take turns (as the Inbox).
+  let narrow = $state(false);
+  $effect(() => {
+    const media = window.matchMedia('(max-width: 899px)');
+    const update = () => (narrow = media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  });
+  const chosenId = $derived(id || (narrow ? '' : (shown.rows[0]?.id ?? '')));
+
+  // The phone frame's open turn: no page line or window chrome; "‹ Chat" in the top bar.
+  const chrome = getChrome();
+  const compact = $derived(narrow && Boolean(id) && Boolean(chrome?.phone));
+  $effect(() => {
+    if (!compact || !chrome) return;
+    chrome.back({ label: 'Chat', name: 'Back to the list (Chat)', go: () => leaveDetail() });
+    return () => chrome.back(null);
+  });
+
+  // Whether the open turn's entry came from a pick here (so leaving pops it) or a deep link.
+  const pushedHere = () => (history.state as { chatDetail?: boolean } | null)?.chatDetail === true;
+  function leaveDetail() {
+    if (pushedHere()) history.back();
+    else onselect?.('', false);
+  }
+
+  function pick(next: string, open: boolean) {
+    onselect?.(next, open && narrow);
+  }
+
+  // Narrow screens swap list and turn: focus follows into the turn after a
+  // pick, and back to the opened row on return; the list comes back backward.
+  let list = $state<{ focusOn: (id: string) => Promise<void> }>();
+  let detailEl = $state<HTMLDivElement>();
+  let returns = $state(0);
+  let was = untrack(() => id);
+  $effect(() => {
+    const now = id;
+    const before = was;
+    was = now;
+    if (!narrow || now === before) return;
+    if (now && !before) void tick().then(() => detailEl?.focus({ preventScroll: true }));
+    else if (!now && before) {
+      untrack(() => returns++);
+      void list?.focusOn(before);
+    }
+  });
 </script>
 
-<PageLine title={view ? 'Chat' : ''}>
+<PageLine title={view ? 'Chat' : ''} class={compact ? 'pageline--echo' : ''}>
   <h1>{#if view}{#if filtered}<span class="pageline__num">{rows.length}</span> of <span class="pageline__num">{view.total}</span>{:else}<span class="pageline__num">{view.total}</span>{/if} interactions{:else}Chat{/if}</h1>
   {#snippet side()}
     {#if view && view.summary.length}<ModelStats summary={view.summary} />{/if}
   {/snippet}
 </PageLine>
 
-<PaneWindow title="Interactions" bind:query searchLabel="Search interactions" placeholder="question, answer…">
-  <LogFilters {filter} facets={last?.facets ?? null} members={store.members} week={store.week} chat onchange={apply} />
-  {#if chat.error}
-    <p class="flash flash--error" role="alert">{chat.error}</p>
-  {/if}
-  {#if view}
-    {#if rows.length === 0}
-      <div class="empty"><strong>Nothing matches these filters.</strong>Remove a chip above, or Clear them all.</div>
-    {:else}
-      <div class="table-wrap">
-        <table>
-          <caption class="vh">Chatbot interactions, newest first</caption>
-          <thead><tr><th scope="col">Question</th><th scope="col">Who</th><th scope="col">When</th><th scope="col">Outcome</th><th scope="col">Model</th><th scope="col" class="num">Took</th><th scope="col" class="num">Tokens</th></tr></thead>
-          <tbody>
-            {#each shown.rows as row (row.id)}
-              {@const models = row.models.length ? row.models.filter((m, i) => row.models.indexOf(m) === i).join(', ') : '—'}
-              <tr>
-                <th scope="row"><a class="cell-clamp" href="/chat/{row.id}" title={mentionsText(row.asked)}><Mentions text={preview(row.asked)} plain asked dropBot /></a></th>
-                <td class="log__who"><Name kind="member" id={row.member_id || row.member.id} name={row.member.name} clip /><div class="id"><Name kind="channel" id={row.channel_id} name={row.channel} clip /></div></td>
-                <td class="mono"><LogTime at={row.at} timeZone={tz} /></td>
-                <td><span class="tone tone--{outcomeTone(row.outcome)}">{OUTCOME_LABEL[row.outcome] ?? row.outcome}</span></td>
-                <td class="mono log__clip" title={models}>{models}</td>
-                <td class="num log__nowrap">{duration(row.latency_ms)}</td>
-                <td class="num log__nowrap"><TokenUsage prompt={row.prompt_tokens} completion={row.completion_tokens} reasoning={row.reasoning_tokens} /></td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
+<section class="card chat window-fill" class:chat--compact={compact} data-fid="window" aria-labelledby="chat-window-title">
+  <div class="card__head chat__bar" data-fid="window-bar">
+    <h2 class="card__title" id="chat-window-title">Interactions</h2>
+    <div class="chat__actions">
+      <div class="chat__search" role="search" data-fid="window-search">
+        <label class="vh" for="chat-q">Search interactions</label>
+        <input id="chat-q" type="search" bind:value={query} placeholder="question, answer…" autocomplete="off" spellcheck="false" />
       </div>
-      <Pager bind:page pages={shown.pages} total={rows.length} noun="interaction" />
-    {/if}
-  {:else if !chat.error}
-    <LoadingState text="Loading interactions…" />
-  {/if}
-</PaneWindow>
-
-<style>
-  /* Aliases and durations never wrap mid-word; a long alias is cut, its tooltip whole. */
-  .log__clip {
-    max-width: 14rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .log__nowrap {
-    white-space: nowrap;
-  }
-
-  .log__who {
-    max-width: 14rem;
-  }
-</style>
+      <div class="chat__filters" data-fid="window-filters">
+        <LogFilters {filter} facets={last?.facets ?? null} members={store.members} week={store.week} chat onchange={apply} />
+      </div>
+    </div>
+  </div>
+  <div class="chat__body" class:chat__body--detail={narrow && Boolean(id)} class:chat__body--list={narrow && !id}>
+    <div class="chat__list" data-fid="chat-list" hidden={narrow && Boolean(id)} {@attach enter(returns || null, 'backward')}>
+      {#if chat.error}
+        <p class="flash flash--error" role="alert">{chat.error}</p>
+      {/if}
+      {#if view}
+        {#if rows.length === 0}
+          <div class="empty"><strong>Nothing matches these filters.</strong>Remove a chip above, or Clear them all.</div>
+        {:else}
+          <ChatList bind:this={list} rows={shown.rows} selected={chosenId} follow={!narrow} timeZone={tz} onpick={pick} />
+          <Pager bind:page pages={shown.pages} total={rows.length} noun="interaction" />
+        {/if}
+      {:else if !chat.error}
+        <LoadingState text="Loading interactions…" />
+      {/if}
+    </div>
+    <div class="chat__detail" data-fid="chat-detail" hidden={!chosenId} tabindex="-1" bind:this={detailEl}>
+      {#if chosenId}
+        {#if narrow && !compact}
+          <button type="button" class="btn btn--ghost chat__back" onclick={leaveDetail}><span aria-hidden="true">←</span> Back to the list</button>
+        {/if}
+        <ChatTurn id={chosenId} timeZone={tz} {toaster} />
+      {/if}
+    </div>
+  </div>
+</section>

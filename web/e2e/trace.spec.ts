@@ -98,10 +98,9 @@ test('copy transcript: Markdown by default, JSON on request, names not ids', asy
 });
 
 test('reasoning: collapsed disclosures in Chat and Extractions, reported counts beside in → out', async ({ page }) => {
-  await page.goto(`${ADMIN}/chat?sw=off`);
-  const chatRow = page.getByRole('row').filter({ has: page.locator('a[href="/chat/c-guide"]') });
-  await expect(chatRow).toContainText('— → — · 32 reasoning');
+  // The turn's header carries its usage (B_Chat rows have no tokens column).
   await page.goto(`${ADMIN}/chat/c-guide?sw=off`);
+  await expect(page.locator('.chat-turn__meta')).toContainText('— → — · 32 reasoning');
   const chat = page.locator('details').filter({ has: page.locator('summary', { hasText: 'Reasoning · 32 tokens' }) });
   await expect(chat).not.toHaveAttribute('open');
   await expect(chat.locator('pre')).toBeHidden();

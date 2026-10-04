@@ -55,7 +55,7 @@ for (const [name, path, selector, setup] of [
   ['week planner', '/', '[data-run]', null],
   ['week runs', '/', 'main table tbody tr', 'Runs'],
   ['week answers', '/', '.week-answers__day', 'Answers'],
-  ['chat log', '/chat', 'main table tbody tr', null],
+  ['chat log', '/chat', '.chat-row', null],
   ['reminders', '/reminders', 'main table tbody tr', null],
   ['config', '/config', '.settings__panel', null],
 ] as const) {

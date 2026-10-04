@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { guardrailFlags, messageParts, modelViewState, profileText, routeLabel, took } from '../src/chat/facts';
+import { callTone, chipTone, guardrailFlags, messageParts, modelViewState, profileText, routeLabel, routeTone, took } from '../src/chat/facts';
+import { short, WITHHELD } from '../src/chat/trace';
 
 describe('chat turn facts', () => {
   it('tells an unknown time from a real zero', () => {
@@ -39,5 +40,25 @@ describe('chat turn facts', () => {
     const call = messageParts({ role: 'assistant', content: null, tool_calls: [{ id: 'call_1', name: 'schedule.read' }] });
     expect(call.content).toBeNull();
     expect(JSON.parse(call.extra!)).toEqual({ tool_calls: [{ id: 'call_1', name: 'schedule.read' }] });
+  });
+
+  it('tints outcomes, calls and routes as the boards do (never colour alone: the word rides along)', () => {
+    expect(chipTone('answered')).toBe('ok');
+    expect(chipTone('timeout')).toBe('risk');
+    expect(chipTone('rate_limited')).toBe('warn');
+    expect(chipTone('withheld')).toBe('neutral');
+    expect(callTone('ok')).toBe('ok');
+    expect(callTone('refused')).toBe('risk');
+    expect(routeTone('homelab')).toBe('ok');
+    expect(routeTone('external_unmasked')).toBe('warn');
+    expect(routeTone(null)).toBe('neutral');
+  });
+
+  it('cuts a trace preview to one short line', () => {
+    expect(short('{"a":\n  1}')).toBe('{"a": 1}');
+    const long = short('x'.repeat(500));
+    expect(long).toHaveLength(121);
+    expect(long.endsWith('…')).toBe(true);
+    expect(WITHHELD).toBe('[message withheld]');
   });
 });

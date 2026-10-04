@@ -372,8 +372,11 @@ test('extractions: pager, detail tabs and a rescan job', async ({ page }) => {
 test('chat: interactions and one interaction in detail', async ({ page }) => {
   await go(page, '/chat');
   await expect(page.getByText('p50').first()).toBeVisible();
-  await page.getByRole('link', { name: 'can you move bm to wed' }).click();
-  await expect(page).toHaveURL(`${ADMIN}/chat/c-move`);
+  // B_Chat (gate G5): the list stays beside the open turn.
+  await page.getByRole('option', { name: /^can you move bm to wed/ }).click();
+  await expect(page).toHaveURL(/\/chat\/c-move(\?|$)/);
+  await expect(page.getByRole('option', { name: /^can you move bm to wed/ })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('heading', { level: 2, name: 'Sun 27 Sep · 06:00' })).toBeVisible();
   await page.getByRole('tab', { name: /Tool trace/ }).click();
   await expect(page.getByRole('row', { name: /schedule.propose/ })).toBeVisible();
   await expect(page.getByRole('row', { name: /schedule.propose/ })).toContainText('63 ms');
@@ -386,7 +389,7 @@ test('chat filters: deep-linked, combinable, summarised, cleared', async ({ page
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('2 of 13 interactions');
   await expect(page.getByRole('button', { name: /Outcome: timeout, error/ })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Filters (1)' })).toBeVisible();
-  await expect(page.getByRole('row')).toHaveCount(3);
+  await expect(page.getByRole('listbox', { name: /Chatbot interactions/ }).getByRole('option')).toHaveCount(2);
 
   // Add a model and a minimum latency through the panel; the URL follows.
   await page.getByRole('button', { name: 'Filters (1)' }).click();
@@ -413,8 +416,9 @@ test('chat filters: deep-linked, combinable, summarised, cleared', async ({ page
   await page.getByRole('searchbox', { name: 'Search interactions' }).fill('carling');
   await expect(page).toHaveURL(/q=carling/);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 of 13 interactions');
-  await page.getByRole('link', { name: /when is carling this week$/ }).click();
-  await expect(page).toHaveURL(`${ADMIN}/chat/c-when`);
+  await page.getByRole('option', { name: /^when is carling this week/ }).click();
+  // The open turn keeps the filters: the list beside it still shows them.
+  await expect(page).toHaveURL(/\/chat\/c-when\?.*q=carling/);
 
   // Nonsense is refused by the server, not silently ignored.
   const bad = await page.request.get(`${ADMIN}/api/admin/chat?outcome=nope`);
@@ -431,7 +435,7 @@ test('chat filters: deep-linked, combinable, summarised, cleared', async ({ page
   await page.getByRole('group', { name: 'Filters' }).getByLabel('At least (ms)').press('Tab');
   await expect(page.getByRole('alert').filter({ hasText: 'whole milliseconds' })).toBeVisible();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Chat');
-  await expect(page.getByRole('table')).toHaveCount(0);
+  await expect(page.getByRole('listbox', { name: /Chatbot interactions/ })).toHaveCount(0);
 });
 
 test('extraction filters: outcome, model and member, deep-linked', async ({ page }) => {

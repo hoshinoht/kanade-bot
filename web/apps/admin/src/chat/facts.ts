@@ -3,6 +3,7 @@
  * unknown, and the Model view's request messages. Pure, so unit-tested.
  */
 import type { ChatRoute, ChatTurn, ModelView } from '@kanade/api-types';
+import { outcomeTone } from '../logs/filters';
 import { duration } from '../logs/format';
 
 export const ROUTE_LABEL: Record<ChatRoute, string> = {
@@ -12,6 +13,20 @@ export const ROUTE_LABEL: Record<ChatRoute, string> = {
 };
 
 export const routeLabel = (route: ChatRoute | null): string => (route ? (ROUTE_LABEL[route] ?? route) : '—');
+
+export type ChipTone = 'neutral' | 'ok' | 'risk' | 'warn';
+
+/** The M3E chip for an outcome (`.ok2` / `.err2`); the legacy pill tone rides along. */
+export function chipTone(outcome: string): ChipTone {
+  const tone = outcomeTone(outcome);
+  return tone === 'success' ? 'ok' : tone === 'danger' ? 'risk' : tone === 'warning' ? 'warn' : 'neutral';
+}
+
+/** A tool call's outcome chip: "ok" or what stopped it. */
+export const callTone = (outcome: string): ChipTone => (outcome === 'ok' ? 'ok' : 'risk');
+
+/** Route chips: leaving the homelab is a warning tint, the homelab an ok tint (B_ChatTrace). */
+export const routeTone = (route: ChatRoute | null): ChipTone => (route === 'homelab' ? 'ok' : route ? 'warn' : 'neutral');
 
 /** null is "unknown" (not recorded); 0 is a real "0 ms". */
 export function took(ms: number | null): string {

@@ -40,8 +40,10 @@ test('model view: a masked turn ends with a collapsed, admin-only Model view tha
   const region = page.locator(`#${await toggle.getAttribute('aria-controls')}`);
   await expect(region).toBeHidden();
   await expect(panel.getByText(/Admin only, sensitive/)).toBeVisible();
-  // Last in the turn: nothing of the conversation follows it.
-  expect(await panel.evaluate((el) => el.lastElementChild?.classList.contains('modelview'))).toBe(true);
+  // Last in the turn, its warning after it (B_Chat): nothing of the conversation follows.
+  expect(
+    await panel.evaluate((el) => [el.lastElementChild?.classList.contains('chat-modelview__note'), el.lastElementChild?.previousElementSibling?.classList.contains('chat-modelview')]),
+  ).toEqual([true, true]);
 
   await toggle.focus();
   await page.keyboard.press('Enter');
@@ -90,10 +92,15 @@ test('turn facts: rounds show model, effort, route and latency; calls sit under 
   await go(page, '/chat/c-guide');
   await expect(page.getByText('gentle (saved)')).toBeVisible();
   await page.getByRole('tab', { name: /Model trace/ }).click();
-  const rounds = page.getByRole('table', { name: /Model requests/ });
-  await expect(rounds.getByRole('row', { name: /^Round 1 / })).toContainText(['kanata/chat']);
-  const first = rounds.getByRole('row', { name: /^Round 1 / }).getByRole('cell');
-  await expect(first).toHaveText(['kanata/chat', 'low', 'Homelab', '3.0 s', 'tool_calls', 'knowledge.read', '—']);
+  // B_ChatTrace: one card per round; the round's calls sit inside it.
+  const first = page.getByRole('region', { name: 'Round 1' });
+  await expect(first.locator('.chat-round__head > *')).toHaveText(['Round 1', 'kanata/chat', 'effort low', 'Homelab', '3.0 s']);
+  await expect(first.locator('dd')).toHaveText(['tool_calls', 'knowledge.read', '—']);
+  await expect(first.locator('.chat-tool')).toContainText(['knowledge.read']);
+  await expect(first.locator('.chat-tool')).toContainText('12 ms');
+  await expect(first.locator('.chat-tool__return')).toContainText('Return: “');
+  await expect(page.getByRole('region', { name: 'Round 2' }).locator('.chat-tool')).toHaveCount(0);
+  await serious(page, 'chat turn model trace');
 
   await page.getByRole('tab', { name: /Tool trace/ }).click();
   const trace = page.getByRole('table', { name: 'Tool calls' });
@@ -112,7 +119,7 @@ test('turn facts: an unknown time reads "unknown"; a failed turn shows its error
   await page.getByRole('tab', { name: /Tool trace/ }).click();
   await expect(page.getByRole('row', { name: /knowledge\.read/ }).getByRole('cell', { name: 'unknown' })).toBeVisible();
   await page.getByRole('tab', { name: /Model trace/ }).click();
-  await expect(page.getByRole('row', { name: /^Round 2 / }).getByRole('cell', { name: 'unknown' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Round 2' }).locator('.chat-round__latency')).toHaveText('unknown');
 
   await go(page, '/chat/c-error');
   const failed = page.getByRole('paragraph').filter({ hasText: /^Failed:/ });

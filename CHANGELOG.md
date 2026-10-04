@@ -803,6 +803,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- v5 admin Chat follows its M3E boards: one window lists interactions beside
+  the open turn (`/chat/:id`), with Copy transcript, pill tabs, conversation
+  bubbles and per-round Model trace cards; phones show the list, then the turn
+  with "‹ Chat".
 - v5 admin Limits: when the server has not mounted the limits route, the page
   shows its M3E board's unavailable state: one window with a centred glyph, a
   short explanation and an **Open Config → Models** link.

@@ -1,0 +1,806 @@
+// Chat (mockups B_Chat, B_ChatTrace; gate G5): one "Interactions" window,
+// the list of turns (400 px) beside the open turn. The list and the turn's
+// tab panel scroll on their own; the window, its title bar, the turn's
+// header and its pill tabs never do. Narrow screens show one at a time.
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+}
+
+/* ── title bar: Interactions · search · Filters (n) ─────────────────────── */
+
+.chat__bar {
+  flex-wrap: nowrap;
+  row-gap: 6px;
+}
+
+.chat__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.chat__search {
+  width: min(220px, 24vw);
+}
+
+.chat__search input {
+  width: 100%;
+  min-width: 0;
+}
+
+// The shared log filter bar rides on the title bar: "Filters (n)", the
+// active filters as removable pills, Clear; its fields open as a popover.
+.chat__filters {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.chat__filters .logfilters {
+  position: relative;
+  margin: 0;
+}
+
+.chat__filters .logfilters__row {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.card__head .chat__filters .logfilters__chip {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1.5px solid color-mix(in srgb, var(--win-ink) 45%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--win-ink);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+}
+
+.card__head .chat__filters .logfilters__chip:hover {
+  border-color: var(--win-ink);
+  background: color-mix(in srgb, var(--win-ink) 12%, transparent);
+}
+
+.chat__filters .logfilters__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: max-content;
+  max-width: min(40rem, calc(100vw - 2rem));
+  max-height: min(70dvh, 32rem);
+  overflow: auto;
+  margin: 0;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 10px 24px -12px rgb(0 0 0 / 0.45);
+  color: var(--ink);
+}
+
+/* ── body: list beside the turn ─────────────────────────────────────────── */
+
+.chat__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: clamp(280px, 36%, 400px) minmax(0, 1fr);
+}
+
+// One column when only one side shows: a narrow screen, or no turn to open.
+.chat__body:has(> [hidden]) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.chat__list,
+.chat__detail {
+  min-width: 0;
+  min-height: 0;
+}
+
+.chat__list[hidden],
+.chat__detail[hidden] {
+  display: none;
+}
+
+.chat__list {
+  display: flex;
+  flex-direction: column;
+  border-right: 1.5px solid var(--line);
+  background: var(--pane);
+}
+
+.chat__body:has(> .chat__detail[hidden]) .chat__list {
+  border-right: 0;
+}
+
+.chat__list > .list-pane {
+  flex: 1 1 auto;
+}
+
+.chat__list > .list-pane .list-pane__options {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 10px;
+}
+
+.chat__list > .flash,
+.chat__list > .empty {
+  margin: 12px;
+}
+
+.chat__list > .pager {
+  flex: none;
+}
+
+/* ── list rows (mockup `.crow`) ─────────────────────────────────────────── */
+
+.chat-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 12px;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.chat-row:hover {
+  background: var(--row-hover);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+// Selected: the surface, a ring and weight -- not colour alone.
+.list-pane__options > .chat-row[aria-selected="true"] {
+  border-radius: 18px;
+  background: var(--select);
+  box-shadow: inset 0 0 0 1.5px var(--select-edge);
+}
+
+.chat-row[aria-selected="true"] .chat-row__q {
+  font-weight: 700;
+}
+
+// Narrow: the keyboard's active option (not yet opened) gets the focus ring.
+.list-pane__options:focus-visible .chat-row--active {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.chat-row__top,
+.chat-row__meta {
+  display: flex;
+  min-width: 0;
+}
+
+.chat-row__top {
+  align-items: baseline;
+  gap: 8px;
+}
+
+.chat-row__q {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-body-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-row__took {
+  flex: none;
+  font-size: var(--fs-mini);
+}
+
+// Model and outcome wrap to their own line rather than clip.
+.chat-row__meta {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+  white-space: nowrap;
+}
+
+.chat-row__end {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  margin-left: auto;
+}
+
+.chat-row__who {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-row__model {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-row__outcome {
+  flex: none;
+}
+
+.chat-row .status-chip {
+  min-height: 18px;
+  padding: 0 8px;
+  font-size: var(--fs-mini);
+  font-weight: 400;
+}
+
+/* ── the open turn ──────────────────────────────────────────────────────── */
+
+.chat__detail {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+}
+
+.chat__detail:focus {
+  outline: none;
+}
+
+.chat__back {
+  align-self: flex-start;
+  margin: 10px 14px 0;
+}
+
+.chat__detail > .loading-state,
+.chat-turn__missing {
+  margin: 18px;
+}
+
+.chat-turn__head {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 18px 10px;
+}
+
+.chat-turn__title {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.chat-turn__eyebrow .name {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+// The names keep their 24 px hit area without growing the header's or a bubble's lines.
+.chat-turn__title .name--copy,
+.chat-bubble__text .name--copy {
+  margin-block: -4px;
+}
+
+.chat-turn__when {
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--fs-brand);
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.chat-turn__meta {
+  margin: 0;
+  line-height: 1.3;
+  overflow: hidden;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-turn__format {
+  flex: none;
+  width: 120px;
+}
+
+.chat-turn__format select {
+  height: 36px;
+  min-height: 36px;
+  padding-block: 0;
+}
+
+.chat-turn__copy {
+  flex: none;
+  min-height: 36px;
+}
+
+.chat-turn__tabs {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  padding: 0 14px 10px;
+  overflow-x: auto;
+  border-bottom: 1.5px solid var(--line);
+}
+
+.chat-turn__tabs .ptab {
+  flex: none;
+}
+
+.chat-turn__panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 18px;
+}
+
+.chat-turn__panel:focus-visible {
+  outline-offset: -3px;
+}
+
+.chat-turn__panel > * {
+  flex: none;
+  margin: 0;
+}
+
+.chat-error {
+  padding: 0.5rem 0.75rem;
+  border: 2px solid color-mix(in srgb, var(--risk) 45%, transparent);
+  border-left-width: 6px;
+  border-radius: var(--r-sm);
+  color: var(--risk-text);
+}
+
+.chat-error__code {
+  font-size: var(--fs-small);
+}
+
+/* Conversation: tonal fact chips (mockup `.tonal2`), then the two bubbles. */
+
+.chat-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chat-fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 14px;
+  background: var(--chip-fill);
+  font-size: var(--fs-small);
+}
+
+.chat-fact dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.chat-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 78%;
+  padding: 12px 16px;
+  border-radius: 20px 20px 20px 6px;
+  background: var(--pane);
+  // The boards' 14.5 px message text: the body-sm step (0.9rem) is the nearest.
+  font-size: var(--fs-body-sm);
+  line-height: 1.4;
+}
+
+.chat-bubble > .cap {
+  font-size: var(--fs-micro);
+}
+
+.chat-bubble__text {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.chat-bubble:not(.chat-bubble--bot) {
+  align-self: flex-start;
+}
+
+.chat-bubble--bot {
+  align-self: flex-end;
+  border-radius: 20px 20px 6px 20px;
+  background: var(--select);
+}
+
+.chat-bubble--bot > .cap {
+  color: var(--select-ink);
+}
+
+.chat-turn__panel > .reasoning {
+  margin-block: 0;
+}
+
+/* A historical masked turn's Model view (radius 16, --pane); its warning after it. */
+
+.chat-modelview {
+  padding: 6px 14px;
+  border-radius: 16px;
+  background: var(--pane);
+}
+
+.chat-modelview__title {
+  margin: 0;
+  font-size: var(--fs-body-sm);
+  font-weight: 700;
+}
+
+.chat-modelview__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 26px;
+  padding: 0 0.5rem 0 0.2rem;
+  margin-left: -0.2rem;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.chat-modelview__toggle:hover {
+  background: var(--row-hover);
+}
+
+.chat-modelview__toggle .icon {
+  transition: transform 0.15s ease;
+}
+
+.chat-modelview__toggle[aria-expanded="true"] .icon {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-modelview__toggle .icon {
+    transition: none;
+  }
+}
+
+.chat-modelview__note {
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+.modelview {
+  margin-top: 0.4rem;
+}
+
+.modelview__head {
+  margin: 1rem 0 0.4rem;
+  font-size: var(--fs-body);
+  font-weight: 700;
+}
+
+.modelview__head:first-child {
+  margin-top: 0.4rem;
+}
+
+.modelview__label {
+  margin: 0.7rem 0 0.3rem;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.modelview__map {
+  width: auto;
+  min-width: min(22rem, 100%);
+}
+
+.modelview__map th,
+.modelview__map td {
+  text-align: left;
+}
+
+.modelview__messages,
+.modelview__calls {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.modelview__messages li,
+.modelview__calls li {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.modelview__role {
+  font-size: var(--fs-small);
+  font-weight: 700;
+}
+
+.modelview__extra {
+  color: var(--dim-text);
+}
+
+/* Model trace: one card per round (mockup `.round`). */
+
+.chat-rounds {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chat-round {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  line-height: 1.35;
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.chat-round__head {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-round__title {
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: 700;
+}
+
+.chat-round__latency {
+  margin-left: auto;
+  font-weight: 700;
+}
+
+// Effort and route chips (mockup `.capchip`): leaving the homelab is a warning tint.
+.chat-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 12px;
+  background: var(--chip-fill);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+}
+
+.chat-chip--warn {
+  background: color-mix(in srgb, var(--warn) 14%, var(--surface));
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 45%, var(--surface));
+  color: var(--warn-text);
+}
+
+.chat-chip--ok {
+  background: color-mix(in srgb, var(--ok) 12%, var(--surface));
+  color: var(--ok-text);
+}
+
+// Finish · Requested tools · Guardrail: three label/value pairs on one line.
+.chat-round__facts {
+  display: grid;
+  grid-template-columns: repeat(3, auto minmax(0, 1fr));
+  align-items: baseline;
+  gap: 6px 12px;
+  margin: 0;
+  font-size: var(--fs-small);
+}
+
+.chat-round__facts > div {
+  display: contents;
+}
+
+.chat-round__facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+// A call of the round (mockup `.tool`): name · arguments · took · outcome · Expand.
+.chat-tool {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--pane);
+  font-size: var(--fs-small);
+}
+
+.chat-tool__name {
+  font-weight: 700;
+}
+
+.chat-tool__args {
+  overflow: hidden;
+  color: var(--dim-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-tool__expand {
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-text);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.chat-tool__return {
+  margin: -4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+/* Tool trace: one line per call, previews cut with an ellipsis. */
+
+.chat-trace {
+  width: 100%;
+  // Phones scroll the table sideways rather than squeeze the previews to nothing.
+  min-width: 42rem;
+  table-layout: fixed;
+}
+
+.chat-trace th:nth-child(1) { width: 12rem; }
+.chat-trace th:nth-child(4) { width: 5.5rem; }
+.chat-trace th:nth-child(5) { width: 6rem; }
+
+.chat-trace__one,
+.chat-trace__cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-trace__preview {
+  display: block;
+  width: 100%;
+  min-height: 1.5rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-trace__text {
+  display: block;
+  overflow: hidden;
+  text-decoration: underline dotted;
+  text-overflow: ellipsis;
+  text-underline-offset: 0.2em;
+  white-space: nowrap;
+}
+
+.chat-trace__round th {
+  overflow: hidden;
+  background: var(--raise);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Produced and Raw. */
+
+.chat-produced {
+  display: grid;
+  gap: 3px;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-produced > li {
+  padding: 10px 14px;
+  border-radius: 4px;
+  background: var(--row);
+}
+
+.chat-produced > li:first-child { border-top-left-radius: 16px; border-top-right-radius: 16px; }
+.chat-produced > li:last-child { border-bottom-left-radius: 16px; border-bottom-right-radius: 16px; }
+
+.chat-raw {
+  margin: 0;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 20px;
+  background: var(--pane);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ── narrow screens ─────────────────────────────────────────────────────── */
+
+// The detail is narrow beside the list until 1100 px: the round's head may wrap.
+@media (max-width: 1099px) {
+  .chat-round__head {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 899px) {
+  .chat__bar {
+    flex-wrap: wrap;
+  }
+
+  .chat__search {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 8rem;
+  }
+
+  .chat__actions {
+    flex: 1 1 auto;
+  }
+
+  .chat-turn__head {
+    flex-wrap: wrap;
+    padding: 12px 14px 8px;
+  }
+
+  .chat-turn__title {
+    flex-basis: 100%;
+  }
+
+  .chat-turn__panel {
+    padding: 12px 14px;
+  }
+
+  .chat-bubble {
+    max-width: 92%;
+  }
+
+  .chat-round__facts {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .chat-tool {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .chat-tool > .status-chip,
+  .chat-tool__expand {
+    justify-self: start;
+  }
+
+  .chat-turn__meta {
+    white-space: normal;
+  }
+}
+
+// The phone frame's open turn: no window chrome; the turn on the ground's card.
+.frame--phone .chat--compact > .card__head {
+  display: none;
+}

@@ -40,6 +40,8 @@
   // Route-level code splitting: only the Week page (and the run sheet it
   // opens) is in the initial bundle; every other page loads on first visit.
   const loadBosses = () => import('./bosses/BossWorkspace.svelte');
+  // The Chat list and an open interaction are one list-detail page (gate G5).
+  const loadChat = () => import('./chat/ChatPage.svelte');
   const PAGES = {
     login: () => import('./pages/LoginPage.svelte'),
     fixed: () => import('./fixed/FixedPage.svelte'),
@@ -48,8 +50,8 @@
     inbox: () => import('./inbox/InboxPage.svelte'),
     extractions: () => import('./extractions/ExtractionsPage.svelte'),
     extraction: () => import('./extractions/ExtractionPage.svelte'),
-    chat: () => import('./chat/ChatPage.svelte'),
-    'chat-interaction': () => import('./chat/ChatTurnPage.svelte'),
+    chat: loadChat,
+    'chat-interaction': loadChat,
     limits: () => import('./limits/LimitsPage.svelte'),
     members: () => import('./members/MembersPage.svelte'),
     reminders: () => import('./reminders/RemindersPage.svelte'),
@@ -197,6 +199,17 @@
       case 'limits':
         return { toaster };
       case 'chat':
+      case 'chat-interaction':
+        return {
+          store,
+          toaster,
+          id: params.id ?? '',
+          search: router.search,
+          onsearch: (search: string) => router.go(`${router.path}${search}`, { replace: true }),
+          // A pick on a phone pushes an entry, so Back returns to the list.
+          onselect: (id: string, open: boolean) =>
+            router.go(`/chat${id ? `/${encodeURIComponent(id)}` : ''}${router.search}`, { replace: !open, state: open ? { chatDetail: true } : null }),
+        };
       case 'extractions':
         return {
           store,
@@ -217,7 +230,6 @@
       case 'boss-knowledge':
         return { selectedKey: params.boss ?? '', difficulty: router.query.get('difficulty') ?? '' };
       case 'extraction':
-      case 'chat-interaction':
         return { id: params.id ?? '', timeZone: store.week?.timezone ?? 'Asia/Kuala_Lumpur', toaster };
       case 'reminders':
         return { run: router.query.get('run') ?? '' };
@@ -233,11 +245,15 @@
   });
 
   // A route change (not the first load) moves focus to the page, as a page load would.
+  // Chat's list and its open interaction are one page, which places focus itself.
+  const inChat = (path: string) => /^\/chat(\/|$)/.test(path);
   let lastPath = router.path;
   $effect(() => {
     const path = router.path;
     if (path === lastPath) return;
+    const within = inChat(path) && inChat(lastPath);
     lastPath = path;
+    if (within) return;
     void tick().then(() => document.getElementById('main')?.focus({ preventScroll: true }));
   });
 
@@ -523,7 +539,7 @@
           pane={sheetWide && RunSheet && store.week ? runPane : undefined}
         />
       {:else if loader && route}
-        {#key route.key === 'bosses' || route.key === 'boss-knowledge' ? 'boss-workspace' : `${route.key} ${JSON.stringify(route.params)}`}<Lazy {loader} props={pageProps(route.key, route.params)} />{/key}
+        {#key route.key === 'bosses' || route.key === 'boss-knowledge' ? 'boss-workspace' : route.key === 'chat' || route.key === 'chat-interaction' ? 'chat-workspace' : `${route.key} ${JSON.stringify(route.params)}`}<Lazy {loader} props={pageProps(route.key, route.params)} />{/key}
       {:else}
         <NotFoundPage path={router.path} />
       {/if}

@@ -376,7 +376,8 @@ test('chat page line on a phone: the strip under the top bar, the table within t
 // box, the item's own alignment and margins.
 test('window dots sit on the tab strip centre line in tabbed title bars', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  for (const path of ['/history', '/inbox', '/limits', '/chat/c-move']) {
+  // Chat's window has no title-bar tabs (B_Chat): its pill tabs belong to the open turn.
+  for (const path of ['/history', '/inbox', '/limits']) {
     await page.goto(`${ADMIN}${path}?sw=off`);
     const strip = page.locator('.card__head.tabs__strip').first();
     await expect(strip.getByRole('tab').first()).toBeVisible();
