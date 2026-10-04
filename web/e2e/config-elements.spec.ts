@@ -83,6 +83,9 @@ test('re-read: channel chips, a running job card that finishes, and Cancel', asy
   await go.click();
   const card = panel(page).getByRole('region', { name: 'Re-reading 2 channels' });
   await expect(card).toBeVisible();
+  // Messages read of the job's total, and the start in guild time (the mock's pinned noon).
+  await expect(card.locator('.rescan__pct')).toHaveText(/^\d{1,3}%$/);
+  await expect(card.locator('.rescan__status')).toHaveText(/^\d+ of \d+ messages · started 12:00$/);
   await expect(card.getByRole('button', { name: 'Cancel' })).toBeVisible();
   await expect(card).toContainText('Found so far:');
   await expect(go).toHaveAttribute('aria-disabled', 'true');

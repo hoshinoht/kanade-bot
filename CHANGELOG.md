@@ -6,6 +6,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin PWA Re-read card shows a running job's progress in messages:
+  "41% · 27 of 66 messages · started 01:40" (guild time), with the wavy bar
+  (experiment B) counting messages too. The percentage and count are left
+  out while the total is unknown or zero, the start while queued; the
+  percentage never passes 100%.
 - v5 admin rescan jobs report progress: `started_at` and the job's
   `messages` / `messages_total` (gated messages read, and the window's
   messages counted from the cache when the job starts), so the Re-read card

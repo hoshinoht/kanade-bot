@@ -120,10 +120,10 @@ test('B: a rescan shows the wavy progress bar, which settles flat when done', as
   const bar = page.getByRole('progressbar', { name: 'Rescan progress' });
   await expect(bar).toBeVisible();
   await expect(bar).toHaveAttribute('aria-valuemin', '0');
-  await expect(bar).toHaveAttribute('aria-valuenow', '1', { timeout: 5_000 });
-  const max = Number(await bar.getAttribute('aria-valuemax'));
-  expect(max).toBeGreaterThan(1);
-  await expect(bar).toHaveAttribute('aria-valuetext', `1 of ${max} channels read`);
+  // While running the bar counts messages against the job's total; the first channel read makes it non-zero.
+  await expect(bar).toHaveAttribute('aria-valuetext', /^[1-9]\d* of \d+ messages read$/, { timeout: 5_000 });
+  const [, read, of] = /^(\d+) of (\d+)/.exec((await bar.getAttribute('aria-valuetext'))!)!;
+  expect(Number(read)).toBeLessThan(Number(of));
   // Mid-run the fill is a moving wave, and the flat track remains.
   const wave = bar.locator('.xp-wavy__wave');
   const first = await wave.getAttribute('d');
@@ -133,14 +133,16 @@ test('B: a rescan shows the wavy progress bar, which settles flat when done', as
   expect(await bar.locator('.xp-wavy__track').getAttribute('d')).toBeTruthy();
   await page.locator('.rescan').screenshot({ path: `${OUT}/B-after-rescan-running.png` });
   await expect(page.locator('.rescan__status')).toHaveText(/Done: \d+ channels read/, { timeout: 15_000 });
-  await expect(bar).toHaveAttribute('aria-valuenow', String(max));
+  // A finished job keeps its channel tally, full.
+  await expect(bar).toHaveAttribute('aria-valuetext', /^(\d+) of \1 channels read$/);
+  await expect(bar).toHaveAttribute('aria-valuenow', (await bar.getAttribute('aria-valuemax'))!);
   await expect.poll(async () => new Set(ys((await wave.getAttribute('d'))!)).size, { timeout: 5_000 }).toBe(1);
   await page.locator('.rescan').screenshot({ path: `${OUT}/B-after-rescan-done.png` });
 });
 
 test('B off: the rescan keeps its text-only progress', async ({ page }) => {
   await startRescan(page, false);
-  await expect(page.locator('.rescan__status')).toHaveText(/Reading 1 of \d+ channels/, { timeout: 5_000 });
+  await expect(page.locator('.rescan__status')).toHaveText(/^\d+ of \d+ messages · started \d\d:\d\d$/, { timeout: 5_000 });
   await expect(page.getByRole('progressbar')).toHaveCount(0);
   await page.locator('.rescan').screenshot({ path: `${OUT}/B-before-rescan-running.png` });
 });
@@ -149,7 +151,7 @@ test('B: reduced motion draws a flat, still bar', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await startRescan(page, true);
   const bar = page.getByRole('progressbar', { name: 'Rescan progress' });
-  await expect(bar).toHaveAttribute('aria-valuenow', '1', { timeout: 5_000 });
+  await expect(bar).toHaveAttribute('aria-valuetext', /^[1-9]\d* of \d+ messages read$/, { timeout: 5_000 });
   const wave = bar.locator('.xp-wavy__wave');
   await expect.poll(async () => (await wave.getAttribute('d')) ?? '').not.toBe('');
   const d = (await wave.getAttribute('d'))!;

@@ -1,7 +1,8 @@
 <!--
   Re-read the party channels (v4 rescan_job.html; M3E B_CfgReread). Channel
   checkbox chips and the window choice in one card; a running job gets its
-  own card with progress, what it found so far and Cancel. The job is polled
+  own card with progress (messages read of the total and the start time, each
+  only when the API supplies it), what it found so far and Cancel. The job is polled
   with the bounded poller instead of v4's self-replacing htmx fragment, and
   its progress line is repeated in a polite live region.
 -->
@@ -11,6 +12,8 @@
   import { experiments, LiveRegion, WavyProgress } from '@kanade/ui';
   import { tick } from 'svelte';
   import { send } from '../resource.svelte';
+  import { getChrome } from '../shell/chrome';
+  import { rescanProgress } from './progress';
 
   let { targets, details = false }: { targets: Channel[]; /** Link the job card to Extractions (Config). */ details?: boolean } = $props();
 
@@ -34,10 +37,13 @@
   });
   $effect(() => () => poller.stop());
 
+  const chrome = getChrome();
   const running = $derived(job?.state === 'running');
   const done = $derived(job ? job.channels.filter((c) => c.state === 'done').length : 0);
   const total = $derived(job?.channels.length ?? 0);
-  const percent = $derived(total ? Math.round((done / total) * 100) : 0);
+  // While running, progress is in messages and only what the API supplies; a finished job keeps its channel tally.
+  const progress = $derived(job && running ? rescanProgress(job, chrome?.timezone || 'Asia/Kuala_Lumpur') : null);
+  const percent = $derived(progress ? progress.percent : total ? Math.round((done / total) * 100) : 0);
   const read = $derived(job ? job.channels.reduce((sum, c) => sum + (c.state === 'done' ? c.messages : 0), 0) : 0);
   const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
   const status = $derived(
@@ -117,12 +123,22 @@
           {job.state === 'running' ? 'Re-reading' : job.state === 'done' ? 'Re-read' : 'Stopped re-reading'}
           {plural(total, 'channel')}
         </h4>
-        <span class="rescan__pct">{percent}%</span>
-        <span class="rescan__status">{status}{#if read}<span class="rescan__read">{` · ${plural(read, 'message')} read`}</span>{/if}</span>
+        {#if percent !== null}<span class="rescan__pct">{percent}%</span>{/if}
+        {#if progress}
+          <span class="rescan__status"
+            >{[progress.count || (read ? `${status} · ${plural(read, 'message')} read` : status), progress.started].filter(Boolean).join(' · ')}</span
+          >
+        {:else}
+          <span class="rescan__status">{status}{#if read}<span class="rescan__read">{` · ${plural(read, 'message')} read`}</span>{/if}</span>
+        {/if}
         {#if running}<button class="btn rescan__cancel" type="button" onclick={() => void cancel()}>Cancel</button>{/if}
       </div>
       {#if experiments.on}
-        <WavyProgress value={done} max={total} label="Rescan progress" text="{done} of {total} channels read" />
+        {#if progress?.count}
+          <WavyProgress value={Math.min(job.messages ?? 0, job.messages_total ?? 0)} max={job.messages_total ?? 0} label="Rescan progress" text="{progress.count} read" />
+        {:else}
+          <WavyProgress value={done} max={total} label="Rescan progress" text="{done} of {total} channels read" />
+        {/if}
       {/if}
       <p class="rescan__found">
         {job.state === 'running' ? 'Found so far:' : 'Found:'}
