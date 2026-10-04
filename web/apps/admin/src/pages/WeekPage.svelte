@@ -4,7 +4,7 @@
   import type { Snippet } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import type { Run, WeekKey } from '@kanade/api-types';
-  import { dayNumber, experiments, flip, Icon, LoadingState, longDate, NapWindow, SPRING_BOUNCY, SPRING_BOUNCY_MS, runTitle, sortRuns } from '@kanade/ui';
+  import { dayNumber, experiments, flip, Icon, LoadingState, longDate, NapWindow, SPRING_BOUNCY, SPRING_BOUNCY_MS, runTitle, sortRuns, WavyProgress } from '@kanade/ui';
   import Planner from '../planner/Planner.svelte';
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
@@ -16,6 +16,7 @@
   import RunsTable from '../week/RunsTable.svelte';
   import { activeFilters, applyFilter, filtering, NO_FILTER, type FilterKey, type WeekFilter } from '../week/filters';
   import { owedByMember } from '../week/waiting';
+  import { weekProgress } from '../week/progress';
 
   export type WeekTab = 'planner' | 'runs' | 'answers';
 
@@ -117,6 +118,8 @@
   // A second click on the open run closes its side pane.
   const toggle = (run: Run) => (run.id === selectedRun && onclose ? onclose() : onopen(run.id));
   const glance = $derived(roomy.current && !phone && !selectedRun && tab === 'planner');
+  // The running boss week's day and reset, a flat bar in the footer (none for next week).
+  const weekBar = $derived(store.week ? weekProgress(store.week) : null);
   const VIEWS: { id: WeekTab; label: string }[] = [
     { id: 'planner', label: 'Planner' },
     { id: 'runs', label: 'Runs' },
@@ -310,6 +313,19 @@
           <a class="week-foot__item" class:week-foot__item--warn={store.summary.inbox > 0} href="/inbox">Inbox {store.summary.inbox}</a>
           <a class="week-foot__item" class:week-foot__item--warn={store.summary.model.busy} href="/limits">Model {store.summary.model.busy ? 'busy' : 'free'}</a>
         {/if}
+      {/if}
+      {#if weekBar}
+        <!-- Flat at every width; phones print the day only (the reset stays in the bar's words and the tooltip). -->
+        <span class="week-foot__item week-foot__week" title={weekBar.text}
+          ><span>{phone ? weekBar.text.split(' · ')[0] : weekBar.text}</span><WavyProgress
+            class="wavy--inline week-foot__bar"
+            value={weekBar.value}
+            max={weekBar.max}
+            wavy={false}
+            label="Boss week"
+            text={weekBar.text}
+          /></span
+        >
       {/if}
       {#if !phone && store.week}
         <span class="week-foot__tz mono" title="Every time here is {store.week.timezone}; the boss week starts {store.week.reset}">{store.week.timezone}</span>

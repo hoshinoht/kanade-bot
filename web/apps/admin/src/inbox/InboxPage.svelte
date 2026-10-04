@@ -321,6 +321,8 @@
             <InboxDetail
               p={chosen}
               bar={phone}
+              now={store.week?.generated_at ?? ''}
+              {timeZone}
               {busy}
               locked={store.proposalsLocked}
               {error}

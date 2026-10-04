@@ -45,11 +45,14 @@ export {
 } from './theme/theme';
 export type { Colorway, ThemeMode } from './theme/theme';
 export { registerServiceWorker, serviceWorkerDisabled } from './sw/register';
-// Design experiments (pwa-design-guidelines "Experiments"); revert as a unit.
+// Design experiments A (loading indicator) and E (planner overshoot) (pwa-design-guidelines "Experiments"); revert as a unit.
 export { experiments, initExperiments, setExperiments, setOvershoot } from './experiments/experiments.svelte';
 export { default as LoadingIndicator } from './components/LoadingIndicator.svelte';
 export { default as PendingLabel } from './components/PendingLabel.svelte';
+// Progress bars (always on, user decision 2026-10-04): wavy or flat, and the segmented answers bar.
 export { default as WavyProgress } from './components/WavyProgress.svelte';
+export { default as AnswerBar } from './components/AnswerBar.svelte';
+export { answerCounts, answerWords, type AnswerCounts } from './answers';
 // M3E motion (m3e-rail-design-spec "Motion and loading"): CSP-safe helpers.
 export { enter, enterFrames, type Direction } from './motion/enter';
 export { flip, measure, deltas, type Point } from './motion/flip';

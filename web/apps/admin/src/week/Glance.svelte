@@ -7,8 +7,9 @@
 -->
 <script lang="ts">
   import type { Answer, Run, Summary, Week } from '@kanade/api-types';
-  import { ANSWER_MARKS, BossTag, weekStartLabel } from '@kanade/ui';
+  import { ANSWER_MARKS, BossTag, runTitle, WavyProgress, weekStartLabel } from '@kanade/ui';
   import { memberLabel } from '../names/directory.svelte';
+  import { runCountdown } from './progress';
   import { openPlaces } from './waiting';
 
   let {
@@ -31,6 +32,8 @@
   const maybe = $derived(run ? run.participants.filter((p) => p.answer === 'maybe').length : 0);
   const party = $derived(run ? ORDER.flatMap((answer) => run.participants.filter((p) => p.answer === answer)) : []);
   const unanswered = $derived(party.filter((p) => p.answer === 'waiting').length);
+  // Waves over the final 24 h (the only wave here: the pane replaces this card when a run is open).
+  const countdown = $derived(run ? runCountdown(run, week) : null);
 </script>
 
 <aside class="side-pane week-glance" aria-label="At a glance">
@@ -40,6 +43,17 @@
         {#if art}<img class="week-glance__art" src={art} alt="" decoding="async" />{/if}
         <p class="cap week-glance__cap" id="week-glance-next">Next up · <span class="mono">{next.countdown}</span></p>
         <p class="week-glance__time mono">{run ? (run.time ?? 'own time') : next.when}</p>
+        {#if run && countdown}
+          <WavyProgress
+            class="week-glance__countdown"
+            value={countdown.value}
+            max={countdown.max}
+            wavy={countdown.wavy}
+            ticks={countdown.ticks}
+            label="Countdown to {runTitle(run)}"
+            text={countdown.text}
+          />
+        {/if}
         {#if run}
           <p class="week-glance__date">{weekStartLabel(week.days[run.day]?.date ?? '')}</p>
           <p class="week-glance__bosses">{#each run.bosses as boss (boss.token)}<BossTag {boss} short />{/each}</p>

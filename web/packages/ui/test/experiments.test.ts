@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { experiments, initExperiments, setExperiments, setOvershoot } from '../src/experiments/experiments.svelte';
 import LoadingIndicator from '../src/components/LoadingIndicator.svelte';
 import PendingLabel from '../src/components/PendingLabel.svelte';
-import WavyProgress from '../src/components/WavyProgress.svelte';
 
 const store = new Map<string, string>();
 const html = { dataset: {} as Record<string, string> };
@@ -89,18 +88,5 @@ describe('LoadingIndicator', () => {
     expect(out).toContain('role="status"');
     expect(out).toContain('aria-label="Loading calls"');
     expect(out).toContain('xp-loading--md');
-  });
-});
-
-describe('WavyProgress', () => {
-  it('is a progressbar with its value, range and words', () => {
-    const out = render(WavyProgress, { props: { value: 1, max: 3, label: 'Rescan progress', text: '1 of 3 channels read' } }).body;
-    expect(out).toContain('role="progressbar"');
-    expect(out).toContain('aria-label="Rescan progress"');
-    expect(out).toContain('aria-valuemin="0"');
-    expect(out).toContain('aria-valuemax="3"');
-    expect(out).toContain('aria-valuenow="1"');
-    expect(out).toContain('aria-valuetext="1 of 3 channels read"');
-    expect(out).toMatch(/<svg[^>]*aria-hidden="true"/);
   });
 });

@@ -1,11 +1,34 @@
 <!--
-  Experiment B: determinate progress whose filled part is a gentle sine wave
-  drifting forward; the rest is a flat track after a small gap. Paths are
-  recomputed per frame (attributes, not styles, so CSP-safe) so both ends keep
-  round caps; the wave flattens at 100% and under reduced motion.
+  Determinate progress (m3e-rail-design-spec "Motion and loading"): the filled
+  part is a gentle sine wave drifting forward while `wavy`, else a flat stroke;
+  the rest is a flat track after a small gap. Paths are recomputed per frame
+  (attributes, not styles, so CSP-safe) so both ends keep round caps; the wave
+  flattens at 100% and under reduced motion, and a flat bar stops drawing once
+  its fill has settled. `ticks` mark fractions of the track (a countdown's
+  T-1h and T-15m); `tone="warn"` takes the warning colour.
 -->
 <script lang="ts">
-  let { value, max, label, text = '' }: { value: number; max: number; label: string; text?: string } = $props();
+  let {
+    value,
+    max,
+    label,
+    text = '',
+    wavy = true,
+    ticks = [],
+    tone = 'accent',
+    class: extra = '',
+  }: {
+    value: number;
+    max: number;
+    label: string;
+    text?: string;
+    /** The drifting wave; a flat bar keeps the same track, gap and caps. */
+    wavy?: boolean;
+    /** Marks along the track, each a fraction 0–1 of its length. */
+    ticks?: number[];
+    tone?: 'accent' | 'warn';
+    class?: string;
+  } = $props();
 
   const STROKE = 4;
   const AMP = 3;
@@ -20,6 +43,9 @@
   let wave = $state('');
   let track = $state('');
   const target = $derived(max > 0 ? Math.min(1, Math.max(0, value / max)) : 0);
+  const marks = $derived(
+    width ? ticks.filter((t) => t > 0 && t < 1).map((t) => STROKE / 2 + t * Math.max(0, width - STROKE)) : [],
+  );
 
   let shown = 0;
   let amp = 0;
@@ -46,6 +72,7 @@
   $effect(() => {
     const goal = target;
     const w = width;
+    const moving = wavy;
     if (!w) return;
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
       shown = goal;
@@ -61,12 +88,12 @@
       // Critically damped approach: progress never overshoots its value.
       shown += (goal - shown) * (1 - Math.exp(-dt * 9));
       if (Math.abs(goal - shown) < 0.0005) shown = goal;
-      // Short fills and a finished bar lose the wave; a long fill carries it fully.
-      const want = goal >= 1 ? 0 : AMP * Math.min(1, (shown * w) / WAVELENGTH);
+      // Short fills, a finished bar and a flat bar lose the wave; a long fill carries it fully.
+      const want = !moving || goal >= 1 ? 0 : AMP * Math.min(1, (shown * w) / WAVELENGTH);
       amp += (want - amp) * (1 - Math.exp(-dt * 6));
       phase = (phase + (dt * WAVELENGTH) / DRIFT_S) % WAVELENGTH;
       draw(w);
-      if (goal >= 1 && shown === goal && amp < 0.02) {
+      if (want === 0 && shown === goal && amp < 0.02) {
         amp = 0;
         draw(w);
         return;
@@ -79,7 +106,8 @@
 </script>
 
 <div
-  class="xp-wavy"
+  class="wavy wavy--{tone} {extra}"
+  class:wavy--flat={!wavy}
   role="progressbar"
   aria-label={label}
   aria-valuemin={0}
@@ -88,8 +116,9 @@
   aria-valuetext={text || undefined}
   bind:clientWidth={width}
 >
-  <svg class="xp-wavy__svg" height={HEIGHT} aria-hidden="true" focusable="false">
-    <path class="xp-wavy__track" d={track} />
-    <path class="xp-wavy__wave" d={wave} />
+  <svg class="wavy__svg" height={HEIGHT} aria-hidden="true" focusable="false">
+    <path class="wavy__track" d={track} />
+    <path class="wavy__wave" d={wave} />
+    {#each marks as x, i (i)}<line class="wavy__tick" x1={x.toFixed(1)} x2={x.toFixed(1)} y1={MID - 4} y2={MID + 4} />{/each}
   </svg>
 </div>

@@ -208,14 +208,20 @@ with it off, every usage site renders exactly what it did before.
   "Saving…" and so on. Reduced motion shows a still rounded square.
   Revert: delete both components, replace each `<PendingLabel …>X</PendingLabel>`
   with `X`, and drop the `saving`/`rejecting`/`via`/`signingIn` flags.
-- **B: wavy progress** (`WavyProgress.svelte`) on the rescan job in
-  `extractions/RescanPanel.svelte`: a determinate `progressbar` whose fill is a
-  slowly drifting sine wave, then a small gap and a flat track, with round
-  ends. It flattens when done and under reduced motion. The path is recomputed
-  per frame (SVG attributes, so it is CSP-safe). Revert: delete the component
-  and the `{#if job && experiments.on}` block.
-- Both experiments share `web/packages/ui/src/styles/_experiments.scss`, the
+- **B: wavy progress** has graduated: `WavyProgress.svelte` is always on and
+  no longer behind the switch. It is a determinate `progressbar` with round
+  ends, a gap and a flat track; `wavy` makes the fill a slowly drifting sine
+  wave (path recomputed per frame as SVG attributes, so it is CSP-safe),
+  otherwise it is flat and stops redrawing once filled. It also takes tick marks
+  and a warning tone. It drives the boss-week footer, run countdowns (wavy over
+  the final 24 h, T-1h/T-15m marks), Inbox proposal expiry, model permits on
+  Limits and Config, and the Re-read job; `AnswerBar.svelte` draws the
+  segmented answers bar. At most two waves move per screen, times come from the
+  server clock, and reduced motion draws everything flat. Styles live in
+  `_progress.scss`; tests in `packages/ui/test/progress.test.ts` and
+  `web/e2e/progress.spec.ts`.
+- The remaining experiments share `web/packages/ui/src/styles/_experiments.scss`, the
   exports at the end of `packages/ui/src/index.ts`, the `@use "experiments"`
   line in `admin.scss`, `packages/ui/test/experiments.test.ts` and
-  `web/e2e/experiments.spec.ts`. Remove these once neither experiment remains.
+  `web/e2e/experiments.spec.ts`. Remove these once no experiment remains.
   Captures from the e2e spec go to `web/e2e/.captures/experiments/`.

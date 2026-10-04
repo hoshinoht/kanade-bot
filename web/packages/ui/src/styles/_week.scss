@@ -224,6 +224,45 @@ a.week-foot__item:hover,
   margin-left: auto;
 }
 
+// "Day 5 of 7 · resets Thu 00:00" and a flat bar of the boss week. It takes
+// the row's spare width; where the row is full (phones, 1000 px without the
+// glance) it wraps onto its own line rather than clipping the facts before it,
+// so it carries no separator dot.
+.week-window__foot {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+.week-foot__week {
+  display: inline-flex;
+  flex: 1 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.week-window__foot > .week-foot__week::before {
+  content: none;
+}
+
+// The phone's footer already overflowed one line: its facts wrap, so they are
+// spaced rather than dotted (a dot would open the second line).
+.week-window--phone .week-window__foot {
+  column-gap: 16px;
+}
+
+.week-window--phone .week-window__foot > *::before {
+  content: none;
+}
+
+// A set width keeps the SVG's 300 px default out of the item's content size,
+// so the item wraps only when "Day … · resets …" and a short bar cannot fit.
+.week-foot__week .week-foot__bar {
+  flex: 1 1 auto;
+  inline-size: 4.5rem;
+  min-inline-size: 4.5rem;
+  max-inline-size: 16rem;
+}
+
 /* ── the board inside the window ─────────────────────────────────────── */
 
 .week-window .board__col {
@@ -508,6 +547,11 @@ a.week-foot__item:hover,
 
 .week-glance__date {
   font-size: var(--fs-body-sm);
+}
+
+// The countdown under the clock: waves over the final 24 h, marks at T-1h and T-15m.
+.week-glance__countdown {
+  margin-block: 2px 4px;
 }
 
 .week-glance__bosses {

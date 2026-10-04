@@ -121,8 +121,11 @@ test('fixed: an edit sends the version it was loaded at; conflicts are per field
   await editButton.click();
   await expect(editor.getByLabel('Note')).toHaveValue('Starts late');
   await editor.getByLabel('Note').fill('Starts late; bring snacks');
+  // The first save's toast may still be showing, so wait for this save's reply.
+  const saved = page.waitForResponse((r) => r.request().method() === 'PATCH' && r.url().includes('/api/admin/fixed/'));
   await editor.getByRole('button', { name: 'Save changes' }).click();
-  await expect(toast(page, 'Saved Tuesday 23:30 — XBM.')).toBeVisible();
+  expect((await saved).ok()).toBe(true);
+  await expect(toast(page, 'Saved Tuesday 23:30 — XBM.').last()).toBeVisible();
 });
 
 test('fixed: a 409 busy keeps the form valid to retry, without the out-of-date advice', async ({ page }) => {

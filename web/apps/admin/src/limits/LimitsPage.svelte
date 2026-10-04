@@ -9,11 +9,12 @@
   import '@kanade/ui/styles/evidence.scss';
   import type { Limits } from '@kanade/api-types';
   import { ApiRequestError, createClient, createPoller } from '@kanade/client';
-  import { LoadingState, Tabs, Toaster, type TabItem } from '@kanade/ui';
+  import { LoadingState, Tabs, Toaster, WavyProgress, type TabItem } from '@kanade/ui';
   import { errorText, send } from '../resource.svelte';
   import { directory } from '../names/directory.svelte';
   import Name from '../names/Name.svelte';
   import PaneWindow from '../pages/PaneWindow.svelte';
+  import { wavingGroups } from './permits';
 
   let { toaster }: { toaster: Toaster } = $props();
 
@@ -66,6 +67,8 @@
     key_rate: 'key rate limit',
     key_quota: 'key quota spent',
   };
+  // Permit bars wave only while requests are in flight, at most two at once.
+  const waving = $derived(wavingGroups(limits?.groups ?? []));
   const busiest = $derived(limits?.groups.find((g) => g.permits.in_use >= g.permits.total));
 
   async function reset(id: string, name: string) {
@@ -92,7 +95,14 @@
             <section class="stat" aria-labelledby="g-{g.name}">
               <h3 class="stat__name" id="g-{g.name}">{g.name} · {g.backend}</h3>
               <p class="stat__big">{g.permits.in_use}/{g.permits.total}<span class="stat__unit">permits in use</span></p>
-              <meter min="0" max={g.permits.total} value={g.permits.in_use} aria-label="{g.name} permits in use"></meter>
+              <WavyProgress
+                class="stat__bar"
+                value={g.permits.in_use}
+                max={g.permits.total}
+                wavy={waving.has(g.name)}
+                label="{g.name} permits in use"
+                text="{g.permits.in_use} of {g.permits.total} in use{g.permits.in_use ? ', requests in flight' : ''}"
+              />
               <dl class="stat__rows">
                 <div><dt>Queue</dt><dd class="mono">{g.queue.length}</dd></div>
                 <div><dt>Rate bucket</dt><dd class="mono">{g.rate.available}/{g.rate.capacity} · +{g.rate.refill_per_min}/min</dd></div>
@@ -168,9 +178,7 @@
 {/if}
 
 <style>
-  meter {
-    width: 100%;
-    height: 0.6rem;
-    margin-bottom: 0.4rem;
+  .stats :global(.stat__bar) {
+    margin-block: 0 0.4rem;
   }
 </style>

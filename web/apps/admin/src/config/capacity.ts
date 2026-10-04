@@ -123,6 +123,23 @@ export function groupRows(models: ConfigView['models']): GroupRow[] {
   return rows;
 }
 
+/**
+ * The least Kanata admits for any of a group's models (each alias's
+ * `max_in_flight`, held to its adapter's), as the startup check counts it;
+ * null when none of them publishes or declares a limit.
+ */
+export function groupCap(models: ConfigView['models'], group: string): number | null {
+  let cap: number | null = null;
+  for (const g of models.groups) {
+    if (g.group !== group) continue;
+    const limit = models.alias_limits.find((l) => l.alias === g.model);
+    if (!limit) continue;
+    const each = Math.min(limit.max_in_flight, limit.adapter_max_in_flight ?? Infinity);
+    if (cap === null || each < cap) cap = each;
+  }
+  return cap;
+}
+
 export interface SplitChecks {
   /** Each group row's own checks, keyed by group name. */
   byGroup: Map<string, CapacityCheck[]>;

@@ -10,6 +10,7 @@
 @use "buttons";
 @use "m3e-buttons"; // M3E pills; before the partials that refine them
 @use "chips-status";
+@use "progress"; // WavyProgress and AnswerBar (always on); before the partials that place them
 @use "bosses";
 @use "runs";
 @use "card-window";

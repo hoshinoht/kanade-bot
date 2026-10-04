@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import type { Run, Week } from '@kanade/api-types';
-  import { BossTag, Icon, RowContent, RunCardBody, runAccessibleName, runTitle } from '@kanade/ui';
+  import { AnswerBar, answerCounts, answerWords, BossTag, Icon, RowContent, RunCardBody, runAccessibleName, runTitle } from '@kanade/ui';
   import { PICK_KEY } from './keyboardMove';
   import { openPlaces } from '../week/waiting';
 
@@ -103,7 +103,7 @@
     class="plan-card__open"
     data-handle={run.id}
     aria-current={selected ? 'true' : undefined}
-    aria-label="{run.time ?? 'own time'} {runTitle(run)}: {runAccessibleName(week, run)}.{clash ? ` Clash: ${clash}.` : ''} Open details"
+    aria-label="{run.time ?? 'own time'} {runTitle(run)}: {runAccessibleName(week, run)}. Answers: {answerWords(answerCounts(run.participants))}.{clash ? ` Clash: ${clash}.` : ''} Open details"
     aria-describedby={movable ? helpId : undefined}
     aria-keyshortcuts={movable ? PICK_KEY : undefined}
     onclick={() => {
@@ -130,7 +130,7 @@
           <span class="plan-card__channel">{run.channel}</span>
         </RowContent>
       {/snippet}
-    </RunCardBody></span>
+    </RunCardBody><AnswerBar participants={run.participants} class="plan-card__answers" /></span>
     {#if clash}
       <!-- Icon and words, never colour alone; the full text is in the accessible name and the tooltip. -->
       <span class="plan-clash plan-card__clash" aria-hidden="true" title="Clash: {clash}"><Icon name="alert-triangle" /> Clash</span>
@@ -207,6 +207,12 @@
 
   .plan-card--movable :global(.runcard__top) {
     grid-column: 1 / -1;
+  }
+
+  /* The answers bar runs under the bosses, the card's full width. */
+  .plan-card :global(.plan-card__answers) {
+    grid-column: 1 / -1;
+    margin-top: 0.2rem;
   }
 
   .plan-card__grip {

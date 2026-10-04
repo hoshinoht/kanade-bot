@@ -6,6 +6,12 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin PWA progress bars for everyone: the boss-week day in the Week
+  footer, run countdowns (wavy over the final 24 h, with T-1h/T-15m marks),
+  answer bars on run cards and the run pane, proposal expiry in the Inbox
+  (warning colour near the end), and model permits on Limits and Config. The
+  Re-read bar no longer sits behind Experiments; at most two bars wave per
+  screen and reduced motion draws them flat.
 - v5 admin PWA run change log: the Week run pane's Changes tab (and the foot
   of the phone run sheet) lists the run's changes newest first, like an IDE
   commit list: a one-line summary over avatar · actor · time ago · via

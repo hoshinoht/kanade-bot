@@ -1,0 +1,85 @@
+// Progress bars, always on (user decision 2026-10-04; m3e-rail-design-spec
+// "Motion and loading"): WavyProgress (wavy or flat, with ticks) and the
+// segmented AnswerBar. Only one or two bars on a screen ever wave.
+
+.wavy {
+  inline-size: 100%;
+  min-inline-size: 6rem;
+  // Breathing room from the status line above and the channel list below.
+  margin-block: 0.45rem 0.6rem;
+}
+
+// Inline in a row of text (the Week footer, a pane head): no block margins.
+.wavy--inline {
+  margin-block: 0;
+}
+
+.wavy__svg {
+  display: block;
+  inline-size: 100%;
+  overflow: visible;
+}
+
+.wavy__wave,
+.wavy__track {
+  fill: none;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.wavy__wave {
+  stroke: var(--accent);
+}
+
+.wavy__track {
+  stroke: color-mix(in srgb, var(--accent) 22%, var(--line));
+}
+
+// Near the end (an expiring proposal): the warning colour, said in words too.
+.wavy--warn .wavy__wave {
+  stroke: var(--warn);
+}
+
+.wavy--warn .wavy__track {
+  stroke: color-mix(in srgb, var(--warn) 22%, var(--line));
+}
+
+// Countdown marks (T-1h, T-15m): short ink strokes across the track.
+.wavy__tick {
+  stroke: var(--dim-text);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+// ── AnswerBar ────────────────────────────────────────────────────────────
+
+.answerbar {
+  display: flex;
+  gap: 2px;
+  inline-size: 100%;
+  block-size: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--line) 60%, transparent);
+  overflow: clip;
+}
+
+.answerbar__seg,
+.answerbar__rest {
+  flex: 0 1 0;
+  min-inline-size: 4px;
+}
+
+.answerbar__seg--yes {
+  background: var(--ok);
+}
+
+.answerbar__seg--maybe {
+  background: var(--own);
+}
+
+// Waiting: outlined and hatched like the Answers chart, so it differs without colour.
+.answerbar__seg--waiting {
+  box-shadow: inset 0 0 0 1.5px var(--warn-text);
+  background: repeating-linear-gradient(135deg, transparent 0 3px, color-mix(in srgb, var(--warn-text) 30%, transparent) 3px 5px);
+}

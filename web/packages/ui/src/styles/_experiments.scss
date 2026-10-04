@@ -1,6 +1,7 @@
 // Revertible design experiments (pwa-design-guidelines "Experiments"): the
-// morphing LoadingIndicator (A) and WavyProgress (B). Components only render
-// these classes while the experiments switch is on.
+// morphing LoadingIndicator (A) and the planner overshoot (E). Components only
+// render these classes while the experiments switch is on. WavyProgress (B)
+// graduated to `_progress.scss` (always on, 2026-10-04).
 
 @use "easing" as *;
 
@@ -83,35 +84,6 @@
   align-items: center;
   gap: 0.35rem;
   visibility: hidden;
-}
-
-.xp-wavy {
-  inline-size: 100%;
-  min-inline-size: 6rem;
-  // Breathing room from the status line above and the channel list below.
-  margin-block: 0.45rem 0.6rem;
-}
-
-.xp-wavy__svg {
-  display: block;
-  inline-size: 100%;
-  overflow: visible;
-}
-
-.xp-wavy__wave,
-.xp-wavy__track {
-  fill: none;
-  stroke-width: 4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.xp-wavy__wave {
-  stroke: var(--accent);
-}
-
-.xp-wavy__track {
-  stroke: color-mix(in srgb, var(--accent) 22%, var(--line));
 }
 
 // Experiment E (opt-in, off by default; `?overshoot=on` with the switch on):

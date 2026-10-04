@@ -7,8 +7,9 @@
 -->
 <script lang="ts">
   import type { ConfigView, ModelInfo, ModelRole, RoleModel } from '@kanade/api-types';
-  import { CHECK_TONE, Icon } from '@kanade/ui';
+  import { CHECK_TONE, Icon, WavyProgress } from '@kanade/ui';
   import {
+    groupCap,
     groupRows,
     isReasoningValid,
     kanataLimits,
@@ -241,9 +242,22 @@
           >
           <tbody>
             {#each groups as g (g.group)}
+              {@const cap = g.permits === null ? null : groupCap(models, g.group)}
               <tr>
                 <th scope="row" class="mono">{g.group}</th>
-                <td class="num mono">{g.permits ?? '—'}</td>
+                <td class="num mono"
+                  >{g.permits ?? '—'}{#if cap !== null && g.permits !== null}
+                    <!-- Flat: Config has no in-flight counts (those wave on Limits). -->
+                    <WavyProgress
+                      class="wavy--inline models__cap"
+                      value={Math.min(g.permits, cap)}
+                      max={cap}
+                      wavy={false}
+                      tone={g.permits > cap ? 'warn' : 'accent'}
+                      label="{g.group} permits of what Kanata admits"
+                      text="{g.permits} of the {cap} Kanata admits"
+                    />{/if}</td
+                >
                 <td><span class="settings__caps">{#each g.models as m (m)}<span class="capchip capchip--mono">{m}</span>{/each}</span></td>
                 <td class="models__check">
                   {#each checks.byGroup.get(g.group) ?? [] as c, i (i)}
@@ -339,6 +353,14 @@
 
   .models__groups {
     width: 100%;
+  }
+
+  /* Under the permit count: a short flat bar of what Kanata admits. */
+  .models__groups :global(.models__cap) {
+    inline-size: 4.5rem;
+    min-inline-size: 0;
+    margin-inline-start: auto;
+    margin-block-start: 4px;
   }
 
   /* Phones scroll the groups table sideways rather than clip its verdicts. */

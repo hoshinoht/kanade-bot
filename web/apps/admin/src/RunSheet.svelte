@@ -9,12 +9,13 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
   import type { Member, Participant, Run, RunStatus, Week } from '@kanade/api-types';
-  import { AnswerChip, BossTag, enter, Icon, Modal, StatusMark, dayLabel, runTitle, sortRuns, whenLabel } from '@kanade/ui';
+  import { AnswerBar, AnswerChip, BossTag, enter, Icon, Modal, StatusMark, WavyProgress, dayLabel, runTitle, sortRuns, whenLabel } from '@kanade/ui';
   import { swapSlots } from './planner/dropTime';
   import { directory, memberLabel } from './names/directory.svelte';
   import Name from './names/Name.svelte';
   import RunLog from './sheet/RunLog.svelte';
   import { parseWhen } from './sheet/parseWhen';
+  import { runCountdown } from './week/progress';
   import { STATUS_LABELS, type MoveOutcome } from './store.svelte';
   import type { Slot } from './planner/keyboardMove';
 
@@ -144,6 +145,8 @@
   // Unsaved input: the Move field holds a target, or the swap picker is open.
   const dirty = $derived(to.trim() !== '' || swapping);
   const artBosses = $derived(run ? run.bosses.filter((b) => b.art) : []);
+  // The pane's countdown to a run still ahead: waves over its final 24 h only.
+  const until = $derived(run && wide ? runCountdown(run, week) : null);
   const addable = $derived(run ? members.filter((m) => !run.participants.some((p) => p.id === m.id)) : []);
   // A twin reads "Ren (2)", never its id.
   const who = (p: Participant) => memberLabel(run?.participants ?? [], p.id);
@@ -517,6 +520,17 @@
               <span class="week-pane__time mono">{run.status === 'otot' || !run.time ? 'own time' : run.time}</span>
               <span class="cap week-pane__day">{dayLabel(week, run.day)}{#if countdown} · {countdown}{/if}</span>
             </p>
+            {#if until}
+              <WavyProgress
+                class="wavy--inline week-pane__countdown"
+                value={until.value}
+                max={until.max}
+                wavy={until.wavy}
+                ticks={until.ticks}
+                label="Countdown to {runTitle(run)}"
+                text={until.text}
+              />
+            {/if}
             <ul class="week-pane__bosses">
               {#each run.bosses as boss (boss.token)}<li><BossTag {boss} portrait level /></li>{/each}
             </ul>
@@ -527,6 +541,7 @@
               {#if counts.maybe}<span class="tone tone--info">{counts.maybe} maybe</span>{/if}
               {#if counts.waiting}<span class="tone tone--neutral">{counts.waiting} waiting</span>{/if}
             </p>
+            <AnswerBar participants={run.participants} class="week-pane__answers" />
             </div>
           </header>
           <div class="week-pane__body">
@@ -591,6 +606,7 @@
             {@render channel(run)}
             <span class="id">#{run.short_id}</span>
           </div>
+          <AnswerBar participants={run.participants} class="run__answerbar" />
           {@render people(run)}
           {@render thisWeek(run)}
         </div>

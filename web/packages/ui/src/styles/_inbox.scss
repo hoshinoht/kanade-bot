@@ -930,3 +930,21 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
 .frame--phone .inbox--compact .past__title { white-space: normal; }
 .frame--phone .inbox--compact .proposal__slot { flex-wrap: nowrap; }
 .frame--phone .inbox--compact .proposal__to { font-size: var(--fs-lg); white-space: nowrap; }
+
+// The time left to decide: a flat bar draining toward expiry (warning colour in its last fifth).
+.proposal__expiry {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.proposal__expirytext {
+  margin: 0;
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+}
+
+.proposal__expiry--warn .proposal__expirytext {
+  color: var(--warn-text);
+  font-weight: 600;
+}

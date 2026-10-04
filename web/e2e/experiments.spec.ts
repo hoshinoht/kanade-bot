@@ -2,9 +2,10 @@ import type { Page, Route } from '@playwright/test';
 import { ADMIN, expect, test } from './support';
 
 // Design experiments (pwa-design-guidelines "Experiments"): A, the morphing
-// loading indicator on short waits; B, the wavy rescan progress. Off
-// (`?experiments=off`) must look and behave exactly as before. Before/after
-// captures go to the git-ignored e2e/.captures/experiments/.
+// loading indicator on short waits. Off (`?experiments=off`) must look and
+// behave exactly as before. B, the wavy rescan progress, is always on since
+// 2026-10-04, so the switch no longer hides it. Before/after captures go to
+// the git-ignored e2e/.captures/experiments/.
 const OUT = 'e2e/.captures/experiments';
 
 async function go(page: Page, path: string, on = true) {
@@ -125,12 +126,12 @@ test('B: a rescan shows the wavy progress bar, which settles flat when done', as
   const [, read, of] = /^(\d+) of (\d+)/.exec((await bar.getAttribute('aria-valuetext'))!)!;
   expect(Number(read)).toBeLessThan(Number(of));
   // Mid-run the fill is a moving wave, and the flat track remains.
-  const wave = bar.locator('.xp-wavy__wave');
+  const wave = bar.locator('.wavy__wave');
   const first = await wave.getAttribute('d');
   await page.waitForTimeout(200);
   expect(await wave.getAttribute('d')).not.toBe(first);
   expect(new Set(ys(first!)).size).toBeGreaterThan(1);
-  expect(await bar.locator('.xp-wavy__track').getAttribute('d')).toBeTruthy();
+  expect(await bar.locator('.wavy__track').getAttribute('d')).toBeTruthy();
   await page.locator('.rescan').screenshot({ path: `${OUT}/B-after-rescan-running.png` });
   await expect(page.locator('.rescan__status')).toHaveText(/Done: \d+ channels read/, { timeout: 15_000 });
   // A finished job keeps its channel tally, full.
@@ -140,11 +141,11 @@ test('B: a rescan shows the wavy progress bar, which settles flat when done', as
   await page.locator('.rescan').screenshot({ path: `${OUT}/B-after-rescan-done.png` });
 });
 
-test('B off: the rescan keeps its text-only progress', async ({ page }) => {
+test('B is always on: the experiments switch no longer hides the rescan bar', async ({ page }) => {
   await startRescan(page, false);
+  await expect(page.locator('html')).toHaveAttribute('data-experiments', 'off');
   await expect(page.locator('.rescan__status')).toHaveText(/^\d+ of \d+ messages · started \d\d:\d\d$/, { timeout: 5_000 });
-  await expect(page.getByRole('progressbar')).toHaveCount(0);
-  await page.locator('.rescan').screenshot({ path: `${OUT}/B-before-rescan-running.png` });
+  await expect(page.getByRole('progressbar', { name: 'Rescan progress' })).toBeVisible();
 });
 
 test('B: reduced motion draws a flat, still bar', async ({ page }) => {
@@ -152,7 +153,7 @@ test('B: reduced motion draws a flat, still bar', async ({ page }) => {
   await startRescan(page, true);
   const bar = page.getByRole('progressbar', { name: 'Rescan progress' });
   await expect(bar).toHaveAttribute('aria-valuetext', /^[1-9]\d* of \d+ messages read$/, { timeout: 5_000 });
-  const wave = bar.locator('.xp-wavy__wave');
+  const wave = bar.locator('.wavy__wave');
   await expect.poll(async () => (await wave.getAttribute('d')) ?? '').not.toBe('');
   const d = (await wave.getAttribute('d'))!;
   expect(new Set(ys(d)).size).toBe(1);

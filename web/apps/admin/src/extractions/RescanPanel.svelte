@@ -9,7 +9,7 @@
 <script lang="ts">
   import type { Channel, RescanJob } from '@kanade/api-types';
   import { createClient, createPoller } from '@kanade/client';
-  import { experiments, LiveRegion, WavyProgress } from '@kanade/ui';
+  import { LiveRegion, WavyProgress } from '@kanade/ui';
   import { tick } from 'svelte';
   import { send } from '../resource.svelte';
   import { getChrome } from '../shell/chrome';
@@ -133,12 +133,11 @@
         {/if}
         {#if running}<button class="btn rescan__cancel" type="button" onclick={() => void cancel()}>Cancel</button>{/if}
       </div>
-      {#if experiments.on}
-        {#if progress?.count}
-          <WavyProgress value={Math.min(job.messages ?? 0, job.messages_total ?? 0)} max={job.messages_total ?? 0} label="Rescan progress" text="{progress.count} read" />
-        {:else}
-          <WavyProgress value={done} max={total} label="Rescan progress" text="{done} of {total} channels read" />
-        {/if}
+      <!-- The page's one moving wave while a job reads; a finished bar settles flat. -->
+      {#if progress?.count}
+        <WavyProgress value={Math.min(job.messages ?? 0, job.messages_total ?? 0)} max={job.messages_total ?? 0} label="Rescan progress" text="{progress.count} read" />
+      {:else}
+        <WavyProgress value={done} max={total} wavy={running} label="Rescan progress" text="{done} of {total} channels read" />
       {/if}
       <p class="rescan__found">
         {job.state === 'running' ? 'Found so far:' : 'Found:'}

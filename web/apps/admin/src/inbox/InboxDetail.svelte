@@ -7,11 +7,12 @@
 -->
 <script lang="ts">
   import type { ApproveRequest, Evidence, Proposal, RunStatus } from '@kanade/api-types';
-  import { BossTag, DecisionCard, Icon, initial, PendingLabel, Portrait, RUN_TONE, STATUS_WORDS, StatusChip, ThreadPanel } from '@kanade/ui';
+  import { BossTag, DecisionCard, Icon, initial, PendingLabel, Portrait, RUN_TONE, STATUS_WORDS, StatusChip, ThreadPanel, WavyProgress } from '@kanade/ui';
   import { directory } from '../names/directory.svelte';
   import Mentions from '../names/Mentions.svelte';
   import Name from '../names/Name.svelte';
   import { editable } from './edit';
+  import { proposalExpiry } from './expiry';
   import { blocked, DISCORD_ONLY, isProposal, SOURCE_LABEL } from './flags';
 
   let {
@@ -23,6 +24,8 @@
     onmove,
     onreject,
     bar = false,
+    now = '',
+    timeZone = 'Asia/Kuala_Lumpur',
   }: {
     p: Proposal;
     busy: boolean;
@@ -35,6 +38,9 @@
     onreject: () => void;
     /** Narrow frames (≤ 899 px): the decision is the bottom action bar. */
     bar?: boolean;
+    /** The server's clock (`Week.generated_at`) for the expiry bar; empty hides it. */
+    now?: string;
+    timeZone?: string;
   } = $props();
   const uid = $props.id();
 
@@ -49,6 +55,7 @@
   const refused = $derived(locked && isProposal(p));
   /** Wide Extractor items (VarRail2): header across, thread beside the decision card. */
   const stacked = $derived(!bar && isProposal(p));
+  const expiry = $derived(proposalExpiry(p, now, timeZone));
   const confText = $derived(p.confidence === null ? 'no score' : `${p.confidence.toFixed(2)} confident`);
   /** The reason Approve is held back, when it is: describes the actions. */
   const whyId = $derived(refused || stop ? `${uid}-why` : undefined);
@@ -199,7 +206,22 @@
       </p>
     {/if}
     {#if p.preview.no_effect}<p class="note">Already in effect: approving would change nothing.</p>{/if}
-    {#if p.public_summary}<p class="note">The member sees: “{p.public_summary}”{#if p.expires_at} · expires <span class="mono">{p.expires_at}</span>{/if}</p>{/if}
+    {#if p.public_summary}<p class="note">The member sees: “{p.public_summary}”{#if p.expires_at && !expiry} · expires <span class="mono">{p.expires_at}</span>{/if}</p>{/if}
+    {#if expiry}
+      <!-- Drains toward expiry; the last fifth turns the warning colour and says so. -->
+      <div class="proposal__expiry" class:proposal__expiry--warn={expiry.warn} data-fid="inbox-expiry">
+        <p class="proposal__expirytext">Expires <span class="mono">{p.expires_at}</span> · {expiry.text}</p>
+        <WavyProgress
+          class="wavy--inline"
+          value={expiry.left}
+          max={expiry.span}
+          wavy={false}
+          tone={expiry.warn ? 'warn' : 'accent'}
+          label="Time left to decide"
+          text="{expiry.text}, expires {p.expires_at}"
+        />
+      </div>
+    {/if}
     <!-- Outside the decision card the change card holds it, never bare text on the ground. -->
     {#if !stacked}{@render consequence()}{/if}
   </div>
