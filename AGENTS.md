@@ -13,7 +13,7 @@
 
 ## v5 toolchain and checks
 
-- CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --locked --all-targets --all-features`, `cargo build --locked --release`.
+- CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --locked --all-targets --all-features`, `cargo build --locked --release`. A `changes` job (dorny/paths-filter) gates each suite on its paths (python, rust, web); when a new input file is read by a suite, add its path to that filter.
 - Targets `provider_contract`, `scheduler`, `notify`, `store`, `discord`, `delivery`, `governor`, `extract`, `api`, `chat` are declared in `Cargo.toml` with `required-features = ["test-support"]`; run one with `cargo test --all-features --test <name>`. `domain`, `persona`, `runtime_bootstrap` are auto-discovered from `tests/<name>/main.rs`.
 - The suite is offline: fake Discord/model providers, loopback stubs, temp stores. Never read `.env`, `data/` or private `config/` from tests.
 - Only `serve --offline` and `healthcheck` run today; config comes from the process environment (`KANADE_TIMEZONE` required, `KANADE_ADMIN_BIND` and optional `KANADE_PUBLIC_BIND` loopback-only). The admin and public routers are separate: admin routes are never mounted on the public listener. See `docs/v5/runtime-bootstrap.md`.

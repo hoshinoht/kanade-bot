@@ -766,6 +766,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- CI runs each suite only when its inputs change: legacy Python and its
+  image for `legacy/python/`, Rust for `src/`, `tests/`, Cargo files and the
+  tracked data its tests read, web for `web/`, `tools/pwa-mock/`, boss
+  knowledge and API schemas. Editing the workflow runs everything.
 - v5 admin Week: clicking the open run's card or Runs row again closes its
   side pane.
 - v5 admin Week: At a glance shows the next run's party with each member's

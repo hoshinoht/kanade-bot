@@ -17,7 +17,47 @@ permissions:
   contents: read
 
 jobs:
+  # Each suite runs only when its inputs changed. A job skipped by `if` counts
+  # as passed for required checks; editing this workflow runs everything.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+      rust: ${{ steps.filter.outputs.rust }}
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4.0.3
+        id: filter
+        with:
+          filters: |
+            python:
+              - .github/workflows/ci.yml
+              - legacy/python/**
+            rust:
+              - .github/workflows/ci.yml
+              - src/**
+              - tests/**
+              - Cargo.toml
+              - Cargo.lock
+              - rust-toolchain.toml
+              - kanade.example.toml
+              - boss/**
+              - config/personas/**
+              - docs/v5/vectors/**
+            web:
+              - .github/workflows/ci.yml
+              - web/**
+              - tools/pwa-mock/**
+              - boss/knowledge/**
+              - docs/v5/api-schemas/**
+
   checks:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -56,6 +96,8 @@ jobs:
         run: uv run pytest -q -m "not live_model"
 
   docker:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -66,6 +108,8 @@ jobs:
         run: docker build -f legacy/python/deploy/Dockerfile legacy/python
 
   rust:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -82,6 +126,8 @@ jobs:
 
   # The Svelte PWAs (web/) and their dev-only mock server (tools/pwa-mock).
   web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
