@@ -24,14 +24,14 @@
     runs,
     people,
     days,
-  }: { filter: ReminderFilter; kinds: string[]; runs: { id: string; label: string }[]; people: string[]; days: string[] } = $props();
+  }: { filter: ReminderFilter; kinds: string[]; runs: { id: string; label: string; day?: string; sub?: string }[]; people: string[]; days: string[] } = $props();
   const uid = $props.id();
   let open = $state(false);
   let button = $state<HTMLButtonElement>();
   let panel = $state<HTMLDivElement>();
   const count = $derived(Object.values(filter).filter(Boolean).length);
   const kindOptions = $derived<SelectOption[]>([{ value: '', label: 'every kind' }, ...kinds.map((k) => ({ value: k, label: k }))]);
-  const runOptions = $derived<SelectOption[]>([{ value: '', label: 'every run' }, ...runs.map((r) => ({ value: r.id, label: r.label }))]);
+  const runOptions = $derived<SelectOption[]>([{ value: '', label: 'every run' }, ...runs.map((r) => ({ value: r.id, label: r.label, group: r.day, sub: r.sub }))]);
   const memberOptions = $derived<SelectOption[]>([{ value: '', label: 'anyone', icon: 'users' }, ...people.map((p) => ({ value: p, label: p, mono: p.slice(0, 1).toUpperCase() }))]);
   const dayOptions = $derived<SelectOption[]>([{ value: '', label: 'every day', icon: 'calendar' }, ...days.map((d) => ({ value: d, label: d }))]);
 

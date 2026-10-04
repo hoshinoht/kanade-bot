@@ -12,11 +12,12 @@
   import type { ReminderRow, Reminders } from '@kanade/api-types';
   import { LoadError } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
+  import type { AdminWeek } from '../store.svelte';
   import ReminderFilters, { NO_FILTER, type ReminderFilter } from './ReminderFilters.svelte';
   import ReminderTable from './ReminderTable.svelte';
   import { dayOf, span } from './when';
 
-  let { run = '' }: { run?: string } = $props();
+  let { store, run = '' }: { store?: AdminWeek; run?: string } = $props();
 
   const reminders = new Resource<Reminders>('/api/admin/reminders');
   $effect(() => void reminders.load());
@@ -37,7 +38,16 @@
   const all = $derived([...(reminders.data?.upcoming ?? []), ...(reminders.data?.sent ?? [])]);
   const distinct = (values: string[]) => [...new Set(values)];
   const kinds = $derived(distinct(all.map((r) => r.kind)));
-  const runs = $derived(distinct(all.map((r) => r.run_id)).map((id) => ({ id, label: runName(all.find((r) => r.run_id === id)!) })));
+  // The Run filter groups runs by the day of their last card, with the run's time and queued count (P_Select).
+  const runs = $derived(
+    distinct(all.map((r) => r.run_id)).map((id) => {
+      const cards = all.filter((r) => r.run_id === id);
+      const time = (store?.week?.runs.find((r) => r.id === id) ?? store?.thisWeek?.runs.find((r) => r.id === id))?.time;
+      const queued = cards.filter((r) => r.state === 'queued' || r.state === 'due').length;
+      const parts = [time, queued ? `${queued} queued` : 'none queued'].filter(Boolean);
+      return { id, label: runName(cards[0]!), day: dayOf(cards[cards.length - 1]!.at), sub: parts.join(' · ') };
+    }).sort((a, b) => days.indexOf(a.day) - days.indexOf(b.day)),
+  );
   const people = $derived(distinct(all.flatMap((r) => r.party)).sort((a, b) => a.localeCompare(b)));
   const days = $derived(distinct(all.map((r) => dayOf(r.at))));
   const keep = (row: ReminderRow) =>

@@ -267,3 +267,11 @@ test('a coarse pointer on a wide screen also gets the native picker', async ({ b
   await expect(filters.getByRole('combobox', { name: 'Kind' })).toHaveJSProperty('tagName', 'SELECT');
   await context.close();
 });
+
+test('Reminders Run list groups runs by day with their time and queued count', async ({ page }) => {
+  const filters = await reminderFilters(page);
+  await filters.getByRole('combobox', { name: 'Run' }).click();
+  const list = page.getByRole('listbox').last();
+  await expect(list.getByRole('group').first()).toHaveAccessibleName(/^\w{3} \d{1,2} \w{3}$/);
+  await expect(list.getByRole('option').nth(1)).toContainText(/\d{2}:\d{2} · \d+ queued|none queued/);
+});

@@ -235,7 +235,7 @@
       case 'extraction':
         return { id: params.id ?? '', timeZone: store.week?.timezone ?? 'Asia/Kuala_Lumpur', toaster };
       case 'reminders':
-        return { run: router.query.get('run') ?? '' };
+        return { store, run: router.query.get('run') ?? '' };
       default:
         return {};
     }
