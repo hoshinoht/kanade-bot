@@ -847,6 +847,17 @@ a.week-foot__item:hover,
   color: var(--ink);
 }
 
+// The art runs under the countdown's right end, where the default track and
+// dim ticks vanish: an opaque track mixed into the pane fill and ink marks.
+.week-pane__countdown .wavy__track {
+  stroke: color-mix(in srgb, var(--accent) 32%, var(--surface));
+}
+
+.week-pane__countdown .wavy__tick {
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
 .week-pane__bosses {
   display: grid;
   gap: 6px;

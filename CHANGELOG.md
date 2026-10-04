@@ -982,6 +982,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 admin run pane: the countdown's track and T-1h/T-15m marks stay visible
+  over the boss art.
 - v5 admin Week Glance: the "Next up" card is readable over bright boss art
   (stronger art, a scrim behind the text, a darker countdown track and ticks),
   and the fill line keeps its space before "maybe". On Next week it still shows
