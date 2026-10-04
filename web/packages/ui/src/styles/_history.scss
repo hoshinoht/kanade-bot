@@ -47,6 +47,19 @@
 .history-row__rows { margin-left: auto; }
 .history-row__open { margin-left: auto; color: var(--select-ink); }
 .history-row__summary { font-size: var(--fs-small); }
+// One rail (the chain is linear): a line from each dot down to the next row's
+// dot, drawn over the gap and the rows so it reads as one line per boss week.
+.history-timeline > li:not(:last-child)::before { content: ""; position: absolute; z-index: 1; top: 24px; left: 18.25px; width: 1.5px; height: calc(100% - 6px); background: var(--line); pointer-events: none; }
+// A rollback is a diamond; a record it undid, a dashed ring (both also tagged in words).
+.history-row__dot--revert { border-radius: 2px; transform: rotate(45deg) scale(0.9); }
+.history-row__dot--undone { box-shadow: none; border: 2px dashed var(--dim-text); }
+.history-row--active .history-row__dot--undone { border-color: var(--accent); }
+// Tags sit at the row's end on every row, compact or opened.
+.history-row__tags { display: flex; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 45%; margin-left: auto; }
+.history-tag { display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border: 1.5px solid var(--line); border-radius: 9px; color: var(--ink); font-size: var(--fs-mini); font-weight: 600; line-height: 1.35; white-space: nowrap; }
+.history-tag .icon { width: 12px; height: 12px; }
+.history-tag--undone { border-style: dashed; color: var(--dim-text); }
+.history-tag--backup { border-color: color-mix(in srgb, var(--ok) 45%, var(--surface)); background: color-mix(in srgb, var(--ok) 12%, var(--surface)); color: var(--ok-text); }
 
 // The change pane (B_History): the head on its own band, then one column of
 // the rows' diffs, the raw link, the actions and, at the foot, the

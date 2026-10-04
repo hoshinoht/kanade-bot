@@ -192,22 +192,23 @@ test.describe('run sheet backdrop', () => {
   });
 });
 
-// The Changes tab's blame once ran four columns past a 340 px pane, cutting
-// off who changed what and wrapping "Day and time" a word a line.
-async function blameFits(page: Page, scope: string) {
-  const table = page.locator(`${scope} .blame__table`);
-  await expect(table.locator('tbody tr').first()).toBeVisible();
-  const fit = await page.locator(scope).evaluate((pane, sel) => {
+// The Changes tab once ran a four-column table past a 340 px pane. Its change
+// log stacks each row (summary over who/when/how) and opens in place, so
+// nothing may cross the scope's right edge, opened or not.
+async function logFits(page: Page, scope: string) {
+  const log = page.locator(`${scope} .runlog`);
+  const rows = log.locator('.runlog__row');
+  await expect(rows.first()).toBeVisible();
+  for (const row of await rows.all()) await row.click();
+  await expect(log.locator('dl:not([hidden])').first()).toBeVisible();
+  const fit = await page.locator(scope).evaluate((pane) => {
     const edge = pane.getBoundingClientRect().right;
-    const cells = [...pane.querySelectorAll<HTMLElement>(`${sel} tr, ${sel} th, ${sel} td`)].filter((el) => el.checkVisibility());
-    const over = cells.filter((el) => el.getBoundingClientRect().right > edge + 0.5).map((el) => el.textContent?.trim());
-    const label = [...pane.querySelectorAll<HTMLElement>(`${sel} tbody th`)].find((th) => th.textContent?.trim() === 'Day and time');
-    const lines = label ? label.getBoundingClientRect().height / parseFloat(getComputedStyle(label).lineHeight || '20') : 1;
-    return { over, lines, cells: cells.length };
-  }, '.blame__table');
-  expect(fit.cells).toBeGreaterThan(4);
+    const parts = [...pane.querySelectorAll<HTMLElement>('.runlog__row, .runlog__row > *, .runlog__meta > *, .runlog__field, .runlog__field > *')].filter((el) => el.checkVisibility());
+    const over = parts.filter((el) => el.getBoundingClientRect().right > edge + 0.5).map((el) => el.textContent?.trim());
+    return { over, parts: parts.length };
+  });
+  expect(fit.parts).toBeGreaterThan(8);
   expect(fit.over).toEqual([]);
-  expect(fit.lines).toBeLessThan(1.6);
 }
 
 test('the run pane Changes tab fits the side pane', async ({ page }) => {
@@ -216,16 +217,17 @@ test('the run pane Changes tab fits the side pane', async ({ page }) => {
   await page.locator('[data-run="r-kalos"] .plan-card__open').click();
   const pane = page.getByRole('complementary', { name: 'XKalos' });
   await pane.getByRole('tab', { name: 'Changes' }).click();
-  await blameFits(page, 'aside.week-pane');
+  await logFits(page, 'aside.week-pane');
 });
 
-test('the phone run sheet blame fits the sheet', async ({ page }) => {
+test('the phone run sheet change log fits the sheet', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${ADMIN}/?sw=off`);
   await page.locator('[data-run="r-kalos"] .plan-card__open').click();
   const sheet = page.getByRole('dialog', { name: 'XKalos' });
-  await sheet.getByText('Who changed this').click();
-  await blameFits(page, 'dialog[open] .modal__panel');
+  // No disclosure: the log sits at the sheet's foot and loads when scrolled to.
+  await sheet.getByRole('heading', { name: 'Changes' }).scrollIntoViewIfNeeded();
+  await logFits(page, 'dialog[open] .modal__panel');
 });
 
 test('at a glance is about the next run: its party with answers in words, waiting first', async ({ page }) => {
@@ -366,10 +368,10 @@ test('the pane pops out to the full sheet on the same tab and comes back to the 
   await expect(pane.getByRole('tab', { name: 'Answers' })).toHaveAttribute('aria-selected', 'true');
   await expect(pane.getByRole('button', { name: 'Open in a larger view' })).toBeFocused();
 
-  // Changes pops out to the open blame; the backdrop closes it back to the pane when clean.
+  // Changes pops out to the change log, scrolled into view; the backdrop closes it back to the pane when clean.
   await pane.getByRole('tab', { name: 'Changes' }).click();
   await pane.getByRole('button', { name: 'Open in a larger view' }).click();
-  await expect(sheet.locator('details.blame')).toHaveAttribute('open', '');
+  await expect(sheet.locator('.runlog__row').first()).toBeInViewport();
   const panel = (await sheet.locator('.modal__panel').boundingBox())!;
   await page.mouse.click(Math.max(4, panel.x / 2), 400);
   await expect(sheet).toBeHidden();

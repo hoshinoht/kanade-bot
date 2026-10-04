@@ -7,7 +7,8 @@
   import type { ChangeRecord, Checkpoints, HistoryPage, RevertPlan } from '@kanade/api-types';
   import { createClient } from '@kanade/client';
   import { SvelteSet } from 'svelte/reactivity';
-  import { Presence, RowContent, Toaster, weekStartLabel } from '@kanade/ui';
+  import { onMount } from 'svelte';
+  import { Icon, Presence, RowContent, Toaster, weekStartLabel } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
   import { SURFACE_LABELS, actorName, describe, localAt, weekDate } from './describe';
@@ -85,6 +86,22 @@
   });
 
   const checkpoints = new Resource<Checkpoints>('/api/admin/history/checkpoints');
+  // The rail's tags: a backup snapshot sits on the record its manifest names as
+  // head (same hash, so a backup the chain no longer holds tags nothing), and a
+  // record a loaded rollback undid points back at that rollback.
+  onMount(() => void checkpoints.load());
+  const snapshots = $derived.by(() => {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- a lookup rebuilt by the derivation, never mutated after
+    const byHash = new Map<string, Checkpoints['backups']>();
+    for (const backup of checkpoints.data?.backups ?? []) byHash.set(backup.history_head.hash, [...(byHash.get(backup.history_head.hash) ?? []), backup]);
+    return byHash;
+  });
+  const revertedBy = $derived.by(() => {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- a lookup rebuilt by the derivation, never mutated after
+    const by = new Map<number, number[]>();
+    for (const record of records) for (const ref of record.refs) by.set(ref.seq, [...(by.get(ref.seq) ?? []), record.seq]);
+    return by;
+  });
   type Tab = 'timeline' | 'checkpoints';
   const TABS: { id: Tab; label: string }[] = [
     { id: 'timeline', label: 'Timeline' },
@@ -170,14 +187,24 @@
 {#snippet rowBody(record: ChangeRecord, isActive: boolean)}
   {@const lines = describe(record, names, tz)}
   {@const count = `${record.rows.length} row${record.rows.length === 1 ? '' : 's'}`}
-  <span class="history-row__dot" aria-hidden="true"></span>
+  {@const backups = snapshots.get(record.hash) ?? []}
+  {@const undoneBy = revertedBy.get(record.seq) ?? []}
+  <span class="history-row__dot" class:history-row__dot--revert={record.refs.length} class:history-row__dot--undone={undoneBy.length} aria-hidden="true"></span>
   <RowContent expanded={isActive}>
-    {#snippet compact()}<span class="mono history-row__seq">#{record.seq}</span> <strong class="history-row__actor">{actorName(record.actor, names, known)}</strong> · <span class="history-row__summary">{lines.length ? lines.join(' · ') : `${count} changed`}</span> · {SURFACE_LABELS[record.surface] ?? record.surface} · {localAt(record.at, tz)} · {count}{#if record.refs.length} · reverts {record.refs.map((ref) => `#${ref.seq}`).join(', ')}{/if}{/snippet}
+    {#snippet compact()}<span class="mono history-row__seq">#{record.seq}</span> <strong class="history-row__actor">{actorName(record.actor, names, known)}</strong> · <span class="history-row__summary">{lines.length ? lines.join(' · ') : `${count} changed`}</span> · {SURFACE_LABELS[record.surface] ?? record.surface} · {localAt(record.at, tz)} · {count}{/snippet}
     <span class="history-row__text">
-    <span class="history-row__head"><span class="mono history-row__seq">#{record.seq}</span><strong class="history-row__actor">{actorName(record.actor, names, known)}</strong><span class="chip chip--mono">{SURFACE_LABELS[record.surface] ?? record.surface}</span>{#if record.refs.length}<span class="chip">reverts {record.refs.map((ref) => `#${ref.seq}`).join(', ')}</span>{/if}<span class="history-row__time mono">{localAt(record.at, tz)}</span><span class="history-row__rows mono">{count}</span>{#if isActive}<span class="history-row__open cap">open</span>{/if}</span>
+    <span class="history-row__head"><span class="mono history-row__seq">#{record.seq}</span><strong class="history-row__actor">{actorName(record.actor, names, known)}</strong><span class="chip chip--mono">{SURFACE_LABELS[record.surface] ?? record.surface}</span><span class="history-row__time mono">{localAt(record.at, tz)}</span><span class="history-row__rows mono">{count}</span>{#if isActive}<span class="history-row__open cap">open</span>{/if}</span>
     <span class="history-row__summary">{lines.length ? lines.join(' · ') : `${count} changed`}</span>
     </span>
   </RowContent>
+  <!-- Tags on the rail (always shown, not only on the opened row): a rollback names what it undid, the undone record names its rollback, a backup marks its snapshot. -->
+  {#if record.refs.length || undoneBy.length || backups.length}
+    <span class="history-row__tags">
+      {#if record.refs.length}<span class="history-tag history-tag--revert"><Icon name="rotate-ccw" />reverts {record.refs.map((ref) => `#${ref.seq}`).join(', ')}</span>{/if}
+      {#if undoneBy.length}<span class="history-tag history-tag--undone">reverted by {undoneBy.map((seq) => `#${seq}`).join(', ')}</span>{/if}
+      {#each backups as backup (backup.file)}<span class="history-tag history-tag--backup" title="{backup.file} · taken {localAt(backup.created_at, tz)}"><Icon name="pin" />backup<span class="vh"> {backup.file}, taken {localAt(backup.created_at, tz)}</span></span>{/each}
+    </span>
+  {/if}
 {/snippet}
 
 <!-- Revert everything one member changed (B_History: the box at the foot of the change pane). -->

@@ -1,7 +1,7 @@
 import { describe as suite, expect, it } from 'vitest';
 import type { ChangeRecord } from '@kanade/api-types';
-import { actorName, describe, localAt, reminderKind, weekDate } from '../src/history/describe';
-import { blameField, blameValue } from '../src/sheet/blame';
+import { actorName, describe, localAt, relativeAt, reminderKind, weekDate } from '../src/history/describe';
+import { fieldChanges, fieldLabel, fieldValue, inRun } from '../src/sheet/runLog';
 
 const TZ = 'Asia/Kuala_Lumpur';
 const names = (id: string) => ({ '1005': 'Tsubame', '1013': 'Ren' })[id] ?? id;
@@ -117,23 +117,72 @@ suite('history describe', () => {
   });
 });
 
-suite('blame labels', () => {
-  it('maps the domain field names to people words, and keeps unknown ones', () => {
-    expect(blameField('slot', names)).toBe('Day and time');
-    expect(blameField('participants', names)).toBe('Roster');
-    expect(blameField('status_pin', names)).toBe('Held status');
-    expect(blameField('rsvp:1005', names)).toBe("Tsubame's answer");
-    expect(blameField('attended:1013', names)).toBe("Ren's attendance");
-    expect(blameField('standing:1005', names)).toBe('standing:1005');
+suite('run change log', () => {
+  const ctx = { names, timeZone: TZ, channel: { id: '900', name: 'boss-xkalos' } };
+
+  it('lists what a record changed on this run only, field by field', () => {
+    const changes = fieldChanges(
+      record([
+        { key: { table: 'runs', id: 'r' }, before: run({}), after: run({ datetime: '2026-09-25T14:00:00+00:00', status: 'at_risk' }) },
+        // The other run of a swap is not this run's change.
+        { key: { table: 'runs', id: 'other' }, before: run({ id: 'other' }), after: run({ id: 'other', status: 'done' }) },
+        { key: { table: 'rsvps', run_id: 'r', user_id: '1005' }, before: null, after: { run_id: 'r', user_id: '1005', state: 'no' } },
+        { key: { table: 'reminders', id: 'rem-1' }, before: reminder({}), after: reminder({ fire_at: '2026-09-25T13:00:00+00:00' }) },
+      ]),
+      'r',
+    );
+    expect(changes.map((c) => c.field)).toEqual(['slot', 'status', 'rsvp:1005']);
+    const [slot, status, rsvp] = changes;
+    expect(`${fieldValue('slot', slot!.before, ctx)} → ${fieldValue('slot', slot!.after, ctx)}`).toBe('Fri 25 21:30 → Fri 25 22:00');
+    expect(fieldValue('status', status!.after, ctx)).toBe('at risk');
+    expect(`${fieldValue(rsvp!.field, rsvp!.before, ctx)} → ${fieldValue(rsvp!.field, rsvp!.after, ctx)}`).toBe('no answer → out');
   });
 
-  it('shows current values plainly', () => {
-    expect(blameValue('slot', { datetime: '2026-09-25T14:00:00+00:00', week_start: '', source: 'amend', fixed_run_id: 'f' }, TZ)).toBe('Fri 25 22:00');
-    expect(blameValue('rsvp:1005', { state: 'no' }, TZ)).toBe('out');
-    expect(blameValue('rsvp:1005', null, TZ)).toBe('cleared');
-    expect(blameValue('attended:1005', { user_id: '1005', attended: true }, TZ)).toBe('attended');
-    expect(blameValue('status', 'at_risk', TZ)).toBe('at risk');
-    expect(blameValue('participants', ['1', '2'], TZ)).toBe('2 people');
-    expect(blameValue('bosses', ['XKalos', 'HStar'], TZ)).toBe('XKalos + HStar');
+  it('names creation, roster, channel and attendance', () => {
+    expect(fieldChanges(record([{ key: { table: 'runs', id: 'r' }, before: null, after: run({}) }]), 'r').map((c) => c.field)).toEqual(['created']);
+    const changes = fieldChanges(
+      record([
+        {
+          key: { table: 'runs', id: 'r' },
+          before: run({}),
+          after: run({ participants: ['1005', '1013'], channel_id: '901', attendance: [{ user_id: '1013', attended: true }] }),
+        },
+      ]),
+      'r',
+    );
+    expect(changes.map((c) => c.field)).toEqual(['participants', 'channel', 'attended:1013']);
+    expect(fieldValue('participants', changes[0]!.after, ctx)).toBe('Tsubame, Ren');
+    expect(fieldValue('channel', changes[1]!.before, ctx)).toBe('boss-xkalos');
+    expect(fieldValue('attended:1013', changes[2]!.after, ctx)).toBe('attended');
+  });
+
+  it('maps the domain field names to people words, and keeps unknown ones', () => {
+    expect(fieldLabel('slot', names)).toBe('Day and time');
+    expect(fieldLabel('participants', names)).toBe('Roster');
+    expect(fieldLabel('status_pin', names)).toBe('Held status');
+    expect(fieldLabel('rsvp:1005', names)).toBe("Tsubame's answer");
+    expect(fieldLabel('attended:1013', names)).toBe("Ren's attendance");
+    expect(fieldLabel('standing:1005', names)).toBe('standing:1005');
+  });
+
+  it('says how long ago by the server clock', () => {
+    const now = '2026-09-29T04:00:00+00:00';
+    expect(relativeAt('2026-09-29T03:59:40+00:00', now)).toBe('just now');
+    expect(relativeAt('2026-09-29T03:48:00+00:00', now)).toBe('12 min ago');
+    expect(relativeAt('2026-09-29T01:00:00+00:00', now)).toBe('3 h ago');
+    expect(relativeAt('2026-09-26T04:00:00+00:00', now)).toBe('3 d ago');
+    expect(relativeAt('2026-08-29T04:00:00+00:00', now)).toBe('4 wk ago');
+  });
+
+  it('drops the run title a line repeats, but keeps a boss change whole', () => {
+    expect(inRun('XKalos: Fri 25 21:30 → Fri 25 22:00', 'XKalos')).toBe('Fri 25 21:30 → Fri 25 22:00');
+    expect(inRun('XKalos roster: +Ren', 'XKalos')).toBe('Roster: +Ren');
+    expect(inRun('XKalos → HStar', 'XKalos')).toBe('XKalos → HStar');
+    expect(inRun('Tsubame → out on XKalos', 'XKalos')).toBe('Tsubame → out on XKalos');
+  });
+
+  it('names the run in its own log when the record carries no run row', () => {
+    const answer = record([{ key: { table: 'rsvps', run_id: 'r', user_id: '1005' }, before: null, after: { run_id: 'r', user_id: '1005', state: 'no' } }]);
+    expect(describe(answer, names, TZ, () => 'XKalos')).toEqual(['Tsubame → out on XKalos']);
   });
 });

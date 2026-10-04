@@ -3,7 +3,7 @@ import { ADMIN, csrf, expect, test } from './support';
 
 // Knowledge (tracked boss/knowledge, schema v2), Inbox, Extractions + rescan,
 // Chat, Limits, History (revert / restore / by member / checkpoints) and the
-// run sheet's blame panel. Mock clock pinned (playwright.config.ts).
+// run pane's change log. Mock clock pinned (playwright.config.ts).
 
 async function go(page: Page, path: string) {
   await page.goto(`${ADMIN}${path}${path.includes('?') ? '&' : '?'}sw=off`);
@@ -505,6 +505,12 @@ test('history: seeded timeline, strict revert, conflicts and force', async ({ pa
   const latest = page.getByRole('listitem').filter({ hasText: '#9' }).first();
   await expect(latest).toContainText('reverts #8');
   await expect(latest).toContainText('rollback');
+  // The rail's tags: the undone record points back at its rollback, and a
+  // backup snapshot marks the record its manifest anchors (not the mismatched one).
+  await expect(page.locator('[data-history="8"] .history-tag--undone')).toHaveText('reverted by #9');
+  await expect(page.locator('[data-history="3"] .history-tag--backup')).toContainText('backup');
+  await expect(page.locator('[data-history="1"] .history-tag--backup')).toHaveCount(1);
+  await expect(page.locator('[data-history="2"] .history-tag--backup')).toHaveCount(0);
   // Records carry reminder rows; a move's re-placed cards fold into one line.
   const moved = page.getByRole('listitem').filter({ hasText: '#3' }).first();
   await expect(moved).toContainText('XKalos: 2 reminders re-placed');
@@ -561,7 +567,7 @@ test('history: seeded timeline, strict revert, conflicts and force', async ({ pa
   await expect(page.getByRole('status').filter({ hasText: 'Chain verified' })).toHaveText(/Chain verified: \d+ records/);
 });
 
-test('history: restore a week to a point, revert a member, and blame in the run sheet', async ({ page }) => {
+test('history: restore a week to a point, revert a member, and a run’s change log', async ({ page }) => {
   await go(page, '/history');
   await page.locator('[data-history="3"]').click();
   await page.getByRole('complementary', { name: 'Change details' }).getByRole('button', { name: 'Restore week to here…' }).click();
@@ -581,12 +587,29 @@ test('history: restore a week to a point, revert a member, and blame in the run 
   await page.getByRole('link', { name: 'Week' }).click();
   await page.locator('[data-run="r-kalos"] .plan-card__open').click();
   const sheet = page.getByRole('complementary', { name: 'XKalos' });
-  // The pane's Changes tab opens the blame already expanded.
+  // The pane's Changes tab is the run's change log, newest first, no disclosure.
   await sheet.getByRole('tab', { name: 'Changes' }).click();
-  await expect(sheet.getByRole('row', { name: /^Day and time/ })).toContainText('via extraction approval');
-  await expect(sheet.getByRole('row', { name: /^Day and time/ })).toContainText('Fri 25 22:00');
-  await expect(sheet.getByRole('row', { name: /^Day and time/ })).toContainText('Asahi');
-  await expect(sheet.getByRole('row', { name: /Tsubame's answer/ })).toContainText('out');
+  const log = sheet.getByRole('region', { name: 'Changes' });
+  const rows = log.locator('.runlog__row');
+  await expect(rows).toHaveCount(2);
+  const moved = log.locator('[data-runlog="3"] .runlog__row');
+  await expect(rows.first()).toContainText('#3');
+  await expect(moved).toContainText('Fri 25 21:30 → Fri 25 22:00');
+  await expect(moved).toContainText('Asahi');
+  await expect(moved).toContainText('via extraction approval');
+  await expect(moved).toContainText(/\d+ (min|h|d) ago/);
+  // A tap opens its before → after.
+  await expect(moved).toHaveAttribute('aria-expanded', 'false');
+  await moved.click();
+  await expect(moved).toHaveAttribute('aria-expanded', 'true');
+  const diff = log.locator('[data-runlog="3"] dl');
+  await expect(diff.locator('.runlog__field').filter({ hasText: 'Day and time' })).toContainText('Fri 25 21:30');
+  await expect(diff.locator('.runlog__field').filter({ hasText: 'Day and time' })).toContainText('Fri 25 22:00');
+  // By field: who last set Tsubame's answer.
+  await log.getByLabel('By field').selectOption({ label: "Tsubame's answer" });
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText('Tsubame → out on XKalos');
+  await expect(rows.first()).toContainText('#2');
 });
 
 test('config: pings, watching, chatbot, persona catalog, models, self-service, portal gate, notifications save', async ({ page }) => {

@@ -157,13 +157,14 @@ function fixedLines(change: RowChange): string[] {
   return lines.length ? lines : [`${name} updated`];
 }
 
-export function describe(record: ChangeRecord, names: Names, timeZone: string): string[] {
+/** `runTitle` names a run the record carries no row for (a run's own log knows its title). */
+export function describe(record: ChangeRecord, names: Names, timeZone: string, runTitle?: (id: string) => string): string[] {
   // Answers and reminders name their run by id; the same record usually carries that run's row.
   const titles = new Map<string, string>();
   for (const row of record.rows) {
     if (row.key.table === 'runs') titles.set(row.key.id, title(row.after ?? row.before));
   }
-  const ctx: Ctx = { names, timeZone, runTitle: (id) => titles.get(id) ?? `run ${id}` };
+  const ctx: Ctx = { names, timeZone, runTitle: (id) => titles.get(id) ?? runTitle?.(id) ?? `run ${id}` };
   // A move re-places its reminders: one line on the run, not one per card.
   const followers = new Map<string, number>();
   for (const row of record.rows) {
@@ -226,6 +227,23 @@ export function actorName(actor: ChangeRecord['actor'], names: Names, known: (id
     return `Admin (${actor.id})`;
   }
   return `system (${actor.id})`;
+}
+
+/**
+ * "12 min ago", "3 h ago", "2 d ago" from `now` (the server's clock, e.g. the
+ * week's `generated_at`, so a skewed device clock cannot move it).
+ */
+export function relativeAt(iso: string, now: string): string {
+  const ms = Date.parse(now) - Date.parse(iso);
+  if (Number.isNaN(ms)) return '';
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 14) return `${days} d ago`;
+  return `${Math.floor(days / 7)} wk ago`;
 }
 
 /** Guild-local "Tue 29 Sep 12:00" for an ISO instant. */

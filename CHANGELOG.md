@@ -6,6 +6,13 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin PWA run change log: the Week run pane's Changes tab (and the foot
+  of the phone run sheet) lists the run's changes newest first, like an IDE
+  commit list: a one-line summary over avatar · actor · time ago · via
+  surface · #seq, each row opening to the run's fields before → after, with
+  a "By field" filter in place of the old blame table. The History timeline
+  draws its records on one rail, tagging the records backups anchor, each
+  rollback with what it reverts, and each undone record with its rollback.
 - v5 admin PWA Re-read card shows a running job's progress in messages:
   "41% · 27 of 66 messages · started 01:40" (guild time), with the wavy bar
   (experiment B) counting messages too. The percentage and count are left

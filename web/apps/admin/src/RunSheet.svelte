@@ -13,7 +13,7 @@
   import { swapSlots } from './planner/dropTime';
   import { directory, memberLabel } from './names/directory.svelte';
   import Name from './names/Name.svelte';
-  import BlamePanel from './sheet/BlamePanel.svelte';
+  import RunLog from './sheet/RunLog.svelte';
   import { parseWhen } from './sheet/parseWhen';
   import { STATUS_LABELS, type MoveOutcome } from './store.svelte';
   import type { Slot } from './planner/keyboardMove';
@@ -85,7 +85,7 @@
     popped = true;
     await tick();
     // The pane's tab is the sheet's open section: bring it into view.
-    if (paneTab !== 'run') requestAnimationFrame(() => sheetBody?.querySelector(paneTab === 'answers' ? '.run__answers' : '.blame')?.scrollIntoView({ block: 'nearest' }));
+    if (paneTab !== 'run') requestAnimationFrame(() => sheetBody?.querySelector(paneTab === 'answers' ? '.run__answers' : '.runlog')?.scrollIntoView({ block: 'nearest' }));
   }
 
   // Back from the pop-out (the sheet unmounts with its branch, so no close
@@ -431,6 +431,10 @@
   {/each}
 {/snippet}
 
+{#snippet changes(run: Run)}
+  <RunLog runId={run.id} title={runTitle(run)} {members} timezone={week.timezone} now={week.generated_at} channel={{ id: run.channel_id, name: run.channel }} />
+{/snippet}
+
 {#snippet arts()}
   {#each artBosses as boss, index (boss.key)}
     <img
@@ -542,7 +546,7 @@
           </div>
         {:else}
           <div class="week-pane__body">
-            {#key run.id}<BlamePanel runId={run.id} {members} timezone={week.timezone} channel={{ id: run.channel_id, name: run.channel }} open />{/key}
+            {#key run.id}{@render changes(run)}{/key}
           </div>
         {/if}
       </div>
@@ -603,7 +607,7 @@
           <summary class="btn answers__summary"><Icon name="chevron-right" /> Answers — set who’s in or out</summary>
           <div class="answers__body">{@render answerRows(run)}</div>
         </details>
-        {#key run.id}<BlamePanel runId={run.id} {members} timezone={week.timezone} channel={{ id: run.channel_id, name: run.channel }} open={popped && paneTab === 'changes'} />{/key}
+        {#key run.id}{@render changes(run)}{/key}
       </article>
     {/if}
   </Modal>
