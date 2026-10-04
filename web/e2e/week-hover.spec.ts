@@ -178,7 +178,8 @@ test.describe('run sheet backdrop', () => {
     await expect(field).toHaveValue('sat 20:30');
     await field.fill('');
 
-    // So is an open swap picker.
+    // So is an open swap picker (behind the sheet's More actions).
+    await sheet.getByRole('button', { name: 'More actions' }).click();
     await sheet.getByRole('button', { name: 'Swap timing with…' }).click();
     await page.mouse.click(at.x, at.y);
     await expect(sheet).toBeVisible();
@@ -231,8 +232,8 @@ test('the phone run sheet change log fits the sheet', async ({ page }) => {
   await page.goto(`${ADMIN}/?sw=off`);
   await page.locator('[data-run="r-kalos"] .plan-card__open').click();
   const sheet = page.getByRole('dialog', { name: 'XKalos' });
-  // No disclosure: the log sits at the sheet's foot and loads when scrolled to.
-  await sheet.getByRole('heading', { name: 'Changes' }).scrollIntoViewIfNeeded();
+  // The log is the window's Changes tab.
+  await sheet.getByRole('tab', { name: 'Changes' }).click();
   await logFits(page, 'dialog[open] .modal__panel');
 });
 
@@ -363,8 +364,8 @@ test('the pane pops out to the full sheet on the same tab and comes back to the 
   const sheet = page.getByRole('dialog', { name: 'XKalos' });
   await expect(sheet).toBeVisible();
   await expect(pane).toHaveCount(0);
-  // Same tab: the sheet's Answers section is open.
-  await expect(sheet.locator('details.run__answers')).toHaveAttribute('open', '');
+  // Same tab: the sheet's window opens on Answers.
+  await expect(sheet.getByRole('tab', { name: /^Answers/ })).toHaveAttribute('aria-selected', 'true');
   expect(await page.evaluate(() => !!document.activeElement?.closest('dialog[open]'))).toBe(true);
   // The run stays selected on the board meanwhile.
   await expect(page.locator('[data-run="r-kalos"]')).toHaveClass(/plan-card--selected/);

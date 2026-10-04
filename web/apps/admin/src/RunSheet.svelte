@@ -9,7 +9,8 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
   import type { Member, Participant, Run, RunStatus, Week } from '@kanade/api-types';
-  import { AnswerBar, AnswerChip, BossTag, enter, Icon, Modal, StatusMark, WavyProgress, dayLabel, runTitle, sortRuns, whenLabel } from '@kanade/ui';
+  import '@kanade/ui/styles/run-sheet.scss';
+  import { ANSWER_MARKS, AnswerBar, AnswerChip, BossTag, enter, Icon, Modal, StatusMark, WavyProgress, dayLabel, runTitle, sortRuns, whenLabel } from '@kanade/ui';
   import { swapSlots } from './planner/dropTime';
   import { directory, memberLabel } from './names/directory.svelte';
   import Name from './names/Name.svelte';
@@ -75,18 +76,24 @@
   // The pane's pill tabs (Run / Answers / Changes); the sheet stacks them.
   let paneTab = $state<'run' | 'answers' | 'changes'>('run');
   const paneTabs: Record<string, HTMLButtonElement> = {};
+  // The full sheet's window tabs (HeroSheet, HeroPhone).
+  type SheetTab = 'party' | 'answers' | 'cards' | 'changes';
+  let sheetTab = $state<SheetTab>('party');
+  // The phone sheet's "More actions" row (Swap, Preview ping, Reset to fixed).
+  let moreOpen = $state(false);
+  const sheetTabs: Record<string, HTMLButtonElement> = {};
   // The pane's pop-out: the same run in the full sheet (the modal used below
   // 840 px), with the pane gone meanwhile. Closing it returns to the pane on
   // the same tab, focus on the pop-out button; the run stays selected.
   let popped = $state(false);
   let popButton = $state<HTMLButtonElement>();
-  let sheetBody = $state<HTMLElement>();
+  // Short status words in the pane and the phone sheet; the laptop sheet spells them out.
+  const short = $derived(!wide || !popped);
 
-  async function popOut() {
+  function popOut() {
+    // The pane's tab opens the matching window tab.
+    sheetTab = paneTab === 'run' ? 'party' : paneTab;
     popped = true;
-    await tick();
-    // The pane's tab is the sheet's open section: bring it into view.
-    if (paneTab !== 'run') requestAnimationFrame(() => sheetBody?.querySelector(paneTab === 'answers' ? '.run__answers' : '.runlog')?.scrollIntoView({ block: 'nearest' }));
   }
 
   // Back from the pop-out (the sheet unmounts with its branch, so no close
@@ -130,6 +137,8 @@
       swapping = false;
       swapWith = '';
       paneTab = 'run';
+      sheetTab = 'party';
+      moreOpen = false;
     }
     if (!open) {
       seeded = null;
@@ -317,7 +326,7 @@
       {/each}
 {/snippet}
 
-{#snippet moveForm(run: Run)}
+{#snippet moveForm(run: Run, more = false)}
   <form onsubmit={move} novalidate data-fid="week-move">
     <input
       bind:value={to}
@@ -327,7 +336,21 @@
       aria-invalid={error ? 'true' : undefined}
       aria-describedby="{uid}-error"
     />
-    <button class="btn" class:btn--primary={wide} type="submit" disabled={busy || saving}>Move</button>
+    <button class="btn btn--primary" class:btn--key={!wide || popped} type="submit" disabled={busy || saving}>Move</button>
+    {#if more}
+      <button
+        type="button"
+        class="btn btn--key runsheet__more-btn"
+        aria-label="More actions"
+        title="More actions"
+        aria-expanded={moreOpen}
+        aria-controls="{uid}-more"
+        onclick={() => (moreOpen = !moreOpen)}
+        ><svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"
+          ><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg
+        ></button
+      >
+    {/if}
   </form>
 {/snippet}
 
@@ -393,9 +416,9 @@
           type="button"
           class="seg__btn"
           aria-pressed={run.status === value}
-          aria-label={wide && SHORT[value] ? label : undefined}
+          aria-label={short && SHORT[value] ? label : undefined}
           disabled={busy}
-          onclick={() => setStatus(value as RunStatus)}>{wide ? (SHORT[value] ?? label) : label}</button
+          onclick={() => setStatus(value as RunStatus)}>{short ? (SHORT[value] ?? label) : label}</button
         >
       {/each}
     </div>
@@ -490,7 +513,7 @@
           aria-label="Open in a larger view"
           title="Open in a larger view"
           bind:this={popButton}
-          onclick={() => void popOut()}
+          onclick={popOut}
           ><svg
             class="icon"
             viewBox="0 0 24 24"
@@ -571,59 +594,132 @@
   <!-- A backdrop click closes it unless something is still unsaved: a typed Move
        target or an open swap picker (everything else saves on press), or a
        change still on its way. Escape and × close it as before. -->
-  <!-- Below 840 px the sheet itself; from 840 px the pane's pop-out, whose close goes back to the pane. -->
+  <!-- Below 840 px the sheet itself, full screen (HeroPhone); from 840 px the
+       pane's pop-out (HeroSheet), whose close goes back to the pane. -->
   <Modal
     bind:open={() => (wide ? popped && open : open), (value) => (wide ? (popped = value) : (open = value))}
     title={run ? runTitle(run) : 'Run'}
     wide
     flush
     lightDismiss={!dirty && !busy}
+    className="runsheet {wide ? 'runsheet--wide' : 'runsheet--narrow'}"
   >
     {#if run}
-      <article class="run run--{run.status}" bind:this={sheetBody}>
-        {@render arts()}
-        <div class="run__time">
-          {run.status === 'otot' || !run.time ? 'own time' : run.time}
-          <small>{dayLabel(week, run.day)}</small>
-        </div>
+      {@const tabs = [
+        { id: 'party', label: 'Party', count: counts.total || null },
+        { id: 'answers', label: 'Answers', count: counts.waiting + counts.maybe || null },
+        { id: 'cards', label: 'Cards', count: run.cards.length || null },
+        { id: 'changes', label: wide ? 'Who changed this' : 'Changes', count: null },
+      ] as const}
+      <article class="runsheet__body runsheet--{run.status}" data-fid="sheet">
+        <header class="runsheet__hero" data-fid="sheet-hero">
+          {@render arts()}
+          <p class="runsheet__when" data-fid="sheet-when">
+            <span class="runsheet__time mono">{run.status === 'otot' || !run.time ? 'own time' : run.time}</span>
+            <span class="cap runsheet__day">{dayLabel(week, run.day)}{countdown ? ` · ${countdown}` : ''}</span>
+            <span class="runsheet__stripe" aria-hidden="true"></span>
+          </p>
+          <div class="runsheet__id">
+            <ul class="runsheet__bosses">
+              {#each run.bosses as boss (boss.token)}<li data-fid="sheet-boss"><BossTag {boss} portrait level /></li>{/each}
+            </ul>
+            <p class="runsheet__chips" data-fid="sheet-chips">
+              <StatusMark status={run.status} words pill />
+              <span class="tone tone--neutral"><b class="mono">{counts.on}/{counts.total}</b>&nbsp;on</span>
+              {#if counts.out}<span class="tone tone--danger mono">{counts.out} out</span>{/if}
+              {#if counts.maybe}<span class="tone tone--info">{counts.maybe} maybe</span>{/if}
+              {#if counts.waiting}<span class="tone tone--neutral">{counts.waiting} waiting</span>{/if}
+              {@render channel(run)}
+              <span class="id">#{run.short_id}</span>
+            </p>
+            <AnswerBar participants={run.participants} class="runsheet__answers" />
+          </div>
+          {#if wide}
+            <div class="runsheet__side" data-fid="sheet-actions">
+              {@render moveForm(run)}
+              <div class="runsheet__acts">{@render actions(run)}</div>
+              {@render status(run)}
+            </div>
+          {:else}
+            <div class="runsheet__moverow">
+              {@render moveForm(run, true)}
+              {#if moreOpen}<div class="runsheet__acts" id="{uid}-more">{@render actions(run)}</div>{/if}
+            </div>
+          {/if}
+          {@render swapBox(run)}
+          {@render notes()}
+        </header>
 
-        <div>
-          <div class="run__bosses">
-            {#if run.bosses.length > 1}
-              <ul class="bosslist">
-                {#each run.bosses as boss (boss.token)}<li><BossTag {boss} portrait level /></li>{/each}
+        <section class="card runsheet__win" data-fid="sheet-window" aria-label="Run details">
+          <div class="card__head tabs__strip runsheet__bar">
+            <div class="tabs__tabs" role="tablist" aria-label="Run details" data-fid="sheet-tabs">
+              {#each tabs as tab, index (tab.id)}
+                <button
+                  type="button"
+                  role="tab"
+                  class="tabs__tab"
+                  id="{uid}-stab-{tab.id}"
+                  aria-selected={sheetTab === tab.id}
+                  aria-controls="{uid}-spanel"
+                  tabindex={sheetTab === tab.id ? 0 : -1}
+                  bind:this={sheetTabs[tab.id]}
+                  onclick={() => (sheetTab = tab.id)}
+                  onkeydown={(event) => {
+                    const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+                    if (!step) return;
+                    event.preventDefault();
+                    const next = tabs[(index + step + tabs.length) % tabs.length]!;
+                    sheetTab = next.id;
+                    sheetTabs[next.id]?.focus();
+                  }}
+                  >{tab.label}{#if tab.count}<span class="tabs__count">{tab.count}</span>{/if}</button
+                >
+              {/each}
+            </div>
+          </div>
+          <div class="runsheet__panel runsheet__panel--{sheetTab}" role="tabpanel" id="{uid}-spanel" aria-labelledby="{uid}-stab-{sheetTab}">
+            {#if sheetTab === 'party'}
+              <ul class="runsheet__party" aria-label="Party" data-fid="week-party">
+                {#each run.participants as person (person.id)}
+                  <li class="slot slot--{person.answer}">
+                    <span class="slot__mark" aria-hidden="true">{ANSWER_MARKS[person.answer].mark}</span>
+                    <span class="slot__text"
+                      ><b class="slot__name">{who(person)}</b><span class="slot__state">{ANSWER_MARKS[person.answer].word}</span></span
+                    >
+                    <button
+                      type="button"
+                      class="chip__x slot__x"
+                      aria-label="Take {who(person)} off this run for this week only"
+                      disabled={busy}
+                      onclick={() => void act(() => onroster(run.id, { remove: person.id }))}>×</button
+                    >
+                  </li>
+                {/each}
+                {#if addable.length > 0}
+                  <li class="slot slot--open">
+                    <span class="slot__mark" aria-hidden="true">+</span>
+                    <select class="slot__add" aria-label="Add someone to {runTitle(run)} for this week" onchange={add} disabled={busy}>
+                      <option value="">Add someone…</option>
+                      {#each addable as member (member.id)}<option value={member.id}>{memberLabel(members, member.id)}</option>{/each}
+                    </select>
+                  </li>
+                {/if}
               </ul>
+              {#if wide}
+                <aside class="runsheet__aside" aria-label="This week" data-fid="sheet-aside">{@render thisWeek(run)}</aside>
+              {/if}
+            {:else if sheetTab === 'answers'}
+              <div class="answers__body">{@render answerRows(run)}</div>
+            {:else if sheetTab === 'cards'}
+              {#if run.roster_change || run.cards.length > 0}{@render thisWeek(run)}{:else}<p class="note">No cards for this run yet.</p>{/if}
             {:else}
-              {#each run.bosses as boss (boss.token)}<BossTag {boss} portrait level />{/each}
+              {#key run.id}{@render changes(run)}{/key}
             {/if}
           </div>
-          <div class="run__meta">
-            <StatusMark status={run.status} words pill />
-            <span class="mono">{counts.on}/{counts.total} on</span>
-            {#if counts.out}<span class="tone tone--danger mono">{counts.out} out</span>{/if}
-            {#if counts.maybe}<span class="tone tone--info mono">{counts.maybe} maybe</span>{/if}
-            {#if counts.waiting}<span class="tone tone--neutral mono">{counts.waiting} waiting</span>{/if}
-            {@render channel(run)}
-            <span class="id">#{run.short_id}</span>
-          </div>
-          <AnswerBar participants={run.participants} class="run__answerbar" />
-          {@render people(run)}
-          {@render thisWeek(run)}
-        </div>
-
-        <div class="run__actions">
-          {@render moveForm(run)}
-          {@render actions(run)}
-        </div>
-        {@render swapBox(run)}
-        {@render status(run)}
-        {@render notes()}
-
-        <details class="answers run__answers" open={popped && paneTab === 'answers'}>
-          <summary class="btn answers__summary"><Icon name="chevron-right" /> Answers — set who’s in or out</summary>
-          <div class="answers__body">{@render answerRows(run)}</div>
-        </details>
-        {#key run.id}{@render changes(run)}{/key}
+          {#if !wide}
+            <div class="runsheet__foot" data-fid="sheet-foot">{@render status(run)}</div>
+          {/if}
+        </section>
       </article>
     {/if}
   </Modal>

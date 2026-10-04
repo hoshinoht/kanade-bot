@@ -274,6 +274,36 @@ const PAIRS: Pair[] = [
       await drawer.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
     },
   },
+  {
+    name: 'hero-login',
+    board: 'HeroLogin',
+    path: '/login',
+    ready: async (page) => {
+      await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'none' } });
+      await page.goto(`${ADMIN}/login?sw=off`);
+      await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toBeVisible();
+    },
+  },
+  // The run sheet: the phone's full sheet, and the pane's "larger view" on a laptop.
+  {
+    name: 'hero-phone',
+    board: 'HeroPhone',
+    path: '/',
+    ready: async (page) => {
+      await page.locator('[data-run="r-carling"] .plan-card__open').click();
+      await expect(page.getByRole('dialog', { name: 'HCarling + HStar' })).toBeVisible();
+    },
+  },
+  {
+    name: 'hero-sheet',
+    board: 'HeroSheet',
+    path: '/',
+    ready: async (page) => {
+      await page.locator('[data-run="r-carling"] .plan-card__open').click();
+      await page.getByRole('complementary', { name: 'HCarling + HStar' }).getByRole('button', { name: 'Open in a larger view' }).click();
+      await expect(page.getByRole('dialog', { name: 'HCarling + HStar' })).toBeVisible();
+    },
+  },
 ];
 
 test.describe('layout fidelity', () => {

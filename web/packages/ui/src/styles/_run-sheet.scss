@@ -1,0 +1,636 @@
+// The full run sheet (boards HeroSheet, HeroPhone): the pane's "larger view"
+// from 840 px and the sheet itself below. An identity card (entry art, clock,
+// bosses, chips, Move) over one window with Party / Answers / Cards / Changes
+// tabs; only the selected panel scrolls. Imported by RunSheet.svelte.
+
+dialog.modal.runsheet {
+  max-width: none;
+  max-height: none;
+}
+
+dialog.runsheet .modal__panel {
+  height: 100%;
+  max-height: none;
+}
+
+dialog.runsheet .modal__body {
+  display: flex;
+  flex-direction: column;
+  background: var(--ground);
+}
+
+// From 840 px: nearly the whole frame, as the board's page.
+dialog.modal.runsheet--wide {
+  width: min(1232px, calc(100% - 48px));
+  height: calc(100dvh - 24px);
+}
+
+// Below 840 px: a tall card over the page, and full screen in the phone frame
+// (spec "Side pane": they may stay full-screen sheets).
+dialog.modal.runsheet--narrow {
+  width: min(46rem, calc(100% - 1.6rem));
+  height: min(92dvh, 56rem);
+}
+
+@media (max-width: 599.98px), (max-height: 499.98px) {
+  dialog.modal.runsheet--narrow {
+    width: 100%;
+    height: 100dvh;
+    margin: 0;
+    inset: 0;
+  }
+
+  dialog.runsheet--narrow .modal__panel {
+    border: 0;
+    border-radius: 0;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    background: var(--ground);
+  }
+}
+
+dialog.runsheet--narrow .modal__head {
+  min-height: 48px;
+}
+
+.runsheet__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  padding: 12px 0;
+}
+
+.runsheet--narrow .runsheet__body {
+  gap: 8px;
+  padding: 8px 10px 10px;
+}
+
+/* ── the identity card ──────────────────────────────────────────────────── */
+
+.runsheet__hero {
+  position: relative;
+  isolation: isolate;
+  flex: none;
+  display: flex;
+  gap: 28px;
+  min-height: 196px;
+  padding: 14px 20px 14px 22px;
+  border: 2px solid var(--win);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: clip;
+}
+
+.runsheet__hero p,
+.runsheet__hero ul {
+  margin: 0;
+}
+
+.runsheet__when {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 170px;
+  padding-top: 8px;
+}
+
+.runsheet__time {
+  font-size: var(--fs-hero);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+// "own time" is words, not a reading: it keeps the window-title size.
+.runsheet--otot .runsheet__time {
+  font-size: var(--fs-lg);
+}
+
+.runsheet__day {
+  color: var(--ink);
+}
+
+.runsheet__stripe {
+  width: 44px;
+  height: 4px;
+  margin-top: 10px;
+  border-radius: 2px;
+  background: var(--off);
+}
+
+.runsheet--planned .runsheet__stripe {
+  background: var(--warn);
+}
+
+.runsheet--confirmed .runsheet__stripe {
+  background: var(--ok);
+}
+
+.runsheet--at_risk .runsheet__stripe {
+  background: var(--risk);
+}
+
+.runsheet--otot .runsheet__stripe {
+  background: var(--own);
+}
+
+.runsheet__id {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 6px;
+}
+
+.runsheet__bosses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 0;
+  list-style: none;
+}
+
+.runsheet__bosses li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.runsheet__bosses .boss {
+  gap: 9px;
+  font-family: var(--display);
+  font-size: var(--fs-body-sm);
+  font-weight: 700;
+}
+
+.runsheet__bosses .portrait {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+}
+
+// On the laptop sheet the name sits over its pill and level (board).
+.runsheet--wide .runsheet__bosses .boss {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 3px 6px;
+}
+
+.runsheet--wide .runsheet__bosses .portrait {
+  grid-row: 1 / span 2;
+  margin-right: 3px;
+}
+
+.runsheet--wide .runsheet__bosses .boss__name {
+  grid-column: 2 / -1;
+}
+
+.runsheet__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.runsheet__chips > * {
+  min-height: 28px;
+}
+
+.runsheet__answers {
+  max-width: 28rem;
+}
+
+// Move, the other actions and the status on the right (board: column, ends aligned).
+.runsheet__side {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.runsheet__side form {
+  padding: 8px;
+  border: 1.5px solid var(--line);
+  border-radius: 26px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+}
+
+.runsheet__hero form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.runsheet__hero form input {
+  width: 120px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 20px;
+  font-family: var(--mono);
+}
+
+.runsheet__hero form .btn--key {
+  min-height: 40px;
+}
+
+.runsheet__acts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.runsheet__acts .btn {
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+}
+
+// The status group alone: its "Status" label is for screen readers here.
+.runsheet__body .statusbar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.runsheet__body .statusbar__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.runsheet__body .seg--status .seg__btn {
+  min-height: 30px;
+  padding: 0 12px;
+}
+
+.runsheet__hero .swap,
+.runsheet__hero .run__error,
+.runsheet__hero .sheet__notice {
+  position: absolute;
+  inset: auto 20px 8px auto;
+  max-width: 34rem;
+}
+
+.runsheet__hero .swap {
+  z-index: 1;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.runsheet__hero .sheet__notice:empty,
+.runsheet__hero .run__error:empty {
+  display: none;
+}
+
+/* ── the window ─────────────────────────────────────────────────────────── */
+
+.runsheet__win {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 220px;
+  padding: 0;
+  overflow: clip;
+}
+
+.runsheet__bar {
+  flex: none;
+  min-height: 48px;
+  margin: 0;
+  padding: 0 10px 0 16px;
+  align-items: flex-end;
+}
+
+.runsheet__bar::before {
+  align-self: flex-end;
+  margin-bottom: 15px;
+}
+
+.runsheet__panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 14px 16px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.runsheet__panel--party {
+  display: flex;
+  gap: 16px;
+}
+
+.runsheet__party {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: 64px;
+  align-content: start;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.runsheet__aside {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 250px;
+  font-size: var(--fs-small);
+}
+
+.runsheet__aside p,
+.runsheet__panel--cards p {
+  margin: 0;
+}
+
+.runsheet__panel--cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── party slots (board `.slot`): one per member, the answer as a mark and a word ── */
+
+.slot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0 6px 0 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  background: var(--raise);
+}
+
+.slot--yes {
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--line));
+  background: color-mix(in srgb, var(--ok) 12%, var(--surface));
+}
+
+.slot--no {
+  border-color: color-mix(in srgb, var(--risk) 45%, var(--line));
+  background: color-mix(in srgb, var(--risk) 10%, var(--surface));
+}
+
+.slot--maybe {
+  border-color: color-mix(in srgb, var(--own) 45%, var(--line));
+  background: color-mix(in srgb, var(--own) 12%, var(--surface));
+}
+
+.slot--waiting,
+.slot--open {
+  border-style: dashed;
+}
+
+.slot--open {
+  background: transparent;
+  color: var(--dim-text);
+}
+
+.slot__mark {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  font-weight: 700;
+  box-sizing: border-box;
+}
+
+.slot--yes .slot__mark {
+  background: var(--ok-text);
+  color: var(--surface);
+}
+
+.slot--no .slot__mark {
+  background: var(--risk-text);
+  color: var(--surface);
+}
+
+.slot--maybe .slot__mark {
+  background: var(--own-text);
+  color: var(--surface);
+}
+
+.slot--waiting .slot__mark {
+  border: 1.5px dashed var(--warn-text);
+  color: var(--warn-text);
+}
+
+.slot--open .slot__mark {
+  border: 1.5px dashed var(--faint);
+  color: var(--dim-text);
+}
+
+.slot__text {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.slot__name {
+  overflow: hidden;
+  font-size: var(--fs-body-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slot__state {
+  font-size: var(--fs-mini);
+  color: var(--dim-text);
+}
+
+.slot__x {
+  flex: none;
+  min-width: 32px;
+  min-height: 32px;
+}
+
+.slot__add {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-body-sm);
+  font-weight: 600;
+}
+
+/* ── below 840 px: the phone's card and window (HeroPhone) ──────────────── */
+
+.runsheet--narrow .runsheet__hero {
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 12px 14px;
+}
+
+.runsheet--narrow .runsheet__when {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+}
+
+.runsheet--narrow .runsheet__time {
+  font-size: var(--fs-hero-narrow);
+}
+
+.runsheet--narrow .runsheet--otot .runsheet__time {
+  font-size: var(--fs-lg);
+}
+
+.runsheet--narrow .runsheet__stripe {
+  display: none;
+}
+
+.runsheet--narrow .runsheet__id {
+  display: contents;
+}
+
+.runsheet--narrow .runsheet__bosses {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.runsheet--narrow .runsheet__bosses .portrait {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
+
+.runsheet--narrow .runsheet__chips {
+  gap: 5px;
+}
+
+.runsheet--narrow .runsheet__chips > * {
+  min-height: 26px;
+}
+
+.runsheet__moverow form {
+  gap: 6px;
+}
+
+.runsheet__moverow form input {
+  flex: 1 1 auto;
+  width: auto;
+  min-height: 44px;
+  border-radius: 22px;
+}
+
+.runsheet__moverow form .btn--key {
+  min-height: 44px;
+}
+
+.runsheet__more-btn {
+  flex: none;
+  width: 44px;
+  padding: 0;
+  justify-content: center;
+}
+
+.runsheet__moverow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.runsheet__moverow .runsheet__acts {
+  justify-content: flex-start;
+}
+
+.runsheet--narrow .runsheet__hero .swap,
+.runsheet--narrow .runsheet__hero .run__error,
+.runsheet--narrow .runsheet__hero .sheet__notice {
+  position: static;
+  max-width: none;
+  box-shadow: none;
+}
+
+.runsheet--narrow .runsheet__bar {
+  padding: 0 6px 0 10px;
+}
+
+.runsheet--narrow .runsheet__bar::before {
+  margin-right: 20px;
+}
+
+.runsheet--narrow .runsheet__bar .tabs__tab {
+  padding: 0 10px;
+}
+
+.runsheet--narrow .runsheet__panel {
+  padding: 10px;
+}
+
+.runsheet--narrow .runsheet__panel--party {
+  padding: 0;
+}
+
+.runsheet--narrow .runsheet__party {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+}
+
+.runsheet--narrow .slot {
+  flex: none;
+  height: 46px;
+}
+
+.runsheet--narrow .slot__text {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.runsheet--narrow .slot__state {
+  margin-left: auto;
+}
+
+.runsheet__foot {
+  flex: none;
+  padding: 8px 10px;
+  border-top: 1.5px solid var(--line);
+}
+
+.runsheet__foot .statusbar {
+  align-items: stretch;
+}
+
+.runsheet__foot .seg--status {
+  display: flex;
+  width: 100%;
+}
+
+.runsheet__foot .seg--status .seg__btn {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 4px;
+}

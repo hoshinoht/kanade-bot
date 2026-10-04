@@ -171,6 +171,8 @@
   /* Display sizes, named by role (v5: they were component-local in v4). */
   --fs-clock: 1.55rem; /* a run's clock on its sheet */
   --fs-clock-narrow: 1.25rem; /* the same clock on a phone */
+  --fs-hero: 3.75rem; /* the full run sheet's clock (HeroSheet), its one hero size */
+  --fs-hero-narrow: 2.75rem; /* the same clock on the phone sheet (HeroPhone) */
   --fs-avatar: 1.75rem; /* the login gate's monogram avatar */
 
   --r: 12px;

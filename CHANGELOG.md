@@ -803,6 +803,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- v5 admin sign-in and the full run sheet follow the M3E hero boards: a
+  banner with the bot's name and a 52 px Discord key; the sheet's laptop and
+  phone views get an identity card with a large clock (new `--fs-hero`
+  tokens), Move and status, over a Party / Answers / Cards / Changes window
+  with one row per member.
 - v5 admin empty Inbox tabs say why nothing waits (the extractor's last read,
   links on, and the tab's last three decisions); failed panes offer Try again
   and Copy details; the phone top bar and drawer follow the M3E spacing.

@@ -79,22 +79,28 @@
   }
 </script>
 
-<!-- v4 login.html: one window on an empty desktop, wearing the bot's banner and avatar. -->
+<!-- One window on an empty desktop (HeroLogin): the bot's banner under a scrim, its avatar and name on it. -->
 <div class="gate">
-  <section class="gate__window" aria-labelledby="{uid}-name">
-    <div class="gate__bar"><span class="gate__bar-title">Sign in</span></div>
-    {#if identity}<img class="gate__hero" src={artUrl(identity.banner, identity)} alt="" />{:else}<div class="gate__hero"></div>{/if}
-    <div class="gate__body">
-      {#if identity}
-        <img class="gate__avatar" src={artUrl(identity.avatar, identity)} alt="" width="64" height="64" />
-      {:else}
-        <span class="gate__avatar" aria-hidden="true">{initial(name)}</span>
-      {/if}
-      <h1 class="gate__name" id="{uid}-name">{name}</h1>
-      <p class="gate__sub">
-        boss scheduler ·
-        <a href="https://github.com/hoshinoht/kanade-bot" rel="noopener noreferrer" target="_blank">powered by kanade</a>
-      </p>
+  <section class="gate__window" aria-labelledby="{uid}-name" data-fid="gate">
+    <div class="gate__bar" data-fid="gate-bar"><span class="gate__bar-title">Sign in</span></div>
+    <div class="gate__hero" data-fid="gate-hero">
+      {#if identity}<img class="gate__banner" src={artUrl(identity.banner, identity)} alt="" />{/if}
+      <div class="gate__id" data-fid="gate-id">
+        {#if identity}
+          <img class="gate__avatar" src={artUrl(identity.avatar, identity)} alt="" width="76" height="76" data-fid="gate-avatar" />
+        {:else}
+          <span class="gate__avatar" aria-hidden="true" data-fid="gate-avatar">{initial(name)}</span>
+        {/if}
+        <div class="gate__who" data-fid="gate-name">
+          <h1 class="gate__name" id="{uid}-name">{name}</h1>
+          <p class="gate__sub">
+            boss scheduler ·
+            <a href="https://github.com/hoshinoht/kanade-bot" rel="noopener noreferrer" target="_blank">powered by kanade</a>
+          </p>
+        </div>
+      </div>
+    </div>
+    <div class="gate__body" data-fid="gate-body">
       <!-- Discord OAuth first, the tailnet identity as fallback, the admin token
            as break-glass only; each shown only when this server offers it. -->
       {#if loginError}<p class="flash flash--error" role="alert">{loginErrorText(loginError)}</p>{/if}
@@ -102,7 +108,11 @@
       {#if !methods && !methodsError}<p class="note" aria-busy="true">Checking how you can sign in…</p>{/if}
       {#if methods?.discord}
         <!-- A full-page navigation: Discord's consent page and its redirect back need the browser, not fetch. -->
-        <a class="btn btn--primary gate__primary" href={discordStart(next)}>Sign in with Discord</a>
+        <a class="btn btn--primary btn--key gate__primary gate__key" href={discordStart(next)} data-fid="gate-key"
+          ><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"
+            ><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3" /></svg
+          >Sign in with Discord</a
+        >
       {/if}
       {#if methods?.tailscale}
         <p class="gate__or">On the tailnet? Your Tailscale identity signs you in when Discord is unavailable.</p>
@@ -115,7 +125,7 @@
         >
       {/if}
       {#if methods?.token}
-        <details class="gate__glass" bind:open={glassOpen}>
+        <details class="gate__glass" bind:open={glassOpen} data-fid="gate-glass">
           <summary>Break-glass: admin token</summary>
           <form onsubmit={submitToken} novalidate>
             <p>For when Discord and the tailnet are both down. Every use is recorded in History.</p>
@@ -144,20 +154,12 @@
 </div>
 
 <style>
-  .gate__primary {
-    width: 100%;
-    justify-content: center;
-    margin-top: 0.4rem;
-  }
-
   .gate__or {
-    margin: 0.7rem 0 0.3rem;
+    margin: 0;
   }
 
-  /* Without the tailnet line between them, the disclosure needs its own room
-     beside the Discord button (WCAG 2.5.8 target spacing). */
   .gate__glass {
-    margin-top: 0.7rem;
+    font-size: var(--fs-small);
   }
 
   .gate__glass summary {

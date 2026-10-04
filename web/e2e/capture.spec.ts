@@ -362,6 +362,7 @@ test('capture planner swap', async ({ page }) => {
     await page.goto(`${ADMIN}/?sw=off`);
     await page.locator('[data-run="r-fa"] .plan-card__open').click();
     const sheet = page.getByRole(vp.name === 'wide' ? 'complementary' : 'dialog', { name: 'HFA' });
+    if (vp.name !== 'wide') await sheet.getByRole('button', { name: 'More actions' }).click();
     await sheet.getByRole('button', { name: 'Swap timing with…' }).click();
     await sheet.getByRole('combobox', { name: 'Swap with' }).selectOption({ label: 'Tue 29 23:30 · XBM' });
     await expect(sheet.getByText('HFA → Tue 29 23:30')).toBeVisible();

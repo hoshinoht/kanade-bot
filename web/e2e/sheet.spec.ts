@@ -46,9 +46,12 @@ test('admin run sheet below 840 px: status, answers and roster in one modal', as
   await notice.getByRole('button', { name: 'Undo' }).click();
   await expect(status.getByRole('button', { name: 'Planned' })).toHaveAttribute('aria-pressed', 'true');
 
-  await sheet.getByText('Answers — set who’s in or out').click();
+  // HeroPhone: answers are the window's Answers tab; Party shows each member as a slot.
+  await sheet.getByRole('tab', { name: /^Answers/ }).click();
   const sora = sheet.getByRole('group', { name: 'Answer for Sora on HLimbo' });
   await sora.getByRole('button', { name: 'Out' }).click();
-  await expect(sheet.locator('.chip--no', { hasText: 'Sora' })).toBeVisible();
+  await expect(sora.getByRole('button', { name: 'Out' })).toHaveAttribute('aria-pressed', 'true');
+  await sheet.getByRole('tab', { name: /^Party/ }).click();
+  await expect(sheet.locator('.slot--no', { hasText: 'Sora' })).toBeVisible();
   await expect(sheet.getByText('someone said no')).toBeVisible();
 });

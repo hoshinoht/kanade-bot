@@ -3,15 +3,15 @@
 .gate__bar::before {
   content: "";
   flex: none;
-  width: 9px;
-  height: 9px;
-  margin-right: 1.75rem;
+  width: 8px;
+  height: 8px;
+  margin-right: 28px;
   border-radius: 50%;
   background: currentcolor;
   opacity: 0.55;
   box-shadow:
-    13px 0 0 currentcolor,
-    26px 0 0 currentcolor;
+    12px 0 0 currentcolor,
+    24px 0 0 currentcolor;
 }
 
 /* ── login: the one window on an empty desktop ──────────────────────────── */
@@ -24,7 +24,9 @@
 }
 
 .gate__window {
-  width: min(27rem, 100%);
+  display: flex;
+  flex-direction: column;
+  width: min(600px, 100%);
   background: var(--surface);
   border: 2px solid var(--win);
   border-radius: var(--r);
@@ -35,58 +37,105 @@
 .gate__bar {
   display: flex;
   align-items: center;
-  gap: 0.7rem;
-  padding: 0.45rem 0.75rem;
+  gap: 4px;
+  height: 42px;
+  padding: 0 12px;
   background: var(--win);
   color: var(--win-ink);
 }
 
 .gate__bar-title {
   font-family: var(--display);
-  font-size: var(--fs-lg);
+  font-size: var(--fs-body);
   font-weight: 700;
 }
 
-/* The bot's profile banner, or -- with nothing cached -- a wash of its accent.
-   A background image rather than an <img> for the same reason as the avatar:
-   a 404 has to be an absence, not a broken glyph. */
-/* v5: the banner is an <img> from /identity/banner (a generated stand-in when
-   nothing is cached, so there is never a broken image). */
+/* HeroLogin: the bot's banner (an <img> from /identity/banner, a generated
+   stand-in when nothing is cached) under a scrim, with the avatar and name on it. */
 .gate__hero {
-  display: block;
-  width: 100%;
-  height: 104px;
-  object-fit: cover;
-  background-color: color-mix(in srgb, var(--accent) 28%, var(--surface));
+  position: relative;
+  isolation: isolate;
+  height: 236px;
+  background: var(--win);
+  color: var(--win-ink);
 }
 
-.gate__body {
-  padding: 0 1.4rem 1.5rem;
+.gate__banner {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
+}
+
+// Dark at the foot so the name reads over any banner (the board's shade).
+.gate__hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, rgb(12 11 18 / 5%) 30%, rgb(12 11 18 / 82%) 100%);
+}
+
+.gate__id {
+  position: absolute;
+  inset: auto 24px 18px;
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
 }
 
 .gate__avatar {
-  width: 64px;
-  height: 64px;
-  margin-top: -32px;
-  border-radius: 16px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 76px;
+  height: 76px;
+  border: 3px solid var(--win-ink);
+  border-radius: 20px;
+  background: var(--win);
+  color: var(--win-ink);
+  font-family: var(--display);
   font-size: var(--fs-avatar);
-  box-shadow: 0 0 0 3px var(--surface);
+  object-fit: cover;
+}
+
+.gate__who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .gate__name {
-  margin: 0.55rem 0 0.1rem;
+  margin: 0;
+  font-weight: 800;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
 }
 
-.gate__sub {
-  margin: 0 0 1rem;
+.gate__sub,
+.gate__sub a {
+  margin: 0;
+  line-height: 1.25;
   font-size: var(--fs-body-sm);
-  color: var(--dim);
+  color: var(--win-ink);
+}
+
+.gate__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 24px 22px;
 }
 
 .gate__body p {
   color: var(--dim);
   font-size: var(--fs-body-sm);
-  margin-top: 0;
+  margin: 0;
 }
 
 .gate__body label {
@@ -101,6 +150,38 @@
 .gate__body .btn {
   width: 100%;
   justify-content: center;
-  margin-top: 0.7rem;
 }
 
+// The key action (board: 52 px, fully rounded).
+.gate__body .gate__key {
+  min-height: 52px;
+  font-size: var(--fs-body);
+}
+
+.gate__body form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+@media (max-width: 480px) {
+  .gate__hero {
+    height: 184px;
+  }
+
+  .gate__id {
+    inset: auto 16px 14px;
+    gap: 12px;
+  }
+
+  .gate__avatar {
+    width: 60px;
+    height: 60px;
+    border-radius: 16px;
+  }
+
+  .gate__body {
+    padding: 16px;
+  }
+}
