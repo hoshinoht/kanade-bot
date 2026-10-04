@@ -1,13 +1,150 @@
 //! History wire shapes (`history.json`): records exactly as hashed (the
-//! canonical body plus `hash`) and rollback plans.
+//! canonical body plus `hash`), pages, rollback plans and checkpoints.
+//! Records and row keys stay JSON values: their encoding is the domain's
+//! canonical one, which the hash covers.
 
 use std::collections::BTreeSet;
 
-use serde_json::{Value, json};
+use serde::Serialize;
+use serde_json::Value;
 
 use crate::domain::history::{
-    ChangeRecord, RecordError, RevertOutcome, RowChange, RowConflict, RowValue, SkippedRow,
+    ChangeRecord, ChangeRef, RecordError, RevertOutcome, RowChange as Change,
+    RowConflict as Conflict, RowValue, SkippedRow,
 };
+
+/// `{seq, hash}`: a record in the chain.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct ChainHead {
+    pub seq: u64,
+    pub hash: String,
+}
+
+impl From<&ChangeRef> for ChainHead {
+    fn from(head: &ChangeRef) -> Self {
+        Self {
+            seq: head.seq,
+            hash: head.hash.clone(),
+        }
+    }
+}
+
+/// `GET /api/admin/history?week&actor&run&before&limit`, newest first. With
+/// `run=<id>` (alone; not with `week` or `actor`): the run's change log, each
+/// record changing its row or RSVPs; the run's before → after is in those
+/// `rows` (`runs` keyed by `id`, `rsvps` by `run_id`).
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct HistoryPage {
+    #[cfg_attr(test, ts(type = "ChangeRecord[]"))]
+    pub records: Vec<Value>,
+    pub head: ChainHead,
+    /// Pass as `before` for the next (older) page; null on the last page.
+    pub next_before: Option<u64>,
+    pub total: u64,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct RowChange {
+    #[cfg_attr(test, ts(type = "RowKey"))]
+    pub key: Value,
+    /// Full domain row; null = absent.
+    #[cfg_attr(test, ts(type = "Record<string, unknown> | null"))]
+    pub before: Value,
+    #[cfg_attr(test, ts(type = "Record<string, unknown> | null"))]
+    pub after: Value,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct RowConflict {
+    pub seq: u64,
+    #[cfg_attr(test, ts(type = "RowKey"))]
+    pub key: Value,
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub expected: Value,
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub found: Value,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct SkippedKey {
+    #[cfg_attr(test, ts(type = "RowKey"))]
+    pub key: Value,
+    pub reason: &'static str,
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum PlanOutcome {
+    Preview,
+    Applied,
+    Unchanged,
+    Conflicts,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct RevertPlan {
+    pub outcome: PlanOutcome,
+    /// The requested records (a refused week or actor rollback: the conflicting ones).
+    pub reverts: Vec<u64>,
+    /// Empty when `outcome` is `conflicts`: a strict refusal plans nothing.
+    pub rows: Vec<RowChange>,
+    pub conflicts: Vec<RowConflict>,
+    pub skipped: Vec<SkippedKey>,
+    #[cfg_attr(test, ts(type = "ChangeRecord | null"))]
+    pub record: Option<Value>,
+}
+
+/// `matches`: the chain holds the backup's head; `older_schema`: it does,
+/// but the backup predates the store's schema; `mismatch`: the head is not
+/// in the chain (truncated or forked history).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum BackupAnchor {
+    Matches,
+    OlderSchema,
+    Mismatch,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct BackupRow {
+    pub file: String,
+    #[cfg_attr(test, ts(type = "'kanade.backup.v1'"))]
+    pub format: &'static str,
+    pub created_at: String,
+    pub history_head: ChainHead,
+    pub revision: u64,
+    pub schema_version: i64,
+    /// The chain still contains `history_head`.
+    pub anchored: bool,
+    pub anchor: BackupAnchor,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct Verified {
+    pub ok: bool,
+    pub checked: u64,
+    pub head: ChainHead,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct Checkpoints {
+    pub verified: Verified,
+    /// `KANADE_BACKUP_DIR` is set: false means no directory, not no backups.
+    pub backup_dir_configured: bool,
+    /// Newest first (at most 100); re-read and re-checked on every request.
+    pub backups: Vec<BackupRow>,
+}
 
 /// `ChangeRecord`: the canonical body the hash covers, plus the hash.
 ///
@@ -29,30 +166,33 @@ fn value(value: Option<&RowValue>) -> Result<Value, RecordError> {
 ///
 /// # Errors
 /// As [`record`].
-pub fn row(row: &RowChange) -> Result<Value, RecordError> {
-    Ok(json!({
-        "key": row.key.to_json(),
-        "before": value(row.before.as_ref())?,
-        "after": value(row.after.as_ref())?,
-    }))
+pub fn row(row: &Change) -> Result<RowChange, RecordError> {
+    Ok(RowChange {
+        key: row.key.to_json(),
+        before: value(row.before.as_ref())?,
+        after: value(row.after.as_ref())?,
+    })
 }
 
-fn conflict(conflict: &RowConflict) -> Result<Value, RecordError> {
-    Ok(json!({
-        "seq": conflict.seq,
-        "key": conflict.key.to_json(),
-        "expected": value(conflict.expected.as_ref())?,
-        "found": value(conflict.found.as_ref())?,
-    }))
+fn conflict(conflict: &Conflict) -> Result<RowConflict, RecordError> {
+    Ok(RowConflict {
+        seq: conflict.seq,
+        key: conflict.key.to_json(),
+        expected: value(conflict.expected.as_ref())?,
+        found: value(conflict.found.as_ref())?,
+    })
 }
 
 /// One entry per key: a week restore reports a timing skipped by several
 /// records once.
-fn skipped(rows: &[SkippedRow]) -> Vec<Value> {
+fn skipped(rows: &[SkippedRow]) -> Vec<SkippedKey> {
     let mut seen = BTreeSet::new();
     rows.iter()
         .filter(|row| seen.insert(row.key.clone()))
-        .map(|row| json!({"key": row.key.to_json(), "reason": "outside week"}))
+        .map(|row| SkippedKey {
+            key: row.key.to_json(),
+            reason: "outside week",
+        })
         .collect()
 }
 
@@ -61,9 +201,12 @@ fn skipped(rows: &[SkippedRow]) -> Vec<Value> {
 ///
 /// # Errors
 /// As [`record`].
-pub fn plan(outcome: &RevertOutcome, applied: Option<&ChangeRecord>) -> Result<Value, RecordError> {
-    let rows = |rows: &[RowChange]| rows.iter().map(row).collect::<Result<Vec<_>, _>>();
-    let conflicts = |list: &[RowConflict]| list.iter().map(conflict).collect::<Result<Vec<_>, _>>();
+pub fn plan(
+    outcome: &RevertOutcome,
+    applied: Option<&ChangeRecord>,
+) -> Result<RevertPlan, RecordError> {
+    let rows = |rows: &[Change]| rows.iter().map(row).collect::<Result<Vec<_>, _>>();
+    let conflicts = |list: &[Conflict]| list.iter().map(conflict).collect::<Result<Vec<_>, _>>();
     Ok(match outcome {
         RevertOutcome::Reverted {
             seqs,
@@ -71,36 +214,40 @@ pub fn plan(outcome: &RevertOutcome, applied: Option<&ChangeRecord>) -> Result<V
             skipped: left,
             rows: changed,
             ..
-        } => json!({
-            "outcome": if applied.is_some() { "applied" } else { "preview" },
-            "reverts": seqs,
-            "rows": rows(applied.map_or(changed.as_slice(), |record| record.rows.as_slice()))?,
-            "conflicts": conflicts(overridden)?,
-            "skipped": skipped(left),
-            "record": applied.map(record).transpose()?,
-        }),
+        } => RevertPlan {
+            outcome: if applied.is_some() {
+                PlanOutcome::Applied
+            } else {
+                PlanOutcome::Preview
+            },
+            reverts: seqs.clone(),
+            rows: rows(applied.map_or(changed.as_slice(), |record| record.rows.as_slice()))?,
+            conflicts: conflicts(overridden)?,
+            skipped: skipped(left),
+            record: applied.map(record).transpose()?,
+        },
         RevertOutcome::Unchanged {
             seqs,
             skipped: left,
-        } => json!({
-            "outcome": "unchanged",
-            "reverts": seqs,
-            "rows": [],
-            "conflicts": [],
-            "skipped": skipped(left),
-            "record": null,
-        }),
+        } => RevertPlan {
+            outcome: PlanOutcome::Unchanged,
+            reverts: seqs.clone(),
+            rows: Vec::new(),
+            conflicts: Vec::new(),
+            skipped: skipped(left),
+            record: None,
+        },
         RevertOutcome::Conflicts {
             seqs,
             conflicts: list,
-        } => json!({
-            "outcome": "conflicts",
-            "reverts": seqs,
-            "rows": [],
-            "conflicts": conflicts(list)?,
-            "skipped": [],
-            "record": null,
-        }),
+        } => RevertPlan {
+            outcome: PlanOutcome::Conflicts,
+            reverts: seqs.clone(),
+            rows: Vec::new(),
+            conflicts: conflicts(list)?,
+            skipped: Vec::new(),
+            record: None,
+        },
     })
 }
 
@@ -109,13 +256,17 @@ pub fn plan(outcome: &RevertOutcome, applied: Option<&ChangeRecord>) -> Result<V
 ///
 /// # Errors
 /// As [`record`].
-pub fn replayed(applied: &ChangeRecord) -> Result<Value, RecordError> {
-    Ok(json!({
-        "outcome": "applied",
-        "reverts": applied.refs.iter().map(|reference| reference.seq).collect::<Vec<_>>(),
-        "rows": applied.rows.iter().map(row).collect::<Result<Vec<_>, _>>()?,
-        "conflicts": [],
-        "skipped": [],
-        "record": record(applied)?,
-    }))
+pub fn replayed(applied: &ChangeRecord) -> Result<RevertPlan, RecordError> {
+    Ok(RevertPlan {
+        outcome: PlanOutcome::Applied,
+        reverts: applied.refs.iter().map(|reference| reference.seq).collect(),
+        rows: applied
+            .rows
+            .iter()
+            .map(row)
+            .collect::<Result<Vec<_>, _>>()?,
+        conflicts: Vec::new(),
+        skipped: Vec::new(),
+        record: Some(record(applied)?),
+    })
 }

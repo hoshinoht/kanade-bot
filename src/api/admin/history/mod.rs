@@ -16,7 +16,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use serde_json::json;
 
 use super::context::{state, unavailable};
 use crate::{
@@ -60,10 +59,6 @@ const PARAMS: [&str; 5] = ["week", "actor", "run", "before", "limit"];
 /// A record the encoder cannot write (an instant out of range) is a server fault.
 fn encoded<T, E>(result: Result<T, E>) -> Result<T, ApiError> {
     result.map_err(|_| ApiError::UNAVAILABLE)
-}
-
-fn head_json(head: &ChangeRef) -> serde_json::Value {
-    json!({"seq": head.seq, "hash": head.hash})
 }
 
 struct PageQuery {
@@ -174,12 +169,12 @@ async fn page(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> Reply
             .map(dto::record)
             .collect::<Result<Vec<_>, _>>(),
     )?;
-    Ok(Json(json!({
-        "records": records,
-        "head": head_json(&head),
-        "next_before": slice.next_before,
-        "total": total,
-    }))
+    Ok(Json(dto::HistoryPage {
+        records,
+        head: (&head).into(),
+        next_before: slice.next_before,
+        total,
+    })
     .into_response())
 }
 
@@ -225,14 +220,14 @@ async fn checkpoints(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
         seq: 0,
         hash: crate::domain::history::GENESIS_PREV_HASH.to_owned(),
     });
-    Ok(Json(json!({
-        "verified": {
-            "ok": verification.is_intact(),
-            "checked": verification.records,
-            "head": head_json(&head),
+    Ok(Json(dto::Checkpoints {
+        verified: dto::Verified {
+            ok: verification.is_intact(),
+            checked: verification.records,
+            head: (&head).into(),
         },
-        "backup_dir_configured": state.backups.dir.is_some(),
-        "backups": listed,
-    }))
+        backup_dir_configured: state.backups.dir.is_some(),
+        backups: listed,
+    })
     .into_response())
 }

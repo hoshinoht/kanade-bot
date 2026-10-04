@@ -13,14 +13,13 @@ use axum::{
     response::IntoResponse,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
 
 use super::{Reply, state};
 use crate::api::admin::write::Refusal;
 use crate::{
     api::{
         auth::AdminSession,
-        dto::rescan::job,
+        dto::{Named, rescan::job},
         error::ApiError,
         listeners::Site,
         rescan::{Remembered, RescanDesk, RescanView, recall, remember},
@@ -97,12 +96,15 @@ async fn replay(state: &ApiState, desk: &RescanDesk, job_id: &str) -> Reply {
 
 pub async fn targets(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
     let state = state(&site)?;
-    let watched: Vec<Value> = state
+    let watched: Vec<Named> = state
         .channels
         .channels()
         .into_iter()
         .filter(|channel| channel.watched)
-        .map(|channel| json!({"id": channel.id, "name": channel.name}))
+        .map(|channel| Named {
+            id: channel.id,
+            name: channel.name,
+        })
         .collect();
     Ok(Json(watched).into_response())
 }

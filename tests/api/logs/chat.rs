@@ -133,8 +133,10 @@ fn chat_summary_usage_sums_round_rows_per_model() {
     );
     // Turn totals that disagree with the rounds are ignored by the summary.
     (mixed.prompt_tokens, mixed.completion_tokens) = (Some(1), Some(1));
-    let summary = chat_summary(&[mixed]);
+    let summary = serde_json::to_value(chat_summary(&[mixed])).unwrap();
     let usage: Vec<_> = summary
+        .as_array()
+        .unwrap()
         .iter()
         .map(|model| {
             (

@@ -85,13 +85,41 @@ pub struct Participant {
     pub answer: &'static str,
 }
 
+/// The reminder cards the PWA labels: the day-of card and two countdowns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub enum CardKind {
+    #[serde(rename = "morning")]
+    Morning,
+    #[serde(rename = "T-1h")]
+    HourBefore,
+    #[serde(rename = "T-15m")]
+    QuarterBefore,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum CardState {
+    Posted,
+    Queued,
+    Skipped,
+}
+
+/// This or next boss week.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum WeekKey {
+    This,
+    Next,
+}
+
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ReminderCard {
-    #[cfg_attr(test, ts(type = "CardKind"))]
-    pub label: &'static str,
-    #[cfg_attr(test, ts(type = "CardState"))]
-    pub state: &'static str,
+    pub label: CardKind,
+    pub state: CardState,
     pub at: String,
     pub url: Option<String>,
 }
@@ -140,13 +168,13 @@ pub struct Week {
 }
 
 /// The card label the PWA knows; other countdown lengths have no label yet.
-pub fn card_label(kind: &str) -> Option<&'static str> {
+pub fn card_label(kind: &str) -> Option<CardKind> {
     if kind == DAY_OF {
-        Some("morning")
+        Some(CardKind::Morning)
     } else if kind == countdown_kind(60) {
-        Some("T-1h")
+        Some(CardKind::HourBefore)
     } else if kind == countdown_kind(15) {
-        Some("T-15m")
+        Some(CardKind::QuarterBefore)
     } else {
         None
     }
@@ -158,13 +186,15 @@ pub fn card_state(
     reminder: &Reminder,
     snapshot: &ScheduleSnapshot,
     now: DateTime<Utc>,
-) -> &'static str {
+) -> CardState {
     let unproven = snapshot.unproven_retired.contains(&reminder.id);
     match (reminder.sent_at, &reminder.message_id) {
-        (Some(_), Some(_)) if !unproven => "posted",
-        (Some(_), _) => "skipped",
-        (None, _) if unproven || is_stale(&reminder.kind, reminder.fire_at, now) => "skipped",
-        (None, _) => "queued",
+        (Some(_), Some(_)) if !unproven => CardState::Posted,
+        (Some(_), _) => CardState::Skipped,
+        (None, _) if unproven || is_stale(&reminder.kind, reminder.fire_at, now) => {
+            CardState::Skipped
+        }
+        (None, _) => CardState::Queued,
     }
 }
 
@@ -255,7 +285,7 @@ pub fn run_dto(
                     label,
                     state,
                     at: hhmm(ctx.zone.from_utc_datetime(&reminder.fire_at.naive_utc())),
-                    url: (state == "posted")
+                    url: (state == CardState::Posted)
                         .then(|| message_url(ctx, run, reminder))
                         .flatten(),
                 },

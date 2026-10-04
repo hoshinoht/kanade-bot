@@ -1,7 +1,7 @@
 // Generated from the Rust API DTOs by src/api/ts_bindings.rs; do not edit.
 // Regenerate: KANADE_WRITE_TS=1 cargo test --all-features --lib ts_bindings
 
-import type { ActorKind, Answer, CardKind, CardState, ContextSource, Difficulty, InboxTab, KnowledgeDoc, PastOutcome, PingLevel, ProposalFlag, ProposalKind, ProposalSource, RunStatus, SelfServiceMode, SignInMethod, WeekKey } from './manual';
+import type { ActorKind, Answer, ChangeRecord, ChatOutcome, ChatRoute, ContextSource, Difficulty, ExtractionOutcome, KnowledgeDoc, PingLevel, ProposalKind, Refusal, RowKey, RunStatus, SelfServiceMode, SignInMethod } from './manual';
 
 /**
  * `common.json#/$defs/Boss`.
@@ -47,6 +47,18 @@ export type SignInMethods = { discord: boolean,
  * This request carries an allow-listed identity from the authenticated edge.
  */
 tailscale: boolean, token: boolean, };
+
+/**
+ * The reminder cards the PWA labels: the day-of card and two countdowns.
+ */
+export type CardKind = "morning" | "T-1h" | "T-15m";
+
+export type CardState = "posted" | "queued" | "skipped";
+
+/**
+ * This or next boss week.
+ */
+export type WeekKey = "this" | "next";
 
 export type WeekDay = { index: number, date: string, dow: string, is_reset: boolean, is_today: boolean, };
 
@@ -104,7 +116,12 @@ export type FixedRow = { id: string, short_id: string, weekday: number, weekday_
 
 export type ValidateResult = { bosses: Array<Boss>, };
 
-export type ReminderRow = { id: string, run_id: string, run_short_id: string, kind: CardKind, state: 'queued' | 'due' | 'sent' | 'stale', at: string, bosses: Array<Boss>, party: Array<string>, url: string | null, };
+/**
+ * A reminder row's state: `due` is past its fire time but not yet posted.
+ */
+export type ReminderState = "queued" | "due" | "sent" | "stale";
+
+export type ReminderRow = { id: string, run_id: string, run_short_id: string, kind: CardKind, state: ReminderState, at: string, bosses: Array<Boss>, party: Array<string>, url: string | null, };
 
 export type Reminders = { upcoming: Array<ReminderRow>, sent: Array<ReminderRow>, };
 
@@ -119,6 +136,19 @@ export type Knowledge = { key: string, name: string, level: number | null, portr
 animated: string | null, hue: number, researched_as_of: string | null, path: string, in_use: Difficulty[], doc: KnowledgeDoc, };
 
 export type EventBoss = { key: string, event: { name: string; availability: string }, summary: string, portrait: string | null, portrait_sm: string | null, art: string | null, animated: string | null, };
+
+export type InboxTab = "extractor" | "self_service";
+
+/**
+ * Kanade read it from party chat (`extraction`) or was asked in chat
+ * (`chat`); `self_service` is a member request.
+ */
+export type ProposalSource = "extraction" | "chat" | "self_service";
+
+/**
+ * Badges an inbox item can carry; each also blocks or qualifies an action.
+ */
+export type ProposalFlag = "conflict" | "expired" | "requester_frozen" | "requester_unauthorised" | "no_effect";
 
 export type Evidence = { id: string, author: string, 
 /**
@@ -146,7 +176,7 @@ export type ProposalChoice = { run_id: string, label: string, when: string, amen
 
 export type ProposalSelfService = { member: Member, via: string, note: string | null, };
 
-export type Proposal = { id: string, short_id: string, kind: ProposalKind, kind_label: string, source: ProposalSource, tab: InboxTab, version: number, flags: ProposalFlag[], preview: ProposalPreview, 
+export type Proposal = { id: string, short_id: string, kind: ProposalKind, kind_label: string, source: ProposalSource, tab: InboxTab, version: number, flags: Array<ProposalFlag>, preview: ProposalPreview, 
 /**
  * One line on what approving does (party, upcoming reminders); `None`
  * with conflicts, no effect, or nothing to say.
@@ -156,6 +186,12 @@ consequence: string | null, expires_at: string | null, choices: Array<ProposalCh
  * The channel thread around `evidence`; `None` when there is none.
  */
 thread: Array<ThreadMessage> | null, card_url: string | null, self_service: ProposalSelfService | null, };
+
+/**
+ * How a closed Inbox item ended: `approved` = merged, `superseded` =
+ * replaced by a newer proposal.
+ */
+export type PastOutcome = "approved" | "rejected" | "superseded" | "discarded" | "withdrawn" | "expired";
 
 /**
  * Who closed it; `name` is ready to show (system actors read as Kanade).
@@ -307,3 +343,363 @@ export type AccessReport = { connected: boolean,
 checked_at: string, rows: Array<AccessRow>, };
 
 export type AccessRow = { id: string, name: string, watched: boolean, digest: boolean, view: boolean, send: boolean, history: boolean, embed: boolean, react: boolean, manage_messages: boolean, };
+
+/**
+ * What the log filters can offer (all values seen, not only the filtered rows').
+ */
+export type LogFacets = { models: Array<string>, tools: Array<string>, outcomes: Array<string>, channels: Array<Member>, };
+
+/**
+ * Reported token usage over a set of logged requests: sums over those that
+ * reported a pair (null when none did), how many did, and the median of
+ * reported prompt tokens / local estimate (two decimals; null when none).
+ */
+export type UsageSummary = { prompt_tokens: number | null, completion_tokens: number | null, reported: number, est_ratio: number | null, };
+
+/**
+ * Per model over the listed (filtered) extraction calls.
+ */
+export type ExtractionSummary = { model: string, count: number, prompt_tokens: number | null, completion_tokens: number | null, reported: number, est_ratio: number | null, };
+
+export type ExtractionRow = { messages: number, changes: number, id: string, short_id: string, at: string, model: string, latency_ms: number | null, channel: string | null, channel_id: string, error: string | null, outcome: ExtractionOutcome, 
+/**
+ * Provider-reported tokens summed over the call's reporting attempts; null = not reported (never 0).
+ */
+prompt_tokens?: number | null, completion_tokens?: number | null, 
+/**
+ * Provider-reported reasoning tokens over reporting attempts; null = unknown.
+ */
+reasoning_tokens?: number | null, };
+
+/**
+ * Query params of `GET /api/admin/extractions`, all optional and
+ * combinable: `model`, `from`/`to` (guild-local YYYY-MM-DD), `outcome`
+ * (comma-separated, any of), `channel`, `member`, `q`. Unknown outcomes or
+ * malformed dates: 422 invalid_filter.
+ */
+export type Extractions = { model: string, 
+/**
+ * Per model over the filtered calls.
+ */
+summary: Array<ExtractionSummary>, rows: Array<ExtractionRow>, 
+/**
+ * Rows before filtering.
+ */
+total: number, facets: LogFacets, };
+
+export type Amendment = { kind: string, bosses: string, when: string, confidence: number, status: string, };
+
+export type ReadMessage = { id: string, author: string, author_id?: string, at: string, content: string, };
+
+/**
+ * The context the call was budgeted for.
+ */
+export type CallContext = { window: number, reserve: number, source: string, };
+
+/**
+ * A change the scheduler refused to stage for the call.
+ */
+export type ExtractionRefusal = { change: string, code: string, message: string, };
+
+export type Extraction = { prompt: string, raw_response: string, 
+/**
+ * Response-only text, capped at 64 KiB including a visible marker.
+ */
+reasoning_content?: string | null, 
+/**
+ * Local prompt estimate over the attempts that reported usage, else every sent attempt.
+ */
+prompt_estimate?: number | null, 
+/**
+ * Null when not logged whole.
+ */
+context?: CallContext | null, amendments: Array<Amendment>, messages: Array<ReadMessage>, refusals?: Array<ExtractionRefusal>, id: string, short_id: string, at: string, model: string, latency_ms: number | null, channel: string | null, channel_id: string, error: string | null, outcome: ExtractionOutcome, 
+/**
+ * Provider-reported tokens summed over the call's reporting attempts; null = not reported (never 0).
+ */
+prompt_tokens?: number | null, completion_tokens?: number | null, 
+/**
+ * Provider-reported reasoning tokens over reporting attempts; null = unknown.
+ */
+reasoning_tokens?: number | null, };
+
+export type JobState = "running" | "done" | "cancelled";
+
+export type ChannelState = "queued" | "reading" | "done";
+
+export type RescanChannel = { id: string, name: string, state: ChannelState, 
+/**
+ * The gated messages its read found (0 until `done`).
+ */
+messages: number, unread?: number, 
+/**
+ * Fixed sentences naming what went wrong, never the recorded text.
+ */
+errors?: Array<string>, };
+
+export type RescanJob = { id: string, state: JobState, window: 'week' | 'since_reset' | 'two_weeks', 
+/**
+ * When the runner took the job (UTC `Z`); null while queued.
+ */
+started_at?: string | null, channels: Array<RescanChannel>, 
+/**
+ * The channels' `messages`: gated messages read so far.
+ */
+messages?: number, 
+/**
+ * `messages` plus each unread channel's gated messages as cached when the job
+ * started; equals `messages` once the job ends. Null while a channel still to
+ * be read has no count. Progress = messages / messages_total.
+ */
+messages_total?: number | null, proposals: number, unread?: number, };
+
+export type ChatRow = { id: string, at: string, member: Member, 
+/**
+ * The full Discord id, even when `member.name` is a placeholder.
+ */
+member_id?: string | null, channel: string | null, channel_id: string, 
+/**
+ * The first round's alias ("—" when no model was called).
+ */
+model: string, 
+/**
+ * Model alias per request round.
+ */
+models: Array<string>, latency_ms: number, outcome: ChatOutcome, asked: string, tools_used: Array<string>, 
+/**
+ * Turn totals as logged (v4 imports may carry one); null = not reported.
+ */
+prompt_tokens?: number | null, completion_tokens?: number | null, 
+/**
+ * Sum of the rounds' reported reasoning counts; null = unknown.
+ */
+reasoning_tokens?: number | null, };
+
+/**
+ * Per model; usage fields come from this model's round rows, never the
+ * turn totals.
+ */
+export type ChatSummary = { model: string, count: number, answered: number, refused: number, errors: number, p50_ms: number, tool_calls: number, prompt_tokens: number | null, completion_tokens: number | null, reported: number, est_ratio: number | null, };
+
+/**
+ * Query params of `GET /api/admin/chat`, all optional and combinable:
+ * `model`, `from`/`to` (guild-local YYYY-MM-DD), `outcome` (comma-separated,
+ * any of), `channel`, `member`, `q`, `tool` and `min_ms`. Unknown outcomes or
+ * malformed dates: 422 invalid_filter.
+ */
+export type Chat = { 
+/**
+ * Per model, over the filtered rows.
+ */
+summary: Array<ChatSummary>, rows: Array<ChatRow>, total: number, facets: LogFacets, };
+
+export type ChatToolCall = { 
+/**
+ * The request round (1-based index into `rounds`) whose reply asked for it.
+ */
+round: number, name: string, arguments: string, result: string, 
+/**
+ * Wall time; null when unknown (0 is a real 0 ms).
+ */
+took_ms: number | null, outcome: string, };
+
+export type RoundGuardrail = { clean: boolean, content_filter: boolean, };
+
+export type ChatRoundFacts = { round: number, requested_tools: Array<string>, finish: string, 
+/**
+ * Alias the request named, as sent.
+ */
+model: string, 
+/**
+ * Reasoning effort as sent (after capability shaping); null when none went out.
+ */
+effort: string | null, route: ChatRoute | null, 
+/**
+ * null when unknown.
+ */
+latency_ms: number | null, 
+/**
+ * Provider-reported usage for this request (both or neither); null = not reported.
+ */
+prompt_tokens?: number | null, completion_tokens?: number | null, 
+/**
+ * The context budget's estimate, completion reserve excluded.
+ */
+prompt_estimate?: number | null, reasoning_content?: string | null, reasoning_tokens?: number | null, guardrail: RoundGuardrail, };
+
+export type ChatCard = { kind: string, url: string, };
+
+export type MaskedRoundView = { round: number, clean: boolean, 
+/**
+ * The request messages exactly as sent (masked).
+ */
+request: { role: 'system' | 'user' | 'assistant' | 'tool'; [key: string]: unknown }[], 
+/**
+ * The model's reply before names were restored.
+ */
+reply: string | null, 
+/**
+ * Tool-call arguments before names were restored.
+ */
+tool_calls: { name: string; arguments: string }[], };
+
+export type TokenName = { token: string, name: string, };
+
+/**
+ * A pseudonymized turn as the model saw it (admin only).
+ */
+export type ModelView = { rounds: Array<MaskedRoundView>, 
+/**
+ * The decoded, finished reply members saw.
+ */
+reply: string, 
+/**
+ * Fake name → member display name; never user ids.
+ */
+mapping: Array<TokenName>, };
+
+export type ChatTurn = { said: string, tools: Array<ChatToolCall>, rounds: Array<ChatRoundFacts>, cards: Array<ChatCard>, raw: string, 
+/**
+ * Persona bundle id; null when none answered (rate limited, imported).
+ */
+persona: string | null, 
+/**
+ * Reply profile id; null for the bundle default voice.
+ */
+profile: string | null, profile_source: 'saved' | 'role' | 'default' | null, 
+/**
+ * The turn's route (its last round's); null when no model ran.
+ */
+route: ChatRoute | null, error: string | null, 
+/**
+ * Stable code: timeout, malformed, content_blocked, identity_leak_blocked, rate_limited, …
+ */
+error_code: string | null, 
+/**
+ * content_filter, external_unmasked, pseudonymized, identity_leak_blocked {role, kinds, count}, …
+ */
+guardrail: Record<string, unknown>, 
+/**
+ * Pseudonymized, with a stored Model view.
+ */
+masked: boolean, 
+/**
+ * Null for passthrough and withheld turns.
+ */
+model_view: ModelView | null, id: string, at: string, member: Member, 
+/**
+ * The full Discord id, even when `member.name` is a placeholder.
+ */
+member_id?: string | null, channel: string | null, channel_id: string, 
+/**
+ * The first round's alias ("—" when no model was called).
+ */
+model: string, 
+/**
+ * Model alias per request round.
+ */
+models: Array<string>, latency_ms: number, outcome: ChatOutcome, asked: string, tools_used: Array<string>, 
+/**
+ * Turn totals as logged (v4 imports may carry one); null = not reported.
+ */
+prompt_tokens?: number | null, completion_tokens?: number | null, 
+/**
+ * Sum of the rounds' reported reasoning counts; null = unknown.
+ */
+reasoning_tokens?: number | null, };
+
+export type Permits = { in_use: number, total: number, };
+
+export type QueuedCall = { position: number, kind: string, who: string, waiting_s: number, };
+
+export type RateLevel = { available: number, capacity: number, refill_per_min: number, };
+
+export type RetryLevel = { remaining: number, capacity: number, };
+
+export type Breaker = { state: 'closed' | 'half_open' | 'open', failures: number, since: string, 
+/**
+ * Set only while a probe is scheduled (open).
+ */
+retry_at?: string | null, };
+
+export type BackendGroup = { name: string, backend: string, models: Array<string>, permits: Permits, queue: Array<QueuedCall>, rate: RateLevel, retry: RetryLevel, breaker: Breaker, };
+
+export type AdmissionWindow = { window: string, 
+/**
+ * No refusal is recorded yet, so the list is always empty.
+ */
+refusals: Refusal[], };
+
+export type Quota = { count: number, per_s: number, };
+
+export type Allowance = { member: Member, staff: boolean, 
+/**
+ * Null for staff (no limit).
+ */
+allowance: Quota | null, used: number, override: boolean, };
+
+export type Limits = { groups: Array<BackendGroup>, admission: AdmissionWindow, allowances: Array<Allowance>, };
+
+/**
+ * `{seq, hash}`: a record in the chain.
+ */
+export type ChainHead = { seq: number, hash: string, };
+
+/**
+ * `GET /api/admin/history?week&actor&run&before&limit`, newest first. With
+ * `run=<id>` (alone; not with `week` or `actor`): the run's change log, each
+ * record changing its row or RSVPs; the run's before → after is in those
+ * `rows` (`runs` keyed by `id`, `rsvps` by `run_id`).
+ */
+export type HistoryPage = { records: ChangeRecord[], head: ChainHead, 
+/**
+ * Pass as `before` for the next (older) page; null on the last page.
+ */
+next_before: number | null, total: number, };
+
+export type RowChange = { key: RowKey, 
+/**
+ * Full domain row; null = absent.
+ */
+before: Record<string, unknown> | null, after: Record<string, unknown> | null, };
+
+export type RowConflict = { seq: number, key: RowKey, expected: unknown, found: unknown, };
+
+export type SkippedKey = { key: RowKey, reason: string, };
+
+export type PlanOutcome = "preview" | "applied" | "unchanged" | "conflicts";
+
+export type RevertPlan = { outcome: PlanOutcome, 
+/**
+ * The requested records (a refused week or actor rollback: the conflicting ones).
+ */
+reverts: Array<number>, 
+/**
+ * Empty when `outcome` is `conflicts`: a strict refusal plans nothing.
+ */
+rows: Array<RowChange>, conflicts: Array<RowConflict>, skipped: Array<SkippedKey>, record: ChangeRecord | null, };
+
+/**
+ * `matches`: the chain holds the backup's head; `older_schema`: it does,
+ * but the backup predates the store's schema; `mismatch`: the head is not
+ * in the chain (truncated or forked history).
+ */
+export type BackupAnchor = "matches" | "older_schema" | "mismatch";
+
+export type BackupRow = { file: string, format: 'kanade.backup.v1', created_at: string, history_head: ChainHead, revision: number, schema_version: number, 
+/**
+ * The chain still contains `history_head`.
+ */
+anchored: boolean, anchor: BackupAnchor, };
+
+export type Verified = { ok: boolean, checked: number, head: ChainHead, };
+
+export type Checkpoints = { verified: Verified, 
+/**
+ * `KANADE_BACKUP_DIR` is set: false means no directory, not no backups.
+ */
+backup_dir_configured: boolean, 
+/**
+ * Newest first (at most 100); re-read and re-checked on every request.
+ */
+backups: Array<BackupRow>, };

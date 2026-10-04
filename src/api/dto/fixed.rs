@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use super::{
     Boss, Named, hhmm,
-    week::{Context, day_index, is_amended, run_time},
+    week::{Context, WeekKey, day_index, is_amended, run_time},
     weekday_name,
 };
 use crate::domain::{
@@ -18,8 +18,7 @@ use crate::domain::{
 pub struct FixedRunLink {
     pub run_id: String,
     pub short_id: String,
-    #[cfg_attr(test, ts(type = "WeekKey"))]
-    pub week: &'static str,
+    pub week: WeekKey,
     pub day: u8,
     pub time: Option<String>,
     #[cfg_attr(test, ts(type = "RunStatus"))]
@@ -74,8 +73,8 @@ fn row(
         })
         .filter_map(|run| {
             let week = match weeks.iter().position(|start| *start == run.week_start)? {
-                0 => "this",
-                _ => "next",
+                0 => WeekKey::This,
+                _ => WeekKey::Next,
             };
             let start_date = ctx.local_date(run.week_start);
             Some(FixedRunLink {

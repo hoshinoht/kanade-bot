@@ -15,8 +15,8 @@ use super::{
 };
 use crate::domain::{
     drafts::{
-        DraftOp, FieldValue, LoadedDraft, MergeAnalysis, MergeConflict, ProposalInfo, Removal,
-        Target,
+        DraftOp, FieldValue, LoadedDraft, MergeAnalysis, MergeConflict, ProposalInfo,
+        ProposalSource as Staged, Removal, Target,
     },
     history::Actor,
     ids::short_id,
@@ -97,6 +97,46 @@ pub struct SelfService {
     pub note: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum InboxTab {
+    Extractor,
+    SelfService,
+}
+
+/// Kanade read it from party chat (`extraction`) or was asked in chat
+/// (`chat`); `self_service` is a member request.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum ProposalSource {
+    Extraction,
+    Chat,
+    SelfService,
+}
+
+impl From<Staged> for ProposalSource {
+    fn from(source: Staged) -> Self {
+        match source {
+            Staged::Extraction => Self::Extraction,
+            Staged::Chat => Self::Chat,
+        }
+    }
+}
+
+/// Badges an inbox item can carry; each also blocks or qualifies an action.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum ProposalFlag {
+    Conflict,
+    Expired,
+    RequesterFrozen,
+    RequesterUnauthorised,
+    NoEffect,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(rename = "Proposal"))]
 pub struct ProposalDto {
@@ -105,13 +145,10 @@ pub struct ProposalDto {
     #[cfg_attr(test, ts(type = "ProposalKind"))]
     pub kind: &'static str,
     pub kind_label: &'static str,
-    #[cfg_attr(test, ts(type = "ProposalSource"))]
-    pub source: &'static str,
-    #[cfg_attr(test, ts(type = "InboxTab"))]
-    pub tab: &'static str,
+    pub source: ProposalSource,
+    pub tab: InboxTab,
     pub version: u64,
-    #[cfg_attr(test, ts(type = "ProposalFlag[]"))]
-    pub flags: Vec<&'static str>,
+    pub flags: Vec<ProposalFlag>,
     pub preview: Preview,
     /// One line on what approving does (party, upcoming reminders); `None`
     /// with conflicts, no effect, or nothing to say.
@@ -499,13 +536,13 @@ fn weekly(ops: &[DraftOp], current: &ScheduleSnapshot) -> Option<(String, Option
     })
 }
 
-fn flags(preview: &Preview, expired: bool, frozen: bool, unauthorised: bool) -> Vec<&'static str> {
+fn flags(preview: &Preview, expired: bool, frozen: bool, unauthorised: bool) -> Vec<ProposalFlag> {
     [
-        (!preview.conflicts.is_empty(), "conflict"),
-        (expired, "expired"),
-        (frozen, "requester_frozen"),
-        (unauthorised, "requester_unauthorised"),
-        (preview.no_effect, "no_effect"),
+        (!preview.conflicts.is_empty(), ProposalFlag::Conflict),
+        (expired, ProposalFlag::Expired),
+        (frozen, ProposalFlag::RequesterFrozen),
+        (unauthorised, ProposalFlag::RequesterUnauthorised),
+        (preview.no_effect, ProposalFlag::NoEffect),
     ]
     .into_iter()
     .filter_map(|(on, flag)| on.then_some(flag))
@@ -597,8 +634,8 @@ pub fn proposal(
         short_id: short_id(&draft.id),
         kind: subject.kind.as_str(),
         kind_label: kind_label(subject.kind.as_str()),
-        source: info.source.as_str(),
-        tab: "extractor",
+        source: info.source.into(),
+        tab: InboxTab::Extractor,
         version: draft.version,
         flags: flags(&shown, expired, false, false),
         preview: shown,
@@ -723,8 +760,8 @@ pub fn request(
         short_id: short_id(&draft.id),
         kind,
         kind_label: kind_label(kind),
-        source: "self_service",
-        tab: "self_service",
+        source: ProposalSource::SelfService,
+        tab: InboxTab::SelfService,
         version: draft.version,
         flags: flags(&shown, expired, frozen, unauthorised),
         preview: shown,

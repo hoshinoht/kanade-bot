@@ -11,7 +11,7 @@ use axum::{
     routing::{get, post},
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 use tokio::sync::Mutex;
 
 use super::{
@@ -21,7 +21,10 @@ use super::{
 use crate::{
     api::{
         auth::AdminSession,
-        dto::iso_instant,
+        dto::{
+            Named,
+            limits::{AdmissionWindow, Allowance as AllowanceRow, Limits, Quota, group},
+        },
         error::ApiError,
         listeners::Site,
         state::{DigestPostRequest, DigestPostResult},
@@ -114,33 +117,6 @@ fn allowance(snapshot: &AllowanceSnapshot, member_id: &str) -> (usize, usize, f6
         ))
 }
 
-fn group(group: crate::infrastructure::llm::governor::GroupSnapshot) -> Value {
-    json!({
-        "name": group.name,
-        "backend": group.backend,
-        "models": group.models,
-        "permits": {"in_use": group.permits.in_use, "total": group.permits.total},
-        "queue": group.queue.into_iter().map(|entry| json!({
-            "position": entry.position,
-            "kind": entry.kind.as_str(),
-            "who": entry.who,
-            "waiting_s": entry.waiting_s,
-        })).collect::<Vec<_>>(),
-        "rate": {
-            "available": group.rate.available,
-            "capacity": group.rate.capacity,
-            "refill_per_min": group.rate.refill_per_min,
-        },
-        "retry": {"remaining": group.retry.remaining, "capacity": group.retry.capacity},
-        "breaker": {
-            "state": group.breaker.state.as_str(),
-            "failures": group.breaker.failures,
-            "since": iso_instant(group.breaker.since),
-            "retry_at": group.breaker.retry_at.map(iso_instant),
-        },
-    })
-}
-
 async fn read(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
     let state = state(&site)?;
     let profiles = state
@@ -152,7 +128,7 @@ async fn read(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
         || Allowance::default().snapshot(0.0),
         |chat| chat.allowance(),
     );
-    let allowances: Vec<Value> = profiles
+    let allowances: Vec<AllowanceRow> = profiles
         .into_iter()
         .filter(|profile| !profile.member.is_bot)
         .filter_map(|profile| {
@@ -163,30 +139,30 @@ async fn read(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
                 let member_name = member.name().unwrap_or(&member_id).to_owned();
                 let staff = access == "staff";
                 let (used, count, per_s, overridden) = allowance(&snapshot, &member_id);
-                json!({
-                    "member": {
-                        "id": member_id,
-                        "name": member_name,
+                AllowanceRow {
+                    member: Named {
+                        id: member_id,
+                        name: member_name,
                     },
-                    "staff": staff,
-                    "allowance": (!staff).then(|| json!({"count": count, "per_s": per_s})),
-                    "used": if staff { 0 } else { used },
-                    "override": overridden,
-                })
+                    staff,
+                    allowance: (!staff).then_some(Quota { count, per_s }),
+                    used: if staff { 0 } else { used },
+                    overridden,
+                }
             })
         })
         .collect();
     let now = state.now();
-    let groups: Vec<Value> = state
+    let groups = state
         .model_limits
         .as_ref()
         .map(|limits| limits(now).into_iter().map(group).collect())
         .unwrap_or_default();
-    Ok(Json(json!({
-        "groups": groups,
-        "admission": {"window": "last hour", "refusals": []},
-        "allowances": allowances,
-    }))
+    Ok(Json(Limits {
+        groups,
+        admission: AdmissionWindow::last_hour(),
+        allowances,
+    })
     .into_response())
 }
 

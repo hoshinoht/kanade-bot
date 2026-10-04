@@ -792,6 +792,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
   ts-rs (`web/packages/api-types/src/generated.ts`, checked by a Rust unit
   test that fails when the file is stale); vocabularies, request bodies and
   the responses still built with `json!` stay hand-written in `manual.ts`.
+- The admin log, rescan, limits and history responses and the API-owned
+  vocabularies (inbox tabs and flags, card kinds and states, reminder and job
+  states) are typed Rust structs and enums, so their TypeScript types are
+  generated too and `manual.ts` halves. Fields and values are unchanged; keys
+  in those responses now follow struct order instead of alphabetical order.
 - CI runs each suite only when its inputs change: legacy Python and its
   image for `legacy/python/`, Rust for `src/`, `tests/`, Cargo files and the
   tracked data its tests read, web for `web/`, `tools/pwa-mock/`, boss

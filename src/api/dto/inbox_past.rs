@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use super::{
     Named,
-    inbox::{Evidence, kind_label, message_url},
+    inbox::{Evidence, InboxTab, ProposalSource, kind_label, message_url},
     iso_instant,
     week::Context,
 };
@@ -33,6 +33,20 @@ pub struct Decider {
     pub name: String,
 }
 
+/// How a closed Inbox item ended: `approved` = merged, `superseded` =
+/// replaced by a newer proposal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum PastOutcome {
+    Approved,
+    Rejected,
+    Superseded,
+    Discarded,
+    Withdrawn,
+    Expired,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct PastItem {
@@ -42,18 +56,15 @@ pub struct PastItem {
     pub kind: &'static str,
     pub kind_label: &'static str,
     /// `extractor` for proposals, `self_service` for member requests.
-    #[cfg_attr(test, ts(type = "InboxTab"))]
-    pub tab: &'static str,
-    #[cfg_attr(test, ts(type = "ProposalSource"))]
-    pub source: &'static str,
+    pub tab: InboxTab,
+    pub source: ProposalSource,
     /// The extraction log or chat interaction that staged a proposal.
     pub source_id: Option<String>,
     pub summary: String,
     pub channel: Option<String>,
     /// The member who asked (requests only).
     pub requester: Option<Named>,
-    #[cfg_attr(test, ts(type = "PastOutcome"))]
-    pub outcome: &'static str,
+    pub outcome: PastOutcome,
     pub decided_by: Option<Decider>,
     pub decided_at: String,
     pub reason: Option<String>,
@@ -73,15 +84,15 @@ pub struct PastPage {
 }
 
 /// The outcome shown for a closed status; live statuses have none.
-pub fn outcome(status: DraftStatus, reason: Option<&str>) -> Option<&'static str> {
+pub fn outcome(status: DraftStatus, reason: Option<&str>) -> Option<PastOutcome> {
     Some(match status {
         DraftStatus::Open | DraftStatus::Submitted => return None,
-        DraftStatus::Merged => "approved",
-        DraftStatus::Rejected => "rejected",
-        DraftStatus::Discarded if reason == Some(SUPERSEDED) => "superseded",
-        DraftStatus::Discarded => "discarded",
-        DraftStatus::Withdrawn => "withdrawn",
-        DraftStatus::Expired => "expired",
+        DraftStatus::Merged => PastOutcome::Approved,
+        DraftStatus::Rejected => PastOutcome::Rejected,
+        DraftStatus::Discarded if reason == Some(SUPERSEDED) => PastOutcome::Superseded,
+        DraftStatus::Discarded => PastOutcome::Discarded,
+        DraftStatus::Withdrawn => PastOutcome::Withdrawn,
+        DraftStatus::Expired => PastOutcome::Expired,
     })
 }
 
@@ -124,8 +135,8 @@ pub fn item(
                 .or_else(|| subject.as_ref().and_then(|s| s.channel_id.clone()));
             (
                 subject.map_or("change", |s| s.kind.as_str()),
-                "extractor",
-                info.source.as_str(),
+                InboxTab::Extractor,
+                ProposalSource::from(info.source),
                 Some(info.source_id.clone()),
                 card.and_then(|card| card.details.summary.clone())
                     .unwrap_or_else(|| draft.title.clone()),
@@ -139,8 +150,8 @@ pub fn item(
                 .as_deref()
                 .and_then(RequestType::parse)
                 .map_or("change", RequestType::as_str),
-            "self_service",
-            "self_service",
+            InboxTab::SelfService,
+            ProposalSource::SelfService,
             None,
             draft.title.clone(),
             None,
@@ -162,7 +173,7 @@ pub fn item(
         decided_by: draft.closed_by.as_ref().map(|actor| decider(ctx, actor)),
         decided_at: iso_instant(draft.updated_at),
         reason: reason
-            .filter(|_| outcome != "superseded")
+            .filter(|_| outcome != PastOutcome::Superseded)
             .map(str::to_owned),
         created_at: iso_instant(draft.created_at),
         history_seq: draft.merged_seq,

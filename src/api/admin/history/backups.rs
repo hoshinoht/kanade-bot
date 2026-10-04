@@ -14,9 +14,16 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use serde_json::{Value, json};
+use serde_json::json;
 
-use crate::{api::dto::iso_instant, infrastructure::store::BackupManifest, runtime::logging};
+use crate::{
+    api::dto::{
+        history::{BackupAnchor, BackupRow},
+        iso_instant,
+    },
+    infrastructure::store::BackupManifest,
+    runtime::logging,
+};
 
 const SUFFIX: &str = ".manifest.json";
 /// Directory entries examined per request.
@@ -132,26 +139,26 @@ fn utc(at: SystemTime) -> Option<DateTime<Utc>> {
 /// `matches` (the chain holds the head), `older_schema` (it does, but the
 /// backup predates this store's schema) or `mismatch` (the head is not in
 /// the chain: history truncated or forked since).
-pub(super) fn anchor(anchored: bool, backup_schema: i64, store_schema: i64) -> &'static str {
+pub(super) fn anchor(anchored: bool, backup_schema: i64, store_schema: i64) -> BackupAnchor {
     match (anchored, backup_schema < store_schema) {
-        (false, _) => "mismatch",
-        (true, true) => "older_schema",
-        (true, false) => "matches",
+        (false, _) => BackupAnchor::Mismatch,
+        (true, true) => BackupAnchor::OlderSchema,
+        (true, false) => BackupAnchor::Matches,
     }
 }
 
-pub(super) fn row(backup: &Found, anchored: bool, store_schema: i64) -> Value {
+pub(super) fn row(backup: &Found, anchored: bool, store_schema: i64) -> BackupRow {
     let manifest = &backup.manifest;
-    json!({
-        "file": backup.file,
-        "format": crate::infrastructure::store::sqlite::BACKUP_MANIFEST_FORMAT,
-        "created_at": iso_instant(backup.created_at),
-        "history_head": {"seq": manifest.history_head.seq, "hash": manifest.history_head.hash},
-        "revision": manifest.revision,
-        "schema_version": manifest.schema_version,
-        "anchored": anchored,
-        "anchor": anchor(anchored, manifest.schema_version, store_schema),
-    })
+    BackupRow {
+        file: backup.file.clone(),
+        format: crate::infrastructure::store::sqlite::BACKUP_MANIFEST_FORMAT,
+        created_at: iso_instant(backup.created_at),
+        history_head: (&manifest.history_head).into(),
+        revision: manifest.revision,
+        schema_version: manifest.schema_version,
+        anchored,
+        anchor: anchor(anchored, manifest.schema_version, store_schema),
+    }
 }
 
 #[cfg(test)]
@@ -160,11 +167,11 @@ mod tests {
 
     #[test]
     fn mismatch_outranks_an_older_schema() {
-        assert_eq!(anchor(true, 21, 21), "matches");
-        assert_eq!(anchor(true, 22, 21), "matches");
-        assert_eq!(anchor(true, 20, 21), "older_schema");
-        assert_eq!(anchor(false, 20, 21), "mismatch");
-        assert_eq!(anchor(false, 21, 21), "mismatch");
+        assert_eq!(anchor(true, 21, 21), BackupAnchor::Matches);
+        assert_eq!(anchor(true, 22, 21), BackupAnchor::Matches);
+        assert_eq!(anchor(true, 20, 21), BackupAnchor::OlderSchema);
+        assert_eq!(anchor(false, 20, 21), BackupAnchor::Mismatch);
+        assert_eq!(anchor(false, 21, 21), BackupAnchor::Mismatch);
     }
 
     #[test]

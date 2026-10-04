@@ -11,31 +11,33 @@ use super::{
         config::{AccessReport, AccessRow},
     },
     assets::Identity,
-    dto::{self, bosses, config, fixed, inbox, inbox_past, members, reminders, week},
+    dto::{
+        self, bosses, config, fixed, history, inbox, inbox_past, limits, logs, members, reminders,
+        rescan, week,
+    },
     error, public,
 };
 
 const TARGET: &str = "web/packages/api-types/src/generated.ts";
 
 /// Hand-written vocabulary (`manual.ts`) the `#[ts(type)]` overrides name.
-const MANUAL: [&str; 17] = [
+const MANUAL: [&str; 16] = [
     "ActorKind",
     "Answer",
-    "CardKind",
-    "CardState",
+    "ChangeRecord",
+    "ChatOutcome",
+    "ChatRoute",
     "ContextSource",
     "Difficulty",
-    "InboxTab",
+    "ExtractionOutcome",
     "KnowledgeDoc",
-    "PastOutcome",
     "PingLevel",
-    "ProposalFlag",
     "ProposalKind",
-    "ProposalSource",
+    "Refusal",
+    "RowKey",
     "RunStatus",
     "SelfServiceMode",
     "SignInMethod",
-    "WeekKey",
 ];
 
 struct Out {
@@ -71,6 +73,9 @@ fn bindings() -> String {
         .add::<admin::SessionView>()
         .add::<admin::Methods>()
         // Week board
+        .add::<week::CardKind>()
+        .add::<week::CardState>()
+        .add::<week::WeekKey>()
         .add::<week::WeekDay>()
         .add::<week::Tally>()
         .add::<week::Participant>()
@@ -94,6 +99,7 @@ fn bindings() -> String {
         .add::<fixed::FixedRunLink>()
         .add::<fixed::FixedRow>()
         .add::<admin::ValidateResult>()
+        .add::<reminders::ReminderState>()
         .add::<reminders::ReminderRow>()
         .add::<reminders::Reminders>()
         .add::<bosses::DifficultyOption>()
@@ -101,6 +107,9 @@ fn bindings() -> String {
         .add::<bosses::Knowledge>()
         .add::<bosses::EventBoss>()
         // Inbox
+        .add::<inbox::InboxTab>()
+        .add::<inbox::ProposalSource>()
+        .add::<inbox::ProposalFlag>()
         .add::<inbox::Evidence>()
         .add::<inbox::ThreadMessage>()
         .add::<inbox::FieldChange>()
@@ -109,6 +118,7 @@ fn bindings() -> String {
         .add::<inbox::Choice>()
         .add::<inbox::SelfService>()
         .add::<inbox::ProposalDto>()
+        .add::<inbox_past::PastOutcome>()
         .add::<inbox_past::Decider>()
         .add::<inbox_past::PastItem>()
         .add::<inbox_past::PastPage>()
@@ -143,7 +153,56 @@ fn bindings() -> String {
         .add::<config::EnvRow>()
         .add::<config::LastDigest>()
         .add::<AccessReport>()
-        .add::<AccessRow>();
+        .add::<AccessRow>()
+        // Chat and Extractions logs, rescans
+        .add::<logs::LogFacets>()
+        .add::<logs::UsageSummary>()
+        .add::<logs::ExtractionSummary>()
+        .add::<logs::ExtractionRow>()
+        .add::<logs::Extractions>()
+        .add::<logs::Amendment>()
+        .add::<logs::ReadMessage>()
+        .add::<logs::CallContext>()
+        .add::<logs::ExtractionRefusal>()
+        .add::<logs::Extraction>()
+        .add::<rescan::JobState>()
+        .add::<rescan::ChannelState>()
+        .add::<rescan::RescanChannel>()
+        .add::<rescan::RescanJob>()
+        .add::<logs::ChatRow>()
+        .add::<logs::ChatSummary>()
+        .add::<logs::Chat>()
+        .add::<logs::ChatToolCall>()
+        .add::<logs::RoundGuardrail>()
+        .add::<logs::ChatRoundFacts>()
+        .add::<logs::ChatCard>()
+        .add::<logs::MaskedRoundView>()
+        .add::<logs::TokenName>()
+        .add::<logs::ModelView>()
+        .add::<logs::ChatTurn>()
+        // Limits
+        .add::<limits::Permits>()
+        .add::<limits::QueuedCall>()
+        .add::<limits::RateLevel>()
+        .add::<limits::RetryLevel>()
+        .add::<limits::Breaker>()
+        .add::<limits::BackendGroup>()
+        .add::<limits::AdmissionWindow>()
+        .add::<limits::Quota>()
+        .add::<limits::Allowance>()
+        .add::<limits::Limits>()
+        // History
+        .add::<history::ChainHead>()
+        .add::<history::HistoryPage>()
+        .add::<history::RowChange>()
+        .add::<history::RowConflict>()
+        .add::<history::SkippedKey>()
+        .add::<history::PlanOutcome>()
+        .add::<history::RevertPlan>()
+        .add::<history::BackupAnchor>()
+        .add::<history::BackupRow>()
+        .add::<history::Verified>()
+        .add::<history::Checkpoints>();
     let used: Vec<&str> = MANUAL
         .into_iter()
         .filter(|name| mentions(&out.body, name))

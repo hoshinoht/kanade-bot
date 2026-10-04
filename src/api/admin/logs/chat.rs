@@ -8,14 +8,13 @@ use axum::{
     http::Uri,
     response::IntoResponse,
 };
-use serde_json::json;
 
 use super::{Directory, Reply, filter, state, store_down};
 use crate::api::admin::write::Refusal;
 use crate::{
     api::{
         auth::AdminSession,
-        dto::logs::{chat_row, chat_summary, chat_turn, created_proposals},
+        dto::logs::{Chat, chat_row, chat_summary, chat_turn, created_proposals},
         error::ApiError,
         listeners::Site,
         state::ApiState,
@@ -63,12 +62,12 @@ pub async fn list(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> R
         .collect();
     let directory = Directory::load(state).await?;
     let names = directory.names();
-    Ok(Json(json!({
-        "summary": chat_summary(&rows),
-        "rows": rows.iter().map(|chat| chat_row(&names, chat)).collect::<Vec<_>>(),
-        "total": facets.total,
-        "facets": names.facets(&facets),
-    }))
+    Ok(Json(Chat {
+        summary: chat_summary(&rows),
+        rows: rows.iter().map(|chat| chat_row(&names, chat)).collect(),
+        total: facets.total,
+        facets: names.facets(&facets),
+    })
     .into_response())
 }
 
