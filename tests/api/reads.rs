@@ -177,6 +177,8 @@ pub struct Reads {
     pub digest_posts: Arc<Mutex<Vec<kanade::api::state::DigestPostRequest>>>,
     /// `KANADE_BACKUP_DIR`, an empty directory unless built `without_backup_dir`.
     pub backup_dir: Option<PathBuf>,
+    /// The store's SQLite file, for tests that alter rows behind the API.
+    pub db_path: PathBuf,
     _fixture: Fixture,
     _dir: TempDir,
 }
@@ -697,6 +699,7 @@ impl Reads {
             chat,
             digest_posts,
             backup_dir,
+            db_path: dir.0.join("kanade.sqlite3"),
             _fixture: fixture,
             _dir: dir,
         }

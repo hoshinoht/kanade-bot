@@ -327,8 +327,17 @@ is `Tampered`.
 Read APIs: `Checkpoints::list_checkpoints(week)` (creation order, all or one
 boss week), `Checkpoints::load_checkpoint(name)`, and `blame` for a run or
 weekly timing. `ChangeHistory::list_changes` pages by `ChangeFilter` (`All`,
-`Week`, `Actor`, `ActorInWeek`, `Revisions`) and `count_changes` counts the
-same filter without genesis (one constant statement per filter on SQLite).
+`Week`, `Actor`, `ActorInWeek`, `Run`, `Revisions`) and `count_changes` counts
+the same filter without genesis (one constant statement per filter on SQLite).
+
+`ChangeFilter::Run(id)` is a run's change log: the records
+`ChangeRecord::touches_run` accepts, which are exactly those blame's field
+index names for the run (`changed_fields`): any change to its row (creation,
+slot moves and swaps, bosses, party, channel, status, pin, attendance) or to
+one of its RSVPs, rollbacks of them included. Records that touched only its
+reminders are left out, as is a run row's removal, which no writer produces.
+SQLite answers from `change_fields` by its primary key, so the log never
+scans `change_log`.
 
 ## Attendance fields
 

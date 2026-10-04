@@ -18,6 +18,7 @@ use chrono::{DateTime, NaiveTime, Timelike, Utc, Weekday};
 use ring::digest::{SHA256, digest};
 use serde_json::{Value, json};
 
+use super::blame::{BlameTarget, changed_fields};
 use super::origin::{Actor, ChangeMeta, Origin, Surface};
 use crate::domain::schedule::{
     FixedRun, Reminder, Rsvp, RsvpSource, RsvpState, Run, RunSource, RunStatus,
@@ -638,6 +639,16 @@ impl ChangeRecord {
     /// Whether the change touched any row of a run in `week`.
     pub fn touches_week(&self, week: DateTime<Utc>) -> bool {
         self.weeks.contains(&week)
+    }
+
+    /// Whether the change set a blamed field of the run (its row or one of
+    /// its RSVPs): the records blame's field index names for it, so stores
+    /// answer from that index. Reminder-only changes and a run row's removal
+    /// (no writer removes runs; reverting a creation cancels) do not count.
+    pub fn touches_run(&self, run_id: &str) -> bool {
+        changed_fields(self)
+            .iter()
+            .any(|(target, _)| matches!(target, BlameTarget::Run(id) if id == run_id))
     }
 }
 

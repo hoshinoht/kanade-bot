@@ -1255,6 +1255,40 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         filtered["total"].as_u64().unwrap() > 0,
         "week filter by instant"
     );
+    // A run's log: every record touching its row or RSVPs, newest first.
+    let run_log = h
+        .ok(
+            "GET",
+            &format!("/api/admin/history?run={id}&limit=2"),
+            None,
+            "history.json#/$defs/HistoryPage",
+        )
+        .await;
+    assert!(
+        run_log["total"].as_u64().unwrap() > 0,
+        "the run has history"
+    );
+    assert!(
+        run_log["records"].as_array().unwrap().iter().all(|r| {
+            r["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|row| row["key"]["id"] == id || row["key"]["run_id"] == id)
+        }),
+        "{run_log}"
+    );
+    for bad in ["run=no-such-run", &format!("run={id}&actor=admin:token")] {
+        h.expect(
+            false,
+            "GET",
+            &format!("/api/admin/history?{bad}"),
+            None,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "",
+        )
+        .await;
+    }
 
     // Blame speaks the domain's field names.
     let blame = h

@@ -73,6 +73,16 @@ pub fn actor(text: &str) -> Option<Actor> {
     }
 }
 
+/// A run id: 1-128 letters, digits, `-`, `_`, `.` or `:` (the idempotency
+/// key's alphabet; v4 and v5 run ids are UUIDs).
+pub fn run_id(text: &str) -> Option<String> {
+    ((1..=128).contains(&text.len())
+        && text
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':')))
+    .then(|| text.to_owned())
+}
+
 /// A bare date (local midnight) or a naive local date-time, in the guild
 /// zone (A5-7); offsets, other shapes and wall times in a DST gap are refused.
 pub fn since(policy: &SchedulePolicy, text: &str) -> Option<DateTime<Utc>> {
@@ -156,6 +166,16 @@ mod tests {
         assert_eq!(actor("admin:discord:1"), Some(Actor::admin("discord:1")));
         for bad in ["member", "member:", "robot:1", ""] {
             assert_eq!(actor(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn run_ids_are_plain_tokens() {
+        let uuid = "0b6f2c1e-8a4d-4c3b-9f1e-2d7a5c6b8e90";
+        assert_eq!(run_id(uuid).as_deref(), Some(uuid));
+        assert_eq!(run_id("r-kalos").as_deref(), Some("r-kalos"));
+        for bad in ["", "r kalos", "r/kalos", "ü", &"a".repeat(129)] {
+            assert_eq!(run_id(bad), None, "{bad}");
         }
     }
 }

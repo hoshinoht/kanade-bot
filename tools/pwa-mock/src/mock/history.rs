@@ -193,6 +193,13 @@ pub fn run_of(key: &Value) -> Option<&str> {
     }
 }
 
+/// A run's log entry: the record changed its row or one of its RSVPs.
+fn touches_run(record: &Record, id: &str) -> bool {
+    record.rows.iter().any(|row| {
+        matches!(row.key["table"].as_str(), Some("runs" | "rsvps")) && run_of(&row.key) == Some(id)
+    })
+}
+
 impl Store {
     /// A boss week as records name it: the RFC 3339 instant it starts.
     fn week_of(next: bool) -> String {
@@ -711,11 +718,13 @@ impl Store {
         }
     }
 
-    /// Newest first, `limit` per page, optionally for one week or one actor.
+    /// Newest first, `limit` per page, optionally for one week or one actor,
+    /// or for one run (its row or RSVPs; reminder rows alone do not count).
     pub fn history_page(
         &self,
         week: Option<&str>,
         actor: Option<&Actor>,
+        run: Option<&str>,
         before: Option<u64>,
         limit: usize,
     ) -> Page {
@@ -727,6 +736,7 @@ impl Store {
             .filter(|r| r.seq > 0)
             .filter(|r| week.as_ref().is_none_or(|w| r.weeks.contains(w)))
             .filter(|r| actor.is_none_or(|a| &r.actor == a))
+            .filter(|r| run.is_none_or(|id| touches_run(r, id)))
             .collect();
         let total = matching.len();
         let page: Vec<Record> = matching
@@ -746,6 +756,13 @@ impl Store {
 
     pub fn record(&self, seq: u64) -> Option<Record> {
         self.history.get(seq as usize).cloned()
+    }
+
+    /// Whether `run=` names a run that exists or has history (else the
+    /// server's `422 invalid_query`).
+    pub fn knows_run(&self, id: &str) -> bool {
+        self.runs.iter().any(|r| r.id == id)
+            || self.history.iter().any(|r| r.seq > 0 && touches_run(r, id))
     }
 
     /// Whether a record after `version` changed this row field (the server's
@@ -1036,7 +1053,7 @@ mod tests {
     #[test]
     fn seeded_history_is_a_chain_ending_in_a_rollback() {
         let s = store();
-        let page = s.history_page(None, None, None, 50);
+        let page = s.history_page(None, None, None, None, 50);
         assert_eq!(page.head.seq, 9);
         let latest = &page.records[0];
         assert_eq!(latest.surface, "rollback");
@@ -1185,6 +1202,28 @@ mod tests {
                 .answer,
             "waiting"
         );
+    }
+
+    #[test]
+    fn a_run_log_lists_its_rsvp_move_and_revert() {
+        let mut s = store();
+        // Undo the seeded time change on Kalos (seq 3).
+        let plan = s.revert_changes(vec![3], &mode(false, false)).ok().unwrap();
+        assert_eq!(plan.outcome, "applied");
+        let page = s.history_page(None, None, Some("r-kalos"), None, 2);
+        let seqs: Vec<u64> = page.records.iter().map(|r| r.seq).collect();
+        assert_eq!(seqs, [10, 3]);
+        assert_eq!((page.total, page.next_before), (3, Some(3)));
+        let older = s.history_page(None, None, Some("r-kalos"), Some(3), 2);
+        let seqs: Vec<u64> = older.records.iter().map(|r| r.seq).collect();
+        assert_eq!((seqs.as_slice(), older.next_before), (&[2][..], None));
+        // The RSVP record carries the answer's before and after.
+        assert!(older.records[0].rows.iter().any(|row| {
+            row.key["table"] == "rsvps"
+                && row.key["user_id"] == "1005"
+                && row.after["state"] == "no"
+        }));
+        assert!(s.knows_run("r-kalos") && !s.knows_run("no-such-run"));
     }
 
     #[test]

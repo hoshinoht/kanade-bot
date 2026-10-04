@@ -66,7 +66,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `POST /api/admin/config/profiles/reload` | `common.json#/$defs/ReloadResult` |
 | `POST /api/admin/digest` | `common.json#/$defs/Message` |
 | `GET /api/admin/access`, `POST /api/admin/access/recheck` | `config.json#/$defs/AccessReport` |
-| `GET /api/admin/history?week=&actor=&before=&limit=` | `history.json#/$defs/HistoryPage` |
+| `GET /api/admin/history?week=&actor=&run=&before=&limit=` | `history.json#/$defs/HistoryPage` |
 | `GET /api/admin/history/{seq}` | `history.json#/$defs/ChangeRecord` |
 | `POST /api/admin/history/revert`, `/restore-week`, `/revert-actor` | `history.json#/$defs/RevertPlan` |
 | `GET /api/admin/history/checkpoints` | `history.json#/$defs/Checkpoints` |

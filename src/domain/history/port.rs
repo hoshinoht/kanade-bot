@@ -22,6 +22,9 @@ pub enum ChangeFilter {
     /// Records by this actor touching this boss week (the history page with
     /// both filters).
     ActorInWeek(Actor, DateTime<Utc>),
+    /// Records touching this run (see [`ChangeRecord::touches_run`]): a run's
+    /// change log.
+    Run(String),
     /// Records whose store revision is within `from..=to`.
     Revisions {
         from: u64,
@@ -65,6 +68,7 @@ impl ChangeQuery {
                 ChangeFilter::ActorInWeek(actor, week) => {
                     &record.origin.actor == actor && record.touches_week(*week)
                 }
+                ChangeFilter::Run(run_id) => record.touches_run(run_id),
                 ChangeFilter::Revisions { from, to } => (*from..=*to).contains(&record.revision),
             }
     }

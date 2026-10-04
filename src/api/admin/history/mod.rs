@@ -56,7 +56,7 @@ const DEFAULT_LIMIT: usize = 20;
 const MAX_LIMIT: usize = 100;
 /// Stores keep seqs as SQLite integers: a larger one names no record.
 pub(super) const MAX_SEQ: u64 = i64::MAX as u64;
-const PARAMS: [&str; 4] = ["week", "actor", "before", "limit"];
+const PARAMS: [&str; 5] = ["week", "actor", "run", "before", "limit"];
 
 /// A record the encoder cannot write (an instant out of range) is a server fault.
 fn encoded<T, E>(result: Result<T, E>) -> Result<T, ApiError> {
@@ -73,8 +73,9 @@ struct PageQuery {
     limit: usize,
 }
 
-/// `week`, `actor`, `before` and `limit`, each at most once; an unknown key or
-/// malformed value is `422 invalid_query`.
+/// `week`, `actor`, `run`, `before` and `limit`, each at most once; an
+/// unknown key or malformed value is `422 invalid_query`, and so is `run`
+/// beside `week` or `actor` (a run's log is the whole of it).
 fn page_query(state: &ApiState, uri: &Uri) -> Result<PageQuery, ApiError> {
     let pairs = wire::query_pairs(uri.query());
     // `query_pairs` drops pairs it cannot decode; those are refused too.
@@ -97,6 +98,9 @@ fn page_query(state: &ApiState, uri: &Uri) -> Result<PageQuery, ApiError> {
         .transpose()?;
     let actor = value("actor")?
         .map(|text| parse::actor(&text).ok_or(ApiError::INVALID_QUERY))
+        .transpose()?;
+    let run = value("run")?
+        .map(|text| parse::run_id(&text).ok_or(ApiError::INVALID_QUERY))
         .transpose()?;
     let number = |key: &str| -> Result<Option<u64>, ApiError> {
         value(key)?
@@ -121,11 +125,13 @@ fn page_query(state: &ApiState, uri: &Uri) -> Result<PageQuery, ApiError> {
         Some(limit @ 1..=100) => usize::try_from(limit).unwrap_or(MAX_LIMIT),
         Some(_) => return Err(ApiError::INVALID_QUERY),
     };
-    let filter = match (week, actor) {
-        (None, None) => ChangeFilter::All,
-        (Some(week), None) => ChangeFilter::Week(week),
-        (None, Some(actor)) => ChangeFilter::Actor(actor),
-        (Some(week), Some(actor)) => ChangeFilter::ActorInWeek(actor, week),
+    let filter = match (week, actor, run) {
+        (None, None, None) => ChangeFilter::All,
+        (Some(week), None, None) => ChangeFilter::Week(week),
+        (None, Some(actor), None) => ChangeFilter::Actor(actor),
+        (Some(week), Some(actor), None) => ChangeFilter::ActorInWeek(actor, week),
+        (None, None, Some(run)) => ChangeFilter::Run(run),
+        (_, _, Some(_)) => return Err(ApiError::INVALID_QUERY),
     };
     Ok(PageQuery {
         filter,
@@ -144,6 +150,19 @@ async fn page(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> Reply
         .history_total(query.filter.clone())
         .await
         .map_err(unavailable)?;
+    // A run with no row and no record is unknown; a gone run keeps its log.
+    if let ChangeFilter::Run(run_id) = &query.filter
+        && total == 0
+        && state
+            .store
+            .snapshot(Scope::Run(run_id.clone()))
+            .await
+            .map_err(unavailable)?
+            .runs
+            .is_empty()
+    {
+        return Err(ApiError::INVALID_QUERY);
+    }
     let slice = state
         .store
         .history_page(query.filter, query.before, query.limit)

@@ -430,6 +430,11 @@ pub(super) async fn ensure_genesis(conn: &mut SqliteConnection) -> Result<(), sq
     tx.commit().await
 }
 
+/// [`ChangeFilter::Run`]: the run's records from the blame field index (its
+/// primary key leads with the target), never a scan of `change_log`.
+const RUN_CLAUSE: &str =
+    "seq IN (SELECT seq FROM change_fields WHERE target_kind = 'run' AND target_id = ?)";
+
 pub(super) const COLUMNS: &str =
     "seq, id, revision, at, actor_kind, actor_id, surface, request_id, body, hash";
 
@@ -536,6 +541,10 @@ impl ChangeHistory for SqliteStore {
                 args.push(Arg::Text(actor.id().to_owned()));
                 args.push(Arg::Text(rows::instant(week)?));
             }
+            ChangeFilter::Run(run_id) => {
+                clauses.push(RUN_CLAUSE);
+                args.push(Arg::Text(run_id.clone()));
+            }
             ChangeFilter::Revisions { from, to } => {
                 clauses.push("revision BETWEEN ? AND ?");
                 args.push(Arg::Int(int(*from)?));
@@ -619,6 +628,14 @@ impl ChangeHistory for SqliteStore {
                     .bind(actor.kind())
                     .bind(actor.id())
                     .bind(rows::instant(week)?)
+                    .fetch_one(&self.readers)
+                    .await
+                }
+                ChangeFilter::Run(run_id) => {
+                    sqlx::query_scalar(&format!(
+                        "SELECT COUNT(*) FROM change_log WHERE seq > 0 AND {RUN_CLAUSE}"
+                    ))
+                    .bind(run_id)
                     .fetch_one(&self.readers)
                     .await
                 }

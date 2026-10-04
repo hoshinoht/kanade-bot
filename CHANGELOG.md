@@ -6,6 +6,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin API: `GET /api/admin/history?run=<id>` pages one run's change
+  log, newest first: every record that changed the run or its RSVPs
+  (creation, moves, swaps, status, attendance, rollbacks), each with its
+  actor, surface, time, seq and the run's rows before and after. The pwa-mock
+  serves it too.
 - v5 admin and public theme pickers group colourways into collapsible sets:
   Base (Otonose, Nazuna, Sumire, Hinano), Blue Archive (Hoshino, Mika, Seia,
   Hina, Aris), Terminal (Catppuccin, Tokyo Night and GitHub, from their

@@ -428,6 +428,7 @@ pub async fn reset_window(State(app): State<App>, Path(id): Path<String>) -> Res
 pub struct HistoryQuery {
     week: Option<String>,
     actor: Option<String>,
+    run: Option<String>,
     before: Option<u64>,
     limit: Option<usize>,
 }
@@ -440,12 +441,24 @@ fn actor(text: &str) -> Option<Actor> {
 pub async fn history(State(app): State<App>, Query(q): Query<HistoryQuery>) -> Response {
     let actor = q.actor.as_deref().and_then(actor);
     let limit = q.limit.unwrap_or(20).clamp(1, 100);
-    Json(
-        app.store
-            .lock()
-            .await
-            .history_page(q.week.as_deref(), actor.as_ref(), q.before, limit),
-    )
+    let store = app.store.lock().await;
+    // As the server: `run` stands alone and names a run or its history.
+    if let Some(run) = q.run.as_deref()
+        && (q.week.is_some() || q.actor.is_some() || !store.knows_run(run))
+    {
+        return error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_query",
+            "A query parameter is not valid.",
+        );
+    }
+    Json(store.history_page(
+        q.week.as_deref(),
+        actor.as_ref(),
+        q.run.as_deref(),
+        q.before,
+        limit,
+    ))
     .into_response()
 }
 

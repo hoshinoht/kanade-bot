@@ -6,6 +6,7 @@
 use kanade::domain::history::{ChangeHistory, Surface};
 use kanade::domain::scheduler::ScheduleStore;
 use serde_json::{Value, json};
+use sqlx::ConnectOptions;
 
 use crate::{reads::Reads, schemas::assert_valid, support::ADMIN_HOST, support::request};
 
@@ -175,6 +176,119 @@ async fn pages_newest_first_with_filters_totals_and_records() {
             "{missing}"
         );
     }
+}
+
+#[tokio::test]
+async fn a_run_log_pages_every_record_touching_one_run() {
+    let reads = Reads::new().await;
+    let moved = reads.move_kalos(6, "21:00").await;
+    let reverted = reads
+        .plan("/api/admin/history/revert", json!({"seqs": [moved]}), &[])
+        .await["record"]["seq"]
+        .as_u64()
+        .unwrap();
+    for (run, member) in [("r-kalos", "1004"), ("n-kalos", "1001")] {
+        let v = reads.version().await;
+        reads
+            .ok(
+                "POST",
+                &format!("/api/admin/runs/{run}/rsvp"),
+                json!({"member_id": member, "answer": "yes", "version": v}),
+                "week.json#/$defs/RunResult",
+            )
+            .await;
+    }
+    let answered = reads.version().await - 1;
+    assert_eq!((moved, reverted, answered), (2, 3, 4));
+
+    // Newest first, paged like the full list; the seed created the run.
+    let first = reads
+        .read("/api/admin/history?run=r-kalos&limit=3", PAGE)
+        .await;
+    assert_eq!(
+        (
+            seqs(&first),
+            first["total"].clone(),
+            first["next_before"].clone()
+        ),
+        (vec![4, 3, 2], json!(4), json!(2))
+    );
+    assert_eq!(first["head"]["seq"], 5);
+    let rest = reads
+        .read("/api/admin/history?run=r-kalos&limit=3&before=2", PAGE)
+        .await;
+    assert_eq!(
+        (seqs(&rest), rest["next_before"].clone()),
+        (vec![1], Value::Null)
+    );
+    // Each record carries the run's row before and after, so the log can
+    // show "field: before → after" without another read.
+    let row = |record: &Value, table: &str| {
+        record["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| {
+                row["key"]["table"] == table
+                    && (row["key"]["id"] == "r-kalos" || row["key"]["run_id"] == "r-kalos")
+            })
+            .cloned()
+            .unwrap()
+    };
+    let undo = row(&first["records"][1], "runs");
+    assert_eq!(first["records"][1]["refs"][0]["seq"], moved);
+    assert_eq!(undo["before"]["datetime"], "2026-09-30T13:00:00+00:00");
+    assert_eq!(undo["after"]["datetime"], "2026-09-29T14:00:00+00:00");
+    let answer = row(&first["records"][0], "rsvps");
+    assert_eq!(
+        (answer["before"].clone(), answer["after"]["state"].clone()),
+        (Value::Null, json!("yes"))
+    );
+    assert_eq!(
+        first["records"][0]["actor"],
+        json!({"kind": "admin", "id": "token"})
+    );
+
+    for bad in [
+        "run=nope",
+        "run=",
+        "run=r%20kalos",
+        "run=r/kalos",
+        "run=r-kalos&run=r-kalos",
+        "run=r-kalos&week=2026-09-24",
+        "run=r-kalos&actor=admin:token",
+    ] {
+        assert_eq!(
+            reads.status_of(&format!("/api/admin/history?{bad}")).await,
+            (422, "invalid_query".into()),
+            "{bad}"
+        );
+    }
+
+    // A run removed behind the API (no writer removes runs) keeps its log.
+    let gone = "/api/admin/history?run=n-star";
+    assert_eq!(seqs(&reads.read(gone, PAGE).await), [1]);
+    let mut conn = sqlx::sqlite::SqliteConnectOptions::new()
+        .filename(&reads.db_path)
+        .connect()
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM runs WHERE id = 'n-star'")
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    sqlx::Connection::close(conn).await.unwrap();
+    assert!(
+        reads
+            .store
+            .load(&kanade::domain::scheduler::Scope::Run("n-star".into()))
+            .await
+            .unwrap()
+            .runs
+            .is_empty()
+    );
+    let page = reads.read(gone, PAGE).await;
+    assert_eq!((seqs(&page), page["total"].clone()), (vec![1], json!(1)));
 }
 
 #[tokio::test]

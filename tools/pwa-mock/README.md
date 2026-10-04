@@ -83,8 +83,10 @@ carry `copy` values, and `last_digest` is the current boss week's Thursday
 History records carry domain rows as the server encodes them (run instants
 in UTC, `rsvps.state`, weekly timings with Monday = 0, unsent `reminders`
 rows derived from each run's cards), name weeks by their starting RFC 3339
-instant (the `week` query also takes the local start date), blame under the
-domain's field names, and answer a strict rollback conflict with `rows: []`
+instant (the `week` query also takes the local start date), list one run's
+change log for `run=<id>` (records changing its row or RSVPs; with `week` or
+`actor`, or for an id with neither a run nor history, `422 invalid_query`),
+blame under the domain's field names, and answer a strict rollback conflict with `rows: []`
 and every selected seq in `reverts` (revert, restore-week and revert-actor).
 The hash is still a stand-in. Checkpoints report a configured backup
 directory with one backup in each anchor state (`matches`, `mismatch`,

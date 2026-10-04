@@ -33,6 +33,7 @@ pub async fn run_suite<S: ScheduleStore + ChangeHistory + BlameIndex + Checkpoin
     genesis_then_one_attributed_record_per_commit(make().await).await;
     chain_stays_intact_and_pages(make().await).await;
     lists_filter_by_week_actor_and_revision(make().await).await;
+    a_run_log_lists_every_record_touching_the_run(make().await).await;
     reverts_amend_status_swap_and_fixed_edit(make().await).await;
     reverting_a_revert_reapplies_the_change(make().await).await;
     unknown_changes_are_refused(make().await).await;
@@ -487,6 +488,119 @@ async fn lists_filter_by_week_actor_and_revision<S: ScheduleStore + ChangeHistor
         service
             .store()
             .count_changes(&ChangeFilter::Actor(Actor::member("9")))
+            .await
+            .expect("count"),
+        0
+    );
+}
+
+/// `ChangeFilter::Run`: creation, a move and its revert, an RSVP and a slot
+/// swap with another run; other runs' changes stay out.
+async fn a_run_log_lists_every_record_touching_the_run<S: ScheduleStore + ChangeHistory>(store: S) {
+    let Fixture {
+        mut service, fixed, ..
+    } = fixture(store).await;
+    let run = run_of(&service, &fixed[0], 0).await;
+    let other = run_of(&service, &fixed[1], 0).await;
+    let next = run_of(&service, &fixed[0], 1).await;
+    let none = BTreeSet::new();
+    let creation = |id: &str, records: &[ChangeRecord]| {
+        records
+            .iter()
+            .find(|record| {
+                record
+                    .rows
+                    .iter()
+                    .any(|row| row.key == RowKey::Run(id.to_owned()) && row.before.is_none())
+            })
+            .expect("the run's creation is recorded")
+            .seq
+    };
+    let records = all_records(service.store()).await;
+    let (created, other_created) = (creation(&run, &records), creation(&other, &records));
+    service
+        .as_origin(member("2"))
+        .amend_run(&run, utc(8, 29, 22, 0), &policy())
+        .await
+        .expect("move");
+    let moved = latest(service.store()).await;
+    revert(&mut service, &[moved.seq], RevertMode::Strict, &none).await;
+    let reverted = latest(service.store()).await;
+    service
+        .as_origin(member("3"))
+        .set_rsvp(&next, "3", RsvpState::Maybe, RsvpSource::Chat)
+        .await
+        .expect("other run's rsvp");
+    service
+        .as_origin(member("2"))
+        .set_rsvp(&run, "2", RsvpState::No, RsvpSource::Chat)
+        .await
+        .expect("rsvp");
+    let answered = latest(service.store()).await;
+    service
+        .as_origin(admin())
+        .set_status(&next, status(RunStatus::Confirmed), &policy().reminders)
+        .await
+        .expect("other run's status");
+    service
+        .as_origin(admin())
+        .swap_run_slots(&run, &other, &policy())
+        .await
+        .expect("swap");
+    let swapped = latest(service.store()).await;
+
+    let expected = [swapped.seq, answered.seq, reverted.seq, moved.seq, created];
+    let mut query = ChangeQuery {
+        limit: 2,
+        newest_first: true,
+        ..ChangeQuery::new(ChangeFilter::Run(run.clone()))
+    };
+    let mut paged = Vec::new();
+    loop {
+        let page = service.store().list_changes(&query).await.expect("page");
+        assert!(page.records.len() <= 2);
+        paged.extend(page.records.iter().map(|record| record.seq));
+        match page.next_cursor {
+            Some(cursor) => query.cursor = Some(cursor),
+            None => break,
+        }
+    }
+    assert_eq!(
+        paged, expected,
+        "a_run_log_lists_every_record_touching_the_run"
+    );
+    assert_eq!(reverted.refs, [moved.reference()], "the move's revert");
+    let filter = ChangeFilter::Run(run.clone());
+    assert_eq!(
+        service.store().count_changes(&filter).await.expect("count"),
+        expected.len() as u64
+    );
+    // The same records as the filter's own predicate over the whole history.
+    let mut touching: Vec<u64> = all_records(service.store())
+        .await
+        .iter()
+        .filter(|record| record.touches_run(&run))
+        .map(|record| record.seq)
+        .collect();
+    touching.reverse();
+    assert_eq!(touching, expected);
+    // The swapped-with run lists the swap but not this run's own changes.
+    let with = ChangeQuery::new(ChangeFilter::Run(other));
+    let with: Vec<u64> = service
+        .store()
+        .list_changes(&with)
+        .await
+        .expect("list")
+        .records
+        .iter()
+        .map(|record| record.seq)
+        .collect();
+    assert_eq!(with, [other_created, swapped.seq]);
+    let unknown = ChangeFilter::Run("no-such-run".into());
+    assert_eq!(
+        service
+            .store()
+            .count_changes(&unknown)
             .await
             .expect("count"),
         0

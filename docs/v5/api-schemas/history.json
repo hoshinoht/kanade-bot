@@ -68,6 +68,7 @@
       }
     },
     "HistoryPage": {
+      "description": "Newest first. With `run=<id>`: that run's change log (records changing its row or RSVPs); each record's `runs`/`rsvps` rows give the run's before and after.",
       "type": "object",
       "additionalProperties": false,
       "required": ["records", "head", "next_before", "total"],

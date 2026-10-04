@@ -904,6 +904,12 @@ export interface ChangeRecord {
   hash: string;
 }
 
+/**
+ * `GET /api/admin/history?week&actor&run&before&limit`, newest first. With
+ * `run=<id>` (alone; not with `week` or `actor`): the run's change log, each
+ * record changing its row or RSVPs; the run's before → after is in those
+ * `rows` (`runs` keyed by `id`, `rsvps` by `run_id`).
+ */
 export interface HistoryPage {
   records: ChangeRecord[];
   head: { seq: number; hash: string };
