@@ -803,6 +803,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- v5 admin Limits: when the server has not mounted the limits route, the page
+  shows its M3E board's unavailable state: one window with a centred glyph, a
+  short explanation and an **Open Config → Models** link.
 - v5 admin Week board: busy day columns keep v4's 230 px floor instead of
   squeezing to 184 px, so pills and names fit; a busy week scrolls sideways
   and the board fades at whichever edge has more columns.

@@ -7,13 +7,13 @@
 <script lang="ts">
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/evidence.scss';
+  import '@kanade/ui/styles/limits.scss';
   import type { Limits } from '@kanade/api-types';
   import { ApiRequestError, createClient, createPoller } from '@kanade/client';
-  import { LoadingState, Tabs, Toaster, WavyProgress, type TabItem } from '@kanade/ui';
+  import { Icon, LoadingState, Tabs, Toaster, WavyProgress, type TabItem } from '@kanade/ui';
   import { errorText, send } from '../resource.svelte';
   import { directory } from '../names/directory.svelte';
   import Name from '../names/Name.svelte';
-  import PaneWindow from '../pages/PaneWindow.svelte';
   import { wavingGroups } from './permits';
 
   let { toaster }: { toaster: Toaster } = $props();
@@ -80,6 +80,7 @@
 
 <PageLine title={limits ? 'Limits' : ''}>
   <h1>{limits ? (busiest ? `${busiest.name} is at capacity` : 'Every backend has room') : 'Limits'}</h1>
+  {#if unbuilt}<p class="pageline__context">capacity</p>{/if}
   {#snippet side()}
     <p class="field__error" role="status">{error}</p>
   {/snippet}
@@ -168,12 +169,23 @@
     {/snippet}
   </Tabs>
 {:else if unbuilt}
-  <PaneWindow title="Limits">
-    <div class="empty" role="status">
-      <strong>{unbuilt}</strong>
-      Model backends and their capacity are still set in <a href="/config?section=models">Config → Models</a>.
+  <!-- B_Limits: the route is not mounted. One window, its body a centred note. -->
+  <section class="card limits-window window-fill" data-fid="window" aria-labelledby="limits-title">
+    <div class="card__head limits-window__head" data-fid="window-bar"><h2 class="card__title" id="limits-title">Limits</h2></div>
+    <div class="limits-window__body" data-fid="limits-body">
+      <div class="limits-window__centre">
+        <div class="limits-unavailable" data-fid="limits-unavailable" role="status">
+          <span class="limits-unavailable__mark" data-fid="limits-unavailable-mark" aria-hidden="true"><Icon name="gauge" /></span>
+          <h3 class="limits-unavailable__title" data-fid="limits-unavailable-title">{unbuilt.replace(/\.$/, '')}</h3>
+          <p class="limits-unavailable__text" data-fid="limits-unavailable-text">
+            Live capacity, queues and gateway refusals will show here once the server supports them. Model backends and their capacity are still set
+            in Config.
+          </p>
+          <a class="btn btn--primary limits-unavailable__link" data-fid="limits-unavailable-link" href="/config?section=models">Open Config → Models</a>
+        </div>
+      </div>
     </div>
-  </PaneWindow>
+  </section>
 {:else}
   <section class="card window-fill"><div class="card__head"><h2 class="card__title">Limits</h2></div><LoadingState text="Loading the limits…" /></section>
 {/if}

@@ -503,8 +503,8 @@ test('limits: a server without the route shows the page and says so, and stops a
   await go(page, '/limits');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Limits');
   const window = page.getByRole('region', { name: 'Limits' });
-  await expect(window.getByRole('status')).toContainText("This isn't available on this server yet.");
-  await expect(window.getByRole('link', { name: 'Config → Models' })).toHaveAttribute('href', '/config?section=models');
+  await expect(window.getByRole('status').getByRole('heading', { level: 3 })).toHaveText("This isn't available on this server yet");
+  await expect(window.getByRole('link', { name: 'Open Config → Models' })).toHaveAttribute('href', '/config?section=models');
   await expect(page.getByText('Loading the limits…')).toHaveCount(0);
   await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
   await page.waitForTimeout(5500);

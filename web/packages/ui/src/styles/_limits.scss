@@ -1,0 +1,86 @@
+// Limits (mockup B_Limits). While the server has not mounted the route: one
+// window whose body centres the unavailable note -- a 112 px cookie glyph on
+// the chip fill, the heading, one line of explanation and the key link to
+// Config → Models. The body scrolls if a short frame cannot hold the note.
+
+.limits-window {
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+}
+
+// Only the title sits on the bar: it never wraps.
+.limits-window__head {
+  flex-wrap: nowrap;
+}
+
+.limits-window__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+// The board's centring wrapper carries the 24 px inset, not the note.
+.limits-window__centre {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.limits-unavailable {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  max-width: 420px;
+  text-align: center;
+}
+
+// The mockups' cookie shape (as `$cookie` in _inbox).
+.limits-unavailable__mark {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 112px;
+  height: 112px;
+  background: var(--chip-fill);
+  color: var(--dim-text);
+  clip-path: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 11.7%, 85.9% 17.7%, 87.7% 24.6%, 90.9% 30.1%, 95.9% 35.1%, 99.2% 41.3%, 98.2% 48.3%, 95.2% 54.8%, 94.1% 61%, 94.8% 68.1%, 93.3% 75%, 88% 79.7%, 81.6% 82.7%, 76.7% 86.8%, 72.7% 92.6%, 67.1% 97%, 60% 97.2%, 53.2% 95.4%, 46.8% 95.4%, 40% 97.2%, 32.9% 97%, 27.3% 92.6%, 23.3% 86.8%, 18.4% 82.7%, 12% 79.7%, 6.7% 75%, 5.2% 68.1%, 5.9% 61%, 4.8% 54.8%, 1.8% 48.3%, 0.8% 41.3%, 4.1% 35.1%, 9.1% 30.1%, 12.3% 24.6%, 14.1% 17.7%, 17.9% 11.7%, 24.4% 9.1%, 31.5% 8.5%, 37.5% 6.3%, 43.3% 2.2%);
+}
+
+.limits-unavailable__mark .icon {
+  width: 44px;
+  height: 44px;
+}
+
+.limits-unavailable__title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--fs-brand);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.limits-unavailable__text {
+  margin: 0;
+  color: var(--dim-text);
+  font-size: var(--fs-body-sm);
+  line-height: 1.5;
+}
+
+// The board's key link: a 40 px accent pill.
+.limits-unavailable .limits-unavailable__link {
+  min-height: 40px;
+  margin: 0;
+  gap: 8px;
+  padding: 0 22px;
+  border: 0;
+  font-size: var(--fs-body-sm);
+  font-weight: 700;
+  text-decoration: none;
+}

@@ -170,6 +170,19 @@ const PAIRS: Pair[] = [
     },
   },
   {
+    name: 'limits',
+    board: 'B_Limits',
+    path: '/limits',
+    // The board shows the route unmounted: answer as the Rust server does, then reload.
+    ready: async (page) => {
+      await page.route('**/api/admin/limits', (route) =>
+        route.fulfill({ status: 404, json: { error: 'not_found', message: 'No such endpoint on this origin.' } }),
+      );
+      await page.reload();
+      await expect(page.getByRole('link', { name: /Config → Models/ })).toBeVisible();
+    },
+  },
+  {
     name: 'phone-week',
     board: 'B_PhoneWeek',
     path: '/',
