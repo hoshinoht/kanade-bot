@@ -50,3 +50,18 @@ test('Week: on Next week the glance still shows the next run, and Open sheet goe
   await expect(page).toHaveURL(`${ADMIN}/`);
   await expect(page.locator('.week-pane')).toBeVisible();
 });
+
+test('Week: with the run pane open, busy columns keep their floor and the board scrolls', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${ADMIN}/?sw=off`);
+  const board = page.locator('.week-window .board');
+  await board.locator('[data-run]').first().click();
+  await expect(page.locator('.week-pane')).toBeVisible();
+  const widths = await board
+    .locator('section.board__col:not(.board__col--empty)')
+    .evaluateAll((cols) => cols.map((c) => c.getBoundingClientRect().width));
+  expect(widths.length).toBeGreaterThan(0);
+  for (const w of widths) expect(w).toBeGreaterThanOrEqual(229.5);
+  const scroller = await board.evaluate((el) => el.scrollWidth > el.clientWidth);
+  if (scroller) await expect(board).toHaveClass(/scroll-more-(start|end)/);
+});

@@ -54,12 +54,18 @@ test('hover grows a card in flow: it stays put, the card below moves down and ba
   await expect(card).not.toHaveClass(/plan-card--grown/);
   await expect(card).toHaveClass(/plan-card--selected/);
   await expect(card.locator('.row-content__compact')).toBeVisible();
-  // A press settles it at once, so nothing below is still moving.
-  expect(await card.locator('.row-content__reveal').evaluate((el) => getComputedStyle(el).transitionDuration)).toBe('0s');
   // Leaving and coming back grows it again.
   await page.mouse.move(5, 400);
   await face.hover();
   await expect(card).toHaveClass(/plan-card--grown/);
+
+  // A press settles a card at once. Pressed with the pane already open, so the board keeps its width.
+  const below = page.locator('[data-run="r-bm"]');
+  await below.locator('.plan-card__open').hover();
+  await expect(below).toHaveClass(/plan-card--grown/);
+  await below.locator('.plan-card__open').click();
+  await expect(below).toHaveClass(/plan-card--selected/);
+  expect(await below.locator('.row-content__reveal').evaluate((el) => getComputedStyle(el).transitionDuration)).toBe('0s');
 });
 
 test('the selected card clips its art, wash and status mark to its rounded shape', async ({ page }) => {
