@@ -114,16 +114,6 @@ pub struct Page {
     pub total: usize,
 }
 
-#[derive(Serialize)]
-pub struct Blame {
-    pub field: String,
-    pub value: Value,
-    pub seq: u64,
-    pub at: String,
-    pub actor: Actor,
-    pub surface: &'static str,
-}
-
 fn fnv(text: &str, seed: u64) -> u64 {
     text.bytes().fold(0xcbf2_9ce4_8422_2325 ^ seed, |h, b| {
         (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
@@ -780,76 +770,6 @@ impl Store {
         })
     }
 
-    /// Who last changed each field of a run, under the domain's blame names
-    /// (`slot`, `bosses`, `participants`, `channel`, `status`, `rsvp:<id>`).
-    pub fn blame(&self, run_id: &str) -> Vec<Blame> {
-        let mut out: BTreeMap<String, Blame> = BTreeMap::new();
-        for record in self.history.iter().filter(|r| r.seq > 0) {
-            for row in &record.rows {
-                let mut note = |field: String, value: Value| {
-                    out.insert(
-                        field.clone(),
-                        Blame {
-                            field,
-                            value,
-                            seq: record.seq,
-                            at: record.at.clone(),
-                            actor: record.actor.clone(),
-                            surface: record.surface,
-                        },
-                    );
-                };
-                match row.key["table"].as_str() {
-                    Some("runs") if row.key["id"] == run_id => {
-                        let pick = |row: &Value, keys: &[&str]| -> Value {
-                            keys.iter()
-                                .map(|k| {
-                                    ((*k).to_owned(), row.get(*k).cloned().unwrap_or(Value::Null))
-                                })
-                                .collect::<serde_json::Map<_, _>>()
-                                .into()
-                        };
-                        let slot = ["datetime", "week_start", "source", "fixed_run_id"];
-                        let fields: [(&str, Value, Value); 5] = [
-                            ("slot", pick(&row.before, &slot), pick(&row.after, &slot)),
-                            (
-                                "bosses",
-                                row.before["bosses"].clone(),
-                                row.after["bosses"].clone(),
-                            ),
-                            (
-                                "participants",
-                                row.before["participants"].clone(),
-                                row.after["participants"].clone(),
-                            ),
-                            (
-                                "channel",
-                                row.before["channel_id"].clone(),
-                                row.after["channel_id"].clone(),
-                            ),
-                            (
-                                "status",
-                                row.before["status"].clone(),
-                                row.after["status"].clone(),
-                            ),
-                        ];
-                        for (field, before, after) in fields {
-                            if row.before.is_null() || before != after {
-                                note(field.to_owned(), after);
-                            }
-                        }
-                    }
-                    Some("rsvps") if row.key["run_id"] == run_id => {
-                        let user = row.key["user_id"].as_str().unwrap_or_default();
-                        note(format!("rsvp:{user}"), row.after.clone());
-                    }
-                    _ => {}
-                }
-            }
-        }
-        out.into_values().collect()
-    }
-
     pub fn checkpoints(&self) -> Value {
         const SCHEMA_VERSION: i64 = 21;
         let at = |seq: u64| {
@@ -1224,18 +1144,5 @@ mod tests {
                 && row.after["state"] == "no"
         }));
         assert!(s.knows_run("r-kalos") && !s.knows_run("no-such-run"));
-    }
-
-    #[test]
-    fn blame_names_the_last_change_per_field() {
-        let s = store();
-        let blame = s.blame("r-kalos");
-        let slot = blame.iter().find(|b| b.field == "slot").unwrap();
-        assert_eq!(slot.surface, "extraction_approval");
-        assert_eq!(slot.actor, Actor::discord_admin("1001"));
-        assert!(slot.value["datetime"].as_str().unwrap().ends_with("+00:00"));
-        let answer = blame.iter().find(|b| b.field == "rsvp:1005").unwrap();
-        assert_eq!(answer.actor, Actor::new("member", "1005"));
-        assert_eq!(answer.value["state"], "no");
     }
 }

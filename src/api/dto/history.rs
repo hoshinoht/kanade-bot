@@ -1,17 +1,12 @@
 //! History wire shapes (`history.json`): records exactly as hashed (the
-//! canonical body plus `hash`), rollback plans and blame lines.
+//! canonical body plus `hash`) and rollback plans.
 
 use std::collections::BTreeSet;
 
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 
-use crate::domain::{
-    history::{
-        Blame, ChangeRecord, RecordError, RevertOutcome, RowChange, RowConflict, RowValue,
-        SkippedRow,
-    },
-    schedule::ScheduleSnapshot,
-    time::to_iso,
+use crate::domain::history::{
+    ChangeRecord, RecordError, RevertOutcome, RowChange, RowConflict, RowValue, SkippedRow,
 };
 
 /// `ChangeRecord`: the canonical body the hash covers, plus the hash.
@@ -123,72 +118,4 @@ pub fn replayed(applied: &ChangeRecord) -> Result<Value, RecordError> {
         "skipped": [],
         "record": record(applied)?,
     }))
-}
-
-/// `BlameEntry[]` for a run: each field some record set, with its current
-/// value from `snapshot` (fields that predate the history are left out).
-///
-/// # Errors
-/// As [`record`].
-pub fn blame(
-    blame: &Blame,
-    run_id: &str,
-    snapshot: &ScheduleSnapshot,
-) -> Result<Vec<Value>, RecordError> {
-    let run = snapshot.runs.iter().find(|run| run.id == run_id);
-    let run_json = run
-        .map(|run| RowValue::Run(run.clone()).to_json())
-        .transpose()?
-        .unwrap_or(Value::Null);
-    let pick = |keys: &[&str]| -> Value {
-        let mut out = Map::new();
-        for key in keys {
-            out.insert(
-                (*key).to_owned(),
-                run_json.get(*key).cloned().unwrap_or(Value::Null),
-            );
-        }
-        Value::Object(out)
-    };
-    let field_value = |field: &str| -> Result<Value, RecordError> {
-        if let Some(user) = field.strip_prefix("rsvp:") {
-            let rsvp = snapshot
-                .rsvps
-                .iter()
-                .find(|rsvp| rsvp.run_id == run_id && rsvp.user_id == user);
-            return value(rsvp.map(|rsvp| RowValue::Rsvp(rsvp.clone())).as_ref());
-        }
-        if let Some(user) = field.strip_prefix("attended:") {
-            return Ok(run_json
-                .get("attendance")
-                .and_then(Value::as_array)
-                .and_then(|entries| {
-                    entries
-                        .iter()
-                        .find(|entry| entry["user_id"] == user)
-                        .cloned()
-                })
-                .unwrap_or(Value::Null));
-        }
-        Ok(match field {
-            "slot" => pick(&["datetime", "week_start", "source", "fixed_run_id"]),
-            "channel" => run_json.get("channel_id").cloned().unwrap_or(Value::Null),
-            other => run_json.get(other).cloned().unwrap_or(Value::Null),
-        })
-    };
-    let mut entries = Vec::new();
-    for line in &blame.lines {
-        let Some(last) = &line.last else {
-            continue;
-        };
-        entries.push(json!({
-            "field": line.field,
-            "value": field_value(&line.field)?,
-            "seq": last.seq,
-            "at": to_iso(&last.at).map_err(|error| RecordError(error.to_string()))?,
-            "actor": {"kind": last.actor.kind(), "id": last.actor.id()},
-            "surface": last.surface.as_str(),
-        }));
-    }
-    Ok(entries)
 }

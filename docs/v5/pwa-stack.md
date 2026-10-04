@@ -232,7 +232,7 @@ ubuntu-latest's preinstalled Google Chrome.
   tracked `boss/knowledge/` (mock reads YAML with `yaml_serde`); Inbox,
   Extractions (+ rescan jobs), Chat, Limits (v5 backend groups), History
   (git-style timeline, revert / restore-week / revert-member previews,
-  checkpoints, run-sheet blame) shaped on `docs/v5/history.md`; login copy for
+  checkpoints, run-sheet change log) shaped on `docs/v5/history.md`; login copy for
   Discord OAuth / Tailscale / break-glass token. Sizes: initial JS 30.7 KB
   public / 71.8 KB admin, initial CSS 7.5 / 9.5 KB (gzip); admin total JS
   144 KB across route chunks.

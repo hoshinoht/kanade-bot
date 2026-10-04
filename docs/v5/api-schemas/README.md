@@ -35,7 +35,6 @@ Pointers are `<file>#/$defs/<Name>`.
 | `PATCH /api/admin/runs/{id}/participants` | `week.json#/$defs/RunResult` |
 | `POST /api/admin/runs/{id}/reset` | `week.json#/$defs/RunResult` |
 | `POST /api/admin/runs/{id}/ping` | `common.json#/$defs/Message` |
-| `GET /api/admin/runs/{id}/blame` | `history.json#/$defs/BlameEntries` |
 | `GET /api/admin/members` | `members.json#/$defs/MemberRows` |
 | `PATCH /api/admin/members/{id}` | `members.json#/$defs/MemberRow` |
 | `POST /api/admin/members/{id}/aliases` | `members.json#/$defs/MemberRow` |
@@ -86,7 +85,8 @@ Pointers are `<file>#/$defs/<Name>`.
 - A5: `history.json` `RowKey.table` adds `reminders` (records carry reminder
   rows and must keep matching their hash); `common.json` `Surface` adds
   `draft_merge`, `request_merge`, `cherry_pick` (all of `Surface::ALL`);
-  `BlameEntry.field` uses the domain's blame names (`slot`, `rsvp:<id>`, …).
+  `BlameEntry` (since removed with `GET /api/admin/runs/{id}/blame`; the
+  run change log is `GET /api/admin/history?run=<id>`).
 - A6: `inbox.json` `Proposal.kind` adds the request types
   (`new_fixed`, `change_fixed`, `join`, `leave`, `swap`), `source` adds
   `chat`, `flags` adds `requester_unauthorised`.

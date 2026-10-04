@@ -204,7 +204,6 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         .route("/api/admin/history/restore-week", post(api::restore_week))
         .route("/api/admin/history/revert-actor", post(api::revert_actor))
         .route("/api/admin/history/{seq}", get(api::history_record))
-        .route("/api/admin/runs/{id}/blame", get(api::blame))
         .route("/api/admin/reminders", get(api::reminders))
         .route("/api/admin/runs/{id}/reset", post(api::reset_run))
         .route("/api/admin/channels", get(api::channels))

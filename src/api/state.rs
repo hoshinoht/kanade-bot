@@ -23,9 +23,8 @@ use crate::{
             StoredProposal,
         },
         history::{
-            Actor, Blame, BlameIndex, BlameTarget, ChangeFilter, ChangeHistory, ChangeQuery,
-            ChangeRecord, ChangeRef, HeldReminders, HistoryVerification, JournalHeld, blame,
-            changed_fields,
+            Actor, BlameIndex, BlameTarget, ChangeFilter, ChangeHistory, ChangeQuery, ChangeRecord,
+            ChangeRef, HeldReminders, HistoryVerification, JournalHeld, changed_fields,
         },
         members::{MemberProfile, MemberStore, PortalEdit},
         model_log::{
@@ -140,7 +139,6 @@ pub trait ReadStore: Send + Sync {
     fn verify_history(&self) -> ReadFuture<'_, HistoryVerification>;
     /// Whether the chain still holds `anchor` (a backup manifest's head).
     fn contains_anchor(&self, anchor: ChangeRef) -> ReadFuture<'_, bool>;
-    fn blame(&self, target: BlameTarget) -> ReadFuture<'_, Option<Blame>>;
     /// Reminders unresolved delivery attempts hold (rollbacks keep them).
     fn held_reminders(&self) -> ReadFuture<'_, BTreeSet<String>>;
     fn extraction_logs(&self, filter: ExtractionFilter) -> ReadFuture<'_, LogPage<ExtractionLog>>;
@@ -381,10 +379,6 @@ where
 
     fn contains_anchor(&self, anchor: ChangeRef) -> ReadFuture<'_, bool> {
         Box::pin(async move { ChangeHistory::contains_anchor(self, &anchor).await })
-    }
-
-    fn blame(&self, target: BlameTarget) -> ReadFuture<'_, Option<Blame>> {
-        Box::pin(async move { blame(self, &target).await })
     }
 
     fn held_reminders(&self) -> ReadFuture<'_, BTreeSet<String>> {

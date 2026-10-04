@@ -3,7 +3,7 @@
 Status: implemented in `src/domain/history/` (types, encoding, verification,
 revert planning, blame, checkpoints), `src/domain/scheduler/service.rs` (attribution, rollbacks)
 and both stores (`src/infrastructure/store/{memory,sqlite}`). The admin API
-(A5, `admin-api.md`) serves the record list, records, blame, the chain check
+(A5, `admin-api.md`) serves the record list (one run's change log with `run=<id>`), records, the chain check
 and the three rollbacks; cherry-pick, checkpoints by name and the graph are
 not exposed yet.
 

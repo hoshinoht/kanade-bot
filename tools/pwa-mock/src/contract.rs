@@ -474,16 +474,6 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     )
     .await;
 
-    for run in &runs {
-        h.ok(
-            "GET",
-            &format!("/api/admin/runs/{}/blame", s(&run["id"])),
-            None,
-            "history.json#/$defs/BlameEntries",
-        )
-        .await;
-    }
-
     // Logs, including their detail pages and the filter refusal.
     for q in ["", "?outcome=failed,proposed"] {
         let x = h
@@ -1289,34 +1279,6 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         )
         .await;
     }
-
-    // Blame speaks the domain's field names.
-    let blame = h
-        .ok(
-            "GET",
-            &format!("/api/admin/runs/{id}/blame"),
-            None,
-            "history.json#/$defs/BlameEntries",
-        )
-        .await;
-    let fields: Vec<&str> = blame
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|e| s(&e["field"]))
-        .collect();
-    assert!(
-        fields.contains(&"slot") && fields.contains(&"status"),
-        "{fields:?}"
-    );
-    assert!(
-        fields.iter().all(|f| matches!(
-            *f,
-            "slot" | "bosses" | "participants" | "channel" | "status" | "status_pin"
-        ) || f.starts_with("rsvp:")
-            || f.starts_with("attended:")),
-        "{fields:?}"
-    );
 
     // A strict revert of the first move conflicts with every later edit of
     // that run: 200, no rows, the requested record named.

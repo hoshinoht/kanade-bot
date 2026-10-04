@@ -28,7 +28,7 @@ use crate::{
         state::ApiState,
     },
     domain::{
-        history::{BlameTarget, ChangeFilter, ChangeRef},
+        history::{ChangeFilter, ChangeRef},
         scheduler::Scope,
     },
 };
@@ -47,7 +47,6 @@ pub fn routes() -> Router<Arc<Site>> {
             post(rollback::revert_actor),
         )
         .route("/api/admin/history/{seq}", get(record))
-        .route("/api/admin/runs/{id}/blame", get(blame))
 }
 
 type Reply = Result<Response, ApiError>;
@@ -236,24 +235,4 @@ async fn checkpoints(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
         "backups": listed,
     }))
     .into_response())
-}
-
-async fn blame(
-    State(site): State<Arc<Site>>,
-    _: AdminSession,
-    UrlPath(run_id): UrlPath<String>,
-) -> Reply {
-    let state = state(&site)?;
-    let blame = state
-        .store
-        .blame(BlameTarget::Run(run_id.clone()))
-        .await
-        .map_err(unavailable)?
-        .ok_or(ApiError::NOT_FOUND)?;
-    let snapshot = state
-        .store
-        .snapshot(Scope::Run(run_id.clone()))
-        .await
-        .map_err(unavailable)?;
-    Ok(Json(encoded(dto::blame(&blame, &run_id, &snapshot))?).into_response())
 }

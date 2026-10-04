@@ -568,18 +568,6 @@ export interface Checkpoints {
   }[];
 }
 
-/** `GET /api/admin/runs/{id}/blame`: who last changed each field some record set. */
-export interface BlameEntry {
-  /** `slot`, `bosses`, `participants`, `channel`, `status`, `status_pin`, `rsvp:<member id>`, `attended:<member id>`. */
-  field: string;
-  /** Current value: `slot` is `{datetime, week_start, source, fixed_run_id}`, `channel` the channel id, `rsvp:`/`attended:` the row or entry (null once cleared). */
-  value: unknown;
-  seq: number;
-  at: string;
-  actor: { kind: ActorKind; id: string };
-  surface: Surface;
-}
-
 // ── Config ────────────────────────────────────────────────────────────────
 
 export type ModelRole = 'extraction' | 'chat' | 'rewrite';

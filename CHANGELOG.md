@@ -933,6 +933,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Removed**
 
+- Removed `GET /api/admin/runs/{id}/blame` (and its mock route, schema and
+  `BlameEntry` type): the admin PWA reads a run's change log from
+  `GET /api/admin/history?run=<id>` instead. Field blame stays in the domain
+  for write preconditions and cherry-pick.
 - Removed model-request pseudonymization and its external-unmasked opt-in for
   chat, extraction and rewrite. Configured external models receive raw member
   data with a warning; retired privacy keys now refuse startup. Historical

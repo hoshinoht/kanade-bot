@@ -292,50 +292,6 @@ async fn a_run_log_pages_every_record_touching_one_run() {
 }
 
 #[tokio::test]
-async fn blame_names_domain_fields_with_current_values() {
-    let reads = Reads::new().await;
-    reads.move_kalos(6, "21:00").await;
-    let v = reads.version().await;
-    reads
-        .ok(
-            "POST",
-            "/api/admin/runs/r-kalos/rsvp",
-            json!({"member_id": "1004", "answer": "yes", "version": v}),
-            "week.json#/$defs/RunResult",
-        )
-        .await;
-    let blame = reads
-        .read(
-            "/api/admin/runs/r-kalos/blame",
-            "history.json#/$defs/BlameEntries",
-        )
-        .await;
-    let entry = |field: &str| {
-        blame
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|entry| entry["field"] == field)
-            .unwrap_or_else(|| panic!("{field}: {blame:#}"))
-            .clone()
-    };
-    let slot = entry("slot");
-    assert_eq!(slot["seq"], 2);
-    assert_eq!(slot["actor"], json!({"kind": "admin", "id": "token"}));
-    // Day 6 of the week from Thu 24 Sep: Wed 30 Sep, 21:00 KL.
-    assert_eq!(slot["value"]["datetime"], "2026-09-30T13:00:00+00:00");
-    let answer = entry("rsvp:1004");
-    assert_eq!(answer["seq"], 3);
-    assert_eq!(answer["value"]["state"], "yes");
-    assert_eq!(answer["value"]["source"], "chat");
-    assert_eq!(entry("participants")["seq"], 1, "set by the seed");
-    assert_eq!(
-        reads.status_of("/api/admin/runs/nope/blame").await,
-        (404, "not_found".into())
-    );
-}
-
-#[tokio::test]
 async fn checkpoints_report_the_verified_chain() {
     let reads = Reads::new().await;
     reads.move_kalos(6, "21:00").await;
