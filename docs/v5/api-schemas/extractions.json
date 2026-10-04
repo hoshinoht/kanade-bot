@@ -164,6 +164,9 @@
           "description": "`24h`/`48h`: a job the bot or `/rescan` started (never sent by the PWA).",
           "enum": ["week", "since_reset", "two_weeks", "24h", "48h"]
         },
+        "started_at": { "description": "Additive: when the runner took the job (UTC `Z`); null while it is queued.", "type": ["string", "null"], "format": "date-time" },
+        "messages": { "description": "Additive: the channels' `messages`, i.e. gated messages read so far.", "type": "integer", "minimum": 0 },
+        "messages_total": { "description": "Additive: `messages` plus, for each channel not yet read, its gated messages in the window as cached when the job started. A finished job's total is its `messages`. Null while a channel still to be read has no count (a queued job, or a count that failed).", "type": ["integer", "null"], "minimum": 0 },
         "channels": {
           "type": "array",
           "items": {
@@ -174,7 +177,7 @@
               "id": { "type": "string" },
               "name": { "type": "string" },
               "state": { "enum": ["queued", "reading", "done"] },
-              "messages": { "type": "integer", "minimum": 0 },
+              "messages": { "description": "Gated messages this channel's read found (0 until it is `done`, and for a channel that could not be read).", "type": "integer", "minimum": 0 },
               "unread": { "description": "A7, additive: messages never read (the model kept turning the rescan away).", "type": "integer", "minimum": 0 },
               "errors": { "description": "A7, additive: fixed sentences, never backend text.", "type": "array", "items": { "type": "string" } }
             }

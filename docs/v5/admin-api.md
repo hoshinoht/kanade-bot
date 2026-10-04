@@ -641,7 +641,17 @@ space), so `{id}` names a proposal or a member request, anything else is 404.
   own task. `state`: queued/running → `running`, done/failed → `done`,
   `cancelled`. Channel `state`: `reading` while read, `done` once read (or
   failed: `errors` = `This channel could not be read.`), else `queued`;
-  `messages` = the gated messages of that channel's window. Additive:
+  `messages` = the gated messages of that channel's window (0 until the
+  channel is `done`, and for a channel that could not be read). Additive
+  progress: `started_at` (UTC `Z`, when the runner took the job; null while
+  queued), the job's `messages` (the channels' sum) and `messages_total`
+  (that sum plus, for each channel not yet read, its gated messages in the
+  window as cached when the job started, widening a quiet `week` as the read
+  does; null while such a channel has no count). Both count gated messages,
+  so `messages / messages_total` is the progress; a backfill can make a read
+  channel's count differ from its estimate, and the total follows the real
+  count once the channel is read. A finished job's total is its `messages`
+  (a done job's two counts are equal). Additive:
   per-channel `unread` (messages the model kept turning away) and `errors`
   (fixed sentences for unread messages, a failed Discord backfill and other
   failures — never the recorded text), and the job's `unread` total. A job

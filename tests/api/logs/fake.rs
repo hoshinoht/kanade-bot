@@ -3,7 +3,7 @@
 //! the test calls [`FakeRescans::step`].
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     sync::{Arc, Mutex},
 };
 
@@ -30,6 +30,9 @@ pub struct FakeRescans {
     pub results: Mutex<BTreeMap<String, Value>>,
     /// Channels whose read fails outright (no result).
     pub failing: Mutex<BTreeSet<String>>,
+    /// Per-channel counts a job expects when it starts; unlisted channels
+    /// have none.
+    pub expected: Mutex<HashMap<String, usize>>,
     /// Refuse submits as if extraction were switched off.
     pub off: Mutex<bool>,
     at: DateTime<Utc>,
@@ -43,6 +46,7 @@ impl FakeRescans {
             requests: Mutex::new(Vec::new()),
             results: Mutex::new(BTreeMap::new()),
             failing: Mutex::new(BTreeSet::new()),
+            expected: Mutex::new(HashMap::new()),
             off: Mutex::new(false),
             at,
             me: me.clone(),
@@ -80,7 +84,9 @@ impl FakeRescans {
         }
         if job.status == RescanStatus::Queued {
             job.status = RescanStatus::Running;
+            job.started_at = Some(self.at);
             view.current = job.channels.first().cloned();
+            view.expected = self.expected.lock().unwrap().clone();
             return;
         }
         let Some(channel) = view.current.take() else {
@@ -134,6 +140,7 @@ impl RescanRunner for FakeRescans {
                     error: None,
                 },
                 current: None,
+                expected: HashMap::new(),
                 stopping: false,
             };
             jobs.insert(

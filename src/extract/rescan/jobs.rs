@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::Value;
 use tokio::sync::Notify;
 
-use super::read::{Pace, Reader};
+use super::read::{Pace, Reader, expected};
 use super::{History, RescanError, RescanRequest, resolve_window};
 use crate::domain::model_log::{ModelLogStore, RescanJob, RescanStatus};
 use crate::domain::scheduler::ScheduleStore;
@@ -32,12 +32,18 @@ const RECOVER_ROWS: u32 = 10_000;
 pub struct JobView {
     pub job: RescanJob,
     pub current: Option<String>,
+    /// Per channel, the gated messages its read was expected to find,
+    /// counted from the store when the job started (before any backfill).
+    /// Empty until then, for a job loaded from the store, and without the
+    /// channels whose count failed.
+    pub expected: HashMap<String, usize>,
 }
 
 struct Tracked {
     job: RescanJob,
     stop: Arc<AtomicBool>,
     current: Option<String>,
+    expected: HashMap<String, usize>,
     /// The cancelled job's `error` when a stop had a reason.
     reason: Option<String>,
     unprocessed_only: bool,
@@ -56,6 +62,7 @@ impl State {
         self.jobs.get(id).map(|tracked| JobView {
             job: tracked.job.clone(),
             current: tracked.current.clone(),
+            expected: tracked.expected.clone(),
         })
     }
 
@@ -221,6 +228,7 @@ where
         let view = JobView {
             job: job.clone(),
             current: None,
+            expected: HashMap::new(),
         };
         {
             let mut state = self.state();
@@ -229,6 +237,7 @@ where
                 job,
                 stop: Arc::new(AtomicBool::new(false)),
                 current: None,
+                expected: HashMap::new(),
                 reason: None,
                 unprocessed_only: request.unprocessed_only,
             });
@@ -264,7 +273,11 @@ where
             .store()
             .load_rescan_job(id)
             .await?
-            .map(|job| JobView { job, current: None }))
+            .map(|job| JobView {
+                job,
+                current: None,
+                expected: HashMap::new(),
+            }))
     }
 
     /// Jobs waiting to be reached (the running one excluded).
@@ -407,6 +420,25 @@ where
                 return;
             }
         };
+        // Read only, before the first backfill: a failed count leaves its
+        // channel out (no total), never the job.
+        let mut counts = HashMap::new();
+        for channel in &job.channels {
+            let count = expected(
+                self.extractor.as_ref(),
+                channel,
+                window,
+                job.automated,
+                unprocessed_only,
+            )
+            .await;
+            if let Ok(count) = count {
+                counts.insert(channel.clone(), count);
+            }
+        }
+        if let Some(tracked) = self.state().jobs.get_mut(id) {
+            tracked.expected = counts;
+        }
         let mut pace = Pace::new(self.extractor.config().drain_interval);
         let mut results: Vec<Value> = Vec::new();
         let mut failure: Option<String> = None;
@@ -499,6 +531,7 @@ mod tests {
             job: job.clone(),
             stop: Arc::new(AtomicBool::new(false)),
             current: Some("900".into()),
+            expected: HashMap::new(),
             reason: None,
             unprocessed_only: false,
         });

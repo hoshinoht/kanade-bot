@@ -39,6 +39,11 @@ async fn poll(logs: &Logs, id: &str) -> Value {
     job(&logs.get(&format!("/api/admin/rescan/{id}")).await, "poll")
 }
 
+/// `[started_at, messages, messages_total]`.
+fn progress(job: &Value) -> Value {
+    json!([job["started_at"], job["messages"], job["messages_total"]])
+}
+
 fn states(job: &Value) -> Vec<&str> {
     job["channels"]
         .as_array()
@@ -77,10 +82,15 @@ async fn a_rescan_is_queued_at_once_then_progresses_per_channel_with_unread_coun
             "store: /private/var/db is locked",
         ]}),
     );
+    fake.expected
+        .lock()
+        .unwrap()
+        .extend([("kalos-four".to_owned(), 4), ("limbo-trio".to_owned(), 6)]);
     let body = r#"{"channels":["kalos-four","limbo-trio","kalos-four"],"window":"since_reset"}"#;
     let first = job(&start(&logs, Some("scan-1"), body).await, "submit");
     // Answered before the runner took a single step.
     assert_eq!(first["state"], "running");
+    assert_eq!(progress(&first), json!([null, 0, null]), "not started");
     assert_eq!(first["window"], "since_reset");
     assert_eq!(states(&first), ["queued", "queued"]);
     assert_eq!(
@@ -104,16 +114,22 @@ async fn a_rescan_is_queued_at_once_then_progresses_per_channel_with_unread_coun
     }
 
     fake.step(&id).await;
-    assert_eq!(states(&poll(&logs, &id).await), ["reading", "queued"]);
+    let started = poll(&logs, &id).await;
+    assert_eq!(states(&started), ["reading", "queued"]);
+    // The pinned clock; the total is each channel's count at the start.
+    assert_eq!(progress(&started), json!(["2026-09-29T04:00:00Z", 0, 10]));
     fake.step(&id).await;
     let midway = poll(&logs, &id).await;
     assert_eq!(states(&midway), ["done", "reading"]);
     assert_eq!(midway["channels"][0]["messages"], 3);
+    // A read channel counts what it read in place of its expected count.
+    assert_eq!(progress(&midway), json!(["2026-09-29T04:00:00Z", 3, 9]));
     fake.step(&id).await;
     let done = logs.get(&format!("/api/admin/rescan/{id}")).await;
     assert!(!done.text().contains("secret") && !done.text().contains("/private"));
     let done = job(&done, "done");
     assert_eq!(done["state"], "done");
+    assert_eq!(progress(&done), json!(["2026-09-29T04:00:00Z", 8, 8]));
     assert_eq!(done["proposals"], 3);
     assert_eq!(done["unread"], 2);
     assert_eq!(
@@ -220,6 +236,11 @@ async fn cancelling_is_immediate_for_queued_jobs_stops_running_ones_and_is_safe_
     let after = poll(&logs, &id).await;
     assert_eq!(after["state"], "cancelled");
     assert_eq!(states(&after), ["queued", "queued"]);
+    assert_eq!(
+        (after["messages"].clone(), after["messages_total"].clone()),
+        (json!(0), json!(0)),
+        "a stopped job's total is what it read"
+    );
     let repeat = job(&logs.write("DELETE", &path, None, None).await, "repeat");
     assert_eq!(repeat["state"], "cancelled");
 
@@ -257,6 +278,8 @@ async fn a_channel_that_could_not_be_read_is_done_with_an_error() {
     let logs = Logs::new().await;
     let fake = &logs.reads.rescans;
     fake.failing.lock().unwrap().insert("kalos-four".into());
+    // kalos-four could not be counted either.
+    fake.expected.lock().unwrap().insert("limbo-trio".into(), 7);
     let started = job(
         &start(
             &logs,
@@ -267,16 +290,27 @@ async fn a_channel_that_could_not_be_read_is_done_with_an_error() {
         "start",
     );
     let id = started["id"].as_str().unwrap().to_owned();
-    for _ in 0..2 {
-        fake.step(&id).await;
-    }
+    fake.step(&id).await;
+    let uncounted = poll(&logs, &id).await;
+    assert_eq!(states(&uncounted), ["reading", "queued"]);
+    assert_eq!(uncounted["messages_total"], Value::Null, "no total to show");
+    fake.step(&id).await;
     let midway = poll(&logs, &id).await;
     assert_eq!(states(&midway), ["done", "reading"]);
     assert_eq!(midway["channels"][0]["errors"], json!([CHANNEL_FAILED]));
+    // The failed channel read nothing, so it adds nothing.
+    assert_eq!(
+        (midway["messages"].clone(), midway["messages_total"].clone()),
+        (json!(0), json!(7))
+    );
     fake.step(&id).await;
     let done = poll(&logs, &id).await;
     assert_eq!(done["state"], "done");
     assert_eq!(done["proposals"], 1);
+    assert_eq!(
+        (done["messages"].clone(), done["messages_total"].clone()),
+        (json!(3), json!(3))
+    );
 }
 
 #[tokio::test]

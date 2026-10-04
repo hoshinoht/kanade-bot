@@ -6,6 +6,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin rescan jobs report progress: `started_at` and the job's
+  `messages` / `messages_total` (gated messages read, and the window's
+  messages counted from the cache when the job starts), so the Re-read card
+  can show "41% · 27 of 66 messages · started 01:40". The PWA mock serves
+  them too.
 - v5 admin API: `GET /api/admin/history?run=<id>` pages one run's change
   log, newest first: every record that changed the run or its RSVPs
   (creation, moves, swaps, status, attendance, rollbacks), each with its

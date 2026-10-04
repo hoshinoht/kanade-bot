@@ -686,7 +686,18 @@ export interface RescanJob {
   id: string;
   state: 'running' | 'done' | 'cancelled';
   window: 'week' | 'since_reset' | 'two_weeks';
+  /** When the runner took the job (UTC `Z`); null while queued. */
+  started_at?: string | null;
+  /** Per channel, the gated messages its read found (0 until `done`). */
   channels: { id: string; name: string; state: 'queued' | 'reading' | 'done'; messages: number }[];
+  /** The channels' `messages`: gated messages read so far. */
+  messages?: number;
+  /**
+   * `messages` plus each unread channel's gated messages as cached when the job
+   * started; equals `messages` once the job ends. Null while a channel still to
+   * be read has no count. Progress = messages / messages_total.
+   */
+  messages_total?: number | null;
   proposals: number;
 }
 

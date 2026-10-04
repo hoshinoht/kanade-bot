@@ -2,9 +2,15 @@
 //! (`docs/v5/extraction-orchestration.md` "Rescan jobs"). Result errors can
 //! carry store or Discord text, so each channel's `errors` are fixed
 //! sentences naming what went wrong, never the recorded text.
+//!
+//! Progress is counted in gated messages: a channel's `messages` once read,
+//! the job's `messages` their sum, and `messages_total` that sum plus what
+//! each unread channel was expected to find when the job started. A final
+//! job's total is what it read, so a done job's two counts are equal.
 
 use serde_json::{Value, json};
 
+use super::iso_instant;
 use crate::{api::rescan::RescanView, domain::model_log::RescanStatus};
 
 pub const CHANNEL_FAILED: &str = "This channel could not be read.";
@@ -75,6 +81,9 @@ pub fn job(view: &RescanView, name: impl Fn(&str) -> String) -> Value {
     let ended = matches!(job.status, RescanStatus::Done | RescanStatus::Failed);
     let mut proposals = 0;
     let mut unread_total = 0;
+    let mut read = 0;
+    // `None` once a channel still to be read has no count.
+    let mut total = Some(0);
     let channels: Vec<Value> = job
         .channels
         .iter()
@@ -106,6 +115,13 @@ pub fn job(view: &RescanView, name: impl Fn(&str) -> String) -> Value {
                 }
                 None => ("queued", 0, 0, Vec::new(), None),
             };
+            read += messages;
+            let still = if state == "done" {
+                Some(messages)
+            } else {
+                view.expected.get(channel).map(|&count| count as u64)
+            };
+            total = total.zip(still).map(|(sum, more)| sum + more);
             json!({
                 "id": channel,
                 "name": named.unwrap_or_else(|| name(channel)),
@@ -122,11 +138,19 @@ pub fn job(view: &RescanView, name: impl Fn(&str) -> String) -> Value {
         RescanStatus::Done | RescanStatus::Failed => "done",
         RescanStatus::Cancelled => "cancelled",
     };
+    let total = if job.status.is_final() {
+        Some(read)
+    } else {
+        total
+    };
     json!({
         "id": job.id,
         "state": state,
         "window": window(&job.window),
+        "started_at": job.started_at.map(iso_instant),
         "channels": channels,
+        "messages": read,
+        "messages_total": total,
         "proposals": proposals,
         "unread": unread_total,
     })

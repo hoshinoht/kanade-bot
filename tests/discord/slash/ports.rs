@@ -113,6 +113,7 @@ impl RescanRunner for Runner {
                     error: None,
                 },
                 current: None,
+                expected: Default::default(),
                 stopping: false,
             };
             self.jobs.lock().unwrap().push(view.clone());

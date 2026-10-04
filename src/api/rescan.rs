@@ -4,7 +4,7 @@
 //! API's `Idempotency-Key` memory lives in [`RescanDesk`].
 
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     future::Future,
     pin::Pin,
     sync::{Arc, Mutex},
@@ -17,7 +17,7 @@ use crate::{
     },
     extract::{
         pipeline::{Outbox, Proposer},
-        rescan::{History, RescanError, RescanRequest, Rescans},
+        rescan::{History, JobView, RescanError, RescanRequest, Rescans},
     },
     infrastructure::llm::LlmProvider,
 };
@@ -30,6 +30,9 @@ pub struct RescanView {
     pub job: RescanJob,
     /// The channel being read while the job runs.
     pub current: Option<String>,
+    /// Per channel, the gated messages its read was expected to find when
+    /// the job started; channels without a count are missing.
+    pub expected: HashMap<String, usize>,
     /// A cancel reached the running job; it ends `cancelled` after the call
     /// in flight.
     pub stopping: bool,
@@ -64,7 +67,12 @@ impl<S, P, X, O, H> RescanService<S, P, X, O, H> {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    fn view(&self, job: RescanJob, current: Option<String>) -> RescanView {
+    fn view(&self, view: JobView) -> RescanView {
+        let JobView {
+            job,
+            current,
+            expected,
+        } = view;
         let mut stopping = self.stopping();
         let flagged = if job.status.is_final() {
             stopping.remove(&job.id);
@@ -75,6 +83,7 @@ impl<S, P, X, O, H> RescanService<S, P, X, O, H> {
         RescanView {
             job,
             current,
+            expected,
             stopping: flagged,
         }
     }
@@ -92,18 +101,12 @@ where
     fn submit(&self, request: RescanRequest) -> RescanFuture<'_, RescanView> {
         Box::pin(async move {
             let view = self.rescans.submit(request).await?;
-            Ok(self.view(view.job, view.current))
+            Ok(self.view(view))
         })
     }
 
     fn job(&self, id: String) -> RescanFuture<'_, Option<RescanView>> {
-        Box::pin(async move {
-            Ok(self
-                .rescans
-                .get(&id)
-                .await?
-                .map(|view| self.view(view.job, view.current)))
-        })
+        Box::pin(async move { Ok(self.rescans.get(&id).await?.map(|view| self.view(view))) })
     }
 
     fn cancel(&self, id: String) -> RescanFuture<'_, Option<RescanView>> {
@@ -115,7 +118,7 @@ where
             if stopped && !view.job.status.is_final() {
                 self.stopping().insert(id);
             }
-            Ok(Some(self.view(view.job, view.current)))
+            Ok(Some(self.view(view)))
         })
     }
 }

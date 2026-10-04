@@ -14,12 +14,70 @@ use crate::domain::model_log::{MessageUpsert, ModelLogStore};
 use crate::domain::scheduler::ScheduleStore;
 use crate::domain::time::to_iso;
 use crate::domain::weeks;
-use crate::extract::pipeline::{CallRecord, Extractor, Failure, Outbox, Proposer};
+use crate::extract::pipeline::{CallRecord, Extractor, Failure, Outbox, PipelineConfig, Proposer};
 use crate::extract::window::{
     BURST_GAP, MAX_BURST_MESSAGES, group_for_rescan, previous_week_start, should_widen,
     window_since,
 };
 use crate::infrastructure::llm::LlmProvider;
+
+/// Where a window read at `now` starts.
+fn window_start(
+    config: &PipelineConfig,
+    key: &str,
+    now: DateTime<Utc>,
+) -> Result<DateTime<Utc>, String> {
+    window_since(
+        key,
+        config.zone,
+        config.reset_weekday,
+        config.reset_time,
+        &now.fixed_offset(),
+    )
+    .map(|since| since.with_timezone(&Utc))
+    .map_err(|error| error.to_string())
+}
+
+/// The boss week before the one `since` falls in: a quiet `week` widens to it.
+fn widened_start(config: &PipelineConfig, since: DateTime<Utc>) -> Result<DateTime<Utc>, String> {
+    weeks::week_start(&since, config.zone, config.reset_weekday, config.reset_time)
+        .and_then(|this| {
+            previous_week_start(&this, config.zone, config.reset_weekday, config.reset_time)
+        })
+        .map(|start| start.to_fixed().with_timezone(&Utc))
+        .map_err(|error| error.to_string())
+}
+
+/// The gated messages a channel's read would find in the store now, before
+/// any backfill, widening as [`Reader::read`] does. A job's progress total.
+pub(super) async fn expected<S, P, X, O>(
+    extractor: &Extractor<S, P, X, O>,
+    channel_id: &str,
+    window: ResolvedWindow,
+    automated: bool,
+    unprocessed_only: bool,
+) -> Result<usize, String>
+where
+    S: ScheduleStore + ModelLogStore + Send + Sync,
+    P: LlmProvider,
+    X: Proposer,
+    O: Outbox,
+{
+    let config = extractor.config();
+    let gated = async |since| {
+        extractor
+            .gated_since(channel_id, since, unprocessed_only)
+            .await
+            .map(|(_, gated)| gated.len())
+            .map_err(|error| error.to_string())
+    };
+    let since = window_start(config, window.key, extractor.now())?;
+    let count = gated(since).await?;
+    if window.may_widen && should_widen(window.key, count, automated) {
+        return gated(widened_start(config, since)?).await;
+    }
+    Ok(count)
+}
 
 /// Spaces a job's model calls by the drain interval.
 pub(super) struct Pace {
@@ -119,16 +177,7 @@ where
         automated: bool,
     ) -> Result<Value, String> {
         let config = self.extractor.config().clone();
-        let now = self.extractor.now();
-        let since = window_since(
-            window.key,
-            config.zone,
-            config.reset_weekday,
-            config.reset_time,
-            &now.fixed_offset(),
-        )
-        .map_err(|error| error.to_string())?;
-        let mut since = since.with_timezone(&Utc);
+        let mut since = window_start(&config, window.key, self.extractor.now())?;
         let mut errors = Vec::new();
         let mut backfilled = self.backfill(channel_id, since, &mut errors).await;
         let (mut stored, mut gated) = self
@@ -139,19 +188,8 @@ where
         let mut widened = false;
         if window.may_widen && should_widen(window.key, gated.len(), automated) {
             // A quiet week just after the reset: last week's plan, once only.
-            let this =
-                weeks::week_start(&since, config.zone, config.reset_weekday, config.reset_time)
-                    .and_then(|this| {
-                        previous_week_start(
-                            &this,
-                            config.zone,
-                            config.reset_weekday,
-                            config.reset_time,
-                        )
-                    })
-                    .map_err(|error| error.to_string())?;
+            since = widened_start(&config, since)?;
             widened = true;
-            since = this.to_fixed().with_timezone(&Utc);
             backfilled += self.backfill(channel_id, since, &mut errors).await;
             (stored, gated) = self
                 .extractor

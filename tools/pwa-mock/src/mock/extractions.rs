@@ -163,8 +163,34 @@ pub struct Job {
     pub id: String,
     pub state: &'static str,
     pub window: String,
+    pub started_at: Option<String>,
     pub channels: Vec<JobChannel>,
+    /// Gated messages read so far (the channels' sum).
+    pub messages: u32,
+    /// `messages` plus what each unread channel is expected to find; a
+    /// finished job's total is what it read.
+    pub messages_total: Option<u32>,
     pub proposals: usize,
+}
+
+impl Job {
+    fn tally(&mut self) {
+        self.messages = self.channels.iter().map(|c| c.messages).sum();
+        self.messages_total = Some(if self.state == "running" {
+            self.channels
+                .iter()
+                .map(|c| {
+                    if c.state == "done" {
+                        c.messages
+                    } else {
+                        c.expected
+                    }
+                })
+                .sum()
+        } else {
+            self.messages
+        });
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -173,6 +199,9 @@ pub struct JobChannel {
     pub name: &'static str,
     pub state: &'static str,
     pub messages: u32,
+    /// What the read will find, known when the job starts.
+    #[serde(skip)]
+    pub expected: u32,
 }
 
 #[derive(Deserialize)]
@@ -325,6 +354,7 @@ impl Store {
                 name: c.1,
                 state: "queued",
                 messages: 0,
+                expected: 40 + c.1.len() as u32,
             })
             .collect();
         if channels.is_empty() {
@@ -344,13 +374,17 @@ impl Store {
             ));
         }
         let (id, _) = self.fresh_id("job");
-        let job = Job {
+        let mut job = Job {
             id,
             state: "running",
             window: req.window,
+            started_at: Some(super::clock::iso_now()),
             channels,
+            messages: 0,
+            messages_total: None,
             proposals: 0,
         };
+        job.tally();
         self.jobs.push(job.clone());
         Ok(job)
     }
@@ -365,13 +399,14 @@ impl Store {
         if job.state == "running" {
             if let Some(ch) = job.channels.iter_mut().find(|c| c.state == "reading") {
                 ch.state = "done";
-                ch.messages = 40 + ch.name.len() as u32;
+                ch.messages = ch.expected;
             }
             if let Some(next) = job.channels.iter_mut().find(|c| c.state == "queued") {
                 next.state = "reading";
             } else if job.channels.iter().all(|c| c.state == "done") {
                 job.state = "done";
             }
+            job.tally();
         }
         Ok(job.clone())
     }
@@ -384,6 +419,7 @@ impl Store {
             .ok_or(MoveError::NotFound)?;
         if job.state == "running" {
             job.state = "cancelled";
+            job.tally();
         }
         Ok(job.clone())
     }
@@ -393,6 +429,42 @@ impl Store {
 mod tests {
     use super::super::logfilter::LogQuery;
     use super::super::tests::store;
+
+    #[test]
+    fn a_rescan_reports_its_start_and_reaches_its_message_total() {
+        let mut s = store();
+        let req = |channels: &[&str]| super::RescanRequest {
+            channels: channels.iter().map(|c| (*c).to_owned()).collect(),
+            window: "week".into(),
+        };
+        let watched: Vec<String> = super::Store::rescan_targets()
+            .as_array()
+            .unwrap()
+            .iter()
+            .take(2)
+            .map(|c| c["id"].as_str().unwrap().to_owned())
+            .collect();
+        let ids: Vec<&str> = watched.iter().map(String::as_str).collect();
+        let job = s.start_rescan(req(&ids)).ok().expect("started");
+        assert_eq!(job.started_at.as_deref(), Some("2026-09-29T04:00:00Z"));
+        let total = job.messages_total.expect("known at the start");
+        assert_eq!(job.messages, 0);
+        let mut polled = s.poll_rescan(&job.id).ok().unwrap();
+        while polled.state == "running" {
+            assert_eq!(
+                polled.messages_total,
+                Some(total),
+                "estimates are exact here"
+            );
+            polled = s.poll_rescan(&job.id).ok().unwrap();
+        }
+        assert_eq!(polled.state, "done");
+        assert_eq!(
+            (polled.messages, polled.messages_total),
+            (total, Some(total))
+        );
+        assert_eq!(polled.started_at, job.started_at);
+    }
 
     #[test]
     fn reasoning_fixtures_preserve_text_counts_and_unknowns() {

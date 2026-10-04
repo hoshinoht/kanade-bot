@@ -144,6 +144,60 @@ async fn a_job_backfills_then_reads_each_channel_in_turn() {
     );
 }
 
+/// The progress total: each channel's gated, role-holder messages in its
+/// window as cached when the job starts, widening a quiet `week` as the read
+/// does; a read channel's `gated` then matches it.
+#[tokio::test(start_paused = true)]
+async fn a_job_counts_each_channel_s_window_when_it_starts() {
+    let world = World::new(vec![nothing(), nothing()]).await;
+    for message in [
+        message("1", MY, local(8, 28, 20, 0), "hstar wed 9pm?"),
+        message("2", MY, local(8, 29, 20, 0), "good night everyone"),
+        message("3", STRANGER, local(8, 29, 21, 0), "carling tue 10pm?"),
+        message("4", MY, local(8, 25, 20, 0), "lotus thu 9pm?"),
+        kanade::extract::pipeline::IncomingMessage {
+            channel_id: OTHER.into(),
+            ..message("5", MY, local(8, 25, 21, 0), "hstar wed 9pm?")
+        },
+    ] {
+        world
+            .extractor
+            .store_message(&message)
+            .await
+            .expect("cache");
+    }
+    let jobs = jobs(&world.extractor, FakeHistory::default());
+    let id = jobs
+        .submit(request(&[CHANNEL, OTHER], "week"))
+        .await
+        .expect("queued")
+        .job
+        .id;
+    assert!(
+        jobs.get(&id)
+            .await
+            .expect("get")
+            .expect("job")
+            .expected
+            .is_empty()
+    );
+    let _worker = start(&jobs);
+    after(1).await;
+    let view = jobs.get(&id).await.expect("get").expect("job");
+    assert_eq!(view.job.status, RescanStatus::Running);
+    // CHANNEL: this week's scheduling message only; OTHER's empty week widens.
+    assert_eq!(view.expected.len(), 2);
+    assert_eq!(view.expected[CHANNEL], 1);
+    assert_eq!(view.expected[OTHER], 1);
+    after(30).await;
+    let done = jobs.get(&id).await.expect("get").expect("job");
+    assert_eq!(done.job.status, RescanStatus::Done);
+    let results = done.job.results.as_array().expect("results");
+    assert_eq!(results[0]["gated"], 1);
+    assert_eq!(results[1]["gated"], 1);
+    assert_eq!(results[1]["widened"], true);
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_repeat_request_attaches_and_a_new_window_replaces_the_queued_job() {
     let world = World::new(Vec::new()).await;
