@@ -6,6 +6,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin Reminders follows its M3E board: Queued / Sent / Stale & other
+  tabs in one window, a Filters (n) popover, one day-grouped table with an
+  "In" column and party chips, and a footer naming the next card. Only the
+  table scrolls; paging is gone.
 - Config › Models › Capacity reports each group's in-flight permits
   (`models.groups[].in_use`, `null` when the governor does not run that group),
   and its bar waves while calls run. The Limits permit bar keeps waving when

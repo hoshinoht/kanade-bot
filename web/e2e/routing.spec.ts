@@ -29,7 +29,7 @@ test('admin: grouped nav has every v4 section as a real route', async ({ page })
     ['Fixed', '8 weekly timings'],
     ['Bosses', /^11 bosses/],
     ['Members', '13 bossers'],
-    ['Reminders', /queued, \d+ sent$/],
+    ['Reminders', /queued · \d+ sent$/],
     ['Inbox', '9 changes waiting'],
     ['Extractions', '34 model calls'],
     ['Chat', '13 interactions'],

@@ -184,7 +184,7 @@ for (const theme of THEMES) {
     await serious(page, 'admin member sheet');
     await page.keyboard.press('Escape');
     await page.getByRole('link', { name: 'Reminders' }).click();
-    await expect(page.getByRole('heading', { name: /^Queued/ })).toBeVisible();
+    await expect(page.getByRole('tab', { name: /^Queued/ })).toBeVisible();
     await serious(page, 'admin reminders');
     await page.goto(`${ADMIN}/?week=next&sw=off`);
     await expect(page.locator('[data-run="n-carling"]')).toBeVisible();

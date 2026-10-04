@@ -712,21 +712,22 @@ test('members: fixed frame keeps roster and wide detail as the only scroll owner
 test('reminders: queued, due, sent and stale, all runs or one', async ({ page }) => {
   await go(page, '/reminders');
   const queued = page.getByRole('table', { name: 'Queued reminders' });
-  const sent = page.getByRole('table', { name: 'Sent reminders' });
-  await expect(queued.getByRole('row').nth(1)).toContainText('Tue 29 Sep 21:00');
-  // Sent is paged 15 at a time; the stale card is on a later page.
-  const older = page.getByRole('button', { name: 'Older →' });
-  while ((await sent.getByText('stale — retired without posting').count()) === 0 && (await older.isEnabled())) await older.click();
-  await expect(sent.getByText('stale — retired without posting')).toBeVisible();
-  await expect(sent.getByRole('link', { name: 'open in Discord' }).first()).toBeVisible();
+  const rows = queued.locator('tbody tr:has(td)');
+  await expect(rows.first()).toContainText('Tue 29 Sep 21:00');
+  // Sent and stale cards each have their own tab.
+  await page.getByRole('tab', { name: /^Sent/ }).click();
+  await expect(page.getByRole('table', { name: 'Sent reminders' }).getByRole('link', { name: /open in Discord/ }).first()).toBeVisible();
+  await page.getByRole('tab', { name: /^Stale & other/ }).click();
+  await expect(page.getByRole('table', { name: 'Stale and other reminders' }).getByText('stale — retired without posting').first()).toBeAttached();
+  await page.getByRole('tab', { name: /^Queued/ }).click();
   await page.getByRole('searchbox', { name: 'Search reminders' }).fill('xbm');
-  await expect(queued.locator('tbody tr')).not.toHaveCount(0);
-  for (const row of await queued.locator('tbody tr').all()) await expect(row).toContainText('XBM');
+  await expect(rows).not.toHaveCount(0);
+  for (const row of await rows.all()) await expect(row).toContainText('XBM');
   await page.getByRole('searchbox', { name: 'Search reminders' }).fill('');
   await queued.getByRole('link', { name: '#630b3544' }).first().click();
   await expect(page).toHaveURL(`${ADMIN}/reminders?run=r-carling`);
   await expect(page.getByText('run #630b3544')).toBeVisible();
-  for (const row of await queued.locator('tbody tr').all()) await expect(row).toContainText('#630b3544');
+  for (const row of await rows.all()) await expect(row).toContainText('#630b3544');
   await page.getByRole('link', { name: 'Show every run' }).click();
   await expect(page).toHaveURL(`${ADMIN}/reminders`);
 });

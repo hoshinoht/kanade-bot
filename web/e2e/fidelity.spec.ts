@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { boardExists, composite, diff, markdown, MOCKUPS, renderBoard, settle, skeleton } from './fidelity-kit';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, expect, PINNED_NOW, test } from './support';
 
 // Layout fidelity against the M3E boards: `bun run fidelity [pair ...] [--keep]`
 // (scripts/fidelity.ts builds with KANADE_FIDELITY=1 so the data-fid tags
@@ -156,6 +156,17 @@ const PAIRS: Pair[] = [
     ready: async (page) => {
       await page.getByRole('tab', { name: /^Answers/ }).click();
       await expect(page.getByRole('heading', { name: 'Still waiting' })).toBeVisible();
+    },
+  },
+  {
+    name: 'reminders',
+    board: 'B_Reminders',
+    path: '/reminders',
+    // The "In" column and "today" read the browser clock: pin it to the mock's.
+    ready: async (page) => {
+      await page.clock.setFixedTime(PINNED_NOW);
+      await page.reload();
+      await expect(page.getByRole('table', { name: /^Queued reminders/ }).locator('tbody tr').first()).toBeVisible();
     },
   },
   {
