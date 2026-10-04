@@ -215,6 +215,9 @@
           store,
           search: router.search,
           onsearch: (search: string) => router.go(`/${key}${search}`, { replace: true }),
+          // As Chat: a pick on a phone pushes an entry, so Back closes the call.
+          onselect: (search: string, open: boolean) =>
+            router.go(`/extractions${search}`, { replace: !open, state: open ? { extractDetail: true } : null }),
         };
       case 'config':
         return {

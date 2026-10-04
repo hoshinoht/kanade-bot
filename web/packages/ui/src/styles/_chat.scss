@@ -83,6 +83,13 @@
   color: var(--ink);
 }
 
+// The date presets are the popover surface's buttons, not the title bar's.
+.card__head .chat__filters .logfilters__panel .btn {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+
 /* ── body: list beside the turn ─────────────────────────────────────────── */
 
 .chat__body {
@@ -755,14 +762,48 @@
     flex-wrap: wrap;
   }
 
+  // The filters popover hangs from the title bar, inside the window's edges and
+  // floor (100% is the bar's height, which grows as the filter row wraps).
+  .chat__bar {
+    position: relative;
+  }
+
+  .chat__filters .logfilters {
+    position: static;
+    min-width: 0;
+  }
+
+  .chat__filters .logfilters__panel {
+    top: calc(100% + 4px);
+    right: 8px;
+    max-width: calc(100% - 16px);
+    max-height: max(6rem, calc(100dvh - 100% - 9rem));
+  }
+
   .chat__search {
     flex: 1 1 auto;
     width: auto;
     min-width: 8rem;
   }
 
+  // As Extractions: the actions take their own line and the filter row wraps, so no chip is cut.
   .chat__actions {
     flex: 1 1 auto;
+    flex-wrap: wrap;
+    gap: 8px 6px;
+    width: 100%;
+    margin-left: 0;
+    padding-bottom: 8px;
+  }
+
+  .chat__filters .logfilters__row {
+    flex-wrap: wrap;
+  }
+
+  .card__head .chat__filters .logfilters__chip {
+    max-width: 100%;
+    white-space: normal;
+    text-align: start;
   }
 
   .chat-turn__head {

@@ -25,7 +25,18 @@
   import ExtractionDetail from './ExtractionDetail.svelte';
   import RescanPanel from './RescanPanel.svelte';
 
-  let { store, search = '', onsearch }: { store: AdminWeek; search?: string; onsearch?: (search: string) => void } = $props();
+  let {
+    store,
+    search = '',
+    onsearch,
+    onselect,
+  }: {
+    store: AdminWeek;
+    search?: string;
+    onsearch?: (search: string) => void;
+    /** Opens a call (`search` carries `call`); `open` pushes a history entry (phones: Back returns to the list). */
+    onselect?: (search: string, open: boolean) => void;
+  } = $props();
   const uid = $props.id();
   const tz = $derived(store.week?.timezone ?? 'Asia/Kuala_Lumpur');
 
@@ -98,19 +109,34 @@
   const compact = $derived(phone && Boolean(call) && Boolean(chrome?.phone));
   $effect(() => {
     if (!compact || !chrome) return;
-    chrome.back({ label: 'Extractions', name: 'Back to the list (Extractions)', go: () => pick('', false) });
+    chrome.back({ label: 'Extractions', name: 'Back to the list (Extractions)', go: () => leaveDetail() });
     return () => chrome.back(null);
   });
 
+  function pick(id: string, open: boolean) {
+    const next = withCall(toSearch(filter), id);
+    if (onselect) onselect(next, open && phone);
+    else onsearch?.(next);
+  }
+  // Whether the open call's entry came from a pick here (so leaving pops it) or a deep link.
+  const pushedHere = () => (history.state as { extractDetail?: boolean } | null)?.extractDetail === true;
+  function leaveDetail() {
+    if (pushedHere()) history.back();
+    else pick('', false);
+  }
+
+  // Phones swap list and call: focus follows into the call, and back to its row on return (Back included).
   let list = $state<{ focusOn: (id: string) => Promise<void> }>();
   let detail = $state<{ focus: () => void }>();
-  function pick(id: string, open: boolean) {
-    const was = call;
-    onsearch?.(withCall(toSearch(filter), id));
-    if (!phone) return;
-    if (id && open) void tick().then(() => detail?.focus());
-    else if (!id && was) void tick().then(() => list?.focusOn(was));
-  }
+  let was = untrack(() => call);
+  $effect(() => {
+    const now = call;
+    const before = was;
+    was = now;
+    if (!phone || now === before) return;
+    if (now && !before) void tick().then(() => detail?.focus());
+    else if (!now && before) void tick().then(() => list?.focusOn(before));
+  });
 
   // Re-read: a title-bar popover that stays mounted, so a running job keeps its card and progress.
   let rereadOpen = $state(false);
@@ -205,7 +231,7 @@
       {/if}
     </div>
     {#if phone && call && !compact}
-      <button type="button" class="btn extract-window__back" onclick={() => pick('', false)}>‹ All calls</button>
+      <button type="button" class="btn extract-window__back" onclick={leaveDetail}>‹ All calls</button>
     {/if}
     {#if chosen && (!phone || call)}
       <ExtractionDetail bind:this={detail} id={chosen} timeZone={tz} {canReread} onreread={(channel) => void openReread(channel)} />

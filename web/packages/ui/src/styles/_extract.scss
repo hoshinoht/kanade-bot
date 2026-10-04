@@ -690,6 +690,36 @@
     flex: 1 1 10rem;
   }
 
+  // The filter row wraps rather than cut a chip.
+  .extract-window__filters .logfilters__row {
+    flex-wrap: wrap;
+  }
+
+  .extract-window__filters .logfilters__chip {
+    max-width: 100%;
+    overflow: visible;
+    white-space: normal;
+    text-align: start;
+  }
+
+  // The filters popover hangs from the title bar, inside the window's edges and
+  // floor (100% is the bar's height, which grows as the filter row wraps).
+  .extract-window__head {
+    position: relative;
+  }
+
+  .extract-window__filters .logfilters {
+    position: static;
+    min-width: 0;
+  }
+
+  .extract-window__filters .logfilters__panel {
+    top: calc(100% + 4px);
+    right: 8px;
+    max-width: calc(100% - 16px);
+    max-height: max(6rem, calc(100dvh - 100% - 9rem));
+  }
+
   .extract-window__body,
   .extract-window__body--single {
     grid-template-columns: minmax(0, 1fr);

@@ -8,6 +8,7 @@
   import type { LogFacets, Member, Week } from '@kanade/api-types';
   import { activeCount, NO_LOG_FILTER, OUTCOME_LABEL, preset, type LogFilter, type Preset } from './filters';
   import { directory, memberLabel } from '../names/directory.svelte';
+  import { Icon } from '@kanade/ui';
 
   let {
     filter,
@@ -27,6 +28,22 @@
   } = $props();
   const uid = $props.id();
   let open = $state(false);
+  let root = $state<HTMLDivElement>();
+  let toggle = $state<HTMLButtonElement>();
+
+  function close(refocus: boolean) {
+    open = false;
+    if (refocus) toggle?.focus({ preventScroll: true });
+  }
+  // A press outside the bar (button, chips, Clear, panel) closes the panel.
+  $effect(() => {
+    if (!open) return;
+    const away = (event: PointerEvent) => {
+      if (!root?.contains(event.target as Node)) close(false);
+    };
+    document.addEventListener('pointerdown', away, true);
+    return () => document.removeEventListener('pointerdown', away, true);
+  });
 
   const set = (patch: Partial<LogFilter>) => onchange({ ...filter, ...patch });
   const count = $derived(activeCount({ ...filter, q: '' }));
@@ -63,9 +80,21 @@
   }
 </script>
 
-<div class="logfilters">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+  class="logfilters"
+  bind:this={root}
+  onkeydown={(event) => {
+    if (open && event.key === 'Escape') {
+      event.stopPropagation();
+      close(true);
+    }
+  }}
+>
   <div class="logfilters__row">
-    <button type="button" class="btn" aria-expanded={open} aria-controls="{uid}-panel" onclick={() => (open = !open)}>Filters ({count})</button>
+    <button type="button" class="btn" aria-expanded={open} aria-controls="{uid}-panel" bind:this={toggle} onclick={() => (open = !open)}
+      ><Icon name="filter" /><span>Filters ({count})</span></button
+    >
     {#each chips as chip (chip.key)}
       <button type="button" class="chip logfilters__chip" onclick={() => set(chip.clear)}
         >{chip.label}<span aria-hidden="true"> ×</span><span class="vh"> — remove</span></button

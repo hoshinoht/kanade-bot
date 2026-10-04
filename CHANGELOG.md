@@ -803,6 +803,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- v5 admin Chat and Extractions: the Filters button has an icon and its panel
+  closes on Escape or a click outside; on phones, Back closes an open
+  extraction call, and the filter chips and panel stay inside the window.
 - v5 admin Chat follows its M3E boards: one window lists interactions beside
   the open turn (`/chat/:id`), with Copy transcript, pill tabs, conversation
   bubbles and per-round Model trace cards; phones show the list, then the turn
@@ -982,6 +985,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 admin Chat: the date presets in the filters panel are visible again.
 - v5 admin run countdowns no longer bunch their marks at the end: the bar fills
   from 24 h out to T-1h, then restarts over the last hour with the T-15m mark
   at three quarters. Opening the run pane scrolls the board to keep the
