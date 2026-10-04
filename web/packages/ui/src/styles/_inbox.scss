@@ -147,37 +147,90 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
   padding: 0 8px;
 }
 
-.inbox__empty {
-  display: grid;
-  place-items: center;
-  align-content: center;
-  max-width: 24rem;
-  min-height: 100%;
-  margin: auto;
-  padding: 2rem 1rem;
-  text-align: center;
+// An empty tab (B_Empty): the note and the tab's last decisions side by side, centred.
+.inbox-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 48px;
+  min-height: 0;
+  padding: 24px;
+  overflow: auto;
 }
 
-.inbox__empty h2 {
-  margin: 0.75rem 0 0.25rem;
-  font-family: var(--display);
-  font-size: var(--fs-lg);
+// One pane on phones: the decisions go under the note.
+@media (max-width: 899px) {
+  .inbox-empty {
+    flex-wrap: wrap;
+    row-gap: 24px;
+  }
 }
 
-.inbox__empty p { margin: 0; color: var(--dim-text); }
-
-.inbox__empty-mark {
-  display: grid;
-  place-items: center;
-  inline-size: 4rem;
-  block-size: 4rem;
-  border: 2px solid var(--ok);
-  border-radius: 42% 58% 54% 46% / 52% 42% 58% 48%;
-  background: color-mix(in srgb, var(--ok) 12%, var(--surface));
-  color: var(--ok-text);
-  font-family: var(--mono);
-  font-size: var(--fs-clock);
+.inbox-empty__at {
+  color: var(--ink);
   font-weight: 700;
+}
+
+.inbox-empty__recent {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 320px;
+  max-width: 100%;
+}
+
+.inbox-empty__head {
+  margin: 0;
+  padding: 0 4px 6px;
+}
+
+.inbox-empty__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+// A grouped list (mockup `.lrow`): row cards, the group's outer corners round.
+.inbox-empty__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 0 12px;
+  border-radius: 4px;
+  background: var(--row);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.inbox-empty__rows > li:first-child .inbox-empty__row { border-top-left-radius: 16px; border-top-right-radius: 16px; }
+.inbox-empty__rows > li:last-child .inbox-empty__row { border-bottom-left-radius: 16px; border-bottom-right-radius: 16px; }
+
+.inbox-empty__row:hover {
+  background: var(--row-hover);
+}
+
+.inbox-empty__lines {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.inbox-empty__what {
+  font-size: var(--fs-body-sm);
+  font-weight: 700;
+}
+
+.inbox-empty__when {
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+}
+
+.inbox-empty__when--risk {
+  color: var(--risk-text);
 }
 
 .inbox__back {

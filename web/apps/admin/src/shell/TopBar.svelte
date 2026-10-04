@@ -38,7 +38,7 @@
   } = $props();
 </script>
 
-<header class="topbar">
+<header class="topbar" data-fid="topbar">
   {#if back}
     <!-- Bound like the menu: the drawer (still opened by the edge swipe) returns focus to whichever is here. -->
     <button bind:this={menu} type="button" class="topbar__back" aria-label={back.name} onclick={() => back?.go()}><Icon name="chevron-left" />{back.label}</button>
@@ -48,6 +48,7 @@
     bind:this={menu}
     type="button"
     class="topbar__menu"
+    data-fid="topbar-menu"
     aria-label="Open the navigation"
     aria-haspopup="dialog"
     aria-expanded={open}
@@ -56,10 +57,10 @@
   >
     <Icon name="menu" />
   </button>
-  <p class="topbar__title">{title}</p>
+  <p class="topbar__title" data-fid="topbar-title">{title}</p>
   {/if}
-  <span class="topbar__fresh" title={timezone ? `Every time here is ${timezone}` : undefined}><Freshness state={fresh} {updated} /></span>
-  <a class="topbar__inbox" href="/inbox" aria-current={onInbox ? 'page' : undefined} aria-label={inbox > 0 ? `Inbox ${inbox} waiting` : 'Inbox'}>
+  <span class="topbar__fresh" data-fid="topbar-fresh" title={timezone ? `Every time here is ${timezone}` : undefined}><Freshness state={fresh} {updated} /></span>
+  <a class="topbar__inbox" data-fid="topbar-inbox" href="/inbox" aria-current={onInbox ? 'page' : undefined} aria-label={inbox > 0 ? `Inbox ${inbox} waiting` : 'Inbox'}>
     <Icon name="inbox" />
     <span class="vh">Inbox</span>
     {#if inbox > 0}<span class="topbar__badge">{inbox}<span class="vh"> waiting</span></span>{/if}

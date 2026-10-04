@@ -78,7 +78,8 @@ test('inbox: extractor tab — list and detail, edit then approve, reject, a cha
   await detail.getByRole('button', { name: 'Approve', exact: true }).click();
   await expect(toast(page, 'Approved: move #b2c4d6e8.')).toBeVisible();
   // An empty tab says why, visibly, not just that it is empty.
-  await expect(page.getByText('Nothing waiting here. The extractor posts a card when it reads a change in a watched channel.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Nothing waiting' })).toBeVisible();
+  await expect(page.getByText('The extractor posts a card when it reads a change in a watched channel.')).toBeVisible();
 
   await page.getByRole('link', { name: 'Week' }).click();
   const wed = page.locator('section.board__col').filter({ has: page.locator('h2 .board__dow:text-is("Wed")') });

@@ -98,8 +98,8 @@
   }}
 >
   {#if open}
-    <div class="drawer__panel">
-      <div class="drawer__head">
+    <div class="drawer__panel" data-fid="drawer">
+      <div class="drawer__head" data-fid="drawer-head">
         <a class="navrail__brand" href="/" onclick={follow}>
           {#if avatar}
             <img class="brand__avatar navrail__tile" src={avatar} alt="" width="36" height="36" />
@@ -108,10 +108,10 @@
           {/if}
           <span class="brand__name">{name}</span>
         </a>
-        <button type="button" class="drawer__close" onclick={() => (open = false)}><Icon name="x" label="Close the navigation" /></button>
+        <button type="button" class="drawer__close" data-fid="drawer-close" onclick={() => (open = false)}><Icon name="x" label="Close the navigation" /></button>
       </div>
       <NavList {active} {inbox} {counts} onnavigate={follow} />
-      <div class="drawer__foot">
+      <div class="drawer__foot" data-fid="drawer-foot">
         {@render account()}
         <span class="drawer__keys" title="Commands: Ctrl K (Cmd K on a Mac)">Ctrl K</span>
         {#if timezone}<span class="drawer__tz" title="Guild timezone — every time here is in it">{timezone}</span>{/if}

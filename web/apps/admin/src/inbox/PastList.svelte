@@ -7,7 +7,7 @@
 <script lang="ts">
   import type { PastItem } from '@kanade/api-types';
   import { tick } from 'svelte';
-  import { ListPane } from '@kanade/ui';
+  import { ListPane, StateNote } from '@kanade/ui';
   import { localAt } from '../history/describe';
   import { SOURCE_LABEL } from './flags';
   import OutcomeChip from './OutcomeChip.svelte';
@@ -95,8 +95,7 @@
     {/each}
   </ListPane>
 {:else}
-  <section class="inbox__empty" aria-label="No past items">
-    <h2>Nothing closed yet</h2>
-    <p>No closed items yet. Approved, rejected and expired changes are kept here.</p>
-  </section>
+  <div class="state-pane">
+    <StateNote icon="clock" title="Nothing closed yet">No closed items yet. Approved, rejected and expired changes are kept here.</StateNote>
+  </div>
 {/if}

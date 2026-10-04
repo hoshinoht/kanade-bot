@@ -238,6 +238,42 @@ const PAIRS: Pair[] = [
       await expect(page.getByText('Round 2', { exact: true })).toBeVisible();
     },
   },
+  {
+    name: 'inbox-empty',
+    board: 'B_Empty',
+    path: '/inbox',
+    // The board shows nothing waiting: answer with an empty inbox, then reload.
+    ready: async (page) => {
+      await page.route('**/api/admin/inbox', (route) => route.fulfill({ json: [] }));
+      await page.reload();
+      await expect(page.getByRole('heading', { name: 'Nothing waiting' })).toBeVisible();
+    },
+  },
+  {
+    name: 'states-error',
+    board: 'B_States',
+    path: '/members',
+    // The board's "Error and retry" quadrant: a pane whose read failed.
+    ready: async (page) => {
+      await page.route('**/api/admin/members', (route) =>
+        route.fulfill({ status: 503, json: { error: 'unavailable', message: "The server didn't answer in time: the request timed out after 10 seconds." } }),
+      );
+      await page.reload();
+      await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible();
+    },
+  },
+  {
+    name: 'phone-nav',
+    board: 'B_PhoneNav',
+    path: '/',
+    ready: async (page) => {
+      await page.getByRole('button', { name: 'Open the navigation' }).click();
+      const drawer = page.getByRole('dialog', { name: 'Navigation' });
+      await expect(drawer).toBeVisible();
+      // Measure the drawer at rest, not mid-slide.
+      await drawer.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+    },
+  },
 ];
 
 test.describe('layout fidelity', () => {

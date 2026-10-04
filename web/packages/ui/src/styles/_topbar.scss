@@ -7,16 +7,15 @@
   flex: none;
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
   min-height: calc(48px + env(safe-area-inset-top));
-  padding: env(safe-area-inset-top) max(2px, env(safe-area-inset-right)) 0 max(2px, env(safe-area-inset-left));
+  padding: env(safe-area-inset-top) max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left));
   background: var(--surface);
   border-bottom: 2px solid var(--win);
 }
 
 .topbar__menu,
 .topbar__inbox {
-  position: relative;
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -29,6 +28,10 @@
   background: transparent;
   color: var(--ink);
   cursor: pointer;
+}
+
+.topbar__inbox {
+  position: relative; // the badge's containing block
 }
 
 .topbar__menu .icon,
@@ -79,10 +82,11 @@
   flex: 1 1 auto;
 }
 
+// As wide as its words (B_PhoneNav); the Live chip takes the slack.
 .topbar__title {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
-  margin: 0 0 0 2px;
+  margin: 0;
   overflow: hidden;
   font-family: var(--display);
   font-size: var(--fs-lg);
@@ -91,18 +95,42 @@
   white-space: nowrap;
 }
 
-// The Live chip, compact: the state's mark and the time ("Live" stays for
-// screen readers; the other states keep their words).
-.topbar__fresh .fresh {
-  display: inline-flex;
+// The Live chip, compact (B_PhoneNav `.chip`, 26 px): the state's mark and
+// the time ("Live" stays for screen readers; the other states keep their words).
+.topbar__fresh {
+  display: flex;
+  flex: none;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.15rem 0.55rem;
-  border: 2px solid var(--line);
+  min-height: 26px;
+  margin-left: auto;
+  padding: 0 8px;
+  border: 1.5px solid var(--line);
   border-radius: 999px;
   font-family: var(--mono);
   font-size: var(--fs-mini);
   white-space: nowrap;
+}
+
+.topbar__fresh .fresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.topbar__fresh .fresh .icon {
+  width: 14px;
+  height: 14px;
+}
+
+// Live shows the mark and the bold time only: the spaces around the
+// screen-reader words would otherwise widen the chip.
+.topbar__fresh .fresh--live {
+  font-size: 0;
+}
+
+.topbar__fresh .fresh--live .fresh__time {
+  font-size: var(--fs-mini);
+  font-weight: 700;
 }
 
 .topbar__fresh .fresh__state,
@@ -198,18 +226,23 @@ dialog.drawer[open]::backdrop {
 .drawer__panel {
   display: flex;
   flex-direction: column;
+  gap: 4px;
   height: 100%;
-  padding: max(14px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  padding: max(16px, env(safe-area-inset-top)) 12px max(16px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
 }
 
+// B_PhoneNav: brand and name, the close button at the far end, 12 px above the list.
 .drawer__head {
   flex: none;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-  padding-left: 4px;
+  gap: 10px;
+  padding: 0 6px 12px;
+}
+
+.drawer__head .navrail__brand {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .drawer .brand__avatar.navrail__tile {
@@ -258,8 +291,10 @@ dialog.drawer[open]::backdrop {
   overscroll-behavior: contain;
 }
 
+.drawer .navlist,
 .drawer .navlist__group {
   align-items: stretch;
+  gap: 4px;
 }
 
 .drawer .navlist__heading {
@@ -311,15 +346,14 @@ dialog.drawer[open]::backdrop {
   font-size: var(--fs-mini);
 }
 
+// The account, then the palette's keys at the far end; the guild time zone wraps below.
 .drawer__foot {
   flex: none;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 2px 8px;
-  margin-top: 8px;
-  padding-top: 10px;
+  gap: 2px 10px;
+  padding: 10px 8px 0;
   border-top: 1.5px solid var(--line);
 }
 
@@ -354,12 +388,11 @@ dialog.drawer[open]::backdrop {
 }
 
 .drawer__keys {
-  padding-right: 8px;
+  margin-left: auto;
 }
 
 .drawer__tz {
   flex: 1 0 100%;
-  padding-left: 4px;
 }
 
 // Phone landscape: tighter rows so most of the list shows at once.

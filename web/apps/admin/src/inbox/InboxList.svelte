@@ -15,15 +15,12 @@
     selected,
     label,
     follow,
-    empty,
     onpick,
   }: {
     items: Proposal[];
     selected: string;
     label: string;
     follow: boolean;
-    /** Why the tab is empty, after "Nothing waiting here." */
-    empty: string;
     onpick: (id: string, open: boolean) => void;
   } = $props();
   const uid = $props.id();
@@ -64,57 +61,49 @@
   }
 </script>
 
-{#if items.length}
-  <ListPane
-    {label}
-    activeDescendant={current ? `${uid}-${current}` : undefined}
-    bind:element={listEl}
-    onkeydown={onKeydown}
-    onclick={(event) => {
-      const option = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-item]') : null;
-      if (!option?.dataset.item) return;
-      active = option.dataset.item;
-      onpick(option.dataset.item, true);
-    }}
-  >
-    {#each items as p (p.id)}
-      <li
-        class="inbox__option expandable-row"
-        class:inbox__option--art={p.tab === 'extractor' && Boolean(p.bosses[0])}
-        data-fid="inbox-row"
-        class:inbox__option--active={!follow && p.id === current}
-        id="{uid}-{p.id}"
-        role="option"
-        aria-selected={p.id === selected}
-        data-item={p.id}
-      >
-        {#if p.tab === 'extractor' && p.bosses[0]}
-          <!-- Extractor rows (VarRail2): the boss art, then the lines; how much of the thread was used. -->
-          <span class="inbox__art" aria-hidden="true"><Portrait boss={p.bosses[0]} size="md" /></span>
+<ListPane
+  {label}
+  activeDescendant={current ? `${uid}-${current}` : undefined}
+  bind:element={listEl}
+  onkeydown={onKeydown}
+  onclick={(event) => {
+    const option = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-item]') : null;
+    if (!option?.dataset.item) return;
+    active = option.dataset.item;
+    onpick(option.dataset.item, true);
+  }}
+>
+  {#each items as p (p.id)}
+    <li
+      class="inbox__option expandable-row"
+      class:inbox__option--art={p.tab === 'extractor' && Boolean(p.bosses[0])}
+      data-fid="inbox-row"
+      class:inbox__option--active={!follow && p.id === current}
+      id="{uid}-{p.id}"
+      role="option"
+      aria-selected={p.id === selected}
+      data-item={p.id}
+    >
+      {#if p.tab === 'extractor' && p.bosses[0]}
+        <!-- Extractor rows (VarRail2): the boss art, then the lines; how much of the thread was used. -->
+        <span class="inbox__art" aria-hidden="true"><Portrait boss={p.bosses[0]} size="md" /></span>
+      {/if}
+      <RowContent expanded={p.id === selected}>
+        {#snippet compact()}<span class="inbox__what">{title(p)}</span> <span class="inbox__meta">· {who(p)} · {p.when}</span>{#if p.thread?.length}<span class="inbox__count"> · {p.thread.length} messages · {p.thread.filter((m) => m.used).length} used</span>{/if}{#each p.flags as flag (flag)} · {FLAG_LABEL[flag]}{/each}{#if p.is_question} · still a question{/if}{/snippet}
+        <span class="inbox__lines">
+        <span class="inbox__what">{title(p)}</span>
+        <span class="inbox__meta"><span>{who(p)}</span> · <span class="mono">{p.when}</span></span>
+        {#if p.tab === 'extractor' && p.thread?.length}
+          <span class="inbox__count">{p.thread.length} message{p.thread.length === 1 ? '' : 's'} · {p.thread.filter((m) => m.used).length} used</span>
         {/if}
-        <RowContent expanded={p.id === selected}>
-          {#snippet compact()}<span class="inbox__what">{title(p)}</span> <span class="inbox__meta">· {who(p)} · {p.when}</span>{#if p.thread?.length}<span class="inbox__count"> · {p.thread.length} messages · {p.thread.filter((m) => m.used).length} used</span>{/if}{#each p.flags as flag (flag)} · {FLAG_LABEL[flag]}{/each}{#if p.is_question} · still a question{/if}{/snippet}
-          <span class="inbox__lines">
-          <span class="inbox__what">{title(p)}</span>
-          <span class="inbox__meta"><span>{who(p)}</span> · <span class="mono">{p.when}</span></span>
-          {#if p.tab === 'extractor' && p.thread?.length}
-            <span class="inbox__count">{p.thread.length} message{p.thread.length === 1 ? '' : 's'} · {p.thread.filter((m) => m.used).length} used</span>
-          {/if}
-          {#if p.flags.length || p.is_question}
-            <span class="inbox__badges">
-              {#each p.flags as flag (flag)}<StatusChip tone={FLAG_TONE[flag] === 'danger' ? 'risk' : 'warn'} legacyTone={FLAG_TONE[flag]}>{FLAG_LABEL[flag]}</StatusChip>{/each}
-              {#if p.is_question}<StatusChip tone="warn">still a question</StatusChip>{/if}
-            </span>
-          {/if}
+        {#if p.flags.length || p.is_question}
+          <span class="inbox__badges">
+            {#each p.flags as flag (flag)}<StatusChip tone={FLAG_TONE[flag] === 'danger' ? 'risk' : 'warn'} legacyTone={FLAG_TONE[flag]}>{FLAG_LABEL[flag]}</StatusChip>{/each}
+            {#if p.is_question}<StatusChip tone="warn">still a question</StatusChip>{/if}
           </span>
-        </RowContent>
-      </li>
-    {/each}
-  </ListPane>
-{:else}
-  <section class="inbox__empty" aria-label="Inbox is empty">
-    <span class="inbox__empty-mark" aria-hidden="true">✓</span>
-    <h2>Nothing waiting</h2>
-    <p>Nothing waiting here. {empty}</p>
-  </section>
-{/if}
+        {/if}
+        </span>
+      </RowContent>
+    </li>
+  {/each}
+</ListPane>

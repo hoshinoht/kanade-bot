@@ -803,6 +803,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- v5 admin empty Inbox tabs say why nothing waits (the extractor's last read,
+  links on, and the tab's last three decisions); failed panes offer Try again
+  and Copy details; the phone top bar and drawer follow the M3E spacing.
 - v5 admin Chat and Extractions: the Filters button has an icon and its panel
   closes on Escape or a click outside; on phones, Back closes an open
   extraction call, and the filter chips and panel stay inside the window.

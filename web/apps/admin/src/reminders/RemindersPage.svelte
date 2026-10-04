@@ -10,6 +10,7 @@
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
   import type { ReminderRow, Reminders } from '@kanade/api-types';
+  import { LoadError } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import ReminderFilters, { NO_FILTER, type ReminderFilter } from './ReminderFilters.svelte';
   import ReminderTable from './ReminderTable.svelte';
@@ -137,7 +138,7 @@
     bind:this={scroller}
   >
     {#if reminders.error}
-      <p class="flash flash--error" role="alert">{reminders.error}</p>
+      <LoadError thing="reminders" reason={reminders.error} onretry={() => void reminders.load()} />
     {:else if reminders.data}
       {#if shown.length}
         <ReminderTable rows={shown} {tab} caption={current.caption} {now} {zone} />

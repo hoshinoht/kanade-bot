@@ -12,13 +12,14 @@
   import '@kanade/ui/styles/evidence.scss';
   import '@kanade/ui/styles/inbox.scss';
   import type { ApproveRequest, InboxTab, Proposal } from '@kanade/api-types';
-  import { Icon, LoadingState, Modal, PendingLabel, Toaster, enter } from '@kanade/ui';
+  import { Icon, LoadError, LoadingState, Modal, PendingLabel, Toaster, enter } from '@kanade/ui';
   import { tick, untrack } from 'svelte';
   import { Resource, send } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
   import { parseEdit } from './edit';
   import { isProposal, REASON_MAX, reasonProblem, refusalText, title } from './flags';
   import InboxDetail from './InboxDetail.svelte';
+  import InboxEmpty from './InboxEmpty.svelte';
   import InboxList from './InboxList.svelte';
   import PastDetail from './PastDetail.svelte';
   import PastList from './PastList.svelte';
@@ -265,7 +266,7 @@
   >
     {#if isPast}
       {#if past.items === null && past.error}
-        <p class="flash flash--error" role="alert">{past.error}</p>
+        <LoadError thing="past decisions" reason={past.error} onretry={() => void past.load()} />
       {:else if past.items === null}
         <LoadingState text="Loading past decisions…" />
       {:else}
@@ -295,9 +296,11 @@
         </div>
       {/if}
     {:else if inbox.error}
-      <p class="flash flash--error" role="alert">{inbox.error}</p>
+      <LoadError thing="the inbox" reason={inbox.error} onretry={() => void inbox.load()} />
     {:else if !inbox.data}
       <LoadingState text="Loading the inbox…" />
+    {:else if !items.length}
+      {#key current}<InboxEmpty tab={current === 'self_service' ? 'self_service' : 'extractor'} {timeZone} />{/key}
     {:else}
       <div class="inbox__list" data-fid="inbox-list" hidden={phone && Boolean(chosen)} {@attach enter(returns || null, 'backward')}>
         <InboxList
@@ -306,7 +309,6 @@
           selected={chosen?.id ?? ''}
           label="{current === 'extractor' ? 'Extractor' : 'Self-service'} items"
           follow={!phone}
-          empty={current === 'extractor' ? 'The extractor posts a card when it reads a change in a watched channel.' : 'Members’ requests arrive here.'}
           onpick={pick}
         />
       </div>

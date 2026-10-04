@@ -1,7 +1,7 @@
 <script lang="ts">
   import PageLine from '../shell/PageLine.svelte';
   import type { BossRow, FixedRow } from '@kanade/api-types';
-  import { BossStack, BossTag, Icon, LoadingState, Modal, Presence, RowContent, Toaster } from '@kanade/ui';
+  import { BossStack, BossTag, Icon, LoadError, LoadingState, Modal, Presence, RowContent, Toaster } from '@kanade/ui';
   import '@kanade/ui/styles/fixed.scss';
   import Name from '../names/Name.svelte';
   import { directory } from '../names/directory.svelte';
@@ -165,7 +165,7 @@
   </div>
   <div class="fixed-window__body">
   {#if fixed.error}
-    <p class="flash flash--error" role="alert">{fixed.error}</p>
+    <LoadError thing="the weekly timings" reason={fixed.error} onretry={() => void load()} />
   {:else if fixed.rows && rows.length === 0}
     <div class="empty">
       {#if q}<strong>Nothing matches “{query}”.</strong>The search reads the bosses, the day and time, the party and the home channel.
