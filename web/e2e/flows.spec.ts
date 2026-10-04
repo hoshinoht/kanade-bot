@@ -170,6 +170,13 @@ async function neverIdle(page: Page) {
   });
 }
 
+// Busy columns keep a 230 px floor, so Wed sits past the right edge: scroll
+// the board to its end so both Mon and Wed are on screen before measuring.
+async function showWeekEnd(page: Page) {
+  await page.locator('.board').evaluate((board) => (board.scrollLeft = board.scrollWidth));
+  await expect(page.locator('.board.scroll-more-end')).toHaveCount(0);
+}
+
 async function dragTo(page: Page, from: { x: number; y: number; width: number; height: number }, to: { x: number; y: number; width: number }) {
   for (let i = 1; i <= 12; i++) {
     await page.mouse.move(
@@ -186,6 +193,7 @@ test('admin: pointer drag of a whole card to another day, Ctrl/Cmd+Z undoes', as
   // Well past the 2.5 s idle timeout and the 1.5 s fallback, still cold.
   await page.waitForTimeout(3000);
   await expect(page.locator('.board:not([data-hydrated])')).toBeVisible();
+  await showWeekEnd(page);
   const card = page.locator('[data-run="r-fa"]');
   const target = column(page, 'Wed');
   const from = (await card.boundingBox())!;
@@ -218,6 +226,7 @@ test('admin: the very first press drags even before the engine hydrates', async 
     await route.continue();
   });
   await openAdmin(page);
+  await showWeekEnd(page);
   const card = page.locator('[data-run="r-fa"]');
   const target = column(page, 'Wed');
   const from = (await card.boundingBox())!;
@@ -257,6 +266,7 @@ test.describe('touch', () => {
     const cdp = await page.context().newCDPSession(page);
     const touch = (type: string, x?: number, y?: number) =>
       cdp.send('Input.dispatchTouchEvent', { type, touchPoints: x === undefined ? [] : [{ x, y: y! }] });
+    await showWeekEnd(page);
     const from = (await page.locator('[data-run="r-fa"]').boundingBox())!;
     const target = column(page, 'Wed');
     const to = (await target.boundingBox())!;

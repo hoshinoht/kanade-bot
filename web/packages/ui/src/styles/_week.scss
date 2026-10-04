@@ -371,11 +371,32 @@ a.week-foot__item:hover,
   padding: 8px;
 }
 
-// The busy board's floor (B_WeekSel: three busy days beside a 340 px pane are
-// about 190 px wide; boss names may wrap). Busier weeks scroll sideways.
+// The busy board's floor: wide enough for a long boss token, its difficulty
+// pill and three party names (v4's 230 px track; user decision 2026-10-04,
+// replacing B_WeekSel's 190 px squeeze). Busier weeks scroll sideways, and
+// an edge with more board past it fades out.
 @media (min-width: 900px) {
   .week-window .board__col:not(.board__col--empty) {
-    min-width: 11.5rem;
+    min-width: 14.375rem;
+  }
+
+  .week-window .board.scroll-more-start {
+    --board-fade-start: 3rem;
+  }
+
+  .week-window .board.scroll-more-end {
+    --board-fade-end: 3rem;
+  }
+
+  .week-window .board.scroll-more-start,
+  .week-window .board.scroll-more-end {
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 var(--board-fade-start, 0px),
+      #000 calc(100% - var(--board-fade-end, 0px)),
+      transparent
+    );
   }
 }
 

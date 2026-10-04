@@ -803,6 +803,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- v5 admin Week board: busy day columns keep v4's 230 px floor instead of
+  squeezing to 184 px, so pills and names fit; a busy week scrolls sideways
+  and the board fades at whichever edge has more columns.
 - The web apps' API response types are generated from the Rust DTOs with
   ts-rs (`web/packages/api-types/src/generated.ts`, checked by a Rust unit
   test that fails when the file is stale); vocabularies, request bodies and

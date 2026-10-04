@@ -55,6 +55,7 @@ export { default as AnswerBar } from './components/AnswerBar.svelte';
 export { answerCounts, answerWords, type AnswerCounts } from './answers';
 // M3E motion (m3e-rail-design-spec "Motion and loading"): CSP-safe helpers.
 export { enter, enterFrames, type Direction } from './motion/enter';
+export { scrollEdges } from './scroll/edges';
 export { flip, measure, deltas, type Point } from './motion/flip';
 export { Presence, EXIT_FALLBACK_MS } from './motion/presence.svelte';
 export { Delay, LOADING_DELAY_MS } from './motion/delay.svelte';

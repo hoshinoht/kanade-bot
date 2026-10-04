@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { Run, Week } from '@kanade/api-types';
-  import { Icon, LiveRegion, WeekRail, dayLabel, runTitle, sortRuns, whenLabel } from '@kanade/ui';
+  import { Icon, LiveRegion, WeekRail, dayLabel, runTitle, scrollEdges, sortRuns, whenLabel } from '@kanade/ui';
   import { clashes, dropTime, swapSlots, timedOthers, zoneAt, type DropTime, type TimedRun } from './dropTime';
   import { IDLE, cancel, describeSlot, onKey, type LiftState, type MovableRun, type Slot } from './keyboardMove';
   import PlannerCard from './PlannerCard.svelte';
@@ -384,7 +384,7 @@
 
 <WeekRail days={week.days} runs={week.runs} />
 
-<div class="board planner" data-fid="week-board" class:planner--dragging={dragging !== null} data-hydrated={engine ? "" : null} bind:this={board} {@attach warmUp}>
+<div class="board planner" data-fid="week-board" class:planner--dragging={dragging !== null} data-hydrated={engine ? "" : null} bind:this={board} {@attach warmUp} {@attach scrollEdges}>
   {#each week.days as day (day.index)}
     {@const runs = byDay[day.index] ?? []}
     <PlannerColumn
