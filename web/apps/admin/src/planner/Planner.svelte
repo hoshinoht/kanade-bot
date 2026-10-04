@@ -290,6 +290,25 @@
   let pointer = { x: 0, y: 0 };
   let board: HTMLDivElement;
 
+  // Opening the pane narrows the board: keep the selected card in view, clear of the edge fades.
+  $effect(() => {
+    const id = selectedRun;
+    if (!id || !board) return;
+    const FADE = 48;
+    const keep = () => {
+      const card = board.querySelector<HTMLElement>(`[data-run="${CSS.escape(id)}"]`);
+      if (!card || board.classList.contains('planner--dragging')) return;
+      const view = board.getBoundingClientRect();
+      const box = card.getBoundingClientRect();
+      if (box.left < view.left + FADE) board.scrollLeft -= view.left + FADE - box.left;
+      else if (box.right > view.right - FADE) board.scrollLeft += box.right - (view.right - FADE);
+    };
+    keep();
+    const seen = new ResizeObserver(keep);
+    seen.observe(board);
+    return () => seen.disconnect();
+  });
+
   function planFor(run: Run, day: number): Plan {
     // Cards of that day in board order, without the dragged one, and where the pointer sits among them.
     const cards = [...board.querySelectorAll<HTMLElement>(`[data-day="${day}"] [data-run]`)].filter((card) => card.dataset.run !== run.id);

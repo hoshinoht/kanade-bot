@@ -214,7 +214,8 @@ with it off, every usage site renders exactly what it did before.
   wave (path recomputed per frame as SVG attributes, so it is CSP-safe),
   otherwise it is flat and stops redrawing once filled. It also takes tick marks
   and a warning tone. It drives the boss-week footer, run countdowns (wavy over
-  the final 24 h, T-1h/T-15m marks), Inbox proposal expiry, model permits on
+  the final 24 h, filling to T-1h, then restarting over the last hour with a
+  T-15m mark), Inbox proposal expiry, model permits on
   Limits and Config, and the Re-read job; `AnswerBar.svelte` draws the
   segmented answers bar. At most two waves move per screen, times come from the
   server clock, and reduced motion draws everything flat. Styles live in

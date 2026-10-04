@@ -63,13 +63,21 @@ describe('run countdown', () => {
   const now = week('2026-09-29T04:00:00Z', 5); // Tue 12:00
   const run = (day: number, time: string | null, status: 'planned' | 'otot' | 'done' | 'cancelled' = 'planned') => ({ day, time, status });
 
-  it('waves over the final 24 h, with marks at T-1h and T-15m', () => {
+  it('waves over the final 24 h, filling to T-1h', () => {
     const c = runCountdown(run(5, '21:00'), now)!;
     expect(c.left).toBe(9 * 60);
     expect(c.wavy).toBe(true);
-    expect(c.value).toBe(COUNTDOWN_SPAN - 9 * 60);
-    expect(c.ticks).toEqual([(1440 - 60) / 1440, (1440 - 15) / 1440]);
+    expect([c.value, c.max]).toEqual([COUNTDOWN_SPAN - 9 * 60, COUNTDOWN_SPAN - 60]);
+    expect(c.ticks).toEqual([]);
     expect(c.text).toBe('starts in 9 h');
+  });
+
+  it('restarts over the last hour with the T-15m mark at three quarters', () => {
+    const c = runCountdown(run(5, '12:50'), now)!;
+    expect([c.left, c.value, c.max, c.wavy]).toEqual([50, 10, 60, true]);
+    expect(c.ticks).toEqual([0.75]);
+    const hour = runCountdown(run(5, '13:00'), now)!;
+    expect([hour.value, hour.max, hour.ticks]).toEqual([0, 60, [0.75]]);
   });
 
   it('is flat and empty earlier than a day out, and wavy exactly at 24 h', () => {

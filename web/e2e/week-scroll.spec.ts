@@ -65,3 +65,22 @@ test('Week: with the run pane open, busy columns keep their floor and the board 
   const scroller = await board.evaluate((el) => el.scrollWidth > el.clientWidth);
   if (scroller) await expect(board).toHaveClass(/scroll-more-(start|end)/);
 });
+
+test('Week: opening the pane keeps the selected card in view', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${ADMIN}/?sw=off`);
+  const board = page.locator('.week-window .board');
+  const card = board.locator('[data-run]').last();
+  await card.click();
+  await expect(page.locator('.week-pane')).toBeVisible();
+  await expect(board).toHaveClass(/scroll-more-start/);
+  await expect
+    .poll(() =>
+      card.evaluate((el) => {
+        const view = el.closest('.board')!.getBoundingClientRect();
+        const box = el.getBoundingClientRect();
+        return box.left >= view.left && box.right <= view.right;
+      }),
+    )
+    .toBe(true);
+});

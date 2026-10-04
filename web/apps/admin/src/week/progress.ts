@@ -31,9 +31,11 @@ export function weekProgress(week: Clocked): Progress | null {
   return { value, max, text: `Day ${today.index + 1} of ${week.days.length} · resets ${week.reset}` };
 }
 
-/** The countdown spans the last day before a run; it waves only inside it. */
+/** The countdown waves over the last day before a run. */
 export const COUNTDOWN_SPAN = DAY;
-/** Marks at the T-1h and T-15m reminders, in minutes before the start. */
+/** It zooms in stages (user decision 2026-10-04): the day down to T-1h, then the last hour. */
+export const COUNTDOWN_STAGES = [DAY, 60];
+/** Reminder marks, in minutes before the start. */
 export const COUNTDOWN_MARKS = [60, 15];
 
 export interface Countdown extends Progress {
@@ -41,14 +43,14 @@ export interface Countdown extends Progress {
   left: number;
   /** Inside the final 24 h: the bar waves. */
   wavy: boolean;
-  /** The T-1h and T-15m marks as fractions of the bar. */
+  /** The reminder marks inside the current stage, as fractions of the bar. */
   ticks: number[];
 }
 
 /**
- * A run still ahead with a clock time: the bar fills over its final 24 h
- * (flat and empty before that), with marks at T-1h and T-15m. Null for
- * own-time, finished, cancelled and started runs.
+ * A run still ahead with a clock time: the bar fills from 24 h out to T-1h
+ * (flat and empty before that), then restarts over the last hour with a
+ * T-15m mark. Null for own-time, finished, cancelled and started runs.
  */
 export function runCountdown(run: Pick<Run, 'day' | 'time' | 'status'>, week: Pick<Week, 'days' | 'generated_at' | 'timezone'>): Countdown | null {
   if (run.time === null || run.status === 'otot' || run.status === 'done' || run.status === 'cancelled') return null;
@@ -57,12 +59,15 @@ export function runCountdown(run: Pick<Run, 'day' | 'time' | 'status'>, week: Pi
   const now = wallMinutes(week.generated_at, week.timezone);
   if (start === null || now === null || start <= now) return null;
   const left = start - now;
+  const span = COUNTDOWN_STAGES.findLast((s) => s >= left) ?? COUNTDOWN_SPAN;
+  const end = COUNTDOWN_STAGES.find((s) => s < span) ?? 0;
+  const max = span - end;
   return {
     left,
-    value: Math.max(0, COUNTDOWN_SPAN - left),
-    max: COUNTDOWN_SPAN,
+    value: Math.min(max, Math.max(0, span - left)),
+    max,
     wavy: left <= COUNTDOWN_SPAN,
-    ticks: COUNTDOWN_MARKS.map((m) => (COUNTDOWN_SPAN - m) / COUNTDOWN_SPAN),
+    ticks: COUNTDOWN_MARKS.filter((m) => m > end && m < span).map((m) => (span - m) / max),
     text: `starts in ${spanWords(left)}`,
   };
 }

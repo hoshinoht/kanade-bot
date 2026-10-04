@@ -2,10 +2,11 @@ import type { Locator, Page } from '@playwright/test';
 import { ADMIN, expect, test } from './support';
 
 // M3E progress bars, always on (user decision 2026-10-04): the boss week in
-// the Week footer, run countdowns (wavy only over the final 24 h, marks at
-// T-1h and T-15m), answers as a segmented bar, proposal expiry in the Inbox,
-// and model permits on Limits and Config, which wave (even when full) while
-// calls are in flight (user decision 2026-10-04). At most two bars wave on a screen.
+// the Week footer, run countdowns (wavy over the final 24 h, filling to T-1h,
+// then over the last hour with a T-15m mark), answers as a segmented bar,
+// proposal expiry in the Inbox, and model permits on Limits and Config, which
+// wave (even when full) while calls are in flight (user decision 2026-10-04).
+// At most two bars wave on a screen.
 // Captures for review go to the git-ignored e2e/.captures/progress/.
 const OUT = 'e2e/.captures/progress';
 
@@ -37,15 +38,21 @@ test('Week: the footer shows the boss week as a flat bar, and at most two bars w
   const card = page.locator('[data-run="r-carling"]');
   await expect(card.locator('.answerbar')).toHaveCount(1);
   await expect(card.getByRole('button').first()).toHaveAccessibleName(/Answers: .*of \d+\./);
-  // The glance's countdown to the next run, marked at T-1h and T-15m.
+  // The glance's countdown to the next run; only the last-hour stage has a (T-15m) mark.
   const countdown = page.locator('.week-glance').getByRole('progressbar', { name: /^Countdown to / });
   await expect(countdown).toHaveAttribute('aria-valuetext', /^starts in /);
-  await expect(countdown.locator('.wavy__tick')).toHaveCount(2);
+  await expect(countdown.locator('.wavy__tick')).toHaveCount(await stageMarks(countdown));
   const far = /day/.test((await countdown.getAttribute('aria-valuetext'))!);
   await expect(countdown).toHaveClass(far ? /wavy--flat/ : /^(?!.*wavy--flat)/);
   expect(await waves(page).count()).toBeLessThanOrEqual(2);
   await page.locator('.week-window').screenshot({ path: `${OUT}/week-glance.png` });
 });
+
+/** Marks a countdown draws: the T-15m mark inside the last hour, none before. */
+async function stageMarks(countdown: Locator): Promise<number> {
+  const text = (await countdown.getAttribute('aria-valuetext'))!;
+  return /^starts in (\d+ min|1 h)$/.test(text) ? 1 : 0;
+}
 
 test('Week: the run pane shows the countdown and the answers bar', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -57,7 +64,7 @@ test('Week: the run pane shows the countdown and the answers bar', async ({ page
   const countdown = pane.getByRole('progressbar', { name: /^Countdown to / });
   if (await countdown.count()) {
     await expect(countdown).toHaveAttribute('aria-valuetext', /^starts in /);
-    await expect(countdown.locator('.wavy__tick')).toHaveCount(2);
+    await expect(countdown.locator('.wavy__tick')).toHaveCount(await stageMarks(countdown));
   }
   // The pane replaces the glance: never more than two waves.
   expect(await waves(page).count()).toBeLessThanOrEqual(2);

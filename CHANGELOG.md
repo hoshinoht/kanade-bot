@@ -982,6 +982,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 admin run countdowns no longer bunch their marks at the end: the bar fills
+  from 24 h out to T-1h, then restarts over the last hour with the T-15m mark
+  at three quarters. Opening the run pane scrolls the board to keep the
+  selected card in view.
 - v5 admin run pane: the countdown's track and T-1h/T-15m marks stay visible
   over the boss art.
 - v5 admin Week Glance: the "Next up" card is readable over bright boss art
