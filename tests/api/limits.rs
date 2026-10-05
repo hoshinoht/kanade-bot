@@ -52,6 +52,8 @@ async fn limits_project_live_groups_and_allowances_without_secrets() {
     let value = reply.json();
     assert_valid("limits.json#/$defs/Limits", LIMITS, &value);
     assert!(value["groups"].is_array());
+    // The page's "Updated …" line reads the server's clock, never the browser's.
+    assert_eq!(value["generated_at"], "2026-09-29T04:00:00Z");
     assert!(
         value["allowances"]
             .as_array()

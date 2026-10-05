@@ -228,6 +228,25 @@ pub async fn switch_session(State(app): State<App>, Json(req): Json<SessionMetho
     StatusCode::NO_CONTENT.into_response()
 }
 
+#[derive(Deserialize)]
+pub struct LimitGroups {
+    groups: String,
+}
+
+/// `POST /__mock/limits {groups}`: `three` seeds three model groups (full and
+/// queueing, half-open, open) for Limits and Config; `default` restores the
+/// one gateway group. Dev and e2e only; `/api/admin/reset` also restores it.
+pub async fn seed_limits(State(app): State<App>, Json(req): Json<LimitGroups>) -> Response {
+    if !app.store.lock().await.seed_limit_groups(&req.groups) {
+        return error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid",
+            "Groups is three or default.",
+        );
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
+
 pub async fn move_run(
     State(app): State<App>,
     Path(id): Path<String>,

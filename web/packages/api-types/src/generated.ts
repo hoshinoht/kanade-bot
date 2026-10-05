@@ -666,7 +666,11 @@ export type Allowance = { member: Member, staff: boolean,
  */
 allowance: Quota | null, used: number, override: boolean, };
 
-export type Limits = { groups: Array<BackendGroup>, admission: AdmissionWindow, allowances: Array<Allowance>, };
+export type Limits = { groups: Array<BackendGroup>, admission: AdmissionWindow, allowances: Array<Allowance>, 
+/**
+ * The server's clock when the snapshot was taken (ISO-8601 UTC), as `Week.generated_at`.
+ */
+generated_at: string, };
 
 /**
  * `{seq, hash}`: a record in the chain.

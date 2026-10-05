@@ -126,7 +126,7 @@ test('Limits: one permit bar per group, waving only with requests in flight, two
   await isWaving(full);
   expect(await waves(page).count()).toBeGreaterThan(0);
   expect(await waves(page).count()).toBeLessThanOrEqual(2);
-  await page.locator('.stats').screenshot({ path: `${OUT}/limits.png` });
+  await page.getByRole('tabpanel', { name: /Backends/ }).screenshot({ path: `${OUT}/limits.png` });
 });
 
 test('Config: each capacity group shows its permits against what Kanata admits, waving while calls run', async ({ page }) => {

@@ -1,7 +1,10 @@
 //! Limits (v5): model backend groups behind the Kanata gateway, their
 //! permits, queue, rate bucket, retry budget and breaker, and the gateway's
-//! admission refusals by kind. Synthetic, shaped for the admin view.
+//! admission refusals by kind. Synthetic, shaped for the admin view. Times
+//! are ISO instants, as the Rust server's `iso_instant`.
 
+use super::clock::{iso_now, iso_z};
+use super::config::Group;
 use super::seed;
 use super::{MoveError, Store};
 use serde_json::{Value, json};
@@ -9,7 +12,7 @@ use serde_json::{Value, json};
 impl Store {
     pub fn limits(&self) -> Value {
         let minute = Self::now_minute();
-        let ago = |m: i64| Self::when(minute - m);
+        let ago = |m: i64| iso_z(minute - m);
         let allowances: Vec<Value> = self
             .members
             .iter()
@@ -55,7 +58,7 @@ impl Store {
                         "queue": [],
                         "rate": { "available": 6, "capacity": 6, "refill_per_min": 1 },
                         "retry": { "remaining": 0, "capacity": 3 },
-                        "breaker": { "state": "open", "failures": 5, "since": ago(12), "retry_at": Self::when(minute + 3) },
+                        "breaker": { "state": "open", "failures": 5, "since": ago(12), "retry_at": iso_z(minute + 3) },
                     }),
                 };
                 group.as_object_mut().unwrap().extend(state.as_object().unwrap().clone());
@@ -80,7 +83,30 @@ impl Store {
                 ],
             },
             "allowances": allowances,
+            "generated_at": iso_now(),
         })
+    }
+
+    /// Dev-only (`POST /__mock/limits {"groups": …}`): `three` declares cloud,
+    /// local and legacy groups so Limits shows the seeded full, half-open and
+    /// open states side by side; `default` returns to the one gateway group.
+    pub fn seed_limit_groups(&mut self, which: &str) -> bool {
+        let group = |model: &str, group: &str, permits: u32| Group {
+            model: model.into(),
+            group: group.into(),
+            permits,
+        };
+        self.config.declared_groups = match which {
+            "three" => Some(vec![
+                group("kanata/chat-cloud", "cloud", 2),
+                group("kanata/rewrite-cloud", "cloud", 2),
+                group("kanata/chat", "local", 4),
+                group("kanata/legacy", "legacy", 2),
+            ]),
+            "default" => None,
+            _ => return false,
+        };
+        true
     }
 
     pub fn reset_window(&mut self, id: &str) -> Result<Value, MoveError> {
@@ -89,5 +115,44 @@ impl Store {
             self.limit_resets.push(id);
         }
         Ok(json!({ "message": format!("{name}'s window is reset.") }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::mock::tests::store;
+
+    #[test]
+    fn seeded_groups_show_three_states_and_default_restores_the_gateway() {
+        let mut s = store();
+        let one = s.limits();
+        assert_eq!(one["groups"].as_array().unwrap().len(), 1);
+        assert_eq!(one["groups"][0]["name"], "gateway");
+        assert!(one["generated_at"].as_str().unwrap().ends_with('Z'));
+        assert!(s.seed_limit_groups("three"));
+        let three = s.limits();
+        let row = |i: usize, key: &str| three["groups"][i][key].clone();
+        assert_eq!(
+            [row(0, "name"), row(1, "name"), row(2, "name")],
+            ["cloud", "local", "legacy"]
+        );
+        assert_eq!(
+            three["groups"][0]["permits"],
+            serde_json::json!({ "in_use": 2, "total": 2 })
+        );
+        assert_eq!(
+            three["groups"][1]["permits"],
+            serde_json::json!({ "in_use": 2, "total": 4 })
+        );
+        assert_eq!(three["groups"][2]["breaker"]["state"], "open");
+        assert!(
+            three["groups"][2]["breaker"]["retry_at"]
+                .as_str()
+                .unwrap()
+                .ends_with('Z')
+        );
+        assert!(!s.seed_limit_groups("four"));
+        assert!(s.seed_limit_groups("default"));
+        assert_eq!(s.limits()["groups"][0]["name"], "gateway");
     }
 }

@@ -97,6 +97,8 @@ pub struct Limits {
     pub groups: Vec<BackendGroup>,
     pub admission: AdmissionWindow,
     pub allowances: Vec<Allowance>,
+    /// The server's clock when the snapshot was taken (ISO-8601 UTC), as `Week.generated_at`.
+    pub generated_at: String,
 }
 
 impl AdmissionWindow {

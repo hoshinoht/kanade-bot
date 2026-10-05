@@ -61,8 +61,12 @@ backend group and validates it against what Kanata publishes:
   `override` marks a per-member allowance set by an admin.
 
 `GET /api/admin/limits` returns all three sections at once (`Limits`):
-`{groups, admission: {window, refusals}, allowances}`. Empty arrays — not
-nulls — when there is nothing to show.
+`{groups, admission: {window, refusals}, allowances, generated_at}`. Empty
+arrays — not nulls — when there is nothing to show. `generated_at` is the
+server's clock when the snapshot was taken (ISO-8601 UTC instant, as
+`Week.generated_at`); the page prints it as "Updated Tue 29 Sep 12:00 · every
+5 s" in the guild zone, never the browser's clock. `breaker.since` and
+`retry_at` are instants of the same form, printed the same way.
 
 ## Operations
 

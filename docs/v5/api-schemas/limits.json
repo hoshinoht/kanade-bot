@@ -106,7 +106,7 @@
     "Limits": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["groups", "admission", "allowances"],
+      "required": ["groups", "admission", "allowances", "generated_at"],
       "properties": {
         "groups": { "type": "array", "items": { "$ref": "#/$defs/BackendGroup" } },
         "admission": {
@@ -118,7 +118,8 @@
             "refusals": { "type": "array", "items": { "$ref": "#/$defs/Refusal" } }
           }
         },
-        "allowances": { "type": "array", "items": { "$ref": "#/$defs/Allowance" } }
+        "allowances": { "type": "array", "items": { "$ref": "#/$defs/Allowance" } },
+        "generated_at": { "type": "string", "description": "The server's clock at the snapshot (ISO-8601 UTC instant), as Week.generated_at." }
       }
     }
   }

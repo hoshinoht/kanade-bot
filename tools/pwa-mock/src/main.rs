@@ -77,6 +77,7 @@ fn common(app: &App, api: Router<App>, dist: PathBuf) -> Router {
         .route("/__mock/whoami", get(whoami))
         .route("/__mock/csrf/rotate", post(writes::rotate))
         .route("/__mock/session", post(api::switch_session))
+        .route("/__mock/limits", post(api::seed_limits))
         .route("/__mock/discord", post(auth::fail_next_discord))
         .with_state(app.clone())
         .fallback_service(static_site(dist))

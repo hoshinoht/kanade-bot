@@ -182,6 +182,33 @@ const PAIRS: Pair[] = [
       await expect(page.getByRole('link', { name: /Config → Models/ })).toBeVisible();
     },
   },
+  // Live Limits: the boards show the mock's three seeded groups (cloud full and
+  // queueing, local half-open, legacy open), or its default one gateway group.
+  ...(
+    [
+      ['limits-live', 'B_LimitsLive', 'three', 'Backends'],
+      ['limits-live-one', 'B_LimitsLiveOne', 'default', 'Backends'],
+      ['limits-queue', 'B_LimitsQueue', 'three', 'Queue'],
+      ['limits-admission', 'B_LimitsAdmission', 'three', 'Admission'],
+      ['limits-allowances', 'B_LimitsAllowances', 'three', 'Allowances'],
+      ['phone-limits', 'B_PhoneLimits', 'three', 'Backends'],
+      ['phone-limits-admission', 'B_PhoneLimitsAdmission', 'three', 'Admission'],
+    ] as const
+  ).map(
+    ([name, board, groups, tab]): Pair => ({
+      name,
+      board,
+      path: '/limits',
+      ready: async (page) => {
+        await page.request.post(`${ADMIN}/__mock/limits`, { data: { groups } });
+        await page.reload();
+        const chosen = page.getByRole('tab', { name: new RegExp(`^${tab}`) });
+        await chosen.click();
+        await expect(chosen).toHaveAttribute('aria-selected', 'true');
+        await expect(page.getByRole('tabpanel')).toBeVisible();
+      },
+    }),
+  ),
   {
     name: 'extract',
     board: 'B_Extract',

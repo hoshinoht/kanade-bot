@@ -177,7 +177,7 @@ whole; unknown or read-only keys are refused with 422.
 | `DELETE /api/admin/rescan/{id}` | — | `RescanJob` | Cancel. v4 `POST …/cancel`. **Implemented (A7)**; safe to repeat. |
 | `GET /api/admin/chat` | — | `Chat` | **Implemented (A7)**. |
 | `GET /api/admin/chat/{id}` | — | `ChatTurn` | **Implemented (A7; transcript fields)**; a withheld question is not shown; historical masked turns may carry `model_view` (admin listener only), while new raw turns do not create one. |
-| `GET /api/admin/limits` | — | `Limits` | **Implemented (A8)**; live governor groups and chat allowances, with empty arrays where a live source has nothing to report. |
+| `GET /api/admin/limits` | — | `Limits` | **Implemented (A8)**; live governor groups and chat allowances, with empty arrays where a live source has nothing to report; `generated_at` is the server's clock at the snapshot (ISO-8601 UTC, as `Week.generated_at`). |
 | `DELETE /api/admin/limits/windows/{id}` | — | `{message}` | **Implemented (A8)**. Clear one member's window. v4 `POST …/reset`. |
 
 ## Operate (members, reminders, config, history)

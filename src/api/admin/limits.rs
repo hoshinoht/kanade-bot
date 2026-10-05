@@ -22,7 +22,7 @@ use crate::{
     api::{
         auth::AdminSession,
         dto::{
-            Named,
+            Named, iso_instant,
             limits::{AdmissionWindow, Allowance as AllowanceRow, Limits, Quota, group},
         },
         error::ApiError,
@@ -162,6 +162,7 @@ async fn read(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
         groups,
         admission: AdmissionWindow::last_hour(),
         allowances,
+        generated_at: iso_instant(now),
     })
     .into_response())
 }

@@ -370,3 +370,34 @@ test('capture planner swap', async ({ page }) => {
     await shot(page, `admin-sheet-swap-${vp.name}-marigold-light`);
   }
 });
+
+// Live Limits (B_LimitsLive and its tab boards) for review: the mock's three
+// seeded groups and its default one gateway group, every tab at 1280×800 and
+// Backends + Admission on a phone, in blossom light and twilight dark.
+for (const groups of ['three', 'default'] as const) {
+  test(`capture live Limits set (${groups})`, async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.request.post(`${ADMIN}/__mock/limits`, { data: { groups } });
+    for (const look of LOOKS.filter((l) => l.name === 'blossom-light' || l.name === 'twilight-dark')) {
+      for (const [w, h, tabs] of [
+        [1280, 800, ['Backends', 'Queue', 'Admission', 'Allowances']],
+        [390, 844, ['Backends', 'Admission']],
+      ] as const) {
+        await page.setViewportSize({ width: w, height: h });
+        await page.goto(`${ADMIN}/limits?sw=off`);
+        await page.evaluate(({ colorway, theme }) => {
+          localStorage.setItem('colorway', colorway);
+          localStorage.setItem('theme', theme);
+        }, look);
+        await page.reload();
+        for (const tab of tabs) {
+          const chosen = page.getByRole('tab', { name: new RegExp(`^${tab}`) });
+          await chosen.click();
+          await expect(chosen).toHaveAttribute('aria-selected', 'true');
+          await settleMotion(page);
+          await shot(page, `limits/${groups}-${look.name}-${w}x${h}-${tab.toLowerCase()}`);
+        }
+      }
+    }
+  });
+}

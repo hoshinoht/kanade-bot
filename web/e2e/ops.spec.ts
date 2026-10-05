@@ -503,10 +503,10 @@ test('limits: backends, queue, admission by kind and an allowance reset', async 
     await route.fulfill({ response: res, json: body });
   });
   await go(page, '/limits');
-  await expect(page.getByRole('region', { name: /^gateway · / })).toContainText('closed');
-  const chat = page.getByRole('region', { name: /^chat · / });
+  await expect(page.getByRole('article', { name: 'gateway' })).toContainText('closed');
+  const chat = page.getByRole('article', { name: 'chat' });
   await expect(chat).toContainText('half-open — probing');
-  await expect(page.getByRole('region', { name: /^rewrite · / })).toContainText('open — calls refused');
+  await expect(page.getByRole('article', { name: 'rewrite' })).toContainText('open — calls refused');
   await page.getByRole('tab', { name: /Queue/ }).click();
   await expect(page.getByRole('row', { name: /rescan/ })).toContainText('1');
   await page.getByRole('tab', { name: /Admission/ }).click();

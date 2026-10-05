@@ -6,6 +6,15 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin Limits: one full-width card per model group (permits bar,
+  breaker in words, rate and retry budgets, models, waiting calls), Queue,
+  Admission (refusals by backend group and gateway key) and Allowances tabs;
+  phones list open and half-open breakers first and scroll the tab strip
+  sideways. The footer prints the server's clock from a new `generated_at`
+  on `GET /api/admin/limits`, and a failed refresh shows a Retrying chip
+  (on phones under the tabs) that says when refreshing stops and offers Try
+  again; a failed first load shows the shared failed state, and focus moves
+  to the member's name after a Reset.
 - v5 admin run pane and run sheet: a "View weekly timing" link on runs that
   came from a weekly timing opens it in the Fixed editor.
 - v5 admin Fixed editor: the Time is the Move picker's stepper (Run lengths

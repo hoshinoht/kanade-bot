@@ -1,25 +1,42 @@
 <!--
-  v5 Limits: the Kanata gateway's backend groups replace v4's single model
-  lock. Each group shows its permits, queue (with positions), rate bucket,
-  retry budget and circuit breaker; admission refusals are counted by kind,
-  including key-level ones. Allowances keep v4's per-member reset. Polled.
+  v5 Limits (B_LimitsLive and its tab boards): the Kanata gateway's backend
+  groups, the calls waiting for a permit, what the gateway refused, and the
+  chat allowances, in one window with title-bar tabs. Backends stacks one
+  row card per group in the configured order (phones: open, then half-open
+  breakers first); only the selected tab's panel scrolls. Polled every 5 s;
+  the footer prints the server's clock (`generated_at`), never the browser's.
+  A failed first read shows the shared failed state; a failed refresh keeps
+  the snapshot under a Retrying chip (phones: under the tabs).
 -->
 <script lang="ts">
+  import { tick } from 'svelte';
   import PageLine from '../shell/PageLine.svelte';
-  import '@kanade/ui/styles/evidence.scss';
+  import { getChrome } from '../shell/chrome';
   import '@kanade/ui/styles/limits.scss';
   import type { Limits } from '@kanade/api-types';
   import { ApiRequestError, createClient, createPoller } from '@kanade/client';
-  import { Icon, LoadingState, Tabs, Toaster, WavyProgress, type TabItem } from '@kanade/ui';
+  import { clockTime, Freshness, Icon, LoadError, LoadingState, Toaster } from '@kanade/ui';
   import { errorText, send } from '../resource.svelte';
-  import { directory } from '../names/directory.svelte';
-  import Name from '../names/Name.svelte';
+  import GroupCard from './GroupCard.svelte';
+  import QueueTab from './QueueTab.svelte';
+  import AdmissionTab from './AdmissionTab.svelte';
+  import AllowancesTab from './AllowancesTab.svelte';
   import { wavingGroups } from './permits';
+  import { atCapacity, GUILD_ZONE, phoneOrder, plural, serverTime } from './view';
 
   let { toaster }: { toaster: Toaster } = $props();
 
+  const chrome = getChrome();
+  const phone = $derived(chrome?.phone ?? false);
+  const zone = $derived(chrome?.timezone || GUILD_ZONE);
+
   let limits = $state<Limits | null>(null);
-  let error = $state('');
+  // A failed refresh keeps the last snapshot and says so where the Live chip was.
+  let fresh = $state<'live' | 'stale' | 'offline'>('live');
+  // After `maxFailures` the poller gives up until Try again; the chip stops saying "Retrying".
+  let stopped = $state(false);
+  // A failed first read (not a 404): the window shows the shared failed state.
+  let failure = $state('');
   // A 404 means this server has not built the route: stop polling and say so in the window.
   let unbuilt = $state('');
   const client = createClient();
@@ -27,147 +44,239 @@
     task: (signal) => client.get<Limits>('/api/admin/limits', { signal }),
     intervalMs: 5000,
     maxFailures: 6,
+    onState: (state) => (stopped = state === 'stopped'),
     onData: (next) => {
       limits = next;
-      error = '';
+      fresh = 'live';
+      failure = '';
     },
     onError: (e) => {
       if (e instanceof ApiRequestError && e.status === 404) {
         poller.stop();
         unbuilt = errorText(e);
-        error = '';
         return;
       }
-      error = 'Could not refresh the limits; retrying.';
+      fresh = typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'stale';
+      if (!limits) failure = e instanceof ApiRequestError ? errorText(e) : e instanceof Error ? e.message : String(e);
     },
   });
+  const retry = () => void poller.refresh();
+  const lastClock = $derived(limits?.generated_at ? clockTime(limits.generated_at, zone, false) : '');
   $effect(() => {
     poller.start();
     return () => poller.stop();
   });
 
   type Tab = 'backends' | 'queue' | 'admission' | 'allowances';
-  let tab = $state<Tab>('backends');
-  const queued = $derived(limits?.groups.reduce((n, g) => n + g.queue.length, 0) ?? 0);
-  const tabs = $derived<TabItem<Tab>[]>([
-    { id: 'backends', label: 'Backends', count: limits?.groups.length ?? null },
+  const groups = $derived(limits?.groups ?? []);
+  const queued = $derived(groups.reduce((n, g) => n + g.queue.length, 0));
+  const refused = $derived(limits?.admission.refusals.reduce((n, r) => n + r.count, 0) ?? 0);
+  const TABS = $derived<{ id: Tab; label: string; count: number }[]>([
+    { id: 'backends', label: 'Backends', count: groups.length },
     { id: 'queue', label: 'Queue', count: queued },
-    { id: 'admission', label: 'Admission', count: limits?.admission.refusals.reduce((n, r) => n + r.count, 0) ?? null },
-    { id: 'allowances', label: 'Allowances', count: limits?.allowances.length ?? null },
+    { id: 'admission', label: 'Admission', count: refused },
+    { id: 'allowances', label: 'Allowances', count: limits?.allowances.length ?? 0 },
   ]);
-  const BREAKER = {
-    closed: { word: 'closed — calls flow', tone: 'success' },
-    half_open: { word: 'half-open — probing', tone: 'warning' },
-    open: { word: 'open — calls refused', tone: 'danger' },
-  } as const;
-  const REFUSAL: Record<string, string> = {
-    rate: 'rate limit',
-    concurrency: 'too many in flight',
-    quota: 'key quota spent',
-    key_rate: 'key rate limit',
-    key_quota: 'key quota spent',
-  };
-  // Permit bars wave only while requests are in flight, at most two at once.
-  const waving = $derived(wavingGroups(limits?.groups ?? []));
-  const busiest = $derived(limits?.groups.find((g) => g.permits.in_use >= g.permits.total));
+  let tab = $state<Tab>('backends');
 
-  async function reset(id: string, name: string) {
+  // Permit bars wave only while requests are in flight, at most two at once.
+  const waving = $derived(wavingGroups(groups));
+  const shown = $derived(phone ? phoneOrder(groups) : groups);
+  const busiest = $derived(atCapacity(groups));
+  const open = $derived(groups.filter((g) => g.breaker.state === 'open').length);
+  const inUse = $derived(groups.reduce((n, g) => n + g.permits.in_use, 0));
+  const total = $derived(groups.reduce((n, g) => n + g.permits.total, 0));
+  const oldest = $derived(
+    groups
+      .flatMap((g) => g.queue.map((q) => ({ ...q, group: g.name })))
+      .reduce<{ waiting_s: number; kind: string; group: string } | null>((a, q) => (!a || q.waiting_s > a.waiting_s ? q : a), null),
+  );
+  const updated = $derived(limits?.generated_at ? serverTime(limits.generated_at, zone) : '');
+  const ALLOWANCE_NOTE = 'Members with chatbot access. Staff are exempt from every budget. The member-facing view comes later.';
+
+  // Each tab keeps its own scroll position.
+  let scroller = $state<HTMLDivElement>();
+  const scrolls: Record<Tab, number> = { backends: 0, queue: 0, admission: 0, allowances: 0 };
+  async function choose(next: Tab) {
+    if (next === tab) return;
+    scrolls[tab] = scroller?.scrollTop ?? 0;
+    tab = next;
+    await tick();
+    scroller?.scrollTo(0, scrolls[next]);
+    reveal(next);
+  }
+  function tabKey(event: KeyboardEvent, index: number) {
+    const moves: Record<string, number> = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: TABS.length - 1 };
+    const target = moves[event.key];
+    if (target === undefined) return;
+    event.preventDefault();
+    const to = TABS[(target + TABS.length) % TABS.length]!;
+    void choose(to.id);
+    document.getElementById(`limits-tab-${to.id}`)?.focus({ preventScroll: true });
+  }
+
+  // Phones scroll the tab strip sideways; fades mark the side that has more.
+  let strip = $state<HTMLDivElement>();
+  let more = $state({ start: false, end: false });
+  function measure() {
+    if (!strip) return;
+    const { scrollLeft, scrollWidth, clientWidth } = strip;
+    more = { start: scrollLeft > 1, end: scrollLeft + clientWidth < scrollWidth - 1 };
+  }
+  // Bring the chosen tab fully into the strip without scrolling anything else.
+  function reveal(id: Tab) {
+    const el = document.getElementById(`limits-tab-${id}`);
+    if (!strip || !el) return;
+    const pad = 24;
+    if (el.offsetLeft - pad < strip.scrollLeft) strip.scrollLeft = Math.max(0, el.offsetLeft - pad);
+    else if (el.offsetLeft + el.offsetWidth + pad > strip.scrollLeft + strip.clientWidth)
+      strip.scrollLeft = el.offsetLeft + el.offsetWidth + pad - strip.clientWidth;
+    measure();
+  }
+  $effect(() => {
+    if (!strip) return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(strip);
+    return () => observer.disconnect();
+  });
+
+  /** Resolves once the refreshed snapshot (without that Reset button) has rendered; true when the reset held. */
+  async function reset(id: string, name: string): Promise<boolean> {
     const result = await send((c) => c.delete<{ message: string }>(`/api/admin/limits/windows/${encodeURIComponent(id)}`));
     toaster.show({ message: result.ok ? result.value.message : `Couldn't reset ${name}: ${result.message}`, tone: result.ok ? 'ok' : 'error' });
-    if (result.ok) void poller.refresh();
+    if (!result.ok) return false;
+    await poller.refresh();
+    await tick();
+    return true;
   }
 </script>
 
-<PageLine title={limits ? 'Limits' : ''}>
-  <h1>{limits ? (busiest ? `${busiest.name} is at capacity` : 'Every backend has room') : 'Limits'}</h1>
+<PageLine
+  title={limits ? 'Limits' : ''}
+  class="{limits && fresh !== 'live' ? 'limits-pageline--stale' : ''} {limits && phone ? 'pageline--echo' : ''}"
+>
+  <h1>{limits ? (busiest ? `${busiest.name} is at capacity` : groups.length ? 'Every backend has room' : 'Limits') : 'Limits'}</h1>
+  {#if limits && (queued || open)}
+    <p class="pageline__context" data-fid="limits-headline">
+      {#if queued}<span class="pageline__num">{queued}</span> waiting{/if}{#if queued && open}&nbsp;·&nbsp;{/if}{#if open}<span
+          class="pageline__num">{open}</span
+        > {plural(open, 'breaker')} open{/if}
+    </p>
+  {/if}
   {#if unbuilt}<p class="pageline__context">capacity</p>{/if}
   {#snippet side()}
-    <p class="field__error" role="status">{error}</p>
+    {#if limits && fresh !== 'live' && !phone}{@render freshness()}{/if}
   {/snippet}
 </PageLine>
 
+<!-- A failed refresh keeps the last snapshot; after the poller gives up the chip says so and offers Try again. -->
+{#snippet freshness()}
+  <span class="mchip mchip--status limits-fresh" role="status">
+    {#if stopped}
+      <span class="fresh fresh--error" data-fresh="stopped"
+        ><Icon name="alert-circle" /> Refreshing stopped{#if lastClock}&nbsp;· last updated {lastClock}{/if}</span
+      >
+    {:else}
+      <Freshness state={fresh} updated={lastClock} />
+    {/if}
+  </span>
+  {#if stopped}<button type="button" class="btn limits-fresh__retry" onclick={retry}>Try again</button>{/if}
+{/snippet}
+
 {#if limits}
-  {@const data = limits}
-  <Tabs items={tabs} bind:selected={tab} label="Limits">
-    {#snippet panel(which)}
-      {#if which === 'backends'}
-        <div class="stats">
-          {#each data.groups as g (g.name)}
-            <section class="stat" aria-labelledby="g-{g.name}">
-              <h3 class="stat__name" id="g-{g.name}">{g.name} · {g.backend}</h3>
-              <p class="stat__big">{g.permits.in_use}/{g.permits.total}<span class="stat__unit">permits in use</span></p>
-              <WavyProgress
-                class="stat__bar"
-                value={g.permits.in_use}
-                max={g.permits.total}
-                wavy={waving.has(g.name)}
-                fullWave
-                label="{g.name} permits in use"
-                text="{g.permits.in_use} of {g.permits.total} in use{g.permits.in_use ? ', requests in flight' : ''}"
-              />
-              <dl class="stat__rows">
-                <div><dt>Queue</dt><dd class="mono">{g.queue.length}</dd></div>
-                <div><dt>Rate bucket</dt><dd class="mono">{g.rate.available}/{g.rate.capacity} · +{g.rate.refill_per_min}/min</dd></div>
-                <div><dt>Retry budget</dt><dd class="mono">{g.retry.remaining}/{g.retry.capacity}</dd></div>
-                <div>
-                  <dt>Breaker</dt>
-                  <dd><span class="tone tone--{BREAKER[g.breaker.state].tone}">{BREAKER[g.breaker.state].word}</span></dd>
-                </div>
-                <div><dt>Since</dt><dd class="mono">{g.breaker.since}{g.breaker.failures ? ` · ${g.breaker.failures} failures` : ''}</dd></div>
-                {#if g.breaker.retry_at}<div><dt>Next probe</dt><dd class="mono">{g.breaker.retry_at}</dd></div>{/if}
-                <div><dt>Models</dt><dd class="mono">{g.models.join(', ')}</dd></div>
-              </dl>
-            </section>
-          {/each}
-        </div>
-      {:else if which === 'queue'}
-        {#if queued}
-          <table>
-            <caption class="vh">Waiting for a permit, by backend and position</caption>
-            <thead><tr><th scope="col">Backend</th><th scope="col" class="num">Position</th><th scope="col">What</th><th scope="col">For</th><th scope="col" class="num">Waiting</th></tr></thead>
-            <tbody>
-              {#each data.groups as g (g.name)}
-                {#each g.queue as item (item.position)}
-                  <tr><th scope="row">{g.name}</th><td class="num">{item.position}</td><td>{item.kind}</td><td>{item.who}</td><td class="num">{item.waiting_s} s</td></tr>
-                {/each}
-              {/each}
-            </tbody>
-          </table>
-        {:else}<p class="note">Nothing is waiting.</p>{/if}
-      {:else if which === 'admission'}
-        <p class="note">Refused by the Kanata gateway in the {data.admission.window}.</p>
-        <table>
-          <caption class="vh">Admission refusals by kind</caption>
-          <thead><tr><th scope="col">Kind</th><th scope="col">Scope</th><th scope="col">Where</th><th scope="col" class="num">Count</th><th scope="col">Last</th></tr></thead>
-          <tbody>
-            {#each data.admission.refusals as r (r.kind + r.target)}
-              <tr>
-                <th scope="row">{REFUSAL[r.kind] ?? r.kind}</th>
-                <td><span class="chip chip--mono">{r.scope === 'key' ? 'key-level' : 'backend'}</span></td>
-                <td class="mono">{r.target}</td><td class="num">{r.count}</td><td class="mono">{r.last_at}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      {:else}
-        <p class="note">Members with chatbot access. Staff are exempt from every budget. The member-facing view comes later.</p>
-        <table>
-          <caption class="vh">Chatbot allowances</caption>
-          <thead><tr><th scope="col">Member</th><th scope="col">Allowance</th><th scope="col">This window</th><th scope="col"><span class="vh">Actions</span></th></tr></thead>
-          <tbody>
-            {#each data.allowances as a (a.member.id)}
-              <tr>
-                <th scope="row"><Name kind="member" id={a.member.id} name={a.member.name} />{#if a.staff} <span class="chip">staff</span>{/if}{#if a.override} <span class="chip">own allowance</span>{/if}</th>
-                <td class="mono">{a.allowance ? `${a.allowance.count} per ${a.allowance.per_s}s` : 'exempt'}</td>
-                <td class="mono">{a.allowance ? (a.used ? `${a.used} used, ${a.allowance.count - a.used} left` : 'idle') : '—'}</td>
-                <td>{#if a.allowance && a.used}<button class="btn" type="button" onclick={() => void reset(a.member.id, directory.label('member', a.member.id, a.member.name))} aria-label="Reset {directory.label('member', a.member.id, a.member.name)}'s window">Reset</button>{/if}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
+  <section class="card limits-window window-fill" data-fid="window" aria-labelledby="limits-title">
+    <div class="card__head tabs__strip limits-window__head" data-fid="window-bar">
+      <h2 class="vh" id="limits-title">Limits</h2>
+      <div
+        class="tabs__tabs limits-window__tabs"
+        class:limits-window__tabs--start={more.start}
+        class:limits-window__tabs--end={more.end}
+        role="tablist"
+        aria-label="Limits"
+        data-fid="window-tabs"
+        bind:this={strip}
+        onscroll={measure}
+      >
+        {#each TABS as t, index (t.id)}
+          <button
+            class="tabs__tab"
+            role="tab"
+            type="button"
+            id="limits-tab-{t.id}"
+            aria-selected={tab === t.id}
+            aria-controls="limits-panel"
+            tabindex={tab === t.id ? 0 : -1}
+            onclick={() => void choose(t.id)}
+            onkeydown={(event) => tabKey(event, index)}>{t.label}<span class="tabs__count">{t.count}</span></button
+          >
+        {/each}
+      </div>
+      {#if !phone}
+        <a class="btn limits-window__config" data-fid="limits-config" href="/config?section=models"><Icon name="sliders" />Capacity in Config</a>
       {/if}
-    {/snippet}
-  </Tabs>
+    </div>
+    {#if phone}
+      <div class="limits-window__summary" data-fid="limits-phone-head">
+        <p>
+          {#if tab === 'admission'}
+            Refused by the Kanata gateway in the <b>{limits.admission.window}</b>.
+          {:else if tab === 'allowances'}
+            {ALLOWANCE_NOTE}
+          {:else if busiest}
+            <b>{busiest.name}</b> is at capacity{#if queued}&nbsp;· <b class="mono">{queued}</b> waiting{/if}{#if open}&nbsp;· <b class="mono">{open}</b>
+              {plural(open, 'breaker')} open{/if}
+          {:else}
+            {groups.length ? 'Every backend has room' : 'No model groups are running'}{#if queued}&nbsp;· <b class="mono">{queued}</b> waiting{/if}
+          {/if}
+        </p>
+        <a class="btn limits-window__config" data-fid="limits-config" href="/config?section=models" aria-label="Capacity in Config"><Icon name="sliders" /></a>
+      </div>
+      <!-- The phone's page line is hidden and its top-bar chip follows the week, so Limits' own freshness shows here. -->
+      {#if fresh !== 'live'}<div class="limits-window__fresh" data-fid="limits-phone-fresh">{@render freshness()}</div>{/if}
+    {/if}
+    <div
+      class="limits-window__panel"
+      class:limits-window__panel--cards={tab === 'backends'}
+      class:limits-window__panel--phone={phone}
+      data-fid="limits-panel"
+      id="limits-panel"
+      role="tabpanel"
+      aria-labelledby="limits-tab-{tab}"
+      tabindex="0"
+      bind:this={scroller}
+    >
+      {#if tab === 'backends'}
+        {#each shown as g (g.name)}
+          <GroupCard group={g} wavy={waving.has(g.name)} {zone} {phone} />
+        {:else}
+          <p class="empty">No model groups are running.</p>
+        {/each}
+      {:else if tab === 'queue'}
+        <QueueTab {groups} {phone} />
+      {:else if tab === 'admission'}
+        <AdmissionTab refusals={limits.admission.refusals} {zone} {phone} />
+      {:else}
+        <AllowancesTab rows={limits.allowances} {phone} onreset={reset} />
+      {/if}
+    </div>
+    <footer class="limits-window__foot" class:limits-window__foot--phone={phone} data-fid="limits-foot">
+      <span class="limits-window__lead">
+        {#if tab === 'backends'}
+          {#if !phone}<b class="mono">{groups.length}</b> backend {plural(groups.length, 'group')} ·&nbsp;{/if}<b class="mono">{inUse}</b> of
+          <span class="mono">{total}</span> permits in use
+        {:else if tab === 'queue'}
+          {#if oldest}<span class="cap">Oldest</span> <b class="mono limits-window__big">{oldest.waiting_s} s</b>{phone ? '' : ` ${oldest.kind} · ${oldest.group}`}{:else}Nothing is waiting{/if}
+        {:else if tab === 'admission'}
+          {#if phone}<b class="mono">{refused}</b> {plural(refused, 'refusal')}{:else}Refused by the Kanata gateway in the <b>{limits.admission.window}</b>.{/if}
+        {:else if phone}
+          <b class="mono">{limits.allowances.length}</b> {plural(limits.allowances.length, 'member')}
+        {:else}
+          {ALLOWANCE_NOTE}
+        {/if}
+      </span>
+      {#if updated}<span class="limits-window__updated">Updated <span class="mono">{updated}</span> · every 5 s</span>{/if}
+    </footer>
+  </section>
 {:else if unbuilt}
   <!-- B_Limits: the route is not mounted. One window, its body a centred note. -->
   <section class="card limits-window window-fill" data-fid="window" aria-labelledby="limits-title">
@@ -186,12 +295,12 @@
       </div>
     </div>
   </section>
+{:else if failure}
+  <!-- A failed first read (5xx or network): the shared failed state; Try again restarts polling. -->
+  <section class="card limits-window window-fill" data-fid="window" aria-labelledby="limits-title">
+    <div class="card__head limits-window__head" data-fid="window-bar"><h2 class="card__title" id="limits-title">Limits</h2></div>
+    <div class="limits-window__body" data-fid="limits-body"><LoadError thing="the limits" reason={failure} onretry={retry} level={3} /></div>
+  </section>
 {:else}
   <section class="card window-fill"><div class="card__head"><h2 class="card__title">Limits</h2></div><LoadingState text="Loading the limits…" /></section>
 {/if}
-
-<style>
-  .stats :global(.stat__bar) {
-    margin-block: 0 0.4rem;
-  }
-</style>

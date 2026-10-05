@@ -1,7 +1,7 @@
-// Limits (mockup B_Limits). While the server has not mounted the route: one
-// window whose body centres the unavailable note -- a 112 px cookie glyph on
-// the chip fill, the heading, one line of explanation and the key link to
-// Config → Models. The body scrolls if a short frame cannot hold the note.
+// Limits (mockups B_LimitsLive, B_LimitsLiveOne, B_LimitsQueue,
+// B_LimitsAdmission, B_LimitsAllowances, B_PhoneLimits, B_PhoneLimitsAdmission;
+// B_Limits while the route is not mounted). One window: title-bar tabs and the
+// Config pill, one scrolling panel on the pane surface, a 34 px footer.
 
 .limits-window {
   display: flex;
@@ -9,9 +9,649 @@
   overflow: clip;
 }
 
-// Only the title sits on the bar: it never wraps.
+// The bar never wraps: tabs on its floor, the Config pill centred at the end.
 .limits-window__head {
   flex-wrap: nowrap;
+  align-items: flex-end;
+}
+
+.limits-window__head .limits-window__config {
+  flex: none;
+  align-self: center;
+  gap: 6px;
+  margin-left: auto;
+  text-decoration: none;
+}
+
+// Phones scroll the tab strip sideways (every tab keeps its count); a fade
+// marks each side that holds more tabs.
+.limits-window__tabs {
+  flex: 0 1 auto;
+  scroll-behavior: auto;
+}
+
+.limits-window__tabs--end {
+  mask-image: linear-gradient(90deg, #000 calc(100% - 48px), transparent);
+}
+
+.limits-window__tabs--start {
+  mask-image: linear-gradient(90deg, transparent, #000 48px);
+}
+
+.limits-window__tabs--start.limits-window__tabs--end {
+  mask-image: linear-gradient(90deg, transparent, #000 48px, #000 calc(100% - 48px), transparent);
+}
+
+// Phone: the page summary (or the tab's note) and the Config button under the tabs.
+.limits-window__summary {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 4px 8px 4px 12px;
+  border-bottom: 1.5px solid var(--line);
+  background: var(--surface);
+  font-size: var(--fs-body-sm);
+}
+
+.limits-window__summary p {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.limits-window__summary .limits-window__config {
+  flex: none;
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.limits-window__panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0 10px 10px;
+  background: var(--pane);
+  color: var(--ink);
+}
+
+.limits-window__panel:focus-visible {
+  outline-offset: -3px;
+}
+
+.limits-window__panel--cards {
+  gap: 10px;
+  padding: 14px;
+}
+
+.limits-window__panel > .empty {
+  margin: 14px 0 0;
+}
+
+.limits-window__panel--phone.limits-window__panel--cards {
+  gap: 8px;
+  padding: 8px;
+}
+
+.limits-window__panel--cards > .empty {
+  margin: 0;
+}
+
+.limits-window__foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 0 14px;
+  overflow: hidden;
+  border-top: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+}
+
+.limits-window__foot--phone {
+  gap: 8px;
+  padding: 0 12px;
+  font-size: var(--fs-mini);
+}
+
+.limits-window__foot b {
+  color: var(--ink);
+}
+
+// The lead wraps rather than clip (the Allowances note at 1000 px).
+.limits-window__lead {
+  min-width: 0;
+  padding: 6px 0;
+  white-space: normal;
+}
+
+.limits-window__big {
+  font-size: var(--fs-body);
+}
+
+.limits-window__updated {
+  flex: none;
+  margin-left: auto;
+}
+
+// A failed refresh: the page's own status chip stands where the Live chip was.
+.limits-pageline--stale .pageline__end > .mchip--status {
+  display: none;
+}
+
+.limits-fresh__retry.btn {
+  min-height: 32px;
+  margin: 0;
+  padding: 0 14px;
+  border-radius: 999px;
+}
+
+// Phones: the page line is hidden, so the chip (and Try again) sit under the summary.
+.limits-window__fresh {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 6px 12px;
+  border-bottom: 1.5px solid var(--line);
+  background: var(--surface);
+}
+
+.limits-window__fresh .limits-fresh {
+  min-width: 0;
+  white-space: normal;
+}
+
+.limits-window__fresh .limits-fresh__retry.btn {
+  min-height: 44px;
+}
+
+.limits-dim {
+  color: var(--dim-text);
+}
+
+/* ── a backend group: rows, not columns (B_LimitsLive) ───────────────────── */
+
+.limits-group {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px 22px;
+  border-radius: var(--r-win);
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.limits-group__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
+}
+
+.limits-group__name {
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--fs-brand);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.limits-group__via {
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+}
+
+.limits-group__breaker.tone {
+  gap: 5px;
+  min-height: 26px;
+  margin-left: 6px;
+  padding: 0 10px;
+  border: 0;
+  font-size: var(--fs-mini);
+}
+
+.limits-group__breaker .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.limits-group__permits {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 0 auto;
+  font-size: var(--fs-body-sm);
+  white-space: nowrap;
+}
+
+.limits-group__num {
+  font-size: var(--fs-clock);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.limits-group__total {
+  color: var(--dim-text);
+  font-size: var(--fs-lg);
+  font-weight: 500;
+}
+
+.limits-group__flight {
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+// The bar spans the card; a 2 px inset keeps the wave off both edges.
+.limits-group__bar {
+  padding: 2px 2px 0;
+}
+
+.limits-group__bar .wavy {
+  margin: 0;
+}
+
+.limits-group__facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 22px;
+  margin: 0;
+  font-size: var(--fs-small);
+}
+
+.limits-group__facts > div {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.limits-group__facts dt {
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.limits-group__facts dd {
+  margin: 0;
+  font-size: var(--fs-small);
+}
+
+.limits-group__models dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.limits-model {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--chip-fill);
+  font-size: var(--fs-mini);
+}
+
+.limits-group__refused {
+  margin: 0;
+  padding: 9px 14px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--risk) 12%, var(--surface));
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--risk) 35%, var(--surface));
+  color: var(--risk-text);
+  font-size: var(--fs-body-sm);
+}
+
+.limits-group__waiting {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.limits-group__waiting h4 {
+  margin: 0;
+  padding: 0 2px;
+}
+
+.limits-waiting {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.limits-waiting__row {
+  display: grid;
+  grid-template-columns: 24px 120px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 6px;
+  background: var(--pane);
+  font-size: var(--fs-small);
+}
+
+.limits-waiting__kind {
+  font-size: var(--fs-mini);
+}
+
+.limits-waiting__who {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.limits-pos {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--chip-fill);
+  font-size: var(--fs-mini);
+  font-weight: 700;
+}
+
+// Phones: the head takes two lines and the card a tighter inset.
+.limits-group--phone {
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: var(--r-win-in);
+}
+
+.limits-group--phone .limits-group__head {
+  gap: 4px 8px;
+}
+
+.limits-group--phone .limits-group__name {
+  font-size: var(--fs-lg);
+}
+
+// Tighter facts so a phone card keeps the board's four lines.
+.limits-group--phone .limits-group__facts {
+  gap: 8px 14px;
+}
+
+.limits-group--phone .limits-group__facts > div {
+  gap: 4px 6px;
+}
+
+.limits-group--phone .limits-group__facts dt {
+  letter-spacing: 0.06em;
+}
+
+.limits-group--phone .limits-group__breaker.tone {
+  margin-left: auto;
+}
+
+.limits-group--phone .limits-group__permits {
+  flex: 1 0 100%;
+  margin: 0;
+}
+
+.limits-group--phone .limits-group__flight {
+  margin-left: auto;
+}
+
+.limits-group--phone .limits-waiting__row {
+  grid-template-columns: 22px auto minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 0 10px;
+}
+
+/* ── the tab tables (B_LimitsQueue, B_LimitsAdmission, B_LimitsAllowances) ── */
+
+.limits-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 2px;
+  font-size: var(--fs-body-sm);
+}
+
+.limits-table th[scope="col"] {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 10px;
+  border: 0;
+  background: var(--pane);
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-transform: uppercase;
+  box-shadow: none;
+}
+
+// A group's label row: on the pane, no card.
+.limits-table__group th {
+  height: 34px;
+  padding: 6px 10px 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--display);
+  font-size: var(--fs-small);
+  font-weight: 700;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.limits-count {
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.limits-table__row > td,
+.limits-table__row > th {
+  height: 44px;
+  padding: 0 10px;
+  border: 0;
+  background: var(--row);
+  font-weight: inherit;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.limits-table__row > :first-child { border-radius: 6px 0 0 6px; }
+.limits-table__row > :last-child { border-radius: 0 6px 6px 0; }
+
+.limits-table__row:hover > * {
+  background: var(--row-hover);
+}
+
+.limits-table__row > .limits-table__lead {
+  font-weight: 600;
+}
+
+.limits-table .limits-table__num {
+  text-align: right;
+}
+
+.limits-table__big {
+  font-size: var(--fs-body);
+  font-weight: 700;
+}
+
+.limits-table__pos { width: 90px; }
+.limits-table__what { width: 140px; }
+.limits-table__scope { width: 120px; }
+.limits-table__where { width: 220px; }
+.limits-table__count { width: 80px; }
+.limits-table__last { width: 190px; }
+.limits-table__allow { width: 200px; }
+.limits-table__window { width: 240px; }
+
+.limits-table .limits-table__act {
+  width: 120px;
+  text-align: right;
+}
+
+.limits-note {
+  margin: 0;
+  padding: 10px 10px 0;
+  color: var(--dim-text);
+  font-size: var(--fs-body-sm);
+}
+
+.limits-scope {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--chip-fill);
+  font-size: var(--fs-mini);
+}
+
+.limits-scope--key {
+  background: color-mix(in srgb, var(--own) 12%, var(--surface));
+  color: var(--own-text);
+}
+
+.limits-member {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.limits-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--chip-fill);
+  font-size: var(--fs-mini);
+  font-weight: 400;
+}
+
+.limits-reset.btn {
+  gap: 6px;
+  min-height: 32px;
+  margin: 0;
+  padding: 0 14px;
+  border-radius: 999px;
+}
+
+/* ── phones: each row reads as two lines (B_PhoneLimitsAdmission) ────────── */
+
+.limits-plist {
+  margin: 0;
+}
+
+.limits-plist__head {
+  margin: 0;
+  padding: 10px 6px 6px;
+  font-family: var(--display);
+  font-size: var(--fs-small);
+  font-weight: 700;
+}
+
+.limits-plist__head.cap {
+  font-family: var(--mono);
+}
+
+.limits-plist__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 4px 0 0;
+  list-style: none;
+}
+
+.limits-plist + .limits-plist .limits-plist__rows,
+.limits-plist .limits-plist__rows {
+  padding-top: 0;
+}
+
+.limits-prow {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: 6px;
+  background: var(--row);
+}
+
+.limits-prow--action {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.limits-prow__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.limits-prow__line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.limits-prow__lead {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--fs-body-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.limits-prow__count {
+  flex: none;
+  margin-left: auto;
+  font-size: var(--fs-lg);
+}
+
+.limits-prow__sub {
+  justify-content: space-between;
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+}
+
+.limits-prow .limits-reset.btn {
+  flex: none;
+  min-height: 44px;
 }
 
 .limits-window__body {
