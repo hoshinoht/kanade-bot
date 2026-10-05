@@ -6,6 +6,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Deploy: an optional cloudflared sidecar (`--profile public`) on an
+  internal `kanade_public` network, reading its tunnel token from the
+  `kanade-cloudflared` secret file; the bot joins that network but opens its
+  public listener only when `kanade.toml` sets `[public] bind` and `host`.
+  Runbook in `deploy/README.md` ("Public portal").
 - Config → Channels: watched channels, watched categories and chat
   categories each save on their own and then override their env seed
   (`KANADE_WATCH_CHANNEL_IDS`, `KANADE_WATCH_CATEGORY_IDS`,

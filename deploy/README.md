@@ -2,7 +2,8 @@
 
 Container and Compose stack for the Rust runtime. The admin portal is served
 on the tailnet through the shared edge (`~/projects/personal/homelab/edge`,
-site `sites/kanade`); the public portal is not deployed yet. The v4 rollback
+site `sites/kanade`); the public portal's tunnel is prepared but not started
+("Public portal" below). The v4 rollback
 stack stays in `legacy/python/deploy/`.
 
 ## Image
@@ -29,15 +30,16 @@ resolve from it.
 
 | Input | Path | Notes |
 |---|---|---|
-| Settings | `kanade.toml` (or `KANADE_CONFIG_FILE=/path`) | Private, git-ignored copy of the tracked `kanade.example.toml`, mounted read-only at `/config/kanade.toml` (`KANADE_CONFIG`); a missing file fails the start. Non-secret settings only (key → variable table: `docs/v5/runtime-bootstrap.md` "Config file"). Required: `runtime.timezone`, `discord.guild_id`, `discord.bossing_role_id`, and `models.base_url` (Compose always sets `KANADE_MODEL_KEY_FILE`, which is refused without it). Usually also `discord.admin_role_id`, `[models.*]` roles and `[[models.groups]]`, and `[settings]` (starting settings, applied only until the store holds a value). Compose's `environment:` fixes bind, host, trusted proxy, healthcheck URL and container paths (store, files, secret files), so those keys in the file are overridden. Keep the three `admin.discord_*` keys all set or all unset. |
+| Settings | `kanade.toml` (or `KANADE_CONFIG_FILE=/path`) | Private, git-ignored copy of the tracked `kanade.example.toml`, mounted read-only at `/config/kanade.toml` (`KANADE_CONFIG`); a missing file fails the start. Non-secret settings only (key → variable table: `docs/v5/runtime-bootstrap.md` "Config file"). Required: `runtime.timezone`, `discord.guild_id`, `discord.bossing_role_id`, and `models.base_url` (Compose always sets `KANADE_MODEL_KEY_FILE`, which is refused without it). Usually also `discord.admin_role_id`, `[models.*]` roles and `[[models.groups]]`, and `[settings]` (starting settings, applied only until the store holds a value). Compose's `environment:` fixes the admin bind and host, trusted proxy, cloudflared peer, healthcheck URL and container paths (store, files, secret files), so those keys in the file are overridden; `[public] bind`/`host` stay in the file (the public listener's opt-in). Keep the three `admin.discord_*` keys all set or all unset. |
 | Legacy env | `.env.v5` (or `KANADE_ENV_FILE=/path`) | Optional (back-compat). Every non-empty `KANADE_*` variable in it overrides the matching `kanade.toml` key; move its settings into `kanade.toml` and delete it so there is one source. |
-| Secrets | `${KANADE_SECRETS_DIR:-$HOME/.config/kanade/v5/secrets}/` | One line per file: `discord_token`, `admin_token` (≥ 32 bytes, e.g. `openssl rand -base64 48`), `discord_client_secret`, and `model_api_key` (a symlink to the Kanata key file v4 uses). Docker Desktop lets uid 65532 read `0600` files; on a Linux host make them readable by uid 65532. |
+| Secrets | `${KANADE_SECRETS_DIR:-$HOME/.config/kanade/v5/secrets}/` | One line per file: `discord_token`, `admin_token` (≥ 32 bytes, e.g. `openssl rand -base64 48`), `discord_client_secret`, and `model_api_key` (a symlink to the Kanata key file v4 uses); `kanade-cloudflared` (the tunnel token) only for profile `public`. Docker Desktop lets uid 65532 read `0600` files; on a Linux host make them readable by uid 65532. |
 | Personas | `config/personas/` | Mounted read-only at `/config/personas`. |
 | Catalog | `boss/bosses.yaml` | Tracked; mounted read-only at `/app/boss/bosses.yaml` (the image carries only `boss/knowledge`). |
 | Boss art | `boss/portraits/`, `boss/artwork/` | Private, mounted read-only over `/app/boss/*`. |
 | Store | Docker volume `kanade_v5_data` | Created by Compose, mounted at `/data`. Not a bind mount (SQLite on macOS file sharing is unsafe). The database is `/data/db/kanade.sqlite` with its owner lock dir `/data/run`; serve creates both directories `0700` on first start. The bot's cached avatar and banner live in `/data/identity` (`KANADE_IDENTITY_DIR`), created `0700` by the gateway side and refreshed from Discord's CDN after each `READY`; deleting it only brings back the monogram and wash until the next refresh. |
 | Backups | `${KANADE_BACKUP_HOST_DIR:-$HOME/.config/kanade/v5/backups}` | Must exist (Compose does not create it, and the bot then fails to start). Bind mounted **read-only** into `bot` at `/backups` (`KANADE_BACKUP_DIR`, listed by History → Checkpoints) and read-write only into the `backup` tool service. Docker Desktop's file sharing writes as the host user, so a `0700` directory you own works for uid 65532; on a Linux host it must be writable by uid 65532 (e.g. an ACL `setfacl -m u:65532:rwx`). The volume tarballs below live here too; the listing ignores them. |
 | Edge network | `kanade_edge` (external, `192.168.97.0/24`) | Created by the v4 stack; it must exist. v5 takes `192.168.97.10` with the alias `kanade-bot`. If the network is ever recreated with another subnet, update the addresses in `compose.yaml`. |
+| Public networks | `kanade_public` (internal, `172.25.0.0/24`), `kanade_tunnel_egress` (`172.24.0.0/24`) | Created by Compose. The bot joins `kanade_public` at `172.25.0.10` on every `up` (unused until `[public] bind` is set); only cloudflared (`172.25.0.3`, profile `public`) also joins it and alone uses `kanade_tunnel_egress`. Both subnets lie outside the engine's default address pools. |
 
 ## Build
 
@@ -208,10 +210,62 @@ Read-only root, `/tmp` tmpfs (16 MiB), all capabilities dropped,
 `no-new-privileges`, 1 CPU, 512 MiB, 128 pids, JSON logs capped at 3 × 10 MB,
 `restart: unless-stopped`, `stop_grace_period: 30s` (above
 `KANADE_SHUTDOWN_TIMEOUT_SECONDS`, default 10; raise both together). No host
-port is published: the listener binds only its `kanade_edge` address, which is
-internal (no egress); Discord and Kanata egress uses the project's `default`
-network. The container healthcheck calls `kanade healthcheck` against its own
-address.
+port is published: the admin listener binds only its `kanade_edge` address
+and the optional public listener only its `kanade_public` one, both internal
+(no egress); Discord and Kanata egress uses the project's `default` network.
+The container healthcheck calls `kanade healthcheck` against its own
+address. cloudflared mirrors this (read-only, no capabilities, uid 65532,
+0.5 CPU, 256 MiB, 64 pids, metrics on its own loopback, no auto-update).
+
+## Public portal (prepared, not started)
+
+The public origin reaches the internet only through a remotely managed
+Cloudflare tunnel: `cloudflared` (profile `public`, so plain `up` never starts
+it) dials out over `kanade_tunnel_egress` and forwards to the bot's public
+listener at `172.25.0.10:8081` on the internal `kanade_public` network. No
+port is published, the edge is not involved, and the public listener mounts
+only public routes (`src/api/listeners.rs`): admin paths answer 404 there.
+The bot trusts `CF-*`/forwarding headers only from `172.25.0.3`
+(`KANADE_CLOUDFLARED_PEER`). Creating the tunnel, its DNS and starting the
+profile each need the owner's go-ahead.
+
+```sh
+# 1. Cloudflare Zero Trust -> Networks -> Tunnels: create a cloudflared tunnel
+#    (remotely managed). Public hostname <public-host> -> service HTTP
+#    172.25.0.10:8081 (this also creates the DNS record). Keep cloudflared's
+#    default Host forwarding: the bot accepts only Host <public-host>.
+# 2. Token file, one line, 0600 (never an env var):
+#    ${KANADE_SECRETS_DIR:-$HOME/.config/kanade/v5/secrets}/kanade-cloudflared
+#    (Compose secret kanade_cloudflared_token, read by cloudflared through
+#    --token-file /run/secrets/kanade_cloudflared_token). Without it the cloudflared
+#    container cannot be created; plain `up` and `config` do not need it.
+# 3. Open the listener in kanade.toml, then recreate the bot (a bind-mounted
+#    file may be replaced by an editor, so restart is not enough):
+#      [public]
+#      bind = "172.25.0.10:8081"
+#      host = "<public-host>"
+docker compose -f deploy/compose.yaml up -d --force-recreate bot
+docker compose -f deploy/compose.yaml logs bot | grep server_started   # 192.168.97.10:8080 and 172.25.0.10:8081
+# 4. Start the tunnel (no depends_on: it never touches the bot).
+docker compose -f deploy/compose.yaml --profile public up -d cloudflared
+# 5. Verify.
+docker compose -f deploy/compose.yaml --profile public logs cloudflared | grep -i 'registered tunnel connection'
+docker port kanade-v5-cloudflared                                     # empty
+curl -sS https://<public-host>/api/public/status                     # {"portal":"closed"}
+curl -s -o /dev/null -w '%{http_code}\n' https://<public-host>/api/admin/session   # 404
+docker exec kanade-v5 /usr/local/bin/kanade healthcheck               # admin still ok
+```
+
+Routine deploys keep using plain `up -d`: it recreates only the bot, and the
+running cloudflared reconnects to the same address (public requests fail with
+502 while the bot is stopped). Pass `--profile public` to `stop`/`down` so
+cloudflared is included.
+
+Roll back: `docker compose -f deploy/compose.yaml --profile public rm -sf
+cloudflared`, remove `[public] bind`/`host` from `kanade.toml` and recreate
+the bot, then delete the public hostname (and its DNS record) or the whole
+tunnel in Cloudflare and the token file. The empty `kanade_public` network
+can stay.
 
 ## Edge and sign-in
 

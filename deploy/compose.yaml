@@ -28,6 +28,9 @@ services:
       # Edge container's current address on kanade_edge; the edge does not pin
       # it yet (handover item), so recheck after any edge recreate.
       KANADE_TRUSTED_PROXY: 192.168.97.2
+      # cloudflared's address on kanade_public. The public listener stays off
+      # until kanade.toml sets [public] bind and host (runbook "Public portal").
+      KANADE_CLOUDFLARED_PEER: 172.25.0.3
       KANADE_HEALTHCHECK_URL: http://192.168.97.10:8080/healthz
       KANADE_WEB_DIR: /app/web
       KANADE_BOSS_DIR: /app/boss
@@ -58,7 +61,10 @@ services:
         ipv4_address: 192.168.97.10
         # The edge site proxies to kanade-bot:8080; v4 must be stopped.
         aliases: [kanade-bot]
-    # No published ports: the listener binds only its kanade_edge address.
+      # Internal; only cloudflared joins. Unused until [public] bind is set.
+      public:
+        ipv4_address: 172.25.0.10
+    # No published ports: each listener binds only its internal network address.
     volumes:
       # SQLite on a named volume, not a macOS bind mount.
       - data:/data
@@ -136,11 +142,68 @@ services:
     mem_limit: 512m
     pids_limit: 128
 
+  # Public portal ingress; never started by `up` (profile). Cloudflare tunnel
+  # (remotely managed, token file) -> bot's public listener on kanade_public.
+  # Runbook: deploy/README.md "Public portal".
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.1@sha256:b269e8abd07a5bf6f3f4be65d5050b2174eca89c56a0241a8ff32a16aec454e4
+    pull_policy: missing
+    profiles: [public]
+    container_name: kanade-v5-cloudflared
+    entrypoint: ["cloudflared", "--no-autoupdate"]
+    # Metrics stay on container loopback; debug logging would record headers.
+    command:
+      - tunnel
+      - --loglevel
+      - info
+      - --metrics
+      - 127.0.0.1:20241
+      - run
+      - --token-file
+      - /run/secrets/kanade_cloudflared_token
+    user: "65532:65532"
+    secrets:
+      - kanade_cloudflared_token
+    networks:
+      public:
+        ipv4_address: 172.25.0.3
+      tunnel_egress:
+        gw_priority: 100
+    # No published ports.
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 0.5
+    mem_limit: 256m
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   # Created by the v4 stack (legacy/python/deploy/compose.yaml); the edge joins it.
   edge:
     name: kanade_edge
     external: true
+  # bot <-> cloudflared only; internal (no egress). Subnets outside the
+  # engine's default address pools so auto-assigned networks never take them.
+  public:
+    name: kanade_public
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.25.0.0/24
+  # cloudflared's own egress to Cloudflare, separate from the bot's default.
+  tunnel_egress:
+    name: kanade_tunnel_egress
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.24.0.0/24
 
 secrets:
   # Host files outside the repo, one line each.
@@ -153,6 +216,9 @@ secrets:
   # A symlink to the Kanata key file v4 uses, so there is one key to rotate.
   kanade_model_api_key:
     file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/model_api_key
+  # Tunnel token (profile public only); never an env var or command argument.
+  kanade_cloudflared_token:
+    file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/kanade-cloudflared
 
 volumes:
   data:
