@@ -29,7 +29,8 @@ test('admin run pane: status, answers, roster and preview ping', async ({ page }
   await expect(sheet.locator('.run__people .chip', { hasText: 'Hotaru' })).toHaveCount(0);
 
   await sheet.getByRole('button', { name: 'Preview ping' }).click();
-  await expect(notice).toContainText('Posted the morning card for HLimbo in #limbo-trio as a TEST message.');
+  await expect(notice).toContainText(/Preview \(not posted\): the morning card for HLimbo at \d\d:\d\d in #limbo-trio\./);
+  await expect(sheet.getByRole('button', { name: 'Preview ping' })).toHaveAttribute('title', /nothing is posted/);
 });
 
 test('admin run sheet below 900 px: status, answers and roster in one modal', async ({ page }) => {

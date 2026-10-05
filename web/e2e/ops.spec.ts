@@ -920,6 +920,26 @@ test('week and sheet: per-channel re-read from the board and the sheet', async (
   await page.keyboard.press('Escape');
 });
 
+test('re-read while the extractor is off: refused with where to switch it on, nothing starts', async ({ page }) => {
+  const off = await page.request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(page.request), data: { watching: { extract_enabled: false } } });
+  expect(off.status()).toBe(200);
+  const why = 'Re-reading needs watching and the extractor switched on (Config → Watching).';
+
+  await go(page, '/');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('[data-run="r-carling"] .plan-card__reread').click();
+  await expect(toast(page, `Couldn't re-read #hstar-party: ${why}`)).toBeVisible();
+  await expect(page.locator('[data-run="r-carling"] .plan-card__reread')).toHaveAttribute('aria-disabled', 'false');
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await go(page, '/extractions');
+  await page.getByRole('button', { name: 'Re-read channels' }).click();
+  await toggleOptions(page.getByRole('combobox', { name: 'Channels to re-read' }), ['#limbo-trio']);
+  await page.getByRole('button', { name: 'Re-read', exact: true }).click();
+  await expect(page.locator('.rescan .field__error')).toHaveText(why);
+  await expect(page.locator('.rescan__job')).toHaveCount(0);
+});
+
 test('config on a phone: the section strip scrolls itself, never the frame', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await go(page, '/config?section=env');

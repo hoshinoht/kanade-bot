@@ -437,7 +437,7 @@
       onclick={() => (swapping ? void closeSwap() : void openSwap())}>{wide ? 'Swap…' : 'Swap timing with…'}</button
     >
   {/if}
-  <button class="btn" type="button" disabled={busy} title="Post this run's morning card now, as a TEST message"
+  <button class="btn" type="button" disabled={busy} title="Preview this run's morning card; nothing is posted"
     onclick={() => void act(() => onping(run.id))}>Preview ping</button
   >
   {#if run.fixed_id && run.amended && !['done', 'cancelled'].includes(run.status)}

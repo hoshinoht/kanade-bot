@@ -13,6 +13,41 @@ Unmounted `/api/admin/*` paths are `404`; every mounted admin route except the
 sign-in reads (`auth/methods`, `auth/tonight`) and the sign-in flows requires a
 session (below) and answers `401 unauthenticated` without one.
 
+## Wiring inventory (2026-10-05)
+
+What the PWA, the pwa-mock, these docs or v4 offer, set against what v5
+`serve` does. `python3 scripts/api_routes/route_diff.py` diffs the paths the
+web apps call and the (method, path) pairs the mock serves against the
+`.route(` calls under `src/api`; it exits 1 on any gap not documented in
+the script. Today it reports only `GET /api/public/week` (public gate), the
+mock's `POST /api/admin/reset` and `/csp-report` (dev tooling) and Rust's
+`/healthz`. v4 dispositions are in `compatibility.md` and `inventory.json`;
+user decisions are cited by date.
+
+| Surface | Route / command | Mock or v4 behaviour | v5 status | Slice or accepted omission |
+|---|---|---|---|---|
+| Admin API | Every `/api/admin/*` and `/api/identity` path the admin app calls (52) | Mock serves all | Mounted | Done; the route diff is empty. |
+| Admin API | `GET /api/admin/limits`, `DELETE …/limits/windows/{id}`, `POST /api/admin/digest` | Mock serves | Mounted (A8) | Done. Override editing (v4 `PUT/DELETE /api/limits/overrides/{user_id}`) stays with `workspace/admin-surfaces`. |
+| Admin API | `GET /api/admin/me` (Account) | Not called yet | Not mounted | `workspace/admin-surfaces` (A02). |
+| Public API | `GET /api/public/week` | Mock serves `PublicWeek` (closed by the portal switch) | `503 closed` (listener always closed) | Public exposure gate: `member-portal/*`. Not mounted on purpose. |
+| Admin API | `POST /api/admin/runs/{id}/ping` | v4 posted a TEST morning card; the mock said "Posted … as a TEST message" | Preview only: "Preview (not posted): …"; nothing is posted | Mock text and the button's title now match v5 (wiring sweep). Posting a test card from the portal (through `DebugDesk`, as `/debug ping` does) is a proposed slice that needs a decision. |
+| Admin API | `POST /api/admin/rescan` while watching is paused or the extractor is off | Mock started the job | `409 extraction_off` naming Config → Watching | Mock now refuses the same way; e2e covers the refusal on the board and on Extractions (wiring sweep). |
+| Admin UI | Re-read (board, run sheet, Extractions, Config → Re-read) before a click | Nothing shown | Refused only on click (`409 extraction_off`; `503 unavailable` when no extraction model is composed) | Proposed: show the off state before the click from `GET /api/admin/config` `watching`. Config → Re-read is in the settings lane. |
+| Admin API | `POST /api/admin/rescan` while another job runs | Mock refuses ("A rescan is already running") | Queues, or attaches to a job already covering the channels | Proposed mock-parity slice (the panel's "One re-read at a time" note follows it). |
+| Admin API | `GET /api/admin/summary` `model` | Mock: busy, held by the extractor | Always `{busy: false, holder: null}`, though the governor is now composed (`ApiState.model_limits`) | Proposed: derive from governor snapshots; the busy rule for several permits needs a decision. |
+| Admin UI | Inbox approve/reject with a token or Tailscale session | — | `403 discord_session_required` | Done: the Inbox knows the session method before the click. |
+| v4 JSON | `GET /api/runs/{id}`; `POST …/cancel`, `…/otot`, `…/restore` | Retain | Folded into `GET /api/admin/week` and `PATCH …/status` | Accepted (user 2026-09-25: cancel/otot/done/restore fold into status). |
+| v4 JSON | `GET /api/pending`, `/api/amendments/{id}*`, `/api/audit`, `/api/chat/summary`, `/api/config/models` | Retain | Served as Inbox, History, Chat `summary`, Config `models` | Done (renamed). |
+| v4 JSON | `POST /api/say`, `POST /api/guide`, `GET /api/rescan` (job list), `POST /api/debug/ping`, `GET /api/messages` (NDJSON) | Retain (bossctl/portal clients) | Not mounted; `/say` and `/debug ping` exist as slash commands | `authoring-ops/operator-cli` (V14): the user selects the CLI commands, then their routes. |
+| v4 JSON | `GET /api/openapi.json`, `/api/docs` | Retain | Not mounted; the schemas are `docs/v5/api-schemas/` | Proposed accepted omission (needs the user's word, as `inventory.json` says Retain). |
+| Slash | `/fixed add\|list\|edit\|remove`, `/schedule`, `/amend`, `/swap`, `/status`, `/rsvp`, `/nick` (staff), `/pings`, `/style`, `/limits`, `/rescan`, `/say`, `/debug ping\|clear_test` | v4 | Registered (`register_retained`) | Done. |
+| Slash | `/cancel`, `/otot`, `/done`, `/restore` | v4 | Folded into `/status` | Accepted (user 2026-09-25). |
+| Slash | `/bot pause\|resume`, `/pingtime`, `/debug status`, `/debug extract` | v4 | Not registered | Accepted drop (user 2026-09-25: the admin app replaces them); `inventory.json` still says Retain. |
+| Slash | `/debug reminders` (+ `upcoming` as `hours:`), `/debug tick`, `/debug materialise` | v4 | Not registered | Deferred (user 2026-09-25); proposed slice. |
+| CLI | `kanade ctl` (v4 `bossctl`, 40 non-memory commands) | v4 HTTP client | Reserved: exits with "not implemented" | `authoring-ops/operator-cli`: needs the user's command selection; the `bossctl` alias is an owner decision. |
+| CLI | `kanade export` (v4 `bossctl export`, `python -m bot.export`) | v4 | Reserved | Portable bundle plan archived; needs a decision (keep reserved or drop). |
+| CLI | `kanade import v4`, `backup`, `models check`, `healthcheck` | v5 | Implemented | Done. |
+
 ## Sign-in and sessions (**Implemented**)
 
 | Method & path | Request | Response | Notes |

@@ -6,6 +6,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Wiring sweep: an inventory of what the PWA, mock, docs and v4 offer
+  against v5 `serve` (`docs/v5/admin-api.md`) and a route-diff script
+  (`scripts/api_routes/route_diff.py`); the dev mock now refuses Re-read while
+  the extractor is off, as the server does, and Preview ping says plainly that
+  nothing is posted.
 - Bosses knowledge page is a shorter tabbed guide (Overview, Phases,
   Strategies, Notes, Sources; `?tab=` and `?phase=` deep links): a mission
   card with its series track (Destiny numbers, Union Champion rank letters),

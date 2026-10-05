@@ -653,9 +653,11 @@ impl Store {
             .ok_or(MoveError::NotFound)?;
         let tokens: Vec<&str> = run.bosses.iter().map(|b| b.token.as_str()).collect();
         let channel = seed::channel(run.channel).map_or(run.channel, |c| c.1);
+        // The server's preview wording: nothing is posted from the portal.
         Ok(format!(
-            "Posted the morning card for {} in {channel} as a TEST message.",
-            tokens.join(" + ")
+            "Preview (not posted): the morning card for {} at {} in {channel}.",
+            tokens.join(" + "),
+            run.time.as_deref().unwrap_or("00:00")
         ))
     }
 

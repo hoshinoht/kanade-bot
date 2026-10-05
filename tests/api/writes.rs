@@ -820,7 +820,13 @@ async fn rsvp_participants_reset_and_ping() {
             "common.json#/$defs/Message",
         )
         .await;
-    assert!(ping["message"].as_str().unwrap().contains("not posted"));
+    // The pwa-mock mirrors this wording; the run sheet shows it verbatim.
+    let message = ping["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("Preview (not posted): the morning card for ")
+            && message.ends_with('.'),
+        "{message}"
+    );
     assert_eq!(
         reads
             .refused("POST", "/api/admin/runs/nope/ping", json!({}))

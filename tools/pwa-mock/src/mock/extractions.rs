@@ -368,6 +368,15 @@ impl Store {
             }
             return Err(MoveError::invalid("Choose at least one watched channel."));
         }
+        // As the server: checked after the request itself is valid.
+        if self.config.paused || !self.config.extract_enabled {
+            return Err(MoveError::Coded(
+                409,
+                "extraction_off",
+                "Re-reading needs watching and the extractor switched on (Config → Watching)."
+                    .into(),
+            ));
+        }
         if self.jobs.iter().any(|j| j.state == "running") {
             return Err(MoveError::invalid(
                 "A rescan is already running; cancel it or wait.",
@@ -464,6 +473,31 @@ mod tests {
             (total, Some(total))
         );
         assert_eq!(polled.started_at, job.started_at);
+    }
+
+    #[test]
+    fn a_rescan_is_refused_while_watching_is_paused_or_the_extractor_is_off() {
+        let watched = super::Store::rescan_targets()[0]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let req = || super::RescanRequest {
+            channels: vec![watched.clone()],
+            window: "week".into(),
+        };
+        for (paused, extract_enabled) in [(true, true), (false, false)] {
+            let mut s = store();
+            s.config.paused = paused;
+            s.config.extract_enabled = extract_enabled;
+            match s.start_rescan(req()) {
+                Err(super::MoveError::Coded(409, "extraction_off", message)) => {
+                    assert!(message.contains("Config → Watching"), "{message}");
+                }
+                Ok(job) => panic!("expected extraction_off, started {}", job.id),
+                Err(other) => panic!("expected extraction_off, got {other}"),
+            }
+            assert!(s.jobs.is_empty(), "nothing queued");
+        }
     }
 
     #[test]
