@@ -105,7 +105,7 @@ test('bosses: selected rows reveal every difficulty and detail keeps timing and 
   await expect(star.locator('.row-content__full .boss-tick')).toHaveCount(catalog.find((boss) => boss.key === 'MaleficStar')!.difficulties.length);
   // The tracked document's facts: tiles, and the guild's difficulty open.
   await expect(page.locator('.guide-tile dt').first()).toHaveText('Boss level');
-  const timing = page.locator('.knowledge-detail aside li').first();
+  const timing = page.locator('.knowledge-aside__timings li').first();
   await expect(timing.locator('strong')).toHaveText(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d\d:\d\d$/);
   await expect(timing.locator('.pill')).toHaveText(/^(EASY|NORMAL|HARD|CHAOS|EXTREME)$/);
   await expect(page.locator('.knowledge-aside__count')).toContainText('next');
@@ -153,7 +153,7 @@ test('bosses: a whole catalog row selects its boss, not only the name', async ({
 
 test('bosses: a weekly timing opens that timing in Fixed', async ({ page }) => {
   await go(page, '/bosses/MaleficStar/knowledge');
-  const timing = page.locator('.knowledge-detail aside li a').first();
+  const timing = page.locator('.knowledge-aside__timings li a').first();
   const when = (await timing.locator('strong').textContent())!.trim();
   await timing.click();
   // Wide, the editor is the side pane beside the list (a sheet only on phones).
@@ -545,6 +545,165 @@ test.describe('boss guide', () => {
     await expect(page.getByRole('tablist', { name: 'Phases' })).toHaveCount(0);
     await expect(page.locator('.guide-timeline__bar')).toHaveCount(0);
     await expect(page.locator('.guide-phase')).not.toHaveAttribute('role', 'tabpanel');
+  });
+
+  test('HP is a disclosure, open by default; closed, the total stays in its head', async ({ page }) => {
+    await inject(page);
+    await go(page, '/bosses/MaleficStar/knowledge');
+    const hp = page.getByRole('region', { name: 'HP', exact: true });
+    const toggle = hp.getByRole('button', { name: 'HP' });
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(hp.locator('.guide-hp__phase')).toHaveCount(4);
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(hp.locator('.guide-hp__phase').first()).toBeHidden();
+    await expect(hp.locator('.guide-hp__head .guide-hp__total [aria-hidden="true"]')).toHaveText('6q');
+    await page.keyboard.press('Enter');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(hp.locator('.guide-hp__phase').first()).toBeVisible();
+  });
+
+  test('the Recommended tile lists one figure per party size, its basis underneath', async ({ page }) => {
+    const doc = structuredClone(GUIDE_DOC);
+    Object.assign(doc.difficulties[0]!.recommended_spec, { parties: [{ party: 'Solo', value: '≈ 120k' }, { party: 'Duo', value: '≈ 95k' }, { party: '6 players', value: '≈ 60k' }] });
+    await page.route(/\/api\/admin\/bosses\/MaleficStar\/knowledge$/, async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), doc, missions: GUIDE_MISSIONS } });
+    });
+    await go(page, '/bosses/MaleficStar/knowledge');
+    const tile = page.locator('.guide-tile').filter({ hasText: 'Recommended' });
+    const rows = tile.getByRole('list', { name: 'Recommended by party size' }).getByRole('listitem');
+    await expect(rows).toHaveText(['Solo≈ 120k', 'Duo≈ 95k', '6 players≈ 60k']);
+    await expect(tile.locator('.guide-tile__value')).toHaveCount(0);
+    await expect(tile.locator('.guide-tile__sub')).toHaveText('Invented, 2026');
+  });
+
+  test('Destiny and Champion in the difficulty switch carry no rim, and their plate when selected', async ({ page }) => {
+    const doc = structuredClone(GUIDE_DOC);
+    (doc.difficulties as unknown[]).push({ name: 'Champion', boss_level: 285 });
+    await page.route(/\/api\/admin\/bosses\/MaleficStar\/knowledge$/, async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), doc, missions: GUIDE_MISSIONS } });
+    });
+    await go(page, '/bosses/MaleficStar/knowledge');
+    const switcher = page.getByRole('group', { name: 'Difficulty' });
+    for (const name of ['Destiny', 'Champion']) {
+      const button = switcher.getByRole('button', { name, exact: true });
+      expect(await button.evaluate((el) => getComputedStyle(el).boxShadow)).toBe('none');
+      await button.click();
+      await expect(button).toHaveAttribute('aria-pressed', 'true');
+      expect(await button.evaluate((el) => getComputedStyle(el).boxShadow)).toBe('none');
+      const [bg, plate] = await button.evaluate((el, token) => [getComputedStyle(el).backgroundColor, (() => {
+        const probe = document.createElement('i');
+        probe.style.setProperty('color', `var(${token})`);
+        document.body.append(probe);
+        const colour = getComputedStyle(probe).color;
+        probe.remove();
+        return colour;
+      })()], `--pill-${name.toLowerCase()}-bg`);
+      expect(bg).toBe(plate);
+    }
+  });
+
+  test('On this page: sticky contents that scroll the panel, select tabs and mark where you are', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await inject(page);
+    await go(page, '/bosses/MaleficStar/knowledge');
+    const toc = page.getByRole('navigation', { name: 'On this page' });
+    await expect(toc.getByRole('button')).toHaveText(['Facts', 'HP', 'Hard notes', 'Overview', 'Phases', 'Strategies', 'Notes', 'Sources']);
+    const panel = page.locator('.knowledge-detail__body');
+    const docTop = () => page.evaluate(() => document.scrollingElement!.scrollTop);
+    // A section entry scrolls the panel (never the document) and marks itself.
+    await toc.getByRole('button', { name: 'Hard notes' }).click();
+    await expect(toc.getByRole('button', { name: 'Hard notes' })).toHaveAttribute('aria-current', 'location');
+    await expect.poll(() => panel.evaluate((b) => b.scrollTop)).toBeGreaterThan(100);
+    expect(await docTop()).toBe(0);
+    // Sticky: still in view after scrolling.
+    await expect(toc).toBeInViewport();
+    // A tab entry selects the tab and brings the tab strip up.
+    await toc.getByRole('button', { name: 'Strategies' }).click();
+    await expect(tablist(page).getByRole('tab', { name: /^Strategies/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(tablist(page).getByRole('tab', { name: /^Strategies/ })).toBeFocused();
+    await expect(page).toHaveURL(/[?&]tab=strategies/);
+    await expect(toc.getByRole('button', { name: 'Strategies' })).toHaveAttribute('aria-current', 'location');
+    await expect.poll(async () => {
+      const [strip, box] = await Promise.all([page.locator('.guide-tabs').boundingBox(), panel.boundingBox()]);
+      return Math.abs(strip!.y - box!.y);
+    }).toBeLessThan(40);
+    // Scroll-spy: back at the top, the first section is current again.
+    await panel.evaluate((b) => b.scrollTo(0, 0));
+    await expect(toc.getByRole('button', { name: 'Facts' })).toHaveAttribute('aria-current', 'location');
+    expect(await docTop()).toBe(0);
+  });
+
+  test('On this page is hidden where the aside sits under the guide', async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 670 });
+    await inject(page);
+    await go(page, '/bosses/MaleficStar/knowledge');
+    await expect(page.getByRole('tablist', { name: 'Guide sections' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'On this page' })).toBeHidden();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByRole('navigation', { name: 'On this page' })).toBeHidden();
+  });
+
+  test('the hero collapses to one line with the difficulty when scrolled, and comes back at the top', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await inject(page);
+    await go(page, '/bosses/MaleficStar/knowledge');
+    const hero = page.locator('.knowledge-hero');
+    const panel = page.locator('.knowledge-detail__body');
+    await expect(hero).not.toHaveClass(/knowledge-hero--compact/);
+    await expect(hero.locator('.knowledge-hero__pill')).toBeHidden();
+    const tall = (await hero.boundingBox())!.height;
+    await panel.evaluate((b) => b.scrollTo(0, 400));
+    await expect(hero).toHaveClass(/knowledge-hero--compact/);
+    await settle(page);
+    await expect(hero.locator('.knowledge-hero__pill')).toHaveText(/HARD/);
+    await expect(hero.locator('.knowledge-hero__meta')).toHaveCSS('opacity', '0');
+    expect((await hero.boundingBox())!.height).toBeLessThan(tall / 2);
+    expect(await page.evaluate(() => document.scrollingElement!.scrollTop)).toBe(0);
+    await panel.evaluate((b) => b.scrollTo(0, 0));
+    await expect(hero).not.toHaveClass(/knowledge-hero--compact/);
+  });
+
+  test('the phase bar is a connected button group: round outer ends, small inner corners, the selected one a pill', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await inject(page);
+    await go(page, '/bosses/MaleficStar/knowledge?tab=phases&phase=2');
+    const segments = page.getByRole('tablist', { name: 'Phases' }).getByRole('tab');
+    await settle(page);
+    const radii = await segments.evaluateAll((list) => list.map((seg) => { const cs = getComputedStyle(seg); return [parseFloat(cs.borderTopLeftRadius), parseFloat(cs.borderTopRightRadius)]; }));
+    // First: round left, small right. Selected (2nd): round both. Third: small both. Last: small left, round right.
+    expect(radii[0]![0]).toBeGreaterThanOrEqual(20);
+    expect(radii[0]![1]).toBeLessThanOrEqual(8);
+    expect(Math.min(...radii[1]!)).toBeGreaterThanOrEqual(20);
+    expect(Math.max(...radii[2]!)).toBeLessThanOrEqual(8);
+    expect(radii[3]![0]).toBeLessThanOrEqual(8);
+    expect(radii[3]![1]).toBeGreaterThanOrEqual(20);
+  });
+
+  test('a narrow scale band breaks between words, never inside a figure', async ({ page }) => {
+    await inject(page);
+    await go(page, '/bosses/MaleficStar/knowledge');
+    const figure = page.locator('.guide-scale .guide-figure').filter({ hasText: '250 – 750' });
+    await expect(figure).toHaveCSS('white-space', 'nowrap');
+    const lines = await figure.evaluate((el) => new Set([...el.getClientRects()].map((r) => Math.round(r.top))).size);
+    expect(lines).toBe(1);
+  });
+
+  test('the last card ends with room below it on every tab', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await inject(page);
+    for (const tab of ['', '?tab=notes', '?tab=sources']) {
+      await go(page, `/bosses/MaleficStar/knowledge${tab}`);
+      await expect(tablist(page)).toBeVisible();
+      const gap = await page.locator('.knowledge-detail__body').evaluate((b) => {
+        b.scrollTo(0, b.scrollHeight);
+        const last = b.querySelector('.knowledge-detail__main')!.lastElementChild!.getBoundingClientRect();
+        return b.getBoundingClientRect().bottom - last.bottom;
+      });
+      expect(gap, `room below the last card${tab}`).toBeGreaterThanOrEqual(32);
+    }
   });
 
   test('Phases on a phone: the timeline turns vertical and nothing is cut', async ({ page }) => {

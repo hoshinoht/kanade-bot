@@ -27,6 +27,12 @@ phases:
   - title: Hits delay Essences
     text: 'Any player''s hit pushes the next one back (15s base, 35s cap).'
     detail: Any hit on any player pushes the next Essence back (base 15s, capped at 35s).
+  - title: Missed Essences
+    text: 'Each miss adds 100/200 Illusion Magic.'
+  - title: Last minute
+    text: 'Predation rises 2 per second in the final minute of a stay.'
+  - title: Leave on time
+    text: 'Stay until the gauge is empty or 1:00 remains; entering Reality at 0 skips the −10% entry penalty.'
 - name: Reality room
   group: Two rooms
   cycle: true
@@ -42,16 +48,20 @@ phases:
   - title: Penalties rise with the gauge
     text: 'See the scale: higher Illusion Magic brings Predation per hit, the Floating Disaster, then more damage taken.'
     detail: 'Reality penalties scale with Illusion Magic: from 250 every hit adds Predation, from 500 the Floating Disaster joins (one source says 750), from 750 you take more damage.'
+  - title: Locked at 1000
+    text: 'At 1000 Illusion Magic you cannot swap out; a 40 s countdown starts, then a forced swap costs 160/200 Predation.'
+  - title: Ready to Eat
+    text: 'Phase 3: body-block every minion, or a full-map blast follows (safe only right under her).'
 mechanics:
 - kind: scale
   title: Illusion Magic in Reality
   bands:
-  - {label: 0–249 base, span: 25, tone: safe}
-  - {label: 250+ hits add Predation, span: 25, tone: neutral}
-  - {label: 500+ Floating Disaster, span: 25, tone: yellow}
-  - {label: 750+ more damage taken, span: 25, tone: red}
-  - {label: 1000 locked in, span: 5, tone: risk}
-  note: 'One source puts the Floating Disaster at 750. At 1000 you cannot swap out and a 40s countdown starts.'
+  - {label: 0–249 base, span: 22, tone: safe}
+  - {label: 250+ hits add Predation, span: 22, tone: neutral}
+  - {label: 500+ Floating Disaster, span: 22, tone: yellow}
+  - {label: 750+ more damage taken, span: 22, tone: red}
+  - {label: 1000 locked in, span: 10, tone: risk}
+  note: 'One source puts the Floating Disaster at 750. At 1000 you cannot swap out; a 40 s countdown starts and a forced swap follows at 0.'
 - kind: ledger
   title: Predation · shared, fails at 1000 (solo)
   rows:
@@ -67,7 +77,7 @@ danger:
   detail: A missed Essence adds 100/200 Illusion Magic in Illusion or 50/60 Predation in Reality (whether these also split by party size is unconfirmed), and Essence patterns add Predation and Illusion Magic when they connect.
 - title: Overstaying
   text: 'Predation climbs in Illusion''s last minute; 1000 Illusion Magic in Reality locks you in until a costly forced swap.'
-  detail: In the final minute of an Illusion stay Predation rises 2 per second. At 1000 Illusion Magic in Reality you cannot swap out, a 40s countdown starts and Predation rises 1 per second; the forced swap plays a roughly 5s cutscene and then costs 160/200 Predation.
+  detail: In the final minute of an Illusion stay Predation rises 2 per second. At 1000 Illusion Magic in Reality you cannot swap out, a 40s countdown starts and Predation rises 1 per second; at 0 the forced swap plays a roughly 5s cutscene and then costs 160/200 Predation.
 - title: Entry penalty
   text: 'Entering Reality with any Illusion Magic left starts you at −10% damage.'
   detail: Swapping into Reality with any Illusion Magic left starts you at -10% final damage.
@@ -156,9 +166,12 @@ difficulties:
   - {phase: total, value: 3.288q}
   recommended_spec:
     kind: HEXA-converted stat
-    value: 49k trio
     basis: With Reality bonus held
     text: Trio 49k, duo 57k, solo 76k with Sol Hecate, assuming you hold the Reality final-damage bonus; add about 3k for a safer clear.
+    parties:
+    - {party: Trio, value: 49k}
+    - {party: Duo, value: 57k}
+    - {party: Solo, value: 76k}
   notes:
   - 3.288q is the KMS value after its Feb 2026 Normal HP cut (about 30% from 4.697q). GMS launched with it a week before MapleSEA (25 Jun 2026); MapleSEA notes give no HP, so SEA is expected to match KMS.
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 2.24q, 20-minute limit.'
@@ -172,9 +185,12 @@ difficulties:
   - {phase: total, value: 14.74q}
   recommended_spec:
     kind: HEXA-converted stat
-    value: 89k trio
     basis: With Reality bonus held
     text: Trio 89k, duo 104k, solo 123k with Sol Hecate, assuming you hold the Reality final-damage bonus; add about 3k for a safer clear.
+    parties:
+    - {party: Trio, value: 89k}
+    - {party: Duo, value: 104k}
+    - {party: Solo, value: 123k}
   notes:
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 10.0q, 20-minute limit.'
 sources:

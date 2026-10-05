@@ -143,6 +143,21 @@
     list.addEventListener('click', onclick);
     return () => list.removeEventListener('click', onclick);
   }
+  // The selected difficulty (from the guide), for the compact header's pill.
+  let shownDifficulty = $state<string | null>(null);
+  // The hero collapses to a one-line bar once the guide is scrolled down and
+  // comes back at the top. Two thresholds, so the hero's own change in height
+  // (the panel grows) cannot flip it back; never for content that barely scrolls.
+  let heroCompact = $state(false);
+  function collapseHero(panel: HTMLElement) {
+    const onscroll = () => {
+      const room = panel.scrollHeight - panel.clientHeight;
+      if (!heroCompact && panel.scrollTop > 96 && room > 160) heroCompact = true;
+      else if (heroCompact && panel.scrollTop < 12) heroCompact = false;
+    };
+    panel.addEventListener('scroll', onscroll, { passive: true });
+    return () => panel.removeEventListener('scroll', onscroll);
+  }
   // The header is one line (cut with an ellipsis on narrow frames); the title holds it whole.
   const heroMeta = $derived(knowledge.data ? `${knowledge.data.level ? `Lv. ${knowledge.data.level} · ` : ''}researched ${knowledge.data.researched_as_of ?? 'undated'} · ${knowledge.data.path}` : '');
   const runWhen = (run: Run) => `${dayLabel(week.data!, run.day)} ${run.time ?? 'own time'}`;
@@ -178,7 +193,7 @@
       {#if phone && selectedKey && !compact}<button type="button" class="btn btn--ghost knowledge-detail__back" onclick={leaveDetail}><span aria-hidden="true">←</span> Back to the catalog</button>{/if}
       {#if knowledge.error}<div class="empty" role="alert"><strong>No knowledge for “{activeKey}”.</strong>{knowledge.error}</div>
       {:else if doc && knowledge.data}
-        <header data-fid="knowledge-head" class="knowledge-hero">
+        <header data-fid="knowledge-head" class="knowledge-hero" class:knowledge-hero--compact={heroCompact}>
           <!-- Keyed by source: a boss switch builds a fresh element, never showing the previous boss's frame. -->
           {#key art?.src}
             {#if art?.kind === 'video'}<video class="knowledge-hero__art" src={art.src} poster={art.poster} muted autoplay loop playsinline preload="metadata" disablepictureinpicture disableremoteplayback aria-hidden="true" onerror={() => (videoFailed = true)}></video>
@@ -186,16 +201,17 @@
           {/key}
           <div class="knowledge-hero__identity">
             {#if activePortrait}<Portrait boss={activePortrait} size="md" />{/if}
-            <div><p class="cap">Checked-in boss knowledge</p><h2>{knowledge.data.name}</h2><p class="knowledge-hero__meta" title={heroMeta}>{knowledge.data.level ? `Lv. ${knowledge.data.level} · ` : ''}researched {knowledge.data.researched_as_of ?? 'undated'} · <code>{knowledge.data.path}</code></p></div>
+            <div><p class="cap">Checked-in boss knowledge</p><h2>{knowledge.data.name}{#if shownDifficulty}<span class="knowledge-hero__pill boss-tick boss-tick--{tickClass(shownDifficulty)}"><span class="vh">, </span>{shownDifficulty.toUpperCase()}</span>{/if}</h2><p class="knowledge-hero__meta" title={heroMeta}>{knowledge.data.level ? `Lv. ${knowledge.data.level} · ` : ''}researched {knowledge.data.researched_as_of ?? 'undated'} · <code>{knowledge.data.path}</code></p></div>
             {#if doc.event}<StatusChip>Seasonal boss · <abbr title={doc.event.name}>{seasonTag(doc.event)}</abbr></StatusChip>{/if}
           </div>
         </header>
-        <div data-fid="knowledge-body" class="knowledge-detail__body">
-          <div class="knowledge-detail__main">
-            <!-- Keyed by boss: the difficulty and open steps start fresh, the tab is read again from the address. -->
-            {#key knowledge.data.key}<KnowledgeGuide knowledge={knowledge.data} {difficulty} />{/key}
-          </div>
-          <aside data-fid="knowledge-aside" aria-label="Weekly timings"><h2 class="cap">Weekly timings</h2>{#if relatedFixed.length}<ul>{#each relatedFixed as timing (timing.id)}{@const boss = timingBoss(timing)}{@const others = otherBosses(timing)}<li><a href="/fixed?open={encodeURIComponent(timing.id)}"><strong>{timing.weekday_name.slice(0, 3)} {timing.time}</strong>{#if boss}<span class="pill pill--{boss.difficulty}">{DIFFICULTY_WORDS[boss.difficulty].toUpperCase()}</span>{/if}{#if others.length}<span class="knowledge-aside__others" title={others.join(' · ')}>+ {others.join(' · ')}</span>{/if}</a></li>{/each}</ul>{:else}<p class="note">No weekly timing uses this boss.</p>{/if}<h2 class="cap">This week</h2><p class="knowledge-aside__count">{relatedRuns.length} run{relatedRuns.length === 1 ? '' : 's'}{nextRun ? ' · next ' : ''}{#if nextRun}<strong>{runWhen(nextRun)}</strong>{/if}</p></aside>
+        <div data-fid="knowledge-body" class="knowledge-detail__body" {@attach collapseHero}>
+          <!-- Keyed by boss: the difficulty and open steps start fresh, the tab is read again from the address. -->
+          {#key knowledge.data.key}
+            <KnowledgeGuide knowledge={knowledge.data} {difficulty} bind:shown={shownDifficulty}>
+              {#snippet timings()}<h2 class="cap">Weekly timings</h2>{#if relatedFixed.length}<ul class="knowledge-aside__timings">{#each relatedFixed as timing (timing.id)}{@const boss = timingBoss(timing)}{@const others = otherBosses(timing)}<li><a href="/fixed?open={encodeURIComponent(timing.id)}"><strong>{timing.weekday_name.slice(0, 3)} {timing.time}</strong>{#if boss}<span class="pill pill--{boss.difficulty}">{DIFFICULTY_WORDS[boss.difficulty].toUpperCase()}</span>{/if}{#if others.length}<span class="knowledge-aside__others" title={others.join(' · ')}>+ {others.join(' · ')}</span>{/if}</a></li>{/each}</ul>{:else}<p class="note">No weekly timing uses this boss.</p>{/if}<h2 class="cap">This week</h2><p class="knowledge-aside__count">{relatedRuns.length} run{relatedRuns.length === 1 ? '' : 's'}{nextRun ? ' · next ' : ''}{#if nextRun}<strong>{runWhen(nextRun)}</strong>{/if}</p>{/snippet}
+            </KnowledgeGuide>
+          {/key}
         </div>
       {:else}<LoadingState text="Loading checked-in knowledge…" />{/if}
     </article>

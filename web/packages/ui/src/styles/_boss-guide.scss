@@ -1,13 +1,16 @@
+@use "easing" as *;
 // The boss guide: the knowledge detail's main column (user-approved mockup
 // boss-guides/research-2026-10-05/design/Main.dc.html, on the M3E
 // primitives). Mission card, lead, fact tiles, HP by phase, the difficulty's
 // notes, then pill tabs over Overview / Phases / Strategies / Notes / Sources.
 // Colour is never the only cue: every tone, pip and segment has its words.
 
-// Knowledge-only difficulties (Champion, Destiny) are outlined in the switch.
 // Six difficulties do not fit a phone's line: the group wraps.
 .knowledge__switch .seg { display: flex; flex-wrap: wrap; row-gap: 4px; }
-.seg button.seg__info { box-shadow: inset 0 0 0 1.5px var(--pill-destiny-edge); }
+// Knowledge-only difficulties (Champion, Destiny) carry no rim in the switch
+// (user decision 2026-10-05); selected, they take their game plate colours.
+.knowledge__switch .seg button.seg__info--champion[aria-pressed="true"] { background: var(--pill-champion-bg); color: var(--pill-champion-fg); }
+.knowledge__switch .seg button.seg__info--destiny[aria-pressed="true"] { background: var(--pill-destiny-bg); color: var(--pill-destiny-fg); }
 
 // The column is stretched to the scrolling body's height: its parts keep their
 // own height (the tab strip, a scroll container, would otherwise shrink away).
@@ -55,10 +58,26 @@
 .guide-tile dd { margin: 0; }
 .guide-tile__value { font-size: var(--fs-lg); font-weight: 700; }
 .guide-tile__sub { color: var(--dim-text); font-size: var(--fs-mini); }
+// A recommendation per party size: one row each, the figure right-aligned.
+.guide-tile__rows ul { display: grid; gap: 2px; margin: 2px 0 0; padding: 0; list-style: none; }
+.guide-tile__rows li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0 10px; font-size: var(--fs-small); }
+.guide-tile__rows .mono { font-size: var(--fs-body); font-weight: 700; white-space: nowrap; }
 // HP breakdown: a pane titled "HP"; the stored total; per phase a dark label
 // bar over one bar per target, equal widths, wrapping into rows of equal bars.
 .guide-hp { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: var(--r); background: var(--pane); }
 .guide-hp h3, .guide-hp p { margin: 0; }
+// The head is a disclosure: "HP" toggles the breakdown; closed, the total stays beside it.
+.guide-hp__head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 12px; }
+.guide-hp__head .guide-hp__total { flex: 1 1 auto; justify-content: flex-end; gap: 2px 10px; }
+.guide-hp__toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; margin: -4px -8px; padding: 0 8px; border: 0; border-radius: 16px; background: transparent; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
+.guide-hp__toggle:hover { background: var(--row-hover); }
+.guide-hp__chevron { width: 7px; height: 7px; border-right: 2px solid currentcolor; border-bottom: 2px solid currentcolor; transform: translateY(-2px) rotate(45deg); }
+.guide-hp--closed .guide-hp__chevron { transform: rotate(-45deg); }
+.guide-hp__body { display: flex; flex-direction: column; gap: 8px; }
+.guide-hp__body[hidden] { display: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .guide-hp__chevron { transition: transform 160ms ease; }
+}
 .guide-hp__total,
 .guide-hp__label { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 12px; }
 .guide-hp__total { font-weight: 700; }
@@ -129,40 +148,59 @@
 // Band widths come from the data (CSSOM flex-grow); a band never shrinks under its label.
 // Bands that cannot share one line wrap onto the next; each band rounds its own outer ends.
 .guide-scale { display: flex; flex-wrap: wrap; gap: 2px; min-height: 26px; margin: 0; padding: 0; font-family: var(--mono); font-size: var(--fs-micro); font-weight: 700; list-style: none; }
-.guide-scale li { display: flex; flex: 1 1 0; align-items: center; justify-content: center; padding: 4px 6px; border-radius: 4px; line-height: 1.2; text-align: center; }
+.guide-scale li { display: flex; flex: 1 1 0; align-items: center; justify-content: center; padding: 4px 6px; border-radius: 4px; line-height: 1.2; text-align: center; text-wrap: balance; }
+// Figures never break (not at their dash either); a narrow band wraps between words.
+.guide-figure { white-space: nowrap; }
 .guide-scale li:first-child { border-radius: 13px 4px 4px 13px; }
 .guide-scale li:last-child { border-radius: 4px 13px 13px 4px; }
 @each $tone in "red", "yellow", "green", "blue", "neutral", "risk", "safe" {
   .guide-tone--#{$tone} { background: var(--guide-#{$tone}); color: var(--guide-#{$tone}-ink); }
 }
 
-// The Phases timeline: one bar of equal segments that picks a phase.
-// Mobile first it is vertical (a rail of full-width rows under each group's
-// label); a container query lays it out as one horizontal bar once each
-// segment gets about 92 px, groups bracketed over their segments.
+// The Phases timeline: one M3E connected button group of equal segments that
+// picks a phase (the `.seg` group's shape: 2 px apart, 6 px inner corners,
+// full outer corners, the selected one morphs to a full pill). Mobile first
+// it is vertical, a connected column under each group's label; a container
+// query lays it out as one horizontal bar once each segment gets ~92 px,
+// groups bracketed over their segments.
 .guide-timeline { display: flex; flex-direction: column; gap: 12px; container: timeline / inline-size; }
 .guide-timeline__bar { display: flex; flex-direction: column; gap: 8px; }
-.guide-timeline__run { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.guide-timeline__run { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .guide-timeline__run--group { padding-left: 10px; border-left: 2px solid var(--off); }
 .guide-timeline__bracket { display: flex; align-items: center; gap: 4px; color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-micro); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .guide-timeline__bracket:empty { display: none; }
 .guide-timeline__loop { font-size: var(--fs-small); letter-spacing: 0; }
-.guide-timeline__seg { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; min-height: 44px; padding: 6px 12px; border: 0; border-radius: var(--r-sm); font: inherit; font-size: var(--fs-small); line-height: 1.25; text-align: start; overflow-wrap: anywhere; cursor: pointer; }
+:where(.guide-timeline__seg) { border-radius: 6px; }
+.guide-timeline__seg { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; min-height: 44px; padding: 6px 14px; border: 0; font: inherit; font-size: var(--fs-small); line-height: 1.25; text-align: start; overflow-wrap: anywhere; cursor: pointer; }
+// Vertical: the column's outer ends are round (top of the first, foot of the last).
+:where(.guide-timeline__run:first-child > .guide-timeline__seg:first-of-type) { border-top-left-radius: 18px; border-top-right-radius: 18px; }
+:where(.guide-timeline__run:last-child > .guide-timeline__seg:last-of-type) { border-bottom-left-radius: 18px; border-bottom-right-radius: 18px; }
 .guide-timeline__seg--plain { background: var(--seg-fill); color: var(--ink); }
 .guide-timeline__tag { font-size: var(--fs-mini); }
-// Selected: a ring and a heavier name, not colour alone; plain segments also take the selection fill.
-.guide-timeline__seg[aria-selected="true"] { box-shadow: inset 0 0 0 2.5px var(--ink); }
-.guide-timeline__seg--plain[aria-selected="true"] { background: var(--select); color: var(--select-ink); }
+// Selected: the full pill shape and a heavier name; an untoned segment takes
+// the group's accent fill, a toned one keeps its tone and gains an ink ring.
+.guide-timeline .guide-timeline__seg[aria-selected="true"] { border-radius: 22px; }
+.guide-timeline__seg--plain[aria-selected="true"] { background: var(--accent-fill); color: var(--accent-ink); }
+.guide-timeline__seg[aria-selected="true"]:not(.guide-timeline__seg--plain) { box-shadow: inset 0 0 0 2px var(--ink); }
+.guide-timeline__seg[aria-selected="true"] .guide-timeline__tag { font-weight: 600; }
+.guide-timeline__seg:not([aria-selected="true"]):hover { filter: brightness(0.97); }
 .guide-timeline__seg:focus-visible { outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) {
+  .guide-timeline__seg { transition: border-radius $spring-ms $spring; }
+}
 @mixin timeline-across {
-  .guide-timeline__bar { display: grid; grid-auto-flow: column; grid-template-rows: auto 1fr; gap: 0 3px; }
-  .guide-timeline__run { display: grid; grid-row: span 2; grid-template-columns: subgrid; grid-template-rows: subgrid; gap: 0 3px; padding: 0; border: 0; }
+  .guide-timeline__bar { display: grid; grid-auto-flow: column; grid-template-rows: auto 1fr; gap: 0 2px; }
+  .guide-timeline__run { display: grid; grid-row: span 2; grid-template-columns: subgrid; grid-template-rows: subgrid; gap: 0 2px; padding: 0; border: 0; }
   .guide-timeline__bracket { grid-column: 1 / -1; justify-content: center; margin-bottom: 4px; padding: 2px 6px 4px; border: 2px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; text-align: center; }
   .guide-timeline__run--group .guide-timeline__bracket { border-color: var(--off); }
   &.guide-timeline--labelled .guide-timeline__bracket:empty { display: block; }
+  :where(.guide-timeline__seg) { border-radius: 6px; }
   .guide-timeline__seg { align-items: center; justify-content: center; min-height: 52px; padding: 6px 8px; text-align: center; }
-  .guide-timeline__run:first-child .guide-timeline__seg:first-of-type { border-radius: 16px var(--r-sm) var(--r-sm) 16px; }
-  .guide-timeline__run:last-child .guide-timeline__seg:last-of-type { border-radius: var(--r-sm) 16px 16px var(--r-sm); }
+  // Across: the bar's outer ends are round (left of the first, right of the last).
+  :where(.guide-timeline__run:first-child > .guide-timeline__seg:first-of-type) { border-radius: 26px 6px 6px 26px; }
+  :where(.guide-timeline__run:last-child > .guide-timeline__seg:last-of-type) { border-radius: 6px 26px 26px 6px; }
+  :where(.guide-timeline__run:first-child:last-child > .guide-timeline__seg:first-of-type:last-of-type) { border-radius: 26px; }
+  .guide-timeline__seg[aria-selected="true"] { border-radius: 26px; }
 }
 @for $n from 1 through 6 {
   .guide-timeline--n#{$n} .guide-timeline__bar { grid-template-columns: repeat(#{$n}, minmax(0, 1fr)); }

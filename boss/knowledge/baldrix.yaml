@@ -22,6 +22,10 @@ phases:
     text: Drains 12/10/s while occupied, fills 8/s while empty, rises when you're hit.
   - title: Portal
     text: Solo and duo get one to an empty room (NPC/Gather, 10s cooldown).
+  - title: Room penalties
+    text: 'Above 750 a room''s penalty spreads to every room; at 1000 it worsens and sticks until the rotation.'
+  - title: Ancient God room
+    text: '+250 for two missed mirror shots in six; +500 once 4 (Normal) / 3 (Hard) rifts open. Close rifts early.'
 - name: Phase 2 · Three sides
   group: Forced rotation
   tag: personal gauge
@@ -33,6 +37,10 @@ phases:
   - title: Marks (trio)
     text: 6/11/14 Marks copy extra patterns between sides.
     detail: 'Phase 2 splits players across the Centre, East and West sides, and Baldrix cannot be bound. Your personal gauge decays 5/4 per second; reaching 1000 adds an Overflow stack and a permanent Magic Mark. In a trio, 3/6/8/10/12 Overflow converts to 50/100/150/200/250 Erosion at each swap, and Marks at 6/11/14 copy extra patterns between sides (the last tier also strengthens his Phase 3 Zone).'
+  - title: Magic Storm
+    text: 'Sweeps all three sides in turn; crouch it and warn the next side. Take purple attacks face-on.'
+  - title: No overflow
+    text: 'Never reaching 1000 all phase earns a shield that blocks the first Ragnarok''s +300.'
 - name: Phase 3 · Together
   tag: Squeezing Magic
   items:
@@ -44,6 +52,10 @@ phases:
   - title: Ragnarok
     text: Every 2 min. +300 Squeezing Magic to all; he is immune ~5s.
     detail: Ragnarok, every two minutes in Phase 3, deals no damage but adds 300 Squeezing Magic to everyone while he is invulnerable for about 5s. HP is split roughly 26/28/46% across the phases.
+  - title: Soul Execution
+    text: 'His hits deal 100% HP until afterimages drain you to 0; never leave his Zone.'
+  - title: Pre-Ragnarok lull
+    text: 'No Triple Swing, Triad Thunder or Zone 10-20s before it; take afterimages then.'
 mechanics:
 - kind: scale
   title: Room gauge at each rotation
@@ -150,9 +162,12 @@ difficulties:
   - {phase: '3', value: 9.309q}
   recommended_spec:
     kind: HEXA-converted stat
-    text: About 108k-113k for a full-timer minimum clear, depending on party composition (KMS release-era figures).
-    value: 108k-113k
-    basis: KMS release era
+    text: About 108k-113k for a full-timer minimum trio clear, depending on party composition (KMS release-era figures); a duo needs about 115k or more and solo about 131k (KMS plus MapleSEA and MapleScouter research).
+    basis: KMS + MapleSEA, MapleScouter
+    parties:
+    - {party: Trio, value: 108k–113k}
+    - {party: Duo, value: ≈ 115k+}
+    - {party: Solo, value: ≈ 131k}
   notes:
   - title: After OVERDRIVE
     text: HP ≈ 3.62q / 3.85q / 6.31q (≈ 13.8q), 20 min. SEA due Oct-Nov 2026.

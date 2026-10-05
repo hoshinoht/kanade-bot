@@ -153,6 +153,15 @@ const STATES: Screen[] = [
   ...['BM', 'Bellona', 'Kalos'].map((key) => ({ name: `admin/bosses/${key}/knowledge`, url: screenUrl(ADMIN, `/bosses/${key}/knowledge`) })),
   { name: 'admin/bosses/Carling/knowledge?difficulty=Destiny', url: screenUrl(ADMIN, '/bosses/Carling/knowledge?difficulty=Destiny') },
   { name: 'admin/bosses/Lotus/knowledge?difficulty=Champion', url: screenUrl(ADMIN, '/bosses/Lotus/knowledge?difficulty=Champion') },
+  {
+    name: 'admin/bosses/Carling/knowledge (scrolled, compact hero, HP closed)',
+    url: screenUrl(ADMIN, '/bosses/Carling/knowledge'),
+    open: async (page) => {
+      await page.locator('.guide-hp__toggle').first().click();
+      await page.locator('.knowledge-detail__body').evaluate((body) => body.scrollTo(0, 400));
+      await expect(page.locator('.knowledge-hero--compact')).toHaveCount(1);
+    },
+  },
   { name: 'admin/bosses/Limbo/knowledge', url: screenUrl(ADMIN, '/bosses/Limbo/knowledge') },
   { name: 'admin/bosses/Carling/knowledge?difficulty=Extreme', url: screenUrl(ADMIN, '/bosses/Carling/knowledge?difficulty=Extreme') },
   { name: 'admin/bosses/Seren/knowledge?tab=phases', url: screenUrl(ADMIN, '/bosses/Seren/knowledge?tab=phases') },

@@ -18,6 +18,12 @@ phases:
   - title: Personal Risk
     text: Forms swap every 100s. Each press removes 10%; leftover Risk becomes Erosion.
     detail: Phases 1 and 3 alternate between two forms every 100s (Specters A/B, then Limbo Black/White). Risk is personal in these phases; it starts full each rotation, each Purification removes 10%, and whatever is left turns into Erosion at the swap (30% left = +30).
+  - title: Bubble fight
+    text: 'Fight Specter A inside its bubble (outside, Erosion ticks up each second); crouch Grasp of Truth, stand on him for Dimensional Collapse.'
+  - title: Specter B floor
+    text: 'A section drops every 30s and falling adds 50 Erosion; Purification restores floor. The slime can hit 5 times.'
+  - title: Specter B burst
+    text: 'Burst with a Genesis i-frame up, or after the slime passes.'
 - name: Phase 2 · Specters C and D
   tag: shared Risk
   items:
@@ -27,11 +33,25 @@ phases:
   - title: Passageway
     text: Bounce spikes into the Shadow of Origin 3 times in 30s for -150 Erosion.
     detail: Between Specters C and D, the Passageway gives 30s to bounce spikes into the Shadow of Origin three times; success removes 150 Erosion and failing costs nothing.
+  - title: Specter C fusions
+    text: 'At 80% of Phase 2 HP, then 20% later; ~30s invulnerable each. Reaching ~70% after the first usually skips the second.'
+  - title: Specter D walls
+    text: 'Close at 25/50/75/100% Risk (left, right, bottom, top) for 300% HP; 100% starts Endless Abyss.'
+  - title: Everyone presses
+    text: 'One idle player lets shared Risk hit 100%; against D, pull it under each wall threshold.'
 - name: Phase 3 · Limbo Black and White
   tag: personal Risk
   items:
   - title: Personal Risk again
     text: Same 100s swap and 10% presses as Phase 1.
+  - title: 'Black''s pools'
+    text: 'A pink pool every 7s; six start a special pattern. Purify beside one to clear it.'
+  - title: 'Black''s grab'
+    text: 'Usually after about four attacks, so expect it after a fifth; stand behind or above. It adds Erosion (100 on Hard).'
+  - title: Bubble fight
+    text: 'Fight Limbo Black inside his bubble (outside, Erosion ticks up each second); crouch Grasp of Truth, stand on him for Dimensional Collapse.'
+  - title: Limbo White
+    text: 'Six Walls of Thought start a special pattern; Monster of Truth ticks every 0.2s.'
 mechanics:
 - kind: ledger
   title: Erosion

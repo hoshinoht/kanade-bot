@@ -17,6 +17,14 @@ phases:
   items:
   - title: Gauge reset
     text: 'The Sun Gauge clears when Phase 2 starts (SEA v246).'
+  - title: Light pillars
+    text: 'Erupt almost instantly and keep spawning while she is bound; many players find Phase 1 the hardest.'
+  - title: Pillar spacing
+    text: 'Solo: stand between two pillar spawn points near Seren so she throws fewer sword auras; jump the slow one.'
+  - title: Burst out
+    text: 'Parties burst at once to get out of the pillar phase.'
+  - title: Extreme
+    text: 'The Phase 1 diagonal lasers fill the gauge faster.'
 - name: Noon
   group: Phase 2
   cycle: true
@@ -26,6 +34,14 @@ phases:
   - title: Shield heal
     text: 'Dawn shield left at Noon heals Seren.'
     detail: Any Dawn shield still up when Noon begins is healed back to Seren.
+  - title: Front laser
+    text: 'Crouch dodges the Noon front laser.'
+  - title: Stun on your terms
+    text: 'Near-full late in Noon? Take a cheap hit so the stun lands here, crouch as it ends, then potion.'
+  - title: Left side
+    text: 'Solo: play the left; the far right has an off-screen hazard and the middle catches crossing lasers.'
+  - title: Extreme
+    text: 'More sun rays.'
 - name: Sunset
   group: Phase 2
   cycle: true
@@ -35,6 +51,12 @@ phases:
   - title: Healing cut
     text: 'Healing −80% and heavy hits; Decent Holy Fountain heals normally.'
     detail: 'Sunset cuts healing from items and skills by 80% and hits very hard; Decent Holy Fountain still heals normally.'
+  - title: Triple slash
+    text: '200% HP on Hard/Extreme, 90% on Normal; crouch all three. Sword pillars deal 70-90%.'
+  - title: Arrive with room
+    text: 'A stun here usually kills, so don''t enter Sunset with a near-full gauge.'
+  - title: Off the wall
+    text: 'Don''t fight her pinned to a wall she faces; her charge lingers there.'
 - name: Midnight
   group: Phase 2
   cycle: true
@@ -44,6 +66,14 @@ phases:
   - title: Burst window
     text: 'Weak attacks that never fill the gauge.'
     detail: 'Midnight attacks barely hurt and do not fill the gauge, so it is the main burst window.'
+  - title: Shrinks per curse
+    text: 'Each curse shrinks Midnight; it regrows at each time change by how many stayed uncursed. At zero the party fails.'
+  - title: Burst timing
+    text: 'Hold binds and the main burst for Midnight; start just before the Mithra''s Power check resolves.'
+  - title: Push before Dawn
+    text: 'Leftover Dawn shield heals back at Noon, so take as much HP here as you can.'
+  - title: Finish here
+    text: 'Strong solos and duos aim to kill her in Midnight; if she will survive, save i-frames or Ascent for Dawn.'
 - name: Dawn
   group: Phase 2
   cycle: true
@@ -56,6 +86,12 @@ phases:
   - title: Deer and orbs
     text: 'Deer (Nerota''s Incarnation) chase you; blue orbs explode nearby.'
     detail: Deer (Nerota's Incarnation) chase you, and blue Nerota's Power orbs explode near you.
+  - title: Bind removes deer
+    text: 'Binding Seren makes the deer vanish (SEA v251); orbs have about 90% less HP since.'
+  - title: Chain hits
+    text: 'Knockback, stuns, slows and orbs chain into more hits, and each feeds her shield.'
+  - title: Solo route
+    text: 'Fight away from orb spawns, kite the deer across, pass through her after her trap cast and clear orbs; let her heal 5-10% at most.'
 danger:
 - title: Phase 1 pillars
   text: 'Near-instant and still spawning while she is bound; many find Phase 1 hardest.'
@@ -137,7 +173,13 @@ difficulties:
   hp:
   - {phase: '1', value: 1.32q}
   - {phase: '2', value: 5.16q}
-  recommended_spec: {kind: Combat power, value: ≈ 800M solo, basis: CMS reference, text: 'CMS lists 800M combat power solo (about 86M each in a 6-party) as a rough reference. Run 250 Authentic Force for the full +25%.'}
+  recommended_spec:
+    kind: Combat power
+    basis: CMS reference
+    text: 'CMS lists 800M combat power solo (about 86M each in a 6-party) as a rough reference. Run 250 Authentic Force for the full +25%.'
+    parties:
+    - {party: Solo, value: 800M}
+    - {party: 6-party (each), value: ≈ 86M}
   notes:
   - 8 lives in MapleSEA, 30 minutes. Phase 1 is level 275 and Phase 2 level 280.
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 896t / 3.50q (32.1% less), 20-minute limit.'

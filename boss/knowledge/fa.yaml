@@ -24,17 +24,34 @@ phases:
 - name: Phase 1 · Warrior and thief
   tag: parry red hits
   items:
-  - Parry the red strengthened hits.
-  - Shadow Partner copies swing just before him.
+  - title: Red hits
+    text: 'Parry the red strengthened hits.'
+  - title: Shadow Partner
+    text: 'Shadow Partner copies swing just before him.'
+  - title: Opener
+    text: 'Unbound on entry he opens with Sword Shower; its slam deals 1000% unless parried or jumped.'
+  - title: Intense Strike
+    text: 'He hides between two clones; the real body''s daggers glow red and deal 999%. Parry, i-frame, or crouch far.'
+  - title: Stage 5 tornadoes
+    text: 'At 800+ they stand at both edges: 25% HP/s, Slow and gauge drain. They vanish if the stage drops.'
 - name: Phase 2 · Mage and archer
   tag: parry your element
   items:
-  - Each player gets Fire, Ice or Holy, re-rolled every Cycle.
-  - Parry only attacks of your own element.
+  - title: Elements
+    text: 'Each player gets Fire, Ice or Holy, re-rolled every Cycle.'
+  - title: Own element
+    text: 'Parry only attacks of your own element.'
+  - title: Altar
+    text: 'Drains the gauge fast on Hard+; the marked player takes it to a corner early.'
 - name: Phase 3 · Both
   tag: both rule sets
   items:
-  - Both rule sets; strengthened hits glow rainbow.
+  - title: Both rule sets
+    text: 'Both rule sets; strengthened hits glow rainbow.'
+  - title: Flow and Arrow Rain
+    text: 'They overlap his other attacks; spend Genesis, i-frames or Ascent here. A bind cancels Elemental Flow.'
+  - title: Extreme
+    text: 'His last swings here deal 200%.'
 mechanics:
 - kind: scale
   title: Power of Order stages
@@ -120,7 +137,13 @@ difficulties:
   - {phase: '1', value: 171t}
   - {phase: '2', value: 171t}
   - {phase: '3', value: 228t}
-  recommended_spec: {kind: HEXA-converted stat, text: 'Trio 25k, duo 30k, solo 40k.', value: 25k-40k}
+  recommended_spec:
+    kind: HEXA-converted stat
+    text: 'Trio 25k, duo 30k, solo 40k.'
+    parties:
+    - {party: Trio, value: 25k}
+    - {party: Duo, value: 30k}
+    - {party: Solo, value: 40k}
   notes:
   - title: After OVERDRIVE
     text: HP ≈ 114t/114t/152t (-33.2%), 20 min. SEA due Oct-Nov 2026.
@@ -135,7 +158,13 @@ difficulties:
   - {phase: '1', value: 495t}
   - {phase: '2', value: 495t}
   - {phase: '3', value: 660t}
-  recommended_spec: {kind: HEXA-converted stat, text: 'Trio 40k, duo 45k, solo 60k.', value: 40k-60k}
+  recommended_spec:
+    kind: HEXA-converted stat
+    text: 'Trio 40k, duo 45k, solo 60k.'
+    parties:
+    - {party: Trio, value: 40k}
+    - {party: Duo, value: 45k}
+    - {party: Solo, value: 60k}
   notes:
   - title: After OVERDRIVE
     text: HP ≈ 331t/331t/441t (-33.2%), 20 min. SEA due Oct-Nov 2026.
@@ -150,7 +179,13 @@ difficulties:
   - {phase: '1', value: 3.135q}
   - {phase: '2', value: 3.135q}
   - {phase: '3', value: 4.18q}
-  recommended_spec: {kind: HEXA-converted stat, text: 'Trio 85k, duo 100k, solo 118k.', value: 85k-118k}
+  recommended_spec:
+    kind: HEXA-converted stat
+    text: 'Trio 85k, duo 100k, solo 118k.'
+    parties:
+    - {party: Trio, value: 85k}
+    - {party: Duo, value: 100k}
+    - {party: Solo, value: 118k}
   notes:
   - title: After OVERDRIVE
     text: HP ≈ 2.09q/2.09q/2.79q (-33.2%), 20 min. SEA due Oct-Nov 2026.

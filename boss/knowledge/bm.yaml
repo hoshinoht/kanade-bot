@@ -19,6 +19,8 @@ phases:
     text: 'They close in from the edges and spawning on you is lethal; avoid corners.'
   - title: Red Lightning
     text: 'Cages you for 15 s.'
+  - title: Knights overlap
+    text: 'Bind and burst when both overlap; their dive makes them briefly untargetable.'
 - name: Phase 2
   tag: Laser Jail
   items:
@@ -27,6 +29,10 @@ phases:
   - title: Laser Jail
     text: 'Full-map check: stand where the charging hand says (see Laser Jail).'
     detail: 'Phase 2: dodge the chain volleys first. For the full-map Laser Jail, a left-hand (red) charge means stand at the far left, right-hand (purple) the far right, both hands directly under him (watch his touch knockback).'
+  - title: Hidden hand
+    text: 'An Origin bind can hide which hand charges Laser Jail; know the timer.'
+  - title: Invincibility
+    text: 'A ~10 s invincibility saved for Laser Jail is free damage; it stops ~2 s before the effect visually ends.'
 - name: Phase 3
   tag: shield bubble
   items:
@@ -37,6 +43,8 @@ phases:
     detail: 'Phase 3: stay inside his shield bubble (outside it you deal half damage). His Creation ultimate (white snowfall) is survived under a platform; Destruction (floor vortex) is survived standing on a platform, ideally the farthest. Crouch to avoid his Push.'
   - title: Push
     text: 'Crouch to avoid it.'
+  - title: Chains
+    text: 'Push, pull and lasers chain curses; stop attacking at pink lasers and don''t double-jump near him.'
 - name: Phase 4
   tag: pick a state
   items:
@@ -48,6 +56,10 @@ phases:
   - title: Pillar check
     text: 'Every 30 s, wrong colour dies; then he regains a barrier.'
     detail: 'Phase 4: party members are hidden. The Harvest key swaps your affinity: Creation ignores white attacks, Destruction ignores black ones. Every 30s a pillar check kills anyone on the wrong colour, then he regains a barrier.'
+  - title: Bullets and explosions
+    text: 'They take most lives here, and nobody can see your mistakes.'
+  - title: Burst on the barrier
+    text: 'Buff ~3 s before a pillar check and burst on the fresh barrier; between bursts, just survive.'
 mechanics:
 - kind: ledger
   title: Curses · 6 s each

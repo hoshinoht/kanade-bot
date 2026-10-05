@@ -24,6 +24,14 @@ phases:
   - title: Dome tests
     text: 'Each 25% segment ends in a three-dome test. A death heals Kalos 5%; success gives a 15 s groggy, timers paused.'
     detail: 'Phase 2 HP is split into four 25% segments. Each segment ends in a test of three safe domes; any death fails it and heals Kalos 5%, while success gives a 15 s groggy with all timers paused.'
+  - title: Left tower in tests
+    text: 'Eye of Restraint keeps firing during dome tests; never start one while it is active.'
+  - title: Threshold control
+    text: 'Stop 0.3-1% above each 25% mark; phase once Left is off and fewer than three weapons are up.'
+  - title: Curses in 2-4
+    text: 'Below 25% a curse lands every minute: two stacks raise damage taken, a third kills. Harvest the armguard to clear.'
+  - title: Breath and dive
+    text: 'Laser Breath kills through Heaven''s Door and reaches one floor up; the dive lands on a random player.'
 mechanics:
 - kind: zones
   title: Four weapons

@@ -141,7 +141,16 @@
             "kind": { "type": "string" },
             "text": { "type": "string" },
             "value": { "type": "string" },
-            "basis": { "type": "string" }
+            "basis": { "type": "string" },
+            "parties": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["party", "value"],
+                "properties": { "party": { "type": "string" }, "value": { "type": "string" } }
+              }
+            }
           }
         },
         "notes": { "$ref": "#/$defs/GuideItems" },

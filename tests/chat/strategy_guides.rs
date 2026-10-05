@@ -413,6 +413,9 @@ difficulties:
     text: Invented spec text.
     value: '≈ 86k'
     basis: Invented basis
+    parties:
+    - {party: Solo, value: '≈ 90k'}
+    - {party: Trio, value: '≈ 70k'}
   notes:
   - title: Extreme item
     text: Invented short.
@@ -467,7 +470,7 @@ An invented summary the bot reads.
 ### Extreme
 - Entry level: 265
 - HP: 1 100.5t, 2 20t ×3 (Invented guards)
-- Recommended (Combat power): Invented spec text. (≈ 86k; Invented basis)
+- Recommended (Combat power): Invented spec text. (Solo ≈ 90k, Trio ≈ 70k; ≈ 86k; Invented basis)
 - Extreme item: Invented long extreme detail.
 Extreme limit: Invented long extreme note.
 ### Destiny

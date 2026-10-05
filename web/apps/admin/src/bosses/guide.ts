@@ -130,6 +130,8 @@ export interface Tile {
   label: string;
   value: string;
   sub?: string;
+  /** One figure per party size (the recommendation), shown in place of `value`. */
+  rows?: { label: string; value: string }[];
 }
 
 export function factTiles(fact: DifficultyFacts): Tile[] {
@@ -143,7 +145,8 @@ export function factTiles(fact: DifficultyFacts): Tile[] {
   const total = fact.hp?.find((row) => row.phase === 'total');
   if (total && !fact.hp?.some((row) => row.phase !== 'total')) out.push({ label: 'HP (total)', value: total.value });
   const spec = fact.recommended_spec;
-  if (spec?.value) out.push({ label: 'Recommended', value: spec.value, sub: spec.basis ?? spec.kind });
+  if (spec?.parties?.length) out.push({ label: 'Recommended', value: '', rows: spec.parties.map((row) => ({ label: row.party, value: row.value })), sub: spec.basis ?? spec.kind });
+  else if (spec?.value) out.push({ label: 'Recommended', value: spec.value, sub: spec.basis ?? spec.kind });
   return out;
 }
 
@@ -155,7 +158,7 @@ export function difficultyNotes(doc: KnowledgeDoc, fact: DifficultyFacts): Guide
   return [
     ...(note ? [note] : []),
     ...(fact.notes ?? []),
-    ...(spec && !spec.value ? [{ title: `Recommended · ${spec.kind}`, text: spec.text }] : []),
+    ...(spec && !spec.value && !spec.parties?.length ? [{ title: `Recommended · ${spec.kind}`, text: spec.text }] : []),
   ];
 }
 
@@ -178,4 +181,39 @@ const KIND_WORD: Record<KnowledgeSource['kind'], string> = { official: 'Official
 
 export function sourceCounts(sources: KnowledgeSource[]): { kind: string; count: number }[] {
   return KINDS.map((kind) => ({ kind: KIND_WORD[kind], count: sources.filter((source) => source.kind === kind).length })).filter((row) => row.count > 0);
+}
+
+/**
+ * A band or zone label split so figures stay whole: "250–749 more damage" →
+ * [figure "250–749", text " more damage"]. A line may break between words,
+ * never inside a figure or at its dash.
+ */
+export function figureParts(label: string): { text: string; figure: boolean }[] {
+  const parts: { text: string; figure: boolean }[] = [];
+  const pattern = /[+−-]?\d[\d,.]*(?:\s?[–—-]\s?\d[\d,.]*)?[%+a-zA-Z]*/g;
+  let last = 0;
+  for (const match of label.matchAll(pattern)) {
+    if (match.index > last) parts.push({ text: label.slice(last, match.index), figure: false });
+    parts.push({ text: match[0], figure: true });
+    last = match.index + match[0].length;
+  }
+  if (last < label.length) parts.push({ text: label.slice(last), figure: false });
+  return parts;
+}
+
+export interface TocSection {
+  key: string;
+  label: string;
+  /** Selector of the section inside the guide column. */
+  selector: string;
+}
+
+/** "On this page" entries for the guide's top sections that are present, in page order. */
+export function tocSections(present: { mission: boolean; facts: boolean; hp: boolean; notes: string | null }): TocSection[] {
+  return [
+    ...(present.mission ? [{ key: 'mission', label: 'Mission', selector: '.guide-mission' }] : []),
+    ...(present.facts ? [{ key: 'facts', label: 'Facts', selector: '.guide-tiles' }] : []),
+    ...(present.hp ? [{ key: 'hp', label: 'HP', selector: '.guide-hp' }] : []),
+    ...(present.notes ? [{ key: 'notes', label: present.notes, selector: '.guide-notes' }] : []),
+  ];
 }

@@ -1,6 +1,7 @@
 // B_Bosses: one master/detail window. The catalog and detail own their own
 // scrolling regions so the fixed shell and title bar never move.
 @use "breakpoints" as *;
+@use "easing" as *;
 @use "boss-guide"; // the guide column inside the knowledge detail
 .bosses-window { display: flex; flex-direction: column; overflow: clip; }
 .frame--rail .bosses-window > .card__head { flex: none; flex-wrap: nowrap; gap: 4px; border-radius: 0; }
@@ -68,10 +69,36 @@
 .knowledge-hero__meta { overflow: hidden; font-size: var(--fs-small); text-overflow: ellipsis; white-space: nowrap; }
 .knowledge-hero__meta code { font-family: var(--mono); font-size: var(--fs-mini); }
 .knowledge-hero__identity > .status-chip { align-self: flex-start; margin-top: 16px; }
-.knowledge-detail__body { display: flex; flex: 1 1 auto; gap: 18px; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 22px; }
-.knowledge-detail__main { display: flex; flex: 1 1 auto; flex-direction: column; gap: 16px; min-width: 0; max-width: 80ch; }
+// Scrolled down, the hero collapses to one line: small portrait, name and the
+// selected difficulty's pill; art, overline and meta line fade out. Classes
+// only (CSP); reduced motion switches without the transition.
+.knowledge-hero__identity > div > .cap, .knowledge-hero__meta { max-height: 2.5em; }
+.knowledge-hero__pill { display: none; margin-left: 10px; vertical-align: middle; }
+.knowledge-hero--compact { min-height: 0; }
+.knowledge-hero--compact .knowledge-hero__identity { gap: 12px; min-height: 52px; padding-top: 8px; padding-bottom: 8px; }
+.knowledge-hero--compact .knowledge-hero__identity .portrait--md { width: 34px; height: 34px; border-radius: 10px; }
+.knowledge-hero--compact .knowledge-hero__identity > div { gap: 0; }
+.knowledge-hero--compact .knowledge-hero__identity h2 { font-size: var(--fs-lg); }
+.knowledge-hero--compact .knowledge-hero__identity > div > .cap,
+.knowledge-hero--compact .knowledge-hero__meta { max-height: 0; overflow: hidden; opacity: 0; }
+.knowledge-hero--compact .knowledge-hero__art { opacity: 0; }
+.knowledge-hero--compact .knowledge-hero__pill { display: inline-flex; }
+.knowledge-hero--compact .knowledge-hero__identity > .status-chip { display: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .knowledge-hero__identity,
+  .knowledge-hero__identity .portrait--md { transition: min-height 220ms $standard, padding 220ms $standard, width 220ms $standard, height 220ms $standard; }
+  .knowledge-hero__art,
+  .knowledge-hero__identity > div > .cap,
+  .knowledge-hero__meta { transition: opacity 160ms linear, max-height 220ms $standard; }
+}
+// Guide and aside are a grid row sized to the guide's content, so the sticky
+// aside ("On this page" over the timings) can travel the guide's full height;
+// a flex row would size both only to the panel's visible height. The guide
+// ends with room to breathe below its last card (user report 2026-10-05).
+.knowledge-detail__body { display: grid; flex: 1 1 auto; grid-template-columns: minmax(0, 80ch) 240px; justify-content: start; align-items: start; gap: 18px; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 22px; }
+.knowledge-detail__main { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding-bottom: 40px; }
 .knowledge__switch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
-.knowledge-detail aside { display: flex; flex: 0 0 240px; flex-direction: column; gap: 8px; }
+.knowledge-detail aside { display: flex; flex-direction: column; gap: 8px; padding-bottom: 40px; }
 .knowledge-detail aside h2 { margin: 0 0 8px; }
 .knowledge-detail aside h2:not(:first-child) { margin-top: 16px; }
 // One outlined group with ruled rows, so neighbouring timings stay apart on the light surface.
@@ -85,11 +112,25 @@
 .knowledge-aside__others { min-width: 0; overflow: hidden; font-size: var(--fs-mini); text-overflow: ellipsis; white-space: nowrap; }
 .knowledge-aside__count { margin: 0; font-size: var(--fs-small); }
 .knowledge-detail__back { flex: none; align-self: flex-start; margin: 10px 14px 0; }
+// The aside sticks as one block ("On this page" first, then the timings), so
+// nothing scrolls under the contents; wherever it sits under the guide it is static.
+.knowledge-detail__body > aside { position: sticky; top: 0; }
+.knowledge-detail aside .guide-toc { display: flex; flex-direction: column; gap: 2px; padding-bottom: 8px; }
+.knowledge-detail aside .guide-toc h2 { margin: 0 0 6px; }
+.knowledge-detail aside .guide-toc h3 { margin: 10px 0 4px; }
+.knowledge-detail aside .guide-toc ul { display: grid; gap: 2px; overflow: visible; border-radius: 0; background: none; box-shadow: none; }
+.knowledge-detail aside .guide-toc li + li { border-top: 0; }
+.guide-toc button { display: flex; align-items: center; width: 100%; min-height: 30px; padding: 0 12px; border: 0; border-left: 3px solid transparent; border-radius: 0 15px 15px 0; background: transparent; color: var(--ink); font: inherit; font-size: var(--fs-small); text-align: start; cursor: pointer; }
+.guide-toc button:hover { background: var(--row-hover); }
+// Current: the selection fill, a bar at the start and bold text (not colour alone).
+.guide-toc button[aria-current="location"] { border-left-color: var(--accent-fill); background: var(--select); color: var(--select-ink); font-weight: 700; }
 // A narrow detail (1000 px frames: rail, list and detail side by side) puts
 // the timings aside under the guide rather than squeezing the guide.
 @container knowledge (max-width: 760px) {
   .knowledge-detail__body { display: block; }
-  .knowledge-detail aside { margin-top: 18px; }
+  .knowledge-detail aside { position: static; margin-top: 18px; }
+  .knowledge-detail__main { padding-bottom: 0; }
+  .knowledge-detail aside .guide-toc { display: none; }
 }
 @media #{$single-pane} {
   .bosses-window--compact { margin: calc(-1 * var(--gutter)) calc(-1 * var(--gutter)) 0; }
@@ -97,7 +138,9 @@
   .bosses-list { flex: 1 1 auto; border-right: 0; }
   .bosses-list--hidden, .knowledge-detail--hidden { display: none; }
   .knowledge-detail__body { display: block; padding: 14px; }
-  .knowledge-detail aside { margin-top: 18px; }
+  .knowledge-detail__main { padding-bottom: 0; }
+  .knowledge-detail aside .guide-toc { display: none; }
+  .knowledge-detail aside { position: static; margin-top: 18px; }
   .knowledge-hero__identity { gap: 12px; padding: 14px; }
   .knowledge-hero__identity .portrait--md { width: 56px; height: 56px; border-radius: 16px; }
   .knowledge-hero__identity h2 { font-size: var(--fs-lg); }

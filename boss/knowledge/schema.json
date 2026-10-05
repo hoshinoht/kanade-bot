@@ -282,7 +282,19 @@
             "kind": { "$ref": "#/$defs/short" },
             "text": { "$ref": "#/$defs/text" },
             "value": { "description": "Short figure for a tile, e.g. '≈ 86k'.", "$ref": "#/$defs/figure" },
-            "basis": { "description": "Where the figure comes from, e.g. 'KMS, Oct 2025'.", "$ref": "#/$defs/label" }
+            "basis": { "description": "Where the figure comes from, e.g. 'KMS, Oct 2025'.", "$ref": "#/$defs/label" },
+            "parties": {
+              "description": "One figure per party size, e.g. Solo / Duo / Trio; the tile lists them as rows.",
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 4,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["party", "value"],
+                "properties": { "party": { "$ref": "#/$defs/label" }, "value": { "$ref": "#/$defs/figure" } }
+              }
+            }
           }
         },
         "notes": { "type": "array", "minItems": 1, "maxItems": 4, "items": { "$ref": "#/$defs/item" } },

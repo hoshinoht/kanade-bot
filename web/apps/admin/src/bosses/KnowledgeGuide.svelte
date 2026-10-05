@@ -3,9 +3,12 @@
   fact tiles, HP by phase and the difficulty's notes, then the Overview /
   Phases / Strategies / Notes / Sources pill tabs. The open tab is in the URL
   (`?tab=`, Overview by default); a tab with nothing in it is not shown.
+  It also renders the aside: "On this page" over the page's timings snippet.
 -->
 <script lang="ts">
   import type { GuideItem, Knowledge } from '@kanade/api-types';
+  import type { Snippet } from 'svelte';
+  import GuideToc from './GuideToc.svelte';
   import FactTiles from './FactTiles.svelte';
   import GuideRows from './GuideRows.svelte';
   import GuideTabs from './GuideTabs.svelte';
@@ -15,9 +18,21 @@
   import PhaseTimeline from './PhaseTimeline.svelte';
   import SourceList from './SourceList.svelte';
   import StrategyCards from './StrategyCards.svelte';
-  import { LETTER, difficultyNotes, factTiles, guideTabs, hpBreakdown, phaseIndex, type GuideTab } from './guide';
+  import { LETTER, difficultyNotes, factTiles, guideTabs, hpBreakdown, phaseIndex, tocSections, type GuideTab } from './guide';
 
-  let { knowledge, difficulty = '' }: { knowledge: Knowledge; difficulty?: string } = $props();
+  let {
+    knowledge,
+    difficulty = '',
+    shown = $bindable(null),
+    timings,
+  }: {
+    knowledge: Knowledge;
+    difficulty?: string;
+    /** The selected difficulty's name, for the compact header's pill. */
+    shown?: string | null;
+    /** The aside's weekly timings and this week's runs. */
+    timings: Snippet;
+  } = $props();
   const uid = $props.id();
 
   const doc = $derived(knowledge.doc);
@@ -30,6 +45,11 @@
   const tiles = $derived(selected ? factTiles(selected) : []);
   const hp = $derived(selected ? hpBreakdown(selected.hp) : null);
   const notes = $derived(selected ? difficultyNotes(doc, selected) : []);
+  $effect(() => {
+    shown = selected?.name ?? null;
+  });
+  let main = $state<HTMLElement>();
+  const sections = $derived(tocSections({ mission: Boolean(selected?.mission), facts: tiles.length > 0, hp: Boolean(hp), notes: notes.length && selected ? `${selected.name} notes` : null }));
   // Overview rows: the old documents' core (no phases) first, then danger (risk mark) and tips (ok mark).
   const lists = $derived<{ key: string; title: string; items: GuideItem[]; mark?: 'risk' | 'ok' }[]>([
     { key: 'core', title: 'Core', items: doc.core ?? [] },
@@ -74,12 +94,13 @@
   }
 </script>
 
+<div class="knowledge-detail__main" bind:this={main}>
 {#if facts.length}
   <div class="knowledge__switch">
     <span class="cap" id="difficulty-label">Difficulty</span>
     <div class="seg" role="group" aria-labelledby="difficulty-label">
       {#each facts as fact (fact.name)}
-        <button type="button" class:seg__info={!LETTER[fact.name]} aria-pressed={selected?.name === fact.name} onclick={() => (chosen = fact.name)}
+        <button type="button" class={LETTER[fact.name] ? undefined : `seg__info seg__info--${fact.name.toLowerCase()}`} aria-pressed={selected?.name === fact.name} onclick={() => (chosen = fact.name)}
           >{fact.name}{#if knowledge.in_use.includes(LETTER[fact.name]!)}<span class="vh"> (the guild runs it)</span> ✓{/if}</button
         >
       {/each}
@@ -125,3 +146,8 @@
     <SourceList sources={doc.sources} />
   {/if}
 </div>
+</div>
+<aside data-fid="knowledge-aside" aria-label="Weekly timings">
+  <GuideToc {main} {sections} {tabs} {tab} tabId={(entry) => `${uid}-tab-${entry}`} onTab={pick} />
+  {@render timings()}
+</aside>

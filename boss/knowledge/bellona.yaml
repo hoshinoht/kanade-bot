@@ -109,7 +109,14 @@ difficulties:
   - {phase: '1', value: 5.564q}
   - {phase: '2', value: 8.152q}
   - {phase: total, value: 13.716q}
-  recommended_spec: {kind: HEXA-converted stat, value: ≈ 98–107k, basis: 'KMS trio, Aug 2026', text: 'KMS trio about 98-107k, duo about 110-119k, solo about 126-132k (Aug 2026, unconfirmed).'}
+  recommended_spec:
+    kind: HEXA-converted stat
+    basis: KMS, Aug 2026
+    text: 'KMS trio about 98-107k, duo about 110-119k, solo about 126-132k (Aug 2026, unconfirmed).'
+    parties:
+    - {party: Trio, value: ≈ 98–107k}
+    - {party: Duo, value: ≈ 110–119k}
+    - {party: Solo, value: ≈ 126–132k}
   notes:
   - 5 Death Count, 20 minute limit (KMS).
 strategies:

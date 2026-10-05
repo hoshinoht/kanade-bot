@@ -10,14 +10,25 @@
 
   let { hp, difficulty }: { hp: HpBreakdown; difficulty: string } = $props();
   const tone = $derived(LETTER[difficulty] ?? difficulty.toLowerCase());
+  const uid = $props.id();
+  // A disclosure, open by default; collapsed, the total stays in the head.
+  let open = $state(true);
 </script>
 
 {#snippet amount(value: string)}
   <span class="mono" title={spellHp(value)}><span aria-hidden="true">{value}</span><span class="vh">{spellHp(value)}</span></span>
 {/snippet}
 
-<section class="guide-hp" aria-labelledby="guide-hp-heading">
-  <h3 class="cap" id="guide-hp-heading">HP</h3>
+<section class="guide-hp" class:guide-hp--closed={!open} aria-labelledby="guide-hp-heading">
+  <div class="guide-hp__head">
+    <h3 class="cap" id="guide-hp-heading">
+      <button type="button" class="guide-hp__toggle" aria-expanded={open} aria-controls="{uid}-hp-body" onclick={() => (open = !open)}
+        ><span>HP</span><span class="guide-hp__chevron" aria-hidden="true"></span></button
+      >
+    </h3>
+    {#if !open && hp.total}<p class="guide-hp__total guide-hp__total--head"><span>Total HP</span>{@render amount(hp.total)}</p>{/if}
+  </div>
+  <div class="guide-hp__body" id="{uid}-hp-body" hidden={!open}>
   {#if hp.total}<p class="guide-hp__total"><span>Total HP</span>{@render amount(hp.total)}</p>{/if}
   <ol class="guide-hp__phases">
     {#each hp.phases as phase, index (index)}
@@ -33,4 +44,5 @@
       </li>
     {/each}
   </ol>
+  </div>
 </section>

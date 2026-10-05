@@ -22,7 +22,7 @@ Code: `apps/admin/src/bosses/` (`BossesPage`, `BossWorkspace`, `BossGrid`,
   bar's back (phone frame) pops it, or replaces a deep link with `/bosses`,
   and focus returns to the boss's link. `[DR 2026-10-05]`
 - Knowledge header is one aligned line: title · Lv · researched date · source
-  `[DR 2026-10-02]`; aside 240 px with weekly timings using the boss.
+  `[DR 2026-10-02]`; aside 240 px with "On this page" over the weekly timings using the boss.
 - Seasonal bosses carry a tonal chip "Seasonal boss · Challengers World
   Season N" in the list and the header `[DR 2026-10-02]`.
 - Knowledge hero plays a muted looping MP4 over the still poster; still image
@@ -95,6 +95,39 @@ Code: `apps/admin/src/bosses/` (`BossesPage`, `BossWorkspace`, `BossGrid`,
   squeeze; ledger figures stay on one line and their labels wrap; four zones
   make two pairs on a narrow card. The header line and a timing's other
   bosses ellipsise with a `title` (allowed in `clipping.spec`).
+- Review round 2 `[DR 2026-10-05]`:
+  - The guide column ends with 40 px of room below its last card on every
+    tab (on the columns, since a scroll container's end padding does not
+    extend its scroll range); the panel lays guide and aside out as a grid
+    row sized to the guide.
+  - HP is a disclosure ("HP" button with a chevron, `aria-expanded`), open by
+    default; closed, "Total HP" stays in its head when there is a total.
+  - The difficulty switch draws no rim on Destiny/Champion; selected, they
+    take their plate (`--pill-destiny-bg` / `--pill-champion-bg`). The ticks
+    in the catalog keep the Destiny rim.
+  - The Phases bar is an M3E connected button group: 2 px apart, 6 px inner
+    corners, round outer ends (left/right across, top/bottom when vertical),
+    the selected segment a full pill (radius spring, still under reduced
+    motion); untoned selected segments take `--accent-fill`, toned ones keep
+    their tone with an ink ring.
+  - "On this page" (`GuideToc.svelte`, a `nav`) heads the aside, which sticks
+    to the top of the panel as one block: the page sections present (Mission,
+    Facts, HP, the difficulty's notes) and the guide's tabs. A section entry
+    scrolls the panel (never the document; smooth unless reduced motion) and
+    focuses the section; a tab entry selects the tab, scrolls to the strip and
+    focuses the tab. Scroll-spy marks the entry at the upper third of the
+    panel (`aria-current="location"`: fill, start bar, bold). Hidden where the
+    aside sits under the guide (below a 760 px detail, phones).
+  - The hero collapses to one 52 px line (34 px portrait, name, the selected
+    difficulty's pill; art, overline and meta line fade) once the panel is
+    scrolled past 96 px and comes back under 12 px (two thresholds, so the
+    height change cannot flip it); only when the panel has 160 px more to
+    scroll. Classes only; reduced motion switches without the transition.
+  - The Recommended tile lists `recommended_spec.parties` as one row per party
+    size (label and figure), the basis underneath; `value` is the fallback.
+  - Scale band labels keep figures whole (`figureParts`, `white-space:
+    nowrap` on the figure, `text-wrap: balance`); a narrow band breaks between
+    words only.
 
 ## Known gaps / Planned
 

@@ -29,6 +29,8 @@ phases:
   - title: Drift
     text: '5s outside the blue band, the needle slides out 25 per 3s; you take up to 10/15% more damage.'
     detail: About 5s after the needle leaves the blue band it starts sliding outward 25 every 3s, and you take up to 10/15% extra damage.
+  - title: Phase 3 shove
+    text: 'Each Command throws the needle to 350/650, or 150 further out; re-centre within 30s.'
 - name: Merged (100s)
   group: Alternating states
   cycle: true
@@ -42,6 +44,10 @@ phases:
     detail: Balanced has its own -7..+7 Deflection needle; finishing within one of 0 removes 40 Rupture, finishing far out adds up to 60.
   - title: Auspicious and Ruinous
     text: 'No needle; just survive.'
+  - title: Auspicious marks
+    text: 'Everyone must reach their mark twice or all gain 50 Rupture; Spectral Bane zones cut damage 80%.'
+  - title: Ruinous
+    text: 'Fastest and hardest; cannon bounces and portals chain deaths, and it runs the two-brand combo from Phase 1.'
 mechanics:
 - kind: scale
   title: Magic Synchronization
@@ -139,9 +145,12 @@ difficulties:
   - {phase: total, value: 10.266q}
   recommended_spec:
     kind: HEXA-converted stat
-    value: 80k trio
     basis: 860 AF, level 300
     text: Trio 80k, duo 95k, solo 117k, measured at 860 Authentic Force, level 300 and a maxed Grand Authentic Symbol Geardrock, with Sol Hecate.
+    parties:
+    - {party: Trio, value: 80k}
+    - {party: Duo, value: 95k}
+    - {party: Solo, value: 117k}
   notes:
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 6.98q, 20-minute limit.'
 - name: Hard
@@ -154,9 +163,11 @@ difficulties:
   - {phase: total, value: 49.4q}
   recommended_spec:
     kind: HEXA-converted stat
-    value: 130k trio
     basis: 860 AF, level 300
     text: Trio 130k, duo 142k, solo not estimated; same assumptions as Normal.
+    parties:
+    - {party: Trio, value: 130k}
+    - {party: Duo, value: 142k}
   notes:
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 33.6q, 20-minute limit.'
 sources:

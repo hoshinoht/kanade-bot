@@ -5,6 +5,8 @@
 <script lang="ts">
   import type { Mechanic } from '@kanade/api-types';
 
+  import { figureParts } from './guide';
+
   let { mechanic }: { mechanic: Mechanic } = $props();
 
   // Band widths through CSSOM (no inline styles under the CSP).
@@ -35,7 +37,7 @@
   {:else}
     <ol class="guide-scale">
       {#each mechanic.bands as band, index (index)}
-        <li class="guide-tone--{band.tone ?? 'neutral'}" {@attach span(band.span)}>{band.label}</li>
+        <li class="guide-tone--{band.tone ?? 'neutral'}" {@attach span(band.span)}><span>{#each figureParts(band.label) as part, at (at)}{#if part.figure}<span class="guide-figure">{part.text}</span>{:else}{part.text}{/if}{/each}</span></li>
       {/each}
     </ol>
   {/if}

@@ -37,6 +37,26 @@ supports were kept.
   Black Mage S, Seren SS, Kalos SSS, each 20 minutes except Black Mage's 45;
   Extreme Black Mage sets the Phase 4 state at random every 30 s.
 
+## Update 2026-10-05: fuller phase cards and per-party specs
+
+- Phase cards in all 11 phased guides gained items (up to 5 per phase), each
+  restating a fact already in the same file (core, danger, tips, difficulty
+  notes, mechanics or strategies); no new facts.
+- `recommended_spec.parties` rows wherever a spec names more than one party
+  size (Baldrix Hard, Bellona Hard, First Adversary Easy-Hard, Jupiter, Radiant
+  Malefic Star, Lotus, Seren Extreme). `value` was dropped where a row repeats it.
+  Authentic Force specs (Seren Normal/Hard, every Kalos difficulty) stay text
+  only, by user decision.
+- Confirmed by the user (2026-10-05): Baldrix Hard needs about 108k-113k
+  HEXA-converted stat for a trio (KMS release era), about 115k or more for a
+  duo and about 131k solo (duo and solo from KMS plus MapleSEA and MapleScouter
+  research).
+- User placements (2026-10-05): Carling's Bird hide-and-seek is Phase 1; Specter
+  A and Limbo Black both have the bubble fight (Grasp of Truth, Dimensional
+  Collapse).
+- Confirmed by the user (2026-10-05): at 1000 Illusion Magic in Reality a 40 s
+  countdown runs and a forced swap follows when it reaches 0.
+
 ## Decisions applied
 
 - MapleSEA patch-note terms come first; the GMS/KMS/guide name appears once as

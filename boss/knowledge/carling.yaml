@@ -22,10 +22,12 @@ phases:
     text: 'Kill a Peril with its gauge unbroken: Bird blocks a lethal hit, Tiger cleanses in Phase 2, Dog gives +10% final damage.'
     detail: 'Killing a Peril with its gauge unbroken grants its blessing: Bird blocks one lethal hit, Tiger gives a Purification cleanse for Phase 2, Dog gives +10% final damage.'
   - title: Tiger's shield
-    text: 'Tiger takes 50% less damage unless lured into the current of three lit Tesla coils.'
+    text: 'Tiger takes 50% less damage unless lured into the current of three lit Tesla coils. Extreme doubles its shields to 2% HP.'
     detail: 'Tiger takes 50% less damage unless you light three Tesla coils in a triangle and lure it into the current; clear electric puddles with the mini coils (Harvest key) before Tiger absorbs them as a shield.'
   - title: Clean finish
     text: 'No gauge broken in Phase 1: +300 Mental Strength, the only refill.'
+  - title: Bird's hide-and-seek
+    text: 'Hit the right Torn Spring painting within 15s or the room wipes.'
 - name: Carling
   tag: all three Perils
   items:
@@ -37,14 +39,18 @@ phases:
   - title: Purification
     text: 'Harvest key; clears Confusion. Time it for the Vengeful Spirits wave each minute.'
     detail: 'Purification (Harvest key) clears Confusion and fits the Vengeful Spirits wave each minute.'
+  - title: Spirits and Scroll
+    text: 'Vengeful Spirits (−30, each minute) and the Scroll trap (≈ −50) drain Mental Strength; a Scroll often chains into a spirit.'
+  - title: Burst after her flight
+    text: 'Dodge spirits by staying airborne or high up.'
 - name: Zones
   tag: 'only your zone''s Peril'
   items:
   - title: Fixed zones
-    text: 'Bird left, Dog centre, Tiger right. Only the Peril in your zone takes damage.'
+    text: 'Bird left, Dog centre, Tiger right. Only the Peril in your zone takes damage; standing in a zone pushes its gauge every 6s.'
     detail: 'Phase 3: Bird (left), Dog (centre) and Tiger (right) have fixed zones. Only the Peril in your zone takes damage (Ascent skills excepted; MapleSEA v251), and standing in a zone pushes its gauge every 6s.'
-  - title: Gauge push
-    text: 'Standing in a zone pushes its gauge every 6s.'
+  - title: Tiger's lightning
+    text: 'Its stun lasts long enough for a second bolt; outside Carling''s zone the follow-up can kill.'
   - title: Outside Carling's zone
     text: '+80% damage taken and no potions.'
     detail: 'Outside Carling''s zone you take +80% damage and cannot use potions.'

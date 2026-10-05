@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { KnowledgeDoc } from '@kanade/api-types';
-import { difficultyNotes, factTiles, guideTabs, hpBreakdown, itemParts, missionPlace, multiplyHp, phaseIndex, phaseName, phaseRuns, runLabel, spellHp, stopLabel } from '../src/bosses/guide';
+import { difficultyNotes, factTiles, figureParts, guideTabs, hpBreakdown, itemParts, missionPlace, multiplyHp, phaseIndex, phaseName, phaseRuns, runLabel, spellHp, stopLabel, tocSections } from '../src/bosses/guide';
 
 describe('boss guide HP', () => {
   it('names a phase by its base and target, or keeps sequential phases as they are', () => {
@@ -155,5 +155,29 @@ describe('phase timeline', () => {
     expect(phaseIndex('9', 5)).toBe(0);
     expect(phaseIndex('0', 5)).toBe(0);
     expect(phaseIndex('two', 5)).toBe(0);
+  });
+});
+
+describe('guide additions (2026-10-05 round 2)', () => {
+  it('shows one recommendation row per party size, the basis underneath; value as the fallback', () => {
+    const spec = { kind: 'HEXA stat', text: 'Long.', value: '≈ 99k', basis: 'KMS, 2026', parties: [{ party: 'Solo', value: '≈ 113k' }, { party: '6 players', value: '≈ 48k' }] };
+    const tile = factTiles({ name: 'Hard', recommended_spec: spec }).at(-1)!;
+    expect(tile).toEqual({ label: 'Recommended', value: '', sub: 'KMS, 2026', rows: [{ label: 'Solo', value: '≈ 113k' }, { label: '6 players', value: '≈ 48k' }] });
+    expect(factTiles({ name: 'Hard', recommended_spec: { ...spec, parties: [] } }).at(-1)).toEqual({ label: 'Recommended', value: '≈ 99k', sub: 'KMS, 2026' });
+    // Parties without a value still count as a figure: no long-text note.
+    const noValue = { kind: spec.kind, text: spec.text, parties: spec.parties };
+    expect(difficultyNotes({ boss: 'x', summary: '', danger: [], tips: [], sources: [] }, { name: 'Hard', recommended_spec: noValue })).toEqual([]);
+  });
+
+  it('keeps figures whole in band labels', () => {
+    expect(figureParts('1000 locked in')).toEqual([{ text: '1000', figure: true }, { text: ' locked in', figure: false }]);
+    expect(figureParts('250–749 more damage')).toEqual([{ text: '250–749', figure: true }, { text: ' more damage', figure: false }]);
+    expect(figureParts('+30% off-band').map((part) => part.text)).toEqual(['+30%', ' off-band']);
+    expect(figureParts('safe')).toEqual([{ text: 'safe', figure: false }]);
+  });
+
+  it('lists the page sections present, in page order', () => {
+    expect(tocSections({ mission: true, facts: true, hp: true, notes: 'Hard notes' }).map((section) => section.label)).toEqual(['Mission', 'Facts', 'HP', 'Hard notes']);
+    expect(tocSections({ mission: false, facts: true, hp: false, notes: null }).map((section) => section.key)).toEqual(['facts']);
   });
 });

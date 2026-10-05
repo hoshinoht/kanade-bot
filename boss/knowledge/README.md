@@ -53,7 +53,8 @@ Optional: `difficulty_notes` (catalog letter to text), `notes`, and new in v2:
     (≤40) shared by adjacent phases, with `cycle: true` on every phase of a
     group that repeats (Seren's Phase 2 clock, alternating states).
   - `hp[].count` (2-6): copies at that HP (three Perils). `recommended_spec`
-    may add `value` (short figure, `≈ 86k`) and `basis` (`KMS, Oct 2025`).
+    may add `value` (short figure, `≈ 86k`), `basis` (`KMS, Oct 2025`) and
+    `parties` (1-4 `{party, value}` rows, e.g. Solo / Duo / Trio).
   - `difficulties[].mission`: `{series: destiny-weapon|union-champion, order
     (1-12), title, modifier?: {text, direction: up|down}, needs?, rules?}`;
     `up` is in the player's favour. The knowledge API lists every boss in the

@@ -127,10 +127,26 @@ fn difficulty_facts(lines: &mut Vec<String>, facts: &Value) {
             spec.get("text").and_then(Value::as_str),
         )
     {
-        let figures: Vec<&str> = ["value", "basis"]
+        let mut figures: Vec<String> = ["value", "basis"]
             .into_iter()
             .filter_map(|field| spec.get(field).and_then(Value::as_str))
+            .map(str::to_owned)
             .collect();
+        // Per-party figures: "Solo ≈ 131k, Party 108k-113k".
+        let parties: Vec<String> = spec
+            .get("parties")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|row| {
+                let party = row.get("party").and_then(Value::as_str)?;
+                let value = row.get("value").and_then(Value::as_str)?;
+                Some(format!("{party} {value}"))
+            })
+            .collect();
+        if !parties.is_empty() {
+            figures.insert(0, parties.join(", "));
+        }
         if figures.is_empty() {
             lines.push(format!("- Recommended ({kind}): {text}"));
         } else {

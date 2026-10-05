@@ -6,6 +6,14 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Boss guides, second pass: the Recommended tile lists one figure per party
+  size (`recommended_spec.parties`), phase cards are fuller, the HP breakdown
+  folds away, the phase bar is a connected button group, an "On this page"
+  list sits at the top of the aside, the header shrinks to portrait, name and
+  difficulty while scrolling, the guide ends with room below its last card,
+  and Destiny/Champion lose their rim in the difficulty switch. Malefic Star's
+  1000 lock ends in a forced swap after 40 s; Baldrix Hard lists trio, duo and
+  solo figures.
 - Wiring sweep: an inventory of what the PWA, mock, docs and v4 offer
   against v5 `serve` (`docs/v5/admin-api.md`) and a route-diff script
   (`scripts/api_routes/route_diff.py`); the dev mock now refuses Re-read while

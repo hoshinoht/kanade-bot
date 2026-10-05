@@ -20,12 +20,26 @@ phases:
     detail: 'In Phase 1, a white shield cuts damage by 90% for 20 s, about every 40 s. Any shield left heals Lotus (up to 20% of max HP); lasers and arms aimed through Lotus strip it. Binding in Phase 1 stops only the shield pattern.'
   - title: Strip it
     text: 'Aim lasers and arms through Lotus; binding stops only the shield pattern.'
+  - title: Clear the shield
+    text: 'Extreme: one full arm set plus the large arm clears it; stand where you can drag them through Lotus.'
+  - title: Bombardment
+    text: 'Safe on the right in Phase 1; the firing cannon itself is safe.'
+  - title: Large arm
+    text: 'About 1 s warning on Extreme; hits 70% HP in Phase 1.'
 - name: Phase 3
   tag: reversed gauge
   items:
   - title: Reversed gauge
     text: 'Annihilation Mode is the default. Only map attacks on Lotus lower the gauge; empty it for Safe Mode.'
     detail: 'In Phase 3 Annihilation Mode is the default and the gauge only falls when Lotus is hit by map attacks; emptying it gives 25 s of Safe Mode on Extreme.'
+  - title: Drain sources
+    text: 'Aim all three tracking lasers, the marked arms (above all the large arm) and missiles through Lotus.'
+  - title: Safe Mode burst
+    text: 'Burst in the 25 s Safe Mode, then drain again as soon as Annihilation resumes.'
+  - title: Darkness Aura
+    text: 'Stand on Lotus to dodge it, unless orange Gravity Restraint lasers bind you; then it deals 100%.'
+  - title: Bombardment corners
+    text: 'Top-left is the default; portals link the safe corners. On Extreme, bottom-right can knock you into the beam.'
 mechanics:
 - kind: ledger
   title: Annihilation gauge · Extreme
@@ -86,7 +100,13 @@ difficulties:
   - {phase: '1', value: 543.3t}
   - {phase: '2', value: 543.3t}
   - {phase: '3', value: 724.4t}
-  recommended_spec: {kind: Combat power, value: ≈ 200M solo, basis: CMS reference, text: CMS lists 200M combat power solo or about 65M each in a duo as a rough reference. There is no Arcane or Authentic Force requirement.}
+  recommended_spec:
+    kind: Combat power
+    basis: CMS reference
+    text: CMS lists 200M combat power solo or about 65M each in a duo as a rough reference. There is no Arcane or Authentic Force requirement.
+    parties:
+    - {party: Solo, value: 200M}
+    - {party: Duo (each), value: ≈ 65M}
   notes:
   - 5 lives, 30 minutes, 10 s potion cooldown; the clear is shared with Normal and Hard, once a week. Entry level 190 comes from the GMS guide (unconfirmed for SEA).
   - HP is the KMS value before OVERDRIVE; each Phase 1 shield holds about 2.7t more.

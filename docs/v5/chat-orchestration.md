@@ -489,7 +489,7 @@ through `ReplyPort::post_reply`, the adapter wires it later).
   `### <name>`, plus ` (<group>[, repeating])` and `: <tag>` when set (no `## Core` when `core` is absent), `mechanics` get
   `## Mechanics` after Tips (a ledger row's `direction` reads "in your
   favour"/"against you", as a mission modifier's does), and each difficulty adds its mission lines, hp
-  `×count` and the spec's `(value; basis)`; `lead` is UI-only. A checked-in
+  `×count` and the spec's `(parties; value; basis)` (parties as `Solo ≈ 131k, Trio …`); `lead` is UI-only. A checked-in
   document that can no longer be read or rendered (edited after startup)
   answers "could not be read right now" (`GuideError::Unreadable`, distinct
   from the absent-guide text) and logs `chat_guide_unreadable` with the

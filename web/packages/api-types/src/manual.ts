@@ -89,8 +89,14 @@ export interface DifficultyFacts {
   force?: { kind: 'arcane' | 'sacred'; value: number };
   /** `count`: copies at this HP (e.g. three Perils); `target`: whose HP it is when a phase is split. */
   hp?: { phase: string; value: string; count?: number; target?: string }[];
-  /** `value`: a short tile figure (`≈ 86k`); `basis`: where it comes from. */
-  recommended_spec?: { kind: string; text: string; value?: string; basis?: string };
+  /** `value`: a short tile figure (`≈ 86k`); `basis`: where it comes from; `parties`: one figure per party size. */
+  recommended_spec?: {
+    kind: string;
+    text: string;
+    value?: string;
+    basis?: string;
+    parties?: { party: string; value: string }[];
+  };
   notes?: GuideItem[];
   mission?: Mission;
 }

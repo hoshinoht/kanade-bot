@@ -42,6 +42,8 @@ phases:
   - title: Arrows of Destiny
     text: 'Drag each arrow through a purple spirit; pull them through the middle near her.'
     detail: For Arrows of Destiny, drag each arrow so it passes through a purple spirit. Firing points sweep from one side to the other (and back on Hard), so pulling arrows through the middle near her hits the spirits reliably.
+  - title: Cards of Truth and Lies
+    text: '7 cards shuffle 4 times (6 on Hard); every false card becomes a blade: 80% HP, death on Hard.'
 - name: Phase 2 (from 50%)
   tag: two more patterns
   items:
@@ -51,6 +53,10 @@ phases:
     text: 'Swallowing Storm and Soul Swords join the rotation.'
   - title: Doubled attacks
     text: 'Wave attack and teleport blast each fire twice.'
+  - title: Soul Swords
+    text: 'Her worst: three swords flash, then slam in order. Sweeps reach behind; any hit fails.'
+  - title: Swallowing Storm
+    text: 'A gust shoves you, then blades fill the map; only the golden barrier is safe.'
 mechanics:
 - kind: ledger
   title: Remnants of Destiny · 0–1,000
