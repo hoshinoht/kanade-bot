@@ -174,22 +174,32 @@ pub struct Job {
 }
 
 impl Job {
+    /// Queued behind another job: the server shows it `running` with no
+    /// `started_at` and no total until the runner takes it.
+    fn queued(&self) -> bool {
+        self.state == "running" && self.started_at.is_none()
+    }
+
     fn tally(&mut self) {
         self.messages = self.channels.iter().map(|c| c.messages).sum();
-        self.messages_total = Some(if self.state == "running" {
-            self.channels
-                .iter()
-                .map(|c| {
-                    if c.state == "done" {
-                        c.messages
-                    } else {
-                        c.expected
-                    }
-                })
-                .sum()
+        self.messages_total = if self.queued() {
+            None
+        } else if self.state == "running" {
+            Some(
+                self.channels
+                    .iter()
+                    .map(|c| {
+                        if c.state == "done" {
+                            c.messages
+                        } else {
+                            c.expected
+                        }
+                    })
+                    .sum(),
+            )
         } else {
-            self.messages
-        });
+            Some(self.messages)
+        };
     }
 }
 
@@ -211,6 +221,9 @@ pub struct RescanRequest {
 }
 
 const MODEL: &str = "kanata/extract";
+/// The server's `extraction_off` sentence (also the summary's `rescan_off`).
+pub const RESCAN_OFF: &str =
+    "Re-reading needs watching and the extractor switched on (Config → Watching).";
 
 impl Store {
     fn hour_minute(h: i64) -> i64 {
@@ -332,6 +345,11 @@ impl Store {
         }))
     }
 
+    /// Why a re-read would be refused now: watching paused or the extractor off.
+    pub fn rescan_off(&self) -> Option<&'static str> {
+        (self.config.paused || !self.config.extract_enabled).then_some(RESCAN_OFF)
+    }
+
     pub fn rescan_targets() -> Value {
         json!(
             seed::CHANNELS
@@ -348,18 +366,22 @@ impl Store {
                 "Pick a window: this boss week, since reset or two weeks.",
             ));
         }
-        let channels: Vec<JobChannel> = req
+        let mut channels: Vec<JobChannel> = Vec::new();
+        for c in req
             .channels
             .iter()
             .filter_map(|id| seed::channel(id).filter(|c| c.2))
-            .map(|c| JobChannel {
-                id: c.0,
-                name: c.1,
-                state: "queued",
-                messages: 0,
-                expected: 40 + c.1.len() as u32,
-            })
-            .collect();
+        {
+            if !channels.iter().any(|known| known.id == c.0) {
+                channels.push(JobChannel {
+                    id: c.0,
+                    name: c.1,
+                    state: "queued",
+                    messages: 0,
+                    expected: 40 + c.1.len() as u32,
+                });
+            }
+        }
         if channels.is_empty() {
             if let [one] = req.channels.as_slice()
                 && let Some(c) = seed::channel(one)
@@ -372,25 +394,34 @@ impl Store {
             return Err(MoveError::invalid("Choose at least one watched channel."));
         }
         // As the server: checked after the request itself is valid.
-        if self.config.paused || !self.config.extract_enabled {
-            return Err(MoveError::Coded(
-                409,
-                "extraction_off",
-                "Re-reading needs watching and the extractor switched on (Config → Watching)."
-                    .into(),
-            ));
+        if let Some(off) = self.rescan_off() {
+            return Err(MoveError::Coded(409, "extraction_off", off.into()));
         }
-        if self.jobs.iter().any(|j| j.state == "running") {
-            return Err(MoveError::invalid(
-                "A rescan is already running; cancel it or wait.",
-            ));
+        // As the server's queue (`Rescans::submit`): the newest live job that
+        // already covers these channels is attached to when it is running or
+        // reads the same window; queued with another window, it is replaced.
+        // Anything else queues behind the running job.
+        if let Some(active) = self.jobs.iter_mut().rev().find(|j| j.state == "running")
+            && channels
+                .iter()
+                .all(|c| active.channels.iter().any(|known| known.id == c.id))
+        {
+            if !active.queued() || active.window == req.window {
+                return Ok(active.clone());
+            }
+            active.state = "cancelled";
+            active.tally();
         }
+        let busy = self
+            .jobs
+            .iter()
+            .any(|j| j.state == "running" && !j.queued());
         let (id, _) = self.fresh_id("job");
         let mut job = Job {
             id,
             state: "running",
             window: req.window,
-            started_at: Some(super::clock::iso_now()),
+            started_at: (!busy).then(super::clock::iso_now),
             channels,
             messages: 0,
             messages_total: None,
@@ -401,14 +432,32 @@ impl Store {
         Ok(job)
     }
 
-    /// Each poll advances the job one channel, like a cooperative drain.
+    /// The runner takes the oldest queued job once none is running.
+    fn start_next(&mut self) {
+        if self
+            .jobs
+            .iter()
+            .any(|j| j.state == "running" && !j.queued())
+        {
+            return;
+        }
+        if let Some(next) = self.jobs.iter_mut().find(|j| j.queued()) {
+            next.started_at = Some(super::clock::iso_now());
+            next.tally();
+        }
+    }
+
+    /// Each poll advances the running job one channel, like a cooperative
+    /// drain, then answers with the job asked about (a queued one waits).
     pub fn poll_rescan(&mut self, id: &str) -> Result<Job, MoveError> {
-        let job = self
+        if !self.jobs.iter().any(|j| j.id == id) {
+            return Err(MoveError::NotFound);
+        }
+        if let Some(job) = self
             .jobs
             .iter_mut()
-            .find(|j| j.id == id)
-            .ok_or(MoveError::NotFound)?;
-        if job.state == "running" {
+            .find(|j| j.state == "running" && !j.queued())
+        {
             if let Some(ch) = job.channels.iter_mut().find(|c| c.state == "reading") {
                 ch.state = "done";
                 ch.messages = ch.expected;
@@ -420,7 +469,8 @@ impl Store {
             }
             job.tally();
         }
-        Ok(job.clone())
+        self.start_next();
+        Ok(self.jobs.iter().find(|j| j.id == id).unwrap().clone())
     }
 
     pub fn cancel_rescan(&mut self, id: &str) -> Result<Job, MoveError> {
@@ -433,7 +483,9 @@ impl Store {
             job.state = "cancelled";
             job.tally();
         }
-        Ok(job.clone())
+        let job = job.clone();
+        self.start_next();
+        Ok(job)
     }
 }
 
@@ -501,6 +553,71 @@ mod tests {
             }
             assert!(s.jobs.is_empty(), "nothing queued");
         }
+    }
+
+    #[test]
+    fn a_second_rescan_attaches_or_queues_as_the_server_does() {
+        let mut s = store();
+        let watched: Vec<String> = super::Store::rescan_targets()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["id"].as_str().unwrap().to_owned())
+            .collect();
+        let (a, b) = (watched[0].as_str(), watched[1].as_str());
+        let req = |channels: &[&str], window: &str| super::RescanRequest {
+            channels: channels.iter().map(|c| (*c).to_owned()).collect(),
+            window: window.into(),
+        };
+        let first = s.start_rescan(req(&[a, b], "week")).ok().unwrap();
+        assert!(first.started_at.is_some(), "nothing ahead: it starts");
+        // Covered by the running job: attached, whatever the window.
+        let again = s.start_rescan(req(&[a], "two_weeks")).ok().unwrap();
+        assert_eq!(again.id, first.id);
+
+        // Not covered: queued behind it, shown running with no start or total.
+        let (c, d) = (watched[2].as_str(), watched[3].as_str());
+        let queued = s.start_rescan(req(&[c, d], "week")).ok().unwrap();
+        assert_ne!(queued.id, first.id);
+        assert_eq!(queued.state, "running");
+        assert_eq!(
+            (queued.started_at.as_ref(), queued.messages_total),
+            (None, None)
+        );
+        // The same window attaches to the queued job ...
+        let same = s.start_rescan(req(&[c], "week")).ok().unwrap();
+        assert_eq!(same.id, queued.id);
+        // ... another window replaces it with a new queued job.
+        let replaced = s.start_rescan(req(&[d], "since_reset")).ok().unwrap();
+        assert_ne!(replaced.id, queued.id);
+        assert_eq!(s.poll_rescan(&queued.id).ok().unwrap().state, "cancelled");
+        assert!(
+            s.poll_rescan(&replaced.id)
+                .ok()
+                .unwrap()
+                .started_at
+                .is_none()
+        );
+
+        // Once the running job ends the queued one is taken.
+        let stopped = s.cancel_rescan(&first.id).ok().unwrap();
+        assert_eq!(stopped.state, "cancelled");
+        let taken = s.poll_rescan(&replaced.id).ok().unwrap();
+        assert!(taken.started_at.is_some());
+        assert!(taken.messages_total.is_some());
+        while s.poll_rescan(&replaced.id).ok().unwrap().state == "running" {}
+        assert_eq!(s.poll_rescan(&replaced.id).ok().unwrap().state, "done");
+    }
+
+    #[test]
+    fn the_summary_says_why_a_rescan_would_be_refused() {
+        let mut s = store();
+        assert_eq!(s.summary().rescan_off, None);
+        s.config.extract_enabled = false;
+        assert_eq!(s.summary().rescan_off, Some(super::RESCAN_OFF));
+        s.config.extract_enabled = true;
+        s.config.paused = true;
+        assert_eq!(s.summary().rescan_off, Some(super::RESCAN_OFF));
     }
 
     #[test]

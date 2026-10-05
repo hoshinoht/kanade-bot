@@ -52,6 +52,9 @@ jobs:
               - devtools/pwa-mock/**
               - boss/knowledge/**
               - docs/v5/api-schemas/**
+              # The route diff compares the web calls and mock routes with these.
+              - src/api/**
+              - scripts/api_routes/**
 
   rust:
     needs: changes
@@ -77,6 +80,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # Every /api/ path the PWAs call and the mock serves must be mounted by
+      # src/api (or listed as a documented exception). Source-only Python.
+      - name: API route diff
+        run: python3 scripts/api_routes/route_diff.py
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0

@@ -5,7 +5,7 @@
 mod chat;
 mod extractions;
 mod filter;
-mod rescan;
+pub(super) mod rescan;
 
 use std::{collections::BTreeMap, sync::Arc};
 

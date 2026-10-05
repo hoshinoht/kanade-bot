@@ -19,6 +19,7 @@ use crate::{
         },
         settings::RunLengths,
     },
+    infrastructure::llm::governor::GroupSnapshot,
 };
 
 /// What every projection reads besides the rows themselves.
@@ -434,6 +435,32 @@ pub struct Model {
     pub holder: Option<String>,
 }
 
+impl Model {
+    /// Busy when a governor group has every permit in use; the holder is
+    /// that group's longest-held permit's call kind (groups in snapshot
+    /// order). Holders are listed by permit sequence, but grants go by
+    /// priority first, so the oldest is the largest `held_s`; a tie goes to
+    /// the lower sequence (listed first).
+    pub fn from_groups(groups: &[GroupSnapshot]) -> Self {
+        let full = groups
+            .iter()
+            .find(|group| group.permits.total > 0 && group.permits.in_use >= group.permits.total);
+        Self {
+            busy: full.is_some(),
+            holder: full
+                .and_then(|group| {
+                    group
+                        .holders
+                        .iter()
+                        .enumerate()
+                        .max_by_key(|(index, holder)| (holder.held_s, std::cmp::Reverse(*index)))
+                })
+                .map(|(_, holder)| holder)
+                .map(|holder| holder.kind.as_str().to_owned()),
+        }
+    }
+}
+
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Summary {
@@ -447,6 +474,17 @@ pub struct Summary {
     pub model: Model,
     /// Notifications `quiet_mode` as the running settings hold it (the shell's chip).
     pub quiet_mode: bool,
+    /// Why Re-read would be refused right now: extraction switched off (the
+    /// `409 extraction_off` sentence) or no extractor composed (the `503
+    /// unavailable` sentence); `null` while re-reading can run.
+    pub rescan_off: Option<String>,
+}
+
+/// The summary's live, non-schedule facts.
+pub struct Live {
+    pub quiet_mode: bool,
+    pub model: Model,
+    pub rescan_off: Option<String>,
 }
 
 fn is_ahead(run: &Run, now: DateTime<Utc>) -> bool {
@@ -478,7 +516,7 @@ pub fn summary(
     snapshot: &ScheduleSnapshot,
     inbox: u64,
     members: usize,
-    quiet_mode: bool,
+    live: Live,
 ) -> Summary {
     let next = next_run(snapshot, ctx.now).map(|run| NextRun {
         run_id: run.id.clone(),
@@ -506,12 +544,9 @@ pub fn summary(
         inbox,
         members,
         reminders: super::reminders::upcoming(ctx, snapshot),
-        // The model governor is not composed into the API yet.
-        model: Model {
-            busy: false,
-            holder: None,
-        },
-        quiet_mode,
+        model: live.model,
+        quiet_mode: live.quiet_mode,
+        rescan_off: live.rescan_off,
     }
 }
 

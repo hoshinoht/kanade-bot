@@ -58,6 +58,25 @@ use crate::{
 
 type ConfigMaker = Box<dyn FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send>;
 
+/// The less common parts of a [`Reads`] build.
+struct Extra {
+    /// `KANADE_BACKUP_DIR` set (an empty directory).
+    backup_dir: bool,
+    model_limits: Option<kanade::api::state::ModelLimits>,
+    /// A rescan runner composed (the fake); `false` is serve without an extractor.
+    rescans: bool,
+}
+
+impl Default for Extra {
+    fn default() -> Self {
+        Self {
+            backup_dir: true,
+            model_limits: None,
+            rescans: true,
+        }
+    }
+}
+
 const TOKEN: &str = "break-glass-token-with-at-least-32-bytes!";
 const TAILSCALE_ADMIN: &str = "ops@example.com";
 const SECOND_TAILSCALE_ADMIN: &str = "second-ops@example.com";
@@ -446,11 +465,19 @@ impl Reads {
 
     /// Boss weeks reset Thursday at `reset` (KL) instead of midnight.
     pub async fn with_reset(reset: NaiveTime) -> Self {
-        Self::build(reset, false, None, true, true, true, None).await
+        Self::build(reset, false, None, true, true, Extra::default()).await
     }
 
     pub async fn with_role_directory_connected(connected: bool) -> Self {
-        Self::build(NaiveTime::MIN, false, None, connected, true, true, None).await
+        Self::build(
+            NaiveTime::MIN,
+            false,
+            None,
+            connected,
+            true,
+            Extra::default(),
+        )
+        .await
     }
 
     /// With the config API over the seeded store.
@@ -463,8 +490,7 @@ impl Reads {
             Some(Box::new(make)),
             true,
             true,
-            true,
-            None,
+            Extra::default(),
         )
         .await
     }
@@ -480,8 +506,26 @@ impl Reads {
             Some(Box::new(make)),
             true,
             true,
+            Extra {
+                model_limits: Some(model_limits),
+                ..Extra::default()
+            },
+        )
+        .await
+    }
+
+    /// With live governor snapshots and no config desk.
+    pub async fn with_model_limits(model_limits: kanade::api::state::ModelLimits) -> Self {
+        Self::build(
+            NaiveTime::MIN,
+            false,
+            None,
             true,
-            Some(model_limits),
+            true,
+            Extra {
+                model_limits: Some(model_limits),
+                ..Extra::default()
+            },
         )
         .await
     }
@@ -496,8 +540,7 @@ impl Reads {
             Some(Box::new(make)),
             connected,
             true,
-            true,
-            None,
+            Extra::default(),
         )
         .await
     }
@@ -511,8 +554,7 @@ impl Reads {
             Some(Box::new(make)),
             true,
             true,
-            true,
-            None,
+            Extra::default(),
         )
         .await
     }
@@ -520,21 +562,56 @@ impl Reads {
     /// Also Discord sign-in and Tailscale sign-in through a trusted edge
     /// (the test client, 127.0.0.1, carrying `EDGE_AUTH`).
     pub async fn with_logins() -> Self {
-        Self::build(NaiveTime::MIN, true, None, true, true, true, None).await
+        Self::build(NaiveTime::MIN, true, None, true, true, Extra::default()).await
     }
 
     /// Sign-ins as [`Reads::with_logins`], over a role directory that may be down.
     pub async fn with_logins_role_directory_connected(connected: bool) -> Self {
-        Self::build(NaiveTime::MIN, true, None, connected, true, true, None).await
+        Self::build(
+            NaiveTime::MIN,
+            true,
+            None,
+            connected,
+            true,
+            Extra::default(),
+        )
+        .await
     }
 
     pub async fn without_digest_delivery() -> Self {
-        Self::build(NaiveTime::MIN, false, None, true, false, true, None).await
+        Self::build(NaiveTime::MIN, false, None, true, false, Extra::default()).await
+    }
+
+    /// No rescan runner: serve without an extraction model.
+    pub async fn without_rescans() -> Self {
+        Self::build(
+            NaiveTime::MIN,
+            false,
+            None,
+            true,
+            true,
+            Extra {
+                rescans: false,
+                ..Extra::default()
+            },
+        )
+        .await
     }
 
     /// No `KANADE_BACKUP_DIR`: checkpoints list no backups.
     pub async fn without_backup_dir() -> Self {
-        Self::build(NaiveTime::MIN, false, None, true, true, false, None).await
+        Self::build(
+            NaiveTime::MIN,
+            false,
+            None,
+            true,
+            true,
+            Extra {
+                backup_dir: false,
+                ..Extra::default()
+            },
+        )
+        .await
     }
 
     async fn build(
@@ -543,9 +620,13 @@ impl Reads {
         config: Option<ConfigMaker>,
         role_directory_connected: bool,
         digest_delivery: bool,
-        backup_dir: bool,
-        model_limits: Option<kanade::api::state::ModelLimits>,
+        extra: Extra,
     ) -> Self {
+        let Extra {
+            backup_dir,
+            model_limits,
+            rescans: with_rescans,
+        } = extra;
         let dir = TempDir::new();
         let backup_dir = backup_dir.then(|| {
             let path = dir.0.join("backups");
@@ -686,7 +767,7 @@ impl Reads {
             knowledge_dir: Some(knowledge.clone()),
             guild_id: Some("900".into()),
             clock: Arc::new(move || pinned),
-            rescans: Some(Arc::new(RescanDesk::new(rescans.clone()))),
+            rescans: with_rescans.then(|| Arc::new(RescanDesk::new(rescans.clone()))),
             config: config.map(|make| make(store.clone())),
             chat: Some(chat_handle),
             model_limits,
@@ -988,6 +1069,12 @@ async fn stats_summary_and_reminders() {
     assert_eq!(summary["inbox"], 0);
     assert_eq!(summary["members"], 3, "Alice, Bob, Dan; never the bot");
     assert_eq!(summary["quiet_mode"], false, "no config desk: the default");
+    assert_eq!(
+        summary["model"],
+        serde_json::json!({"busy": false, "holder": null}),
+        "no governor: free"
+    );
+    assert_eq!(summary["rescan_off"], serde_json::Value::Null);
 
     let reminders = reads
         .read("/api/admin/reminders", "reminders.json#/$defs/Reminders")
@@ -1014,6 +1101,87 @@ async fn stats_summary_and_reminders() {
         serde_json::json!(["Alice", "Bobby", "Dan"])
     );
     assert_eq!(reminders["sent"][0]["at"], "Tue 29 Sep 09:00");
+}
+
+#[tokio::test]
+async fn summary_reports_a_full_governor_group_and_a_switched_off_rescan() {
+    use kanade::infrastructure::llm::governor::{
+        BreakerState, BreakerView, CallKind, Counters, GroupSnapshot, HeldPermit, PermitUsage,
+        RateLevel, RetryLevel,
+    };
+    let held = |kind: CallKind, held_s: u64| HeldPermit {
+        kind,
+        who: "someone".into(),
+        held_s,
+    };
+    let group = |name: &str, in_use: u32, total: u32, holders: Vec<HeldPermit>| GroupSnapshot {
+        name: name.into(),
+        backend: "Kanata".into(),
+        models: Vec::new(),
+        permits: PermitUsage { in_use, total },
+        queue: Vec::new(),
+        holders,
+        rate: RateLevel {
+            available: 1,
+            capacity: 1,
+            refill_per_min: 1,
+        },
+        retry: RetryLevel {
+            remaining: 1,
+            capacity: 1,
+        },
+        breaker: BreakerView {
+            state: BreakerState::Closed,
+            failures: 0,
+            since: DateTime::UNIX_EPOCH,
+            retry_at: None,
+        },
+        counters: Counters::default(),
+    };
+    let busy = Arc::new(Mutex::new(false));
+    let limits: kanade::api::state::ModelLimits = {
+        let busy = busy.clone();
+        Arc::new(move |_| {
+            let full = *busy.lock().unwrap();
+            vec![
+                // A group without permits is never "every permit in use".
+                group("empty", 0, 0, Vec::new()),
+                group("local", 1, 2, vec![held(CallKind::Chat, 3)]),
+                group(
+                    "gateway",
+                    if full { 2 } else { 1 },
+                    2,
+                    if full {
+                        // Listed by sequence: a later, higher-priority grant can come first.
+                        vec![held(CallKind::Chat, 2), held(CallKind::Rescan, 40)]
+                    } else {
+                        vec![held(CallKind::Rescan, 40)]
+                    },
+                ),
+            ]
+        })
+    };
+    let reads = Reads::with_model_limits(limits).await;
+    let summary = || reads.read("/api/admin/summary", "week.json#/$defs/Summary");
+    assert_eq!(
+        summary().await["model"],
+        serde_json::json!({"busy": false, "holder": null}),
+        "a permit is free in every group"
+    );
+    *busy.lock().unwrap() = true;
+    assert_eq!(
+        summary().await["model"],
+        serde_json::json!({"busy": true, "holder": "rescan"}),
+        "the full group's longest-held permit, not the first listed"
+    );
+
+    assert_eq!(summary().await["rescan_off"], Value::Null);
+    *reads.rescans.off.lock().unwrap() = true;
+    let off = summary().await["rescan_off"].clone();
+    assert_eq!(
+        off, "Re-reading needs watching and the extractor switched on (Config → Watching).",
+        "the sentence the refused POST carries"
+    );
 }
 
 #[tokio::test]

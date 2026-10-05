@@ -103,11 +103,17 @@ async fn summary(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
         Some(desk) => desk.settings().await.notifications.quiet_mode,
         None => false,
     };
+    let model = state
+        .model_limits
+        .as_ref()
+        .map_or_else(Vec::new, |limits| limits(now));
+    let live = dto::week::Live {
+        quiet_mode,
+        model: dto::week::Model::from_groups(&model),
+        rescan_off: super::logs::rescan::off_note(state),
+    };
     let ctx = context(&site, state, roster(&[]), now);
-    Ok(Json(dto::week::summary(
-        &ctx, &snapshot, inbox, members, quiet_mode,
-    ))
-    .into_response())
+    Ok(Json(dto::week::summary(&ctx, &snapshot, inbox, members, live)).into_response())
 }
 
 async fn fixed(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {

@@ -54,6 +54,8 @@
 
   const uid = $props.id();
   const helpId = `${uid}-help`;
+  // Re-read is refused while extraction is off: say so before anyone presses it.
+  const rereadOff = $derived(store.summary?.rescan_off ? { note: store.summary.rescan_off, id: `${uid}-reread-off` } : null);
   const chrome = getChrome();
   const phone = $derived(chrome?.phone ?? false);
   // O5: the at-a-glance pane from 1200 px; below that the footer carries its facts.
@@ -238,6 +240,10 @@
         <div class="week-window__count">{@render heading()}</div>
       </div>
     {/if}
+    {#if rereadOff}
+      <!-- Single-pane boards carry per-card Re-read buttons, which this describes; wider ones re-read from the run pane. -->
+      <p class="week-reread-off" id={rereadOff.id} hidden={tab !== 'planner'}>{rereadOff.note}</p>
+    {/if}
     <div class="week-window__body">
       <!-- Always in the DOM: every movable card's aria-describedby points here. Planner-only. -->
       <p class="week-help" id={helpId} hidden={!helpOpen || tab !== 'planner'}>
@@ -264,6 +270,7 @@
             onhold={(h) => (store.holding = h)}
             saving={store.mutating}
             {onreread}
+            {rereadOff}
             {busyChannels}
             step={store.runStep}
             allRuns={store.week?.runs}

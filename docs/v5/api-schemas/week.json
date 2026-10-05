@@ -171,7 +171,7 @@
     "Summary": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["next", "unanswered", "inbox", "members", "reminders", "model", "quiet_mode"],
+      "required": ["next", "unanswered", "inbox", "members", "reminders", "model", "quiet_mode", "rescan_off"],
       "properties": {
         "next": {
           "anyOf": [
@@ -196,6 +196,7 @@
         "members": { "type": "integer", "minimum": 0 },
         "reminders": { "type": "integer", "minimum": 0 },
         "model": {
+          "description": "Busy when a model-governor group has every permit in use; holder is that group's oldest permit's call kind (chat, extraction, rescan, follow_up, rewrite, pre_screen).",
           "type": "object",
           "additionalProperties": false,
           "required": ["busy", "holder"],
@@ -204,7 +205,11 @@
             "holder": { "$ref": "common.json#/$defs/NullableString" }
           }
         },
-        "quiet_mode": { "type": "boolean" }
+        "quiet_mode": { "type": "boolean" },
+        "rescan_off": {
+          "description": "Why Re-read would be refused now: extraction switched off (the sentence POST /api/admin/rescan answers 409 extraction_off with) or no extractor on this server (its 503 unavailable sentence); null while re-reading can run.",
+          "$ref": "common.json#/$defs/NullableString"
+        }
       }
     },
     "Tonight": {

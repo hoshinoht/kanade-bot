@@ -377,6 +377,29 @@ async fn a_rescan_while_extraction_is_off_says_how_to_switch_it_on() {
 }
 
 #[tokio::test]
+async fn without_an_extractor_the_summary_and_the_refusal_share_one_reason() {
+    let logs = Logs {
+        reads: crate::reads::Reads::without_rescans().await,
+        proposal: String::new(),
+    };
+    let summary = logs.get("/api/admin/summary").await;
+    assert_eq!(summary.status, 200, "{}", summary.text());
+    let off = summary.json()["rescan_off"].clone();
+    assert_eq!(
+        off,
+        "Re-reading is unavailable: this server runs no extractor (no extraction model is set up)."
+    );
+    let reply = start(
+        &logs,
+        None,
+        r#"{"channels":["kalos-four"],"window":"week"}"#,
+    )
+    .await;
+    refused(&reply, 503, "unavailable");
+    assert_eq!(reply.json()["message"], off, "the same sentence");
+}
+
+#[tokio::test]
 async fn every_log_and_rescan_route_needs_a_session_and_writes_need_csrf() {
     let logs = Logs::new().await;
     let admin = logs.reads.admin;

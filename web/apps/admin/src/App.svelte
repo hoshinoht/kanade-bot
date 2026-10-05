@@ -239,6 +239,7 @@
             void store.refresh();
           },
           onquiet: (on: boolean) => store.setQuiet(on),
+          rescanOff: store.summary?.rescan_off ?? null,
         };
       case 'bosses':
       case 'boss-knowledge':
@@ -488,6 +489,7 @@
       onreset={(runId) => store.resetToFixed(runId)}
       onping={(runId) => store.ping(runId)}
       onreread={rereadChannel}
+      rereadOff={store.summary?.rescan_off ?? null}
       saving={store.mutating}
     />
   {/if}

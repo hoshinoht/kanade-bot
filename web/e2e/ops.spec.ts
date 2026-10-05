@@ -899,6 +899,9 @@ test('week and sheet: per-channel re-read from the board and the sheet', async (
 
   // The board's own button (phones show it; wide clicks it directly too).
   await page.setViewportSize({ width: 390, height: 844 });
+  // Extraction is on: no note, and the button is live before any press.
+  await expect(page.locator('.week-reread-off')).toHaveCount(0);
+  await expect(page.locator('[data-run="r-carling"] .plan-card__reread')).toHaveAttribute('aria-disabled', 'false');
   await page.locator('[data-run="r-carling"] .plan-card__reread').click();
   const progress = toast(page, /Re-reading #hstar-party/);
   await expect(progress).toBeVisible();
@@ -921,24 +924,57 @@ test('week and sheet: per-channel re-read from the board and the sheet', async (
   await page.keyboard.press('Escape');
 });
 
-test('re-read while the extractor is off: refused with where to switch it on, nothing starts', async ({ page }) => {
+test('re-read while the extractor is off: off before any press, with the server\'s reason, on the board, the pane and Extractions', async ({ page }) => {
   const off = await page.request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(page.request), data: { watching: { extract_enabled: false } } });
   expect(off.status()).toBe(200);
   const why = 'Re-reading needs watching and the extractor switched on (Config → Watching).';
+  const summary = await page.request.get(`${ADMIN}/api/admin/summary`);
+  expect((await summary.json()).rescan_off).toBe(why);
 
-  await go(page, '/');
+  // The board's per-card buttons (single pane): off, described by the note over the board.
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator('[data-run="r-carling"] .plan-card__reread').click();
-  await expect(toast(page, `Couldn't re-read #hstar-party: ${why}`)).toBeVisible();
-  await expect(page.locator('[data-run="r-carling"] .plan-card__reread')).toHaveAttribute('aria-disabled', 'false');
+  await go(page, '/');
+  const card = page.locator('[data-run="r-carling"] .plan-card__reread');
+  await expect(card).toHaveAttribute('aria-disabled', 'true');
+  await expect(page.locator('.week-reread-off')).toHaveText(why);
+  await expect(card).toHaveAccessibleDescription(why);
 
+  // The run pane's channel button says the same, in the pane.
   await page.setViewportSize({ width: 1280, height: 800 });
+  await page.locator('[data-run="r-carling"] .plan-card__open').click();
+  await expect(page.getByRole('complementary', { name: 'HCarling + HStar' })).toBeVisible();
+  const sheet = page.getByRole('button', { name: 'Re-read #hstar-party from Discord and propose any changes' });
+  await expect(sheet).toHaveAttribute('aria-disabled', 'true');
+  await expect(sheet).toHaveAccessibleDescription(why);
+  await expect(page.locator('.sheet__offnote')).toHaveText(why);
+  // Playwright treats aria-disabled as disabled; force the press to prove it does nothing.
+  await sheet.click({ force: true });
+  await expect(page.locator('.sheet__notice')).not.toContainText('Re-reading #hstar-party');
+
+  // Extractions: the title-bar button stays shut and the call's own button is off.
   await go(page, '/extractions');
-  await page.getByRole('button', { name: 'Re-read channels' }).click();
-  await toggleOptions(page.getByRole('combobox', { name: 'Channels to re-read' }), ['#limbo-trio']);
-  await page.getByRole('button', { name: 'Re-read', exact: true }).click();
-  await expect(page.locator('.rescan .field__error')).toHaveText(why);
-  await expect(page.locator('.rescan__job')).toHaveCount(0);
+  const reread = page.getByRole('button', { name: 'Re-read channels' });
+  await expect(reread).toHaveAttribute('aria-disabled', 'true');
+  await expect(reread).toHaveAccessibleDescription(why);
+  await expect(page.locator('.extract-window__off')).toHaveText(why);
+  await reread.click({ force: true });
+  await expect(reread).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('group', { name: 'Re-read the party channels' })).toBeHidden();
+  const one = page.getByRole('button', { name: 'Re-read this channel' });
+  await expect(one).toBeDisabled();
+  await expect(one).toHaveAttribute('title', why);
+
+  // Switched back on, every button is live again and the notes are gone.
+  const on = await page.request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(page.request), data: { watching: { extract_enabled: true } } });
+  expect(on.status()).toBe(200);
+  await go(page, '/extractions');
+  await expect(page.getByRole('button', { name: 'Re-read channels' })).not.toHaveAttribute('aria-disabled', 'true');
+  await expect(page.locator('.extract-window__off')).toHaveCount(0);
+  await go(page, '/');
+  await page.locator('[data-run="r-carling"] .plan-card__open').click();
+  await expect(sheet).toHaveAttribute('aria-disabled', 'false');
+  await expect(page.locator('.sheet__offnote')).toHaveCount(0);
+  await expect(page.locator('.week-reread-off')).toHaveCount(0);
 });
 
 test('config on a phone: the section strip scrolls itself, never the frame', async ({ page }) => {

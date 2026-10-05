@@ -16,6 +16,7 @@
     onopen,
     onhold,
     onreread,
+    rereadOff = null,
     busyChannels,
     saving = false,
     step = 30,
@@ -31,6 +32,8 @@
     onopen: (run: Run) => void;
     onhold: (holding: boolean) => void;
     onreread?: (run: Run) => void;
+    /** Re-reading is off: the server's sentence and the id of the note showing it. */
+    rereadOff?: { note: string; id: string } | null;
     busyChannels?: Set<string>;
     /** A planner write is pending; starting another one would make rollback unsafe. */
     saving?: boolean;
@@ -433,6 +436,7 @@
               onblur={handleBlur}
               {drag}
               {onreread}
+              {rereadOff}
               rereadBusy={busyChannels?.has(run.channel_id) ?? false}
             />
           {/each}

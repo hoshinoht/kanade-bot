@@ -574,8 +574,8 @@ emit only safe configuration-error descriptions, not environment values.
 
 Live `serve` runs the Discord gateway, roster sync, the chat pilot,
 extraction and the delivery tick, chat and extraction each behind its
-settings switch (see "Live serve"). `ctl` and `export`
-are reserved commands that return a nonzero not-implemented result.
+settings switch (see "Live serve"). `ctl` is a reserved command that
+returns a nonzero not-implemented result; there is no `export` command.
 `import v4` is the one-off testing import from a v4 snapshot
 (`v4-import.md`). `backup [--name FILE]` is the deploy-time snapshot:
 it needs only `KANADE_DB_PATH`, `KANADE_OWNER_LOCK_DIR` and
@@ -587,7 +587,7 @@ first"); it writes `FILE` (a plain `[A-Za-z0-9._-]` name; default
 overwriting either (exit `78`), and prints the history head, revision and
 schema. Opening the store runs pending migrations, so run it with the image
 that last served the store. `serve --offline` wires no scheduler, persistence,
-Discord, import/export, admin API or mutation route.
+Discord, import, admin API or mutation route.
 
 The runtime installs Rustls' `ring` provider before command processing. SQLx
 and Twilight are intentionally absent until storage and Discord work needs

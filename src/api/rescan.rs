@@ -39,6 +39,11 @@ pub struct RescanView {
 }
 
 pub trait RescanRunner: Send + Sync {
+    /// Why a submit would be refused before anything is queued (extraction
+    /// switched off), so a client can say so before anyone asks.
+    fn ready(&self) -> Result<(), RescanError> {
+        Ok(())
+    }
     /// Queue a job (or hand back the one already covering these channels).
     fn submit(&self, request: RescanRequest) -> RescanFuture<'_, RescanView>;
     fn job(&self, id: String) -> RescanFuture<'_, Option<RescanView>>;

@@ -24,8 +24,16 @@
     id,
     timeZone,
     canReread,
+    rescanOff = null,
     onreread,
-  }: { id: string; timeZone: string; canReread: (channel: string) => boolean; onreread: (channel: string) => void } = $props();
+  }: {
+    id: string;
+    timeZone: string;
+    canReread: (channel: string) => boolean;
+    /** Why re-reading is off right now (the server's sentence). */
+    rescanOff?: string | null;
+    onreread: (channel: string) => void;
+  } = $props();
   const uid = $props.id();
   const call = $derived(new Resource<Extraction>(`/api/admin/extractions/${encodeURIComponent(id)}`));
   $effect(() => void call.load());
@@ -143,7 +151,7 @@
             {:else if !data.error}<p class="note">The model found nothing to change.</p>{/if}
           </section>
         {/if}
-        <CallOutcome call={data} canReread={canReread(data.channel_id)} onreread={() => onreread(data.channel_id)} />
+        <CallOutcome call={data} canReread={canReread(data.channel_id)} {rescanOff} onreread={() => onreread(data.channel_id)} />
       </div>
     {/if}
   {:else}

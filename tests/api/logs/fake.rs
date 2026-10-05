@@ -114,11 +114,17 @@ impl FakeRescans {
 }
 
 impl RescanRunner for FakeRescans {
+    fn ready(&self) -> Result<(), RescanError> {
+        if *self.off.lock().unwrap() {
+            Err(RescanError::Off)
+        } else {
+            Ok(())
+        }
+    }
+
     fn submit(&self, request: RescanRequest) -> RescanFuture<'_, RescanView> {
         Box::pin(async move {
-            if *self.off.lock().unwrap() {
-                return Err(RescanError::Off);
-            }
+            self.ready()?;
             self.requests.lock().unwrap().push(request.clone());
             let mut jobs = self.jobs.lock().unwrap();
             let id = format!("job-{}", jobs.len() + 1);

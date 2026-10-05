@@ -50,7 +50,10 @@ async fn only_the_retained_commands_are_registered_for_the_guild() {
         assert_eq!(hidden, staff, "{}", command["name"]);
     }
     let debug = &payload[1];
-    assert_eq!(names(&debug["options"]), ["ping", "clear_test"]);
+    assert_eq!(
+        names(&debug["options"]),
+        ["ping", "clear_test", "reminders", "materialise"]
+    );
     let fixed = &payload[0];
     assert_eq!(names(&fixed["options"]), ["add", "list", "edit", "remove"]);
 

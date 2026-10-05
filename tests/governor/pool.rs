@@ -250,3 +250,58 @@ async fn holders_are_tracked_and_released() {
     drop(a);
     assert_eq!(snap(&governor).permits.in_use, 1);
 }
+
+/// Grants go by priority before sequence, so the first-listed holder (lowest
+/// sequence) is not always the oldest: the summary's `model.holder` must name
+/// the longest-held permit.
+#[tokio::test(start_paused = true)]
+async fn the_summary_holder_is_the_longest_held_permit_across_priorities() {
+    use kanade::api::dto::week::Model;
+    let governor = governor(2, 600);
+    let a = governor
+        .acquire(Role::Chat, ticket(Priority::ChatNew, "a"), LONG)
+        .await
+        .unwrap();
+    let b = governor
+        .acquire(Role::Extraction, ticket(Priority::Extraction, "b"), LONG)
+        .await
+        .unwrap();
+    let wait = |priority: Priority, who: &'static str| {
+        let governor = governor.clone();
+        tokio::spawn(async move {
+            governor
+                .acquire(Role::Chat, ticket(priority, who), LONG)
+                .await
+                .expect("granted")
+        })
+    };
+    // Queued first (lower sequence), served second.
+    let late = wait(Priority::FollowUp, "follow-up");
+    settle().await;
+    let urgent = wait(Priority::ChatRound, "chat round");
+    settle().await;
+    assert_eq!(snap(&governor).queue.len(), 2);
+
+    drop(a);
+    settle().await;
+    tokio::time::advance(Duration::from_secs(30)).await;
+    drop(b);
+    settle().await;
+    tokio::time::advance(Duration::from_secs(5)).await;
+    let _held = (late.await.unwrap(), urgent.await.unwrap());
+
+    let snapshot = snap(&governor);
+    let listed: Vec<_> = snapshot
+        .holders
+        .iter()
+        .map(|h| (h.kind, h.held_s))
+        .collect();
+    assert_eq!(
+        listed,
+        [(CallKind::FollowUp, 5), (CallKind::Chat, 35)],
+        "listed by sequence, not by age"
+    );
+    let model = Model::from_groups(&[snapshot]);
+    assert!(model.busy);
+    assert_eq!(model.holder.as_deref(), Some("chat"));
+}

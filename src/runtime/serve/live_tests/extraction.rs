@@ -455,6 +455,8 @@ async fn extraction_off_records_watched_messages_but_never_calls_the_model() {
 
         // Rescans are refused too, from the API port and from /rescan.
         let runner = &ctx.composition.admin.state.rescans.as_ref().unwrap().runner;
+        // Known before anyone asks: the summary's `rescan_off` reads this.
+        assert_eq!(runner.ready(), Err(RescanError::Off));
         let refused = runner
             .submit(RescanRequest {
                 channels: vec![HOME_A.to_string()],
@@ -1016,6 +1018,7 @@ async fn shutdown_stops_rescans_before_the_store_closes() {
         connect(&ctx).await;
         eventually!("the startup call", model.chats() == 1);
         let runner = &ctx.composition.admin.state.rescans.as_ref().unwrap().runner;
+        assert_eq!(runner.ready(), Ok(()), "switched on");
         let queued = runner
             .submit(RescanRequest {
                 channels: vec![HOME_B.to_string()],

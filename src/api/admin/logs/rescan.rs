@@ -38,11 +38,34 @@ pub struct RescanBody {
     window: String,
 }
 
+/// The 503's sentence when no rescan runner is composed (no extraction
+/// model), also the summary's `rescan_off` then.
+pub const RESCAN_UNAVAILABLE: &str =
+    "Re-reading is unavailable: this server runs no extractor (no extraction model is set up).";
+
+fn no_runner() -> Refusal {
+    Refusal::new(
+        StatusCode::SERVICE_UNAVAILABLE,
+        ApiError::UNAVAILABLE.error,
+        RESCAN_UNAVAILABLE,
+    )
+}
+
 fn desk(state: &ApiState) -> Result<&RescanDesk, Refusal> {
-    state
-        .rescans
-        .as_deref()
-        .ok_or_else(|| ApiError::UNAVAILABLE.into())
+    state.rescans.as_deref().ok_or_else(no_runner)
+}
+
+/// The `extraction_off` refusal's sentence, also the summary's `rescan_off`.
+pub const RESCAN_OFF: &str =
+    "Re-reading needs watching and the extractor switched on (Config → Watching).";
+
+/// Why a re-read would be refused right now, before anyone asks: no
+/// runner at all, or extraction switched off.
+pub fn off_note(state: &ApiState) -> Option<String> {
+    let Some(desk) = state.rescans.as_deref() else {
+        return Some(RESCAN_UNAVAILABLE.to_owned());
+    };
+    matches!(desk.runner.ready(), Err(RescanError::Off)).then(|| RESCAN_OFF.to_owned())
 }
 
 fn refused(error: RescanError) -> Refusal {
@@ -51,11 +74,7 @@ fn refused(error: RescanError) -> Refusal {
         RescanError::Window(_) => {
             Refusal::invalid("Pick a window: this boss week, since reset or two weeks.")
         }
-        RescanError::Off => Refusal::new(
-            StatusCode::CONFLICT,
-            "extraction_off",
-            "Re-reading needs watching and the extractor switched on (Config → Watching).",
-        ),
+        RescanError::Off => Refusal::new(StatusCode::CONFLICT, "extraction_off", RESCAN_OFF),
         RescanError::Closed | RescanError::Store(_) => ApiError::UNAVAILABLE.into(),
     }
 }

@@ -281,6 +281,59 @@ async fn debug_posts_test_cards_through_the_port() {
 }
 
 #[tokio::test]
+async fn debug_materialises_through_the_writer_and_lists_reminder_rows() {
+    let slash = Slash::new().await;
+    let reminders = |run: Option<&str>| {
+        sub(
+            "reminders",
+            run.map_or_else(|| json!([]), |run| json!([opt("run_id", run)])),
+        )
+    };
+    // The seeded runs were written without reminder rows.
+    assert_eq!(slash.run(DAN, "debug", reminders(None)).await, "_none_");
+    assert_eq!(
+        slash.run(DAN, "debug", reminders(Some(R_KALOS))).await,
+        "_none_"
+    );
+
+    // The week after next has no run from the Tuesday timing yet.
+    let created = slash.run(DAN, "debug", sub("materialise", json!([]))).await;
+    let (head, line) = created.split_once('\n').unwrap();
+    assert_eq!(head, "Created 1 run(s):");
+    let short = line
+        .strip_prefix("run `#")
+        .and_then(|rest| rest.strip_suffix("` · XKalos · Tue 13 Oct 22:00"))
+        .unwrap_or_else(|| panic!("{line}"));
+    assert_eq!(
+        slash.run(DAN, "debug", sub("materialise", json!([]))).await,
+        "Nothing new - both weeks were already materialised."
+    );
+
+    // Materialising also placed the seeded runs' missing rows; soonest first.
+    let all = slash.run(DAN, "debug", reminders(None)).await;
+    assert_eq!(
+        all.lines().collect::<Vec<_>>(),
+        [
+            "run `#11111111` · `day_of` · Tue 29 Sep 09:00 · sent".to_owned(),
+            "run `#11111111` · `countdown_60` · Tue 29 Sep 21:00 · pending".to_owned(),
+            "run `#11111111` · `countdown_15` · Tue 29 Sep 21:45 · pending".to_owned(),
+            "run `#33333333` · `day_of` · Tue 06 Oct 09:00 · pending".to_owned(),
+            "run `#33333333` · `countdown_60` · Tue 06 Oct 21:00 · pending".to_owned(),
+            "run `#33333333` · `countdown_15` · Tue 06 Oct 21:45 · pending".to_owned(),
+            format!("run `#{short}` · `day_of` · Tue 13 Oct 09:00 · pending"),
+            format!("run `#{short}` · `countdown_60` · Tue 13 Oct 21:00 · pending"),
+            format!("run `#{short}` · `countdown_15` · Tue 13 Oct 21:45 · pending"),
+        ]
+    );
+    let mine = slash.run(DAN, "debug", reminders(Some(short))).await;
+    assert_eq!(mine, all.lines().skip(6).collect::<Vec<_>>().join("\n"));
+    assert_eq!(
+        slash.run(DAN, "debug", reminders(Some("nope"))).await,
+        "❌ No run matches `nope`."
+    );
+}
+
+#[tokio::test]
 async fn say_posts_verbatim_and_notifies_only_written_users() {
     let slash = Slash::with(Ports {
         closed: vec![LOUNGE.to_string()],

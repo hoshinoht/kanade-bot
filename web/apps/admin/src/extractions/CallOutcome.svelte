@@ -9,7 +9,12 @@
   import { duration } from '../logs/format';
   import TokenUsage from '../logs/TokenUsage.svelte';
 
-  let { call, canReread, onreread }: { call: Extraction; canReread: boolean; onreread: () => void } = $props();
+  let {
+    call,
+    canReread,
+    rescanOff = null,
+    onreread,
+  }: { call: Extraction; canReread: boolean; rescanOff?: string | null; onreread: () => void } = $props();
   const n = $derived(call.amendments.length);
   const headline = $derived(
     n ? `${n} change${n === 1 ? '' : 's'} proposed` : call.outcome === 'proposed' || call.outcome === 'no_change' ? 'No change' : (OUTCOME_LABEL[call.outcome] ?? call.outcome),
@@ -42,7 +47,7 @@
     data-fid="extract-reread-one"
     type="button"
     disabled={!canReread}
-    title={canReread ? undefined : 'Only the party channels Kanade watches can be re-read.'}
+    title={canReread ? undefined : (rescanOff ?? 'Only the party channels Kanade watches can be re-read.')}
     onclick={onreread}>Re-read this channel</button
   >
 </aside>

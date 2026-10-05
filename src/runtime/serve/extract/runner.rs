@@ -28,9 +28,17 @@ pub struct Gated {
 }
 
 impl RescanRunner for Gated {
+    fn ready(&self) -> Result<(), RescanError> {
+        if self.status.enabled() {
+            self.inner.ready()
+        } else {
+            Err(RescanError::Off)
+        }
+    }
+
     fn submit(&self, request: RescanRequest) -> RescanFuture<'_, RescanView> {
-        if !self.status.enabled() {
-            return Box::pin(async { Err(RescanError::Off) });
+        if let Err(error) = self.ready() {
+            return Box::pin(async { Err(error) });
         }
         self.inner.submit(request)
     }

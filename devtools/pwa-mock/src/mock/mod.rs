@@ -417,11 +417,13 @@ impl Store {
             // Same derivations as the Members and Reminders pages' headings.
             members: self.member_rows().iter().filter(|m| m.bossing).count(),
             reminders: self.reminders().upcoming.len(),
+            // Limits' first group is full; the server names its oldest holder's kind.
             model: Model {
                 busy: true,
-                holder: Some("extractor"),
+                holder: Some("extraction"),
             },
             quiet_mode: self.config.quiet_mode,
+            rescan_off: self.rescan_off(),
         }
     }
 

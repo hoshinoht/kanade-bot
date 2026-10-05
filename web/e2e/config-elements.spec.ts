@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, test, openList, toggleOptions } from './support';
+import { ADMIN, csrf, expect, test, openList, toggleOptions } from './support';
 
 // The M3E Config elements: Pings countdown chips (B_CfgPings), Re-read channel
 // chips and the job card (B_CfgReread), Theme tiles (B_CfgTheme) and "Find a
@@ -67,6 +67,10 @@ test('re-read: the channels multi-select, a running job card that finishes, and 
   await page.goto(`${ADMIN}/config?section=rescan&sw=off`);
   const channels = panel(page).getByRole('combobox', { name: 'Channels to re-read' });
   await expect(channels).toHaveText(/none/);
+  // Extraction is on: the key is live and no off note shows.
+  await expect(panel(page).getByRole('button', { name: 'Re-read', exact: true })).toHaveAttribute('aria-disabled', 'false');
+  await expect(panel(page).locator('.rescan__note--off')).toHaveCount(0);
+  await expect(panel(page).getByText('One re-read at a time.')).toBeVisible();
   // Space toggles the active row and the list stays open; Enter closes it.
   await channels.focus();
   await page.keyboard.press('ArrowDown');
@@ -110,6 +114,22 @@ test('re-read: the channels multi-select, a running job card that finishes, and 
   await expect(stopped.locator('.rescan__status')).toHaveText(new RegExp(`^Cancelled after \\d of ${total} channels\\.`));
   await expect(go).toBeFocused();
   await expect(go).toHaveAttribute('aria-disabled', 'false');
+});
+
+test('re-read while the extractor is off: the key is off with the server\'s reason before any press', async ({ page }) => {
+  const off = await page.request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(page.request), data: { watching: { extract_enabled: false } } });
+  expect(off.status()).toBe(200);
+  const why = 'Re-reading needs watching and the extractor switched on (Config → Watching).';
+  await page.goto(`${ADMIN}/config?section=rescan&sw=off`);
+  const go = panel(page).getByRole('button', { name: 'Re-read', exact: true });
+  await expect(go).toHaveAttribute('aria-disabled', 'true');
+  await expect(go).toHaveAccessibleDescription(why);
+  await expect(panel(page).locator('.rescan__note--off')).toHaveText(why);
+  await toggleOptions(panel(page).getByRole('combobox', { name: 'Channels to re-read' }), ['#limbo-trio']);
+  // Playwright treats aria-disabled as disabled; force the press to prove it starts nothing.
+  await go.click({ force: true });
+  await expect(panel(page).locator('.rescan__job')).toHaveCount(0);
+  await expect(panel(page).locator('.rescan .field__error')).toBeHidden();
 });
 
 test('re-read on Extractions: the same panel, without the link back to itself', async ({ page }) => {

@@ -16,7 +16,17 @@
   import { getChrome } from '../shell/chrome';
   import { rescanProgress } from './progress';
 
-  let { targets, details = false }: { targets: Channel[]; /** Link the job card to Extractions (Config). */ details?: boolean } = $props();
+  let {
+    targets,
+    details = false,
+    off = null,
+  }: {
+    targets: Channel[];
+    /** Link the job card to Extractions (Config). */
+    details?: boolean;
+    /** Why the server would refuse a re-read now (the summary's `rescan_off`): shown, and Re-read stays off. */
+    off?: string | null;
+  } = $props();
 
   const uid = $props.id();
   let chosen = $state<string[]>([]);
@@ -65,7 +75,7 @@
   async function start(event: SubmitEvent) {
     event.preventDefault();
     // aria-disabled, not disabled: the key keeps focus while a job runs.
-    if (running) return;
+    if (running || off) return;
     error = '';
     const result = await send((c) => c.post<RescanJob>('/api/admin/rescan', { channels: chosen, window: window_ }));
     if (!result.ok) {
@@ -108,8 +118,18 @@
           ]}
         />
       </div>
-      <button class="btn btn--primary rescan__key" type="submit" aria-disabled={running} bind:this={go}>Re-read</button>
-      <span class="rescan__note">One re-read at a time.</span>
+      <button
+        class="btn btn--primary rescan__key"
+        type="submit"
+        aria-disabled={running || off !== null}
+        aria-describedby={off ? `${uid}-off` : undefined}
+        bind:this={go}>Re-read</button
+      >
+      {#if off}
+        <span class="rescan__note rescan__note--off" id="{uid}-off">{off}</span>
+      {:else}
+        <span class="rescan__note">One re-read at a time.</span>
+      {/if}
     </div>
     <p class="field__error" role="alert">{error}</p>
   </form>
@@ -197,6 +217,10 @@
     align-self: center;
     font-size: var(--fs-small);
     color: var(--dim-text);
+  }
+
+  .rescan__note--off {
+    color: var(--warn-text);
   }
 
   .field__error {

@@ -154,6 +154,8 @@ pub struct Summary {
     pub model: Model,
     /// Config → Notifications quiet mode, as the last config PATCH left it.
     pub quiet_mode: bool,
+    /// The `extraction_off` sentence while Config → Watching has extraction off.
+    pub rescan_off: Option<&'static str>,
 }
 
 /// The signed-out sign-in strip: time, boss names and the aggregate tally only.

@@ -16,6 +16,17 @@
   flex-wrap: nowrap;
 }
 
+// Re-read is off (the summary's `rescan_off`): the server's sentence under the
+// title bar, so the disabled "Re-read channels" says why before it is pressed.
+.extract-window__off {
+  flex: none;
+  margin: 0;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--warn-text);
+  font-size: var(--fs-small);
+}
+
 .extract-window__head .card__title {
   flex: none;
 }

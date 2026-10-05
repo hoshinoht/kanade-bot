@@ -158,6 +158,23 @@
 
 /* ── footer: the week's status line ─────────────────────────────────── */
 
+// Re-read is off (the summary's `rescan_off`): one line over the board where
+// the cards carry Re-read buttons; the two-pane board has none.
+.week-reread-off {
+  flex: none;
+  margin: 0;
+  padding: 4px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--warn-text);
+  font-size: var(--fs-small);
+}
+
+@media #{$two-pane} {
+  .week-reread-off {
+    display: none;
+  }
+}
+
 .week-window__foot {
   display: flex;
   flex: none;

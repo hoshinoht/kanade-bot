@@ -40,6 +40,7 @@
     onsection,
     onrunlengths,
     onquiet,
+    rescanOff = null,
   }: {
     toaster: Toaster;
     section?: string;
@@ -48,6 +49,8 @@
     onrunlengths?: (defaultMinutes: number) => void;
     /** A save answered: the shell's quiet-mode chip follows the saved value at once. */
     onquiet?: (on: boolean) => void;
+    /** Why Re-read is refused right now (the summary's `rescan_off`). */
+    rescanOff?: string | null;
   } = $props();
 
   // `terms` hold the cards' own titles too, so a search names a setting, not only a section.
@@ -455,7 +458,7 @@
             {:else if item.key === 'rescan'}
               <SettingsPanel title="Re-read the party channels">
                 {#snippet lead()}Runs the extractor again over stored messages.{/snippet}
-                <RescanPanel targets={targets.data ?? []} details />
+                <RescanPanel targets={targets.data ?? []} details off={rescanOff} />
               </SettingsPanel>
             {:else if item.key === 'access'}
               <AccessSection {toaster} />

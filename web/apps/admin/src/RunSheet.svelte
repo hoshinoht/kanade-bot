@@ -35,6 +35,7 @@
     onping,
     onreset,
     onreread,
+    rereadOff = null,
     saving = false,
     wide = false,
     countdown = null,
@@ -54,6 +55,8 @@
     onping: (runId: string) => Promise<MoveOutcome>;
     onreset: (runId: string) => Promise<MoveOutcome>;
     onreread: (run: Run) => Promise<MoveOutcome>;
+    /** Why Re-read is refused right now (the summary's `rescan_off`): shown, and the button stays off. */
+    rereadOff?: string | null;
     saving?: boolean;
     /** A side pane in the Week window (gate G4) instead of the full-screen sheet. */
     wide?: boolean;
@@ -186,7 +189,7 @@
 
   // aria-disabled, not disabled: the re-read takes seconds and focus must stay put.
   function rereadChannel(target: Run) {
-    if (busy) return;
+    if (busy || rereadOff) return;
     notice = { ok: true, message: `Re-reading ${target.channel}…` };
     void act(() => onreread(target));
   }
@@ -310,8 +313,10 @@
     <button
       type="button"
       class="chanmark__btn"
+      class:chanmark__btn--off={Boolean(rereadOff)}
       aria-label="Re-read {run.channel} from Discord and propose any changes"
-      aria-disabled={busy}
+      aria-disabled={busy || Boolean(rereadOff)}
+      aria-describedby={rereadOff ? `${uid}-reread-off` : undefined}
       onclick={() => rereadChannel(run)}><Icon name="refresh-cw" /></button
     ></span
   >
@@ -500,6 +505,10 @@
   </div>
 {/snippet}
 
+{#snippet rereadNote()}
+  {#if rereadOff}<p class="sheet__offnote" id="{uid}-reread-off">{rereadOff}</p>{/if}
+{/snippet}
+
 {#snippet notes()}
   <p class="sheet__notice" class:sheet__notice--error={notice && !notice.ok} role="status">
     {#if notice}
@@ -649,6 +658,7 @@
             <div class="week-pane__actions">{@render actions(run)}</div>
             {@render swapBox(run)}
             <p class="cap week-pane__label">Party · {@render channel(run)} <span class="id">#{run.short_id}</span></p>
+            {@render rereadNote()}
             {@render people(run)}
             {@render paneWeek(run)}
             {@render status(run)}
@@ -728,6 +738,8 @@
               {@render timing(run)}
             </p>
             <AnswerBar participants={run.participants} class="runsheet__answers" />
+            <!-- Beside the channel's Re-read button it describes, in the identity column. -->
+            {@render rereadNote()}
           </div>
           {#if wide}
             <div class="runsheet__side" data-fid="sheet-actions">
@@ -890,5 +902,16 @@
 
   .sheet__notice--error {
     color: var(--risk-text);
+  }
+
+  .sheet__offnote {
+    margin: 0;
+    font-size: var(--fs-small);
+    color: var(--warn-text);
+  }
+
+  .chanmark__btn--off {
+    cursor: not-allowed;
+    opacity: 0.5;
   }
 </style>

@@ -6,6 +6,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Discord: `/debug reminders [run_id]` lists a run's reminder rows as v4 did,
+  and `/debug materialise` materialises both weeks through the shared writer.
+  `/debug tick` stays out (the delivery loop has no on-demand tick).
 - Admin: a "Quiet mode on" chip (bell-off icon and words) takes the Live
   chip's place in the page line and phone top bar while quiet mode is on,
   updating as soon as Config saves; `GET /api/admin/summary` gains
@@ -266,6 +269,15 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- Admin: Re-read buttons on the Week board, run pane and sheet, Extractions
+  and Config → Re-read are off with the server's reason shown before any
+  press while extraction is switched off, or when the server runs no
+  extractor; `GET /api/admin/summary` gains `rescan_off`, and the rescan 503
+  now carries the same no-extractor sentence.
+- Admin summary: `model` reports busy when a governor group has every permit
+  in use, naming the longest-held permit's kind.
+- CI runs the API route diff (`scripts/api_routes/route_diff.py`) in the web
+  job.
 - Admin: Chat, Extractions, History, Bosses and Config show the standard
   "Couldn't load …" pane (reason, Try again, Copy details) when their first
   read fails, and Members, Reminders and History show loading words while
@@ -355,6 +367,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Removed**
 
+- The reserved `kanade export` command.
 - Removed `GET /api/admin/runs/{id}/blame` (and its mock route, schema and
   `BlameEntry` type): the admin PWA reads a run's change log from
   `GET /api/admin/history?run=<id>` instead. Field blame stays in the domain

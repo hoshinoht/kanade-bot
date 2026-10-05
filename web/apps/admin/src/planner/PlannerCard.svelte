@@ -17,6 +17,7 @@
     drag,
     onreread,
     rereadBusy,
+    rereadOff = null,
     clash = null,
     dropMark = null,
     swapTarget = false,
@@ -34,6 +35,8 @@
     drag?: ((card: HTMLElement, handle: HTMLElement | null, runId: string, movable: boolean) => () => void) | null;
     onreread?: (run: Run) => void;
     rereadBusy?: boolean;
+    /** Why re-reading is off (the server's sentence) and the id of the note that shows it. */
+    rereadOff?: { note: string; id: string } | null;
     /** Who it double-books, and where ("Asahi in HFA 21:00"); overlap alone is not a clash. */
     clash?: string | null;
     /** A pointer drag would land just before or after this card. */
@@ -149,9 +152,10 @@
       type="button"
       class="plan-card__reread"
       aria-label="Re-read {run.channel} for {runTitle(run)}"
-      aria-disabled={rereadBusy}
+      aria-disabled={rereadBusy || rereadOff !== null}
+      aria-describedby={rereadOff?.id}
       onclick={() => {
-        if (!rereadBusy) onreread(run);
+        if (!rereadBusy && !rereadOff) onreread(run);
       }}
     >
       <Icon name="refresh-cw" />
@@ -300,9 +304,14 @@
       cursor: pointer;
     }
 
-    .plan-card__reread:hover {
+    .plan-card__reread:hover:not([aria-disabled='true']) {
       color: var(--accent);
       background: var(--raise);
+    }
+
+    .plan-card__reread[aria-disabled='true'] {
+      cursor: not-allowed;
+      opacity: 0.5;
     }
   }
 

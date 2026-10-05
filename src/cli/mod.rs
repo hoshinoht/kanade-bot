@@ -29,7 +29,6 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Command, Err
         "ctl" if arguments.len() == 1 => Ok(Command::Reserved { name: "ctl" }),
         "import" => parse_import(&arguments[1..]),
         "backup" => parse_backup(&arguments[1..]),
-        "export" if arguments.len() == 1 => Ok(Command::Reserved { name: "export" }),
         _ => Err(usage()),
     }
 }
@@ -141,7 +140,7 @@ fn parse_backup(arguments: &[String]) -> Result<Command, Error> {
 }
 
 fn usage() -> Error {
-    Error::Usage("usage: kanade {serve [--offline]|healthcheck [--url http://127.0.0.1:8080/healthz]|models check [--probe]|import v4 --from PATH [--since YYYY-MM-DD] [--refresh-logs] [--apply]|backup [--name FILE]|ctl|export}".into())
+    Error::Usage("usage: kanade {serve [--offline]|healthcheck [--url http://127.0.0.1:8080/healthz]|models check [--probe]|import v4 --from PATH [--since YYYY-MM-DD] [--refresh-logs] [--apply]|backup [--name FILE]|ctl}".into())
 }
 
 #[cfg(test)]
@@ -155,6 +154,15 @@ mod tests {
             Command::Serve { offline: true }
         );
         assert!(parse(["serve".into(), "--other".into()]).is_err());
+    }
+
+    #[test]
+    fn ctl_stays_reserved_and_export_is_gone() {
+        assert_eq!(
+            parse(["ctl".into()]).unwrap(),
+            Command::Reserved { name: "ctl" }
+        );
+        assert!(parse(["export".into()]).is_err());
     }
 
     fn args(text: &str) -> Result<Command, Error> {

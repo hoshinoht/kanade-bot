@@ -98,7 +98,13 @@ reminders: number, model: ModelBusy,
 /**
  * Notifications `quiet_mode` as the running settings hold it (the shell's chip).
  */
-quiet_mode: boolean, };
+quiet_mode: boolean, 
+/**
+ * Why Re-read would be refused right now: extraction switched off (the
+ * `409 extraction_off` sentence) or no extractor composed (the `503
+ * unavailable` sentence); `null` while re-reading can run.
+ */
+rescan_off: string | null, };
 
 /**
  * The signed-out sign-in strip: no names, ids, answers, party, channel or version.

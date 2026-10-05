@@ -145,7 +145,10 @@
   let rereadButton = $state<HTMLButtonElement>();
   let rereadPanel = $state<HTMLDivElement>();
   let rescan = $state<{ choose: (ids: string[]) => void }>();
+  // While extraction is off the server refuses a re-read: say so before anyone presses it.
+  const rescanOff = $derived(store.summary?.rescan_off ?? null);
   async function openReread(channel?: string) {
+    if (rescanOff) return;
     rereadMounted = true;
     rereadOpen = true;
     await tick();
@@ -165,7 +168,7 @@
     document.addEventListener('pointerdown', away, true);
     return () => document.removeEventListener('pointerdown', away, true);
   });
-  const canReread = (channel: string) => Boolean(channel) && (targets.data ?? []).some((t) => t.id === channel);
+  const canReread = (channel: string) => !rescanOff && Boolean(channel) && (targets.data ?? []).some((t) => t.id === channel);
 </script>
 
 <PageLine title={view ? 'Extractions' : ''} class={compact ? 'pageline--echo' : ''}>
@@ -192,11 +195,14 @@
         data-fid="extract-reread"
         aria-expanded={rereadOpen}
         aria-controls="{uid}-reread"
+        aria-disabled={rescanOff !== null && !rereadOpen}
+        aria-describedby={rescanOff ? `${uid}-reread-off` : undefined}
         bind:this={rereadButton}
         onclick={() => (rereadOpen ? closeReread(false) : void openReread())}><Icon name="refresh-cw" /><span>Re-read channels</span></button
       >
     </div>
   </div>
+  {#if rescanOff}<p class="extract-window__off" id="{uid}-reread-off">{rescanOff}</p>{/if}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
     class="extract-reread"
@@ -212,7 +218,7 @@
       }
     }}
   >
-    {#if rereadMounted}<RescanPanel targets={targets.data ?? []} bind:this={rescan} />{/if}
+    {#if rereadMounted}<RescanPanel targets={targets.data ?? []} off={rescanOff} bind:this={rescan} />{/if}
   </div>
   <div class="extract-window__body" class:extract-window__body--single={phone || !view || rows.length === 0}>
     <div class="extract-list" data-fid="extract-list" hidden={phone && Boolean(call)}>
@@ -233,7 +239,7 @@
       <button type="button" class="btn extract-window__back" onclick={leaveDetail}>‹ All calls</button>
     {/if}
     {#if chosen && (!phone || call)}
-      <ExtractionDetail bind:this={detail} id={chosen} timeZone={tz} {canReread} onreread={(channel) => void openReread(channel)} />
+      <ExtractionDetail bind:this={detail} id={chosen} timeZone={tz} {canReread} {rescanOff} onreread={(channel) => void openReread(channel)} />
     {/if}
   </div>
 </section>
