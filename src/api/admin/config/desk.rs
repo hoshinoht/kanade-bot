@@ -21,7 +21,7 @@ use crate::{
     },
     chat::persona::{PersonaSnapshot, PersonaStore, ProfileId},
     domain::settings::{
-        Models, RuntimeSettings, Section, SettingsChange, SettingsError, SettingsStore,
+        IdList, Models, RuntimeSettings, Section, SettingsChange, SettingsError, SettingsStore,
         save_section_recorded,
     },
     infrastructure::llm::{
@@ -40,6 +40,10 @@ pub trait SettingsPort: Send + Sync {
         section: Section,
         change: Option<SettingsChange>,
     ) -> ConfigFuture<'_, Result<(), SettingsError>>;
+
+    /// The id lists that have a stored row (an explicit list save); the
+    /// others follow their env seed.
+    fn saved_lists(&self) -> ConfigFuture<'_, Result<Vec<IdList>, SettingsError>>;
 }
 
 impl<T: SettingsStore + Send + Sync> SettingsPort for T {
@@ -49,6 +53,16 @@ impl<T: SettingsStore + Send + Sync> SettingsPort for T {
         change: Option<SettingsChange>,
     ) -> ConfigFuture<'_, Result<(), SettingsError>> {
         Box::pin(async move { save_section_recorded(self, &section, change).await })
+    }
+
+    fn saved_lists(&self) -> ConfigFuture<'_, Result<Vec<IdList>, SettingsError>> {
+        Box::pin(async move {
+            let rows = self.settings_rows().await?;
+            Ok(IdList::ALL
+                .into_iter()
+                .filter(|list| rows.contains_key(list.key()))
+                .collect())
+        })
     }
 }
 
@@ -185,6 +199,17 @@ pub struct ConfigDesk {
     pub(super) personas: Option<PersonaFiles>,
     changes: watch::Sender<SettingsChanged>,
     keys: Mutex<VecDeque<Remembered>>,
+    /// Which id lists have a stored row: read from the store once, then
+    /// kept by the saves (all settings writes go through this desk).
+    saved: Mutex<SavedLists>,
+}
+
+/// The cached saved-list set and a save count, so a store read that began
+/// before a list save never installs its older answer.
+#[derive(Default)]
+struct SavedLists {
+    lists: Option<Vec<IdList>>,
+    saves: u64,
 }
 
 impl ConfigDesk {
@@ -203,6 +228,7 @@ impl ConfigDesk {
             personas: inputs.personas,
             changes,
             keys: Mutex::new(VecDeque::new()),
+            saved: Mutex::new(SavedLists::default()),
         }
     }
 
@@ -274,6 +300,48 @@ impl ConfigDesk {
         }
     }
 
+    /// The saved id lists. A failed first read never fails the page: it is
+    /// logged, every list shows `env` for this answer, and the next read retries.
+    pub(super) async fn saved_lists(&self) -> Vec<IdList> {
+        let saves = {
+            let cached = self.saved.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some(lists) = &cached.lists {
+                return lists.clone();
+            }
+            cached.saves
+        };
+        match self.store.saved_lists().await {
+            Ok(saved) => {
+                let mut cached = self.saved.lock().unwrap_or_else(PoisonError::into_inner);
+                // A save landed during the read: the answer may predate it.
+                if cached.saves == saves {
+                    cached.lists = Some(saved.clone());
+                }
+                saved
+            }
+            // Store error text may carry paths, so only the event is logged.
+            Err(_) => {
+                crate::runtime::logging::event(
+                    "WARN",
+                    "config_saved_lists_unreadable",
+                    serde_json::json!({}),
+                );
+                Vec::new()
+            }
+        }
+    }
+
+    /// A committed list save: that list now has a row.
+    pub(super) fn note_saved(&self, list: IdList) {
+        let mut cached = self.saved.lock().unwrap_or_else(PoisonError::into_inner);
+        cached.saves += 1;
+        if let Some(lists) = cached.lists.as_mut()
+            && !lists.contains(&list)
+        {
+            lists.push(list);
+        }
+    }
+
     pub(super) async fn catalog(&self) -> CatalogRead {
         match &self.models {
             Some(models) => models.read().await,
@@ -296,6 +364,7 @@ impl ConfigDesk {
         missing
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn view(
         &self,
         settings: &RuntimeSettings,
@@ -304,7 +373,15 @@ impl ConfigDesk {
         roles: &[RoleEntry],
         notices: Vec<String>,
         last_digest: Option<dto::LastDigest>,
+        saved: &[IdList],
     ) -> ConfigView {
+        let source = |list: IdList| {
+            if saved.contains(&list) {
+                "saved"
+            } else {
+                "env"
+            }
+        };
         let missing_env = self.missing_env(settings);
         let choices = self.profile_choices_for(settings);
         let persona = dto::persona(
@@ -321,6 +398,10 @@ impl ConfigDesk {
             watching: dto::Watching {
                 paused: settings.watching.paused,
                 extract_enabled: settings.watching.extract_enabled,
+                channel_ids: settings.watching.channel_ids.clone(),
+                channel_ids_source: source(IdList::WatchedChannels),
+                category_ids: settings.watching.category_ids.clone(),
+                category_ids_source: source(IdList::WatchedCategories),
             },
             chatbot: dto::Chatbot {
                 enabled: settings.chatbot.enabled,
@@ -328,6 +409,8 @@ impl ConfigDesk {
                 missing_env,
                 member_rate: settings.chatbot.member_rate.into(),
                 guild_rate: settings.chatbot.guild_rate.into(),
+                category_ids: settings.chatbot.category_ids.clone(),
+                category_ids_source: source(IdList::ChatCategories),
             },
             notifications: dto::Notifications {
                 quiet_mode: settings.notifications.quiet_mode,
@@ -453,27 +536,6 @@ impl ConfigDesk {
                 copy: ids(&posting),
             },
             EnvRow {
-                key: "KANADE_WATCH_CHANNEL_IDS",
-                label: "Watched channels",
-                value: named(&settings.watching.channel_ids),
-                reason: "Watching a new channel is a deliberate deploy.",
-                copy: ids(&settings.watching.channel_ids),
-            },
-            EnvRow {
-                key: "KANADE_WATCH_CATEGORY_IDS",
-                label: "Watched categories",
-                value: named(&settings.watching.category_ids),
-                reason: "Watching a whole category is a deliberate deploy, like channels.",
-                copy: ids(&settings.watching.category_ids),
-            },
-            EnvRow {
-                key: "KANADE_CHAT_CATEGORY_IDS",
-                label: "Chat categories",
-                value: named(&settings.chatbot.category_ids),
-                reason: "The chatbot answers in every channel of these categories; set with the channel layout.",
-                copy: ids(&settings.chatbot.category_ids),
-            },
-            EnvRow {
                 key: "KANADE_CHAT_PILOT_ROLE_ID",
                 label: "Chat pilot role",
                 value: set(facts.chat_pilot_role_id.as_ref()),
@@ -516,4 +578,69 @@ fn groups_summary(groups: &[CapacityGroup]) -> String {
         .collect();
     let noun = if groups.len() == 1 { "group" } else { "groups" };
     format!("{} {noun}: {}", groups.len(), each.join(", "))
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::sync::Notify;
+
+    use super::*;
+
+    /// A store whose list read waits for `gate`, to interleave a save.
+    #[derive(Default)]
+    struct Gated {
+        lists: Mutex<Vec<IdList>>,
+        entered: Notify,
+        gate: Notify,
+    }
+
+    impl SettingsPort for Gated {
+        fn save(
+            &self,
+            _: Section,
+            _: Option<SettingsChange>,
+        ) -> ConfigFuture<'_, Result<(), SettingsError>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn saved_lists(&self) -> ConfigFuture<'_, Result<Vec<IdList>, SettingsError>> {
+            Box::pin(async move {
+                let lists = self.lists.lock().unwrap().clone();
+                self.entered.notify_one();
+                self.gate.notified().await;
+                Ok(lists)
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn a_list_read_that_began_before_a_save_is_never_cached() {
+        let store = Arc::new(Gated::default());
+        let desk = ConfigDesk::new(ConfigInputs {
+            settings: RuntimeSettings::default(),
+            store: store.clone(),
+            models: None,
+            facts: ConfigFacts {
+                timezone: "UTC".into(),
+                model_gateway: None,
+                model_permits: 1,
+                model_groups: Vec::new(),
+                chat_pilot_role_id: None,
+            },
+            personas: None,
+        });
+        let save = async {
+            store.entered.notified().await;
+            store.lists.lock().unwrap().push(IdList::ChatCategories);
+            desk.note_saved(IdList::ChatCategories);
+            store.gate.notify_one();
+        };
+        let (stale, ()) = tokio::join!(desk.saved_lists(), save);
+        assert!(stale.is_empty(), "the read began before the save");
+        // The stale answer was not kept: the next read asks the store again.
+        store.gate.notify_one();
+        assert_eq!(desk.saved_lists().await, [IdList::ChatCategories]);
+        // Now cached: no store read (the gate holds no permit).
+        assert_eq!(desk.saved_lists().await, [IdList::ChatCategories]);
+    }
 }

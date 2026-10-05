@@ -148,6 +148,7 @@ pub fn interaction(
             prompt_tokens: round.prompt_tokens,
             completion_tokens: round.completion_tokens,
             prompt_estimate: round.prompt_estimate,
+            request_ids: round.request_ids.clone(),
         })
         .collect();
     ChatInteraction {
@@ -175,6 +176,7 @@ pub fn interaction(
         profile: None,
         profile_source: None,
         error_code: generation.failure.as_ref().map(|f| f.code().to_owned()),
+        session_id: generation.session_id.clone(),
     }
 }
 

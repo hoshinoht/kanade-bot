@@ -19,6 +19,9 @@ pub(in crate::infrastructure::llm) struct Gate<'a> {
     tag: Option<&'a str>,
     /// The last admitted request as it went out.
     sent: Option<SentRequest>,
+    /// Every correlation id handed to the provider, in order; the session's
+    /// own list, so a cancelled call still keeps the id it sent.
+    sent_ids: Option<&'a mut Vec<String>>,
 }
 
 pub(in crate::infrastructure::llm) enum Denied {
@@ -49,12 +52,25 @@ impl<'a> Gate<'a> {
             attempt: None,
             tag: None,
             sent: None,
+            sent_ids: None,
         }
     }
 
-    pub(in crate::infrastructure::llm) fn tagged(mut self, tag: &'a str) -> Self {
+    /// Tags each request `{tag}-{n}` and appends every id sent to `sent_ids`.
+    pub(in crate::infrastructure::llm) fn tagged(
+        mut self,
+        tag: &'a str,
+        sent_ids: &'a mut Vec<String>,
+    ) -> Self {
         self.tag = Some(tag);
+        self.sent_ids = Some(sent_ids);
         self
+    }
+
+    pub(super) fn note_request_id(&mut self, id: &str) {
+        if let Some(ids) = self.sent_ids.as_deref_mut() {
+            ids.push(id.to_owned());
+        }
     }
 
     pub(super) fn note_sent(&mut self, sent: SentRequest) {
@@ -84,6 +100,7 @@ impl<'a> Gate<'a> {
             attempt: None,
             tag: None,
             sent: None,
+            sent_ids: None,
         }
     }
 

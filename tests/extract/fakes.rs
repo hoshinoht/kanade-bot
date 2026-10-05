@@ -38,8 +38,8 @@ use kanade::infrastructure::llm::governor::{
 };
 use kanade::infrastructure::llm::identity::Member;
 use kanade::infrastructure::llm::{
-    ChatRequest, CompletionFuture, CompletionResponse, ExecutionLimits, FakeAction, FakeProvider,
-    FinishReason, LlmProvider, RetryPolicy, Usage,
+    CapabilityFuture, ChatRequest, CompletionFuture, CompletionResponse, ExecutionLimits,
+    FakeAction, FakeProvider, FinishReason, LlmProvider, ModelCapabilities, RetryPolicy, Usage,
 };
 use kanade::infrastructure::store::{MemoryScheduleStore, SqliteStore};
 use tokio::sync::mpsc;
@@ -405,6 +405,11 @@ pub struct Model {
     pub panics: Mutex<HashSet<usize>>,
     /// While set, each call waits for one permit before it answers.
     pub gate: Mutex<Option<Arc<tokio::sync::Semaphore>>>,
+    /// Published capabilities; `None` (the default) sends untagged, unshaped
+    /// requests, as when the gateway listing is unavailable.
+    pub caps: Mutex<Option<ModelCapabilities>>,
+    /// The `x-request-id`s tagged calls carried, in order.
+    pub request_ids: Mutex<Vec<String>>,
 }
 
 impl Model {
@@ -440,6 +445,25 @@ impl LlmProvider for Model {
             }
             answer.await
         })
+    }
+
+    fn capabilities<'a>(
+        &'a self,
+        _model: &'a str,
+        _deadline: tokio::time::Instant,
+    ) -> CapabilityFuture<'a> {
+        let caps = self.caps.lock().unwrap().clone();
+        Box::pin(async move { caps })
+    }
+
+    fn complete_tagged(
+        &self,
+        request: &ChatRequest,
+        _capabilities: &ModelCapabilities,
+        request_id: &str,
+    ) -> CompletionFuture<'_> {
+        self.request_ids.lock().unwrap().push(request_id.to_owned());
+        self.complete(request)
     }
 }
 
@@ -478,6 +502,8 @@ pub fn client(actions: Vec<FakeAction>, grouped: bool) -> (Arc<Model>, Arc<Model
         calls: AtomicUsize::new(0),
         panics: Mutex::new(HashSet::new()),
         gate: Mutex::new(None),
+        caps: Mutex::new(None),
+        request_ids: Mutex::new(Vec::new()),
     });
     let retry = RetryPolicy {
         total_deadline: Duration::from_secs(30),

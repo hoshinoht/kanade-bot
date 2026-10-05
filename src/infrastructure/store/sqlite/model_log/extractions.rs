@@ -4,8 +4,8 @@ use sqlx::SqliteConnection;
 use sqlx::sqlite::SqliteRow;
 
 use super::{
-    instant, json_text, optional_signed, optional_text, read_instant, read_json, read_list,
-    read_optional_u64, read_u64, text,
+    instant, json_text, optional_list, optional_signed, optional_text, read_instant, read_json,
+    read_list, read_optional_list, read_optional_u64, read_u64, text,
 };
 use crate::domain::model_log::{
     ExtractionFilter, ExtractionLog, ExtractionOutcome, ExtractionRefusal, LogCursor, LogFacets,
@@ -18,13 +18,14 @@ use crate::infrastructure::store::sqlite::schedule::store_error;
 const COLUMNS: &str = "e.id, e.at, e.channel_id, e.member_ids, e.model, e.reasoning, e.prompt, \
     e.raw_response, e.latency_ms, e.request_count, e.outcome, e.error, e.guardrail, \
     e.message_ids, e.proposal_ids, e.refusals, e.prompt_tokens, e.completion_tokens, \
-    e.prompt_estimate, e.reasoning_content, e.reasoning_tokens";
+    e.prompt_estimate, e.reasoning_content, e.reasoning_tokens, e.session_id, e.request_ids";
 
 /// [`COLUMNS`] without the prompt and response bodies (list pages).
 const LIST_COLUMNS: &str = "e.id, e.at, e.channel_id, e.member_ids, e.model, e.reasoning, \
     '' AS prompt, '' AS raw_response, e.latency_ms, e.request_count, e.outcome, e.error, \
     e.guardrail, e.message_ids, e.proposal_ids, e.refusals, e.prompt_tokens, \
-    e.completion_tokens, e.prompt_estimate, NULL AS reasoning_content, e.reasoning_tokens";
+    e.completion_tokens, e.prompt_estimate, NULL AS reasoning_content, e.reasoning_tokens, \
+    e.session_id, e.request_ids";
 
 fn refusals_of(row: &SqliteRow) -> Result<Vec<ExtractionRefusal>, StoreError> {
     let value = read_json(row, "refusals")?;
@@ -65,6 +66,8 @@ fn log_of(row: &SqliteRow) -> Result<ExtractionLog, StoreError> {
         prompt_tokens: read_optional_u64(row, "prompt_tokens")?,
         completion_tokens: read_optional_u64(row, "completion_tokens")?,
         prompt_estimate: read_optional_u64(row, "prompt_estimate")?,
+        session_id: optional_text(row, "session_id")?,
+        request_ids: read_optional_list(row, "request_ids")?,
     })
 }
 
@@ -76,9 +79,9 @@ pub(super) async fn insert(
         "INSERT INTO extractions (id, at, channel_id, member_ids, model, reasoning, prompt, \
          raw_response, latency_ms, request_count, outcome, error, guardrail, message_ids, \
          proposal_ids, refusals, prompt_tokens, completion_tokens, prompt_estimate, \
-         reasoning_content, reasoning_tokens) \
+         reasoning_content, reasoning_tokens, session_id, request_ids) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
-         ?18, ?19, ?20, ?21)",
+         ?18, ?19, ?20, ?21, ?22, ?23)",
     )
     .bind(&log.id)
     .bind(instant(&log.at)?)
@@ -106,6 +109,8 @@ pub(super) async fn insert(
     .bind(optional_signed(log.prompt_estimate, "prompt_estimate")?)
     .bind(&log.reasoning_content)
     .bind(optional_signed(log.reasoning_tokens, "reasoning_tokens")?)
+    .bind(&log.session_id)
+    .bind(optional_list(&log.request_ids))
     .execute(&mut *conn)
     .await
     .map_err(store_error)?;

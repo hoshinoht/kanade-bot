@@ -324,6 +324,9 @@ impl Store {
             "prompt_estimate": c.estimate,
             "reasoning_content": if c.id == "x-bm" { Some("The messages agree on Wednesday at the existing time.") } else { None },
             "reasoning_tokens": if c.id == "x-bm" { Some(24) } else { None::<u32> },
+            // Invented gateway ids; older calls predate them.
+            "session_id": (c.id == "x-bm").then_some("kanade-extraction-1a2b3c4d-3"),
+            "request_ids": if c.id == "x-bm" { vec!["kanade-extraction-1a2b3c4d-3-1"] } else { Vec::new() },
             // Older legacy calls were logged before the context was.
             "context": if c.model == MODEL { json!({"window": 8_192, "reserve": 2_500, "source": "local_default"}) } else { Value::Null },
         }))
@@ -512,6 +515,13 @@ mod tests {
         let absent = s.extraction("x-limbo").ok().expect("unreported");
         assert!(absent["reasoning_content"].is_null());
         assert!(absent["reasoning_tokens"].is_null());
+        assert_eq!(bm["session_id"], "kanade-extraction-1a2b3c4d-3");
+        assert_eq!(
+            bm["request_ids"],
+            serde_json::json!(["kanade-extraction-1a2b3c4d-3-1"])
+        );
+        assert!(absent["session_id"].is_null());
+        assert_eq!(absent["request_ids"], serde_json::json!([]));
     }
 
     #[test]

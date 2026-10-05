@@ -84,6 +84,10 @@ pub(super) fn observe(event: &ChatEvent<'_>, readiness: impl FnOnce() -> Readine
                     "tools_ms": generation.tools_ms,
                     "clean_retry": generation.clean_retry,
                     "withheld": interaction.withheld,
+                    // The gateway's own log keys: correlation ids only. The
+                    // session's full list, so a failed request is named too.
+                    "session_id": interaction.session_id,
+                    "request_ids": generation.request_ids,
                 }),
             );
         }
@@ -147,6 +151,7 @@ mod tests {
             profile: None,
             profile_source: None,
             error_code: None,
+            session_id: None,
         }
     }
 
@@ -172,13 +177,36 @@ mod tests {
     #[test]
     fn chat_answered_names_persona_profile_and_model_without_content() {
         logging::capture();
-        let (row, provenance) = (row(), provenance());
+        let (mut row, provenance) = (row(), provenance());
+        row.session_id = Some("kanade-chat-0000abcd-9".into());
+        row.rounds = vec![crate::domain::model_log::ChatRound {
+            model: "chat-model".into(),
+            reasoning: None,
+            reasoning_content: None,
+            reasoning_tokens: None,
+            finish_reason: Some("stop".into()),
+            latency_ms: Some(700),
+            tool_bundles: Vec::new(),
+            tools: Vec::new(),
+            tool_calls: json!([]),
+            response: Some("SECRET REPLY".into()),
+            route: None,
+            clean: false,
+            prompt_tokens: None,
+            completion_tokens: None,
+            prompt_estimate: None,
+            request_ids: vec![
+                "kanade-chat-0000abcd-9-1".into(),
+                "kanade-chat-0000abcd-9-2".into(),
+            ],
+        }];
         let generation = Generation {
             reply: "SECRET REPLY".into(),
             rounds: 2,
             tool_calls: vec!["list_runs".into()],
             model_ms: 700,
             tools_ms: 50,
+            request_ids: row.rounds[0].request_ids.clone(),
             ..Generation::default()
         };
         observe(
@@ -202,6 +230,11 @@ mod tests {
         assert_eq!(line["reasoning"], "low");
         assert_eq!(line["route"], "homelab");
         assert_eq!(line["tools"], json!(["list_runs"]));
+        assert_eq!(line["session_id"], "kanade-chat-0000abcd-9");
+        assert_eq!(
+            line["request_ids"],
+            json!(["kanade-chat-0000abcd-9-1", "kanade-chat-0000abcd-9-2"])
+        );
         let text = line.to_string();
         for private in ["SECRET", "4242", "1001"] {
             assert!(!text.contains(private), "{private} leaked: {text}");
@@ -212,11 +245,14 @@ mod tests {
     fn an_external_failure_is_labeled_unmasked() {
         use crate::chat::answer::AnswerFailure;
         logging::capture();
-        let (row, provenance) = (row(), provenance());
+        let (mut row, provenance) = (row(), provenance());
+        // The failed request answered no round: only the session list names it.
+        row.session_id = Some("kanade-chat-0000abcd-a".into());
         let generation = Generation {
             external: true,
             external_unmasked: true,
             failure: Some(AnswerFailure::Malformed),
+            request_ids: vec!["kanade-chat-0000abcd-a-1".into()],
             ..Generation::default()
         };
         observe(
@@ -232,6 +268,8 @@ mod tests {
         let line = logging::captured().remove(0);
         assert_eq!(line["event"], "chat_failed");
         assert_eq!(line["route"], "external_unmasked");
+        assert_eq!(line["session_id"], "kanade-chat-0000abcd-a");
+        assert_eq!(line["request_ids"], json!(["kanade-chat-0000abcd-a-1"]));
         assert!(!line.as_object().unwrap().contains_key("masking"));
         let text = line.to_string();
         for private in ["SECRET", "4242", "1001"] {

@@ -242,6 +242,9 @@ async fn a_withheld_question_is_never_shown_or_searchable() {
     assert_eq!(turn["rounds"][0]["reasoning_content"], "[message withheld]");
     assert_eq!(turn["rounds"][0]["reasoning_tokens"], 8);
     assert_eq!(turn["reasoning_tokens"], 8);
+    // A row without correlation reads as none recorded.
+    assert_eq!(turn["session_id"], json!(null));
+    assert_eq!(turn["rounds"][0]["request_ids"], json!([]));
     assert_eq!(turn["member"], json!({"id": "1002", "name": "Bobby"}));
     assert!(!reply.text().contains("forbidden"), "{}", reply.text());
 }
@@ -268,11 +271,13 @@ async fn chat_detail_is_the_row_plus_the_turn_and_unknown_ids_are_404() {
              "model": "kanata/chat", "effort": "low", "route": "homelab", "latency_ms": 1000,
              "prompt_tokens": 1200, "completion_tokens": 30, "prompt_estimate": 1000,
              "reasoning_content": "Look up Kalos before answering.", "reasoning_tokens": 12,
+             "request_ids": ["kanade-chat-0000abcd-7-1", "kanade-chat-0000abcd-7-2"],
              "guardrail": clean},
             {"round": 2, "requested_tools": [], "finish": "stop", "model": "kanata/chat",
              "effort": null, "route": "external_masked", "latency_ms": null,
              "prompt_tokens": null, "completion_tokens": null, "prompt_estimate": 1100,
              "reasoning_content": "Use the read result.", "reasoning_tokens": null,
+             "request_ids": ["kanade-chat-0000abcd-7-3"],
              "guardrail": {"clean": true, "content_filter": false}},
         ])
     );
@@ -282,6 +287,7 @@ async fn chat_detail_is_the_row_plus_the_turn_and_unknown_ids_are_404() {
     assert_eq!(turn["route"], "external_masked");
     assert_eq!(turn["error"], json!(null));
     assert_eq!(turn["error_code"], json!(null));
+    assert_eq!(turn["session_id"], "kanade-chat-0000abcd-7");
     assert_eq!(turn["guardrail"], json!({"pseudonymized": true}));
     assert_eq!(turn["masked"], false, "no Model view stored");
     assert_eq!(turn["model_view"], json!(null));

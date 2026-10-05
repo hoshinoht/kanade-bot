@@ -95,7 +95,7 @@ test('turn facts: rounds show model, effort, route and latency; calls sit under 
   // B_ChatTrace: one card per round; the round's calls sit inside it.
   const first = page.getByRole('region', { name: 'Round 1' });
   await expect(first.locator('.chat-round__head > *')).toHaveText(['Round 1', 'kanata/chat', 'effort low', 'Homelab', '3.0 s']);
-  await expect(first.locator('dd')).toHaveText(['tool_calls', 'knowledge.read', '—']);
+  await expect(first.locator('dd')).toHaveText(['tool_calls', 'knowledge.read', '—', 'kanade-chat-1a2b3c4d-7-1, kanade-chat-1a2b3c4d-7-2']);
   await expect(first.locator('.chat-tool')).toContainText(['knowledge.read']);
   await expect(first.locator('.chat-tool')).toContainText('12 ms');
   await expect(first.locator('.chat-tool__return')).toContainText('Return: “');

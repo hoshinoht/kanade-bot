@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 pub use audit::{RowDiff, SettingsChange, SettingsChangeQuery, diff_rows};
-pub use codec::Section;
+pub use codec::{IdList, Section};
 pub use model::{
     Chatbot, ContextRole, ContextSettings, DEFAULT_DEFLECTION_LINE, DEFAULT_RUN_MINUTES,
     LOCAL_CONTEXT_WARNING, LOCAL_CONTEXT_WARNING_TOKENS, MAX_CONTEXT_TOKENS, MAX_DEFLECTION_CHARS,

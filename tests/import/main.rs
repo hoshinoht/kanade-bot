@@ -728,11 +728,13 @@ async fn refresh_logs_replaces_only_imported_logs_and_is_idempotent() {
             prompt_tokens: None,
             completion_tokens: None,
             prompt_estimate: None,
+            request_ids: Vec::new(),
         }],
         persona: None,
         profile: None,
         profile_source: None,
         error_code: None,
+        session_id: None,
     };
     store.record_chat(stale.clone()).await.unwrap();
     stale.id = "native-1".into();

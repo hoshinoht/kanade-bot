@@ -376,8 +376,12 @@ async fn rows_logged_before_context_facts_still_read_after_a_reopen() {
          ALTER TABLE extractions DROP COLUMN reasoning_tokens;
          ALTER TABLE chat_rounds DROP COLUMN reasoning_content;
          ALTER TABLE chat_rounds DROP COLUMN reasoning_tokens;
+         ALTER TABLE extractions DROP COLUMN session_id;
+         ALTER TABLE extractions DROP COLUMN request_ids;
+         ALTER TABLE chat_interactions DROP COLUMN session_id;
+         ALTER TABLE chat_rounds DROP COLUMN request_ids;
          DROP TABLE settings_changes;
-         DELETE FROM schema_migrations WHERE version IN (21, 22, 23);
+         DELETE FROM schema_migrations WHERE version IN (21, 22, 23, 24);
          UPDATE store_meta SET schema_version = 20;",
     )
     .await;
@@ -420,6 +424,16 @@ async fn rows_logged_before_context_facts_still_read_after_a_reopen() {
         ),
         (None, None)
     );
+    // Rows from before 0024 load with no correlation recorded.
+    assert_eq!(
+        (&extraction.session_id, extraction.request_ids.len()),
+        (&None, 0)
+    );
+    assert_eq!(
+        (&chat.session_id, chat.rounds[0].request_ids.len()),
+        (&None, 0)
+    );
+    assert!(listed.items[0].request_ids.is_empty());
     let chats = store
         .list_chats(&ChatFilter {
             limit: 10,
@@ -432,11 +446,13 @@ async fn rows_logged_before_context_facts_still_read_after_a_reopen() {
     let store = SqliteStore::open(&config)
         .await
         .expect("reopen after additive migration");
-    assert_eq!(store.schema_version().await.expect("version"), 23);
+    assert_eq!(store.schema_version().await.expect("version"), 24);
     let mut extraction = extraction;
     extraction.id = "x-reasoning".into();
     extraction.reasoning_content = Some("Stored extraction reasoning.".into());
     extraction.reasoning_tokens = Some(24);
+    extraction.session_id = Some("kanade-extraction-0000abcd-3".into());
+    extraction.request_ids = vec!["kanade-extraction-0000abcd-3-1".into()];
     store
         .record_extraction(extraction.clone())
         .await
@@ -445,6 +461,8 @@ async fn rows_logged_before_context_facts_still_read_after_a_reopen() {
     chat.id = "c-reasoning".into();
     chat.rounds[0].reasoning_content = Some("Stored chat reasoning.".into());
     chat.rounds[0].reasoning_tokens = Some(32);
+    chat.session_id = Some("kanade-chat-0000abcd-4".into());
+    chat.rounds[0].request_ids = vec!["kanade-chat-0000abcd-4-1".into()];
     store
         .record_chat(chat.clone())
         .await
@@ -488,13 +506,17 @@ async fn the_profanity_migration_keeps_existing_chat_rows_and_their_children() {
          VALUES ('c-plain', 0, 'm', '[]', '[\"get_schedule\"]', '[]');
          INSERT INTO chat_tools VALUES ('c-plain', 'get_schedule');
          INSERT INTO chat_masked VALUES ('c-masked', '[]', 'a2', '[]');
+         ALTER TABLE extractions DROP COLUMN session_id;
+         ALTER TABLE extractions DROP COLUMN request_ids;
+         ALTER TABLE chat_interactions DROP COLUMN session_id;
+         ALTER TABLE chat_rounds DROP COLUMN request_ids;
          DROP TABLE settings_changes;
          DELETE FROM schema_migrations WHERE version >= 22;
          UPDATE store_meta SET schema_version = 21;",
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 23);
+    assert_eq!(store.schema_version().await.expect("version"), 24);
     let plain = store
         .load_chat("c-plain")
         .await

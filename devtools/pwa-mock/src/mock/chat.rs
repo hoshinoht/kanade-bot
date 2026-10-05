@@ -478,6 +478,12 @@ impl Store {
                     "prompt_estimate": round_usage(&t, i).2,
                     "reasoning_content": if t.id == "c-guide" && i == 0 { Some("Read the checked-in Limbo notes before answering.") } else { None },
                     "reasoning_tokens": if t.id == "c-guide" && i == 0 { Some(32) } else { None::<u32> },
+                    // The guide turn's first round was retried once; older turns predate ids.
+                    "request_ids": match (t.id == "c-guide", i) {
+                        (true, 0) => vec![format!("{GUIDE_SESSION}-1"), format!("{GUIDE_SESSION}-2")],
+                        (true, n) => vec![format!("{GUIDE_SESSION}-{}", n + 2)],
+                        _ => Vec::new(),
+                    },
                     "guardrail": {
                         // A reply-side profanity hit spends the clean retry too.
                         "clean": (t.outcome == "clean_retry" || t.profanity.is_some_and(|hit| hit.0 == "reply"))
@@ -500,9 +506,13 @@ impl Store {
             format!("{{\"role\":\"assistant\",\"content\":{:?}}}", t.said)
         });
         Self::turn_facts(&t, &mut row);
+        row["session_id"] = json!((t.id == "c-guide").then_some(GUIDE_SESSION));
         Ok(row)
     }
 }
+
+/// The guide turn's gateway correlation stem (an invented id).
+const GUIDE_SESSION: &str = "kanade-chat-1a2b3c4d-7";
 
 #[cfg(test)]
 mod tests {
@@ -523,6 +533,24 @@ mod tests {
         let absent = s.chat_turn("c-when").ok().expect("old turn");
         assert!(absent["reasoning_tokens"].is_null());
         assert!(absent["rounds"][0]["reasoning_content"].is_null());
+    }
+
+    #[test]
+    fn correlation_fixtures_number_requests_within_the_session() {
+        let s = store();
+        let guide = s.chat_turn("c-guide").ok().expect("guide");
+        assert_eq!(guide["session_id"], super::GUIDE_SESSION);
+        assert_eq!(
+            guide["rounds"][0]["request_ids"],
+            serde_json::json!(["kanade-chat-1a2b3c4d-7-1", "kanade-chat-1a2b3c4d-7-2"])
+        );
+        assert_eq!(
+            guide["rounds"][1]["request_ids"],
+            serde_json::json!(["kanade-chat-1a2b3c4d-7-3"])
+        );
+        let absent = s.chat_turn("c-when").ok().expect("old turn");
+        assert!(absent["session_id"].is_null());
+        assert_eq!(absent["rounds"][0]["request_ids"], serde_json::json!([]));
     }
 
     fn ids(v: &serde_json::Value) -> Vec<String> {

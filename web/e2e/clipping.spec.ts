@@ -23,7 +23,7 @@ interface Allow {
 const CHAT = ['admin/chat', 'admin/chat/c-move', 'admin/chat/c-when', 'admin/chat/c-safe-line'];
 const INBOX = ['admin/inbox', 'admin/inbox?tab=self_service', 'admin/inbox (item open)'];
 const EXTRACTIONS = ['admin/extractions', 'admin/extractions/x-kalos'];
-const SECTIONS = ['pings', 'run-lengths', 'watching', 'chatbot', 'profanity', 'persona', 'models', 'self-service', 'notifications', 'digest', 'rescan', 'access', 'theme', 'env'];
+const SECTIONS = ['pings', 'run-lengths', 'watching', 'chatbot', 'profanity', 'persona', 'models', 'self-service', 'notifications', 'digest', 'channels', 'rescan', 'access', 'theme', 'env'];
 const CONFIG = ['admin/config', ...SECTIONS.map((key) => `admin/config?section=${key}`)];
 
 /** The one allow-list. Keep every entry specific and give it a reason. */

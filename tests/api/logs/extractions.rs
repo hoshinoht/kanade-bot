@@ -135,6 +135,11 @@ async fn extraction_detail_carries_the_call_its_proposals_and_refusals() {
         "The party agreed on Wednesday."
     );
     assert_eq!(detail["reasoning_tokens"], 24);
+    assert_eq!(detail["session_id"], "kanade-extraction-0000abcd-8");
+    assert_eq!(
+        detail["request_ids"],
+        json!(["kanade-extraction-0000abcd-8-1"])
+    );
     assert_eq!(
         detail["prompt"],
         "Messages:\n[Alice] kalos wed 9pm instead?"
@@ -177,6 +182,8 @@ async fn extraction_detail_carries_the_call_its_proposals_and_refusals() {
     assert_valid(EXTRACTION, "failed", &failed);
     assert_eq!(failed["reasoning_content"], json!(null));
     assert_eq!(failed["reasoning_tokens"], json!(null));
+    assert_eq!(failed["session_id"], json!(null));
+    assert_eq!(failed["request_ids"], json!([]));
     assert_eq!(failed["refusals"], json!([]));
     assert_eq!(failed["messages"], json!([]));
     assert_eq!(

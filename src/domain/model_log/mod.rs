@@ -21,6 +21,6 @@ pub use port::{MessageUpsert, ModelLogStore, ReadMessage};
 pub use reasoning::{REASONING_CAP, REASONING_TRUNCATED, capped_reasoning};
 pub use records::{
     AllowanceOverride, ChatInteraction, ChatRound, ExtractionLog, ExtractionRefusal,
-    PROFILE_SOURCES, ROUTES, RescanJob, WatchedMessage, in_order,
+    PROFILE_SOURCES, ROUTES, RescanJob, WatchedMessage, in_order, is_correlation_id,
 };
 pub use retention::{DEFAULT_LOG_RETENTION, PRUNE_BATCH, PruneCounts, retention_cutoff};

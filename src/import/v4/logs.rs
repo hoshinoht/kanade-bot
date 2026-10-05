@@ -98,6 +98,7 @@ fn rounds(row: &V4Chat, model: &str) -> Vec<ChatRound> {
             prompt_tokens: None,
             completion_tokens: None,
             prompt_estimate: None,
+            request_ids: Vec::new(),
         }];
     }
     recorded
@@ -136,6 +137,7 @@ fn rounds(row: &V4Chat, model: &str) -> Vec<ChatRound> {
                 prompt_tokens: None,
                 completion_tokens: None,
                 prompt_estimate: None,
+                request_ids: Vec::new(),
             }
         })
         .collect()
@@ -183,6 +185,7 @@ pub fn chat(row: &V4Chat, at: DateTime<Utc>) -> ChatInteraction {
         profile: None,
         profile_source: None,
         error_code: None,
+        session_id: None,
     }
 }
 
@@ -243,6 +246,8 @@ pub fn extraction(
         prompt_tokens: None,
         completion_tokens: None,
         prompt_estimate: None,
+        request_ids: Vec::new(),
+        session_id: None,
     }
 }
 

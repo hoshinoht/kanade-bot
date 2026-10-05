@@ -60,6 +60,7 @@
     <p class="settings__box settings__box--risk" role="alert">
       Not configured — set {#each chatbot.missing_env as name, i (i)}{i > 0 ? ' and ' : ''}<code>{name}</code>{/each} in the
       environment and restart. Until both are set the bot answers nobody.
+      {#if chatbot.missing_env.includes('KANADE_CHAT_CATEGORY_IDS')}Chat categories can also be saved in <a href="/config?section=channels">Channels</a>, with no restart.{/if}
     </p>
   {/if}
   <SwitchCard

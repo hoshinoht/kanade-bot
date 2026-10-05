@@ -3,6 +3,15 @@
   "$id": "https://kanade.invalid/api-schemas/config.json",
   "title": "Runtime settings (GET/PATCH /api/admin/config) and the channel access report",
   "$defs": {
+    "IdList": {
+      "description": "Discord ids as strings, in saved order (the server only stores canonical positive ids; like other channel id fields the schema leaves the format open).",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "IdListSource": {
+      "description": "`saved` once an explicit list save stored the list (it then overrides the env seed); `env` while it follows the seed.",
+      "enum": ["saved", "env"]
+    },
     "SelfServiceMode": { "enum": ["cards_and_link", "link_first", "cards_only"] },
     "Rate": {
       "type": "object",
@@ -245,22 +254,28 @@
         "watching": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["paused", "extract_enabled"],
+          "required": ["paused", "extract_enabled", "channel_ids", "channel_ids_source", "category_ids", "category_ids_source"],
           "properties": {
             "paused": { "type": "boolean" },
-            "extract_enabled": { "type": "boolean" }
+            "extract_enabled": { "type": "boolean" },
+            "channel_ids": { "$ref": "#/$defs/IdList", "description": "Effective watched channel ids: the saved row, else KANADE_WATCH_CHANNEL_IDS." },
+            "channel_ids_source": { "$ref": "#/$defs/IdListSource" },
+            "category_ids": { "$ref": "#/$defs/IdList", "description": "Effective watched category ids: the saved row, else KANADE_WATCH_CATEGORY_IDS." },
+            "category_ids_source": { "$ref": "#/$defs/IdListSource" }
           }
         },
         "chatbot": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["enabled", "configured", "missing_env", "member_rate", "guild_rate"],
+          "required": ["enabled", "configured", "missing_env", "member_rate", "guild_rate", "category_ids", "category_ids_source"],
           "properties": {
             "enabled": { "type": "boolean" },
             "configured": { "type": "boolean" },
             "missing_env": { "type": "array", "items": { "type": "string" } },
             "member_rate": { "$ref": "#/$defs/Rate" },
-            "guild_rate": { "$ref": "#/$defs/Rate" }
+            "guild_rate": { "$ref": "#/$defs/Rate" },
+            "category_ids": { "$ref": "#/$defs/IdList", "description": "Effective chat category ids: the saved row, else KANADE_CHAT_CATEGORY_IDS." },
+            "category_ids_source": { "$ref": "#/$defs/IdListSource" }
           }
         },
         "notifications": {

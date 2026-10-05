@@ -375,6 +375,7 @@
               },
               "reasoning_content": { "$ref": "common.json#/$defs/NullableString", "description": "Response-only text, at most 64 KiB including a visible truncation marker; withheld when the turn is withheld. Never sent in a later request." },
               "reasoning_tokens": { "$ref": "#/$defs/TokenCount", "description": "Provider-reported reasoning tokens; independent of the usage pair. Null when absent, never substituted with 0." },
+              "request_ids": { "$ref": "common.json#/$defs/RequestIds", "description": "Every `x-request-id` this round sent, in order (`{session_id}-{n}`; transient retries and requeues included). Empty when none was recorded. Additive, optional for older clients/fixtures." },
               "guardrail": {
                 "type": "object",
                 "additionalProperties": false,
@@ -443,6 +444,10 @@
         "error_code": {
           "$ref": "common.json#/$defs/NullableString",
           "description": "Stable code: timeout, malformed, content_blocked, kept_calling_tools, context_budget, route_refused, identity_leak_blocked, rate_limited, a governor refusal (busy, queue_timeout, backend_unavailable, …) or a model error (upstream_timeout, invalid_output, …)."
+        },
+        "session_id": {
+          "$ref": "common.json#/$defs/CorrelationId",
+          "description": "The question session's gateway correlation stem (`kanade-chat-…`): every request it sent, failed ones included, went out as `{session_id}-{n}`. Null when not recorded (older rows, v4 imports, turns that sent no tagged request). Additive, optional for older clients/fixtures."
         },
         "guardrail": {
           "type": "object",

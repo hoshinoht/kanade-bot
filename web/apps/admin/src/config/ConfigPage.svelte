@@ -15,6 +15,7 @@
   import { directory } from '../names/directory.svelte';
   import { Resource, send } from '../resource.svelte';
   import AccessSection from './AccessSection.svelte';
+  import ChannelsSection from './ChannelsSection.svelte';
   import ChatbotSection from './ChatbotSection.svelte';
   import DigestSection from './DigestSection.svelte';
   import EnvSection from './EnvSection.svelte';
@@ -58,10 +59,11 @@
     { key: 'self-service', label: 'Self-service', group: 'Members', terms: 'public portal cards links how members are answered' },
     { key: 'notifications', label: 'Notifications', group: 'Members', terms: 'quiet mode pings' },
     { key: 'digest', label: 'Weekly digest', group: 'Members', terms: 'post channel week' },
+    { key: 'channels', label: 'Channels', group: 'Server', terms: 'watched channels categories chat categories ids environment seed' },
     { key: 'rescan', label: 'Re-read', group: 'Server', terms: 'channels extractor running' },
     { key: 'access', label: 'Channel access', group: 'Server', terms: 'manage messages permissions check' },
     { key: 'theme', label: 'Theme', group: 'Server', terms: 'colourway colorway mode system light dark' },
-    { key: 'env', label: 'Set in the environment', group: 'Read-only', terms: 'environment variables timezone categories' },
+    { key: 'env', label: 'Set in the environment', group: 'Read-only', terms: 'environment variables timezone' },
   ] as const;
   type Key = (typeof SECTIONS)[number]['key'];
 
@@ -231,6 +233,7 @@
       case 'pings': return c.pings.day_of_ping_time;
       case 'watching': return c.watching.paused ? 'paused' : 'on';
       case 'chatbot': return c.chatbot.enabled ? 'on' : 'off';
+      case 'channels': return `${c.watching.channel_ids.length}`;
       case 'profanity': return checks(c.profanity);
       case 'persona': return c.persona.personas.find((p) => p.key === c.persona.active)?.name ?? c.persona.active;
       // The roles that have a model, as on the board ("3").
@@ -264,6 +267,11 @@
       case 'self-service': return [`Portal ${hint(item)}`, c.self_service.effective_mode.replaceAll('_', ' ')];
       case 'notifications': return [`Quiet mode ${c.notifications.quiet_mode ? 'on' : 'off'}`];
       case 'digest': return ['Weekly post', 'Channel and preview'];
+      case 'channels': return [
+        `${c.watching.channel_ids.length} watched channels`,
+        `${c.watching.category_ids.length} watched categories`,
+        `${c.chatbot.category_ids.length} chat categories`,
+      ];
       case 'rescan': return [`${targets.data?.length ?? 0} available channels`];
       case 'access': return [`${missingManage.length} channels missing Manage Messages`];
       case 'theme': return [colorway, 'Kept in this browser'];
@@ -465,7 +473,7 @@
                       save({ watching: { paused: !on } }, on ? 'Watching resumed.' : 'Watching paused.', {
                         patch: { watching: { paused: on } },
                         done: on ? 'Watching paused again.' : 'Watching resumed again.',
-                      })}>Reads new messages in the watched channels and categories (set in the environment).</SwitchCard
+                      })}>Reads new messages in the watched channels and categories (set in <a href="/config?section=channels">Channels</a>).</SwitchCard
                   >
                   <SwitchCard
                     title={() => 'Extractor'}
@@ -484,6 +492,8 @@
                 </SettingsPanel>
               {:else if item.key === 'chatbot'}
                 <ChatbotSection chatbot={c.chatbot} {save} />
+              {:else if item.key === 'channels'}
+                <ChannelsSection watching={c.watching} chatbot={c.chatbot} {save} />
               {:else if item.key === 'profanity'}
                 <ProfanitySection profanity={c.profanity} {save} />
               {:else if item.key === 'persona'}

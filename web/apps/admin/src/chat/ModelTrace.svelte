@@ -2,6 +2,7 @@
   The Model trace tab (B_ChatTrace): one card per request round — model,
   effort, route and latency; finish, requested tools and guardrail; then the
   round's tool calls, each with its return line. Expand opens a call whole.
+  Request ids are the `x-request-id`s the round sent, to find it in Kanata's log.
 -->
 <script lang="ts">
   import type { ChatTurn, RoundGuardrail } from '@kanade/api-types';
@@ -34,6 +35,9 @@
           <div><dt class="cap">Finish</dt><dd class="mono">{r.finish || '—'}</dd></div>
           <div><dt class="cap">Requested tools</dt><dd class="mono">{r.requested_tools.join(', ') || 'none'}</dd></div>
           <div><dt class="cap">Guardrail</dt><dd>{flags(guard(r.round))}</dd></div>
+          {#if r.request_ids.length}
+            <div><dt class="cap">Request ids</dt><dd class="mono">{r.request_ids.join(', ')}</dd></div>
+          {/if}
         </dl>
         {#each r.calls as call, i (i)}
           <div class="chat-tool" data-fid="chat-tool">
@@ -52,4 +56,5 @@
       </section>
     {/each}
   </div>
+{:else if turn.session_id}<p class="note">No round answered. Gateway session <span class="mono">{turn.session_id}</span>.</p>
 {:else}<p class="note">No model was called.</p>{/if}

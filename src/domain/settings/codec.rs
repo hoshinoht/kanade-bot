@@ -32,6 +32,57 @@ pub enum Section {
     Profanity(Profanity),
     Schedule(Schedule),
     Posting(Posting),
+    /// One id list written alone: `Watching`/`Chatbot` saves never write their
+    /// lists, so a toggle save cannot store (and so freeze) an env-seeded list.
+    IdList(IdList, Vec<String>),
+}
+
+/// The Discord id lists an admin may replace, each its own row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IdList {
+    WatchedChannels,
+    WatchedCategories,
+    ChatCategories,
+}
+
+impl IdList {
+    pub const ALL: [Self; 3] = [
+        Self::WatchedChannels,
+        Self::WatchedCategories,
+        Self::ChatCategories,
+    ];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::WatchedChannels => keys::WATCHED_CHANNELS,
+            Self::WatchedCategories => keys::WATCHED_CATEGORIES,
+            Self::ChatCategories => keys::CHAT_CATEGORIES,
+        }
+    }
+
+    /// The settings section the list belongs to.
+    pub fn section(self) -> &'static str {
+        match self {
+            Self::WatchedChannels | Self::WatchedCategories => "watching",
+            Self::ChatCategories => "chatbot",
+        }
+    }
+
+    pub fn get(self, settings: &RuntimeSettings) -> &Vec<String> {
+        match self {
+            Self::WatchedChannels => &settings.watching.channel_ids,
+            Self::WatchedCategories => &settings.watching.category_ids,
+            Self::ChatCategories => &settings.chatbot.category_ids,
+        }
+    }
+
+    pub fn get_mut(self, settings: &mut RuntimeSettings) -> &mut Vec<String> {
+        match self {
+            Self::WatchedChannels => &mut settings.watching.channel_ids,
+            Self::WatchedCategories => &mut settings.watching.category_ids,
+            Self::ChatCategories => &mut settings.chatbot.category_ids,
+        }
+    }
 }
 
 type Rows = Vec<(&'static str, String)>;
@@ -401,12 +452,9 @@ pub(super) fn encode(section: &Section) -> Rows {
         Section::Watching(watching) => vec![
             (keys::PAUSED, flag_text(watching.paused)),
             (keys::EXTRACT_ENABLED, flag_text(watching.extract_enabled)),
-            (keys::WATCHED_CHANNELS, list_text(&watching.channel_ids)),
-            (keys::WATCHED_CATEGORIES, list_text(&watching.category_ids)),
         ],
         Section::Chatbot(chat) => vec![
             (keys::CHAT_MODE, flag_text(chat.enabled)),
-            (keys::CHAT_CATEGORIES, list_text(&chat.category_ids)),
             (keys::CHAT_RATE_COUNT, chat.member_rate.count.to_string()),
             (
                 keys::CHAT_RATE_WINDOW,
@@ -487,6 +535,7 @@ pub(super) fn encode(section: &Section) -> Rows {
                 posting.channel_id.clone().unwrap_or_default(),
             )]
         }
+        Section::IdList(list, ids) => vec![(list.key(), list_text(ids))],
     }
 }
 
@@ -500,8 +549,16 @@ pub(super) fn encode_checked(section: &Section) -> Result<Rows, SettingsError> {
     }
     let read_back = match section {
         Section::Pings(_) => Section::Pings(probe.pings),
-        Section::Watching(_) => Section::Watching(probe.watching),
-        Section::Chatbot(_) => Section::Chatbot(probe.chatbot),
+        // The lists are not this section's rows, so they read back as given.
+        Section::Watching(watching) => Section::Watching(Watching {
+            channel_ids: watching.channel_ids.clone(),
+            category_ids: watching.category_ids.clone(),
+            ..probe.watching
+        }),
+        Section::Chatbot(chat) => Section::Chatbot(Chatbot {
+            category_ids: chat.category_ids.clone(),
+            ..probe.chatbot
+        }),
         Section::Notifications(_) => Section::Notifications(probe.notifications),
         Section::SelfService(_) => Section::SelfService(probe.self_service),
         Section::Persona(_) => Section::Persona(probe.persona),
@@ -510,6 +567,7 @@ pub(super) fn encode_checked(section: &Section) -> Result<Rows, SettingsError> {
         Section::Profanity(_) => Section::Profanity(probe.profanity),
         Section::Schedule(_) => Section::Schedule(probe.schedule),
         Section::Posting(_) => Section::Posting(probe.posting),
+        Section::IdList(list, _) => Section::IdList(*list, list.get(&probe).clone()),
     };
     if read_back == *section {
         Ok(rows)
@@ -534,6 +592,7 @@ impl Section {
             Self::Profanity(_) => "profanity",
             Self::Schedule(_) => "schedule",
             Self::Posting(_) => "posting",
+            Self::IdList(list, _) => list.section(),
         }
     }
 }

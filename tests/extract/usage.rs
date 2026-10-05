@@ -87,6 +87,44 @@ async fn an_answer_retry_sums_both_reported_attempts() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn logged_request_ids_are_exactly_the_ids_sent_across_retries() {
+    use kanade::infrastructure::llm::ModelCapabilities;
+    // A transient failure retried, a bad answer, then the answer retry.
+    let world = World::new(vec![
+        FakeAction::Transient,
+        answer("not json", None),
+        answer(NOTHING, None),
+    ])
+    .await;
+    *world.model.caps.lock().unwrap() = Some(ModelCapabilities::minimal());
+    one_call(&world).await;
+    let rows = world.logs().await;
+    let sent = world.model.request_ids.lock().unwrap().clone();
+    let session = rows[0]
+        .session_id
+        .clone()
+        .expect("a tagged request went out");
+    assert!(session.starts_with("kanade-extraction-"), "{session}");
+    assert_eq!(
+        sent,
+        (1..=3)
+            .map(|n| format!("{session}-{n}"))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(rows[0].request_ids, sent);
+    assert_eq!(rows[0].request_count, 3);
+}
+
+#[tokio::test(start_paused = true)]
+async fn untagged_calls_log_no_correlation() {
+    let world = World::new(vec![answer(NOTHING, None)]).await;
+    one_call(&world).await;
+    let rows = world.logs().await;
+    assert!(world.model.request_ids.lock().unwrap().is_empty());
+    assert_eq!((&rows[0].session_id, rows[0].request_ids.len()), (&None, 0));
+}
+
+#[tokio::test(start_paused = true)]
 async fn reasoning_attempts_are_retained_summed_and_not_sent_back() {
     use kanade::infrastructure::llm::{ModelCapabilities, wire_body};
     let with_reasoning = |content: &str, text: &str, tokens: Option<u64>| {

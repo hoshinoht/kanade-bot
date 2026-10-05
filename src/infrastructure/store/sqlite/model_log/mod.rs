@@ -76,6 +76,18 @@ fn read_list(row: &SqliteRow, column: &str) -> Result<Vec<String>, StoreError> {
     serde_json::from_str(&text(row, column)?).map_err(|error| corrupt(column, error))
 }
 
+/// A nullable JSON id list: NULL (older rows) reads as empty.
+fn read_optional_list(row: &SqliteRow, column: &str) -> Result<Vec<String>, StoreError> {
+    optional_text(row, column)?.map_or(Ok(Vec::new()), |text| {
+        serde_json::from_str(&text).map_err(|error| corrupt(column, error))
+    })
+}
+
+/// An empty id list is stored NULL (none recorded).
+fn optional_list(ids: &[String]) -> Option<String> {
+    (!ids.is_empty()).then(|| rows::list(ids))
+}
+
 fn signed(value: u64, what: &str) -> Result<i64, StoreError> {
     i64::try_from(value).map_err(|_| StoreError::Constraint(format!("{what} is too large")))
 }

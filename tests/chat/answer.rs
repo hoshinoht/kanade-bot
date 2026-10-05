@@ -73,6 +73,8 @@ fn filtered() -> FakeAction {
 struct Run {
     generation: Generation,
     requests: Vec<ChatRequest>,
+    /// The `x-request-id`s the provider was handed, in order.
+    request_ids: Vec<String>,
     world: World,
     input: Value,
     ctx: ToolContext,
@@ -146,6 +148,7 @@ async fn run_routed(
     Run {
         generation,
         requests: provider.fake.requests(),
+        request_ids: provider.fake.request_ids(),
         world,
         input,
         ctx,
@@ -1027,6 +1030,89 @@ async fn the_clean_retry_is_a_round_with_its_own_usage() {
         ),
         (Some(300), Some(12))
     );
+}
+
+/// The chat-log row of `run`, stored and read back.
+async fn stored_row(run: &Run, id: &str) -> kanade::domain::model_log::ChatInteraction {
+    let row = interaction(
+        id.into(),
+        run.world.clock.now().with_timezone(&Utc),
+        &run.ctx,
+        "which weeklies?",
+        &run.generation,
+        MODEL,
+        settings(&run.input, 8).reasoning,
+        1,
+    );
+    let store = run.world.service.store();
+    store.record_chat(row.clone()).await.expect("record");
+    let stored = store.load_chat(id).await.expect("load").expect("row");
+    assert_eq!(stored, row);
+    stored
+}
+
+/// `{session}-1..=n`, the ids a session numbers its requests with.
+fn numbered(session: &str, n: usize) -> Vec<String> {
+    (1..=n).map(|i| format!("{session}-{i}")).collect()
+}
+
+#[tokio::test(start_paused = true)]
+async fn logged_request_ids_are_exactly_the_ids_sent_across_rounds_and_retries() {
+    use kanade::infrastructure::llm::LlmProvider as _;
+    // Round 1 answers at once; round 2's first request fails transiently and
+    // its retry answers.
+    let run = run(
+        vec![
+            wants(&[("r1", "list_fixed", json!({}))]),
+            FakeAction::Transient,
+            words("Three weeklies."),
+        ],
+        ToolOffer::dynamic([Bundle::Strategy], false),
+        8,
+        "which weeklies?",
+        &Passthrough,
+        &Ports::default(),
+    )
+    .await;
+    let row = stored_row(&run, "chat-rounds").await;
+    let session = row.session_id.clone().expect("a tagged request went out");
+    assert!(session.starts_with("kanade-chat-"), "{session}");
+    let sent = &run.request_ids;
+    assert_eq!(*sent, numbered(&session, 3));
+    assert_eq!(run.generation.request_ids, *sent);
+    assert_eq!(
+        row.rounds
+            .iter()
+            .map(|round| round.request_ids.clone())
+            .collect::<Vec<_>>(),
+        [sent[..1].to_vec(), sent[1..].to_vec()]
+    );
+
+    // A filtered request answers no round, so only the session stem finds
+    // it; the clean retry is its own round.
+    let run = run_routed(
+        vec![filtered(), words("Here you go.")],
+        ToolOffer::full_set(false),
+        8,
+        "which weeklies?",
+        &Passthrough,
+        &Ports::default(),
+        |_| {},
+    )
+    .await;
+    let row = stored_row(&run, "chat-clean").await;
+    let session = row.session_id.clone().expect("session");
+    assert_eq!(run.request_ids, numbered(&session, 2));
+    // The filtered request is in no round, but the session list keeps it.
+    assert_eq!(run.generation.request_ids, run.request_ids);
+    assert_eq!(row.rounds.len(), 1);
+    assert!(row.rounds[0].clean);
+    assert_eq!(row.rounds[0].request_ids, run.request_ids[1..]);
+
+    // An untagged call sends no id.
+    let plain = FakeProvider::new(Vec::new());
+    let _ = plain.complete(&run.requests[0]).await;
+    assert!(plain.request_ids().is_empty());
 }
 
 /// Ports whose pending-card read takes a fixed time, so a call's wall time

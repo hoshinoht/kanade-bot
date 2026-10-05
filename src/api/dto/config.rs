@@ -59,6 +59,14 @@ pub struct Pings {
 pub struct Watching {
     pub paused: bool,
     pub extract_enabled: bool,
+    /// Effective watched channel ids (saved row, else the env seed).
+    pub channel_ids: Vec<String>,
+    /// `saved` once an explicit list save stored the list, else `env`.
+    #[cfg_attr(test, ts(type = "IdListSource"))]
+    pub channel_ids_source: &'static str,
+    pub category_ids: Vec<String>,
+    #[cfg_attr(test, ts(type = "IdListSource"))]
+    pub category_ids_source: &'static str,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -85,6 +93,10 @@ pub struct Chatbot {
     pub missing_env: Vec<String>,
     pub member_rate: Rate,
     pub guild_rate: Rate,
+    /// Effective chat category ids (saved row, else the env seed).
+    pub category_ids: Vec<String>,
+    #[cfg_attr(test, ts(type = "IdListSource"))]
+    pub category_ids_source: &'static str,
 }
 
 #[derive(Clone, Debug, Serialize)]

@@ -8,7 +8,7 @@ use std::{
 use chrono::{NaiveTime, Weekday};
 
 use super::*;
-use crate::domain::settings::{Section, SettingsStore, keys, save_section};
+use crate::domain::settings::{IdList, Section, SettingsStore, keys, save_section};
 
 pub(super) struct Temp(pub(super) PathBuf);
 
@@ -118,12 +118,14 @@ async fn seeds_apply_under_stored_rows_and_category_lists_round_trip() {
     let mut edited = loaded.clone();
     edited.watching.category_ids = vec!["51".into()];
     edited.chatbot.category_ids = vec!["61".into(), "62".into()];
-    save_section(&*store, &Section::Watching(edited.watching.clone()))
-        .await
-        .unwrap();
-    save_section(&*store, &Section::Chatbot(edited.chatbot.clone()))
-        .await
-        .unwrap();
+    for (list, ids) in [
+        (IdList::WatchedCategories, &edited.watching.category_ids),
+        (IdList::ChatCategories, &edited.chatbot.category_ids),
+    ] {
+        save_section(&*store, &Section::IdList(list, ids.clone()))
+            .await
+            .unwrap();
+    }
     let rows = store.settings_rows().await.unwrap();
     assert_eq!(rows[keys::WATCHED_CATEGORIES], "51");
     assert_eq!(rows[keys::CHAT_CATEGORIES], "61,62");

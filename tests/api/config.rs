@@ -20,7 +20,7 @@ use kanade::{
         ProfileSource,
     },
     domain::settings::{
-        Models, Reasoning, RoleModel, RoleProfileAssignment, RuntimeSettings, SettingsStore,
+        Models, Reasoning, RoleModel, RoleProfileAssignment, RuntimeSettings, SettingsStore, keys,
         load_settings,
     },
     infrastructure::llm::{
@@ -554,7 +554,17 @@ async fn get_shows_settings_models_personas_and_env_facts() {
     assert_eq!(copy("KANADE_MODEL_PERMITS"), "2");
     assert_eq!(copy("KANADE_MODEL_BASE_URL"), "https://kanata.test/v1");
     assert_eq!(copy("KANADE_CHAT_PILOT_ROLE_ID"), "30");
-    assert_eq!(copy("KANADE_CHAT_CATEGORY_IDS"), Value::Null, "unset");
+    // The id lists left the env table for the Channels editor.
+    for moved in [
+        "KANADE_WATCH_CHANNEL_IDS",
+        "KANADE_WATCH_CATEGORY_IDS",
+        "KANADE_CHAT_CATEGORY_IDS",
+    ] {
+        assert!(!env_rows.iter().any(|row| row["key"] == moved), "{moved}");
+    }
+    assert_eq!(view["chatbot"]["category_ids"], json!([]));
+    assert_eq!(view["chatbot"]["category_ids_source"], "env");
+    assert_eq!(view["watching"]["channel_ids_source"], "env");
     assert_eq!(copy("KANADE_POST_CHANNEL_ID"), Value::Null, "unset");
     assert_eq!(view["last_digest"], Value::Null, "no digest posted yet");
 
@@ -2653,4 +2663,221 @@ async fn invalid_context_settings_are_refused_with_422() {
         config.desk.settings().await.models.context,
         Default::default()
     );
+}
+
+fn seeded_lists() -> RuntimeSettings {
+    let mut seed = settings();
+    seed.watching.channel_ids = vec!["12".into()];
+    seed.watching.category_ids = vec!["21".into()];
+    seed.chatbot.category_ids = vec!["31".into()];
+    seed
+}
+
+#[tokio::test]
+async fn toggle_saves_never_freeze_env_seeded_channel_lists() {
+    let config = Config::with_settings(true, Vec::new(), seeded_lists()).await;
+    config.patch(json!({"watching": {"paused": true}})).await;
+    config
+        .patch(json!({"watching": {"extract_enabled": false}}))
+        .await;
+    config
+        .patch(json!({"chatbot": {"enabled": true, "member_rate": {"count": 4}}}))
+        .await;
+
+    let view = config.get().await;
+    for source in [
+        &view["watching"]["channel_ids_source"],
+        &view["watching"]["category_ids_source"],
+        &view["chatbot"]["category_ids_source"],
+    ] {
+        assert_eq!(source, "env");
+    }
+    let rows = config.reads.store.settings_rows().await.unwrap();
+    for key in [
+        keys::WATCHED_CHANNELS,
+        keys::WATCHED_CATEGORIES,
+        keys::CHAT_CATEGORIES,
+    ] {
+        assert!(!rows.contains_key(key), "{key} was frozen: {rows:?}");
+    }
+    // The toggles themselves are stored, and a changed env applies on restart.
+    let mut next_env = seeded_lists();
+    next_env.watching.channel_ids = vec!["13".into()];
+    next_env.watching.category_ids = vec!["22".into()];
+    next_env.chatbot.category_ids = vec!["32".into()];
+    let restarted = load_settings(&*config.reads.store, &next_env)
+        .await
+        .unwrap();
+    assert!(restarted.watching.paused);
+    assert!(!restarted.watching.extract_enabled);
+    assert!(restarted.chatbot.enabled);
+    assert_eq!(restarted.chatbot.member_rate.count, 4);
+    assert_eq!(restarted.watching.channel_ids, ["13"]);
+    assert_eq!(restarted.watching.category_ids, ["22"]);
+    assert_eq!(restarted.chatbot.category_ids, ["32"]);
+    // History lists only the toggles each save changed.
+    let changes = config
+        .reads
+        .store
+        .settings_changes(Default::default())
+        .await
+        .unwrap();
+    assert_eq!(changes.len(), 3);
+    for change in &changes {
+        assert!(
+            !change.values.keys().any(|key| key.contains("_ids")),
+            "{change:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_explicit_list_save_persists_only_that_list_and_applies_live() {
+    let config = Config::with_settings(true, Vec::new(), seeded_lists()).await;
+    let mut changes = config.desk.subscribe();
+    let body = json!({"watching": {"category_ids": ["41", "40"]}});
+    let first = view(
+        &config.send("PATCH", PATH, Some("list-1"), &body).await,
+        "list save",
+    );
+    {
+        let change = changes.borrow_and_update();
+        assert_eq!(change.revision, 1);
+        assert_eq!(change.section, Some("watching"));
+        assert_eq!(change.settings.watching.category_ids, ["41", "40"]);
+        assert_eq!(change.settings.watching.channel_ids, ["12"]);
+    }
+    // A replay answers the same view without a second write or publish.
+    let replay = view(
+        &config.send("PATCH", PATH, Some("list-1"), &body).await,
+        "replay",
+    );
+    assert_eq!(replay, first);
+    let other = config
+        .send(
+            "PATCH",
+            PATH,
+            Some("list-1"),
+            &json!({"watching": {"category_ids": ["42"]}}),
+        )
+        .await;
+    refused(&other, 422, "idempotency_mismatch", "reused list key");
+    assert!(!changes.has_changed().unwrap());
+    config
+        .patch(json!({"chatbot": {"category_ids": ["51"]}}))
+        .await;
+
+    let after = config.get().await;
+    assert_eq!(after["watching"]["category_ids"], json!(["41", "40"]));
+    assert_eq!(after["watching"]["category_ids_source"], "saved");
+    assert_eq!(after["watching"]["channel_ids"], json!(["12"]));
+    assert_eq!(after["watching"]["channel_ids_source"], "env");
+    assert_eq!(after["chatbot"]["category_ids"], json!(["51"]));
+    assert_eq!(after["chatbot"]["category_ids_source"], "saved");
+    let rows = config.reads.store.settings_rows().await.unwrap();
+    assert_eq!(rows[keys::WATCHED_CATEGORIES], "41,40");
+    assert_eq!(rows[keys::CHAT_CATEGORIES], "51");
+    assert!(!rows.contains_key(keys::WATCHED_CHANNELS), "{rows:?}");
+    // Saved lists win over a changed env; the unsaved one still follows it.
+    let mut next_env = seeded_lists();
+    next_env.watching.channel_ids = vec!["13".into()];
+    next_env.watching.category_ids = vec!["22".into()];
+    next_env.chatbot.category_ids = vec!["32".into()];
+    let restarted = load_settings(&*config.reads.store, &next_env)
+        .await
+        .unwrap();
+    assert_eq!(restarted.watching.channel_ids, ["13"]);
+    assert_eq!(restarted.watching.category_ids, ["41", "40"]);
+    assert_eq!(restarted.chatbot.category_ids, ["51"]);
+
+    // History records each list save as its section with just that row.
+    let stored = config
+        .reads
+        .store
+        .settings_changes(Default::default())
+        .await
+        .unwrap();
+    assert_eq!(stored.len(), 2);
+    assert_eq!(stored[0].section, "chatbot");
+    assert_eq!(
+        stored[0].values.keys().collect::<Vec<_>>(),
+        [keys::CHAT_CATEGORIES]
+    );
+    assert_eq!(stored[1].section, "watching");
+    assert_eq!(stored[1].values[keys::WATCHED_CATEGORIES].from, "21");
+    assert_eq!(stored[1].values[keys::WATCHED_CATEGORIES].to, "41,40");
+    // Saving the same list again is a no-op: nothing stored, nothing published.
+    config
+        .patch(json!({"chatbot": {"category_ids": ["51"]}}))
+        .await;
+    assert_eq!(
+        config
+            .reads
+            .store
+            .settings_changes(Default::default())
+            .await
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn list_saves_refuse_mixed_bodies_bad_ids_and_the_removed_chat_channel_list() {
+    let config = Config::with_settings(true, Vec::new(), seeded_lists()).await;
+    for (body, code) in [
+        (
+            json!({"watching": {"paused": true, "channel_ids": ["1"]}}),
+            "invalid",
+        ),
+        (
+            json!({"watching": {"channel_ids": ["1"], "category_ids": ["2"]}}),
+            "invalid",
+        ),
+        (
+            json!({"chatbot": {"enabled": true, "category_ids": ["1"]}}),
+            "invalid",
+        ),
+        (json!({"watching": {"channel_ids": "1"}}), "invalid"),
+        (json!({"watching": {"channel_ids": [1]}}), "invalid"),
+        (json!({"watching": {"channel_ids": ["01"]}}), "invalid"),
+        (json!({"watching": {"category_ids": ["2", "2"]}}), "invalid"),
+        (json!({"chatbot": {"channel_ids": ["1"]}}), "unknown_field"),
+        (
+            json!({"chatbot": {"chat_channel_ids": ["1"]}}),
+            "unknown_field",
+        ),
+    ] {
+        config.refused(body, 422, code).await;
+    }
+    assert!(config.reads.store.settings_rows().await.unwrap().is_empty());
+    assert_eq!(config.desk.settings().await, seeded_lists());
+}
+
+#[tokio::test]
+async fn a_list_save_needs_a_session_and_csrf() {
+    let config = Config::with_settings(true, Vec::new(), seeded_lists()).await;
+    let body = json!({"watching": {"channel_ids": ["77"]}}).to_string();
+    let no_csrf = send(
+        config.reads.admin,
+        "PATCH",
+        ADMIN_HOST,
+        PATH,
+        &[ORIGIN, ("Cookie", &config.reads.cookie)],
+        Some(&body),
+    )
+    .await;
+    assert_eq!(no_csrf.status, 403, "{}", no_csrf.text());
+    let no_session = send(
+        config.reads.admin,
+        "PATCH",
+        ADMIN_HOST,
+        PATH,
+        &[ORIGIN, ("X-Kanade-CSRF", &config.reads.csrf)],
+        Some(&body),
+    )
+    .await;
+    assert_eq!(no_session.status, 401, "{}", no_session.text());
+    assert!(config.reads.store.settings_rows().await.unwrap().is_empty());
+    assert_eq!(config.desk.settings().await.watching.channel_ids, ["12"]);
 }

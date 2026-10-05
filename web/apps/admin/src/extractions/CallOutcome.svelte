@@ -33,6 +33,7 @@
     {plural(call.messages.length, 'message')} read · {plural(n, 'change')}<br />
     latency <span class="mono">{duration(call.latency_ms)}</span><br />
     tokens <span class="mono"><TokenUsage prompt={call.prompt_tokens} completion={call.completion_tokens} reasoning={call.reasoning_tokens} /></span>
+    {#if call.request_ids?.length}<br />request ids <span class="mono extract-outcome__ids">{call.request_ids.join(', ')}</span>{/if}
   </p>
   <span class="extract-outcome__gap"></span>
   <!-- Only party channels can be re-read; any other says why instead of vanishing. -->
@@ -45,3 +46,10 @@
     onclick={onreread}>Re-read this channel</button
   >
 </aside>
+
+<style>
+  /* Ids are long unbroken tokens; they wrap anywhere rather than widen the card. */
+  .extract-outcome__ids {
+    overflow-wrap: anywhere;
+  }
+</style>

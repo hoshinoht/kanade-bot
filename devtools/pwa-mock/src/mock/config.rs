@@ -84,6 +84,11 @@ pub struct Config {
     pub context: model_context::Settings,
     pub run_lengths: RunLengths,
     pub profanity: super::profanity::Settings,
+    /// Saved id lists (`Some` after an explicit list save); `None` follows
+    /// the env seed, as the server's missing row does.
+    pub watched_channel_ids: Option<Vec<String>>,
+    pub watched_category_ids: Option<Vec<String>>,
+    pub chat_category_ids: Option<Vec<String>>,
     /// Roles with a model when the bot started: extraction and heading
     /// rewrites run only for those until a restart.
     #[serde(skip)]
@@ -246,12 +251,80 @@ fn variant(id: &str) -> Option<(&'static str, &'static str)> {
         .map(|(_, base, effort)| (*base, *effort))
 }
 
+/// The env seeds of the three id lists: every watched seed channel, no
+/// watched categories, one invented chat category.
+pub const CHAT_CATEGORY_SEED: &str = "410000000000000001";
+
+impl Config {
+    /// `(effective ids, "saved" | "env")` for each list, as the server's view.
+    pub fn watched_channels(&self) -> (Vec<String>, &'static str) {
+        match &self.watched_channel_ids {
+            Some(ids) => (ids.clone(), "saved"),
+            None => (
+                seed::CHANNELS
+                    .iter()
+                    .filter(|c| c.2)
+                    .map(|c| c.0.to_owned())
+                    .collect(),
+                "env",
+            ),
+        }
+    }
+
+    pub fn watched_categories(&self) -> (Vec<String>, &'static str) {
+        match &self.watched_category_ids {
+            Some(ids) => (ids.clone(), "saved"),
+            None => (Vec::new(), "env"),
+        }
+    }
+
+    pub fn chat_categories(&self) -> (Vec<String>, &'static str) {
+        match &self.chat_category_ids {
+            Some(ids) => (ids.clone(), "saved"),
+            None => (vec![CHAT_CATEGORY_SEED.to_owned()], "env"),
+        }
+    }
+}
+
+/// An explicit list save's ids, checked as the server does (canonical
+/// positive Discord ids, at most 100, no repeats); watched channels also
+/// take the mock directory's own (non-numeric) channel ids.
+fn id_list(value: &Value, path: &str, channels: bool) -> Result<Vec<String>, MoveError> {
+    let items = value
+        .as_array()
+        .ok_or_else(|| MoveError::invalid(format!("{path} must be an array of Discord ids.")))?;
+    if items.len() > 100 {
+        return Err(MoveError::invalid(format!("{path} holds at most 100 ids.")));
+    }
+    let canonical = |id: &str| {
+        id.parse::<u64>()
+            .is_ok_and(|n| n > 0 && n.to_string() == id)
+    };
+    let mut ids: Vec<String> = Vec::new();
+    for item in items {
+        let id = item
+            .as_str()
+            .filter(|id| canonical(id) || (channels && seed::channel(id).is_some()))
+            .ok_or_else(|| {
+                MoveError::invalid(format!(
+                    "{path} must be an array of canonical positive Discord ids."
+                ))
+            })?;
+        if ids.iter().any(|seen| seen == id) {
+            return Err(MoveError::invalid(format!(
+                "{id} is listed twice in {path}."
+            )));
+        }
+        ids.push(id.to_owned());
+    }
+    Ok(ids)
+}
+
 /// The server's env rows (`src/api/admin/config/desk.rs`): same keys, labels
 /// and reasons; `copy` is the raw env form (ids comma-joined, lowercase
 /// weekday), null when unset.
 fn env_rows(c: &Config) -> Vec<Value> {
     let row = |key: &str, label: &str, value: String, reason: &str, copy: Option<String>| json!({ "key": key, "label": label, "value": value, "reason": reason, "copy": copy });
-    let watched: Vec<_> = seed::CHANNELS.iter().filter(|c| c.2).collect();
     let mut groups: Vec<(&str, u32)> = Vec::new();
     for g in c.declared_groups.iter().flatten() {
         if !groups.iter().any(|(name, _)| *name == g.group) {
@@ -301,27 +374,6 @@ fn env_rows(c: &Config) -> Vec<Value> {
             "#boss-schedule".into(),
             "Set with the guild's channel layout.",
             Some("boss-schedule".into()),
-        ),
-        row(
-            "KANADE_WATCH_CHANNEL_IDS",
-            "Watched channels",
-            watched.iter().map(|c| c.1).collect::<Vec<_>>().join(", "),
-            "Watching a new channel is a deliberate deploy.",
-            Some(watched.iter().map(|c| c.0).collect::<Vec<_>>().join(",")),
-        ),
-        row(
-            "KANADE_WATCH_CATEGORY_IDS",
-            "Watched categories",
-            "none".into(),
-            "Watching a whole category is a deliberate deploy, like channels.",
-            None,
-        ),
-        row(
-            "KANADE_CHAT_CATEGORY_IDS",
-            "Chat categories",
-            "none".into(),
-            "The chatbot answers in every channel of these categories; set with the channel layout.",
-            None,
         ),
         row(
             "KANADE_CHAT_PILOT_ROLE_ID",
@@ -444,6 +496,9 @@ pub const PII_PSEUDONYMISE: bool = false;
 
 pub fn defaults() -> Config {
     Config {
+        watched_channel_ids: None,
+        watched_category_ids: None,
+        chat_category_ids: None,
         day_of_ping_time: "09:00".into(),
         countdown_minutes: vec![60, 15],
         paused: false,
@@ -721,13 +776,18 @@ impl Store {
             .collect();
         json!({
             "pings": { "day_of_ping_time": c.day_of_ping_time, "countdown_minutes": c.countdown_minutes },
-            "watching": { "paused": c.paused, "extract_enabled": c.extract_enabled },
+            "watching": {
+                "paused": c.paused, "extract_enabled": c.extract_enabled,
+                "channel_ids": c.watched_channels().0, "channel_ids_source": c.watched_channels().1,
+                "category_ids": c.watched_categories().0, "category_ids_source": c.watched_categories().1,
+            },
             "chatbot": {
                 "enabled": c.chat_enabled,
                 "configured": true,
                 "missing_env": Vec::<String>::new(),
                 "member_rate": { "count": c.member_rate.0, "window_s": c.member_rate.1 },
                 "guild_rate": { "count": c.guild_rate.0, "window_s": c.guild_rate.1 },
+                "category_ids": c.chat_categories().0, "category_ids_source": c.chat_categories().1,
             },
             "notifications": { "quiet_mode": c.quiet_mode },
             "self_service": { "mode": c.self_service_mode, "effective_mode": effective_mode(c), "public_portal": c.public_portal },
@@ -817,6 +877,28 @@ impl Store {
                         "Countdowns are up to four whole minutes between 5 and 1440.",
                     ))?;
                 next.countdown_minutes = mins;
+            }
+        }
+        // An id list is saved only alone (an explicit list save), as the server.
+        for (section, key) in [
+            ("watching", "channel_ids"),
+            ("watching", "category_ids"),
+            ("chatbot", "category_ids"),
+        ] {
+            let Some(body) = patch.get(section).and_then(Value::as_object) else {
+                continue;
+            };
+            let Some(value) = body.get(key) else {
+                continue;
+            };
+            if body.len() != 1 {
+                return Err(bad("Save a channel or category list on its own."));
+            }
+            let ids = id_list(value, &format!("{section}.{key}"), key == "channel_ids")?;
+            match (section, key) {
+                ("watching", "channel_ids") => next.watched_channel_ids = Some(ids),
+                ("watching", _) => next.watched_category_ids = Some(ids),
+                _ => next.chat_category_ids = Some(ids),
             }
         }
         if let Some(p) = patch.get("watching") {
@@ -1286,7 +1368,13 @@ pub fn stored_rows(c: &Config) -> std::collections::BTreeMap<&'static str, Strin
         ),
         ("paused", flag(c.paused)),
         ("extract_enabled", flag(c.extract_enabled)),
+        ("v5.watched_channel_ids", c.watched_channels().0.join(",")),
+        (
+            "v5.watched_category_ids",
+            c.watched_categories().0.join(","),
+        ),
         ("chat_mode", flag(c.chat_enabled)),
+        ("v5.chat_category_ids", c.chat_categories().0.join(",")),
         ("chat_pilot_rate_count", c.member_rate.0.to_string()),
         ("chat_pilot_rate_window_s", c.member_rate.1.to_string()),
         ("chat_pilot_global_rate_count", c.guild_rate.0.to_string()),
@@ -1328,8 +1416,8 @@ fn check_patch_keys(patch: &Value) -> Result<(), MoveError> {
     {
         let keys: &[&str] = match section.as_str() {
             "pings" => &["day_of_ping_time", "countdown_minutes"],
-            "watching" => &["paused", "extract_enabled"],
-            "chatbot" => &["enabled", "member_rate", "guild_rate"],
+            "watching" => &["paused", "extract_enabled", "channel_ids", "category_ids"],
+            "chatbot" => &["enabled", "member_rate", "guild_rate", "category_ids"],
             "persona" => &[
                 "active",
                 "role_profiles",
@@ -1497,6 +1585,52 @@ mod tests {
     }
 
     #[test]
+    fn an_explicit_list_save_overrides_only_that_seed() {
+        let mut s = store();
+        let view = s.config_view();
+        assert_eq!(view["watching"]["channel_ids_source"], "env");
+        assert_eq!(
+            view["chatbot"]["category_ids"],
+            json!([super::CHAT_CATEGORY_SEED])
+        );
+        assert!(
+            !view["env"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|row| row["key"] == "KANADE_WATCH_CHANNEL_IDS")
+        );
+        // A toggle stores no list.
+        s.patch_config(&json!({"watching": {"paused": true}}))
+            .ok()
+            .unwrap();
+        assert!(s.config.watched_channel_ids.is_none());
+        let saved = s
+            .patch_config(&json!({"watching": {"category_ids": ["21", "22"]}}))
+            .ok()
+            .unwrap();
+        assert_eq!(saved["watching"]["category_ids"], json!(["21", "22"]));
+        assert_eq!(saved["watching"]["category_ids_source"], "saved");
+        assert_eq!(saved["watching"]["channel_ids_source"], "env");
+        assert_eq!(saved["chatbot"]["category_ids_source"], "env");
+        for bad in [
+            json!({"watching": {"paused": false, "channel_ids": []}}),
+            json!({"chatbot": {"category_ids": ["0"]}}),
+            json!({"chatbot": {"category_ids": ["7", "7"]}}),
+            json!({"chatbot": {"category_ids": ["kalos-four"]}}),
+            json!({"chatbot": {"channel_ids": ["1"]}}),
+        ] {
+            assert!(s.patch_config(&bad).is_err(), "{bad}");
+        }
+        // Watched channels take the directory's own ids.
+        let channels = s
+            .patch_config(&json!({"watching": {"channel_ids": ["kalos-four"]}}))
+            .ok()
+            .unwrap();
+        assert_eq!(channels["watching"]["channel_ids"], json!(["kalos-four"]));
+    }
+
+    #[test]
     fn config_view_names_check_groups_env_copies_and_the_last_digest() {
         let mut s = store();
         let view = s.config_view();
@@ -1513,7 +1647,6 @@ mod tests {
                 .clone()
         };
         assert_eq!(copy(&view, "KANADE_BOSS_WEEK_RESET_WEEKDAY"), "thu");
-        assert_eq!(copy(&view, "KANADE_WATCH_CATEGORY_IDS"), json!(null));
         assert_eq!(copy(&view, "KANADE_MODEL_PERMITS"), "1");
         // Pinned at Tue 29 Sep 12:00: the boss week began Thu 24 Sep.
         assert_eq!(

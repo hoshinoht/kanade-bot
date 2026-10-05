@@ -1,8 +1,8 @@
 use std::{collections::VecDeque, sync::Mutex, time::Duration};
 
 use super::{
-    ChatRequest, CompletionFuture, CompletionResponse, LlmProvider, ProviderFailure,
-    ProviderFailureKind,
+    ChatRequest, CompletionFuture, CompletionResponse, LlmProvider, ModelCapabilities,
+    ProviderFailure, ProviderFailureKind,
 };
 
 #[derive(Clone, Debug)]
@@ -26,6 +26,7 @@ pub enum FakeAction {
 pub struct FakeProvider {
     actions: Mutex<VecDeque<FakeAction>>,
     requests: Mutex<Vec<ChatRequest>>,
+    request_ids: Mutex<Vec<String>>,
 }
 
 impl FakeProvider {
@@ -33,11 +34,21 @@ impl FakeProvider {
         Self {
             actions: Mutex::new(actions.into_iter().collect()),
             requests: Mutex::new(Vec::new()),
+            request_ids: Mutex::new(Vec::new()),
         }
     }
 
     pub fn requests(&self) -> Vec<ChatRequest> {
         self.requests
+            .lock()
+            .expect("fake provider request lock poisoned")
+            .clone()
+    }
+
+    /// The correlation ids tagged requests carried, in order: what the HTTP
+    /// provider sends as `x-request-id`.
+    pub fn request_ids(&self) -> Vec<String> {
+        self.request_ids
             .lock()
             .expect("fake provider request lock poisoned")
             .clone()
@@ -57,6 +68,19 @@ impl LlmProvider for FakeProvider {
             .pop_front()
             .unwrap_or(FakeAction::Permanent);
         Box::pin(async move { run(action).await })
+    }
+
+    fn complete_tagged(
+        &self,
+        request: &ChatRequest,
+        capabilities: &ModelCapabilities,
+        request_id: &str,
+    ) -> CompletionFuture<'_> {
+        self.request_ids
+            .lock()
+            .expect("fake provider request lock poisoned")
+            .push(request_id.to_owned());
+        self.complete_with(request, capabilities)
     }
 }
 

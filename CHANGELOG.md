@@ -6,6 +6,16 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Config → Channels: watched channels, watched categories and chat
+  categories each save on their own and then override their env seed
+  (`KANADE_WATCH_CHANNEL_IDS`, `KANADE_WATCH_CATEGORY_IDS`,
+  `KANADE_CHAT_CATEGORY_IDS`); a list nobody saved keeps following its
+  variable.
+- Model logs keep the `x-request-id` correlation ids each chat round and
+  extraction call sent (store migration 0024; older rows have none): the chat
+  Model trace and extraction outcome show them, `chat_answered`/`chat_failed`
+  log every id sent (failed requests included), and `models check --probe`
+  prints them.
 - Boss guides: shorter strategy names (e.g. "P4 burst only", "Keep P2 mark-free")
   from the 2026-10-05 strategy review; steps and facts unchanged.
 - Boss guides: the HP breakdown starts folded, showing only "Total HP" in its
@@ -333,6 +343,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- Saving a Config switch no longer freezes the env-seeded channel lists into
+  stored settings.
 - v5 chat: a `request_tools` call with the wrong argument shape is now told
   the argument name (`Call request_tools with {"bundle": "strategy"}; …`), so
   the model recovers on its next round instead of wasting several.

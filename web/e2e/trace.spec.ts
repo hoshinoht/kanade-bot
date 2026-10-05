@@ -125,6 +125,28 @@ test('reasoning: collapsed disclosures in Chat and Extractions, reported counts 
   await expect(page.locator('summary', { hasText: 'Reasoning' })).toHaveCount(0);
 });
 
+test('gateway correlation: each round and call shows the x-request-ids it sent', async ({ page }) => {
+  await page.goto(`${ADMIN}/chat/c-guide?sw=off`);
+  await page.getByRole('tab', { name: /Model trace/ }).click();
+  const first = page.locator('.chat-round').filter({ has: page.getByRole('heading', { name: 'Round 1' }) });
+  await expect(first.locator('dt', { hasText: 'Request ids' }).locator('xpath=following-sibling::dd')).toHaveText(
+    'kanade-chat-1a2b3c4d-7-1, kanade-chat-1a2b3c4d-7-2',
+  );
+  await page.screenshot({ path: 'e2e/.captures/synthetic/correlation-chat.png', animations: 'disabled' });
+  // A turn logged before ids were recorded shows none.
+  await page.goto(`${ADMIN}/chat/c-when?sw=off`);
+  await page.getByRole('tab', { name: /Model trace/ }).click();
+  await expect(page.locator('.chat-round').first()).toBeVisible();
+  await expect(page.locator('dt', { hasText: 'Request ids' })).toHaveCount(0);
+
+  await page.goto(`${ADMIN}/extractions/x-bm?sw=off`);
+  await page.getByRole('tab', { name: /^Changes/ }).click();
+  await expect(page.getByRole('complementary', { name: 'Outcome' })).toContainText('request ids kanade-extraction-1a2b3c4d-3-1');
+  await page.goto(`${ADMIN}/extractions/x-limbo?sw=off`);
+  await page.getByRole('tab', { name: /^Changes/ }).click();
+  await expect(page.getByRole('complementary', { name: 'Outcome' })).not.toContainText('request ids');
+});
+
 test('copy transcript: a withheld turn stays redacted', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: ADMIN });
   await page.goto(`${ADMIN}/chat/c-withheld?sw=off`);

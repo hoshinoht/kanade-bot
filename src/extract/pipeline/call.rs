@@ -161,6 +161,10 @@ pub(crate) struct CallRecord {
     pub raw: String,
     pub latency_ms: Option<u64>,
     pub requests: u32,
+    /// The session's correlation stem, once it sent a tagged request.
+    pub session_id: Option<String>,
+    /// Every `x-request-id` sent (answer and transient retries included).
+    pub request_ids: Vec<String>,
     pub message_ids: Vec<String>,
     pub member_ids: Vec<String>,
     /// Message id -> author id, context included.
@@ -197,6 +201,13 @@ impl CallRecord {
     pub fn ok(&self) -> bool {
         self.failure.is_none()
     }
+
+    /// The ids the gateway logged for this call; the stem only once a
+    /// tagged request went out.
+    pub fn correlate(&mut self, session: &str, sent: &[String]) {
+        self.session_id = (!sent.is_empty()).then(|| session.to_owned());
+        sent.clone_into(&mut self.request_ids);
+    }
 }
 
 impl std::fmt::Debug for CallRecord {
@@ -204,6 +215,8 @@ impl std::fmt::Debug for CallRecord {
         f.debug_struct("CallRecord")
             .field("log_id", &self.log_id)
             .field("requests", &self.requests)
+            .field("session_id", &self.session_id)
+            .field("request_ids", &self.request_ids)
             .field(
                 "reasoning_bytes",
                 &self.reasoning_content.as_ref().map(String::len),
@@ -323,6 +336,8 @@ where
             reasoning_tokens: None,
             latency_ms: None,
             requests: 0,
+            session_id: None,
+            request_ids: Vec::new(),
             message_ids,
             member_ids: members,
             authors: rows
@@ -542,6 +557,7 @@ where
                         .attempt(session.requests_used() > before, estimate, None);
                     record.model = alias;
                     record.requests = session.requests_used();
+                    record.correlate(session.id(), session.request_ids());
                     record.external_unmasked = route.external && record.requests > 0;
                     record.latency_ms =
                         Some(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX));
@@ -602,6 +618,7 @@ where
         };
         record.model = alias;
         record.requests = session.requests_used();
+        record.correlate(session.id(), session.request_ids());
         record.external_unmasked = route.external && record.requests > 0;
         record.latency_ms = Some(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX));
         record.raw = if call.raw.is_empty() {

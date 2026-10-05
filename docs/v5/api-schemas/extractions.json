@@ -115,6 +115,8 @@
             }
           }
         },
+        "session_id": { "$ref": "common.json#/$defs/CorrelationId", "description": "The call session's gateway correlation stem (`kanade-extraction-…`); null when not recorded (older rows, v4 imports, calls that sent no tagged request). Additive, optional for older clients/fixtures." },
+        "request_ids": { "$ref": "common.json#/$defs/RequestIds", "description": "Every `x-request-id` the call sent, in order: `{session_id}-{n}`, answer and transient retries included. Empty when none was recorded. Additive, optional for older clients/fixtures." },
         "refusals": {
           "description": "A7, additive (the Rust server always sends it): changes the scheduler refused to stage for this call.",
           "type": "array",

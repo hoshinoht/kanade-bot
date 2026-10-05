@@ -131,6 +131,8 @@ pub struct ModelRound {
     /// The budget's prompt estimate for this request, completion reserve
     /// excluded.
     pub prompt_estimate: Option<u64>,
+    /// The `x-request-id`s this round sent (retries included).
+    pub request_ids: Vec<String>,
 }
 
 impl fmt::Debug for ModelRound {
@@ -266,6 +268,11 @@ pub struct Generation {
     pub completion_tokens: Option<u64>,
     /// Provider requests sent (retries and requeues included).
     pub requests: u32,
+    /// The question session's correlation stem, once it sent a tagged request.
+    pub session_id: Option<String>,
+    /// Every `x-request-id` the session sent, failed requests included (a
+    /// failed request answers no round, so rounds alone miss it).
+    pub request_ids: Vec<String>,
     pub model_ms: u64,
     pub tools_ms: u64,
     /// The chat route sends raw member data outside the homelab.

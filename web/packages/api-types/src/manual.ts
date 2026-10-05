@@ -323,6 +323,9 @@ export interface RollbackMode {
 export type ModelRole = 'extraction' | 'chat' | 'rewrite';
 export type SelfServiceMode = 'cards_and_link' | 'link_first' | 'cards_only';
 
+/** A Config id list: `saved` once an explicit list save stored it, else it follows its env seed. */
+export type IdListSource = 'saved' | 'env';
+
 /** Where a role's context window came from, before clamps. */
 export type ContextSource = 'override' | 'catalog' | 'cloud_default' | 'local_default';
 

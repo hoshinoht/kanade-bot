@@ -164,12 +164,13 @@ impl Loop<'_, '_> {
         &mut self,
         round: u32,
         response: &CompletionResponse,
-        (bundles, latency_ms, clean, sent, estimate): (
+        (bundles, latency_ms, clean, sent, estimate, request_ids): (
             Vec<String>,
             u64,
             bool,
             Option<SentRequest>,
             usize,
+            Vec<String>,
         ),
     ) {
         if let Some(usage) = &response.usage {
@@ -199,6 +200,7 @@ impl Loop<'_, '_> {
                 .as_ref()
                 .map(|usage| u64::from(usage.completion_tokens)),
             prompt_estimate: u64::try_from(estimate).ok(),
+            request_ids,
         });
     }
 
@@ -326,6 +328,7 @@ where
         };
         let request = state.request(&alias, outgoing.messages, &offer, &offered);
         let started = Instant::now();
+        let first_id = session.request_ids().len();
         let sent = session.complete(&request).await;
         let latency = millis(started);
         state.generation.model_ms += latency;
@@ -341,10 +344,11 @@ where
         };
         let bundles = bundle_names(&offer, with_tools);
         let sent = session.last_sent().cloned();
+        let ids = session.request_ids()[first_id..].to_vec();
         state.record(
             round,
             &response,
-            (bundles, latency, false, sent, outgoing.estimate),
+            (bundles, latency, false, sent, outgoing.estimate, ids),
         );
         if response.tool_calls.is_empty() {
             let content = strip(response.content.as_deref().unwrap_or_default());
@@ -532,6 +536,11 @@ where
     }
     let mut generation = state.generation;
     generation.requests = session.requests_used();
+    // Only a session that sent a tagged request is findable in the gateway log.
+    generation.session_id = (!session.request_ids().is_empty()).then(|| session.id().to_owned());
+    session
+        .request_ids()
+        .clone_into(&mut generation.request_ids);
     generation.blocked = generation.reply.is_empty()
         && (filtered || generation.failure == Some(AnswerFailure::ContentBlocked));
     generation
@@ -607,6 +616,7 @@ async fn send_clean<P: LlmProvider>(
     let request = state.request(alias, outgoing.messages, &state.question.offer, &[]);
     let started = Instant::now();
     let before = session.requests_used();
+    let first_id = session.request_ids().len();
     let sent = session.clean_retry(&request).await;
     let latency = millis(started);
     state.generation.model_ms += latency;
@@ -622,10 +632,11 @@ async fn send_clean<P: LlmProvider>(
     };
     state.generation.clean_retry = true;
     let sent = session.last_sent().cloned();
+    let ids = session.request_ids()[first_id..].to_vec();
     state.record(
         round,
         &response,
-        (Vec::new(), latency, true, sent, outgoing.estimate),
+        (Vec::new(), latency, true, sent, outgoing.estimate, ids),
     );
     let content = strip(response.content.as_deref().unwrap_or_default());
     if response.tool_calls.is_empty() && !content.is_empty() {

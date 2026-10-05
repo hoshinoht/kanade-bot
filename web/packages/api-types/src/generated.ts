@@ -1,7 +1,7 @@
 // Generated from the Rust API DTOs by src/api/ts_bindings.rs; do not edit.
 // Regenerate: KANADE_WRITE_TS=1 cargo test --all-features --lib ts_bindings
 
-import type { ActorKind, Answer, ChangeRecord, ChatOutcome, ChatRoute, ContextSource, Difficulty, DifficultyName, ExtractionOutcome, KnowledgeDoc, MissionSeries, PingLevel, ProposalKind, Refusal, RowKey, RunStatus, SelfServiceMode, SignInMethod, Surface } from './manual';
+import type { ActorKind, Answer, ChangeRecord, ChatOutcome, ChatRoute, ContextSource, Difficulty, DifficultyName, ExtractionOutcome, IdListSource, KnowledgeDoc, MissionSeries, PingLevel, ProposalKind, Refusal, RowKey, RunStatus, SelfServiceMode, SignInMethod, Surface } from './manual';
 
 /**
  * `common.json#/$defs/Boss`.
@@ -263,11 +263,23 @@ last_digest: LastDigest | null, };
 
 export type Pings = { day_of_ping_time: string, countdown_minutes: Array<number>, };
 
-export type Watching = { paused: boolean, extract_enabled: boolean, };
+export type Watching = { paused: boolean, extract_enabled: boolean, 
+/**
+ * Effective watched channel ids (saved row, else the env seed).
+ */
+channel_ids: Array<string>, 
+/**
+ * `saved` once an explicit list save stored the list, else `env`.
+ */
+channel_ids_source: IdListSource, category_ids: Array<string>, category_ids_source: IdListSource, };
 
 export type Rate = { count: number, window_s: number, };
 
-export type Chatbot = { enabled: boolean, configured: boolean, missing_env: Array<string>, member_rate: Rate, guild_rate: Rate, };
+export type Chatbot = { enabled: boolean, configured: boolean, missing_env: Array<string>, member_rate: Rate, guild_rate: Rate, 
+/**
+ * Effective chat category ids (saved row, else the env seed).
+ */
+category_ids: Array<string>, category_ids_source: IdListSource, };
 
 export type Notifications = { quiet_mode: boolean, };
 
@@ -457,7 +469,16 @@ prompt_estimate?: number | null,
 /**
  * Null when not logged whole.
  */
-context?: CallContext | null, amendments: Array<Amendment>, messages: Array<ReadMessage>, refusals?: Array<ExtractionRefusal>, id: string, short_id: string, at: string, model: string, latency_ms: number | null, channel: string | null, channel_id: string, error: string | null, outcome: ExtractionOutcome, 
+context?: CallContext | null, amendments: Array<Amendment>, messages: Array<ReadMessage>, refusals?: Array<ExtractionRefusal>, 
+/**
+ * The call session's gateway correlation stem; null when not recorded.
+ */
+session_id?: string | null, 
+/**
+ * Every `x-request-id` the call sent, in order (retries included);
+ * empty when none was recorded.
+ */
+request_ids?: Array<string>, id: string, short_id: string, at: string, model: string, latency_ms: number | null, channel: string | null, channel_id: string, error: string | null, outcome: ExtractionOutcome, 
 /**
  * Provider-reported tokens summed over the call's reporting attempts; null = not reported (never 0).
  */
@@ -569,7 +590,12 @@ prompt_tokens?: number | null, completion_tokens?: number | null,
 /**
  * The context budget's estimate, completion reserve excluded.
  */
-prompt_estimate?: number | null, reasoning_content?: string | null, reasoning_tokens?: number | null, guardrail: RoundGuardrail, };
+prompt_estimate?: number | null, reasoning_content?: string | null, reasoning_tokens?: number | null, 
+/**
+ * Every `x-request-id` this round sent, in order (retries included);
+ * empty when none was recorded.
+ */
+request_ids?: Array<string>, guardrail: RoundGuardrail, };
 
 export type ChatCard = { kind: string, url: string, };
 
@@ -637,6 +663,11 @@ route: ChatRoute | null, error: string | null,
  * Stable code: timeout, malformed, content_blocked, identity_leak_blocked, rate_limited, …
  */
 error_code: string | null, 
+/**
+ * The question session's gateway correlation stem; each request went
+ * out as `{session_id}-{n}`. Null when not recorded.
+ */
+session_id?: string | null, 
 /**
  * content_filter, external_unmasked, pseudonymized, identity_leak_blocked {role, kinds, count}, …
  */

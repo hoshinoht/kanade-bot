@@ -292,6 +292,35 @@ fn off_is_sent_as_none_unless_a_published_list_excludes_it() {
     assert_eq!(parsed, Effort::Off);
 }
 
+#[tokio::test]
+async fn a_retried_request_reports_every_header_it_sent() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let calls = std::sync::Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let stub = Stub::start(models_or(move |_| {
+        if seen.fetch_add(1, Ordering::SeqCst) == 0 {
+            Reply::Json(500, json!({"error": {"message": "synthetic"}}))
+        } else {
+            Reply::Json(200, completion("qwen3:8b", r#"{"answer":"ok"}"#))
+        }
+    }))
+    .await;
+    let client = client(declared(stub.url()));
+    let mut extraction = client
+        .open_extraction("run", Duration::from_secs(5), Duration::from_secs(30))
+        .await
+        .unwrap();
+    extraction.complete(&structured()).await.unwrap();
+    let sent: Vec<String> = stub
+        .chat_requests()
+        .iter()
+        .map(|request| request.header("x-request-id").unwrap().to_owned())
+        .collect();
+    let session = extraction.id().to_owned();
+    assert_eq!(sent, [format!("{session}-1"), format!("{session}-2")]);
+    assert_eq!(extraction.request_ids(), sent);
+}
+
 #[test]
 fn an_empty_tool_result_is_sent_as_a_placeholder() {
     let request = ChatRequest {
@@ -342,6 +371,11 @@ async fn governed_requests_carry_a_correlation_id() {
     let session = question.id().to_owned();
     assert!(session.starts_with("kanade-chat-"));
     assert_eq!(ids, [format!("{session}-1"), format!("{session}-2")]);
+    assert_eq!(
+        question.request_ids(),
+        ids,
+        "what the session reports is what went out"
+    );
     assert!(ids.iter().all(|id| {
         id.len() <= 128
             && id

@@ -17,7 +17,7 @@ use crate::{
         persona::ProfileId,
     },
     domain::settings::{
-        Chatbot, ContextSettings, MAX_DEFLECTION_CHARS, MAX_PROFANITY_WORDS,
+        Chatbot, ContextSettings, IdList, MAX_DEFLECTION_CHARS, MAX_PROFANITY_WORDS,
         MAX_ROLE_PROFILE_ASSIGNMENTS, Notifications, OVERRIDE_RUN_MINUTES, PROFANITY_WORD_CHARS,
         Persona, Pings, Profanity, RUN_MINUTES, Rate, RoleProfileAssignment, RunLengthOverride,
         RunLengths, SelfService, SelfServiceMode, Watching, is_profanity_word,
@@ -79,7 +79,8 @@ const GROUPS: &str = "it is set in kanade.toml ([[models.groups]]); restart to a
 /// Read-only keys the view carries; anything else not writable is unknown.
 fn read_only(section: &str, key: &str) -> Option<&'static str> {
     match (section, key) {
-        ("chatbot", "configured" | "missing_env")
+        ("chatbot", "configured" | "missing_env" | "category_ids_source")
+        | ("watching", "channel_ids_source" | "category_ids_source")
         | ("self_service", "effective_mode")
         | (
             "models",
@@ -124,8 +125,14 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
         let writable = matches!(
             (name.as_str(), key.as_str()),
             ("pings", "day_of_ping_time" | "countdown_minutes")
-                | ("watching", "paused" | "extract_enabled")
-                | ("chatbot", "enabled" | "member_rate" | "guild_rate")
+                | (
+                    "watching",
+                    "paused" | "extract_enabled" | "channel_ids" | "category_ids"
+                )
+                | (
+                    "chatbot",
+                    "enabled" | "member_rate" | "guild_rate" | "category_ids"
+                )
                 | ("notifications", "quiet_mode")
                 | ("self_service", "mode" | "public_portal")
                 | ("persona", "active" | "visibility" | "role_profiles")
@@ -152,6 +159,52 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
         });
     }
     Ok((name, body))
+}
+
+/// At most this many ids per list.
+pub const MAX_LIST_IDS: usize = 100;
+
+/// The id list a `watching`/`chatbot` body names. A list is replaced only by
+/// a body carrying it alone, so a toggle save never stores an env-seeded list.
+pub fn id_list(name: &str, body: &Map<String, Value>) -> Result<Option<IdList>, PatchError> {
+    let list = match name {
+        "watching" if body.contains_key("channel_ids") => IdList::WatchedChannels,
+        "watching" if body.contains_key("category_ids") => IdList::WatchedCategories,
+        "chatbot" if body.contains_key("category_ids") => IdList::ChatCategories,
+        _ => return Ok(None),
+    };
+    if body.len() != 1 {
+        return Err(PatchError::invalid(
+            "Save a channel or category list on its own.",
+        ));
+    }
+    Ok(Some(list))
+}
+
+/// Canonical positive Discord ids, in the order given, no repeats.
+pub fn ids(value: &Value, path: &str) -> Result<Vec<String>, PatchError> {
+    let items = value
+        .as_array()
+        .ok_or_else(|| field_error(path, "an array of Discord ids"))?;
+    if items.len() > MAX_LIST_IDS {
+        return Err(PatchError::invalid(format!(
+            "{path} holds at most {MAX_LIST_IDS} ids."
+        )));
+    }
+    let mut ids: Vec<String> = Vec::with_capacity(items.len());
+    for item in items {
+        let id = item
+            .as_str()
+            .filter(|id| canonical_role_id(id))
+            .ok_or_else(|| field_error(path, "an array of canonical positive Discord ids"))?;
+        if ids.iter().any(|seen| seen == id) {
+            return Err(PatchError::invalid(format!(
+                "{id} is listed twice in {path}."
+            )));
+        }
+        ids.push(id.to_owned());
+    }
+    Ok(ids)
 }
 
 /// Context controls are saved as one complete JSON object, avoiding partial
@@ -645,6 +698,50 @@ mod tests {
         );
         assert_eq!(code(json!({"models": {"groups": []}})), "read_only");
         assert!(section(&json!({"watching": {"paused": true}})).is_ok());
+        // The per-channel chat list was removed; it stays unknown.
+        assert_eq!(
+            code(json!({"chatbot": {"channel_ids": ["1"]}})),
+            "unknown_field"
+        );
+    }
+
+    #[test]
+    fn a_list_is_saved_alone_as_canonical_unique_ids() {
+        let body = |value: Value| value.as_object().unwrap().clone();
+        assert_eq!(
+            id_list("watching", &body(json!({"category_ids": []}))),
+            Ok(Some(IdList::WatchedCategories))
+        );
+        assert_eq!(
+            id_list("chatbot", &body(json!({"category_ids": []}))),
+            Ok(Some(IdList::ChatCategories))
+        );
+        assert_eq!(
+            id_list("watching", &body(json!({"paused": true}))),
+            Ok(None)
+        );
+        assert_eq!(
+            id_list(
+                "watching",
+                &body(json!({"paused": true, "channel_ids": []}))
+            )
+            .unwrap_err()
+            .0
+            .error,
+            "invalid"
+        );
+        assert_eq!(ids(&json!(["12", "9"]), "p").unwrap(), ["12", "9"]);
+        for bad in [
+            json!("12"),
+            json!([12]),
+            json!(["012"]),
+            json!(["0"]),
+            json!(["12", "12"]),
+            json!(["-1"]),
+            Value::Array(vec![json!("1"); MAX_LIST_IDS + 1]),
+        ] {
+            assert!(ids(&bad, "p").is_err(), "{bad}");
+        }
     }
 
     #[test]

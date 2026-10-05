@@ -27,16 +27,32 @@ async fn a_probe_sends_one_tiny_member_free_completion_per_role() {
     };
     let stack = ready(input);
     stack.check_startup().await;
+    let mut results = Vec::new();
     for role in ModelRoles::ALL {
         let result = stack.probe(role, Duration::from_secs(5)).await.unwrap();
         assert!(
             matches!(&result.outcome, ProbeOutcome::Ok { finish_reason, .. } if finish_reason == "stop"),
             "{result:?}"
         );
+        assert_eq!(result.request_ids.len(), 1, "{result:?}");
+        results.push(result);
     }
     let sent = stub.chat_requests();
     assert_eq!(sent.len(), 3);
     assert_eq!(sent[0].body["max_tokens"], 128);
+    let headers: Vec<&str> = sent
+        .iter()
+        .map(|request| request.header("x-request-id").expect("tagged"))
+        .collect();
+    assert_eq!(
+        results
+            .iter()
+            .flat_map(|result| &result.request_ids)
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        headers,
+        "each probe reports the id it sent"
+    );
     assert_eq!(sent[0].body["reasoning_effort"], "none");
     assert_eq!(sent[2].body["reasoning_effort"], "low");
     assert!(sent[0].body.get("tools").is_none());
@@ -154,6 +170,11 @@ async fn models_check_probe_sends_ping_to_external_roles_without_opt_in() {
             .iter()
             .all(|request| { request.body["messages"][1]["content"] == "ping" })
     );
+    // The listing names each probe's sent id, so the gateway log can be searched.
+    for request in &requests {
+        let id = request.header("x-request-id").expect("tagged");
+        assert!(out.contains(&format!(" request_ids={id}")), "{out}");
+    }
 }
 
 #[tokio::test]

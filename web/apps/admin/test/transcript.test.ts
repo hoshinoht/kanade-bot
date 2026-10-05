@@ -66,6 +66,22 @@ describe('chat transcript', () => {
     expect(json.rounds[1].reasoning_content).toBeNull();
     expect(json.rounds[1].reasoning_tokens).toBeNull();
   });
+  it('copies the gateway session and each round’s request ids, empty when not recorded', () => {
+    const t = turn({ session_id: 'kanade-chat-1a2b3c4d-7' });
+    t.rounds[0]!.request_ids = ['kanade-chat-1a2b3c4d-7-1', 'kanade-chat-1a2b3c4d-7-2'];
+    const md = transcriptMarkdown(t, { timeZone: 'UTC' });
+    expect(md).toContain('- Gateway session: kanade-chat-1a2b3c4d-7');
+    expect(md).toContain('- Request ids: kanade-chat-1a2b3c4d-7-1, kanade-chat-1a2b3c4d-7-2');
+    expect(md.match(/- Request ids:/g)).toHaveLength(1);
+    const json = JSON.parse(transcriptJson(t, { timeZone: 'UTC' }));
+    expect(json.session_id).toBe('kanade-chat-1a2b3c4d-7');
+    expect(json.rounds[0].request_ids).toEqual(t.rounds[0]!.request_ids);
+    expect(json.rounds[1].request_ids).toEqual([]);
+    const old = transcriptMarkdown(turn(), { timeZone: 'UTC' });
+    expect(old).not.toContain('Gateway session');
+    expect(old).not.toContain('Request ids');
+  });
+
   it('deals tool calls out to the rounds that requested them', () => {
     const r = rounds(turn());
     expect(r.map((x) => x.calls.length)).toEqual([1, 0]);

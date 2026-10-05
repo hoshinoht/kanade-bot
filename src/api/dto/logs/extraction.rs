@@ -137,6 +137,13 @@ pub struct Extraction {
     pub messages: Vec<ReadMessage>,
     #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub refusals: Vec<ExtractionRefusal>,
+    /// The call session's gateway correlation stem; null when not recorded.
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub session_id: Option<String>,
+    /// Every `x-request-id` the call sent, in order (retries included);
+    /// empty when none was recorded.
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
+    pub request_ids: Vec<String>,
 }
 
 /// Per model over the listed calls: how many, and their reported usage
@@ -383,6 +390,8 @@ pub fn extraction(
                 message: refusal.message.clone(),
             })
             .collect(),
+        session_id: log.session_id.clone(),
+        request_ids: log.request_ids.clone(),
     }
 }
 

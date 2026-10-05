@@ -44,6 +44,16 @@ impl LlmProvider for Scripted {
         let caps = self.caps.clone();
         Box::pin(async move { Some(caps) })
     }
+
+    // The fake keeps the tagged id: what the HTTP provider sends as `x-request-id`.
+    fn complete_tagged(
+        &self,
+        request: &ChatRequest,
+        capabilities: &ModelCapabilities,
+        request_id: &str,
+    ) -> CompletionFuture<'_> {
+        self.fake.complete_tagged(request, capabilities, request_id)
+    }
 }
 
 pub fn effort(name: &str) -> Effort {

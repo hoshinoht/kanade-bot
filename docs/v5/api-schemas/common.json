@@ -26,6 +26,16 @@
       ]
     },
     "NullableString": { "type": ["string", "null"] },
+    "CorrelationId": {
+      "description": "A gateway correlation id (`x-request-id` stem): 1-128 of [A-Za-z0-9_-]; null when not recorded.",
+      "type": ["string", "null"],
+      "pattern": "^[A-Za-z0-9_-]{1,128}$"
+    },
+    "RequestIds": {
+      "description": "The exact `x-request-id` values sent, in order; never secrets.",
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$" }
+    },
     "Boss": {
       "type": "object",
       "additionalProperties": false,

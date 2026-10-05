@@ -9,8 +9,9 @@ type Rate = { count?: number; window_s?: number };
  */
 export interface ConfigPatch {
   pings?: { day_of_ping_time?: string; countdown_minutes?: number[] };
-  watching?: { paused?: boolean; extract_enabled?: boolean };
-  chatbot?: { enabled?: boolean; member_rate?: Rate; guild_rate?: Rate };
+  /** An id list is sent alone (an explicit list save) and replaces the list whole. */
+  watching?: { paused?: boolean; extract_enabled?: boolean; channel_ids?: string[]; category_ids?: string[] };
+  chatbot?: { enabled?: boolean; member_rate?: Rate; guild_rate?: Rate; category_ids?: string[] };
   persona?: {
     active?: string;
     role_profiles?: RoleProfileWrite[];

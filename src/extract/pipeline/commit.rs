@@ -382,6 +382,8 @@ where
                 prompt_estimate: record.usage.prompt_estimate(),
                 reasoning_content: record.reasoning_content.clone(),
                 reasoning_tokens: record.reasoning_tokens,
+                session_id: record.session_id.clone(),
+                request_ids: record.request_ids.clone(),
                 outcome: extraction_outcome(
                     record.failure,
                     record.proposal_ids.len(),

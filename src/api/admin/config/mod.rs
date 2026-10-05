@@ -107,6 +107,7 @@ fn put(settings: &mut RuntimeSettings, section: Section) {
         Section::Profanity(value) => settings.profanity = value,
         Section::Schedule(value) => settings.schedule = value,
         Section::Posting(value) => settings.posting = value,
+        Section::IdList(list, ids) => *list.get_mut(settings) = ids,
     }
 }
 
@@ -124,7 +125,16 @@ async fn answer(
     };
     let channels = state.channels.channels();
     let last_digest = last_digest(state, &channels).await;
-    let mut view = desk.view(settings, catalog, &channels, &roles, notices, last_digest);
+    let saved = desk.saved_lists().await;
+    let mut view = desk.view(
+        settings,
+        catalog,
+        &channels,
+        &roles,
+        notices,
+        last_digest,
+        &saved,
+    );
     fill_in_use(state, &mut view.models.groups);
     Ok(Json(view).into_response())
 }
@@ -211,7 +221,19 @@ async fn update(
     let mut notices = Vec::new();
     let mut context_warnings = Vec::new();
     let mut catalog = None;
+    let list = patch::id_list(name, fields)?;
     let section = match name {
+        _ if let Some(list) = list => {
+            let ids = patch::ids(
+                fields.values().next().expect("a list body has one key"),
+                &format!(
+                    "{}.{}",
+                    list.section(),
+                    fields.keys().next().expect("one key")
+                ),
+            )?;
+            Section::IdList(list, ids)
+        }
         "pings" => Section::Pings(patch::pings(&current.pings, fields)?),
         "watching" => Section::Watching(patch::watching(&current.watching, fields)?),
         "chatbot" => Section::Chatbot(patch::chatbot(
@@ -361,7 +383,14 @@ async fn update(
         };
         switch_persona(desk, &persona.active, section.clone(), record).await?;
     } else if next != *current {
+        let list = match &section {
+            Section::IdList(list, _) => Some(*list),
+            _ => None,
+        };
         desk.store.save(section, record).await.map_err(stored)?;
+        if let Some(list) = list {
+            desk.note_saved(list);
+        }
     }
     let saved_before = current.models.clone();
     if next != *current {

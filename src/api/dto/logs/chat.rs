@@ -128,6 +128,10 @@ pub struct ChatRoundFacts {
     pub reasoning_content: Option<String>,
     #[cfg_attr(test, ts(optional = nullable))]
     pub reasoning_tokens: Option<u64>,
+    /// Every `x-request-id` this round sent, in order (retries included);
+    /// empty when none was recorded.
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
+    pub request_ids: Vec<String>,
     pub guardrail: RoundGuardrail,
 }
 
@@ -219,6 +223,10 @@ pub struct ChatTurn {
     pub error: Option<String>,
     /// Stable code: timeout, malformed, content_blocked, identity_leak_blocked, rate_limited, …
     pub error_code: Option<String>,
+    /// The question session's gateway correlation stem; each request went
+    /// out as `{session_id}-{n}`. Null when not recorded.
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub session_id: Option<String>,
     /// content_filter, external_unmasked, pseudonymized, identity_leak_blocked {role, kinds, count}, …
     #[cfg_attr(test, ts(type = "Record<string, unknown>"))]
     pub guardrail: Value,
@@ -426,6 +434,7 @@ fn turn(
                 .as_ref()
                 .map(|content| withheld(content.clone())),
             reasoning_tokens: round.reasoning_tokens,
+            request_ids: round.request_ids.clone(),
             guardrail: RoundGuardrail {
                 clean: round.clean,
                 content_filter: round.finish_reason.as_deref() == Some("content_filter"),
@@ -470,6 +479,7 @@ fn turn(
             .find_map(|round| round.route.clone()),
         error: chat.error.clone(),
         error_code: chat.error_code.clone(),
+        session_id: chat.session_id.clone(),
         guardrail: chat.guardrail.clone(),
         masked: masked.is_some(),
         model_view: masked.and_then(|masked| model_view(names, chat, masked)),

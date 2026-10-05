@@ -30,7 +30,9 @@ fn every_section_round_trips_through_its_rows() {
     let mut settings = RuntimeSettings::default();
     settings.pings.countdown_minutes = vec![60, 15];
     settings.watching.channel_ids = vec!["11".into(), "12".into()];
+    settings.watching.category_ids = vec!["21".into()];
     settings.chatbot.enabled = true;
+    settings.chatbot.category_ids = vec!["31".into()];
     settings.persona.profile_visibility = vec!["loud".into(), "terse".into()];
     settings.persona.role_profiles = vec![
         RoleProfileAssignment {
@@ -70,6 +72,18 @@ fn every_section_round_trips_through_its_rows() {
         Section::Profanity(settings.profanity.clone()),
         Section::Schedule(settings.schedule),
         Section::Posting(settings.posting.clone()),
+        Section::IdList(
+            IdList::WatchedChannels,
+            settings.watching.channel_ids.clone(),
+        ),
+        Section::IdList(
+            IdList::WatchedCategories,
+            settings.watching.category_ids.clone(),
+        ),
+        Section::IdList(
+            IdList::ChatCategories,
+            settings.chatbot.category_ids.clone(),
+        ),
     ];
     let mut stored = BTreeMap::new();
     for section in &sections {
@@ -362,6 +376,35 @@ fn a_zero_member_allowance_is_staff_only_but_the_pool_needs_one() {
         resolve(&rows(&[(keys::CHAT_GLOBAL_RATE_COUNT, "0")]), &defaults),
         Err(SettingsError::Malformed {
             key: keys::CHAT_GLOBAL_RATE_COUNT,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn toggle_sections_never_write_their_id_lists() {
+    let mut settings = RuntimeSettings::default();
+    settings.watching.channel_ids = vec!["11".into()];
+    settings.watching.category_ids = vec!["21".into()];
+    settings.chatbot.category_ids = vec!["31".into()];
+    let written: BTreeSet<&str> = [
+        Section::Watching(settings.watching.clone()),
+        Section::Chatbot(settings.chatbot.clone()),
+    ]
+    .iter()
+    .flat_map(|section| encode_checked(section).expect("encodes"))
+    .map(|(key, _)| key)
+    .collect();
+    for list in IdList::ALL {
+        assert!(!written.contains(list.key()), "{}", list.key());
+        let rows = encode_checked(&Section::IdList(list, vec!["7".into(), "8".into()]))
+            .expect("a list encodes alone");
+        assert_eq!(rows, [(list.key(), "7,8".to_owned())]);
+    }
+    assert!(matches!(
+        encode_checked(&Section::IdList(IdList::ChatCategories, vec!["x".into()])),
+        Err(SettingsError::Malformed {
+            key: keys::CHAT_CATEGORIES,
             ..
         })
     ));

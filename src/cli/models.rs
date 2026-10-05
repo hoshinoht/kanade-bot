@@ -215,13 +215,19 @@ pub async fn check(
                 result.alias,
                 result.effort.as_str()
             );
+            // The ids the gateway logged this probe under (never the key).
+            let ids = if result.request_ids.is_empty() {
+                String::new()
+            } else {
+                format!(" request_ids={}", result.request_ids.join(","))
+            };
             match &result.outcome {
                 ProbeOutcome::Ok {
                     latency_ms,
                     finish_reason,
-                } => writeln!(out, "{head} ok {latency_ms} ms finish={finish_reason}"),
+                } => writeln!(out, "{head} ok {latency_ms} ms finish={finish_reason}{ids}"),
                 ProbeOutcome::Refused(reason) => writeln!(out, "{head} refused: {reason}"),
-                ProbeOutcome::Failed(reason) => writeln!(out, "{head} failed: {reason}"),
+                ProbeOutcome::Failed(reason) => writeln!(out, "{head} failed{ids}: {reason}"),
             }
             .map_err(io)?;
             if !result.outcome.is_ok() {

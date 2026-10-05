@@ -124,8 +124,11 @@ for (const theme of THEMES) {
     await expect(page.getByRole('textbox', { name: 'Morning ping' })).toBeVisible();
     await serious(page, 'admin config pings');
     await page.getByRole('tab', { name: 'Set in the environment' }).click();
-    await expect(page.getByRole('row', { name: /Watched categories/ })).toBeVisible();
+    await expect(page.getByRole('row', { name: /Timezone/ })).toBeVisible();
     await serious(page, 'admin config env');
+    await page.getByRole('tab', { name: /^Channels/ }).click();
+    await expect(page.getByRole('button', { name: 'Save watched categories' })).toBeVisible();
+    await serious(page, 'admin config channels');
     await page.getByRole('tab', { name: 'Models' }).click();
     await page.getByRole('tab', { name: 'Roles' }).click();
     await choose(page.getByRole('combobox', { name: /^Model/ }).first(), 'kanata/chat-cloud');

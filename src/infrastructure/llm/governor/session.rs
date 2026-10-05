@@ -273,6 +273,7 @@ impl<P: LlmProvider> ModelClient<P> {
             answer_retry_used: false,
             ended: false,
             last_sent: None,
+            request_ids: Vec::new(),
             id: self.next_id(CallKind::Chat),
         })
     }
@@ -345,6 +346,7 @@ impl<P: LlmProvider> ModelClient<P> {
             answer_retry_used: false,
             ended: false,
             last_sent: None,
+            request_ids: Vec::new(),
             id: self.next_id(CallKind::Extraction),
         })
     }
@@ -417,6 +419,7 @@ impl<P: LlmProvider> ModelClient<P> {
             answer_retry_used: true,
             ended: false,
             last_sent: None,
+            request_ids: Vec::new(),
             id: self.next_id(CallKind::Rewrite),
         })
     }
@@ -455,6 +458,8 @@ pub struct Session<'c, P> {
     answer_retry_used: bool,
     ended: bool,
     last_sent: Option<SentRequest>,
+    /// Every `x-request-id` sent, in order (retries and requeues included).
+    request_ids: Vec<String>,
     id: String,
 }
 
@@ -502,6 +507,13 @@ impl<P: LlmProvider> Session<'_, P> {
     /// Correlation id; request `n` of this session is sent as `x-request-id: {id}-{n}`.
     pub fn id(&self) -> &str {
         &self.id
+    }
+
+    /// The `x-request-id`s actually sent so far, in order. An admitted
+    /// request that never reached the provider has none, and a request sent
+    /// without known capabilities carries no header.
+    pub fn request_ids(&self) -> &[String] {
+        &self.request_ids
     }
 
     /// The alias every request of this session must name.
@@ -596,7 +608,7 @@ impl<P: LlmProvider> Session<'_, P> {
                 retry_first,
                 random.as_ref(),
             )
-            .tagged(&self.id);
+            .tagged(&self.id, &mut self.request_ids);
             let result = self.client.runner.run(request, &mut gate).await;
             if let Some(sent) = gate.take_sent() {
                 self.last_sent = Some(sent);

@@ -23,6 +23,7 @@ pub async fn run_suite<S: ModelLogStore + Sync>(make: impl AsyncFn() -> S) {
     chat_logs_round_trip_with_rounds(make().await).await;
     token_usage_round_trips_and_pairs_are_whole(make().await).await;
     reasoning_round_trips_with_independent_nulls_and_row_retention(make().await).await;
+    correlation_ids_round_trip_and_refuse_malformed_ids(make().await).await;
     masked_chat_views_round_trip_and_prune(make().await).await;
     identity_leak_is_an_extraction_outcome(make().await).await;
     chat_filters_match_rounds_flags_and_latency(make().await).await;
@@ -200,6 +201,97 @@ async fn reasoning_round_trips_with_independent_nulls_and_row_retention<S: Model
     assert_eq!(store.load_chat("c-reasoning").await.expect("load"), None);
 }
 
+async fn correlation_ids_round_trip_and_refuse_malformed_ids<S: ModelLogStore>(store: S) {
+    let mut log = extraction("x-corr", utc(20, 12, 0));
+    log.session_id = Some("kanade-extraction-0000abcd-1".into());
+    log.request_ids = vec![
+        "kanade-extraction-0000abcd-1-1".into(),
+        "kanade-extraction-0000abcd-1-2".into(),
+    ];
+    store.record_extraction(log.clone()).await.expect("record");
+    assert_eq!(
+        store.load_extraction(&log.id).await.expect("load"),
+        Some(log.clone())
+    );
+    let listed = store
+        .list_extractions(&ExtractionFilter {
+            omit_bodies: true,
+            ..Default::default()
+        })
+        .await
+        .expect("list");
+    assert_eq!(listed.items[0].request_ids, log.request_ids);
+    assert_eq!(listed.items[0].session_id, log.session_id);
+    // Absent ids stay absent: no session, no requests.
+    let plain = extraction("x-plain", utc(20, 11, 0));
+    store
+        .record_extraction(plain.clone())
+        .await
+        .expect("record");
+    let loaded = store.load_extraction("x-plain").await.expect("load");
+    assert_eq!(
+        loaded
+            .as_ref()
+            .map(|log| (&log.session_id, log.request_ids.len())),
+        Some((&None, 0))
+    );
+
+    let mut interaction = chat("c-corr", utc(20, 12, 0));
+    interaction.session_id = Some("kanade-chat-0000abcd-2".into());
+    let mut first = round("m", &[]);
+    first.request_ids = vec!["kanade-chat-0000abcd-2-1".into()];
+    let mut second = round("m", &[]);
+    second.request_ids = vec![
+        "kanade-chat-0000abcd-2-2".into(),
+        "kanade-chat-0000abcd-2-3".into(),
+    ];
+    interaction.rounds = vec![first, second, round("m", &[])];
+    store
+        .record_chat(interaction.clone())
+        .await
+        .expect("record");
+    assert_eq!(
+        store.load_chat(&interaction.id).await.expect("load"),
+        Some(interaction.clone())
+    );
+    let page = store
+        .list_chats(&ChatFilter::default())
+        .await
+        .expect("list");
+    assert!(page.items.contains(&interaction));
+
+    for bad in ["", "has space", "x-request-id:secret", &"a".repeat(129)] {
+        let mut wrong = log.clone();
+        wrong.id = "x-bad-request".into();
+        wrong.request_ids = vec![bad.to_owned()];
+        assert!(matches!(
+            store.record_extraction(wrong).await,
+            Err(StoreError::Constraint(_))
+        ));
+        let mut wrong = log.clone();
+        wrong.id = "x-bad-session".into();
+        wrong.session_id = Some(bad.to_owned());
+        assert!(matches!(
+            store.record_extraction(wrong).await,
+            Err(StoreError::Constraint(_))
+        ));
+        let mut wrong = chat("c-bad-session", utc(20, 12, 0));
+        wrong.session_id = Some(bad.to_owned());
+        assert!(matches!(
+            store.record_chat(wrong).await,
+            Err(StoreError::Constraint(_))
+        ));
+        let mut wrong = chat("c-bad-round", utc(20, 12, 0));
+        let mut r = round("m", &[]);
+        r.request_ids = vec![bad.to_owned()];
+        wrong.rounds.push(r);
+        assert!(matches!(
+            store.record_chat(wrong).await,
+            Err(StoreError::Constraint(_))
+        ));
+    }
+}
+
 fn utc(day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 9, day, hour, minute, 0)
         .single()
@@ -241,6 +333,8 @@ fn extraction(id: &str, at: DateTime<Utc>) -> ExtractionLog {
         prompt_tokens: None,
         completion_tokens: None,
         prompt_estimate: None,
+        request_ids: Vec::new(),
+        session_id: None,
     }
 }
 
@@ -261,6 +355,7 @@ fn round(model: &str, tools: &[&str]) -> ChatRound {
         prompt_tokens: None,
         completion_tokens: None,
         prompt_estimate: None,
+        request_ids: Vec::new(),
     }
 }
 
@@ -289,6 +384,7 @@ fn chat(id: &str, at: DateTime<Utc>) -> ChatInteraction {
         profile: None,
         profile_source: None,
         error_code: None,
+        session_id: None,
     }
 }
 

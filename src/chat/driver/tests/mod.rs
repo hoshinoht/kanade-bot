@@ -782,6 +782,7 @@ fn withheld_row(message_id: &str) -> ChatInteraction {
         profile: None,
         profile_source: None,
         error_code: None,
+        session_id: None,
     }
 }
 

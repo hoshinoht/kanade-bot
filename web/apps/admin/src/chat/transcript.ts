@@ -26,6 +26,8 @@ export interface Round {
   latency_ms: number | null;
   finish: string;
   requested_tools: string[];
+  /** The `x-request-id`s the round sent, as Kanata logged them; empty when not recorded. */
+  request_ids: string[];
   calls: Call[];
 }
 
@@ -53,6 +55,7 @@ export function rounds(turn: ChatTurn): Round[] {
     latency_ms: r.latency_ms ?? null,
     finish: r.finish,
     requested_tools: r.requested_tools,
+    request_ids: r.request_ids ?? [],
     calls: [],
   }));
   for (const call of turn.tools) (out.find((r) => r.round === call.round) ?? out[out.length - 1])?.calls.push(call);
@@ -82,6 +85,7 @@ function header(turn: ChatTurn, ctx: TranscriptContext) {
     profile: turn.profile ?? null,
     profile_source: turn.profile_source ?? null,
     route: turn.route ?? null,
+    session_id: turn.session_id ?? null,
   };
 }
 
@@ -106,6 +110,7 @@ export function transcriptMarkdown(turn: ChatTurn, ctx: TranscriptContext): stri
     `- Route: ${routeLabel(h.route)}`,
     `- Models: ${h.models.join(', ') || '—'}`,
     `- Took: ${duration(turn.latency_ms)}`,
+    ...(h.session_id ? [`- Gateway session: ${h.session_id}`] : []),
     '',
     '## Question',
     '',
@@ -126,6 +131,7 @@ export function transcriptMarkdown(turn: ChatTurn, ctx: TranscriptContext): stri
       `- Finish: ${r.finish || '—'}`,
       `- Requested tools: ${r.requested_tools.join(', ') || 'none'}`,
     );
+    if (r.request_ids.length) lines.push(`- Request ids: ${r.request_ids.join(', ')}`);
     if (r.reasoning_tokens !== null) lines.push(`- Reasoning tokens: ${r.reasoning_tokens}`);
     if (r.reasoning_content) lines.push('', '### Reasoning', '', fence(r.reasoning_content));
     for (const c of r.calls) lines.push(...callLines(c));

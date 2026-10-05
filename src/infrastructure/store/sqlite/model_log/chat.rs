@@ -6,8 +6,8 @@ use sqlx::{Row, SqliteConnection};
 
 use super::extractions::{Keyed, distinct, page};
 use super::{
-    instant, json_text, optional_signed, optional_text, read_instant, read_json, read_list,
-    read_optional_u64, read_u64, text,
+    instant, json_text, optional_list, optional_signed, optional_text, read_instant, read_json,
+    read_list, read_optional_list, read_optional_u64, read_u64, text,
 };
 use crate::domain::model_log::{
     ChatFilter, ChatInteraction, ChatOutcome, ChatRound, LogCursor, LogFacets, LogPage, MaskedTurn,
@@ -20,11 +20,11 @@ use crate::infrastructure::store::sqlite::schedule::store_error;
 const COLUMNS: &str = "c.id, c.at, c.channel_id, c.message_id, c.member_id, c.question, \
     c.reply, c.outcome, c.error, c.clean_retry, c.withheld, c.guardrail, c.request_count, \
     c.latency_ms, c.model_ms, c.tools_ms, c.prompt_tokens, c.completion_tokens, c.persona, \
-    c.profile, c.profile_source, c.error_code";
+    c.profile, c.profile_source, c.error_code, c.session_id";
 
 const ROUND_COLUMNS: &str = "model, reasoning, finish_reason, latency_ms, tool_bundles, tools, \
     tool_calls, response, route, clean, prompt_tokens, completion_tokens, prompt_estimate, \
-    reasoning_content, reasoning_tokens";
+    reasoning_content, reasoning_tokens, request_ids";
 
 impl Keyed for ChatInteraction {
     fn cursor(&self) -> LogCursor {
@@ -69,6 +69,7 @@ fn interaction_of(row: &SqliteRow) -> Result<ChatInteraction, StoreError> {
         profile: optional_text(row, "profile")?,
         profile_source: optional_text(row, "profile_source")?,
         error_code: optional_text(row, "error_code")?,
+        session_id: optional_text(row, "session_id")?,
     })
 }
 
@@ -91,6 +92,7 @@ fn round_of(row: &SqliteRow) -> Result<ChatRound, StoreError> {
         prompt_tokens: read_optional_u64(row, "prompt_tokens")?,
         completion_tokens: read_optional_u64(row, "completion_tokens")?,
         prompt_estimate: read_optional_u64(row, "prompt_estimate")?,
+        request_ids: read_optional_list(row, "request_ids")?,
     })
 }
 
@@ -117,8 +119,8 @@ pub(super) async fn insert(
         "INSERT INTO chat_interactions (id, at, channel_id, message_id, member_id, question, \
          reply, outcome, error, clean_retry, withheld, guardrail, request_count, latency_ms, \
          model_ms, tools_ms, prompt_tokens, completion_tokens, persona, profile, profile_source, \
-         error_code) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, \
-         ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
+         error_code, session_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, \
+         ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
     )
     .bind(&chat.id)
     .bind(instant(&chat.at)?)
@@ -145,6 +147,7 @@ pub(super) async fn insert(
     .bind(&chat.profile)
     .bind(&chat.profile_source)
     .bind(&chat.error_code)
+    .bind(&chat.session_id)
     .execute(&mut *conn)
     .await
     .map_err(store_error)?;
@@ -152,8 +155,9 @@ pub(super) async fn insert(
         sqlx::query(
             "INSERT INTO chat_rounds (interaction_id, ord, model, reasoning, finish_reason, \
              latency_ms, tool_bundles, tools, tool_calls, response, route, clean, \
-             prompt_tokens, completion_tokens, prompt_estimate, reasoning_content, reasoning_tokens) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+             prompt_tokens, completion_tokens, prompt_estimate, reasoning_content, reasoning_tokens, \
+             request_ids) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
         )
         .bind(&chat.id)
         .bind(i64::try_from(ord).map_err(|_| StoreError::Constraint("too many rounds".into()))?)
@@ -175,6 +179,7 @@ pub(super) async fn insert(
         .bind(optional_signed(round.prompt_estimate, "prompt_estimate")?)
         .bind(&round.reasoning_content)
         .bind(optional_signed(round.reasoning_tokens, "reasoning_tokens")?)
+        .bind(optional_list(&round.request_ids))
         .execute(&mut *conn)
         .await
         .map_err(store_error)?;

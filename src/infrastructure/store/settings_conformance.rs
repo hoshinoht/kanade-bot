@@ -8,9 +8,9 @@ use crate::domain::attendance::AttendanceMode;
 use crate::domain::history::{Actor, Surface};
 use crate::domain::scheduler::StoreError;
 use crate::domain::settings::{
-    Reasoning, RuntimeSettings, Section, SelfServiceMode, SettingsChange, SettingsChangeQuery,
-    SettingsError, SettingsStore, diff_rows, keys, load_settings, save_section,
-    save_section_recorded,
+    IdList, Reasoning, RuntimeSettings, Section, SelfServiceMode, SettingsChange,
+    SettingsChangeQuery, SettingsError, SettingsStore, diff_rows, keys, load_settings,
+    save_section, save_section_recorded,
 };
 
 pub async fn run_suite<S: SettingsStore>(make: impl AsyncFn() -> S) {
@@ -155,6 +155,7 @@ async fn sections_round_trip_and_keep_other_rows<S: SettingsStore>(store: S) {
     wanted.posting.channel_id = Some("77".into());
     for section in [
         Section::Chatbot(wanted.chatbot.clone()),
+        Section::IdList(IdList::ChatCategories, wanted.chatbot.category_ids.clone()),
         Section::Models(wanted.models.clone()),
         Section::SelfService(wanted.self_service),
         Section::Persona(wanted.persona.clone()),

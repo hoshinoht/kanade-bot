@@ -83,6 +83,7 @@ fn round(model: &str, tools: &[&str], calls: Value, response: Option<&str>) -> C
         prompt_tokens: None,
         completion_tokens: None,
         prompt_estimate: None,
+        request_ids: Vec::new(),
     }
 }
 
@@ -122,6 +123,7 @@ fn chat(
         profile: None,
         profile_source: None,
         error_code: None,
+        session_id: None,
     }
 }
 
@@ -153,6 +155,8 @@ pub fn extraction(
         prompt_tokens: None,
         completion_tokens: None,
         prompt_estimate: None,
+        request_ids: Vec::new(),
+        session_id: None,
     }
 }
 
@@ -199,6 +203,12 @@ async fn seed_chats(reads: &Reads) {
     answered.rounds[0].reasoning_content = Some("Look up Kalos before answering.".into());
     answered.rounds[0].reasoning_tokens = Some(12);
     answered.rounds[1].reasoning_content = Some("Use the read result.".into());
+    answered.session_id = Some("kanade-chat-0000abcd-7".into());
+    answered.rounds[0].request_ids = vec![
+        "kanade-chat-0000abcd-7-1".into(),
+        "kanade-chat-0000abcd-7-2".into(),
+    ];
+    answered.rounds[1].request_ids = vec!["kanade-chat-0000abcd-7-3".into()];
     answered.rounds[1].prompt_estimate = Some(1100);
     let mut withheld = chat(
         "c-withheld",
@@ -347,6 +357,8 @@ async fn seed_extractions(reads: &Reads, proposal: &str) {
     newest.prompt_estimate = Some(1200);
     newest.reasoning_content = Some("The party agreed on Wednesday.".into());
     newest.reasoning_tokens = Some(24);
+    newest.session_id = Some("kanade-extraction-0000abcd-8".into());
+    newest.request_ids = vec!["kanade-extraction-0000abcd-8-1".into()];
     newest.guardrail =
         json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default"}});
     newest.message_ids = vec!["m-said".into(), "m-pruned".into()];

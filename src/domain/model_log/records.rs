@@ -69,6 +69,12 @@ pub struct ExtractionLog {
     pub completion_tokens: Option<u64>,
     /// The local prompt-size estimate, independent of the reported pair.
     pub prompt_estimate: Option<u64>,
+    /// The governed session's correlation stem; `None` for rows written
+    /// before it was recorded (and v4 imports).
+    pub session_id: Option<String>,
+    /// Every `x-request-id` the call sent, in order (answer and transient
+    /// retries included); empty when none was recorded.
+    pub request_ids: Vec<String>,
 }
 
 /// One change the scheduler refused to stage: the change kind, a stable
@@ -129,6 +135,9 @@ pub struct ChatRound {
     pub completion_tokens: Option<u64>,
     /// The local prompt-size estimate, independent of the reported pair.
     pub prompt_estimate: Option<u64>,
+    /// Every `x-request-id` this round sent, in order (transient retries and
+    /// requeues included); empty when none was recorded.
+    pub request_ids: Vec<String>,
 }
 
 /// One chat question (v4 `chat_interactions`, plus the v5 filter fields).
@@ -165,6 +174,10 @@ pub struct ChatInteraction {
     pub profile_source: Option<String>,
     /// A stable code for `error` (e.g. `timeout`, `identity_leak_blocked`).
     pub error_code: Option<String>,
+    /// The question session's correlation stem: every request it sent,
+    /// failed ones included, went out as `{session_id}-{n}`. `None` for rows
+    /// written before it was recorded and turns that opened no session.
+    pub session_id: Option<String>,
 }
 
 /// One rescan job (v4 `rescan_jobs`). `window` is kept as given (v4 and v5
@@ -212,6 +225,18 @@ fn usage_pair(prompt: Option<u64>, completion: Option<u64>) -> bool {
     prompt.is_some() == completion.is_some()
 }
 
+/// The gateway's `x-request-id` alphabet: 1–128 of `[A-Za-z0-9_-]`.
+pub fn is_correlation_id(id: &str) -> bool {
+    (1..=128).contains(&id.len())
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
+fn correlation_shape(session: Option<&str>, requests: &[String]) -> bool {
+    session.is_none_or(is_correlation_id) && requests.iter().all(|id| is_correlation_id(id))
+}
+
 fn reasoning_shape(text: Option<&str>, tokens: Option<u64>) -> bool {
     text.is_none_or(|text| !text.is_empty() && text.len() <= super::REASONING_CAP)
         && tokens.is_none_or(|tokens| i64::try_from(tokens).is_ok())
@@ -224,6 +249,10 @@ impl ExtractionLog {
         shape(
             reasoning_shape(self.reasoning_content.as_deref(), self.reasoning_tokens),
             "extraction reasoning",
+        )?;
+        shape(
+            correlation_shape(self.session_id.as_deref(), &self.request_ids),
+            "extraction request ids",
         )?;
         shape(
             usage_pair(self.prompt_tokens, self.completion_tokens),
@@ -242,7 +271,15 @@ impl ChatInteraction {
                 .is_none_or(|source| PROFILE_SOURCES.contains(&source)),
             "chat profile_source",
         )?;
+        shape(
+            correlation_shape(self.session_id.as_deref(), &[]),
+            "chat session id",
+        )?;
         for round in &self.rounds {
+            shape(
+                correlation_shape(None, &round.request_ids),
+                "chat round request ids",
+            )?;
             shape(
                 reasoning_shape(round.reasoning_content.as_deref(), round.reasoning_tokens),
                 "chat round reasoning",
@@ -312,6 +349,8 @@ impl fmt::Debug for ExtractionLog {
             .field("raw_response_len", &self.raw_response.len())
             .field("messages", &self.message_ids.len())
             .field("proposal_ids", &self.proposal_ids)
+            .field("session_id", &self.session_id)
+            .field("request_ids", &self.request_ids)
             .finish_non_exhaustive()
     }
 }
@@ -327,6 +366,7 @@ impl fmt::Debug for ChatRound {
             .field("completion_tokens", &self.completion_tokens)
             .field("prompt_estimate", &self.prompt_estimate)
             .field("response_len", &self.response.as_ref().map(String::len))
+            .field("request_ids", &self.request_ids)
             .finish_non_exhaustive()
     }
 }
@@ -345,6 +385,7 @@ impl fmt::Debug for ChatInteraction {
             .field("latency_ms", &self.latency_ms)
             .field("question_len", &self.question.len())
             .field("reply_len", &self.reply.len())
+            .field("session_id", &self.session_id)
             .field("rounds", &self.rounds)
             .finish_non_exhaustive()
     }

@@ -849,8 +849,9 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
   await page.getByRole('tab', { name: 'Set in the environment' }).click();
   await expect(panel.getByRole('row', { name: /Timezone/ })).toContainText('Asia/Kuala_Lumpur');
   await expect(panel.getByRole('row', { name: /Timezone/ })).toContainText('a change needs a restart');
-  await expect(panel.getByRole('row', { name: /Watched categories/ })).toContainText('KANADE_WATCH_CATEGORY_IDS');
-  await expect(panel.getByRole('row', { name: /Watched categories/ })).toContainText('deliberate deploy');
+  // The id lists moved to Channels, where the env values are only seeds.
+  await expect(panel.getByRole('row', { name: /Watched categories/ })).toHaveCount(0);
+  await expect(panel.getByRole('row', { name: /Digest channel/ })).toContainText('KANADE_POST_CHANNEL_ID');
   await expect(panel.getByRole('row', { name: /Model gateway/ })).not.toContainText('secret');
   await expect(panel.locator('input, select, [role="combobox"]')).toHaveCount(0);
 });
@@ -1181,11 +1182,11 @@ test('env: copy buttons write the raw env value; none where it is unset', async 
   await panel.getByRole('button', { name: 'Copy KANADE_BOSS_WEEK_RESET_WEEKDAY' }).click();
   await expect(toast(page, 'Copied KANADE_BOSS_WEEK_RESET_WEEKDAY.')).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('thu');
-  await panel.getByRole('button', { name: 'Copy KANADE_WATCH_CHANNEL_IDS' }).click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/^[^,\s]+(,[^,\s]+)+$/);
+  await panel.getByRole('button', { name: 'Copy KANADE_POST_CHANNEL_ID' }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('boss-schedule');
   // Unset values have nothing to copy.
-  await expect(panel.getByRole('row', { name: /Watched categories/ }).getByRole('button')).toHaveCount(0);
-  await expect(panel.getByRole('button', { name: 'Copy KANADE_WATCH_CATEGORY_IDS' })).toHaveCount(0);
+  await expect(panel.getByRole('row', { name: /Chat pilot role/ }).getByRole('button')).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Copy KANADE_CHAT_PILOT_ROLE_ID' })).toHaveCount(0);
 
   // Without a clipboard the toast says the value instead.
   await page.evaluate(() => {

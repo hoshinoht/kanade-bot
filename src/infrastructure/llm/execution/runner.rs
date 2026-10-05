@@ -180,6 +180,8 @@ impl<P: LlmProvider> CompletionRunner<P> {
             let request_id = gate.request_id();
             let call = match (&capabilities, &request_id) {
                 (Some(capabilities), Some(id)) => {
+                    // Recorded as handed over: the id the gateway logs.
+                    gate.note_request_id(id);
                     self.provider.complete_tagged(current, capabilities, id)
                 }
                 (Some(capabilities), None) => self.provider.complete_with(current, capabilities),

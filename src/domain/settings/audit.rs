@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 
-use super::{RuntimeSettings, Section, codec};
+use super::{IdList, RuntimeSettings, Section, codec};
 use crate::domain::history::{Actor, Surface};
 
 /// One stored row's text before and after a save.
@@ -65,8 +65,13 @@ fn rows(settings: &RuntimeSettings) -> BTreeMap<&'static str, String> {
         Section::Schedule(settings.schedule),
         Section::Posting(settings.posting.clone()),
     ]
-    .iter()
-    .flat_map(codec::encode)
+    .into_iter()
+    .chain(
+        IdList::ALL
+            .into_iter()
+            .map(|list| Section::IdList(list, list.get(settings).clone())),
+    )
+    .flat_map(|section| codec::encode(&section))
     .collect()
 }
 
