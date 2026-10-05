@@ -114,6 +114,8 @@ export const GROUPS: Group[] = ['Schedule', 'Kanade', 'Operate'];
 
 export const ROUTES = [
   { key: 'login', pattern: '/login' },
+  // Reached from the account menu; no navigation destination of its own.
+  { key: 'account', pattern: '/account' },
   ...SECTIONS.map((s) => ({ key: s.key, pattern: s.href })),
   ...DETAILS.map((d) => ({ key: d.key, pattern: d.pattern })),
 ];

@@ -27,9 +27,10 @@ use crate::{
         },
         error::ApiError,
         listeners::Site,
-        state::{DigestPostRequest, DigestPostResult},
+        state::{ApiState, DigestPostRequest, DigestPostResult},
     },
     chat::pilot::{Allowance, AllowanceSnapshot},
+    domain::members::MemberProfile,
 };
 
 const REMEMBERED_KEYS: usize = 256;
@@ -117,6 +118,40 @@ fn allowance(snapshot: &AllowanceSnapshot, member_id: &str) -> (usize, usize, f6
         ))
 }
 
+/// The chat pilot's live allowance snapshot (the default allowance offline).
+pub(super) fn allowance_snapshot(state: &ApiState) -> AllowanceSnapshot {
+    state.chat.as_ref().map_or_else(
+        || Allowance::default().snapshot(0.0),
+        |chat| chat.allowance(),
+    )
+}
+
+/// One member's Limits allowance row; `None` without chatbot access (and for bots).
+pub(super) fn allowance_row(
+    state: &ApiState,
+    snapshot: &AllowanceSnapshot,
+    profile: &MemberProfile,
+) -> Option<AllowanceRow> {
+    let access = state.access.access(profile);
+    (!profile.member.is_bot && access != "none").then(|| {
+        let member = &profile.member;
+        let member_id = member.user_id.clone();
+        let member_name = member.name().unwrap_or(&member_id).to_owned();
+        let staff = access == "staff";
+        let (used, count, per_s, overridden) = allowance(snapshot, &member_id);
+        AllowanceRow {
+            member: Named {
+                id: member_id,
+                name: member_name,
+            },
+            staff,
+            allowance: (!staff).then_some(Quota { count, per_s }),
+            used: if staff { 0 } else { used },
+            overridden,
+        }
+    })
+}
+
 async fn read(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
     let state = state(&site)?;
     let profiles = state
@@ -124,33 +159,10 @@ async fn read(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
         .members()
         .await
         .map_err(super::context::unavailable)?;
-    let snapshot = state.chat.as_ref().map_or_else(
-        || Allowance::default().snapshot(0.0),
-        |chat| chat.allowance(),
-    );
+    let snapshot = allowance_snapshot(state);
     let allowances: Vec<AllowanceRow> = profiles
-        .into_iter()
-        .filter(|profile| !profile.member.is_bot)
-        .filter_map(|profile| {
-            let access = state.access.access(&profile);
-            (access != "none").then(|| {
-                let member = profile.member;
-                let member_id = member.user_id.clone();
-                let member_name = member.name().unwrap_or(&member_id).to_owned();
-                let staff = access == "staff";
-                let (used, count, per_s, overridden) = allowance(&snapshot, &member_id);
-                AllowanceRow {
-                    member: Named {
-                        id: member_id,
-                        name: member_name,
-                    },
-                    staff,
-                    allowance: (!staff).then_some(Quota { count, per_s }),
-                    used: if staff { 0 } else { used },
-                    overridden,
-                }
-            })
-        })
+        .iter()
+        .filter_map(|profile| allowance_row(state, &snapshot, profile))
         .collect();
     let now = state.now();
     let groups = state

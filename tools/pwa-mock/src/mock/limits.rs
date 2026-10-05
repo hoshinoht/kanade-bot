@@ -109,6 +109,37 @@ impl Store {
         true
     }
 
+    /// `GET /api/admin/me`: neutral for the token and Tailscale; a Discord
+    /// session is its member with seeded roles (staff, then the bossing role)
+    /// and the same allowance row as Limits.
+    pub fn me(&self) -> Value {
+        let member = self.discord_user().and_then(|id| {
+            let m = self.members.iter().find(|m| m.seed.id == id)?;
+            let held = |role: &Value| match role["name"].as_str() {
+                Some("staff") => m.seed.access == "staff",
+                Some("bossers") => m.seed.bossing,
+                _ => false,
+            };
+            let roles: Vec<Value> = Self::roles()
+                .as_array()?
+                .iter()
+                .filter(|r| held(r))
+                .cloned()
+                .collect();
+            let allowance = self.limits()["allowances"]
+                .as_array()?
+                .iter()
+                .find(|row| row["member"]["id"] == id)
+                .cloned()
+                .unwrap_or(Value::Null);
+            Some(json!({
+                "id": m.seed.id, "name": m.seed.name, "access": m.seed.access,
+                "bossing": m.seed.bossing, "roles": roles, "allowance": allowance,
+            }))
+        });
+        json!({ "display": self.session_display(), "method": self.session_method(), "member": member })
+    }
+
     pub fn reset_window(&mut self, id: &str) -> Result<Value, MoveError> {
         let (id, name) = seed::member_name(id).ok_or(MoveError::NotFound)?;
         if !self.limit_resets.contains(&id) {
@@ -154,5 +185,32 @@ mod tests {
         assert!(!s.seed_limit_groups("four"));
         assert!(s.seed_limit_groups("default"));
         assert_eq!(s.limits()["groups"][0]["name"], "gateway");
+    }
+
+    #[test]
+    fn me_is_neutral_for_tokens_and_matches_limits_for_discord() {
+        let mut s = store();
+        let me = s.me();
+        assert_eq!(me["method"], "discord");
+        assert_eq!(me["member"]["id"], "1001");
+        let names: Vec<&str> = me["member"]["roles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["staff", "bossers"]);
+        let limits = s.limits();
+        let row = limits["allowances"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["member"]["id"] == "1001")
+            .unwrap();
+        assert_eq!(&me["member"]["allowance"], row);
+        for method in ["token", "tailscale"] {
+            assert!(s.set_session(method));
+            assert_eq!(s.me()["member"], serde_json::Value::Null, "{method}");
+        }
     }
 }

@@ -1,4 +1,4 @@
-import type { Channel, ConfigView, Identity, MemberRow, Role, MoveResult, Run, RunResult, RunStatus, Session, Stats, Summary, SwapResult, Week, WeekKey } from '@kanade/api-types';
+import type { Channel, ConfigView, Identity, Me, MemberRow, Role, MoveResult, Run, RunResult, RunStatus, Session, Stats, Summary, SwapResult, Week, WeekKey } from '@kanade/api-types';
 import { ApiRequestError, createClient, createPoller, type Poller } from '@kanade/client';
 import { clockTime, runTitle, whenLabel, type FreshState } from '@kanade/ui';
 import { directory } from './names/directory.svelte';
@@ -42,6 +42,8 @@ export class AdminWeek {
   channels = $state<Channel[]>([]);
   identity = $state<Identity | null>(null);
   session = $state<Session | null>(null);
+  /** The signed-in admin as the guild sees them (`member` null for the token and Tailscale). */
+  me = $state<Me | null>(null);
   /** The planner's keyboard time step: Config → Run lengths default minutes (30 until it loads). */
   runStep = $state(30);
   /** This boss week, polled alongside while Next week is on screen (read-only). */
@@ -163,13 +165,14 @@ export class AdminWeek {
   /** Reference data that changes rarely: loaded once per page. */
   async #loadReference(): Promise<void> {
     const get = <T>(path: string) => this.#client.get<T>(path).catch(() => null);
-    const [members, channels, identity, session, roles, config] = await Promise.all([
+    const [members, channels, identity, session, roles, config, me] = await Promise.all([
       get<MemberRow[]>('/api/admin/members'),
       get<Channel[]>('/api/admin/channels'),
       get<Identity>('/api/identity'),
       get<Session>('/api/admin/session'),
       get<Role[]>('/api/admin/roles'),
       get<ConfigView>('/api/admin/config'),
+      get<Me>('/api/admin/me'),
     ]);
     if (config?.run_lengths) this.runStep = config.run_lengths.default_minutes;
     this.members = members ?? [];
@@ -181,12 +184,14 @@ export class AdminWeek {
     directory.setIdentity(identity);
     directory.setGuildRoles(roles ?? []);
     this.session = session;
+    this.me = me;
   }
 
   /** Ends the session on the server (the cookie is cleared there); the page then shows sign-in. */
   async signOut(): Promise<void> {
     await this.#client.post('/api/admin/auth/logout', {}).catch(() => undefined);
     this.session = null;
+    this.me = null;
     this.#refusedProposals = false;
   }
 

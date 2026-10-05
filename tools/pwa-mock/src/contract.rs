@@ -354,6 +354,10 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "identity.json#/$defs/Session",
     )
     .await;
+    let me = h
+        .ok("GET", "/api/admin/me", None, "identity.json#/$defs/Me")
+        .await;
+    assert_eq!(me["member"]["id"], "1001");
     let fixed = h
         .ok(
             "GET",
@@ -1493,6 +1497,10 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     h.csrf = fresh;
     h.ok("GET", "/api/admin/week", None, "week.json#/$defs/Week")
         .await;
+    let me = h
+        .ok("GET", "/api/admin/me", None, "identity.json#/$defs/Me")
+        .await;
+    assert_eq!(me["member"], Value::Null, "a token session stays neutral");
     let (status, headers, _) = h
         .send_with(
             false,

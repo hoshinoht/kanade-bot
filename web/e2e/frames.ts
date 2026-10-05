@@ -25,6 +25,7 @@ export const SCREENS: [string, string, string][] = [
   ['admin', ADMIN, '/chat/c-when'],
   ['admin', ADMIN, '/chat/c-safe-line'],
   ['admin', ADMIN, '/limits'],
+  ['admin', ADMIN, '/account'],
   ['admin', ADMIN, '/history'],
   ['admin', ADMIN, '/config'],
   ['admin', ADMIN, '/config?section=models'],

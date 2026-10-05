@@ -523,6 +523,11 @@ impl Reads {
         Self::build(NaiveTime::MIN, true, None, true, true, true, None).await
     }
 
+    /// Sign-ins as [`Reads::with_logins`], over a role directory that may be down.
+    pub async fn with_logins_role_directory_connected(connected: bool) -> Self {
+        Self::build(NaiveTime::MIN, true, None, connected, true, true, None).await
+    }
+
     pub async fn without_digest_delivery() -> Self {
         Self::build(NaiveTime::MIN, false, None, true, false, true, None).await
     }

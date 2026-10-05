@@ -439,6 +439,10 @@ pub async fn limits(State(app): State<App>) -> Response {
     Json(app.store.lock().await.limits()).into_response()
 }
 
+pub async fn me(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.me()).into_response()
+}
+
 pub async fn reset_window(State(app): State<App>, Path(id): Path<String>) -> Response {
     outcome(app.store.lock().await.reset_window(&id))
 }

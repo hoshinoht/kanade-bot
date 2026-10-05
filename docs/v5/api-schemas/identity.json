@@ -28,6 +28,38 @@
         }
       }
     },
+    "Me": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["display", "method", "member"],
+      "properties": {
+        "display": { "type": "string" },
+        "method": { "enum": ["discord", "tailscale", "token"] },
+        "member": {
+          "description": "The guild member behind a Discord sign-in; null for the admin token, Tailscale, and a Discord account with no member row.",
+          "anyOf": [{ "$ref": "#/$defs/MeMember" }, { "type": "null" }]
+        }
+      }
+    },
+    "MeMember": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "access", "bossing", "roles", "allowance"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "access": { "enum": ["staff", "pilot", "none"] },
+        "bossing": { "type": "boolean" },
+        "roles": {
+          "description": "Current guild roles, highest first, named only; null while the role directory is unavailable.",
+          "anyOf": [{ "type": "array", "items": { "$ref": "common.json#/$defs/Role" } }, { "type": "null" }]
+        },
+        "allowance": {
+          "description": "The member's row exactly as GET /api/admin/limits shows it; null without chatbot access.",
+          "anyOf": [{ "$ref": "limits.json#/$defs/Allowance" }, { "type": "null" }]
+        }
+      }
+    },
     "PublicStatus": {
       "type": "object",
       "additionalProperties": false,

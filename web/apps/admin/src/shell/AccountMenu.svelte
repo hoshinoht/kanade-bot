@@ -1,6 +1,6 @@
 <!--
   The masthead's account chip: who is signed in (and how), opening a small
-  menu with "Copy user ID" (when the id is known) and "Sign out". A menu
+  menu with "Your account", "Copy user ID" (when the id is known) and "Sign out". A menu
   button (APG pattern): Enter/Space/↓ open on the first item, ↑ on the last;
   arrows move, Home/End jump, Escape or Tab close, and focus returns to the chip.
 -->
@@ -99,6 +99,8 @@
       <p class="account__who">
         <strong>{who}</strong>{#if session?.method}<span>signed in with {METHOD[session.method] ?? session.method}</span>{/if}
       </p>
+      <!-- The router takes the click; focus then moves to the page, as on any route change. -->
+      <a role="menuitem" tabindex="-1" class="account__item" href="/account" onclick={() => hide(false)}><Icon name="users" /> Your account</a>
       {#if userId}
         <button
           type="button"

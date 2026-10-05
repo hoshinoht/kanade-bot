@@ -45,6 +45,7 @@
   const loadChat = () => import('./chat/ChatPage.svelte');
   const PAGES = {
     login: () => import('./pages/LoginPage.svelte'),
+    account: () => import('./account/AccountPage.svelte'),
     fixed: () => import('./fixed/FixedPage.svelte'),
     bosses: loadBosses,
     'boss-knowledge': loadBosses,
@@ -96,7 +97,8 @@
   const section = $derived(SECTIONS.find((s) => s.key === (detail?.section ?? route?.key)));
   const which = $derived(router.query.get('week') === 'next' ? 'next' : 'this');
   const sheetRun = $derived(sheetRunId ? (store.run(sheetRunId) ?? null) : null);
-  const title = $derived(route?.key === 'login' ? 'Sign in' : (detail?.title ?? section?.title ?? 'Not found'));
+  const OWN_TITLES: Record<string, string> = { login: 'Sign in', account: 'Account' };
+  const title = $derived(OWN_TITLES[route?.key ?? ''] ?? detail?.title ?? section?.title ?? 'Not found');
 
   // A page's back step for the phone's top bar (an open Inbox item).
   let pageBack = $state<BackStep | null>(null);
@@ -131,6 +133,7 @@
       // A refused sign-in attempt is the form's to explain.
       if (path.startsWith('/api/admin/auth/') || router.path === '/login' || router.query.has('login_error')) return;
       store.session = null;
+      store.me = null;
       router.go(loginHref(router.path + router.search), { replace: true });
     });
     return () => onUnauthenticated(null);
@@ -140,9 +143,11 @@
   const signingIn = $derived(route?.key === 'login');
   $effect(() => (signingIn ? undefined : store.start()));
 
-  // Session carries no user id; a Discord sign-in's display name is the member's, when it names exactly one.
+  // `/api/admin/me` names the member; before it answers (or on an older server) a Discord
+  // sign-in's display name is the member's, when it names exactly one.
   const accountId = $derived.by(() => {
     if (store.session?.method !== 'discord') return null;
+    if (store.me?.member) return store.me.member.id;
     const matches = [...directory.members].filter(([, name]) => name === store.session?.display);
     return matches.length === 1 ? matches[0]![0] : null;
   });

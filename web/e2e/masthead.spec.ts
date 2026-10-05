@@ -32,14 +32,17 @@ test('account menu: keyboard, copy the user id, sign out, and axe', async ({ pag
   await page.keyboard.press('Enter');
   const menu = page.getByRole('menu', { name: 'Account' });
   await expect(menu).toContainText('signed in with Discord');
+  const account = menu.getByRole('menuitem', { name: 'Your account' });
   const copy = menu.getByRole('menuitem', { name: 'Copy user ID' });
   const signOut = menu.getByRole('menuitem', { name: 'Sign out' });
-  await expect(copy).toBeFocused();
+  await expect(account).toBeFocused();
   await expect(chip).toHaveAttribute('aria-expanded', 'true');
+  await page.keyboard.press('ArrowDown');
+  await expect(copy).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect(signOut).toBeFocused();
   await page.keyboard.press('ArrowDown');
-  await expect(copy).toBeFocused();
+  await expect(account).toBeFocused();
   await page.keyboard.press('End');
   await expect(signOut).toBeFocused();
   await page.keyboard.press('Escape');
@@ -52,6 +55,8 @@ test('account menu: keyboard, copy the user id, sign out, and axe', async ({ pag
   const scan = await new AxeBuilder({ page }).include('.navrail').withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
   expect(scan.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => v.id)).toEqual([]);
   await page.keyboard.press('Home');
+  await expect(account).toBeFocused();
+  await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('1001');
   await expect(page.getByRole('group', { name: 'Notification' }).filter({ hasText: 'Copied your user ID.' })).toBeVisible();
@@ -72,5 +77,5 @@ test('account menu: a token session has no user id to copy', async ({ page }) =>
   await page.getByRole('button', { name: /Break-glass token/ }).click();
   const menu = page.getByRole('menu', { name: 'Account' });
   await expect(menu).toContainText('signed in with the admin token');
-  await expect(menu.getByRole('menuitem')).toHaveText([/Sign out/]);
+  await expect(menu.getByRole('menuitem')).toHaveText([/Your account/, /Sign out/]);
 });

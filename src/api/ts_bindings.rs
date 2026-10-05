@@ -12,8 +12,8 @@ use super::{
     },
     assets::Identity,
     dto::{
-        self, bosses, config, fixed, history, inbox, inbox_past, limits, logs, members, reminders,
-        rescan, week,
+        self, account, bosses, config, fixed, history, inbox, inbox_past, limits, logs, members,
+        reminders, rescan, week,
     },
     error, public,
 };
@@ -199,6 +199,9 @@ fn bindings() -> String {
         .add::<limits::Quota>()
         .add::<limits::Allowance>()
         .add::<limits::Limits>()
+        // Account
+        .add::<account::MeMember>()
+        .add::<account::Me>()
         // History
         .add::<history::ChainHead>()
         .add::<history::HistoryPage>()

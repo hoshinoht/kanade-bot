@@ -2,6 +2,7 @@
 //! [`crate::api::auth::AdminSession`]; unmounted `/api/admin/*` paths are the
 //! generic 404.
 
+mod account;
 mod auth;
 pub mod config;
 mod context;
@@ -34,6 +35,7 @@ pub fn routes() -> Router<Arc<Site>> {
         .route("/healthz", get(health))
         .route("/art/{kind}/{key}", get(assets::art))
         .merge(auth::routes())
+        .merge(account::routes())
         .merge(tonight::routes())
         .merge(read::routes())
         .merge(write::routes())

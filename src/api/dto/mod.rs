@@ -2,6 +2,7 @@
 //! projections from domain rows. Guild-local text is built by hand because
 //! chrono runs without its formatting features here.
 
+pub mod account;
 pub mod bosses;
 pub mod config;
 mod consequence;

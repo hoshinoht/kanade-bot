@@ -6,6 +6,12 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Admin Account page: `GET /api/admin/me` (admin listener only) shows how you
+  signed in; a Discord sign-in also shows its chatbot access, bossing role,
+  server role names and the same chat allowance Limits shows, while the admin
+  token and Tailscale show a neutral "Not a Discord member" note. Opened from
+  the account menu's new "Your account" item; "Copy user ID" now reads the id
+  from `/me`.
 - Boss guides, second pass: the Recommended tile lists one figure per party
   size (`recommended_spec.parties`), phase cards are fuller, the HP breakdown
   folds away, the phase bar is a connected button group, an "On this page"

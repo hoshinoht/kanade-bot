@@ -710,6 +710,28 @@ export type Limits = { groups: Array<BackendGroup>, admission: AdmissionWindow, 
  */
 generated_at: string, };
 
+export type MeMember = { id: string, name: string, access: 'staff' | 'pilot' | 'none', 
+/**
+ * Holds the bossing role (on the roster).
+ */
+bossing: boolean, 
+/**
+ * Current guild roles, highest first; ids the directory cannot name are
+ * left out. Null while the role directory is unavailable.
+ */
+roles: Array<Role> | null, 
+/**
+ * The member's row exactly as Limits shows it; null without chatbot access.
+ */
+allowance: Allowance | null, };
+
+export type Me = { display: string, method: SignInMethod, 
+/**
+ * The guild member behind a Discord sign-in; null for the admin token,
+ * Tailscale, and a Discord account with no member row.
+ */
+member: MeMember | null, };
+
 /**
  * `{seq, hash}`: a record in the chain.
  */
