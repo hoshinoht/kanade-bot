@@ -2,7 +2,7 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
-## 1.0.0-beta.1 (in development)
+## 1.0.0-beta.3 (in development)
 
 **Added**
 
@@ -153,7 +153,6 @@ Notable changes to the Boss Scheduler Bot, newest first.
   two-line phone run cards. Planner cards grow on hover or keyboard focus
   (not on touch), a click opens the run, and clicking outside the run sheet
   closes it unless an edit is in progress.
-
 - v5 boss animations: `/art/animated/{key}` serves the boss's MP4 from
   `boss/artwork/animated/` with byte ranges (so Safari and iOS can play it),
   boss knowledge and event bosses carry a nullable `animated` URL, and the
@@ -199,7 +198,6 @@ Notable changes to the Boss Scheduler Bot, newest first.
   Anchored column reads ✓ matches, ○ older schema or ✗ mismatch in words;
   with no backups it says none were taken yet, or that this server has no
   backup directory.
-
 - v5 admin Config API adds three read-only fields for the Config page:
   `models.capacity_check[].group` names the capacity group each check is about
   (null for cross-group checks), `env[].copy` gives the raw value to paste into
@@ -213,7 +211,6 @@ Notable changes to the Boss Scheduler Bot, newest first.
   raw value gets a "Copy KANADE_…" button. Persona's reply profiles lead with a
   fixed "Default voice" row (the active persona as written; never selected or
   saved). The dev mock's env rows now use the server's keys, labels and order.
-
 - v5 admin Inbox items carry an optional one-line `consequence` read off the
   merge preview (e.g. "Party unchanged · 2 reminders will move", "Adds Finn",
   "2 reminders will be dropped"): party joins and leaves of the changed runs
@@ -221,7 +218,6 @@ Notable changes to the Boss Scheduler Bot, newest first.
   conflicts, expiry, no effect or nothing to say. Served by the pwa-mock and
   typed in `@kanade/api-types`; the decision card shows it before Approve
   (inside the change card on phones).
-
 - v5 admin API reads and changes a weekly timing's owner: `FixedRow` adds
   `owner_id`, and `POST`/`PATCH /api/admin/fixed` accept an optional `owner_id`
   (a rostered, non-bot member, not necessarily in the party; else `422 invalid`).
@@ -231,7 +227,6 @@ Notable changes to the Boss Scheduler Bot, newest first.
   phones), preselects the saved owner, defaults a new timing to the signed-in
   Discord member or else the first party member picked, and reads an owner
   refusal out on the field.
-
 - v5 admin phone navigation drawer shows Members and Reminders counts beside
   Week: `GET /api/admin/summary` adds `members` (bossing roster) and
   `reminders` (upcoming cards), derived as the Members and Reminders pages count.
@@ -240,21 +235,161 @@ Notable changes to the Boss Scheduler Bot, newest first.
   removing an alias the member does not hold returns the unchanged row. The admin
   PWA Members sheet gives each alias chip a × that removes it in place.
 
+**Changed**
+
+- Upgraded `scripts/bench_headers.py` with automated scoring, multi-repetition capabilities, and markdown reporting.
+- v5 PWA: at most two toasts stack, newest on top, hiding after 6 s (10 s
+  with Undo) while errors stay until dismissed; every admin list-detail
+  screen and the Week run pane switch to one pane at a shared 900 px
+  breakpoint (Bosses gains a Back link in the rail frame); Zilla Slab and
+  Maple Mono load real 700 faces instead of synthesised bold.
+- Boss knowledge accepts Champion and Destiny difficulties, shown only on the
+  Bosses info page (orange and dark-rimmed ticks, info only) and in chat
+  guides, never in the scheduler.
+- v5 admin run pane and run sheet: boss art stays inside the identity card
+  and fades into it (no hard cut behind Move), only where there is no text:
+  behind the actions on the laptop sheet, a top-right corner by the clock in
+  the pane and on phones; two or three bosses show as angled slices in run
+  order, further bosses as portraits only. Text contrast over it is measured
+  from pixels in e2e.
+- v5 admin full run sheet is one window: the identity card sits flush on the
+  modal's surface (no ground band around it) and Party / Answers / Cards /
+  Changes are a tab strip in it, not a second titled window.
+- v5 admin sign-in and the full run sheet follow the M3E hero boards: a
+  banner with the bot's name and a 52 px Discord key; the sheet's laptop and
+  phone views get an identity card with a large clock (new `--fs-hero`
+  tokens), Move and status, over a Party / Answers / Cards / Changes window
+  with one row per member.
+- v5 admin empty Inbox tabs say why nothing waits (the extractor's last read,
+  links on, and the tab's last three decisions); failed panes offer Try again
+  and Copy details; the phone top bar and drawer follow the M3E spacing.
+- v5 admin Chat and Extractions: the Filters button has an icon and its panel
+  closes on Escape or a click outside; on phones, Back closes an open
+  extraction call, and the filter chips and panel stay inside the window.
+- v5 admin Chat follows its M3E boards: one window lists interactions beside
+  the open turn (`/chat/:id`), with Copy transcript, pill tabs, conversation
+  bubbles and per-round Model trace cards; phones show the list, then the turn
+  with "‹ Chat".
+- v5 admin Extractions follows its M3E boards: one Calls window lists calls
+  beside the open call (Changes / Chat read / Prompt / Raw tabs, an outcome
+  card, and a code viewer with find, Wrap and Copy), with Filters and Re-read
+  on its title bar. `/extractions/:id` links open that call in the list.
+- v5 admin Limits: when the server has not mounted the limits route, the page
+  shows its M3E board's unavailable state: one window with a centred glyph, a
+  short explanation and an **Open Config → Models** link.
+- v5 admin Week board: busy day columns keep v4's 230 px floor instead of
+  squeezing to 184 px, so pills and names fit; a busy week scrolls sideways
+  and the board fades at whichever edge has more columns.
+- The web apps' API response types are generated from the Rust DTOs with
+  ts-rs (`web/packages/api-types/src/generated.ts`, checked by a Rust unit
+  test that fails when the file is stale); vocabularies, request bodies and
+  the responses still built with `json!` stay hand-written in `manual.ts`.
+- The admin log, rescan, limits and history responses and the API-owned
+  vocabularies (inbox tabs and flags, card kinds and states, reminder and job
+  states) are typed Rust structs and enums, so their TypeScript types are
+  generated too and `manual.ts` halves. Fields and values are unchanged; keys
+  in those responses now follow struct order instead of alphabetical order.
+- CI runs each suite only when its inputs change: legacy Python and its
+  image for `legacy/python/`, Rust for `src/`, `tests/`, Cargo files and the
+  tracked data its tests read, web for `web/`, `tools/pwa-mock/`, boss
+  knowledge and API schemas. Editing the workflow runs everything.
+- v5 admin Week: clicking the open run's card or Runs row again closes its
+  side pane.
+- v5 admin Week: At a glance shows the next run's party with each member's
+  answer, waiting first; the run side pane is wider (about 410-480 px from
+  1000 px) and can pop out to the larger run sheet on the same tab.
+
+**Removed**
+
+- Removed `GET /api/admin/runs/{id}/blame` (and its mock route, schema and
+  `BlameEntry` type): the admin PWA reads a run's change log from
+  `GET /api/admin/history?run=<id>` instead. Field blame stays in the domain
+  for write preconditions and cherry-pick.
+
+**Fixed**
+
+- v5 chat: a `request_tools` call with the wrong argument shape is now told
+  the argument name (`Call request_tools with {"bundle": "strategy"}; …`), so
+  the model recovers on its next round instead of wasting several.
+- v5 chat: withholding a content-filtered message no longer drops every
+  unrelated re-anchorable exchange; only anchors tied to that message go.
+- v5 admin Chat: the date presets in the filters panel are visible again.
+- v5 admin run countdowns no longer bunch their marks at the end: the bar fills
+  from 24 h out to T-1h, then restarts over the last hour with the T-15m mark
+  at three quarters. Opening the run pane scrolls the board to keep the
+  selected card in view.
+- v5 admin run pane: the countdown's track and T-1h/T-15m marks stay visible
+  over the boss art.
+- v5 admin Week Glance: the "Next up" card is readable over bright boss art
+  (stronger art, a scrim behind the text, a darker countdown track and ticks),
+  and the fill line keeps its space before "maybe". On Next week it still shows
+  the next run's portrait and countdown, and Open sheet switches to This week.
+  A busy reset-day column head no longer runs its count into "reset".
+- v5 admin and public PWAs: the fixed frame clips instead of hiding overflow,
+  so focusing or revealing a control (opening a Config section) can no longer
+  scroll the whole shell up under the window.
+- v5 admin Week: the selected run card keeps its artwork and status bar inside
+  its rounded corners, and a hovered card grows in place and pushes the runs
+  below it down instead of covering them.
+- v5 admin Week: the channel filter now filters (it compared the channel id
+  with the channel name the API sends as `party`) and lists only the shown
+  week's party channels.
+- v5 admin run pane: the Changes tab stacks each change so nothing is cut off
+  at the pane edge, and the home channel shows its name; full boss tags no
+  longer repeat their name in a tooltip.
+- v5 chat keeps the persona's schedule wording and puts the run's card under
+  it; it replaces a line only when it names a run id, time or date the
+  schedule lookup did not return, instead of falling back on any word the
+  checks could not read.
+- v5 chat "when is my next run" lists every upcoming run from now across boss
+  and calendar weeks: `get_schedule` with `week:"auto"` and no day no longer
+  stops at Sunday, so runs early next calendar week (still this boss week) are
+  found instead of "No upcoming runs for you in this week".
+- v5 chat keeps a persona sentence that mentions a run and puts the run's
+  record under it, instead of replacing the whole sentence with the record.
+- v5 chat "when is my next run?" answers with just the soonest run, and
+  `get_schedule` `week:"auto"` without a day stops at the end of this boss
+  week instead of listing every later week; plural or qualified asks ("my next
+  runs", "next run for hard lucid") still list this boss week's remaining runs.
+- v5 chat also keeps a persona sentence that names a run by its date and time
+  (no id) only when every fact in it was read and matches the run (fail-closed),
+  with the run's record under it; another catalog boss or difficulty, a wrong
+  or unread number, date, tally, status or channel (also in words), a
+  negation, am/pm, a relative day such as "tonight", or more than one time
+  still gets the listing. Not caught: a plain name of a boss outside the
+  catalog, a lowercase everyday-word alias ("star"), member names, and facts
+  phrased in words outside the checked lists.
+- v5 admin Bosses event rows, when selected, show the boss's difficulties and
+  levels below the name like catalog rows, instead of an unwrapped availability
+  note that ran past the row.
+- v5 chat no longer treats an ordinal that cannot be a date ("waiting on its
+  first ✅") as an unread fact, so such a persona sentence keeps its wording.
+- v5 avatar initials (Members sheet, inbox transcript, rail, drawer, account
+  menu, sign-in and public masthead) show the first readable letter of a name,
+  skipping emoji and symbols: "🥔猫铃薯🥔" shows "猫" instead of a broken half
+  of the emoji.
+- v5 admin phones keep selected list rows on their compact line across Fixed,
+  Week, Inbox, History, Members, Bosses and Config, including landscape; the
+  sideways settings strip never grows, while desktop rows still expand; the
+  Inbox heading wraps each boss name with its pill as one unit, and a Members
+  name cell keeps the name whole, ellipsises aliases and drops the "chat only"
+  chip below the name rather than past the column.
+
+## 1.0.0-beta.2 (2026-10-02)
+
+**Added**
 
 - v5 admin Bosses now uses the M3E catalog and checked-in knowledge workspace:
   level-ordered boss rows keep weekly difficulty ticks visible beside the selected
   strategy, facts, provenance and seasonal availability, with this week's linked
   timings alongside. Phone navigation moves from the catalog into a backable detail.
-
 - v5 replays offline ✅/❌ on pending proposal cards after startup and fresh
   gateway READY, using current approver roles; conflicting answers stay pending
   with a visible note, and stale chat rejection follow-ups are not sent.
-
 - v5 model logs retain Kanata reasoning text (64 KiB, visibly truncated) and
   reported reasoning tokens; admin Chat/Extractions show collapsed reasoning
   and token counts, and copied chat transcripts include both. Oversized counts
   stay unknown, and retries keep a single truncation marker.
-
 - v5 admin Inbox items read closer to their boards: the header and thread
   panel form one column beside the decision pane, a proposal shows Kanade's
   one-line italic summary under its header on wide screens, the facts line
@@ -267,7 +402,6 @@ Notable changes to the Boss Scheduler Bot, newest first.
   and "Open in Discord" at its foot, used messages marked "used", and
   "See the card" beside Reject; Extractor list rows lead with the boss art
   and say how much of the thread was used.
-
 - v5 admin Config sections now follow their M3E boards: each section has a
   heading and lead, settings cards that scroll, and a save bar that stays put
   (dirty dot, "field old → new", Discard, Save <section>; disabled when clean,
@@ -280,7 +414,6 @@ Notable changes to the Boss Scheduler Bot, newest first.
   above the table, and Re-read spaces its channel chips and Window row like
   B_CfgReread, with a "Channels · n of m" count, Select all / Clear and a
   one-at-a-time note.
-
 - v5 admin Inbox items now carry `thread`: the stored channel messages around
   a proposal's evidence (oldest first, at most 37, the extractor's context plus
   a burst), each marked `used` when the proposal cites it. It is read from the
@@ -332,7 +465,6 @@ Notable changes to the Boss Scheduler Bot, newest first.
   deciding commits (never during v4 import), and refreshes posted proposal
   cards after committed portal inbox approvals or rejections.
 - v5 admin Inbox now uses the M3E contained list, thread and decision-pane primitives across Extractor and Self-service, including the approved phone detail action bar.
-
 - v5 chat now follows up a qualifying ❌ on its own proposal card with one
   read-only, silent reply to the card. It verifies the original chat asker,
   uses a per-channel cooldown, spends no chat allowance and retains only the
@@ -379,6 +511,147 @@ Notable changes to the Boss Scheduler Bot, newest first.
   too-long question with a typed context-budget error and a member reply;
   a Kanata size 400 above the published output maximum no longer downgrades
   the model's sampling controls.
+
+**Changed**
+
+- v5 admin selected list rows smoothly grow to reveal their full content across
+  Fixed, Week, Inbox, History, Members, Bosses and Config; compact multi-boss
+  timings use overlapping portraits, and planner days always keep one card column.
+- v5 chat reuses another channel's live proposal for the same run change,
+  pointing to its existing card (or saying it is still being posted) instead
+  of creating a duplicate, while retaining normal retirement and card
+  refreshes; cardless chat proposals qualify only during a two-minute grace.
+- v5 admin shared M3E furniture now follows the mockups: an unboxed page line
+  (display title, bold mono count, serif context, no ⓘ), a "Live HH:MM" chip
+  and "Ctrl K" pill, 48 px window title bars with pill search and pill
+  controls, panes flush to their window with list items as card surfaces and
+  a tonal selection, mono overlines, pill and connected buttons, tonal status
+  chips, an icon Approve key with Reject taking the risk fill when Approve is
+  blocked, no visible "open" on selected rows, and the phone drawer's Week
+  count and Ctrl K hint. A hovered list row now gets its own state layer
+  (`--row-hover`) instead of turning the pane's colour.
+- v5 admin Fixed, History and Inbox follow their mockups more closely: a
+  Fixed timing's whole row is the selectable card (one button per row) at
+  the mockup's density (weekday over time, 28 px portraits, flags inline, the
+  party as one line of names), its flags read in lower case and Add carries
+  a plus; History's filters read
+  "Week: every week" and the change pane drops its extra header row; Inbox
+  section labels are mono overlines with tonal header chips, and an item
+  opened on a phone has "‹ Inbox" in the top bar, a compact header and a
+  bottom action bar (pencil, Reject…, Approve).
+- v5 admin Fixed's boss picker shows each boss's difficulties on one line in
+  compact rows (an existing timing lists its own bosses until "All n
+  bosses…"), with 40 px fields and name-chip party picks; the Inbox item
+  shows the boss art, the member's words as a speech bubble, participant
+  changes as chips, the thread as rows with initials and used messages
+  lifted (ready for a per-message `used` mark and a Used/All toggle), the
+  message time opening Discord instead of an "open" link, and a decision
+  pane that explains a blocked Approve and what Reject does.
+- v5 admin Inbox threads come from the item's `thread` (the channel messages
+  around the evidence, each marked used) with a Used/All toggle starting on
+  Used; Fixed rows open from anywhere on the row without a positioned overlay
+  (WebKit-safe) and keep their fill when hovered; selected Fixed and History
+  rows also go bold; the phone's back step returns focus after the drawer.
+- v5 admin History's Checkpoints tab says "No backups recorded yet" (no
+  backup directory configured) instead of an empty table and hides the
+  Timeline's filters; tabbed title bars centre their window dots on the tabs.
+- v5 admin History rows carry the mockup's dot, a facts line with the row
+  count and a one-line summary; a change's fields read one per line, and on
+  wide screens "Revert a member's changes…" sits at the foot of the open
+  change. Fixed timings lay out as grid rows (still one table, one button per
+  row), with Home channel on its own line in the editor.
+- v5 admin Inbox threads keep cited messages that were deleted (merged back
+  in as used, "no longer stored") and start on All when none is used; the
+  phone action bar is focused pencil → Reject… → Approve as it is seen; Fixed
+  rows show the party as plain text (full list in the tooltip) and ring a
+  focused row inside its card.
+- v5 admin Fixed's editor follows B_Fixed's spacing: sections 12 px apart,
+  "All n bosses…" and the typed bosses on one line under the rows, the note
+  after the party, and the party showing its picks and the first few others
+  with a "+n" chip for the rest; the list head lines up with the rows, and on
+  phones the party sits under the bosses with no sideways scroll.
+- v5 admin planner drops set the time as well as the day: a run dropped
+  between runs starts right after the one above (its start + run length), at
+  the top of a day it ends right before the run below, an empty day keeps its
+  time and own-time runs stay untimed, held within 00:00–23:59. The drag shows
+  and announces the resulting time ("→ 23:00"); an overlap that double-books
+  a member shows a clash warning (icon and words) on the indicator and both
+  cards but still saves. Keyboard moves step by the default run length;
+  Shift+Up jumps to just after the previous run, Shift+Down to just before the
+  next. A drop made while someone else changed the week is refused as a
+  conflict rather than overwriting it. Config gains a Run lengths section
+  (default minutes with a slider, boss + difficulty overrides checked against
+  the boss list).
+- v5 admin app shell (M3E slice 1, gates G1, G2, G6, G7): a navigation rail
+  replaces the masthead's grouped nav (96 px, expanded to 240 px from 1440 px
+  wide and collapsible, remembered per browser; Inbox badge; account at the
+  foot), a 36 px page line replaces the page-head cards (title, count, page
+  controls, an ⓘ for one-time help, the Live chip and Commands), windows get
+  a 20 px frame and the 1180 px page cap is gone. Phones and phone landscape
+  get a 48 px top bar (menu, title, Live, Inbox) and a navigation drawer that
+  traps focus and returns it to the menu, instead of the pinned links and
+  "More". New M3E tokens (`--select*`, `--pane`, `--board`, `--row`,
+  `--chip-fill`, `--seg-fill`) with contrast overrides and a per-face check.
+- v5 admin page line: the title group (title, count, context) sits in an
+  outlined surface shape with 12 px corners, in every colourway and face (ink
+  read washed out on the bare ground, e.g. blossom); the controls stay their
+  own chips, History's filters become field chips, and the line stays 36 px.
+  Chat's per-model stats no longer stack one row per model: compact chips for
+  the two busiest models ("model 37 ✓ · p50 2.2 s") and a "+n models · e
+  errors" button opening the full per-model table keep the line one row.
+
+**Fixed**
+
+- v5 admin Bosses: a whole catalog or event row selects its boss, weekly timings
+  read as one outlined list and open that timing's editor in Fixed
+  (`/fixed?open=<id>`), difficulty notes sit in their own accented callouts, and
+  seasonal chips use a short `Seasonal boss · CW3` tag (full season name on hover)
+  so the event list no longer scrolls sideways.
+- v5 admin Inbox shows a proposed status change as status chips under its
+  field name (old struck, new toned, e.g. At risk → Unconfirmed) instead of
+  raw `at_risk`/`planned` text pushed into a side column.
+- v5 extraction refuses hints naming only done or cancelled runs for kinds
+  that act on existing runs; Add/Fix keep v4 behaviour. Dayless RSVP/Sub
+  answers stay in their evidence message's boss week without escaping a
+  channel that has live runs; bare clocks keep their implicit resolved day
+  ("Refuse + anchor", including on rescans).
+- v5 Discord chat: asking which seasonal bosses or guides exist now names the seasonal event bosses (Kai, Meilin) with their event and availability.
+- v5 Discord chat: after a schedule lookup, a reply announcing a posted card
+  (e.g. a move proposal waiting for ✅) is no longer replaced by the lookup's
+  run listing; the card reply posts as the model wrote it.
+- v5 admin History: the window no longer scrolls away when a row opens, only
+  the clicked row of a multi-week change is marked open, tabs and Week/Who
+  filters match the other M3E title bars, a change shows compact field diffs
+  with the raw JSON in a viewer, and repeated summary lines collapse into one
+  with a count. History, Fixed and Members no longer draw two sets of window dots.
+- v5 re-reading party channels while watching is paused or the extractor is
+  off now says so and points to Config → Watching (API `409 extraction_off`,
+  same wording from `/rescan`), instead of "The service is unavailable".
+- v5 admin Week help ("How to move runs") now opens as a contained card and
+  mentions swapping; the run sheet keeps its action buttons on their own row so
+  a moved run's extra actions no longer squeeze the run details.
+- v5 long slash-command replies now post their follow-up parts in serve;
+  the production transport refused every follow-up (and would have refused
+  any other default-bodied transport call) as invalid without sending it.
+- v5 chat queue fixes: waiting questions' keycap positions are renumbered
+  when a question leaves the queue; a queued question whose channel left the
+  chat category is refunded instead of answered; a panic while a question's
+  context is built refunds its allowance and logs a failed row. A lookup
+  that panics again while the question is being cleaned up no longer aborts
+  the process: cleanup is deferred off the unwinding stack and, if it still
+  fails, only settles and refunds.
+- v5 extraction reads each message version once across live bursts, backlog
+  drains and startup/manual rescans (in-memory claims; the other reader
+  defers and gets the row back if the owner fails). Rows are marked read
+  before proposals or cards are posted, so a crash never repeats effects; an
+  edit during a running call drops the stale answer and the edit is proposed
+  instead (v4 proposed the old text). Gateway receipt times use the injected
+  clock.
+
+## 1.0.0-beta.1 (2026-09-28)
+
+**Added**
+
 - v5 gives countdown and weekly digest headers a bounded persona-flavored
   interjection, preserving code-owned schedule facts and stable stored text
   across retries and edits; schema v18 stores phrases before delivery claims.
@@ -891,153 +1164,6 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
-- v5 PWA: at most two toasts stack, newest on top, hiding after 6 s (10 s
-  with Undo) while errors stay until dismissed; every admin list-detail
-  screen and the Week run pane switch to one pane at a shared 900 px
-  breakpoint (Bosses gains a Back link in the rail frame); Zilla Slab and
-  Maple Mono load real 700 faces instead of synthesised bold.
-- Boss knowledge accepts Champion and Destiny difficulties, shown only on the
-  Bosses info page (orange and dark-rimmed ticks, info only) and in chat
-  guides, never in the scheduler.
-- v5 admin run pane and run sheet: boss art stays inside the identity card
-  and fades into it (no hard cut behind Move), only where there is no text:
-  behind the actions on the laptop sheet, a top-right corner by the clock in
-  the pane and on phones; two or three bosses show as angled slices in run
-  order, further bosses as portraits only. Text contrast over it is measured
-  from pixels in e2e.
-- v5 admin full run sheet is one window: the identity card sits flush on the
-  modal's surface (no ground band around it) and Party / Answers / Cards /
-  Changes are a tab strip in it, not a second titled window.
-- v5 admin sign-in and the full run sheet follow the M3E hero boards: a
-  banner with the bot's name and a 52 px Discord key; the sheet's laptop and
-  phone views get an identity card with a large clock (new `--fs-hero`
-  tokens), Move and status, over a Party / Answers / Cards / Changes window
-  with one row per member.
-- v5 admin empty Inbox tabs say why nothing waits (the extractor's last read,
-  links on, and the tab's last three decisions); failed panes offer Try again
-  and Copy details; the phone top bar and drawer follow the M3E spacing.
-- v5 admin Chat and Extractions: the Filters button has an icon and its panel
-  closes on Escape or a click outside; on phones, Back closes an open
-  extraction call, and the filter chips and panel stay inside the window.
-- v5 admin Chat follows its M3E boards: one window lists interactions beside
-  the open turn (`/chat/:id`), with Copy transcript, pill tabs, conversation
-  bubbles and per-round Model trace cards; phones show the list, then the turn
-  with "‹ Chat".
-- v5 admin Extractions follows its M3E boards: one Calls window lists calls
-  beside the open call (Changes / Chat read / Prompt / Raw tabs, an outcome
-  card, and a code viewer with find, Wrap and Copy), with Filters and Re-read
-  on its title bar. `/extractions/:id` links open that call in the list.
-- v5 admin Limits: when the server has not mounted the limits route, the page
-  shows its M3E board's unavailable state: one window with a centred glyph, a
-  short explanation and an **Open Config → Models** link.
-- v5 admin Week board: busy day columns keep v4's 230 px floor instead of
-  squeezing to 184 px, so pills and names fit; a busy week scrolls sideways
-  and the board fades at whichever edge has more columns.
-- The web apps' API response types are generated from the Rust DTOs with
-  ts-rs (`web/packages/api-types/src/generated.ts`, checked by a Rust unit
-  test that fails when the file is stale); vocabularies, request bodies and
-  the responses still built with `json!` stay hand-written in `manual.ts`.
-- The admin log, rescan, limits and history responses and the API-owned
-  vocabularies (inbox tabs and flags, card kinds and states, reminder and job
-  states) are typed Rust structs and enums, so their TypeScript types are
-  generated too and `manual.ts` halves. Fields and values are unchanged; keys
-  in those responses now follow struct order instead of alphabetical order.
-- CI runs each suite only when its inputs change: legacy Python and its
-  image for `legacy/python/`, Rust for `src/`, `tests/`, Cargo files and the
-  tracked data its tests read, web for `web/`, `tools/pwa-mock/`, boss
-  knowledge and API schemas. Editing the workflow runs everything.
-- v5 admin Week: clicking the open run's card or Runs row again closes its
-  side pane.
-- v5 admin Week: At a glance shows the next run's party with each member's
-  answer, waiting first; the run side pane is wider (about 410-480 px from
-  1000 px) and can pop out to the larger run sheet on the same tab.
-- v5 admin selected list rows smoothly grow to reveal their full content across
-  Fixed, Week, Inbox, History, Members, Bosses and Config; compact multi-boss
-  timings use overlapping portraits, and planner days always keep one card column.
-
-- v5 chat reuses another channel's live proposal for the same run change,
-  pointing to its existing card (or saying it is still being posted) instead
-  of creating a duplicate, while retaining normal retirement and card
-  refreshes; cardless chat proposals qualify only during a two-minute grace.
-
-- v5 admin shared M3E furniture now follows the mockups: an unboxed page line
-  (display title, bold mono count, serif context, no ⓘ), a "Live HH:MM" chip
-  and "Ctrl K" pill, 48 px window title bars with pill search and pill
-  controls, panes flush to their window with list items as card surfaces and
-  a tonal selection, mono overlines, pill and connected buttons, tonal status
-  chips, an icon Approve key with Reject taking the risk fill when Approve is
-  blocked, no visible "open" on selected rows, and the phone drawer's Week
-  count and Ctrl K hint. A hovered list row now gets its own state layer
-  (`--row-hover`) instead of turning the pane's colour.
-- v5 admin Fixed, History and Inbox follow their mockups more closely: a
-  Fixed timing's whole row is the selectable card (one button per row) at
-  the mockup's density (weekday over time, 28 px portraits, flags inline, the
-  party as one line of names), its flags read in lower case and Add carries
-  a plus; History's filters read
-  "Week: every week" and the change pane drops its extra header row; Inbox
-  section labels are mono overlines with tonal header chips, and an item
-  opened on a phone has "‹ Inbox" in the top bar, a compact header and a
-  bottom action bar (pencil, Reject…, Approve).
-- v5 admin Fixed's boss picker shows each boss's difficulties on one line in
-  compact rows (an existing timing lists its own bosses until "All n
-  bosses…"), with 40 px fields and name-chip party picks; the Inbox item
-  shows the boss art, the member's words as a speech bubble, participant
-  changes as chips, the thread as rows with initials and used messages
-  lifted (ready for a per-message `used` mark and a Used/All toggle), the
-  message time opening Discord instead of an "open" link, and a decision
-  pane that explains a blocked Approve and what Reject does.
-- v5 admin Inbox threads come from the item's `thread` (the channel messages
-  around the evidence, each marked used) with a Used/All toggle starting on
-  Used; Fixed rows open from anywhere on the row without a positioned overlay
-  (WebKit-safe) and keep their fill when hovered; selected Fixed and History
-  rows also go bold; the phone's back step returns focus after the drawer.
-- v5 admin History's Checkpoints tab says "No backups recorded yet" (no
-  backup directory configured) instead of an empty table and hides the
-  Timeline's filters; tabbed title bars centre their window dots on the tabs.
-- v5 admin History rows carry the mockup's dot, a facts line with the row
-  count and a one-line summary; a change's fields read one per line, and on
-  wide screens "Revert a member's changes…" sits at the foot of the open
-  change. Fixed timings lay out as grid rows (still one table, one button per
-  row), with Home channel on its own line in the editor.
-- v5 admin Inbox threads keep cited messages that were deleted (merged back
-  in as used, "no longer stored") and start on All when none is used; the
-  phone action bar is focused pencil → Reject… → Approve as it is seen; Fixed
-  rows show the party as plain text (full list in the tooltip) and ring a
-  focused row inside its card.
-- v5 admin Fixed's editor follows B_Fixed's spacing: sections 12 px apart,
-  "All n bosses…" and the typed bosses on one line under the rows, the note
-  after the party, and the party showing its picks and the first few others
-  with a "+n" chip for the rest; the list head lines up with the rows, and on
-  phones the party sits under the bosses with no sideways scroll.
-- v5 admin planner drops set the time as well as the day: a run dropped
-  between runs starts right after the one above (its start + run length), at
-  the top of a day it ends right before the run below, an empty day keeps its
-  time and own-time runs stay untimed, held within 00:00–23:59. The drag shows
-  and announces the resulting time ("→ 23:00"); an overlap that double-books
-  a member shows a clash warning (icon and words) on the indicator and both
-  cards but still saves. Keyboard moves step by the default run length;
-  Shift+Up jumps to just after the previous run, Shift+Down to just before the
-  next. A drop made while someone else changed the week is refused as a
-  conflict rather than overwriting it. Config gains a Run lengths section
-  (default minutes with a slider, boss + difficulty overrides checked against
-  the boss list).
-- v5 admin app shell (M3E slice 1, gates G1, G2, G6, G7): a navigation rail
-  replaces the masthead's grouped nav (96 px, expanded to 240 px from 1440 px
-  wide and collapsible, remembered per browser; Inbox badge; account at the
-  foot), a 36 px page line replaces the page-head cards (title, count, page
-  controls, an ⓘ for one-time help, the Live chip and Commands), windows get
-  a 20 px frame and the 1180 px page cap is gone. Phones and phone landscape
-  get a 48 px top bar (menu, title, Live, Inbox) and a navigation drawer that
-  traps focus and returns it to the menu, instead of the pinned links and
-  "More". New M3E tokens (`--select*`, `--pane`, `--board`, `--row`,
-  `--chip-fill`, `--seg-fill`) with contrast overrides and a per-face check.
-- v5 admin page line: the title group (title, count, context) sits in an
-  outlined surface shape with 12 px corners, in every colourway and face (ink
-  read washed out on the bare ground, e.g. blossom); the controls stay their
-  own chips, History's filters become field chips, and the line stays 36 px.
-  Chat's per-model stats no longer stack one row per model: compact chips for
-  the two busiest models ("model 37 ✓ · p50 2.2 s") and a "+n models · e
-  errors" button opening the full per-model table keep the line one row.
 - v4: Kanata request bodies follow per-alias capability metadata from `/v1/models`
   (cached, minimal when absent): `response_format`, `temperature`/`seed` and
   `reasoning_effort` are sent only to aliases that accept them, so extraction and
@@ -1083,10 +1209,6 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Removed**
 
-- Removed `GET /api/admin/runs/{id}/blame` (and its mock route, schema and
-  `BlameEntry` type): the admin PWA reads a run's change log from
-  `GET /api/admin/history?run=<id>` instead. Field blame stays in the domain
-  for write preconditions and cherry-pick.
 - Removed model-request pseudonymization and its external-unmasked opt-in for
   chat, extraction and rewrite. Configured external models receive raw member
   data with a warning; retired privacy keys now refuse startup. Historical
@@ -1098,119 +1220,6 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
-- v5 chat: a `request_tools` call with the wrong argument shape is now told
-  the argument name (`Call request_tools with {"bundle": "strategy"}; …`), so
-  the model recovers on its next round instead of wasting several.
-- v5 chat: withholding a content-filtered message no longer drops every
-  unrelated re-anchorable exchange; only anchors tied to that message go.
-- v5 admin Chat: the date presets in the filters panel are visible again.
-- v5 admin run countdowns no longer bunch their marks at the end: the bar fills
-  from 24 h out to T-1h, then restarts over the last hour with the T-15m mark
-  at three quarters. Opening the run pane scrolls the board to keep the
-  selected card in view.
-- v5 admin run pane: the countdown's track and T-1h/T-15m marks stay visible
-  over the boss art.
-- v5 admin Week Glance: the "Next up" card is readable over bright boss art
-  (stronger art, a scrim behind the text, a darker countdown track and ticks),
-  and the fill line keeps its space before "maybe". On Next week it still shows
-  the next run's portrait and countdown, and Open sheet switches to This week.
-  A busy reset-day column head no longer runs its count into "reset".
-- v5 admin and public PWAs: the fixed frame clips instead of hiding overflow,
-  so focusing or revealing a control (opening a Config section) can no longer
-  scroll the whole shell up under the window.
-- v5 admin Week: the selected run card keeps its artwork and status bar inside
-  its rounded corners, and a hovered card grows in place and pushes the runs
-  below it down instead of covering them.
-- v5 admin Week: the channel filter now filters (it compared the channel id
-  with the channel name the API sends as `party`) and lists only the shown
-  week's party channels.
-- v5 admin run pane: the Changes tab stacks each change so nothing is cut off
-  at the pane edge, and the home channel shows its name; full boss tags no
-  longer repeat their name in a tooltip.
-- v5 chat keeps the persona's schedule wording and puts the run's card under
-  it; it replaces a line only when it names a run id, time or date the
-  schedule lookup did not return, instead of falling back on any word the
-  checks could not read.
-- v5 chat "when is my next run" lists every upcoming run from now across boss
-  and calendar weeks: `get_schedule` with `week:"auto"` and no day no longer
-  stops at Sunday, so runs early next calendar week (still this boss week) are
-  found instead of "No upcoming runs for you in this week".
-- v5 chat keeps a persona sentence that mentions a run and puts the run's
-  record under it, instead of replacing the whole sentence with the record.
-- v5 chat "when is my next run?" answers with just the soonest run, and
-  `get_schedule` `week:"auto"` without a day stops at the end of this boss
-  week instead of listing every later week; plural or qualified asks ("my next
-  runs", "next run for hard lucid") still list this boss week's remaining runs.
-- v5 chat also keeps a persona sentence that names a run by its date and time
-  (no id) only when every fact in it was read and matches the run (fail-closed),
-  with the run's record under it; another catalog boss or difficulty, a wrong
-  or unread number, date, tally, status or channel (also in words), a
-  negation, am/pm, a relative day such as "tonight", or more than one time
-  still gets the listing. Not caught: a plain name of a boss outside the
-  catalog, a lowercase everyday-word alias ("star"), member names, and facts
-  phrased in words outside the checked lists.
-- v5 admin Bosses event rows, when selected, show the boss's difficulties and
-  levels below the name like catalog rows, instead of an unwrapped availability
-  note that ran past the row.
-- v5 chat no longer treats an ordinal that cannot be a date ("waiting on its
-  first ✅") as an unread fact, so such a persona sentence keeps its wording.
-- v5 avatar initials (Members sheet, inbox transcript, rail, drawer, account
-  menu, sign-in and public masthead) show the first readable letter of a name,
-  skipping emoji and symbols: "🥔猫铃薯🥔" shows "猫" instead of a broken half
-  of the emoji.
-- v5 admin phones keep selected list rows on their compact line across Fixed,
-  Week, Inbox, History, Members, Bosses and Config, including landscape; the
-  sideways settings strip never grows, while desktop rows still expand; the
-  Inbox heading wraps each boss name with its pill as one unit, and a Members
-  name cell keeps the name whole, ellipsises aliases and drops the "chat only"
-  chip below the name rather than past the column.
-
-- v5 admin Bosses: a whole catalog or event row selects its boss, weekly timings
-  read as one outlined list and open that timing's editor in Fixed
-  (`/fixed?open=<id>`), difficulty notes sit in their own accented callouts, and
-  seasonal chips use a short `Seasonal boss · CW3` tag (full season name on hover)
-  so the event list no longer scrolls sideways.
-- v5 admin Inbox shows a proposed status change as status chips under its
-  field name (old struck, new toned, e.g. At risk → Unconfirmed) instead of
-  raw `at_risk`/`planned` text pushed into a side column.
-
-- v5 extraction refuses hints naming only done or cancelled runs for kinds
-  that act on existing runs; Add/Fix keep v4 behaviour. Dayless RSVP/Sub
-  answers stay in their evidence message's boss week without escaping a
-  channel that has live runs; bare clocks keep their implicit resolved day
-  ("Refuse + anchor", including on rescans).
-- v5 Discord chat: asking which seasonal bosses or guides exist now names the seasonal event bosses (Kai, Meilin) with their event and availability.
-- v5 Discord chat: after a schedule lookup, a reply announcing a posted card
-  (e.g. a move proposal waiting for ✅) is no longer replaced by the lookup's
-  run listing; the card reply posts as the model wrote it.
-- v5 admin History: the window no longer scrolls away when a row opens, only
-  the clicked row of a multi-week change is marked open, tabs and Week/Who
-  filters match the other M3E title bars, a change shows compact field diffs
-  with the raw JSON in a viewer, and repeated summary lines collapse into one
-  with a count. History, Fixed and Members no longer draw two sets of window dots.
-- v5 re-reading party channels while watching is paused or the extractor is
-  off now says so and points to Config → Watching (API `409 extraction_off`,
-  same wording from `/rescan`), instead of "The service is unavailable".
-- v5 admin Week help ("How to move runs") now opens as a contained card and
-  mentions swapping; the run sheet keeps its action buttons on their own row so
-  a moved run's extra actions no longer squeeze the run details.
-- v5 long slash-command replies now post their follow-up parts in serve;
-  the production transport refused every follow-up (and would have refused
-  any other default-bodied transport call) as invalid without sending it.
-- v5 chat queue fixes: waiting questions' keycap positions are renumbered
-  when a question leaves the queue; a queued question whose channel left the
-  chat category is refunded instead of answered; a panic while a question's
-  context is built refunds its allowance and logs a failed row. A lookup
-  that panics again while the question is being cleaned up no longer aborts
-  the process: cleanup is deferred off the unwinding stack and, if it still
-  fails, only settles and refunds.
-- v5 extraction reads each message version once across live bursts, backlog
-  drains and startup/manual rescans (in-memory claims; the other reader
-  defers and gets the row back if the owner fails). Rows are marked read
-  before proposals or cards are posted, so a crash never repeats effects; an
-  edit during a running call drops the stale answer and the edit is proposed
-  instead (v4 proposed the old text). Gateway receipt times use the injected
-  clock.
 - v5 self-schedule lookup now recognizes an exact bot name copied into a
   model's participant argument without treating other members as self.
 - v5 day-of reminder fields now label only members still waiting for an answer
@@ -1261,876 +1270,6 @@ Notable changes to the Boss Scheduler Bot, newest first.
   normalized to BLOCKED on open; reconciliation is flagged in-process). The healthcheck reads the mode and accepts a live API
   without a heartbeat while closed.
 
-## Unreleased
+## v4 (Python, frozen rollback)
 
-**Changed**
-
-- Upgraded  with automated scoring, multi-repetition capabilities, and markdown reporting.
-
-## Unreleased
-
-**Changed**
-
-- Upgraded `scripts/bench_headers.py` with automated scoring, multi-repetition capabilities, and markdown reporting.
-
-## 4.9.0
-
-**Added**
-
-- Weekly digest cards are now tracked per boss week, update after clears and
-  RSVPs, replace earlier portal posts, and retire into a persistent weekly log.
-- Governed Discord memory uses schema v12 persistence with notification-first,
-  case-by-case enrollment, typed review cards, and subject-controlled approval.
-- Deterministic typed proposals and scoped retrieval keep memory limited to
-  presentation preferences; no chat transcript is imported or backfilled.
-- Member `/memory` controls plus authenticated portal, API, and `bossctl` admin
-  operations support enrollment, correction, revocation, opt-out, and deletion.
-- Boss strategy responses carry bounded source attribution, with full provenance
-  and source URLs on authenticated per-boss knowledge pages.
-
-**Changed**
-
-- Weekly digests now lead with each boss and an explicit cleared/planned status,
-  with scheduling metadata on a separate line and cleared progress in the summary.
-- The chat tool-schema growth guard now allows up to 4,096 estimated tokens.
-- Retention cleanup runs on the first tick and hourly thereafter regardless of the
-  memory switch; failures are isolated, logged, and retried on the next hourly window.
-- Governed memory now expires proposals after 7 days, active preferences after
-  180 days, inactive content and retrieval diagnostics after 30 days (diagnostics
-  also keep only the newest 500), and lifecycle events after 365 days.
-- The rollout remains disabled by default; enabling the capability never enrolls
-  members or enables production collection by itself.
-
-**Fixed**
-
-- Whole-next-week chatbot lookups now recover when the model redundantly sends
-  `day="next"`, avoiding unnecessary weekday-by-weekday tool loops.
-- Chat scheduling now passes Discord user mentions directly to proposal tools
-  instead of reasking for names, and routes requests to set up recurring runs
-  through new-weekly proposals rather than existing-weekly changes.
-- Reworked member review into a single tabbed Memory governance window, keeping enrollment,
-  preference setting, records, and activity within the fixed viewport review surface.
-
-## 4.8.2
-
-**Changed**
-
-- Split repository guidance into subsystem-specific `AGENTS.md` files covering
-  boss data, runtime packages, chatbot tools, portal assets, and tests.
-
-## 4.8.1
-
-**Changed**
-
-- Removed unused helpers and logger scaffolding, stale generated comments, and
-  repeated documentation introductions without changing runtime behavior.
-- Pruned redundant implementation-detail tests and made shared chatbot fixtures
-  deterministic across boss-week reset boundaries.
-
-## 4.8.0
-
-**Added**
-
-- Atomic major persona bundles: one portal selection now swaps identity,
-  default behaviour, and staging copy together from
-  `config/personas/personas/<id>/`, described by the private
-  `config/personas/personas.yaml` manifest (IDs, labels, default, legacy
-  aliases, optional per-bundle filenames). Invalid selections change neither
-  the stored choice nor the active answer; in-flight answers stay pinned to
-  one bundle.
-- Config page **Persona** control with human labels, configured-vs-effective
-  display, and safe recovery guidance that never shows prompt text. The API
-  keeps existing persona fields and adds `persona_labels`,
-  `persona_effective`, `persona_effective_label`, `persona_catalog_mode`,
-  and `persona_issue`; `bossctl config` renders the new mappings safely.
-- The tracked fallback bundle is Kanade-flavoured (`personas/kanade/`): with
-  no configured persona the bot answers in the default Kanade voice instead
-  of a placeholder. Keep bundles compact and run with an `OLLAMA_NUM_CTX`
-  that fits them plus the tool schemas.
-
-**Changed**
-
-- Chat schedule lookups now treat unqualified weeks as guild-local calendar
-  weeks, while explicit boss-week lookups retain reset-to-reset semantics.
-- Chat schedule replies now use bounded two-line records; trusted requests for
-  runs left, remaining, upcoming, or next exclude completed runs without giving
-  the model a filtering option.
-- Reply-profile overlays moved up to `config/personas/behaviours/` with
-  staging overrides in `config/personas/behaviours/staging/`; the old
-  `behaviours/profiles/` and `behaviour-plugins/` paths remain readable as
-  legacy fallbacks. The stale `config/personas/identities/` directory is
-  gone; live identities live in the bundles.
-- `PERSONA_PATH` is now a deprecated fresh-database seed only.
-
-## 4.6.0
-
-**Added**
-
-- Repository-specific `AGENTS.md` guidance for setup, focused checks,
-  architecture boundaries, generated assets, migrations, and private files.
-- Spaced full-name boss aliases such as `Hard Black Mage`,
-  `Normal Radiant Malefic Star`, and `Normal The First Adversary` now resolve in
-  commands, extraction, and chatbot run lookups.
-
-**Changed**
-
-- Renamed the internal `Star` boss key and tokens to `MaleficStar`, including
-  catalog, knowledge, assets, examples, and a v10-to-v11 SQLite migration.
-  Existing `star`, `nstar`, and `hstar` aliases remain accepted.
-- Reminder cards now use the lead boss's catalog colour, with the previous card
-  colours retained as fallbacks when no boss colour is available.
-
-**Fixed**
-
-- Moving a recurring run across the boss-week boundary into a week that already
-  contains that recurring run now returns a clear conflict instead of leaking a
-  SQLite uniqueness error through the portal, slash command, or proposal card.
-- Same-weekday future times such as `sat 22:30` now resolve to later today rather
-  than the same weekday one week later; past times still roll forward.
-
-## 4.5.0
-
-**Added**
-
-- Reply-profile search on the Config page, filtering by name and
-  instructions, plus a public/private visibility filter (client-side,
-  like the existing pagination).
-- Reply-profile editors open as modals instead of inline disclosures,
-  matching the member sheet.
-- Bulk publish / make-private for reply profiles, with a two-stage select
-  toggle (page, then all) that prioritises the active filter.
-- `.githooks` mirroring the CI gates, documented in Development.
-
-**Fixed**
-
-- Updated seven stale tool-schema tests to the deliberately trimmed 4.3.0
-  copy instead of re-adding bulk to the schemas.
-
-## 4.4.0
-
-**Added**
-
-- Persona-aware chatbot staging lines loaded from YAML: defaults in
-  `config/personas/behaviours/staging.yaml` with per-profile overrides in
-  `behaviours/profiles/staging/<profile>.yaml` (partial files inherit the
-  rest from `default`; unknown profiles use `default`; `{boss}` still
-  interpolates the resolved boss).
-- Silent processing indicator for chat answers: a no-ping staging
-  placeholder plus typing indicator while the model works. Success deletes
-  the placeholder and posts the final answer with its single ping; failures
-  edit the placeholder in place. Rejection follow-ups use the active
-  profile's generic line.
-- `silent` option on `post_plain` (`AllowedMentions.none()`) for staging
-  placeholders, plus `edit_plain` / `delete_placeholder` helpers.
-
-**Changed**
-
-- Staging copy is validated at startup: unknown keys and non-string values
-  are reported (falling back to defaults) instead of surfacing mid-request.
-- `bot.__version__` brought back in line with the package version.
-
-## 4.3.0
-
-**Added**
-
-- Separate `CHAT_PILOT_THINK` reasoning for speech, falling back to
-  `OLLAMA_THINK`, with per-call model+think logging.
-- `list_fixed` read-only chat tool for recurring weekly timings.
-- Portal Fixed edit can shift a timing's home channel to another watched
-  channel (live runs follow; unwatched channels rejected).
-- Strategy narrow/clarify replies are rewritten in voice in one no-tools
-  round, falling back to the static meaning on failure.
-
-**Changed**
-
-- Strategy answers rewrite the guide in voice (opener, bullets, closer),
-  copy boss names exactly, and omit source URLs / Sources (no Discord
-  embeds; the tool strips them, the domain keeps them for audit).
-- Scheduler four-sentence limit applies to scheduler replies only;
-  strategy/guides use compact bullets and are exempt.
-- Chat tool schemas trimmed for context budget, with a schema-token guard.
-
-**Fixed**
-
-- `get_schedule` treats blank day/participant/difficulty as omitted and
-  reports bad `scope` with its valid values.
-- Role mentions (`<@&id>`) no longer split multi-boss strategy targets.
-- Proposal cards say NOT DONE until ✅ (no more "move's done").
-
-## 4.2.0
-
-**Added**
-
-- A validated, source-backed boss strategy knowledge base and read-only chat
-  tool. Explicit strategy questions retrieve checked-in mechanics before the
-  bot answers in its configured persona.
-
-**Changed**
-
-- Boss metadata, strategy documents, portraits, icons and entry artwork now
-  live together under `boss/`.
-- `bossctl guide` derives boss entries from the canonical catalog and uploads
-  thumbnails as file data instead of sharing filesystem paths with the bot.
-
-**Fixed**
-
-- Chat no longer leaks tool refusals into Discord. A clarification that
-  contains a `?` anywhere (not just trailing) is kept as-is on `REFUSED`,
-  unless it falsely claims a card went up. Overwritten refusals are passed
-  through the member-facing filter, which now strips model-only
-  instructions (`short form` / `back to the tool` / `for the tool only` /
-  `never show them`, `propose_*` names).
-
-## 4.1.1
-
-**Added**
-
-- `bossctl guide` — posts the full server guide to a Discord channel.
-  Reads message templates from `config/guide.yaml` and boss entries from
-  `config/guide_bosses.yaml`, attaching portrait thumbnails as embed
-  images with per-boss accent colours. API endpoint `POST /api/guide`
-  added for messages with embeds and file uploads.
-- Guide config files (`guide.yaml`, `guide_bosses.yaml`) are
-  git-ignored with committed examples and a `config/README.md` for
-  setup instructions.
-- Role IDs in guide messages now render as clickable Discord mentions.
-
-**Changed**
-
-- **Personas directory moved** from `personas/` to `config/personas/`. All
-  bind mounts, config defaults, gitignore rules, and documentation updated.
-  Legacy root-level identity files and `behaviour-plugins/` profiles remain
-  readable during migration.
-- Guide "Talk to me" section updated: speech-pilot works anywhere under
-  the bossing category, not a single channel.
-- Guide messages now have vertical spacing between sections.
-- Footer is a standalone message (no `---` divider).
-
-## 4.0.1
-
-**Added**
-
-- `bossctl post-message` — post a Discord message from the CLI with full
-  markdown support. Accepts `--channel`, `--file`, or `--stdin` for longer
-  content. API endpoint `POST /api/say` added alongside it.
-- Members page redesigned as a compact card list with modal detail sheets,
-  replacing the overflowed 8-column table.
-
-**Changed**
-
-- Docker volumes renamed from `kanade-bot_*` to `kanade_*`; old volumes
-  migrated and removed.
-- `get_schedule` now correctly resolves the entire boss week when `day` is
-  omitted or empty, instead of refusing with a validation error.
-- Member list rows show a chevron affordance and tighter spacing.
-
-**Fixed**
-
-- Member list rows now visually indicate clickability.
-- Verbose comments condensed across `get_schedule.py`, `_modal.scss` and
-  `_runsheet.scss`.
-
-## 4.0.0
-
-**Added**
-
-- **Member-selectable reply styles** (`/style` command): members choose from a
-  public catalog of 13 profiles — chuunibyou, concise, gacha-addict, imouto,
-  kouhai, kuudere, mesugaki, ojou-sama, onee-san, raid-leader, sleep-deprived,
-  tsundere, vip-butler — with Discord autocomplete, ephemeral feedback, and
-  `none` to reset to default. Choices are saved per-member in SQLite.
-- **Component prompt system**: the chatbot prompt is assembled from discrete
-  components in explicit precedence — identity, default behaviour, active
-  profile, assistant scope, scheduler policy, grounding policy, runtime
-  context, and voice cue — instead of a single monolithic template.
-- **Dynamic assistant name** extracted from `# Persona: ...` in the identity
-  file; never hard-coded.
-- **Role-based style precedence**: first configured readable matching role
-  silently supersedes a member's saved choice. The member sees the same
-  response style; the mechanism is never disclosed.
-- **Portal style visibility**: Members page shows both the saved style and the
-  style that would apply to the next reply. Config page includes profile
-  publication toggle, role-priority move controls, and broken-entry
-  diagnostics.
-- **Profile deletion guard**: profiles assigned to a role or published cannot
-  be deleted.
-- Code-owned prompt assets: `assistant-scope.md`, `scheduler-policy.md`,
-  `grounding-policy.md` in `bot/chat/prompts/`.
-
-**Changed**
-
-- **Schema v9 → v10**: `members` table gains nullable `reply_style`.
-  Unversioned databases and schemas older than v9 are rejected at startup.
-- Compose project renamed from `kanade-bot` to `kanade`; `bot` and `caddy`
-  services retained, Valkey deferred until multi-process scaling.
-- Persona directory restructured into `identities/`, `behaviours/`, and
-  `behaviours/profiles/`; legacy filenames remain valid with new paths taking
-  precedence.
-- Behaviour-plugins renamed to reply profiles under `behaviours/profiles/`;
-  portal labels updated accordingly.
-- Style resolution uses first-configured-readable-match instead of composing
-  all matching role assignments.
-- `/style` reports a choice was "saved", never "active".
-- Identity template deliberately excludes a `**Voice:**` slot; default
-  behaviour carries the trailing voice cue.
-- `CHAT_PILOT_HISTORY_TTL_S` default reduced to 2700 seconds.
-- Verbose comments condensed across all touched files.
-- Dockerfile copies only tracked fallback templates; live files come from the
-  host bind mount.
-
-**Fixed**
-
-- Profile deletion no longer silently orphans role assignments or public
-  publication flags.
-- Missing persona files fall back to tracked templates with a log warning
-  instead of failing silently.
-- Tool-schema diagnostic logging added for easier troubleshooting.
-
-## 3.3.0
-
-**Added**
-
-- The web portal now persists and displays each model round, including thinking
-  traces, raw responses, tool arguments, complete tool results and posted-card
-  outcomes.
-- `get_schedule` now supports `today`, `tonight`, `tomorrow` and weekday filters,
-  composed with participant and channel scopes.
-- Added `Lotus` boss into list of available bosses.
-
-**Changed**
-
-- Reorganised the Python package into `agent`, `domain`, and `infrastructure`
-  namespaces, and split the chatbot's monolithic tool module into individual
-  tools behind the existing `bot.chat.tools` interface.
-- Reminder reconciliation now preserves mappings for already-posted reminders,
-  reopens eligible skipped reminders, retires newly past reminders and rebuilds
-  countdowns only for live runs.
-
-**Fixed**
-
-- Run lookup now resolves weekdays to one concrete date across current and next
-  boss weeks and refuses conflicting day references instead of choosing one.
-- First-person schedule requests no longer mistake the bot's user or managed-role
-  trigger mention for a roster participant.
-- Bare date questions now default to the whole group's schedule across all
-  channels instead of silently applying person and channel filters.
-- Member-facing replies no longer expose scheduler function/option syntax or
-  emit the `<none>` placeholder; known runs in other channels remain explicit.
-- Failed Discord proposal posts can no longer be described as successfully
-  posted cards merely because their database rows were created.
-- Reminder reconciliation no longer deletes live morning-message mappings,
-  creates no-op audit entries or leaves stale reminder states behind.
-- Wide Limits tables now scroll on narrow screens instead of clipping the mobile
-  portal.
-- `get_schedule` tool call description tightened
-
-## 3.2.0
-
-**Added**
-
-- `get_schedule` can filter by `participant="me"` or one roster name while
-  retaining whole-group and channel-only schedule scopes.
-
-**Changed**
-
-- Chatbot factual replies now use compact Discord Markdown: bold boss names and
-  actions, italic dates and times, and code-formatted ids, statuses and RSVP
-  tallies.
-- Visible cross-channel schedule references are now clickable Discord channel
-  links.
-- Multi-block chatbot replies preserve one blank line around headings and
-  remarks while keeping consecutive schedule rows compact.
-- Package, runtime and API version metadata now report `3.2.0`.
-
-**Fixed**
-
-- Named participant filters are resolved against the roster instead of silently
-  returning the unfiltered schedule. Invalid, unknown and ambiguous participant
-  values are refused with a clarification prompt.
-
-## 3.1.2
-
-**Fixed**
-
-- `parse_when` now resolves `next <weekday> HH:MM` (e.g. `next tuesday 22:30`).
-  `dateparser` returns `None` for this form when `PREFER_DATES_FROM=future` is
-  set; the fix falls back to the extractor's own day/time resolver, which already
-  handles `next` via `_NEXT_RE` and `_WEEKDAY_ALIASES`.
-- Failed proposal cards now include the proposal summary in the pipeline error
-  log, making it possible to identify which `propose_add` triggered a post
-  failure without enabling `DEBUG` logging.
-- Tool response text is now logged at `DEBUG` on the success path in addition to
-  the existing argument trace, completing the picture for `LOG_LEVEL=DEBUG`.
-- The Config section pills no longer overlap on mobile, and wide settings content
-  can no longer force the portal beyond the viewport.
-
-## 3.1.1
-
-**Changed**
-
-- The portal stylesheet now has an SCSS source layout: `bot/api/static/portal.scss`
-  is the ordered entrypoint and `bot/api/static/portal/*.scss` holds the split
-  partials, broken out from the former monolithic `portal.css`.
-- `bot/api/static/portal.css` is now generated and git-ignored. Compose builds it
-  into the image from the SCSS sources; local and packaged runs serve the same
-  bundle from memory when the artifact is absent.
-- The package and API version metadata now report `3.1.1`.
-
-## 3.1.0
-
-**Added**
-
-- **Behaviour plugins** layer reusable Markdown instructions on top of the active
-  chatbot persona without replacing its voice or operating rules. Discord roles
-  can be assigned different plugins, and a member holding several configured
-  roles receives every matching plugin in assignment order while the main chat
-  role remains required for access.
-- **Live plugin management in Config → Chatbot**: create, edit and delete plugin
-  files, then add, update or remove role assignments without restarting the bot.
-  Plugin and assignment editors are collapsible and independently paginated for
-  larger lists, preserving the current page across form submissions.
-- Deployments can seed initial role assignments with `CHAT_ROLE_PLUGINS`.
-  Portal-managed assignments persist in SQLite, plugin instructions persist in
-  the writable, git-ignored `personas/behaviour-plugins/` directory, and the
-  tracked `example.md` documents how to write additional plugins.
-
-**Changed**
-
-- Matching behaviour-plugin instructions are reinforced on every model round,
-  including direct answers and automatic clarification follow-ups. The base
-  persona's factual and safety rules continue to override style instructions.
-- The compose persona mount is writable so portal-created plugin files survive
-  container rebuilds while the rest of the container root remains read-only.
-
-## 3.0.2
-**Added**
-- Minor UI tweaks to the portal
-
-## 3.0.1
-**Fixed**
-- The chat model could combine a canonical boss token with a second difficulty, 
-  generating `XBM Hard` for “Extreme BM.” Validation correctly rejected `Hard` 
-  as an unknown second boss, so no proposal card was created. Updated the 
-  `propose_add` tool description to distinguish canonical tokens from spoken 
-  difficulty-first names, prohibit combining both forms, and explicitly map 
-  “Extreme BM” to `XBM`.
-
-## 3.0.0
-
-**Added**
-
-- **The portal redesigned as "Kanade's Desktop"**: cream windows with chrome
-  title bars on a coloured ground, five selectable colourways — marigold (the
-  default), blossom, periwinkle, coral, twilight — each with an after-hours
-  dark face, and a System/Light/Dark control. The choice lives in the browser
-  and is stamped before first paint, so nothing flashes. The bot's own Discord
-  avatar and banner are the portal's identity: the masthead, the favicon and
-  the login window's hero.
-- **The Week page is a day board**: seven columns starting at the boss-week
-  reset, where an empty day collapses to a spine and the days with runs take
-  the room. Compact cards open a run sheet — the full card in a dialog, with
-  a plain fragment link when JavaScript is off — and a now-strip answers the
-  page's four questions (next run, answers owed, inbox, model) before any of
-  it is read.
-- **No page scrolls on desktop**: the table pages became searchable, paginated
-  windows that scroll inside a fixed frame — server-side search and paging on
-  Audit, Extractions, Chat and Reminders, search on Members and Fixed — and
-  Config became one Settings window, a table of contents on the left and one
-  section at a time on the right, switched by fragment alone.
-- **The bosses bring their own artwork**: `config/portraits` now has two sizes
-  (the full art goes out on Discord's embed thumbnails; the portal's small
-  renders keep the crisper 64px icons), and `config/artwork/entry` holds each
-  boss's entry splash, laid behind the week's run cards as a veil that costs
-  no height — one boss takes the side vignette, two take a corner each and
-  meet in a seam. Both directories are git-ignored beside tracked READMEs;
-  everything renders fine without them.
-- **The portal draws its own icons** — inline Feather strokes in
-  `currentColor`, so every colourway and dark face tints every icon. Discord
-  keeps its emoji vocabulary untouched: over there a reaction *is* an emoji.
-- **The morning ping carries the boss's entry splash**: the day-of message
-  wears the lead boss's entry art as its embed image, on top of the portrait
-  thumbnail it already had. Countdowns stay text-lean.
-- **Limits, a chat's detail and an extraction's detail became tabbed browser
-  windows** — fragment-switched tabs on the window chrome, the same no-script
-  `:target` machinery as Settings, with live counts on the Limits tabs and the
-  allowance form kept outside the polled region so a refresh never eats what
-  you were typing.
-- **Personas moved into `personas/`**, bind-mounted read-only into the
-  container — tracked README and template, everything a deployment actually
-  writes git-ignored — and the Config page's Chatbot panel says which file the
-  voice is coming from, marked when it fell back to the template.
-- **Voices swap live**: every `.md` in `personas/` (bar the README) is a
-  dropdown on the Chatbot panel, the choice is runtime config seeded from
-  `PERSONA_PATH`'s basename, and the next answer is in the new voice — no
-  restart. Submissions are validated by membership in the real directory
-  listing, audits carry filenames only, and a chosen file that goes missing
-  falls back to the template and says so on the panel.
-- **The README shows the portal**: six screenshots in `docs/images/`, with the
-  week board in a `<picture>` tag so GitHub serves the light face to light
-  readers and the Twilight one after dark.
-- **A caddy front door** (`caddy/` service in compose): the portal is served
-  over HTTPS at a personal domain with a real Let's Encrypt certificate,
-  reachable only from the tailnet. The public A record points at the host's
-  Tailscale IP — a CGNAT address that resolves everywhere and routes nowhere
-  outside the tailnet — and the DNS-01 challenge means no port ever opens to
-  the internet. Docker publishes 443 on that IP alone (`CADDY_BIND_IP` in
-  `.env`), so the socket never exists on the LAN. Personal pieces follow the
-  `.env.example` pattern: `caddy/Caddyfile.example` is the tracked template;
-  the real Caddyfile and the Cloudflare token (`.env.caddy`) stay untracked.
-
-**Changed**
-
-- **`tailscale serve` is retired** — it only speaks its machine's ts.net name
-  and rejects any other hostname at the TLS handshake, so the old ts.net URL
-  is gone. The loopback `127.0.0.1:8080` mapping stays for host-local CLI and
-  dev use.
-- With the serve proxy gone, the `Tailscale-User-Login` header no longer
-  arrives: the portal asks for `ADMIN_TOKEN` login on every device, and
-  `TRUST_TAILSCALE_HEADERS` / `ALLOWED_TAILSCALE_LOGINS` are effectively
-  idle until some future front door re-authenticates tailnet identity.
-- The board's compact cards speak the party's own shorthand — `NCarling`,
-  `HStar` — so a boss and its difficulty pill always hold one line; the full
-  names stay on the sheet, the tooltips and the screen-reader labels.
-- The Config page's `.env` panel names both models — **Data model** for
-  extraction and rescans, **Speech model** for the chatbot's conversations —
-  where one "Model" row used to stand for two different machines.
-- The compose project follows the repo's name: project and container are
-  `kanade-bot`, and `docker compose up -d --build` is the whole deploy.
-
-**Fixed**
-
-- Type reads at an honest size everywhere — a seven-step ladder with body text
-  at a true 16px — and a difficulty pill can no longer be clipped at a narrow
-  column or orphaned on a line away from its boss.
-- `pytest -q` no longer doubles into silence: the verbosity flag is out of
-  `addopts`, which keeps only the marker filter.
-- The Settings sidebar's raised ground meets the window's title bar instead of
-  leaving a strip of card surface between the two.
-
-## 2.1.0
-
-**Added**
-
-- **Capacity controls** for the one 13 GB model the host has. A shared model
-  lock (`bot/modellock.py`) serialises the chatbot, the extractor and rescans;
-  staff questions queue for the model while everybody else is turned away with
-  💬 after a short wait (`CHAT_PILOT_LOCK_WAIT_S`). A guild-wide answer budget
-  (`CHAT_PILOT_GLOBAL_RATE_*`) sits on top of the per-person window, so handing
-  out the pilot role more widely cannot monopolise the machine.
-- Rate-limit refusals now say when to come back — ⏳ plus one canned sentence
-  per episode with the wait in it, never a model call. Per-member windows can
-  be cleared from the portal, `DELETE /api/limits/windows/{id}` and
-  `bossctl limits reset`, all audited.
-- **Custom rate limits**: the four capacity numbers are runtime config like
-  `chat_mode` — seeded from `.env`, edited from the portal and `bossctl`
-  without a restart — and members can be granted their own allowance
-  (schema v8), applied live and quoted in their own refusal notice.
-- **A Limits page** in the portal and `GET /api/limits`: who has the model and
-  for how long, both budgets as used-of-total, open per-member windows with
-  reset and override controls, everyone holding the pilot role (staff marked
-  exempt), and the rescan queue — updated by server-sent events
-  (`bot/events.py`, `GET /limits/events`) the moment something changes, with a
-  slow visibility-aware poll and a plain Refresh link as fallbacks.
-  `bossctl limits` prints the same view.
-- **`/limits`** slash command: your own allowance as a progress bar, ephemeral,
-  with when a spent answer comes back; staff get one line and no numbers.
-  Reading it never spends anything.
-- **`propose_change_fixed`**: the chatbot can change an existing weekly timing
-  in place — its night, its party, or both — through the usual ✅/❌ card.
-  Same row, same run ids, RSVPs kept; several matching weeklies refuse with a
-  candidate list rather than guessing, and `propose_move`/`propose_add` steer
-  the recurring case here instead of minting duplicates.
-- **Chat memory**: remembered turns age out per turn
-  (`CHAT_PILOT_HISTORY_TTL_S`, 45 min default) so a stale topic cannot claim
-  "move it to 22:00" an hour later; the prompt names the last card posted in
-  the channel, party included; and replying to an old bot answer re-anchors
-  that exchange into context past the TTL.
-
-**Changed**
-
-- Creating a weekly timing whose week already holds the matching one-off run
-  now **adopts** it — same id, answers and reminders kept, retimed to the
-  weekly slot — instead of materialising a duplicate beside it. Through every
-  door: the card, `/fixed add` and the portal.
-- Tool steering closes three live failures: "this is fixed" on a new run maps
-  to the weekly flag, "for me" puts the asker on the run, and asking to change
-  a weekly that does not exist explains the conversion instead of offering
-  other bosses' timings.
-- Portal cards for all `fix` variants finally read alike — "change weekly ·
-  every Wed 23:30" instead of "new weekly · TBD" — in the inbox and the chat
-  interaction trace.
-
-**Fixed**
-
-- Chat generations in two channels could overlap each other and an extraction
-  inside Ollama, timing everything out at once while the host did all the
-  work; everything now queues for the same lock.
-- `resolve_fixed` no longer matches a query's weekday against other bosses'
-  weeklies when the boss it names has none.
-- The Limits page no longer rebuilds its poll timer on every refresh or wipes
-  a half-typed form; forms live outside the refreshed region.
-
-## 2.0.0
-
-**Added**
-
-- **The chatbot** (`bot/chat/`): mention-gated, role-gated, rate-limited, with a
-  persona loaded from the data volume. Read tools answer scheduling questions
-  directly; write tools draft the same ✅/❌ proposal cards everything else
-  uses — the model can never touch the schedule itself. Understands the group's
-  own language: "tonight 23:00", "tmr 2300", bare clock times, "Hard Baldrix"
-  and "Extreme Kalos" spelled out, weekly versus one-time runs.
-- Rejection follow-up: ❌ a card the chatbot drafted for you and it asks — in
-  voice, once per card, cooldown-guarded — what you would like instead.
-- Chat analytics: every interaction logged with its tool trace, rounds, latency
-  and token counts; a Chat page in the portal, `GET /api/chat`, `bossctl chat`.
-- The chat model is its own setting (`CHAT_PILOT_MODEL`), so conversation can
-  run on a larger model — Ollama's hosted ones included — while extraction
-  stays local.
-- **Audit trail** (schema v7): every schedule mutation records surface, actor,
-  action, subject and detail. Portal actions name the tailnet login when
-  `TRUST_TAILSCALE_HEADERS` vouches for it, `bossctl` names the OS user, cards
-  name the reacting member, chat-drafted cards name the asker, slash commands
-  name the invoker. An Audit page in the portal, `GET /api/audit`,
-  `bossctl audit`.
-- Container hardening: read-only root filesystem, all capabilities dropped,
-  no-new-privileges, memory and pid caps. Dependabot version bumps, security
-  alerts and secret-scanning push protection on the repository.
-
-**Changed**
-
-- Chat write tools are scoped server-side: proposing a change to an existing
-  run requires being on it (or owning the weekly timing behind it) and asking
-  from its home channel; admins are exempt. Retiring superseded cards is
-  channel-scoped the same way, so a draft raised elsewhere can no longer bury
-  a party's pending card.
-- Schedule answers mark finished runs as already happened and say plainly when
-  nothing upcoming is left, instead of leaving the arithmetic to the model.
-- The system prompt states the configured chat model and the developer
-  attribution, so "what model are you on" and "who made you" get facts, not
-  inventions.
-- Documentation split: setup, commands, extractor, chatbot, portal and
-  development each have their own guide under `docs/`; the README is a pitch
-  and an index. Licensed under MIT.
-
-**Fixed**
-
-- Member text can no longer impersonate the scheduler's own bracketed notes to
-  the model; the note shapes are defused where member text enters the prompt,
-  and guild tags like `[SAKU]` pass untouched.
-- The persona voice reminder now actually arrives last: gpt-oss's template
-  hoists trailing system messages into the top instructions header, so it is
-  sent as a user-role scheduler note instead — which is also why card
-  confirmations kept coming out flat.
-- A blank `API_PORT=` line in `.env` no longer silently fails the container
-  healthcheck.
-
-## 1.9.0
-
-**Added**
-
-- `/say` — admins post as the bot, verbatim. The mention allow-list is built from
-  the `@mentions` in the text, so the message reaches exactly who it names and
-  nobody else. `@everyone`/`@here` is always blocked, and quiet mode silences it
-  like everything else.
-- `ADMIN_ROLE_ID` is now the "who runs the bot" role: it grants `/say`, `/debug`
-  and the right to change any run, not just your own. Discord's own Administrator
-  permission and the server owner qualify too, so leaving the setting empty locks
-  nobody out.
-- The portal records who answered a run and when, alongside the reaction tally.
-- Continuous integration: lint, format check and the full offline test suite.
-
-**Changed**
-
-- `/say` and `/debug` no longer appear in a non-admin's command picker, and the
-  permission is checked again when the command runs — a server can hand the
-  picker entry back out, so hiding it is not the gate.
-- Countdown pings now go to everyone on the run except those who have declined.
-  An hour out, the people who are coming want the reminder whether or not they
-  have ticked; somebody who reacted ❌ has already answered and is named on the
-  card without being pinged again.
-
-**Fixed**
-
-- Posted reminder cards no longer freeze at the tally they had when they were
-  sent. Every write that changes what a card shows — a reaction, `/rsvp`, the
-  portal, an RSVP extracted from chat — queues a re-render, so a card that still
-  read "confirmed · 2/4 ✅" hours after everyone had answered now keeps up. Card
-  edits carry the same mention allow-list as the original send, so refreshing can
-  never become a second way to ping.
-
-## 1.8.0
-
-**Added**
-
-- The weekly digest posts automatically at boss-week reset, idempotent across
-  restarts and slept-through resets.
-- Nightly database backup: one SQLite online-backup snapshot per local day,
-  written to `data/backups` on the host, converted out of WAL so each file is
-  self-contained, and pruned to the newest fourteen.
-
-**Changed**
-
-- The digest distinguishes runs that are at risk because somebody declined from
-  those that are merely unconfirmed, and counts them separately.
-
-**Fixed**
-
-- Removing a ❌ reaction now retracts the reschedule notice, matching what
-  `/rsvp` and the portal already did.
-- A fully answered run with someone out no longer reads as all-confirmed.
-
-## 1.7.0
-
-**Added**
-
-- Quiet mode: a runtime toggle that posts everything with an empty mention
-  allow-list and a bell marker, for working against a live guild without
-  notifying it.
-- Post resilience — bounded retry on DNS and timeout failures, stranded proposals
-  re-posted, and one channel's failing rescan no longer affects the others.
-- Portal: dialog editors on the Fixed page, rendered mentions and move arrows in
-  the inbox, and a quiet-mode toggle on Config.
-
-**Changed**
-
-- Prompts are token-budgeted against a calibrated estimator. Oversized message
-  bursts are read in chunks but still consolidated onto a single card.
-- Card arbitration: decisions beat questions for the same run, the latest
-  evidence wins ties, and ambiguous matches are split or dropped rather than
-  guessed.
-- Compose: the database moved to a named volume with a 60-second stop grace
-  period, after a hard kill mid-write corrupted it.
-
-**Fixed**
-
-- A partial move inherits the matched run's own day and time instead of
-  resolving to TBD.
-- Evidence can no longer match a run in a later boss week, so next week's runs
-  cannot be dragged backwards.
-- A `sub` with no named replacement proposes a plain weekly removal rather than
-  claiming a stand-in is needed.
-- An incomplete or retracted tally no longer demotes an already-confirmed run;
-  only a decline or a line-up change does.
-
-## 1.6.0
-
-**Added**
-
-- Per-member ping levels — `/pings essential|all|off`, also settable from the
-  portal, the API and `bossctl`.
-- A single mention resolver: only day-of cards, unanswered countdowns, proposal
-  cards and decline notices notify anyone. Every other post names people in
-  plain text.
-- A live per-channel Manage Messages check, surfaced on the portal's Config
-  page, in `/debug status` and in `bossctl access`.
-- `scripts/bench_extract.py`, the benchmark behind the current model choice.
-
-**Fixed**
-
-- One timing change per run per card, chosen by precedence, instead of a card
-  carrying two contradictory amendments for the same run.
-- Run hints and matches now require a shared boss, so an amendment can no longer
-  land on an unrelated run.
-- Moves, `otot`s and cancels that would change nothing are dropped rather than
-  proposed.
-- Deleting a card marks its proposals withdrawn, so they leave the inbox.
-
-## 1.5.0
-
-**Added**
-
-- Rescans run on a queue instead of blocking the bot. A request returns a job id
-  with progress, cancellation, and a list of recent jobs.
-- Per-run member swap for a single week — `/swap`, `bossctl swap`, the API, and a
-  chip UI in the portal.
-
-**Changed**
-
-- Rescan bursts are grouped by local calendar day, carry the 25 messages before
-  them as context, and produce one consolidated card per channel per rescan.
-- Automated rescans are capped at 48 hours and never widen into the previous week.
-
-**Fixed**
-
-- Day-only amendments whose day has already passed are dropped as stale.
-- A day's single stated time carries onto same-day moves that lack one.
-
-## 1.4.0
-
-**Added**
-
-- Week-wide rescan that pulls Discord history first, plus a startup backfill for
-  each watched channel.
-- Explicit run status control — planned, confirmed, otot, done, cancelled — from
-  `/status`, the portal, the API and `bossctl`.
-- Portal: in-game difficulty pills, a boss-grid picker, a bosses page, and boss
-  portraits with a monogram fallback.
-
-**Changed**
-
-- A run is marked done once its slot has passed, and drops out of `/schedule`,
-  the portal and `bossctl` by default.
-- Every change made through the portal or CLI is announced in the run's home
-  channel, marked *(via portal)*.
-
-**Fixed**
-
-- Open redirect on the `next=` parameter of the login route.
-
-## 1.3.0
-
-**Added**
-
-- An HTTP API served by uvicorn inside the bot's own asyncio loop, bound to
-  loopback. Bearer-token auth, opt-in Tailscale identity, and a signed session
-  cookie; the health endpoint stays unauthenticated.
-- The web portal — week view, fixed-timing editor, proposal inbox, extraction
-  log, members, reminders and config. Light and dark, and every form works
-  without JavaScript.
-- `bossctl`, covering the same operations from a terminal.
-- The weekly digest card.
-
-## 1.2.0
-
-**Added**
-
-- Chat extraction: a keyword gate with fuzzy boss aliases, a structured-output
-  schema, and a deterministic merge, resolve and match pipeline that proposes
-  `move`, `add`, `cancel`, `otot`, `sub`, `split` and `fix` amendments as cards.
-- A proposal applies only when a participant with the bossing role reacts ✅, and
-  expires after 24 hours. An RSVP stated in chat is the one exception and is
-  recorded straight away.
-- `/rescan`, `/debug extract`, and `python -m bot.extract` for offline dry runs
-  over an exported channel.
-- A fixture suite runnable against the live model with `pytest -m ollama`.
-
-## 1.1.0
-
-**Added**
-
-- Day-of and countdown reminders are embeds carrying full boss names and
-  difficulty.
-- A stale-reminder guard, so a host that was asleep does not replay old pings.
-
-**Changed**
-
-- ✅ and ❌ are mutually exclusive. Decline notices are deduplicated, and
-  retracted when the decline is withdrawn.
-- `/fixed add` no longer adds its creator automatically — only the participants
-  named are pinged.
-- Times may be typed as `2359`, `930`, `9pm` or `9:30pm`.
-
-## 1.0.0
-
-First working release.
-
-**Added**
-
-- Roster synced from the bossing role, with no manual upkeep.
-- `/fixed` baseline timings, materialised into concrete runs at each boss-week
-  reset, with the current and next week always populated.
-- Day-of and countdown reminders, stored as rows in SQLite so a restart never
-  loses or replays a ping.
-- ✅/❌ reactions driving run status.
-- Deployment with Docker Compose.
+Releases 4.9.0 and earlier are in [legacy/python/CHANGELOG.md](legacy/python/CHANGELOG.md).
