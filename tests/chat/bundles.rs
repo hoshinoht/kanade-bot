@@ -144,7 +144,7 @@ fn unavailable_strategy_is_hidden_from_the_dynamic_surface() {
     assert_eq!(
         offer.request(Some("strategy")),
         kanade::chat::tools::bundles::Requested::Refused(
-            "bundle must be one of: run_changes, weekly_changes.".into()
+            "Call request_tools with {\"bundle\": \"run_changes\"}; bundle must be one of: run_changes, weekly_changes.".into()
         )
     );
 }
@@ -308,9 +308,52 @@ async fn read_only_turns_refuse_writes_and_write_bundles() {
         .await;
     assert_eq!(
         bad.outcome.output,
-        "bundle must be one of: strategy, run_changes, weekly_changes."
+        "Call request_tools with {\"bundle\": \"strategy\"}; bundle must be one of: strategy, run_changes, weekly_changes."
     );
     assert_eq!(proposals(&world).await, 0);
+}
+
+#[tokio::test]
+async fn a_misshaped_request_is_told_the_argument_name_and_can_retry() {
+    let mut world = world().await;
+    let mut session = PassthroughSession;
+    let mut offer = ToolOffer::dynamic([], false);
+    let ctx = world.context(&json!({"author_id": "11", "channel_id": "700"}));
+    // The bundle name sent as a key instead of the `bundle` argument.
+    let wrong = world
+        .dispatch(
+            &ctx,
+            &mut offer,
+            &mut session,
+            "request_tools",
+            &json!({"strategy": true}),
+        )
+        .await;
+    assert_eq!(
+        (
+            wrong.outcome.output.as_str(),
+            wrong.outcome.error,
+            wrong.requested
+        ),
+        (
+            "Call request_tools with {\"bundle\": \"strategy\"}; bundle must be one of: strategy, run_changes, weekly_changes.",
+            Some(REFUSED),
+            None
+        )
+    );
+    // A refused shape does not spend the one request per question.
+    assert!(!offer.requested());
+    let fixed = world
+        .dispatch(
+            &ctx,
+            &mut offer,
+            &mut session,
+            "request_tools",
+            &json!({"bundle": "strategy"}),
+        )
+        .await;
+    assert!(fixed.outcome.ok, "{}", fixed.outcome.output);
+    assert_eq!(fixed.requested, Some(Bundle::Strategy));
 }
 
 #[tokio::test]

@@ -325,7 +325,12 @@ impl ToolOffer {
             .and_then(Bundle::from_request)
             .filter(|bundle| self.available.contains(bundle))
         else {
-            return Requested::Refused(format!("bundle must be one of: {}.", names.join(", ")));
+            // Name the argument: a model sending {"strategy": true} recovers next round.
+            let example = names.first().copied().unwrap_or_default();
+            return Requested::Refused(format!(
+                "Call request_tools with {{\"bundle\": \"{example}\"}}; bundle must be one of: {}.",
+                names.join(", ")
+            ));
         };
         if self.read_only && bundle.writes() {
             return Requested::Refused(READ_ONLY_TURN.to_owned());

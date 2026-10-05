@@ -1009,6 +1009,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- v5 chat: a `request_tools` call with the wrong argument shape is now told
+  the argument name (`Call request_tools with {"bundle": "strategy"}; …`), so
+  the model recovers on its next round instead of wasting several.
 - v5 admin Chat: the date presets in the filters panel are visible again.
 - v5 admin run countdowns no longer bunch their marks at the end: the bar fills
   from 24 h out to T-1h, then restarts over the last hour with the T-15m mark
