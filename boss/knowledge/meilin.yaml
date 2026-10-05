@@ -128,7 +128,7 @@ difficulties:
   notes:
   - Cards and Storm failures are lethal (1000% max HP) on Hard only; Hard also adds rings, arrows and sword swings and speeds up the Flame and Freeze swings.
 strategies:
-- name: Full-mechanic route
+- name: Use Chaos and Order
   when: Standard approach at or near the recommended spec; first clears
   risk: medium
   damage: medium
@@ -137,7 +137,7 @@ strategies:
   - Stay glued to Meilin and clear every Destiny pattern so the gauge fills about once per pattern cycle.
   - Take the altar pick at once, choosing picks that complete the three class icons for an Order.
   - Fire each held Chaos skill in a burst or semi-burst before the next full gauge, so the altar does not overwrite it.
-- name: Invincibility skip for Phase 2 swords and storm
+- name: P2 sword and storm iframes
   when: Classes with Genesis liberation invincibility, Ascent, or short i-frames (e.g. Shadower, Mihile)
   risk: low
   damage: medium
@@ -146,14 +146,14 @@ strategies:
   - Swallowing Storm, stand inside the golden barrier and use Ascent or a short i-frame through the shove instead of riding the wind.
   - Soul Swords, start Genesis invincibility around the second sword and cover the last sword with Ascent; on Normal a long invincibility can cover the whole pattern.
   - Do not use invincibility on Flame and Freeze; an invincible clear there gives no gauge.
-- name: Damage check, ignore the gimmick
+- name: 'Overgear: focus on damage'
   when: Well above the recommended spec
   risk: low
   damage: high
   payoff: Simplest run; Chaos and Order are only bonus damage, not a clear requirement
   steps:
   - Dodge Destiny patterns safely rather than chasing gauge, and use Chaos or Order only when they come up.
-- name: Minimum-spec reroll
+- name: Retry for better Order
   when: Below the recommended spec, aiming for Hard at the lowest possible stats
   risk: high
   damage: low

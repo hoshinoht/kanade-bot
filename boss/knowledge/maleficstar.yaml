@@ -109,7 +109,7 @@ tips:
   text: 'Both arms up: spikes in front. One arm up: spikes behind.'
   detail: 'Heavenly Waltz tell: both arms raised means spikes in front of her, one arm raised means spikes behind.'
 strategies:
-- name: Fully safe route
+- name: Low-gauge route
   when: Party damage well above the requirement; first clears.
   risk: low
   damage: high
@@ -118,7 +118,7 @@ strategies:
   - Stay in Illusion until Illusion Magic is empty or 1:00 remains on the room timer.
   - Enter Reality with the gauge at 0 to skip the -10% entry penalty.
   - Take the left altar on every Essence so Reality stays at its lowest penalty stage; only Essence-pattern hits then add Predation.
-- name: Flexible standard route
+- name: Adjust the gauge
   when: Most parties near or above the recommended spec.
   risk: medium
   damage: medium
@@ -128,7 +128,7 @@ strategies:
   - Take right three times (105%, then 115%, then 130% at gauge 750) without reaching 1000.
   - When Predation climbs faster than the party likes, switch to left altars until the timer ends or the party is ready to go right again.
   - Back in Illusion, stay until the gauge is empty or 1:00 remains.
-- name: Hold +30% route
+- name: Keep +30% damage
   when: Low-spec clears with sustained-damage classes and very clean dodging.
   risk: high
   damage: low
@@ -138,7 +138,7 @@ strategies:
   - Take three rights to reach 130%, then stop catching Essences, because every catch forces an altar choice.
   - Dodge everything; missed Essences and hits drive Predation up quickly.
   - Swap back near the timer's end; about five catches in Illusion recover roughly 200 Predation. Repeat.
-- name: Burst-cycle route
+- name: Match altars to bursts
   when: Low-spec Hard clears with burst classes; the guide rates it very hard and a caller helps.
   risk: high
   damage: low

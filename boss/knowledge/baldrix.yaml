@@ -187,7 +187,7 @@ difficulties:
     text: The +30% includes %HP attacks (wiki). Last Destiny mission.
     detail: 'Destiny Weapon 2nd Growth mission "Battle, Baldrix" (MapleSEA v252): Hard Baldrix solo in Destiny Mode taking 30% more damage (the wiki says this includes %HP attacks). The last mission; needs 15,000 Adversary''s Resolve. Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
 strategies:
-- name: Phase 1 room assignment
+- name: P1 room split
   when: Every party, set before entering.
   risk: low
   damage: low
@@ -197,7 +197,7 @@ strategies:
   - The Baldrix room needs steady uptime inside his Zone and on the weak-point side (the guide rates it hardest; KMS players rate Sleipnir hardest).
   - The Sleipnir room wants a stun answer such as Hero's Will for chain stun-locks.
   - The Ancient God room player keeps closing rifts and steers the mirror light onto the possessed statue.
-- name: Clean Phase 2
+- name: Keep P2 mark-free
   when: Parties that can dodge Phase 2 without overflowing; the guide encourages it.
   risk: medium
   damage: medium

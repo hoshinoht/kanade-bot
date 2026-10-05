@@ -183,7 +183,7 @@ difficulties:
     text: Bring enough damage that the Phase 2 special pattern never runs.
     detail: 'Community advice: bring enough damage that the Phase 2 special pattern (Risk at 100%) never runs.'
 strategies:
-- name: Skip the second Specter C fusion
+- name: Skip the second fusion
   when: Parties with comfortable damage for Phase 2
   risk: low
   damage: high
@@ -191,7 +191,7 @@ strategies:
   steps:
   - Hold burst until the first fusion at exactly 80% of Phase 2 HP finishes.
   - Burst immediately after; pushing to about 70% by the time the next fusion would trigger usually prevents it (Korean community tip).
-- name: Play through both fusions
+- name: Handle both fusions
   when: Parties near minimum damage
   risk: low
   damage: medium

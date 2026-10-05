@@ -120,7 +120,7 @@ difficulties:
   notes:
   - 5 Death Count, 20 minute limit (KMS).
 strategies:
-- name: Survival first
+- name: Dodge first
   when: First clears or below the minimum cut
   risk: low
   damage: high
@@ -129,7 +129,7 @@ strategies:
   - Stop attacking during every tell; add damage only once dodges are consistent.
   - Treat each Insane window as a no-hit check; a clean one refunds a life.
   - After a hit, reset and focus on the next tell instead of chasing damage.
-- name: Party life-sharing
+- name: Share spare lives
   when: Duo or trio where one member has spare Death Count
   risk: medium
   damage: medium

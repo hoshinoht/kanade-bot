@@ -106,14 +106,14 @@ tips:
   text: 'Save i-frames and Ascent skills for them.'
   detail: On Hard, keep i-frames and Ascent skills for the forced Auspicious/Ruinous merges.
 strategies:
-- name: One on Jupiter
+- name: One left, two right
   when: Trios with one strong, steady-uptime player (iSIingGunz guide).
   risk: medium
   damage: medium
   payoff: Steadiest needle, because Jupiter-side lasers swing it hardest.
   steps:
   - In the waiting room the strongest player takes Jupiter's side (left) alone; the other two take the Alchemical Entity (right), whose movement suits burst classes.
-- name: Two on Jupiter, switch in Phase 3
+- name: Two left, swap in P3
   when: Trios still learning the fight, and solo or duo runs (Korean Inven guide).
   risk: medium
   damage: medium

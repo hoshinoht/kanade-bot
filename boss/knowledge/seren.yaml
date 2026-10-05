@@ -221,7 +221,7 @@ difficulties:
     text: 'Clears count and add Hamcelot''s Protection: 25% less damage taken.'
     detail: 'Practice Mode clears count and add Hamcelot''s Protection (25% less damage taken). After OVERDRIVE, KMS adds Hamcelot''s Trial (Final Damage -30%, -25% on Black Mage); not in MapleSEA yet.'
 strategies:
-- name: Midnight burst (party)
+- name: Burst at Midnight
   when: Parties of 2-6, especially Normal and Hard with mixed damage
   risk: low
   damage: medium
@@ -231,7 +231,7 @@ strategies:
   - In Phase 2, hold binds and main burst for Midnight and start just before the Mithra's Power check resolves.
   - Push as much HP as possible before Dawn, because leftover Dawn shield is healed back at Noon.
   - Everyone plays to avoid curses in Noon, Sunset and Dawn; clean segments regrow Midnight.
-- name: Kill before Dawn
+- name: Finish before Dawn
   when: Strong solo or duo that can take most remaining HP in one cycle
   risk: medium
   damage: high
@@ -239,7 +239,7 @@ strategies:
   steps:
   - Go into Phase 2 Midnight with every burst and bind and aim to finish her there.
   - If she will clearly survive, save Genesis i-frames or Ascent skills to survive Dawn instead.
-- name: Solo rhythm play
+- name: Dodge between attacks
   when: Solo Normal or Hard
   risk: medium
   damage: medium

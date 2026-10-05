@@ -128,7 +128,7 @@ difficulties:
     text: 'Clears count and add Hamcelot''s Protection: 25% less damage taken.'
     detail: 'Practice Mode clears count and add Hamcelot''s Protection (25% less damage taken). After OVERDRIVE, KMS adds Hamcelot''s Trial (Final Damage -30%, -25% on Black Mage); not in MapleSEA yet.'
 strategies:
-- name: Duo standard
+- name: Standard duo
   when: Two players, the group's usual setup
   risk: medium
   damage: high
@@ -138,7 +138,7 @@ strategies:
   - Phases 1-2 - burst to phase before your gauge fills.
   - Phase 2 - play top-left or bottom-right, which double as the bombardment safe zones.
   - Phase 3 - default to top-left rather than bottom-right.
-- name: Phase 3 drain discipline
+- name: P3 gauge drain
   when: Always in Phase 3
   risk: low
   damage: low

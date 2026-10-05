@@ -6,6 +6,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Boss guides: shorter strategy names (e.g. "P4 burst only", "Keep P2 mark-free")
+  from the 2026-10-05 strategy review; steps and facts unchanged.
 - Boss guides: the HP breakdown starts folded, showing only "Total HP" in its
   head until opened.
 - Admin Account page: `GET /api/admin/me` (admin listener only) shows how you

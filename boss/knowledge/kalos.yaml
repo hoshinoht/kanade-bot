@@ -194,7 +194,7 @@ difficulties:
     text: 'Community view: Normal Kalos solo needs more spec than Hard Serene, for only +5% IED.'
     detail: 'Community view: a Normal Kalos solo needs more spec than Hard Serene for only +5% IED, so many players stop at Rank SS.'
 strategies:
-- name: Left-first control
+- name: Clear left first
   when: Easy and Normal, learning parties or low shot accuracy
   risk: low
   damage: low
@@ -204,7 +204,7 @@ strategies:
   - Shoot the towers from close range so the shot cannot miss.
   - Never start a dome test while the Left tower is active.
   - Hold a charged shot when the next system is about 10 s away, instead of firing at nothing.
-- name: Prep and hold
+- name: Prepare weapons
   when: Chaos and Extreme, where three active weapons empower all of them
   risk: medium
   damage: high
@@ -214,7 +214,7 @@ strategies:
   - When a third weapon switches on, finish the reserve to drop back to two.
   - Leave a nearly finished weapon up until the next activation, so you do not re-roll a worse one.
   - Prioritise the Right tower over Left when arrows are empowered, and keep shooting during tests and bursts.
-- name: Threshold burst
+- name: Hold HP, then burst
   when: Any difficulty; the main party damage plan
   risk: medium
   damage: high

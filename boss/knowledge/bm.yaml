@@ -182,7 +182,7 @@ difficulties:
   - title: 5th champion slot
     text: 'In KMS it needs four Rank S champions, i.e. four Hard Black Mage solos.'
 strategies:
-- name: Phase 4 burst-only
+- name: P4 burst only
   when: Hard with clear-time slack (60 minute limit)
   risk: low
   damage: medium
@@ -191,7 +191,7 @@ strategies:
   - Skip normal attacks in Phase 4; the barrier refills after each 30s pillar check.
   - Start buffs about 3s before a pillar check and burst on the fresh barrier.
   - Four pillar checks are roughly one 2-minute burst cycle; between bursts, just survive.
-- name: Laser Jail invincibility
+- name: P2 laser iframe
   when: Any difficulty, with a class that has a roughly 10-second invincibility
   risk: low
   damage: medium
@@ -199,7 +199,7 @@ strategies:
   steps:
   - Save the invincibility for Laser Jail (or a Phase 3 ultimate) and keep attacking through it.
   - Damage stops about 2s before the effect visually ends, so be in the safe spot by then.
-- name: Black State (Destruction)
+- name: 'P4 black: safer'
   when: Phase 4, for a safer clear
   risk: low
   damage: high
@@ -208,7 +208,7 @@ strategies:
   - Pick Destruction (Black) State with the Harvest key as Phase 4 starts.
   - Dodge white attacks; a hit gives Creation (heal-over-time, -10% damage), so potions stay usable.
   - Swap only for pillar checks, then return to Black.
-- name: White State (Creation)
+- name: 'P4 white: more damage'
   when: Phase 4, for a faster clear when you can dodge cleanly
   risk: high
   damage: medium

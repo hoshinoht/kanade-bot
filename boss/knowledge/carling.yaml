@@ -231,7 +231,7 @@ difficulties:
   - title: After OVERDRIVE
     text: 'KMS players found it harder under the 20-minute limit; Destiny Mode HP after OVERDRIVE is unconfirmed.'
 strategies:
-- name: Balanced gauges
+- name: Balance all gauges
   when: Parties, first clears and practice runs, or any spec with room to spare
   risk: low
   damage: high
@@ -242,18 +242,18 @@ strategies:
   - In Phase 2, bait Carling's teleport to the third whose laser colour you need.
   - 'Phase 3: Tiger first (its lightning is the most dangerous), then Bird, and Dog last so you can stand centre with Carling and push her HP before Aura Overflow; walk between zones to fix gauges.'
   - Before the Phase 3 Perils spawn, wait on Tiger's side to pre-load its gauge.
-- name: Tiger + Bird break (Do'oul turbo)
+- name: Break Tiger + Bird
   when: Destiny Carling and solos near the minimum cut, after a clean Phase 1 (all blessings plus the refill) and a Phase 2 with no spirit or Scroll hits
   risk: high
   damage: low
   payoff: The setup at the start of Phase 3 is the hard part; afterwards only Dog's gauge matters, so you walk less and keep near-full uptime on Carling. The lowest damage requirement, paid for with 700 Mental Strength.
   steps:
-  - At Phase 3 start, stand in Tiger's zone (right) and burst so Tiger reaches 1000 and Bird reaches 0 (two breaks, 700 Mental Strength).
+  - At Phase 3 start, break both Tiger and Bird. Each gauge can reach either 0 or 1000; their endpoint directions do not matter (two breaks, 700 Mental Strength).
   - Stop repairing Tiger and Bird. Keep Dog in range by alternating between the Dog and Bird zones, using each zone's statue.
   - 'Kill orders seen in 2026: Tiger, Bird, Dog (a 2026 Destiny clear) or Bird, Dog, Tiger; jobs differ. What matters is that Dog is the only gauge left.'
   - With about 300 Mental Strength left, one or two deaths end the run; play safe through Aura Overflow.
   - 'Extreme: no 2026 break-build clear was found, and Extreme adds +30% damage from any Peril outside 250-750, so treat it as unproven there.'
-- name: Bird + Dog break
+- name: Break Bird + Dog
   when: Alternative to Tiger + Bird for jobs that handle Tiger's zone better; Korean guides say to pick the Peril you find hardest and kill it first
   risk: high
   damage: low
