@@ -12,6 +12,7 @@
   import Name from '../names/Name.svelte';
   import Avatar from '../shared/Avatar.svelte';
   import { memberAvatar } from '../shared/avatar';
+  import { discordLink } from '../shared/discordLink.svelte';
   import { SOURCE_LABEL } from './flags';
   import OutcomeChip from './OutcomeChip.svelte';
   import { outcomeSentence, sourceLink } from './past';
@@ -58,7 +59,7 @@
             <div class="msg__body">
               <p class="msg__line">
                 <span class="msg__who">{#if line.author_id}<Name kind="member" id={line.author_id} name={line.author} />{:else}{who}{/if}</span>
-                {#if line.url}<a class="msg__at" href={line.url} target="_blank" rel="noopener noreferrer">{line.at}<span class="vh"> (open in Discord)</span></a>
+                {#if line.url}<a class="msg__at" {...discordLink(line.url)}>{line.at}<span class="vh"> (open in Discord)</span></a>
                 {:else}<span class="msg__at">{line.at}</span>{/if}
               </p>
               {#if line.missing}<p class="msg__text">Message no longer cached{#if line.url}; the link still opens it in Discord{/if}.</p>
@@ -74,7 +75,7 @@
     <nav class="past__card past__links" aria-label="Related records">
       {#if item.history_seq !== null}<a href="/history">History record #{item.history_seq}</a>{/if}
       {#if source}<a href={source.href}>{source.label}</a>{/if}
-      {#if item.card_url}<a href={item.card_url} target="_blank" rel="noopener noreferrer">See the card<span class="vh"> (opens Discord)</span></a>{/if}
+      {#if item.card_url}<a {...discordLink(item.card_url)}>See the card<span class="vh"> (opens Discord)</span></a>{/if}
     </nav>
   {/if}
 </article>

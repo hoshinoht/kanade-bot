@@ -14,7 +14,11 @@
   import { Resource } from '../resource.svelte';
   import Avatar from '../shared/Avatar.svelte';
   import { ME_AVATAR } from '../shared/avatar';
+  import '@kanade/ui/styles/settings.scss';
+  import SwitchCard from '../config/SwitchCard.svelte';
+  import { discordLinks } from '../shared/discordLink.svelte';
 
+  const uid = $props.id();
   const me = new Resource<Me>('/api/admin/me');
   $effect(() => void me.load());
 
@@ -86,6 +90,20 @@
       </dl>
     {/if}
   {/if}
+  <section class="account__device" aria-labelledby="{uid}-device">
+    <h3 class="cap" id="{uid}-device">This device</h3>
+    <SwitchCard
+      title={() => 'Open Discord links in the app'}
+      on={discordLinks.app}
+      action={(next) => (next ? 'Open in the app' : 'Open in the browser')}
+      apply={async (next) => {
+        discordLinks.set(next);
+        return '';
+      }}
+      >Applies only to this device. Without the Discord app installed here the links will not open, so turn this off to open them in
+      the browser.</SwitchCard
+    >
+  </section>
 </PaneWindow>
 
 <style>
@@ -95,6 +113,17 @@
 
   .account__head {
     margin: -4px -2px 12px;
+  }
+
+  .account__device {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 20px 2px 4px;
+  }
+
+  .account__device h3 {
+    margin: 0;
   }
 
   .account__roles {

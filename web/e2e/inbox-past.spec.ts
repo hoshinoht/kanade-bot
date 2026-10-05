@@ -62,20 +62,21 @@ test('a closed item reads as its outcome, decider, reason, evidence and links, w
   await expect(detail.locator('.past__sentence')).toContainText(`Approved by ${approved.decided_by!.name} · `);
   await expect(detail.getByRole('link', { name: `History record #${approved.history_seq}` })).toHaveAttribute('href', '/history');
   await expect(detail.getByRole('link', { name: 'Extraction log entry' })).toHaveAttribute('href', `/extractions/${approved.source_id}`);
+  // Discord links open the app by default (discord://, same tab; see discord-links.spec).
   const card = detail.getByRole('link', { name: /See the card/ });
-  await expect(card).toHaveAttribute('target', '_blank');
-  await expect(card).toHaveAttribute('rel', /noopener/);
+  await expect(card).toHaveAttribute('href', /^discord:\/\/-\/channels\//);
+  await expect(card).not.toHaveAttribute('target');
   // Evidence: every message opens in Discord; an uncached one says so and keeps its link.
   const messages = detail.locator('.msg');
   await expect(messages).toHaveCount(approved.evidence.length);
   for (const link of await detail.locator('.msg a.msg__at').all()) {
-    await expect(link).toHaveAttribute('target', '_blank');
-    await expect(link).toHaveAttribute('rel', /noopener/);
+    await expect(link).toHaveAttribute('href', /^discord:\/\/-\/channels\//);
+    await expect(link).not.toHaveAttribute('target');
   }
   const gone = approved.evidence.find((e) => e.missing)!;
   const goneRow = messages.filter({ hasText: 'Message no longer cached' });
   await expect(goneRow).toHaveCount(1);
-  await expect(goneRow.locator('a.msg__at')).toHaveAttribute('href', gone.url!);
+  await expect(goneRow.locator('a.msg__at')).toHaveAttribute('href', gone.url!.replace('https://discord.com/', 'discord://-/'));
   // Read-only: nothing to decide.
   await expect(page.locator('.inbox').getByRole('button', { name: /Approve|Reject|Move/ })).toHaveCount(0);
 

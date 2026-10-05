@@ -6,6 +6,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Admin: Discord links (Inbox evidence and cards, run sheet cards, sent reminders, last digest, chat cards) open in the Discord app via `discord://` by default; turn off "Open Discord links in the app" on Account to keep https links on that device.
 - Admin pages update live: `GET /api/admin/events` sends change hints over SSE (schedule, inbox, chat, extraction, delivery, settings, rescan, members), fed by the store's write hook. Pages re-read in place and apply only newer data; untouched Config forms follow saved changes while edits in progress are kept. Polling slows to 60 s while the stream is open and returns to 15 s when it drops; hidden tabs close the stream, and a stream never extends the session's idle time.
 - Admin: member and admin portraits. Discord avatars are cached by image
   hash on the data volume (`<KANADE_IDENTITY_DIR>/members`) and served at

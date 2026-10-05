@@ -1180,9 +1180,10 @@ test('digest: the last posted card follows the API, and is omitted without one',
   await expect(card).toContainText(last.this_week ? '· this week ·' : '· week of ');
   await expect(card).toContainText(last.channel_name ?? last.channel_id);
   const link = card.getByRole('link', { name: /open in Discord/ });
-  await expect(link).toHaveAttribute('href', last.url!);
-  await expect(link).toHaveAttribute('target', '_blank');
-  await expect(link).toHaveAttribute('rel', /noopener/);
+  // The Discord app by default: same tab, no "new tab" hint.
+  await expect(link).toHaveAttribute('href', last.url!.replace('https://discord.com/', 'discord://-/'));
+  await expect(link).not.toHaveAttribute('target');
+  await expect(link).not.toContainText('new tab');
 
   // An unknown channel name falls back to its id; no link without a URL; an older week says which.
   await page.route(`${ADMIN}/api/admin/config`, async (route) => {

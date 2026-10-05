@@ -19,6 +19,7 @@
   import MovePicker from './sheet/MovePicker.svelte';
   import { liveRuns, namesIn, pickerRun } from './sheet/move';
   import { runCountdown } from './week/progress';
+  import { discordLink } from './shared/discordLink.svelte';
   import { STATUS_LABELS, type MoveOutcome } from './store.svelte';
   import type { Slot } from './planner/keyboardMove';
 
@@ -357,7 +358,7 @@
 {#snippet cardLinks(run: Run)}
       {#each run.cards as card (card.label)}
         {#if card.state === 'posted' && card.url}
-          <a class="cardlink cardlink--posted" href={card.url} target="_blank" rel="noopener noreferrer"
+          <a class="cardlink cardlink--posted" {...discordLink(card.url)}
             title="Open the {card.label} card in Discord (posted {card.at})"
             >{card.label} <span class="cardlink__at">{card.at}</span><span class="cardlink__out"><Icon name="external-link" /></span
             ><span class="vh">(posted, opens Discord)</span></a

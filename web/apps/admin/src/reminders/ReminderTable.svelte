@@ -7,6 +7,7 @@
   import type { ReminderRow } from '@kanade/api-types';
   import { BossTag } from '@kanade/ui';
   import { dayOf, daysUntil, span } from './when';
+  import { discordLink } from '../shared/discordLink.svelte';
 
   let {
     rows,
@@ -63,7 +64,7 @@
           </td>
           <td class="reminders-table__state">
             {#if row.state === 'sent'}
-              {#if row.url}<a class="tone tone--success" href={row.url} target="_blank" rel="noopener noreferrer">sent<span class="vh">: open in Discord</span></a>{:else}<span class="tone tone--success">sent</span>{/if}
+              {#if row.url}<a class="tone tone--success" {...discordLink(row.url)}>sent<span class="vh">: open in Discord</span></a>{:else}<span class="tone tone--success">sent</span>{/if}
             {:else if row.state === 'stale'}
               <span class="tone tone--danger" title={STALE}>stale<span class="vh">{` — ${STALE.toLowerCase()}`}</span></span>
             {:else if row.state === 'due'}

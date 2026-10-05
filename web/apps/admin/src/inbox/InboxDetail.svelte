@@ -14,6 +14,7 @@
   import Name from '../names/Name.svelte';
   import Avatar from '../shared/Avatar.svelte';
   import { memberAvatar } from '../shared/avatar';
+  import { discordLink } from '../shared/discordLink.svelte';
   import type { Slot } from '../planner/keyboardMove';
   import MovePicker from '../sheet/MovePicker.svelte';
   import { liveRuns, namesIn } from '../sheet/move';
@@ -201,7 +202,7 @@
     <span class="proposal__fact proposal__fact--aside mono">#{p.short_id}</span>
     <span class="proposal__fact proposal__fact--aside">read {p.read_at}</span>
     {#if p.channel && !(stacked && messages.length)}<span class="proposal__fact">{p.channel}</span>{/if}
-    {#if p.card_url && !stacked}<a class="proposal__fact proposal__card" href={p.card_url} target="_blank" rel="noopener noreferrer">See the card</a>{/if}
+    {#if p.card_url && !stacked}<a class="proposal__fact proposal__card" {...discordLink(p.card_url)}>See the card</a>{/if}
   </p>
 {/snippet}
 
@@ -412,7 +413,7 @@
               <p class="msg__line">
                 <span class="msg__who">{#if line.author_id}<Name kind="member" id={line.author_id} name={line.author} />{:else}{who}{/if}</span>
                 <!-- The time opens the message in Discord (no separate "open" link, as on the board). -->
-                {#if line.url && !line.missing}<a class="msg__at" href={line.url} target="_blank" rel="noopener noreferrer">{line.at}<span class="vh"> (open in Discord)</span></a>
+                {#if line.url && !line.missing}<a class="msg__at" {...discordLink(line.url)}>{line.at}<span class="vh"> (open in Discord)</span></a>
                 {:else}<span class="msg__at">{line.at}</span>{/if}
                 {#if line.used !== false}<span class="vh">(used)</span>{#if stacked}<span class="cap msg__used" aria-hidden="true">used</span>{/if}{/if}
               </p>
@@ -425,7 +426,7 @@
       {#if stacked}
         <div class="proposal__threadfoot" data-fid="phone-thread-foot">
           {@render facts()}
-          {#if discordUrl}<a class="proposal__discord" href={discordUrl} target="_blank" rel="noopener noreferrer">Open in Discord</a>{/if}
+          {#if discordUrl}<a class="proposal__discord" {...discordLink(discordUrl)}>Open in Discord</a>{/if}
         </div>
       {/if}
     </section>
@@ -450,7 +451,7 @@
         <span class="decision__spacer" aria-hidden="true"></span>
         <div class="decision__footrow" data-fid="decision-foot">
           {#if editing}<button class="btn btn--ghost proposal__edit-cancel" type="button" onclick={() => void closeEdit()}>Cancel edit</button>
-          {:else if p.card_url}<a class="proposal__card" href={p.card_url} target="_blank" rel="noopener noreferrer">See the card</a>{/if}
+          {:else if p.card_url}<a class="proposal__card" {...discordLink(p.card_url)}>See the card</a>{/if}
           {@render rejectKey()}
         </div>
         <p class="field__error" id="{uid}-err" role="alert">{error}</p>

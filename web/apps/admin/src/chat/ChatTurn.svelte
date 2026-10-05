@@ -14,6 +14,7 @@
   import Name from '../names/Name.svelte';
   import { Resource } from '../resource.svelte';
   import { copyText } from '../shared/copy';
+  import { discordLink } from '../shared/discordLink.svelte';
   import TextModal from '../shared/TextModal.svelte';
   import Conversation from './Conversation.svelte';
   import ModelTrace from './ModelTrace.svelte';
@@ -115,7 +116,7 @@
     {:else if tab === 'cards'}
       {#if data.cards.length}
         <ul class="chat-produced" aria-label="What this turn produced">
-          {#each data.cards as c (c.url)}<li><a href={c.url} target="_blank" rel="noopener noreferrer">{c.kind} card</a></li>{/each}
+          {#each data.cards as c (c.url)}<li><a {...discordLink(c.url)}>{c.kind} card</a></li>{/each}
         </ul>
       {:else}<p class="note">Nothing produced.</p>{/if}
     {:else}

@@ -4,6 +4,7 @@
   import '@kanade/ui/styles/select.scss';
   import SettingsPanel from './SettingsPanel.svelte';
   import { Resource, send } from '../resource.svelte';
+  import { discordLink } from '../shared/discordLink.svelte';
 
   let {
     toaster,
@@ -74,9 +75,7 @@
       <h4 class="cap" id="{uid}-last">Last posted</h4>
       <p class="digest__lastline">
         <b class="mono">{lastAt}</b> · {lastWeek} · {last.channel_name ?? last.channel_id}{last.url ? ' · ' : ''}{#if last.url}<a
-            href={last.url}
-            target="_blank"
-            rel="noopener noreferrer">open in Discord<Icon name="external-link" /><span class="vh"> (opens in a new tab)</span></a
+            {...discordLink(last.url)}>open in Discord<Icon name="external-link" />{#if discordLink(last.url).target}<span class="vh"> (opens in a new tab)</span>{/if}</a
           >{/if}
       </p>
     </section>
