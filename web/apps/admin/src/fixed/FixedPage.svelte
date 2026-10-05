@@ -256,6 +256,7 @@
         members={store.members}
         {self}
         week={store.week}
+        timeStep={store.runStep}
         version={fixed.version}
         onsaved={saved}
         onstale={stale}

@@ -6,6 +6,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin run pane and run sheet: a "View weekly timing" link on runs that
+  came from a weekly timing opens it in the Fixed editor.
+- v5 admin Fixed editor: the Time is the Move picker's stepper (Run lengths
+  step), still typed into, with Enter saving as before.
 - v5 admin dropdowns: every select is one rounded pill with keyboard
   type-ahead, search on long lists and the phone's own picker on small
   screens; Re-read channels is a multi-select (All · None), and the Dates
@@ -819,6 +823,15 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- v5 admin run pane and run sheet: boss art stays inside the identity card
+  and fades into it (no hard cut behind Move), only where there is no text:
+  behind the actions on the laptop sheet, a top-right corner by the clock in
+  the pane and on phones; two or three bosses show as angled slices in run
+  order, further bosses as portraits only. Text contrast over it is measured
+  from pixels in e2e.
+- v5 admin full run sheet is one window: the identity card sits flush on the
+  modal's surface (no ground band around it) and Party / Answers / Cards /
+  Changes are a tab strip in it, not a second titled window.
 - v5 admin sign-in and the full run sheet follow the M3E hero boards: a
   banner with the bot's name and a 52 px Discord key; the sheet's laptop and
   phone views get an identity card with a large clock (new `--fs-hero`

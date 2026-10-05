@@ -5,7 +5,7 @@
 -->
 <script lang="ts">
   import type { Boss, BossRow, Channel, FixedRequest, FixedRow, MemberRow, ValidateResult } from '@kanade/api-types';
-  import { BossTag, DayStrip, Modal, Select, dayLabel, enter } from '@kanade/ui';
+  import { BossTag, DayStrip, Modal, Select, TimeStepper, dayLabel, enter } from '@kanade/ui';
   import '@kanade/ui/styles/select.scss';
   import '@kanade/ui/styles/fixed.scss';
   import '@kanade/ui/styles/move-picker.scss';
@@ -32,6 +32,7 @@
     onretire,
     leaving = false,
     onleft,
+    timeStep = 30,
   }: {
     open: boolean;
     wide: boolean;
@@ -54,6 +55,8 @@
     /** Closed, playing its exit (FixedPage's Presence): inert, and the phone dialog closes. */
     leaving?: boolean;
     onleft?: (event: AnimationEvent) => void;
+    /** The time stepper's step: Config → Run lengths default minutes, as the Move picker. */
+    timeStep?: number;
   } = $props();
   // A primitive key: the pane's content enters again only for another timing (or a new one).
   const rowKey = $derived(row?.id ?? 'new');
@@ -68,6 +71,14 @@
 
   let weekday = $state(0);
   let time = $state('');
+  // The stepper reads a typed "21:30"; anything else stays as typed for the server to judge.
+  const timeMinutes = $derived.by(() => {
+    const hit = /^(\d{1,2}):(\d{2})$/.exec(time.trim());
+    if (!hit) return null;
+    const [h, m] = [Number(hit[1]), Number(hit[2])];
+    return h < 24 && m < 60 ? h * 60 + m : null;
+  });
+  const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
   let channel = $state('');
   let note = $state('');
   let party = $state<string[]>([]);
@@ -271,7 +282,21 @@
           <span>Day</span>
           <DayStrip days={weekdayStrip} value={Number(weekday)} label="Day" compact onpick={(value) => (weekday = value)} />
         </div>
-        <label class="field"><span>Time</span><input bind:value={time} placeholder="21:30" size="6" class="mono" /></label>
+        <!-- The Move picker's stepper (Run lengths step), still typed into; Enter submits the form. -->
+        <div class="field fixedsheet__time">
+          <!-- A label for the typed field only: the stepper's chevrons stay outside it. -->
+          <label class="label" for="{uid}-time">Time</label>
+          <TimeStepper
+            id="{uid}-time"
+            value={timeMinutes}
+            step={timeStep}
+            start={21 * 60}
+            draft={time}
+            placeholder="21:30"
+            ontype={(text) => (time = text)}
+            onchange={(minutes) => (time = hhmm(minutes))}
+          />
+        </div>
         <div class="field">
           <span>Owner</span>
           <Select

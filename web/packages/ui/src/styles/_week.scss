@@ -799,9 +799,7 @@ a.week-foot__item:hover,
   margin-left: 0;
 }
 
-// The pane's scrolling panel. It holds the run's entry art (`_runs.scss` .run__art, unchanged), as
-// the sheet's card does: something to be absolute against, and a stacking
-// context of its own so the art's z-index -1 stays above the pane's surface.
+// The pane's scrolling panel.
 .week-pane__panel {
   position: relative;
   isolation: isolate;
@@ -813,9 +811,15 @@ a.week-foot__item:hover,
   overscroll-behavior: contain;
 }
 
+// The identity card holds the run's entry art (`_run-sheet.scss` .run__arts), as the
+// sheet's card does: something to be absolute against, a stacking context of
+// its own so the art's z-index -1 stays above the pane's surface, and a clip so
+// it never runs under the Move picker below.
 .week-pane__art {
   position: relative;
+  isolation: isolate;
   flex: none;
+  overflow: clip;
   border-bottom: 1.5px solid var(--line);
 }
 

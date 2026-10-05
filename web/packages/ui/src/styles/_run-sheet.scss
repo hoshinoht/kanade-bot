@@ -1,7 +1,11 @@
 // The full run sheet (boards HeroSheet, HeroPhone): the pane's "larger view"
-// from 840 px and the sheet itself below. An identity card (entry art, clock,
-// bosses, chips, Move) over one window with Party / Answers / Cards / Changes
-// tabs; only the selected panel scrolls. Imported by RunSheet.svelte.
+// from 840 px and the sheet itself below. The modal is the one window (its
+// title bar holds the dots, title and close): the identity card (entry art,
+// clock, bosses, chips, Move) sits flush on its surface, then a strip of
+// Party / Answers / Cards / Changes tabs; only the selected panel scrolls.
+// The boards draw the card and a tabbed `.win` on the page's ground; inside a
+// modal that became a window in a window, so here they are sections of one.
+// Imported by RunSheet.svelte.
 
 dialog.modal.runsheet {
   max-width: none;
@@ -16,7 +20,7 @@ dialog.runsheet .modal__panel {
 dialog.runsheet .modal__body {
   display: flex;
   flex-direction: column;
-  background: var(--ground);
+  background: var(--surface);
 }
 
 // From 840 px: nearly the whole frame, as the board's page.
@@ -44,7 +48,7 @@ dialog.modal.runsheet--narrow {
     border: 0;
     border-radius: 0;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-    background: var(--ground);
+    background: var(--surface);
   }
 }
 
@@ -56,17 +60,139 @@ dialog.runsheet--narrow .modal__head {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 10px;
   min-height: 0;
-  padding: 12px 0;
-}
-
-.runsheet--narrow .runsheet__body {
-  gap: 8px;
-  padding: 8px 10px 10px;
 }
 
 /* ── the identity card ──────────────────────────────────────────────────── */
+
+/* The entry art (`_runs.scss` has the board card's) in the run pane's and the
+ * run sheet's identity card (RunSheet `.run__arts`): it lives inside that card
+ * only -- never under the Move picker or the party below it -- and only where
+ * no words are, so text keeps its contrast from the card's own surface rather
+ * than from any treatment of the text (e2e/run-identity-contrast.spec.ts
+ * measures every word against the rendered pixels behind it).
+ *
+ *  - Laptop sheet: the art is the actions column's backdrop (Move, the other
+ *    actions, the status group, all on fills of their own), its left edge
+ *    fading into the surface before the bosses and chips.
+ *  - Pane and phone sheet: their words run the card's full width, so the art
+ *    is a top-right corner beside the clock, fading out leftwards before the
+ *    day and downwards before the first boss row.
+ *
+ * One boss is one picture. Two or three are angled slices, the lead first (on
+ * the left, the order they are named in), meeting in soft seams; further
+ * bosses are their portraits only. Each slice is a skewed window with the
+ * picture counter-skewed inside it, so the seam is a slanted soft edge at any
+ * card height (a slanted gradient alone would tilt with the box's aspect).
+ *
+ * The veil's opacity sits on the whole group, not on each picture, so a seam
+ * is a crossfade rather than a lighter stripe where two washes overlap. */
+.run__arts {
+  /* TUNING KNOBS -- the slant, the seam's softness, the left fade's length,
+     the foot's fade. */
+  --slice-skew: -12deg;
+  --slice-seam: 32px;
+  --slice-bleed: 56px;
+  --arts-fade: 96px;
+  --arts-foot: 44px;
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: -1;
+  width: 72%;
+  overflow: clip;
+  opacity: var(--art-veil);
+  /* The foot fades into the card, so nothing ends in a hard line. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--arts-foot)), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--arts-foot)), transparent);
+  pointer-events: none;
+}
+
+/* Laptop sheet: the card is a grid (clock | identity | actions) and the art is
+   placed on the actions track, reaching back across the gap; its fade starts
+   where the identity column ends. The track's right and bottom lines already
+   land on the card's padding edges, the top one on its content edge (measured;
+   e2e/run-identity.spec.ts `confined` guards the group inside the card). */
+.runsheet--wide .runsheet__hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: 28px;
+}
+
+.runsheet--wide .runsheet__hero > .run__arts {
+  grid-row: 1;
+  grid-column: 3;
+  inset: -14px 0 0 -28px;
+  width: auto;
+}
+
+/* Pane and phone sheet: the top-right corner, beside the clock. */
+.week-pane__art > .run__arts,
+.runsheet--narrow .runsheet__hero > .run__arts {
+  --slice-seam: 20px;
+  --arts-fade: 56px;
+  --arts-foot: 40px;
+  inset: 0 0 auto auto;
+  width: 36%;
+  height: 84px;
+}
+
+/* Every slice bleeds past the group's outer edges, where the skew would
+   otherwise leave an empty triangle at a corner; the group clips the bleed. */
+.run__slice {
+  position: absolute;
+  inset: 0 calc(-1 * var(--slice-bleed));
+  overflow: clip;
+  transform: skewX(var(--slice-skew));
+  /* The first slice is the group's left edge: a long soft fade into the card. */
+  -webkit-mask-image: linear-gradient(to right, transparent var(--slice-bleed), #000 calc(var(--slice-bleed) + var(--arts-fade)));
+  mask-image: linear-gradient(to right, transparent var(--slice-bleed), #000 calc(var(--slice-bleed) + var(--arts-fade)));
+}
+
+/* Later slices start half a seam before their boundary and fade in across it,
+   over the slice before, which runs on to half a seam after it. */
+.run__slice + .run__slice {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--slice-seam));
+  mask-image: linear-gradient(to right, transparent, #000 var(--slice-seam));
+}
+
+/* Two: the lead takes 55%. Three: 40 / 30 / 30. */
+.run__arts--2 > .run__slice:nth-child(1) {
+  right: calc(45% - var(--slice-seam) / 2);
+}
+
+.run__arts--2 > .run__slice:nth-child(2) {
+  left: calc(55% - var(--slice-seam) / 2);
+}
+
+.run__arts--3 > .run__slice:nth-child(1) {
+  right: calc(60% - var(--slice-seam) / 2);
+}
+
+.run__arts--3 > .run__slice:nth-child(2) {
+  left: calc(40% - var(--slice-seam) / 2);
+  right: calc(30% - var(--slice-seam) / 2);
+}
+
+.run__arts--3 > .run__slice:nth-child(3) {
+  left: calc(70% - var(--slice-seam) / 2);
+}
+
+.run__art {
+  position: absolute;
+  /* Wider than its window, so the counter-skew still covers both corners. */
+  inset: 0 calc(-1 * var(--slice-bleed));
+  width: calc(100% + 2 * var(--slice-bleed));
+  height: 100%;
+  object-fit: cover;
+  object-position: center var(--art-crop-sheet);
+  transform: skewX(calc(-1 * var(--slice-skew)));
+}
+
+/* One boss: the whole picture, cropped from the right as the board's card. */
+.run__arts--1 .run__art {
+  object-position: right var(--art-crop-sheet);
+}
+
 
 .runsheet__hero {
   position: relative;
@@ -76,10 +202,9 @@ dialog.runsheet--narrow .modal__head {
   gap: 28px;
   min-height: 196px;
   padding: 14px 20px 14px 22px;
-  border: 2px solid var(--win);
-  border-radius: 16px;
+  // Flush on the modal's surface: a rule, not a frame, parts it from the tabs.
+  border-bottom: 1.5px solid var(--line);
   background: var(--surface);
-  box-shadow: var(--shadow);
   overflow: clip;
 }
 
@@ -204,6 +329,33 @@ dialog.runsheet--narrow .modal__head {
   max-width: 28rem;
 }
 
+// "View weekly timing" (pane and sheet): the run's source, a link pill among
+// the status chips, opaque so it reads over the art.
+.runlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px 0 8px;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent-text);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.runlink:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+
+.runlink .icon {
+  width: 14px;
+  height: 14px;
+}
+
 // Move, the other actions and the status on the right (board: column, ends aligned).
 .runsheet__side {
   flex: none;
@@ -279,28 +431,60 @@ dialog.runsheet--narrow .modal__head {
   display: none;
 }
 
-/* ── the window ─────────────────────────────────────────────────────────── */
+/* ── the tabbed section (no title bar of its own) ───────────────────────── */
 
 .runsheet__win {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 220px;
-  padding: 0;
   overflow: clip;
 }
 
+// The tab strip: pill tabs on the surface (the pane's `.ptab`), ruled off from the panel.
 .runsheet__bar {
   flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   min-height: 48px;
-  margin: 0;
-  padding: 0 10px 0 16px;
-  align-items: flex-end;
+  padding: 0 12px 0 16px;
+  border-bottom: 1.5px solid var(--line);
 }
 
-.runsheet__bar::before {
-  align-self: flex-end;
-  margin-bottom: 15px;
+.runsheet__bar .tabs__tabs {
+  align-items: center;
+  gap: 4px;
+}
+
+.runsheet__bar .tabs__tab {
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 17px;
+  color: var(--ink);
+}
+
+.runsheet__bar .tabs__tab:hover {
+  background: var(--row-hover);
+}
+
+.runsheet__bar .tabs__tab:focus-visible {
+  outline-color: var(--accent);
+  outline-offset: 0;
+}
+
+.runsheet__bar .tabs__tab[aria-selected="true"] {
+  background: var(--select);
+  color: var(--select-ink);
+}
+
+.runsheet__bar .tabs__count {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 40%, transparent);
+}
+
+.runsheet__bar .tabs__tab[aria-selected="true"] .tabs__count {
+  background: var(--surface);
+  box-shadow: none;
 }
 
 .runsheet__panel {
@@ -552,10 +736,6 @@ dialog.runsheet--narrow .modal__head {
   padding: 0 6px 0 10px;
 }
 
-.runsheet--narrow .runsheet__bar::before {
-  margin-right: 20px;
-}
-
 .runsheet--narrow .runsheet__bar .tabs__tab {
   padding: 0 10px;
 }
@@ -614,29 +794,13 @@ dialog.runsheet--narrow .modal__head {
 
 /* ── the Move view (P_MovePhone; HeroSheet's window on a laptop) ────────── */
 
-.runsheet__movewin .runsheet__bar {
-  align-items: center;
-  gap: 10px;
-}
-
-.runsheet__movewin .runsheet__bar::before {
-  align-self: center;
-  margin-bottom: 0;
-}
-
 .runsheet__movetitle {
   flex: 1 1 auto;
   margin: 0;
-  color: var(--win-ink);
+  color: var(--ink);
   font-family: var(--display);
   font-size: 15px;
   font-weight: 700;
-}
-
-.runsheet__movewin .runsheet__back {
-  border-color: color-mix(in srgb, var(--win-ink) 45%, transparent);
-  background: transparent;
-  color: var(--win-ink);
 }
 
 .runsheet__back {

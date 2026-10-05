@@ -164,7 +164,9 @@
   });
   // Unsaved input: the Move view or the swap picker is open.
   const dirty = $derived(moving || swapping);
-  const artBosses = $derived(run ? run.bosses.filter((b) => b.art) : []);
+  // The identity card's art: one picture, or angled slices in run order (lead
+  // first), at most three; any further bosses show as their portraits only.
+  const artBosses = $derived(run ? run.bosses.filter((b) => b.art).slice(0, 3) : []);
   // The pane's countdown to a run still ahead: waves over its final 24 h only.
   const until = $derived(run && wide ? runCountdown(run, week) : null);
   const addable = $derived(run ? members.filter((m) => !run.participants.some((p) => p.id === m.id)) : []);
@@ -248,6 +250,13 @@
     if (!outcome.ok) error = outcome.message;
     else if (wide) swapping = false;
     else open = false;
+  }
+
+  // Following a link away: the pane or sheet closes with the page it sat on.
+  // A modified click opens a new tab, so this one stays.
+  function leaveFor(event: MouseEvent) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    open = false;
   }
 
   // An action picker: the pick adds the member and the picker returns to its prompt.
@@ -525,16 +534,20 @@
 {/snippet}
 
 {#snippet arts()}
-  {#each artBosses as boss, index (boss.key)}
-    <img
-      class="run__art"
-      class:run__art--lead={artBosses.length > 1 && index === 0}
-      class:run__art--second={artBosses.length > 1 && index > 0}
-      src={boss.art}
-      alt=""
-      decoding="async"
-    />
-  {/each}
+  {#if artBosses.length > 0}
+    <div class="run__arts run__arts--{artBosses.length}" data-fid="run-art">
+      {#each artBosses as boss (boss.token)}
+        <span class="run__slice"><img class="run__art" src={boss.art} alt="" decoding="async" /></span>
+      {/each}
+    </div>
+  {/if}
+{/snippet}
+
+<!-- A run from a weekly timing links to it (the app's router turns the click into a route change). -->
+{#snippet timing(run: Run)}
+  {#if run.fixed_id}
+    <a class="runlink" href="/fixed?open={encodeURIComponent(run.fixed_id)}" onclick={leaveFor}><Icon name="pin" />View weekly timing</a>
+  {/if}
 {/snippet}
 
 {#if wide && !popped}
@@ -599,8 +612,8 @@
       </div>
       <div class="week-pane__panel" role="tabpanel" id="{uid}-ppanel" aria-labelledby="{uid}-ptab-{paneTab}">
         {#if paneTab === 'run'}
-          {@render arts()}
           <header class="week-pane__art" data-fid="week-pane-art">
+            {@render arts()}
             <div class="week-pane__lead">
             <p class="week-pane__when">
               <span class="week-pane__time mono">{run.status === 'otot' || !run.time ? 'own time' : run.time}</span>
@@ -626,6 +639,7 @@
               {#if counts.out}<span class="tone tone--danger mono">{counts.out} out</span>{/if}
               {#if counts.maybe}<span class="tone tone--info">{counts.maybe} maybe</span>{/if}
               {#if counts.waiting}<span class="tone tone--neutral">{counts.waiting} waiting</span>{/if}
+              {@render timing(run)}
             </p>
             <AnswerBar participants={run.participants} class="week-pane__answers" />
             </div>
@@ -711,6 +725,7 @@
               {#if counts.waiting}<span class="tone tone--neutral">{counts.waiting} waiting</span>{/if}
               {@render channel(run)}
               <span class="id">#{run.short_id}</span>
+              {@render timing(run)}
             </p>
             <AnswerBar participants={run.participants} class="runsheet__answers" />
           </div>
@@ -733,16 +748,17 @@
         {#if moving}
           <!-- HeroSheet's window turns into the Move picker; Back (or Escape) returns to the tabs. -->
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-          <section class="card runsheet__win runsheet__movewin" data-fid="sheet-window" aria-labelledby="{uid}-movetitle" onkeydown={backKey}>
-            <div class="card__head runsheet__bar">
+          <section class="runsheet__win runsheet__movewin" data-fid="sheet-window" aria-labelledby="{uid}-movetitle" onkeydown={backKey}>
+            <div class="runsheet__bar">
               <h3 class="runsheet__movetitle" id="{uid}-movetitle">Move {runTitle(run)}</h3>
               <button type="button" class="btn runsheet__back" onclick={() => void closeMove()}><Icon name="chevron-left" />Back to the run</button>
             </div>
             <div class="runsheet__panel runsheet__panel--move">{@render picker(run, 'pane', true)}</div>
           </section>
         {:else}
-        <section class="card runsheet__win" data-fid="sheet-window" aria-label="Run details">
-          <div class="card__head tabs__strip runsheet__bar">
+        <!-- One window: the modal's title bar is the only one; the tabs are a strip of its body (HeroSheet's `.win` tabs). -->
+        <section class="runsheet__win" data-fid="sheet-window" aria-label="Run details">
+          <div class="tabs__strip runsheet__bar">
             <div class="tabs__tabs" role="tablist" aria-label="Run details" data-fid="sheet-tabs">
               {#each tabs as tab, index (tab.id)}
                 <button

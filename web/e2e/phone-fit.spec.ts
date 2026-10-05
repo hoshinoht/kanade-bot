@@ -148,9 +148,9 @@ for (const size of SIZES) {
       if (document.documentElement.scrollWidth > window.innerWidth) out.push('the page scrolls sideways');
       if (grid.scrollWidth > grid.clientWidth) out.push('the fields scroll sideways');
       const boxes = [...grid.querySelectorAll<HTMLElement>('.field')].map((field) => ({
-        name: field.querySelector('span')!.textContent!.trim(),
-        // The Day is the weekday strip (P_MoveStates "Reuse"), a box like the others.
-        box: field.querySelector('.dd, input, .daystrip')!.getBoundingClientRect(),
+        name: field.querySelector(':scope > span, :scope > label')!.textContent!.trim(),
+        // The Day is the weekday strip (P_MoveStates "Reuse") and the Time the stepper pill, boxes like the others.
+        box: field.querySelector('.dd, .timestep, input, .daystrip')!.getBoundingClientRect(),
       }));
       boxes.forEach(({ name, box }, i) => {
         if (box.left < bound.left - 0.5 || box.right > bound.right + 0.5) out.push(`${name} leaves the sheet`);

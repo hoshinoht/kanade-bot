@@ -30,8 +30,9 @@ test('admin run pane: portraits, levels, split artwork, monogram fallback', asyn
   await page.goto(`${ADMIN}/?sw=off`);
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
   const sheet = page.getByRole('complementary', { name: 'HCarling + HStar' });
-  await expect(sheet.locator('img.run__art--lead')).toHaveAttribute('src', '/art/entry/Carling');
-  await expect(sheet.locator('img.run__art--second')).toHaveAttribute('src', '/art/entry/MaleficStar');
+  // Two bosses: two angled slices in the identity card, the lead first.
+  await expect(sheet.locator('.week-pane__art .run__slice:nth-child(1) img.run__art')).toHaveAttribute('src', '/art/entry/Carling');
+  await expect(sheet.locator('.week-pane__art .run__slice:nth-child(2) img.run__art')).toHaveAttribute('src', '/art/entry/MaleficStar');
   await expect(sheet.locator('img.portrait')).toHaveCount(2);
   await expect(sheet.locator('img.portrait').first()).toHaveAttribute('src', '/art/icons/Carling');
   await expect(sheet.getByText('Lv. 275')).toBeVisible();

@@ -178,3 +178,8 @@
 // The weekday strip (P_MoveStates "Reuse") takes the line; time and owner share the next.
 .fixedsheet__fields .fixedsheet__day { grid-column: 1 / -1; }
 .fixedsheet__day .daystrip { max-width: 22rem; }
+// The time is the Move picker's stepper (`_move-picker.scss`), typed into:
+// the field's 40 px row, the input bare inside the pill, whose ring is the
+// only focus mark (no `input:focus` wash box inside it).
+.fixedsheet__time .timestep { align-self: start; height: 40px; border-radius: 20px; }
+.fixedsheet__content .timestep input.timestep__value { width: 4.5em; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; outline: none; color: inherit; font-size: var(--fs-body); font-weight: 600; text-align: center; }
