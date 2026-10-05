@@ -63,3 +63,6 @@ tools/pwa-mock/target/
 
 # Local design research captures (kept on disk, not tracked)
 /docs/research/
+
+# Private dev notes, logs, plans and reviews (kept on disk, never tracked; see its AGENTS.md)
+/docs/notes/

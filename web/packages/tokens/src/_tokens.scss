@@ -73,7 +73,7 @@
   --accent-wash: color-mix(in srgb, var(--accent) 16%, var(--surface));
   --win-soft: color-mix(in srgb, var(--win) 30%, transparent);
 
-  /* M3E depth-2 surfaces (docs/v5/m3e-rail-design-spec.md "Tokens"): the
+  /* M3E depth-2 surfaces (docs/notes/m3e-rail-design-spec.md "Tokens"): the
      selected-item container and its edge and ink, the list pane, the week
      board, contained rows, tonal chips and unselected connected-group
      buttons. `--row-lift` is what a row is lifted toward: white by day, a

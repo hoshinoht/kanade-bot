@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { ADMIN, expect, test } from './support';
 
-// The M3E shell (docs/v5/m3e-rail-design-spec.md, gates G1, G2, G6, G7): the
+// The M3E shell (docs/notes/m3e-rail-design-spec.md, gates G1, G2, G6, G7): the
 // navigation rail at ≥ 600 px, the 36 px page line, and on phones a 48 px top
 // bar with a navigation drawer instead of any nav row.
 

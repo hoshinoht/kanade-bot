@@ -2,7 +2,7 @@
 
 The current, as-built design reference for the Kanade v5 admin PWA
 (`web/apps/admin`, shared pieces in `web/packages/{tokens,ui}`). It replaces
-`../m3e-rail-design-spec.md` and `../pwa-design-guidelines.md` as the place to
+`../../notes/m3e-rail-design-spec.md` and `../pwa-design-guidelines.md` as the place to
 look things up; those stay as history. Written 2026-10-05 from the code at
 `d47f78b` plus the user's decision register.
 
@@ -14,7 +14,7 @@ until the user says otherwise, and you add the difference to "Drift found".
 
 | Key | Means |
 |---|---|
-| `[old §X]` | `../m3e-rail-design-spec.md`, section X (the 2026-09-28 handoff) |
+| `[old §X]` | `../../notes/m3e-rail-design-spec.md`, section X (the 2026-09-28 handoff) |
 | `[guide]` | `../pwa-design-guidelines.md` |
 | `[web/AGENTS]` | `web/AGENTS.md` |
 | `[lesson]` | root `AGENTS.md`, `recall:lessons` block |
@@ -29,7 +29,7 @@ until the user says otherwise, and you add the difference to "Drift found".
 4. Board picture (`png/`): layout intent only.
 5. The old specs (`[old §]`, `[guide]`): history and rationale.
 
-`../public-portal-plan.md` specifies the public app; it is linked here, not
+`../../notes/public-portal-plan.md` specifies the public app; it is linked here, not
 merged (user decision 2026-10-05).
 
 ## Read order by task

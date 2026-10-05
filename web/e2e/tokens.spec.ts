@@ -3,7 +3,7 @@ import { ADMIN, expect, test } from './support';
 
 // The M3E tokens' contrast in every colourway and face, read from the real
 // stylesheet (the browser resolves the color-mix() chains): text pairs need
-// 4.5:1 (docs/v5/m3e-rail-design-spec.md "Tokens" and "Accessibility
+// 4.5:1 (docs/notes/m3e-rail-design-spec.md "Tokens" and "Accessibility
 // checklist"); a selected row's state cue is its fill, shape and bold title,
 // not its light edge. Overrides live in packages/tokens/_contrast.scss.
 

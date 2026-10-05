@@ -19,5 +19,5 @@ Code: `apps/admin/src/pages/LoginPage.svelte`; `_gate.scss`.
 ## Public app
 
 The public portal is a separate product on its own origin, with its own
-masthead and 1180 px cap; see `../../public-portal-plan.md` (linked, not
+masthead and 1180 px cap; see `../../../notes/public-portal-plan.md` (linked, not
 merged).

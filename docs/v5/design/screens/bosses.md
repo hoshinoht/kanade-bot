@@ -134,5 +134,5 @@ Code: `apps/admin/src/bosses/` (`BossesPage`, `BossWorkspace`, `BossGrid`,
 
 - **Planned:** port this screen to the public portal (signed-in members only,
   read-only guide + "your runs with this boss this week"); see
-  `../../public-portal-plan.md`. `[DR 2026-10-04]`
+  `../../../notes/public-portal-plan.md`. `[DR 2026-10-04]`
 - No animated art in Discord cards. `[DR 2026-10-04]`

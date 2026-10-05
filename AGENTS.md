@@ -10,6 +10,7 @@
 - `web/` is the production Svelte 5 PWA workspace (see `web/AGENTS.md`); `tools/pwa-mock/` is its dev-only Axum mock server (own Cargo project); the stack-evaluation spike was removed (restore from commit `6aecff4` if needed); `scripts/` holds the v5 inventory checker (`check_v5_inventory.py`, `v5_inventory/`), `boss_knowledge/` import tooling and `bench_headers.py`.
 - `boss/knowledge/` is the tracked v5 boss knowledge (schema v2); v4's copy under `legacy/python/boss/knowledge/` must not change because the frozen v4 container validates it at startup. Root `boss/portraits` and `boss/artwork` are private, git-ignored art.
 - Current planning state lives in git-ignored `.opencode/workplan/kanade-v5-roadmap.{json,md}`; its `## Decision register` records user decisions that override older plan text. Predecessor plans are marked archived; their historical decisions and receipts remain preserved.
+- `docs/notes/` is git-ignored and holds private dev logs, session notes, unpublished plans/specs and reviews (see its `AGENTS.md`); put anything others should not see there, never in tracked docs. `docs/research/` (also git-ignored) holds private captures and mockups.
 
 ## v5 toolchain and checks
 
