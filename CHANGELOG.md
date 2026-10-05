@@ -6,6 +6,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 admin History lists Config section saves: every effective save (persona
+  switches included) is stored with its changed settings before and after
+  (store migration 0023) and shows as a view-only "Config" row in the
+  timeline, with the field diff, raw JSON and a link back to the section.
 - v5 admin Limits: one full-width card per model group (permits bar,
   breaker in words, rate and retry budgets, models, waiting calls), Queue,
   Admission (refusals by backend group and gateway key) and Allowances tabs;

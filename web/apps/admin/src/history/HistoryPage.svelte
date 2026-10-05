@@ -6,16 +6,18 @@
   import '@kanade/ui/styles/history.scss';
   import '@kanade/ui/styles/date-picker.scss';
   import '@kanade/ui/styles/select.scss';
-  import type { ChangeRecord, Checkpoints, HistoryPage, RevertPlan } from '@kanade/api-types';
+  import type { ChangeRecord, Checkpoints, HistoryPage, RevertPlan, SettingsChangeRow } from '@kanade/api-types';
   import { createClient } from '@kanade/client';
   import { SvelteSet } from 'svelte/reactivity';
   import { onMount } from 'svelte';
-  import { DatePicker, Icon, Presence, RowContent, Select, serverClock, Toaster, weekStartLabel, type SelectOption } from '@kanade/ui';
+  import { DatePicker, Icon, Presence, RowContent, Select, serverClock, Toaster, TWO_PANE_QUERY, weekStartLabel, type SelectOption } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
   import { SURFACE_LABELS, actorName, describe, localAt, weekDate } from './describe';
   import RevertDialog from './RevertDialog.svelte';
   import HistoryDetail from './HistoryDetail.svelte';
+  import ConfigDetail from './ConfigDetail.svelte';
+  import { mergeTimeline, sectionLabel, settingCount, settingSummary, type TimelineItem } from './settings';
   import CheckpointsPanel from './CheckpointsPanel.svelte';
   import TextModal from '../shared/TextModal.svelte';
   import { memberLabel } from '../names/directory.svelte';
@@ -25,12 +27,16 @@
   let week = $state('');
   let actor = $state('');
   let records = $state<ChangeRecord[]>([]);
+  // Config section saves: view-only rows interleaved by time (not in the chain).
+  let settings = $state<SettingsChangeRow[]>([]);
+  let settingsTotal = $state(0);
   let head = $state<HistoryPage['head'] | null>(null);
   let nextBefore = $state<number | null>(null);
   let total = $state(0);
   let error = $state('');
   let loading = $state(false);
   let selectedSeq = $state<number | null>(null);
+  let selectedConfig = $state<number | null>(null);
   let selectedWeek = $state('');
   let selectOnDesktop = $state(true);
   let wide = $state(false);
@@ -47,10 +53,13 @@
     try {
       const page = await client.get<HistoryPage>(`/api/admin/history?${params}`);
       records = more ? [...records, ...page.records] : page.records;
-      for (const r of page.records) if (r.actor.kind === 'admin') seenAdmins.add(r.actor.id);
+      // A clock step back at a page boundary can repeat a save: keep each id once.
+      settings = more ? [...settings, ...page.settings.filter((s) => !settings.some((had) => had.id === s.id))] : page.settings;
+      for (const r of [...page.records, ...page.settings]) if (r.actor.kind === 'admin') seenAdmins.add(r.actor.id);
       head = page.head;
       nextBefore = page.next_before;
       total = page.total;
+      settingsTotal = page.settings_total;
       error = '';
     } catch (e) {
       error = e instanceof Error ? e.message : 'Could not load the history.';
@@ -63,12 +72,13 @@
     void week;
     void actor;
     selectedSeq = null;
+    selectedConfig = null;
     selectedWeek = '';
     selectOnDesktop = true;
     void load();
   });
   $effect(() => {
-    const media = window.matchMedia('(width >= 900px)');
+    const media = window.matchMedia(TWO_PANE_QUERY);
     const update = () => (wide = media.matches);
     update();
     media.addEventListener('change', update);
@@ -77,12 +87,14 @@
   // History opens the newest change only for an initial/filtered desktop view.
   // An explicitly closed pane stays closed until the user selects another row.
   $effect(() => {
-    if (wide && selectOnDesktop && records.length) {
-      const record = records[0];
-      selectedSeq = record?.seq ?? null;
-      selectedWeek = record?.weeks[0] ?? '';
-      restore = String(record?.seq ?? '');
-      restoreGroup = record?.weeks[0] ?? '';
+    const first = timeline[0];
+    if (wide && selectOnDesktop && first) {
+      const week = first.kind === 'change' ? (first.record.weeks[0] ?? '') : first.change.week;
+      if (first.kind === 'change') selectedSeq = first.record.seq;
+      else selectedConfig = first.change.id;
+      selectedWeek = week;
+      restore = itemKey(first);
+      restoreGroup = week;
       selectOnDesktop = false;
     }
   });
@@ -121,8 +133,10 @@
   }
   const names = (id: string) => memberLabel(store.members, id);
   const tz = $derived(store.week?.timezone ?? 'Asia/Kuala_Lumpur');
-  const weeks = $derived([...new Set(records.flatMap((r) => r.weeks))].sort().reverse());
-  const groups = $derived(weeks.length ? weeks.map((w) => ({ week: w, records: records.filter((r) => r.weeks.includes(w)) })) : [{ week: '', records }]);
+  const timeline = $derived(mergeTimeline(records, settings));
+  const itemKey = (item: TimelineItem) => (item.kind === 'change' ? String(item.record.seq) : `c${item.change.id}`);
+  const weeks = $derived([...new Set([...records.flatMap((r) => r.weeks), ...settings.map((s) => s.week)])].sort().reverse());
+  const groups = $derived(weeks.length ? weeks.map((w) => ({ week: w, items: timeline.filter((item) => (item.kind === 'change' ? item.record.weeks.includes(w) : item.change.week === w)) })) : [{ week: '', items: timeline }]);
   const loose = $derived(records.filter((r) => r.weeks.length === 0));
   const members = $derived(store.members.filter((m) => m.bossing));
   const known = (id: string) => store.members.some((m) => m.id === id);
@@ -150,13 +164,16 @@
   ]);
   const whoOptions = $derived<SelectOption[]>(members.map((m) => memberOption(m, `member:${m.id}`)));
   const selected = $derived(records.find((record) => record.seq === selectedSeq) ?? null);
+  const selectedSave = $derived(settings.find((change) => change.id === selectedConfig) ?? null);
   // The pane outlives the selection by its exit animation; while open it reads
   // the live record (the presence copy lags an effect behind).
-  const pane = new Presence<{ record: ChangeRecord; week: string }>();
-  $effect(() => pane.set(selected ? { record: selected, week: selectedWeek } : null));
+  type Shown = { kind: 'change'; record: ChangeRecord; week: string } | { kind: 'config'; change: SettingsChangeRow };
+  const pane = new Presence<Shown>();
+  $effect(() => pane.set(selected ? { kind: 'change', record: selected, week: selectedWeek } : selectedSave ? { kind: 'config', change: selectedSave } : null));
   // A change spanning several boss weeks is listed once per week: only the row
   // that was opened is active.
   const active = (record: ChangeRecord, group: string) => record.seq === selectedSeq && group === selectedWeek;
+  const activeSave = (change: SettingsChangeRow) => change.id === selectedConfig;
 
   let dialogOpen = $state(false);
   let dialog = $state<{ title: string; path: string; body: Record<string, unknown> }>({ title: '', path: '', body: {} });
@@ -187,12 +204,23 @@
     restore = String(record.seq);
     restoreGroup = openedWeek;
     selectedSeq = record.seq;
+    selectedConfig = null;
     selectedWeek = openedWeek;
+    selectOnDesktop = false;
+    (event.currentTarget as HTMLButtonElement).focus({ preventScroll: true });
+  }
+  function openSave(change: SettingsChangeRow, event: MouseEvent) {
+    restore = `c${change.id}`;
+    restoreGroup = change.week;
+    selectedConfig = change.id;
+    selectedSeq = null;
+    selectedWeek = change.week;
     selectOnDesktop = false;
     (event.currentTarget as HTMLButtonElement).focus({ preventScroll: true });
   }
   function closeDetail() {
     selectedSeq = null;
+    selectedConfig = null;
     selectedWeek = '';
     selectOnDesktop = false;
     requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-history="${restore}"][data-history-week="${restoreGroup}"]`)?.focus({ preventScroll: true }));
@@ -201,6 +229,7 @@
   // page), outside the list/pane row so the two stay the body's only children.
   let raw = $state({ open: false, title: '', text: '' });
   const showRaw = (record: ChangeRecord) => (raw = { open: true, title: `Change #${record.seq} raw JSON`, text: JSON.stringify(record, null, 2) });
+  const showSaveRaw = (change: SettingsChangeRow) => (raw = { open: true, title: `${sectionLabel(change.section)} settings raw JSON`, text: JSON.stringify(change, null, 2) });
   async function done(plan: RevertPlan) {
     toaster.show({ message: plan.record ? `Reverted as #${plan.record.seq}.` : 'Nothing changed.', tone: 'ok' });
     await load();
@@ -232,6 +261,19 @@
   {/if}
 {/snippet}
 
+<!-- A Config save: the same row shape, a square dot and a "Config" chip; view-only. -->
+{#snippet saveBody(change: SettingsChangeRow, isActive: boolean)}
+  {@const who = actorName(change.actor, names, known)}
+  <span class="history-row__dot history-row__dot--config" aria-hidden="true"></span>
+  <RowContent expanded={isActive}>
+    {#snippet compact()}<strong class="history-row__actor">{who}</strong> · <span class="history-row__summary">{settingSummary(change)}</span> · {SURFACE_LABELS[change.surface] ?? change.surface} · {localAt(change.at, tz)} · {settingCount(change)}{/snippet}
+    <span class="history-row__text">
+    <span class="history-row__head"><strong class="history-row__actor">{who}</strong><span class="chip chip--mono history-row__config">Config</span><span class="chip chip--mono">{SURFACE_LABELS[change.surface] ?? change.surface}</span><span class="history-row__time mono">{localAt(change.at, tz)}</span><span class="history-row__rows mono">{settingCount(change)}</span>{#if isActive}<span class="history-row__open cap">open</span>{/if}</span>
+    <span class="history-row__summary">{settingSummary(change)}</span>
+    </span>
+  </RowContent>
+{/snippet}
+
 <!-- Revert everything one member changed (B_History: the box at the foot of the change pane). -->
 {#snippet memberRevert()}
   <form class="history-member" data-fid="history-revert-member" onsubmit={revertMember}>
@@ -245,7 +287,7 @@
 {/snippet}
 
 <PageLine title="History">
-  <h1><span class="pageline__num">{total.toLocaleString('en')}</span> change{total === 1 ? '' : 's'}</h1>
+  <h1><span class="pageline__num">{(total + settingsTotal).toLocaleString('en')}</span> change{total + settingsTotal === 1 ? '' : 's'}</h1>
   {#if head}<p class="pageline__context">head #{head.seq} · <span class="mono">{head.hash.slice(0, 12)}</span></p>{/if}
 </PageLine>
 
@@ -254,7 +296,7 @@
     <h2 class="vh" id="history-title">History</h2>
     <div class="tabs__tabs" role="tablist" aria-label="History" data-fid="window-tabs">
       {#each TABS as t, index (t.id)}
-        <button class="tabs__tab" role="tab" type="button" id="history-tab-{t.id}" aria-selected={tab === t.id} aria-controls="history-{t.id}" tabindex={tab === t.id ? 0 : -1} onclick={() => (tab = t.id)} onkeydown={(event) => tabKey(event, index)}>{t.label}{#if t.id === 'timeline'}<span class="tabs__count">{total}</span>{:else if checkpoints.data}<span class="tabs__count">{checkpoints.data.backups.length}</span>{/if}</button>
+        <button class="tabs__tab" role="tab" type="button" id="history-tab-{t.id}" aria-selected={tab === t.id} aria-controls="history-{t.id}" tabindex={tab === t.id ? 0 : -1} onclick={() => (tab = t.id)} onkeydown={(event) => tabKey(event, index)}>{t.label}{#if t.id === 'timeline'}<span class="tabs__count">{total + settingsTotal}</span>{:else if checkpoints.data}<span class="tabs__count">{checkpoints.data.backups.length}</span>{/if}</button>
       {/each}
     </div>
     <!-- The filters only apply to the Timeline. -->
@@ -281,15 +323,23 @@
           {/if}
           {#if error}<p class="flash flash--error" role="alert">{error}</p>{/if}
           {#each groups as group (group.week)}
-            {#if group.records.length}
+            {#if group.items.length}
               <section class="history__week" aria-labelledby="history-week-{weekDate(group.week, tz)}">
                 <h3 class="pane__section" data-fid="history-group" id="history-week-{weekDate(group.week, tz)}">{group.week ? `Boss week of ${weekLabel(group.week)}` : 'Changes'}</h3>
                 <ol class="history-timeline">
-                  {#each group.records as record (record.seq)}
+                  {#each group.items as item (itemKey(item))}
                     <li>
-                       <button class="history-row expandable-row" data-fid="history-row" class:history-row--active={active(record, group.week)} type="button" aria-current={active(record, group.week) ? 'true' : undefined} data-history={record.seq} data-history-week={group.week} onclick={(event) => open(record, event, group.week)}>
-                        {@render rowBody(record, active(record, group.week))}
-                      </button>
+                      {#if item.kind === 'change'}
+                        {@const record = item.record}
+                        <button class="history-row expandable-row" data-fid="history-row" class:history-row--active={active(record, group.week)} type="button" aria-current={active(record, group.week) ? 'true' : undefined} data-history={record.seq} data-history-week={group.week} onclick={(event) => open(record, event, group.week)}>
+                          {@render rowBody(record, active(record, group.week))}
+                        </button>
+                      {:else}
+                        {@const change = item.change}
+                        <button class="history-row history-row--config expandable-row" data-fid="history-row" class:history-row--active={activeSave(change)} type="button" aria-current={activeSave(change) ? 'true' : undefined} data-history="c{change.id}" data-history-week={group.week} onclick={(event) => openSave(change, event)}>
+                          {@render saveBody(change, activeSave(change))}
+                        </button>
+                      {/if}
                     </li>
                   {/each}
                 </ol>
@@ -297,11 +347,12 @@
             {/if}
           {/each}
            {#if loose.length && weeks.length}<section class="history__week" aria-labelledby="history-week-none"><h3 class="pane__section" data-fid="history-group" id="history-week-none">Weekly timings and other changes</h3><ol class="history-timeline">{#each loose as record (record.seq)}<li><button class="history-row expandable-row" class:history-row--active={active(record, '')} type="button" aria-current={active(record, '') ? 'true' : undefined} data-history={record.seq} data-history-week="" onclick={(event) => open(record, event, '')}>{@render rowBody(record, active(record, ''))}</button></li>{/each}</ol></section>{/if}
-          {#if !loading && records.length === 0}<div class="empty"><strong>No changes match.</strong></div>{/if}
+          {#if !loading && records.length === 0 && settings.length === 0}<div class="empty"><strong>No changes match.</strong></div>{/if}
         </div>
         {#if nextBefore !== null}<div class="history-list-region__pager"><button class="btn" type="button" disabled={loading} onclick={() => void load(true)}>Older changes</button></div>{/if}
       </div>
-      {#if pane.shown}<HistoryDetail wide={wide} member={memberRevert} record={selected ?? pane.shown.record} week={selected ? selectedWeek : pane.shown.week} timezone={tz} {names} onclose={closeDetail} onrevert={revert} onrestore={restoreWeek} onraw={showRaw} leaving={pane.leaving} onleft={(event) => pane.done(event)} />{/if}
+      {#if pane.shown?.kind === 'change'}<HistoryDetail wide={wide} member={memberRevert} record={selected ?? pane.shown.record} week={selected ? selectedWeek : pane.shown.week} timezone={tz} {names} onclose={closeDetail} onrevert={revert} onrestore={restoreWeek} onraw={showRaw} leaving={pane.leaving} onleft={(event) => pane.done(event)} />
+      {:else if pane.shown?.kind === 'config'}{@const change = selectedSave ?? pane.shown.change}<ConfigDetail wide={wide} {change} timezone={tz} actor={actorName(change.actor, names, known)} onclose={closeDetail} onraw={showSaveRaw} leaving={pane.leaving} onleft={(event) => pane.done(event)} />{/if}
     </div>
   {:else}
     <div class="history-window__body" id="history-checkpoints" role="tabpanel" aria-labelledby="history-tab-checkpoints">

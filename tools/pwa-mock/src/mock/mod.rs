@@ -67,6 +67,8 @@ pub struct Store {
     fixed: Vec<Fixed>,
     members: Vec<MemberState>,
     history: Vec<history::Record>,
+    /// Config section saves History lists beside the records.
+    settings_changes: Vec<history::SettingsChange>,
     proposals: Vec<inbox::Proposal>,
     /// Closed inbox items, so a repeated decision answers as the first did.
     decided: Vec<inbox::Decided>,
@@ -93,6 +95,7 @@ impl Store {
             fixed: Vec::new(),
             members: Vec::new(),
             history: Vec::new(),
+            settings_changes: Vec::new(),
             proposals: Vec::new(),
             decided: Vec::new(),
             session: "discord",
@@ -133,6 +136,7 @@ impl Store {
         self.limit_resets.clear();
         self.digest_week = None;
         self.config = config::defaults();
+        self.settings_changes.clear();
         self.seed_history();
     }
 

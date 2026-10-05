@@ -1174,6 +1174,12 @@ impl Store {
                 ));
             }
         }
+        let section = patch
+            .as_object()
+            .and_then(|obj| obj.keys().next())
+            .cloned()
+            .unwrap_or_default();
+        self.record_settings(&section, &stored_rows(&self.config), &stored_rows(&next));
         self.config = next;
         let mut view = self.config_view();
         view["notices"] = json!(notices);
@@ -1253,6 +1259,59 @@ impl Store {
             .collect();
         json!({ "connected": true, "checked_at": Self::when(Self::now_minute()), "rows": rows })
     }
+}
+
+/// The server's stored `config` rows for these settings (keys and text as
+/// `src/domain/settings/codec.rs` writes them), which History diffs.
+pub fn stored_rows(c: &Config) -> std::collections::BTreeMap<&'static str, String> {
+    let flag = |on: bool| if on { "1" } else { "0" }.to_owned();
+    fn json(value: &impl Serialize) -> String {
+        serde_json::to_string(value).unwrap_or_default()
+    }
+    let visible: Vec<&str> = c
+        .profile_visibility
+        .iter()
+        .filter(|v| v.public)
+        .map(|v| v.key.as_str())
+        .collect();
+    [
+        ("day_of_ping_time", c.day_of_ping_time.clone()),
+        (
+            "countdown_minutes",
+            c.countdown_minutes
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
+        ("paused", flag(c.paused)),
+        ("extract_enabled", flag(c.extract_enabled)),
+        ("chat_mode", flag(c.chat_enabled)),
+        ("chat_pilot_rate_count", c.member_rate.0.to_string()),
+        ("chat_pilot_rate_window_s", c.member_rate.1.to_string()),
+        ("chat_pilot_global_rate_count", c.guild_rate.0.to_string()),
+        (
+            "chat_pilot_global_rate_window_s",
+            c.guild_rate.1.to_string(),
+        ),
+        ("quiet_mode", flag(c.quiet_mode)),
+        ("v5.self_service_mode", c.self_service_mode.clone()),
+        ("v5.public_portal", flag(c.public_portal)),
+        ("persona", c.persona.clone()),
+        ("v5.profile_visibility", visible.join(",")),
+        ("v5.role_profiles", json(&c.role_profiles)),
+        ("extract_model", c.extraction.alias.clone()),
+        ("extract_reasoning", c.extraction.reasoning.clone()),
+        ("chat_pilot_model", c.chat.alias.clone()),
+        ("chat_pilot_think", c.chat.reasoning.clone()),
+        ("v5.rewrite_model", c.rewrite.alias.clone()),
+        ("v5.rewrite_reasoning", c.rewrite.reasoning.clone()),
+        ("v5.model_context", json(&c.context)),
+        ("v5.run_lengths", json(&c.run_lengths)),
+        ("v5.profanity", json(&c.profanity)),
+    ]
+    .into_iter()
+    .collect()
 }
 
 /// One section per request; only the writable fields below. Anything else —

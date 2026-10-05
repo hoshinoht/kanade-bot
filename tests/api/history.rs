@@ -178,6 +178,93 @@ async fn pages_newest_first_with_filters_totals_and_records() {
     }
 }
 
+/// Config saves are not in the chain, so they page by time: each sits on the
+/// page whose oldest record is the newest one at or before it, exactly once.
+#[tokio::test]
+async fn config_saves_interleave_by_time_and_appear_on_exactly_one_page() {
+    use chrono::{DateTime, Duration, Utc};
+    use kanade::domain::history::Actor;
+    use kanade::domain::settings::{RowDiff, SettingsChange, SettingsStore};
+
+    let reads = Reads::new().await;
+    reads.move_kalos(6, "21:00").await;
+    reads.move_kalos(4, "20:00").await;
+    reads.move_kalos(3, "19:00").await;
+    let at = |seq: u64| {
+        let reads = &reads;
+        async move {
+            let record = reads
+                .read(&format!("/api/admin/history/{seq}"), RECORD)
+                .await;
+            DateTime::parse_from_rfc3339(record["at"].as_str().unwrap())
+                .unwrap()
+                .with_timezone(&Utc)
+        }
+    };
+    let (seed_at, moved_at) = (at(1).await, at(4).await);
+    let save = |at: DateTime<Utc>, section: &str| SettingsChange {
+        id: 0,
+        at,
+        actor: Actor::admin("token"),
+        surface: Surface::AdminPortal,
+        section: section.into(),
+        revision: 1,
+        values: [(
+            "quiet_mode".to_owned(),
+            RowDiff {
+                from: "0".into(),
+                to: "1".into(),
+            },
+        )]
+        .into(),
+    };
+    for (when, section) in [
+        (moved_at + Duration::hours(1), "newest"),
+        (moved_at, "tied"),
+        (seed_at - Duration::hours(1), "oldest"),
+    ] {
+        reads
+            .store
+            .put_settings_rows_recorded(
+                vec![("quiet_mode".into(), "1".into())],
+                save(when, section),
+            )
+            .await
+            .unwrap();
+    }
+
+    let mut pages = Vec::new();
+    let mut path = "/api/admin/history?limit=2".to_owned();
+    loop {
+        let page = reads.read(&path, PAGE).await;
+        assert_eq!(page["settings_total"], 3);
+        let sections: Vec<String> = page["settings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["section"].as_str().unwrap().to_owned())
+            .collect();
+        pages.push((seqs(&page), sections));
+        match page["next_before"].as_u64() {
+            Some(before) => path = format!("/api/admin/history?limit=2&before={before}"),
+            None => break,
+        }
+    }
+    assert_eq!(
+        pages,
+        [
+            (vec![4, 3], vec!["newest".to_owned(), "tied".to_owned()]),
+            (vec![2, 1], vec!["oldest".to_owned()]),
+        ]
+    );
+    // One page holding everything lists every save.
+    let all = reads.read("/api/admin/history?limit=100", PAGE).await;
+    assert_eq!(all["settings"].as_array().unwrap().len(), 3);
+    // A cursor naming no record places no save rather than repeating them.
+    let lost = reads.read("/api/admin/history?before=99", PAGE).await;
+    assert_eq!(lost["settings"], json!([]));
+}
+
 #[tokio::test]
 async fn a_run_log_pages_every_record_touching_one_run() {
     let reads = Reads::new().await;

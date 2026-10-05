@@ -35,6 +35,7 @@ use crate::{
         proposals::{ProposalCardStore, StoredCard},
         schedule::{SchedulePolicy, ScheduleSnapshot},
         scheduler::{ScheduleStore, Scope, StoreError},
+        settings::{SettingsChange, SettingsChangeQuery, SettingsStore},
     },
 };
 
@@ -153,6 +154,8 @@ pub trait ReadStore: Send + Sync {
     fn masked_chat(&self, id: String) -> ReadFuture<'_, Option<MaskedTurn>>;
     /// Every weekly digest card, active or retired (the Config page's last post).
     fn digests(&self) -> ReadFuture<'_, Vec<WeeklyDigest>>;
+    /// Recorded Config section saves, newest first.
+    fn settings_changes(&self, query: SettingsChangeQuery) -> ReadFuture<'_, Vec<SettingsChange>>;
 }
 
 /// A closed Inbox item: a proposal (with its stored facts) or a member
@@ -182,6 +185,7 @@ where
         + ProposalCardStore
         + ModelLogStore
         + DeliveryJournal
+        + SettingsStore
         + Send
         + Sync,
 {
@@ -424,6 +428,10 @@ where
                 .map(|log| log.digests)
                 .map_err(|error| StoreError::Backend(error.to_string()))
         })
+    }
+
+    fn settings_changes(&self, query: SettingsChangeQuery) -> ReadFuture<'_, Vec<SettingsChange>> {
+        Box::pin(SettingsStore::settings_changes(self, query))
     }
 }
 

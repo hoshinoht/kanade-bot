@@ -106,12 +106,35 @@ pub struct Mode {
     pub request_id: Option<String>,
 }
 
+#[derive(Clone, Serialize)]
+pub struct SettingRowDiff {
+    pub key: String,
+    pub from: String,
+    pub to: String,
+}
+
+/// A saved Config section (the server's `SettingsChangeRow`): view-only,
+/// outside the chain, never revertible.
+#[derive(Clone, Serialize)]
+pub struct SettingsChange {
+    pub id: u64,
+    pub at: String,
+    pub actor: Actor,
+    pub surface: &'static str,
+    pub section: String,
+    pub revision: u64,
+    pub week: String,
+    pub values: Vec<SettingRowDiff>,
+}
+
 #[derive(Serialize)]
 pub struct Page {
     pub records: Vec<Record>,
     pub head: Ref,
     pub next_before: Option<u64>,
     pub total: usize,
+    pub settings: Vec<SettingsChange>,
+    pub settings_total: usize,
 }
 
 fn fnv(text: &str, seed: u64) -> u64 {
@@ -736,12 +759,75 @@ impl Store {
             .cloned()
             .collect();
         let next_before = (page.len() > limit).then(|| page[limit - 1].seq);
+        let records: Vec<Record> = page.into_iter().take(limit).collect();
+        // As the server: saves page by time between this page's oldest record
+        // and the oldest record of the page `before` came from.
+        let matching: Vec<&SettingsChange> = self
+            .settings_changes
+            .iter()
+            .rev()
+            .filter(|_| run.is_none())
+            .filter(|s| week.as_ref().is_none_or(|w| &s.week == w))
+            .filter(|s| actor.is_none_or(|a| &s.actor == a))
+            .collect();
+        let settings_total = matching.len();
+        let upper = before.map(|b| self.record(b).filter(|r| r.seq > 0).map(|r| r.at));
+        let lower = next_before.and_then(|_| records.last().map(|r| r.at.clone()));
+        let settings = match upper {
+            Some(None) => Vec::new(),
+            upper => matching
+                .into_iter()
+                .filter(|s| lower.as_ref().is_none_or(|l| &s.at >= l))
+                .filter(|s| {
+                    upper
+                        .as_ref()
+                        .and_then(Option::as_ref)
+                        .is_none_or(|u| &s.at < u)
+                })
+                .cloned()
+                .collect(),
+        };
         Page {
-            records: page.into_iter().take(limit).collect(),
+            records,
             head: self.head(),
             next_before,
             total,
+            settings,
+            settings_total,
         }
+    }
+
+    /// Records an effective Config save (the server writes it with the
+    /// section's rows); a save that changes no stored row records nothing.
+    pub fn record_settings(
+        &mut self,
+        section: &str,
+        before: &BTreeMap<&'static str, String>,
+        after: &BTreeMap<&'static str, String>,
+    ) {
+        let values: Vec<SettingRowDiff> = after
+            .iter()
+            .filter(|(key, value)| before.get(*key) != Some(*value))
+            .map(|(key, to)| SettingRowDiff {
+                key: (*key).to_owned(),
+                from: before.get(key).cloned().unwrap_or_default(),
+                to: to.clone(),
+            })
+            .collect();
+        if values.is_empty() {
+            return;
+        }
+        let id = self.settings_changes.len() as u64 + 1;
+        self.settings_changes.push(SettingsChange {
+            id,
+            at: iso(now_secs()),
+            actor: self.session_actor(),
+            surface: "admin_portal",
+            section: section.to_owned(),
+            revision: id,
+            week: Self::week_of(false),
+            values,
+        });
     }
 
     pub fn record(&self, seq: u64) -> Option<Record> {
@@ -1122,6 +1208,58 @@ mod tests {
                 .answer,
             "waiting"
         );
+    }
+
+    #[test]
+    fn config_saves_join_the_page_with_before_and_after() {
+        let mut s = store();
+        s.patch_config(&serde_json::json!({"notifications": {"quiet_mode": true}}))
+            .ok()
+            .unwrap();
+        // A no-op and a refused save record nothing.
+        s.patch_config(&serde_json::json!({"notifications": {"quiet_mode": true}}))
+            .ok()
+            .unwrap();
+        assert!(
+            s.patch_config(&serde_json::json!({"pings": {"day_of_ping_time": "25:00"}}))
+                .is_err()
+        );
+        s.patch_config(&serde_json::json!({"persona": {"active": "yuuki"}}))
+            .ok()
+            .unwrap();
+        let page = s.history_page(None, None, None, None, 100);
+        assert_eq!(page.settings_total, 2);
+        let sections: Vec<&str> = page.settings.iter().map(|c| c.section.as_str()).collect();
+        assert_eq!(sections, ["persona", "notifications"]);
+        let quiet = &page.settings[1];
+        assert_eq!(quiet.values.len(), 1);
+        assert_eq!(
+            (
+                quiet.values[0].key.as_str(),
+                quiet.values[0].from.as_str(),
+                quiet.values[0].to.as_str()
+            ),
+            ("quiet_mode", "0", "1")
+        );
+        assert_eq!(quiet.actor, s.session_actor());
+        assert_eq!(quiet.week, super::Store::week_of(false));
+        // Who filters them; a run's log never lists them.
+        let other = Actor::new("member", "1005");
+        assert_eq!(
+            s.history_page(None, Some(&other), None, None, 100)
+                .settings_total,
+            0
+        );
+        assert!(
+            s.history_page(None, None, Some("r-kalos"), None, 100)
+                .settings
+                .is_empty()
+        );
+        // Saved now, after every seeded record: only the first page holds them.
+        let first = s.history_page(None, None, None, None, 2);
+        assert_eq!(first.settings.len(), 2);
+        let older = s.history_page(None, None, None, first.next_before, 2);
+        assert!(older.settings.is_empty());
     }
 
     #[test]

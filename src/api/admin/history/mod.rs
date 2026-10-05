@@ -1,11 +1,13 @@
 //! History (A5): the record list and records, blame, the chain check, and
 //! rollbacks (revert, week restore, actor revert) with preview-then-apply.
+//! Pages also carry Config section saves (view-only, outside the chain).
 //! Reads use the store's readers; rollbacks and their previews go through
 //! the one scheduler writer.
 
 mod backups;
 pub(super) mod parse;
 mod rollback;
+mod settings;
 
 use std::sync::Arc;
 
@@ -159,9 +161,11 @@ async fn page(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> Reply
     }
     let slice = state
         .store
-        .history_page(query.filter, query.before, query.limit)
+        .history_page(query.filter.clone(), query.before, query.limit)
         .await
         .map_err(unavailable)?;
+    let (settings, settings_total) =
+        settings::page(state, &query.filter, query.before, &slice).await?;
     let records = encoded(
         slice
             .records
@@ -174,6 +178,8 @@ async fn page(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> Reply
         head: (&head).into(),
         next_before: slice.next_before,
         total,
+        settings,
+        settings_total,
     })
     .into_response())
 }

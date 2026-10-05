@@ -48,6 +48,9 @@
 .history-row__dot--revert { border-radius: 2px; transform: rotate(45deg) scale(0.9); }
 .history-row__dot--undone { box-shadow: none; border: 2px dashed var(--dim-text); }
 .history-row--active .history-row__dot--undone { border-color: var(--accent); }
+// A Config save (outside the chain): a square dot plus the "Config" chip in words.
+.history-row__dot--config { border-radius: 2px; }
+.history-row__head .history-row__config { box-shadow: inset 0 0 0 1.5px var(--line); background: transparent; font-weight: 700; }
 // Tags sit at the row's end on every row, compact or opened.
 .history-row__tags { display: flex; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 45%; margin-left: auto; }
 .history-tag { display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border: 1.5px solid var(--line); border-radius: 9px; color: var(--ink); font-size: var(--fs-mini); font-weight: 600; line-height: 1.35; white-space: nowrap; }
@@ -83,6 +86,7 @@
 .history-diff__arrow { color: var(--dim); text-align: center; }
 .history-diff__now { font-weight: 700; }
 .history-detail__raw { font-size: var(--fs-small); text-align: start; }
+.history-detail__note { margin: 0; color: var(--dim); font-size: var(--fs-small); line-height: 1.4; }
 .history-detail__actions { display: flex; gap: 8px; margin-top: 4px; }
 // Revert a member's changes (B_History): a tonal box pinned to the pane's foot.
 .history-member { display: flex; flex-direction: column; gap: 8px; margin-top: auto; padding: 12px; border-radius: 18px; background: var(--pane); }

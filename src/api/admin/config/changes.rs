@@ -3,47 +3,21 @@
 //! `v5.profanity`, admin-written words and the deflection line; never a
 //! secret, so before/after values are safe to log.
 
-use std::collections::BTreeMap;
-
 use serde_json::{Map, Value, json};
 
 use super::models::LocalContextWarning;
 use crate::{
     chat::persona::PersonaSnapshot,
-    domain::settings::{LOCAL_CONTEXT_WARNING, RuntimeSettings, Section, section_rows},
+    domain::settings::{LOCAL_CONTEXT_WARNING, RuntimeSettings, diff_rows},
     infrastructure::llm::setup::{RoleSwap, RunningRole},
     runtime::logging,
 };
 
-fn rows(settings: &RuntimeSettings) -> BTreeMap<&'static str, String> {
-    [
-        Section::Pings(settings.pings.clone()),
-        Section::Watching(settings.watching.clone()),
-        Section::Chatbot(settings.chatbot.clone()),
-        Section::Notifications(settings.notifications),
-        Section::SelfService(settings.self_service),
-        Section::Persona(settings.persona.clone()),
-        Section::Models(settings.models.clone()),
-        Section::RunLengths(settings.run_lengths.clone()),
-        Section::Profanity(settings.profanity.clone()),
-        Section::Schedule(settings.schedule),
-        Section::Posting(settings.posting.clone()),
-    ]
-    .iter()
-    .flat_map(section_rows)
-    .collect()
-}
-
 /// `{key: {"from", "to"}}` for every stored row that differs.
 pub(super) fn diff(before: &RuntimeSettings, after: &RuntimeSettings) -> Map<String, Value> {
-    let (before, after) = (rows(before), rows(after));
-    after
-        .iter()
-        .filter(|(key, value)| before.get(*key) != Some(*value))
-        .map(|(key, value)| {
-            let from = before.get(key).cloned().unwrap_or_default();
-            ((*key).to_owned(), json!({"from": from, "to": value}))
-        })
+    diff_rows(before, after)
+        .into_iter()
+        .map(|(key, row)| (key, json!({"from": row.from, "to": row.to})))
         .collect()
 }
 

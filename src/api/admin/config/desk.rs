@@ -21,7 +21,8 @@ use crate::{
     },
     chat::persona::{PersonaSnapshot, PersonaStore, ProfileId},
     domain::settings::{
-        Models, RuntimeSettings, Section, SettingsError, SettingsStore, save_section,
+        Models, RuntimeSettings, Section, SettingsChange, SettingsError, SettingsStore,
+        save_section_recorded,
     },
     infrastructure::llm::{
         governor::Role,
@@ -31,14 +32,23 @@ use crate::{
 
 pub type ConfigFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
-/// Object-safe section writes over any [`SettingsStore`].
+/// Object-safe section writes over any [`SettingsStore`]; `change` (the
+/// History record of an effective save) is appended in the same transaction.
 pub trait SettingsPort: Send + Sync {
-    fn save(&self, section: Section) -> ConfigFuture<'_, Result<(), SettingsError>>;
+    fn save(
+        &self,
+        section: Section,
+        change: Option<SettingsChange>,
+    ) -> ConfigFuture<'_, Result<(), SettingsError>>;
 }
 
 impl<T: SettingsStore + Send + Sync> SettingsPort for T {
-    fn save(&self, section: Section) -> ConfigFuture<'_, Result<(), SettingsError>> {
-        Box::pin(async move { save_section(self, &section).await })
+    fn save(
+        &self,
+        section: Section,
+        change: Option<SettingsChange>,
+    ) -> ConfigFuture<'_, Result<(), SettingsError>> {
+        Box::pin(async move { save_section_recorded(self, &section, change).await })
     }
 }
 
@@ -223,6 +233,12 @@ impl ConfigDesk {
 
     pub(super) async fn lock(&self) -> MutexGuard<'_, RuntimeSettings> {
         self.current.lock().await
+    }
+
+    /// The revision the next [`Self::publish`] assigns; stable while the
+    /// settings lock is held.
+    pub(super) fn next_revision(&self) -> u64 {
+        self.changes.borrow().revision + 1
     }
 
     pub(super) fn publish(

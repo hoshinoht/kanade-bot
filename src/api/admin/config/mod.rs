@@ -35,7 +35,13 @@ use super::write::{Refusal, bad_body, origin, state};
 use crate::{
     api::{auth::AdminSession, error::ApiError, listeners::Site, state::ApiState},
     chat::persona::{FALLBACK_PERSONA, PersonaId, PersonaRoot, ProfileId, ReloadError},
-    domain::settings::{LOCAL_CONTEXT_WARNING, RuntimeSettings, Section, SettingsError},
+    domain::{
+        history::Surface,
+        settings::{
+            LOCAL_CONTEXT_WARNING, RuntimeSettings, Section, SettingsChange, SettingsError,
+            diff_rows,
+        },
+    },
 };
 
 type Reply = Result<axum::response::Response, Refusal>;
@@ -337,13 +343,25 @@ async fn update(
     if current.persona.profile_visibility != next.persona.profile_visibility {
         notices.push("Reply profile visibility updated.".into());
     }
+    // History's record of this save, written with its rows: a refused save or
+    // one that changes no stored row records nothing.
+    let values = diff_rows(&current, &next);
+    let record = (!values.is_empty()).then(|| SettingsChange {
+        id: 0,
+        at: state.now(),
+        actor: session.actor.clone(),
+        surface: Surface::AdminPortal,
+        section: name_of(name).to_owned(),
+        revision: desk.next_revision(),
+        values,
+    });
     if switch_active_persona {
         let Section::Persona(persona) = &section else {
             unreachable!("active persona patch makes a persona section")
         };
-        switch_persona(desk, &persona.active, section.clone()).await?;
+        switch_persona(desk, &persona.active, section.clone(), record).await?;
     } else if next != *current {
-        desk.store.save(section).await.map_err(stored)?;
+        desk.store.save(section, record).await.map_err(stored)?;
     }
     let saved_before = current.models.clone();
     if next != *current {
@@ -407,7 +425,12 @@ fn name_of(section: &str) -> &'static str {
 
 /// Validate, persist, then swap the live snapshot; any failure leaves the
 /// saved selection and the last good snapshot as they were.
-async fn switch_persona(desk: &ConfigDesk, active: &str, section: Section) -> Result<(), Refusal> {
+async fn switch_persona(
+    desk: &ConfigDesk,
+    active: &str,
+    section: Section,
+    record: Option<SettingsChange>,
+) -> Result<(), Refusal> {
     let files = desk
         .personas
         .as_ref()
@@ -419,7 +442,7 @@ async fn switch_persona(desk: &ConfigDesk, active: &str, section: Section) -> Re
     let handle = tokio::runtime::Handle::current();
     let outcome = tokio::task::spawn_blocking(move || {
         let root = PersonaRoot::open(&dir).map_err(ReloadError::Invalid)?;
-        personas.reload(&root, &id, |_| handle.block_on(port.save(section)))
+        personas.reload(&root, &id, |_| handle.block_on(port.save(section, record)))
     })
     .await
     .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;

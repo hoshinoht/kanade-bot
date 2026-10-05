@@ -6,6 +6,7 @@
 //! variable keeps the code default. Writes go one [`Section`] at a time,
 //! atomically.
 
+mod audit;
 mod codec;
 pub mod keys;
 mod model;
@@ -13,6 +14,7 @@ mod model;
 use std::collections::BTreeMap;
 use std::fmt;
 
+pub use audit::{RowDiff, SettingsChange, SettingsChangeQuery, diff_rows};
 pub use codec::Section;
 pub use model::{
     Chatbot, ContextRole, ContextSettings, DEFAULT_DEFLECTION_LINE, DEFAULT_RUN_MINUTES,
@@ -43,6 +45,20 @@ pub trait SettingsStore {
         &self,
         rows: Vec<(String, String)>,
     ) -> impl Future<Output = Result<(), StoreError>> + Send;
+
+    /// As [`Self::put_settings_rows`], appending `change` in the same
+    /// transaction; returns the change's id.
+    fn put_settings_rows_recorded(
+        &self,
+        rows: Vec<(String, String)>,
+        change: SettingsChange,
+    ) -> impl Future<Output = Result<u64, StoreError>> + Send;
+
+    /// Recorded section saves matching `query`, newest first.
+    fn settings_changes(
+        &self,
+        query: SettingsChangeQuery,
+    ) -> impl Future<Output = Result<Vec<SettingsChange>, StoreError>> + Send;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -112,6 +128,27 @@ pub async fn save_section<S: SettingsStore>(
         .map(|(key, value)| (key.to_owned(), value))
         .collect();
     store.put_settings_rows(rows).await?;
+    Ok(())
+}
+
+/// [`save_section`], appending `change` (if any) in the same transaction, so
+/// a refused save records nothing.
+///
+/// # Errors
+/// As [`save_section`].
+pub async fn save_section_recorded<S: SettingsStore>(
+    store: &S,
+    section: &Section,
+    change: Option<SettingsChange>,
+) -> Result<(), SettingsError> {
+    let Some(change) = change else {
+        return save_section(store, section).await;
+    };
+    let rows = codec::encode_checked(section)?
+        .into_iter()
+        .map(|(key, value)| (key.to_owned(), value))
+        .collect();
+    store.put_settings_rows_recorded(rows, change).await?;
     Ok(())
 }
 

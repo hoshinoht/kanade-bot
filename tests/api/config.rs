@@ -1764,6 +1764,100 @@ async fn saved_changes_are_published_to_subscribers() {
 }
 
 #[tokio::test]
+async fn effective_saves_are_listed_in_history_with_before_and_after() {
+    const PAGE: &str = "history.json#/$defs/HistoryPage";
+    let config = Config::new().await;
+    let history = |query: &'static str| {
+        let reads = &config.reads;
+        async move {
+            reads
+                .read(&format!("/api/admin/history{query}"), PAGE)
+                .await
+        }
+    };
+    let empty = history("").await;
+    assert_eq!(empty["settings"], json!([]));
+    assert_eq!(empty["settings_total"], 0);
+
+    config
+        .patch(json!({"notifications": {"quiet_mode": true}}))
+        .await;
+    // A no-op save and a refused save record nothing.
+    config
+        .patch(json!({"notifications": {"quiet_mode": true}}))
+        .await;
+    config
+        .refused(
+            json!({"pings": {"day_of_ping_time": "25:00"}}),
+            422,
+            "invalid",
+        )
+        .await;
+    // The persona switch persists through the persona reload path.
+    config.patch(json!({"persona": {"active": "calm"}})).await;
+
+    let page = history("").await;
+    assert_eq!(page["settings_total"], 2);
+    assert_eq!(
+        page["total"], empty["total"],
+        "journal totals are unchanged"
+    );
+    let settings = page["settings"].as_array().unwrap();
+    assert_eq!(settings.len(), 2);
+    let (persona, quiet) = (&settings[0], &settings[1]);
+    assert_eq!(persona["section"], "persona");
+    assert_eq!(persona["actor"], json!({"kind": "admin", "id": "token"}));
+    assert_eq!(persona["surface"], "admin_portal");
+    assert_eq!(persona["revision"], 2);
+    assert_eq!(persona["week"], "2026-09-23T16:00:00+00:00");
+    let persona_row = persona["values"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["key"] == "persona")
+        .expect("persona row");
+    assert_eq!(persona_row["to"], "calm");
+    assert_ne!(persona_row["from"], "calm");
+    assert_eq!(quiet["section"], "notifications");
+    assert_eq!(quiet["revision"], 1);
+    assert_eq!(
+        quiet["values"],
+        json!([{"key": "quiet_mode", "from": "0", "to": "1"}])
+    );
+    assert!(persona["id"].as_u64() > quiet["id"].as_u64());
+
+    // Who and Week filters apply; a run's log never lists settings.
+    let mine = history("?actor=admin:token").await;
+    assert_eq!(mine["settings_total"], 2);
+    let other = history("?actor=admin:seed").await;
+    assert_eq!(
+        (other["settings"].clone(), other["settings_total"].clone()),
+        (json!([]), json!(0))
+    );
+    assert_eq!(history("?week=2026-09-24").await["settings_total"], 2);
+    let next = history("?week=2026-10-01").await;
+    assert_eq!(
+        (next["settings"].clone(), next["settings_total"].clone()),
+        (json!([]), json!(0))
+    );
+    let run = history("?run=r-kalos").await;
+    assert_eq!(
+        (run["settings"].clone(), run["settings_total"].clone()),
+        (json!([]), json!(0))
+    );
+
+    // Stored with the rows: a restart's store still lists them.
+    let stored = config
+        .reads
+        .store
+        .settings_changes(Default::default())
+        .await
+        .unwrap();
+    assert_eq!(stored.len(), 2);
+    assert_eq!(stored[0].values["persona"].to, "calm");
+}
+
+#[tokio::test]
 async fn profiles_reload_and_persona_switch_swap_the_live_snapshot() {
     let config = Config::new().await;
     let effective = |store: &PersonaStore| {

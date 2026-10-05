@@ -133,6 +133,7 @@ pub struct MemoryScheduleStore {
     sessions: Mutex<BTreeMap<String, crate::infrastructure::store::web_sessions::WebSession>>,
     members: Mutex<BTreeMap<String, crate::domain::members::MemberProfile>>,
     config: Mutex<BTreeMap<String, String>>,
+    settings_changes: Mutex<Vec<crate::domain::settings::SettingsChange>>,
     runs_written: super::observer::Observer,
 }
 

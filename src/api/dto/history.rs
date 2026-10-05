@@ -42,7 +42,54 @@ pub struct HistoryPage {
     pub head: ChainHead,
     /// Pass as `before` for the next (older) page; null on the last page.
     pub next_before: Option<u64>,
+    /// Matching records (journal only; `settings_total` counts Config saves).
     pub total: u64,
+    /// Config section saves in this page's time window, newest first: at or
+    /// after the page's oldest record (no lower bound on the last page) and
+    /// before the oldest record of the page `before` came from (no upper
+    /// bound on the first page), so each save appears on exactly one page.
+    /// Always empty with `run`.
+    pub settings: Vec<SettingsChangeRow>,
+    /// Config saves matching `week`/`actor` across all pages.
+    pub settings_total: u64,
+}
+
+/// `{kind, id}`, as a record names its actor.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct SettingsActor {
+    #[cfg_attr(test, ts(type = "ActorKind"))]
+    pub kind: &'static str,
+    pub id: String,
+}
+
+/// One stored settings row's text before and after the save.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct SettingRowDiff {
+    pub key: String,
+    pub from: String,
+    pub to: String,
+}
+
+/// A saved Config section: view-only, outside the hash chain, never
+/// revertible. Settings rows never hold a secret.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct SettingsChangeRow {
+    pub id: u64,
+    pub at: String,
+    pub actor: SettingsActor,
+    #[cfg_attr(test, ts(type = "Surface"))]
+    pub surface: &'static str,
+    /// The saved section; the PWA links `/config?section=<section>`.
+    pub section: String,
+    /// The settings revision the save published (counted per process run).
+    pub revision: u64,
+    /// The boss week containing `at`, named as records name weeks.
+    pub week: String,
+    /// Changed rows, by key.
+    pub values: Vec<SettingRowDiff>,
 }
 
 #[derive(Serialize)]

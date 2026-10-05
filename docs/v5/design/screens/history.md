@@ -9,7 +9,8 @@ checkpoints.
 ## As built
 
 Code: `apps/admin/src/history/` (`HistoryPage`, `HistoryDetail`,
-`CheckpointsPanel`, `RevertDialog`, `ActorName`, `describe.ts`);
+`ConfigDetail`, `CheckpointsPanel`, `RevertDialog`, `ActorName`,
+`describe.ts`, `settings.ts`);
 `_history.scss`.
 
 - Tabs **Timeline n / Checkpoints**; Week and Who filters as title-bar
@@ -25,6 +26,15 @@ Code: `apps/admin/src/history/` (`HistoryPage`, `HistoryDetail`,
   (Chat pattern), Revert… (risk key) and the member-revert box at the pane
   foot, whose "Since" is the single-date picker (`DatePicker mode="single"`).
   `[DR 2026-10-02]`, `[DR 2026-10-04]`
+- Config section saves (`[DR 2026-10-05]`) interleave by time with the
+  change rows inside the boss-week groups: a square dot, a "Config" chip,
+  "Config · Persona — persona, chat_mode" and "n settings"; the Who and
+  Week filters apply to them. Opening one shows the same pane (phones: the
+  sheet) view-only: "Persona settings saved", the compact field diff (JSON
+  rows field by field), "Show raw JSON", a note that saves are outside the
+  change chain, and "Open Persona in Config" (`/config?section=`); no
+  Revert…, no Restore week, no member-revert box. `ConfigDetail.svelte`,
+  `settings.ts`.
 - Checkpoints empty state keeps its wording: "No backups recorded yet" plus
   "No backup directory is configured on this server, so no checkpoint
   anchors the history." `[DR 2026-10-02]`

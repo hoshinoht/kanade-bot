@@ -1,7 +1,7 @@
 // Generated from the Rust API DTOs by src/api/ts_bindings.rs; do not edit.
 // Regenerate: KANADE_WRITE_TS=1 cargo test --all-features --lib ts_bindings
 
-import type { ActorKind, Answer, ChangeRecord, ChatOutcome, ChatRoute, ContextSource, Difficulty, ExtractionOutcome, KnowledgeDoc, PingLevel, ProposalKind, Refusal, RowKey, RunStatus, SelfServiceMode, SignInMethod } from './manual';
+import type { ActorKind, Answer, ChangeRecord, ChatOutcome, ChatRoute, ContextSource, Difficulty, ExtractionOutcome, KnowledgeDoc, PingLevel, ProposalKind, Refusal, RowKey, RunStatus, SelfServiceMode, SignInMethod, Surface } from './manual';
 
 /**
  * `common.json#/$defs/Boss`.
@@ -715,7 +715,55 @@ export type HistoryPage = { records: ChangeRecord[], head: ChainHead,
 /**
  * Pass as `before` for the next (older) page; null on the last page.
  */
-next_before: number | null, total: number, };
+next_before: number | null, 
+/**
+ * Matching records (journal only; `settings_total` counts Config saves).
+ */
+total: number, 
+/**
+ * Config section saves in this page's time window, newest first: at or
+ * after the page's oldest record (no lower bound on the last page) and
+ * before the oldest record of the page `before` came from (no upper
+ * bound on the first page), so each save appears on exactly one page.
+ * Always empty with `run`.
+ */
+settings: Array<SettingsChangeRow>, 
+/**
+ * Config saves matching `week`/`actor` across all pages.
+ */
+settings_total: number, };
+
+/**
+ * `{kind, id}`, as a record names its actor.
+ */
+export type SettingsActor = { kind: ActorKind, id: string, };
+
+/**
+ * One stored settings row's text before and after the save.
+ */
+export type SettingRowDiff = { key: string, from: string, to: string, };
+
+/**
+ * A saved Config section: view-only, outside the hash chain, never
+ * revertible. Settings rows never hold a secret.
+ */
+export type SettingsChangeRow = { id: number, at: string, actor: SettingsActor, surface: Surface, 
+/**
+ * The saved section; the PWA links `/config?section=<section>`.
+ */
+section: string, 
+/**
+ * The settings revision the save published (counted per process run).
+ */
+revision: number, 
+/**
+ * The boss week containing `at`, named as records name weeks.
+ */
+week: string, 
+/**
+ * Changed rows, by key.
+ */
+values: Array<SettingRowDiff>, };
 
 export type RowChange = { key: RowKey, 
 /**

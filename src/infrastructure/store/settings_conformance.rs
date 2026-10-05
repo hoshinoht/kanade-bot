@@ -2,13 +2,15 @@
 //! code default, section writes that touch only their own keys, v4-encoded
 //! rows, and malformed rows refused with the key named.
 
-use chrono::{NaiveTime, Weekday};
+use chrono::{DateTime, NaiveTime, Utc, Weekday};
 
 use crate::domain::attendance::AttendanceMode;
+use crate::domain::history::{Actor, Surface};
 use crate::domain::scheduler::StoreError;
 use crate::domain::settings::{
-    Reasoning, RuntimeSettings, Section, SelfServiceMode, SettingsError, SettingsStore, keys,
-    load_settings, save_section,
+    Reasoning, RuntimeSettings, Section, SelfServiceMode, SettingsChange, SettingsChangeQuery,
+    SettingsError, SettingsStore, diff_rows, keys, load_settings, save_section,
+    save_section_recorded,
 };
 
 pub async fn run_suite<S: SettingsStore>(make: impl AsyncFn() -> S) {
@@ -19,6 +21,8 @@ pub async fn run_suite<S: SettingsStore>(make: impl AsyncFn() -> S) {
     v4_rows_read_as_v4_wrote_them(make().await).await;
     malformed_rows_are_errors_naming_the_key(make().await).await;
     refused_writes_store_nothing(make().await).await;
+    recorded_saves_append_one_change_with_their_rows(make().await).await;
+    refused_recorded_saves_record_nothing(make().await).await;
 }
 
 fn time(hour: u32, minute: u32) -> NaiveTime {
@@ -267,5 +271,168 @@ async fn refused_writes_store_nothing<S: SettingsStore>(store: S) {
     assert!(
         store.settings_rows().await.expect("rows").is_empty(),
         "no partial write"
+    );
+}
+
+fn instant(text: &str) -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339(text)
+        .expect("instant")
+        .with_timezone(&Utc)
+}
+
+fn change(
+    at: &str,
+    actor: Actor,
+    before: &RuntimeSettings,
+    after: &RuntimeSettings,
+) -> SettingsChange {
+    SettingsChange {
+        id: 0,
+        at: instant(at),
+        actor,
+        surface: Surface::AdminPortal,
+        section: "notifications".into(),
+        revision: 3,
+        values: diff_rows(before, after),
+    }
+}
+
+async fn recorded_saves_append_one_change_with_their_rows<S: SettingsStore>(store: S) {
+    let before = RuntimeSettings::default();
+    let mut quiet = before.clone();
+    quiet.notifications.quiet_mode = true;
+    let first = change(
+        "2026-09-29T04:00:00Z",
+        Actor::admin("token"),
+        &before,
+        &quiet,
+    );
+    save_section_recorded(
+        &store,
+        &Section::Notifications(quiet.notifications),
+        Some(first.clone()),
+    )
+    .await
+    .expect("recorded save");
+    assert!(
+        load_settings(&store, &before)
+            .await
+            .expect("load")
+            .notifications
+            .quiet_mode
+    );
+
+    let mut pings = quiet.clone();
+    pings.pings.countdown_minutes = vec![30];
+    let mut second = change(
+        "2026-09-29T05:00:00Z",
+        Actor::admin("discord:1001"),
+        &quiet,
+        &pings,
+    );
+    second.section = "pings".into();
+    second.revision = 4;
+    save_section_recorded(
+        &store,
+        &Section::Pings(pings.pings.clone()),
+        Some(second.clone()),
+    )
+    .await
+    .expect("second save");
+    // A save without a change (a no-op) appends nothing.
+    save_section_recorded(&store, &Section::Pings(pings.pings.clone()), None)
+        .await
+        .expect("plain save");
+
+    let all = store
+        .settings_changes(SettingsChangeQuery::default())
+        .await
+        .expect("list");
+    assert_eq!(all.len(), 2, "newest first, one per recorded save");
+    assert_eq!(all[0].section, "pings");
+    assert_eq!(all[0].actor, second.actor);
+    assert_eq!(all[0].revision, 4);
+    assert_eq!(all[0].at, second.at);
+    assert_eq!(all[0].values, second.values);
+    assert_eq!(all[1].values, first.values);
+    assert_eq!(all[1].values[keys::QUIET_MODE].from, "0");
+    assert_eq!(all[1].values[keys::QUIET_MODE].to, "1");
+    assert!(all[0].id > all[1].id, "ids increase");
+
+    let by_actor = store
+        .settings_changes(SettingsChangeQuery {
+            actor: Some(Actor::admin("token")),
+            ..SettingsChangeQuery::default()
+        })
+        .await
+        .expect("by actor");
+    assert_eq!(by_actor.len(), 1);
+    assert_eq!(by_actor[0].section, "notifications");
+    let window = store
+        .settings_changes(SettingsChangeQuery {
+            actor: None,
+            from: Some(instant("2026-09-29T04:00:00Z")),
+            until: Some(instant("2026-09-29T05:00:00Z")),
+        })
+        .await
+        .expect("window");
+    assert_eq!(window.len(), 1, "from inclusive, until exclusive");
+    assert_eq!(window[0].section, "notifications");
+}
+
+async fn refused_recorded_saves_record_nothing<S: SettingsStore>(store: S) {
+    let before = RuntimeSettings::default();
+    let mut after = before.clone();
+    after.chatbot.enabled = true;
+    after.chatbot.guild_rate.count = 0;
+    let invalid = save_section_recorded(
+        &store,
+        &Section::Chatbot(after.chatbot.clone()),
+        Some(change(
+            "2026-09-29T04:00:00Z",
+            Actor::admin("token"),
+            &before,
+            &after,
+        )),
+    )
+    .await;
+    assert!(
+        matches!(invalid, Err(SettingsError::Malformed { .. })),
+        "{invalid:?}"
+    );
+    let outside = store
+        .put_settings_rows_recorded(
+            raw(&[("last_digest_week", "x")]),
+            change(
+                "2026-09-29T04:00:00Z",
+                Actor::admin("token"),
+                &before,
+                &after,
+            ),
+        )
+        .await;
+    assert!(
+        matches!(outside, Err(StoreError::Constraint(_))),
+        "{outside:?}"
+    );
+    let empty = store
+        .put_settings_rows_recorded(
+            raw(&[(keys::QUIET_MODE, "1")]),
+            change(
+                "2026-09-29T04:00:00Z",
+                Actor::admin("token"),
+                &before,
+                &before,
+            ),
+        )
+        .await;
+    assert!(matches!(empty, Err(StoreError::Constraint(_))), "{empty:?}");
+    assert!(store.settings_rows().await.expect("rows").is_empty());
+    assert!(
+        store
+            .settings_changes(SettingsChangeQuery::default())
+            .await
+            .expect("list")
+            .is_empty()
     );
 }

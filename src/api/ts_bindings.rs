@@ -21,7 +21,7 @@ use super::{
 const TARGET: &str = "web/packages/api-types/src/generated.ts";
 
 /// Hand-written vocabulary (`manual.ts`) the `#[ts(type)]` overrides name.
-const MANUAL: [&str; 16] = [
+const MANUAL: [&str; 17] = [
     "ActorKind",
     "Answer",
     "ChangeRecord",
@@ -38,6 +38,7 @@ const MANUAL: [&str; 16] = [
     "RunStatus",
     "SelfServiceMode",
     "SignInMethod",
+    "Surface",
 ];
 
 struct Out {
@@ -198,6 +199,9 @@ fn bindings() -> String {
         // History
         .add::<history::ChainHead>()
         .add::<history::HistoryPage>()
+        .add::<history::SettingsActor>()
+        .add::<history::SettingRowDiff>()
+        .add::<history::SettingsChangeRow>()
         .add::<history::RowChange>()
         .add::<history::RowConflict>()
         .add::<history::SkippedKey>()
