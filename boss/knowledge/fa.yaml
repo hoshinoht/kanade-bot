@@ -15,7 +15,7 @@ core:
   text: 0.5s parry on NPC/Gather. 6s cooldown, 4.5s back on a rewarded parry.
   detail: Immortal Will (NPC/Gather key; also called Indomitable Will) is a 0.5s parry with a 6s cooldown. A rewarded parry cuts 4.5s off it and raises Power of Order, so a whiff costs the full 6s. It works while you are i-framed, but not during Origin or Ascent casts.
 - title: Party scaling
-  text: Duos and trios gain less gauge and lose less, except on Extreme.
+  text: Duo/trio gain 50%/34%. Hit loss is 75%/50% on Easy to Hard, 100% on Extreme.
   detail: 'Compared with solo, duo gauge gain is 50% and trio gain is 34% on every difficulty. Gauge loss in Easy/Normal/Hard/Extreme is 75%/75%/75%/100% for a duo and 50%/50%/50%/100% for a trio. Extreme reduces gains but not losses.'
 - title: Bind
   text: Cancels his pattern; no critical bind. HP splits 30/30/40.
@@ -244,10 +244,10 @@ strategies:
   when: Players confident in the timing; skip on Extreme unless practised, since the final arrow deals 999%
   risk: high
   damage: low
-  payoff: Large gauge gain (+250 solo on Easy, +200 otherwise)
+  payoff: Large gauge gain (solo +250 on Easy, +200 otherwise; duos and trios get the party share)
   steps:
   - During the six regular shots, steer the crossbow so it fires away from you.
-  - Parry the final arrow of your own attribute.
+  - Parry the final arrow of your own attribute; practise the timing before relying on it.
 - name: Start at Stage 5
   when: Parties where everyone parries reliably. Described for Easy (about 3 parries) and Normal (about 4); untested on Hard/Extreme, where other guides burst right after the opener parry
   risk: high

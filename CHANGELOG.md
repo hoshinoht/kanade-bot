@@ -262,6 +262,12 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- Boss guides: accuracy pass from the 2026-10-05 strategy review. Limbo
+  fusions, Baldrix Phase 2 pillars and Ragnarok timing, Black Mage i-frames
+  and Destruction bonus are corrected or marked unverified; Malefic Star
+  altar arithmetic is flagged unresolved; kill orders, margins and side
+  assignments in Carling, Seren, Kalos, First Adversary and Jupiter read as
+  party conventions; Carling's Tiger + Dog break is "disfavoured", not dead.
 - Boss guides: each party size's recommended figure is its own fact tile
   ("Recommended · Trio", "Recommended · Duo", …), each with its basis.
 - Difficulty pills: Easy is a slate pill (white on dark grey; light grey with

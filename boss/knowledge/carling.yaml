@@ -132,9 +132,9 @@ difficulty_notes:
     title: Extreme
     text: '+30% damage taken from a Peril''s element while its gauge is outside 250-750; Tiger''s Phase 1 shields double to 2% HP.'
 notes:
-- title: Tiger + Dog break is dead
-  text: 'The 2025 easy build stopped working with MapleSEA v251''s Phase 3 zone rule.'
-  detail: 'The Tiger + Dog break (stand in Dog''s zone, hit both side Perils, manage only Bird) was the easy build in 2025, but MapleSEA v251''s Phase 3 zone rule ended it: managing Bird now means walking between the two zones furthest apart.'
+- title: Tiger + Dog break is disfavoured
+  text: 'The 2025 easy build lost favour with MapleSEA v251''s Phase 3 zone rule.'
+  detail: 'The Tiger + Dog break (stand in Dog''s zone, hit both side Perils, manage only Bird) was the easy build in 2025. Since MapleSEA v251''s Phase 3 zone rule, managing Bird means walking between the two zones furthest apart, so most parties now pick another break; it is harder, not impossible.'
 - title: Destiny Resolve per clear
   text: 'Normal 20 · Hard 160 · Extreme 1,200, split among everyone who entered.'
   detail: 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Normal 20, Hard 160, Extreme 1,200.'
@@ -238,20 +238,20 @@ strategies:
   payoff: Keeps most Mental Strength, so deaths and mistakes are survivable. It is the hardest route to execute (three linked gauges all fight) and walking zones to fix them costs uptime, so it needs the most damage.
   steps:
   - Keep every gauge between 1 and 999 all fight; on Extreme stay around 250-750.
-  - 'Phase 1 order: 2026 guides default to Tiger, Bird, Dog. Higher-spec players and most Destiny clears use Dog, Tiger, Bird: burst Dog after its second frenzy, then take a few Dog hits to pre-drain Tiger before leaving.'
+  - 'Pick one Phase 1 order and say why; none is universal. 2026 guides default to Tiger, Bird, Dog. Dog, Tiger, Bird was the most common in one tracked Destiny sample (43%): burst Dog after its second frenzy, then take a few Dog hits to pre-drain Tiger before leaving.'
   - In Phase 2, bait Carling's teleport to the third whose laser colour you need.
-  - 'Phase 3: Tiger first (its lightning is the most dangerous), then Bird, and Dog last so you can stand centre with Carling and push her HP before Aura Overflow; walk between zones to fix gauges.'
+  - 'Phase 3 order can differ from Phase 1. One option: Tiger first (its lightning is the most dangerous), then Bird, and Dog last so you can stand centre with Carling and push her HP before Aura Overflow; walk between zones to fix gauges.'
   - Before the Phase 3 Perils spawn, wait on Tiger's side to pre-load its gauge.
 - name: Break Tiger + Bird
   when: Destiny Carling and solos near the minimum cut, after a clean Phase 1 (all blessings plus the refill) and a Phase 2 with no spirit or Scroll hits
   risk: high
   damage: low
-  payoff: The setup at the start of Phase 3 is the hard part; afterwards only Dog's gauge matters, so you walk less and keep near-full uptime on Carling. The lowest damage requirement, paid for with 700 Mental Strength.
+  payoff: The setup at the start of Phase 3 is the hard part; afterwards only Dog's gauge matters, so you walk less and keep near-full uptime on Carling. Guides rate its damage need lowest (a route opinion, not a same-class comparison), paid for with 700 Mental Strength.
   steps:
   - At Phase 3 start, break both Tiger and Bird. Each gauge can reach either 0 or 1000; their endpoint directions do not matter (two breaks, 700 Mental Strength).
   - Stop repairing Tiger and Bird. Keep Dog in range by alternating between the Dog and Bird zones, using each zone's statue.
-  - 'Kill orders seen in 2026: Tiger, Bird, Dog (a 2026 Destiny clear) or Bird, Dog, Tiger; jobs differ. What matters is that Dog is the only gauge left.'
-  - With about 300 Mental Strength left, one or two deaths end the run; play safe through Aura Overflow.
+  - 'Kill orders seen in 2026: Tiger, Bird, Dog (one Destiny clear) or Bird, Dog, Tiger; no order is established for every job. What matters is that Dog is the only gauge left.'
+  - About 300 Mental Strength is left only if you had 1000 before the breaks; subtract Phase 2 losses and deaths from your real pool, then play safe through Aura Overflow.
   - 'Extreme: no 2026 break-build clear was found, and Extreme adds +30% damage from any Peril outside 250-750, so treat it as unproven there.'
 - name: Break Bird + Dog
   when: Alternative to Tiger + Bird for jobs that handle Tiger's zone better; Korean guides say to pick the Peril you find hardest and kill it first
@@ -260,7 +260,7 @@ strategies:
   payoff: Same trade as Tiger + Bird (two breaks, 700 Mental Strength) but leaves Tiger as the only gauge to manage.
   steps:
   - Break Bird and Dog at the start of Phase 3 and keep only Tiger in range.
-  - 'Kill orders in 2026 Korean guides: Tiger, Dog, Bird or Bird, Dog, Tiger.'
+  - 'Which gauge stays and which Peril dies first are separate choices. Kill orders in 2026 Korean guides: Tiger, Dog, Bird or Bird, Dog, Tiger; none is shown to suit every job.'
 sources:
 - url: https://www.maplesea.com/updates/view/v224_Patch_Notes/
   title: MapleSEA v224 patch notes (Carling release)

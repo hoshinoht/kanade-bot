@@ -32,7 +32,7 @@ phases:
   - title: Last minute
     text: 'Predation rises 2 per second in the final minute of a stay.'
   - title: Leave on time
-    text: 'Stay until the gauge is empty or 1:00 remains; entering Reality at 0 skips the −10% entry penalty.'
+    text: 'Stay until the gauge is empty or 1:00 remains (call the timer: the last minute adds Predation); entering Reality at 0 skips the −10% entry penalty.'
 - name: Reality room
   group: Two rooms
   cycle: true
@@ -44,7 +44,7 @@ phases:
     detail: 'Reality room: Essences come every 15s regardless of hits.'
   - title: Altars
     text: 'Each catch opens two for 7s. Left: −250 gauge, less damage. Right: +250, more damage (−10% to +30%).'
-    detail: 'Each catch opens two altars for 7s, picked by pressing the NPC/Gather key on the left or right half of the map: left lowers Illusion Magic by 250 for -5 to -15% final damage, right raises it by 250 for +5 to +15% (more at a higher gauge), within -10% to +30% overall.'
+    detail: 'Each catch opens two altars for 7s, picked by pressing the NPC/Gather key on the left or right half of the map: left lowers Illusion Magic by 250 for -5 to -15% final damage, right raises it by 250 for +5 to +15% (more at a higher gauge), within -10% to +30% overall. Whether the tier is read before or after the gauge moves is unresolved, so the exact total after several rights is too.'
   - title: Penalties rise with the gauge
     text: 'See the scale: higher Illusion Magic brings Predation per hit, the Floating Disaster, then more damage taken.'
     detail: 'Reality penalties scale with Illusion Magic: from 250 every hit adds Predation, from 500 the Floating Disaster joins (one source says 750), from 750 you take more damage.'
@@ -113,45 +113,48 @@ strategies:
   when: Party damage well above the requirement; first clears.
   risk: low
   damage: high
-  payoff: Slowest clear, almost no Predation gain.
+  payoff: Slowest clear, with the least Predation from gauge penalties.
   steps:
-  - Stay in Illusion until Illusion Magic is empty or 1:00 remains on the room timer.
+  - Stay in Illusion until Illusion Magic is empty or 1:00 remains on the room timer; have someone call the timer, since the last minute adds Predation.
   - Enter Reality with the gauge at 0 to skip the -10% entry penalty.
-  - Take the left altar on every Essence so Reality stays at its lowest penalty stage; only Essence-pattern hits then add Predation.
+  - Take the left altar on every Essence so Reality stays at its lowest penalty stage. Left still lowers your damage at gauge 0, and missed Essences, pattern hits and overstaying still add Predation.
 - name: Adjust the gauge
   when: Most parties near or above the recommended spec.
   risk: medium
   damage: medium
-  payoff: +30% for most bursts, with a way to back off.
+  payoff: Higher damage for most bursts, with a way to back off.
   steps:
   - Empty Illusion Magic in Illusion, then enter Reality.
-  - Take right three times (105%, then 115%, then 130% at gauge 750) without reaching 1000.
+  - Take right altars to raise damage without reaching 1000. Read the displayed damage, because sources disagree on the total after three rights from 0 (130% or 120%) and hits that raise the gauge change it too.
   - When Predation climbs faster than the party likes, switch to left altars until the timer ends or the party is ready to go right again.
   - Back in Illusion, stay until the gauge is empty or 1:00 remains.
 - name: Keep +30% damage
-  when: Low-spec clears with sustained-damage classes and very clean dodging.
+  when: 'Unresolved: the full recipe was not recovered from its original guide. Advanced only; not a default or near-minimum route without a whole-run Predation budget.'
   risk: high
   damage: low
   payoff: Nearly the whole Reality stay at +30%.
   steps:
   - Burst twice in Illusion while emptying the gauge, leaving with about a minute on the timer.
-  - Take three rights to reach 130%, then stop catching Essences, because every catch forces an altar choice.
-  - Dodge everything; missed Essences and hits drive Predation up quickly.
-  - Swap back near the timer's end; about five catches in Illusion recover roughly 200 Predation. Repeat.
+  - Take rights up to the top damage tier (check the displayed value), then stop catching Essences, because every catch forces an altar choice.
+  - Dodge everything; each deliberate miss and every hit adds Predation.
+  - Swap back near the timer's end; about five catches in Illusion remove roughly 200 Predation, but that does not prove the whole run stays under 1000. Repeat only if your budget allows.
 - name: Match altars to bursts
-  when: Low-spec Hard clears with burst classes; the guide rates it very hard and a caller helps.
+  when: 'Unresolved: no readable source confirms the whole cycle; it depends on starting gauge, timing and cooldowns. Advanced Hard parties with a caller, never a first clear.'
   risk: high
   damage: low
   payoff: +30% on every burst.
   steps:
   - After the opening burst catch one Essence in Illusion and swap just before the second, so the -10% lasts only seconds.
-  - With a high gauge each right is +15%; cycle right, right, left so 130% lands on each burst and the gauge never reaches 1000.
+  - Cycle right, right, left so the top damage tier lands on each burst and the gauge never reaches 1000 (the exact percentages per right are unresolved).
   - Do not bind her during a burst while an Essence or altar is still due; stall the 7s altar pick instead.
   - In Illusion catch two Essences without being hit, swap back just before the third, and arrive 30-40s before the next burst.
 notes:
 - title: Limits
   text: '30 min now (20 after OVERDRIVE), 10s potions; no slows, and she resists Zero''s critical bind.'
   detail: 30-minute limit in MapleSEA now (20 minutes after OVERDRIVE) and 10-second potion cooldown; she cannot be slowed and resists Zero's critical bind.
+- title: 'Unresolved: altar arithmetic'
+  text: 'Sources disagree on damage after three rights from 0 (105/115/130% or 105/110/120%); trust the in-game value.'
+  detail: 'Unresolved: one source lists the altar bonus by the gauge before activation, which gives 105, 110, then 120% after three rights from 0; other guides, and these routes, expect 105, 115, then 130%. Until a MapleSEA run records the displayed modifier, read it in game rather than counting altars.'
 - title: Symbol bonus
   text: 'The area''s Authentic Symbol at Growth Level 11: +20% damage to her.'
   detail: The area's Authentic Symbol at Growth Level 11 gives +20% damage against her (MapleSEA v251).
@@ -229,3 +232,8 @@ sources:
   author: FMKorea contributors
   kind: guide
   fetched: '2026-10-02'
+- url: https://m.namu.moe/w/찬란한%20흉성/공략
+  title: NamuWiki mirror - Radiant Malefic Star strategy (altar table)
+  author: NamuWiki contributors
+  kind: wiki
+  fetched: '2026-10-05'

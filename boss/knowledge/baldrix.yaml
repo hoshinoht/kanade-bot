@@ -38,7 +38,8 @@ phases:
     text: 6/11/14 Marks copy extra patterns between sides.
     detail: 'Phase 2 splits players across the Centre, East and West sides, and Baldrix cannot be bound. Your personal gauge decays 5/4 per second; reaching 1000 adds an Overflow stack and a permanent Magic Mark. In a trio, 3/6/8/10/12 Overflow converts to 50/100/150/200/250 Erosion at each swap, and Marks at 6/11/14 copy extra patterns between sides (the last tier also strengthens his Phase 3 Zone).'
   - title: Magic Storm
-    text: 'Sweeps all three sides in turn; crouch it and warn the next side. Take purple attacks face-on.'
+    text: 'Sweeps all three sides in turn; crouch it and warn the next side. Purple pillars/orbs: stand inside; blue: stay out.'
+    detail: 'Phase 2 Magic Storm sweeps the three sides in turn; crouch it, and its exit shows the side it reaches next. For the colour-coded pillar and orb patterns, the purple version is safe inside its area and the blue version generally has to be avoided; learn each tell rather than treating every purple effect alike.'
   - title: No overflow
     text: 'Never reaching 1000 all phase earns a shield that blocks the first Ragnarok''s +300.'
 - name: Phase 3 · Together
@@ -50,8 +51,8 @@ phases:
   - title: At 1000
     text: Drops to 600 and Soul Execution starts.
   - title: Ragnarok
-    text: Every 2 min. +300 Squeezing Magic to all; he is immune ~5s.
-    detail: Ragnarok, every two minutes in Phase 3, deals no damage but adds 300 Squeezing Magic to everyone while he is invulnerable for about 5s. HP is split roughly 26/28/46% across the phases.
+    text: Every 125 s (MapleSEA v246). +300 Squeezing Magic to all; he is immune ~5s.
+    detail: Ragnarok, on a 125-second cooldown in Phase 3 (MapleSEA v246; not the 120 s room rotation), deals no damage but adds 300 Squeezing Magic to everyone while he is invulnerable for about 5s. HP is split roughly 26/28/46% across the phases.
   - title: Soul Execution
     text: 'His hits deal 100% HP until afterimages drain you to 0; never leave his Zone.'
   - title: Pre-Ragnarok lull
@@ -93,8 +94,8 @@ danger:
   text: +250 for two missed mirror shots in six; +500 when 4 (N) / 3 (H) rifts open.
   detail: The Ancient God room gains 250 if the mirror light fails to hit the possessed statue twice in six shots. It gains 500, and all rifts reset, once 4 rifts on Normal or 3 on Hard are fully open; a rift spawns every 10s and, left alone, the first is fully open after about 40s.
 - title: Magic Storm (Phase 2)
-  text: Sweeps all three sides in turn; crouch it. Take purple attacks face-on.
-  detail: Phase 2 Magic Storm passes through all three sides in turn (crouch it), and purple attacks must be faced and taken rather than dodged.
+  text: Sweeps all three sides in turn; crouch it. Purple pillars/orbs are safe inside, blue ones are not.
+  detail: Phase 2 Magic Storm passes through all three sides in turn (crouch it). In the pillar and orb patterns, step inside the purple area and keep out of the blue one; purple never means you may take a hit.
 - title: Sleipnir's chains
   text: They can stun-lock you; keep Hero's Will or a stun cleanse ready.
 tips:
@@ -194,7 +195,8 @@ strategies:
   payoff: Each player starts in the room that suits them.
   steps:
   - First to join goes to Baldrix, second to Sleipnir, third to the Ancient God; leave and rejoin to change the order. In a trio keep one player per room so every gauge drains.
-  - The Baldrix room needs steady uptime inside his Zone and on the weak-point side (the guide rates it hardest; KMS players rate Sleipnir hardest).
+  - The split only lasts until the first 120 s rotation moves everyone on, so each player still learns every room.
+  - The Baldrix room needs steady uptime inside his Zone and on the weak-point side. Which room is hardest depends on player and class (the guide says Baldrix, KMS players say Sleipnir).
   - The Sleipnir room wants a stun answer such as Hero's Will for chain stun-locks.
   - The Ancient God room player keeps closing rifts and steers the mirror light onto the possessed statue.
 - name: Keep P2 mark-free
@@ -205,7 +207,7 @@ strategies:
   steps:
   - Never let your personal gauge reach 1000 in Phase 2; each overflow adds a permanent Magic Mark.
   - Crouch Magic Storm and warn the next side; the storm's portal shows where it goes next.
-  - Face and take purple attacks rather than dodging them.
+  - Identify each pillar or orb pattern by its tell, then stand inside the purple safe area and keep out of the blue one; never tank a hit because it is purple.
 sources:
 - url: https://docs.google.com/document/d/1uBXXBbUt86N2T67HY0dQrFjo7fbOthVrWBMWfUyi4NY/edit
   title: MapleStory Complete Baldrix Guide
@@ -246,4 +248,19 @@ sources:
   title: MapleStory Wiki - Destiny Weapon
   author: MapleStory Wiki contributors
   kind: wiki
+  fetched: '2026-10-05'
+- url: https://www.maplesea.com/updates/view/v246_Patch1/
+  title: MapleSEA v246 patch notes (Ragnarok cooldown 125 s)
+  author: Nexon (MapleSEA)
+  kind: official
+  fetched: '2026-10-05'
+- url: https://www.inven.co.kr/board/maple/2304/43214
+  title: Inven - Baldrix Phase 2 guide, part 1
+  author: Inven contributors
+  kind: guide
+  fetched: '2026-10-05'
+- url: https://www.inven.co.kr/board/maple/2304/43216
+  title: Inven - Baldrix Phase 2 guide, part 2
+  author: Inven contributors
+  kind: guide
   fetched: '2026-10-05'

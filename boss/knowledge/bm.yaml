@@ -4,7 +4,7 @@ lead: 'Four phases of curse management: never take white and black hits within 6
 core:
 - title: Two curses
   text: 'Hits apply white Creation or black Destruction for 6 s; taking the other while one is active costs a life.'
-  detail: 'Hits apply the Curse of Creation (also called Creative Curse; white: heal-over-time, -10% damage, burning aura) or the Curse of Destruction (also called Destructive Curse; black: +15% damage taken, +10% damage, no potions) for 6s. Taking the opposite curse while one is active costs a life, deals +50% HP damage and seals skills for 5s.'
+  detail: 'Hits apply the Curse of Creation (also called Creative Curse; white: heal-over-time, -10% damage, burning aura) or the Curse of Destruction (also called Destructive Curse; black: +15% damage taken, +10% damage per the English wiki, SEA value unconfirmed, no potions) for 6s. Taking the opposite curse while one is active costs a life, deals +50% HP damage and seals skills for 5s.'
 - title: Origin binds only
   text: 'From Phase 2, only Origin skills bind him; normal binds still work on the Phase 1 knights.'
   detail: Only Origin skills can bind Black Mage from Phase 2 onward; normal binds still work on the Phase 1 knights.
@@ -22,17 +22,17 @@ phases:
   - title: Knights overlap
     text: 'Bind and burst when both overlap; their dive makes them briefly untargetable.'
 - name: Phase 2
-  tag: Laser Jail
+  tag: full-map lasers
   items:
   - title: Chain volleys
     text: 'Dodge these first.'
-  - title: Laser Jail
-    text: 'Full-map check: stand where the charging hand says (see Laser Jail).'
-    detail: 'Phase 2: dodge the chain volleys first. For the full-map Laser Jail, a left-hand (red) charge means stand at the far left, right-hand (purple) the far right, both hands directly under him (watch his touch knockback).'
+  - title: Full-map lasers
+    text: 'Stand in the safe spot indicated by his charging hand (see P2 full-map lasers).'
+    detail: 'Phase 2: dodge the chain volleys first. For the full-map lasers (also called Laser Jail in English guides), a left-hand (red) charge means stand at the far left, right-hand (purple) the far right, both hands directly under him (watch his touch knockback).'
   - title: Hidden hand
-    text: 'An Origin bind can hide which hand charges Laser Jail; know the timer.'
+    text: 'An Origin bind can hide which hand charges the full-map lasers; know the timer.'
   - title: Invincibility
-    text: 'A ~10 s invincibility saved for Laser Jail is free damage; it stops ~2 s before the effect visually ends.'
+    text: 'An i-frame can cover the full-map lasers if you have checked it lasts long enough; the ~10 s / ends ~2 s early figures are unverified.'
 - name: Phase 3
   tag: shield bubble
   items:
@@ -69,7 +69,7 @@ mechanics:
   - {label: Opposite curse while one is active, value: −1 life · +50% HP hit, direction: down}
   note: 'Crossing curses also seals skills for 5 s.'
 - kind: zones
-  title: Laser Jail (Phase 2)
+  title: P2 full-map lasers
   zones:
   - {name: Far left, sub: left hand · red, tone: red}
   - {name: Under him, sub: both hands, tone: neutral}
@@ -90,8 +90,8 @@ danger:
   text: 'Misplaced in a full-map attack or wall spawn means death. Red Lightning is near-lethal, lethal under Destruction.'
   detail: Phase 2 and 3 full-map attacks and Phase 1 wall spawns are instant kills when positioned wrong; walking into Red Lightning is near-lethal, and lethal while you hold the Curse of Destruction.
 - title: Hidden hand
-  text: 'A Phase 2 Origin bind can hide the Laser Jail hand; know the timer.'
-  detail: An Origin bind in Phase 2 can hide which hand is charging Laser Jail; know the timer instead.
+  text: 'A Phase 2 Origin bind can hide the hand charging the full-map lasers; know the timer.'
+  detail: An Origin bind in Phase 2 can hide which hand is charging the full-map lasers; know the timer instead.
 - title: Phase 3 chains
   text: 'Push, pull and lasers chain curses; stop attacking at pink lasers, no double-jumps near him.'
   detail: Phase 3 Push, pull and lasers can chain curses; stop attacking when pink lasers appear and avoid double-jumping near him.
@@ -183,22 +183,22 @@ difficulties:
     text: 'In KMS it needs four Rank S champions, i.e. four Hard Black Mage solos.'
 strategies:
 - name: P4 burst only
-  when: Hard with clear-time slack (60 minute limit)
+  when: Ordinary Hard with plenty of clear-time slack (60 minute limit); not Champion or shorter limits unless your damage is proven
   risk: low
   damage: medium
   payoff: Damage lands on fresh barriers while the rest of the phase is spent surviving
   steps:
-  - Skip normal attacks in Phase 4; the barrier refills after each 30s pillar check.
+  - Between bursts, sustained damage is less productive because the barrier refills after each 30s pillar check, so you may stop attacking to survive; this is a survival choice, not a rule.
   - Start buffs about 3s before a pillar check and burst on the fresh barrier.
   - Four pillar checks are roughly one 2-minute burst cycle; between bursts, just survive.
 - name: P2 laser iframe
-  when: Any difficulty, with a class that has a roughly 10-second invincibility
+  when: Any difficulty, with an i-frame you have checked covers the whole Phase 2 full-map attack
   risk: low
   damage: medium
   payoff: Turns the Phase 2 full-map check into a free damage window
   steps:
-  - Save the invincibility for Laser Jail (or a Phase 3 ultimate) and keep attacking through it.
-  - Damage stops about 2s before the effect visually ends, so be in the safe spot by then.
+  - Save the invincibility for the Phase 2 full-map lasers (or a Phase 3 ultimate) and keep attacking through it.
+  - The guide's ~10s length and ~2s early end are unverified; test your own class's coverage and know the safe spot as the fallback.
 - name: 'P4 black: safer'
   when: Phase 4, for a safer clear
   risk: low
@@ -207,16 +207,18 @@ strategies:
   steps:
   - Pick Destruction (Black) State with the Harvest key as Phase 4 starts.
   - Dodge white attacks; a hit gives Creation (heal-over-time, -10% damage), so potions stay usable.
-  - Swap only for pillar checks, then return to Black.
+  - Swap only for pillar checks, then return to Black; check your current curse before any swap.
+  - On Extreme the game sets your state at random every 30s, so Black cannot simply be held there.
 - name: 'P4 white: more damage'
   when: Phase 4, for a faster clear when you can dodge cleanly
   risk: high
   damage: medium
-  payoff: Faster, since hits give the Destruction curse's +10% damage, but no potions while it lasts and 15% more damage taken.
+  payoff: Can be faster, but the damage bonus only comes from taking a hit for the Destruction curse, which also blocks potions and adds 15% damage taken.
   steps:
   - Pick Creation (White) State with the Harvest key as Phase 4 starts.
   - Dodge black attacks; a hit gives Destruction (+10% damage, +15% damage taken, no potions).
-  - Swap only for pillar checks, then return to White.
+  - Swap only for pillar checks, then return to White; check your current curse before any swap.
+  - The +10% figure is the English wiki's (another source differs, SEA unconfirmed); on Extreme the state is set at random every 30s.
 sources:
 - url: https://maplestorywiki.net/w/Black_Mage/Monster
   title: MapleStory Wiki - Black Mage/Monster

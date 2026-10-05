@@ -69,7 +69,7 @@ phases:
   - title: Shrinks per curse
     text: 'Each curse shrinks Midnight; it regrows at each time change by how many stayed uncursed. At zero the party fails.'
   - title: Burst timing
-    text: 'Hold binds and the main burst for Midnight; start just before the Mithra''s Power check resolves.'
+    text: 'Hold binds and the main burst for Midnight; start on the caller''s mark once everyone is in the Mithra''s Power safe spot.'
   - title: Push before Dawn
     text: 'Leftover Dawn shield heals back at Noon, so take as much HP here as you can.'
   - title: Finish here
@@ -91,7 +91,7 @@ phases:
   - title: Chain hits
     text: 'Knockback, stuns, slows and orbs chain into more hits, and each feeds her shield.'
   - title: Solo route
-    text: 'Fight away from orb spawns, kite the deer across, pass through her after her trap cast and clear orbs; let her heal 5-10% at most.'
+    text: 'Fight away from orb spawns, kite the deer across, pass through her after her trap cast and clear orbs; a common personal target is under 5-10% healing.'
 danger:
 - title: Phase 1 pillars
   text: 'Near-instant and still spawning while she is bound; many find Phase 1 hardest.'
@@ -222,17 +222,17 @@ difficulties:
     detail: 'Practice Mode clears count and add Hamcelot''s Protection (25% less damage taken). After OVERDRIVE, KMS adds Hamcelot''s Trial (Final Damage -30%, -25% on Black Mage); not in MapleSEA yet.'
 strategies:
 - name: Burst at Midnight
-  when: Parties of 2-6, especially Normal and Hard with mixed damage
+  when: Parties of 2-6, especially Normal and Hard with mixed damage; a learning default the party agrees before entry
   risk: low
   damage: medium
   payoff: Safest burst window; protects the Midnight segment
   steps:
   - Burst immediately in Phase 1 to get out of the pillar phase.
-  - In Phase 2, hold binds and main burst for Midnight and start just before the Mithra's Power check resolves.
+  - In Phase 2, hold binds and main burst for Midnight. The caller confirms the start once everyone is in the Mithra's Power safe spot (the exact pre-resolution timing is unverified).
   - Push as much HP as possible before Dawn, because leftover Dawn shield is healed back at Noon.
   - Everyone plays to avoid curses in Noon, Sunset and Dawn; clean segments regrow Midnight.
 - name: Finish before Dawn
-  when: Strong solo or duo that can take most remaining HP in one cycle
+  when: Strong solo or duo that has shown it can take the remaining HP in one Midnight window
   risk: medium
   damage: high
   payoff: Skips Dawn's shield and deer entirely
@@ -247,8 +247,8 @@ strategies:
   steps:
   - Learn how many attacks fit between her stab and rush and crouch on cue.
   - Phase 1 - stand between two pillar spawn points and stay near Seren so she throws fewer sword auras; jump over the slow one.
-  - Noon - play the left side; the far right has an off-screen hazard and the middle catches crossing lasers.
-  - Dawn - fight on one side away from orb spawns, kite the deer across, wait for her trap cast, then pass through her and clear orbs; aim to let her heal no more than about 5-10%.
+  - Noon - the left side usually works; the far right has an off-screen hazard and the middle catches crossing lasers. Adjust to the pattern.
+  - Dawn - fight on one side away from orb spawns, kite the deer across, wait for her trap cast, then pass through her and clear orbs; binding her removes the deer (SEA v251). Healing under about 5-10% is one player's target, not a fixed threshold.
 sources:
 - url: https://www.maplesea.com/updates/view/v251_Content2/
   title: MapleSEA v251 Content Updates Part 2

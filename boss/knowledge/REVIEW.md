@@ -25,7 +25,7 @@ supports were kept.
   not list the trial bosses, so they are KMS's; Hamcelot's Trial is not in SEA.
 - **Carling**: Tiger/Bird/Dog callouts; strategies are Balanced gauges, Tiger +
   Bird break (MapleBossLab: ~88% of 322 Destiny builds) and Bird + Dog break.
-  Tiger + Dog break is a note (dead since v251). Dropped from the draft: the
+  Tiger + Dog break is a note (disfavoured since v251; owner decision 2026-10-05). Dropped from the draft: the
   unsourced "44 of 56 clears" statistic and Tiger + Bird as proven on Extreme.
 - **First Adversary**: Stage 5 opener added (sourced only for Easy/Normal);
   Parry the opener now bursts at Stage 4; "Sniping, avoid it" became a tip;
@@ -56,6 +56,34 @@ supports were kept.
   Collapse).
 - Confirmed by the user (2026-10-05): at 1000 Illusion Magic in Reality a 40 s
   countdown runs and a forced swap follows when it reaches 0.
+
+## Update 2026-10-05: strategy accuracy pass (MapleSEA v254)
+
+Applied the private strategy review (`docs/notes/boss-guides/`, local only).
+Conditional routes were qualified, not upgraded; user-confirmed facts above
+were left unchanged.
+
+- **Limbo**: a fusion is a ~5 s disappearance followed by a ~30 s pattern
+  with attackable periods; the next one triggers 20 points below the HP
+  reached. The second-fusion skip is Normal-sourced, unverified on Hard.
+  Destiny's 800 Erosion is a start value that recovery can lower.
+- **Baldrix**: Phase 2 purple pillars/orbs are safe inside, blue ones are
+  avoided (replaces "take purple attacks"); Phase 3 Ragnarok is on a 125 s
+  cooldown (MapleSEA v246), separate from the 120 s rotations.
+- **Radiant Malefic Star**: altar arithmetic is unresolved (105/115/130% vs
+  105/110/120% after three rights from 0); Keep +30% and Match altars to
+  bursts are flagged unresolved advanced recipes.
+- **Black Mage**: the ~10 s / ~2 s i-frame figures are unverified; the
+  Destruction +10% is the English wiki value; burst-only is for ordinary
+  Hard with time slack.
+- **Carling, Seren, Kalos, First Adversary, Jupiter**: kill orders, margins,
+  timings and side assignments are labelled as party conventions or
+  personal targets.
+- Owner decisions 2026-10-05: Black Mage Champion stays 45 min and the
+  Extreme random 30 s state change stays unqualified (both owner-confirmed);
+  Carling Tiger + Dog is disfavoured since v251, not dead.
+- Still open: SEA altar modifier after three rights; Hard Limbo fusion skip;
+  Black Mage i-frame coverage and SEA Destruction bonus.
 
 ## Decisions applied
 

@@ -27,7 +27,7 @@ phases:
   - title: Left tower in tests
     text: 'Eye of Restraint keeps firing during dome tests; never start one while it is active.'
   - title: Threshold control
-    text: 'Stop 0.3-1% above each 25% mark; phase once Left is off and fewer than three weapons are up.'
+    text: 'Stop just above each 25% mark (parties use about 0.3-1%); phase once Left is off and fewer than three weapons are up.'
   - title: Curses in 2-4
     text: 'Below 25% a curse lands every minute: two stacks raise damage taken, a third kills. Harvest the armguard to clear.'
   - title: Breath and dive
@@ -200,29 +200,29 @@ strategies:
   damage: low
   payoff: Fewest stun-chain deaths and safe dome tests
   steps:
-  - Cleanse Eye of Restraint first, then Eye of the Abyss, then the ball, then the drone (the least dangerous).
-  - Shoot the towers from close range so the shot cannot miss.
+  - Cleanse Eye of Restraint first, then usually Eye of the Abyss; whether the ball or the drone comes next is the caller's choice.
+  - Shoot from an angle you have practised and check that each shot connects.
   - Never start a dome test while the Left tower is active.
   - Hold a charged shot when the next system is about 10 s away, instead of firing at nothing.
 - name: Prepare weapons
-  when: Chaos and Extreme, where three active weapons empower all of them
+  when: Chaos and Extreme, where three active weapons empower all of them; an advanced party convention that needs a caller
   risk: medium
   damage: high
   payoff: Keeps the active count under three at tests and bursts
   steps:
-  - Shoot one weapon (often the ball or drone) down to its last colour and leave it there as a reserve.
-  - When a third weapon switches on, finish the reserve to drop back to two.
+  - Shoot one weapon (often the ball or drone) down to its last colour and leave it there as a reserve, with one named player owning it.
+  - When a third weapon switches on, the owner calls and finishes the reserve at once to drop back to two; never sit on three empowered weapons.
   - Leave a nearly finished weapon up until the next activation, so you do not re-roll a worse one.
-  - Prioritise the Right tower over Left when arrows are empowered, and keep shooting during tests and bursts.
+  - Some routes put the Right tower ahead of Left while arrows are empowered; agree that exception in advance, and keep shooting during tests and bursts.
 - name: Hold HP, then burst
-  when: Any difficulty; the main party damage plan
+  when: Any difficulty; the main party damage plan, with an entry sequence and stop margin each party calibrates
   risk: medium
   damage: high
   payoff: One long burst per segment and fewer weapon cycles
   steps:
   - Phase 1 - group on one side, wait for his first teleport so everyone has loaded, then bind and burst.
   - Phase 2 start - group in the middle so his opening dive lands there, step out, then bind and burst.
-  - Stop about 0.3-1% above each 25% threshold and phase once Left is off and fewer than three weapons are up, before the next Roar adds a weapon.
+  - Stop just above each 25% threshold (about 0.3-1% is a party habit, not an official margin; allow for lingering damage) and phase once Left is off and fewer than three weapons are up, before the next Roar adds a weapon.
   - Burst again in the 15 s groggy after each dome test, and burst through segment 2-4 quickly.
 sources:
 - url: https://www.maplesea.com/updates/view/v251_Content2/

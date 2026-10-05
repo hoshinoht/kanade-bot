@@ -112,7 +112,8 @@ strategies:
   damage: medium
   payoff: Steadiest needle, because Jupiter-side lasers swing it hardest.
   steps:
-  - In the waiting room the strongest player takes Jupiter's side (left) alone; the other two take the Alchemical Entity (right), whose movement suits burst classes.
+  - In the waiting room one player takes Jupiter's side (left) alone; the other two take the Alchemical Entity (right), whose movement suits burst classes.
+  - Putting the strongest player left is a party-building habit, not a rule; whoever goes left must also steer the needle reliably.
 - name: Two left, swap in P3
   when: Trios still learning the fight, and solo or duo runs (Korean Inven guide).
   risk: medium
@@ -121,7 +122,7 @@ strategies:
   steps:
   - Solo and duo players fight on Jupiter's side; a duo may burst together there and split otherwise.
   - In a trio, Phases 1-2 put two on Jupiter and one on the Entity.
-  - From Phase 3 swap to one on Jupiter and two on the Entity, since the Entity side starts branding and Commands come every 30s.
+  - From Phase 3 swap to one on Jupiter and two on the Entity, since the Entity side starts branding and Commands come every 30s. Say who swaps in the run briefing.
 difficulty_notes:
   h:
     title: Forced merges
