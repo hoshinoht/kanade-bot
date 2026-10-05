@@ -52,7 +52,7 @@ test('inbox: thread messages show their authors’ portraits', async ({ page }) 
 test('account: the page and the account chip show the signed-in admin’s portrait', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await go(page, '/account');
-  await loaded(page.locator('.account__head .membersheet__avatar'), /\/api\/admin\/me\/avatar$/);
+  await loaded(page.locator('.account-id .account-id__portrait'), /\/api\/admin\/me\/avatar$/);
   await loaded(page.getByRole('button', { name: /^Account: Asahi/ }).locator('.account__initial'), /\/me\/avatar$/);
 });
 
@@ -60,7 +60,7 @@ test('account: a portrait that cannot load falls back to the initial', async ({ 
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.route('**/api/admin/me/avatar', (route) => route.abort());
   await go(page, '/account');
-  const head = page.locator('.account__head .membersheet__avatar');
+  const head = page.locator('.account-id .account-id__portrait');
   await expect(head.locator('img')).toHaveCount(0);
   await expect(head).toHaveText('A');
 });

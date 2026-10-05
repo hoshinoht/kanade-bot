@@ -24,10 +24,11 @@
     "Persona": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["key", "name"],
+      "required": ["key", "name", "voice"],
       "properties": {
         "key": { "type": "string" },
-        "name": { "type": "string" }
+        "name": { "type": "string" },
+        "voice": { "type": "string", "description": "The profile's one-line voice; empty when it has none." }
       }
     },
     "Personas": { "type": "array", "items": { "$ref": "#/$defs/Persona" } }

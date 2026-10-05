@@ -205,6 +205,17 @@
               state: open ? { inboxDetail: true } : null,
             }),
         };
+      case 'account':
+        return {
+          toaster,
+          timeZone: store.week?.timezone ?? 'Asia/Kuala_Lumpur',
+          tab: router.query.get('tab') ?? '',
+          ontab: (tab: string) => router.go(tab === 'profile' ? '/account' : `/account?tab=${tab}`, { replace: true }),
+          onsignout: async () => {
+            await store.signOut();
+            router.go('/login');
+          },
+        };
       case 'limits':
         return { toaster };
       case 'chat':

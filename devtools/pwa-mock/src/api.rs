@@ -218,13 +218,20 @@ pub async fn session(State(app): State<App>) -> Response {
 #[derive(Deserialize)]
 pub struct SessionMethod {
     method: String,
+    /// With `discord`: the seeded member to sign in as (default Asahi, 1001).
+    #[serde(default)]
+    user: Option<String>,
 }
 
 /// `POST /__mock/session {method}`: sign in again as `discord`, `token` or
 /// `tailscale` (a new CSRF token, as a real sign-in), or sign out with
 /// `none`, so e2e can cover the Discord-only rule and the sign-in flow.
 pub async fn switch_session(State(app): State<App>, Json(req): Json<SessionMethod>) -> Response {
-    if !app.store.lock().await.set_session(&req.method) {
+    let switched = match (req.method.as_str(), req.user.as_deref()) {
+        ("discord", Some(user)) => app.store.lock().await.set_discord_member(user),
+        _ => app.store.lock().await.set_session(&req.method),
+    };
+    if !switched {
         return error(
             StatusCode::UNPROCESSABLE_ENTITY,
             "invalid",
@@ -448,6 +455,21 @@ pub async fn limits(State(app): State<App>) -> Response {
 
 pub async fn me(State(app): State<App>) -> Response {
     Json(app.store.lock().await.me()).into_response()
+}
+
+pub async fn own_sessions(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.own_sessions()).into_response()
+}
+
+pub async fn end_own_session(State(app): State<App>, Path(handle): Path<String>) -> Response {
+    match app.store.lock().await.end_own_session(&handle) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(refused) => outcome::<()>(Err(refused)),
+    }
+}
+
+pub async fn end_other_sessions(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.end_other_sessions()).into_response()
 }
 
 pub async fn reset_window(State(app): State<App>, Path(id): Path<String>) -> Response {

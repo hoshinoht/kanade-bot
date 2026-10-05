@@ -224,6 +224,15 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         .route("/api/admin/session", get(api::session))
         .route("/api/admin/me", get(api::me))
         .route("/api/admin/me/avatar", get(avatars::me))
+        .route("/api/admin/me/sessions", get(api::own_sessions))
+        .route(
+            "/api/admin/me/sessions/{handle}",
+            delete(api::end_own_session),
+        )
+        .route(
+            "/api/admin/me/sessions/sign-out-others",
+            post(api::end_other_sessions),
+        )
         .route("/api/admin/auth/methods", get(auth::methods))
         .route("/api/admin/auth/tonight", get(auth::tonight))
         .route("/api/admin/auth/discord/start", get(auth::discord_start))

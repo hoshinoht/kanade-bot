@@ -387,6 +387,73 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         .ok("GET", "/api/admin/me", None, "identity.json#/$defs/Me")
         .await;
     assert_eq!(me["member"]["id"], "1001");
+    // Asahi holds `staff`, whose role assignment (Terse) beats the saved Kanade.
+    assert_eq!(me["member"]["reply_style"]["source"], "role");
+    assert_eq!(me["member"]["reply_style"]["role_name"], "staff");
+    assert_eq!(me["member"]["reply_style"]["saved"]["key"], "kanade");
+    let personas = h
+        .ok(
+            "GET",
+            "/api/admin/personas",
+            None,
+            "members.json#/$defs/Personas",
+        )
+        .await;
+    assert!(personas[0]["voice"].is_string());
+
+    // Account → Sessions: list, end another, refuse this one, end the rest.
+    let sessions = h
+        .ok(
+            "GET",
+            "/api/admin/me/sessions",
+            None,
+            "identity.json#/$defs/AccountSessions",
+        )
+        .await;
+    let handle = |current: bool| {
+        sessions["sessions"]
+            .as_array()
+            .and_then(|rows| rows.iter().find(|row| row["current"] == current))
+            .map(|row| s(&row["handle"]).to_owned())
+            .unwrap_or_default()
+    };
+    let (own, other) = (handle(true), handle(false));
+    let (status, _) = h
+        .send(
+            false,
+            "DELETE",
+            &format!("/api/admin/me/sessions/{other}"),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    h.expect(
+        false,
+        "DELETE",
+        &format!("/api/admin/me/sessions/{other}"),
+        None,
+        StatusCode::NOT_FOUND,
+        "",
+    )
+    .await;
+    h.expect(
+        false,
+        "DELETE",
+        &format!("/api/admin/me/sessions/{own}"),
+        None,
+        StatusCode::CONFLICT,
+        "",
+    )
+    .await;
+    let ended = h
+        .ok(
+            "POST",
+            "/api/admin/me/sessions/sign-out-others",
+            None,
+            "identity.json#/$defs/SessionsEnded",
+        )
+        .await;
+    assert_eq!(ended["ended"], 1);
     let fixed = h
         .ok(
             "GET",

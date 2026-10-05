@@ -35,12 +35,14 @@ pub fn session(fill: char, method: LoginMethod, subject: &str) -> WebSession {
         checked_at: at(0),
         expires_at: at(12 * 60),
         avatar_hash: None,
+        device: None,
     }
 }
 
 async fn sessions_round_trip_and_rotate<S: WebSessionStore>(store: S) {
     let mut first = session('a', LoginMethod::Discord, "100");
     first.avatar_hash = Some("a_0123456789abcdef0123456789abcdef".into());
+    first.device = Some("Firefox · macOS".into());
     store.put_session(&first, None).await.expect("put");
     assert_eq!(
         store.load_session(&first.id_hash).await.expect("load"),
@@ -109,6 +111,27 @@ async fn touch_delete_and_revoke_by_identity<S: WebSessionStore>(store: S) {
             .expect("touch")
     );
 
+    let listed: Vec<String> = store
+        .subject_sessions(SessionOrigin::Admin, LoginMethod::Discord, "100")
+        .await
+        .expect("list")
+        .into_iter()
+        .map(|session| session.id_hash)
+        .collect();
+    assert_eq!(
+        listed,
+        [hash('a'), hash('b')],
+        "one identity's sessions, oldest first"
+    );
+    assert!(
+        store
+            .subject_sessions(SessionOrigin::Public, LoginMethod::Discord, "100")
+            .await
+            .expect("list")
+            .is_empty(),
+        "never another origin's"
+    );
+
     assert_eq!(
         store
             .delete_subject_sessions(SessionOrigin::Admin, LoginMethod::Discord, "100")
@@ -174,6 +197,11 @@ async fn malformed_rows_are_refused<S: WebSessionStore>(store: S) {
     bad_avatar.avatar_hash = Some("<svg onload=x>".into());
     let mut short_avatar = session('a', LoginMethod::Discord, "100");
     short_avatar.avatar_hash = Some("0123".into());
+    let device = |text: String| {
+        let mut row = session('a', LoginMethod::Discord, "100");
+        row.device = Some(text);
+        row
+    };
     let underscored = |hash: &str| {
         let mut row = session('a', LoginMethod::Discord, "100");
         row.avatar_hash = Some(hash.into());
@@ -196,6 +224,8 @@ async fn malformed_rows_are_refused<S: WebSessionStore>(store: S) {
             "uppercase avatar hash",
             underscored("0123456789ABCDEF0123456789ABCDEF"),
         ),
+        ("empty device", device(String::new())),
+        ("long device", device("x".repeat(65))),
         ("markup avatar hash", bad_avatar),
         ("short avatar hash", short_avatar),
         ("uppercase hash", bad_hash),

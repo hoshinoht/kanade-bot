@@ -41,6 +41,14 @@ async fn token_sessions_are_neutral_and_anonymous_callers_are_refused() {
     let value = me(&reads, &[("Cookie", &reads.cookie)]).await;
     assert_eq!(value["method"], "token");
     assert_eq!(value["member"], Value::Null);
+    // Diagnostics: the build and the server's clock (the fixture's pinned instant).
+    assert_eq!(value["version"], env!("CARGO_PKG_VERSION"));
+    assert!(
+        value["server_time"]
+            .as_str()
+            .is_some_and(|at| at.starts_with("20") && at.ends_with('Z')),
+        "{value}"
+    );
 }
 
 #[tokio::test]

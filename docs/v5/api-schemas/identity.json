@@ -31,20 +31,22 @@
     "Me": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["display", "method", "member"],
+      "required": ["display", "method", "member", "server_time", "version"],
       "properties": {
         "display": { "type": "string" },
         "method": { "enum": ["discord", "tailscale", "token"] },
         "member": {
           "description": "The guild member behind a Discord sign-in; null for the admin token, Tailscale, and a Discord account with no member row.",
           "anyOf": [{ "$ref": "#/$defs/MeMember" }, { "type": "null" }]
-        }
+        },
+        "server_time": { "type": "string", "description": "The server's clock when this was read (ISO-8601 UTC)." },
+        "version": { "type": "string", "description": "The server build (Cargo.toml version)." }
       }
     },
     "MeMember": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name", "access", "bossing", "roles", "allowance"],
+      "required": ["id", "name", "access", "bossing", "roles", "allowance", "reply_style"],
       "properties": {
         "id": { "type": "string" },
         "name": { "type": "string" },
@@ -57,8 +59,69 @@
         "allowance": {
           "description": "The member's row exactly as GET /api/admin/limits shows it; null without chatbot access.",
           "anyOf": [{ "$ref": "limits.json#/$defs/Allowance" }, { "type": "null" }]
+        },
+        "reply_style": {
+          "description": "How chat answers this member; null while no persona is loaded.",
+          "anyOf": [{ "$ref": "#/$defs/ReplyStyle" }, { "type": "null" }]
         }
       }
+    },
+    "ReplyStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The reply profile in effect and the member's own saved choice; the first role assignment the member holds beats the saved choice.",
+      "required": ["in_effect", "source", "role_name", "saved"],
+      "properties": {
+        "in_effect": {
+          "description": "What chat uses now; null is the persona's default voice.",
+          "anyOf": [{ "$ref": "#/$defs/ReplyStyleRef" }, { "type": "null" }]
+        },
+        "source": { "enum": ["role", "saved", "default"] },
+        "role_name": { "$ref": "common.json#/$defs/NullableString", "description": "The role whose assignment wins (source role), when the role directory can name it." },
+        "saved": {
+          "description": "The member's saved choice; null is the default voice.",
+          "anyOf": [{ "$ref": "#/$defs/ReplyStyleRef" }, { "type": "null" }]
+        }
+      }
+    },
+    "ReplyStyleRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "name", "public"],
+      "properties": {
+        "key": { "type": "string" },
+        "name": { "type": "string", "description": "The profile's label; the key when its file is no longer readable." },
+        "public": { "type": "boolean", "description": "Members may choose it (Config > Persona visibility)." }
+      }
+    },
+    "AccountSessions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessions", "generated_at"],
+      "properties": {
+        "sessions": { "type": "array", "items": { "$ref": "#/$defs/AccountSession" } },
+        "generated_at": { "type": "string", "description": "The server's clock when this was read (ISO-8601 UTC)." }
+      }
+    },
+    "AccountSession": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One live session of the caller's identity (same sign-in method and subject); handle names it for sign-out, ids and hashes never leave the server.",
+      "required": ["handle", "method", "device", "signed_in_at", "last_seen_at", "current"],
+      "properties": {
+        "handle": { "type": "string", "pattern": "^[0-9a-f]{24}$" },
+        "method": { "enum": ["discord", "tailscale", "token"] },
+        "device": { "$ref": "common.json#/$defs/NullableString", "description": "Browser and system from the sign-in's User-Agent (\"Firefox · macOS\"); null when unrecognised." },
+        "signed_in_at": { "type": "string" },
+        "last_seen_at": { "type": "string" },
+        "current": { "type": "boolean", "description": "The session this request came with." }
+      }
+    },
+    "SessionsEnded": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ended"],
+      "properties": { "ended": { "type": "integer", "minimum": 0 } }
     },
     "PublicStatus": {
       "type": "object",

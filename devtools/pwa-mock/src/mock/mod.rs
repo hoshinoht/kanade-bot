@@ -1,5 +1,6 @@
 //! Synthetic boss weeks (fake names only) and their in-memory mutation rules.
 
+mod account;
 pub mod catalog;
 mod chat;
 pub mod clock;
@@ -74,6 +75,8 @@ pub struct Store {
     decided: Vec<inbox::Decided>,
     /// How the mock's admin signed in: `discord`, `token` or `tailscale`.
     session: &'static str,
+    /// The seeded member a Discord session signs in as (Asahi by default).
+    discord_as: &'static str,
     /// Signed out: every admin route but sign-in answers `401 unauthenticated`.
     signed_in: bool,
     /// The next Discord sign-in fails with this `login_error` code.
@@ -86,6 +89,8 @@ pub struct Store {
     /// `POST /__mock/arrive` added a chat turn / an extraction call.
     arrived_chat: bool,
     arrived_extraction: bool,
+    /// Account → Sessions: handles of seeded sessions signed out from the page.
+    ended_sessions: Vec<&'static str>,
     version: u64,
     next_id: u32,
     catalog: Catalog,
@@ -102,6 +107,7 @@ impl Store {
             proposals: Vec::new(),
             decided: Vec::new(),
             session: "discord",
+            discord_as: "1001",
             signed_in: true,
             discord_error: None,
             jobs: Vec::new(),
@@ -110,6 +116,7 @@ impl Store {
             config: config::defaults(),
             arrived_chat: false,
             arrived_extraction: false,
+            ended_sessions: Vec::new(),
             version: 1,
             next_id: 1,
             catalog,
@@ -135,6 +142,7 @@ impl Store {
         self.proposals = inbox::seed();
         self.decided.clear();
         self.session = "discord";
+        self.discord_as = "1001";
         self.signed_in = true;
         self.discord_error = None;
         self.jobs.clear();
@@ -144,6 +152,7 @@ impl Store {
         self.settings_changes.clear();
         self.arrived_chat = false;
         self.arrived_extraction = false;
+        self.ended_sessions.clear();
         self.seed_history();
     }
 

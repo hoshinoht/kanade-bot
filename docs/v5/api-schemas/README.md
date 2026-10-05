@@ -29,6 +29,9 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/public/week?week=` | `week.json#/$defs/PublicWeek` (503 `ApiError` `closed` while the portal is closed) |
 | `GET /api/admin/session` | `identity.json#/$defs/Session` |
 | `GET /api/admin/me` | `identity.json#/$defs/Me` |
+| `GET /api/admin/me/sessions` | `identity.json#/$defs/AccountSessions` |
+| `DELETE /api/admin/me/sessions/{handle}` | `204`, no body |
+| `POST /api/admin/me/sessions/sign-out-others` | `identity.json#/$defs/SessionsEnded` |
 | `GET /api/admin/auth/tonight` (no session) | `week.json#/$defs/Tonight` |
 | `GET /api/admin/week?week=` | `week.json#/$defs/Week` |
 | `GET /api/admin/stats?week=` | `week.json#/$defs/Stats` |

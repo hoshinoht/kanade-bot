@@ -572,7 +572,15 @@ fn route(id: &str) -> Option<Route> {
     })
 }
 
-fn profile_visible(c: &Config, key: &str) -> bool {
+/// A reply profile's label and voice line, by key.
+pub fn profile_label_voice(key: &str) -> Option<(&'static str, &'static str)> {
+    PROFILES
+        .iter()
+        .find(|(k, ..)| *k == key)
+        .map(|(_, name, _, voice, _)| (*name, *voice))
+}
+
+pub fn profile_visible(c: &Config, key: &str) -> bool {
     c.profile_visibility
         .iter()
         .find(|v| v.key == key)

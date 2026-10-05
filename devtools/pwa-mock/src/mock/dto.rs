@@ -308,6 +308,7 @@ pub struct MemberRow {
 pub struct Persona {
     pub key: &'static str,
     pub name: &'static str,
+    pub voice: &'static str,
 }
 
 #[derive(Deserialize)]

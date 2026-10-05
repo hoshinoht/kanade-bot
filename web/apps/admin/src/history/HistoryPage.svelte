@@ -25,7 +25,9 @@
   let { store, toaster }: { store: AdminWeek; toaster: Toaster } = $props();
   const client = createClient();
   let week = $state('');
-  let actor = $state('');
+  // `?actor=` (Account's "See my changes") starts filtered to that actor.
+  const linkedActor = new URLSearchParams(location.search).get('actor') ?? '';
+  let actor = $state(linkedActor);
   let records = $state<ChangeRecord[]>([]);
   // Config section saves: view-only rows interleaved by time (not in the chain).
   let settings = $state<SettingsChangeRow[]>([]);
@@ -176,7 +178,7 @@
   const loose = $derived(records.filter((r) => r.weeks.length === 0));
   const members = $derived(store.members.filter((m) => m.bossing));
   const known = (id: string) => store.members.some((m) => m.id === id);
-  const seenAdmins = new SvelteSet<string>();
+  const seenAdmins = new SvelteSet<string>(linkedActor.startsWith('admin:') ? [linkedActor.slice(6)] : []);
   const admins = $derived([...seenAdmins].map((id) => ({ id, label: actorName({ kind: 'admin', id }, names, known) })).sort((a, b) => a.label.localeCompare(b.label)));
   const memberOption = (m: { id: string; name: string }, value: string, group?: string): SelectOption => {
     const label = names(m.id);

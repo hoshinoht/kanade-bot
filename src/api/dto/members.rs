@@ -30,6 +30,8 @@ pub struct MemberRow {
 pub struct Persona {
     pub key: String,
     pub name: String,
+    /// The profile's one-line voice; empty when it has none.
+    pub voice: String,
 }
 
 pub fn personas(options: &[PersonaOption]) -> Vec<Persona> {
@@ -38,6 +40,7 @@ pub fn personas(options: &[PersonaOption]) -> Vec<Persona> {
         .map(|option| Persona {
             key: option.key.clone(),
             name: option.name.clone(),
+            voice: option.voice.clone(),
         })
         .collect()
 }

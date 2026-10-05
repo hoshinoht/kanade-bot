@@ -128,6 +128,16 @@ const STATES: Screen[] = [
     url: screenUrl(ADMIN, `/config?section=${key}`),
   })),
   { name: 'admin/inbox?tab=self_service', url: screenUrl(ADMIN, '/inbox?tab=self_service') },
+  { name: 'admin/account?tab=sessions', url: screenUrl(ADMIN, '/account?tab=sessions') },
+  { name: 'admin/account?tab=browser', url: screenUrl(ADMIN, '/account?tab=browser') },
+  {
+    name: 'admin/account (reply style picker)',
+    url: screenUrl(ADMIN, '/account'),
+    open: async (page) => {
+      await page.locator('.account-window__panel button[aria-haspopup="dialog"]').click();
+      await expect(page.getByRole('dialog', { name: 'Reply style' }).getByRole('radio').first()).toBeVisible();
+    },
+  },
   {
     name: 'admin/inbox (item open)',
     url: screenUrl(ADMIN, '/inbox'),

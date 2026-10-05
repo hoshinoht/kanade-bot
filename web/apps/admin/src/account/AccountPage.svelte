@@ -1,137 +1,187 @@
 <!--
-  Account (A02): who is signed in, from `GET /api/admin/me`. A Discord sign-in
-  shows the member's chatbot access, bossing role, server roles (names, never
-  ids) and the chat allowance row Limits shows; the admin token and Tailscale
-  have no Discord account, so they get one neutral note instead.
+  Account (boards AdminAccount / AdminPhone, direction B, approved
+  2026-10-05): one window with Profile / Sessions / This browser title-bar
+  tabs (`?tab=`), the identity fixed beside the one scrolling panel (above it
+  on phones). Reads `GET /api/admin/me` and `GET /api/admin/me/sessions`;
+  the reply style saves through the Members edit of the admin's own row.
 -->
 <script lang="ts">
-  import PageLine from '../shell/PageLine.svelte';
-  import PaneWindow from '../pages/PaneWindow.svelte';
-  import '@kanade/ui/styles/members.scss';
-  import type { Me } from '@kanade/api-types';
-  import { LoadError, LoadingState, StateNote } from '@kanade/ui';
-  import Name from '../names/Name.svelte';
-  import { Resource } from '../resource.svelte';
-  import Avatar from '../shared/Avatar.svelte';
-  import { ME_AVATAR } from '../shared/avatar';
   import '@kanade/ui/styles/settings.scss';
-  import SwitchCard from '../config/SwitchCard.svelte';
-  import { discordLinks } from '../shared/discordLink.svelte';
+  import '@kanade/ui/styles/account.scss';
+  import type { AccountSessions, Me, MemberRow, Persona } from '@kanade/api-types';
+  import { LoadError, LoadingState, type Toaster } from '@kanade/ui';
+  import { tick } from 'svelte';
+  import PageLine from '../shell/PageLine.svelte';
+  import { getChrome } from '../shell/chrome';
+  import { Resource, send } from '../resource.svelte';
+  import { copyText } from '../shared/copy';
+  import BrowserTab from './BrowserTab.svelte';
+  import Identity from './Identity.svelte';
+  import ProfileTab from './ProfileTab.svelte';
+  import ReplyPicker from './ReplyPicker.svelte';
+  import SessionsTab from './SessionsTab.svelte';
+  import { TABS, diagnostics, methodLong, tabOf, type AccountTab } from './account';
 
-  const uid = $props.id();
-  const me = new Resource<Me>('/api/admin/me');
-  $effect(() => void me.load());
+  let {
+    toaster,
+    timeZone,
+    tab: asked = '',
+    ontab,
+    onsignout,
+  }: {
+    toaster: Toaster;
+    /** The guild's zone (`Week.timezone`). */
+    timeZone: string;
+    tab?: string;
+    ontab: (tab: AccountTab) => void;
+    onsignout: () => void;
+  } = $props();
 
-  const METHOD: Record<string, string> = { discord: 'Discord', tailscale: 'Tailscale', token: 'the admin token' };
-  const ACCESS = { staff: 'Staff — exempt from chatbot budgets', pilot: 'Chat pilot', none: 'No chatbot access' };
-  const method = $derived(me.data ? (METHOD[me.data.method] ?? me.data.method) : '');
-  const member = $derived(me.data?.member ?? null);
-  const allowance = $derived(member?.allowance ?? null);
+  const chrome = getChrome();
+  const compact = $derived(chrome?.phone ?? false);
+  const tab = $derived(tabOf(asked));
+
+  const me = new Resource<Me>('/api/admin/me', { topics: ['members', 'settings'] });
+  const sessions = new Resource<AccountSessions>('/api/admin/me/sessions');
+  const personas = new Resource<Persona[]>('/api/admin/personas', { topics: ['settings'] });
+  $effect(() => {
+    const stop = me.watch();
+    void sessions.load();
+    return stop;
+  });
+
+  const tabs: Record<string, HTMLButtonElement> = {};
+  function choose(next: AccountTab, focus = false) {
+    ontab(next);
+    if (next === 'sessions') void sessions.refresh();
+    if (focus) void tick().then(() => tabs[next]?.focus());
+  }
+  function tabKey(event: KeyboardEvent, index: number) {
+    const moves: Record<string, number> = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: TABS.length - 1 };
+    const to = moves[event.key];
+    if (to === undefined) return;
+    event.preventDefault();
+    choose(TABS[(to + TABS.length) % TABS.length]!.id, true);
+  }
+
+  async function copyDiagnostics() {
+    if (!me.data) return;
+    const ok = await copyText(diagnostics(me.data, timeZone));
+    toaster.show(ok ? { message: 'Copied the diagnostics.', tone: 'ok' } : { message: "Couldn't copy the diagnostics.", tone: 'error' });
+  }
+
+  let checking = $state(false);
+  async function recheck() {
+    if (checking) return;
+    checking = true;
+    const failed = await me.refresh();
+    checking = false;
+    if (failed) toaster.show({ message: `Couldn't recheck your access: ${failed}`, tone: 'error' });
+  }
+
+  // Sessions: sign one out, or every other one.
+  let busy = $state('');
+  async function endSession(handle: string, device: string) {
+    if (busy) return;
+    busy = handle;
+    const outcome = await send((client) => client.delete(`/api/admin/me/sessions/${encodeURIComponent(handle)}`));
+    busy = '';
+    if (outcome.ok || outcome.status === 404) toaster.show({ message: outcome.ok ? `Signed out ${device}.` : 'That session had already ended.', tone: 'ok' });
+    else toaster.show({ message: `Couldn't sign out ${device}: ${outcome.message}`, tone: 'error' });
+    await sessions.refresh();
+    // Its button is gone: focus the list's heading region rather than the page.
+    void tick().then(() => document.querySelector<HTMLElement>('.account-window__panel')?.focus({ preventScroll: true }));
+  }
+  async function endOthers() {
+    if (busy) return;
+    busy = 'others';
+    const outcome = await send((client) => client.post<{ ended: number }>('/api/admin/me/sessions/sign-out-others', {}));
+    busy = '';
+    if (outcome.ok) {
+      const n = outcome.value.ended;
+      toaster.show({ message: n ? `Signed out ${n} other session${n === 1 ? '' : 's'}.` : 'No other sessions to sign out.', tone: 'ok' });
+    } else toaster.show({ message: `Couldn't sign out the other sessions: ${outcome.message}`, tone: 'error' });
+    await sessions.refresh();
+    void tick().then(() => document.querySelector<HTMLElement>('.account-window__panel')?.focus({ preventScroll: true }));
+  }
+
+  // Reply style: the admin's own saved style (public profiles only).
+  let picking = $state(false);
+  let saving = $state(false);
+  let saveError = $state('');
+  function openPicker() {
+    saveError = '';
+    if (!personas.data) void personas.load();
+    picking = true;
+  }
+  async function saveStyle(key: string, name: string) {
+    const id = me.data?.member?.id;
+    if (!id || saving) return;
+    saving = true;
+    saveError = '';
+    const outcome = await send((client) => client.patch<MemberRow>(`/api/admin/members/${encodeURIComponent(id)}`, { persona: key }));
+    saving = false;
+    if (!outcome.ok) {
+      saveError = outcome.message;
+      return;
+    }
+    picking = false;
+    await me.refresh();
+    const style = me.data?.member?.reply_style;
+    const by = style?.role_name ? `Your ${style.role_name} role` : 'A role';
+    const role = style?.source === 'role' ? ` ${by} still sets ${style.in_effect?.name ?? 'the style'}.` : '';
+    toaster.show({ message: `Saved ${name} as your reply style.${role}`, tone: 'ok' });
+  }
+
+  const name = $derived(me.data ? (me.data.member?.name ?? me.data.display) : '');
+  const count = $derived(sessions.data?.sessions.length ?? null);
+  const style = $derived(me.data?.member?.reply_style ?? null);
 </script>
 
-<PageLine>
-  <h1>{me.data?.display ?? 'Account'}</h1>
-  {#if method}<p class="pageline__context">signed in with {method}</p>{/if}
+<PageLine class="pageline--echo">
+  <h1>Account</h1>
+  {#if me.data}<p class="pageline__context">{name} · {methodLong(me.data.method)}</p>{/if}
 </PageLine>
-<PaneWindow title="Account">
-  {#if me.error}
-    <LoadError thing="your account" reason={me.error} onretry={() => void me.load()} />
-  {:else if !me.data}
-    <LoadingState text="Loading your account…" />
-  {:else}
-    <header class="membersheet__head account__head" data-fid="account-head">
-      <Avatar class="membersheet__avatar" src={ME_AVATAR} name={me.data.display} />
-      <div class="membersheet__who">
-        <p class="cap">{member ? 'Member' : 'Signed in'}</p>
-        <h2>{member?.name ?? me.data.display}</h2>
-        {#if method}<p class="membersheet__handle">signed in with {method}</p>{/if}
-      </div>
-    </header>
-    {#if !member}
-      <StateNote icon="shield" title={me.data.method === 'discord' ? 'Not in the member list' : 'Not a Discord member'}>
-        {#if me.data.method === 'discord'}
-          Your Discord account has no member row right now, so there are no server roles or chat allowance to show.
-        {:else}
-          Signed in with {method}: there is no Discord account, server roles or chat allowance to show.
-        {/if}
-      </StateNote>
-    {:else}
-      <dl class="membersheet__grid account__facts" data-fid="account-facts">
-        <dt>Discord account</dt>
-        <dd><Name kind="member" id={member.id} name={member.name} /></dd>
-        <dt>Chatbot</dt>
-        <dd>{ACCESS[member.access]}</dd>
-        <dt>Bossing role</dt>
-        <dd>{member.bossing ? 'Yes — on the roster' : 'No — not on the roster'}</dd>
-        <dt>Server roles</dt>
-        <dd>
-          {#if member.roles === null}
-            <span class="note">Unavailable while Discord is disconnected.</span>
-          {:else if member.roles.length}
-            <ul class="account__roles" aria-label="Server roles">
-              {#each member.roles as role (role.id)}<li><Name kind="role" id={role.id} name={role.name} /></li>{/each}
-            </ul>
-          {:else}
-            None
-          {/if}
-        </dd>
-        <dt>Chat allowance</dt>
-        <dd>
-          {#if !allowance}
-            No chatbot access
-          {:else if !allowance.allowance}
-            Exempt (staff)
-          {:else}
-            <span class="mono">{allowance.allowance.count} per {allowance.allowance.per_s}s</span>
-            · {#if allowance.used}<b>{allowance.used} used</b>, {allowance.allowance.count - allowance.used} left{:else}idle this window{/if}
-            {#if allowance.override}<span class="note">· own allowance</span>{/if}
-          {/if}
-        </dd>
-      </dl>
-    {/if}
+
+<section class="card account-window window-fill" class:account-window--compact={compact} aria-labelledby="account-title" data-fid="window">
+  <div class="card__head tabs__strip" data-fid="window-bar">
+    <h2 class="vh" id="account-title">Account</h2>
+    <div class="tabs__tabs" role="tablist" aria-label="Account" data-fid="window-tabs">
+      {#each TABS as t, index (t.id)}
+        <button
+          class="tabs__tab"
+          role="tab"
+          type="button"
+          id="account-tab-{t.id}"
+          aria-selected={tab === t.id}
+          aria-controls="account-panel"
+          tabindex={tab === t.id ? 0 : -1}
+          bind:this={tabs[t.id]}
+          onclick={() => choose(t.id)}
+          onkeydown={(event) => tabKey(event, index)}
+          >{compact && t.id === 'browser' ? 'Browser' : t.label}{#if t.id === 'sessions' && count !== null}<span class="tabs__count">{count}</span>{/if}</button
+        >
+      {/each}
+    </div>
+  </div>
+  <div class="account-window__body">
+    {#if me.data}<Identity me={me.data} {timeZone} {compact} oncopy={() => void copyDiagnostics()} {onsignout} />{/if}
+    <div class="account-window__panel" id="account-panel" role="tabpanel" aria-labelledby="account-tab-{tab}" tabindex="0">
+      {#if tab === 'browser'}
+        <BrowserTab />
+      {:else if me.error && !me.data}
+        <LoadError thing="your account" reason={me.error} onretry={() => void me.load()} />
+      {:else if !me.data}
+        <LoadingState text="Loading your account…" />
+      {:else if tab === 'sessions'}
+        <SessionsTab {sessions} {timeZone} {compact} {busy} onend={(handle, device) => void endSession(handle, device)} onendothers={() => void endOthers()} />
+      {:else}
+        <ProfileTab me={me.data} {compact} {checking} onrecheck={() => void recheck()} onstyle={openPicker} oncopy={() => void copyDiagnostics()} {onsignout} />
+      {/if}
+    </div>
+  </div>
+  <!-- Inside the window: a direct child of the shell would take `.shell > *`'s zero margin and lose its centring. -->
+  {#if style}
+    <ReplyPicker bind:open={picking} {style} {personas} {saving} error={saveError} onsave={(key, label) => void saveStyle(key, label)} />
   {/if}
-  <section class="account__device" aria-labelledby="{uid}-device">
-    <h3 class="cap" id="{uid}-device">This device</h3>
-    <SwitchCard
-      title={() => 'Open Discord links in the app'}
-      on={discordLinks.app}
-      action={(next) => (next ? 'Open in the app' : 'Open in the browser')}
-      apply={async (next) => {
-        discordLinks.set(next);
-        return '';
-      }}
-      >Applies only to this device. Without the Discord app installed here the links will not open, so turn this off to open them in
-      the browser.</SwitchCard
-    >
-  </section>
-</PaneWindow>
-
-<style>
-  .account__facts {
-    padding: 4px 2px;
-  }
-
-  .account__head {
-    margin: -4px -2px 12px;
-  }
-
-  .account__device {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin: 20px 2px 4px;
-  }
-
-  .account__device h3 {
-    margin: 0;
-  }
-
-  .account__roles {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 12px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-</style>
+</section>

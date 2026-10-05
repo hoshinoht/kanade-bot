@@ -30,6 +30,7 @@ pub fn load_personas(dir: &Path, configured: Option<&PersonaId>) -> Result<Perso
                 .map(|profile| PersonaOption {
                     key: profile.value.id.to_string(),
                     name: profile.value.label.clone(),
+                    voice: profile.value.voice.clone().unwrap_or_default(),
                 })
                 .collect()
         })

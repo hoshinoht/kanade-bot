@@ -44,7 +44,11 @@ impl Store {
     pub fn personas() -> Vec<Persona> {
         PERSONAS
             .iter()
-            .map(|&(key, name)| Persona { key, name })
+            .map(|&(key, name)| Persona {
+                key,
+                name,
+                voice: super::config::profile_label_voice(key).map_or("", |(_, voice)| voice),
+            })
             .collect()
     }
 

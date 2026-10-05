@@ -385,21 +385,33 @@ impl Store {
         match self.session {
             "token" => Actor::admin(),
             "tailscale" => Actor::new("admin", "tailscale:ops@example.test"),
-            _ => Actor::discord_admin("1001"),
+            _ => Actor::discord_admin(self.discord_as),
         }
     }
 
     /// The Discord user behind the session, if it signed in with Discord.
     pub fn discord_user(&self) -> Option<&'static str> {
-        (self.session == "discord").then_some("1001")
+        (self.session == "discord").then_some(self.discord_as)
     }
 
     pub fn session_display(&self) -> &'static str {
         match self.session {
             "token" => "Break-glass token",
             "tailscale" => "ops@example.test",
-            _ => "Asahi",
+            _ => super::seed::member_name(self.discord_as).map_or("Asahi", |(_, name)| name),
         }
+    }
+
+    /// Dev and e2e only: sign in with Discord as another seeded member (the
+    /// Account page's pilot, no-chat and other states).
+    pub fn set_discord_member(&mut self, id: &str) -> bool {
+        let Some((id, _)) = super::seed::member_name(id) else {
+            return false;
+        };
+        self.session = "discord";
+        self.discord_as = id;
+        self.signed_in = true;
+        true
     }
 
     /// Sign in as `discord`, `token` or `tailscale`, or sign out with `none`.
@@ -415,6 +427,7 @@ impl Store {
             return false;
         };
         self.session = known;
+        self.discord_as = "1001";
         self.signed_in = true;
         true
     }

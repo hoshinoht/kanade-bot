@@ -4,6 +4,7 @@
 mod discord;
 mod fallbacks;
 mod hardening;
+mod own_sessions;
 mod roster;
 mod sessions;
 

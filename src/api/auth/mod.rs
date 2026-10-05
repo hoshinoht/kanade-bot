@@ -7,10 +7,12 @@
 pub mod audit;
 pub mod crypto;
 pub mod csrf;
+pub mod device;
 pub mod discord;
 pub mod discord_http;
 #[cfg(any(test, feature = "test-support"))]
 pub mod fake;
+pub mod own;
 pub mod rate;
 pub mod roster;
 mod secrets;
@@ -262,12 +264,16 @@ impl AdminAuth {
     pub(crate) async fn start_session(
         &self,
         context: &AuditContext,
-        method: LoginMethod,
-        subject: &str,
-        display: &str,
-        avatar_hash: Option<&str>,
+        identity: SignIn<'_>,
         replaces: Option<&str>,
     ) -> Option<String> {
+        let SignIn {
+            method,
+            subject,
+            display,
+            avatar_hash,
+            device,
+        } = identity;
         let now = self.now();
         let id = crypto::random_token()?;
         let session = WebSession {
@@ -281,6 +287,7 @@ impl AdminAuth {
             checked_at: now,
             expires_at: now + self.policy.absolute,
             avatar_hash: avatar_hash.map(str::to_owned),
+            device,
         };
         let _ = self
             .sessions
@@ -300,6 +307,17 @@ impl AdminAuth {
         );
         Some(id)
     }
+}
+
+/// Who a new session belongs to and what the sign-in reported.
+pub(crate) struct SignIn<'a> {
+    pub method: LoginMethod,
+    pub subject: &'a str,
+    pub display: &'a str,
+    /// The Discord avatar hash (Discord sign-ins only).
+    pub avatar_hash: Option<&'a str>,
+    /// The sign-in request's [`device::label`].
+    pub device: Option<String>,
 }
 
 /// Wall clock without chrono's `clock` feature; before the epoch reads as the epoch.

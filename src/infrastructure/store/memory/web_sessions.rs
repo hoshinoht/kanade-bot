@@ -26,8 +26,14 @@ fn check(session: &WebSession) -> Result<(), StoreError> {
         .avatar_hash
         .as_deref()
         .is_none_or(|avatar| hex(avatar.strip_prefix("a_").unwrap_or(avatar)));
+    // 0026: 1 to 64 characters.
+    let device_ok = session
+        .device
+        .as_deref()
+        .is_none_or(|device| (1..=64).contains(&device.chars().count()));
     if !hash_ok
         || !avatar_ok
+        || !device_ok
         || !(1..=320).contains(&subject)
         || session.display.chars().count() > 200
     {
@@ -102,6 +108,28 @@ impl WebSessionStore for MemoryScheduleStore {
 
     fn delete_session<'a>(&'a self, id_hash: &'a str) -> SessionFuture<'a, bool> {
         Box::pin(async move { Ok(self.sessions().remove(id_hash).is_some()) })
+    }
+
+    fn subject_sessions<'a>(
+        &'a self,
+        origin: SessionOrigin,
+        method: LoginMethod,
+        subject: &'a str,
+    ) -> SessionFuture<'a, Vec<WebSession>> {
+        Box::pin(async move {
+            let mut found: Vec<WebSession> = self
+                .sessions()
+                .values()
+                .filter(|session| {
+                    session.origin == origin
+                        && session.method == method
+                        && session.subject == subject
+                })
+                .cloned()
+                .collect();
+            found.sort_by(|a, b| (a.created_at, &a.id_hash).cmp(&(b.created_at, &b.id_hash)));
+            Ok(found)
+        })
     }
 
     fn delete_subject_sessions<'a>(

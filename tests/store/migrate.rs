@@ -35,7 +35,7 @@ async fn empty_file_migrates_to_the_newest_version_with_sound_foreign_keys() {
     )
     .expect("chmod");
     let store = SqliteStore::open(&config).await.expect("opens");
-    assert_eq!(store.schema_version().await.expect("version"), 25);
+    assert_eq!(store.schema_version().await.expect("version"), 26);
     assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
     let empty = store.load(&Scope::All).await.expect("load");
     assert_eq!(empty.revision, 0);
@@ -44,7 +44,7 @@ async fn empty_file_migrates_to_the_newest_version_with_sound_foreign_keys() {
         ledger(&config).await,
         [
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25
+            25, 26
         ]
     );
 }
@@ -59,7 +59,7 @@ async fn reopen_is_idempotent_and_keeps_rows() {
     store.close().await.expect("close");
     for _ in 0..2 {
         let store = SqliteStore::open(&config).await.expect("reopens");
-        assert_eq!(store.schema_version().await.expect("version"), 25);
+        assert_eq!(store.schema_version().await.expect("version"), 26);
         assert_eq!(store.load(&Scope::All).await.expect("load"), before);
         store.close().await.expect("close");
     }
@@ -67,7 +67,7 @@ async fn reopen_is_idempotent_and_keeps_rows() {
         ledger(&config).await,
         [
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25
+            25, 26
         ]
     );
 }
@@ -102,7 +102,7 @@ async fn future_schema_version_refuses_to_open() {
         .expect("close");
     tamper(
         &config,
-        "INSERT INTO schema_migrations VALUES (26, 'next', '2027-01-01T00:00:00+00:00')",
+        "INSERT INTO schema_migrations VALUES (27, 'next', '2027-01-01T00:00:00+00:00')",
     )
     .await;
     let error = SqliteStore::open(&config).await.err().expect("refused");
@@ -110,8 +110,8 @@ async fn future_schema_version_refuses_to_open() {
         matches!(
             error,
             SqliteStoreError::FutureVersion {
-                found: 26,
-                known: 25
+                found: 27,
+                known: 26
             }
         ),
         "{error}"
@@ -120,7 +120,7 @@ async fn future_schema_version_refuses_to_open() {
         ledger(&config).await,
         [
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25, 26
+            25, 26, 27
         ],
         "a refused open writes nothing"
     );
@@ -179,6 +179,7 @@ async fn upgrading_from_v19_preserves_declines_and_reenables_foreign_keys() {
          ALTER TABLE extractions DROP COLUMN request_ids;
          ALTER TABLE chat_interactions DROP COLUMN session_id;
          ALTER TABLE chat_rounds DROP COLUMN request_ids;
+         ALTER TABLE web_sessions DROP COLUMN device;
          ALTER TABLE web_sessions DROP COLUMN avatar_hash;
          DROP TABLE settings_changes;
          DELETE FROM schema_migrations WHERE version >= 20;
@@ -304,14 +305,14 @@ async fn a_version_one_store_gains_the_later_tables_on_open() {
     .await;
     assert_eq!(ledger(&config).await, [1]);
     let store = SqliteStore::open(&config).await.expect("migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 25);
+    assert_eq!(store.schema_version().await.expect("version"), 26);
     assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
     store.close().await.expect("close");
     assert_eq!(
         ledger(&config).await,
         [
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25
+            25, 26
         ]
     );
     let mut conn = SqliteConnectOptions::new()
@@ -354,6 +355,7 @@ async fn upgrading_from_v22_adds_append_only_settings_changes() {
          ALTER TABLE extractions DROP COLUMN request_ids;
          ALTER TABLE chat_interactions DROP COLUMN session_id;
          ALTER TABLE chat_rounds DROP COLUMN request_ids;
+         ALTER TABLE web_sessions DROP COLUMN device;
          ALTER TABLE web_sessions DROP COLUMN avatar_hash;
 DROP TABLE settings_changes;
          DELETE FROM schema_migrations WHERE version >= 23;
@@ -362,7 +364,7 @@ DROP TABLE settings_changes;
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("v22 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 25);
+    assert_eq!(store.schema_version().await.expect("version"), 26);
     let rows = store.settings_rows().await.expect("rows");
     assert_eq!(rows.get(keys::QUIET_MODE).map(String::as_str), Some("1"));
     assert!(
@@ -438,7 +440,8 @@ async fn upgrading_from_v24_keeps_sessions_and_adds_the_avatar_hash() {
     tamper(
         &config,
         &format!(
-            "ALTER TABLE web_sessions DROP COLUMN avatar_hash;
+            "ALTER TABLE web_sessions DROP COLUMN device;
+             ALTER TABLE web_sessions DROP COLUMN avatar_hash;
              DELETE FROM schema_migrations WHERE version >= 25;
              UPDATE store_meta SET schema_version = 24;
              INSERT INTO web_sessions (id_hash, origin, method, subject, display, created_at,
@@ -450,7 +453,7 @@ async fn upgrading_from_v24_keeps_sessions_and_adds_the_avatar_hash() {
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("v24 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 25);
+    assert_eq!(store.schema_version().await.expect("version"), 26);
     let before = store.load_session(&old).await.expect("load").expect("kept");
     assert_eq!(
         (before.subject.as_str(), before.avatar_hash.as_deref()),
@@ -511,5 +514,74 @@ async fn upgrading_from_v24_keeps_sessions_and_adds_the_avatar_hash() {
             .await
             .unwrap_or_else(|error| panic!("{good}: {error}"));
     }
+    conn.close().await.expect("close");
+}
+
+/// 0026 adds the nullable `web_sessions.device` to a v25 store: an older
+/// session reads back without one, a new one keeps its label across a
+/// reopen, and an empty or over-long label is refused.
+#[tokio::test]
+async fn upgrading_from_v25_keeps_sessions_and_adds_the_device() {
+    use kanade::infrastructure::store::web_sessions::{WebSession, WebSessionStore};
+
+    let dir = TempDir::new();
+    let config = dir.config("v25-sessions");
+    SqliteStore::open(&config)
+        .await
+        .expect("opens")
+        .close()
+        .await
+        .expect("close");
+    let old = "a".repeat(64);
+    tamper(
+        &config,
+        &format!(
+            "ALTER TABLE web_sessions DROP COLUMN device;
+             DELETE FROM schema_migrations WHERE version >= 26;
+             UPDATE store_meta SET schema_version = 25;
+             INSERT INTO web_sessions (id_hash, origin, method, subject, display, created_at,
+                 last_seen_at, checked_at, expires_at)
+             VALUES ('{old}', 'admin', 'token', 'fingerprint', 'Break-glass token',
+                 '2026-09-29T04:00:00.000000+00:00', '2026-09-29T04:00:00.000000+00:00',
+                 '2026-09-29T04:00:00.000000+00:00', '2026-09-29T16:00:00.000000+00:00');"
+        ),
+    )
+    .await;
+    let store = SqliteStore::open(&config).await.expect("v25 migrates");
+    assert_eq!(store.schema_version().await.expect("version"), 26);
+    let before = store.load_session(&old).await.expect("load").expect("kept");
+    assert_eq!(before.device, None);
+    let signed_in = WebSession {
+        id_hash: "b".repeat(64),
+        device: Some("Firefox · macOS".into()),
+        ..before.clone()
+    };
+    store.put_session(&signed_in, None).await.expect("put");
+    store.close().await.expect("close");
+
+    let store = SqliteStore::open(&config).await.expect("reopens");
+    assert_eq!(
+        store.load_session(&signed_in.id_hash).await.expect("load"),
+        Some(signed_in.clone())
+    );
+    store.close().await.expect("close");
+
+    let mut conn = SqliteConnectOptions::new()
+        .filename(&config.db_path)
+        .connect()
+        .await
+        .expect("raw connection");
+    for bad in [String::new(), "x".repeat(65)] {
+        let refused = sqlx::query("UPDATE web_sessions SET device = ?1")
+            .bind(&bad)
+            .execute(&mut conn)
+            .await;
+        assert!(refused.is_err(), "{bad:?}");
+    }
+    sqlx::query("UPDATE web_sessions SET device = ?1")
+        .bind("é".repeat(64))
+        .execute(&mut conn)
+        .await
+        .expect("64 characters, whatever their bytes");
     conn.close().await.expect("close");
 }

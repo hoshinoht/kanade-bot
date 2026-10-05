@@ -6,6 +6,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Admin: Account › Sessions lists your own live sessions with browser and system, and signs out one or all others (`/api/admin/me/sessions`; store migration 0026 adds `web_sessions.device`, a short label derived from the User-Agent, never the raw header).
 - Admin JSON reads carry a strong ETag and answer `304 Not Modified` to a matching `If-None-Match`; the admin app revalidates the reads that live hints trigger and keeps unchanged data on screen.
 - Arrival motion for changes made elsewhere: Week cards glide to where another admin moved them, new Week runs and Inbox, Chat and Extractions rows are marked once, and changed Inbox counts pulse. Your own writes never animate this way, and reduced motion keeps only a colour fade.
 - Admin: a Reminders row opens its Discord card preview (side pane, or a sheet on phones) through a read-only `GET /api/admin/reminders/{id}/preview`. Unsent cards are built as the delivery tick will post them; posted cards as the refresh worker edits them, from the runs they were posted for and with their stored heading. Stale rows show no card.
@@ -284,6 +285,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- Admin: the Account page is rebuilt as one window with Profile / Sessions / This browser tabs: access and a recheck, an allowance meter, the reply style in effect next to your saved one (with a searchable picker of public styles), diagnostics, and per-browser look, Discord links and shortcuts.
 - Admin: Reminders "In", "today" and "Next in" follow the server clock (`generated_at`, `fire_at`), not the browser's.
 - Admin: Re-read buttons on the Week board, run pane and sheet, Extractions
   and Config → Re-read are off with the server's reason shown before any

@@ -24,10 +24,11 @@ use serde::{Deserialize, Serialize};
 use crate::{
     api::{
         auth::{
-            AdminAuth, AdminSession,
+            AdminAuth, AdminSession, SignIn,
             audit::{AuditContext, AuditEvent},
             crypto,
             csrf::{self, CSRF_HEADER},
+            device,
             discord::{BeginError, CodeExchange, DiscordError, DiscordLogin},
             rate::Route,
             staff::StaffCheck,
@@ -354,10 +355,13 @@ async fn discord_callback(
     let Some(id) = auth
         .start_session(
             &context,
-            LoginMethod::Discord,
-            &user.id,
-            &user.display(),
-            user.avatar.as_deref(),
+            SignIn {
+                method: LoginMethod::Discord,
+                subject: &user.id,
+                display: &user.display(),
+                avatar_hash: user.avatar.as_deref(),
+                device: device::label(&headers),
+            },
             replaces.as_deref(),
         )
         .await
@@ -404,10 +408,13 @@ async fn tailscale_login(State(site): State<Arc<Site>>, request: Request) -> Res
     match auth
         .start_session(
             &context,
-            LoginMethod::Tailscale,
-            &login,
-            &name,
-            None,
+            SignIn {
+                method: LoginMethod::Tailscale,
+                subject: &login,
+                display: &name,
+                avatar_hash: None,
+                device: device::label(&parts.headers),
+            },
             replaces.as_deref(),
         )
         .await
@@ -476,10 +483,13 @@ async fn token_login(
     match auth
         .start_session(
             &context,
-            LoginMethod::Token,
-            &fingerprint,
-            display,
-            None,
+            SignIn {
+                method: LoginMethod::Token,
+                subject: &fingerprint,
+                display,
+                avatar_hash: None,
+                device: device::label(&headers),
+            },
             replaces.as_deref(),
         )
         .await

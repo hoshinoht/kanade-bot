@@ -558,6 +558,8 @@ impl ChannelList for StaticChannels {
 pub struct PersonaOption {
     pub key: String,
     pub name: String,
+    /// The profile's one-line voice; empty when it has none.
+    pub voice: String,
 }
 
 /// The bot's staff rule plus the facts it reads that are not member rows:

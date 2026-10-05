@@ -157,6 +157,7 @@ impl LiveProfileChoices {
                 options.push(PersonaOption {
                     key: id.to_string(),
                     name: profile.value.label.clone(),
+                    voice: profile.value.voice.clone().unwrap_or_default(),
                 });
             }
         }

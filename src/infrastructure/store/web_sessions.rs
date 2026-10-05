@@ -76,6 +76,9 @@ pub struct WebSession {
     pub expires_at: DateTime<Utc>,
     /// The Discord avatar hash reported at sign-in (0025); `None` without one.
     pub avatar_hash: Option<String>,
+    /// "Browser · system" read from the sign-in's User-Agent (0026); `None`
+    /// when unrecognised.
+    pub device: Option<String>,
 }
 
 pub type SessionFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, StoreError>> + Send + 'a>>;
@@ -103,6 +106,15 @@ pub trait WebSessionStore: Send + Sync {
 
     /// `false` when the session did not exist.
     fn delete_session<'a>(&'a self, id_hash: &'a str) -> SessionFuture<'a, bool>;
+
+    /// Every stored session of one identity, oldest first (expired ones
+    /// included until pruned; callers apply the policy).
+    fn subject_sessions<'a>(
+        &'a self,
+        origin: SessionOrigin,
+        method: LoginMethod,
+        subject: &'a str,
+    ) -> SessionFuture<'a, Vec<WebSession>>;
 
     /// Every session of one identity, e.g. after it lost staff access.
     fn delete_subject_sessions<'a>(

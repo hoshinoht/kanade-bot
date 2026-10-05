@@ -204,8 +204,13 @@ fn bindings() -> String {
         .add::<limits::Allowance>()
         .add::<limits::Limits>()
         // Account
+        .add::<account::ReplyStyleRef>()
+        .add::<account::ReplyStyle>()
         .add::<account::MeMember>()
         .add::<account::Me>()
+        .add::<account::AccountSession>()
+        .add::<account::AccountSessions>()
+        .add::<account::SessionsEnded>()
         // History
         .add::<history::ChainHead>()
         .add::<history::HistoryPage>()

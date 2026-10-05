@@ -141,7 +141,11 @@ export type PingResult = { message: string, };
 
 export type MemberRow = { id: string, name: string, nickname: string | null, aliases: Array<string>, runs_this_week: number, ping_level: PingLevel, persona: string | null, persona_available: boolean, bossing: boolean, access: 'staff' | 'pilot' | 'none', };
 
-export type Persona = { key: string, name: string, };
+export type Persona = { key: string, name: string, 
+/**
+ * The profile's one-line voice; empty when it has none.
+ */
+voice: string, };
 
 export type FixedRunLink = { run_id: string, short_id: string, week: WeekKey, day: number, time: string | null, status: RunStatus, amended: boolean, };
 
@@ -796,6 +800,35 @@ export type Limits = { groups: Array<BackendGroup>, admission: AdmissionWindow, 
  */
 generated_at: string, };
 
+export type ReplyStyleRef = { key: string, 
+/**
+ * The profile's label; the key when its file is no longer readable.
+ */
+name: string, 
+/**
+ * Members may choose it (Config → Persona visibility).
+ */
+public: boolean, };
+
+/**
+ * The reply profile in effect and the member's own saved choice. A role
+ * assignment (first match in Config → Persona) beats the saved choice.
+ */
+export type ReplyStyle = { 
+/**
+ * What chat uses now; null is the persona's default voice.
+ */
+in_effect: ReplyStyleRef | null, source: 'role' | 'saved' | 'default', 
+/**
+ * The role whose assignment wins (source `role`), when the role
+ * directory can name it.
+ */
+role_name: string | null, 
+/**
+ * The member's saved choice; null is the default voice.
+ */
+saved: ReplyStyleRef | null, };
+
 export type MeMember = { id: string, name: string, access: 'staff' | 'pilot' | 'none', 
 /**
  * Holds the bossing role (on the roster).
@@ -809,14 +842,48 @@ roles: Array<Role> | null,
 /**
  * The member's row exactly as Limits shows it; null without chatbot access.
  */
-allowance: Allowance | null, };
+allowance: Allowance | null, 
+/**
+ * How chat answers this member; null while no persona is loaded.
+ */
+reply_style: ReplyStyle | null, };
 
 export type Me = { display: string, method: SignInMethod, 
 /**
  * The guild member behind a Discord sign-in; null for the admin token,
  * Tailscale, and a Discord account with no member row.
  */
-member: MeMember | null, };
+member: MeMember | null, 
+/**
+ * The server's clock when this was read (ISO-8601 UTC).
+ */
+server_time: string, 
+/**
+ * The server build (`Cargo.toml` version).
+ */
+version: string, };
+
+/**
+ * One live session of the caller's identity (same sign-in method and
+ * subject). `handle` names it for sign-out; ids and hashes never leave.
+ */
+export type AccountSession = { handle: string, method: SignInMethod, 
+/**
+ * "Firefox · macOS"; null when the browser was not recognised.
+ */
+device: string | null, signed_in_at: string, last_seen_at: string, 
+/**
+ * The session this request came with.
+ */
+current: boolean, };
+
+export type AccountSessions = { sessions: Array<AccountSession>, 
+/**
+ * The server's clock when this was read (ISO-8601 UTC).
+ */
+generated_at: string, };
+
+export type SessionsEnded = { ended: number, };
 
 /**
  * `{seq, hash}`: a record in the chain.

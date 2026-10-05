@@ -2947,3 +2947,111 @@ async fn a_config_save_hints_settings_to_open_event_streams() {
             .is_empty()
     );
 }
+
+/// Account → Reply style: `/me` resolves the style exactly as a chat turn
+/// does (the first role assignment the member holds beats their saved
+/// choice), names the winning role, and the member saves only public styles
+/// through the Members edit. A role may point at a private profile.
+#[tokio::test]
+async fn account_reply_style_shows_role_overrides_and_the_saved_public_choice() {
+    use kanade::domain::members::MemberStore;
+
+    let config = Config::with_two_admins().await;
+    config.dir.profile("bold");
+    assert_eq!(
+        config.send("POST", RELOAD, None, &json!({})).await.status,
+        200
+    );
+    config
+        .patch(json!({"persona": {"visibility": [{"key": "bold", "public": true}]}}))
+        .await;
+    let mut cara = config
+        .reads
+        .store
+        .load_member("1003")
+        .await
+        .unwrap()
+        .unwrap();
+    cara.roles = vec!["701".into(), "20".into(), "700".into()];
+    cara.reply_style = None;
+    config.reads.store.put_member(cara).await.unwrap();
+    let (cookie, csrf) = config.reads.discord_session(1003, "Cara").await;
+    let style = async || {
+        let reply = request(
+            config.reads.admin,
+            "GET",
+            ADMIN_HOST,
+            "/api/admin/me",
+            &[("Cookie", &cookie)],
+        )
+        .await;
+        assert_eq!(reply.status, 200, "{}", reply.text());
+        let me = reply.json();
+        assert_valid("identity.json#/$defs/Me", "me", &me);
+        me["member"]["reply_style"].clone()
+    };
+    assert_eq!(
+        style().await,
+        json!({"in_effect": null, "source": "default", "role_name": null, "saved": null})
+    );
+
+    let personas = config
+        .reads
+        .read("/api/admin/personas", "members.json#/$defs/Personas")
+        .await;
+    assert_eq!(personas[0]["key"], "bold", "public profiles only");
+    assert_eq!(
+        personas[0]["voice"],
+        "<A short voice cue for this profile.>"
+    );
+    assert_eq!(personas.as_array().unwrap().len(), 1);
+
+    let save = |persona: &str| {
+        let body = json!({ "persona": persona }).to_string();
+        let (cookie, csrf) = (cookie.clone(), csrf.clone());
+        let admin = config.reads.admin;
+        async move {
+            send(
+                admin,
+                "PATCH",
+                ADMIN_HOST,
+                "/api/admin/members/1003",
+                &[ORIGIN, ("Cookie", &cookie), ("X-Kanade-CSRF", &csrf)],
+                Some(&body),
+            )
+            .await
+        }
+    };
+    assert_eq!(save("bold").await.status, 200);
+    let bold = json!({"key": "bold", "name": "Example", "public": true});
+    assert_eq!(
+        style().await,
+        json!({"in_effect": bold, "source": "saved", "role_name": null, "saved": bold})
+    );
+    assert_eq!(
+        save("calm").await.status,
+        422,
+        "a private profile is refused"
+    );
+
+    let digest = config.get().await["persona"]["role_profiles_digest"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    config
+        .patch(json!({"persona": {
+            "role_profiles": [
+                {"role_id": "702", "profile": "bold"},
+                {"role_id": "700", "profile": "calm"},
+                {"role_id": "701", "profile": "bold"}
+            ],
+            "role_profiles_digest": digest
+        }}))
+        .await;
+    let calm = json!({"key": "calm", "name": "Example", "public": false});
+    assert_eq!(
+        style().await,
+        json!({"in_effect": calm, "source": "role", "role_name": "Officer", "saved": bold}),
+        "the first assignment Cara holds, even a private profile"
+    );
+}

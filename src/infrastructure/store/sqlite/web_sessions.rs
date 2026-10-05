@@ -14,7 +14,7 @@ use crate::infrastructure::store::web_sessions::{
 };
 
 const COLUMNS: &str = "id_hash, origin, method, subject, display, created_at, last_seen_at, \
-    checked_at, expires_at, avatar_hash";
+    checked_at, expires_at, avatar_hash, device";
 
 fn corrupt(column: &str, detail: impl std::fmt::Display) -> StoreError {
     StoreError::Backend(format!("web_sessions.{column} is unreadable: {detail}"))
@@ -44,6 +44,9 @@ fn session_of(row: &SqliteRow) -> Result<WebSession, StoreError> {
         avatar_hash: row
             .try_get("avatar_hash")
             .map_err(|error| corrupt("avatar_hash", error))?,
+        device: row
+            .try_get("device")
+            .map_err(|error| corrupt("device", error))?,
     })
 }
 
@@ -61,8 +64,8 @@ async fn put(
     }
     sqlx::query(
         "INSERT INTO web_sessions (id_hash, origin, method, subject, display, created_at, \
-         last_seen_at, checked_at, expires_at, avatar_hash) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+         last_seen_at, checked_at, expires_at, avatar_hash, device) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
     )
     .bind(&session.id_hash)
     .bind(session.origin.as_str())
@@ -74,6 +77,7 @@ async fn put(
     .bind(instant(&session.checked_at)?)
     .bind(instant(&session.expires_at)?)
     .bind(&session.avatar_hash)
+    .bind(&session.device)
     .execute(&mut *conn)
     .await
     .map_err(store_error)?;
@@ -125,6 +129,27 @@ async fn delete(conn: &mut SqliteConnection, id_hash: &str) -> Result<bool, Stor
         .await
         .map_err(store_error)?;
     Ok(done.rows_affected() > 0)
+}
+
+async fn list_subject(
+    conn: &mut SqliteConnection,
+    origin: SessionOrigin,
+    method: LoginMethod,
+    subject: &str,
+) -> Result<Vec<WebSession>, StoreError> {
+    sqlx::query(&format!(
+        "SELECT {COLUMNS} FROM web_sessions \
+         WHERE origin = ?1 AND method = ?2 AND subject = ?3 ORDER BY created_at, id_hash"
+    ))
+    .bind(origin.as_str())
+    .bind(method.as_str())
+    .bind(subject)
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(store_error)?
+    .iter()
+    .map(session_of)
+    .collect()
 }
 
 async fn delete_subject(
@@ -189,6 +214,15 @@ impl WebSessionStore for SqliteStore {
 
     fn delete_session<'a>(&'a self, id_hash: &'a str) -> SessionFuture<'a, bool> {
         Box::pin(async move { write_txn!(self, tx, delete(&mut tx, id_hash)) })
+    }
+
+    fn subject_sessions<'a>(
+        &'a self,
+        origin: SessionOrigin,
+        method: LoginMethod,
+        subject: &'a str,
+    ) -> SessionFuture<'a, Vec<WebSession>> {
+        Box::pin(async move { read_txn!(self, tx, list_subject(&mut tx, origin, method, subject)) })
     }
 
     fn delete_subject_sessions<'a>(

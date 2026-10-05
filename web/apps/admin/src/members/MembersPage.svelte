@@ -26,7 +26,8 @@
   const PING: Record<PingLevel, string> = { essential: 'Essential', all: 'All', off: 'Off' };
 
   let query = $state('');
-  let openId = $state<string | null>(null);
+  // `?open=<id>` (Account's "Open my member profile") opens that member's sheet.
+  let openId = $state<string | null>(new URLSearchParams(location.search).get('open'));
   let wide = $state(false);
   // The board's default: most runs this week first.
   let order = $state<MemberOrder>('runs');

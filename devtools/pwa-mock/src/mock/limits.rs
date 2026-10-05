@@ -132,12 +132,21 @@ impl Store {
                 .find(|row| row["member"]["id"] == id)
                 .cloned()
                 .unwrap_or(Value::Null);
+            let held: Vec<&str> = roles
+                .iter()
+                .filter_map(|role| role["id"].as_str())
+                .collect();
+            let reply_style = self.reply_style(&held, m.persona);
             Some(json!({
                 "id": m.seed.id, "name": m.seed.name, "access": m.seed.access,
                 "bossing": m.seed.bossing, "roles": roles, "allowance": allowance,
+                "reply_style": reply_style,
             }))
         });
-        json!({ "display": self.session_display(), "method": self.session_method(), "member": member })
+        json!({
+            "display": self.session_display(), "method": self.session_method(), "member": member,
+            "server_time": super::clock::iso_now(), "version": super::account::server_version(),
+        })
     }
 
     /// As the server: an effective clear (answers in the window) is recorded
