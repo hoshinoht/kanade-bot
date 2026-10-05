@@ -30,7 +30,7 @@ uv run --no-project --with pyyaml --with jsonschema scripts/boss_knowledge/valid
 - Checks semantics: the file stem matches `boss`, URLs, difficulties and HP
   phases are unique, dates are real and not in the future, and difficulties and
   `difficulty_notes` exist in the boss catalog (`--catalog`, default
-  `legacy/python/boss/bosses.yaml`). Non-catalog bosses must declare `event`.
+  `boss/bosses.yaml`). Non-catalog bosses must declare `event`.
   Phase names and mechanic titles are unique, a phase `group` covers adjacent
   phases only and all of them set the same `cycle` (which needs a group), a document has at most one
   mission per series, and no two bosses share an `order` in a mission series

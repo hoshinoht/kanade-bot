@@ -247,6 +247,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- The frozen v4 rollback tree `legacy/python/` is no longer tracked (git-ignored,
+  kept locally; in history up to `487c4ed`): CI drops the Python and v4 image
+  jobs, the legacy-only git hooks are removed, and the boss-knowledge
+  validator reads the root `boss/bosses.yaml`.
 - Upgraded `scripts/bench_headers.py` with automated scoring, multi-repetition capabilities, and markdown reporting.
 - v5 PWA: at most two toasts stack, newest on top, hiding after 6 s (10 s
   with Undo) while errors stay until dismissed; every admin list-detail
@@ -1282,4 +1286,5 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 ## v4 (Python, frozen rollback)
 
-Releases 4.9.0 and earlier are in [legacy/python/CHANGELOG.md](legacy/python/CHANGELOG.md).
+Releases 4.9.0 and earlier are in `legacy/python/CHANGELOG.md` (local only;
+in git history up to `487c4ed`).

@@ -1,1 +1,0 @@
-"""Stateful scheduler compatibility vectors."""

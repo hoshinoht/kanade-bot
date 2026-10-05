@@ -26,7 +26,7 @@ except ImportError as exc:  # pragma: no cover - environment hint
 ROOT = Path(__file__).resolve().parents[2]
 KNOWLEDGE = ROOT / "boss" / "knowledge"
 CACHE = ROOT / "data" / "research" / "boss-guides"
-CATALOG = ROOT / "legacy" / "python" / "boss" / "bosses.yaml"
+CATALOG = ROOT / "boss" / "bosses.yaml"
 LETTER_NAMES = {"e": "Easy", "n": "Normal", "h": "Hard", "c": "Chaos", "x": "Extreme"}
 # Shown on the Bosses info page only; never scheduler (catalog) difficulties.
 INFO_ONLY = {"Champion", "Destiny"}

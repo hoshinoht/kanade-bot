@@ -1,1 +1,0 @@
-"""Reminder-row scheduler vectors."""

@@ -2,7 +2,7 @@
 
 ## Repository layout
 
-- Root = Rust v5 crate `kanade` (`Cargo.toml`, edition 2024, toolchain pinned in `rust-toolchain.toml`). `legacy/python/` = frozen v4 rollback (Python), independently runnable.
+- Root = Rust v5 crate `kanade` (`Cargo.toml`, edition 2024, toolchain pinned in `rust-toolchain.toml`). `legacy/python/` = frozen v4 rollback (Python), independently runnable, **git-ignored and local only** since 2026-10-05 (in history up to `487c4ed`; restore with `git archive 487c4ed legacy/python | tar -x`). Never re-add it.
 - `src/main.rs` installs the rustls `ring` provider and delegates to `src/runtime/` (command dispatch, env-only config, JSON logs, TLS); `src/cli/` parses `serve`, `healthcheck` and reserved `ctl`/`import`/`export`; `src/api/` is the bootstrap health server; `src/chat/persona/` loads the v5 persona layout.
 - Feature code: `src/domain/` (pure rules), `src/extract/` (pure extraction rules), `src/infrastructure/` (`llm/` provider, `store/` SQLite + journal), `src/bot/` (Discord). Each has its own `AGENTS.md`.
 - `tests/<target>/main.rs` integration suites (see `tests/AGENTS.md`); `docs/v5/` contracts, decisions and frozen v4 vectors (see `docs/v5/AGENTS.md`).
@@ -23,12 +23,12 @@
 
 ## v4 rollback toolchain
 
+- Everything in this section applies only to a checkout that has the local, untracked `legacy/python/`; CI no longer runs it.
 - The v4 rollback tree is `legacy/python/`; run its Python commands from that directory.
 - Use Python 3.12 and `uv`; run `uv sync --locked` there before v4 checks.
 - A focused v4 test is `cd legacy/python && uv run pytest -q tests/test_<area>.py::test_<case>`.
 - `uv run pytest` excludes the `live_model` marker through pytest config and needs neither Discord nor a model. `uv run pytest -m live_model -v` calls the real Kanata gateway and skips unless `KANATA_BASE_URL`, `KANATA_API_KEY_FILE` and `EXTRACT_MODEL`/`CHAT_PILOT_MODEL` are set; narrow the chatbot smoke test with `-k chat_live`.
 - Match v4 CI from `legacy/python/` with Ruff, stylesheet generation, and the non-live-model suite; the rollback image is `docker build -f legacy/python/deploy/Dockerfile legacy/python`.
-- Optional local hooks are enabled with `git config core.hooksPath .githooks`; they cover only `legacy/python/` (pre-commit lock check, Ruff format/re-stage and lint; pre-push non-live-model suite) and skip when `uv` is missing.
 - If the repository moves and `.venv` commands report a bad interpreter, repair their absolute shebangs with `uv sync --reinstall`.
 
 ## Where v4 behavior lives

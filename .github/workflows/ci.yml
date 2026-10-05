@@ -25,7 +25,6 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      python: ${{ steps.filter.outputs.python }}
       rust: ${{ steps.filter.outputs.rust }}
       web: ${{ steps.filter.outputs.web }}
     steps:
@@ -34,9 +33,6 @@ jobs:
         id: filter
         with:
           filters: |
-            python:
-              - .github/workflows/ci.yml
-              - legacy/python/**
             rust:
               - .github/workflows/ci.yml
               - src/**
@@ -56,58 +52,6 @@ jobs:
               - tools/pwa-mock/**
               - boss/knowledge/**
               - docs/v5/api-schemas/**
-
-  checks:
-    needs: changes
-    if: needs.changes.outputs.python == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      # setup-uv stopped publishing moving major/minor tags at v8, so there is
-      # no `@v10` to pin to -- the full version tag is the immutable one.
-      - uses: astral-sh/setup-uv@v10.0.1
-
-      # Match the legacy project's Python constraint and rollback image.
-      - name: Install Python
-        run: uv python install 3.12
-
-      # `--locked` fails if uv.lock has drifted from pyproject.toml, so a
-      # dependency bump that forgot to relock cannot merge.
-      - name: Install the project
-        working-directory: legacy/python
-        run: uv sync --locked
-
-      - name: Lint
-        working-directory: legacy/python
-        run: uv run ruff check .
-
-      - name: Format
-        working-directory: legacy/python
-        run: uv run ruff format --check .
-
-      - name: Build portal stylesheet
-        working-directory: legacy/python
-        run: uv run python -m bot.portal_styles --output /tmp/portal.css
-
-      # The `live_model` marker calls the private Kanata gateway and is
-      # deliberately never run here; `uv run pytest -m live_model` is a
-      # local-only step. Everything else must pass.
-      - name: Tests
-        working-directory: legacy/python
-        run: uv run pytest -q -m "not live_model"
-
-  docker:
-    needs: changes
-    if: needs.changes.outputs.python == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      # Build validity only: the image is never pushed, so there is no registry
-      # login and no secret to leak to a fork's pull request.
-      - name: Build the image
-        run: docker build -f legacy/python/deploy/Dockerfile legacy/python
 
   rust:
     needs: changes

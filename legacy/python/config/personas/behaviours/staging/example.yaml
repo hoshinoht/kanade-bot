@@ -1,4 +1,0 @@
-# Copy to <profile>.yaml (matching behaviours/<profile>.md) and edit.
-# Partial file: missing keys fall back to default in staging.yaml.
-
-generic: "Processing request. Stand by."

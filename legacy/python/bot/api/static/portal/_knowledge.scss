@@ -1,9 +1,0 @@
-/* Boss strategy provenance: cited sources, then the research metadata. */
-.knowledge-sources { margin: 0; padding-left: 1.25rem; overflow-wrap: anywhere; }
-.knowledge-sources li + li { margin-top: 0.55rem; }
-.knowledge-meta { margin-top: 1rem; border-top: 2px solid var(--line-soft); padding-top: 0.65rem; }
-.knowledge-meta dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.4rem 0.8rem; margin: 0.7rem 0 0; }
-.knowledge-meta dt { color: var(--dim); }
-.knowledge-meta dd { margin: 0; overflow-wrap: anywhere; }
-
-@media (max-width: 640px) { .knowledge-meta dl { grid-template-columns: 1fr; gap: 0.1rem; } }

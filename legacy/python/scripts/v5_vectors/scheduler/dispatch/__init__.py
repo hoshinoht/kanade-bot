@@ -1,1 +1,0 @@
-"""Reminder dispatch classification vectors."""

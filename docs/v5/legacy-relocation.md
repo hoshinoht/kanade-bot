@@ -1,6 +1,8 @@
 # Legacy Python relocation
 
-The frozen v4 rollback implementation is `legacy/python/`. Its tracked manifest
+The frozen v4 rollback implementation is `legacy/python/`. Since 2026-10-05 it
+is git-ignored and kept only locally (in git history up to `487c4ed`; restore
+with `git archive 487c4ed legacy/python | tar -x`). Its tracked manifest
 is `legacy/python/RELOCATION_MANIFEST.txt`: 343 pure moves and one Docker
 context hardening change, all recorded with pre-relocation git-index SHA-256.
 `LICENSE` is retained at the repository root and copied into the legacy package
