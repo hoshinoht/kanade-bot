@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, expect, test, unconditional } from './support';
 
 // The M3E shell (docs/notes/m3e-rail-design-spec.md, gates G1, G2, G6, G7): the
 // navigation rail at ≥ 600 px, the 36 px page line, and on phones a 48 px top
@@ -303,7 +303,7 @@ test('page line: unboxed on the ground, the count a bold mono numeral, Live HH:M
 // Live data has more models than the mock: two more in the summary.
 async function fourModels(page: Page) {
   await page.route(/\/api\/admin\/chat(\?.*)?$/, async (route) => {
-    const response = await route.fetch();
+    const response = await route.fetch(unconditional(route));
     const json = (await response.json()) as { summary: Record<string, unknown>[] };
     json.summary.push(
       { model: 'glm-5.3-flash:cloud', count: 40, answered: 37, refused: 1, errors: 2, p50_ms: 2200, tool_calls: 31 },

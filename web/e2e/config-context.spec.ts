@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { ConfigView } from '@kanade/api-types';
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, settle, test, choose } from './support';
+import { ADMIN, expect, settle, test, choose, unconditional } from './support';
 
 const WARNING = 'Context past 16k may result in degraded performance on local models.';
 const toast = (page: Page, text: string | RegExp) => page.getByRole('group', { name: 'Notification' }).filter({ hasText: text });
@@ -139,7 +139,7 @@ test('context windows: an override above the published window is refused by the 
       await route.continue();
       return;
     }
-    const response = await route.fetch();
+    const response = await route.fetch(unconditional(route));
     const view = (await response.json()) as ConfigView;
     const extract = view.models.catalog.find((m) => m.id === 'kanata/extract')!;
     extract.context_tokens = 131_072;

@@ -49,6 +49,12 @@ export interface LiveEvents {
   readonly healthy: boolean;
   /** Called on every change of `healthy`; returns the unsubscribe. */
   onHealth(listener: (healthy: boolean) => void): () => void;
+  /**
+   * Bumped when the server restarted (a new `boot` id), e.g. after a backup
+   * restore: versions may have gone down, so readers take their next answer
+   * whatever its version.
+   */
+  readonly epoch: number;
 }
 
 const CLOSED = 2;
@@ -81,6 +87,8 @@ export function createLiveEvents(options: LiveEventsOptions): LiveEvents {
   let grace: ReturnType<typeof setTimeout> | null = null;
   /** The last seq heard; null until the first `ready`. */
   let lastSeq: number | null = null;
+  let lastBoot: string | null = null;
+  let epoch = 0;
   /** Subscribers woken while hidden: they read when the tab is shown. */
   const owed = new Set<Subscriber>();
   let unwatch: (() => void) | null = null;
@@ -163,10 +171,17 @@ export function createLiveEvents(options: LiveEventsOptions): LiveEvents {
       }, graceMs);
     };
     opened.addEventListener('ready', (event) => {
-      const { seq } = JSON.parse(event.data) as EventReady;
+      const { seq, boot } = JSON.parse(event.data) as EventReady;
+      const restarted = lastBoot !== null && boot !== lastBoot;
+      // The first `ready` cannot tell whether the reads before it came from
+      // this process (a restart in between is possible, if unlikely): it opens
+      // a new epoch too, so the next read takes whatever version it gets. Read
+      // order still keeps late answers out; it costs no extra read.
+      if (restarted || lastBoot === null) epoch += 1;
       // A new process or missed hints: whatever is on screen may be stale.
-      if (lastSeq !== null && seq !== lastSeq) wakeAll();
+      if (restarted || (lastSeq !== null && seq !== lastSeq)) wakeAll();
       lastSeq = seq;
+      lastBoot = boot;
     });
     opened.addEventListener('message', (event) => {
       const hint = JSON.parse(event.data) as EventHint;
@@ -213,6 +228,9 @@ export function createLiveEvents(options: LiveEventsOptions): LiveEvents {
     },
     get healthy() {
       return healthy;
+    },
+    get epoch() {
+      return epoch;
     },
     onHealth(listener) {
       healthListeners.add(listener);

@@ -1,6 +1,6 @@
 import type { FixedRow } from '@kanade/api-types';
 import type { Locator, Page } from '@playwright/test';
-import { ADMIN, expect, settle, test } from './support';
+import { ADMIN, expect, settle, test, unconditional } from './support';
 
 const MULTI = 'Edit Tuesday 22:00 — HCarling + HStar';
 const height = (row: Locator) => row.evaluate((el) => Math.round(el.getBoundingClientRect().height));
@@ -151,7 +151,7 @@ for (const width of [1920, 2560]) {
 
 test('Fixed: expanding a lower row never scrolls the fixed shell or jumps the list anchor', async ({ page }) => {
   await page.route(`${ADMIN}/api/admin/fixed`, async (route) => {
-    const response = await route.fetch();
+    const response = await route.fetch(unconditional(route));
     const rows = await response.json() as FixedRow[];
     const multi = rows.find((row) => row.bosses.length > 1)!;
     await route.fulfill({ response, json: [...rows, ...Array.from({ length: 20 }, (_, index) => ({ ...multi, id: `long-${index}`, short_id: `l${index}` }))] });

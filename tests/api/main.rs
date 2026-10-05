@@ -7,6 +7,7 @@ mod assets;
 mod auth;
 mod avatars;
 mod config;
+mod etag;
 mod events;
 mod headers;
 mod history;

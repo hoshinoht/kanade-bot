@@ -947,6 +947,8 @@ export type EventHint = { topic: EventTopic, seq: number, };
 
 /**
  * The `ready` event that opens every stream: the last hint's `seq` (0 before
- * any), so a reconnecting client knows whether it missed something.
+ * any), so a reconnecting client knows whether it missed something, and the
+ * server process's `boot` id: a new one means a restart (perhaps after a
+ * restore), when versions may go down and the client takes what it reads.
  */
-export type EventReady = { seq: number, };
+export type EventReady = { seq: number, boot: string, };

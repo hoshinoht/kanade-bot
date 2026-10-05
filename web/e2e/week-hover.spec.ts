@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, settle, test, choose, openList, optionLabels } from './support';
+import { ADMIN, expect, settle, test, choose, openList, optionLabels, unconditional } from './support';
 
 // Week mini cards grow on hover (fine pointers) and keyboard focus, in flow:
 // the cards below in that day move down rather than being covered (an
@@ -266,14 +266,14 @@ test('the channel filter offers only the week\'s party channels and narrows ever
   // The real API sends the channel's name as `party` (the mock sends the id),
   // which is why matching on it never filtered: rewrite it as production does.
   await page.route('**/api/admin/week*', async (route) => {
-    const response = await route.fetch();
+    const response = await route.fetch(unconditional(route));
     const week = await response.json();
     for (const run of week.runs) run.party = run.channel;
     await route.fulfill({ response, json: week });
   });
   // Guild channels outside the bossing category, as the real channel list has them.
   await page.route('**/api/admin/channels', async (route) => {
-    const response = await route.fetch();
+    const response = await route.fetch(unconditional(route));
     const channels = await response.json();
     channels.push({ id: '900000000000000001', name: '#general' }, { id: '900000000000000002', name: '#bot-spam' });
     await route.fulfill({ response, json: channels });

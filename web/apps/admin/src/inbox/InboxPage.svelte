@@ -43,7 +43,7 @@
     onselect?: (tab: PageTab, item: string, open: boolean) => void;
   } = $props();
 
-  const inbox = new Resource<Proposal[]>('/api/admin/inbox', { topics: ['inbox'] });
+  const inbox = new Resource<Proposal[]>('/api/admin/inbox', { topics: ['inbox'], keys: (items) => items.map((p) => p.id) });
   $effect(() => inbox.watch());
 
   // Past (read-only, closed items) has no live count and loads when first opened.
@@ -310,6 +310,7 @@
           label="{current === 'extractor' ? 'Extractor' : 'Self-service'} items"
           follow={!phone}
           onpick={pick}
+          fresh={inbox.fresh}
         />
       </div>
       <div class="inbox__detail" hidden={!chosen} tabindex="-1" bind:this={detailEl} {@attach enter(chosenId)}>

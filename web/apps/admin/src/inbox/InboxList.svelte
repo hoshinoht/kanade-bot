@@ -16,12 +16,15 @@
     label,
     follow,
     onpick,
+    fresh,
   }: {
     items: Proposal[];
     selected: string;
     label: string;
     follow: boolean;
     onpick: (id: string, open: boolean) => void;
+    /** Items a live update just brought in: marked once (`data-new`). */
+    fresh?: ReadonlySet<string>;
   } = $props();
   const uid = $props.id();
   let active = $state('');
@@ -83,6 +86,7 @@
       role="option"
       aria-selected={p.id === selected}
       data-item={p.id}
+      data-new={fresh?.has(p.id) ? '' : undefined}
     >
       {#if p.tab === 'extractor' && p.bosses[0]}
         <!-- Extractor rows (VarRail2): the boss art, then the lines; how much of the thread was used. -->

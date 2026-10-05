@@ -66,17 +66,22 @@ History record 3), paged by the last id shown as the server does; decisions
 made in the mock session do not join it.
 
 Live updates: `GET /api/admin/events` answers as the server's stream does
-(`ready {seq}`, then `{topic, seq}` hints with no data), emitted after every
+(`ready {seq, boot}` with one `boot` id per mock process, then `{topic, seq}` hints with no data), emitted after every
 successful admin write (`runs/*`, `fixed`, `history/*` → `schedule`;
 `inbox/*` → `inbox` + `schedule`; `config` → `settings`; `digest` →
 `delivery`; `rescan` → `rescan`; `members/*` → `members`). With no streaming body, each response is
 short: `EventSource` reconnects after 200 ms with `Last-Event-ID` and the next
 response holds (up to 10 s) for a newer hint, so pages see the same events in
-order. `POST /__mock/arrive {"kind": "reaction" | "proposal" | "chat" |
+order. `POST /__mock/arrive {"kind": "reaction" | "move" | "run" | "proposal" | "chat" |
 "extraction" | "member"}` stands in for a change made outside the portal
-(Ren's ✅ on Kalos, a new extractor proposal, a chat turn, an extraction
+(Ren's ✅ on Kalos, another admin moving Hard Limbo to Thursday 21:00 or
+adding a Normal Limbo run on Thursday 20:00 (`run`), a new extractor proposal, a chat turn, an extraction
 call, Mika's new alias `mikan` from a roster sync), changes
 the reads and emits the matching hint; `POST /api/admin/reset` clears them.
+
+Admin JSON reads carry an `ETag` (std SipHash of the body; the server's is a
+SHA-256 prefix) and answer `304` with the same headers and no body when
+`If-None-Match` names it, as the server does.
 
 Names: `GET /api/admin/roles` (three guild roles, one colourless),
 `Identity.bot_user_id` (`1543532497948909578` on the admin origin, null on

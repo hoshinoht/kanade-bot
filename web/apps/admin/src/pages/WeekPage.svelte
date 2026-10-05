@@ -1,10 +1,10 @@
 <script lang="ts" module></script>
 
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { tick, type Snippet } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import type { Run, WeekKey } from '@kanade/api-types';
-  import { dayNumber, experiments, flip, Icon, LoadingState, longDate, NapWindow, SPRING_BOUNCY, SPRING_BOUNCY_MS, runTitle, sortRuns, WavyProgress } from '@kanade/ui';
+  import { dayNumber, experiments, flip, replay, Icon, LoadingState, longDate, NapWindow, SPRING_BOUNCY, SPRING_BOUNCY_MS, runTitle, sortRuns, WavyProgress } from '@kanade/ui';
   import Planner from '../planner/Planner.svelte';
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
@@ -140,6 +140,19 @@
       void flip(document.querySelector('.board.planner'), { selector: '[data-run]', key: (el) => el.dataset.run, ...bouncy });
     };
     return () => (store.beforeChange = null);
+  });
+
+  // A change from elsewhere (another admin, a Discord reaction) glides too,
+  // and runs it brings in are marked once. The admin's own writes never do.
+  $effect(() => {
+    store.beforeArrival = (added) => {
+      if (tab === 'planner') void flip(document.querySelector('.board.planner'), { selector: '[data-run]', key: (el) => el.dataset.run });
+      if (!added.length) return;
+      void tick().then(() => {
+        for (const id of added) for (const el of document.querySelectorAll(`[data-run="${CSS.escape(id)}"]`)) replay(el, 'data-new');
+      });
+    };
+    return () => (store.beforeArrival = null);
   });
 
   function viewKey(event: KeyboardEvent, index: number) {

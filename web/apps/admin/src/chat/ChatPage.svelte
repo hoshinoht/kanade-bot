@@ -45,7 +45,7 @@
   const tz = $derived(store.week?.timezone ?? 'Asia/Kuala_Lumpur');
 
   const filter = $derived(parseFilter(search));
-  const chat = $derived(new Resource<Chat>(`/api/admin/chat${toSearch(filter)}`, { topics: ['chat'] }));
+  const chat = $derived(new Resource<Chat>(`/api/admin/chat${toSearch(filter)}`, { topics: ['chat'], keys: (data) => data.rows.map((row) => row.id) }));
   $effect(() => chat.watch());
   // Last good read stays on screen while a new filter loads.
   let last = $state<Chat | null>(null);
@@ -167,7 +167,7 @@
         {#if rows.length === 0}
           <div class="empty"><strong>Nothing matches these filters.</strong>Remove a chip above, or Clear them all.</div>
         {:else}
-          <ChatList bind:this={list} rows={shown.rows} selected={chosenId} follow={!narrow} timeZone={tz} onpick={pick} />
+          <ChatList bind:this={list} rows={shown.rows} selected={chosenId} follow={!narrow} timeZone={tz} onpick={pick} fresh={chat.fresh} />
           <Pager bind:page pages={shown.pages} total={rows.length} noun="interaction" />
         {/if}
       {:else}

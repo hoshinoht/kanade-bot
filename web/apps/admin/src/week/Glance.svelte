@@ -7,7 +7,8 @@
 -->
 <script lang="ts">
   import type { Answer, Run, Summary, Week } from '@kanade/api-types';
-  import { ANSWER_MARKS, BossTag, runTitle, WavyProgress, weekStartLabel } from '@kanade/ui';
+  import { ANSWER_MARKS, BossTag, pulse, runTitle, WavyProgress, weekStartLabel } from '@kanade/ui';
+  import { arrival } from '../resource.svelte';
   import { memberLabel } from '../names/directory.svelte';
   import { runCountdown } from './progress';
   import { openPlaces } from './waiting';
@@ -95,7 +96,7 @@
   {#if summary}
     <div class="week-glance__foot">
       <a class="week-glance__fact" class:week-glance__fact--warn={summary.inbox > 0} href="/inbox"
-        >Inbox <b class="mono">{summary.inbox ? `${summary.inbox} waiting` : 'clear'}</b></a
+        >Inbox <b class="mono" {@attach pulse(summary.inbox, arrival.seq)}>{summary.inbox ? `${summary.inbox} waiting` : 'clear'}</b></a
       >
       <a class="week-glance__fact" class:week-glance__fact--warn={summary.model.busy} href="/limits" title={summary.model.holder ?? 'nothing is holding it'}
         >Model <b class="mono">{summary.model.busy ? 'busy' : 'free'}</b></a

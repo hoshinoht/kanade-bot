@@ -20,7 +20,16 @@
     follow,
     timeZone,
     onpick,
-  }: { rows: ExtractionRow[]; selected: string; follow: boolean; timeZone: string; onpick: (id: string, open: boolean) => void } = $props();
+    fresh,
+  }: {
+    rows: ExtractionRow[];
+    selected: string;
+    follow: boolean;
+    timeZone: string;
+    onpick: (id: string, open: boolean) => void;
+    /** Calls a live update just brought in: marked once (`data-new`). */
+    fresh?: ReadonlySet<string>;
+  } = $props();
   const uid = $props.id();
   let active = $state('');
   let listEl = $state<HTMLUListElement>();
@@ -79,6 +88,7 @@
       class:extract-row--active={!follow && row.id === current}
       data-fid="extract-row"
       id="{uid}-{row.id}"
+      data-new={fresh?.has(row.id) ? '' : undefined}
       role="option"
       aria-selected={row.id === selected}
       data-call={row.id}

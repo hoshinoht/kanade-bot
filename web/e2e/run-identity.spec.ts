@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import type { Week } from '@kanade/api-types';
-import { ADMIN, REAL_ART, expect, settle, test } from './support';
+import { ADMIN, REAL_ART, expect, settle, test, unconditional } from './support';
 
 // The run pane's and the full sheet's identity card: entry art confined to the
 // card (one picture, or up to three angled slices in run order), the "View
@@ -12,7 +12,7 @@ const OUT = REAL_ART ? 'e2e/.captures/real' : 'e2e/.captures/synthetic';
 /** r-carling (HCarling + HStar) with Kalos and Black Mage added: four bosses, all with art. */
 async function fourBosses(page: Page) {
   await page.route(`${ADMIN}/api/admin/week*`, async (route) => {
-    const response = await route.fetch();
+    const response = await route.fetch(unconditional(route));
     const week = (await response.json()) as Week;
     const pick = (id: string) => week.runs.find((r) => r.id === id)?.bosses ?? [];
     const runs = week.runs.map((r) => (r.id === 'r-carling' ? { ...r, bosses: [...r.bosses, ...pick('r-kalos'), ...pick('r-bm')] } : r));

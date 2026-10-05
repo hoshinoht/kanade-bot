@@ -49,6 +49,14 @@ export function guardWrites(sessionPath: string, guards: CsrfGuard['guards']): v
 
 let unauthenticated: ((path: string) => void) | null = null;
 
+/** When this page last completed a write (any client), for telling its own echoes from arrivals. */
+let wroteAt = Number.NEGATIVE_INFINITY;
+
+/** This page completed a write less than `ms` ago: changes read now are likely its own echo. */
+export function wroteWithin(ms: number): boolean {
+  return Date.now() - wroteAt < ms;
+}
+
 /** Page-wide: told of every 401 (signed out or the session ended), so the app can send the user to sign in. */
 export function onUnauthenticated(handler: ((path: string) => void) | null): void {
   unauthenticated = handler;
@@ -82,8 +90,15 @@ export interface Client {
   delete<T>(path: string, options?: RequestOptions): Promise<T>;
 }
 
+/** Tagged answers one client keeps for revalidation; the oldest goes first. */
+const REMEMBERED_TAGS = 32;
+
 export function createClient(options: ClientOptions = {}): Client {
   const base = options.base ?? '';
+  // GET answers that carried an `ETag`: the next read of the path asks
+  // `If-None-Match`, and a 304 hands back the very same object, so callers
+  // that compare (or keep) what is on screen see "unchanged" for free.
+  const tagged = new Map<string, { tag: string; value: unknown }>();
   const timeoutMs = options.timeoutMs ?? 10_000;
   const doFetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
   // Read per request: module-level clients may exist before the app installs its guard.
@@ -92,6 +107,8 @@ export function createClient(options: ClientOptions = {}): Client {
   async function attempt<T>(method: string, path: string, body: unknown, opts: RequestOptions, extra: Record<string, string>): Promise<T> {
     const timeout = AbortSignal.timeout(timeoutMs);
     const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
+    const known = method === 'GET' ? tagged.get(path) : undefined;
+    if (known) extra = { ...extra, 'If-None-Match': known.tag };
     let response: Response;
     try {
       response = await doFetch(base + path, {
@@ -114,6 +131,8 @@ export function createClient(options: ClientOptions = {}): Client {
     const csrf = guard();
     if (token && csrf) csrf.token = token;
 
+    if (response.status === 304 && known) return known.value as T;
+
     let parsed: unknown = null;
     const text = await response.text();
     if (text) {
@@ -128,7 +147,15 @@ export function createClient(options: ClientOptions = {}): Client {
       if (response.status === 401) unauthenticated?.(path);
       throw new ApiRequestError('http', apiError?.message ?? `HTTP ${response.status}`, response.status, apiError);
     }
+    if (method === 'GET') remember(path, response.headers.get('ETag'), parsed);
     return parsed as T;
+  }
+
+  function remember(path: string, tag: string | null, value: unknown) {
+    tagged.delete(path);
+    if (!tag) return;
+    tagged.set(path, { tag, value });
+    if (tagged.size > REMEMBERED_TAGS) tagged.delete(tagged.keys().next().value!);
   }
 
   /** Concurrent callers share one session read; a failure leaves the server to refuse. */
@@ -157,7 +184,9 @@ export function createClient(options: ClientOptions = {}): Client {
       const headers: Record<string, string> = { 'Idempotency-Key': key };
       if (guarded && csrf.token) headers[CSRF_HEADER] = csrf.token;
       try {
-        return await attempt<T>(method, path, body, opts, headers);
+        const done = await attempt<T>(method, path, body, opts, headers);
+        wroteAt = Date.now();
+        return done;
       } catch (error) {
         if (!(error instanceof ApiRequestError)) throw error;
         // One refresh per action: a token that is still refused means the session itself is gone.

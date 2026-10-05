@@ -1,6 +1,6 @@
 import type { Channel, ConfigView, EventTopic, Identity, Me, MemberRow, Role, MoveResult, Run, RunResult, RunStatus, Session, Stats, Summary, SwapResult, Week, WeekKey } from '@kanade/api-types';
-import { ApiRequestError, createClient, createPoller, type LiveEvents, type Poller } from '@kanade/client';
-import { live } from './resource.svelte';
+import { ApiRequestError, createClient, createPoller, wroteWithin, type LiveEvents, type Poller } from '@kanade/client';
+import { arrival, live, OWN_ECHO_MS } from './resource.svelte';
 import { clockTime, runTitle, whenLabel, type FreshState } from '@kanade/ui';
 import { directory } from './names/directory.svelte';
 import type { Slot } from './planner/keyboardMove';
@@ -13,8 +13,12 @@ export const FALLBACK_POLL_MS = 60_000;
 /** What the board, its tiles and the Inbox badge show: a hint of these re-reads them. */
 export const WEEK_TOPICS: readonly EventTopic[] = ['schedule', 'inbox', 'delivery', 'settings'];
 
-/** A polled week, its stats, and which week was asked for. */
-type Snapshot = [Week, Stats, WeekKey];
+/**
+ * A polled week, its stats, which week was asked for, whether it came from
+ * elsewhere (a hint or a timed poll, not the admin's own refresh or write),
+ * and the event stream's restart count when it was read.
+ */
+type Snapshot = [Week, Stats, WeekKey, boolean, number];
 
 /** The last planner change, for one-step undo: a move goes back; a swap is swapped again. */
 export type LastMove =
@@ -75,12 +79,19 @@ export class AdminWeek {
   #buffered: Snapshot | null = null;
   /** Bumped by each Config save's quiet-mode answer (`setQuiet`). */
   #quietSaves = 0;
+  /** The next read was asked for by the admin (`refresh()`): nothing it brings is an arrival. */
+  #asked = false;
+  /** The stream's restart count when the shown week was taken. */
+  #epoch = 0;
 
   constructor(events: LiveEvents = live) {
     this.#events = events;
     this.#poller = createPoller<Snapshot>({
       task: async (signal) => {
         const which = this.which;
+        const remote = !this.#asked;
+        this.#asked = false;
+        const epoch = this.#events.epoch;
         const query = `?week=${which}`;
         const quietSaves = this.#quietSaves;
         const [week, stats, read, current] = await Promise.all([
@@ -93,9 +104,12 @@ export class AdminWeek {
         // A save answered while this read was out is newer than the read's quiet mode.
         const summary = quietSaves !== this.#quietSaves && this.summary ? { ...read, quiet_mode: this.summary.quiet_mode } : read;
         // The tiles describe "right now", not the board, so they never wait for a hold.
-        if (JSON.stringify(this.summary) !== JSON.stringify(summary)) this.summary = summary;
+        if (JSON.stringify(this.summary) !== JSON.stringify(summary)) {
+          if (remote && this.summary && !this.#echo()) arrival.seq += 1;
+          this.summary = summary;
+        }
         if (current && !same(this.#current, current)) this.#current = current;
-        return [week, stats, which] as Snapshot;
+        return [week, stats, which, remote, epoch] as Snapshot;
       },
       intervalMs: POLL_MS,
       maxIntervalMs: 2 * 60_000,
@@ -133,23 +147,49 @@ export class AdminWeek {
   #receive(snapshot: Snapshot) {
     // Reachable again: the connection is live even if this snapshot waits.
     this.fresh = 'live';
-    const [week, , which] = snapshot;
+    const [week, , which, , epoch] = snapshot;
     // Asked for before a this/next switch: not the week on screen any more.
     if (which !== this.which) return;
-    // A response that left the server before our own move committed is older than what we hold.
-    if (this.week && week.version < this.week.version) return;
+    // A response that left the server before our own move committed is older
+    // than what we hold, unless the server restarted since (a restore can
+    // lower the version).
+    if (this.#older(week, epoch)) return;
     if (this.#holding || this.#pendingMoves > 0) {
-      if (!this.#buffered || week.version >= this.#buffered[0].version) this.#buffered = snapshot;
+      if (!this.#buffered || week.version >= this.#buffered[0].version || epoch !== this.#buffered[4]) this.#buffered = snapshot;
       return;
     }
     this.#apply(snapshot);
   }
 
-  #apply([week, stats]: Snapshot) {
+  #older(week: Week, epoch: number): boolean {
+    return this.week !== null && week.version < this.week.version && epoch === this.#epoch;
+  }
+
+  /** The page wrote a moment ago (here or on any page): what changed is its echo. */
+  #echo(): boolean {
+    return wroteWithin(OWN_ECHO_MS);
+  }
+
+  /**
+   * Called just before a week from elsewhere (a hint or a timed poll) changes
+   * the board, with the runs it adds: the board glides moved cards (FLIP)
+   * and marks the new ones. Never for the admin's own writes or refreshes.
+   */
+  beforeArrival: ((added: string[]) => void) | null = null;
+
+  #apply([week, stats, , remote, epoch]: Snapshot) {
+    this.#epoch = epoch;
     // An unchanged poll keeps the objects on screen: new-but-equal objects
     // re-run every derived value and attachment on the page for nothing.
-    if (!same(this.week, week)) this.week = week;
-    else if (this.week) this.week.generated_at = week.generated_at;
+    if (!same(this.week, week)) {
+      if (remote && this.week && !this.#echo()) {
+        // eslint-disable-next-line svelte/prefer-svelte-reactivity -- a lookup built and read here, never state
+        const had = new Set(this.week.runs.map((r) => r.id));
+        this.beforeArrival?.(week.runs.filter((r) => !had.has(r.id)).map((r) => r.id));
+        arrival.seq += 1;
+      }
+      this.week = week;
+    } else if (this.week) this.week.generated_at = week.generated_at;
     if (JSON.stringify(this.stats) !== JSON.stringify(stats)) this.stats = stats;
     // "Updated" names the data on screen, not the last response received.
     this.updated = clockTime(week.generated_at, week.timezone, false);
@@ -159,7 +199,7 @@ export class AdminWeek {
     if (this.#holding || this.#pendingMoves > 0 || !this.#buffered) return;
     const snapshot = this.#buffered;
     this.#buffered = null;
-    if (!this.week || snapshot[0].version >= this.week.version) this.#apply(snapshot);
+    if (!this.#older(snapshot[0], snapshot[4])) this.#apply(snapshot);
   }
 
   /** Switch between this and next boss week; the board shows loading until it arrives. */
@@ -220,7 +260,10 @@ export class AdminWeek {
     };
   }
 
+  /** Read now, as the admin asked (Refresh, after an own decision): what it brings is not an arrival. */
   refresh(): Promise<void> {
+    // Joining a read already out (a hint's) does not make that read ours.
+    if (this.#poller.state !== 'running') this.#asked = true;
     return this.#poller.refresh();
   }
 

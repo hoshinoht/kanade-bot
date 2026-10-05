@@ -8,6 +8,7 @@ mod auth;
 mod avatars;
 #[cfg(test)]
 mod contract;
+mod etag;
 mod events;
 mod headers;
 mod mock;
@@ -248,6 +249,7 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
             app.clone(),
             events::after_write,
         ))
+        .route_layer(middleware::from_fn(etag::revalidate))
         .route_layer(middleware::from_fn_with_state(app.clone(), writes::guard));
     let public_api = Router::new()
         .route("/api/public/week", get(api::public_week))

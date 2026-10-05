@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, expect, test, unconditional } from './support';
 
 // M3E progress bars, always on (user decision 2026-10-04): the boss week in
 // the Week footer, run countdowns (wavy over the final 24 h, filling to T-1h,
@@ -144,7 +144,7 @@ test('Config: each capacity group shows its permits against what Kanata admits, 
 test('Config: idle groups stay flat, and at most two of the busy ones wave', async ({ page }) => {
   await page.route(`${ADMIN}/api/admin/config`, async (route) => {
     if (route.request().method() !== 'GET') return route.continue();
-    const res = await route.fetch();
+    const res = await route.fetch(unconditional(route));
     const body = await res.json();
     body.models.groups_source = 'config';
     body.models.groups = [

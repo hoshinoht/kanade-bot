@@ -101,11 +101,18 @@ async fn pump(
         permit: _permit,
         mut hints,
         ready,
+        boot,
         mut closed,
     } = subscription;
     let opening = format!("retry: {RETRY_MS}\n");
     let mut first = Vec::from(opening.as_bytes());
-    first.extend_from_slice(&data(Some("ready"), &EventReady { seq: ready }));
+    first.extend_from_slice(&data(
+        Some("ready"),
+        &EventReady {
+            seq: ready,
+            boot: boot.clone(),
+        },
+    ));
     if frames.send(first.into()).await.is_err() {
         return;
     }

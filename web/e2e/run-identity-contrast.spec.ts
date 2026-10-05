@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import type { Week } from '@kanade/api-types';
-import { ADMIN, REAL_ART, expect, settle, test } from './support';
+import { ADMIN, REAL_ART, expect, settle, test, unconditional } from './support';
 
 // Text contrast over the identity card's entry art, measured from pixels: every
 // text element's colour against the worst rendered background pixel inside its
@@ -38,7 +38,7 @@ interface Item {
 
 async function fourBosses(page: Page) {
   await page.route(`${ADMIN}/api/admin/week*`, async (route) => {
-    const response = await route.fetch();
+    const response = await route.fetch(unconditional(route));
     const week = (await response.json()) as Week;
     const pick = (id: string) => week.runs.find((r) => r.id === id)?.bosses ?? [];
     const runs = week.runs.map((r) => (r.id === 'r-carling' ? { ...r, bosses: [...r.bosses, ...pick('r-kalos'), ...pick('r-bm')] } : r));

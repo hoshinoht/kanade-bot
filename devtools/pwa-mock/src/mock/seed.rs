@@ -480,3 +480,19 @@ pub fn runs() -> Vec<Rec> {
         ),
     ]
 }
+
+/** e2e: the run another admin adds (`POST /__mock/arrive {"kind": "run"}`). */
+pub fn arrived_run() -> Rec {
+    rec(
+        "r-arrived",
+        "a9b8c7d6",
+        false,
+        0,
+        Some("20:00"),
+        "planned",
+        "NLimbo",
+        people(&[("1003", "yes"), ("1007", "waiting")]),
+        "limbo-trio",
+        None,
+    )
+}

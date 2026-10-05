@@ -147,6 +147,22 @@ impl Store {
         self.seed_history();
     }
 
+    /// e2e: another admin adds a Normal Limbo run on Thursday 20:00.
+    pub fn arrive_run(&mut self) -> Result<(), MoveError> {
+        if self.runs.iter().any(|r| r.id == "r-arrived") {
+            return Err(MoveError::invalid("That run has already arrived."));
+        }
+        self.tracked(
+            history::Actor::new("admin", "discord:1002"),
+            "admin_portal",
+            |s| {
+                s.runs.push(seed::arrived_run());
+                s.version += 1;
+                Ok(())
+            },
+        )
+    }
+
     /// The week version (history head) edits are checked against.
     pub fn version(&self) -> u64 {
         self.version

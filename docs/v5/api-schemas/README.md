@@ -12,6 +12,9 @@ register every file as an in-memory resource under its `$id`.
   revisions and latencies are `integer` (≥ 0 where they cannot be negative);
   scores, rates and seconds stay `number`.
 - Every non-2xx JSON body on both origins is `error.json#/$defs/ApiError`.
+- Successful admin JSON `GET`s (outside `/api/admin/auth/`) carry a strong
+  `ETag`; `If-None-Match` naming it answers `304` with no body and the same
+  headers.
 - `devtools/pwa-mock` validates every endpoint below against these files
   (`src/contract.rs`); the Rust API slices validate against the same files.
 
@@ -71,7 +74,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/admin/history/{seq}` | `history.json#/$defs/ChangeRecord` |
 | `POST /api/admin/history/revert`, `/restore-week`, `/revert-actor` | `history.json#/$defs/RevertPlan` |
 | `GET /api/admin/history/checkpoints` | `history.json#/$defs/Checkpoints` |
-| `GET /api/admin/events` | `text/event-stream`, not JSON: a `ready` event `{seq}` (`EventReady`), then one message per change `{topic, seq}` (`EventHint`, topics `schedule`, `inbox`, `chat`, `extraction`, `delivery`, `settings`, `rescan`; no data) and `: keep-alive` comments; `429 too_many_streams` at the connection cap |
+| `GET /api/admin/events` | `text/event-stream`, not JSON: a `ready` event `{seq, boot}` (`EventReady`; a new `boot` means the server restarted), then one message per change `{topic, seq}` (`EventHint`, topics `schedule`, `inbox`, `chat`, `extraction`, `delivery`, `settings`, `rescan`; no data) and `: keep-alive` comments; `429 too_many_streams` at the connection cap |
 | any non-2xx | `error.json#/$defs/ApiError` |
 
 ## Files

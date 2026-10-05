@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import type { Boss, Week } from '@kanade/api-types';
-import { ADMIN } from './support';
+import { ADMIN, unconditional } from './support';
 
 /**
  * A busy week: the mock's week plus a 1-, 2- and 3-boss run on every day
@@ -8,7 +8,7 @@ import { ADMIN } from './support';
  */
 export async function busyWeek(page: Page) {
   await page.route(`${ADMIN}/api/admin/week*`, async (route) => {
-    const response = await route.fetch();
+    const response = await route.fetch(unconditional(route));
     const week = (await response.json()) as Week;
     const base = week.runs.find((r) => r.status !== 'done' && r.status !== 'cancelled')!;
     const like = base.bosses[0]!;

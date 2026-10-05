@@ -1,13 +1,13 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, PINNED_NOW, settle, test, choose, optionLabels } from './support';
+import { ADMIN, expect, PINNED_NOW, settle, test, choose, optionLabels, unconditional } from './support';
 
 type Row = { id: string; party: string[]; kind: string; at: string };
 
 /** A live-sized queue: the mock's rows repeated to 33, one with a big party. */
 async function longQueue(page: Page) {
   await page.route(/\/api\/admin\/reminders$/, async (route) => {
-    const res = await route.fetch();
+    const res = await route.fetch(unconditional(route));
     const body = (await res.json()) as { upcoming: Row[] };
     const base = body.upcoming;
     body.upcoming = Array.from({ length: 33 }, (_, i) => ({ ...base[i % base.length]!, id: `q-${i}` }));

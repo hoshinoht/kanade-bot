@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { ConfigView } from '@kanade/api-types';
-import { ADMIN, expect, settle, test, choose } from './support';
+import { ADMIN, expect, settle, test, choose, unconditional } from './support';
 
 test('models config warns when raw member data leaves the homelab', async ({ page }) => {
   await page.route('**/api/admin/config', async (route) => {
@@ -8,7 +8,7 @@ test('models config warns when raw member data leaves the homelab', async ({ pag
       await route.continue();
       return;
     }
-    const response = await route.fetch();
+    const response = await route.fetch(unconditional(route));
     const view = (await response.json()) as ConfigView;
     view.models.roles.rewrite.alias = 'kanata/unlisted-synthetic';
     await route.fulfill({ response, json: view });

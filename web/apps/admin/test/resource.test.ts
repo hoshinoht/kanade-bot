@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { EventTopic } from '@kanade/api-types';
 import type { LiveEvents } from '@kanade/client';
-import { pinnedFirst, Resource } from '../src/resource.svelte';
+import { arrival, pinnedFirst, Resource } from '../src/resource.svelte';
 
 type Doc = { version: number; label: string };
 
@@ -26,6 +26,7 @@ function server() {
 /** A hint source the test fires by hand. */
 function hints() {
   const subscribers = new Set<{ topics: readonly EventTopic[]; wake: () => void }>();
+  let epoch = 0;
   const events: LiveEvents = {
     subscribe(topics, wake) {
       const entry = { topics, wake };
@@ -34,9 +35,13 @@ function hints() {
     },
     healthy: true,
     onHealth: () => () => {},
+    get epoch() {
+      return epoch;
+    },
   };
   return {
     events,
+    restart: () => (epoch += 1),
     fire: (topic: EventTopic) => [...subscribers].filter((s) => s.topics.includes(topic)).forEach((s) => s.wake()),
     count: () => subscribers.size,
   };
@@ -128,6 +133,98 @@ describe('Resource refresh', () => {
     expect(doc.data?.label).toBe('two');
     stop();
     expect(live.count()).toBe(0);
+  });
+});
+
+describe('Resource after a server restart', () => {
+  it('takes a lower version once the stream reports a restart (a restore lowered the head)', async () => {
+    const pending = server();
+    const live = hints();
+    const doc = new Resource<Doc>('/api/admin/doc', { topics: ['schedule'], version: (d) => d.version, events: live.events });
+    doc.watch();
+    pending[0]!.resolve({ version: 9, label: 'before the restore' });
+    await settle();
+    live.fire('schedule');
+    pending[1]!.resolve({ version: 4, label: 'restored' });
+    await settle();
+    expect(doc.data?.label).toBe('before the restore');
+    live.restart();
+    live.fire('schedule');
+    pending[2]!.resolve({ version: 4, label: 'restored' });
+    await settle();
+    expect(doc.data?.label).toBe('restored');
+    // From then on the usual rule holds again.
+    live.fire('schedule');
+    pending[3]!.resolve({ version: 3, label: 'late' });
+    await settle();
+    expect(doc.data?.label).toBe('restored');
+  });
+
+  it('an explicit load takes what the server says, whatever its version', async () => {
+    const pending = server();
+    const doc = new Resource<Doc>('/api/admin/doc', { version: (d) => d.version });
+    void doc.load();
+    pending[0]!.resolve({ version: 9, label: 'nine' });
+    await settle();
+    void doc.load();
+    pending[1]!.resolve({ version: 2, label: 'two' });
+    await settle();
+    expect(doc.data?.label).toBe('two');
+  });
+});
+
+describe('Resource arrivals', () => {
+  type List = { id: string }[];
+  it('marks rows a hint brought in and counts the arrival; own re-reads mark nothing', async () => {
+    const pending = server();
+    const live = hints();
+    const list = new Resource<List>('/api/admin/list', { topics: ['inbox'], keys: (rows) => rows.map((r) => r.id), events: live.events });
+    list.watch();
+    pending[0]!.resolve([{ id: 'a' }]);
+    await settle();
+    expect([...list.fresh]).toEqual([]);
+    const seq = arrival.seq;
+
+    live.fire('inbox');
+    pending[1]!.resolve([{ id: 'b' }, { id: 'a' }]);
+    await settle();
+    expect([...list.fresh]).toEqual(['b']);
+    expect(arrival.seq).toBe(seq + 1);
+
+    // Unchanged: nothing new, nothing counted.
+    live.fire('inbox');
+    pending[2]!.resolve([{ id: 'b' }, { id: 'a' }]);
+    await settle();
+    expect(arrival.seq).toBe(seq + 1);
+
+    // The page's own re-read (after its own decision) is not an arrival.
+    void list.refresh();
+    pending[3]!.resolve([{ id: 'c' }, { id: 'b' }, { id: 'a' }]);
+    await settle();
+    expect([...list.fresh]).toEqual([]);
+    expect(arrival.seq).toBe(seq + 1);
+  });
+});
+
+describe('Resource arrival marks', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('empties `fresh` once the mark has played, so a list mounted later is not marked again', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] });
+    const pending = server();
+    const live = hints();
+    const list = new Resource<{ id: string }[]>('/api/admin/list', { topics: ['inbox'], keys: (rows) => rows.map((r) => r.id), events: live.events });
+    list.watch();
+    pending[0]!.resolve([{ id: 'a' }]);
+    await settle();
+    live.fire('inbox');
+    pending[1]!.resolve([{ id: 'b' }, { id: 'a' }]);
+    await settle();
+    expect([...list.fresh]).toEqual(['b']);
+    vi.advanceTimersByTime(2_000);
+    expect([...list.fresh]).toEqual(['b']);
+    vi.advanceTimersByTime(200);
+    expect([...list.fresh]).toEqual([]);
   });
 });
 

@@ -291,7 +291,11 @@ function liveStream() {
   const subscribers = new Set<{ topics: readonly EventTopic[]; wake: () => void }>();
   const listeners = new Set<(healthy: boolean) => void>();
   let healthy = false;
+  let epoch = 0;
   const events: LiveEvents = {
+    get epoch() {
+      return epoch;
+    },
     subscribe(topics, wake) {
       const entry = { topics, wake };
       subscribers.add(entry);
@@ -307,6 +311,7 @@ function liveStream() {
   };
   return {
     events,
+    restart: () => (epoch += 1),
     setHealthy(next: boolean) {
       healthy = next;
       listeners.forEach((l) => l(next));
@@ -389,5 +394,45 @@ describe('AdminWeek: live hints and the polling fallback', () => {
     store.holding = false;
     expect(store.week?.version).toBe(2);
     stop();
+  });
+});
+
+describe('AdminWeek: arrivals and restarts', () => {
+  it('a week from elsewhere calls the arrival hook with the runs it adds; own refreshes and writes never do', async () => {
+    const two: Week = { ...week(2), runs: [run('r1', 3), run('r2', 4)] };
+    const three: Week = { ...week(3), runs: [run('r1', 5), run('r2', 4)] };
+    const four: Week = { ...week(4), runs: [run('r1', 6), run('r2', 4)] };
+    serve(week(1), two, three, four);
+    // Well past any write earlier tests made (those would read as this page's echo).
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 60_000);
+    vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
+    const live = liveStream();
+    const store = new AdminWeek(live.events);
+    const arrivals: string[][] = [];
+    store.beforeArrival = (added) => arrivals.push(added);
+    const stop = store.start(); // first load
+    await vi.waitFor(() => expect(store.week?.version).toBe(1));
+    live.fire('schedule'); // another admin: r2 added, r1 moved
+    await store.refresh(); // joins the hinted read
+    expect(store.week?.version).toBe(2);
+    await store.refresh(); // asked for: version 3 lands quietly
+    expect(store.week?.version).toBe(3);
+    expect(arrivals).toEqual([['r2']]);
+    stop();
+    vi.useRealTimers();
+  });
+
+  it('after a server restart a lower version replaces the week (a restore)', async () => {
+    serve(week(7, 2), week(3, 5), week(3, 5));
+    const live = liveStream();
+    const store = new AdminWeek(live.events);
+    await store.refresh();
+    await store.refresh();
+    expect(store.week?.version).toBe(7);
+    live.restart();
+    await store.refresh();
+    expect(store.week?.version).toBe(3);
+    expect(store.week?.runs[0]?.day).toBe(5);
   });
 });

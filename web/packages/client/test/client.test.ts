@@ -130,3 +130,35 @@ describe('admin writes', () => {
     }
   });
 });
+
+describe('conditional reads', () => {
+  it('revalidates a tagged read and hands back the same object on 304', async () => {
+    const answers = [
+      new Response('{"week":1}', { status: 200, headers: { ETag: '"a"' } }),
+      new Response(null, { status: 304, headers: { ETag: '"a"' } }),
+      new Response('{"week":2}', { status: 200, headers: { ETag: '"b"' } }),
+      new Response('{"week":3}', { status: 200 }),
+      new Response('{"week":4}', { status: 200 }),
+    ];
+    const fetchMock = vi.fn(async () => answers.shift()!);
+    const client = createClient({ fetch: fetchMock as unknown as typeof fetch });
+    const first = await client.get<{ week: number }>('/api/admin/week');
+    const again = await client.get<{ week: number }>('/api/admin/week');
+    expect(again).toBe(first);
+    expect(await client.get('/api/admin/week')).toEqual({ week: 2 });
+    // An untagged answer forgets the tag: the next read is unconditional.
+    expect(await client.get('/api/admin/week')).toEqual({ week: 3 });
+    await client.get('/api/admin/week');
+    const sent = fetchMock.mock.calls.map((call) => ((call as unknown as [string, RequestInit])[1].headers as Record<string, string>)['If-None-Match']);
+    expect(sent).toEqual([undefined, '"a"', '"a"', '"b"', undefined]);
+  });
+
+  it('never makes writes conditional', async () => {
+    const fetchMock = vi.fn(async () => new Response('{"ok":true}', { status: 200, headers: { ETag: '"a"' } }));
+    const client = createClient({ fetch: fetchMock as unknown as typeof fetch, csrf: createCsrfGuard('/s', () => false) });
+    await client.get('/x');
+    await client.post('/x', {});
+    const headers = (fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1].headers as Record<string, string>;
+    expect(headers['If-None-Match']).toBeUndefined();
+  });
+});

@@ -47,7 +47,7 @@
     const clean = toSearch(filter);
     if (clean !== toSearch(parseFilter(search))) onsearch?.(withCall(clean, call));
   });
-  const extractions = $derived(new Resource<Extractions>(`/api/admin/extractions${toSearch(filter)}`, { topics: ['extraction'] }));
+  const extractions = $derived(new Resource<Extractions>(`/api/admin/extractions${toSearch(filter)}`, { topics: ['extraction'], keys: (data) => data.rows.map((row) => row.id) }));
   const targets = new Resource<Channel[]>('/api/admin/rescan/targets');
   $effect(() => extractions.watch());
   $effect(() => void targets.load());
@@ -231,7 +231,7 @@
         {#if rows.length === 0}
           <div class="empty"><strong>Nothing matches these filters.</strong>Remove a chip above, or Clear them all.</div>
         {:else}
-          <CallList bind:this={list} rows={shown.rows} selected={chosen} follow={!phone} timeZone={tz} onpick={pick} />
+          <CallList bind:this={list} rows={shown.rows} selected={chosen} follow={!phone} timeZone={tz} onpick={pick} fresh={extractions.fresh} />
           <Pager bind:page pages={shown.pages} total={rows.length} noun="call" />
         {/if}
       {:else}

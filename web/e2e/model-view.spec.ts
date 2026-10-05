@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import type { ChatTurn } from '@kanade/api-types';
-import { ADMIN, expect, settle, test } from './support';
+import { ADMIN, expect, settle, test, unconditional } from './support';
 
 // Chat turn facts (persona, reply profile, per-round model/effort/route/latency,
 // calls grouped by round), the collapsed admin-only Model view of a masked turn,
@@ -21,7 +21,7 @@ async function serious(page: Page, label: string) {
 /** Serves the mock's turn with `patch` applied: states the mock does not seed. */
 async function patchTurn(page: Page, id: string, patch: (turn: ChatTurn) => void) {
   await page.route(`**/api/admin/chat/${id}`, async (route) => {
-    const response = await route.fetch();
+    const response = await route.fetch(unconditional(route));
     const turn = (await response.json()) as ChatTurn;
     patch(turn);
     await route.fulfill({ response, json: turn });

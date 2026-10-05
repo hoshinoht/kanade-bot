@@ -46,6 +46,8 @@ pub struct Hub {
     last: Mutex<u64>,
     clients: Arc<Semaphore>,
     closed: watch::Sender<bool>,
+    /// Unique per process, so clients can tell a restart from a reconnect.
+    boot: String,
 }
 
 impl std::fmt::Debug for Hub {
@@ -70,6 +72,8 @@ pub(crate) struct Subscription {
     pub hints: broadcast::Receiver<EventHint>,
     /// The seq before the first hint this stream will hear.
     pub ready: u64,
+    /// This process's id (`EventReady::boot`).
+    pub boot: String,
     pub closed: watch::Receiver<bool>,
 }
 
@@ -81,6 +85,7 @@ impl Hub {
             last: Mutex::new(0),
             clients: Arc::new(Semaphore::new(config.max_clients)),
             closed: watch::channel(false).0,
+            boot: uuid::Uuid::new_v4().simple().to_string(),
         }
     }
 
@@ -127,6 +132,7 @@ impl Hub {
             permit,
             hints: self.sender.subscribe(),
             ready: *last,
+            boot: self.boot.clone(),
             closed: self.closed.subscribe(),
         })
     }

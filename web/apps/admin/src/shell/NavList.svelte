@@ -5,7 +5,8 @@
   are the groups' accessible names everywhere.
 -->
 <script lang="ts">
-  import { Icon } from '@kanade/ui';
+  import { Icon, pulse } from '@kanade/ui';
+  import { arrival } from '../resource.svelte';
   import { GROUPS, SECTIONS } from '../routes';
 
   let {
@@ -33,8 +34,8 @@
           aria-label={section.key === 'inbox' && inbox > 0 ? `Inbox ${inbox} waiting` : undefined}
           onclick={onnavigate}
           ><span class="navlist__ind"><Icon name={section.icon} /></span><span class="navlist__label">{section.label}</span
-          >{#if section.key === 'inbox' && inbox > 0}<span class="navlist__badge">{inbox}<span class="vh"> waiting</span></span
-          >{:else if counts[section.key] !== undefined}<span class="navlist__count" aria-hidden="true">{counts[section.key]}</span>{/if}</a
+          >{#if section.key === 'inbox' && inbox > 0}<span class="navlist__badge" {@attach pulse(inbox, arrival.seq)}>{inbox}<span class="vh"> waiting</span></span
+          >{:else if counts[section.key] !== undefined}<span class="navlist__count" aria-hidden="true" {@attach pulse(counts[section.key], arrival.seq)}>{counts[section.key]}</span>{/if}</a
         >
       {/each}
     </div>

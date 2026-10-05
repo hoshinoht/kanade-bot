@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { GUIDE_DOC, GUIDE_MISSIONS } from './guide-fixture';
-import { ADMIN, REAL_ART, expect, settle, test } from './support';
+import { ADMIN, REAL_ART, expect, settle, test, unconditional } from './support';
 
 // Event bosses (knowledge documents with an `event`, outside the catalog: Kai,
 // Meilin in the tracked boss/knowledge): art like catalog rows and the
@@ -36,7 +36,7 @@ test.describe('event bosses', () => {
 
   test('an event row renders its art as a catalog row does', async ({ page }) => {
     await page.route(/\/api\/admin\/bosses\/events$/, async (route) => {
-      const response = await route.fetch();
+      const response = await route.fetch(unconditional(route));
       const rows = (await response.json()) as { key: string; portrait: string | null; portrait_sm: string | null }[];
       for (const row of rows) if (row.key === 'Kai') Object.assign(row, { portrait: null, portrait_sm: '/art/icons/Carling' });
       await route.fulfill({ response, json: rows });
@@ -230,7 +230,7 @@ test.describe('info-only difficulties', () => {
       await page.emulateMedia({ colorScheme: scheme });
       await page.setViewportSize({ width: 1280, height: 800 });
       await page.route(/\/api\/admin\/bosses\/MaleficStar\/knowledge$/, async (route) => {
-        const response = await route.fetch();
+        const response = await route.fetch(unconditional(route));
         const body = (await response.json()) as { doc: { difficulties: object[] } };
         body.doc.difficulties.push({ name: 'Champion', boss_level: 285 }, { name: 'Destiny', boss_level: 290, notes: ['Placeholder note.'] });
         await route.fulfill({ response, json: body });
@@ -271,7 +271,7 @@ test.describe('animated knowledge hero', () => {
     await expect.poll(() => video.evaluate((v: HTMLVideoElement) => !v.paused && v.currentTime > 0)).toBe(true);
     // The video takes the still's place exactly: the same box as the image.
     await page.route(/\/api\/admin\/bosses\/MaleficStar\/knowledge$/, async (route) => {
-      const response = await route.fetch();
+      const response = await route.fetch(unconditional(route));
       await route.fulfill({ response, json: { ...(await response.json()), animated: null } });
     });
     // Layout boxes (offset*), so the pane's enter transform cannot skew them.
@@ -347,7 +347,7 @@ test.describe('boss guide', () => {
 
   async function inject(page: Page, missions: unknown[] = GUIDE_MISSIONS) {
     await page.route(/\/api\/admin\/bosses\/MaleficStar\/knowledge$/, async (route) => {
-      const response = await route.fetch();
+      const response = await route.fetch(unconditional(route));
       const body = (await response.json()) as Record<string, unknown>;
       await route.fulfill({ response, json: { ...body, doc: GUIDE_DOC, missions } });
     });
@@ -536,7 +536,7 @@ test.describe('boss guide', () => {
   test('a single phase shows just its card: no timeline bar, no tablist', async ({ page }) => {
     const doc = { ...structuredClone(GUIDE_DOC), phases: [{ name: 'Only phase', tag: 'one tag', items: ['Invented only line.'] }] };
     await page.route(/\/api\/admin\/bosses\/MaleficStar\/knowledge$/, async (route) => {
-      const response = await route.fetch();
+      const response = await route.fetch(unconditional(route));
       await route.fulfill({ response, json: { ...(await response.json()), doc, missions: GUIDE_MISSIONS } });
     });
     await go(page, '/bosses/MaleficStar/knowledge?tab=phases');
@@ -570,7 +570,7 @@ test.describe('boss guide', () => {
     const doc = structuredClone(GUIDE_DOC);
     Object.assign(doc.difficulties[0]!.recommended_spec, { parties: [{ party: 'Solo', value: '≈ 120k' }, { party: 'Duo', value: '≈ 95k' }, { party: '6 players', value: '≈ 60k' }] });
     await page.route(/\/api\/admin\/bosses\/MaleficStar\/knowledge$/, async (route) => {
-      const response = await route.fetch();
+      const response = await route.fetch(unconditional(route));
       await route.fulfill({ response, json: { ...(await response.json()), doc, missions: GUIDE_MISSIONS } });
     });
     await go(page, '/bosses/MaleficStar/knowledge');
@@ -584,7 +584,7 @@ test.describe('boss guide', () => {
     const doc = structuredClone(GUIDE_DOC);
     (doc.difficulties as unknown[]).push({ name: 'Champion', boss_level: 285 });
     await page.route(/\/api\/admin\/bosses\/MaleficStar\/knowledge$/, async (route) => {
-      const response = await route.fetch();
+      const response = await route.fetch(unconditional(route));
       await route.fulfill({ response, json: { ...(await response.json()), doc, missions: GUIDE_MISSIONS } });
     });
     await go(page, '/bosses/MaleficStar/knowledge');
@@ -764,7 +764,7 @@ test.describe('boss guide', () => {
       sources: [{ url: 'https://example.invalid/old', title: 'Invented', author: 'Nobody', kind: 'guide', fetched: '2026-10-01' }],
     };
     await page.route(/\/api\/admin\/bosses\/MaleficStar\/knowledge$/, async (route) => {
-      const response = await route.fetch();
+      const response = await route.fetch(unconditional(route));
       await route.fulfill({ response, json: { ...(await response.json()), doc: OLD, missions: [] } });
     });
     await go(page, '/bosses/MaleficStar/knowledge');
@@ -807,7 +807,7 @@ test.describe('boss guide', () => {
     const doc = structuredClone(GUIDE_DOC);
     (doc.difficulties[0]!.hp as unknown[])[0] = { phase: '1', value: '1,234.5t', count: 6, target: 'Many lamps' };
     await page.route(/\/api\/admin\/bosses\/MaleficStar\/knowledge$/, async (route) => {
-      const response = await route.fetch();
+      const response = await route.fetch(unconditional(route));
       await route.fulfill({ response, json: { ...(await response.json()), doc, missions: GUIDE_MISSIONS } });
     });
     await go(page, '/bosses/MaleficStar/knowledge');

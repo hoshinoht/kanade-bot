@@ -4,7 +4,8 @@
   always one tap away. No bottom navigation bar.
 -->
 <script lang="ts">
-  import { Freshness, Icon, type FreshState } from '@kanade/ui';
+  import { Freshness, Icon, pulse, type FreshState } from '@kanade/ui';
+  import { arrival } from '../resource.svelte';
   import type { BackStep } from './chrome';
   import QuietMode from './QuietMode.svelte';
 
@@ -69,6 +70,6 @@
   <a class="topbar__inbox" data-fid="topbar-inbox" href="/inbox" aria-current={onInbox ? 'page' : undefined} aria-label={inbox > 0 ? `Inbox ${inbox} waiting` : 'Inbox'}>
     <Icon name="inbox" />
     <span class="vh">Inbox</span>
-    {#if inbox > 0}<span class="topbar__badge">{inbox}<span class="vh"> waiting</span></span>{/if}
+    {#if inbox > 0}<span class="topbar__badge" {@attach pulse(inbox, arrival.seq)}>{inbox}<span class="vh"> waiting</span></span>{/if}
   </a>
 </header>

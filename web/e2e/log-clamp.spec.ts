@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, settle, test } from './support';
+import { ADMIN, expect, settle, test, unconditional } from './support';
 
 // Live bug: a pasted multi-line problem statement made one Chat log row fill
 // the screen. Free text in a log row is a one-line preview; the open turn keeps it whole.
@@ -27,13 +27,13 @@ const LONG = [
 
 async function longQuestion(page: Page) {
   await page.route(/\/api\/admin\/chat(\?.*)?$/, async (route) => {
-    const res = await route.fetch();
+    const res = await route.fetch(unconditional(route));
     const body = (await res.json()) as { rows: { id: string; asked: string }[] };
     for (const row of body.rows) if (row.id === ID) row.asked = LONG;
     await route.fulfill({ response: res, json: body });
   });
   await page.route(`${ADMIN}/api/admin/chat/${ID}`, async (route) => {
-    const res = await route.fetch();
+    const res = await route.fetch(unconditional(route));
     const body = (await res.json()) as { asked: string };
     body.asked = LONG;
     await route.fulfill({ response: res, json: body });

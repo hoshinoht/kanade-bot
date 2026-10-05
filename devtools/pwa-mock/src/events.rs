@@ -23,7 +23,10 @@ use tokio::sync::watch;
 
 use crate::{
     App,
-    mock::{dto::RsvpRequest, history::Actor},
+    mock::{
+        dto::{MoveRequest, RsvpRequest},
+        history::Actor,
+    },
 };
 
 /// Hints kept for reconnecting streams; an older `Last-Event-ID` gets `ready`.
@@ -78,10 +81,21 @@ fn stream(body: String) -> Response {
     response
 }
 
+/// This mock process's `boot` id (the server's changes on every restart).
+fn boot() -> &'static str {
+    static BOOT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    BOOT.get_or_init(|| {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_nanos());
+        format!("mock-{nanos:x}")
+    })
+}
+
 fn ready(seq: u64) -> String {
     format!(
         "retry: {RETRY_MS}\nid: {seq}\nevent: ready\ndata: {}\n\n",
-        json!({ "seq": seq })
+        json!({ "seq": seq, "boot": boot() })
     )
 }
 
@@ -174,6 +188,30 @@ pub async fn arrive(State(app): State<App>, Json(arrival): Json<Arrival>) -> Res
                 )
             });
             if reacted.is_err() {
+                return StatusCode::CONFLICT.into_response();
+            }
+            "schedule"
+        }
+        // Another admin moves Hard Limbo from Friday 23:30 to Thursday 21:00.
+        "move" => {
+            let version = store.version();
+            let moved = store.tracked(Actor::new("admin", "discord:1002"), "admin_portal", |s| {
+                s.move_run(
+                    "r-limbo",
+                    MoveRequest {
+                        day: 0,
+                        time: Some("21:00".into()),
+                        version,
+                    },
+                )
+            });
+            if moved.is_err() {
+                return StatusCode::CONFLICT.into_response();
+            }
+            "schedule"
+        }
+        "run" => {
+            if store.arrive_run().is_err() {
                 return StatusCode::CONFLICT.into_response();
             }
             "schedule"

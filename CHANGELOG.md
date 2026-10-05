@@ -6,6 +6,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Admin JSON reads carry a strong ETag and answer `304 Not Modified` to a matching `If-None-Match`; the admin app revalidates the reads that live hints trigger and keeps unchanged data on screen.
+- Arrival motion for changes made elsewhere: Week cards glide to where another admin moved them, new Week runs and Inbox, Chat and Extractions rows are marked once, and changed Inbox counts pulse. Your own writes never animate this way, and reduced motion keeps only a colour fade.
 - Admin: a Reminders row opens its Discord card preview (side pane, or a sheet on phones) through a read-only `GET /api/admin/reminders/{id}/preview`. Unsent cards are built as the delivery tick will post them; posted cards as the refresh worker edits them, from the runs they were posted for and with their stored heading. Stale rows show no card.
 - Admin: History → Checkpoints names the first bad record when the chain check fails (`Verified.first_broken`), and its populated backups view is covered end to end.
 - Admin: Discord links (Inbox evidence and cards, run sheet cards, sent reminders, last digest, chat cards) open in the Discord app via `discord://` by default; turn off "Open Discord links in the app" on Account to keep https links on that device.
@@ -389,6 +391,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- After a server restart (for example a backup restore that lowers the history head), open admin pages take the restored data instead of keeping the pre-restore week until reload.
 - Store: migration 0006 is restored byte for byte (a comment path edit in the
   docs move changed its checksum, so an existing store refused to open); a
   test now pins every shipped migration's checksum.

@@ -1676,7 +1676,7 @@ async fn events_hint_own_writes_and_arrivals_and_the_reads_change() {
     let mut h = Harness::new();
     let opening = h.events(None).await;
     assert!(
-        opening.contains("event: ready\ndata: {\"seq\":0}"),
+        opening.contains("event: ready\ndata: {\"boot\":\"mock-") && opening.contains("\"seq\":0}"),
         "{opening}"
     );
 
@@ -1695,6 +1695,8 @@ async fn events_hint_own_writes_and_arrivals_and_the_reads_change() {
 
     for (kind, topic) in [
         ("reaction", "schedule"),
+        ("move", "schedule"),
+        ("run", "schedule"),
         ("proposal", "inbox"),
         ("chat", "chat"),
         ("extraction", "extraction"),
@@ -1794,4 +1796,30 @@ async fn events_hint_own_writes_and_arrivals_and_the_reads_change() {
     )
     .await;
     assert!(h.failures.is_empty(), "{}", h.failures.join("\n"));
+}
+
+#[tokio::test]
+async fn admin_reads_revalidate_with_etags() {
+    let h = Harness::new();
+    for path in [
+        "/api/admin/week",
+        "/api/admin/summary",
+        "/api/admin/inbox",
+        "/api/admin/chat",
+    ] {
+        let (status, headers, body) = h.send_with(false, "GET", path, None, &[]).await;
+        assert_eq!(status, StatusCode::OK, "{path}");
+        let tag = headers[header::ETAG].to_str().unwrap().to_owned();
+        let (status, again, empty) = h
+            .send_with(false, "GET", path, None, &[("if-none-match", &tag)])
+            .await;
+        assert_eq!(status, StatusCode::NOT_MODIFIED, "{path}");
+        assert_eq!(empty, Value::Null, "{path}: no body");
+        assert_eq!(again[header::ETAG], tag.as_str());
+        assert_eq!(again[header::CACHE_CONTROL], headers[header::CACHE_CONTROL]);
+        let (status, _, fresh) = h
+            .send_with(false, "GET", path, None, &[("if-none-match", "\"other\"")])
+            .await;
+        assert_eq!((status, fresh), (StatusCode::OK, body), "{path}");
+    }
 }

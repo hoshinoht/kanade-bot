@@ -7,6 +7,7 @@ mod auth;
 mod avatars;
 pub mod config;
 mod context;
+mod etag;
 mod events;
 mod history;
 mod inbox;
@@ -50,6 +51,7 @@ pub fn routes() -> Router<Arc<Site>> {
         .merge(limits::routes())
         .merge(config::routes())
         .merge(events::routes())
+        .route_layer(axum::middleware::from_fn(etag::revalidate))
 }
 
 /// Answers only clients on this host (the local healthcheck), whatever the

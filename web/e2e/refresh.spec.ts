@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, expect, test, unconditional } from './support';
 
 // A poll cycle must update in place: no page content remounted, no scroll
 // reset, the Answers bars kept (the old canvas chart was destroyed and
@@ -9,7 +9,7 @@ import { ADMIN, expect, test } from './support';
 async function livelyWeek(page: Page) {
   let n = 0;
   await page.route(/\/api\/admin\/(week|stats)(\?|$)/, async (route) => {
-    const res = await route.fetch();
+    const res = await route.fetch(unconditional(route));
     const body = await res.json();
     n++;
     if (body.version !== undefined) {

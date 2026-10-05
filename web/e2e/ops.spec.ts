@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, csrf, expect, test, choose, expectValue, optionLabels, optionIn, openList, toggleOptions } from './support';
+import { ADMIN, csrf, expect, test, choose, expectValue, optionLabels, optionIn, openList, toggleOptions, unconditional } from './support';
 
 // Knowledge (tracked boss/knowledge, schema v2), Inbox, Extractions + rescan,
 // Chat, Limits, History (revert / restore / by member / checkpoints) and the
@@ -127,7 +127,7 @@ test('inbox: a 403 discord_session_required still locks proposals when the sessi
   await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'token' } });
   // An older session answer without `method`: the refusal is the fallback.
   await page.route(`${ADMIN}/api/admin/session`, async (route) => {
-    const response = await route.fetch();
+    const response = await route.fetch(unconditional(route));
     await route.fulfill({ response, json: { display: 'Break-glass token' } });
   });
   await go(page, '/inbox');
@@ -493,7 +493,7 @@ test('extraction filters: outcome, model and member, deep-linked', async ({ page
 test('limits: backends, queue, admission by kind and an allowance reset', async ({ page }) => {
   // The mock runs Config's one gateway group; two more groups show the other breaker states.
   await page.route(`${ADMIN}/api/admin/limits`, async (route) => {
-    const res = await route.fetch();
+    const res = await route.fetch(unconditional(route));
     const body = await res.json();
     const since = body.groups[0].breaker.since;
     const idle = { queue: [], rate: { available: 1, capacity: 20, refill_per_min: 4 }, retry: { remaining: 2, capacity: 5 } };
@@ -858,7 +858,7 @@ test('config: pings, watching, chatbot, persona catalog, models, self-service, p
 
 test('config: unreachable catalog and disconnected access render fallbacks', async ({ page }) => {
   await page.route(`${ADMIN}/api/admin/config`, async (route) => {
-    const res = await route.fetch();
+    const res = await route.fetch(unconditional(route));
     const body = await res.json();
     body.models.reachable = false;
     await route.fulfill({ response: res, json: body });
@@ -1044,7 +1044,7 @@ test('persona: Reload profiles re-reads the config, so voice and summary follow 
   let reloaded = false;
   await page.route(`${ADMIN}/api/admin/config`, async (route) => {
     if (!reloaded || route.request().method() !== 'GET') return route.continue();
-    const res = await route.fetch();
+    const res = await route.fetch(unconditional(route));
     const body = await res.json();
     const kanade = body.persona.profiles.find((p: { key: string }) => p.key === 'kanade');
     kanade.voice = 'Freshly edited voice';
@@ -1097,7 +1097,7 @@ test('models: capacity groups read-only, one row per group, Kanata limits in wor
 test('models: config-declared groups, uniform limits, a stored variant, an unset role', async ({ page }) => {
   await page.route(`${ADMIN}/api/admin/config`, async (route) => {
     if (route.request().method() !== 'GET') return route.continue();
-    const res = await route.fetch();
+    const res = await route.fetch(unconditional(route));
     const body = await res.json();
     body.models.groups_source = 'config';
     body.models.groups = [
@@ -1187,7 +1187,7 @@ test('digest: the last posted card follows the API, and is omitted without one',
 
   // An unknown channel name falls back to its id; no link without a URL; an older week says which.
   await page.route(`${ADMIN}/api/admin/config`, async (route) => {
-    const res = await route.fetch();
+    const res = await route.fetch(unconditional(route));
     const body = await res.json();
     body.last_digest = { ...body.last_digest, channel_name: null, url: null, this_week: false };
     await route.fulfill({ response: res, json: body });
@@ -1199,7 +1199,7 @@ test('digest: the last posted card follows the API, and is omitted without one',
   await page.unroute(`${ADMIN}/api/admin/config`);
 
   await page.route(`${ADMIN}/api/admin/config`, async (route) => {
-    const res = await route.fetch();
+    const res = await route.fetch(unconditional(route));
     const body = await res.json();
     body.last_digest = null;
     await route.fulfill({ response: res, json: body });

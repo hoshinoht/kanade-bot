@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { ADMIN, PUBLIC, csrf, expect, test, choose, expectValue, optionLabels } from './support';
+import { ADMIN, PUBLIC, csrf, expect, test, choose, expectValue, optionLabels, unconditional } from './support';
 
 type Profile = { key: string; name: string; public: boolean; voice: string; prompt_summary: string };
 type ConfigResponse = { persona: { profiles: Profile[] } };
@@ -22,7 +22,7 @@ async function manyProfiles(page: Page, patches?: VisibilityPatch[]) {
       return;
     }
     if (route.request().method() !== 'GET') return route.continue();
-    const res = await route.fetch();
+    const res = await route.fetch(unconditional(route));
     const body = (await res.json()) as ConfigResponse;
     const keys = new Set(body.persona.profiles.map((p) => p.key));
     for (let i = 1; i <= 20; i++) {

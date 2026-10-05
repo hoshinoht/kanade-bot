@@ -31,4 +31,5 @@
 @use "icons";
 @use "../nap/nap-theme";
 @use "motion";
+@use "arrival"; // live-update arrival marks and number ticks
 @use "experiments"; // revertible design experiments (pwa-design-guidelines "Experiments")

@@ -1,4 +1,4 @@
-import { expect, test as base, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import { expect, test as base, type APIRequestContext, type Locator, type Page, type Route } from '@playwright/test';
 
 /**
  * This worker's own mock (see the port scheme in `playwright.config.ts`):
@@ -211,4 +211,14 @@ export async function toggleOptions(box: Locator, labels: string[]): Promise<voi
   const list = await openList(box);
   for (const label of labels) await optionIn(list, { label }).click();
   await trigger(box).press('Escape');
+}
+
+/**
+ * Options for `route.fetch` without the app's `If-None-Match`: a test that
+ * rewrites a read's body needs the body, never a `304` for the copy the app holds.
+ */
+export function unconditional(route: Route): { headers: Record<string, string> } {
+  const headers = { ...route.request().headers() };
+  delete headers['if-none-match'];
+  return { headers };
 }

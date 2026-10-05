@@ -86,7 +86,7 @@ describe('createLiveEvents', () => {
     const stopChat = events.subscribe(['chat'], chat);
     expect(sources).toHaveLength(1);
     last().open();
-    last().emit('ready', { seq: 4 });
+    last().emit('ready', { seq: 4, boot: 'b1' });
     last().emit('message', { topic: 'schedule', seq: 5 });
     last().emit('message', { topic: 'inbox', seq: 6 });
     expect(week).not.toHaveBeenCalled();
@@ -112,7 +112,7 @@ describe('createLiveEvents', () => {
     events.subscribe(['schedule'], week);
     events.subscribe(['chat'], chat);
     last().open();
-    last().emit('ready', { seq: 10 });
+    last().emit('ready', { seq: 10, boot: 'b1' });
     // 11 never arrived (the server's buffer overflowed).
     last().emit('message', { topic: 'schedule', seq: 12 });
     vi.advanceTimersByTime(100);
@@ -121,14 +121,14 @@ describe('createLiveEvents', () => {
     // Same process, nothing missed: no wake.
     last().drop();
     last().open();
-    last().emit('ready', { seq: 12 });
+    last().emit('ready', { seq: 12, boot: 'b1' });
     vi.advanceTimersByTime(100);
     expect([week.mock.calls.length, chat.mock.calls.length]).toEqual([1, 1]);
 
     // The server restarted (or hints went by while away).
     last().drop();
     last().open();
-    last().emit('ready', { seq: 3 });
+    last().emit('ready', { seq: 3, boot: 'b1' });
     vi.advanceTimersByTime(100);
     expect([week.mock.calls.length, chat.mock.calls.length]).toEqual([2, 2]);
   });
@@ -190,7 +190,7 @@ describe('createLiveEvents', () => {
     const stop = events.subscribe(['schedule'], week);
     events.subscribe(['chat'], chat);
     last().open();
-    last().emit('ready', { seq: 1 });
+    last().emit('ready', { seq: 1, boot: 'b1' });
     // A hint lands just before the tab is hidden: owed, not read while hidden.
     last().emit('message', { topic: 'schedule', seq: 2 });
     visibility.set(false);
@@ -207,7 +207,7 @@ describe('createLiveEvents', () => {
     expect(week).toHaveBeenCalledTimes(1);
     expect(chat).not.toHaveBeenCalled();
     last().open();
-    last().emit('ready', { seq: 5 });
+    last().emit('ready', { seq: 5, boot: 'b1' });
     vi.advanceTimersByTime(100);
     expect([week.mock.calls.length, chat.mock.calls.length]).toEqual([2, 1]);
 
@@ -215,7 +215,7 @@ describe('createLiveEvents', () => {
     visibility.set(false);
     visibility.set(true);
     last().open();
-    last().emit('ready', { seq: 5 });
+    last().emit('ready', { seq: 5, boot: 'b1' });
     vi.advanceTimersByTime(100);
     expect([week.mock.calls.length, chat.mock.calls.length]).toEqual([2, 1]);
     stop();
@@ -231,5 +231,28 @@ describe('createLiveEvents', () => {
     expect(sources).toHaveLength(1);
     stop();
     expect(visibility.listeners.size).toBe(0);
+  });
+
+  it('counts server restarts (a new boot id) and wakes everyone after one', () => {
+    const { events, last } = setup();
+    const week = vi.fn();
+    events.subscribe(['schedule'], week);
+    last().open();
+    expect(events.epoch).toBe(0);
+    last().emit('ready', { seq: 9, boot: 'b1' });
+    // The first ready opens an epoch: the reads before it may predate a restart.
+    expect(events.epoch).toBe(1);
+    vi.advanceTimersByTime(100);
+    expect(week).not.toHaveBeenCalled();
+    last().drop();
+    last().open();
+    last().emit('ready', { seq: 9, boot: 'b1' });
+    expect(events.epoch).toBe(1);
+    last().drop();
+    last().open();
+    last().emit('ready', { seq: 9, boot: 'b2' });
+    expect(events.epoch).toBe(2);
+    vi.advanceTimersByTime(100);
+    expect(week).toHaveBeenCalledTimes(1);
   });
 });

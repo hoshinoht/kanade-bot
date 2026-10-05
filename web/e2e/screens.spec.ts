@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, csrf, expect, test, choose, expectValue, optionLabels } from './support';
+import { ADMIN, csrf, expect, test, choose, expectValue, optionLabels, unconditional } from './support';
 
 // Fixed, Bosses, Members, Reminders and the run sheet's weekly-timing tools,
 // against the mock pinned to Tue 29 Sep 2026 12:00 (playwright.config.ts).
@@ -403,7 +403,7 @@ test('history: wide Close and Escape leave the detail closed and return to its r
 test('history: restoring a multi-week record uses the week group it was opened from', async ({ page }) => {
   const secondWeek = '2026-10-07T16:00:00+00:00';
   await page.route('**/api/admin/history?*', async (route) => {
-    const response = await route.fetch();
+    const response = await route.fetch(unconditional(route));
     const body = await response.json();
     const record = body.records.find((item: { seq: number }) => item.seq === 3);
     record.weeks = [...record.weeks, secondWeek];
@@ -421,7 +421,7 @@ test('history: restoring a multi-week record uses the week group it was opened f
 test('history: a change listed under two weeks marks only the opened row active', async ({ page }) => {
   const secondWeek = '2026-10-07T16:00:00+00:00';
   await page.route('**/api/admin/history?*', async (route) => {
-    const response = await route.fetch();
+    const response = await route.fetch(unconditional(route));
     const body = await response.json();
     const record = body.records.find((item: { seq: number }) => item.seq === 3);
     record.weeks = [...record.weeks, secondWeek];
@@ -942,7 +942,7 @@ test('history checkpoints: empty states without backups, and no timeline filters
   await page.setViewportSize({ width: 1280, height: 800 });
   let configured = true;
   await page.route(/\/api\/admin\/history\/checkpoints$/, async (route) => {
-    const response = await route.fetch();
+    const response = await route.fetch(unconditional(route));
     const json = (await response.json()) as { backups: unknown[]; backup_dir_configured: boolean };
     json.backups = [];
     json.backup_dir_configured = configured;
@@ -973,7 +973,7 @@ test('history checkpoints: empty states without backups, and no timeline filters
 test('history checkpoints: a failed chain check', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.route(/\/api\/admin\/history\/checkpoints$/, async (route) => {
-    const response = await route.fetch();
+    const response = await route.fetch(unconditional(route));
     const json = (await response.json()) as { verified: { ok: boolean; first_broken: number | null } };
     json.verified.ok = false;
     json.verified.first_broken = 2;
@@ -993,7 +993,7 @@ test('history checkpoints: a failed chain check', async ({ page }) => {
 test('inbox: a cited message that is gone still shows in the thread, as used', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.route(/\/api\/admin\/inbox$/, async (route) => {
-    const response = await route.fetch();
+    const response = await route.fetch(unconditional(route));
     type Line = { id: string; author: string; at: string; content: string | null; url: string | null; missing: boolean; used?: boolean };
     const json = (await response.json()) as { id: string; evidence: Line[]; thread: Line[] | null }[];
     const item = json.find((p) => p.id === 'p-bm-move')!;
@@ -1023,7 +1023,7 @@ test('inbox: a cited message that is gone still shows in the thread, as used', a
 test('inbox: a status change shows as status chips under its field name', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.route(/\/api\/admin\/inbox$/, async (route) => {
-    const response = await route.fetch();
+    const response = await route.fetch(unconditional(route));
     const json = (await response.json()) as { id: string; preview: { changes: { target: string; field: string; from: string; to: string }[] } }[];
     const item = json.find((p) => p.id === 'p-bm-move')!;
     const slot = item.preview.changes[0]!;

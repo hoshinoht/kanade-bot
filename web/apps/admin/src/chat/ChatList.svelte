@@ -23,12 +23,15 @@
     follow,
     timeZone,
     onpick,
+    fresh,
   }: {
     rows: ChatRow[];
     selected: string;
     follow: boolean;
     timeZone: string;
     onpick: (id: string, open: boolean) => void;
+    /** Turns a live update just brought in: marked once (`data-new`). */
+    fresh?: ReadonlySet<string>;
   } = $props();
   const uid = $props.id();
   let active = $state('');
@@ -88,6 +91,7 @@
       class="chat-row"
       class:chat-row--active={!follow && row.id === current}
       id="{uid}-{row.id}"
+      data-new={fresh?.has(row.id) ? '' : undefined}
       role="option"
       aria-selected={row.id === selected}
       data-item={row.id}

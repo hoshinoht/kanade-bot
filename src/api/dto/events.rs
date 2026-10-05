@@ -53,9 +53,12 @@ pub struct EventHint {
 }
 
 /// The `ready` event that opens every stream: the last hint's `seq` (0 before
-/// any), so a reconnecting client knows whether it missed something.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+/// any), so a reconnecting client knows whether it missed something, and the
+/// server process's `boot` id: a new one means a restart (perhaps after a
+/// restore), when versions may go down and the client takes what it reads.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct EventReady {
     pub seq: u64,
+    pub boot: String,
 }

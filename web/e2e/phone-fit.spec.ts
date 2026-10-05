@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, test, expectValue } from './support';
+import { ADMIN, expect, test, expectValue, unconditional } from './support';
 
 // Phone clipping regressions: the Inbox heading's boss tags wrap as whole
 // units, and the Members name cell keeps its name, aliases and chip inside it.
@@ -195,7 +195,7 @@ for (const size of SIZES) {
       await page.setViewportSize(size);
       if (text !== CONSEQUENCE) {
         await page.route(/\/api\/admin\/inbox(\?.*)?$/, async (route) => {
-          const res = await route.fetch();
+          const res = await route.fetch(unconditional(route));
           const items = (await res.json()) as { id: string; consequence: string | null }[];
           await route.fulfill({ response: res, json: items.map((item) => (item.id === 'p-bm-move' ? { ...item, consequence: text } : item)) });
         });
