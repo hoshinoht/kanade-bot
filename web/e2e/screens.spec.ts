@@ -897,9 +897,10 @@ test('inbox: boss art, and a thread without stray open links', async ({ page }) 
   // The phone frame takes over after the resize: wait for the compact item.
   await expect(page.locator('.inbox--compact')).toHaveCount(1);
   await expect(detail.locator('.proposal__head .proposal__art .portrait')).toHaveCount(1);
-  // The facts stay on one line (cut at the edge, never wrapped).
+  // The facts wrap to at most two lines rather than being cut (user decision
+  // 2026-10-05); the clipping audit checks that no fact is cut.
   const meta = detail.locator('.proposal__meta');
-  await expect.poll(async () => (await meta.boundingBox())!.height).toBeLessThanOrEqual(30);
+  await expect.poll(async () => (await meta.boundingBox())!.height).toBeLessThanOrEqual(48);
 });
 
 // The Inbox thread from the API's `thread` (each message marked `used`): the
