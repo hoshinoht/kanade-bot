@@ -83,6 +83,7 @@ pub struct Config {
     /// `models.context`: defaults, per-role reserve/cap and alias overrides.
     pub context: model_context::Settings,
     pub run_lengths: RunLengths,
+    pub profanity: super::profanity::Settings,
     /// Roles with a model when the bot started: extraction and heading
     /// rewrites run only for those until a restart.
     #[serde(skip)]
@@ -496,6 +497,7 @@ pub fn defaults() -> Config {
                 minutes: 60,
             }],
         },
+        profanity: super::profanity::Settings::default(),
         started: vec!["extraction", "chat", "rewrite"],
     }
 }
@@ -762,6 +764,7 @@ impl Store {
                 "context": c.context,
             },
             "run_lengths": c.run_lengths,
+            "profanity": c.profanity.view(),
             "manage_messages": { "missing": missing_manage },
             "env": env_rows(c),
             "last_digest": self.last_digest(),
@@ -1147,6 +1150,9 @@ impl Store {
                 return Err(bad("run_lengths.overrides must be an array of overrides."));
             }
         }
+        if let Some(body) = patch.get("profanity").and_then(Value::as_object) {
+            next.profanity = next.profanity.patch(body).map_err(MoveError::Invalid)?;
+        }
         for (role, feature, before, after) in [
             (
                 "extraction",
@@ -1275,6 +1281,14 @@ fn check_patch_keys(patch: &Value) -> Result<(), MoveError> {
             "self_service" => &["mode", "public_portal"],
             "notifications" => &["quiet_mode"],
             "run_lengths" => &["default_minutes", "overrides"],
+            "profanity" => &[
+                "extra_words",
+                "allowed_words",
+                "check_questions",
+                "check_replies",
+                "deflection_line",
+                "builtin_words",
+            ],
             _ => return Err(bad(section)),
         };
         let body = body.as_object().ok_or_else(|| bad(section))?;
@@ -1288,7 +1302,10 @@ fn check_patch_keys(patch: &Value) -> Result<(), MoveError> {
                 return Err(bad(&format!("{section}.{key}")));
             }
             // As the server: contracted as editable, but it cannot store them yet.
-            if matches!((section.as_str(), key.as_str()), ("models", "groups")) {
+            if matches!(
+                (section.as_str(), key.as_str()),
+                ("models", "groups") | ("profanity", "builtin_words")
+            ) {
                 return Err(MoveError::Coded(
                     422,
                     "read_only",
@@ -1502,6 +1519,35 @@ mod tests {
             ] } }),
         ] {
             assert!(s.patch_config(&patch).is_err(), "{patch}");
+        }
+    }
+
+    #[test]
+    fn profanity_saves_with_the_server_rules() {
+        let mut s = store();
+        let view = s.config_view();
+        assert_eq!(view["profanity"]["check_questions"], true);
+        assert!(
+            !view["profanity"]["builtin_words"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        let saved = s
+            .patch_config(
+                &json!({ "profanity": { "extra_words": ["Heck"], "check_replies": false } }),
+            )
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(saved["profanity"]["extra_words"], json!(["heck"]));
+        assert_eq!(saved["profanity"]["check_replies"], false);
+        assert!(
+            s.patch_config(&json!({ "profanity": { "allowed_words": ["heck"] } }))
+                .is_err()
+        );
+        match s.patch_config(&json!({ "profanity": { "builtin_words": [] } })) {
+            Err(crate::mock::MoveError::Coded(422, "read_only", _)) => {}
+            Err(other) => panic!("wanted read_only, got {other}"),
+            Ok(_) => panic!("saved a read-only key"),
         }
     }
 

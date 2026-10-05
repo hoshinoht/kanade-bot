@@ -26,7 +26,7 @@ use crate::{
         roster::LiveRoster,
     },
     chat::{
-        answer::{AnswerDeps, Generation, GuildView, answer},
+        answer::{AnswerDeps, Generation, GuildView, ProfanityGuard, answer},
         driver::{
             Answerer, Asked, ChatDriver, ChatEvent, ChatHandle, DriverConfig, FollowUpRequest, Job,
             Prepared, RejectionFollowUp, Setup,
@@ -238,6 +238,21 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
         for profile in &members {
             roster.upsert(profile.member.clone());
         }
+        let bot_names = self.cache.self_names();
+        // Names already loaded for this question; none of them can trigger.
+        let names: Vec<String> = members
+            .iter()
+            .flat_map(|profile| {
+                let member = &profile.member;
+                member
+                    .display_name
+                    .iter()
+                    .chain(&member.nickname)
+                    .chain(&profile.aliases)
+                    .cloned()
+            })
+            .chain(bot_names.iter().cloned())
+            .collect();
         Some(Prepared {
             persona,
             catalog: Arc::clone(&self.catalog),
@@ -254,7 +269,9 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             now: (self.clock)(),
             zone: self.policy.zone(),
             reset: (self.policy.reset_weekday, self.policy.reset_time),
-            bot_names: self.cache.self_names(),
+            bot_names,
+            // Read per question: a saved Profanity change applies to the next one.
+            profanity: ProfanityGuard::new(&settings.profanity).with_names(names),
         })
     }
 

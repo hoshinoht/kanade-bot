@@ -32,7 +32,7 @@ test('admin: grouped nav has every v4 section as a real route', async ({ page })
     ['Reminders', /queued · \d+ sent$/],
     ['Inbox', '9 changes waiting'],
     ['Extractions', '34 model calls'],
-    ['Chat', '13 interactions'],
+    ['Chat', '16 interactions'],
     ['Limits', 'gateway is at capacity'],
   ] as const) {
     await nav.getByRole('link', { name: label }).click();

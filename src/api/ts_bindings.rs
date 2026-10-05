@@ -151,6 +151,7 @@ fn bindings() -> String {
         .add::<config::CapacityCheck>()
         .add::<config::RunLengths>()
         .add::<config::RunLengthOverride>()
+        .add::<config::Profanity>()
         .add::<config::ManageMessages>()
         .add::<config::EnvRow>()
         .add::<config::LastDigest>()
@@ -181,6 +182,7 @@ fn bindings() -> String {
         .add::<logs::MaskedRoundView>()
         .add::<logs::TokenName>()
         .add::<logs::ModelView>()
+        .add::<logs::ProfanityDetail>()
         .add::<logs::ChatTurn>()
         // Limits
         .add::<limits::Permits>()

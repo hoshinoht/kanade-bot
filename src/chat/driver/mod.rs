@@ -194,7 +194,8 @@ fn new_row_id() -> String {
 }
 
 impl<A: Answerer, S: Surface> ChatDriver<A, S> {
-    /// Validate the config and reload the withheld ids from the chat log
+    /// Validate the config and reload the withheld and profanity-excluded
+    /// ids from the chat log
     /// before the driver exists, so no question is admitted first.
     pub async fn start<L: ModelLogStore + Sync>(
         config: DriverConfig,
@@ -207,6 +208,10 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
         let mut pilot = ChatPilot::new(config.history_ttl_s, config.traffic, config.guard);
         pilot
             .reload_withheld(log)
+            .await
+            .map_err(DriverError::Store)?;
+        pilot
+            .reload_excluded(log)
             .await
             .map_err(DriverError::Store)?;
         let overrides = log

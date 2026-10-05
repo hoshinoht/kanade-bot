@@ -202,6 +202,59 @@ are C3. Serve wiring is `chat::driver` (below).
   `clean_retry` flag is set only when the session's request count shows the
   retry was actually sent (a refusal, or a requeue that lost its permit
   before sending, leaves it unset and keeps the original reason).
+- Profanity guardrail (user decision 2026-10-05; `answer/profanity.rs`): the
+  nudge deny-list as a live `WordFilter` (built-ins minus Config's
+  `allowed_words`, plus `extra_words`; Discord `<…>` tokens and links are
+  dropped before matching, since digits read as letters; chat also blanks
+  number tokens such as meso amounts `800b`, `1.5k`, `8008`, while digits
+  inside a word still read as letters). Chat matches with
+  `WordFilter::denied_strict` (reviews 2026-10-05): the nudge reading with
+  precise named exceptions: `EXACT_ONLY` (`tai`, `asu`) match only as the
+  exact word, `RUN_STRICT` (`boob`, `nigger`, whose collapsed forms are
+  `bob`/`niger`) need their letter runs, and `SAFE_FORMS` (`cumin`,
+  `hoey`, `cocky`, `titter`, `babies`, …) never hit (the inside entry
+  `niger` still matches "Niger"/"Nigeria": an accepted gap an admin can
+  clear by allowing it again); every other entry keeps suffixes,
+  stretching and collapse (`fukin`, `wtfff`, `ashole`). Nudge and heading
+  rewrites keep `denied`, which their vectors pin. Known names (roster
+  display names, nicknames, chat aliases and the bot's names, already
+  loaded by `prepare`) are removed before matching, except names that are
+  profanity themselves: a name is exempt only when its listed words are all
+  `REAL_NAME_COLLISIONS` (`dick`, `tai`, …). Read per question from `v5.profanity` into
+  `Prepared::profanity`, so a save applies to the next question. **Question side** (`check_questions`): the driver checks the
+  member's own message (not history) before calling the answerer; a hit's
+  whole answer is the deflection line, delivered like any answer (staging,
+  then the edit; Delivery I1–I7 unchanged), with no model call, charged
+  against the allowance (no refund). **Reply side** (`check_replies`): the
+  model's own reply text is checked (before finishing), not the grounded
+  records, tool output or card lines finishing adds from store data, and
+  nothing when an unposted write's status text replaces the reply whole; a
+  hit
+  spends the question's reserved clean retry once
+  (`Session::clean_retry`, the same reservation and storm guard; it counts
+  as a clean retry), and the retry is delivered if its text is clean.
+  When the retry is unavailable (guarded off, already spent on a malformed
+  or filtered answer, refused, failed) or hits again, the deflection line is
+  sent instead; the question does not fail. Follow-up turns check replies
+  too (they hold no retry). Context (user decision 2026-10-05): when the
+  line was sent (`Generation::kept_out_of_context`, i.e. `sent` set), the
+  whole exchange, question and line, stays out of every later context:
+  `Conversations::exclude` drops it from history and anchors, and
+  `remember`, reply chains and re-anchoring skip those message ids
+  entirely (no `[message withheld]` placeholder; `withheld` stays the
+  content-filter mechanism and the log keeps the question in full). A
+  recovered retry is an ordinary exchange. History is memory-only; only
+  the question ids come back after a restart (`reload_excluded`, from the
+  chat log, like `reload_withheld`), since a Discord reply chain can still
+  reach them. The bot's line is not logged by id, so after a restart a
+  reply to the line itself can bring the line (never the question) back.
+  Follow-up turns exclude every landed part of a replaced reply. Every hit logs outcome `profanity` with
+  `guardrail.profanity = {side, word, sent}` (`sent` null when the retry was
+  delivered). The same live list checks the reminder heading and phrase
+  rewrites today (`HeadingRewrite::words`, wired in serve's `card_kit`).
+  Serve builds no `Nudger` yet (self-service is not wired); when it is, the
+  `Nudger` must be built `.with_words(...)` from the same live setting, or
+  its rewrites fall back to the built-in list.
 - Finishing (v4 order): an unposted write overwrites a claiming reply unless
   it already asks a question; new-card claims are stripped on turns that
   posted nothing; then schedule regrounding, member-facing scrubbing and
@@ -299,7 +352,8 @@ summed into `tools_ms`. The clean retry's round logs no calls. Kept for the
 log's 90-day retention. Outcomes: `answered`; `refused`/`clarified` when a write was
 refused (clarified if the reply asks); `content_blocked` (guardrail
 `{"content_filter": true}`), `timeout`, `turned_away` (governor refusals,
-gateway admission, backend down), else `error`. `clean_retry` is a flag;
+gateway admission, backend down), `profanity` (any guardrail hit, above;
+it wins over the others), else `error`. `clean_retry` is a flag;
 `rate_limited` rows come from `ChatPilot::limited` and the `withheld` flag
 from `ChatPilot::conclude` (below).
 
@@ -342,7 +396,8 @@ through `ReplyPort::post_reply`, the adapter wires it later).
 - **Clean-retry guard.** `CleanRetryGuard`: one clean retry per member per
   600 s; more than 3 in 60 s suspends clean retries guild-wide for 600 s and
   raises one `StormAlert`. Every clean retry counts, whatever triggered it
-  (content filter, empty or malformed; user decision 2026-09-25).
+  (content filter, empty or malformed, or a listed word in the reply; user
+  decisions 2026-09-25, 2026-10-05).
   `ChatPilot::reserve_clean_retry` reserves one when a question starts (the
   value for `AnswerSettings::clean_retry`), so concurrent questions cannot
   all pass: one reservation per member, and at most 4 recent or reserved

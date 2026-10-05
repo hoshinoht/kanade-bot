@@ -36,6 +36,8 @@ spelled! {
     /// How a chat question ended. `withheld` and `clean_retry` are also
     /// flags on the interaction, so a filter on either matches the flag too.
     /// `unknown` is for v4-imported rows that map to nothing else.
+    /// `profanity`: the guardrail deflected the question or retried or
+    /// replaced the reply (details in `guardrail.profanity`).
     ChatOutcome {
         Answered => "answered",
         Refused => "refused",
@@ -47,6 +49,7 @@ spelled! {
         ContentBlocked => "content_blocked",
         Withheld => "withheld",
         CleanRetry => "clean_retry",
+        Profanity => "profanity",
         Unknown => "unknown",
     }
 }

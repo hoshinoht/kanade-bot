@@ -12,8 +12,8 @@ use serde::Serialize;
 
 pub use chat::{
     Chat, ChatCard, ChatRoundFacts, ChatRow, ChatSummary, ChatToolCall, ChatTurn, MaskedRoundView,
-    ModelView, RoundGuardrail, TokenName, asked, chat_row, chat_summary, chat_turn,
-    created_proposals,
+    ModelView, ProfanityDetail, RoundGuardrail, TokenName, asked, chat_row, chat_summary,
+    chat_turn, created_proposals,
 };
 pub use extraction::{
     Amendment, CALL_FAILED, CallContext, Extraction, ExtractionBase, ExtractionRefusal,

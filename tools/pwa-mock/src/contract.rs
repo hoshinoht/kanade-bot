@@ -1163,6 +1163,15 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         )
         .await;
     assert_eq!(lengths["run_lengths"]["default_minutes"], 20);
+    let profanity = h
+        .ok(
+            "PATCH",
+            "/api/admin/config",
+            Some(json!({ "profanity": { "extra_words": ["heck"], "check_replies": false } })),
+            "config.json#/$defs/ConfigView",
+        )
+        .await;
+    assert_eq!(profanity["profanity"]["extra_words"], json!(["heck"]));
     h.expect(
         false,
         "PATCH",

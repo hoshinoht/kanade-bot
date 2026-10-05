@@ -178,6 +178,7 @@ async fn replay(case: Value) -> Vec<Value> {
         let question = Question {
             ctx: &ctx,
             conversation: messages(&step["conversation"]),
+            profanity: None,
             reminder: persona.voice_reminder(),
             offer: ToolOffer::full_set(ctx.read_only),
             settings: settings(input, V4_TOOL_ROUNDS),

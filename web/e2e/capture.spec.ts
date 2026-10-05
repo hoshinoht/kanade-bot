@@ -401,3 +401,41 @@ for (const groups of ['three', 'default'] as const) {
     }
   });
 }
+
+// The profanity guardrail (user decision 2026-10-05): Config → Profanity with
+// the built-in word search open, and the three profanity turns in Chat.
+for (const vp of VIEWPORTS) {
+  for (const look of [
+    { name: 'blossom-light', colorway: 'blossom', theme: 'light' },
+    { name: 'blossom-dark', colorway: 'blossom', theme: 'dark' },
+  ]) {
+    test(`capture profanity ${vp.name} ${look.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.addInitScript(
+        ([c, t]) => {
+          localStorage.setItem('colorway', c!);
+          localStorage.setItem('theme', t!);
+        },
+        [look.colorway, look.theme],
+      );
+      const tag = `${vp.name}-${look.name}`;
+      await page.goto(`${ADMIN}/config?section=profanity&sw=off`);
+      const panel = page.getByRole('tabpanel', { name: 'Profanity' });
+      await expect(panel.getByRole('switch', { name: 'Check replies' })).toBeVisible();
+      await settleMotion(page);
+      await shot(page, `admin-config-profanity-top-${tag}`);
+      await panel.getByRole('textbox', { name: 'Add blocked words' }).fill('heck');
+      await panel.getByRole('button', { name: 'Add', exact: true }).click();
+      await panel.getByRole('combobox', { name: 'Find a built-in word to allow again' }).fill('ra');
+      await expect(panel.getByRole('listbox', { name: 'Built-in words' })).toBeVisible();
+      await settleMotion(page);
+      await shot(page, `admin-config-profanity-${tag}`);
+      for (const id of ['c-deflected', 'c-safe-line', 'c-recovered']) {
+        await page.goto(`${ADMIN}/chat/${id}?sw=off`);
+        await expect(page.locator('.chat-guard')).toBeVisible();
+        await settleMotion(page);
+        await shot(page, `admin-chat-${id}-${tag}`);
+      }
+    });
+  }
+}

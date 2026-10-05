@@ -494,6 +494,7 @@ fn question(ctx: &ToolContext) -> Question<'_> {
                 content: "Invented Mira: move my run to Monday at 22:00".into(),
             },
         ],
+        profanity: None,
         reminder: "Keep the tool facts exact.".into(),
         offer: ToolOffer::full_set(false),
         settings: AnswerSettings {

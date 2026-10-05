@@ -6,7 +6,7 @@ use super::MoveError;
 use super::clock::iso_date;
 use serde::Deserialize;
 
-pub const CHAT_OUTCOMES: [&str; 10] = [
+pub const CHAT_OUTCOMES: [&str; 11] = [
     "answered",
     "refused",
     "clarified",
@@ -17,6 +17,7 @@ pub const CHAT_OUTCOMES: [&str; 10] = [
     "content_blocked",
     "withheld",
     "clean_retry",
+    "profanity",
 ];
 
 pub const EXTRACTION_OUTCOMES: [&str; 7] = [

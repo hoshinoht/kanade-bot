@@ -321,7 +321,7 @@ for (const size of [
     await page.setViewportSize(size);
     await fourModels(page);
     await page.goto(`${ADMIN}/chat?sw=off`);
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('13 interactions');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('16 interactions');
     const line = page.locator('.pageline');
     const chips = line.getByRole('list', { name: 'Busiest models, for these rows' }).getByRole('listitem');
     await expect(chips).toHaveCount(2);
@@ -358,7 +358,7 @@ test('chat page line on a phone: the strip under the top bar, the table within t
   await page.setViewportSize({ width: 390, height: 844 });
   await fourModels(page);
   await page.goto(`${ADMIN}/chat?sw=off`);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('13 interactions');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('16 interactions');
   const line = page.locator('.pageline');
   await expect(line.locator('.pageline__head')).toHaveCSS('border-top-width', '0px');
   await line.getByRole('button', { name: /models · 4 errors$/ }).click();

@@ -6,7 +6,8 @@ use std::sync::Arc;
 use serde_json::json;
 
 use crate::chat::nudge::{
-    NudgeRewriter, REWRITE_DEADLINE, RewriteFailure, RewritePrompt, SharedRewriter, accept_rewrite,
+    NudgeRewriter, REWRITE_DEADLINE, RewriteFailure, RewritePrompt, SharedRewriter, WordFilter,
+    WordSource, accept_rewrite_with,
 };
 use crate::chat::persona::{CompiledPersona, NudgeMood};
 use crate::domain::catalog::BossTable;
@@ -230,7 +231,17 @@ pub fn accept_phrase(
     seed: &str,
     catalog: Option<&BossTable>,
 ) -> Result<String, PhraseRejection> {
-    let line = accept_rewrite(output, seed).map_err(|_| PhraseRejection::UnsafeLine)?;
+    accept_phrase_with(output, seed, catalog, WordFilter::builtin())
+}
+
+/// As [`accept_phrase`], against the live effective deny-list.
+pub fn accept_phrase_with(
+    output: &str,
+    seed: &str,
+    catalog: Option<&BossTable>,
+    words: &WordFilter,
+) -> Result<String, PhraseRejection> {
+    let line = accept_rewrite_with(output, seed, words).map_err(|_| PhraseRejection::UnsafeLine)?;
     if line.chars().any(char::is_numeric) {
         return Err(PhraseRejection::FactualTerm);
     }
@@ -311,11 +322,13 @@ fn names_catalog_entry(tokens: &[String], catalog: &BossTable) -> bool {
     })
 }
 
-/// The rewriter and persona; either missing means the seed.
+/// The rewriter and persona; either missing means the seed. `words` is the
+/// live profanity list, read per rewrite (`None`: the built-in list).
 #[derive(Clone, Default)]
 pub struct HeadingRewrite {
     pub rewriter: Option<SharedRewriter>,
     pub persona: Option<PersonaSource>,
+    pub words: Option<WordSource>,
 }
 
 impl std::fmt::Debug for HeadingRewrite {
@@ -323,11 +336,19 @@ impl std::fmt::Debug for HeadingRewrite {
         f.debug_struct("HeadingRewrite")
             .field("rewriter", &self.rewriter.is_some())
             .field("persona", &self.persona.is_some())
+            .field("words", &self.words.is_some())
             .finish()
     }
 }
 
 impl HeadingRewrite {
+    fn words(&self) -> Arc<WordFilter> {
+        self.words.as_ref().map_or_else(
+            || Arc::new(WordFilter::builtin().clone()),
+            |source| source(),
+        )
+    }
+
     /// The prompt a rewrite would send, if one would be attempted.
     pub fn prompt(&self) -> Option<RewritePrompt> {
         self.rewriter.as_ref()?;
@@ -385,7 +406,7 @@ impl HeadingRewrite {
         match tokio::time::timeout(REWRITE_DEADLINE, call).await {
             Err(_) => (fallback(), HeadingSource::Seed, "timeout"),
             Ok(Err(failure)) => (fallback(), HeadingSource::Seed, failure_reason(failure)),
-            Ok(Ok(text)) => match accept_phrase(&text, seed, catalog) {
+            Ok(Ok(text)) => match accept_phrase_with(&text, seed, catalog, &self.words()) {
                 Ok(phrase) => (phrase, HeadingSource::Rewrite, "accepted"),
                 Err(_) => (fallback(), HeadingSource::Seed, "rejected"),
             },
@@ -404,7 +425,7 @@ impl HeadingRewrite {
         match tokio::time::timeout(REWRITE_DEADLINE, call).await {
             Err(_) => (seed(), HeadingSource::Seed, "timeout"),
             Ok(Err(failure)) => (seed(), HeadingSource::Seed, failure_reason(failure)),
-            Ok(Ok(text)) => match accept_rewrite(&text, DAY_OF_HEADING_SEED) {
+            Ok(Ok(text)) => match accept_rewrite_with(&text, DAY_OF_HEADING_SEED, &self.words()) {
                 Ok(line) => (line, HeadingSource::Rewrite, "accepted"),
                 Err(_) => (seed(), HeadingSource::Seed, "rejected"),
             },

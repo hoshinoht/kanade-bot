@@ -200,9 +200,23 @@ impl ChatPilot {
             answered.withheld = true;
         }
         let conversations = &mut self.conversations;
-        conversations.remember(done.channel_id, asked.clone(), done.now);
-        conversations.remember(done.channel_id, answered.clone(), done.now);
-        conversations.anchor(posted_id.as_deref(), done.channel_id, asked, answered);
+        if generation.kept_out_of_context() {
+            // A deflected question, or a reply replaced by the safe line:
+            // neither side enters this process's context (no dangling
+            // question, and the line is not shown back to the model). After
+            // a restart only the question id is reloaded (`reload_excluded`);
+            // a reply chain to the line itself can then bring the line back.
+            for id in [Some(&done.message.id), posted_id.as_ref()]
+                .into_iter()
+                .flatten()
+            {
+                conversations.exclude(id);
+            }
+        } else {
+            conversations.remember(done.channel_id, asked.clone(), done.now);
+            conversations.remember(done.channel_id, answered.clone(), done.now);
+            conversations.anchor(posted_id.as_deref(), done.channel_id, asked, answered);
+        }
         if let Some(focus) = &generation.focus {
             conversations.note_card(done.channel_id, focus, done.now);
         }
@@ -272,6 +286,45 @@ impl ChatPilot {
         // Pages are newest first; insert oldest first so eviction order holds.
         for id in ids.iter().rev() {
             self.conversations.withhold(id);
+        }
+        Ok(ids.len())
+    }
+
+    /// Exclude again, after a restart, the questions of every `profanity`
+    /// row whose question or reply was replaced by the deflection line
+    /// (newest [`WITHHELD_CACHE`]), so a direct reply to one cannot pull it
+    /// back through its reply chain. Read from the existing chat log; the
+    /// bot's own line is not logged by id. Returns how many.
+    pub async fn reload_excluded<S: ModelLogStore + Sync>(
+        &mut self,
+        store: &S,
+    ) -> Result<usize, StoreError> {
+        let mut ids = Vec::new();
+        let mut filter = ChatFilter {
+            outcomes: vec![ChatOutcome::Profanity],
+            limit: MAX_PAGE,
+            ..ChatFilter::default()
+        };
+        while ids.len() < WITHHELD_CACHE {
+            let page = store.list_chats(&filter).await?;
+            ids.extend(
+                page.items
+                    .into_iter()
+                    .filter(|row| {
+                        row.guardrail
+                            .pointer("/profanity/sent")
+                            .is_some_and(serde_json::Value::is_string)
+                    })
+                    .filter_map(|row| row.message_id),
+            );
+            match page.next {
+                Some(cursor) => filter.cursor = Some(cursor),
+                None => break,
+            }
+        }
+        ids.truncate(WITHHELD_CACHE);
+        for id in ids.iter().rev() {
+            self.conversations.exclude(id);
         }
         Ok(ids.len())
     }

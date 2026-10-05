@@ -409,7 +409,7 @@ test('chat: interactions and one interaction in detail', async ({ page }) => {
 
 test('chat filters: deep-linked, combinable, summarised, cleared', async ({ page }) => {
   await go(page, '/chat?outcome=timeout,error');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('2 of 13 interactions');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('2 of 16 interactions');
   await expect(page.getByRole('button', { name: /Outcome: timeout, error/ })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Filters (1)' })).toBeVisible();
   await expect(page.getByRole('listbox', { name: /Chatbot interactions/ }).getByRole('option')).toHaveCount(2);
@@ -419,21 +419,21 @@ test('chat filters: deep-linked, combinable, summarised, cleared', async ({ page
   const panel = page.getByRole('group', { name: 'Filters' });
   await choose(panel.getByLabel('Model'), 'kanata/chat');
   await expect(page).toHaveURL(/model=kanata%2Fchat/);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 of 13 interactions');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 of 16 interactions');
   await panel.getByLabel('At least (ms)').fill('70000');
   await panel.getByLabel('At least (ms)').press('Tab');
   await expect(page.getByText('Nothing matches these filters.')).toBeVisible();
   await page.getByRole('button', { name: /≥ 70000 ms/ }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 of 13 interactions');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 of 16 interactions');
 
   // Tool used, a date preset (guild time) and text, then Clear.
   await page.getByRole('button', { name: 'Clear' }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('13 interactions');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('16 interactions');
   // The panel stays open after Clear.
   await expect(page.getByRole('button', { name: 'Filters (0)' })).toHaveAttribute('aria-expanded', 'true');
   await choose(page.getByRole('group', { name: 'Filters' }).getByLabel('Tool used'), 'schedule.read');
   // Includes the withheld turn: its tool name shows even though its traffic does not.
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('4 of 13 interactions');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('4 of 16 interactions');
   await page.getByRole('button', { name: /^Dates/ }).click();
   const dates = page.getByRole('dialog', { name: 'Date range' });
   await dates.getByRole('button', { name: 'This boss week' }).click();
@@ -441,7 +441,7 @@ test('chat filters: deep-linked, combinable, summarised, cleared', async ({ page
   await expect(page).toHaveURL(/from=2026-09-24&to=2026-09-29/);
   await page.getByRole('searchbox', { name: 'Search interactions' }).fill('carling');
   await expect(page).toHaveURL(/q=carling/);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 of 13 interactions');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 of 16 interactions');
   await page.getByRole('option', { name: /^when is carling this week/ }).click();
   // The open turn keeps the filters: the list beside it still shows them.
   await expect(page).toHaveURL(/\/chat\/c-when\?.*q=carling/);
@@ -455,7 +455,7 @@ test('chat filters: deep-linked, combinable, summarised, cleared', async ({ page
 
   // A refused filter shows its error without the previous filter's rows.
   await go(page, '/chat');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('13 interactions');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('16 interactions');
   await page.getByRole('button', { name: 'Filters (0)' }).click();
   await page.getByRole('group', { name: 'Filters' }).getByLabel('At least (ms)').fill('1e3');
   await page.getByRole('group', { name: 'Filters' }).getByLabel('At least (ms)').press('Tab');

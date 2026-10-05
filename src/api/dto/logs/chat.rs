@@ -174,6 +174,29 @@ pub struct ModelView {
     pub mapping: Vec<TokenName>,
 }
 
+/// A profanity guardrail hit (`guardrail.profanity`, outcome `profanity`).
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct ProfanityDetail {
+    /// The member's question (deflected, no model call) or the finished reply.
+    #[cfg_attr(test, ts(type = "'question' | 'reply'"))]
+    pub side: String,
+    /// The deny-listed word that matched (the first hit).
+    pub word: String,
+    /// The line sent instead; null when the reply's clean retry came back
+    /// clean and was delivered.
+    pub sent: Option<String>,
+}
+
+fn profanity(guardrail: &Value) -> Option<ProfanityDetail> {
+    let hit = guardrail.get("profanity")?;
+    Some(ProfanityDetail {
+        side: hit.get("side")?.as_str()?.to_owned(),
+        word: hit.get("word")?.as_str()?.to_owned(),
+        sent: hit.get("sent").and_then(Value::as_str).map(str::to_owned),
+    })
+}
+
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChatTurn {
@@ -203,6 +226,9 @@ pub struct ChatTurn {
     pub masked: bool,
     /// Null for passthrough and withheld turns.
     pub model_view: Option<ModelView>,
+    /// Set on `profanity` turns: which side hit, the word and the line sent.
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub profanity: Option<ProfanityDetail>,
 }
 
 /// Round aliases in first-use order.
@@ -447,6 +473,7 @@ fn turn(
         guardrail: chat.guardrail.clone(),
         masked: masked.is_some(),
         model_view: masked.and_then(|masked| model_view(names, chat, masked)),
+        profanity: profanity(&chat.guardrail),
     }
 }
 

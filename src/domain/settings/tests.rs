@@ -52,6 +52,9 @@ fn every_section_round_trips_through_its_rows() {
         difficulty: "e".into(),
         minutes: 75,
     });
+    settings.profanity.extra_words = vec!["frick".into()];
+    settings.profanity.allowed_words = vec!["babi".into()];
+    settings.profanity.check_replies = false;
     settings.schedule.reset_weekday = Weekday::Wed;
     settings.schedule.attendance = AttendanceMode::V5;
     settings.posting.channel_id = Some("99".into());
@@ -64,6 +67,7 @@ fn every_section_round_trips_through_its_rows() {
         Section::Persona(settings.persona.clone()),
         Section::Models(settings.models.clone()),
         Section::RunLengths(settings.run_lengths.clone()),
+        Section::Profanity(settings.profanity.clone()),
         Section::Schedule(settings.schedule),
         Section::Posting(settings.posting.clone()),
     ];
@@ -112,6 +116,61 @@ fn saved_run_lengths_row_wins_over_the_seed() {
         stored,
         "saved settings override only the startup seed"
     );
+}
+
+#[test]
+fn profanity_defaults_check_both_sides_and_stored_rows_are_strict() {
+    let defaults = Profanity::default();
+    assert!(defaults.check_questions && defaults.check_replies);
+    assert!(defaults.extra_words.is_empty() && defaults.allowed_words.is_empty());
+    assert_eq!(defaults.deflection_line, DEFAULT_DEFLECTION_LINE);
+    assert!(defaults.check().is_ok());
+    let stored = |edit: fn(&mut Profanity)| {
+        let mut profanity = Profanity::default();
+        edit(&mut profanity);
+        let row = serde_json::to_string(&profanity).unwrap();
+        resolve(
+            &rows(&[(keys::PROFANITY, &row)]),
+            &RuntimeSettings::default(),
+        )
+    };
+    let saved = stored(|p| p.extra_words = vec!["frick".into()]).expect("reads");
+    assert_eq!(saved.profanity.extra_words, ["frick"]);
+    for bad in [
+        (|p: &mut Profanity| p.extra_words = vec!["Frick".into()]) as fn(&mut Profanity),
+        |p| p.extra_words = vec!["fr1ck".into()],
+        |p| p.extra_words = vec!["x".into()],
+        |p| p.extra_words = vec!["frick".into(), "frick".into()],
+        |p| p.allowed_words = vec!["two words".into()],
+        |p| {
+            p.extra_words = vec!["babi".into()];
+            p.allowed_words = vec!["babi".into()];
+        },
+        |p| {
+            p.extra_words = (0..=MAX_PROFANITY_WORDS)
+                .map(|i| {
+                    let letter = |n: usize| char::from(b'a' + u8::try_from(n % 26).unwrap());
+                    [letter(i / 26), letter(i)].iter().collect()
+                })
+                .collect();
+        },
+        |p| p.deflection_line = String::new(),
+        |p| p.deflection_line = " padded".into(),
+        |p| p.deflection_line = "two\nlines".into(),
+        |p| p.deflection_line = "x".repeat(MAX_DEFLECTION_CHARS + 1),
+    ] {
+        assert!(
+            matches!(stored(bad), Err(SettingsError::Malformed { .. })),
+            "a malformed profanity row is refused"
+        );
+    }
+    assert!(matches!(
+        resolve(
+            &rows(&[(keys::PROFANITY, r#"{"extra_words":[]}"#)]),
+            &RuntimeSettings::default()
+        ),
+        Err(SettingsError::Malformed { .. })
+    ));
 }
 
 #[test]

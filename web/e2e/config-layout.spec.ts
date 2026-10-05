@@ -108,7 +108,7 @@ test("config: search filters the contents, keeps one tab stop and leaves the ope
   await search.fill("zzz");
   await expect(page.getByText("No settings match “zzz”.")).toBeVisible();
   await search.fill("");
-  await expect(visible).toHaveCount(13);
+  await expect(visible).toHaveCount(14);
 });
 
 test("config: the access problem is a risk chip on the page line that opens Channel access", async ({

@@ -21,6 +21,8 @@ struct Turn {
     tools: Vec<(&'static str, &'static str, &'static str, u32, &'static str)>,
     /// The provider reported token usage for its rounds.
     usage: bool,
+    /// A profanity guardrail hit: side, matched word, the line sent instead.
+    profanity: Option<(&'static str, &'static str, Option<&'static str>)>,
 }
 
 /// Round `i`'s `(prompt, completion, estimate)` tokens: none when turned
@@ -71,6 +73,7 @@ fn turn(
         said: "",
         tools: vec![],
         usage: true,
+        profanity: None,
     }
 }
 
@@ -194,6 +197,33 @@ fn turns() -> Vec<Turn> {
             usage: false,
             ..turn("c-blocked", 42, "1006", "fa-night", "content_blocked")
         },
+        // The profanity guardrail, with invented placeholder words: a
+        // deflected question (no model call), a reply whose clean retry hit
+        // again (the line was sent) and one whose retry came back clean.
+        Turn {
+            models: vec![],
+            latency_ms: 40,
+            asked: "<@1543532497948909578> blarg, when is lotus?",
+            said: super::profanity::DEFAULT_LINE,
+            profanity: Some(("question", "blarg", Some(super::profanity::DEFAULT_LINE))),
+            ..turn("c-deflected", 40, "1009", "seren-trio", "profanity")
+        },
+        Turn {
+            models: vec![CHAT, CHAT],
+            latency_ms: 3_960,
+            asked: "is kalos still on tonight",
+            said: super::profanity::DEFAULT_LINE,
+            profanity: Some(("reply", "frak", Some(super::profanity::DEFAULT_LINE))),
+            ..turn("c-safe-line", 36, "1005", "kalos-four", "profanity")
+        },
+        Turn {
+            models: vec![CHAT, CHAT],
+            latency_ms: 3_120,
+            asked: "when is lotus",
+            said: "Lotus is Thursday 21:00; three of six are in so far.",
+            profanity: Some(("reply", "smeg", None)),
+            ..turn("c-recovered", 33, "1003", "limbo-trio", "profanity")
+        },
         Turn {
             models: vec![],
             latency_ms: 0,
@@ -307,7 +337,14 @@ impl Store {
         if masked {
             guardrail.insert("pseudonymized".into(), json!(true));
         }
+        let profanity = t
+            .profanity
+            .map(|(side, word, sent)| json!({ "side": side, "word": word, "sent": sent }));
+        if let Some(hit) = &profanity {
+            guardrail.insert("profanity".into(), hit.clone());
+        }
         row["guardrail"] = Value::Object(guardrail);
+        row["profanity"] = profanity.unwrap_or(Value::Null);
         row["masked"] = json!(masked && ran);
         row["model_view"] = if masked { model_view() } else { Value::Null };
     }
@@ -442,7 +479,9 @@ impl Store {
                     "reasoning_content": if t.id == "c-guide" && i == 0 { Some("Read the checked-in Limbo notes before answering.") } else { None },
                     "reasoning_tokens": if t.id == "c-guide" && i == 0 { Some(32) } else { None::<u32> },
                     "guardrail": {
-                        "clean": t.outcome == "clean_retry" && i + 1 == t.models.len(),
+                        // A reply-side profanity hit spends the clean retry too.
+                        "clean": (t.outcome == "clean_retry" || t.profanity.is_some_and(|hit| hit.0 == "reply"))
+                            && i + 1 == t.models.len(),
                         "content_filter": t.outcome == "content_blocked",
                     },
                 }))
@@ -499,7 +538,7 @@ mod tests {
     fn chat_filters_combine_and_refuse_nonsense() {
         let s = store();
         let all = s.chat(&LogQuery::default()).ok().unwrap();
-        assert_eq!(all["rows"].as_array().unwrap().len(), 13);
+        assert_eq!(all["rows"].as_array().unwrap().len(), 16);
         let q = LogQuery {
             outcome: Some("timeout,error".into()),
             ..Default::default()
@@ -536,6 +575,27 @@ mod tests {
             })
             .is_err()
         );
+    }
+
+    #[test]
+    fn profanity_turns_filter_and_show_their_detail() {
+        let s = store();
+        let q = LogQuery {
+            outcome: Some("profanity".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            ids(&s.chat(&q).ok().unwrap()),
+            ["c-deflected", "c-safe-line", "c-recovered"]
+        );
+        let deflected = s.chat_turn("c-deflected").ok().unwrap();
+        assert_eq!(deflected["profanity"]["side"], "question");
+        assert_eq!(deflected["said"], deflected["profanity"]["sent"]);
+        assert!(deflected["rounds"].as_array().unwrap().is_empty());
+        let recovered = s.chat_turn("c-recovered").ok().unwrap();
+        assert!(recovered["profanity"]["sent"].is_null());
+        assert_eq!(recovered["rounds"][1]["guardrail"]["clean"], true);
+        assert!(s.chat_turn("c-when").ok().unwrap()["profanity"].is_null());
     }
 
     #[test]

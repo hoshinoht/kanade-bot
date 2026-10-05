@@ -22,10 +22,16 @@ fn chat_guardrail(generation: &Generation) -> Value {
     if generation.external_unmasked {
         guardrail.insert("external_unmasked".into(), Value::Bool(true));
     }
+    if let Some(hit) = &generation.profanity {
+        guardrail.insert("profanity".into(), hit.to_json());
+    }
     Value::Object(guardrail)
 }
 
 pub fn chat_outcome(generation: &Generation) -> ChatOutcome {
+    if generation.profanity.is_some() {
+        return ChatOutcome::Profanity;
+    }
     if let Some(failure) = &generation.failure {
         return match failure {
             AnswerFailure::ContentBlocked => ChatOutcome::ContentBlocked,

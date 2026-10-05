@@ -33,7 +33,8 @@ pub use day_of::{card_runs, day_of_card};
 pub use digest::{DIGEST_EMPTY, DIGEST_FOOTER, digest_card};
 pub use heading::{
     COUNTDOWN_PHRASE_SEED, DAY_OF_HEADING_SEED, DIGEST_PHRASE_SEED, HeadingRewrite, HeadingSource,
-    PersonaSource, PhraseKind, PhraseRejection, accept_phrase, failure_reason, seed_heading,
+    PersonaSource, PhraseKind, PhraseRejection, accept_phrase, accept_phrase_with, failure_reason,
+    seed_heading,
 };
 pub use record::{CardRecord, DAY_OF_KIND, DigestPhraseStore, PostedCard, ReminderCardStore};
 

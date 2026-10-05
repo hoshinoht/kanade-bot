@@ -15,6 +15,7 @@ pub mod logfilter;
 mod model_context;
 pub mod past;
 mod people;
+mod profanity;
 mod reminders;
 mod seed;
 

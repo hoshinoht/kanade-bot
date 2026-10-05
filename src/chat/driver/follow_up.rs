@@ -188,8 +188,13 @@ impl<A: Answerer, S: Surface> FollowUpHeld<A, S> {
             .anchor_assistant(&id, &self.origin_id, assistant);
     }
 
-    async fn complete(&mut self, row: ChatInteraction, reply: String) {
-        if let Some(id) = lock(&self.record).first_id() {
+    /// `kept_out`: the reply was replaced by the profanity line, which never
+    /// enters context, not even through a member's reply to it.
+    async fn complete(&mut self, row: ChatInteraction, reply: String, kept_out: bool) {
+        let record = lock(&self.record).clone();
+        if kept_out {
+            exclude_landed(&mut self.driver.state().pilot.conversations, &record);
+        } else if let Some(id) = record.first_id() {
             self.remember(reply, id);
         }
         self.driver.shared.answerer.record(row).await;
@@ -248,7 +253,9 @@ impl<A: Answerer, S: Surface> FollowUpHeld<A, S> {
             }
             let record = lock(&record_handle).clone();
             let row = row(&prepared, &ctx, &prompt, &generation, &record, Some(cause));
-            if let Some(id) = record.first_id() {
+            if generation.kept_out_of_context() {
+                exclude_landed(&mut driver.state().pilot.conversations, &record);
+            } else if let Some(id) = record.first_id() {
                 let assistant = ChatTurn::new(TurnRole::Assistant, reply.clone(), Some(id.clone()));
                 let mut state = driver.state();
                 state
@@ -263,6 +270,16 @@ impl<A: Answerer, S: Surface> FollowUpHeld<A, S> {
             driver.shared.answerer.record(row).await;
             driver.state().rejection_followups.remove(&origin_id);
         });
+    }
+}
+
+/// Every landed part of a replaced follow-up reply leaves context for good.
+fn exclude_landed(
+    conversations: &mut crate::chat::context::Conversations,
+    record: &DeliveryRecord,
+) {
+    for landed in &record.landed {
+        conversations.exclude(&landed.id);
     }
 }
 
@@ -452,6 +469,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                 model_context_tokens: prepared.context_window,
                 clean_retry: false,
             },
+            profanity: Some(&prepared.profanity),
         };
         let deletion = Deletion::default();
         let delivery = Delivery::new(
@@ -504,6 +522,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
             &delivery_record,
             was_cut.then_some(Cause::Shutdown),
         );
-        held.complete(row, reply).await;
+        let kept_out = generation.kept_out_of_context();
+        held.complete(row, reply, kept_out).await;
     }
 }

@@ -1645,6 +1645,106 @@ async fn run_lengths_are_validated_saved_once_and_apply_to_the_next_week_read() 
 }
 
 #[tokio::test]
+async fn profanity_is_validated_saved_and_published_live() {
+    let config = Config::new().await;
+    let initial = config.get().await;
+    let profanity = &initial["profanity"];
+    assert_eq!(profanity["check_questions"], true);
+    assert_eq!(profanity["check_replies"], true);
+    assert_eq!(profanity["extra_words"], json!([]));
+    assert_eq!(profanity["allowed_words"], json!([]));
+    assert_eq!(
+        profanity["deflection_line"],
+        kanade::domain::settings::DEFAULT_DEFLECTION_LINE
+    );
+    let builtin: Vec<&str> = profanity["builtin_words"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|word| word.as_str().unwrap())
+        .collect();
+    assert!(builtin.contains(&"babi") && builtin.contains(&"fuck"));
+    assert!(
+        builtin.windows(2).all(|pair| pair[0] < pair[1]),
+        "sorted, once each"
+    );
+
+    let too_many: Vec<String> = (0..101)
+        .map(|i| {
+            let letter = |n: usize| char::from(b'a' + u8::try_from(n % 26).unwrap());
+            [letter(i / 26), letter(i), 'x'].iter().collect()
+        })
+        .collect();
+    for body in [
+        json!({"profanity": {"extra_words": ["fr1ck"]}}),
+        json!({"profanity": {"extra_words": ["two words"]}}),
+        json!({"profanity": {"extra_words": ["x"]}}),
+        json!({"profanity": {"extra_words": ["frick", " FRICK "]}}),
+        json!({"profanity": {"extra_words": ["fuck"]}}),
+        json!({"profanity": {"extra_words": too_many}}),
+        json!({"profanity": {"extra_words": "frick"}}),
+        json!({"profanity": {"allowed_words": ["frick"]}}),
+        json!({"profanity": {"check_questions": "yes"}}),
+        json!({"profanity": {"deflection_line": ""}}),
+        json!({"profanity": {"deflection_line": "   "}}),
+        json!({"profanity": {"deflection_line": "x".repeat(201)}}),
+        json!({"profanity": {"deflection_line": "one\ntwo"}}),
+        json!({"profanity": {"deflection_line": "Watch the shit talk."}}),
+        json!({"profanity": {"extra_words": ["clean"]}}),
+    ] {
+        config.refused(body, 422, "invalid").await;
+    }
+    config
+        .refused(
+            json!({"profanity": {"builtin_words": []}}),
+            422,
+            "read_only",
+        )
+        .await;
+    config
+        .refused(json!({"profanity": {"words": []}}), 422, "unknown_field")
+        .await;
+
+    let mut changes = config.desk.subscribe();
+    let body = json!({"profanity": {
+        "extra_words": [" Frick ", "heck"],
+        "allowed_words": ["babi"],
+        "check_replies": false,
+        "deflection_line": "  Language, please!  ",
+    }});
+    let saved = view(
+        &config.send("PATCH", PATH, Some("profanity"), &body).await,
+        "profanity save",
+    );
+    assert_eq!(saved["profanity"]["extra_words"], json!(["frick", "heck"]));
+    assert_eq!(saved["profanity"]["allowed_words"], json!(["babi"]));
+    assert_eq!(saved["profanity"]["check_replies"], false);
+    assert_eq!(saved["profanity"]["check_questions"], true);
+    assert_eq!(saved["profanity"]["deflection_line"], "Language, please!");
+    {
+        let change = changes.borrow_and_update();
+        assert_eq!(change.revision, 1);
+        assert_eq!(change.section, Some("profanity"));
+        assert_eq!(change.settings.profanity.extra_words, ["frick", "heck"]);
+    }
+    // The line is checked against the list it would be sent with.
+    config
+        .refused(
+            json!({"profanity": {"deflection_line": "Oh heck, ask nicely."}}),
+            422,
+            "invalid",
+        )
+        .await;
+    let reloaded = config.get().await;
+    assert_eq!(reloaded["profanity"], saved["profanity"]);
+    let no_op = config
+        .patch(json!({"profanity": {"check_questions": true}}))
+        .await;
+    assert_eq!(no_op["profanity"], saved["profanity"]);
+    assert!(!changes.has_changed().unwrap());
+}
+
+#[tokio::test]
 async fn saved_changes_are_published_to_subscribers() {
     let config = Config::new().await;
     let mut changes = config.desk.subscribe();

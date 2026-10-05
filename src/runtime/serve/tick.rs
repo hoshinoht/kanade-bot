@@ -30,7 +30,7 @@ use crate::{
         transport::DiscordTransport,
     },
     chat::{
-        nudge::{GovernedRewriter, RewriteReserve, SharedRewriter},
+        nudge::{GovernedRewriter, RewriteReserve, SharedRewriter, WordFilter, WordSource},
         persona::{CompiledPersona, PersonaStore},
     },
     domain::notify::DeliveryJournal,
@@ -148,6 +148,15 @@ pub fn card_kit(
     personas: Arc<PersonaStore>,
     settings: watch::Receiver<SettingsChanged>,
 ) -> CardKit {
+    // The live profanity list, read per rewrite like chat reads it per question.
+    let live = settings.clone();
+    let words: WordSource = Arc::new(move || {
+        let profanity = &live.borrow().settings.profanity;
+        Arc::new(WordFilter::new(
+            &profanity.extra_words,
+            &profanity.allowed_words,
+        ))
+    });
     let rewriter = models
         .filter(|stack| stack.has_role(Role::Rewrite))
         .map(|stack| {
@@ -174,6 +183,7 @@ pub fn card_kit(
         heading: HeadingRewrite {
             rewriter,
             persona: Some(persona),
+            words: Some(words),
         },
     }
 }

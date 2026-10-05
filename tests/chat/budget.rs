@@ -76,6 +76,7 @@ async fn ask_scripted(
                     content: format!("Alvin tan: {QUESTION}"),
                 },
             ],
+            profanity: None,
             reminder: kanade().voice_reminder(),
             offer,
             settings: tuned,

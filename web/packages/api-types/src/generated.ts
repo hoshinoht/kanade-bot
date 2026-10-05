@@ -245,7 +245,7 @@ export type PastPage = { items: Array<PastItem>,
  */
 next_before: string | null, };
 
-export type ConfigView = { pings: Pings, watching: Watching, chatbot: Chatbot, notifications: Notifications, self_service: SelfServiceSettings, persona: PersonaSettings, models: ModelSettings, run_lengths: RunLengths, manage_messages: ManageMessages, notices: Array<string>, env: Array<EnvRow>, 
+export type ConfigView = { pings: Pings, watching: Watching, chatbot: Chatbot, notifications: Notifications, self_service: SelfServiceSettings, persona: PersonaSettings, models: ModelSettings, run_lengths: RunLengths, profanity: ProfanitySettings, manage_messages: ManageMessages, notices: Array<string>, env: Array<EnvRow>, 
 /**
  * `null` when no digest is active or the journal could not be read.
  */
@@ -341,6 +341,12 @@ group: string | null, };
 export type RunLengths = { default_minutes: number, overrides: Array<RunLengthOverride>, };
 
 export type RunLengthOverride = { boss: string, difficulty: Difficulty, minutes: number, };
+
+/**
+ * The chat profanity guardrail. `builtin_words` is read-only: the code-owned
+ * list, each entry of which may be allowed again.
+ */
+export type ProfanitySettings = { extra_words: Array<string>, allowed_words: Array<string>, check_questions: boolean, check_replies: boolean, deflection_line: string, builtin_words: Array<string>, };
 
 export type ManageMessages = { missing: Array<string>, };
 
@@ -586,6 +592,24 @@ reply: string,
  */
 mapping: Array<TokenName>, };
 
+/**
+ * A profanity guardrail hit (`guardrail.profanity`, outcome `profanity`).
+ */
+export type ProfanityDetail = { 
+/**
+ * The member's question (deflected, no model call) or the finished reply.
+ */
+side: 'question' | 'reply', 
+/**
+ * The deny-listed word that matched (the first hit).
+ */
+word: string, 
+/**
+ * The line sent instead; null when the reply's clean retry came back
+ * clean and was delivered.
+ */
+sent: string | null, };
+
 export type ChatTurn = { said: string, tools: Array<ChatToolCall>, rounds: Array<ChatRoundFacts>, cards: Array<ChatCard>, raw: string, 
 /**
  * Persona bundle id; null when none answered (rate limited, imported).
@@ -614,7 +638,11 @@ masked: boolean,
 /**
  * Null for passthrough and withheld turns.
  */
-model_view: ModelView | null, id: string, at: string, member: Member, 
+model_view: ModelView | null, 
+/**
+ * Set on `profanity` turns: which side hit, the word and the line sent.
+ */
+profanity?: ProfanityDetail | null, id: string, at: string, member: Member, 
 /**
  * The full Discord id, even when `member.name` is a placeholder.
  */

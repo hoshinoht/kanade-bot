@@ -23,6 +23,8 @@ export interface ConfigPatch {
   notifications?: { quiet_mode?: boolean };
   /** Both keys optional; `overrides` replaces the list whole. */
   run_lengths?: Partial<ConfigView['run_lengths']>;
+  /** Lists replace whole; `builtin_words` is read-only (422). */
+  profanity?: Partial<Omit<ConfigView['profanity'], 'builtin_words'>>;
 }
 
 /** The opposite change, offered as Undo on the success toast (switches and visibility). */

@@ -4,7 +4,7 @@
   "title": "Chatbot log and turn detail",
   "$defs": {
     "ChatOutcome": {
-      "description": "`unknown`: a v4-imported question that maps to no other outcome.",
+      "description": "`unknown`: a v4-imported question that maps to no other outcome. `profanity`: the profanity guardrail deflected the question or retried or replaced the reply (see ChatTurn.profanity).",
       "enum": [
         "answered",
         "refused",
@@ -16,6 +16,7 @@
         "content_blocked",
         "withheld",
         "clean_retry",
+        "profanity",
         "unknown"
       ]
     },
@@ -461,6 +462,24 @@
             }
           ],
           "description": "Admin only; null for passthrough and withheld turns."
+        },
+        "profanity": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["side", "word", "sent"],
+              "properties": {
+                "side": { "enum": ["question", "reply"] },
+                "word": { "type": "string", "description": "The listed word that matched (the first hit)." },
+                "sent": { "type": ["string", "null"], "description": "The line sent instead; null when the reply's clean retry came back clean and was delivered." }
+              }
+            }
+          ],
+          "description": "Set on `profanity` turns (guardrail.profanity). Always sent by the server; optional so earlier fixtures stay valid."
         }
       }
     },

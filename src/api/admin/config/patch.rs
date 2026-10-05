@@ -12,11 +12,15 @@ use serde_json::{Map, Value};
 
 use crate::{
     api::admin::write::Refusal,
-    chat::persona::ProfileId,
+    chat::{
+        nudge::{WordFilter, is_builtin_word},
+        persona::ProfileId,
+    },
     domain::settings::{
-        Chatbot, ContextSettings, MAX_ROLE_PROFILE_ASSIGNMENTS, Notifications,
-        OVERRIDE_RUN_MINUTES, Persona, Pings, RUN_MINUTES, Rate, RoleProfileAssignment,
-        RunLengthOverride, RunLengths, SelfService, SelfServiceMode, Watching,
+        Chatbot, ContextSettings, MAX_DEFLECTION_CHARS, MAX_PROFANITY_WORDS,
+        MAX_ROLE_PROFILE_ASSIGNMENTS, Notifications, OVERRIDE_RUN_MINUTES, PROFANITY_WORD_CHARS,
+        Persona, Pings, Profanity, RUN_MINUTES, Rate, RoleProfileAssignment, RunLengthOverride,
+        RunLengths, SelfService, SelfServiceMode, Watching, is_profanity_word,
     },
 };
 
@@ -81,7 +85,8 @@ fn read_only(section: &str, key: &str) -> Option<&'static str> {
             "models",
             "reachable" | "catalog" | "groups_source" | "alias_limits" | "capacity_check",
         )
-        | ("persona", "personas" | "profiles" | "role_profiles_digest") => Some(DERIVED),
+        | ("persona", "personas" | "profiles" | "role_profiles_digest")
+        | ("profanity", "builtin_words") => Some(DERIVED),
         ("models", "key_limits" | "pii_pseudonymise") => Some(DEPLOYMENT),
         ("models", "groups") => Some(GROUPS),
         _ => None,
@@ -103,7 +108,7 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
     };
     match name.as_str() {
         "pings" | "watching" | "chatbot" | "notifications" | "self_service" | "persona"
-        | "models" | "run_lengths" => {}
+        | "models" | "run_lengths" | "profanity" => {}
         "manage_messages" | "env" | "notices" => {
             return Err(PatchError::read_only(name, DEPLOYMENT));
         }
@@ -126,6 +131,14 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
                 | ("persona", "active" | "visibility" | "role_profiles")
                 | ("models", "roles" | "context")
                 | ("run_lengths", "default_minutes" | "overrides")
+                | (
+                    "profanity",
+                    "extra_words"
+                        | "allowed_words"
+                        | "check_questions"
+                        | "check_replies"
+                        | "deflection_line"
+                )
         ) || (name == "persona"
             && key == "role_profiles_digest"
             && body.contains_key("role_profiles"));
@@ -208,6 +221,98 @@ pub fn run_lengths(
         }
         next.overrides = overrides;
     }
+    Ok(next)
+}
+
+/// A word list as stored: trimmed, lowercased, letters only, bounded, no
+/// repeats (a repeat is refused rather than dropped, so nothing is silently lost).
+fn words(value: &Value, path: &str) -> Result<Vec<String>, PatchError> {
+    let items = value
+        .as_array()
+        .ok_or_else(|| field_error(path, "an array of words"))?;
+    if items.len() > MAX_PROFANITY_WORDS {
+        return Err(PatchError::invalid(format!(
+            "{path} holds at most {MAX_PROFANITY_WORDS} words."
+        )));
+    }
+    let mut words: Vec<String> = Vec::with_capacity(items.len());
+    for item in items {
+        let word = item
+            .as_str()
+            .map(|word| word.trim().to_lowercase())
+            .filter(|word| is_profanity_word(word))
+            .ok_or_else(|| {
+                PatchError::invalid(format!(
+                    "{path} takes single words of {}-{} letters (no digits, spaces or symbols).",
+                    PROFANITY_WORD_CHARS.start(),
+                    PROFANITY_WORD_CHARS.end()
+                ))
+            })?;
+        if words.contains(&word) {
+            return Err(PatchError::invalid(format!(
+                "“{word}” is listed twice in {path}."
+            )));
+        }
+        words.push(word);
+    }
+    Ok(words)
+}
+
+/// The guardrail section merged onto `current`. Allowed words must be
+/// built-ins; extra words must not be (allow-again is how a built-in comes
+/// off); the deflection line must pass the list it is sent in place of.
+pub fn profanity(current: &Profanity, body: &Map<String, Value>) -> Result<Profanity, PatchError> {
+    let mut next = current.clone();
+    if let Some(value) = body.get("extra_words") {
+        next.extra_words = words(value, "profanity.extra_words")?;
+    }
+    if let Some(value) = body.get("allowed_words") {
+        next.allowed_words = words(value, "profanity.allowed_words")?;
+    }
+    if let Some(value) = body.get("check_questions") {
+        next.check_questions = flag(value, "profanity.check_questions")?;
+    }
+    if let Some(value) = body.get("check_replies") {
+        next.check_replies = flag(value, "profanity.check_replies")?;
+    }
+    if let Some(value) = body.get("deflection_line") {
+        let line = value
+            .as_str()
+            .map(str::trim)
+            .filter(|line| {
+                !line.is_empty()
+                    && line.chars().count() <= MAX_DEFLECTION_CHARS
+                    && !line.chars().any(char::is_control)
+            })
+            .ok_or_else(|| {
+                PatchError::invalid(format!(
+                    "The deflection line is one line of 1-{MAX_DEFLECTION_CHARS} characters."
+                ))
+            })?;
+        line.clone_into(&mut next.deflection_line);
+    }
+    if let Some(word) = next
+        .allowed_words
+        .iter()
+        .find(|word| !is_builtin_word(word))
+    {
+        return Err(PatchError::invalid(format!(
+            "“{word}” is not on the built-in list, so it cannot be allowed again."
+        )));
+    }
+    if let Some(word) = next.extra_words.iter().find(|word| is_builtin_word(word)) {
+        return Err(PatchError::invalid(format!(
+            "“{word}” is already on the built-in list."
+        )));
+    }
+    let filter = WordFilter::new(&next.extra_words, &next.allowed_words);
+    if let Some(hit) = filter.denied(&next.deflection_line) {
+        return Err(PatchError::invalid(format!(
+            "The deflection line uses the listed word “{}”.",
+            hit.as_str()
+        )));
+    }
+    next.check().map_err(PatchError::invalid)?;
     Ok(next)
 }
 

@@ -10,9 +10,9 @@ use super::SettingsError;
 use super::keys;
 use super::model::{
     Chatbot, ContextSettings, MAX_CONTEXT_TOKENS, MAX_ROLE_PROFILE_ASSIGNMENTS, Models,
-    Notifications, OVERRIDE_RUN_MINUTES, Persona, Pings, Posting, RUN_MINUTES, Reasoning,
-    RoleModel, RoleProfileAssignment, RunLengths, RuntimeSettings, Schedule, SelfService,
-    SelfServiceMode, Watching,
+    Notifications, OVERRIDE_RUN_MINUTES, Persona, Pings, Posting, Profanity, RUN_MINUTES,
+    Reasoning, RoleModel, RoleProfileAssignment, RunLengths, RuntimeSettings, Schedule,
+    SelfService, SelfServiceMode, Watching,
 };
 use crate::domain::attendance::AttendanceMode;
 use crate::domain::weeks::{parse_hhmm, parse_weekday};
@@ -29,6 +29,7 @@ pub enum Section {
     Persona(Persona),
     Models(Models),
     RunLengths(RunLengths),
+    Profanity(Profanity),
     Schedule(Schedule),
     Posting(Posting),
 }
@@ -307,6 +308,15 @@ fn run_lengths(key: &'static str, value: &str) -> Result<RunLengths, SettingsErr
     Ok(lengths)
 }
 
+fn profanity(key: &'static str, value: &str) -> Result<Profanity, SettingsError> {
+    let profanity: Profanity = serde_json::from_str(value)
+        .map_err(|_| malformed(key, value, "expected profanity settings JSON"))?;
+    profanity
+        .check()
+        .map_err(|reason| malformed(key, value, reason))?;
+    Ok(profanity)
+}
+
 fn apply(out: &mut RuntimeSettings, key: &'static str, value: &str) -> Result<(), SettingsError> {
     match key {
         keys::DAY_OF_PING_TIME => out.pings.day_of_ping_time = clock(key, value)?,
@@ -342,6 +352,7 @@ fn apply(out: &mut RuntimeSettings, key: &'static str, value: &str) -> Result<()
         keys::REWRITE_REASONING => out.models.rewrite.reasoning = reasoning(key, value, true)?,
         keys::MODEL_CONTEXT => out.models.context = context(key, value)?,
         keys::RUN_LENGTHS => out.run_lengths = run_lengths(key, value)?,
+        keys::PROFANITY => out.profanity = profanity(key, value)?,
         keys::RESET_WEEKDAY => {
             out.schedule.reset_weekday =
                 parse_weekday(value).map_err(|error| malformed(key, value, error.to_string()))?;
@@ -458,6 +469,10 @@ pub(super) fn encode(section: &Section) -> Rows {
             keys::RUN_LENGTHS,
             serde_json::to_string(lengths).expect("run lengths serialize infallibly"),
         )],
+        Section::Profanity(profanity) => vec![(
+            keys::PROFANITY,
+            serde_json::to_string(profanity).expect("profanity settings serialize infallibly"),
+        )],
         Section::Schedule(schedule) => vec![
             (keys::RESET_WEEKDAY, weekday_text(schedule.reset_weekday)),
             (keys::RESET_TIME, clock_text(schedule.reset_time)),
@@ -492,6 +507,7 @@ pub(super) fn encode_checked(section: &Section) -> Result<Rows, SettingsError> {
         Section::Persona(_) => Section::Persona(probe.persona),
         Section::Models(_) => Section::Models(probe.models),
         Section::RunLengths(_) => Section::RunLengths(probe.run_lengths),
+        Section::Profanity(_) => Section::Profanity(probe.profanity),
         Section::Schedule(_) => Section::Schedule(probe.schedule),
         Section::Posting(_) => Section::Posting(probe.posting),
     };
@@ -515,6 +531,7 @@ impl Section {
             Self::Persona(_) => "persona",
             Self::Models(_) => "models",
             Self::RunLengths(_) => "run_lengths",
+            Self::Profanity(_) => "profanity",
             Self::Schedule(_) => "schedule",
             Self::Posting(_) => "posting",
         }

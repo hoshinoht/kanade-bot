@@ -28,19 +28,20 @@ fn posted_card(generation: &Generation) -> bool {
     last_write(generation).is_some_and(|last| last.outcome.ok && !last.posted.is_empty())
 }
 
-fn finalize_write_reply(generation: &mut Generation) {
+/// `true` when the model's reply was replaced by the fixed status text.
+fn finalize_write_reply(generation: &mut Generation) -> bool {
     let Some(last) = last_write(generation) else {
-        return;
+        return false;
     };
     let posted = !last.posted.is_empty();
     if last.outcome.ok && posted {
-        return;
+        return false;
     }
     if last.outcome.error == Some(REFUSED) && looks_like_clarification(&generation.reply) {
-        return;
+        return false;
     }
     if generation.reply.is_empty() {
-        return;
+        return false;
     }
     let detail = tidy(&member_facing(&last.outcome.output), None);
     let status = if posted {
@@ -54,6 +55,7 @@ fn finalize_write_reply(generation: &mut Generation) {
         format!("{status} {detail}")
     };
     generation.reply = tidy(&text, None);
+    true
 }
 
 /// No new-card embroidery on a turn that posted nothing.
@@ -67,8 +69,10 @@ fn finalize_read_claim(generation: &mut Generation) {
 
 /// `D-GROUND-WRITE`: a turn whose last write posted a card keeps the model's
 /// card reply; v4 regrounded it, so a time in it pulled in the lookup listing.
-pub(super) fn finish(generation: &mut Generation) {
-    finalize_write_reply(generation);
+/// Returns `true` when the model's words were replaced whole by fixed text
+/// (an unposted write), so members never see them.
+pub(super) fn finish(generation: &mut Generation) -> bool {
+    let replaced = finalize_write_reply(generation);
     finalize_read_claim(generation);
     if !generation.reply.is_empty() {
         let outcomes = generation.tool_outcomes();
@@ -80,4 +84,5 @@ pub(super) fn finish(generation: &mut Generation) {
             generation.reply = shape_reply(&generation.reply, &outcomes);
         }
     }
+    replaced
 }

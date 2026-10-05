@@ -20,8 +20,87 @@ pub struct RuntimeSettings {
     pub persona: Persona,
     pub models: Models,
     pub run_lengths: RunLengths,
+    pub profanity: Profanity,
     pub schedule: Schedule,
     pub posting: Posting,
+}
+
+/// The chat profanity guardrail (`v5.profanity`, user decision 2026-10-05):
+/// the code-owned deny-list minus `allowed_words` plus `extra_words`, checked
+/// on member questions and on finished replies; `deflection_line` is sent
+/// instead. Whether an allowed word is a built-in and whether the line passes
+/// the list are checked at the API (the list lives in `chat::nudge`).
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Profanity {
+    pub extra_words: Vec<String>,
+    pub allowed_words: Vec<String>,
+    pub check_questions: bool,
+    pub check_replies: bool,
+    pub deflection_line: String,
+}
+
+pub const MAX_PROFANITY_WORDS: usize = 100;
+pub const PROFANITY_WORD_CHARS: std::ops::RangeInclusive<usize> = 2..=32;
+pub const MAX_DEFLECTION_CHARS: usize = 200;
+/// Mild and generic, in Kanade's voice; it passes the built-in list.
+pub const DEFAULT_DEFLECTION_LINE: &str =
+    "Ochitsuite! Let's keep it clean in here. Ask me again nicely and I'll help.";
+
+impl Default for Profanity {
+    fn default() -> Self {
+        Self {
+            extra_words: Vec::new(),
+            allowed_words: Vec::new(),
+            check_questions: true,
+            check_replies: true,
+            deflection_line: DEFAULT_DEFLECTION_LINE.to_owned(),
+        }
+    }
+}
+
+impl Profanity {
+    /// The stored-form rules: each list at most [`MAX_PROFANITY_WORDS`]
+    /// distinct lowercase words of letters only, [`PROFANITY_WORD_CHARS`]
+    /// long, no word on both lists; the line trimmed, one line, non-empty and
+    /// at most [`MAX_DEFLECTION_CHARS`].
+    pub fn check(&self) -> Result<(), &'static str> {
+        for words in [&self.extra_words, &self.allowed_words] {
+            if words.len() > MAX_PROFANITY_WORDS {
+                return Err("a word list is too long");
+            }
+            for (index, word) in words.iter().enumerate() {
+                if !is_profanity_word(word) {
+                    return Err("words are lowercase letters only");
+                }
+                if words[..index].contains(word) {
+                    return Err("a word is listed twice");
+                }
+            }
+        }
+        if self
+            .extra_words
+            .iter()
+            .any(|word| self.allowed_words.contains(word))
+        {
+            return Err("a word cannot be both extra and allowed");
+        }
+        let line = &self.deflection_line;
+        if line.trim() != line
+            || line.is_empty()
+            || line.chars().count() > MAX_DEFLECTION_CHARS
+            || line.chars().any(char::is_control)
+        {
+            return Err("the deflection line is one non-empty line of at most 200 characters");
+        }
+        Ok(())
+    }
+}
+
+pub fn is_profanity_word(word: &str) -> bool {
+    PROFANITY_WORD_CHARS.contains(&word.chars().count())
+        && word.chars().all(char::is_alphabetic)
+        && word.to_lowercase() == word
 }
 
 /// The length a planner uses for a run. Overrides are keyed by the catalog's

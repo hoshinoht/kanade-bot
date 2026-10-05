@@ -13,7 +13,7 @@ use tokio::time::{Instant, timeout_at};
 use super::finish::{POSTED_UNFINISHED, finish};
 use super::{
     AnswerFailure, CARD_NOT_POSTED, CONTEXT_BUDGET_REPLY, ChatPorts, Generation, GuildView,
-    ModelRound, Question, RoundOutcome,
+    ModelRound, ProfanityGuard, ProfanityHit, ProfanitySide, Question, RoundOutcome,
 };
 use crate::chat::context::{budgeted, card_focus};
 use crate::chat::tools::bundles::{Mode, ToolOffer};
@@ -501,49 +501,109 @@ where
     };
 
     let filtered = matches!(retry, Some(Retry::ContentBlocked));
+    let params = (
+        alias.as_str(),
+        seconds,
+        context_tokens,
+        settings.max_output_tokens as usize,
+        round,
+    );
+    let mut clean_base = Some(clean_base);
     match retry {
         Some(retry) if settings.clean_retry => {
-            clean_retry(
-                &mut state,
-                retry,
-                clean_base,
-                session,
-                (
-                    &alias,
-                    seconds,
-                    context_tokens,
-                    settings.max_output_tokens as usize,
-                    round,
-                ),
-            )
-            .await;
+            if let Some(base) = clean_base.take() {
+                clean_retry(&mut state, retry, base, session, params).await;
+            }
         }
         // Guarded off (per-member limit or storm guard): no retry is sent.
         Some(retry) => state.generation.failure = Some(retry.failure()),
         None => {}
     }
+    // The model's own words, before finishing adds grounded records and
+    // card lines built from store data (member names are not its words).
+    let said = state.generation.reply.clone();
+    let replaced = finish(&mut state.generation);
+    // An unposted write's fixed status text replaced the model's words
+    // whole: members never see them, so there is nothing to check.
+    if let Some(guard) = question.profanity.filter(|_| !replaced) {
+        // The reserved clean retry, when this question still holds it.
+        let base = clean_base.filter(|_| settings.clean_retry);
+        profanity_check(&mut state, guard, &said, base, session, params).await;
+    }
     let mut generation = state.generation;
     generation.requests = session.requests_used();
-    finish(&mut generation);
     generation.blocked = generation.reply.is_empty()
         && (filtered || generation.failure == Some(AnswerFailure::ContentBlocked));
     generation
 }
 
+/// The model-written reply text (`said`, before finishing) is checked; data
+/// lines finishing adds are not. A hit spends the question's reserved clean
+/// retry once, and a retry that is unavailable, fails or hits again sends
+/// the deflection line.
+async fn profanity_check<P: LlmProvider>(
+    state: &mut Loop<'_, '_>,
+    guard: &ProfanityGuard,
+    said: &str,
+    base: Option<Vec<Message>>,
+    session: &mut Session<'_, P>,
+    params: (&str, u64, usize, usize, u32),
+) {
+    let Some(word) = guard.reply_hit(said) else {
+        return;
+    };
+    let mut sent = Some(guard.line().to_owned());
+    if let Some(base) = base
+        && let Ok(content) = send_clean(state, base, session, params).await
+    {
+        let clean = guard.reply_hit(&content).is_none();
+        state.generation.reply = content;
+        let _ = finish(&mut state.generation);
+        if clean && !state.generation.reply.is_empty() {
+            sent = None;
+        }
+    }
+    if let Some(line) = &sent {
+        line.clone_into(&mut state.generation.reply);
+    }
+    state.generation.profanity = Some(ProfanityHit {
+        side: ProfanitySide::Reply,
+        word,
+        sent,
+    });
+}
+
 async fn clean_retry<P: LlmProvider>(
     state: &mut Loop<'_, '_>,
     retry: Retry,
+    base: Vec<Message>,
+    session: &mut Session<'_, P>,
+    params: (&str, u64, usize, usize, u32),
+) {
+    let seconds = params.1;
+    match send_clean(state, base, session, params).await {
+        Ok(content) => state.generation.reply = content,
+        Err(None) => state.generation.failure = Some(retry.failure()),
+        Err(Some(error)) => {
+            state.generation.failure = Some(match triage(error, seconds) {
+                Ok(again) => again.failure(),
+                Err(failure) => failure,
+            });
+        }
+    }
+}
+
+/// Send the reserved clean retry: system prompt, the asker's message and the
+/// voice reminder, no tools. `Ok` is its text answer; `Err(Some)` a session
+/// error after a request went out, `Err(None)` no request or no text.
+async fn send_clean<P: LlmProvider>(
+    state: &mut Loop<'_, '_>,
     mut base: Vec<Message>,
     session: &mut Session<'_, P>,
-    (alias, seconds, context_tokens, reserve, round): (&str, u64, usize, usize, u32),
-) {
-    let outgoing = match budgeted(&mut base, "[]", &state.reminder, context_tokens, reserve) {
-        Ok(fits) => fits,
-        Err(_) => {
-            state.generation.failure = Some(retry.failure());
-            return;
-        }
-    };
+    (alias, _seconds, context_tokens, reserve, round): (&str, u64, usize, usize, u32),
+) -> Result<String, Option<SessionError>> {
+    let outgoing =
+        budgeted(&mut base, "[]", &state.reminder, context_tokens, reserve).map_err(|_| None)?;
     let request = state.request(alias, outgoing.messages, &state.question.offer, &[]);
     let started = Instant::now();
     let before = session.requests_used();
@@ -557,15 +617,7 @@ async fn clean_retry<P: LlmProvider>(
             // loses its permit or an ended session may or may not have sent.
             let unsent = session.requests_used() == before;
             state.generation.clean_retry = !unsent;
-            state.generation.failure = Some(if unsent {
-                retry.failure()
-            } else {
-                match triage(error, seconds) {
-                    Ok(again) => again.failure(),
-                    Err(failure) => failure,
-                }
-            });
-            return;
+            return Err((!unsent).then_some(error));
         }
     };
     state.generation.clean_retry = true;
@@ -577,8 +629,8 @@ async fn clean_retry<P: LlmProvider>(
     );
     let content = strip(response.content.as_deref().unwrap_or_default());
     if response.tool_calls.is_empty() && !content.is_empty() {
-        state.generation.reply = content.to_owned();
+        Ok(content.to_owned())
     } else {
-        state.generation.failure = Some(retry.failure());
+        Err(None)
     }
 }

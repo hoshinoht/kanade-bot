@@ -19,6 +19,19 @@ Notable changes to the Boss Scheduler Bot, newest first.
   came from a weekly timing opens it in the Fixed editor.
 - v5 admin Fixed editor: the Time is the Move picker's stepper (Run lengths
   step), still typed into, with Enter saving as before.
+- v5 chat profanity guardrail: the nudge deny-list (plus Config's extra
+  words, minus words allowed again) checks member questions, answered with
+  a configurable in-character line and no model call, and the model's own
+  reply words, which get one clean retry before the line is sent. Member
+  names, run data and meso amounts never count; deflected exchanges stay
+  out of later chat context. Hits log the Chat outcome `profanity` with the
+  side, word and line sent; Config gains a live `profanity` section.
+  Reminder heading rewrites check the same live list.
+- v5 admin Profanity: Config → Profanity edits extra blocked words, built-in
+  words allowed again (found by typing, never listed whole), the question and
+  reply checks (live, with Undo) and the deflection line; Chat filters the
+  `profanity` outcome and each such turn shows the side, the matched word and
+  the line sent (or "Retry answered cleanly").
 - v5 admin dropdowns: every select is one rounded pill with keyboard
   type-ahead, search on long lists and the phone's own picker on small
   screens; Re-read channels is a multi-select (All · None), and the Dates
@@ -1034,6 +1047,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - v5 chat: a `request_tools` call with the wrong argument shape is now told
   the argument name (`Call request_tools with {"bundle": "strategy"}; …`), so
   the model recovers on its next round instead of wasting several.
+- v5 chat: withholding a content-filtered message no longer drops every
+  unrelated re-anchorable exchange; only anchors tied to that message go.
 - v5 admin Chat: the date presets in the filters panel are visible again.
 - v5 admin run countdowns no longer bunch their marks at the end: the bar fills
   from 24 h out to T-1h, then restarts over the last hour with the T-15m mark

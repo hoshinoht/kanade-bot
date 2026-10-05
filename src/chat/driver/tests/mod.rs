@@ -120,6 +120,8 @@ fn channels() -> Channels {
 /// What one `answer` call does.
 enum Step {
     Reply(&'static str),
+    /// The profanity line sent in place of a listed reply.
+    Replaced(&'static str),
     /// Reply once notified.
     Held(Arc<Notify>, &'static str),
     /// Never answers (only a shutdown cut ends it).
@@ -151,6 +153,8 @@ struct Fake {
     /// The next prepared directory panics on its first lookup.
     panic_directory: AtomicBool,
     panic_directory_always: AtomicBool,
+    /// The live guardrail each `prepare` reads, like serve's settings watch.
+    profanity: Mutex<crate::chat::answer::ProfanityGuard>,
 }
 
 impl Fake {
@@ -167,6 +171,7 @@ impl Fake {
             observed: Mutex::default(),
             panic_directory: AtomicBool::new(false),
             panic_directory_always: AtomicBool::new(false),
+            profanity: Mutex::default(),
         }
     }
 }
@@ -225,6 +230,7 @@ impl Answerer for Arc<Fake> {
             zone: chrono_tz::Asia::Kuala_Lumpur,
             reset: (Weekday::Thu, NaiveTime::MIN),
             bot_names: vec!["Kanade".into()],
+            profanity: self.profanity.lock().unwrap().clone(),
         })
     }
 
@@ -242,6 +248,17 @@ impl Answerer for Arc<Fake> {
         let step = self.steps.lock().unwrap().pop_front();
         let reply = match step {
             Some(Step::Reply(text)) => text,
+            Some(Step::Replaced(line)) => {
+                return Generation {
+                    reply: line.into(),
+                    profanity: Some(crate::chat::answer::ProfanityHit {
+                        side: crate::chat::answer::ProfanitySide::Reply,
+                        word: "shit".into(),
+                        sent: Some(line.into()),
+                    }),
+                    ..Generation::default()
+                };
+            }
             Some(Step::Held(notify, text)) => {
                 notify.notified().await;
                 text
@@ -1359,6 +1376,47 @@ async fn a_rejected_chat_card_gets_one_read_only_generic_reply_and_remembers_onl
     assert!(!history[0].content.contains("Note from the scheduler"));
 }
 
+/// A follow-up whose reply was replaced by the profanity line keeps it out of
+/// context: no history turn, no anchor, and a member's reply to the line
+/// cannot pull it back through the reply chain.
+#[tokio::test]
+async fn a_replaced_follow_up_reply_stays_out_of_context() {
+    let rig = rig(vec![Step::Replaced("Language, please!")]).await;
+    rig.driver.rejected(rejected_card("9001", CHANNEL)).await;
+    rig.settle().await;
+    assert!(
+        rig.effects()
+            .contains(&"edit 5001: Language, please!".to_owned())
+    );
+    let mut state = rig.driver.state();
+    let conversations = &mut state.pilot.conversations;
+    assert!(conversations.history(CHANNEL, 10.0).is_empty());
+    assert!(conversations.is_excluded("5001"));
+    let reply = QuestionMessage {
+        id: "1002".into(),
+        author_id: "11".into(),
+        content: "why?".into(),
+        reference: Some(Reference {
+            message_id: Some("5001".into()),
+            resolved: Some(Box::new(Parent {
+                id: "5001".into(),
+                author_id: Some(BOT.into()),
+                content: Some("Language, please!".into()),
+                reference: None,
+            })),
+        }),
+    };
+    let turns = crate::chat::context::build_turns(
+        conversations,
+        &reply,
+        CHANNEL,
+        11.0,
+        BOT,
+        &Roster::new(),
+    );
+    assert_eq!(turns.len(), 1, "only the new question: {turns:?}");
+}
+
 #[tokio::test]
 async fn rejected_cards_are_silent_when_the_scope_fails_or_the_channel_is_busy() {
     let held = Arc::new(Notify::new());
@@ -1469,6 +1527,91 @@ async fn a_hard_shutdown_abort_of_a_rejection_follow_up_logs_and_joins_it() {
         "the abort release ran before stop returned"
     );
     assert!(rig.driver.shared.tasks.lock().unwrap().is_empty());
+}
+
+fn asking(id: &str, content: &str) -> Asked {
+    let mut asked = asked(id, "11", CHANNEL, &[ROLE]);
+    asked.message.content = format!("<@{BOT}> {content}");
+    asked
+}
+
+#[tokio::test]
+async fn a_listed_word_in_the_question_is_deflected_without_a_model_call_and_charged() {
+    let rig = rig(vec![Step::Forever]).await;
+    let line = crate::domain::settings::DEFAULT_DEFLECTION_LINE;
+    assert!(
+        rig.driver
+            .offer(asking("1001", "when is the fucking lotus run?"))
+    );
+    rig.settle().await;
+    assert!(
+        rig.fake.seen.lock().unwrap().conversations.is_empty(),
+        "no model call"
+    );
+    assert_eq!(
+        rig.effects(),
+        [
+            format!("post silent ^1001 {CHANNEL}: {}", staged()),
+            format!("edit 5001: {line}"),
+        ],
+        "a normal delivery: staging, then the line"
+    );
+    let rows = rig.rows();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].outcome, ChatOutcome::Profanity);
+    assert_eq!(rows[0].reply, line);
+    assert_eq!(rows[0].request_count, 0);
+    assert_eq!(
+        rows[0].guardrail["profanity"],
+        json!({"side": "question", "word": "fuck", "sent": line})
+    );
+    assert_eq!(rows[0].guardrail["delivery"]["parts"], 1);
+    assert_eq!(rig.pool_used(), 1, "it counts against the allowance");
+    assert_eq!(rig.driver.status(), "idle");
+}
+
+#[tokio::test]
+async fn a_saved_profanity_change_applies_to_the_next_question() {
+    let rig = rig(vec![Step::Reply("Lotus is at 9.")]).await;
+    assert!(rig.driver.offer(asking("1001", "frick, when is lotus?")));
+    rig.settle().await;
+    assert_eq!(rig.rows()[0].outcome, ChatOutcome::Answered);
+    *rig.fake.profanity.lock().unwrap() =
+        crate::chat::answer::ProfanityGuard::new(&crate::domain::settings::Profanity {
+            extra_words: vec!["frick".into()],
+            deflection_line: "Language, please!".into(),
+            ..crate::domain::settings::Profanity::default()
+        });
+    rig.advance(1.0);
+    assert!(rig.driver.offer(asking("1002", "frick, when is lotus?")));
+    rig.settle().await;
+    let rows = rig.rows();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[1].outcome, ChatOutcome::Profanity);
+    assert_eq!(rows[1].reply, "Language, please!");
+    assert_eq!(rows[1].guardrail["profanity"]["word"], "frick");
+    assert_eq!(rig.fake.seen.lock().unwrap().conversations.len(), 1);
+    *rig.fake.profanity.lock().unwrap() =
+        crate::chat::answer::ProfanityGuard::new(&crate::domain::settings::Profanity {
+            check_questions: false,
+            ..crate::domain::settings::Profanity::default()
+        });
+    rig.fake
+        .steps
+        .lock()
+        .unwrap()
+        .push_back(Step::Reply("Still at 9."));
+    rig.advance(1.0);
+    assert!(
+        rig.driver
+            .offer(asking("1003", "what the fuck, when is lotus?"))
+    );
+    rig.settle().await;
+    assert_eq!(
+        rig.rows()[2].outcome,
+        ChatOutcome::Answered,
+        "questions unchecked"
+    );
 }
 
 mod delivery;

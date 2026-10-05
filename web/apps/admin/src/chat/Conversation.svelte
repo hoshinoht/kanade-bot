@@ -22,6 +22,25 @@
     {turn.error ?? 'no detail recorded'}{#if turn.error_code}<span class="mono chat-error__code">{` (${turn.error_code})`}</span>{/if}
   </p>
 {/if}
+{#if turn.profanity}
+  {@const hit = turn.profanity}
+  <!-- The word shows in full: the question and reply below carry it verbatim anyway (admin-only view). -->
+  <section class="chat-guard" aria-labelledby="{uid}-chat-guard-title">
+    <h3 class="chat-guard__title" id="{uid}-chat-guard-title">Profanity in the {hit.side === 'question' ? 'question' : 'reply'}</h3>
+    <dl class="chat-guard__facts">
+      <div><dt>Matched</dt><dd class="mono">{hit.word}</dd></div>
+      <div>
+        <dt>{hit.sent === null ? 'Outcome' : 'Sent instead'}</dt>
+        <dd>{#if hit.sent === null}Retry answered cleanly{:else}“{hit.sent}”{/if}</dd>
+      </div>
+    </dl>
+    <p class="chat-guard__note">
+      {#if hit.side === 'question'}Deflected with no model call; the exchange stays out of later chat context.
+      {:else if hit.sent === null}The first reply used a listed word; its clean retry did not and was sent, so this stays an ordinary exchange.
+      {:else}The reply used a listed word and no clean retry could replace it, so the safe line went out; the exchange stays out of later chat context.{/if}
+    </p>
+  </section>
+{/if}
 <dl class="chat-facts" data-fid="chat-facts">
   <div class="chat-fact"><dt>Persona</dt><dd class="mono">{turn.persona ?? '—'}</dd></div>
   <div class="chat-fact"><dt>Reply profile</dt><dd>{profileText(turn)}</dd></div>

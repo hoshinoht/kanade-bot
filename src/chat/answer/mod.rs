@@ -6,6 +6,7 @@
 
 mod finish;
 mod pilot;
+mod profanity;
 mod record;
 mod rounds;
 
@@ -17,6 +18,7 @@ use chrono::{NaiveTime, Weekday};
 use chrono_tz::Tz;
 
 pub use pilot::{AnswerDeps, answer};
+pub use profanity::{ProfanityGuard, ProfanityHit, ProfanitySide};
 pub use record::{chat_outcome, interaction, with_persona};
 pub use rounds::run_question;
 
@@ -91,6 +93,8 @@ pub struct Question<'a> {
     pub reminder: String,
     pub offer: ToolOffer,
     pub settings: AnswerSettings,
+    /// The live profanity guardrail; `None` checks nothing.
+    pub profanity: Option<&'a ProfanityGuard>,
 }
 
 /// One tool call and the round that asked for it.
@@ -268,6 +272,8 @@ pub struct Generation {
     pub external_unmasked: bool,
     /// The chat route leaves the homelab.
     pub external: bool,
+    /// A profanity guardrail hit (question deflected, or reply retried or replaced).
+    pub profanity: Option<ProfanityHit>,
 }
 
 impl Generation {
@@ -276,6 +282,14 @@ impl Generation {
             failure: Some(failure),
             ..Self::default()
         }
+    }
+
+    /// A profanity hit whose question or reply was replaced by the
+    /// deflection line: the exchange stays out of every later context.
+    pub fn kept_out_of_context(&self) -> bool {
+        self.profanity
+            .as_ref()
+            .is_some_and(|hit| hit.sent.is_some())
     }
 
     /// No reply because content was filtered at some attempt.

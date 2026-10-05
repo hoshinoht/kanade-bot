@@ -287,6 +287,6 @@ async fn a_cancelled_open_releases_ownership_once_sqlite_is_closed() {
         }
     }
     let store = reopened.expect("ownership was released");
-    assert_eq!(store.schema_version().await.expect("version"), 21);
+    assert_eq!(store.schema_version().await.expect("version"), 22);
     store.close().await.expect("close");
 }

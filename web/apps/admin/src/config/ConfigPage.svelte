@@ -21,6 +21,7 @@
   import ModelsSection from './ModelsSection.svelte';
   import PersonaSection from './PersonaSection.svelte';
   import PingsSection from './PingsSection.svelte';
+  import ProfanitySection from './ProfanitySection.svelte';
   import RunLengthsSection from './RunLengthsSection.svelte';
   import type { ConfigPatch, RoleProfileSave, Undo } from './save';
   import SectionScope from './SectionScope.svelte';
@@ -51,6 +52,7 @@
     { key: 'run-lengths', label: 'Run lengths', group: 'Bot', terms: 'duration boss default overrides' },
     { key: 'watching', label: 'Chat watching', group: 'Bot', terms: 'watching extractor messages pause' },
     { key: 'chatbot', label: 'Chatbot', group: 'Bot', terms: 'answer rate cap limits how often it answers per person' },
+    { key: 'profanity', label: 'Profanity', group: 'Bot', terms: 'swear words blocked deny list deflection line allowed built-in questions replies check' },
     { key: 'persona', label: 'Persona', group: 'Bot', terms: 'active persona reply profiles visibility roles role overrides assignments' },
     { key: 'models', label: 'Models', group: 'Bot', terms: 'roles reasoning context windows capacity groups kanata extraction rewrite' },
     { key: 'self-service', label: 'Self-service', group: 'Members', terms: 'public portal cards links how members are answered' },
@@ -229,6 +231,7 @@
       case 'pings': return c.pings.day_of_ping_time;
       case 'watching': return c.watching.paused ? 'paused' : 'on';
       case 'chatbot': return c.chatbot.enabled ? 'on' : 'off';
+      case 'profanity': return checks(c.profanity);
       case 'persona': return c.persona.personas.find((p) => p.key === c.persona.active)?.name ?? c.persona.active;
       // The roles that have a model, as on the board ("3").
       case 'models': return `${Object.values(c.models.roles).filter((r) => r.alias).length}`;
@@ -237,6 +240,13 @@
       case 'env': return `${c.env.length}`;
       default: return '';
     }
+  }
+
+  /** Which sides the profanity guardrail checks, in one word or two. */
+  function checks(p: ConfigView['profanity']): string {
+    if (p.check_questions && p.check_replies) return 'on';
+    if (p.check_questions) return 'questions';
+    return p.check_replies ? 'replies' : 'off';
   }
 
   /** Expanded-row facts, one per line. */
@@ -248,6 +258,7 @@
       case 'run-lengths': return [`${c.run_lengths.default_minutes} min default`, `${c.run_lengths.overrides.length} overrides`];
       case 'watching': return [c.watching.paused ? 'Watching paused' : 'Watching on', `Extractor ${c.watching.extract_enabled ? 'on' : 'off'}`];
       case 'chatbot': return [c.chatbot.enabled ? 'On' : 'Off', `${c.chatbot.member_rate.count} answers / ${c.chatbot.member_rate.window_s}s per person`];
+      case 'profanity': return [`Checks ${checks(c.profanity)}`, `${c.profanity.extra_words.length} extra · ${c.profanity.allowed_words.length} allowed again`];
       case 'persona': return [hint(item), `${c.persona.profiles.length} reply profiles`, `${c.persona.role_profiles.length} role overrides`];
       case 'models': return Object.entries(c.models.roles).map(([role, model]) => `${role}: ${model.alias ?? 'unset'}`);
       case 'self-service': return [`Portal ${hint(item)}`, c.self_service.effective_mode.replaceAll('_', ' ')];
@@ -474,6 +485,8 @@
                 </SettingsPanel>
               {:else if item.key === 'chatbot'}
                 <ChatbotSection chatbot={c.chatbot} {save} />
+              {:else if item.key === 'profanity'}
+                <ProfanitySection profanity={c.profanity} {save} />
               {:else if item.key === 'persona'}
                 <PersonaSection
                   persona={c.persona}

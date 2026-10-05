@@ -52,11 +52,13 @@ const SCREENS: [string, string, string][] = [
   ['admin', ADMIN, '/chat'],
   ['admin', ADMIN, '/chat/c-move'],
   ['admin', ADMIN, '/chat/c-when'],
+  ['admin', ADMIN, '/chat/c-safe-line'],
   ['admin', ADMIN, '/limits'],
   ['admin', ADMIN, '/history'],
   ['admin', ADMIN, '/config'],
   ['admin', ADMIN, '/config?section=models'],
   ['admin', ADMIN, '/config?section=persona'],
+  ['admin', ADMIN, '/config?section=profanity'],
   ['public', PUBLIC, '/'],
 ];
 

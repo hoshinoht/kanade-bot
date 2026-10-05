@@ -165,6 +165,12 @@ impl<A: Answerer, S: Surface> Held<A, S> {
         } else {
             posted
         };
+        if generation.kept_out_of_context() {
+            // Every landed part of the line, not only the first.
+            for landed in &lock(&self.record).landed {
+                pilot.conversations.exclude(&landed.id);
+            }
+        }
         let prepared = &*self.prepared;
         let done = Finished {
             message: &asked.message,
@@ -606,6 +612,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                 model_context_tokens: prepared.context_window,
                 clean_retry: reserved,
             },
+            profanity: Some(&prepared.profanity),
         };
         let delivery = Delivery::new(
             surface,
@@ -619,12 +626,29 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
             &prepared.catalog,
             prepared.persona.staging_lines(),
         );
-        let answered = shared.answerer.answer(Job {
-            prepared: &prepared,
-            asked,
-            question,
-            cancelled: &deletion.flag,
-        });
+        // A listed word in the member's own message: the deflection line is
+        // the whole answer and no model is called (it is delivered, logged and
+        // charged like any answer).
+        let deflected = prepared
+            .profanity
+            .question_hit(&asked.message.content)
+            .map(|word| prepared.profanity.deflect(word));
+        let answered = async {
+            match deflected {
+                Some(generation) => generation,
+                None => {
+                    shared
+                        .answerer
+                        .answer(Job {
+                            prepared: &prepared,
+                            asked,
+                            question,
+                            cancelled: &deletion.flag,
+                        })
+                        .await
+                }
+            }
+        };
         let answer = delivery
             .until_answered(staging, answered, cut_signal(shared.cut.subscribe()))
             .await;

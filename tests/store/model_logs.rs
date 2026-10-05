@@ -376,7 +376,7 @@ async fn rows_logged_before_context_facts_still_read_after_a_reopen() {
          ALTER TABLE extractions DROP COLUMN reasoning_tokens;
          ALTER TABLE chat_rounds DROP COLUMN reasoning_content;
          ALTER TABLE chat_rounds DROP COLUMN reasoning_tokens;
-         DELETE FROM schema_migrations WHERE version = 21;
+         DELETE FROM schema_migrations WHERE version IN (21, 22);
          UPDATE store_meta SET schema_version = 20;",
     )
     .await;
@@ -431,7 +431,7 @@ async fn rows_logged_before_context_facts_still_read_after_a_reopen() {
     let store = SqliteStore::open(&config)
         .await
         .expect("reopen after additive migration");
-    assert_eq!(store.schema_version().await.expect("version"), 21);
+    assert_eq!(store.schema_version().await.expect("version"), 22);
     let mut extraction = extraction;
     extraction.id = "x-reasoning".into();
     extraction.reasoning_content = Some("Stored extraction reasoning.".into());
@@ -457,5 +457,85 @@ async fn rows_logged_before_context_facts_still_read_after_a_reopen() {
         Some(extraction)
     );
     assert_eq!(store.load_chat(&chat.id).await.expect("load"), Some(chat));
+    store.close().await.expect("close");
+}
+
+/// 0022 rebuilds `chat_interactions` on an existing store whose connection
+/// enforces foreign keys: every row, its rounds, tools and historical masked
+/// view survive the reopen, and `profanity` rows can then be written.
+#[tokio::test]
+async fn the_profanity_migration_keeps_existing_chat_rows_and_their_children() {
+    use kanade::domain::model_log::ChatOutcome;
+
+    let dir = TempDir::new();
+    let config = dir.config("pre-profanity");
+    SqliteStore::open(&config)
+        .await
+        .expect("opens")
+        .close()
+        .await
+        .expect("close");
+    tamper(
+        &config,
+        "INSERT INTO chat_interactions (id, at, channel_id, member_id, question, reply, \
+         outcome, clean_retry, withheld, guardrail, request_count, persona) VALUES \
+         ('c-plain', '2026-09-20T00:00:00+00:00', '9', '1', 'q', 'a', 'answered', 0, 0, \
+          '{\"context\": {}}', 1, 'kanade'), \
+         ('c-masked', '2026-09-21T00:00:00+00:00', '9', '2', 'q2', 'a2', 'content_blocked', \
+          1, 1, '{\"pseudonymized\": true}', 2, NULL);
+         INSERT INTO chat_rounds (interaction_id, ord, model, tool_bundles, tools, tool_calls) \
+         VALUES ('c-plain', 0, 'm', '[]', '[\"get_schedule\"]', '[]');
+         INSERT INTO chat_tools VALUES ('c-plain', 'get_schedule');
+         INSERT INTO chat_masked VALUES ('c-masked', '[]', 'a2', '[]');
+         DELETE FROM schema_migrations WHERE version = 22;
+         UPDATE store_meta SET schema_version = 21;",
+    )
+    .await;
+    let store = SqliteStore::open(&config).await.expect("migrates");
+    assert_eq!(store.schema_version().await.expect("version"), 22);
+    let plain = store
+        .load_chat("c-plain")
+        .await
+        .expect("reads")
+        .expect("kept");
+    assert_eq!(plain.outcome, ChatOutcome::Answered);
+    assert_eq!(plain.persona.as_deref(), Some("kanade"));
+    assert_eq!(plain.rounds.len(), 1);
+    assert_eq!(plain.rounds[0].tools, ["get_schedule"]);
+    let masked = store
+        .load_chat("c-masked")
+        .await
+        .expect("reads")
+        .expect("kept");
+    assert!(masked.withheld && masked.clean_retry);
+    assert!(
+        store
+            .load_masked_chat("c-masked")
+            .await
+            .expect("reads")
+            .is_some(),
+        "the historical masked view is kept"
+    );
+    let tooled = store
+        .list_chats(&ChatFilter {
+            tool: Some("get_schedule".into()),
+            limit: 10,
+            ..ChatFilter::default()
+        })
+        .await
+        .expect("lists");
+    assert_eq!(tooled.items.len(), 1, "chat_tools still joins");
+    let mut rude = plain.clone();
+    rude.id = "c-rude".into();
+    rude.outcome = ChatOutcome::Profanity;
+    rude.guardrail = serde_json::json!({"profanity": {"side": "question", "word": "frick", "sent": "Language!"}});
+    rude.rounds = Vec::new();
+    store
+        .record_chat(rude.clone())
+        .await
+        .expect("profanity row");
+    store.close().await.expect("close");
+    let store = SqliteStore::open(&config).await.expect("reopens");
+    assert_eq!(store.load_chat("c-rude").await.expect("load"), Some(rude));
     store.close().await.expect("close");
 }

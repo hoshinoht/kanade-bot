@@ -99,6 +99,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 21,
         sql: include_str!("migrations/0021_model_log_reasoning.sql"),
     },
+    Migration {
+        version: 22,
+        sql: include_str!("migrations/0022_chat_profanity.sql"),
+    },
 ];
 
 /// The migration that adds `change_fields`, which is backfilled from the
@@ -208,7 +212,7 @@ mod tests {
         }
         let insert = "INSERT INTO extractions (id, at, member_ids, model, reasoning, prompt, raw_response, request_count, outcome, guardrail, message_ids, proposal_ids";
         conn.execute(format!("{insert}) VALUES ('old', '2026-09-01T00:00:00+00:00', '[]', 'm', 'low', 'p', 'r', 1, 'unknown', '{{}}', '[]', '[]')").as_str()).await.expect("old row");
-        assert_eq!(apply(&mut conn).await.expect("additive"), 21);
+        assert_eq!(apply(&mut conn).await.expect("additive"), 22);
         let old: (String, Option<String>, Option<i64>) = sqlx::query_as("SELECT reasoning, reasoning_content, reasoning_tokens FROM extractions WHERE id = 'old'").fetch_one(&mut conn).await.expect("old row preserved");
         assert_eq!(old, ("low".into(), None, None));
         for (id, text, count, valid) in [
@@ -266,7 +270,7 @@ mod tests {
         )
         .await
         .expect("v14 rows");
-        assert_eq!(apply(&mut conn).await.expect("remaining migrations"), 21);
+        assert_eq!(apply(&mut conn).await.expect("remaining migrations"), 22);
         let kept: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM extractions e JOIN extraction_members m \
              ON m.extraction_id = e.id WHERE e.id = 'x-1' AND e.refusals = '[]'",
@@ -345,7 +349,7 @@ mod tests {
         .await
         .expect("v17 cards");
 
-        assert_eq!(apply(&mut conn).await.expect("v18"), 21);
+        assert_eq!(apply(&mut conn).await.expect("v18"), 22);
         let rows: Vec<(String, Option<String>)> =
             sqlx::query_as("SELECT kind, heading FROM reminder_cards ORDER BY dedupe_key")
                 .fetch_all(&mut conn)
@@ -380,7 +384,7 @@ mod tests {
             .connect()
             .await
             .expect("reopen v18 file");
-        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 21);
+        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 22);
         let rows: Vec<(String, Option<String>)> =
             sqlx::query_as("SELECT kind, heading FROM reminder_cards ORDER BY dedupe_key")
                 .fetch_all(&mut conn)
@@ -461,7 +465,7 @@ mod tests {
         .await
         .expect("v18 rows");
 
-        assert_eq!(apply(&mut conn).await.expect("v19"), 21);
+        assert_eq!(apply(&mut conn).await.expect("v19"), 22);
         let usage = "prompt_tokens IS NULL AND completion_tokens IS NULL \
             AND prompt_estimate IS NULL";
         let unreported: i64 = sqlx::query_scalar(&format!(
@@ -544,7 +548,7 @@ mod tests {
             .connect()
             .await
             .expect("reopen v19 file");
-        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 21);
+        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 22);
         let rows: Vec<UsageRow<String>> = sqlx::query_as(
             "SELECT id, prompt_tokens, completion_tokens, prompt_estimate, \
              typeof(prompt_tokens) || ',' || typeof(completion_tokens) || ',' \
@@ -626,7 +630,7 @@ mod tests {
         )
         .await
         .expect("v15 rows");
-        assert_eq!(apply(&mut conn).await.expect("0016+"), 21);
+        assert_eq!(apply(&mut conn).await.expect("0016+"), 22);
         let row = sqlx::query(
             "SELECT c.persona, c.profile, c.profile_source, c.error_code, r.route, r.clean, \
              r.model FROM chat_interactions c JOIN chat_rounds r ON r.interaction_id = c.id",
@@ -664,6 +668,155 @@ mod tests {
             .await
             .is_err(),
             "route is checked"
+        );
+    }
+
+    /// 0022 rebuilds `chat_interactions` for outcome `profanity` with
+    /// foreign keys on: every row (masked history included) and its rounds,
+    /// tools and masked view keep their parent, the indexes and the
+    /// insert-only trigger come back, and the children's schema is untouched.
+    #[tokio::test]
+    async fn the_chat_rebuild_keeps_rows_children_and_indexes() {
+        let mut conn = SqliteConnection::connect("sqlite::memory:")
+            .await
+            .expect("memory db");
+        conn.execute("PRAGMA foreign_keys = ON").await.expect("fk");
+        conn.execute(LEDGER).await.expect("ledger");
+        for migration in &MIGRATIONS[..21] {
+            conn.execute(migration.sql).await.expect("old migration");
+            sqlx::query("INSERT INTO schema_migrations VALUES (?1, ?2, 'then')")
+                .bind(migration.version)
+                .bind(checksum(migration.sql))
+                .execute(&mut conn)
+                .await
+                .expect("ledger row");
+        }
+        let schema = "SELECT type, name, sql FROM sqlite_master \
+             WHERE tbl_name IN ('chat_rounds', 'chat_tools', 'chat_masked') ORDER BY name";
+        let children: Vec<(String, String, Option<String>)> = sqlx::query_as(schema)
+            .fetch_all(&mut conn)
+            .await
+            .expect("children");
+        conn.execute(
+            "INSERT INTO chat_interactions (id, at, channel_id, member_id, question, reply, \
+             outcome, error, clean_retry, withheld, guardrail, request_count, latency_ms, \
+             persona, profile_source, error_code) VALUES \
+             ('c-1', '2026-09-01T00:00:00.000000+00:00', '9', '1', 'q', 'r', 'answered', \
+              NULL, 1, 0, '{\"context\":{}}', 2, 40, 'kanade', 'default', NULL), \
+             ('c-2', '2026-09-02T00:00:00.000000+00:00', '9', '2', 'q2', 'r2', \
+              'content_blocked', 'blocked', 0, 1, '{\"content_filter\":true}', 1, 7, \
+              NULL, NULL, 'content_blocked');
+             INSERT INTO chat_rounds (interaction_id, ord, model, tool_bundles, tools, \
+             tool_calls, route, clean, prompt_tokens, completion_tokens) VALUES \
+             ('c-1', 0, 'kanata/chat', '[]', '[\"get_schedule\"]', '[]', 'homelab', 0, 10, 2);
+             INSERT INTO chat_tools VALUES ('c-1', 'get_schedule');
+             INSERT INTO chat_masked VALUES ('c-2', '[]', 'r2', '[]');",
+        )
+        .await
+        .expect("v21 rows");
+        assert_eq!(apply(&mut conn).await.expect("0022"), 22);
+        let rows: Vec<(String, String, i64, i64, String, Option<String>)> = sqlx::query_as(
+            "SELECT id, outcome, clean_retry, withheld, guardrail, persona \
+             FROM chat_interactions ORDER BY id",
+        )
+        .fetch_all(&mut conn)
+        .await
+        .expect("rows");
+        assert_eq!(
+            rows,
+            [
+                (
+                    "c-1".into(),
+                    "answered".into(),
+                    1,
+                    0,
+                    r#"{"context":{}}"#.into(),
+                    Some("kanade".into())
+                ),
+                (
+                    "c-2".into(),
+                    "content_blocked".into(),
+                    0,
+                    1,
+                    r#"{"content_filter":true}"#.into(),
+                    None
+                ),
+            ]
+        );
+        let joined: i64 = sqlx::query_scalar(
+            "SELECT (SELECT COUNT(*) FROM chat_rounds r JOIN chat_interactions c \
+             ON c.id = r.interaction_id) + (SELECT COUNT(*) FROM chat_tools t \
+             JOIN chat_interactions c ON c.id = t.interaction_id) + (SELECT COUNT(*) \
+             FROM chat_masked m JOIN chat_interactions c ON c.id = m.interaction_id)",
+        )
+        .fetch_one(&mut conn)
+        .await
+        .expect("children");
+        assert_eq!(joined, 3);
+        assert!(
+            sqlx::query("PRAGMA foreign_key_check")
+                .fetch_all(&mut conn)
+                .await
+                .expect("fk check")
+                .is_empty()
+        );
+        let after: Vec<(String, String, Option<String>)> = sqlx::query_as(schema)
+            .fetch_all(&mut conn)
+            .await
+            .expect("children");
+        assert_eq!(after, children, "children are not rebuilt");
+        let indexes: Vec<String> = sqlx::query_scalar(
+            "SELECT name FROM sqlite_master WHERE tbl_name = 'chat_interactions' \
+             AND type != 'table' AND sql IS NOT NULL ORDER BY name",
+        )
+        .fetch_all(&mut conn)
+        .await
+        .expect("indexes");
+        assert_eq!(
+            indexes,
+            [
+                "chat_channel",
+                "chat_flags",
+                "chat_interactions_no_update",
+                "chat_outcome",
+                "chat_recent"
+            ]
+        );
+        let leftovers: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name = 'chat_interactions_v21'",
+        )
+        .fetch_one(&mut conn)
+        .await
+        .expect("leftovers");
+        assert_eq!(leftovers, 0);
+        conn.execute(
+            "INSERT INTO chat_interactions (id, at, question, reply, outcome, clean_retry, \
+             withheld, guardrail, request_count) VALUES ('c-3', \
+             '2026-09-03T00:00:00.000000+00:00', 'q', 'r', 'profanity', 0, 0, '{}', 0)",
+        )
+        .await
+        .expect("profanity is an outcome");
+        assert!(
+            conn.execute(
+                "INSERT INTO chat_interactions (id, at, question, reply, outcome, \
+                 clean_retry, withheld, guardrail, request_count) VALUES ('c-4', \
+                 '2026-09-03T00:00:00.000000+00:00', 'q', 'r', 'rude', 0, 0, '{}', 0)",
+            )
+            .await
+            .is_err(),
+            "outcomes stay checked"
+        );
+        assert!(
+            conn.execute("UPDATE chat_interactions SET reply = 'x' WHERE id = 'c-1'")
+                .await
+                .is_err(),
+            "still insert-only"
+        );
+        assert!(
+            conn.execute("INSERT INTO chat_tools VALUES ('nobody', 'get_schedule')")
+                .await
+                .is_err(),
+            "children still reference the rebuilt table"
         );
     }
 }

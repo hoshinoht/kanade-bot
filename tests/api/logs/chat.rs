@@ -485,3 +485,79 @@ async fn a_masked_turn_shows_its_model_view_with_names_never_ids() {
         (json!(true), json!(null))
     );
 }
+
+#[tokio::test]
+async fn profanity_turns_filter_facet_and_show_their_detail() {
+    use kanade::domain::model_log::{ChatOutcome, ModelLogStore};
+
+    let logs = Logs::new().await;
+    let line = "Language, please!";
+    let mut question = super::chat(
+        "c-deflected",
+        super::utc(9, 29, 2, 0),
+        "1003",
+        "star",
+        "an invented rude question",
+        line,
+        ChatOutcome::Profanity,
+        Some(30),
+        Vec::new(),
+    );
+    question.guardrail = json!({"profanity": {"side": "question", "word": "frick", "sent": line}});
+    let mut recovered = super::chat(
+        "c-recovered",
+        super::utc(9, 29, 3, 0),
+        "1003",
+        "star",
+        "when is lotus?",
+        "Lotus is at 9.",
+        ChatOutcome::Profanity,
+        Some(900),
+        vec![
+            super::round(
+                "kanata/chat",
+                &[],
+                json!([]),
+                Some("an invented rude reply"),
+            ),
+            super::round("kanata/chat", &[], json!([]), Some("Lotus is at 9.")),
+        ],
+    );
+    recovered.clean_retry = true;
+    recovered.rounds[1].clean = true;
+    recovered.guardrail = json!({"profanity": {"side": "reply", "word": "frick", "sent": null}});
+    for row in [question, recovered] {
+        logs.reads.store.record_chat(row).await.unwrap();
+    }
+    let all = list(&logs, "").await;
+    assert!(
+        all["facets"]["outcomes"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("profanity"))
+    );
+    assert_eq!(
+        ids(&list(&logs, "?outcome=profanity").await),
+        ["c-recovered", "c-deflected"]
+    );
+    let path = "/api/admin/chat/c-deflected";
+    let turn = logs.get(path).await.json();
+    assert_valid(TURN, path, &turn);
+    assert_eq!(turn["outcome"], "profanity");
+    assert_eq!(
+        turn["profanity"],
+        json!({"side": "question", "word": "frick", "sent": line})
+    );
+    assert_eq!(turn["said"], line);
+    let path = "/api/admin/chat/c-recovered";
+    let turn = logs.get(path).await.json();
+    assert_valid(TURN, path, &turn);
+    assert_eq!(
+        turn["profanity"],
+        json!({"side": "reply", "word": "frick", "sent": null})
+    );
+    let path = "/api/admin/chat/c-answer";
+    let plain = logs.get(path).await.json();
+    assert_valid(TURN, path, &plain);
+    assert_eq!(plain["profanity"], json!(null));
+}

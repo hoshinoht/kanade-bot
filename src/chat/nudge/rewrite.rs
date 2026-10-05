@@ -3,7 +3,10 @@
 
 use std::{future::Future, time::Duration};
 
-use super::{prompt::RewritePrompt, safety};
+use super::{
+    prompt::RewritePrompt,
+    safety::{self, Hit, WordFilter},
+};
 use crate::chat::persona::{NUDGE_FIELDS, check_nudge_line};
 
 /// User decision: the rewrite gets ~2 s, then the seed line is used.
@@ -69,12 +72,26 @@ pub enum Rejection {
     Placeholders,
     /// Markdown, a Unicode format character or an invite link.
     Markup,
-    /// A deny-listed word (the matched entry, not the line).
+    /// A deny-listed word (the matched built-in entry, not the line; an
+    /// admin-added word reports [`CUSTOM_WORD`]).
     Denied(&'static str),
 }
 
-/// The model's line if it passes every check. Surrounding whitespace is trimmed first.
+/// What [`Rejection::Denied`] names for an admin-added word.
+pub const CUSTOM_WORD: &str = "custom";
+
+/// The model's line if it passes every check against the built-in deny-list.
 pub fn accept_rewrite(output: &str, seed: &str) -> Result<String, Rejection> {
+    accept_rewrite_with(output, seed, WordFilter::builtin())
+}
+
+/// As [`accept_rewrite`], against the live effective deny-list. Surrounding
+/// whitespace is trimmed first.
+pub fn accept_rewrite_with(
+    output: &str,
+    seed: &str,
+    words: &WordFilter,
+) -> Result<String, Rejection> {
     let line = output.trim();
     check_nudge_line(line).map_err(|_| Rejection::LineRules)?;
     if safety::has_markup(line) || safety::has_format_char(line) || safety::has_invite(line) {
@@ -86,8 +103,10 @@ pub fn accept_rewrite(output: &str, seed: &str) -> Result<String, Rejection> {
     if !same_fields {
         return Err(Rejection::Placeholders);
     }
-    if let Some(word) = safety::denied_word(line) {
-        return Err(Rejection::Denied(word));
+    match words.denied(line) {
+        Some(Hit::Builtin(word)) => return Err(Rejection::Denied(word)),
+        Some(Hit::Extra(_)) => return Err(Rejection::Denied(CUSTOM_WORD)),
+        None => {}
     }
     Ok(line.to_owned())
 }

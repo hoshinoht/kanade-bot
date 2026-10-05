@@ -17,8 +17,8 @@ use kanade::chat::nudge::{
     DENY_INSIDE, DENY_SEA, DENY_SOUNDALIKE, EDIT_RUN_ACTION, GENTLE_MOOD, LineSource, MAX_CHANNELS,
     NUDGE_REWRITE_INSTRUCTION, NoRewrite, Nudge, NudgeFacts, NudgeRewriter, Nudger, PLAYFUL_MOOD,
     RECENT_PER_CHANNEL, REQUEST_CHANGE_ACTION, Rejection, RewriteFailure, RewritePrompt,
-    SeedReason, SeedRotation, accept_rewrite, denied_word, has_invite, has_markup, mood_for,
-    render,
+    SeedReason, SeedRotation, WordFilter, accept_rewrite, accept_rewrite_with, denied_word,
+    has_invite, has_markup, mood_for, render,
 };
 use kanade::chat::persona::{
     CompiledPersona, NudgeMood, NudgePurpose, NudgeSource, PersonaId, ProfileId, parse_bundle,
@@ -493,6 +493,58 @@ fn sound_alikes_and_southeast_asian_swears_are_denied() {
         assert!(accept_rewrite(clean, seed).is_ok(), "{clean:?}");
     }
     assert!(DENY_SEA.contains(&"pukimak") && DENY_SOUNDALIKE.contains(&"dih"));
+}
+
+/// The chat profanity settings reach rewrites: an admin word is denied
+/// (reported as `custom`) and an allowed-again built-in passes.
+#[test]
+fn the_effective_list_adds_extra_words_and_allows_built_ins_again() {
+    let seed = "Move {boss} yourself.";
+    let words = WordFilter::new(&["frick".into()], &["babi".into(), "shit".into()]);
+    assert_eq!(
+        accept_rewrite_with("Move {boss} yourself, frickin slowpoke.", seed, &words),
+        Err(Rejection::Denied(kanade::chat::nudge::CUSTOM_WORD))
+    );
+    assert!(accept_rewrite_with("Move {boss} yourself, babi.", seed, &words).is_ok());
+    // Allowing a word takes it off the inside list too.
+    assert!(accept_rewrite_with("Move {boss} yourself, bullshit.", seed, &words).is_ok());
+    assert!(accept_rewrite("Move {boss} yourself, babi.", seed).is_err());
+    assert!(matches!(
+        accept_rewrite_with("Move {boss} yourself, fuck.", seed, &words),
+        Err(Rejection::Denied("fuck"))
+    ));
+}
+
+/// The nudger reads its list per rewrite, so a saved change applies without
+/// rebuilding it.
+#[tokio::test(start_paused = true)]
+async fn nudge_rewrites_follow_the_live_list() {
+    let live = Arc::new(Mutex::new(Arc::new(WordFilter::builtin().clone())));
+    let source = Arc::clone(&live);
+    let fake = GovernedFake::new(
+        governor(),
+        vec![
+            Step::Reply("Frick, {boss} {day} {time}!"),
+            Step::Reply("Frick, {boss} {day} {time}!"),
+        ],
+    );
+    let nudger = Nudger::new(Arc::new(Fixed(0)), &fake)
+        .with_words(Arc::new(move || Arc::clone(&source.lock().unwrap())));
+    let persona = persona(SEEDS);
+    let before = nudger.lead_in(&persona, &facts(NudgeMood::Playful)).await;
+    assert_eq!(before.line, LineSource::Rewritten);
+    *live.lock().unwrap() = Arc::new(WordFilter::new(&["frick".into()], &[]));
+    // Another channel, so the rotation offers the same seed again.
+    let other = NudgeFacts {
+        channel_id: "900000000000000002",
+        ..facts(NudgeMood::Playful)
+    };
+    let after = nudger.lead_in(&persona, &other).await;
+    assert_eq!(
+        after.line,
+        LineSource::Seed(SeedReason::Rejected(Rejection::Denied("custom")))
+    );
+    assert!(!after.lead_in.contains("Frick"));
 }
 
 #[tokio::test(start_paused = true)]

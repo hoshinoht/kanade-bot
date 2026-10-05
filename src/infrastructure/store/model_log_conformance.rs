@@ -26,6 +26,7 @@ pub async fn run_suite<S: ModelLogStore + Sync>(make: impl AsyncFn() -> S) {
     masked_chat_views_round_trip_and_prune(make().await).await;
     identity_leak_is_an_extraction_outcome(make().await).await;
     chat_filters_match_rounds_flags_and_latency(make().await).await;
+    profanity_is_a_chat_outcome_with_its_guardrail_detail(make().await).await;
     rescan_jobs_stop_changing_once_final(make().await).await;
     allowance_overrides_replace_and_clear(make().await).await;
     tips_are_claimed_once_per_member_and_week(make().await).await;
@@ -997,6 +998,39 @@ async fn identity_leak_is_an_extraction_outcome<S: ModelLogStore>(store: S) {
         .await
         .expect("list");
     assert_eq!(ids(&page.items, |log| &log.id), ["x-leak"]);
+}
+
+async fn profanity_is_a_chat_outcome_with_its_guardrail_detail<S: ModelLogStore>(store: S) {
+    let mut hit = chat("c-rude", utc(21, 9, 0));
+    hit.outcome = ChatOutcome::Profanity;
+    hit.reply = "Language, please!".into();
+    hit.guardrail =
+        json!({"profanity": {"side": "question", "word": "frick", "sent": "Language, please!"}});
+    hit.rounds = Vec::new();
+    store.record_chat(hit.clone()).await.expect("record");
+    store
+        .record_chat(chat("c-fine", utc(22, 9, 0)))
+        .await
+        .expect("record");
+    assert_eq!(
+        store.load_chat("c-rude").await.expect("load"),
+        Some(hit),
+        "profanity: the row and its detail round-trip"
+    );
+    let page = store
+        .list_chats(&ChatFilter {
+            outcomes: vec![ChatOutcome::Profanity],
+            limit: 10,
+            ..ChatFilter::default()
+        })
+        .await
+        .expect("list");
+    assert_eq!(ids(&page.items, |chat| &chat.id), ["c-rude"]);
+    let facets = store.chat_facets().await.expect("facets");
+    assert!(
+        facets.outcomes.iter().any(|outcome| outcome == "profanity"),
+        "profanity: offered as a facet"
+    );
 }
 
 async fn chat_filters_match_rounds_flags_and_latency<S: ModelLogStore>(store: S) {

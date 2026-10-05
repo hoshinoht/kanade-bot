@@ -13,6 +13,7 @@ mod live_switch;
 mod looping;
 mod model;
 mod pilot;
+mod profanity;
 mod proposal_dedupe;
 mod propose;
 mod read_tools;

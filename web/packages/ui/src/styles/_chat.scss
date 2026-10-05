@@ -838,3 +838,56 @@
 .frame--phone .chat--compact > .card__head {
   display: none;
 }
+
+/* A profanity guardrail hit (Conversation, first): which side, the matched
+   word and what went out instead. A warn edge plus a heading, never colour alone. */
+
+.chat-guard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  border: 2px solid color-mix(in srgb, var(--warn) 50%, transparent);
+  border-left-width: 6px;
+  border-radius: var(--r-sm);
+  // No tint: its words keep the pane's checked text contrast in every colourway.
+  background: var(--surface);
+}
+
+.chat-guard__title {
+  margin: 0;
+  font-size: var(--fs-body-sm);
+  font-weight: 700;
+}
+
+.chat-guard__facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+  font-size: var(--fs-small);
+}
+
+.chat-guard__facts > div {
+  display: contents;
+}
+
+.chat-guard__facts dt {
+  color: var(--dim-text);
+}
+
+.chat-guard__facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.chat-guard__facts dd.mono {
+  font-weight: 700;
+}
+
+.chat-guard__note {
+  margin: 0;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+  line-height: 1.45;
+}

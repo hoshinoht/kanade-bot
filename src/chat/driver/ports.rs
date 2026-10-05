@@ -10,7 +10,7 @@ use chrono_tz::Tz;
 
 use super::ChatEvent;
 use super::FollowUpRequest;
-use crate::chat::answer::{Generation, Question};
+use crate::chat::answer::{Generation, ProfanityGuard, Question};
 use crate::chat::context::QuestionMessage;
 use crate::chat::gate::{ChannelDirectory, IncomingMessage, PilotSettings};
 use crate::chat::persona::CompiledPersona;
@@ -81,6 +81,8 @@ pub struct Prepared {
     pub zone: Tz,
     pub reset: (Weekday, NaiveTime),
     pub bot_names: Vec<String>,
+    /// The profanity guardrail as saved when the question started.
+    pub profanity: ProfanityGuard,
 }
 
 /// One question for the model side.

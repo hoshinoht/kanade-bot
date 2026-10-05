@@ -6,7 +6,10 @@
 use std::sync::{Arc, Mutex};
 
 use chrono::{TimeZone, Utc};
-use kanade::chat::answer::{AnswerDeps, AnswerFailure, Generation, Question, answer};
+use kanade::chat::answer::{
+    AnswerDeps, AnswerFailure, Generation, ProfanityGuard, ProfanityHit, ProfanitySide, Question,
+    answer,
+};
 use kanade::chat::context::{QuestionMessage, Reference, WITHHELD, build_turns};
 use kanade::chat::gate::{
     Author, ChannelInfo, IncomingMessage, PilotSettings, RATE_LIMITED, Summons, decide,
@@ -670,6 +673,7 @@ async fn filtered_then(
                     content: "Alvin tan: hmm".into(),
                 },
             ],
+            profanity: None,
             reminder: persona.voice_reminder(),
             offer: ToolOffer::full_set(false),
             settings,
@@ -839,4 +843,221 @@ async fn withheld_questions_survive_a_restart() {
         turns.iter().map(|t| t.prompt_text()).collect::<Vec<_>>(),
         [WITHHELD, "Priya: what did they say?"]
     );
+}
+
+/// Concludes one question on `pilot` in channel 700 at `now`.
+async fn conclude_on(
+    pilot: &mut ChatPilot,
+    world: &World,
+    question: &QuestionMessage,
+    generation: &Generation,
+    now: f64,
+) -> Concluded {
+    pilot
+        .conclude(
+            Finished {
+                message: question,
+                channel_id: "700",
+                ctx: &ctx_for(&question.author_id, &question.id),
+                generation,
+                persona: &kanade(),
+                directory: &world.guild,
+                log: facts(&format!("chat-{}", question.id)),
+                spent_at: None,
+                reserved: false,
+                now,
+            },
+            &ReplyTo,
+        )
+        .await
+}
+
+/// Posts the answer as `reply-to-<question id>`: unique per question.
+struct ReplyTo;
+
+impl ReplyPort for ReplyTo {
+    async fn post_reply(
+        &self,
+        _channel_id: &str,
+        reply_to: &str,
+        _text: &str,
+    ) -> Result<String, String> {
+        Ok(format!("reply-to-{reply_to}"))
+    }
+}
+
+fn texts(turns: &[kanade::chat::context::ChatTurn]) -> Vec<String> {
+    turns.iter().map(|t| t.prompt_text().to_owned()).collect()
+}
+
+const LINE: &str = "Language, please!";
+
+fn line_guard() -> ProfanityGuard {
+    ProfanityGuard::new(&kanade::domain::settings::Profanity {
+        deflection_line: LINE.into(),
+        ..kanade::domain::settings::Profanity::default()
+    })
+}
+
+/// A deflected question and the line sent for it never enter later context:
+/// not history, not anchors, not a reply chain to either message, and no
+/// placeholder either. The log row keeps the question in full.
+#[tokio::test]
+async fn a_deflected_question_and_its_line_stay_out_of_context() {
+    let world = world().await;
+    let mut pilot = new_pilot();
+    let rude = message("8600", "22", "this fucking bot, when is lotus?", None);
+    let deflected = line_guard().deflect("fuck".into());
+    let concluded = conclude_on(&mut pilot, &world, &rude, &deflected, 1.0).await;
+    assert_eq!(concluded.reply, LINE);
+    assert!(!concluded.withheld, "not the content-filter mechanism");
+    assert_eq!(concluded.interaction.outcome, ChatOutcome::Profanity);
+    assert_eq!(
+        concluded.interaction.question, rude.content,
+        "logged in full"
+    );
+    assert!(!concluded.interaction.withheld);
+    let posted = concluded.posted_id.expect("posted");
+
+    let next = message("8601", "33", "what's on?", None);
+    let turns = build_turns(
+        &mut pilot.conversations,
+        &next,
+        "700",
+        2.0,
+        BOT,
+        &world.guild,
+    );
+    assert_eq!(texts(&turns), ["Priya: what's on?"]);
+    for (parent, author, text) in [
+        ("8600", "22", rude.content.as_str()),
+        (posted.as_str(), BOT, LINE),
+    ] {
+        let reply = message("8602", "33", "huh?", Some((parent, author, text)));
+        let turns = build_turns(
+            &mut pilot.conversations,
+            &reply,
+            "700",
+            2.0,
+            BOT,
+            &world.guild,
+        );
+        assert_eq!(texts(&turns), ["Priya: huh?"], "reply to {parent}");
+    }
+}
+
+/// A reply replaced by the safe line keeps the whole exchange out (the
+/// question alone would dangle unanswered); a reply whose clean retry was
+/// delivered is a normal exchange and stays.
+#[tokio::test]
+async fn a_replaced_reply_drops_its_exchange_and_a_recovered_one_keeps_it() {
+    let world = world().await;
+    let mut pilot = new_pilot();
+    let replaced = Generation {
+        reply: LINE.into(),
+        profanity: Some(ProfanityHit {
+            side: ProfanitySide::Reply,
+            word: "shit".into(),
+            sent: Some(LINE.into()),
+        }),
+        clean_retry: true,
+        ..Generation::default()
+    };
+    let asked = message("8700", "22", "when is kalos?", None);
+    conclude_on(&mut pilot, &world, &asked, &replaced, 1.0).await;
+    let recovered = Generation {
+        reply: "Lotus is at nine.".into(),
+        profanity: Some(ProfanityHit {
+            side: ProfanitySide::Reply,
+            word: "shit".into(),
+            sent: None,
+        }),
+        clean_retry: true,
+        ..Generation::default()
+    };
+    let asked = message("8701", "22", "when is lotus?", None);
+    conclude_on(&mut pilot, &world, &asked, &recovered, 2.0).await;
+    let next = message("8702", "33", "and after?", None);
+    let turns = build_turns(
+        &mut pilot.conversations,
+        &next,
+        "700",
+        3.0,
+        BOT,
+        &world.guild,
+    );
+    let texts = texts(&turns);
+    assert_eq!(
+        texts,
+        [
+            "kanon: when is lotus?",
+            "Lotus is at nine.",
+            "Priya: and after?"
+        ]
+    );
+    assert!(
+        !texts
+            .iter()
+            .any(|t| t.contains("kalos") || t.contains(LINE))
+    );
+}
+
+/// Like withheld ids, excluded question ids come back from the chat log after
+/// a restart, so a direct reply cannot pull a deflected question back in.
+#[tokio::test]
+async fn excluded_questions_survive_a_restart() {
+    let world = world().await;
+    let store = MemoryScheduleStore::new();
+    let mut before = new_pilot();
+    let rude = message("8800", "22", "this fucking bot", None);
+    let concluded = conclude_on(
+        &mut before,
+        &world,
+        &rude,
+        &line_guard().deflect("fuck".into()),
+        1.0,
+    )
+    .await;
+    store.record_chat(concluded.interaction).await.unwrap();
+    let mut recovered = conclude_on(
+        &mut before,
+        &world,
+        &message("8801", "22", "when is lotus?", None),
+        &Generation {
+            reply: "Nine.".into(),
+            profanity: Some(ProfanityHit {
+                side: ProfanitySide::Reply,
+                word: "shit".into(),
+                sent: None,
+            }),
+            ..Generation::default()
+        },
+        2.0,
+    )
+    .await
+    .interaction;
+    recovered.at += chrono::TimeDelta::seconds(1);
+    store.record_chat(recovered).await.unwrap();
+
+    let reply = message(
+        "8802",
+        "33",
+        "what?",
+        Some(("8800", "22", "this fucking bot")),
+    );
+    let mut restarted = new_pilot();
+    assert_eq!(restarted.reload_excluded(&store).await.unwrap(), 1);
+    assert!(
+        !restarted.conversations.is_excluded("8801"),
+        "recovered stays"
+    );
+    let turns = build_turns(
+        &mut restarted.conversations,
+        &reply,
+        "700",
+        3.0,
+        BOT,
+        &world.guild,
+    );
+    assert_eq!(texts(&turns), ["Priya: what?"]);
 }

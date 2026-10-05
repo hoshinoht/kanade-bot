@@ -13,9 +13,10 @@ use crate::{
     chat::persona::{PersonaSnapshot, ProfileId},
     domain::notify::WeeklyDigest,
     domain::settings::{
-        ContextRole as StoredContextRole, Rate as StoredRate, RoleModel as StoredRole,
-        RoleProfileAssignment as StoredRoleProfile, RunLengthOverride as StoredRunLengthOverride,
-        RunLengths as StoredRunLengths, RuntimeSettings,
+        ContextRole as StoredContextRole, Profanity as StoredProfanity, Rate as StoredRate,
+        RoleModel as StoredRole, RoleProfileAssignment as StoredRoleProfile,
+        RunLengthOverride as StoredRunLengthOverride, RunLengths as StoredRunLengths,
+        RuntimeSettings,
     },
     domain::time::ZonedDateTime,
     infrastructure::llm::{
@@ -38,6 +39,7 @@ pub struct ConfigView {
     pub persona: Persona,
     pub models: Models,
     pub run_lengths: RunLengths,
+    pub profanity: Profanity,
     pub manage_messages: ManageMessages,
     pub notices: Vec<String>,
     pub env: Vec<EnvRow>,
@@ -116,6 +118,30 @@ pub fn run_lengths(settings: &StoredRunLengths) -> RunLengths {
     RunLengths {
         default_minutes: settings.default_minutes,
         overrides: settings.overrides.iter().map(override_).collect(),
+    }
+}
+
+/// The chat profanity guardrail. `builtin_words` is read-only: the code-owned
+/// list, each entry of which may be allowed again.
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "ProfanitySettings"))]
+pub struct Profanity {
+    pub extra_words: Vec<String>,
+    pub allowed_words: Vec<String>,
+    pub check_questions: bool,
+    pub check_replies: bool,
+    pub deflection_line: String,
+    pub builtin_words: Vec<&'static str>,
+}
+
+pub fn profanity(settings: &StoredProfanity) -> Profanity {
+    Profanity {
+        extra_words: settings.extra_words.clone(),
+        allowed_words: settings.allowed_words.clone(),
+        check_questions: settings.check_questions,
+        check_replies: settings.check_replies,
+        deflection_line: settings.deflection_line.clone(),
+        builtin_words: crate::chat::nudge::builtin_words(),
     }
 }
 

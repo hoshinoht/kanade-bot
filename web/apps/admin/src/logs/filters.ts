@@ -65,6 +65,7 @@ export const OUTCOME_LABEL: Record<string, string> = {
   failed: 'failed',
   self_service_link: 'self-service link sent',
   identity_leak: 'identity leak blocked',
+  profanity: 'profanity',
 };
 
 /** The pill profile for a log outcome (the word is always shown too). */

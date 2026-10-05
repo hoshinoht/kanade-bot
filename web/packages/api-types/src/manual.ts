@@ -207,7 +207,8 @@ export type ChatOutcome =
   | 'turned_away'
   | 'content_blocked'
   | 'withheld'
-  | 'clean_retry';
+  | 'clean_retry'
+  | 'profanity';
 
 /** Where a round's member data went; null for rows recorded before routes were. */
 export type ChatRoute = 'homelab' | 'external_masked' | 'external_unmasked';

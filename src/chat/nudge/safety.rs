@@ -1,6 +1,10 @@
 //! Extra checks for model-written lead-ins (seed lines are human-approved and
 //! skip them): no Discord markdown, no invisible format characters, no invite
 //! links, and a small code-owned SFW deny-list (user decision 2026-09-25).
+//! The chat profanity guardrail reuses the deny-list as a [`WordFilter`]
+//! (built-ins minus admin-allowed words plus admin extras, 2026-10-05).
+
+use std::sync::LazyLock;
 
 /// Characters Discord renders as formatting. A single `~` is plain text (a
 /// persona's "on you~"); only `~~` strikes through.
@@ -178,6 +182,11 @@ pub fn has_invite(line: &str) -> bool {
 /// Leetspeak digits/symbols become letters, then runs of one letter collapse
 /// (`sh1iiit` → `shit`); words split on anything that is not a letter.
 fn normalise(text: &str) -> String {
+    leet(text, true)
+}
+
+/// [`normalise`]'s leetspeak mapping, with or without collapsing runs.
+fn leet(text: &str, collapse_runs: bool) -> String {
     let mut out = String::with_capacity(text.len());
     let chars: Vec<char> = text.chars().flat_map(char::to_lowercase).collect();
     for (at, &c) in chars.iter().enumerate() {
@@ -197,12 +206,119 @@ fn normalise(text: &str) -> String {
             '8' => 'b',
             other => other,
         };
-        if !out.ends_with(c) || !c.is_alphabetic() {
+        if !collapse_runs || !out.ends_with(c) || !c.is_alphabetic() {
             out.push(c);
         }
     }
     out
 }
+
+/// Blanks number tokens (digits with `.`/`,`, optionally one `k`/`m`/`b`
+/// unit: `800b`, `8008`, `1.5k`) so meso amounts and counts never read as
+/// leetspeak (`800b` → `boob`); digits inside a word (`5h1t`) still map.
+fn without_numbers(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut at = 0;
+    while at < chars.len() {
+        let token = |c: char| c.is_alphanumeric() || c == '.' || c == ',';
+        if !token(chars[at]) {
+            out.push(chars[at]);
+            at += 1;
+            continue;
+        }
+        let end = (at..chars.len())
+            .find(|&i| !token(chars[i]))
+            .unwrap_or(chars.len());
+        let word = &chars[at..end];
+        let trimmed = {
+            let mut len = word.len();
+            while len > 0 && matches!(word[len - 1], '.' | ',') {
+                len -= 1;
+            }
+            &word[..len]
+        };
+        let body = match trimmed.last() {
+            Some(c) if matches!(c.to_ascii_lowercase(), 'k' | 'm' | 'b') => {
+                &trimmed[..trimmed.len() - 1]
+            }
+            _ => trimmed,
+        };
+        let numeric = body.first().is_some_and(char::is_ascii_digit)
+            && body
+                .iter()
+                .all(|c| c.is_ascii_digit() || matches!(c, '.' | ','));
+        if numeric {
+            out.extend(std::iter::repeat_n(' ', word.len()));
+        } else {
+            out.extend(word);
+        }
+        at = end;
+    }
+    out
+}
+
+/// Letter runs: `boob` → `[(b, 1), (o, 2), (b, 1)]`.
+fn runs(word: &str) -> Vec<(char, usize)> {
+    let mut out: Vec<(char, usize)> = Vec::new();
+    for c in word.chars() {
+        match out.last_mut() {
+            Some((last, count)) if *last == c => *count += 1,
+            _ => out.push((c, 1)),
+        }
+    }
+    out
+}
+
+/// `raw` starts with `entry`'s runs, each at least as long: `booob` covers
+/// `boob`, but `bob` does not (collapsing must not make another word).
+fn covers(raw: &str, entry: &str) -> bool {
+    let (raw, entry) = (runs(raw), runs(entry));
+    raw.len() >= entry.len()
+        && raw
+            .iter()
+            .zip(&entry)
+            .all(|((letter, count), (want, need))| letter == want && count >= need)
+}
+
+/// Short entries that are common names or words themselves, or whose suffix
+/// forms are (`asus`): chat matches them only as the exact whole word.
+/// `tai`: a common surname/given name and an everyday Malay/Thai word;
+/// `asu`: `asus` (the brand) and ASU. Other short entries (`fuk`, `tit`,
+/// `cum`, `hoe`, `wtf`, `diu`, `kuy`, `yed`…) keep suffixes and stretching:
+/// their forms are what members type (`fukin`, `tits`, `wtfff`).
+pub const EXACT_ONLY: &[&str] = &["tai", "asu"];
+
+/// Entries whose collapsed form is a common word or name (`boob` → `bob`,
+/// `nigger` → `niger`): chat needs each letter run at least as long as the
+/// entry's, so collapsing them never makes the other word. Collapse still
+/// applies to every other entry (`ashole`, `pusy`, `jiz`, `chebai`). The
+/// inside entry `niger` still matches "Niger"/"Nigeria" (accepted gap;
+/// admins can allow it again).
+pub const RUN_STRICT: &[&str] = &["boob", "nigger"];
+
+/// Ordinary words and names a suffix form would otherwise hit
+/// (`cum`+`in`, `hoe`+`y`, `cock`+`y`, `dik`+`es`, `babi`+`es`, collapsed
+/// `titter` = `tit`+`er`).
+pub const SAFE_FORMS: &[&str] = &[
+    "cumin",
+    "cumins",
+    "hoey",
+    "hoed",
+    "hoer",
+    "cocky",
+    "cocker",
+    "cockers",
+    "cocking",
+    "titter",
+    "titters",
+    "tittering",
+    "tittered",
+    "titer",
+    "titers",
+    "dikes",
+    "babies",
+];
 
 fn collapse(word: &str) -> String {
     let mut out = String::with_capacity(word.len());
@@ -214,31 +330,162 @@ fn collapse(word: &str) -> String {
     out
 }
 
-/// A deny-listed word, or `None`. Only the entry is reported, never the line.
-pub fn denied_word(line: &str) -> Option<&'static str> {
-    let normalised = normalise(line);
-    normalised
-        .split(|c: char| !c.is_alphabetic())
-        .filter(|word| !word.is_empty())
-        .find_map(|word| {
-            let mut whole_words = DENY_LIST
+static BUILTIN: LazyLock<WordFilter> = LazyLock::new(|| WordFilter::new(&[], &[]));
+
+/// A deny-list hit: the built-in entry, or an admin-added word.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hit<'a> {
+    Builtin(&'static str),
+    Extra(&'a str),
+}
+
+impl Hit<'_> {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Builtin(word) => word,
+            Self::Extra(word) => word,
+        }
+    }
+}
+
+/// Every built-in entry once, sorted: the words an admin may allow again.
+/// Allowing one removes it from every list it is on (whole-word and inside).
+pub fn builtin_words() -> Vec<&'static str> {
+    let mut words: Vec<&'static str> = DENY_LIST
+        .iter()
+        .chain(DENY_SOUNDALIKE)
+        .chain(DENY_SEA)
+        .chain(DENY_INSIDE)
+        .copied()
+        .collect();
+    words.sort_unstable();
+    words.dedup();
+    words
+}
+
+pub fn is_builtin_word(word: &str) -> bool {
+    DENY_LIST
+        .iter()
+        .chain(DENY_SOUNDALIKE)
+        .chain(DENY_SEA)
+        .chain(DENY_INSIDE)
+        .any(|entry| *entry == word)
+}
+
+/// The effective deny-list: built-ins minus `allowed`, plus admin `extra`
+/// words (whole-word, with the built-in suffixes). Entries are collapsed once.
+#[derive(Clone, Debug)]
+pub struct WordFilter {
+    builtin_whole: Vec<(String, &'static str)>,
+    extra_whole: Vec<(String, String)>,
+    inside: Vec<&'static str>,
+}
+
+impl WordFilter {
+    pub fn new(extra: &[String], allowed: &[String]) -> Self {
+        let kept = |entry: &&&'static str| !allowed.iter().any(|word| word == **entry);
+        Self {
+            builtin_whole: DENY_LIST
                 .iter()
                 .chain(DENY_SOUNDALIKE)
                 .chain(DENY_SEA)
-                .copied();
-            let whole = whole_words.find(|entry| {
-                let entry = collapse(entry);
-                word == entry
-                    || SUFFIXES.iter().any(|suffix| {
-                        word.strip_prefix(entry.as_str())
-                            .is_some_and(|rest| rest == collapse(suffix))
-                    })
-            });
-            whole.or_else(|| {
-                DENY_INSIDE
+                .filter(kept)
+                .map(|entry| (collapse(entry), *entry))
+                .collect(),
+            extra_whole: extra
+                .iter()
+                .map(|word| (collapse(&word.to_lowercase()), word.clone()))
+                .collect(),
+            inside: DENY_INSIDE.iter().filter(kept).copied().collect(),
+        }
+    }
+
+    /// The built-in list with nothing allowed again and no extras.
+    pub fn builtin() -> &'static Self {
+        &BUILTIN
+    }
+
+    /// The chat guardrail's match (user reviews 2026-10-05): [`Self::denied`]
+    /// with precise exceptions for words members really use: [`EXACT_ONLY`]
+    /// entries match only exactly, [`RUN_STRICT`] entries need their letter
+    /// runs, and [`SAFE_FORMS`] never hit. [`Self::denied`] keeps the nudge
+    /// vectors' reading.
+    pub fn denied_strict(&self, line: &str) -> Option<Hit<'_>> {
+        let raw = leet(&without_numbers(line), false);
+        raw.split(|c: char| !c.is_alphabetic())
+            .filter(|word| !word.is_empty())
+            .filter(|raw_word| !SAFE_FORMS.contains(raw_word))
+            .find_map(|raw_word| {
+                let word = collapse(raw_word);
+                let matches = |collapsed: &str, entry: &str| {
+                    if EXACT_ONLY.contains(&entry) {
+                        return raw_word == entry;
+                    }
+                    let whole = word == collapsed
+                        || SUFFIXES.iter().any(|suffix| {
+                            word.strip_prefix(collapsed)
+                                .is_some_and(|rest| rest == collapse(suffix))
+                        });
+                    whole && (!RUN_STRICT.contains(&entry) || covers(raw_word, entry))
+                };
+                self.builtin_whole
                     .iter()
-                    .copied()
-                    .find(|entry| word.contains(entry))
+                    .find(|(collapsed, entry)| matches(collapsed, entry))
+                    .map(|(_, entry)| Hit::Builtin(entry))
+                    .or_else(|| {
+                        self.extra_whole
+                            .iter()
+                            .find(|(collapsed, entry)| matches(collapsed, entry))
+                            .map(|(_, entry)| Hit::Extra(entry.as_str()))
+                    })
+                    .or_else(|| {
+                        self.inside
+                            .iter()
+                            .find(|entry| word.contains(*entry))
+                            .map(|entry| Hit::Builtin(entry))
+                    })
             })
-        })
+    }
+
+    /// The first deny-listed word in `line`, or `None`. Only the entry is
+    /// reported, never the line.
+    pub fn denied(&self, line: &str) -> Option<Hit<'_>> {
+        let normalised = normalise(line);
+        normalised
+            .split(|c: char| !c.is_alphabetic())
+            .filter(|word| !word.is_empty())
+            .find_map(|word| {
+                let matches = |entry: &str| {
+                    word == entry
+                        || SUFFIXES.iter().any(|suffix| {
+                            word.strip_prefix(entry)
+                                .is_some_and(|rest| rest == collapse(suffix))
+                        })
+                };
+                self.builtin_whole
+                    .iter()
+                    .find(|(collapsed, _)| matches(collapsed))
+                    .map(|(_, entry)| Hit::Builtin(entry))
+                    .or_else(|| {
+                        self.extra_whole
+                            .iter()
+                            .find(|(collapsed, _)| matches(collapsed))
+                            .map(|(_, word)| Hit::Extra(word.as_str()))
+                    })
+                    .or_else(|| {
+                        self.inside
+                            .iter()
+                            .find(|entry| word.contains(*entry))
+                            .map(|entry| Hit::Builtin(entry))
+                    })
+            })
+    }
+}
+
+/// A built-in deny-listed word, or `None`. Only the entry is reported, never the line.
+pub fn denied_word(line: &str) -> Option<&'static str> {
+    match BUILTIN.denied(line)? {
+        Hit::Builtin(word) => Some(word),
+        Hit::Extra(_) => None,
+    }
 }

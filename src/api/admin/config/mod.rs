@@ -98,6 +98,7 @@ fn put(settings: &mut RuntimeSettings, section: Section) {
         Section::Persona(value) => settings.persona = value,
         Section::Models(value) => settings.models = value,
         Section::RunLengths(value) => settings.run_lengths = value,
+        Section::Profanity(value) => settings.profanity = value,
         Section::Schedule(value) => settings.schedule = value,
         Section::Posting(value) => settings.posting = value,
     }
@@ -269,6 +270,7 @@ async fn update(
             fields,
             &state.catalog,
         )?),
+        "profanity" => Section::Profanity(patch::profanity(&current.profanity, fields)?),
         _ => {
             if desk.models.is_none() {
                 return Err(models_unreachable(
@@ -398,6 +400,7 @@ fn name_of(section: &str) -> &'static str {
         "self_service" => "self_service",
         "persona" => "persona",
         "run_lengths" => "run_lengths",
+        "profanity" => "profanity",
         _ => "models",
     }
 }

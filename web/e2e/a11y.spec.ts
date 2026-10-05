@@ -113,6 +113,10 @@ for (const theme of THEMES) {
     await page.getByRole('tab', { name: 'Self-service' }).click();
     await expect(page.getByRole('switch', { name: /Public portal/ })).toBeVisible();
     await serious(page, 'admin config self-service');
+    await page.getByRole('tab', { name: /^Profanity/ }).click();
+    await page.getByRole('combobox', { name: 'Find a built-in word to allow again' }).fill('r');
+    await expect(page.getByRole('listbox', { name: 'Built-in words' })).toBeVisible();
+    await serious(page, 'admin config profanity');
     await page.getByRole('tab', { name: /^Persona/ }).click();
     await expect(page.getByText(/Reload profiles/)).toBeVisible();
     await serious(page, 'admin config persona');
@@ -149,6 +153,9 @@ for (const theme of THEMES) {
     await page.goto(`${ADMIN}/chat/c-move?sw=off`);
     await page.getByRole('tab', { name: /Tool trace/ }).click();
     await serious(page, 'admin chat turn');
+    await page.goto(`${ADMIN}/chat/c-safe-line?sw=off`);
+    await expect(page.getByRole('region', { name: 'Profanity in the reply' })).toBeVisible();
+    await serious(page, 'admin chat profanity turn');
     await page.goto(`${ADMIN}/limits?sw=off`);
     await expect(page.getByRole('heading', { level: 3, name: 'gateway' })).toBeVisible();
     await serious(page, 'admin limits');

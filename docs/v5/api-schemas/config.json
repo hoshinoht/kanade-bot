@@ -32,6 +32,20 @@
         "overrides": { "type": "array", "items": { "$ref": "#/$defs/RunLengthOverride" }, "description": "Replaced whole by PATCH; boss+difficulty pairs must be unique and valid in the catalog." }
       }
     },
+    "ProfanitySettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extra_words", "allowed_words", "check_questions", "check_replies", "deflection_line", "builtin_words"],
+      "properties": {
+        "extra_words": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/ProfanityWord" }, "description": "Admin-added words, matched whole with the built-in suffixes. Replaced whole by PATCH; trimmed and lowercased; not built-ins and no repeats (422 otherwise)." },
+        "allowed_words": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/ProfanityWord" }, "description": "Built-in words allowed again (each must be in builtin_words; 422 otherwise). Replaced whole by PATCH." },
+        "check_questions": { "type": "boolean", "description": "A listed word in a member's question sends deflection_line with no model call (charged like an answer)." },
+        "check_replies": { "type": "boolean", "description": "A listed word in a finished reply spends the clean retry once; a retry that is unavailable or hits again sends deflection_line." },
+        "deflection_line": { "type": "string", "minLength": 1, "maxLength": 200, "description": "One line; it must not itself contain a listed word (422)." },
+        "builtin_words": { "type": "array", "items": { "type": "string" }, "description": "Read-only: the code-owned list, sorted; each entry may be allowed again." }
+      }
+    },
+    "ProfanityWord": { "type": "string", "minLength": 2, "maxLength": 32 },
     "ModelInfo": {
       "type": "object",
       "additionalProperties": false,
@@ -217,7 +231,7 @@
     "ConfigView": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["pings", "watching", "chatbot", "notifications", "self_service", "persona", "models", "run_lengths", "manage_messages", "env"],
+      "required": ["pings", "watching", "chatbot", "notifications", "self_service", "persona", "models", "run_lengths", "profanity", "manage_messages", "env"],
       "properties": {
         "pings": {
           "type": "object",
@@ -319,6 +333,7 @@
           }
         },
         "run_lengths": { "$ref": "#/$defs/RunLengths", "description": "Saved planner run durations. PATCH accepts default_minutes and/or a complete overrides array." },
+        "profanity": { "$ref": "#/$defs/ProfanitySettings", "description": "The chat profanity guardrail. PATCH accepts any of extra_words, allowed_words, check_questions, check_replies, deflection_line; changes apply to the next question and nudge rewrite." },
         "manage_messages": {
           "type": "object",
           "additionalProperties": false,

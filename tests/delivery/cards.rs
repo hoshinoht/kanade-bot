@@ -750,6 +750,7 @@ fn rewriting(rewriter: &Arc<Scripted>) -> CardKit {
         heading: HeadingRewrite {
             rewriter: Some(SharedRewriter(rewriter.clone())),
             persona: Some(persona()),
+            words: None,
         },
         ..kit(None)
     }
@@ -814,12 +815,61 @@ async fn failure_timeout_rejection_or_no_rewriter_keep_the_v4_heading() {
         heading: HeadingRewrite {
             rewriter: Some(SharedRewriter(Scripted::new(Script::Reply("x {day}")))),
             persona: None,
+            words: None,
         },
         ..kit(None)
     };
     assert_eq!(
         morning_content(no_persona).await.as_deref(),
         Some(DAY_OF_CONTENT)
+    );
+}
+
+/// Heading rewrites check the live profanity list, read per rewrite: an
+/// admin extra word is rejected (the v4 heading stays) and a built-in
+/// allowed again passes.
+#[tokio::test(start_paused = true)]
+async fn heading_rewrites_follow_the_live_profanity_list() {
+    use kanade::chat::nudge::WordFilter;
+
+    let live = Arc::new(Mutex::new(Arc::new(WordFilter::new(
+        &["shine".into()],
+        &[],
+    ))));
+    let source = Arc::clone(&live);
+    let with_words = |rewriter: &Arc<Scripted>| CardKit {
+        heading: HeadingRewrite {
+            words: Some(Arc::new({
+                let source = Arc::clone(&source);
+                move || Arc::clone(&source.lock().unwrap())
+            })),
+            ..rewriting(rewriter).heading
+        },
+        ..kit(None)
+    };
+    let shine = Scripted::new(Script::Reply("Rise and shine, it's {day}!"));
+    assert_eq!(
+        morning_content(with_words(&shine)).await.as_deref(),
+        Some(DAY_OF_CONTENT),
+        "an admin extra word rejects the rewrite"
+    );
+    assert_eq!(shine.calls(), 1);
+    let babi = Scripted::new(Script::Reply("Babi, it's {day}!"));
+    assert_eq!(
+        morning_content(rewriting(&babi)).await.as_deref(),
+        Some(DAY_OF_CONTENT),
+        "the built-in list rejects it"
+    );
+    *live.lock().unwrap() = Arc::new(WordFilter::new(&[], &["babi".into()]));
+    assert_eq!(
+        morning_content(with_words(&babi)).await.as_deref(),
+        Some("📅 **Babi, it's Thu 10 Sep!**\n<@1001> Bex"),
+        "a built-in allowed again is accepted"
+    );
+    assert_eq!(
+        morning_content(with_words(&shine)).await.as_deref(),
+        Some("📅 **Rise and shine, it's Thu 10 Sep!**\n<@1001> Bex"),
+        "the extra word was removed live"
     );
 }
 
@@ -1172,6 +1222,7 @@ fn gated_cards(rewriter: &Arc<GateRewriter>) -> CardKit {
         heading: HeadingRewrite {
             rewriter: Some(SharedRewriter(rewriter.clone())),
             persona: Some(persona()),
+            words: None,
         },
         ..kit(None)
     }

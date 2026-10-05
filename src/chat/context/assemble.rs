@@ -114,6 +114,12 @@ pub fn build_turns(
     let chain: Vec<ChatTurn> = reply_chain(message, bot_user_id, directory)
         .into_iter()
         .filter(|turn| turn.message_id.as_ref().is_none_or(|id| !seen.contains(id)))
+        // An excluded message (a profanity-deflected exchange) is dropped whole.
+        .filter(|turn| {
+            turn.message_id
+                .as_deref()
+                .is_none_or(|id| !state.is_excluded(id))
+        })
         .collect();
     seen.extend(chain.iter().filter_map(|turn| turn.message_id.clone()));
     let mut turns = state.reanchored(message.replied_message_id(), &seen);

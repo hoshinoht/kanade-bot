@@ -357,6 +357,7 @@ impl ConfigDesk {
                 context: dto::context_settings(&settings.models.context),
             },
             run_lengths: dto::run_lengths(&settings.run_lengths),
+            profanity: dto::profanity(&settings.profanity),
             manage_messages: ManageMessages {
                 missing: Vec::new(),
             },

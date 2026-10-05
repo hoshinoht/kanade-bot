@@ -7,9 +7,9 @@ use chrono::{DateTime, Utc};
 
 use super::{
     prompt::RewritePrompt,
-    rewrite::{NudgeRewriter, REWRITE_DEADLINE, Rejection, RewriteFailure, accept_rewrite},
+    rewrite::{NudgeRewriter, REWRITE_DEADLINE, Rejection, RewriteFailure, accept_rewrite_with},
     rotation::SeedRotation,
-    safety,
+    safety::{self, WordFilter},
 };
 use crate::chat::persona::{
     CompiledPersona, NudgeMood, NudgePurpose, NudgeSource, check_nudge_line, fill_nudge,
@@ -111,9 +111,14 @@ pub struct Nudge {
     pub seeds: NudgeSource,
 }
 
+/// The live effective deny-list a rewrite is checked against, read per
+/// rewrite so a saved Profanity change applies without a restart.
+pub type WordSource = Arc<dyn Fn() -> Arc<WordFilter> + Send + Sync>;
+
 pub struct Nudger<R> {
     rotation: SeedRotation,
     rewriter: R,
+    words: WordSource,
 }
 
 impl<R> std::fmt::Debug for Nudger<R> {
@@ -123,11 +128,21 @@ impl<R> std::fmt::Debug for Nudger<R> {
 }
 
 impl<R: NudgeRewriter> Nudger<R> {
+    /// Checks rewrites against the built-in deny-list until
+    /// [`Self::with_words`] supplies the live one.
     pub fn new(random: Arc<dyn Random>, rewriter: R) -> Self {
+        let builtin = Arc::new(WordFilter::builtin().clone());
         Self {
             rotation: SeedRotation::new(random),
             rewriter,
+            words: Arc::new(move || Arc::clone(&builtin)),
         }
+    }
+
+    #[must_use]
+    pub fn with_words(mut self, words: WordSource) -> Self {
+        self.words = words;
+        self
     }
 
     /// The lead-in only if `member_id` has no tip yet in the boss week holding
@@ -177,7 +192,7 @@ impl<R: NudgeRewriter> Nudger<R> {
             Ok(Err(RewriteFailure::Misconfigured)) => {
                 (seed.to_owned(), LineSource::Seed(SeedReason::Misconfigured))
             }
-            Ok(Ok(output)) => match accept_rewrite(&output, seed) {
+            Ok(Ok(output)) => match accept_rewrite_with(&output, seed, &(self.words)()) {
                 Ok(line) => (line, LineSource::Rewritten),
                 Err(rejection) => (
                     seed.to_owned(),

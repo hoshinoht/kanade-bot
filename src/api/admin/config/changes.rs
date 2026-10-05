@@ -1,6 +1,7 @@
 //! Operator log lines for saved settings and persona swaps. Every settings row
-//! is a structured value (ids, flags, counts, clocks, aliases), never free
-//! text or a secret, so before/after values are safe to log.
+//! is a structured value (ids, flags, counts, clocks, aliases) or, for
+//! `v5.profanity`, admin-written words and the deflection line; never a
+//! secret, so before/after values are safe to log.
 
 use std::collections::BTreeMap;
 
@@ -24,6 +25,7 @@ fn rows(settings: &RuntimeSettings) -> BTreeMap<&'static str, String> {
         Section::Persona(settings.persona.clone()),
         Section::Models(settings.models.clone()),
         Section::RunLengths(settings.run_lengths.clone()),
+        Section::Profanity(settings.profanity.clone()),
         Section::Schedule(settings.schedule),
         Section::Posting(settings.posting.clone()),
     ]
@@ -259,5 +261,20 @@ mod tests {
             diff(&after, &after).is_empty(),
             "a no-op emits no audit row"
         );
+    }
+
+    #[test]
+    fn a_profanity_change_audits_its_row() {
+        logging::capture();
+        let before = RuntimeSettings::default();
+        let mut after = before.clone();
+        after.profanity.extra_words = vec!["frick".into()];
+        settings_changed(9, "profanity", "admin:token", &before, &after);
+        let lines = logging::captured();
+        assert_eq!(lines[0]["section"], "profanity");
+        assert_eq!(lines[0]["keys"], serde_json::json!(["v5.profanity"]));
+        let row = &lines[0]["values"]["v5.profanity"];
+        let to: Value = serde_json::from_str(row["to"].as_str().unwrap()).unwrap();
+        assert_eq!(to["extra_words"], serde_json::json!(["frick"]));
     }
 }

@@ -1069,6 +1069,88 @@ async fn renamed_member_names_in_chat_history_are_sent_unchanged() {
     .await;
 }
 
+/// The next question's request body (the last completion so far).
+fn last_body(stub: &ModelStub) -> String {
+    stub.completions
+        .lock()
+        .unwrap()
+        .last()
+        .expect("a completion")
+        .to_string()
+}
+
+#[tokio::test]
+async fn a_deflected_question_and_its_line_never_reach_the_next_prompt() {
+    let line = crate::domain::settings::DEFAULT_DEFLECTION_LINE;
+    let stub = ModelStub::start("local", "Lotus is at nine tonight.").await;
+    let (live, discord) = live(&stub, &[]).await;
+    drive(live, discord, async |live| {
+        connect(live);
+        eventually!("chat idle", live.health.health().await.chat == Some("idle"));
+        live.events
+            .send(question_with_text(
+                5001,
+                &[PILOT_ROLE],
+                "this fucking bot, when is kalos?",
+            ))
+            .unwrap();
+        eventually!("the line", answered(&live.fake, THREAD, 1));
+        assert_eq!(replies(&live.fake, THREAD)[0].0, line);
+        assert_eq!(stub.completions(), 0, "no model call");
+        live.events.send(question(5002, &[PILOT_ROLE])).unwrap();
+        eventually!("the second reply", answered(&live.fake, THREAD, 2));
+        assert_eq!(stub.completions(), 1);
+        let body = last_body(&stub);
+        assert!(body.contains("when is lotus"), "{body}");
+        for kept_out in ["fucking", "when is kalos", line] {
+            assert!(!body.contains(kept_out), "{kept_out} leaked: {body}");
+        }
+        let rows = chats(&live.store).await;
+        let rude = rows
+            .iter()
+            .find(|row| row.message_id.as_deref() == Some("5001"))
+            .unwrap();
+        assert_eq!(rude.outcome, ChatOutcome::Profanity);
+        assert!(rude.question.contains("fucking"), "logged in full");
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_replaced_reply_stays_out_and_a_recovered_one_stays_in() {
+    let line = crate::domain::settings::DEFAULT_DEFLECTION_LINE;
+    for (retry, kept) in [("Shit, nine.", false), ("Kalos is at nine.", true)] {
+        let stub = ModelStub::scripted(
+            "local",
+            "Lotus is at nine tonight.",
+            vec![
+                completion(ALIAS, "Kalos is at nine, shit."),
+                completion(ALIAS, retry),
+            ],
+        )
+        .await;
+        let (live, discord) = live(&stub, &[]).await;
+        drive(live, discord, async |live| {
+            connect(live);
+            eventually!("chat idle", live.health.health().await.chat == Some("idle"));
+            live.events
+                .send(question_with_text(5001, &[PILOT_ROLE], "when is kalos?"))
+                .unwrap();
+            eventually!("the first reply", answered(&live.fake, THREAD, 1));
+            let shown = &replies(&live.fake, THREAD)[0].0;
+            assert_eq!(shown == line, !kept, "{shown}");
+            live.events.send(question(5002, &[PILOT_ROLE])).unwrap();
+            eventually!("the second reply", answered(&live.fake, THREAD, 2));
+            assert_eq!(stub.completions(), 3, "the clean retry ran");
+            let body = last_body(&stub);
+            assert!(!body.contains("shit") && !body.contains(line), "{body}");
+            assert_eq!(body.contains("when is kalos"), kept, "{body}");
+            assert_eq!(body.contains("Kalos is at nine."), kept, "{body}");
+        })
+        .await;
+    }
+}
+
 #[tokio::test]
 async fn chat_off_ignores_questions_and_health_says_disabled() {
     let stub = ModelStub::start("local", "x").await;

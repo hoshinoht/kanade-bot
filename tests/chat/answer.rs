@@ -136,6 +136,7 @@ async fn run_routed(
         let question = Question {
             ctx: &ctx,
             conversation,
+            profanity: None,
             reminder: persona.voice_reminder(),
             offer,
             settings: settings(&input, tool_rounds),
@@ -728,6 +729,7 @@ async fn an_external_pre_admission_refusal_does_not_claim_disclosure() {
                         content: "Alvin tan: synthetic question".into(),
                     },
                 ],
+                profanity: None,
                 reminder: persona.voice_reminder(),
                 offer: ToolOffer::dynamic([], false),
                 settings: settings(&input, 8),
@@ -1186,6 +1188,7 @@ async fn a_deadline_during_staging_still_reports_and_supersedes_the_proposal() {
                 content: "Alvin tan: move hstar to thu 22:00".into(),
             },
         ],
+        profanity: None,
         reminder: kanade().voice_reminder(),
         offer: ToolOffer::full_set(false),
         settings: settings(&input, 8),
