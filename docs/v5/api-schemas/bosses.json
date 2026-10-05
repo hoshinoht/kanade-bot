@@ -38,6 +38,55 @@
         "aliases": { "type": "array", "items": { "type": "string" } }
       }
     },
+    "GuideItem": {
+      "anyOf": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["title", "text"],
+          "properties": { "title": { "type": "string" }, "text": { "type": "string" }, "detail": { "type": "string" } }
+        }
+      ]
+    },
+    "GuideItems": { "type": "array", "items": { "$ref": "#/$defs/GuideItem" } },
+    "Mission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["series", "order", "title"],
+      "properties": {
+        "series": { "$ref": "#/$defs/MissionSeries" },
+        "order": { "type": "integer" },
+        "title": { "type": "string" },
+        "modifier": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["text", "direction"],
+          "properties": { "text": { "type": "string" }, "direction": { "enum": ["up", "down"] } }
+        },
+        "needs": { "type": "string" },
+        "rules": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "MissionSeries": { "enum": ["destiny-weapon", "union-champion"] },
+    "MissionStop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["series", "order", "key", "name", "difficulty"],
+      "properties": {
+        "series": { "$ref": "#/$defs/MissionSeries" },
+        "order": { "type": "integer" },
+        "key": { "type": "string" },
+        "name": { "type": "string" },
+        "difficulty": { "enum": ["Easy", "Normal", "Hard", "Chaos", "Extreme", "Champion", "Destiny"] }
+      }
+    },
+    "Mechanic": {
+      "description": "Diagram block; shape per kind as in boss/knowledge/schema.json.",
+      "type": "object",
+      "required": ["kind", "title"],
+      "properties": { "kind": { "enum": ["ledger", "zones", "scale"] }, "title": { "type": "string" } }
+    },
     "Strategy": {
       "type": "object",
       "additionalProperties": false,
@@ -78,7 +127,8 @@
             "required": ["phase", "value"],
             "properties": {
               "phase": { "type": "string" },
-              "value": { "type": "string" }
+              "value": { "type": "string" },
+              "count": { "type": "integer" }
             }
           }
         },
@@ -88,10 +138,13 @@
           "required": ["kind", "text"],
           "properties": {
             "kind": { "type": "string" },
-            "text": { "type": "string" }
+            "text": { "type": "string" },
+            "value": { "type": "string" },
+            "basis": { "type": "string" }
           }
         },
-        "notes": { "type": "array", "items": { "type": "string" } }
+        "notes": { "$ref": "#/$defs/GuideItems" },
+        "mission": { "$ref": "#/$defs/Mission" }
       }
     },
     "KnowledgeSource": {
@@ -110,25 +163,36 @@
     "KnowledgeDoc": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["boss", "summary", "core", "danger", "tips", "sources"],
+      "required": ["boss", "summary", "danger", "tips", "sources"],
       "properties": {
         "boss": { "type": "string" },
         "summary": { "type": "string" },
-        "core": { "type": "array", "items": { "type": "string" } },
-        "danger": { "type": "array", "items": { "type": "string" } },
-        "tips": { "type": "array", "items": { "type": "string" } },
+        "lead": { "type": "string" },
+        "core": { "$ref": "#/$defs/GuideItems" },
+        "phases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "items"],
+            "properties": { "name": { "type": "string" }, "items": { "$ref": "#/$defs/GuideItems" } }
+          }
+        },
+        "danger": { "$ref": "#/$defs/GuideItems" },
+        "tips": { "$ref": "#/$defs/GuideItems" },
         "difficulty_notes": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "e": { "type": "string" },
-            "n": { "type": "string" },
-            "h": { "type": "string" },
-            "c": { "type": "string" },
-            "x": { "type": "string" }
+            "e": { "$ref": "#/$defs/GuideItem" },
+            "n": { "$ref": "#/$defs/GuideItem" },
+            "h": { "$ref": "#/$defs/GuideItem" },
+            "c": { "$ref": "#/$defs/GuideItem" },
+            "x": { "$ref": "#/$defs/GuideItem" }
           }
         },
-        "notes": { "type": "array", "items": { "type": "string" } },
+        "notes": { "$ref": "#/$defs/GuideItems" },
+        "mechanics": { "type": "array", "items": { "$ref": "#/$defs/Mechanic" } },
         "event": { "$ref": "#/$defs/EventInfo" },
         "difficulties": { "type": "array", "items": { "$ref": "#/$defs/DifficultyFacts" } },
         "strategies": { "type": "array", "items": { "$ref": "#/$defs/Strategy" } },
@@ -138,7 +202,7 @@
     "Knowledge": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["key", "name", "level", "portrait", "animated", "hue", "researched_as_of", "path", "in_use", "doc"],
+      "required": ["key", "name", "level", "portrait", "animated", "hue", "researched_as_of", "path", "in_use", "doc", "missions"],
       "properties": {
         "key": { "type": "string" },
         "name": { "type": "string" },
@@ -149,7 +213,8 @@
         "researched_as_of": { "$ref": "common.json#/$defs/NullableString" },
         "path": { "type": "string" },
         "in_use": { "type": "array", "items": { "$ref": "common.json#/$defs/Difficulty" } },
-        "doc": { "$ref": "#/$defs/KnowledgeDoc" }
+        "doc": { "$ref": "#/$defs/KnowledgeDoc" },
+        "missions": { "type": "array", "items": { "$ref": "#/$defs/MissionStop" } }
       }
     },
     "EventBoss": {

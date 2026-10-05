@@ -1,7 +1,7 @@
 // Generated from the Rust API DTOs by src/api/ts_bindings.rs; do not edit.
 // Regenerate: KANADE_WRITE_TS=1 cargo test --all-features --lib ts_bindings
 
-import type { ActorKind, Answer, ChangeRecord, ChatOutcome, ChatRoute, ContextSource, Difficulty, ExtractionOutcome, KnowledgeDoc, PingLevel, ProposalKind, Refusal, RowKey, RunStatus, SelfServiceMode, SignInMethod, Surface } from './manual';
+import type { ActorKind, Answer, ChangeRecord, ChatOutcome, ChatRoute, ContextSource, Difficulty, DifficultyName, ExtractionOutcome, KnowledgeDoc, MissionSeries, PingLevel, ProposalKind, Refusal, RowKey, RunStatus, SelfServiceMode, SignInMethod, Surface } from './manual';
 
 /**
  * `common.json#/$defs/Boss`.
@@ -152,11 +152,20 @@ export type DifficultyOption = { letter: Difficulty, name: string, token: string
 
 export type BossRow = { key: string, name: string, level: number, hue: number, portrait: string | null, difficulties: Array<DifficultyOption>, };
 
+/**
+ * One boss's place in a mission series (Destiny Weapon, Union Champion).
+ */
+export type MissionStop = { series: MissionSeries, order: number, key: string, name: string, difficulty: DifficultyName, };
+
 export type Knowledge = { key: string, name: string, level: number | null, portrait: string | null, 
 /**
  * The looping MP4 (`/art/animated/{key}`); null where the deployment has none.
  */
-animated: string | null, hue: number, researched_as_of: string | null, path: string, in_use: Difficulty[], doc: KnowledgeDoc, };
+animated: string | null, hue: number, researched_as_of: string | null, path: string, in_use: Difficulty[], doc: KnowledgeDoc, 
+/**
+ * Every boss in the series of a mission this doc defines, by `order`.
+ */
+missions: Array<MissionStop>, };
 
 export type EventBoss = { key: string, event: { name: string; availability: string }, summary: string, portrait: string | null, portrait_sm: string | null, art: string | null, animated: string | null, };
 

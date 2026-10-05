@@ -1,7 +1,7 @@
 <script lang="ts">
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
-  import type { Boss, BossRow, Difficulty, DifficultyFacts, EventBoss, FixedRow, Knowledge, Run, Week } from '@kanade/api-types';
+  import type { Boss, BossRow, Difficulty, DifficultyFacts, EventBoss, FixedRow, GuideItem, Knowledge, Run, Week } from '@kanade/api-types';
   import { DIFFICULTY_WORDS, LoadingState, Portrait, RowContent, SINGLE_PANE_QUERY, StatusChip, dayLabel, enter } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import BossGrid from './BossGrid.svelte';
@@ -50,7 +50,8 @@
   // The boss whose knowledge is on screen: its pane content enters when it changes.
   const shownKey = $derived(doc && knowledge.data ? knowledge.data.key : null);
   const facts = $derived(doc?.difficulties ?? []);
-  const lists = $derived<[string, string[]][]>(doc ? [['Core', doc.core], ['Danger', doc.danger], ['Tips', doc.tips]] : []);
+  const lists = $derived<[string, GuideItem[]][]>(doc ? [['Core', doc.core ?? doc.phases?.flatMap((phase) => phase.items) ?? []], ['Danger', doc.danger], ['Tips', doc.tips]] : []);
+  const say = (item: GuideItem) => (typeof item === 'string' ? item : `${item.title}. ${item.text}`);
   const LETTER: Record<string, Difficulty> = { Easy: 'e', Normal: 'n', Hard: 'h', Chaos: 'c', Extreme: 'x' };
   /** Knowledge-only difficulties (never scheduled): no catalog letter, own tick colours. */
   const infoOnly = $derived(facts.filter((fact) => !LETTER[fact.name]).map((fact) => fact.name));
@@ -214,10 +215,10 @@
             {#if facts.length}<div class="knowledge__switch"><span class="cap" id="difficulty-label">Difficulty</span><div class="seg" role="group" aria-labelledby="difficulty-label">{#each facts as fact (fact.name)}<button type="button" aria-pressed={selected?.name === fact.name} onclick={() => (chosen = fact.name)}>{fact.name}{#if knowledge.data.in_use.includes(LETTER[fact.name]!)}<span class="vh"> (the guild runs it)</span> ✓{/if}</button>{/each}</div></div>{/if}
             <p class="knowledge__summary">{doc.summary}</p>
             {#if doc.event}<p class="flash flash--ok"><strong>Event boss.</strong> {doc.event.availability}</p>{/if}
-            {#if selected}<section aria-labelledby="facts-heading"><h2 class="vh" id="facts-heading">{selected.name} facts</h2><dl class="knowledge-facts">{#each factRows as [label, value] (label)}<div><dt class="cap">{label}</dt><dd>{value}</dd></div>{/each}</dl>{#if selected.recommended_spec}<section class="knowledge-recommended"><h3 class="cap">Recommended · hexa-converted stat</h3><p>{selected.recommended_spec.text}</p></section>{/if}{#each phaseHp as hp (hp.phase)}<p class="knowledge__detail"><strong>HP phase {hp.phase}:</strong> {hp.value}</p>{/each}{#if note || selected.notes?.length}<section class="knowledge-callouts" aria-labelledby="difficulty-notes-heading"><h3 class="cap" id="difficulty-notes-heading">{selected.name} notes</h3><ul>{#if note}<li>{note}</li>{/if}{#each selected.notes ?? [] as item (item)}<li>{item}</li>{/each}</ul></section>{/if}</section>{/if}
-            {#each lists as [title, items] (title)}{#if items.length}<section class="knowledge-notes"><h2 class="cap">{title}</h2><ul>{#each items as item (item)}<li>{item}</li>{/each}</ul></section>{/if}{/each}
+            {#if selected}<section aria-labelledby="facts-heading"><h2 class="vh" id="facts-heading">{selected.name} facts</h2><dl class="knowledge-facts">{#each factRows as [label, value] (label)}<div><dt class="cap">{label}</dt><dd>{value}</dd></div>{/each}</dl>{#if selected.recommended_spec}<section class="knowledge-recommended"><h3 class="cap">Recommended · hexa-converted stat</h3><p>{selected.recommended_spec.text}</p></section>{/if}{#each phaseHp as hp (hp.phase)}<p class="knowledge__detail"><strong>HP phase {hp.phase}:</strong> {hp.value}</p>{/each}{#if note || selected.notes?.length}<section class="knowledge-callouts" aria-labelledby="difficulty-notes-heading"><h3 class="cap" id="difficulty-notes-heading">{selected.name} notes</h3><ul>{#if note}<li>{say(note)}</li>{/if}{#each selected.notes ?? [] as item, index (index)}<li>{say(item)}</li>{/each}</ul></section>{/if}</section>{/if}
+            {#each lists as [title, items] (title)}{#if items.length}<section class="knowledge-notes"><h2 class="cap">{title}</h2><ul>{#each items as item, index (index)}<li>{say(item)}</li>{/each}</ul></section>{/if}{/each}
             {#if doc.strategies?.length}<StrategyList strategies={doc.strategies} />{/if}
-            {#if doc.notes?.length}<section class="knowledge-notes"><h2 class="cap">Notes</h2><ul>{#each doc.notes as item (item)}<li>{item}</li>{/each}</ul></section>{/if}
+            {#if doc.notes?.length}<section class="knowledge-notes"><h2 class="cap">Notes</h2><ul>{#each doc.notes as item, index (index)}<li>{say(item)}</li>{/each}</ul></section>{/if}
             <section class="knowledge-notes"><h2 class="cap">Sources</h2><ul class="knowledge-sources">{#each doc.sources as source (source.url)}<li><a href={source.url} rel="noopener noreferrer" target="_blank">{source.title}</a><span>by {source.author} · {source.kind} · fetched {source.fetched}{#if source.updated} · updated {source.updated}{/if}</span></li>{/each}</ul><p class="note">Our own paraphrase of these sources; the authors are credited above.</p></section>
           </div>
           <aside data-fid="knowledge-aside" aria-label="Weekly timings"><h2 class="cap">Weekly timings</h2>{#if relatedFixed.length}<ul>{#each relatedFixed as timing (timing.id)}{@const boss = timingBoss(timing)}{@const others = otherBosses(timing)}<li><a href="/fixed?open={encodeURIComponent(timing.id)}"><strong>{timing.weekday_name.slice(0, 3)} {timing.time}</strong>{#if boss}<span class="pill pill--{boss.difficulty}">{DIFFICULTY_WORDS[boss.difficulty].toUpperCase()}</span>{/if}{#if others.length}<span class="knowledge-aside__others">+ {others.join(' · ')}</span>{/if}</a></li>{/each}</ul>{:else}<p class="note">No weekly timing uses this boss.</p>{/if}<h2 class="cap">This week</h2><p class="knowledge-aside__count">{relatedRuns.length} run{relatedRuns.length === 1 ? '' : 's'}{#if nextRun} · next <strong>{runWhen(nextRun)}</strong>{/if}</p></aside>

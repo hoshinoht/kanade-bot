@@ -87,10 +87,41 @@ export interface DifficultyFacts {
   pdr_percent?: number;
   party_max?: number;
   force?: { kind: 'arcane' | 'sacred'; value: number };
-  hp?: { phase: string; value: string }[];
-  recommended_spec?: { kind: string; text: string };
-  notes?: string[];
+  /** `count`: copies at this HP (e.g. three Perils). */
+  hp?: { phase: string; value: string; count?: number }[];
+  /** `value`: a short tile figure (`≈ 86k`); `basis`: where it comes from. */
+  recommended_spec?: { kind: string; text: string; value?: string; basis?: string };
+  notes?: GuideItem[];
+  mission?: Mission;
 }
+
+/** A bullet: plain text, or a bold title + one line; `detail` is the chatbot's long wording (not shown). */
+export type GuideItem = string | { title: string; text: string; detail?: string };
+
+export interface GuidePhase {
+  name: string;
+  items: GuideItem[];
+}
+
+export type MissionSeries = 'destiny-weapon' | 'union-champion';
+
+/** A solo mission at this difficulty; `modifier.direction` up = in the player's favour. */
+export interface Mission {
+  series: MissionSeries;
+  order: number;
+  title: string;
+  modifier?: { text: string; direction: 'up' | 'down' };
+  needs?: string;
+  rules?: string[];
+}
+
+/** Named colour role; the label is always printed too. */
+export type GuideTone = 'red' | 'yellow' | 'green' | 'blue' | 'neutral' | 'risk' | 'safe';
+
+export type Mechanic =
+  | { kind: 'ledger'; title: string; rows: { label: string; value: string; direction?: 'up' | 'down' }[]; note?: string }
+  | { kind: 'zones'; title: string; zones: { name: string; sub?: string; tone?: GuideTone }[]; note?: string }
+  | { kind: 'scale'; title: string; bands: { label: string; span: number; tone?: GuideTone }[]; note?: string };
 
 export interface KnowledgeSource {
   url: string;
@@ -118,11 +149,16 @@ export interface Strategy {
 export interface KnowledgeDoc {
   boss: string;
   summary: string;
-  core: string[];
-  danger: string[];
-  tips: string[];
-  difficulty_notes?: Partial<Record<Difficulty, string>>;
-  notes?: string[];
+  /** One-line page lead; fall back to `summary`. */
+  lead?: string;
+  /** Absent when `phases` carries the core mechanics. */
+  core?: GuideItem[];
+  phases?: GuidePhase[];
+  danger: GuideItem[];
+  tips: GuideItem[];
+  difficulty_notes?: Partial<Record<Difficulty, GuideItem>>;
+  notes?: GuideItem[];
+  mechanics?: Mechanic[];
   /** Seasonal/event bosses outside the catalog (e.g. Kai). */
   event?: { name: string; availability: string };
   difficulties?: DifficultyFacts[];

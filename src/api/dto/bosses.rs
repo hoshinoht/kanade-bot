@@ -101,6 +101,21 @@ pub struct Knowledge {
     pub in_use: Vec<String>,
     #[cfg_attr(test, ts(type = "KnowledgeDoc"))]
     pub doc: Value,
+    /// Every boss in the series of a mission this doc defines, by `order`.
+    pub missions: Vec<MissionStop>,
+}
+
+/// One boss's place in a mission series (Destiny Weapon, Union Champion).
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct MissionStop {
+    #[cfg_attr(test, ts(type = "MissionSeries"))]
+    pub series: String,
+    pub order: u8,
+    pub key: String,
+    pub name: String,
+    #[cfg_attr(test, ts(type = "DifficultyName"))]
+    pub difficulty: String,
 }
 
 pub fn knowledge(
@@ -143,6 +158,7 @@ pub fn knowledge(
             .unwrap_or_default(),
         key,
         doc,
+        missions: Vec::new(),
     })
 }
 

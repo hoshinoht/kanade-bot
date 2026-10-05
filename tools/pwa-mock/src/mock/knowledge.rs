@@ -23,6 +23,8 @@ pub struct Knowledge {
     /// Difficulty letters a live weekly timing runs.
     pub in_use: Vec<String>,
     pub doc: Value,
+    /// As the server: every boss in the series of this doc's missions.
+    pub missions: Vec<Value>,
 }
 
 #[derive(Serialize)]
@@ -139,6 +141,7 @@ impl Store {
             path,
             key,
             doc,
+            missions: Vec::new(),
         })
     }
 }
