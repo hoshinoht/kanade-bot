@@ -23,9 +23,24 @@ trusted-types kanade-sw";
 
 pub const HSTS: &str = "max-age=31536000; includeSubDomains";
 
+/// The admin portraits: unversioned URLs that change with the avatar.
+fn portrait(path: &str) -> bool {
+    path == "/api/admin/me/avatar"
+        || path
+            .strip_prefix("/api/admin/members/")
+            .and_then(|rest| rest.strip_suffix("/avatar"))
+            .is_some_and(|id| !id.is_empty() && !id.contains('/'))
+}
+
 pub fn cache_policy(path: &str, success: bool) -> &'static str {
     // An explicit max-age would let caches keep a 404/503 (missing chunk, closed art).
-    if !success || path.starts_with("/api/") || path == "/api" || path == "/healthz" {
+    if !success {
+        "no-store"
+    } else if portrait(path) {
+        // Per-user and behind the session: the browser alone keeps it, and
+        // revalidates each use against the content ETag (304 when unchanged).
+        "private, no-cache"
+    } else if path.starts_with("/api/") || path == "/api" || path == "/healthz" {
         "no-store"
     } else if path.starts_with("/identity/") {
         // v4's policy; `/api/identity` versions the URLs and responses carry an ETag.
@@ -97,6 +112,23 @@ mod tests {
         assert_eq!(
             cache_policy("/identity/avatar", true),
             "public, max-age=86400, must-revalidate"
+        );
+        assert_eq!(
+            cache_policy("/api/admin/members/1003/avatar", true),
+            "private, no-cache"
+        );
+        assert_eq!(
+            cache_policy("/api/admin/me/avatar", true),
+            "private, no-cache"
+        );
+        assert_eq!(
+            cache_policy("/api/admin/members/1003/avatar", false),
+            "no-store"
+        );
+        assert_eq!(cache_policy("/api/admin/members/1003", true), "no-store");
+        assert_eq!(
+            cache_policy("/api/admin/members/a/b/avatar", true),
+            "no-store"
         );
         assert_eq!(cache_policy("/assets/missing.js", false), "no-store");
         assert_eq!(cache_policy("/art/entry/carling", false), "no-store");

@@ -191,6 +191,32 @@ impl Harness {
         }
     }
 
+    /// A portrait: `200` with an image type and the server's cache policy.
+    async fn image(&mut self, path: &str) {
+        let res = self
+            .admin
+            .clone()
+            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        self.checked += 1;
+        let header = |name| {
+            res.headers()
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default()
+                .to_owned()
+        };
+        let (kind, cache) = (header(header::CONTENT_TYPE), header(header::CACHE_CONTROL));
+        if res.status() != StatusCode::OK
+            || !kind.starts_with("image/")
+            || cache != "private, no-cache"
+        {
+            self.failures
+                .push(format!("admin GET {path}: {} {kind} {cache}", res.status()));
+        }
+    }
+
     /// A call that must succeed and match `target`.
     async fn ok(&mut self, method: &str, path: &str, body: Option<Value>, target: &str) -> Value {
         self.expect(false, method, path, body, StatusCode::OK, target)
@@ -1153,6 +1179,32 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "common.json#/$defs/Message",
     )
     .await;
+    // The clear is a `limits` row in History, in the settings stream's shape.
+    let cleared = h
+        .ok(
+            "GET",
+            "/api/admin/history",
+            None,
+            "history.json#/$defs/HistoryPage",
+        )
+        .await;
+    assert!(
+        cleared["settings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["section"] == "limits"
+                && row["values"][0]["key"] == format!("window.{who}")),
+        "{cleared}"
+    );
+    // Portraits are images, never JSON or HTML.
+    for path in [
+        "/api/admin/members/1001/avatar".to_owned(),
+        "/api/admin/members/1005/avatar".to_owned(),
+        "/api/admin/me/avatar".to_owned(),
+    ] {
+        h.image(&path).await;
+    }
     h.ok(
         "PATCH",
         "/api/admin/config",

@@ -2,10 +2,13 @@
 //! gate: persisted roles and Administrator, and sessions ended on loss.
 
 use kanade::{
-    api::auth::{
-        audit::AuditEvent,
-        roster::{on_guild_available, on_roster_update},
-        wire,
+    api::{
+        auth::{
+            audit::AuditEvent,
+            roster::{on_guild_available, on_roster_update},
+            wire,
+        },
+        avatars::AvatarCache,
     },
     bot::events::{AdminRoles, RosterUpdate},
     domain::members::MemberStore,
@@ -36,7 +39,7 @@ fn admin_roles(roles: &[u64]) -> AdminRoles {
 
 async fn apply(harness: &Harness, update: RosterUpdate) -> u64 {
     let auth = harness.site.auth.clone().unwrap();
-    on_roster_update(&auth, &*harness.store, &update)
+    on_roster_update(&auth, &*harness.store, None, &update)
         .await
         .unwrap()
 }
@@ -129,4 +132,51 @@ async fn guild_access_revokes_lost_administrator_and_a_replaced_owner() {
     assert_eq!(guild(&harness, 444, &[30, 31]).await, 0);
     let row = harness.store.load_member("222").await.unwrap().unwrap();
     assert!(!row.is_guild_admin);
+}
+
+/// A member who leaves loses their cached portrait; others keep theirs, and
+/// a member who is only updated keeps it too.
+#[tokio::test]
+async fn leaving_purges_the_members_cached_portraits() {
+    let harness = Harness::store_gated().await;
+    let dir = std::env::temp_dir().join(format!("kanade-avatars-{}", uuid::Uuid::new_v4()));
+    let avatars = AvatarCache::new(Some(dir.clone()), None);
+    let hash = "0123456789abcdef0123456789abcdef";
+    for name in [
+        format!("111-{hash}.png"),
+        format!("111-a_{hash}.png"),
+        format!("1110-{hash}.png"),
+        format!("222-{hash}.webp"),
+    ] {
+        std::fs::write(dir.join(name), b"x").unwrap();
+    }
+    let auth = harness.site.auth.clone().unwrap();
+    on_roster_update(
+        &auth,
+        &*harness.store,
+        Some(&avatars),
+        &seen(222, &[BOSSING], false),
+    )
+    .await
+    .unwrap();
+    on_roster_update(
+        &auth,
+        &*harness.store,
+        Some(&avatars),
+        &RosterUpdate::Left {
+            user_id: "111".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let mut left: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    left.sort();
+    assert_eq!(
+        left,
+        [format!("1110-{hash}.png"), format!("222-{hash}.webp")]
+    );
+    std::fs::remove_dir_all(dir).unwrap();
 }

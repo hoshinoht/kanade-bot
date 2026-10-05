@@ -1,11 +1,13 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { MemberPatch, MemberRow, Persona, PingLevel } from '@kanade/api-types';
-  import { enter, Icon, initial, Modal, Select } from '@kanade/ui';
+  import { enter, Icon, Modal, Select } from '@kanade/ui';
   import '@kanade/ui/styles/select.scss';
   import { send } from '../resource.svelte';
   import { directory } from '../names/directory.svelte';
   import Name from '../names/Name.svelte';
+  import Avatar from '../shared/Avatar.svelte';
+  import { memberAvatar } from '../shared/avatar';
   import { ANSWER_WORDS, type MemberWeek } from './runs';
 
   let {
@@ -120,7 +122,7 @@
     <dl class="membersheet__grid" data-fid="members-facts">
       {#if !wide}
         <dt>Discord account</dt>
-        <dd><Name kind="member" id={member.id} name={member.name} /> <span class="note">· select to copy the ID</span></dd>
+        <dd class="membersheet__account"><Avatar class="membersheet__avatar membersheet__avatar--inline" src={memberAvatar(member.id)} name={member.name} /><span><Name kind="member" id={member.id} name={member.name} /> <span class="note">· select to copy the ID</span></span></dd>
       {/if}
       <dt>Server nickname</dt>
       <dd>{member.nickname ?? '—'}</dd>
@@ -220,7 +222,7 @@
 {#if wide}
   <aside class="side-pane" class:is-leaving={leaving} inert={leaving} aria-label="Member details" data-fid="members-pane" onanimationend={onleft} {@attach enter(memberId)}>
     <header class="membersheet__head" data-fid="members-pane-head">
-      <span class="membersheet__avatar" aria-hidden="true">{initial(member.name)}</span>
+      <Avatar class="membersheet__avatar" src={memberAvatar(member.id)} name={member.name} />
       <div class="membersheet__who">
         <p class="cap">{member.bossing ? 'Member' : 'Chat access only'}</p>
         <h2>{directory.label('member', member.id, member.name)}</h2>

@@ -6,6 +6,15 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Admin: member and admin portraits. Discord avatars are cached by image
+  hash on the data volume (`<KANADE_IDENTITY_DIR>/members`) and served at
+  `GET /api/admin/members/{id}/avatar` and `/api/admin/me/avatar` (admin
+  listener only, ETag/304, monogram fallback, purged when a member leaves);
+  Members, the member sheet, Inbox threads, Account and the account chip show
+  them. A Discord sign-in stores the avatar hash with the session (store
+  migration 0025).
+- History: Limits window clears are recorded (actor, time, member and the
+  window as it was), exactly once per effective clear.
 - Discord: `/debug reminders [run_id]` lists a run's reminder rows as v4 did,
   and `/debug materialise` materialises both weeks through the shared writer.
   `/debug tick` stays out (the delivery loop has no on-demand tick).

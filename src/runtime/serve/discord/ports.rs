@@ -10,6 +10,7 @@ use crate::{
             AdminAuth,
             roster::{on_guild_available, on_roster_update},
         },
+        avatars::AvatarCache,
         state::GuildAccess,
     },
     bot::{
@@ -31,6 +32,7 @@ pub struct StoreRoster {
     pub store: Arc<SqliteStore>,
     pub auth: Arc<AdminAuth>,
     pub access: Arc<GuildAccess>,
+    pub avatars: Option<Arc<AvatarCache>>,
 }
 
 impl RosterSink for StoreRoster {
@@ -39,7 +41,7 @@ impl RosterSink for StoreRoster {
     }
 
     async fn update(&self, update: &RosterUpdate) -> Result<u64, StoreError> {
-        on_roster_update(&self.auth, &*self.store, update).await
+        on_roster_update(&self.auth, &*self.store, self.avatars.as_deref(), update).await
     }
 
     async fn prune(&self, member: GatewayMember) -> Result<u64, StoreError> {

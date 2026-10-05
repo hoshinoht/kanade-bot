@@ -25,9 +25,11 @@ pub struct SettingsChange {
     pub at: DateTime<Utc>,
     pub actor: Actor,
     pub surface: Surface,
-    /// The saved section (`persona`, `models`, …).
+    /// The saved section (`persona`, `models`, …), or `limits` for a cleared
+    /// Limits chat window (key `window.<member id>`, no settings row written).
     pub section: String,
-    /// The settings revision the save published (counted per process).
+    /// The settings revision the save published (counted per process); 0
+    /// for a `limits` clear, which publishes none.
     pub revision: u64,
     /// Every stored row that differs; never empty.
     pub values: BTreeMap<String, RowDiff>,

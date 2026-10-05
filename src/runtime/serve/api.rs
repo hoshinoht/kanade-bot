@@ -20,6 +20,7 @@ use crate::{
             self, AdminAuth, Clock,
             staff::{GuildStaffGate, StoreGuildMembers},
         },
+        avatars::AvatarCache,
         server::LiveAdmin,
         state::{ApiState, BackupDir, ChannelList, GuildAccess},
         write::{ApiClock, SchedulerWriter},
@@ -229,6 +230,9 @@ pub async fn compose(
             dir: config.backup_dir.clone(),
             schema_version,
         },
+        avatars: Some(Arc::new(AvatarCache::discord(
+            config.runtime.http.identity_dir.as_deref(),
+        ))),
     };
     Ok(Composition {
         admin: LiveAdmin {

@@ -5,7 +5,7 @@
 //! last cached files in place.
 
 mod cdn;
-mod files;
+pub(crate) mod files;
 
 use std::future::Future;
 use std::path::{Path, PathBuf};

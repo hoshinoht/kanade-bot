@@ -8,10 +8,12 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { ApproveRequest, Evidence, Proposal, RunStatus, Week } from '@kanade/api-types';
-  import { BossTag, DecisionCard, Icon, initial, PendingLabel, Portrait, RUN_TONE, STATUS_WORDS, StatusChip, ThreadPanel, WavyProgress } from '@kanade/ui';
+  import { BossTag, DecisionCard, Icon, PendingLabel, Portrait, RUN_TONE, STATUS_WORDS, StatusChip, ThreadPanel, WavyProgress } from '@kanade/ui';
   import { directory } from '../names/directory.svelte';
   import Mentions from '../names/Mentions.svelte';
   import Name from '../names/Name.svelte';
+  import Avatar from '../shared/Avatar.svelte';
+  import { memberAvatar } from '../shared/avatar';
   import type { Slot } from '../planner/keyboardMove';
   import MovePicker from '../sheet/MovePicker.svelte';
   import { liveRuns, namesIn } from '../sheet/move';
@@ -405,7 +407,7 @@
         {#each shownMessages as line (line.id)}
           {@const who = line.author_id ? null : directory.label('member', '', line.author)}
           <li class="msg" data-fid="phone-thread-msg" class:msg--used={line.used !== false} class:msg--gone={line.missing}>
-            <span class="msg__av" aria-hidden="true">{initial(who ?? line.author)}</span>
+            <Avatar class="msg__av" src={line.author_id ? memberAvatar(line.author_id) : null} name={who ?? line.author} />
             <div class="msg__body">
               <p class="msg__line">
                 <span class="msg__who">{#if line.author_id}<Name kind="member" id={line.author_id} name={line.author} />{:else}{who}{/if}</span>

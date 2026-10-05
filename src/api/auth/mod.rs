@@ -265,6 +265,7 @@ impl AdminAuth {
         method: LoginMethod,
         subject: &str,
         display: &str,
+        avatar_hash: Option<&str>,
         replaces: Option<&str>,
     ) -> Option<String> {
         let now = self.now();
@@ -279,6 +280,7 @@ impl AdminAuth {
             last_seen_at: now,
             checked_at: now,
             expires_at: now + self.policy.absolute,
+            avatar_hash: avatar_hash.map(str::to_owned),
         };
         let _ = self
             .sessions

@@ -14,7 +14,7 @@ use crate::infrastructure::store::web_sessions::{
 };
 
 const COLUMNS: &str = "id_hash, origin, method, subject, display, created_at, last_seen_at, \
-    checked_at, expires_at";
+    checked_at, expires_at, avatar_hash";
 
 fn corrupt(column: &str, detail: impl std::fmt::Display) -> StoreError {
     StoreError::Backend(format!("web_sessions.{column} is unreadable: {detail}"))
@@ -41,6 +41,9 @@ fn session_of(row: &SqliteRow) -> Result<WebSession, StoreError> {
         last_seen_at: at(row, "last_seen_at")?,
         checked_at: at(row, "checked_at")?,
         expires_at: at(row, "expires_at")?,
+        avatar_hash: row
+            .try_get("avatar_hash")
+            .map_err(|error| corrupt("avatar_hash", error))?,
     })
 }
 
@@ -58,7 +61,8 @@ async fn put(
     }
     sqlx::query(
         "INSERT INTO web_sessions (id_hash, origin, method, subject, display, created_at, \
-         last_seen_at, checked_at, expires_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+         last_seen_at, checked_at, expires_at, avatar_hash) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
     )
     .bind(&session.id_hash)
     .bind(session.origin.as_str())
@@ -69,6 +73,7 @@ async fn put(
     .bind(instant(&session.last_seen_at)?)
     .bind(instant(&session.checked_at)?)
     .bind(instant(&session.expires_at)?)
+    .bind(&session.avatar_hash)
     .execute(&mut *conn)
     .await
     .map_err(store_error)?;

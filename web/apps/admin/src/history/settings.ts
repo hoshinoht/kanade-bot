@@ -19,15 +19,50 @@ const SECTIONS: Record<string, { label: string; key: string }> = {
   profanity: { label: 'Profanity', key: 'profanity' },
 };
 
-export const sectionLabel = (section: string) => SECTIONS[section]?.label ?? section;
-export const sectionHref = (section: string) => `/config?section=${encodeURIComponent(SECTIONS[section]?.key ?? section)}`;
+/** A cleared Limits chat window, recorded beside the saves (section `limits`). */
+export const LIMITS_SECTION = 'limits';
+export const isWindowClear = (change: SettingsChangeRow) => change.section === LIMITS_SECTION;
+
+export const sectionLabel = (section: string) => (section === LIMITS_SECTION ? 'Limits' : (SECTIONS[section]?.label ?? section));
+export const sectionHref = (section: string) =>
+  section === LIMITS_SECTION ? '/limits' : `/config?section=${encodeURIComponent(SECTIONS[section]?.key ?? section)}`;
 /** A row key without the `v5.` storage prefix. */
 const keyLabel = (key: string) => key.replace(/^v5\./, '');
 
-export const settingCount = (change: SettingsChangeRow) => `${change.values.length} setting${change.values.length === 1 ? '' : 's'}`;
+export const settingCount = (change: SettingsChangeRow) =>
+  isWindowClear(change) ? 'chat window' : `${change.values.length} setting${change.values.length === 1 ? '' : 's'}`;
+
+export interface WindowClear {
+  memberId: string;
+  member: string;
+  /** Answers in the window when it was cleared. */
+  used: number;
+  limit: number;
+  perS: number;
+  overridden: boolean;
+}
+
+/** The window a `limits` record cleared, as it was; `null` for a Config save. */
+export function windowClear(change: SettingsChangeRow): WindowClear | null {
+  const row = change.values[0];
+  if (!isWindowClear(change) || !row) return null;
+  const memberId = row.key.replace(/^window\./, '');
+  const before = object(row.from) ?? {};
+  const number = (value: unknown) => (typeof value === 'number' ? value : 0);
+  return {
+    memberId,
+    member: typeof before.member === 'string' ? before.member : memberId,
+    used: number(before.used),
+    limit: number(before.limit),
+    perS: number(before.per_s),
+    overridden: before.overridden === true,
+  };
+}
 
 /** "Config · Persona — persona, chat_mode": the section and the first keys it changed. */
 export function settingSummary(change: SettingsChangeRow): string {
+  const clear = windowClear(change);
+  if (clear) return `Limits · cleared ${clear.member}'s chat window (${clear.used} used)`;
   const keys = change.values.map((row) => keyLabel(row.key));
   const shown = keys.slice(0, 3).join(', ');
   const more = keys.length > 3 ? ` +${keys.length - 3} more` : '';

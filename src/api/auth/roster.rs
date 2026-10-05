@@ -6,7 +6,7 @@ use twilight_model::id::{Id, marker::UserMarker};
 
 use super::AdminAuth;
 use crate::{
-    api::state::GuildAccess,
+    api::{avatars::AvatarCache, state::GuildAccess},
     bot::{
         events::{AdminRoles, RosterUpdate},
         ids::id_text,
@@ -20,10 +20,12 @@ use crate::{
 /// Persist the update as v4's `upsert_member` did (names and role flag; the
 /// ping level, aliases and reply style are kept) plus the gateway's role ids
 /// and Administrator, then end sessions of anyone who left or no longer
-/// passes the staff rule. Returns the sessions ended.
+/// passes the staff rule; a member who left also loses their cached
+/// portrait. Returns the sessions ended.
 pub async fn on_roster_update<S: MemberStore>(
     auth: &AdminAuth,
     members: &S,
+    avatars: Option<&AvatarCache>,
     update: &RosterUpdate,
 ) -> Result<u64, StoreError> {
     // Gateway-owned fields only, each in one write: a concurrent portal edit
@@ -53,6 +55,9 @@ pub async fn on_roster_update<S: MemberStore>(
         RosterUpdate::Left { user_id } => {
             // A member who left holds no role, whatever the last update said.
             members.member_departed(user_id).await?;
+            if let Some(avatars) = avatars {
+                avatars.purge(user_id);
+            }
             Ok(auth.member_left(user_id).await)
         }
     }

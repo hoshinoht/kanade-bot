@@ -23,6 +23,40 @@ pub async fn run_suite<S: SettingsStore>(make: impl AsyncFn() -> S) {
     refused_writes_store_nothing(make().await).await;
     recorded_saves_append_one_change_with_their_rows(make().await).await;
     refused_recorded_saves_record_nothing(make().await).await;
+    rowless_records_leave_the_settings_alone(make().await).await;
+}
+
+/// A Limits window clear: a `limits` record with no settings row.
+async fn rowless_records_leave_the_settings_alone<S: SettingsStore>(store: S) {
+    let at = DateTime::parse_from_rfc3339("2026-09-29T04:00:00Z")
+        .expect("instant")
+        .with_timezone(&Utc);
+    let change = SettingsChange {
+        id: 0,
+        at,
+        actor: Actor::admin("discord:1003"),
+        surface: Surface::AdminPortal,
+        section: "limits".into(),
+        revision: 0,
+        values: [(
+            "window.1004".to_owned(),
+            crate::domain::settings::RowDiff {
+                from: r#"{"used":3}"#.into(),
+                to: r#"{"used":0}"#.into(),
+            },
+        )]
+        .into(),
+    };
+    let id = store
+        .put_settings_rows_recorded(Vec::new(), change.clone())
+        .await
+        .expect("recorded");
+    assert!(store.settings_rows().await.expect("rows").is_empty());
+    let listed = store
+        .settings_changes(SettingsChangeQuery::default())
+        .await
+        .expect("list");
+    assert_eq!(listed, vec![SettingsChange { id, ..change }]);
 }
 
 fn time(hour: u32, minute: u32) -> NaiveTime {

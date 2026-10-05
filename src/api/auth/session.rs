@@ -27,6 +27,8 @@ pub struct AdminSession {
     pub actor: Actor,
     pub method: LoginMethod,
     pub display: String,
+    /// The Discord avatar hash stored at sign-in (Discord sessions only).
+    pub avatar_hash: Option<String>,
     /// `None` for bearer (CLI) requests, which carry no ambient credential.
     session_id: Option<String>,
 }
@@ -182,6 +184,7 @@ impl AdminAuth {
             actor: Actor::admin(actor_id(session.method, &session.subject)),
             method: session.method,
             display: session.display,
+            avatar_hash: session.avatar_hash,
             session_id: Some(id),
         })
     }
@@ -225,6 +228,7 @@ impl AdminAuth {
                 actor: Actor::admin(super::TOKEN_ACTOR),
                 method: LoginMethod::Token,
                 display: "Break-glass token".into(),
+                avatar_hash: None,
                 session_id: None,
             });
         }

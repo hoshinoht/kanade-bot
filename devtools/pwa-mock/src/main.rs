@@ -5,6 +5,7 @@
 mod api;
 mod assets;
 mod auth;
+mod avatars;
 #[cfg(test)]
 mod contract;
 mod headers;
@@ -157,6 +158,7 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         .route("/api/admin/summary", get(api::summary))
         .route("/api/admin/members", get(api::members))
         .route("/api/admin/members/{id}", patch(api::patch_member))
+        .route("/api/admin/members/{id}/avatar", get(avatars::member))
         .route("/api/admin/members/{id}/aliases", post(api::add_alias))
         .route(
             "/api/admin/members/{id}/aliases/{alias}",
@@ -211,6 +213,7 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         .route("/api/admin/roles", get(api::roles))
         .route("/api/admin/session", get(api::session))
         .route("/api/admin/me", get(api::me))
+        .route("/api/admin/me/avatar", get(avatars::me))
         .route("/api/admin/auth/methods", get(auth::methods))
         .route("/api/admin/auth/tonight", get(auth::tonight))
         .route("/api/admin/auth/discord/start", get(auth::discord_start))

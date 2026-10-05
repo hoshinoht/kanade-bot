@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod assets;
 pub mod auth;
+pub mod avatars;
 pub mod dto;
 pub mod error;
 pub mod guard;

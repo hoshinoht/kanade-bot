@@ -17,7 +17,7 @@
   import RevertDialog from './RevertDialog.svelte';
   import HistoryDetail from './HistoryDetail.svelte';
   import ConfigDetail from './ConfigDetail.svelte';
-  import { mergeTimeline, sectionLabel, settingCount, settingSummary, type TimelineItem } from './settings';
+  import { isWindowClear, mergeTimeline, sectionLabel, settingCount, settingSummary, type TimelineItem } from './settings';
   import CheckpointsPanel from './CheckpointsPanel.svelte';
   import TextModal from '../shared/TextModal.svelte';
   import { memberLabel } from '../names/directory.svelte';
@@ -232,7 +232,7 @@
   // page), outside the list/pane row so the two stay the body's only children.
   let raw = $state({ open: false, title: '', text: '' });
   const showRaw = (record: ChangeRecord) => (raw = { open: true, title: `Change #${record.seq} raw JSON`, text: JSON.stringify(record, null, 2) });
-  const showSaveRaw = (change: SettingsChangeRow) => (raw = { open: true, title: `${sectionLabel(change.section)} settings raw JSON`, text: JSON.stringify(change, null, 2) });
+  const showSaveRaw = (change: SettingsChangeRow) => (raw = { open: true, title: isWindowClear(change) ? 'Limits window clear raw JSON' : `${sectionLabel(change.section)} settings raw JSON`, text: JSON.stringify(change, null, 2) });
   async function done(plan: RevertPlan) {
     toaster.show({ message: plan.record ? `Reverted as #${plan.record.seq}.` : 'Nothing changed.', tone: 'ok' });
     await load();
@@ -264,14 +264,14 @@
   {/if}
 {/snippet}
 
-<!-- A Config save: the same row shape, a square dot and a "Config" chip; view-only. -->
+<!-- A Config save (or a cleared Limits window): the same row shape, a square dot and a "Config" (or "Limits") chip; view-only. -->
 {#snippet saveBody(change: SettingsChangeRow, isActive: boolean)}
   {@const who = actorName(change.actor, names, known)}
   <span class="history-row__dot history-row__dot--config" aria-hidden="true"></span>
   <RowContent expanded={isActive}>
     {#snippet compact()}<strong class="history-row__actor">{who}</strong> · <span class="history-row__summary">{settingSummary(change)}</span> · {SURFACE_LABELS[change.surface] ?? change.surface} · {localAt(change.at, tz)} · {settingCount(change)}{/snippet}
     <span class="history-row__text">
-    <span class="history-row__head"><strong class="history-row__actor">{who}</strong><span class="chip chip--mono history-row__config">Config</span><span class="chip chip--mono">{SURFACE_LABELS[change.surface] ?? change.surface}</span><span class="history-row__time mono">{localAt(change.at, tz)}</span><span class="history-row__rows mono">{settingCount(change)}</span>{#if isActive}<span class="history-row__open cap">open</span>{/if}</span>
+    <span class="history-row__head"><strong class="history-row__actor">{who}</strong><span class="chip chip--mono history-row__config">{isWindowClear(change) ? 'Limits' : 'Config'}</span><span class="chip chip--mono">{SURFACE_LABELS[change.surface] ?? change.surface}</span><span class="history-row__time mono">{localAt(change.at, tz)}</span><span class="history-row__rows mono">{settingCount(change)}</span>{#if isActive}<span class="history-row__open cap">open</span>{/if}</span>
     <span class="history-row__summary">{settingSummary(change)}</span>
     </span>
   </RowContent>

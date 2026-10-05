@@ -207,6 +207,7 @@ where
             store: Arc::clone(&store),
             auth,
             access: Arc::clone(&access),
+            avatars: composition.admin.state.avatars.clone(),
         },
         Arc::clone(&wiring.transport),
         Arc::clone(&cache),

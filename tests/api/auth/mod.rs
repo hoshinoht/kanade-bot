@@ -69,6 +69,7 @@ pub fn user(id: u64, name: &str) -> DiscordUser {
         username: name.to_lowercase(),
         global_name: Some(name.into()),
         bot: false,
+        avatar: None,
     }
 }
 

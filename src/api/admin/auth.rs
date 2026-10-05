@@ -357,6 +357,7 @@ async fn discord_callback(
             LoginMethod::Discord,
             &user.id,
             &user.display(),
+            user.avatar.as_deref(),
             replaces.as_deref(),
         )
         .await
@@ -406,6 +407,7 @@ async fn tailscale_login(State(site): State<Arc<Site>>, request: Request) -> Res
             LoginMethod::Tailscale,
             &login,
             &name,
+            None,
             replaces.as_deref(),
         )
         .await
@@ -477,6 +479,7 @@ async fn token_login(
             LoginMethod::Token,
             &fingerprint,
             display,
+            None,
             replaces.as_deref(),
         )
         .await

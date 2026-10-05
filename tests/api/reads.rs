@@ -19,6 +19,7 @@ use kanade::{
             staff::{GuildStaffGate, StoreGuildMembers},
             wire,
         },
+        avatars::{AvatarCache, AvatarFetch, AvatarRef, FetchFuture},
         listeners::Site,
         rescan::RescanDesk,
         state::{
@@ -27,7 +28,7 @@ use kanade::{
         },
         write::{ApiClock, SchedulerWriter},
     },
-    bot::commands::AccessPolicy,
+    bot::{commands::AccessPolicy, identity::Image},
     chat::{
         driver::{ChatHandle, ChatView},
         pilot::{ChatPilot, GuardLimits, LimitsView, TrafficLimits},
@@ -200,8 +201,41 @@ pub struct Reads {
     pub db_path: PathBuf,
     /// `KANADE_KNOWLEDGE_DIR`, re-read per request.
     pub knowledge_dir: PathBuf,
+    /// The portrait cache directory (`<identity>/members`) and its stand-in CDN.
+    pub avatar_dir: PathBuf,
+    pub cdn: Arc<FakeCdn>,
     _fixture: Fixture,
     _dir: TempDir,
+}
+
+/// The avatar hash a member's Discord sign-in reports (and the gateway knows).
+pub fn avatar_hash(id: u64) -> String {
+    format!("{id:032x}")
+}
+
+/// A CDN that answers a PNG naming the path asked; `/1004/` paths fail.
+#[derive(Default)]
+pub struct FakeCdn {
+    pub calls: Mutex<Vec<String>>,
+}
+
+pub const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
+
+struct SharedCdn(Arc<FakeCdn>);
+
+impl AvatarFetch for SharedCdn {
+    fn fetch<'a>(&'a self, path: &'a str) -> FetchFuture<'a> {
+        self.0.calls.lock().unwrap().push(path.to_owned());
+        let reply = if path.contains("/1004/") {
+            Err("status")
+        } else {
+            Ok(Image {
+                content_type: "image/png".into(),
+                bytes: [PNG, path.as_bytes()].concat(),
+            })
+        };
+        Box::pin(async move { reply })
+    }
 }
 
 pub struct FakeChat {
@@ -219,6 +253,15 @@ impl Default for FakeChat {
             )),
             resets: Mutex::new(Vec::new()),
         }
+    }
+}
+
+impl FakeChat {
+    /// One answer in `member`'s live window.
+    pub fn spend(&self, member: &str) {
+        let mut pilot = self.pilot.lock().unwrap();
+        let budgets = pilot.allowance.budgets(0.0);
+        assert!(budgets.person.unwrap().allow(member, 0.0));
     }
 }
 
@@ -730,6 +773,12 @@ impl Reads {
                 })
             })
         };
+        let avatar_dir = fixture.root.join("identity/members");
+        let cdn = Arc::new(FakeCdn::default());
+        let avatars = Arc::new(AvatarCache::new(
+            Some(avatar_dir.clone()),
+            Some(Box::new(SharedCdn(cdn.clone()))),
+        ));
         let state = ApiState {
             store: store.clone(),
             writer,
@@ -779,6 +828,7 @@ impl Reads {
                 dir: backup_dir.clone(),
                 schema_version: store.schema_version().await.unwrap(),
             },
+            avatars: Some(avatars),
         };
         let mut http = fixture.http();
         if logins {
@@ -818,12 +868,15 @@ impl Reads {
             backup_dir,
             db_path: dir.0.join("kanade.sqlite3"),
             knowledge_dir: knowledge,
+            avatar_dir,
+            cdn,
             _fixture: fixture,
             _dir: dir,
         }
     }
 
-    /// A Discord session for `user` (staff by the stored member rows):
+    /// A Discord session for `user` (staff by the stored member rows), whose
+    /// sign-in reports the avatar hash [`avatar_hash`]:
     /// `(Cookie header, CSRF token)`.
     pub async fn discord_session(&self, id: u64, name: &str) -> (String, String) {
         let start = request(
@@ -849,6 +902,7 @@ impl Reads {
                 username: name.to_lowercase(),
                 global_name: Some(name.into()),
                 bot: false,
+                avatar: Some(avatar_hash(id)),
             },
         );
         let login_cookie = format!("{}={login}", wire::LOGIN_COOKIE);
@@ -1663,6 +1717,16 @@ impl ChannelList for ReadyGuild {
 
     fn connected(&self) -> bool {
         self.1
+    }
+
+    /// Alice has a guild avatar, Bob and Dan user avatars (Dan's CDN fetch
+    /// fails); the gateway shows none for Cara.
+    fn member_avatar(&self, user_id: &str) -> Option<AvatarRef> {
+        match user_id {
+            "1001" => AvatarRef::member("900", "1001", &avatar_hash(1)),
+            "1002" | "1004" => AvatarRef::user(user_id, &avatar_hash(2)),
+            _ => None,
+        }
     }
 
     /// `kalos-four` is not known yet; `limbo-trio` may not post or tidy.

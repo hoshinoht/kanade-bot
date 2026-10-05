@@ -103,6 +103,90 @@ async fn resetting_a_window_needs_csrf_and_replays_once() {
     }
 }
 
+async fn limit_records(reads: &Reads) -> Vec<serde_json::Value> {
+    let page = reads
+        .read("/api/admin/history", "history.json#/$defs/HistoryPage")
+        .await;
+    page["settings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["section"] == "limits")
+        .cloned()
+        .collect()
+}
+
+/// A clear is recorded in History once, with the actor and the window as
+/// it was; a replayed key and an already-empty window record nothing.
+#[tokio::test]
+async fn an_effective_clear_is_recorded_once_and_no_ops_are_not() {
+    let reads = Reads::new().await;
+    reads.chat.spend("1001");
+    reads.chat.spend("1001");
+    let first = write(&reads, RESET, Some("clear-1"), None).await;
+    assert_eq!(first.status, 200, "{}", first.text());
+    let replay = write(&reads, RESET, Some("clear-1"), None).await;
+    assert_eq!(replay.status, 200, "{}", replay.text());
+    let empty = write(&reads, RESET, Some("clear-2"), None).await;
+    assert_eq!(empty.status, 200, "{}", empty.text());
+    let unkeyed = write(&reads, RESET, None, None).await;
+    assert_eq!(unkeyed.status, 200, "{}", unkeyed.text());
+
+    let records = limit_records(&reads).await;
+    assert_eq!(records.len(), 1, "{records:?}");
+    let record = &records[0];
+    assert_eq!(record["actor"], json!({"kind": "admin", "id": "token"}));
+    assert_eq!(record["surface"], "admin_portal");
+    assert_eq!(record["revision"], 0);
+    assert_eq!(record["at"], "2026-09-29T04:00:00+00:00");
+    let values = record["values"].as_array().unwrap();
+    assert_eq!(values.len(), 1);
+    assert_eq!(values[0]["key"], "window.1001");
+    let from: serde_json::Value =
+        serde_json::from_str(values[0]["from"].as_str().unwrap()).unwrap();
+    let to: serde_json::Value = serde_json::from_str(values[0]["to"].as_str().unwrap()).unwrap();
+    assert_eq!(from["member"], "Alice");
+    assert_eq!(
+        (from["used"].clone(), to["used"].clone()),
+        (json!(2), json!(0))
+    );
+    assert_eq!(from["limit"], to["limit"]);
+    assert_eq!(from["per_s"], to["per_s"]);
+    assert!(from["per_s"].is_u64(), "whole seconds: {from}");
+
+    // Another member's clear is its own record.
+    reads.chat.spend("1002");
+    let bob = write(
+        &reads,
+        "/api/admin/limits/windows/1002",
+        Some("clear-3"),
+        None,
+    )
+    .await;
+    assert_eq!(bob.status, 200, "{}", bob.text());
+    let records = limit_records(&reads).await;
+    assert_eq!(records.len(), 2);
+    assert_eq!(
+        records[0]["values"][0]["key"], "window.1002",
+        "newest first"
+    );
+}
+
+/// Unkeyed clears of one window, sent together: one sees the answers and
+/// records; the other finds the window empty.
+#[tokio::test]
+async fn concurrent_unkeyed_clears_record_once() {
+    let reads = Reads::new().await;
+    reads.chat.spend("1001");
+    let (one, two) = tokio::join!(
+        write(&reads, RESET, None, None),
+        write(&reads, RESET, None, None)
+    );
+    assert_eq!((one.status, two.status), (200, 200));
+    assert_eq!(limit_records(&reads).await.len(), 1);
+    assert_eq!(reads.chat.resets.lock().unwrap().len(), 2);
+}
+
 #[tokio::test]
 async fn digest_uses_the_delivery_port_and_replays_once() {
     let reads = Reads::new().await;

@@ -23,8 +23,19 @@ img-src 'self' data:; media-src 'self'; font-src 'self'; connect-src 'self'; man
 worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; \
 trusted-types kanade-sw; report-uri /csp-report";
 
+/// The admin portraits, as the server: per-user, revalidated by ETag.
+fn portrait(path: &str) -> bool {
+    path == "/api/admin/me/avatar"
+        || path
+            .strip_prefix("/api/admin/members/")
+            .and_then(|rest| rest.strip_suffix("/avatar"))
+            .is_some_and(|id| !id.is_empty() && !id.contains('/'))
+}
+
 fn cache_policy(path: &str) -> &'static str {
-    if path.starts_with("/api/") || path.starts_with("/__mock/") || path == "/csp-report" {
+    if portrait(path) {
+        "private, no-cache"
+    } else if path.starts_with("/api/") || path.starts_with("/__mock/") || path == "/csp-report" {
         "no-store"
     } else if path.starts_with("/art/") || path.starts_with("/identity/") {
         // Unhashed, deployment-replaceable art: short-lived, never immutable.

@@ -12,6 +12,8 @@
   import { LoadError, LoadingState, StateNote } from '@kanade/ui';
   import Name from '../names/Name.svelte';
   import { Resource } from '../resource.svelte';
+  import Avatar from '../shared/Avatar.svelte';
+  import { ME_AVATAR } from '../shared/avatar';
 
   const me = new Resource<Me>('/api/admin/me');
   $effect(() => void me.load());
@@ -32,53 +34,67 @@
     <LoadError thing="your account" reason={me.error} onretry={() => void me.load()} />
   {:else if !me.data}
     <LoadingState text="Loading your account…" />
-  {:else if !member}
-    <StateNote icon="shield" title={me.data.method === 'discord' ? 'Not in the member list' : 'Not a Discord member'}>
-      {#if me.data.method === 'discord'}
-        Your Discord account has no member row right now, so there are no server roles or chat allowance to show.
-      {:else}
-        Signed in with {method}: there is no Discord account, server roles or chat allowance to show.
-      {/if}
-    </StateNote>
   {:else}
-    <dl class="membersheet__grid account__facts" data-fid="account-facts">
-      <dt>Discord account</dt>
-      <dd><Name kind="member" id={member.id} name={member.name} /></dd>
-      <dt>Chatbot</dt>
-      <dd>{ACCESS[member.access]}</dd>
-      <dt>Bossing role</dt>
-      <dd>{member.bossing ? 'Yes — on the roster' : 'No — not on the roster'}</dd>
-      <dt>Server roles</dt>
-      <dd>
-        {#if member.roles === null}
-          <span class="note">Unavailable while Discord is disconnected.</span>
-        {:else if member.roles.length}
-          <ul class="account__roles" aria-label="Server roles">
-            {#each member.roles as role (role.id)}<li><Name kind="role" id={role.id} name={role.name} /></li>{/each}
-          </ul>
+    <header class="membersheet__head account__head" data-fid="account-head">
+      <Avatar class="membersheet__avatar" src={ME_AVATAR} name={me.data.display} />
+      <div class="membersheet__who">
+        <p class="cap">{member ? 'Member' : 'Signed in'}</p>
+        <h2>{member?.name ?? me.data.display}</h2>
+        {#if method}<p class="membersheet__handle">signed in with {method}</p>{/if}
+      </div>
+    </header>
+    {#if !member}
+      <StateNote icon="shield" title={me.data.method === 'discord' ? 'Not in the member list' : 'Not a Discord member'}>
+        {#if me.data.method === 'discord'}
+          Your Discord account has no member row right now, so there are no server roles or chat allowance to show.
         {:else}
-          None
+          Signed in with {method}: there is no Discord account, server roles or chat allowance to show.
         {/if}
-      </dd>
-      <dt>Chat allowance</dt>
-      <dd>
-        {#if !allowance}
-          No chatbot access
-        {:else if !allowance.allowance}
-          Exempt (staff)
-        {:else}
-          <span class="mono">{allowance.allowance.count} per {allowance.allowance.per_s}s</span>
-          · {#if allowance.used}<b>{allowance.used} used</b>, {allowance.allowance.count - allowance.used} left{:else}idle this window{/if}
-          {#if allowance.override}<span class="note">· own allowance</span>{/if}
-        {/if}
-      </dd>
-    </dl>
+      </StateNote>
+    {:else}
+      <dl class="membersheet__grid account__facts" data-fid="account-facts">
+        <dt>Discord account</dt>
+        <dd><Name kind="member" id={member.id} name={member.name} /></dd>
+        <dt>Chatbot</dt>
+        <dd>{ACCESS[member.access]}</dd>
+        <dt>Bossing role</dt>
+        <dd>{member.bossing ? 'Yes — on the roster' : 'No — not on the roster'}</dd>
+        <dt>Server roles</dt>
+        <dd>
+          {#if member.roles === null}
+            <span class="note">Unavailable while Discord is disconnected.</span>
+          {:else if member.roles.length}
+            <ul class="account__roles" aria-label="Server roles">
+              {#each member.roles as role (role.id)}<li><Name kind="role" id={role.id} name={role.name} /></li>{/each}
+            </ul>
+          {:else}
+            None
+          {/if}
+        </dd>
+        <dt>Chat allowance</dt>
+        <dd>
+          {#if !allowance}
+            No chatbot access
+          {:else if !allowance.allowance}
+            Exempt (staff)
+          {:else}
+            <span class="mono">{allowance.allowance.count} per {allowance.allowance.per_s}s</span>
+            · {#if allowance.used}<b>{allowance.used} used</b>, {allowance.allowance.count - allowance.used} left{:else}idle this window{/if}
+            {#if allowance.override}<span class="note">· own allowance</span>{/if}
+          {/if}
+        </dd>
+      </dl>
+    {/if}
   {/if}
 </PaneWindow>
 
 <style>
   .account__facts {
     padding: 4px 2px;
+  }
+
+  .account__head {
+    margin: -4px -2px 12px;
   }
 
   .account__roles {

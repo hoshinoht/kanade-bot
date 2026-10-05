@@ -316,6 +316,7 @@ impl<K: RosterSink, T: DiscordTransport> RosterTask<K, T> {
                     return false;
                 }
             };
+        self.cache.replace_member_avatars(&fetched);
         let stored = match self.sink.members().await {
             Ok(rows) => rows,
             Err(error) => {

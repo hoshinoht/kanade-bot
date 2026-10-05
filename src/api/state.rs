@@ -156,6 +156,9 @@ pub trait ReadStore: Send + Sync {
     fn digests(&self) -> ReadFuture<'_, Vec<WeeklyDigest>>;
     /// Recorded Config section saves, newest first.
     fn settings_changes(&self, query: SettingsChangeQuery) -> ReadFuture<'_, Vec<SettingsChange>>;
+    /// Record a History entry that writes no settings row (a Limits window
+    /// clear, section `limits`); returns its id.
+    fn record_settings_change(&self, change: SettingsChange) -> ReadFuture<'_, u64>;
 }
 
 /// A closed Inbox item: a proposal (with its stored facts) or a member
@@ -433,6 +436,10 @@ where
     fn settings_changes(&self, query: SettingsChangeQuery) -> ReadFuture<'_, Vec<SettingsChange>> {
         Box::pin(SettingsStore::settings_changes(self, query))
     }
+
+    fn record_settings_change(&self, change: SettingsChange) -> ReadFuture<'_, u64> {
+        Box::pin(self.put_settings_rows_recorded(Vec::new(), change))
+    }
 }
 
 /// A channel the admin may pick (home channels, digest override).
@@ -480,6 +487,12 @@ pub trait ChannelList: Send + Sync {
     /// What the bot may do in one channel; `None` while its permissions are
     /// unknown (v4 counts unknown as allowed).
     fn grants(&self, _id: &str) -> Option<ChannelGrants> {
+        None
+    }
+
+    /// A member's gateway portrait; `None` (the monogram) when the gateway
+    /// has not shown one.
+    fn member_avatar(&self, _user_id: &str) -> Option<super::avatars::AvatarRef> {
         None
     }
 }
@@ -641,6 +654,8 @@ pub struct ApiState {
     /// The delivery-owned manual digest port, absent while Discord is offline.
     pub digest_post: Option<DigestPost>,
     pub backups: BackupDir,
+    /// Member and admin portraits; `None` serves monograms only.
+    pub avatars: Option<Arc<super::avatars::AvatarCache>>,
 }
 
 impl std::fmt::Debug for ApiState {

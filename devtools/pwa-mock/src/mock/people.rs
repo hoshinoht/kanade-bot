@@ -5,6 +5,14 @@ use super::seed::PERSONAS;
 use super::{MoveError, Store};
 
 impl Store {
+    /// A seeded member's name, for their portrait's monogram.
+    pub fn member_display(&self, id: &str) -> Option<String> {
+        self.members
+            .iter()
+            .find(|m| m.seed.id == id)
+            .map(|m| m.seed.name.to_owned())
+    }
+
     fn member_row(&self, index: usize) -> MemberRow {
         let m = &self.members[index];
         MemberRow {

@@ -3,6 +3,7 @@
 //! member events. Shared (`Arc`) with the API, the chat gate and delivery,
 //! which read it through their own traits (`views.rs`).
 
+mod avatars;
 mod permissions;
 mod profile;
 mod views;
@@ -107,6 +108,7 @@ struct State {
     role_names: HashMap<Id<RoleMarker>, RoleName>,
     channels: HashMap<Id<ChannelMarker>, CachedChannel>,
     watch: WatchList,
+    member_avatars: HashMap<Id<UserMarker>, avatars::MemberAvatar>,
 }
 
 /// One guild's gateway view. Empty until the guild becomes available.
@@ -198,6 +200,10 @@ impl GuildCache {
             .chain(&guild.threads)
             .map(|channel| (channel.id, CachedChannel::from_channel(channel)))
             .collect();
+        // Partial for large guilds; the startup reconcile lists everyone.
+        for member in &guild.members {
+            avatars::put(&mut state, &member.user, member.avatar);
+        }
         let self_id = state.self_id;
         if let Some(me) = guild
             .members

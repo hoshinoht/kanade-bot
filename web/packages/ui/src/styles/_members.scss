@@ -118,6 +118,21 @@
 .membersheet__head h2 { font-family: var(--display); font-size: var(--fs-brand); line-height: 1.15; }
 .membersheet__handle { color: var(--dim-text); font-size: var(--fs-small); line-height: 1.3; }
 .membersheet__avatar { display: grid; flex: none; width: 52px; height: 52px; place-items: center; clip-path: polygon(50% 0%, 75% 7%, 93% 25%, 100% 50%, 93% 75%, 75% 93%, 50% 100%, 25% 93%, 7% 75%, 0% 50%, 7% 25%, 25% 7%); background: var(--win); color: var(--win-ink); font-family: var(--display); font-size: var(--fs-brand); font-weight: 800; }
+.membersheet__avatar--inline { width: 32px; height: 32px; font-size: var(--fs-small); }
+.membersheet__account { display: flex; align-items: center; gap: 8px; }
+
+/* List rows: a 28 px cookie portrait before the name. */
+.memberlist__lead { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.memberlist__lead > :last-child { flex: 1 1 auto; min-width: 0; }
+.memberlist__av { display: grid; flex: none; width: 28px; height: 28px; place-items: center; clip-path: polygon(50% 0%, 75% 7%, 93% 25%, 100% 50%, 93% 75%, 75% 93%, 50% 100%, 25% 93%, 7% 75%, 0% 50%, 7% 25%, 25% 7%); background: var(--win); color: var(--win-ink); font-family: var(--display); font-size: var(--fs-micro); font-weight: 800; }
+.memberlist__row--active .memberlist__lead { align-items: flex-start; }
+.memberlist__row--active .memberlist__av { margin-top: 8px; }
+// Phones give the name column every pixel (125% text included); the sheet
+// still shows the portrait.
+@media (max-width: 599px), (max-height: 500px) {
+  .memberlist__av { display: none; }
+}
+
 .membersheet__close.btn {
   flex: none;
   justify-content: center;

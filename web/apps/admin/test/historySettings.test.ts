@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChangeRecord, SettingsChangeRow } from '@kanade/api-types';
-import { mergeTimeline, sectionHref, settingFields, settingSummary } from '../src/history/settings';
+import { mergeTimeline, sectionHref, settingCount, settingFields, settingSummary, windowClear } from '../src/history/settings';
 
 const save = (over: Partial<SettingsChangeRow>): SettingsChangeRow => ({
   id: 1,
@@ -57,5 +57,31 @@ describe('Config saves on the History timeline', () => {
     const settings = [save({ id: 1, at: '2026-09-27T00:00:00+00:00' }), save({ id: 2, at: '2026-09-29T03:00:00+00:00' }), save({ id: 3, at: '2026-09-29T06:00:00+00:00' })];
     const order = mergeTimeline(records, settings).map((item) => (item.kind === 'change' ? `#${item.record.seq}` : `c${item.change.id}`));
     expect(order).toEqual(['c3', '#4', 'c2', '#3', '#2', 'c1']);
+  });
+});
+
+describe('Limits window clears on the History timeline', () => {
+  const clear = save({
+    section: 'limits',
+    revision: 0,
+    values: [
+      {
+        key: 'window.1003',
+        from: '{"member":"Mika","used":3,"limit":4,"per_s":300,"overridden":false}',
+        to: '{"member":"Mika","used":0,"limit":4,"per_s":300,"overridden":false}',
+      },
+    ],
+  });
+
+  it('reads the window as it was and summarises the clear', () => {
+    expect(windowClear(clear)).toEqual({ memberId: '1003', member: 'Mika', used: 3, limit: 4, perS: 300, overridden: false });
+    expect(windowClear(save({}))).toBeNull();
+    expect(settingSummary(clear)).toBe("Limits · cleared Mika's chat window (3 used)");
+    expect(settingCount(clear)).toBe('chat window');
+    expect(sectionHref('limits')).toBe('/limits');
+  });
+
+  it('lists only the count that changed', () => {
+    expect(settingFields(clear)).toEqual([{ name: 'window.1003.used', was: '3', now: '0' }]);
   });
 });

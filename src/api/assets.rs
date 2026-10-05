@@ -136,7 +136,7 @@ async fn identity_image(site: &Site, stem: &str, request: &HeaderMap) -> Respons
 }
 
 /// A monogram on the window-chrome colour, like v4's fallback initial.
-fn monogram(name: &str) -> String {
+pub(crate) fn monogram(name: &str) -> String {
     let initial: String = name
         .trim()
         .chars()

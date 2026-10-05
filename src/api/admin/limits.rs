@@ -30,7 +30,10 @@ use crate::{
         state::{ApiState, DigestPostRequest, DigestPostResult},
     },
     chat::pilot::{Allowance, AllowanceSnapshot},
-    domain::members::MemberProfile,
+    domain::{
+        members::MemberProfile,
+        settings::{RowDiff, SettingsChange},
+    },
 };
 
 const REMEMBERED_KEYS: usize = 256;
@@ -195,37 +198,90 @@ async fn reset_window(
         .await
         .map_err(super::context::unavailable)?
         .ok_or(ApiError::NOT_FOUND)?;
-    let name = profile.member.name().unwrap_or(&member_id);
+    let name = profile.member.name().unwrap_or(&member_id).to_owned();
     let applied = format!("{name}'s window is reset.");
-    if let Some(key) = key {
-        let mut keys = state.limits.keys.lock().await;
-        if let Some(entry) = LimitsDesk::recall(&keys, &actor, &key) {
-            return if entry.digest == digest {
-                Ok(message(entry.message))
-            } else {
-                Err(mismatch())
-            };
-        }
-        let chat = state.chat.as_ref().ok_or(ApiError::UNAVAILABLE)?;
-        if !chat.reset_allowance(&member_id) {
-            return Err(ApiError::UNAVAILABLE.into());
-        }
-        LimitsDesk::remember(
-            &mut keys,
-            Remembered {
-                actor,
-                key,
-                digest,
-                message: applied.clone(),
-            },
-        );
-    } else {
-        let chat = state.chat.as_ref().ok_or(ApiError::UNAVAILABLE)?;
-        if !chat.reset_allowance(&member_id) {
-            return Err(ApiError::UNAVAILABLE.into());
-        }
+    // Held across snapshot, record and reset, keyed or not: two concurrent
+    // clears of one window can never both see answers and both record.
+    let mut keys = state.limits.keys.lock().await;
+    let Some(key) = key else {
+        clear_window(state, &session, &member_id, &name).await?;
+        return Ok(message(applied));
+    };
+    if let Some(entry) = LimitsDesk::recall(&keys, &actor, &key) {
+        return if entry.digest == digest {
+            Ok(message(entry.message))
+        } else {
+            Err(mismatch())
+        };
     }
+    clear_window(state, &session, &member_id, &name).await?;
+    LimitsDesk::remember(
+        &mut keys,
+        Remembered {
+            actor,
+            key,
+            digest,
+            message: applied.clone(),
+        },
+    );
     Ok(message(applied))
+}
+
+/// The History settings section of a cleared Limits window.
+const CLEARED_SECTION: &str = "limits";
+
+/// One window's facts as History stores them (`used` is what changes).
+fn window_text(name: &str, used: usize, limit: usize, per_s: f64, overridden: bool) -> String {
+    // Whole seconds read as integers, not `3600.0`.
+    let per_s = if per_s.fract() == 0.0 && per_s.abs() < 1e15 {
+        json!(per_s as i64)
+    } else {
+        json!(per_s)
+    };
+    json!({"member": name, "used": used, "limit": limit, "per_s": per_s, "overridden": overridden})
+        .to_string()
+}
+
+/// Clear the member's live window. An effective clear (answers in the
+/// window) is recorded in History first, so a failed record clears nothing;
+/// an empty window is a no-op with no record.
+async fn clear_window(
+    state: &ApiState,
+    session: &AdminSession,
+    member_id: &str,
+    name: &str,
+) -> Result<(), Refusal> {
+    let chat = state.chat.as_ref().ok_or(ApiError::UNAVAILABLE)?;
+    let view = chat.limits().ok_or(ApiError::UNAVAILABLE)?;
+    let (used, limit, per_s, overridden) = allowance(&view.allowance, member_id);
+    if used > 0 {
+        let origin = session.origin();
+        let change = SettingsChange {
+            id: 0,
+            at: state.now(),
+            actor: origin.actor,
+            surface: origin.surface,
+            section: CLEARED_SECTION.into(),
+            revision: 0,
+            values: [(
+                format!("window.{member_id}"),
+                RowDiff {
+                    from: window_text(name, used, limit, per_s, overridden),
+                    to: window_text(name, 0, limit, per_s, overridden),
+                },
+            )]
+            .into(),
+        };
+        state
+            .store
+            .record_settings_change(change)
+            .await
+            .map_err(super::context::unavailable)?;
+    }
+    if !chat.reset_allowance(member_id) {
+        return Err(ApiError::UNAVAILABLE.into());
+    }
+    Ok(())
 }
 
 #[derive(Deserialize)]

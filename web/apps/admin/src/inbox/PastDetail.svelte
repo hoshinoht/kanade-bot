@@ -6,11 +6,12 @@
 -->
 <script lang="ts">
   import type { PastItem } from '@kanade/api-types';
-  import { initial } from '@kanade/ui';
   import { localAt } from '../history/describe';
   import { directory } from '../names/directory.svelte';
   import Mentions from '../names/Mentions.svelte';
   import Name from '../names/Name.svelte';
+  import Avatar from '../shared/Avatar.svelte';
+  import { memberAvatar } from '../shared/avatar';
   import { SOURCE_LABEL } from './flags';
   import OutcomeChip from './OutcomeChip.svelte';
   import { outcomeSentence, sourceLink } from './past';
@@ -53,7 +54,7 @@
         {#each item.evidence as line (line.id)}
           {@const who = line.author_id ? null : directory.label('member', '', line.author)}
           <li class="msg msg--used" class:msg--gone={line.missing}>
-            <span class="msg__av" aria-hidden="true">{initial(who ?? line.author)}</span>
+            <Avatar class="msg__av" src={line.author_id ? memberAvatar(line.author_id) : null} name={who ?? line.author} />
             <div class="msg__body">
               <p class="msg__line">
                 <span class="msg__who">{#if line.author_id}<Name kind="member" id={line.author_id} name={line.author} />{:else}{who}{/if}</span>

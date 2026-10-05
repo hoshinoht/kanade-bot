@@ -140,8 +140,27 @@ impl Store {
         json!({ "display": self.session_display(), "method": self.session_method(), "member": member })
     }
 
+    /// As the server: an effective clear (answers in the window) is recorded
+    /// in History as a `limits` settings change; an empty window records nothing.
     pub fn reset_window(&mut self, id: &str) -> Result<Value, MoveError> {
         let (id, name) = seed::member_name(id).ok_or(MoveError::NotFound)?;
+        let row = self.limits()["allowances"]
+            .as_array()
+            .and_then(|rows| rows.iter().find(|row| row["member"]["id"] == id).cloned());
+        if let Some(row) = row.filter(|row| row["used"].as_u64().is_some_and(|used| used > 0)) {
+            let window = |used: u64| {
+                json!({
+                    "member": name,
+                    "used": used,
+                    "limit": row["allowance"]["count"].as_u64().unwrap_or(0),
+                    "per_s": row["allowance"]["per_s"].as_u64().unwrap_or(0),
+                    "overridden": row["override"].as_bool().unwrap_or(false),
+                })
+                .to_string()
+            };
+            let from = window(row["used"].as_u64().unwrap_or(0));
+            self.record_limit_clear(id, from, window(0));
+        }
         if !self.limit_resets.contains(&id) {
             self.limit_resets.push(id);
         }

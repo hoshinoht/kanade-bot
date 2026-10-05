@@ -100,6 +100,8 @@ pub struct DiscordUser {
     pub username: String,
     pub global_name: Option<String>,
     pub bot: bool,
+    /// The user avatar hash (`identify` returns it), already validated.
+    pub avatar: Option<String>,
 }
 
 impl DiscordUser {

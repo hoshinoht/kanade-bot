@@ -9,6 +9,8 @@
   import { memberLabel } from '../names/directory.svelte';
   import { Resource } from '../resource.svelte';
   import MemberSheet from './MemberSheet.svelte';
+  import Avatar from '../shared/Avatar.svelte';
+  import { memberAvatar } from '../shared/avatar';
   import { memberRuns, orderMembers, runCounts, type MemberOrder } from './runs';
 
   const members = new Resource<MemberRow[]>('/api/admin/members');
@@ -127,6 +129,8 @@
                 }}
                 data-member={member.id}
               >
+                <span class="memberlist__lead">
+                <Avatar class="memberlist__av" src={memberAvatar(member.id)} name={member.name} />
                 <RowContent expanded={member.id === openId}>
                   {#snippet compact()}<span class="memberlist__name">
                   <span class="memberlist__who"><strong>{memberLabel(members.data ?? [], member.id)}</strong>
@@ -135,6 +139,7 @@
                   </span>{/snippet}
                   <span class="memberlist__identity"><strong>{memberLabel(members.data ?? [], member.id)}</strong>{#if member.name !== memberLabel(members.data ?? [], member.id)}<span class="id">{member.name}</span>{/if}{#if member.nickname && member.nickname !== memberLabel(members.data ?? [], member.id)}<span class="id">{member.nickname}</span>{/if}{#if member.aliases.length}<span class="id">{member.aliases.join(' · ')}</span>{/if}{#if !member.bossing}<span class="chip chip--waiting">chat only</span>{/if}</span>
                 </RowContent>
+                </span>
                 <span class="memberlist__stat mono"><span class="vh">, runs this week: </span>{member.runs_this_week}</span>
                 <span class="memberlist__preference"><span class="vh">, @mentions: </span>{PING[member.ping_level]}</span>
                 <span class="memberlist__style mono"><span class="vh">, reply style: </span>{member.persona ?? 'default'}</span>

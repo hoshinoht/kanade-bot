@@ -830,6 +830,25 @@ impl Store {
         });
     }
 
+    /// A cleared Limits window (`reset_window`): section `limits`, revision 0.
+    pub fn record_limit_clear(&mut self, member_id: &str, from: String, to: String) {
+        let id = self.settings_changes.len() as u64 + 1;
+        self.settings_changes.push(SettingsChange {
+            id,
+            at: iso(now_secs()),
+            actor: self.session_actor(),
+            surface: "admin_portal",
+            section: "limits".to_owned(),
+            revision: 0,
+            week: Self::week_of(false),
+            values: vec![SettingRowDiff {
+                key: format!("window.{member_id}"),
+                from,
+                to,
+            }],
+        });
+    }
+
     pub fn record(&self, seq: u64) -> Option<Record> {
         self.history.get(seq as usize).cloned()
     }

@@ -4,6 +4,7 @@
 
 mod account;
 mod auth;
+mod avatars;
 pub mod config;
 mod context;
 mod history;
@@ -36,6 +37,7 @@ pub fn routes() -> Router<Arc<Site>> {
         .route("/art/{kind}/{key}", get(assets::art))
         .merge(auth::routes())
         .merge(account::routes())
+        .merge(avatars::routes())
         .merge(tonight::routes())
         .merge(read::routes())
         .merge(write::routes())

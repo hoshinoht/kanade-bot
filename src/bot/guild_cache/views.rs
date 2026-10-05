@@ -107,6 +107,10 @@ impl ChannelList for GuildCache {
         self.is_available()
     }
 
+    fn member_avatar(&self, user_id: &str) -> Option<crate::api::avatars::AvatarRef> {
+        GuildCache::member_avatar(self, parse_id(user_id)?)
+    }
+
     fn grants(&self, id: &str) -> Option<ChannelGrants> {
         let granted = self.permissions(parse_id(id)?)?;
         Some(ChannelGrants {

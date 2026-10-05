@@ -266,14 +266,17 @@ impl Router {
             }),
             Event::MemberAdd(add) => {
                 cache.member_roles(add.member.user.id, &add.member.roles);
+                cache.member_avatar_seen(&add.member.user, add.member.avatar);
                 roster_update(&add.member, role, &self.guild.admin_roles()).map(BotEvent::Roster)
             }
             Event::MemberUpdate(update) => {
                 cache.member_roles(update.user.id, &update.roles);
                 cache.member_profile(update.user.id, update.nick.as_deref(), update.avatar);
+                cache.member_avatar_seen(&update.user, update.avatar);
                 member_update(&update, role, &self.guild.admin_roles()).map(BotEvent::Roster)
             }
             Event::MemberRemove(remove) => (!remove.user.bot).then(|| {
+                cache.member_avatar_gone(remove.user.id);
                 BotEvent::Roster(RosterUpdate::Left {
                     user_id: id_text(remove.user.id),
                 })

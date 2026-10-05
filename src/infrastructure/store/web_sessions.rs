@@ -74,6 +74,8 @@ pub struct WebSession {
     pub checked_at: DateTime<Utc>,
     /// Absolute expiry.
     pub expires_at: DateTime<Utc>,
+    /// The Discord avatar hash reported at sign-in (0025); `None` without one.
+    pub avatar_hash: Option<String>,
 }
 
 pub type SessionFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, StoreError>> + Send + 'a>>;

@@ -34,11 +34,13 @@ pub fn session(fill: char, method: LoginMethod, subject: &str) -> WebSession {
         last_seen_at: at(0),
         checked_at: at(0),
         expires_at: at(12 * 60),
+        avatar_hash: None,
     }
 }
 
 async fn sessions_round_trip_and_rotate<S: WebSessionStore>(store: S) {
-    let first = session('a', LoginMethod::Discord, "100");
+    let mut first = session('a', LoginMethod::Discord, "100");
+    first.avatar_hash = Some("a_0123456789abcdef0123456789abcdef".into());
     store.put_session(&first, None).await.expect("put");
     assert_eq!(
         store.load_session(&first.id_hash).await.expect("load"),
@@ -160,7 +162,34 @@ async fn malformed_rows_are_refused<S: WebSessionStore>(store: S) {
     empty_subject.subject.clear();
     let mut long_display = session('a', LoginMethod::Token, "token");
     long_display.display = "x".repeat(201);
+    let mut bad_avatar = session('a', LoginMethod::Discord, "100");
+    bad_avatar.avatar_hash = Some("<svg onload=x>".into());
+    let mut short_avatar = session('a', LoginMethod::Discord, "100");
+    short_avatar.avatar_hash = Some("0123".into());
+    let underscored = |hash: &str| {
+        let mut row = session('a', LoginMethod::Discord, "100");
+        row.avatar_hash = Some(hash.into());
+        row
+    };
     for (case, session) in [
+        (
+            "underscore inside",
+            underscored("0123456789abcdef0123456789abcd_f"),
+        ),
+        (
+            "prefix not a_",
+            underscored("_a0123456789abcdef0123456789abcdef"),
+        ),
+        (
+            "doubled prefix",
+            underscored("a_a_23456789abcdef0123456789abcdef"),
+        ),
+        (
+            "uppercase avatar hash",
+            underscored("0123456789ABCDEF0123456789ABCDEF"),
+        ),
+        ("markup avatar hash", bad_avatar),
+        ("short avatar hash", short_avatar),
         ("uppercase hash", bad_hash),
         ("short hash", short_hash),
         ("empty subject", empty_subject),

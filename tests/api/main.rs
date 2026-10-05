@@ -5,6 +5,7 @@
 mod account;
 mod assets;
 mod auth;
+mod avatars;
 mod config;
 mod headers;
 mod history;

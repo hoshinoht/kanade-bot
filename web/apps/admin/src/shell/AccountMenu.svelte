@@ -6,8 +6,10 @@
 -->
 <script lang="ts">
   import type { Session } from '@kanade/api-types';
-  import { Icon, initial } from '@kanade/ui';
+  import { Icon } from '@kanade/ui';
   import { tick } from 'svelte';
+  import Avatar from '../shared/Avatar.svelte';
+  import { ME_AVATAR } from '../shared/avatar';
 
   let {
     session,
@@ -90,7 +92,7 @@
     onclick={() => (open ? hide() : void show('first'))}
     onkeydown={onChipKey}
   >
-    <span class="account__initial" aria-hidden="true">{initial(who)}</span>
+    <Avatar class="account__initial" src={session ? ME_AVATAR : null} name={who} />
     <span class="account__name">{who}</span>
     <Icon name="chevron-down" />
   </button>

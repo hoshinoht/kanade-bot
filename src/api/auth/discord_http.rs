@@ -226,6 +226,19 @@ struct UserReply {
     global_name: Option<String>,
     #[serde(default)]
     bot: bool,
+    #[serde(default)]
+    avatar: Option<String>,
+}
+
+/// A Discord image hash as its canonical text; anything else is dropped (the
+/// portrait falls back to the monogram) rather than refusing the sign-in.
+fn avatar_hash(text: Option<&str>) -> Option<String> {
+    use twilight_model::util::ImageHash;
+    text?
+        .parse::<ImageHash>()
+        .ok()
+        .filter(|hash| *hash != ImageHash::CLYDE)
+        .map(|hash| hash.to_string())
 }
 
 impl DiscordApi for HttpsDiscord {
@@ -264,6 +277,7 @@ impl DiscordApi for HttpsDiscord {
                 username: reply.username,
                 global_name: reply.global_name,
                 bot: reply.bot,
+                avatar: avatar_hash(reply.avatar.as_deref()),
             })
         })
     }
@@ -397,8 +411,30 @@ mod tests {
         let reply: UserReply =
             serde_json::from_str(r#"{"id":"1","username":"u","global_name":null}"#).unwrap();
         assert!(!reply.bot);
+        assert_eq!(reply.avatar, None);
         let reply: TokenReply =
             serde_json::from_str(r#"{"access_token":"a","token_type":"Bearer"}"#).unwrap();
         assert_eq!(reply.scope, "", "a missing scope is not identify");
+    }
+
+    #[test]
+    fn only_well_formed_avatar_hashes_are_kept() {
+        for hash in [
+            "0123456789abcdef0123456789abcdef",
+            "a_0123456789abcdef0123456789abcdef",
+        ] {
+            assert_eq!(avatar_hash(Some(hash)).as_deref(), Some(hash));
+        }
+        for bad in [
+            "",
+            "clyde",
+            "../x",
+            "0123",
+            "<svg>",
+            "0123456789ABCDEF0123456789ABCDEFxx",
+        ] {
+            assert_eq!(avatar_hash(Some(bad)), None, "{bad}");
+        }
+        assert_eq!(avatar_hash(None), None);
     }
 }

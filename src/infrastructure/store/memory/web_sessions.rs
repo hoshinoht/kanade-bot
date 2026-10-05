@@ -15,7 +15,22 @@ fn check(session: &WebSession) -> Result<(), StoreError> {
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
     let subject = session.subject.chars().count();
-    if !hash_ok || !(1..=320).contains(&subject) || session.display.chars().count() > 200 {
+    // 0025: 32 lowercase hex digits, or `a_` and 32 (animated).
+    let hex = |text: &str| {
+        text.len() == 32
+            && text
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    };
+    let avatar_ok = session
+        .avatar_hash
+        .as_deref()
+        .is_none_or(|avatar| hex(avatar.strip_prefix("a_").unwrap_or(avatar)));
+    if !hash_ok
+        || !avatar_ok
+        || !(1..=320).contains(&subject)
+        || session.display.chars().count() > 200
+    {
         return Err(StoreError::Constraint("web_sessions CHECK".into()));
     }
     Ok(())
