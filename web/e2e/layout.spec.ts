@@ -1,17 +1,12 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, PUBLIC, expect, settle, test } from './support';
+import { SCREENS, SIZES, screenUrl } from './frames';
+import { ADMIN, expect, settle, test } from './support';
 
 // docs/v5/pwa-design-guidelines.md "Area follows importance" (user rule): the
 // one scrolling area keeps ≥ 55% of the viewport height and never less than
 // 360 px where the viewport can hold that (below 655 px tall the 55% share
-// is the floor), and the document itself never scrolls.
-export const SIZES = [
-  { width: 1280, height: 800 },
-  { width: 1000, height: 670 },
-  { width: 1280, height: 600 },
-  { width: 390, height: 844 },
-  { width: 844, height: 390 },
-] as const;
+// is the floor), and the document itself never scrolls. Frames and screens:
+// `frames.ts`.
 
 /** The primary surface each page gives its area to, in priority order. */
 const SURFACE = [
@@ -39,36 +34,13 @@ export function budget(height: number): number {
   return Math.max(0.55 * height, height >= 655 ? 360 : 0);
 }
 
-const SCREENS: [string, string, string][] = [
-  ['admin', ADMIN, '/'],
-  ['admin', ADMIN, '/fixed'],
-  ['admin', ADMIN, '/bosses'],
-  ['admin', ADMIN, '/bosses/Carling/knowledge'],
-  ['admin', ADMIN, '/members'],
-  ['admin', ADMIN, '/reminders'],
-  ['admin', ADMIN, '/inbox'],
-  ['admin', ADMIN, '/extractions'],
-  ['admin', ADMIN, '/extractions/x-kalos'],
-  ['admin', ADMIN, '/chat'],
-  ['admin', ADMIN, '/chat/c-move'],
-  ['admin', ADMIN, '/chat/c-when'],
-  ['admin', ADMIN, '/chat/c-safe-line'],
-  ['admin', ADMIN, '/limits'],
-  ['admin', ADMIN, '/history'],
-  ['admin', ADMIN, '/config'],
-  ['admin', ADMIN, '/config?section=models'],
-  ['admin', ADMIN, '/config?section=persona'],
-  ['admin', ADMIN, '/config?section=profanity'],
-  ['public', PUBLIC, '/'],
-];
-
 for (const size of SIZES) {
   test(`layout ${size.width}×${size.height}: every screen keeps its area and never scrolls the document`, async ({ page }) => {
     test.setTimeout(120_000);
     await page.setViewportSize(size);
     const failures: string[] = [];
     for (const [app, origin, path] of SCREENS) {
-      await page.goto(`${origin}${path}${path.includes('?') ? '&' : '?'}sw=off`);
+      await page.goto(screenUrl(origin, path));
       await expect(page.getByRole('heading').first()).toBeVisible();
       await settle(page);
       const got = await area(page);

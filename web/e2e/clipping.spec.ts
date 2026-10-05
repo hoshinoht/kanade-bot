@@ -1,0 +1,214 @@
+import type { Page } from '@playwright/test';
+import { SCREENS, SIZES, screenUrl } from './frames';
+import { ADMIN, PUBLIC, expect, settle, test } from './support';
+import { auditText, type Finding } from './text-audit';
+
+// General text-clipping check (docs/v5/design/verification.md "Measuring text
+// in the app"): every admin and public screen, plus the main states behind a
+// tab or a pick, at the five layout frames. Any clipped, cut, spilled or
+// off-screen text fails unless ALLOW names it; an ellipsis needs an ALLOW entry too.
+
+type Size = `${number}×${number}`;
+
+interface Allow {
+  /** Matches the text element or any ancestor of it. */
+  selector: string;
+  /** Screen names (see STATES / SCREENS paths) or '*'. */
+  screens: string[] | '*';
+  sizes: Size[] | '*';
+  kinds: Finding['kind'][];
+  reason: string;
+}
+
+const GUIDE = 'Bosses guide redesign in progress (workspace/guide-ui)';
+
+const CHAT = ['admin/chat', 'admin/chat/c-move', 'admin/chat/c-when', 'admin/chat/c-safe-line'];
+const INBOX = ['admin/inbox', 'admin/inbox?tab=self_service', 'admin/inbox (item open)'];
+const EXTRACTIONS = ['admin/extractions', 'admin/extractions/x-kalos'];
+const SECTIONS = ['pings', 'run-lengths', 'watching', 'chatbot', 'profanity', 'persona', 'models', 'self-service', 'notifications', 'digest', 'rescan', 'access', 'theme', 'env'];
+const CONFIG = ['admin/config', ...SECTIONS.map((key) => `admin/config?section=${key}`)];
+
+/** The one allow-list. Keep every entry specific and give it a reason. */
+const ALLOW: Allow[] = [
+  {
+    selector: '.skip',
+    screens: '*',
+    sizes: '*',
+    kinds: ['hidden'],
+    reason: 'the skip link waits above the frame until it takes focus (_base.scss .skip)',
+  },
+  {
+    selector: '.knowledge-detail',
+    screens: ['admin/bosses', 'admin/bosses/Carling/knowledge'],
+    sizes: '*',
+    kinds: ['spill', 'cut', 'hidden', 'clip-x', 'clip-y', 'off-screen', 'ellipsis', 'ellipsis-bare'],
+    reason: GUIDE,
+  },
+  {
+    selector: '.modelstats__chips',
+    screens: CHAT,
+    sizes: ['1000×670'],
+    kinds: ['hidden'],
+    reason: 'ModelStats drops a chip that does not fit rather than cutting it; "+n models" lists every model (web/AGENTS.md)',
+  },
+  {
+    selector: '.row-content__compact',
+    screens: [...INBOX, 'admin/history'],
+    sizes: '*',
+    kinds: ['ellipsis', 'ellipsis-bare'],
+    reason: "a list row's one-line summary; opening the row shows it in full",
+  },
+  {
+    selector: '.extract-row__facts',
+    screens: EXTRACTIONS,
+    sizes: '*',
+    kinds: ['ellipsis', 'ellipsis-bare'],
+    reason: "a call row's one-line facts; the opened call shows each in full",
+  },
+  {
+    selector: '.chat-row__q',
+    screens: CHAT,
+    sizes: '*',
+    kinds: ['ellipsis'],
+    reason: "a turn row's question (titled); the opened turn shows it in full",
+  },
+  {
+    selector: '.pageline__context',
+    screens: CONFIG,
+    sizes: ['1000×670'],
+    kinds: ['ellipsis-bare'],
+    reason: "_page-line.scss: the page line's context gives way first",
+  },
+  {
+    selector: '.settings__problem',
+    screens: CONFIG,
+    sizes: ['1000×670'],
+    kinds: ['ellipsis-bare'],
+    reason: 'the problem chip is itself the link to Channel access; its "· fix in Channel access" hint gives way (phones drop it)',
+  },
+  {
+    selector: '.profile__open',
+    screens: ['admin/config?section=persona'],
+    sizes: '*',
+    kinds: ['ellipsis-bare'],
+    reason: "a profile's prompt preview is the button that opens the full prompt",
+  },
+  {
+    selector: '.boss-stack__names, .chips .name',
+    screens: ['admin/fixed'],
+    sizes: '*',
+    kinds: ['ellipsis'],
+    reason: 'weekly-timing boss names and member chips ellipsise with their full name in a title',
+  },
+  {
+    selector: '.proposal__threadhead .proposal__threadfact',
+    screens: INBOX,
+    sizes: '*',
+    kinds: ['ellipsis', 'ellipsis-bare'],
+    reason: "the thread head's channel and time span give way to the Used / All switch; each message shows its own time",
+  },
+];
+
+interface Screen {
+  name: string;
+  url: string;
+  /** Opens the state after the page has loaded (a tab, a row). */
+  open?: (page: Page) => Promise<void>;
+}
+
+const STATES: Screen[] = [
+  ...SCREENS.map(([app, origin, path]) => ({ name: `${app}${path}`, url: screenUrl(origin, path) })),
+  ...SECTIONS.filter((key) => !SCREENS.some(([, , path]) => path === `/config?section=${key}`)).map((key) => ({
+    name: `admin/config?section=${key}`,
+    url: screenUrl(ADMIN, `/config?section=${key}`),
+  })),
+  { name: 'admin/inbox?tab=self_service', url: screenUrl(ADMIN, '/inbox?tab=self_service') },
+  {
+    name: 'admin/inbox (item open)',
+    url: screenUrl(ADMIN, '/inbox'),
+    open: async (page) => {
+      await page.locator('[data-item]').first().click();
+    },
+  },
+  {
+    name: 'admin/ Runs tab',
+    url: screenUrl(ADMIN, '/'),
+    open: async (page) => {
+      await page.getByRole('tab', { name: /^Runs/ }).click();
+    },
+  },
+  {
+    name: 'admin/ Answers tab',
+    url: screenUrl(ADMIN, '/'),
+    open: async (page) => {
+      await page.getByRole('tab', { name: /^Answers/ }).click();
+    },
+  },
+  {
+    name: 'admin/ run open',
+    url: screenUrl(ADMIN, '/'),
+    open: async (page) => {
+      const card = page.locator('[data-run="r-carling"]').first();
+      await card.scrollIntoViewIfNeeded();
+      await card.click();
+      await expect(page.locator('.week-pane, dialog[open]').first()).toBeVisible();
+    },
+  },
+];
+
+const sizeName = (s: { width: number; height: number }): Size => `${s.width}×${s.height}`;
+const hits = (list: string[] | '*', value: string) => list === '*' || list.includes(value);
+
+test.describe.configure({ mode: 'parallel' });
+
+for (const screen of STATES) {
+  test(`text clipping: ${screen.name}`, async ({ page }) => {
+    test.setTimeout(90_000);
+    const failures: string[] = [];
+    for (const size of SIZES) {
+      const at = sizeName(size);
+      await page.setViewportSize(size);
+      await page.goto(screen.url);
+      await expect(page.getByRole('heading').first()).toBeVisible();
+      await screen.open?.(page);
+      await page.evaluate(() => document.fonts.ready);
+      await settle(page);
+      const allow = ALLOW.filter((a) => hits(a.screens, screen.name) && hits(a.sizes, at));
+      const found = await auditText(page, allow.map((a) => a.selector));
+      for (const f of found) {
+        if (f.allowed.some((i) => allow[i]!.kinds.includes(f.kind))) continue;
+        failures.push(`${at} ${f.kind.padEnd(13)} ${f.path} "${f.text}" (${f.detail})`);
+      }
+    }
+    expect(failures, `clipped text on ${screen.name}`).toEqual([]);
+  });
+}
+
+// Positive control: the audit must catch each kind it claims to (built with CSSOM, as CSP requires).
+test('text clipping: the audit catches a clip, a cut, a spill, an ellipsis and off-screen text', async ({ page }) => {
+  await page.goto(screenUrl(PUBLIC, '/'));
+  await expect(page.getByRole('heading').first()).toBeVisible();
+  await page.evaluate(() => {
+    const add = (parent: HTMLElement, text: string, css: Record<string, string>) => {
+      const el = document.createElement('div');
+      el.textContent = text;
+      for (const [key, value] of Object.entries(css)) el.style.setProperty(key, value);
+      parent.append(el);
+      return el;
+    };
+    const host = add(document.body, '', { position: 'fixed', top: '0', left: '0', 'z-index': '9' });
+    const long = 'A long line of words that cannot fit';
+    add(host, long, { width: '60px', overflow: 'hidden', 'white-space': 'nowrap' }).className = 'probe-clip';
+    const clipper = add(host, '', { width: '60px', overflow: 'clip' });
+    const inner = document.createElement('span');
+    inner.className = 'probe-cut';
+    inner.textContent = long;
+    inner.style.setProperty('white-space', 'nowrap');
+    clipper.append(inner);
+    add(host, long, { width: '60px', 'white-space': 'nowrap' }).className = 'probe-spill';
+    add(host, long, { width: '60px', overflow: 'hidden', 'white-space': 'nowrap', 'text-overflow': 'ellipsis' }).className = 'probe-ellipsis';
+    add(document.body, 'Past the right edge', { position: 'fixed', top: '200px', left: 'calc(100vw - 20px)', 'white-space': 'nowrap' }).className = 'probe-off';
+  });
+  const kinds = (await auditText(page, [])).filter((f) => f.path.includes('probe-')).map((f) => `${f.path.split('.').pop()} ${f.kind}`);
+  expect(kinds).toEqual(expect.arrayContaining(['probe-clip clip-x', 'probe-cut cut', 'probe-spill spill', 'probe-ellipsis ellipsis-bare', 'probe-off off-screen']));
+});

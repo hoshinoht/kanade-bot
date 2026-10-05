@@ -483,11 +483,9 @@
     max-width: 1px;
   }
 
+  /* Not a button that opens the prompt, so it wraps rather than ellipsising. */
   .profile__prompt--default {
-    overflow: hidden;
     color: var(--dim-text);
-    white-space: nowrap;
-    text-overflow: ellipsis;
   }
 
   .profile__visibility {

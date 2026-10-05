@@ -190,7 +190,7 @@
      Wide Extractor items (VarRail2): the header across the top, then the
      thread panel beside a 300 px decision card that holds the change. -->
 {#snippet facts()}
-  <!-- One line of facts (truncated, never wrapped, on a phone). -->
+  <!-- The facts as running text: they wrap, each fact whole, and are never cut. -->
   <p class="proposal__meta" data-fid="inbox-meta">
     <span class="chip proposal__source">{SOURCE_LABEL[p.source]}</span>
     {#if p.source !== 'self_service' && !stacked}

@@ -299,13 +299,16 @@
   line-height: 1.15;
 }
 
+// Wraps rather than cutting: the token counts at its end are shown nowhere else.
 .chat-turn__meta {
   margin: 0;
   line-height: 1.3;
-  overflow: hidden;
   color: var(--dim-text);
   font-size: var(--fs-small);
-  text-overflow: ellipsis;
+}
+
+// A value and its unit ("7.1 s", "1,950 → 85 tokens") break as one.
+.chat-turn__meta .mono {
   white-space: nowrap;
 }
 
@@ -828,10 +831,6 @@
   .chat-tool > .status-chip,
   .chat-tool__expand {
     justify-self: start;
-  }
-
-  .chat-turn__meta {
-    white-space: normal;
   }
 }
 

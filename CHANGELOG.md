@@ -6,6 +6,15 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- v5 web e2e `clipping.spec.ts`: every admin and public screen (plus Config
+  sections, Inbox items, Week tabs and an open run) is audited at the five
+  layout frames for cut, clipped, spilled and off-screen text, with one
+  allow-list of intended ellipses. Fixes what it found: the Inbox thread's
+  Used / All switch no longer falls off a narrow thread (the head takes two
+  rows), the thread foot and the phone item head wrap their facts so "Read
+  from chat" and "See the card" are never cut, the Chat turn's facts wrap
+  instead of hiding the token counts, and the Persona table's default prompt
+  wraps instead of "(the pe…".
 - Boss guides gain Destiny Weapon mission entries (Seren, Kalos, Carling, First
   Adversary, Limbo, Baldrix: modifier, Adversary's Resolve cost and per-clear
   Resolve) and Union Champion trial entries (Lotus, Black Mage, Seren, Kalos).

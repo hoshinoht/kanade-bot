@@ -21,7 +21,9 @@ Code: `apps/admin/src/inbox/` (`InboxPage`, `InboxList`, `InboxDetail`,
   detail; below 900 px list and detail take turns.
 - Detail: header (portrait, heading with boss tags that wrap whole at every
   width, summary) → thread panel (full thread, per-message "used" marker,
-  Used n / All toggle `[DR 2026-10-02]`) + decision card (300 px,
+  Used n / All toggle `[DR 2026-10-02]`; on a narrow thread the head takes
+  two rows and the foot wraps rather than cutting a fact `[DR 2026-10-05]`)
+  + decision card (300 px,
   `--select`, radius 28): mono overline "Would change", old value struck,
   new value, **consequence line** before Approve when the API supplies it
   `[DR 2026-10-03]`, key **Approve**, "Edit, then approve" field + Move,
@@ -41,7 +43,9 @@ Code: `apps/admin/src/inbox/` (`InboxPage`, `InboxList`, `InboxDetail`,
 ## Phone
 
 `inbox--compact`: an open item drops the page line, tabs and window chrome,
-puts "‹ Inbox" in the top bar (`chrome.back()`), shows a compact header,
+puts "‹ Inbox" in the top bar (`chrome.back()`), shows a compact header
+(its facts wrap to a second line, never cut, so "See the card" shows in
+full `[DR 2026-10-05]`),
 thread toggle and the decision as a bottom action bar (pencil toggles the
 edit field, Reject…, Approve). The consequence line sits inside the change
 card on phones and Self-service. `[web/AGENTS]`, `[DR 2026-10-03]`
