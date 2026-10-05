@@ -112,7 +112,8 @@ test('Bosses: selection preserves the list DOM while revealing all difficulties'
   await expect(row.getByRole('link')).toHaveAttribute('aria-current', 'true');
   await expect(row).toHaveAttribute('data-preserved', 'yes');
   await expect.poll(() => height(row)).toBeGreaterThan(before + 10);
-  await expect(row.locator('.row-content__full .boss-tick')).toHaveCount(4);
+  // Catalog difficulties only; knowledge may add info-only Champion/Destiny ticks.
+  await expect(row.locator('.row-content__full .boss-tick:not(.boss-tick--champion, .boss-tick--destiny)')).toHaveCount(4);
 });
 
 for (const screen of [

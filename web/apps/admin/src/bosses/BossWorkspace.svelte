@@ -52,6 +52,9 @@
   const facts = $derived(doc?.difficulties ?? []);
   const lists = $derived<[string, string[]][]>(doc ? [['Core', doc.core], ['Danger', doc.danger], ['Tips', doc.tips]] : []);
   const LETTER: Record<string, Difficulty> = { Easy: 'e', Normal: 'n', Hard: 'h', Chaos: 'c', Extreme: 'x' };
+  /** Knowledge-only difficulties (never scheduled): no catalog letter, own tick colours. */
+  const infoOnly = $derived(facts.filter((fact) => !LETTER[fact.name]).map((fact) => fact.name));
+  const tickClass = (name: string) => LETTER[name] ?? name.toLowerCase();
   let chosen = $state<string | null>(null);
   const selected = $derived.by(() => {
     const inUse = knowledge.data?.in_use ?? [];
@@ -178,12 +181,12 @@
   <div class="bosses-window__body">
     <nav data-fid="boss-list" class="bosses-list" aria-label="Boss catalog" class:bosses-list--hidden={phone && Boolean(selectedKey)} bind:this={navEl} {@attach tagPicks}>
       {#if bosses.error}<p class="flash flash--error" role="alert">{bosses.error}</p>
-      {:else if bosses.data}<BossGrid rows={catalog} readonly active={activeKey} />
+      {:else if bosses.data}<BossGrid rows={catalog} readonly active={activeKey} {infoOnly} />
         {#if eventRows.length}
           <h3 class="cap bosses-list__event-title">Event bosses</h3>
           <ul class="bosses-events" aria-label="Event bosses" {@attach forwardEventClicks}>
             {#each eventRows as boss (boss.key)}
-              <li class="expandable-row" data-fid="boss-row" class:bosses-events__active={boss.key === activeKey}><a href="/bosses/{boss.key}/knowledge" aria-current={boss.key === activeKey ? 'true' : undefined}><Portrait boss={eventAsBoss(boss)} size="md" /><strong>{boss.key}</strong></a><RowContent expanded={boss.key === activeKey}>{#snippet compact()}<StatusChip>Seasonal boss · <abbr title={boss.event.name}>{seasonTag(boss.event)}</abbr></StatusChip>{/snippet}<span class="bossrow__difficulties" role="group" aria-label="{boss.key} difficulties">{#each boss.key === knowledge.data?.key ? facts : [] as fact (fact.name)}<span><span class="boss-tick boss-tick--{LETTER[fact.name] ?? 'n'}">{fact.name.toUpperCase()}</span>{#if fact.boss_level ?? fact.entry_level}<span class="bossrow__tracked">{` Lv. ${fact.boss_level ?? fact.entry_level}`}</span>{/if}</span>{/each}</span></RowContent></li>
+              <li class="expandable-row" data-fid="boss-row" class:bosses-events__active={boss.key === activeKey}><a href="/bosses/{boss.key}/knowledge" aria-current={boss.key === activeKey ? 'true' : undefined}><Portrait boss={eventAsBoss(boss)} size="md" /><strong>{boss.key}</strong></a><RowContent expanded={boss.key === activeKey}>{#snippet compact()}<StatusChip>Seasonal boss · <abbr title={boss.event.name}>{seasonTag(boss.event)}</abbr></StatusChip>{/snippet}<span class="bossrow__difficulties" role="group" aria-label="{boss.key} difficulties">{#each boss.key === knowledge.data?.key ? facts : [] as fact (fact.name)}<span><span class="boss-tick boss-tick--{tickClass(fact.name)}">{fact.name.toUpperCase()}</span>{#if fact.boss_level ?? fact.entry_level}<span class="bossrow__tracked">{` Lv. ${fact.boss_level ?? fact.entry_level}`}</span>{/if}</span>{/each}</span></RowContent></li>
             {/each}
           </ul>
         {/if}
@@ -211,7 +214,7 @@
             {#if facts.length}<div class="knowledge__switch"><span class="cap" id="difficulty-label">Difficulty</span><div class="seg" role="group" aria-labelledby="difficulty-label">{#each facts as fact (fact.name)}<button type="button" aria-pressed={selected?.name === fact.name} onclick={() => (chosen = fact.name)}>{fact.name}{#if knowledge.data.in_use.includes(LETTER[fact.name]!)}<span class="vh"> (the guild runs it)</span> ✓{/if}</button>{/each}</div></div>{/if}
             <p class="knowledge__summary">{doc.summary}</p>
             {#if doc.event}<p class="flash flash--ok"><strong>Event boss.</strong> {doc.event.availability}</p>{/if}
-            {#if selected}<section aria-labelledby="facts-heading"><h2 class="vh" id="facts-heading">{DIFFICULTY_WORDS[letter!]} facts</h2><dl class="knowledge-facts">{#each factRows as [label, value] (label)}<div><dt class="cap">{label}</dt><dd>{value}</dd></div>{/each}</dl>{#if selected.recommended_spec}<section class="knowledge-recommended"><h3 class="cap">Recommended · hexa-converted stat</h3><p>{selected.recommended_spec.text}</p></section>{/if}{#each phaseHp as hp (hp.phase)}<p class="knowledge__detail"><strong>HP phase {hp.phase}:</strong> {hp.value}</p>{/each}{#if note || selected.notes?.length}<section class="knowledge-callouts" aria-labelledby="difficulty-notes-heading"><h3 class="cap" id="difficulty-notes-heading">{selected.name} notes</h3><ul>{#if note}<li>{note}</li>{/if}{#each selected.notes ?? [] as item (item)}<li>{item}</li>{/each}</ul></section>{/if}</section>{/if}
+            {#if selected}<section aria-labelledby="facts-heading"><h2 class="vh" id="facts-heading">{selected.name} facts</h2><dl class="knowledge-facts">{#each factRows as [label, value] (label)}<div><dt class="cap">{label}</dt><dd>{value}</dd></div>{/each}</dl>{#if selected.recommended_spec}<section class="knowledge-recommended"><h3 class="cap">Recommended · hexa-converted stat</h3><p>{selected.recommended_spec.text}</p></section>{/if}{#each phaseHp as hp (hp.phase)}<p class="knowledge__detail"><strong>HP phase {hp.phase}:</strong> {hp.value}</p>{/each}{#if note || selected.notes?.length}<section class="knowledge-callouts" aria-labelledby="difficulty-notes-heading"><h3 class="cap" id="difficulty-notes-heading">{selected.name} notes</h3><ul>{#if note}<li>{note}</li>{/if}{#each selected.notes ?? [] as item (item)}<li>{item}</li>{/each}</ul></section>{/if}</section>{/if}
             {#each lists as [title, items] (title)}{#if items.length}<section class="knowledge-notes"><h2 class="cap">{title}</h2><ul>{#each items as item (item)}<li>{item}</li>{/each}</ul></section>{/if}{/each}
             {#if doc.strategies?.length}<StrategyList strategies={doc.strategies} />{/if}
             {#if doc.notes?.length}<section class="knowledge-notes"><h2 class="cap">Notes</h2><ul>{#each doc.notes as item (item)}<li>{item}</li>{/each}</ul></section>{/if}

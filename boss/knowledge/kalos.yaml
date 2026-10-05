@@ -20,6 +20,8 @@ tips:
 - Read a weapon's colour to count the shots left (red, then purple, then dark blue).
 - Use Hero's Will before the left tower's laser lands to avoid its stun.
 - 'Authentic Symbol: Hotel Arcs Lv 11 adds +20% damage against Kalos (SEA v251).'
+notes:
+- 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Normal 10, Chaos 70, Extreme 400.'
 difficulties:
 - name: Easy
   entry_level: 265
@@ -75,6 +77,21 @@ difficulties:
   notes:
   - 8 lives in MapleSEA, 30 minutes. Watcher's Roar is replaced by marked pillars that one-shot.
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 3.87q / 10.35q (33.2% less), 20-minute limit.'
+- name: Destiny
+  entry_level: 275
+  boss_level: 285
+  pdr_percent: 380
+  party_max: 1
+  notes:
+  - 'Destiny Weapon mission "Battle, Gatekeeper Kalos" (MapleSEA v244): Chaos Kalos solo in Destiny Mode with the Death Count cut from 8 to 3. Second mission; needs 2,500 Adversary''s Resolve.'
+  - 'Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
+- name: Champion
+  entry_level: 260
+  party_max: 1
+  notes:
+  - 'Union Champion Rank SSS trial (Champion Evaluation Match): Normal Kalos solo in Champion Mode within 20 minutes, after Rank SS. The SSS insignia gives every character +5% Ignore Enemy DEF.'
+  - 'Practice Mode clears count and add Hamcelot''s Protection (25% less damage taken). After OVERDRIVE, KMS adds Hamcelot''s Trial (Final Damage -30%, -25% on Black Mage); not in MapleSEA yet. MapleSEA notes do not list the trial bosses, so the boss and limit here are KMS''s.'
+  - 'Community view: a Normal Kalos solo needs more spec than Hard Serene for only +5% IED, so many players stop at Rank SS.'
 strategies:
 - name: Left-first control
   when: Easy and Normal, learning parties or low shot accuracy
@@ -147,3 +164,18 @@ sources:
   author: MapleStory Wiki contributors
   kind: wiki
   fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v243_Patch_Notes/
+  title: MapleSEA v243 NEXT II patch notes (Union Champion)
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-05'
+- url: https://maplestory.nexon.com/Guide/N23GameInformation/Articles/409
+  title: KMS official guide - Union Champion
+  author: Nexon Korea
+  kind: official
+  fetched: '2026-10-05'
+- url: https://maplestorywiki.net/w/Destiny_Weapon
+  title: MapleStory Wiki - Destiny Weapon
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-10-05'

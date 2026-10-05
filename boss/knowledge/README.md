@@ -19,7 +19,11 @@ Optional: `difficulty_notes` (catalog letter to text), `notes`, and new in v2:
 - `difficulties`: a list of `{name, entry_level, boss_level, pdr_percent,
   party_max, force: {kind: arcane|sacred, value}, hp: [{phase, value}],
   recommended_spec: {kind, text}, notes}`. Only `name` is required. `name` is
-  `Easy|Normal|Hard|Chaos|Extreme` and must be a catalog difficulty. `hp.phase`
+  `Easy|Normal|Hard|Chaos|Extreme` and must be a catalog difficulty, or
+  `Champion|Destiny`, which appear only on the Bosses info page and in chat
+  guides (never in the scheduler, so not in the catalog). Up to 7 entries.
+  `Destiny` is the Destiny Weapon mission (its modifier and Adversary's
+  Resolve cost in `notes`); `Champion` is the Union Champion trial. `hp.phase`
   is `'1'`, `'2-1'`, or `total` when phases are HP thresholds on one bar.
   Unit-bearing values stay strings (`241.5t`, `10.266q`).
 - `strategies` (added 2026-10): up to 4 named routes, each `{name, when, risk:
@@ -30,10 +34,12 @@ Optional: `difficulty_notes` (catalog letter to text), `notes`, and new in v2:
   Korean name), matched case-insensitively by the chatbot. Event bosses stay
   answerable until their file is removed or edited by hand.
 - MapleSEA wording: SEA patch-note terms first, other names once as "also
-  called". `force.kind: sacred` is MapleSEA's Authentic Force. HP rows are the
+  called". `force.kind: sacred` is MapleSEA's Authentic Force. Exception: Carling's
+  Perils are Tiger (Do'oul), Bird (Gunggi) and Dog (Hondon), introduced once
+  with the SEA name and the animal name afterwards (user decision 2026-10-05). HP rows are the
   KMS values before OVERDRIVE (what MapleSEA has now); a per-difficulty note
   gives the post-OVERDRIVE value until MapleSEA ships it.
-- `sources` entries are objects: `{url (https), title, author, kind:
+- `sources` (1-14) entries are objects: `{url (https), title, author, kind:
   guide|wiki|tool|official, fetched: YYYY-MM-DD, updated?: YYYY-MM-DD}`.
 
 Unknown keys are rejected at every level.

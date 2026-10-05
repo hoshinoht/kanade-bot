@@ -56,7 +56,7 @@
       "additionalProperties": false,
       "required": ["name"],
       "properties": {
-        "name": { "enum": ["Easy", "Normal", "Hard", "Chaos", "Extreme"] },
+        "name": { "enum": ["Easy", "Normal", "Hard", "Chaos", "Extreme", "Champion", "Destiny"] },
         "entry_level": { "type": "integer" },
         "boss_level": { "type": "integer" },
         "pdr_percent": { "type": "number" },

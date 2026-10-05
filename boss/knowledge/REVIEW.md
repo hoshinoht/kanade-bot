@@ -7,6 +7,34 @@ sources, are in the git-ignored `data/research/boss-guides/research-2026-10-02/`
 All text is our own paraphrase. `validate.py` passes for every file, and the
 longest run shared with a cached guide is well under the 12-word limit.
 
+## Update 2026-10-05: Destiny, Union Champion, Carling and First Adversary
+
+Research: git-ignored `data/research/boss-guides/research-2026-10-05/`
+(`report-destiny.md`, `report-boss-champion.md`, `report-carling-fa-verify.md`).
+Started from a user-supplied Carling/First Adversary draft; only claims a source
+supports were kept.
+
+- **Destiny** entries (solo, Destiny Mode, MapleSEA v244/v252): Seren Hard
+  FD -80% (2,000 Resolve), Kalos Chaos Death Count 3 (2,500), Carling Hard
+  FD +20% (3,000), First Adversary Hard FD -20% and +50% Power of Order loss
+  (10,000), Limbo Hard starting at 800 Erosion (12,500), Baldrix Hard +30%
+  damage taken (15,000). Resolve per clear is a top-level note per boss.
+- **Champion** entries (Union Champion trials; "Boss Champion" was confirmed by
+  the user to mean this): Lotus Hard (B), Black Mage Hard (S), Seren Hard (SS),
+  Kalos Normal (SSS). Verus Hilla (A) has no knowledge file. MapleSEA notes do
+  not list the trial bosses, so they are KMS's; Hamcelot's Trial is not in SEA.
+- **Carling**: Tiger/Bird/Dog callouts; strategies are Balanced gauges, Tiger +
+  Bird break (MapleBossLab: ~88% of 322 Destiny builds) and Bird + Dog break.
+  Tiger + Dog break is a note (dead since v251). Dropped from the draft: the
+  unsourced "44 of 56 clears" statistic and Tiger + Bird as proven on Extreme.
+- **First Adversary**: Stage 5 opener added (sourced only for Easy/Normal);
+  Parry the opener now bursts at Stage 4; "Sniping, avoid it" became a tip;
+  Stage 5 tornado danger.
+- Schema: `difficulties` up to 7, `sources` up to 14; API contract
+  `docs/v5/api-schemas/bosses.json` accepts Champion/Destiny.
+- Open: Destiny Mode HP after OVERDRIVE; SEA trial bosses/limits; Black Mage
+  trial limit in SEA (45 min presumed); Jupiter Resolve labels.
+
 ## Decisions applied
 
 - MapleSEA patch-note terms come first; the GMS/KMS/guide name appears once as

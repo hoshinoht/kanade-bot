@@ -32,6 +32,8 @@
 .boss-tick--h { background: var(--pill-h-bg); color: var(--pill-h-fg); }
 .boss-tick--c { background: var(--pill-c-bg); color: var(--pill-c-fg); }
 .boss-tick--x { background: var(--pill-x-bg); color: var(--pill-x-fg); }
+.boss-tick--champion { background: var(--pill-champion-bg); color: var(--pill-champion-fg); }
+.boss-tick--destiny { background: var(--pill-destiny-bg); box-shadow: inset 0 0 0 1px var(--pill-destiny-edge); color: var(--pill-destiny-fg); }
 .boss-tick--more { box-shadow: inset 0 0 0 1.5px var(--line); color: var(--dim-text); }
 .bosses-list__event-title { margin: 14px 0 6px; }
 .bosses-events { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }

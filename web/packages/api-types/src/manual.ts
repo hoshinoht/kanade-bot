@@ -76,7 +76,8 @@ export interface FixedRequest {
   override?: { seq: number; hash: string }[];
 }
 
-export type DifficultyName = 'Easy' | 'Normal' | 'Hard' | 'Chaos' | 'Extreme';
+/** Champion and Destiny exist only in boss knowledge (the Bosses info page), never in the scheduler. */
+export type DifficultyName = 'Easy' | 'Normal' | 'Hard' | 'Chaos' | 'Extreme' | 'Champion' | 'Destiny';
 
 /** One difficulty's facts (boss/knowledge schema v2). Unit-bearing values stay strings (`241.5t`). */
 export interface DifficultyFacts {

@@ -6,6 +6,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Boss guides gain Destiny Weapon mission entries (Seren, Kalos, Carling, First
+  Adversary, Limbo, Baldrix: modifier, Adversary's Resolve cost and per-clear
+  Resolve) and Union Champion trial entries (Lotus, Black Mage, Seren, Kalos).
+  Carling uses Tiger/Bird/Dog callouts with Tiger + Bird and Bird + Dog break
+  routes; First Adversary adds the Stage 5 opener.
 - v5 admin History lists Config section saves: every effective save (persona
   switches included) is stored with its changed settings before and after
   (store migration 0023) and shows as a view-only "Config" row in the
@@ -854,6 +859,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
   screen and the Week run pane switch to one pane at a shared 900 px
   breakpoint (Bosses gains a Back link in the rail frame); Zilla Slab and
   Maple Mono load real 700 faces instead of synthesised bold.
+- Boss knowledge accepts Champion and Destiny difficulties, shown only on the
+  Bosses info page (orange and dark-rimmed ticks, info only) and in chat
+  guides, never in the scheduler.
 - v5 admin run pane and run sheet: boss art stays inside the identity card
   and fades into it (no hard cut behind Move), only where there is no text:
   behind the actions on the laptop sheet, a top-right corner by the clock in

@@ -115,6 +115,13 @@
   --pill-c-fg: #f0a030;
   --pill-x-bg: #17161c;
   --pill-x-fg: #ff5a3c;
+  /* Info-page-only difficulties (boss knowledge, never scheduled): Champion
+     the game's orange plate, Destiny a dark plate with a light rim. */
+  --pill-champion-bg: #c25418;
+  --pill-champion-fg: #ffffff;
+  --pill-destiny-bg: #2a2730;
+  --pill-destiny-fg: #ffffff;
+  --pill-destiny-edge: #b9b4c2;
 
   /* The boss monogram's tint, as numbers rather than colours: the hue is set
      per boss on the element (`--mono-hue`), and only the saturation and
@@ -431,6 +438,11 @@
     --pill-c-fg: #f5b452;
     --pill-x-bg: #0e0d12;
     --pill-x-fg: #ff7050;
+    --pill-champion-bg: #f08a3c;
+    --pill-champion-fg: #2b1204;
+    --pill-destiny-bg: #0e0d12;
+    --pill-destiny-fg: #ffffff;
+    --pill-destiny-edge: #8c8796;
 
     --mono-s: 32%;
     --mono-l: 24%;
@@ -658,6 +670,11 @@
   --pill-c-fg: #f5b452;
   --pill-x-bg: #0e0d12;
   --pill-x-fg: #ff7050;
+  --pill-champion-bg: #f08a3c;
+  --pill-champion-fg: #2b1204;
+  --pill-destiny-bg: #0e0d12;
+  --pill-destiny-fg: #ffffff;
+  --pill-destiny-edge: #8c8796;
 
   --mono-s: 32%;
   --mono-l: 24%;

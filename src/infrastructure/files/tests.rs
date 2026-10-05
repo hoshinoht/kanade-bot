@@ -136,6 +136,26 @@ fn knowledge_fixture_validates_and_refuses_bad_documents() {
 }
 
 #[test]
+fn knowledge_accepts_info_only_difficulties() {
+    let temp = Temp::new();
+    let dir = knowledge_fixture(&temp);
+    let doc = dir.join("maleficstar.yaml");
+    let text = fs::read_to_string(&doc).expect("read");
+    let with =
+        |names: &str| text.replacen("difficulties:\n", &format!("difficulties:\n{names}"), 1);
+
+    // Champion and Destiny live only in knowledge, outside the catalog.
+    fs::write(&doc, with("- name: Champion\n- name: Destiny\n")).expect("write");
+    assert_eq!(
+        load_knowledge_dir(&dir).expect("info-only").keys,
+        ["MaleficStar"]
+    );
+
+    fs::write(&doc, with("- name: Mythic\n")).expect("write");
+    load_knowledge_dir(&dir).expect_err("unknown difficulty");
+}
+
+#[test]
 fn knowledge_requires_schema_v2_meta() {
     let temp = Temp::new();
     let dir = knowledge_fixture(&temp);

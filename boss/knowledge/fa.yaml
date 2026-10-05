@@ -13,6 +13,7 @@ danger:
 - Sword Shower (also called Greatsword Shower) ends with a slam dealing 1000% unless parried or cleared with a high enough jump; it is his opener when he is not bound on entry.
 - Phase 2 Altar drops on a marked player and drains the gauge quickly on Hard/Extreme, so that player should take it to a corner early; moving it at the last moment makes others see it in the wrong place.
 - Phase 3 Elemental Flow and Arrow Rain overlap with his other attacks; they are good slots for Genesis or class i-frames and Ascent skills, and a bind cancels Elemental Flow.
+- 'At Stage 5 (800+) in Phase 1, tornadoes stand at both map edges: 25% HP per second plus Slow, and contact drains Power of Order by 10 on Hard or 20 on Extreme. They vanish if the stage drops.'
 - Extreme adds much heavier hits, including a 999% final Sniping arrow and 200% last swings in Phase 3, and party gauge losses are no longer reduced.
 tips:
 - Reliable correct parries matter more than damage greed. Aim to enter every Cycle at 600+; once the gauge is high, dodge risky attacks instead of forcing parries.
@@ -20,10 +21,12 @@ tips:
 - Stay on the same side as whoever holds aggro; he can turn around just before strengthened swings.
 - Burst on cooldown rather than waiting for the Cycle, since waiting pushes every later burst back. The guide's ideal is 16 bursts (5 in Phase 1, 4 in Phase 2, 7 in Phase 3).
 - 'Summon Evolve tell: both wings folded hits the centre, both spread hits both sides, one wing folded hits that side.'
+- To skip Sniping safely, move onto his centre once the crossbow locks on and hold a blink or i-frame until the final arrow passes; no gauge gain, no risk.
 - He casts nothing for about 5s before each Cycle, and big patterns stop 10-15s before it, so that is a safe damage window.
 notes:
 - MapleSEA v249 (Mar 2026) applied the KMS 1.2.407 change, so a gauge at stage 4 or higher keeps its value through the Cycle of Power.
 - 30-minute limit, 10-second potion cooldown, 1-3 players. One clear per week shared across all difficulties; it counts on the Phase 3 kill.
+- 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Normal 15, Hard 120, Extreme 500.'
 - Odium symbol at Growth Level 11 gives +20% damage against this boss (MapleSEA v251). MapleSEA v249 also caps boss kills at 12 per week.
 difficulties:
 - name: Easy
@@ -78,6 +81,15 @@ difficulties:
   recommended_spec: {kind: HEXA-converted stat, text: 'Strongly composition-dependent; roughly 112-113k with a Lynn for a minimum clear.'}
   notes:
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 6.45q/6.45q/8.60q (33.2% less), 20-minute limit.'
+- name: Destiny
+  entry_level: 275
+  boss_level: 285
+  pdr_percent: 380
+  party_max: 1
+  force: {kind: sacred, value: 340}
+  notes:
+  - 'Destiny Weapon 2nd Growth mission "Battle, The First Adversary" (MapleSEA v252): Hard solo in Destiny Mode with Final Damage -20% and 50% more Power of Order lost when hit. Fourth mission, after Carling; needs 10,000 Adversary''s Resolve.'
+  - 'Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
 strategies:
 - name: Parry the opener
   when: Parties that parry reliably; most useful at minimum spec on Hard/Extreme
@@ -87,7 +99,7 @@ strategies:
   steps:
   - Do not bind on entry, so his first cast is Sword Shower.
   - Up-jump or i-frame the first slam, then everyone parries the second slam. In a trio one parry alone will not reach stage 4.
-  - Burst right after the parry.
+  - Burst as soon as the gauge reaches Stage 4 (600+, +10% final damage); do not hold the burst to chase Stage 5.
 - name: Bind on entry
   when: Damage is comfortable, or someone cannot yet parry the opener reliably (inferred from the guide's wording, not stated as a recommendation)
   risk: low
@@ -104,13 +116,15 @@ strategies:
   steps:
   - During the six regular shots, steer the crossbow so it fires away from you.
   - Parry the final arrow of your own attribute.
-- name: Sniping, avoid it
-  when: Low on parry confidence, or the gauge is already high
-  risk: low
-  damage: medium
-  payoff: No gauge gain and no risk
+- name: Stage 5 opener
+  when: Parties where everyone parries reliably. Described for Easy (about 3 parries) and Normal (about 4); untested on Hard/Extreme, where other guides burst right after the opener parry
+  risk: high
+  damage: low
+  payoff: The first burst runs at +20% final damage instead of +10%, but a missed parry or a death delays it long enough to lose more than the bonus
   steps:
-  - Once the crossbow locks on, move onto the boss's centre and hold a blink or i-frame until the final arrow passes.
+  - Do not bind or burst on entry; deal sustained damage and have everyone parry the opening strengthened attacks.
+  - Burst the moment the shared gauge crosses 800 (Stage 5); nothing above 800 adds damage, so do not build toward 1000.
+  - Stay off the map edges once the Stage 5 tornadoes appear.
 sources:
 - url: https://docs.google.com/document/d/1kVb7FMPvHtntji69dnfAsU025yT_hqdDM1aWVRodxXU/edit
   title: MapleStory Complete First Adversary Guide
@@ -152,3 +166,18 @@ sources:
   author: MapleStory Wiki contributors
   kind: wiki
   fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v252_Content/
+  title: MapleSEA v252 content (Destiny Weapon 2nd Growth)
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-05'
+- url: https://mitemprice.kr/bossblog/firstadversary.php
+  title: mitemprice - First Adversary guide
+  author: mitemprice.kr
+  kind: guide
+  fetched: '2026-10-05'
+- url: https://maplestorywiki.net/w/Destiny_Weapon
+  title: MapleStory Wiki - Destiny Weapon
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-10-05'

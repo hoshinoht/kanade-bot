@@ -35,6 +35,12 @@ difficulties:
   - 5 lives, 30 minutes, 10 s potion cooldown; the clear is shared with Normal and Hard, once a week. Entry level 190 comes from the GMS guide (unconfirmed for SEA).
   - HP is the KMS value before OVERDRIVE; each Phase 1 shield holds about 2.7t more.
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 368t / 368t / 491t (32.2% less; KMS calls Lotus Suu), 20-minute limit.'
+- name: Champion
+  entry_level: 260
+  party_max: 1
+  notes:
+  - 'Union Champion Rank B trial (Champion Evaluation Match): Hard Lotus (not Extreme; also called Suu) solo in Champion Mode within 20 minutes; every champion starts at Rank C. The B insignia gives every character +20 All Stats and +1,000 Max HP/MP.'
+  - 'Practice Mode clears count and add Hamcelot''s Protection (25% less damage taken). After OVERDRIVE, KMS adds Hamcelot''s Trial (Final Damage -30%, -25% on Black Mage); not in MapleSEA yet. MapleSEA notes do not list the trial bosses, so the boss and limit here are KMS''s.'
 strategies:
 - name: Duo standard
   when: Two players, the group's usual setup
@@ -90,3 +96,13 @@ sources:
   author: MapleStory Wiki contributors
   kind: wiki
   fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v243_Patch_Notes/
+  title: MapleSEA v243 NEXT II patch notes (Union Champion)
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-05'
+- url: https://maplestory.nexon.com/Guide/N23GameInformation/Articles/409
+  title: KMS official guide - Union Champion
+  author: Nexon Korea
+  kind: official
+  fetched: '2026-10-05'

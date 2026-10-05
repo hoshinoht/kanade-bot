@@ -43,6 +43,7 @@ strategies:
 notes:
 - 30-minute limit in MapleSEA now (20 minutes after OVERDRIVE) and 10-second potion cooldown. Phases 1-2 keep players in separate rooms, so party buffs do not reach each other until Phase 3.
 - The Talahart Authentic Symbol at Growth Level 11 gives +20% damage against him (MapleSEA v251). MapleSEA names for the Phase 2-3 mechanics, the portal and the shield are unconfirmed.
+- 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Normal 150, Hard 450.'
 difficulties:
 - name: Normal
   entry_level: 290
@@ -74,6 +75,12 @@ difficulties:
     text: About 108k-113k for a full-timer minimum clear, depending on party composition (KMS release-era figures).
   notes:
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 3.62q / 3.85q / 6.31q (about 13.8q total), 20-minute limit.'
+- name: Destiny
+  entry_level: 290
+  party_max: 1
+  notes:
+  - 'Destiny Weapon 2nd Growth mission "Battle, Baldrix" (MapleSEA v252): Hard Baldrix solo in Destiny Mode taking 30% more damage (the wiki says this includes %HP attacks). The last mission; needs 15,000 Adversary''s Resolve.'
+  - 'Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
 sources:
 - url: https://docs.google.com/document/d/1uBXXBbUt86N2T67HY0dQrFjo7fbOthVrWBMWfUyi4NY/edit
   title: MapleStory Complete Baldrix Guide
@@ -105,3 +112,13 @@ sources:
   author: MapleStory Wiki contributors
   kind: wiki
   fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v252_Content/
+  title: MapleSEA v252 content (Destiny Weapon 2nd Growth)
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-05'
+- url: https://maplestorywiki.net/w/Destiny_Weapon
+  title: MapleStory Wiki - Destiny Weapon
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-10-05'

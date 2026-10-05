@@ -28,6 +28,8 @@ KNOWLEDGE = ROOT / "boss" / "knowledge"
 CACHE = ROOT / "data" / "research" / "boss-guides"
 CATALOG = ROOT / "legacy" / "python" / "boss" / "bosses.yaml"
 LETTER_NAMES = {"e": "Easy", "n": "Normal", "h": "Hard", "c": "Chaos", "x": "Extreme"}
+# Shown on the Bosses info page only; never scheduler (catalog) difficulties.
+INFO_ONLY = {"Champion", "Destiny"}
 DEFAULT_NGRAM = 12
 REPORT_FLOOR = 6
 _WORD = re.compile(r"[a-z0-9%]+")
@@ -130,7 +132,7 @@ def check_semantics(path: Path, doc: dict, catalog: dict, errors: list[str]) -> 
     if not catalog:
         return
     if boss in catalog:
-        allowed = {LETTER_NAMES[letter] for letter in catalog[boss]}
+        allowed = {LETTER_NAMES[letter] for letter in catalog[boss]} | INFO_ONLY
         extra = sorted(set(names) - allowed)
         if extra:
             errors.append(f"difficulties not in catalog for {boss}: {', '.join(extra)}")

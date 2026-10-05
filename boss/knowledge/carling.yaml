@@ -1,18 +1,18 @@
 boss: Carling
-summary: Carling (also called Kaling) replaces deaths with a shared 1000 Mental Strength pool and three linked Balance of Season gauges for Gunggi, Do'oul and Hondon; a gauge reaching 0 or 1000 locks and costs 350, so runs are won by gauge control more than raw damage.
+summary: 'Carling (also called Kaling) replaces deaths with a shared 1000 Mental Strength pool and three linked Balance of Season gauges, one per Peril: Tiger (Do''oul), Bird (Gunggi) and Dog (Hondon). A gauge reaching 0 or 1000 locks and costs 350, so runs are won by gauge control more than raw damage.'
 core:
 - 'Mental Strength (also called Willpower) is shared: 1000 at the start, and the run fails at 0. Each death costs 160/100/80/70/60/50 for parties of 1-6 (MapleSEA v249). Phase 2 spirits (-30) and the Scroll trap (about -50) also drain it. The only refill is +300 for finishing Phase 1 with no gauge broken.'
-- 'The Balance of Season gauges (also called seasonal gauges) start at 500 and are linked: a Gunggi (Spring, also called Goongi) hit raises Gunggi and lowers Hondon; Do''oul (Summer, also called Dool) raises Do''oul and lowers Gunggi; Hondon (Autumn, also called Chaos) raises Hondon and lowers Do''oul. A gauge at 0 or 1000 locks and costs 350; three breaks end the run.'
-- 'The Four Gentlemen laser flowers (also called Four Gracious Plants) move gauges by colour: red = Gunggi, green = Do''oul, yellow = Hondon.'
-- 'Phase 1 splits the party into three Peril rooms (max 2 each). While alive, Gunggi drains Mental Strength every 30s, Do''oul shields the other two every 45s, and Hondon makes the others hit 25% harder. Killing a Peril with its gauge unbroken grants its blessing: Gunggi blocks one lethal hit, Do''oul gives a Purification cleanse for Phase 2, Hondon gives +10% final damage.'
-- 'Do''oul takes 50% less damage unless you light three Tesla coils in a triangle and lure it into the current; clear electric puddles with the mini coils (Harvest key) before Do''oul absorbs them as a shield.'
-- 'Phase 2 Carling uses all three Perils'' attacks. After her flight she teleports; bait it toward the third of the map whose laser colour you need (left Gunggi, centre Do''oul, right Hondon). Purification (Harvest key) clears Confusion and fits the Vengeful Spirits wave each minute.'
-- 'Phase 3: Gunggi (left), Hondon (centre) and Do''oul (right) have fixed zones. Only the Peril in your zone takes damage (Ascent skills excepted; MapleSEA v251), and standing in a zone pushes its gauge every 6s. Outside Carling''s zone you take +80% damage and cannot use potions. Each Peril kill unlocks the next 25% of Carling''s HP.'
+- 'Callouts: Tiger = Do''oul (Summer, also called Dool), Bird = Gunggi (Spring, also called Goongi), Dog = Hondon (Autumn, also called Hundun or Chaos), after how the models look. Gauges start at 500 and are linked: a Bird hit raises Bird and lowers Dog, Tiger raises Tiger and lowers Bird, Dog raises Dog and lowers Tiger. A gauge at 0 or 1000 locks and costs 350; three breaks end the run.'
+- 'The Four Gentlemen laser flowers (also called Four Gracious Plants) move gauges by colour: red = Bird, green = Tiger, yellow = Dog.'
+- 'Phase 1 splits the party into three Peril rooms (max 2 each). While alive, Bird drains Mental Strength every 30s, Tiger shields the other two every 45s, and Dog makes the others hit 25% harder. Killing a Peril with its gauge unbroken grants its blessing: Bird blocks one lethal hit, Tiger gives a Purification cleanse for Phase 2, Dog gives +10% final damage.'
+- 'Tiger takes 50% less damage unless you light three Tesla coils in a triangle and lure it into the current; clear electric puddles with the mini coils (Harvest key) before Tiger absorbs them as a shield.'
+- 'Phase 2 Carling uses all three Perils'' attacks. After her flight she teleports; bait it toward the third of the map whose laser colour you need (left Bird, centre Tiger, right Dog). Purification (Harvest key) clears Confusion and fits the Vengeful Spirits wave each minute.'
+- 'Phase 3: Bird (left), Dog (centre) and Tiger (right) have fixed zones. Only the Peril in your zone takes damage (Ascent skills excepted; MapleSEA v251), and standing in a zone pushes its gauge every 6s. Outside Carling''s zone you take +80% damage and cannot use potions. Each Peril kill unlocks the next 25% of Carling''s HP.'
 danger:
 - After all three Phase 3 Perils die, Aura Overflow kills everyone in Carling's zone every 30s (plus one random zone on Hard/Extreme), ignoring most invincibility; plan the last kill and leave the flagged zone. MapleSEA's name for it is unconfirmed.
 - Phase 2 Vengeful Spirits (each minute) and the Scroll imprisonment cost Mental Strength directly; a Scroll catch often chains into a spirit hit.
-- Do'oul's Phase 3 lightning stuns long enough for a second bolt; outside Carling's zone the follow-up can kill outright.
-- Gunggi's hide-and-seek wipes the room if nobody hits the right Torn Spring painting within 15s.
+- Tiger's Phase 3 lightning stuns long enough for a second bolt; outside Carling's zone the follow-up can kill outright.
+- Bird's hide-and-seek wipes the room if nobody hits the right Torn Spring painting within 15s.
 - Repeatedly taking one Peril's attacks maxes its gauge and bottoms out its neighbour at the same time.
 tips:
 - Name one gauge caller who calls numbers; before leaving a room, pre-load the gauge the next room will push down.
@@ -20,12 +20,15 @@ tips:
 - In Phase 3, switch on the zone statue (Harvest key) before single-target bursts so they hit the Peril, not Carling.
 - In Phase 2, burst right after Carling's flight and dodge spirits by staying airborne or high up.
 - A full party pays less per death but shares one pool, so it has fewer total spare deaths than it looks.
+- 'Balanced gauges are the safest for Mental Strength but the hardest to execute: you watch three linked gauges and walk zones all fight. A two-gauge break is simpler afterwards but spends most of your margin, so deaths become far more costly.'
 difficulty_notes:
-  h: On Hard and Extreme, Aura Overflow hits Carling's zone plus a random second zone, and Gunggi's Phase 3 tornado order is random (fixed on Easy/Normal).
-  x: Extreme adds +30% damage taken from a Peril's element whenever its gauge is outside 250-750, and Do'oul's Phase 1 shields double to 2% HP.
+  h: On Hard and Extreme, Aura Overflow hits Carling's zone plus a random second zone, and Bird's Phase 3 tornado order is random (fixed on Easy/Normal).
+  x: Extreme adds +30% damage taken from a Peril's element whenever its gauge is outside 250-750, and Tiger's Phase 1 shields double to 2% HP.
 notes:
 - HP rows are KMS values before OVERDRIVE (what MapleSEA has now, including the v244 and v251 cuts). Phase 1 and 3-1 rows are per Peril (three each); 3-2 is Carling; Phase 3 rows are rounded.
 - 30 minute limit before OVERDRIVE. Bindable since MapleSEA v244. MapleSEA caps boss clears at 12 per week (v249).
+- 'The Tiger + Dog break (stand in Dog''s zone, hit both side Perils, manage only Bird) was the easy build in 2025, but MapleSEA v251''s Phase 3 zone rule ended it: managing Bird now means walking between the two zones furthest apart.'
+- 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Normal 20, Hard 160, Extreme 1,200.'
 difficulties:
 - name: Easy
   entry_level: 275
@@ -86,28 +89,49 @@ difficulties:
   - {phase: total, value: 47.1q}
   notes:
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 31.9q total, 20-minute limit.'
+- name: Destiny
+  entry_level: 275
+  boss_level: 285
+  pdr_percent: 380
+  party_max: 1
+  force: {kind: sacred, value: 350}
+  recommended_spec: {kind: HEXA-converted stat, text: 'KMS minimum clears fell from about 115-122k (Aug 2025) to about 104-112k (Feb 2026; Kain 104k up to Hero 112k); a MapleSEA Captain cleared at about 114k.'}
+  notes:
+  - 'Destiny Weapon mission "Battle, Apostle Carling" (MapleSEA v244): Hard Carling solo in Destiny Mode with +20% Final Damage, the only mission modifier in your favour. Third mission, after Chosen Serene and Gatekeeper Kalos; needs 3,000 Adversary''s Resolve.'
+  - 'Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
+  - 'Of 322 Destiny clear builds tracked by MapleBossLab, about 88% used the Tiger + Bird break; the most common Phase 1 order was Dog, Tiger, Bird (43%).'
+  - KMS players reported Destiny Carling felt harder after OVERDRIVE's 20-minute limit; Destiny Mode HP after OVERDRIVE is unconfirmed.
 strategies:
 - name: Balanced gauges
-  when: Parties, first clears, or any spec with room to spare
+  when: Parties, first clears and practice runs, or any spec with room to spare
   risk: low
   damage: high
-  payoff: Keeps most Mental Strength so mistakes are survivable; walking gauges costs uptime, so the clear is slower
+  payoff: Keeps most Mental Strength, so deaths and mistakes are survivable. It is the hardest route to execute (three linked gauges all fight) and walking zones to fix them costs uptime, so it needs the most damage.
   steps:
-  - Keep every gauge between 1 and 999 (250-750 on Extreme) in all phases.
-  - 'Phase 1 order used by min-cut solo players: Hondon, Do''oul, Gunggi. Burst Hondon after its second frenzy, then take a few Hondon hits to pre-drain Do''oul before leaving.'
+  - Keep every gauge between 1 and 999 all fight; on Extreme stay around 250-750.
+  - 'Phase 1 order: 2026 guides default to Tiger, Bird, Dog. Higher-spec players and most Destiny clears use Dog, Tiger, Bird: burst Dog after its second frenzy, then take a few Dog hits to pre-drain Tiger before leaving.'
   - In Phase 2, bait Carling's teleport to the third whose laser colour you need.
-  - 'Phase 3 order: Do''oul, Gunggi, then Hondon last, so you can stand centre with Carling and push her HP before Aura Overflow starts; walk between zones to fix gauges.'
-  - Before the Phase 3 Perils spawn, wait on Do'oul's side to pre-load its gauge.
-- name: Do'oul turbo (break build)
-  when: Solo or duo near the minimum cut, only after a clean Phase 1 (all blessings plus the refill) and a Phase 2 with no spirit or Scroll hits
+  - 'Phase 3: Tiger first (its lightning is the most dangerous), then Bird, and Dog last so you can stand centre with Carling and push her HP before Aura Overflow; walk between zones to fix gauges.'
+  - Before the Phase 3 Perils spawn, wait on Tiger's side to pre-load its gauge.
+- name: Tiger + Bird break (Do'oul turbo)
+  when: Destiny Carling and solos near the minimum cut, after a clean Phase 1 (all blessings plus the refill) and a Phase 2 with no spirit or Scroll hits
   risk: high
   damage: low
-  payoff: Near-full Phase 3 uptime with only one gauge left to manage
+  payoff: The setup at the start of Phase 3 is the hard part; afterwards only Dog's gauge matters, so you walk less and keep near-full uptime on Carling. The lowest damage requirement, paid for with 700 Mental Strength.
   steps:
-  - At Phase 3 start, park in the right (Do'oul) zone and burst, letting Do'oul reach 1000 and Gunggi reach 0 (700 Mental Strength spent).
-  - After Do'oul dies, manage only Hondon's gauge by alternating between the Hondon and Gunggi zones, using each zone's statue.
+  - At Phase 3 start, stand in Tiger's zone (right) and burst so Tiger reaches 1000 and Bird reaches 0 (two breaks, 700 Mental Strength).
+  - Stop repairing Tiger and Bird. Keep Dog in range by alternating between the Dog and Bird zones, using each zone's statue.
+  - 'Kill orders seen in 2026: Tiger, Bird, Dog (a 2026 Destiny clear) or Bird, Dog, Tiger; jobs differ. What matters is that Dog is the only gauge left.'
   - With about 300 Mental Strength left, one or two deaths end the run; play safe through Aura Overflow.
-  - The older Hondon-zone build (hit everything from Hondon's zone) stopped working after MapleSEA v251's zone rule.
+  - 'Extreme: no 2026 break-build clear was found, and Extreme adds +30% damage from any Peril outside 250-750, so treat it as unproven there.'
+- name: Bird + Dog break
+  when: Alternative to Tiger + Bird for jobs that handle Tiger's zone better; Korean guides say to pick the Peril you find hardest and kill it first
+  risk: high
+  damage: low
+  payoff: Same trade as Tiger + Bird (two breaks, 700 Mental Strength) but leaves Tiger as the only gauge to manage.
+  steps:
+  - Break Bird and Dog at the start of Phase 3 and keep only Tiger in range.
+  - 'Kill orders in 2026 Korean guides: Tiger, Dog, Bird or Bird, Dog, Tiger.'
 sources:
 - url: https://www.maplesea.com/updates/view/v224_Patch_Notes/
   title: MapleSEA v224 patch notes (Carling release)
@@ -115,10 +139,10 @@ sources:
   kind: official
   fetched: '2026-10-02'
 - url: https://www.maplesea.com/updates/view/v244_Patch_Notes/
-  title: MapleSEA v244 patch notes
+  title: MapleSEA v244 patch notes (Destiny Weapon)
   author: Nexon SEA
   kind: official
-  fetched: '2026-10-02'
+  fetched: '2026-10-05'
 - url: https://www.maplesea.com/updates/view/v249_Patch_IBF/
   title: MapleSEA v249 patch notes
   author: Nexon SEA
@@ -149,6 +173,31 @@ sources:
   author: arca.live community
   kind: guide
   fetched: '2026-10-02'
+- url: https://www.inven.co.kr/board/maple/2294/451493
+  title: Inven - Destiny Kaling clear (Do'oul 1000 / Gunggi 0)
+  author: Inven community
+  kind: guide
+  fetched: '2026-10-05'
+- url: https://www.fmkorea.com/9613700681
+  title: fmkorea - Kaling break builds after the Phase 3 zone rule
+  author: fmkorea community
+  kind: guide
+  fetched: '2026-10-05'
+- url: https://www.inven.co.kr/board/maple/5974/7015347
+  title: Inven - Kaling Phase 3 kill orders (2026)
+  author: Inven community
+  kind: guide
+  fetched: '2026-10-05'
+- url: https://www.inven.co.kr/board/maple/5974/6224609
+  title: Inven - Destiny Kaling minimum specs by job (Feb 2026)
+  author: Inven community
+  kind: guide
+  fetched: '2026-10-05'
+- url: https://maplebosslab.com/bosses/karing
+  title: MapleBossLab - Kaling Destiny clear builds
+  author: MapleBossLab
+  kind: tool
+  fetched: '2026-10-05'
 - url: https://mapletools.app/bosses/kaling/guide
   title: MapleTools - Kaling guide
   author: MapleTools

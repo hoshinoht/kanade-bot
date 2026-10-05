@@ -57,6 +57,13 @@ difficulties:
   notes:
   - 12 lives per player, 30 minute limit. Boss level 275 in Phase 1.
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 3.26q total, 20-minute limit.'
+- name: Champion
+  entry_level: 260
+  party_max: 1
+  notes:
+  - 'Union Champion Rank S trial (Champion Evaluation Match): Hard Black Mage solo in Champion Mode, after Rank A. The limit was 45 minutes at KMS launch and is 20 since KMS OVERDRIVE; MapleSEA presumably still has 45. The S insignia gives every character +5% Boss Damage.'
+  - 'Practice Mode clears count and add Hamcelot''s Protection (25% less damage taken). After OVERDRIVE, KMS adds Hamcelot''s Trial (Final Damage -30%, -25% on Black Mage); not in MapleSEA yet. MapleSEA notes do not list the trial bosses, so the boss and limit here are KMS''s.'
+  - In KMS a 5th champion slot needs four Rank S champions, i.e. four Hard Black Mage solos.
 strategies:
 - name: Phase 4 burst-only
   when: Hard with clear-time slack (60 minute limit)
@@ -121,3 +128,13 @@ sources:
   author: MapleTools
   kind: tool
   fetched: '2026-09-05'
+- url: https://www.maplesea.com/updates/view/v243_Patch_Notes/
+  title: MapleSEA v243 NEXT II patch notes (Union Champion)
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-05'
+- url: https://maplestory.nexon.com/Guide/N23GameInformation/Articles/409
+  title: KMS official guide - Union Champion
+  author: Nexon Korea
+  kind: official
+  fetched: '2026-10-05'

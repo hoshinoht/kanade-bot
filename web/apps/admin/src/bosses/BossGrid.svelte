@@ -8,7 +8,15 @@
     selected = $bindable([]),
     readonly = false,
     active = '',
-  }: { rows: BossRow[]; selected?: string[]; readonly?: boolean; active?: string } = $props();
+    infoOnly = [],
+  }: {
+    rows: BossRow[];
+    selected?: string[];
+    readonly?: boolean;
+    active?: string;
+    /** The active boss's knowledge-only difficulties (Champion, Destiny), shown after its catalog ones. */
+    infoOnly?: string[];
+  } = $props();
 
   // The grid wants a Boss; rows carry the same art fields.
   const asBoss = (row: BossRow) => ({
@@ -60,7 +68,7 @@
           {/each}
           {#if remaining}<span class="boss-tick boss-tick--more">+{remaining}<span class="vh"> untracked difficulties</span></span>{/if}
           </span>{/snippet}
-          <span class="bossrow__difficulties" role="group" aria-label="{row.name} difficulties">{#each row.difficulties as option (option.token)}<span><span class="boss-tick boss-tick--{option.letter}">{option.name.toUpperCase()}</span>{#if option.in_use}<span class="bossrow__tracked"> ✓ weekly timing</span>{/if}</span>{/each}</span>
+          <span class="bossrow__difficulties" role="group" aria-label="{row.name} difficulties">{#each row.difficulties as option (option.token)}<span><span class="boss-tick boss-tick--{option.letter}">{option.name.toUpperCase()}</span>{#if option.in_use}<span class="bossrow__tracked"> ✓ weekly timing</span>{/if}</span>{/each}{#if row.key === active}{#each infoOnly as name (name)}<span><span class="boss-tick boss-tick--{name.toLowerCase()}">{name.toUpperCase()}</span><span class="bossrow__tracked"> info only</span></span>{/each}{/if}</span>
         </RowContent>
       </div>
     {:else}

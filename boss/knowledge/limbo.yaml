@@ -25,6 +25,7 @@ notes:
 - 30-minute limit, 10-second potion cooldown, 1-3 players.
 - MapleSEA v251 (Jun 2026) made Purification Energy usable during Origin and Ascent casts and made the Phase 3 map (Limbo's Unconscious) about 32% taller.
 - Carcion symbol at Growth Level 11 gives +20% damage against Limbo (MapleSEA v251). MapleSEA v249 also caps boss kills at 12 per week.
+- 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Normal 120, Hard 360.'
 difficulties:
 - name: Normal
   entry_level: 285
@@ -54,6 +55,15 @@ difficulties:
   notes:
   - 500 Authentic Force to enter; 550 (the full 1.25x damage tier) is strongly recommended. MapleSEA notes do not state the 550 tier, so that part is unconfirmed for SEA.
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 2.55q / 1.28q / 1.28q / 3.37q (32.5% less), 20-minute limit.'
+- name: Destiny
+  entry_level: 285
+  boss_level: 285
+  party_max: 1
+  notes:
+  - 'Destiny Weapon 2nd Growth mission "Battle, Limbo" (MapleSEA v252): Hard Limbo solo in Destiny Mode, starting at 800 Erosion instead of 0. Fifth mission; needs 12,500 Adversary''s Resolve.'
+  - With only 200 Erosion of room, one death (+150) leaves almost nothing; avoid every 50/80-Erosion hit and Limbo Black's grab.
+  - 'Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
+  - 'Community advice: bring enough damage that the Phase 2 special pattern (Risk at 100%) never runs.'
 strategies:
 - name: Skip the second Specter C fusion
   when: Parties with comfortable damage for Phase 2
@@ -107,3 +117,13 @@ sources:
   author: MapleTools
   kind: tool
   fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v252_Content/
+  title: MapleSEA v252 content (Destiny Weapon 2nd Growth)
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-05'
+- url: https://maplestorywiki.net/w/Destiny_Weapon
+  title: MapleStory Wiki - Destiny Weapon
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-10-05'

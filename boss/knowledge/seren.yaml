@@ -22,6 +22,8 @@ tips:
 - Use Hero's Will on blindness or accuracy-down before you burst.
 difficulty_notes:
   x: Extreme fills the gauge faster, including passively and from Phase 1 diagonal lasers, and has more Noon sun rays and tougher Dawn deer. SEA v244 halved the gauge gain from its light of judgement pattern.
+notes:
+- 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Hard 6, Extreme 80.'
 difficulties:
 - name: Normal
   entry_level: 260
@@ -63,6 +65,22 @@ difficulties:
   notes:
   - 8 lives in MapleSEA, 30 minutes. Phase 1 is level 275 and Phase 2 level 280.
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 896t / 3.50q (32.1% less), 20-minute limit.'
+- name: Destiny
+  entry_level: 275
+  boss_level: 275
+  pdr_percent: 380
+  party_max: 1
+  force: {kind: sacred, value: 200}
+  notes:
+  - 'Destiny Weapon mission "Battle, Chosen Serene" (MapleSEA v244): Hard Serene solo in Destiny Mode with Final Damage reduced by 80%. It is the first mission and needs 2,000 Adversary''s Resolve.'
+  - 'Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
+- name: Champion
+  entry_level: 260
+  boss_level: 275
+  party_max: 1
+  notes:
+  - 'Union Champion Rank SS trial (Champion Evaluation Match): Hard Serene solo in Champion Mode within 20 minutes, after the champion reaches Rank S. The SS insignia gives every character +3% Critical Damage.'
+  - 'Practice Mode clears count and add Hamcelot''s Protection (25% less damage taken). After OVERDRIVE, KMS adds Hamcelot''s Trial (Final Damage -30%, -25% on Black Mage); not in MapleSEA yet. MapleSEA notes do not list the trial bosses, so the boss and limit here are KMS''s.'
 strategies:
 - name: Midnight burst (party)
   when: Parties of 2-6, especially Normal and Hard with mixed damage
@@ -143,3 +161,18 @@ sources:
   author: MapleStory Wiki contributors
   kind: wiki
   fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v243_Patch_Notes/
+  title: MapleSEA v243 NEXT II patch notes (Union Champion)
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-05'
+- url: https://maplestory.nexon.com/Guide/N23GameInformation/Articles/409
+  title: KMS official guide - Union Champion
+  author: Nexon Korea
+  kind: official
+  fetched: '2026-10-05'
+- url: https://maplestorywiki.net/w/Destiny_Weapon
+  title: MapleStory Wiki - Destiny Weapon
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-10-05'

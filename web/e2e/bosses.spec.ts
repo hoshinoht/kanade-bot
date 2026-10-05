@@ -1,5 +1,6 @@
+import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { ADMIN, REAL_ART, expect, test } from './support';
+import { ADMIN, REAL_ART, expect, settle, test } from './support';
 
 // Event bosses (knowledge documents with an `event`, outside the catalog: Kai,
 // Meilin in the tracked boss/knowledge): art like catalog rows and the
@@ -220,6 +221,41 @@ test('capture event bosses with real art', async ({ page }) => {
 
 // Synthetic fixtures: MaleficStar has an invented 1-second solid-colour MP4
 // (e2e/fixtures/boss/artwork/animated); Kalos has entry art only.
+// Champion and Destiny live only in boss knowledge (never the scheduler's
+// catalog): no tracked document has them yet, so the read is extended here.
+test.describe('info-only difficulties', () => {
+  test.skip(REAL_ART, 'fixture-specific assertions');
+
+  for (const scheme of ['light', 'dark'] as const) {
+    test(`Champion and Destiny show on the knowledge page in their own colours (${scheme})`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.route(/\/api\/admin\/bosses\/MaleficStar\/knowledge$/, async (route) => {
+        const response = await route.fetch();
+        const body = (await response.json()) as { doc: { difficulties: object[] } };
+        body.doc.difficulties.push({ name: 'Champion', boss_level: 285 }, { name: 'Destiny', boss_level: 290, notes: ['Placeholder note.'] });
+        await route.fulfill({ response, json: body });
+      });
+      await go(page, '/bosses/MaleficStar/knowledge');
+      const row = page.locator('.bossrow--active');
+      await expect(row.locator('.row-content__full .boss-tick--champion')).toHaveText('CHAMPION');
+      await expect(row.locator('.row-content__full .boss-tick--destiny')).toHaveText('DESTINY');
+      await expect(row.locator('.row-content__full .bossrow__difficulties > span').filter({ has: page.locator('.boss-tick--destiny') })).toHaveText('DESTINYinfo only');
+
+      const switcher = page.getByRole('group', { name: 'Difficulty' });
+      await switcher.getByRole('button', { name: 'Champion', exact: true }).click();
+      await expect(page.locator('#facts-heading')).toHaveText('Champion facts');
+      await expect(page.locator('.knowledge-facts')).toContainText('285');
+      await switcher.getByRole('button', { name: 'Destiny', exact: true }).click();
+      await expect(page.locator('#difficulty-notes-heading')).toHaveText('Destiny notes');
+
+      await settle(page);
+      const axe = await new AxeBuilder({ page }).include('.bossrow--active .bossrow__difficulties').withRules(['color-contrast']).analyze();
+      expect(axe.violations).toEqual([]);
+    });
+  }
+});
+
 test.describe('animated knowledge hero', () => {
   test.skip(REAL_ART, 'fixture-specific assertions');
 
