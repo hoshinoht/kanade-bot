@@ -200,20 +200,25 @@ impl ModelLogStore for MemoryScheduleStore {
     }
 
     async fn record_extraction(&self, log: ExtractionLog) -> Result<(), StoreError> {
-        log.check_shape()?;
-        let mut logs = self.logs();
-        if logs.extractions.contains_key(&log.id) {
-            return Err(StoreError::Constraint(format!(
-                "extraction {} exists",
-                log.id
-            )));
+        let result = async {
+            log.check_shape()?;
+            let mut logs = self.logs();
+            if logs.extractions.contains_key(&log.id) {
+                return Err(StoreError::Constraint(format!(
+                    "extraction {} exists",
+                    log.id
+                )));
+            }
+            let log = ExtractionLog {
+                at: micros(log.at),
+                ..log
+            };
+            logs.extractions.insert(log.id.clone(), log);
+            Ok(())
         }
-        let log = ExtractionLog {
-            at: micros(log.at),
-            ..log
-        };
-        logs.extractions.insert(log.id.clone(), log);
-        Ok(())
+        .await;
+        self.written
+            .after(crate::infrastructure::store::Written::Extraction, result)
     }
 
     async fn load_extraction(&self, id: &str) -> Result<Option<ExtractionLog>, StoreError> {
@@ -278,20 +283,9 @@ impl ModelLogStore for MemoryScheduleStore {
     }
 
     async fn record_chat(&self, interaction: ChatInteraction) -> Result<(), StoreError> {
-        interaction.check_shape()?;
-        let mut logs = self.logs();
-        if logs.chats.contains_key(&interaction.id) {
-            return Err(StoreError::Constraint(format!(
-                "chat interaction {} exists",
-                interaction.id
-            )));
-        }
-        let interaction = ChatInteraction {
-            at: micros(interaction.at),
-            ..interaction
-        };
-        logs.chats.insert(interaction.id.clone(), interaction);
-        Ok(())
+        let result = self.insert_chat(interaction);
+        self.written
+            .after(crate::infrastructure::store::Written::Chat, result)
     }
 
     async fn load_chat(&self, id: &str) -> Result<Option<ChatInteraction>, StoreError> {
@@ -305,8 +299,10 @@ impl ModelLogStore for MemoryScheduleStore {
     ) -> Result<(), StoreError> {
         masked.check_shape()?;
         let id = interaction.id.clone();
-        self.record_chat(interaction).await?;
+        self.insert_chat(interaction)?;
         self.logs().masked.insert(id, masked);
+        self.written
+            .notify(crate::infrastructure::store::Written::Chat);
         Ok(())
     }
 
@@ -412,39 +408,52 @@ impl ModelLogStore for MemoryScheduleStore {
     }
 
     async fn insert_rescan_job(&self, job: RescanJob) -> Result<(), StoreError> {
-        job.check_shape()?;
-        let mut logs = self.logs();
-        if logs.rescans.contains_key(&job.id) {
-            return Err(StoreError::Constraint(format!(
-                "rescan job {} exists",
-                job.id
-            )));
+        let result = async {
+            job.check_shape()?;
+            let mut logs = self.logs();
+            if logs.rescans.contains_key(&job.id) {
+                return Err(StoreError::Constraint(format!(
+                    "rescan job {} exists",
+                    job.id
+                )));
+            }
+            let job = RescanJob {
+                created_at: micros(job.created_at),
+                started_at: optional(job.started_at),
+                finished_at: optional(job.finished_at),
+                ..job
+            };
+            logs.rescans.insert(job.id.clone(), job);
+            Ok(())
         }
-        let job = RescanJob {
-            created_at: micros(job.created_at),
-            started_at: optional(job.started_at),
-            finished_at: optional(job.finished_at),
-            ..job
-        };
-        logs.rescans.insert(job.id.clone(), job);
-        Ok(())
+        .await;
+        self.written
+            .after(crate::infrastructure::store::Written::Rescan, result)
     }
 
     async fn update_rescan_job(&self, job: RescanJob) -> Result<bool, StoreError> {
-        job.check_shape()?;
-        let mut logs = self.logs();
-        let Some(stored) = logs.rescans.get_mut(&job.id) else {
-            return Ok(false);
-        };
-        if stored.status.is_final() {
-            return Ok(false);
+        let result = async {
+            job.check_shape()?;
+            let mut logs = self.logs();
+            let Some(stored) = logs.rescans.get_mut(&job.id) else {
+                return Ok(false);
+            };
+            if stored.status.is_final() {
+                return Ok(false);
+            }
+            stored.status = job.status;
+            stored.started_at = optional(job.started_at);
+            stored.finished_at = optional(job.finished_at);
+            stored.results = job.results;
+            stored.error = job.error;
+            Ok(true)
         }
-        stored.status = job.status;
-        stored.started_at = optional(job.started_at);
-        stored.finished_at = optional(job.finished_at);
-        stored.results = job.results;
-        stored.error = job.error;
-        Ok(true)
+        .await;
+        if matches!(result, Ok(true)) {
+            self.written
+                .notify(crate::infrastructure::store::Written::Rescan);
+        }
+        result
     }
 
     async fn load_rescan_job(&self, id: &str) -> Result<Option<RescanJob>, StoreError> {
@@ -495,5 +504,25 @@ impl ModelLogStore for MemoryScheduleStore {
             .logs()
             .tips
             .remove(&(member_id.to_owned(), micros(week))))
+    }
+}
+
+impl super::MemoryScheduleStore {
+    /// One chat interaction, as SQLite's insert (the hook is told by callers).
+    fn insert_chat(&self, interaction: ChatInteraction) -> Result<(), StoreError> {
+        interaction.check_shape()?;
+        let mut logs = self.logs();
+        if logs.chats.contains_key(&interaction.id) {
+            return Err(StoreError::Constraint(format!(
+                "chat interaction {} exists",
+                interaction.id
+            )));
+        }
+        let interaction = ChatInteraction {
+            at: micros(interaction.at),
+            ..interaction
+        };
+        logs.chats.insert(interaction.id.clone(), interaction);
+        Ok(())
     }
 }

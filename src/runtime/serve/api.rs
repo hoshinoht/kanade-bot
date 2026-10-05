@@ -21,6 +21,7 @@ use crate::{
             staff::{GuildStaffGate, StoreGuildMembers},
         },
         avatars::AvatarCache,
+        events::Hub,
         server::LiveAdmin,
         state::{ApiState, BackupDir, ChannelList, GuildAccess},
         write::{ApiClock, SchedulerWriter},
@@ -201,6 +202,10 @@ pub async fn compose(
         .await
         .map_err(|_| Error::Startup("store schema version could not be read".into()))?;
     let clock: Clock = Arc::new(auth::system_now);
+    // Every write path (portal, Discord, extractor, tick) commits through this
+    // store, so its write hook is the one place change hints come from.
+    let events = Arc::new(Hub::default());
+    store.observe_writes(events.observer());
     let writer = SchedulerWriter::new(
         SchedulerService::new(store.clone(), RandomIds, ApiClock(clock.clone()))
             .with_attendance(policy.attendance),
@@ -233,6 +238,7 @@ pub async fn compose(
         avatars: Some(Arc::new(AvatarCache::discord(
             config.runtime.http.identity_dir.as_deref(),
         ))),
+        events,
     };
     Ok(Composition {
         admin: LiveAdmin {

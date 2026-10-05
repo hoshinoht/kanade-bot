@@ -310,7 +310,7 @@ fn message(id: &str, channel: &str, at: DateTime<Utc>, content: &str) -> Watched
     }
 }
 
-fn extraction(id: &str, at: DateTime<Utc>) -> ExtractionLog {
+pub(crate) fn extraction(id: &str, at: DateTime<Utc>) -> ExtractionLog {
     ExtractionLog {
         reasoning_content: None,
         reasoning_tokens: None,
@@ -359,7 +359,7 @@ fn round(model: &str, tools: &[&str]) -> ChatRound {
     }
 }
 
-fn chat(id: &str, at: DateTime<Utc>) -> ChatInteraction {
+pub(crate) fn chat(id: &str, at: DateTime<Utc>) -> ChatInteraction {
     ChatInteraction {
         id: id.into(),
         at,
@@ -995,7 +995,7 @@ async fn token_usage_round_trips_and_pairs_are_whole<S: ModelLogStore>(store: S)
     );
 }
 
-fn masked() -> MaskedTurn {
+pub(crate) fn masked() -> MaskedTurn {
     MaskedTurn {
         rounds: vec![
             MaskedRound {
@@ -1279,7 +1279,7 @@ async fn chat_filters_match_rounds_flags_and_latency<S: ModelLogStore>(store: S)
     );
 }
 
-fn rescan(id: &str, at: DateTime<Utc>) -> RescanJob {
+pub(crate) fn rescan(id: &str, at: DateTime<Utc>) -> RescanJob {
     RescanJob {
         id: id.into(),
         channels: vec!["900".into(), "901".into()],

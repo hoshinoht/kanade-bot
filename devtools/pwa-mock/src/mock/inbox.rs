@@ -524,6 +524,23 @@ fn timed(kind: &str) -> bool {
 }
 
 impl Store {
+    /// e2e: the extractor reads a new question from #limbo-trio.
+    pub fn arrive_proposal(&mut self) {
+        let Some(like) = seed().into_iter().find(|p| p.id == "p-limbo-add") else {
+            return;
+        };
+        self.proposals.push(Proposal {
+            id: "p-arrived",
+            short_id: "e9f0a1b2",
+            day: 4,
+            read_at_hour: 131,
+            summary: "Mika asks whether anyone is up for Normal Limbo on Sunday.",
+            evidence: vec![("1003", "nlimbo sun 9pm?", 131, Some("m-arrived"))],
+            thread: Some(vec![Line::Said(0)]),
+            ..like
+        });
+    }
+
     fn at_hour(h: i64) -> i64 {
         Self::start(false) * 1440 - 8 * 60 + h * 60
     }

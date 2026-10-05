@@ -1,7 +1,8 @@
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Run, Stats, Week } from '@kanade/api-types';
-import { AdminWeek } from '../src/store.svelte';
+import type { EventTopic, Run, Stats, Week } from '@kanade/api-types';
+import type { LiveEvents } from '@kanade/client';
+import { AdminWeek, FALLBACK_POLL_MS } from '../src/store.svelte';
 
 const run = (id: string, day: number): Run => ({
   id,
@@ -282,5 +283,111 @@ describe('AdminWeek: swaps', () => {
     await expect(pending).resolves.toMatchObject({ ok: false });
     expect(store.mutating).toBe(false);
     expect(slots(store)).toEqual(['r1 0 21:00', 'r2 3 23:30']);
+  });
+});
+
+/** A hint stream the test drives: health and hints by hand. */
+function liveStream() {
+  const subscribers = new Set<{ topics: readonly EventTopic[]; wake: () => void }>();
+  const listeners = new Set<(healthy: boolean) => void>();
+  let healthy = false;
+  const events: LiveEvents = {
+    subscribe(topics, wake) {
+      const entry = { topics, wake };
+      subscribers.add(entry);
+      return () => subscribers.delete(entry);
+    },
+    get healthy() {
+      return healthy;
+    },
+    onHealth(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+  return {
+    events,
+    setHealthy(next: boolean) {
+      healthy = next;
+      listeners.forEach((l) => l(next));
+    },
+    fire: (topic: EventTopic) => [...subscribers].filter((s) => s.topics.includes(topic)).forEach((s) => s.wake()),
+    subscribers: () => subscribers.size,
+  };
+}
+
+describe('AdminWeek: live hints and the polling fallback', () => {
+  /** Counts week reads; each read is one version newer. */
+  function countWeeks() {
+    let reads = 0;
+    vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const path = url.split('?')[0]!;
+        if (path === '/api/admin/week') reads++;
+        const body = path.endsWith('/stats')
+          ? stats
+          : path.endsWith('/summary')
+            ? { next: null, unanswered: 0, inbox: 0, model: { busy: false, holder: null } }
+            : path === '/api/admin/week'
+              ? week(reads)
+              : path.startsWith('/api/admin/config') || path.startsWith('/api/identity') || path.endsWith('/session') || path.endsWith('/me')
+                ? null
+                : [];
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    );
+    return () => reads;
+  }
+
+  afterEach(() => vi.useRealTimers());
+
+  it('polls at 15 s without the stream, slows to the fallback while it is open, and re-reads on a hint', async () => {
+    vi.useFakeTimers();
+    const reads = countWeeks();
+    const live = liveStream();
+    const store = new AdminWeek(live.events);
+    const stop = store.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reads()).toBe(1);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(reads()).toBe(2);
+
+    live.setHealthy(true);
+    await vi.advanceTimersByTimeAsync(FALLBACK_POLL_MS - 1);
+    expect(reads()).toBe(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(reads()).toBe(3);
+
+    live.fire('chat');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reads()).toBe(3);
+    for (const topic of ['schedule', 'inbox', 'delivery', 'settings'] as const) live.fire(topic);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reads()).toBe(4);
+    expect(store.week?.version).toBe(4);
+
+    // The stream dropped: the normal cadence resumes.
+    live.setHealthy(false);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(reads()).toBe(5);
+    stop();
+    expect(live.subscribers()).toBe(0);
+  });
+
+  it('a hint during a drag is buffered like a poll and lands on release', async () => {
+    countWeeks();
+    const live = liveStream();
+    const store = new AdminWeek(live.events);
+    const stop = store.start();
+    await vi.waitFor(() => expect(store.week?.version).toBe(1));
+    store.holding = true;
+    live.fire('schedule');
+    await store.refresh(); // joins the read the hint started
+    expect(store.week?.version).toBe(1);
+    store.holding = false;
+    expect(store.week?.version).toBe(2);
+    stop();
   });
 });

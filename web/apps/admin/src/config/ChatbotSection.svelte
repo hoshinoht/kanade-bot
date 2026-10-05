@@ -2,6 +2,7 @@
 <script lang="ts">
   import type { ConfigView } from '@kanade/api-types';
   import { changes } from './dirty';
+  import { followSaved } from './follow.svelte';
   import type { Save } from './save';
   import SaveBar from './SaveBar.svelte';
   import SettingsPanel from './SettingsPanel.svelte';
@@ -14,6 +15,11 @@
   let member = $state({ ...chatbot.member_rate });
   // svelte-ignore state_referenced_locally
   let guild = $state({ ...chatbot.guild_rate });
+  followSaved(
+    () => ({ member: { ...chatbot.member_rate }, guild: { ...chatbot.guild_rate } }),
+    () => ({ member, guild }),
+    (saved) => ({ member, guild } = saved),
+  );
   let error = $state('');
   let saving = $state(false);
 

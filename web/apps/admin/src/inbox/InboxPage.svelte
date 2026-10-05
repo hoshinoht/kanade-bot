@@ -43,8 +43,8 @@
     onselect?: (tab: PageTab, item: string, open: boolean) => void;
   } = $props();
 
-  const inbox = new Resource<Proposal[]>('/api/admin/inbox');
-  $effect(() => void inbox.load());
+  const inbox = new Resource<Proposal[]>('/api/admin/inbox', { topics: ['inbox'] });
+  $effect(() => inbox.watch());
 
   // Past (read-only, closed items) has no live count and loads when first opened.
   const TABS: { id: PageTab; label: string }[] = [

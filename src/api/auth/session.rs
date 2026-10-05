@@ -104,6 +104,25 @@ impl AdminAuth {
     }
 
     pub(crate) async fn authenticate(&self, parts: &Parts) -> Result<AdminSession, ApiError> {
+        self.authenticate_with(parts, true).await
+    }
+
+    /// As [`Self::authenticate`], but never extends the idle window: an open
+    /// event stream (and its reconnects) is not activity, so a hidden or
+    /// forgotten tab still signs out after the idle limit. A due staff
+    /// re-check is still recorded.
+    pub(crate) async fn authenticate_quietly(
+        &self,
+        parts: &Parts,
+    ) -> Result<AdminSession, ApiError> {
+        self.authenticate_with(parts, false).await
+    }
+
+    async fn authenticate_with(
+        &self,
+        parts: &Parts,
+        activity: bool,
+    ) -> Result<AdminSession, ApiError> {
         let context = AuditContext::of(parts);
         if let Some(header) = parts.headers.get(AUTHORIZATION) {
             return self.bearer(header.as_bytes(), parts, &context);
@@ -171,10 +190,12 @@ impl AdminAuth {
         {
             return Err(ApiError::CSRF);
         }
-        if (now - session.last_seen_at >= TOUCH_EVERY || checked_at != session.checked_at)
+        let seen = if activity { now } else { session.last_seen_at };
+        let stale = activity && now - session.last_seen_at >= TOUCH_EVERY;
+        if (stale || checked_at != session.checked_at)
             && !self
                 .sessions()
-                .touch_session(&hash, now, checked_at)
+                .touch_session(&hash, seen, checked_at)
                 .await
                 .map_err(|_| ApiError::UNAVAILABLE)?
         {
@@ -187,6 +208,20 @@ impl AdminAuth {
             avatar_hash: session.avatar_hash,
             session_id: Some(id),
         })
+    }
+
+    /// Whether the cookie session `id` still stands: not signed out or
+    /// revoked, not past its absolute or idle expiry. An open event stream
+    /// asks this on every heartbeat; the full re-checks run when it reconnects.
+    pub(crate) async fn session_live(&self, id: &str) -> bool {
+        let hash = crypto::sha256_hex(id.as_bytes());
+        let Ok(Some(session)) = self.sessions().load_session(&hash).await else {
+            return false;
+        };
+        let now = self.now();
+        session.origin == SessionOrigin::Admin
+            && now < session.expires_at
+            && now - session.last_seen_at < self.policy().idle
     }
 
     fn bearer(

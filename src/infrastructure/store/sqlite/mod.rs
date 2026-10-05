@@ -190,6 +190,8 @@ pub struct SqliteStore {
     readers: SqlitePool,
     /// Told the runs each committed change touched.
     runs_written: crate::infrastructure::store::observer::Observer,
+    /// Told what kind of data each committed write changed.
+    written: crate::infrastructure::store::observer::WriteHook,
     unclosed: UnclosedWarning,
     // Declared last: SQLite handles drop before ownership is released.
     owner: StoreOwner,
@@ -217,6 +219,16 @@ impl SqliteStore {
 
     pub(super) fn runs_written(&self, runs: &[String]) {
         self.runs_written.notify(runs);
+    }
+
+    /// Install the write-kind hook (once; `false` if already set). It runs
+    /// after each committed write that live pages read.
+    pub fn observe_writes(&self, observer: crate::infrastructure::store::WriteObserver) -> bool {
+        self.written.set(observer)
+    }
+
+    pub(super) fn written(&self) -> &crate::infrastructure::store::observer::WriteHook {
+        &self.written
     }
 
     pub(super) async fn writer_lease(&self) -> Result<writer::WriterLease<'_>, writer::LeaseError> {
@@ -325,6 +337,7 @@ impl SqliteStore {
             writer: Writer::new(db_path.to_owned(), owner.identity(), writer),
             readers,
             runs_written: Default::default(),
+            written: Default::default(),
             unclosed: UnclosedWarning {
                 armed: true,
                 db_path: db_path.to_owned(),

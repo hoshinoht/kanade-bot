@@ -12,8 +12,8 @@ use super::{
     },
     assets::Identity,
     dto::{
-        self, account, bosses, config, fixed, history, inbox, inbox_past, limits, logs, members,
-        reminders, rescan, week,
+        self, account, bosses, config, events, fixed, history, inbox, inbox_past, limits, logs,
+        members, reminders, rescan, week,
     },
     error, public,
 };
@@ -217,7 +217,11 @@ fn bindings() -> String {
         .add::<history::BackupAnchor>()
         .add::<history::BackupRow>()
         .add::<history::Verified>()
-        .add::<history::Checkpoints>();
+        .add::<history::Checkpoints>()
+        // Live updates
+        .add::<events::Topic>()
+        .add::<events::EventHint>()
+        .add::<events::EventReady>();
     let used: Vec<&str> = MANUAL
         .into_iter()
         .filter(|name| mentions(&out.body, name))

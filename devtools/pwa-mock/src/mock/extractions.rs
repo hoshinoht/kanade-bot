@@ -226,13 +226,39 @@ pub const RESCAN_OFF: &str =
     "Re-reading needs watching and the extractor switched on (Config → Watching).";
 
 impl Store {
+    /// The seeded calls plus any that arrived (e2e).
+    fn calls(&self) -> Vec<Call> {
+        let mut all = calls();
+        if self.arrived_extraction {
+            all.push(Call {
+                id: "x-arrived".into(),
+                short_id: "f1e2d3c4".into(),
+                hour: 139,
+                latency_ms: Some(9_420),
+                channel: "limbo-trio",
+                messages: vec![("1003", "limbo still 11:30 tonight?"), ("1007", "yes")],
+                amendments: vec![],
+                error: None,
+                model: MODEL,
+                outcome: "no_change",
+                usage: Some((1_410, 22)),
+                estimate: Some(1_350),
+            });
+        }
+        all
+    }
+
+    pub fn arrive_extraction(&mut self) {
+        self.arrived_extraction = true;
+    }
+
     fn hour_minute(h: i64) -> i64 {
         Self::start(false) * 1440 - 8 * 60 + h * 60
     }
 
     pub fn extractions(&self, query: &LogQuery) -> Result<Value, MoveError> {
         query.validate(&EXTRACTION_OUTCOMES, false)?;
-        let mut all = calls();
+        let mut all = self.calls();
         all.sort_by_key(|c| std::cmp::Reverse(c.hour));
         let listed: Vec<&Call> = all
             .iter()
@@ -303,7 +329,8 @@ impl Store {
     }
 
     pub fn extraction(&self, id: &str) -> Result<Value, MoveError> {
-        let c = calls()
+        let c = self
+            .calls()
             .into_iter()
             .find(|c| c.id == id)
             .ok_or(MoveError::NotFound)?;

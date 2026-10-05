@@ -5,6 +5,7 @@
 -->
 <script lang="ts">
   import type { ConfigView, SelfServiceMode } from '@kanade/api-types';
+  import { followSaved } from './follow.svelte';
   import type { Save } from './save';
   import SaveBar from './SaveBar.svelte';
   import SettingsPanel from './SettingsPanel.svelte';
@@ -20,6 +21,11 @@
   ];
   // svelte-ignore state_referenced_locally
   let mode = $state<SelfServiceMode>(selfService.mode);
+  followSaved(
+    () => selfService.mode,
+    () => mode,
+    (saved) => (mode = saved),
+  );
   let error = $state('');
   let saving = $state(false);
   const name = (id: SelfServiceMode) => MODES.find((m) => m.id === id)!.name.toLowerCase();

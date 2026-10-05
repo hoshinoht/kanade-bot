@@ -378,6 +378,8 @@ test('role profiles: an empty current directory shows unavailable roles, not sta
 });
 
 test('role profiles: a second admin conflict preserves the draft until explicit reload', async ({ page }) => {
+  // A tab that missed the other admin's save (no live hint), so its Save meets the conflict.
+  await page.route(`${ADMIN}/api/admin/events`, (route) => route.abort());
   const list = await roleEditor(page);
   const rows = roleRows(list);
   const config = (await (await page.request.get(`${ADMIN}/api/admin/config`)).json()) as {

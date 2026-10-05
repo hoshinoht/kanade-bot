@@ -25,6 +25,7 @@ use crate::domain::notify::{
     NotificationIntent, OutboxNotice, PendingNotices, Receipt, Recovery, WeeklyDigest,
 };
 use crate::domain::time::{from_iso, to_iso};
+use crate::infrastructure::store::Written;
 
 fn backend(error: sqlx::Error) -> JournalError {
     JournalError::Backend(error.to_string())
@@ -420,7 +421,8 @@ impl DeliveryJournal for SqliteStore {
         record_week: Option<DateTime<Utc>>,
         at: DateTime<Utc>,
     ) -> Result<(), JournalError> {
-        write_tx!(self, tx => finalize::bind(&mut tx, lease, attempt, receipt, record_week, at))
+        let result = write_tx!(self, tx => finalize::bind(&mut tx, lease, attempt, receipt, record_week, at));
+        self.written().after(Written::Delivery, result)
     }
 
     async fn mark_indeterminate(
@@ -428,7 +430,8 @@ impl DeliveryJournal for SqliteStore {
         lease: &Lease,
         attempt: &AttemptId,
     ) -> Result<(), JournalError> {
-        write_tx!(self, tx => finalize::mark_indeterminate(&mut tx, lease, attempt))
+        let result = write_tx!(self, tx => finalize::mark_indeterminate(&mut tx, lease, attempt));
+        self.written().after(Written::Delivery, result)
     }
 
     async fn retire_rejected(
@@ -438,7 +441,8 @@ impl DeliveryJournal for SqliteStore {
         reason: &str,
         at: DateTime<Utc>,
     ) -> Result<(), JournalError> {
-        write_tx!(self, tx => retire::rejected(&mut tx, lease, attempt, reason, at))
+        let result = write_tx!(self, tx => retire::rejected(&mut tx, lease, attempt, reason, at));
+        self.written().after(Written::Delivery, result)
     }
 
     async fn retire_for_replacement(
@@ -447,7 +451,8 @@ impl DeliveryJournal for SqliteStore {
         digest: &WeeklyDigest,
         at: DateTime<Utc>,
     ) -> Result<(), JournalError> {
-        write_tx!(self, tx => retire::for_replacement(&mut tx, lease, digest, at))
+        let result = write_tx!(self, tx => retire::for_replacement(&mut tx, lease, digest, at));
+        self.written().after(Written::Delivery, result)
     }
 
     async fn retire_decline_retraction(
@@ -459,9 +464,10 @@ impl DeliveryJournal for SqliteStore {
         message_id: &str,
         at: DateTime<Utc>,
     ) -> Result<(), JournalError> {
-        write_tx!(self, tx => retire::decline_retraction(
+        let result = write_tx!(self, tx => retire::decline_retraction(
             &mut tx, lease, run_id, user_id, channel_id, message_id, at
-        ))
+        ));
+        self.written().after(Written::Delivery, result)
     }
 
     async fn resolve_decline_retract_pending(
@@ -471,7 +477,9 @@ impl DeliveryJournal for SqliteStore {
         user_id: &str,
         at: DateTime<Utc>,
     ) -> Result<bool, JournalError> {
-        write_tx!(self, tx => retire::resolve_decline_pending(&mut tx, lease, run_id, user_id, at))
+        let result = write_tx!(self, tx => retire::resolve_decline_pending(&mut tx, lease, run_id, user_id, at));
+        self.written()
+            .after_if(Written::Delivery, result, |resolved| *resolved)
     }
 
     async fn retire_unproven(
@@ -481,7 +489,8 @@ impl DeliveryJournal for SqliteStore {
         reason: &str,
         at: DateTime<Utc>,
     ) -> Result<(), JournalError> {
-        write_tx!(self, tx => retire::unproven(&mut tx, attempt, actor, reason, at))
+        let result = write_tx!(self, tx => retire::unproven(&mut tx, attempt, actor, reason, at));
+        self.written().after(Written::Delivery, result)
     }
 
     async fn release_unsent(
@@ -491,7 +500,9 @@ impl DeliveryJournal for SqliteStore {
         reason: &str,
         at: DateTime<Utc>,
     ) -> Result<(), JournalError> {
-        write_tx!(self, tx => retire::release_unsent(&mut tx, lease, attempt, reason, at))
+        let result =
+            write_tx!(self, tx => retire::release_unsent(&mut tx, lease, attempt, reason, at));
+        self.written().after(Written::Delivery, result)
     }
 
     async fn record_digest_week(
@@ -500,7 +511,8 @@ impl DeliveryJournal for SqliteStore {
         week: DateTime<Utc>,
         at: DateTime<Utc>,
     ) -> Result<(), JournalError> {
-        write_tx!(self, tx => finalize::record_digest_week(&mut tx, lease, week, at))
+        let result = write_tx!(self, tx => finalize::record_digest_week(&mut tx, lease, week, at));
+        self.written().after(Written::Delivery, result)
     }
 
     async fn retire_digests_before(
@@ -509,7 +521,9 @@ impl DeliveryJournal for SqliteStore {
         week: DateTime<Utc>,
         at: DateTime<Utc>,
     ) -> Result<usize, JournalError> {
-        write_tx!(self, tx => retire::digests_before(&mut tx, lease, week, at))
+        let result = write_tx!(self, tx => retire::digests_before(&mut tx, lease, week, at));
+        self.written()
+            .after_if(Written::Delivery, result, |retired| *retired > 0)
     }
 
     async fn recover_on_start(&self, at: DateTime<Utc>) -> Result<Recovery, JournalError> {

@@ -16,7 +16,7 @@
   import LogFilters from '../logs/LogFilters.svelte';
   import Pager from '../pages/Pager.svelte';
   import { PAGE_SIZE, paged } from '../pages/paging';
-  import { Resource } from '../resource.svelte';
+  import { pinnedFirst, Resource } from '../resource.svelte';
   import { getChrome } from '../shell/chrome';
   import PageLine from '../shell/PageLine.svelte';
   import type { AdminWeek } from '../store.svelte';
@@ -47,9 +47,9 @@
     const clean = toSearch(filter);
     if (clean !== toSearch(parseFilter(search))) onsearch?.(withCall(clean, call));
   });
-  const extractions = $derived(new Resource<Extractions>(`/api/admin/extractions${toSearch(filter)}`));
+  const extractions = $derived(new Resource<Extractions>(`/api/admin/extractions${toSearch(filter)}`, { topics: ['extraction'] }));
   const targets = new Resource<Channel[]>('/api/admin/rescan/targets');
-  $effect(() => void extractions.load());
+  $effect(() => extractions.watch());
   $effect(() => void targets.load());
   let last = $state<Extractions | null>(null);
   $effect(() => {
@@ -82,12 +82,13 @@
 
   const rows = $derived(view?.rows ?? []);
   let page = $state(1);
-  // Each new result set starts at the first page, or at the chosen call's page (a deep link).
-  let landed: Extractions | null = null;
+  // Each new result set starts at the first page, or at the chosen call's page
+  // (a deep link); a live refresh of the same set keeps the page.
+  let landed: Resource<Extractions> | null = null;
   $effect(() => {
     const data = extractions.data;
-    if (!data || data === landed) return;
-    landed = data;
+    if (!data || extractions === landed) return;
+    landed = extractions;
     const at = data.rows.findIndex((r) => r.id === untrack(() => call));
     page = at >= 0 ? Math.floor(at / PAGE_SIZE) + 1 : 1;
   });
@@ -103,7 +104,9 @@
     return () => media.removeEventListener('change', update);
   });
   // Wide: a call is always open (the first one on the page until one is chosen).
-  const chosen = $derived(call || (phone ? '' : (shown.rows[0]?.id ?? '')));
+  // That default stays put when a refresh adds calls above it.
+  const firstOpen = pinnedFirst(() => extractions);
+  const chosen = $derived(call || (phone ? '' : firstOpen(shown.rows, page)));
 
   const chrome = getChrome();
   const compact = $derived(phone && Boolean(call) && Boolean(chrome?.phone));

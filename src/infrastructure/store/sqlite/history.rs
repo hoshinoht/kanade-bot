@@ -938,7 +938,11 @@ impl Checkpoints for SqliteStore {
             Err(error) => (Err(backend(error)), false),
         };
         lease.finish(healthy);
-        result
+        self.written().after_if(
+            crate::infrastructure::store::Written::Schedule,
+            result,
+            |created| matches!(created, CheckpointCreated::Created(_)),
+        )
     }
 
     async fn load_checkpoint(&self, name: &str) -> Result<Option<Checkpoint>, StoreError> {

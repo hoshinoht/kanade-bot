@@ -26,6 +26,8 @@ export interface Poller {
   stop(): void;
   /** Run now (coalesced with an in-flight request); also restarts a stopped poller. */
   refresh(): Promise<void>;
+  /** A new steady cadence (e.g. slower while live hints arrive); a waiting poll is rescheduled. */
+  setInterval(intervalMs: number): void;
   readonly state: PollState;
   readonly failures: number;
 }
@@ -55,8 +57,8 @@ export function documentVisibility(): VisibilitySource {
 }
 
 export function createPoller<T>(options: PollOptions<T>): Poller {
-  const interval = clamp(options.intervalMs, MIN_INTERVAL_MS, MAX_INTERVAL_MS);
-  const ceiling = clamp(options.maxIntervalMs ?? interval * 8, interval, MAX_INTERVAL_MS);
+  let interval = clamp(options.intervalMs, MIN_INTERVAL_MS, MAX_INTERVAL_MS);
+  let ceiling = clamp(options.maxIntervalMs ?? interval * 8, interval, MAX_INTERVAL_MS);
   const maxFailures = Math.max(1, options.maxFailures ?? 5);
   const visibility = options.visibility ?? documentVisibility();
 
@@ -167,6 +169,11 @@ export function createPoller<T>(options: PollOptions<T>): Poller {
         setState('waiting');
       }
       return run();
+    },
+    setInterval(intervalMs) {
+      interval = clamp(intervalMs, MIN_INTERVAL_MS, MAX_INTERVAL_MS);
+      ceiling = Math.max(ceiling, interval);
+      if (state === 'waiting') schedule();
     },
     get state() {
       return state;

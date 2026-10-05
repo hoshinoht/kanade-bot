@@ -77,6 +77,7 @@ impl Harness {
             public: false,
             boss_dir: Arc::new(boss_dir),
             writes: Arc::default(),
+            hints: Arc::default(),
         };
         let csrf = app.writes.token();
         let (admin, public) = routers(app, &root().join("web"));
@@ -1610,4 +1611,163 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         h.checked,
         h.failures.join("\n")
     );
+}
+
+impl Harness {
+    /// `GET /api/admin/events` as `EventSource` sends it: the SSE text.
+    async fn events(&self, last: Option<u64>) -> String {
+        let mut req = Request::builder().uri("/api/admin/events");
+        if let Some(last) = last {
+            req = req.header("last-event-id", last.to_string());
+        }
+        let res = self
+            .admin
+            .clone()
+            .oneshot(req.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(res.headers()[header::CONTENT_TYPE], "text/event-stream");
+        let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        String::from_utf8(bytes.to_vec()).unwrap()
+    }
+
+    /// Each `data:` line's JSON (hints carry `topic` and `seq` only).
+    async fn hints(&self, last: u64) -> Vec<Value> {
+        self.events(Some(last))
+            .await
+            .lines()
+            .filter_map(|line| line.strip_prefix("data: "))
+            .map(|data| serde_json::from_str::<Value>(data).unwrap())
+            .inspect(|hint| {
+                let keys: Vec<&String> = hint.as_object().unwrap().keys().collect();
+                assert_eq!(keys, ["seq", "topic"], "no data in a hint: {hint}");
+            })
+            .collect()
+    }
+}
+
+#[tokio::test]
+async fn events_hint_own_writes_and_arrivals_and_the_reads_change() {
+    let mut h = Harness::new();
+    let opening = h.events(None).await;
+    assert!(
+        opening.contains("event: ready\ndata: {\"seq\":0}"),
+        "{opening}"
+    );
+
+    let week = h
+        .ok("GET", "/api/admin/week", None, "week.json#/$defs/Week")
+        .await;
+    let version = week["version"].as_u64().unwrap();
+    h.ok(
+        "POST",
+        "/api/admin/runs/r-limbo/move",
+        Some(json!({ "day": 2, "time": "23:30", "version": version })),
+        "week.json#/$defs/MoveResult",
+    )
+    .await;
+    assert_eq!(h.hints(0).await, [json!({ "seq": 1, "topic": "schedule" })]);
+
+    for (kind, topic) in [
+        ("reaction", "schedule"),
+        ("proposal", "inbox"),
+        ("chat", "chat"),
+        ("extraction", "extraction"),
+        ("member", "members"),
+    ] {
+        let (status, _) = h
+            .send(
+                false,
+                "POST",
+                "/__mock/arrive",
+                Some(json!({ "kind": kind })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::NO_CONTENT, "{kind}");
+        let last = h.hints(0).await.last().cloned().unwrap();
+        assert_eq!(last["topic"], topic, "{kind}");
+    }
+
+    let week = h
+        .ok("GET", "/api/admin/week", None, "week.json#/$defs/Week")
+        .await;
+    let kalos = week["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == "r-kalos")
+        .unwrap();
+    let ren = kalos["participants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == "1005")
+        .unwrap();
+    assert_eq!(ren["answer"], "yes", "the reaction landed");
+    let members = h
+        .ok(
+            "GET",
+            "/api/admin/members",
+            None,
+            "members.json#/$defs/MemberRows",
+        )
+        .await;
+    let mika = members
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["id"] == "1003")
+        .unwrap();
+    assert!(
+        mika["aliases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a == "mikan"),
+        "the roster sync landed: {mika}"
+    );
+    let inbox = h
+        .ok(
+            "GET",
+            "/api/admin/inbox",
+            None,
+            "inbox.json#/$defs/Proposals",
+        )
+        .await;
+    assert!(
+        inbox
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["id"] == "p-arrived")
+    );
+    let chat = h
+        .ok("GET", "/api/admin/chat", None, "chat.json#/$defs/Chat")
+        .await;
+    assert_eq!(chat["rows"][0]["id"], "c-arrived", "newest first");
+    h.ok(
+        "GET",
+        "/api/admin/chat/c-arrived",
+        None,
+        "chat.json#/$defs/ChatTurn",
+    )
+    .await;
+    let calls = h
+        .ok(
+            "GET",
+            "/api/admin/extractions",
+            None,
+            "extractions.json#/$defs/Extractions",
+        )
+        .await;
+    assert_eq!(calls["rows"][0]["id"], "x-arrived", "newest first");
+    h.ok(
+        "GET",
+        "/api/admin/extractions/x-arrived",
+        None,
+        "extractions.json#/$defs/Extraction",
+    )
+    .await;
+    assert!(h.failures.is_empty(), "{}", h.failures.join("\n"));
 }

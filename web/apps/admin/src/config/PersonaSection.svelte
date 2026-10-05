@@ -11,6 +11,7 @@
   import type { Change } from './dirty';
   import { plainLines, plainText, preview } from './markdown';
   import PillTabs from './PillTabs.svelte';
+  import { followSaved } from './follow.svelte';
   import type { Save, SaveRoleProfiles } from './save';
   import RoleAssignmentsSection from './RoleAssignmentsSection.svelte';
   import SaveBar from './SaveBar.svelte';
@@ -47,6 +48,11 @@
 
   // svelte-ignore state_referenced_locally
   let active = $state(persona.active);
+  followSaved(
+    () => persona.active,
+    () => active,
+    (saved) => (active = saved),
+  );
   let personaOpen = $state(false);
   const next = $derived(persona.personas.find((p) => p.key === active));
   const profiles = $derived(persona.profiles);

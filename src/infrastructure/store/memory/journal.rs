@@ -689,7 +689,12 @@ impl DeliveryJournal for MemoryScheduleStore {
         record_week: Option<DateTime<Utc>>,
         at: DateTime<Utc>,
     ) -> Result<(), JournalError> {
-        self.journal_write(|tables| bind_in(tables, lease, attempt, receipt, record_week, at))
+        let result = async {
+            self.journal_write(|tables| bind_in(tables, lease, attempt, receipt, record_week, at))
+        }
+        .await;
+        self.written
+            .after(crate::infrastructure::store::Written::Delivery, result)
     }
 
     async fn mark_indeterminate(
@@ -697,18 +702,23 @@ impl DeliveryJournal for MemoryScheduleStore {
         lease: &Lease,
         attempt: &AttemptId,
     ) -> Result<(), JournalError> {
-        self.journal_write(|tables| {
-            tables.journal.check_live(lease)?;
-            let row = tables.journal.attempt(attempt)?;
-            if row.state != AttemptState::Intent {
-                return Err(state_changed(format!(
-                    "attempt {attempt} is {}",
-                    row.state.as_str()
-                )));
-            }
-            row.state = AttemptState::Indeterminate;
-            Ok(())
-        })
+        let result = async {
+            self.journal_write(|tables| {
+                tables.journal.check_live(lease)?;
+                let row = tables.journal.attempt(attempt)?;
+                if row.state != AttemptState::Intent {
+                    return Err(state_changed(format!(
+                        "attempt {attempt} is {}",
+                        row.state.as_str()
+                    )));
+                }
+                row.state = AttemptState::Indeterminate;
+                Ok(())
+            })
+        }
+        .await;
+        self.written
+            .after(crate::infrastructure::store::Written::Delivery, result)
     }
 
     async fn retire_rejected(
@@ -718,22 +728,27 @@ impl DeliveryJournal for MemoryScheduleStore {
         reason: &str,
         at: DateTime<Utc>,
     ) -> Result<(), JournalError> {
-        check_resolution(REJECTED_ACTOR, reason)?;
-        self.journal_write(|tables| {
-            tables.journal.check_live(lease)?;
-            let row = tables.journal.attempt(attempt)?;
-            if row.state != AttemptState::Intent {
-                return Err(state_changed(format!(
-                    "attempt {attempt} is {}",
-                    row.state.as_str()
-                )));
-            }
-            retire(row, REJECTED_ACTOR, reason);
-            let targets = row.targets.clone();
-            suppress_natives(tables, &targets, at)?;
-            tables.revision += 1;
-            Ok(())
-        })
+        let result = async {
+            check_resolution(REJECTED_ACTOR, reason)?;
+            self.journal_write(|tables| {
+                tables.journal.check_live(lease)?;
+                let row = tables.journal.attempt(attempt)?;
+                if row.state != AttemptState::Intent {
+                    return Err(state_changed(format!(
+                        "attempt {attempt} is {}",
+                        row.state.as_str()
+                    )));
+                }
+                retire(row, REJECTED_ACTOR, reason);
+                let targets = row.targets.clone();
+                suppress_natives(tables, &targets, at)?;
+                tables.revision += 1;
+                Ok(())
+            })
+        }
+        .await;
+        self.written
+            .after(crate::infrastructure::store::Written::Delivery, result)
     }
 
     async fn retire_for_replacement(
@@ -742,7 +757,10 @@ impl DeliveryJournal for MemoryScheduleStore {
         digest: &WeeklyDigest,
         at: DateTime<Utc>,
     ) -> Result<(), JournalError> {
-        self.journal_write(|tables| replace_in(tables, lease, digest, at))
+        let result =
+            async { self.journal_write(|tables| replace_in(tables, lease, digest, at)) }.await;
+        self.written
+            .after(crate::infrastructure::store::Written::Delivery, result)
     }
 
     async fn retire_decline_retraction(
@@ -754,39 +772,44 @@ impl DeliveryJournal for MemoryScheduleStore {
         message_id: &str,
         _at: DateTime<Utc>,
     ) -> Result<(), JournalError> {
-        self.journal_write(|tables| {
-            tables.journal.check_live(lease)?;
-            let target = DeliveryTarget::Decline {
-                run_id: run_id.into(),
-                user_id: user_id.into(),
-            };
-            let attempt = tables.journal.attempts.iter().find_map(|(id, row)| {
-                (row.state == AttemptState::Bound
-                    && row.dedupe_active
-                    && row.channel_id == channel_id
-                    && row.message_id.as_deref() == Some(message_id)
-                    && row
-                        .targets
-                        .iter()
-                        .any(|held| !held.released && held.target == target))
-                .then_some(id.clone())
-            });
-            let Some(attempt) = attempt else {
-                return Err(state_changed("no bound claim matches the decline notice"));
-            };
-            tables
-                .declines
-                .retract(run_id, user_id, channel_id, message_id)
-                .map_err(state_changed)?;
-            let attempt = tables.journal.attempt(&AttemptId(attempt))?;
-            retire(
-                attempt,
-                crate::domain::notify::DECLINE_RETRACTION_ACTOR,
-                crate::domain::notify::DECLINE_RETRACTION_REASON,
-            );
-            tables.revision += 1;
-            Ok(())
-        })
+        let result = async {
+            self.journal_write(|tables| {
+                tables.journal.check_live(lease)?;
+                let target = DeliveryTarget::Decline {
+                    run_id: run_id.into(),
+                    user_id: user_id.into(),
+                };
+                let attempt = tables.journal.attempts.iter().find_map(|(id, row)| {
+                    (row.state == AttemptState::Bound
+                        && row.dedupe_active
+                        && row.channel_id == channel_id
+                        && row.message_id.as_deref() == Some(message_id)
+                        && row
+                            .targets
+                            .iter()
+                            .any(|held| !held.released && held.target == target))
+                    .then_some(id.clone())
+                });
+                let Some(attempt) = attempt else {
+                    return Err(state_changed("no bound claim matches the decline notice"));
+                };
+                tables
+                    .declines
+                    .retract(run_id, user_id, channel_id, message_id)
+                    .map_err(state_changed)?;
+                let attempt = tables.journal.attempt(&AttemptId(attempt))?;
+                retire(
+                    attempt,
+                    crate::domain::notify::DECLINE_RETRACTION_ACTOR,
+                    crate::domain::notify::DECLINE_RETRACTION_REASON,
+                );
+                tables.revision += 1;
+                Ok(())
+            })
+        }
+        .await;
+        self.written
+            .after(crate::infrastructure::store::Written::Delivery, result)
     }
 
     async fn resolve_decline_retract_pending(
@@ -796,34 +819,42 @@ impl DeliveryJournal for MemoryScheduleStore {
         user_id: &str,
         _at: DateTime<Utc>,
     ) -> Result<bool, JournalError> {
-        self.journal_write(|tables| {
-            tables.journal.check_live(lease)?;
-            let Some(notice) = tables
-                .declines
-                .rows
-                .get_mut(&(run_id.into(), user_id.into()))
-            else {
-                return Ok(false);
-            };
-            if !notice.retract_pending || notice.message_id.is_some() {
-                return Ok(false);
-            }
-            let target = DeliveryTarget::Decline {
-                run_id: run_id.into(),
-                user_id: user_id.into(),
-            };
-            let Some(attempt) = tables.journal.attempts.values_mut().find(|row| {
-                row.state == AttemptState::Retired
-                    && row.resolved_by.as_deref() == Some(NOT_SENT_ACTOR)
-                    && row.targets.iter().any(|held| held.target == target)
-            }) else {
-                return Ok(false);
-            };
-            attempt.resolved_by = Some(crate::domain::notify::DECLINE_RETRACTION_ACTOR.into());
-            attempt.reason = crate::domain::notify::DECLINE_RETRACTION_REASON.into();
-            notice.retract_pending = false;
-            Ok(true)
-        })
+        let result = async {
+            self.journal_write(|tables| {
+                tables.journal.check_live(lease)?;
+                let Some(notice) = tables
+                    .declines
+                    .rows
+                    .get_mut(&(run_id.into(), user_id.into()))
+                else {
+                    return Ok(false);
+                };
+                if !notice.retract_pending || notice.message_id.is_some() {
+                    return Ok(false);
+                }
+                let target = DeliveryTarget::Decline {
+                    run_id: run_id.into(),
+                    user_id: user_id.into(),
+                };
+                let Some(attempt) = tables.journal.attempts.values_mut().find(|row| {
+                    row.state == AttemptState::Retired
+                        && row.resolved_by.as_deref() == Some(NOT_SENT_ACTOR)
+                        && row.targets.iter().any(|held| held.target == target)
+                }) else {
+                    return Ok(false);
+                };
+                attempt.resolved_by = Some(crate::domain::notify::DECLINE_RETRACTION_ACTOR.into());
+                attempt.reason = crate::domain::notify::DECLINE_RETRACTION_REASON.into();
+                notice.retract_pending = false;
+                Ok(true)
+            })
+        }
+        .await;
+        self.written.after_if(
+            crate::infrastructure::store::Written::Delivery,
+            result,
+            |resolved| *resolved,
+        )
     }
 
     async fn retire_unproven(
@@ -833,33 +864,38 @@ impl DeliveryJournal for MemoryScheduleStore {
         reason: &str,
         at: DateTime<Utc>,
     ) -> Result<(), JournalError> {
-        check_resolution(actor, reason)?;
-        self.journal_write(|tables| {
-            let operation_live = {
+        let result = async {
+            check_resolution(actor, reason)?;
+            self.journal_write(|tables| {
+                let operation_live = {
+                    let row = tables.journal.attempt(attempt)?;
+                    if !row.state.is_unresolved() || !row.dedupe_active {
+                        return Err(state_changed(format!("attempt {attempt} is resolved")));
+                    }
+                    if row.targets.iter().any(|target| target.released) {
+                        return Err(state_changed("an unresolved attempt has a released target"));
+                    }
+                    let operation = row.operation_id.clone();
+                    tables
+                        .journal
+                        .leases
+                        .get(&operation)
+                        .is_some_and(|lease| lease.lifecycle == Lifecycle::Live)
+                };
+                if operation_live {
+                    return Err(state_changed("the attempt's own lease is still live"));
+                }
                 let row = tables.journal.attempt(attempt)?;
-                if !row.state.is_unresolved() || !row.dedupe_active {
-                    return Err(state_changed(format!("attempt {attempt} is resolved")));
-                }
-                if row.targets.iter().any(|target| target.released) {
-                    return Err(state_changed("an unresolved attempt has a released target"));
-                }
-                let operation = row.operation_id.clone();
-                tables
-                    .journal
-                    .leases
-                    .get(&operation)
-                    .is_some_and(|lease| lease.lifecycle == Lifecycle::Live)
-            };
-            if operation_live {
-                return Err(state_changed("the attempt's own lease is still live"));
-            }
-            let row = tables.journal.attempt(attempt)?;
-            retire(row, actor, reason);
-            let targets = row.targets.clone();
-            suppress_natives(tables, &targets, at)?;
-            tables.revision += 1;
-            Ok(())
-        })
+                retire(row, actor, reason);
+                let targets = row.targets.clone();
+                suppress_natives(tables, &targets, at)?;
+                tables.revision += 1;
+                Ok(())
+            })
+        }
+        .await;
+        self.written
+            .after(crate::infrastructure::store::Written::Delivery, result)
     }
 
     async fn release_unsent(
@@ -869,24 +905,29 @@ impl DeliveryJournal for MemoryScheduleStore {
         reason: &str,
         _at: DateTime<Utc>,
     ) -> Result<(), JournalError> {
-        check_resolution(NOT_SENT_ACTOR, reason)?;
-        self.journal_write(|tables| {
-            tables.journal.check_live(lease)?;
-            let row = tables.journal.attempt(attempt)?;
-            if row.state != AttemptState::Intent {
-                return Err(state_changed(format!(
-                    "attempt {attempt} is {}",
-                    row.state.as_str()
-                )));
-            }
-            if row.operation_id != lease.operation_id {
-                return Err(state_changed(format!(
-                    "attempt {attempt} belongs to another operation"
-                )));
-            }
-            retire(row, NOT_SENT_ACTOR, reason);
-            Ok(())
-        })
+        let result = async {
+            check_resolution(NOT_SENT_ACTOR, reason)?;
+            self.journal_write(|tables| {
+                tables.journal.check_live(lease)?;
+                let row = tables.journal.attempt(attempt)?;
+                if row.state != AttemptState::Intent {
+                    return Err(state_changed(format!(
+                        "attempt {attempt} is {}",
+                        row.state.as_str()
+                    )));
+                }
+                if row.operation_id != lease.operation_id {
+                    return Err(state_changed(format!(
+                        "attempt {attempt} belongs to another operation"
+                    )));
+                }
+                retire(row, NOT_SENT_ACTOR, reason);
+                Ok(())
+            })
+        }
+        .await;
+        self.written
+            .after(crate::infrastructure::store::Written::Delivery, result)
     }
 
     async fn record_digest_week(
@@ -895,10 +936,15 @@ impl DeliveryJournal for MemoryScheduleStore {
         week: DateTime<Utc>,
         at: DateTime<Utc>,
     ) -> Result<(), JournalError> {
-        self.journal_write(|tables| {
-            tables.journal.check_live(lease)?;
-            tables.journal.raise_marker(week, at)
-        })
+        let result = async {
+            self.journal_write(|tables| {
+                tables.journal.check_live(lease)?;
+                tables.journal.raise_marker(week, at)
+            })
+        }
+        .await;
+        self.written
+            .after(crate::infrastructure::store::Written::Delivery, result)
     }
 
     async fn retire_digests_before(
@@ -907,20 +953,28 @@ impl DeliveryJournal for MemoryScheduleStore {
         week: DateTime<Utc>,
         at: DateTime<Utc>,
     ) -> Result<usize, JournalError> {
-        self.journal_write(|tables| {
-            tables.journal.check_live(lease)?;
-            let mut retired = 0;
-            for row in tables.journal.digests.values_mut() {
-                if row.week_start < week && row.retired_at.is_none() {
-                    row.retired_at = Some(at);
-                    retired += 1;
+        let result = async {
+            self.journal_write(|tables| {
+                tables.journal.check_live(lease)?;
+                let mut retired = 0;
+                for row in tables.journal.digests.values_mut() {
+                    if row.week_start < week && row.retired_at.is_none() {
+                        row.retired_at = Some(at);
+                        retired += 1;
+                    }
                 }
-            }
-            if retired > 0 {
-                tables.revision += 1;
-            }
-            Ok(retired)
-        })
+                if retired > 0 {
+                    tables.revision += 1;
+                }
+                Ok(retired)
+            })
+        }
+        .await;
+        self.written.after_if(
+            crate::infrastructure::store::Written::Delivery,
+            result,
+            |retired| *retired > 0,
+        )
     }
 
     async fn recover_on_start(&self, _at: DateTime<Utc>) -> Result<Recovery, JournalError> {

@@ -11,6 +11,7 @@ use crate::domain::members::{
     GatewayMember, Member, MemberProfile, MemberStore, PingLevel, PortalEdit, is_valid_alias,
 };
 use crate::domain::scheduler::StoreError;
+use crate::infrastructure::store::Written;
 
 const COLUMNS: &str = "user_id, display_name, nickname, has_role, is_bot, ping_level, aliases, \
     reply_style, roles, is_guild_admin";
@@ -121,13 +122,19 @@ async fn put(conn: &mut SqliteConnection, profile: &MemberProfile) -> Result<(),
 }
 
 /// One upsert naming only gateway columns, so portal columns are never rewritten.
-async fn gateway(conn: &mut SqliteConnection, update: &GatewayMember) -> Result<(), StoreError> {
-    sqlx::query(
+/// `true` when the row was new or any gateway field differed (an identical
+/// update is skipped, so a roster resync hints only real changes).
+async fn gateway(conn: &mut SqliteConnection, update: &GatewayMember) -> Result<bool, StoreError> {
+    let done = sqlx::query(
         "INSERT INTO members (user_id, display_name, nickname, has_role, is_bot, roles, \
          is_guild_admin) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
          ON CONFLICT (user_id) DO UPDATE SET display_name = excluded.display_name, \
          nickname = excluded.nickname, has_role = excluded.has_role, is_bot = excluded.is_bot, \
-         roles = excluded.roles, is_guild_admin = excluded.is_guild_admin",
+         roles = excluded.roles, is_guild_admin = excluded.is_guild_admin \
+         WHERE members.display_name IS NOT excluded.display_name \
+         OR members.nickname IS NOT excluded.nickname OR members.has_role IS NOT excluded.has_role \
+         OR members.is_bot IS NOT excluded.is_bot OR members.roles IS NOT excluded.roles \
+         OR members.is_guild_admin IS NOT excluded.is_guild_admin",
     )
     .bind(&update.user_id)
     .bind(&update.display_name)
@@ -139,7 +146,7 @@ async fn gateway(conn: &mut SqliteConnection, update: &GatewayMember) -> Result<
     .execute(&mut *conn)
     .await
     .map_err(store_error)?;
-    Ok(())
+    Ok(done.rows_affected() > 0)
 }
 
 async fn departed(conn: &mut SqliteConnection, user_id: &str) -> Result<bool, StoreError> {
@@ -236,19 +243,28 @@ impl MemberStore for SqliteStore {
     }
 
     async fn put_member(&self, profile: MemberProfile) -> Result<(), StoreError> {
-        write_txn!(self, tx, put(&mut tx, &profile))
+        let result = write_txn!(self, tx, put(&mut tx, &profile));
+        self.written().after(Written::Members, result)
     }
 
     async fn apply_gateway(&self, update: GatewayMember) -> Result<(), StoreError> {
-        write_txn!(self, tx, gateway(&mut tx, &update))
+        let changed = write_txn!(self, tx, gateway(&mut tx, &update))?;
+        if changed {
+            self.written().notify(Written::Members);
+        }
+        Ok(())
     }
 
     async fn member_departed(&self, user_id: &str) -> Result<bool, StoreError> {
-        write_txn!(self, tx, departed(&mut tx, user_id))
+        let result = write_txn!(self, tx, departed(&mut tx, user_id));
+        self.written()
+            .after_if(Written::Members, result, |found| *found)
     }
 
     async fn clear_guild_admin(&self, user_id: &str) -> Result<bool, StoreError> {
-        write_txn!(self, tx, not_admin(&mut tx, user_id))
+        let result = write_txn!(self, tx, not_admin(&mut tx, user_id));
+        self.written()
+            .after_if(Written::Members, result, |found| *found)
     }
 
     async fn apply_portal(
@@ -256,6 +272,8 @@ impl MemberStore for SqliteStore {
         user_id: &str,
         edit: PortalEdit,
     ) -> Result<Option<MemberProfile>, StoreError> {
-        write_txn!(self, tx, portal(&mut tx, user_id, &edit))
+        let result = write_txn!(self, tx, portal(&mut tx, user_id, &edit));
+        self.written()
+            .after_if(Written::Members, result, Option::is_some)
     }
 }

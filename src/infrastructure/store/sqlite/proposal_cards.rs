@@ -94,11 +94,13 @@ impl ProposalCardStore for SqliteStore {
         details: &CardDetails,
         at: DateTime<Utc>,
     ) -> Result<(), StoreError> {
-        write_txn!(
+        let result = write_txn!(
             self,
             tx,
             save_in(&mut tx, proposal_id, channel_id, details, &at)
-        )
+        );
+        self.written()
+            .after(crate::infrastructure::store::Written::Inbox, result)
     }
 
     async fn load_cards(&self, proposal_ids: &[String]) -> Result<Vec<StoredCard>, StoreError> {

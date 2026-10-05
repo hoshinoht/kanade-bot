@@ -6,6 +6,7 @@ pub mod account;
 pub mod bosses;
 pub mod config;
 mod consequence;
+pub mod events;
 pub mod fixed;
 pub mod history;
 pub mod inbox;

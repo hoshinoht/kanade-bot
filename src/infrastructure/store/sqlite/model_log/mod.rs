@@ -26,6 +26,7 @@ use crate::domain::model_log::{
     RescanJob, WatchedMessage,
 };
 use crate::domain::scheduler::StoreError;
+use crate::infrastructure::store::Written;
 
 fn corrupt(table: &str, detail: impl std::fmt::Display) -> StoreError {
     StoreError::Backend(format!("{table} row is unreadable: {detail}"))
@@ -149,7 +150,8 @@ impl ModelLogStore for SqliteStore {
 
     async fn record_extraction(&self, log: ExtractionLog) -> Result<(), StoreError> {
         log.check_shape()?;
-        write_txn!(self, tx, extractions::insert(&mut tx, &log))
+        let result = write_txn!(self, tx, extractions::insert(&mut tx, &log));
+        self.written().after(Written::Extraction, result)
     }
 
     async fn load_extraction(&self, id: &str) -> Result<Option<ExtractionLog>, StoreError> {
@@ -169,7 +171,8 @@ impl ModelLogStore for SqliteStore {
 
     async fn record_chat(&self, interaction: ChatInteraction) -> Result<(), StoreError> {
         interaction.check_shape()?;
-        write_txn!(self, tx, chat::insert(&mut tx, &interaction))
+        let result = write_txn!(self, tx, chat::insert(&mut tx, &interaction));
+        self.written().after(Written::Chat, result)
     }
 
     async fn load_chat(&self, id: &str) -> Result<Option<ChatInteraction>, StoreError> {
@@ -183,11 +186,12 @@ impl ModelLogStore for SqliteStore {
     ) -> Result<(), StoreError> {
         interaction.check_shape()?;
         masked.check_shape()?;
-        write_txn!(
+        let result = write_txn!(
             self,
             tx,
             chat::insert_masked(&mut tx, &interaction, &masked)
-        )
+        );
+        self.written().after(Written::Chat, result)
     }
 
     async fn load_masked_chat(&self, id: &str) -> Result<Option<MaskedTurn>, StoreError> {
@@ -227,12 +231,17 @@ impl ModelLogStore for SqliteStore {
 
     async fn insert_rescan_job(&self, job: RescanJob) -> Result<(), StoreError> {
         job.check_shape()?;
-        write_txn!(self, tx, jobs::insert_rescan(&mut tx, &job))
+        let result = write_txn!(self, tx, jobs::insert_rescan(&mut tx, &job));
+        self.written().after(Written::Rescan, result)
     }
 
     async fn update_rescan_job(&self, job: RescanJob) -> Result<bool, StoreError> {
         job.check_shape()?;
-        write_txn!(self, tx, jobs::update_rescan(&mut tx, &job))
+        let updated = write_txn!(self, tx, jobs::update_rescan(&mut tx, &job))?;
+        if updated {
+            self.written().notify(Written::Rescan);
+        }
+        Ok(updated)
     }
 
     async fn load_rescan_job(&self, id: &str) -> Result<Option<RescanJob>, StoreError> {

@@ -4,6 +4,7 @@ pub mod auth;
 pub mod avatars;
 pub mod dto;
 pub mod error;
+pub mod events;
 pub mod guard;
 pub mod listeners;
 pub mod public;

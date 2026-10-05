@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import type { ConfigView, ReplyProfile, Role, RoleProfileWrite } from '@kanade/api-types';
   import { PendingLabel, Select } from '@kanade/ui';
   import '@kanade/ui/styles/select.scss';
@@ -118,6 +118,9 @@
   $effect(() => {
     const key = roleConfigKey;
     if (key === roleHydratedKey) return;
+    // A live refresh never discards an unsaved draft: its Save meets the
+    // digest conflict instead, as a stale tab's would.
+    if (roleHydratedKey && untrack(() => roleDraftChanged)) return;
     roleHydratedKey = key;
     adoptRoleAssignments(assignments, digest);
   });

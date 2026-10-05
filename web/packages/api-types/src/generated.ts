@@ -884,3 +884,20 @@ backup_dir_configured: boolean,
  * Newest first (at most 100); re-read and re-checked on every request.
  */
 backups: Array<BackupRow>, };
+
+/**
+ * What kind of data changed.
+ */
+export type EventTopic = "schedule" | "inbox" | "chat" | "extraction" | "delivery" | "settings" | "rescan" | "members";
+
+/**
+ * The default (`message`) event: one hint. `seq` counts hints since the
+ * process started, so a gap tells the client it missed some.
+ */
+export type EventHint = { topic: EventTopic, seq: number, };
+
+/**
+ * The `ready` event that opens every stream: the last hint's `seq` (0 before
+ * any), so a reconnecting client knows whether it missed something.
+ */
+export type EventReady = { seq: number, };

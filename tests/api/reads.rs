@@ -7,7 +7,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
+use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
 use kanade::{
     api::{
         admin::{config::ConfigDesk, limits::LimitsDesk},
@@ -20,6 +20,7 @@ use kanade::{
             wire,
         },
         avatars::{AvatarCache, AvatarFetch, AvatarRef, FetchFuture},
+        events::{EventsConfig, Hub},
         listeners::Site,
         rescan::RescanDesk,
         state::{
@@ -89,6 +90,12 @@ pub const EDGE_HEADERS: [(&str, &str); 3] = [
     ("Tailscale-User-Login", TAILSCALE_ADMIN),
 ];
 const ORIGIN: (&str, &str) = ("Origin", "https://kanade.test");
+/// Short beats and a small cap, so stream tests run in real time.
+pub const EVENTS: EventsConfig = EventsConfig {
+    heartbeat: std::time::Duration::from_millis(150),
+    max_clients: 2,
+    max_lifetime: std::time::Duration::from_secs(60),
+};
 
 fn utc(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, month, day, hour, minute, 0)
@@ -204,6 +211,12 @@ pub struct Reads {
     /// The portrait cache directory (`<identity>/members`) and its stand-in CDN.
     pub avatar_dir: PathBuf,
     pub cdn: Arc<FakeCdn>,
+    /// The admin site as served, for tests that serve it again (shutdown).
+    pub site: Site,
+    /// Change hints, fed by the store's write hook as in `serve`.
+    pub events: Arc<Hub>,
+    /// Added to the sign-in clock only (sessions age; reads stay pinned).
+    pub session_skew: Arc<Mutex<TimeDelta>>,
     _fixture: Fixture,
     _dir: TempDir,
 }
@@ -713,10 +726,12 @@ impl Reads {
         ));
         let pinned = now();
         let discord = Arc::new(FakeDiscord::default());
+        let session_skew = Arc::new(Mutex::new(TimeDelta::zero()));
+        let skew = Arc::clone(&session_skew);
         let mut auth = AdminAuth::new(store.clone(), staff)
             .with_breakglass(TOKEN.as_bytes())
             .unwrap()
-            .with_clock(Arc::new(move || pinned));
+            .with_clock(Arc::new(move || pinned + *skew.lock().unwrap()));
         if logins {
             auth = auth
                 .with_discord(DiscordLogin::new(
@@ -779,6 +794,8 @@ impl Reads {
             Some(avatar_dir.clone()),
             Some(Box::new(SharedCdn(cdn.clone()))),
         ));
+        let events = Arc::new(Hub::new(EVENTS));
+        assert!(store.observe_writes(events.observer()));
         let state = ApiState {
             store: store.clone(),
             writer,
@@ -829,6 +846,7 @@ impl Reads {
                 schema_version: store.schema_version().await.unwrap(),
             },
             avatars: Some(avatars),
+            events: events.clone(),
         };
         let mut http = fixture.http();
         if logins {
@@ -840,7 +858,7 @@ impl Reads {
             site.edge_secret = Some(Arc::new(SealedSecret::new(EDGE_SECRET.as_bytes()).unwrap()));
         }
         site.state = Some(Arc::new(state));
-        let admin = spawn(site).await;
+        let admin = spawn(site.clone()).await;
         let login = send(
             admin,
             "POST",
@@ -870,6 +888,9 @@ impl Reads {
             knowledge_dir: knowledge,
             avatar_dir,
             cdn,
+            site,
+            events,
+            session_skew,
             _fixture: fixture,
             _dir: dir,
         }

@@ -71,6 +71,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/admin/history/{seq}` | `history.json#/$defs/ChangeRecord` |
 | `POST /api/admin/history/revert`, `/restore-week`, `/revert-actor` | `history.json#/$defs/RevertPlan` |
 | `GET /api/admin/history/checkpoints` | `history.json#/$defs/Checkpoints` |
+| `GET /api/admin/events` | `text/event-stream`, not JSON: a `ready` event `{seq}` (`EventReady`), then one message per change `{topic, seq}` (`EventHint`, topics `schedule`, `inbox`, `chat`, `extraction`, `delivery`, `settings`, `rescan`; no data) and `: keep-alive` comments; `429 too_many_streams` at the connection cap |
 | any non-2xx | `error.json#/$defs/ApiError` |
 
 ## Files

@@ -1,5 +1,6 @@
-import type { Channel, ConfigView, Identity, Me, MemberRow, Role, MoveResult, Run, RunResult, RunStatus, Session, Stats, Summary, SwapResult, Week, WeekKey } from '@kanade/api-types';
-import { ApiRequestError, createClient, createPoller, type Poller } from '@kanade/client';
+import type { Channel, ConfigView, EventTopic, Identity, Me, MemberRow, Role, MoveResult, Run, RunResult, RunStatus, Session, Stats, Summary, SwapResult, Week, WeekKey } from '@kanade/api-types';
+import { ApiRequestError, createClient, createPoller, type LiveEvents, type Poller } from '@kanade/client';
+import { live } from './resource.svelte';
 import { clockTime, runTitle, whenLabel, type FreshState } from '@kanade/ui';
 import { directory } from './names/directory.svelte';
 import type { Slot } from './planner/keyboardMove';
@@ -7,6 +8,10 @@ import { swapSlots } from './planner/dropTime';
 import { tick } from 'svelte';
 
 const POLL_MS = 15_000;
+/** While live hints arrive, polling is only the safety net. */
+export const FALLBACK_POLL_MS = 60_000;
+/** What the board, its tiles and the Inbox badge show: a hint of these re-reads them. */
+export const WEEK_TOPICS: readonly EventTopic[] = ['schedule', 'inbox', 'delivery', 'settings'];
 
 /** A polled week, its stats, and which week was asked for. */
 type Snapshot = [Week, Stats, WeekKey];
@@ -62,6 +67,7 @@ export class AdminWeek {
 
   #client = createClient();
   #poller: Poller;
+  #events: LiveEvents;
   #pendingMoves = 0;
   #nextUndoRevision = 1;
   #holding = false;
@@ -70,7 +76,8 @@ export class AdminWeek {
   /** Bumped by each Config save's quiet-mode answer (`setQuiet`). */
   #quietSaves = 0;
 
-  constructor() {
+  constructor(events: LiveEvents = live) {
+    this.#events = events;
     this.#poller = createPoller<Snapshot>({
       task: async (signal) => {
         const which = this.which;
@@ -205,14 +212,32 @@ export class AdminWeek {
     this.#poller.start();
     const online = () => void this.#poller.refresh();
     window.addEventListener('online', online);
+    const unfollow = this.#follow();
     return () => {
       window.removeEventListener('online', online);
+      unfollow();
       this.#poller.stop();
     };
   }
 
   refresh(): Promise<void> {
     return this.#poller.refresh();
+  }
+
+  /**
+   * Hints re-read the week now (a hold buffers the answer like any poll);
+   * polling slows to a safety net while the stream is open and returns to
+   * its normal cadence when it drops.
+   */
+  #follow(): () => void {
+    const pace = (healthy: boolean) => this.#poller.setInterval(healthy ? FALLBACK_POLL_MS : POLL_MS);
+    pace(this.#events.healthy);
+    const unhealth = this.#events.onHealth(pace);
+    const unfollow = this.#events.subscribe(WEEK_TOPICS, () => void this.#poller.refresh());
+    return () => {
+      unhealth();
+      unfollow();
+    };
   }
 
   /** The loaded week's (This or Next) runs still to come, unfiltered: the drawer's Week count. */

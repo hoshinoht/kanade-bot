@@ -23,7 +23,7 @@
   import LogFilters from '../logs/LogFilters.svelte';
   import Pager from '../pages/Pager.svelte';
   import { paged } from '../pages/paging';
-  import { Resource } from '../resource.svelte';
+  import { pinnedFirst, Resource } from '../resource.svelte';
 
   let {
     store,
@@ -45,8 +45,8 @@
   const tz = $derived(store.week?.timezone ?? 'Asia/Kuala_Lumpur');
 
   const filter = $derived(parseFilter(search));
-  const chat = $derived(new Resource<Chat>(`/api/admin/chat${toSearch(filter)}`));
-  $effect(() => void chat.load());
+  const chat = $derived(new Resource<Chat>(`/api/admin/chat${toSearch(filter)}`, { topics: ['chat'] }));
+  $effect(() => chat.watch());
   // Last good read stays on screen while a new filter loads.
   let last = $state<Chat | null>(null);
   $effect(() => {
@@ -96,7 +96,9 @@
     media.addEventListener('change', update);
     return () => media.removeEventListener('change', update);
   });
-  const chosenId = $derived(id || (narrow ? '' : (shown.rows[0]?.id ?? '')));
+  // The default open turn stays put when a refresh adds turns above it.
+  const firstOpen = pinnedFirst(() => chat);
+  const chosenId = $derived(id || (narrow ? '' : firstOpen(shown.rows, page)));
 
   // The phone frame's open turn: no page line or window chrome; "‹ Chat" in the top bar.
   const chrome = getChrome();

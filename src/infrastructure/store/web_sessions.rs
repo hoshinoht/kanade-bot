@@ -92,7 +92,8 @@ pub trait WebSessionStore: Send + Sync {
 
     fn load_session<'a>(&'a self, id_hash: &'a str) -> SessionFuture<'a, Option<WebSession>>;
 
-    /// `false` when the session no longer exists.
+    /// `false` when the session no longer exists. `last_seen_at` never moves
+    /// backwards, so a delayed quiet re-check cannot undo a newer touch.
     fn touch_session<'a>(
         &'a self,
         id_hash: &'a str,

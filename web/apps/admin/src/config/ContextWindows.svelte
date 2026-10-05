@@ -13,6 +13,7 @@
   import { ROLES } from './capacity';
   import { clampNotes, isLocal, LOCAL_WARNING, MAX_CONTEXT_TOKENS, overrideMax, SOURCE_LABELS, tokens } from './context';
   import { changes as listChanges, type Change } from './dirty';
+  import { followSaved } from './follow.svelte';
   import type { Save } from './save';
   import TokenSlider from './TokenSlider.svelte';
 
@@ -52,6 +53,11 @@
 
   // svelte-ignore state_referenced_locally
   let draft = $state(fromSaved(models.context));
+  followSaved(
+    () => fromSaved(models.context),
+    () => draft,
+    (saved) => (draft = saved),
+  );
   let error = $state('');
 
   // The save bar's summary, field by field against the saved settings.

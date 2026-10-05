@@ -15,6 +15,7 @@ use crate::domain::history::{Actor, Surface};
 use crate::domain::scheduler::StoreError;
 use crate::domain::settings::{RowDiff, SettingsChange, SettingsChangeQuery, SettingsStore, keys};
 use crate::domain::time::from_iso;
+use crate::infrastructure::store::Written;
 
 fn key_list() -> String {
     serde_json::Value::from(keys::ALL.to_vec()).to_string()
@@ -166,7 +167,8 @@ impl SettingsStore for SqliteStore {
 
     async fn put_settings_rows(&self, rows: Vec<(String, String)>) -> Result<(), StoreError> {
         refuse_unknown(&rows)?;
-        write_txn!(self, tx, write(&mut tx, &rows))
+        let result = write_txn!(self, tx, write(&mut tx, &rows));
+        self.written().after(Written::Settings, result)
     }
 
     async fn put_settings_rows_recorded(
@@ -175,10 +177,11 @@ impl SettingsStore for SqliteStore {
         change: SettingsChange,
     ) -> Result<u64, StoreError> {
         refuse_unknown(&rows)?;
-        write_txn!(self, tx, async {
+        let result = write_txn!(self, tx, async {
             write(&mut tx, &rows).await?;
             append(&mut tx, &change).await
-        })
+        });
+        self.written().after(Written::Settings, result)
     }
 
     async fn settings_changes(

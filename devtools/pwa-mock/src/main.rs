@@ -8,6 +8,7 @@ mod auth;
 mod avatars;
 #[cfg(test)]
 mod contract;
+mod events;
 mod headers;
 mod mock;
 mod reports;
@@ -38,6 +39,8 @@ struct App {
     boss_dir: Arc<PathBuf>,
     /// CSRF token and Idempotency-Key replays, shared by both origins' state.
     writes: Arc<writes::Writes>,
+    /// Change hints for `GET /api/admin/events`.
+    hints: Arc<events::Hints>,
 }
 
 /// SPA fallback for extensionless paths only, so a missing asset is a 404 rather than HTML.
@@ -80,6 +83,7 @@ fn common(app: &App, api: Router<App>, dist: PathBuf) -> Router {
         .route("/__mock/session", post(api::switch_session))
         .route("/__mock/limits", post(api::seed_limits))
         .route("/__mock/discord", post(auth::fail_next_discord))
+        .route("/__mock/arrive", post(events::arrive))
         .with_state(app.clone())
         .fallback_service(static_site(dist))
         .layer(middleware::from_fn(headers::apply))
@@ -127,6 +131,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         public: false,
         boss_dir: Arc::new(boss_dir.clone()),
         writes: Arc::default(),
+        hints: Arc::default(),
     };
     let (admin, public) = routers(app, &web);
 
@@ -233,7 +238,12 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
             patch(api::participants),
         )
         .route("/api/admin/runs/{id}/ping", post(api::ping))
+        .route("/api/admin/events", get(events::events))
         .route("/api/admin/reset", post(api::reset))
+        .route_layer(middleware::from_fn_with_state(
+            app.clone(),
+            events::after_write,
+        ))
         .route_layer(middleware::from_fn_with_state(app.clone(), writes::guard));
     let public_api = Router::new()
         .route("/api/public/week", get(api::public_week))

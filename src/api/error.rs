@@ -84,6 +84,12 @@ impl ApiError {
         error: "invalid_body",
         message: "The request body is not valid.",
     };
+    /// The admin event stream is at its connection cap; pages keep polling.
+    pub const TOO_MANY_STREAMS: Self = Self {
+        status: StatusCode::TOO_MANY_REQUESTS,
+        error: "too_many_streams",
+        message: "Too many live connections are open; this page will poll instead.",
+    };
     pub const UNAVAILABLE: Self = Self {
         status: StatusCode::SERVICE_UNAVAILABLE,
         error: "unavailable",

@@ -135,6 +135,7 @@ pub struct MemoryScheduleStore {
     config: Mutex<BTreeMap<String, String>>,
     settings_changes: Mutex<Vec<crate::domain::settings::SettingsChange>>,
     runs_written: super::observer::Observer,
+    written: super::observer::WriteHook,
 }
 
 impl MemoryScheduleStore {
@@ -145,6 +146,11 @@ impl MemoryScheduleStore {
     /// As `SqliteStore::observe_run_writes`.
     pub fn observe_run_writes(&self, observer: super::RunObserver) -> bool {
         self.runs_written.set(observer)
+    }
+
+    /// As `SqliteStore::observe_writes`.
+    pub fn observe_writes(&self, observer: super::WriteObserver) -> bool {
+        self.written.set(observer)
     }
 
     fn tables(&self) -> std::sync::MutexGuard<'_, Tables> {
@@ -244,6 +250,7 @@ impl MemoryScheduleStore {
             && !committed.replayed
         {
             self.runs_written.notify(&runs);
+            self.written.notify(super::Written::Schedule);
         }
         result
     }
@@ -649,37 +656,46 @@ impl BlameIndex for MemoryScheduleStore {
 
 impl Checkpoints for MemoryScheduleStore {
     async fn create_checkpoint(&self, new: NewCheckpoint) -> Result<CheckpointCreated, StoreError> {
-        check_checkpoint(&new)?;
-        let mut tables = self.tables();
-        let history = &mut tables.history;
-        if new.kind == CheckpointKind::Auto
-            && let Some(existing) = history.checkpoints.iter().find(|row| {
-                row.kind == CheckpointKind::Auto && (row.week == new.week || row.name == new.name)
-            })
-        {
-            return Ok(CheckpointCreated::Existing(existing.clone()));
+        let result = async {
+            check_checkpoint(&new)?;
+            let mut tables = self.tables();
+            let history = &mut tables.history;
+            if new.kind == CheckpointKind::Auto
+                && let Some(existing) = history.checkpoints.iter().find(|row| {
+                    row.kind == CheckpointKind::Auto
+                        && (row.week == new.week || row.name == new.name)
+                })
+            {
+                return Ok(CheckpointCreated::Existing(existing.clone()));
+            }
+            if history.checkpoints.iter().any(|row| row.name == new.name) {
+                return Err(StoreError::Constraint(format!(
+                    "checkpoint name {:?} is taken",
+                    new.name
+                )));
+            }
+            let head = history
+                .records
+                .last()
+                .ok_or_else(|| StoreError::Backend("the history has no genesis record".into()))?;
+            let created = Checkpoint {
+                name: new.name,
+                kind: new.kind,
+                head: head.reference(),
+                revision: head.revision,
+                week: new.week,
+                created_at: new.created_at,
+                created_by: new.created_by,
+            };
+            history.checkpoints.push(created.clone());
+            Ok(CheckpointCreated::Created(created))
         }
-        if history.checkpoints.iter().any(|row| row.name == new.name) {
-            return Err(StoreError::Constraint(format!(
-                "checkpoint name {:?} is taken",
-                new.name
-            )));
-        }
-        let head = history
-            .records
-            .last()
-            .ok_or_else(|| StoreError::Backend("the history has no genesis record".into()))?;
-        let created = Checkpoint {
-            name: new.name,
-            kind: new.kind,
-            head: head.reference(),
-            revision: head.revision,
-            week: new.week,
-            created_at: new.created_at,
-            created_by: new.created_by,
-        };
-        history.checkpoints.push(created.clone());
-        Ok(CheckpointCreated::Created(created))
+        .await;
+        self.written.after_if(
+            crate::infrastructure::store::Written::Schedule,
+            result,
+            |created| matches!(created, CheckpointCreated::Created(_)),
+        )
     }
 
     async fn load_checkpoint(&self, name: &str) -> Result<Option<Checkpoint>, StoreError> {
@@ -764,133 +780,141 @@ impl DraftStore for MemoryScheduleStore {
     }
 
     async fn create_draft(&self, new: NewDraft) -> Result<DraftCreated, StoreError> {
-        if new.kind == crate::domain::drafts::DraftKind::Proposal {
-            return Err(StoreError::Constraint(
-                "proposals are created with create_proposal".into(),
-            ));
-        }
-        let mut tables = self.tables();
-        if let Some(request) = &new.request {
-            let key = (
-                new.author.kind().to_owned(),
-                new.author.id().to_owned(),
-                request.request_id.clone(),
-            );
-            if let Some((digest, draft_id)) = tables.drafts.requests.get(&key) {
-                let draft = tables
-                    .drafts
-                    .drafts
-                    .get(draft_id)
-                    .ok_or_else(|| {
-                        StoreError::Backend(format!(
-                            "draft_requests points at missing draft {draft_id}"
-                        ))
-                    })?
-                    .clone();
-                return if digest == &request.digest {
-                    Ok(DraftCreated::Replayed(draft))
-                } else {
-                    Ok(DraftCreated::Mismatch {
-                        draft_id: draft_id.clone(),
-                    })
-                };
+        let result = async {
+            if new.kind == crate::domain::drafts::DraftKind::Proposal {
+                return Err(StoreError::Constraint(
+                    "proposals are created with create_proposal".into(),
+                ));
             }
-        }
-        if tables.drafts.drafts.contains_key(&new.id) {
-            return Err(StoreError::Constraint(format!("draft {} exists", new.id)));
-        }
-        if let Some(submit) = &new.submit {
-            let mine = || {
-                tables.drafts.drafts.values().filter(|draft| {
-                    draft.kind == crate::domain::drafts::DraftKind::Request
-                        && draft.author == new.author
-                })
-            };
-            let pending = mine()
-                .filter(|draft| draft.status == crate::domain::drafts::DraftStatus::Submitted)
-                .count() as u64;
-            if pending >= submit.limits.max_pending {
-                return Ok(DraftCreated::Limited(RequestLimit::Pending {
-                    count: pending,
-                    max: submit.limits.max_pending,
-                }));
-            }
-            // Stored instants keep microseconds, as SQLite's text does.
-            let since = micros(new.at - submit.limits.window);
-            let recent = mine().filter(|draft| draft.created_at > since).count() as u64;
-            if recent >= submit.limits.max_per_window {
-                return Ok(DraftCreated::Limited(RequestLimit::Rate {
-                    count: recent,
-                    max: submit.limits.max_per_window,
-                }));
-            }
-        }
-        let expires_week = new.submit.as_ref().and_then(|submit| submit.expires_week);
-        let stored = StoredDraft {
-            id: new.id.clone(),
-            kind: new.kind,
-            title: new.title.clone(),
-            author: new.author.clone(),
-            base: new.base.clone(),
-            base_revision: new.base_revision,
-            version: 1,
-            status: if new.submit.is_some() {
-                crate::domain::drafts::DraftStatus::Submitted
-            } else {
-                crate::domain::drafts::DraftStatus::Open
-            },
-            request_type: new.request_type.clone(),
-            subject: new.subject.clone(),
-            merged_seq: None,
-            closed_by: None,
-            close_reason: None,
-            created_at: new.at,
-            updated_at: new.at,
-            scope: match expires_week {
-                None => crate::domain::drafts::DraftScope::Weekly,
-                Some(week) => crate::domain::drafts::DraftScope::Week(week),
-            },
-        };
-        tables.drafts.drafts.insert(new.id.clone(), stored.clone());
-        tables.drafts.order.push(new.id.clone());
-        if let Some(request) = &new.request {
-            tables.drafts.requests.insert(
-                (
+            let mut tables = self.tables();
+            if let Some(request) = &new.request {
+                let key = (
                     new.author.kind().to_owned(),
                     new.author.id().to_owned(),
                     request.request_id.clone(),
-                ),
-                (request.digest.clone(), new.id.clone()),
-            );
-        }
-        let mut next = tables.clone();
-        draft_event(
-            &mut next,
-            &new.id,
-            1,
-            DraftEventKind::Created,
-            &new.author,
-            new.at,
-            None,
-        );
-        if let Some(submit) = &new.submit {
-            let mut ops = submit.ops.clone();
-            for (position, staged) in ops.iter_mut().enumerate() {
-                staged.ord = position;
+                );
+                if let Some((digest, draft_id)) = tables.drafts.requests.get(&key) {
+                    let draft = tables
+                        .drafts
+                        .drafts
+                        .get(draft_id)
+                        .ok_or_else(|| {
+                            StoreError::Backend(format!(
+                                "draft_requests points at missing draft {draft_id}"
+                            ))
+                        })?
+                        .clone();
+                    return if digest == &request.digest {
+                        Ok(DraftCreated::Replayed(draft))
+                    } else {
+                        Ok(DraftCreated::Mismatch {
+                            draft_id: draft_id.clone(),
+                        })
+                    };
+                }
             }
-            next.drafts.ops.insert(new.id.clone(), ops);
+            if tables.drafts.drafts.contains_key(&new.id) {
+                return Err(StoreError::Constraint(format!("draft {} exists", new.id)));
+            }
+            if let Some(submit) = &new.submit {
+                let mine = || {
+                    tables.drafts.drafts.values().filter(|draft| {
+                        draft.kind == crate::domain::drafts::DraftKind::Request
+                            && draft.author == new.author
+                    })
+                };
+                let pending = mine()
+                    .filter(|draft| draft.status == crate::domain::drafts::DraftStatus::Submitted)
+                    .count() as u64;
+                if pending >= submit.limits.max_pending {
+                    return Ok(DraftCreated::Limited(RequestLimit::Pending {
+                        count: pending,
+                        max: submit.limits.max_pending,
+                    }));
+                }
+                // Stored instants keep microseconds, as SQLite's text does.
+                let since = micros(new.at - submit.limits.window);
+                let recent = mine().filter(|draft| draft.created_at > since).count() as u64;
+                if recent >= submit.limits.max_per_window {
+                    return Ok(DraftCreated::Limited(RequestLimit::Rate {
+                        count: recent,
+                        max: submit.limits.max_per_window,
+                    }));
+                }
+            }
+            let expires_week = new.submit.as_ref().and_then(|submit| submit.expires_week);
+            let stored = StoredDraft {
+                id: new.id.clone(),
+                kind: new.kind,
+                title: new.title.clone(),
+                author: new.author.clone(),
+                base: new.base.clone(),
+                base_revision: new.base_revision,
+                version: 1,
+                status: if new.submit.is_some() {
+                    crate::domain::drafts::DraftStatus::Submitted
+                } else {
+                    crate::domain::drafts::DraftStatus::Open
+                },
+                request_type: new.request_type.clone(),
+                subject: new.subject.clone(),
+                merged_seq: None,
+                closed_by: None,
+                close_reason: None,
+                created_at: new.at,
+                updated_at: new.at,
+                scope: match expires_week {
+                    None => crate::domain::drafts::DraftScope::Weekly,
+                    Some(week) => crate::domain::drafts::DraftScope::Week(week),
+                },
+            };
+            tables.drafts.drafts.insert(new.id.clone(), stored.clone());
+            tables.drafts.order.push(new.id.clone());
+            if let Some(request) = &new.request {
+                tables.drafts.requests.insert(
+                    (
+                        new.author.kind().to_owned(),
+                        new.author.id().to_owned(),
+                        request.request_id.clone(),
+                    ),
+                    (request.digest.clone(), new.id.clone()),
+                );
+            }
+            let mut next = tables.clone();
             draft_event(
                 &mut next,
                 &new.id,
                 1,
-                DraftEventKind::Submitted,
+                DraftEventKind::Created,
                 &new.author,
                 new.at,
                 None,
             );
+            if let Some(submit) = &new.submit {
+                let mut ops = submit.ops.clone();
+                for (position, staged) in ops.iter_mut().enumerate() {
+                    staged.ord = position;
+                }
+                next.drafts.ops.insert(new.id.clone(), ops);
+                draft_event(
+                    &mut next,
+                    &new.id,
+                    1,
+                    DraftEventKind::Submitted,
+                    &new.author,
+                    new.at,
+                    None,
+                );
+            }
+            *tables = next;
+            Ok(DraftCreated::Created(stored))
         }
-        *tables = next;
-        Ok(DraftCreated::Created(stored))
+        .await;
+        self.written.after_if(
+            crate::infrastructure::store::Written::Inbox,
+            result,
+            |created| matches!(created, DraftCreated::Created(_)),
+        )
     }
 
     async fn load_draft(&self, id: &str) -> Result<Option<LoadedDraft>, StoreError> {
@@ -951,102 +975,110 @@ impl DraftStore for MemoryScheduleStore {
         &self,
         update: crate::domain::drafts::DraftUpdate,
     ) -> Result<DraftWrite, StoreError> {
-        let mut tables = self.tables();
-        let Some(draft) = tables.drafts.drafts.get(&update.draft_id).cloned() else {
-            return Ok(DraftWrite::Stale(DraftStale::Missing));
-        };
-        if !draft.status.is_live() || draft.version != update.expected_version {
-            return Ok(DraftWrite::Stale(draft_stale_of(&draft)));
-        }
-        let mut next = tables.clone();
-        let mut draft = draft;
-        match &update.change {
-            DraftChange::ReplaceOps {
-                ops,
-                event,
-                ord,
-                expires_week,
-            } => {
-                let mut ops = ops.clone();
-                for (position, staged) in ops.iter_mut().enumerate() {
-                    staged.ord = position;
-                }
-                next.drafts.ops.insert(draft.id.clone(), ops);
-                draft.version += 1;
-                draft.updated_at = update.at;
-                draft.scope = match expires_week {
-                    None => crate::domain::drafts::DraftScope::Weekly,
-                    Some(week) => crate::domain::drafts::DraftScope::Week(*week),
-                };
-                draft_event(
-                    &mut next,
-                    &draft.id,
-                    draft.version,
-                    *event,
-                    &update.actor,
-                    update.at,
-                    Some(ord.to_string()),
-                );
+        let result = async {
+            let mut tables = self.tables();
+            let Some(draft) = tables.drafts.drafts.get(&update.draft_id).cloned() else {
+                return Ok(DraftWrite::Stale(DraftStale::Missing));
+            };
+            if !draft.status.is_live() || draft.version != update.expected_version {
+                return Ok(DraftWrite::Stale(draft_stale_of(&draft)));
             }
-            DraftChange::Rebase {
-                base,
-                base_revision,
-                expires_week,
-            } => {
-                draft.base = base.clone();
-                draft.base_revision = *base_revision;
-                draft.version += 1;
-                draft.updated_at = update.at;
-                draft.scope = match expires_week {
-                    None => crate::domain::drafts::DraftScope::Weekly,
-                    Some(week) => crate::domain::drafts::DraftScope::Week(*week),
-                };
-                draft_event(
-                    &mut next,
-                    &draft.id,
-                    draft.version,
-                    DraftEventKind::Rebased,
-                    &update.actor,
-                    update.at,
-                    Some(format!("{} {}", base.seq, base.hash)),
-                );
-            }
-            DraftChange::Close {
-                status,
-                reason,
-                notices,
-            } => {
-                let kind = match status {
-                    crate::domain::drafts::DraftStatus::Discarded => DraftEventKind::Discarded,
-                    crate::domain::drafts::DraftStatus::Rejected => DraftEventKind::Rejected,
-                    crate::domain::drafts::DraftStatus::Withdrawn => DraftEventKind::Withdrawn,
-                    crate::domain::drafts::DraftStatus::Expired => DraftEventKind::Expired,
-                    _ => {
-                        return Err(StoreError::Constraint(format!(
-                            "cannot close a draft as {status}"
-                        )));
+            let mut next = tables.clone();
+            let mut draft = draft;
+            match &update.change {
+                DraftChange::ReplaceOps {
+                    ops,
+                    event,
+                    ord,
+                    expires_week,
+                } => {
+                    let mut ops = ops.clone();
+                    for (position, staged) in ops.iter_mut().enumerate() {
+                        staged.ord = position;
                     }
-                };
-                draft.status = *status;
-                draft.closed_by = Some(update.actor.clone());
-                draft.close_reason = reason.clone();
-                draft.updated_at = update.at;
-                draft_event(
-                    &mut next,
-                    &draft.id,
-                    draft.version,
-                    kind,
-                    &update.actor,
-                    update.at,
-                    reason.clone(),
-                );
-                next.outbox
-                    .enqueue(&draft_source(&draft.id), notices, update.at)?;
+                    next.drafts.ops.insert(draft.id.clone(), ops);
+                    draft.version += 1;
+                    draft.updated_at = update.at;
+                    draft.scope = match expires_week {
+                        None => crate::domain::drafts::DraftScope::Weekly,
+                        Some(week) => crate::domain::drafts::DraftScope::Week(*week),
+                    };
+                    draft_event(
+                        &mut next,
+                        &draft.id,
+                        draft.version,
+                        *event,
+                        &update.actor,
+                        update.at,
+                        Some(ord.to_string()),
+                    );
+                }
+                DraftChange::Rebase {
+                    base,
+                    base_revision,
+                    expires_week,
+                } => {
+                    draft.base = base.clone();
+                    draft.base_revision = *base_revision;
+                    draft.version += 1;
+                    draft.updated_at = update.at;
+                    draft.scope = match expires_week {
+                        None => crate::domain::drafts::DraftScope::Weekly,
+                        Some(week) => crate::domain::drafts::DraftScope::Week(*week),
+                    };
+                    draft_event(
+                        &mut next,
+                        &draft.id,
+                        draft.version,
+                        DraftEventKind::Rebased,
+                        &update.actor,
+                        update.at,
+                        Some(format!("{} {}", base.seq, base.hash)),
+                    );
+                }
+                DraftChange::Close {
+                    status,
+                    reason,
+                    notices,
+                } => {
+                    let kind = match status {
+                        crate::domain::drafts::DraftStatus::Discarded => DraftEventKind::Discarded,
+                        crate::domain::drafts::DraftStatus::Rejected => DraftEventKind::Rejected,
+                        crate::domain::drafts::DraftStatus::Withdrawn => DraftEventKind::Withdrawn,
+                        crate::domain::drafts::DraftStatus::Expired => DraftEventKind::Expired,
+                        _ => {
+                            return Err(StoreError::Constraint(format!(
+                                "cannot close a draft as {status}"
+                            )));
+                        }
+                    };
+                    draft.status = *status;
+                    draft.closed_by = Some(update.actor.clone());
+                    draft.close_reason = reason.clone();
+                    draft.updated_at = update.at;
+                    draft_event(
+                        &mut next,
+                        &draft.id,
+                        draft.version,
+                        kind,
+                        &update.actor,
+                        update.at,
+                        reason.clone(),
+                    );
+                    next.outbox
+                        .enqueue(&draft_source(&draft.id), notices, update.at)?;
+                }
             }
+            next.drafts.drafts.insert(draft.id.clone(), draft.clone());
+            *tables = next;
+            Ok(DraftWrite::Written(draft))
         }
-        next.drafts.drafts.insert(draft.id.clone(), draft.clone());
-        *tables = next;
-        Ok(DraftWrite::Written(draft))
+        .await;
+        self.written.after_if(
+            crate::infrastructure::store::Written::Inbox,
+            result,
+            |write| matches!(write, DraftWrite::Written(_)),
+        )
     }
 
     async fn commit_merge(
@@ -1150,6 +1182,8 @@ impl DraftStore for MemoryScheduleStore {
             && !committed.replayed
         {
             self.runs_written.notify(&runs);
+            self.written.notify(super::Written::Schedule);
+            self.written.notify(super::Written::Inbox);
         }
         result
     }
@@ -1161,47 +1195,55 @@ impl DraftStore for MemoryScheduleStore {
         actor: &Actor,
         notices: Vec<(String, crate::domain::schedule::Notice)>,
     ) -> Result<Vec<String>, StoreError> {
-        let mut tables = self.tables();
-        let mut due: Vec<String> = tables
-            .drafts
-            .drafts
-            .values()
-            .filter(|draft| {
-                draft.status.is_live()
-                    && draft
-                        .scope
-                        .expires_week()
-                        .is_some_and(|expires| expires < week)
-            })
-            .map(|draft| draft.id.clone())
-            .collect();
-        due.sort();
-        let mut next = tables.clone();
-        for id in &due {
-            let Some(mut draft) = next.drafts.drafts.get(id).cloned() else {
-                continue;
-            };
-            draft.status = crate::domain::drafts::DraftStatus::Expired;
-            draft.closed_by = Some(actor.clone());
-            draft.updated_at = at;
-            next.drafts.drafts.insert(id.clone(), draft.clone());
-            draft_event(
-                &mut next,
-                id,
-                draft.version,
-                DraftEventKind::Expired,
-                actor,
-                at,
-                None,
-            );
-            let planned: Vec<_> = notices
-                .iter()
-                .filter(|(draft, _)| draft == id)
-                .map(|(_, notice)| notice.clone())
+        let result = async {
+            let mut tables = self.tables();
+            let mut due: Vec<String> = tables
+                .drafts
+                .drafts
+                .values()
+                .filter(|draft| {
+                    draft.status.is_live()
+                        && draft
+                            .scope
+                            .expires_week()
+                            .is_some_and(|expires| expires < week)
+                })
+                .map(|draft| draft.id.clone())
                 .collect();
-            next.outbox.enqueue(&draft_source(id), &planned, at)?;
+            due.sort();
+            let mut next = tables.clone();
+            for id in &due {
+                let Some(mut draft) = next.drafts.drafts.get(id).cloned() else {
+                    continue;
+                };
+                draft.status = crate::domain::drafts::DraftStatus::Expired;
+                draft.closed_by = Some(actor.clone());
+                draft.updated_at = at;
+                next.drafts.drafts.insert(id.clone(), draft.clone());
+                draft_event(
+                    &mut next,
+                    id,
+                    draft.version,
+                    DraftEventKind::Expired,
+                    actor,
+                    at,
+                    None,
+                );
+                let planned: Vec<_> = notices
+                    .iter()
+                    .filter(|(draft, _)| draft == id)
+                    .map(|(_, notice)| notice.clone())
+                    .collect();
+                next.outbox.enqueue(&draft_source(id), &planned, at)?;
+            }
+            *tables = next;
+            Ok(due)
         }
-        *tables = next;
-        Ok(due)
+        .await;
+        if result.as_ref().is_ok_and(|done| !done.is_empty()) {
+            self.written
+                .notify(crate::infrastructure::store::Written::Inbox);
+        }
+        result
     }
 }

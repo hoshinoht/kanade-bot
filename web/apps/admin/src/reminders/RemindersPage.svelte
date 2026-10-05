@@ -19,8 +19,8 @@
 
   let { store, run = '' }: { store?: AdminWeek; run?: string } = $props();
 
-  const reminders = new Resource<Reminders>('/api/admin/reminders');
-  $effect(() => void reminders.load());
+  const reminders = new Resource<Reminders>('/api/admin/reminders', { topics: ['schedule', 'delivery'] });
+  $effect(() => reminders.watch());
 
   // Relative times read the guild's wall clock against now, refreshed each half minute.
   const chrome = getChrome();

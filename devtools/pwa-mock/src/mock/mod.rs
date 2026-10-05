@@ -83,6 +83,9 @@ pub struct Store {
     /// The newest manually posted digest week (`false` this, `true` next).
     digest_week: Option<bool>,
     config: config::Config,
+    /// `POST /__mock/arrive` added a chat turn / an extraction call.
+    arrived_chat: bool,
+    arrived_extraction: bool,
     version: u64,
     next_id: u32,
     catalog: Catalog,
@@ -105,6 +108,8 @@ impl Store {
             limit_resets: Vec::new(),
             digest_week: None,
             config: config::defaults(),
+            arrived_chat: false,
+            arrived_extraction: false,
             version: 1,
             next_id: 1,
             catalog,
@@ -137,7 +142,14 @@ impl Store {
         self.digest_week = None;
         self.config = config::defaults();
         self.settings_changes.clear();
+        self.arrived_chat = false;
+        self.arrived_extraction = false;
         self.seed_history();
+    }
+
+    /// The week version (history head) edits are checked against.
+    pub fn version(&self) -> u64 {
+        self.version
     }
 
     fn fresh_id(&mut self, prefix: &str) -> (String, String) {

@@ -656,6 +656,9 @@ pub struct ApiState {
     pub backups: BackupDir,
     /// Member and admin portraits; `None` serves monograms only.
     pub avatars: Option<Arc<super::avatars::AvatarCache>>,
+    /// Change hints for open admin pages (`GET /api/admin/events`), fed by
+    /// the store's write hook.
+    pub events: Arc<super::events::Hub>,
 }
 
 impl std::fmt::Debug for ApiState {

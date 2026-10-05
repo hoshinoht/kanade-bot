@@ -11,7 +11,7 @@
   import { SvelteSet } from 'svelte/reactivity';
   import { onMount } from 'svelte';
   import { DatePicker, Icon, LoadError, LoadingState, Presence, RowContent, Select, serverClock, Toaster, TWO_PANE_QUERY, weekStartLabel, type SelectOption } from '@kanade/ui';
-  import { Resource } from '../resource.svelte';
+  import { live, Resource } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
   import { SURFACE_LABELS, actorName, describe, localAt, weekDate } from './describe';
   import RevertDialog from './RevertDialog.svelte';
@@ -71,6 +71,39 @@
     }
   }
 
+  /**
+   * A live hint: records and saves newer than the top join it in place, so
+   * the loaded older pages, the selection and the scroll stay; an answer
+   * older than the head on screen is dropped.
+   */
+  let topRead = 0;
+  async function refreshTop() {
+    if (!loaded || loading) return;
+    const mine = ++topRead;
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- a request's query, built and sent, never state
+    const params = new URLSearchParams({ limit: '20' });
+    if (week) params.set('week', week);
+    if (actor) params.set('actor', actor);
+    try {
+      const page = await client.get<HistoryPage>(`/api/admin/history?${params}`);
+      if (mine !== topRead || loading || (head && page.head.seq < head.seq)) return;
+      const newest = records[0]?.seq ?? 0;
+      const fresh = page.records.filter((r) => r.seq > newest);
+      // More new records than one page: the gap cannot be stitched, so read again.
+      if (fresh.length === page.records.length && page.next_before !== null && records.length) return void load();
+      const saves = page.settings.filter((s) => !settings.some((had) => had.id === s.id));
+      for (const r of [...fresh, ...saves]) if (r.actor.kind === 'admin') seenAdmins.add(r.actor.id);
+      if (fresh.length) records = [...fresh, ...records];
+      if (saves.length) settings = [...saves, ...settings];
+      head = page.head;
+      total = page.total;
+      settingsTotal = page.settings_total;
+    } catch {
+      // The next hint tries again; the timeline keeps what it shows.
+    }
+  }
+  onMount(() => live.subscribe(['schedule', 'settings'], () => void refreshTop()));
+
   $effect(() => {
     void week;
     void actor;
@@ -102,11 +135,11 @@
     }
   });
 
-  const checkpoints = new Resource<Checkpoints>('/api/admin/history/checkpoints');
+  const checkpoints = new Resource<Checkpoints>('/api/admin/history/checkpoints', { topics: ['schedule'] });
   // The rail's tags: a backup snapshot sits on the record its manifest names as
   // head (same hash, so a backup the chain no longer holds tags nothing), and a
   // record a loaded rollback undid points back at that rollback.
-  onMount(() => void checkpoints.load());
+  onMount(() => checkpoints.watch());
   const snapshots = $derived.by(() => {
     // eslint-disable-next-line svelte/prefer-svelte-reactivity -- a lookup rebuilt by the derivation, never mutated after
     const byHash = new Map<string, Checkpoints['backups']>();

@@ -2919,3 +2919,31 @@ async fn a_list_save_needs_a_session_and_csrf() {
     assert!(config.reads.store.settings_rows().await.unwrap().is_empty());
     assert_eq!(config.desk.settings().await.watching.channel_ids, ["12"]);
 }
+
+#[tokio::test]
+async fn a_config_save_hints_settings_to_open_event_streams() {
+    let config = Config::new().await;
+    let mut stream = crate::events::Stream::open(config.reads.admin, &config.reads.cookie).await;
+    let ready = stream.ready().await;
+    config
+        .patch(json!({"notifications": {"quiet_mode": true}}))
+        .await;
+    assert_eq!(
+        stream.hint().await,
+        json!({"topic": "settings", "seq": ready + 1})
+    );
+    // A refused save writes nothing and hints nothing.
+    config
+        .refused(
+            json!({"notifications": {"quiet_mode": "yes"}}),
+            422,
+            "invalid",
+        )
+        .await;
+    assert!(
+        stream
+            .topics(std::time::Duration::from_millis(300))
+            .await
+            .is_empty()
+    );
+}

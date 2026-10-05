@@ -565,3 +565,25 @@ async fn sqlite_history_conforms() {
     })
     .await;
 }
+
+#[tokio::test]
+async fn memory_write_hints_conform() {
+    kanade::infrastructure::store::hints_conformance::run_suite(
+        &MemoryScheduleStore::new(),
+        |store, observer| store.observe_writes(observer),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn sqlite_write_hints_conform() {
+    let dir = support::TempDir::new();
+    let store = SqliteStore::open(&dir.config("hints"))
+        .await
+        .expect("fresh store opens");
+    kanade::infrastructure::store::hints_conformance::run_suite(&store, |store, observer| {
+        store.observe_writes(observer)
+    })
+    .await;
+    store.close().await.expect("store closes");
+}

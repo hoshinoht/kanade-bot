@@ -10,6 +10,7 @@
   import { tick } from 'svelte';
   import { changes } from './dirty';
   import { check, draftOf, MAX_LINE_CHARS, wordProblem, wordsOf, type ProfanityField } from './profanity';
+  import { followSaved } from './follow.svelte';
   import type { Save } from './save';
   import SaveBar from './SaveBar.svelte';
   import SettingsPanel from './SettingsPanel.svelte';
@@ -24,6 +25,11 @@
   let draft = $state(draftOf(profanity));
   /** The add field: typed words count as drafted even before Add, as in Pings. */
   let typed = $state('');
+  followSaved(
+    () => ({ draft: draftOf(profanity), typed: '' }),
+    () => ({ draft, typed }),
+    (saved) => ({ draft, typed } = saved),
+  );
   let error = $state('');
   let bad = $state<ProfanityField | null>(null);
   let saving = $state(false);

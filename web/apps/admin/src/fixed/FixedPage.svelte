@@ -5,7 +5,7 @@
   import '@kanade/ui/styles/fixed.scss';
   import Name from '../names/Name.svelte';
   import { directory } from '../names/directory.svelte';
-  import { Resource, send } from '../resource.svelte';
+  import { live, Resource, send } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
   import FixedEditor from './FixedEditor.svelte';
   import { FixedSnapshot } from './snapshot.svelte';
@@ -23,6 +23,8 @@
   $effect(() => {
     void load();
     void bosses.load();
+    // The snapshot publishes rows and version together, newest load only.
+    return live.subscribe(['schedule'], () => void load());
   });
 
   function load() {

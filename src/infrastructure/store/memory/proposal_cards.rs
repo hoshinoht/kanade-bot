@@ -14,39 +14,44 @@ impl ProposalCardStore for MemoryScheduleStore {
         details: &CardDetails,
         at: DateTime<Utc>,
     ) -> Result<(), StoreError> {
-        let mut tables = self.tables();
-        if let Some((_, card)) = tables.drafts.cards.get(proposal_id) {
-            // The same round trip SQLite stores, so equality matches.
-            let stored = CardDetails::from_json(&card.details.to_json());
-            let given = CardDetails::from_json(&details.to_json());
-            return if card.channel_id == channel_id && stored == given {
-                Ok(())
-            } else {
-                Err(StoreError::Constraint(format!(
-                    "proposal {proposal_id} already has another card"
-                )))
+        let result = async {
+            let mut tables = self.tables();
+            if let Some((_, card)) = tables.drafts.cards.get(proposal_id) {
+                // The same round trip SQLite stores, so equality matches.
+                let stored = CardDetails::from_json(&card.details.to_json());
+                let given = CardDetails::from_json(&details.to_json());
+                return if card.channel_id == channel_id && stored == given {
+                    Ok(())
+                } else {
+                    Err(StoreError::Constraint(format!(
+                        "proposal {proposal_id} already has another card"
+                    )))
+                };
+            }
+            if !tables.drafts.proposals.contains_key(proposal_id) {
+                return Err(StoreError::Constraint(format!(
+                    "proposal {proposal_id} does not exist"
+                )));
+            }
+            let details = CardDetails::from_json(&details.to_json())
+                .ok_or_else(|| StoreError::Constraint("card details do not round-trip".into()))?;
+            let card = StoredCard {
+                proposal_id: proposal_id.to_owned(),
+                channel_id: channel_id.to_owned(),
+                details,
+                message_id: None,
+                posted_at: None,
             };
+            let order = micros(at).timestamp_micros();
+            tables.drafts.cards.insert(
+                proposal_id.to_owned(),
+                (u64::try_from(order).unwrap_or_default(), card),
+            );
+            Ok(())
         }
-        if !tables.drafts.proposals.contains_key(proposal_id) {
-            return Err(StoreError::Constraint(format!(
-                "proposal {proposal_id} does not exist"
-            )));
-        }
-        let details = CardDetails::from_json(&details.to_json())
-            .ok_or_else(|| StoreError::Constraint("card details do not round-trip".into()))?;
-        let card = StoredCard {
-            proposal_id: proposal_id.to_owned(),
-            channel_id: channel_id.to_owned(),
-            details,
-            message_id: None,
-            posted_at: None,
-        };
-        let order = micros(at).timestamp_micros();
-        tables.drafts.cards.insert(
-            proposal_id.to_owned(),
-            (u64::try_from(order).unwrap_or_default(), card),
-        );
-        Ok(())
+        .await;
+        self.written
+            .after(crate::infrastructure::store::Written::Inbox, result)
     }
 
     async fn load_cards(&self, proposal_ids: &[String]) -> Result<Vec<StoredCard>, StoreError> {

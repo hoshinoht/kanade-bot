@@ -14,6 +14,7 @@
   import { Resource } from '../resource.svelte';
   import MinutesField from './MinutesField.svelte';
   import { check, DEFAULT_RANGE, draftOf, OVERRIDE_RANGE } from './runLengths';
+  import { followSaved } from './follow.svelte';
   import type { Save } from './save';
   import SaveBar from './SaveBar.svelte';
   import SettingsPanel from './SettingsPanel.svelte';
@@ -31,6 +32,11 @@
 
   // svelte-ignore state_referenced_locally
   let draft = $state(draftOf(runLengths));
+  followSaved(
+    () => draftOf(runLengths),
+    () => draft,
+    (saved) => (draft = saved),
+  );
   let error = $state('');
   let bad = $state<'default' | number | null>(null);
   let saving = $state(false);

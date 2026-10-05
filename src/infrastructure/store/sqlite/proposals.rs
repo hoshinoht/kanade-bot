@@ -19,6 +19,7 @@ use crate::domain::drafts::{
 };
 use crate::domain::history::Actor;
 use crate::domain::scheduler::{CARDLESS_CHAT_GRACE, StoreError, same_run_proposal};
+use crate::infrastructure::store::Written;
 
 const INFO_COLUMNS: &str = "source, source_id, supersede_key, expires_at";
 
@@ -189,7 +190,7 @@ impl crate::domain::drafts::ProposalStore for SqliteStore {
                 "duplicate lookup is chat-only".into(),
             ));
         }
-        write_txn!(self, tx, async {
+        let result = write_txn!(self, tx, async {
             // Preserve id replay/conflict semantics before looking for siblings.
             if load_in(&mut tx, &new.id).await?.is_none() {
                 let candidates: Vec<String> = sqlx::query_scalar(
@@ -233,12 +234,18 @@ impl crate::domain::drafts::ProposalStore for SqliteStore {
             Ok(ProposalSubmission::Created(Box::new(
                 create_in(&mut tx, &new, expires_at).await?,
             )))
+        });
+        self.written().after_if(Written::Inbox, result, |submission| {
+            matches!(submission, ProposalSubmission::Created(created) if matches!(**created, ProposalCreated::Created { .. }))
         })
     }
 
     async fn create_proposal(&self, new: NewProposal) -> Result<ProposalCreated, StoreError> {
         let expires_at = check_new_proposal(&new)?;
-        write_txn!(self, tx, create_in(&mut tx, &new, expires_at))
+        let result = write_txn!(self, tx, create_in(&mut tx, &new, expires_at));
+        self.written().after_if(Written::Inbox, result, |created| {
+            matches!(created, ProposalCreated::Created { .. })
+        })
     }
 
     async fn load_proposal(
@@ -280,6 +287,10 @@ impl crate::domain::drafts::ProposalStore for SqliteStore {
         now: chrono::DateTime<chrono::Utc>,
         actor: &Actor,
     ) -> Result<Vec<String>, StoreError> {
-        write_txn!(self, tx, expire_in(&mut tx, now, actor))
+        let expired = write_txn!(self, tx, expire_in(&mut tx, now, actor))?;
+        if !expired.is_empty() {
+            self.written().notify(Written::Inbox);
+        }
+        Ok(expired)
     }
 }

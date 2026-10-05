@@ -95,6 +95,14 @@ async fn touch_delete_and_revoke_by_identity<S: WebSessionStore>(store: S) {
     let touched = store.load_session(&hash('a')).await.expect("load").unwrap();
     assert_eq!((touched.last_seen_at, touched.checked_at), (at(5), at(4)));
     assert!(
+        store
+            .touch_session(&hash('a'), at(3), at(6))
+            .await
+            .expect("older touch")
+    );
+    let touched = store.load_session(&hash('a')).await.expect("load").unwrap();
+    assert_eq!((touched.last_seen_at, touched.checked_at), (at(5), at(6)));
+    assert!(
         !store
             .touch_session(&hash('e'), at(5), at(5))
             .await

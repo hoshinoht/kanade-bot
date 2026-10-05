@@ -7,6 +7,7 @@ mod auth;
 mod avatars;
 pub mod config;
 mod context;
+mod events;
 mod history;
 mod inbox;
 pub mod limits;
@@ -46,6 +47,7 @@ pub fn routes() -> Router<Arc<Site>> {
         .merge(logs::routes())
         .merge(limits::routes())
         .merge(config::routes())
+        .merge(events::routes())
 }
 
 /// Answers only clients on this host (the local healthcheck), whatever the

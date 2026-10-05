@@ -3,6 +3,7 @@
   import { LiveRegion } from '@kanade/ui';
   import { tick } from 'svelte';
   import { changes } from './dirty';
+  import { followSaved } from './follow.svelte';
   import type { Save } from './save';
   import SaveBar from './SaveBar.svelte';
   import SettingsPanel from './SettingsPanel.svelte';
@@ -17,6 +18,15 @@
   let minutes = $state<number[]>([...pings.countdown_minutes]);
   /** The add field; a typed value counts as drafted (B_CfgPings) even before Add. */
   let draft = $state('');
+  followSaved(
+    () => ({ time: pings.day_of_ping_time, minutes: [...pings.countdown_minutes], add: '' }),
+    () => ({ time, minutes, add: draft }),
+    (saved) => {
+      time = saved.time;
+      minutes = saved.minutes;
+      draft = saved.add;
+    },
+  );
   let error = $state('');
   let saving = $state(false);
   let announce = $state('');

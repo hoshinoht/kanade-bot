@@ -6,6 +6,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Admin pages update live: `GET /api/admin/events` sends change hints over SSE (schedule, inbox, chat, extraction, delivery, settings, rescan, members), fed by the store's write hook. Pages re-read in place and apply only newer data; untouched Config forms follow saved changes while edits in progress are kept. Polling slows to 60 s while the stream is open and returns to 15 s when it drops; hidden tabs close the stream, and a stream never extends the session's idle time.
 - Admin: member and admin portraits. Discord avatars are cached by image
   hash on the data volume (`<KANADE_IDENTITY_DIR>/members`) and served at
   `GET /api/admin/members/{id}/avatar` and `/api/admin/me/avatar` (admin

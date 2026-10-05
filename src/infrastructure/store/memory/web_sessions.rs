@@ -91,7 +91,7 @@ impl WebSessionStore for MemoryScheduleStore {
         Box::pin(async move {
             Ok(match self.sessions().get_mut(id_hash) {
                 Some(session) => {
-                    session.last_seen_at = micros(last_seen_at);
+                    session.last_seen_at = session.last_seen_at.max(micros(last_seen_at));
                     session.checked_at = micros(checked_at);
                     true
                 }

@@ -25,13 +25,13 @@
   } = $props();
   const bosses = new Resource<BossRow[]>('/api/admin/bosses');
   const events = new Resource<EventBoss[]>('/api/admin/bosses/events');
-  const fixed = new Resource<FixedRow[]>('/api/admin/fixed');
-  const week = new Resource<Week>('/api/admin/week?week=this');
+  const fixed = new Resource<FixedRow[]>('/api/admin/fixed', { topics: ['schedule'] });
+  const week = new Resource<Week>('/api/admin/week?week=this', { topics: ['schedule'], version: (w) => w.version });
   $effect(() => {
     void bosses.load();
     void events.load();
-    void fixed.load();
-    void week.load();
+    const unfollow = [fixed.watch(), week.watch()];
+    return () => unfollow.forEach((stop) => stop());
   });
 
   const catalog = $derived(bosses.data ?? []);

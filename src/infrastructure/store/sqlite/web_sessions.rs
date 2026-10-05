@@ -102,10 +102,14 @@ async fn touch(
     last_seen_at: &DateTime<Utc>,
     checked_at: &DateTime<Utc>,
 ) -> Result<bool, StoreError> {
+    let Some(current) = load(&mut *conn, id_hash).await? else {
+        return Ok(false);
+    };
+    let seen = current.last_seen_at.max(*last_seen_at);
     let done = sqlx::query(
         "UPDATE web_sessions SET last_seen_at = ?1, checked_at = ?2 WHERE id_hash = ?3",
     )
-    .bind(instant(last_seen_at)?)
+    .bind(instant(&seen)?)
     .bind(instant(checked_at)?)
     .bind(id_hash)
     .execute(&mut *conn)

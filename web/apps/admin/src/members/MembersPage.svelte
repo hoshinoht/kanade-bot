@@ -13,14 +13,15 @@
   import { memberAvatar } from '../shared/avatar';
   import { memberRuns, orderMembers, runCounts, type MemberOrder } from './runs';
 
-  const members = new Resource<MemberRow[]>('/api/admin/members');
+  // The open sheet reads its row from this list, so both follow a roster change.
+  const members = new Resource<MemberRow[]>('/api/admin/members', { topics: ['members'] });
   const personas = new Resource<Persona[]>('/api/admin/personas');
   // The detail's "This week" list reads the runs the member is on.
-  const week = new Resource<Week>('/api/admin/week?week=this');
+  const week = new Resource<Week>('/api/admin/week?week=this', { topics: ['schedule'], version: (w) => w.version });
   $effect(() => {
-    void members.load();
     void personas.load();
-    void week.load();
+    const unfollow = [members.watch(), week.watch()];
+    return () => unfollow.forEach((stop) => stop());
   });
   const PING: Record<PingLevel, string> = { essential: 'Essential', all: 'All', off: 'Off' };
 

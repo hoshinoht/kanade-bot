@@ -34,7 +34,7 @@ fn at(hour: u32, minute: u32) -> DateTime<Utc> {
         .expect("valid instant")
 }
 
-fn week() -> DateTime<Utc> {
+pub(crate) fn week() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 8, 26, 16, 0, 0)
         .single()
         .expect("valid instant")
@@ -55,7 +55,12 @@ fn fixed(id: &str, weekday: Weekday, hour: u32) -> FixedRun {
     }
 }
 
-fn run(id: &str, fixed_run_id: Option<&str>, week_start: DateTime<Utc>, hour: u32) -> Run {
+pub(crate) fn run(
+    id: &str,
+    fixed_run_id: Option<&str>,
+    week_start: DateTime<Utc>,
+    hour: u32,
+) -> Run {
     Run {
         id: id.into(),
         fixed_run_id: fixed_run_id.map(Into::into),

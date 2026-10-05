@@ -65,6 +65,19 @@ message (`422 idempotency_mismatch` if it differs).
 History record 3), paged by the last id shown as the server does; decisions
 made in the mock session do not join it.
 
+Live updates: `GET /api/admin/events` answers as the server's stream does
+(`ready {seq}`, then `{topic, seq}` hints with no data), emitted after every
+successful admin write (`runs/*`, `fixed`, `history/*` → `schedule`;
+`inbox/*` → `inbox` + `schedule`; `config` → `settings`; `digest` →
+`delivery`; `rescan` → `rescan`; `members/*` → `members`). With no streaming body, each response is
+short: `EventSource` reconnects after 200 ms with `Last-Event-ID` and the next
+response holds (up to 10 s) for a newer hint, so pages see the same events in
+order. `POST /__mock/arrive {"kind": "reaction" | "proposal" | "chat" |
+"extraction" | "member"}` stands in for a change made outside the portal
+(Ren's ✅ on Kalos, a new extractor proposal, a chat turn, an extraction
+call, Mika's new alias `mikan` from a roster sync), changes
+the reads and emits the matching hint; `POST /api/admin/reset` clears them.
+
 Names: `GET /api/admin/roles` (three guild roles, one colourless),
 `Identity.bot_user_id` (`1543532497948909578` on the admin origin, null on
 the public one), `author_id` on inbox evidence and extraction messages, inbox

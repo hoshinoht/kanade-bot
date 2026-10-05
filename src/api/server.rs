@@ -36,6 +36,7 @@ pub async fn serve(
     }
     admin_site.listener_ip = Some(config.admin_bind.ip());
     let bot = live.as_ref().map(|live| Arc::clone(&live.state.channels));
+    let events = live.as_ref().map(|live| Arc::clone(&live.state.events));
     if let Some(live) = live {
         admin_site.auth = Some(live.auth);
         admin_site.state = Some(live.state);
@@ -71,6 +72,11 @@ pub async fn serve(
         result = &mut servers => result.map_err(|_| Error::Startup("HTTP server stopped unexpectedly".into())),
         () = shutdown => {
             logging::shutdown_started();
+            // Open event streams never finish on their own: end them first so
+            // the drain is not held to the deadline.
+            if let Some(events) = &events {
+                events.close();
+            }
             let _ = stop.send(());
             timeout(config.shutdown_timeout, &mut servers)
                 .await

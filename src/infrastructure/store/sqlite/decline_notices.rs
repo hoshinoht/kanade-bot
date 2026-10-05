@@ -160,6 +160,8 @@ impl DeclineNoticeStore for SqliteStore {
             && !committed.replayed
         {
             self.runs_written(&runs);
+            self.written()
+                .notify(crate::infrastructure::store::Written::Schedule);
         }
         result
     }

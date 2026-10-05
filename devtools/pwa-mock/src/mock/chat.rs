@@ -303,6 +303,27 @@ fn model_view() -> Value {
 }
 
 impl Store {
+    /// The seeded turns, newest first, after any that arrived (e2e).
+    fn turns(&self) -> Vec<Turn> {
+        let mut all = turns();
+        if self.arrived_chat {
+            all.insert(
+                0,
+                Turn {
+                    latency_ms: 1_950,
+                    asked: "<@1543532497948909578> is limbo still on tonight?",
+                    said: "Hard Limbo is tonight at 23:30, 2 of 3 on so far.",
+                    ..turn("c-arrived", 139, "1003", "limbo-trio", "answered")
+                },
+            );
+        }
+        all
+    }
+
+    pub fn arrive_chat(&mut self) {
+        self.arrived_chat = true;
+    }
+
     /// Turn-level facts: persona, reply profile, route, error, guardrail and
     /// (the masked example only) the Model view.
     fn turn_facts(t: &Turn, row: &mut Value) {
@@ -371,7 +392,7 @@ impl Store {
 
     pub fn chat(&self, query: &LogQuery) -> Result<Value, MoveError> {
         query.validate(&CHAT_OUTCOMES, true)?;
-        let all = turns();
+        let all = self.turns();
         let rows: Vec<&Turn> = all
             .iter()
             .filter(|t| {
@@ -440,7 +461,8 @@ impl Store {
     }
 
     pub fn chat_turn(&self, id: &str) -> Result<Value, MoveError> {
-        let t = turns()
+        let t = self
+            .turns()
             .into_iter()
             .find(|t| t.id == id)
             .ok_or(MoveError::NotFound)?;

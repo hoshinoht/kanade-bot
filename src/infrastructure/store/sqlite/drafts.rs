@@ -19,6 +19,7 @@ use crate::domain::history::{Actor, ChangeMeta, ChangeRecord, ChangeRef};
 use crate::domain::notify::draft_source;
 use crate::domain::schedule::Notice;
 use crate::domain::scheduler::{Committed, StoreError};
+use crate::infrastructure::store::Written;
 use crate::infrastructure::store::history::touched_keys;
 
 /// Selected `FROM drafts` (unaliased): a `draft_proposals` row (0007) makes
@@ -775,7 +776,10 @@ impl crate::domain::drafts::DraftStore for SqliteStore {
                 "proposals are created with create_proposal".into(),
             ));
         }
-        write_txn!(self, tx, create_in(&mut tx, &new))
+        let result = write_txn!(self, tx, create_in(&mut tx, &new));
+        self.written().after_if(Written::Inbox, result, |created| {
+            matches!(created, DraftCreated::Created(_))
+        })
     }
 
     async fn load_draft(&self, id: &str) -> Result<Option<LoadedDraft>, StoreError> {
@@ -857,7 +861,10 @@ impl crate::domain::drafts::DraftStore for SqliteStore {
         &self,
         update: DraftUpdate,
     ) -> Result<crate::domain::drafts::DraftWrite, StoreError> {
-        write_txn!(self, tx, update_in(&mut tx, &update))
+        let result = write_txn!(self, tx, update_in(&mut tx, &update));
+        self.written().after_if(Written::Inbox, result, |write| {
+            matches!(write, DraftWrite::Written(_))
+        })
     }
 
     async fn commit_merge(
@@ -887,6 +894,8 @@ impl crate::domain::drafts::DraftStore for SqliteStore {
             && !committed.replayed
         {
             self.runs_written(&runs);
+            self.written().notify(Written::Schedule);
+            self.written().notify(Written::Inbox);
         }
         result
     }
@@ -898,6 +907,10 @@ impl crate::domain::drafts::DraftStore for SqliteStore {
         actor: &Actor,
         notices: Vec<(String, Notice)>,
     ) -> Result<Vec<String>, StoreError> {
-        write_txn!(self, tx, expire_in(&mut tx, &week, &at, actor, &notices))
+        let expired = write_txn!(self, tx, expire_in(&mut tx, &week, &at, actor, &notices))?;
+        if !expired.is_empty() {
+            self.written().notify(Written::Inbox);
+        }
+        Ok(expired)
     }
 }

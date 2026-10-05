@@ -138,7 +138,12 @@ fn create_in(tables: &mut Tables, new: &NewProposal) -> Result<ProposalCreated, 
 
 impl ProposalStore for MemoryScheduleStore {
     async fn create_proposal(&self, new: NewProposal) -> Result<ProposalCreated, StoreError> {
-        create_in(&mut self.tables(), &new)
+        let result = create_in(&mut self.tables(), &new);
+        self.written.after_if(
+            crate::infrastructure::store::Written::Inbox,
+            result,
+            |created| matches!(created, ProposalCreated::Created { .. }),
+        )
     }
 
     async fn create_proposal_or_existing(
@@ -146,45 +151,51 @@ impl ProposalStore for MemoryScheduleStore {
         new: NewProposal,
         current_week: DateTime<Utc>,
     ) -> Result<ProposalSubmission, StoreError> {
-        check_new_proposal(&new)?;
-        if new.source != ProposalSource::Chat {
-            return Err(StoreError::Constraint(
-                "duplicate lookup is chat-only".into(),
-            ));
-        }
-        let mut tables = self.tables();
-        if !tables.drafts.drafts.contains_key(&new.id) {
-            for id in &tables.drafts.order {
-                let (Some(draft), Some(info)) = (
-                    tables.drafts.drafts.get(id),
-                    tables.drafts.proposals.get(id),
-                ) else {
-                    continue;
-                };
-                let loaded = LoadedDraft {
-                    draft: draft.clone(),
-                    ops: tables.drafts.ops.get(id).cloned().unwrap_or_default(),
-                };
-                if let Some(channel) = same_run_proposal(&new, &loaded, info, current_week) {
-                    let card = tables.drafts.cards.get(id).map(|(_, card)| card);
-                    if info.source == ProposalSource::Chat
-                        && card.is_none()
-                        && new.at - loaded.draft.created_at >= CARDLESS_CHAT_GRACE
-                    {
+        let result = async {
+            check_new_proposal(&new)?;
+            if new.source != ProposalSource::Chat {
+                return Err(StoreError::Constraint(
+                    "duplicate lookup is chat-only".into(),
+                ));
+            }
+            let mut tables = self.tables();
+            if !tables.drafts.drafts.contains_key(&new.id) {
+                for id in &tables.drafts.order {
+                    let (Some(draft), Some(info)) = (
+                        tables.drafts.drafts.get(id),
+                        tables.drafts.proposals.get(id),
+                    ) else {
                         continue;
+                    };
+                    let loaded = LoadedDraft {
+                        draft: draft.clone(),
+                        ops: tables.drafts.ops.get(id).cloned().unwrap_or_default(),
+                    };
+                    if let Some(channel) = same_run_proposal(&new, &loaded, info, current_week) {
+                        let card = tables.drafts.cards.get(id).map(|(_, card)| card);
+                        if info.source == ProposalSource::Chat
+                            && card.is_none()
+                            && new.at - loaded.draft.created_at >= CARDLESS_CHAT_GRACE
+                        {
+                            continue;
+                        }
+                        return Ok(ProposalSubmission::Existing(ExistingProposal {
+                            proposal_id: id.clone(),
+                            channel_id: card.map_or(channel, |card| card.channel_id.clone()),
+                            message_id: card.and_then(|card| card.message_id.clone()),
+                        }));
                     }
-                    return Ok(ProposalSubmission::Existing(ExistingProposal {
-                        proposal_id: id.clone(),
-                        channel_id: card.map_or(channel, |card| card.channel_id.clone()),
-                        message_id: card.and_then(|card| card.message_id.clone()),
-                    }));
                 }
             }
+            Ok(ProposalSubmission::Created(Box::new(create_in(
+                &mut tables,
+                &new,
+            )?)))
         }
-        Ok(ProposalSubmission::Created(Box::new(create_in(
-            &mut tables,
-            &new,
-        )?)))
+        .await;
+        self.written.after_if(crate::infrastructure::store::Written::Inbox, result, |submission| {
+            matches!(submission, ProposalSubmission::Created(created) if matches!(**created, ProposalCreated::Created { .. }))
+        })
     }
 
     async fn load_proposal(
@@ -229,27 +240,35 @@ impl ProposalStore for MemoryScheduleStore {
         now: DateTime<Utc>,
         actor: &Actor,
     ) -> Result<Vec<String>, StoreError> {
-        let now = micros(now);
-        let mut tables = self.tables();
-        let due: Vec<String> = tables
-            .drafts
-            .proposals
-            .iter()
-            .filter(|(id, info)| {
-                info.expires_at <= now
-                    && tables
-                        .drafts
-                        .drafts
-                        .get(*id)
-                        .is_some_and(|draft| draft.status.is_live())
-            })
-            .map(|(id, _)| id.clone())
-            .collect();
-        let mut next = tables.clone();
-        for id in &due {
-            close(&mut next, id, DraftStatus::Expired, None, actor, now);
+        let result = async {
+            let now = micros(now);
+            let mut tables = self.tables();
+            let due: Vec<String> = tables
+                .drafts
+                .proposals
+                .iter()
+                .filter(|(id, info)| {
+                    info.expires_at <= now
+                        && tables
+                            .drafts
+                            .drafts
+                            .get(*id)
+                            .is_some_and(|draft| draft.status.is_live())
+                })
+                .map(|(id, _)| id.clone())
+                .collect();
+            let mut next = tables.clone();
+            for id in &due {
+                close(&mut next, id, DraftStatus::Expired, None, actor, now);
+            }
+            *tables = next;
+            Ok(due)
         }
-        *tables = next;
-        Ok(due)
+        .await;
+        if result.as_ref().is_ok_and(|done| !done.is_empty()) {
+            self.written
+                .notify(crate::infrastructure::store::Written::Inbox);
+        }
+        result
     }
 }

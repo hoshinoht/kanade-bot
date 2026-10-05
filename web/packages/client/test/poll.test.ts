@@ -190,5 +190,26 @@ describe('createPoller', () => {
     expect(task).toHaveBeenCalledTimes(3);
     poller.stop();
   });
-});
 
+  it('changes cadence on request: a waiting poll is rescheduled at the new interval', async () => {
+    const vis = visibility();
+    const task = vi.fn(async () => 1);
+    const poller = createPoller({ task, onData: () => {}, intervalMs: 15_000, visibility: vis.source });
+    poller.start();
+    await flush();
+    expect(poller.state).toBe('waiting');
+    // Live hints arrive: polling becomes the slow safety net.
+    poller.setInterval(60_000);
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(task).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(task).toHaveBeenCalledTimes(2);
+    // The stream dropped: back to the normal cadence from now.
+    poller.setInterval(15_000);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(task).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(task).toHaveBeenCalledTimes(4);
+    poller.stop();
+  });
+});

@@ -73,15 +73,14 @@
   ] as const;
   type Key = (typeof SECTIONS)[number]['key'];
 
-  const config = new Resource<ConfigView>('/api/admin/config');
+  // Sections keep their own drafts, so a refresh behind them never discards an edit.
+  const config = new Resource<ConfigView>('/api/admin/config', { topics: ['settings', 'delivery'] });
   const targets = new Resource<Channel[]>('/api/admin/rescan/targets');
   let roleChoices = $state<Role[] | null>(null);
   let roleDirectoryError = $state('');
   let roleDirectoryLoading = $state(false);
   let roleDirectoryRequest = 0;
-  $effect(() => {
-    void config.load();
-  });
+  $effect(() => config.watch());
 
   const uid = $props.id();
   const selected = $derived<Key>(SECTIONS.some((s) => s.key === section) ? (section as Key) : 'pings');
@@ -329,21 +328,19 @@
     return result;
   }
 
+  // Re-reads go through the resource, so a newer hinted read is never replaced by an older one.
   async function refreshConfig(): Promise<ConfigView | null> {
-    const result = await send((client) => client.get<ConfigView>('/api/admin/config'));
-    if (!result.ok) {
-      config.error = result.message;
+    const failed = await config.refresh();
+    if (failed) {
+      config.error = failed;
       return null;
     }
-    config.data = result.value;
-    config.error = '';
-    return result.value;
+    return config.data;
   }
 
   // After a successful post a failed re-read must not look like a page fault.
   async function refreshQuietly(): Promise<void> {
-    const result = await send((client) => client.get<ConfigView>('/api/admin/config'));
-    if (result.ok) config.data = result.value;
+    await config.refresh();
   }
 </script>
 

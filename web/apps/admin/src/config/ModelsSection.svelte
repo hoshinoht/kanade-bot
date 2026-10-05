@@ -26,6 +26,7 @@
   import ContextWindows from './ContextWindows.svelte';
   import { changes, type Change } from './dirty';
   import PillTabs from './PillTabs.svelte';
+  import { followSaved } from './follow.svelte';
   import type { Save } from './save';
   import SaveBar from './SaveBar.svelte';
   import SettingsPanel from './SettingsPanel.svelte';
@@ -35,6 +36,11 @@
 
   // svelte-ignore state_referenced_locally
   let roles = $state<Record<ModelRole, RoleModel>>(structuredClone($state.snapshot(models.roles)));
+  followSaved(
+    () => structuredClone($state.snapshot(models.roles)),
+    () => roles,
+    (saved) => (roles = saved),
+  );
   let rolesError = $state('');
   let saving = $state(false);
   let tab = $state('roles');

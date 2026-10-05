@@ -14,7 +14,7 @@ pub async fn run_suite<S: MemberStore>(make: impl AsyncFn() -> S) {
     portal_alias_removal_releases_the_alias(make().await).await;
 }
 
-fn gateway(user_id: &str, name: &str, roles: &[&str]) -> GatewayMember {
+pub(crate) fn gateway(user_id: &str, name: &str, roles: &[&str]) -> GatewayMember {
     GatewayMember {
         user_id: user_id.into(),
         display_name: Some(name.into()),
