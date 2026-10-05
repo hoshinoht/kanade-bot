@@ -130,8 +130,6 @@ export interface Tile {
   label: string;
   value: string;
   sub?: string;
-  /** One figure per party size (the recommendation), shown in place of `value`. */
-  rows?: { label: string; value: string }[];
 }
 
 export function factTiles(fact: DifficultyFacts): Tile[] {
@@ -145,7 +143,8 @@ export function factTiles(fact: DifficultyFacts): Tile[] {
   const total = fact.hp?.find((row) => row.phase === 'total');
   if (total && !fact.hp?.some((row) => row.phase !== 'total')) out.push({ label: 'HP (total)', value: total.value });
   const spec = fact.recommended_spec;
-  if (spec?.parties?.length) out.push({ label: 'Recommended', value: '', rows: spec.parties.map((row) => ({ label: row.party, value: row.value })), sub: spec.basis ?? spec.kind });
+  // One tile per party size, each with the shared basis.
+  if (spec?.parties?.length) out.push(...spec.parties.map((row) => ({ label: `Recommended · ${row.party}`, value: row.value, sub: spec.basis ?? spec.kind })));
   else if (spec?.value) out.push({ label: 'Recommended', value: spec.value, sub: spec.basis ?? spec.kind });
   return out;
 }

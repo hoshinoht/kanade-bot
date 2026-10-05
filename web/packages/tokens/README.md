@@ -20,7 +20,7 @@ as `e2e/tokens.spec.ts`).
 | Shared signals | `--warn --own` | `:root` + dark blocks | Ported unchanged |
 | Derived | `--raise --line-soft --faint --off --accent-wash --win-soft` | `:root` `color-mix()` | Ported; `--faint` re-derived toward `--ink` (was 3.3-3.8:1) |
 | Text-only signals | `--dim-text --ok-text --risk-text --own-text --warn-text` | none (v4 used the fill colours as text) | New: the fill colour mixed toward `--ink`, for chips, statuses and freshness |
-| Difficulty pills | `--pill-{e,n,h,c,x}-{bg,fg}` | `:root` + dark blocks | Ported; light `--pill-n-bg`/`--pill-h-bg` darkened slightly (3.53/4.21 → 4.6:1) |
+| Difficulty pills | `--pill-{e,n,h,c,x}-{bg,fg}` | `:root` + dark blocks | Ported; light `--pill-n-bg`/`--pill-h-bg` darkened slightly (3.53/4.21 → 4.6:1); Easy is a slate pill (white on `#686d77` light, dark on `#aeb3bd` dark) so it stands off grey cards |
 | Boss monogram | `--mono-s --mono-l --mono-ink-s --mono-ink-l --mono-line-s --mono-line-l` | `:root` + dark blocks | Ported |
 | Entry-art veil | `--art-veil --art-crop-sheet --art-crop-card` | `:root` | Ported |
 | Type families | `--display` Solway, `--body` Zilla Slab, `--mono` Maple Mono (v5, user choice; v4 used Sometype Mono) | `:root`, Google Fonts `<link>` | Same stacks; faces self-hosted from `@fontsource/*` (OFL-1.1), latin subset, v4's weights (700/800, 400/500/600, 400/500/600) |

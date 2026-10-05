@@ -159,10 +159,12 @@ describe('phase timeline', () => {
 });
 
 describe('guide additions (2026-10-05 round 2)', () => {
-  it('shows one recommendation row per party size, the basis underneath; value as the fallback', () => {
+  it('shows one recommendation tile per party size, each with the basis; value as the fallback', () => {
     const spec = { kind: 'HEXA stat', text: 'Long.', value: '≈ 99k', basis: 'KMS, 2026', parties: [{ party: 'Solo', value: '≈ 113k' }, { party: '6 players', value: '≈ 48k' }] };
-    const tile = factTiles({ name: 'Hard', recommended_spec: spec }).at(-1)!;
-    expect(tile).toEqual({ label: 'Recommended', value: '', sub: 'KMS, 2026', rows: [{ label: 'Solo', value: '≈ 113k' }, { label: '6 players', value: '≈ 48k' }] });
+    expect(factTiles({ name: 'Hard', recommended_spec: spec }).slice(-2)).toEqual([
+      { label: 'Recommended · Solo', value: '≈ 113k', sub: 'KMS, 2026' },
+      { label: 'Recommended · 6 players', value: '≈ 48k', sub: 'KMS, 2026' },
+    ]);
     expect(factTiles({ name: 'Hard', recommended_spec: { ...spec, parties: [] } }).at(-1)).toEqual({ label: 'Recommended', value: '≈ 99k', sub: 'KMS, 2026' });
     // Parties without a value still count as a figure: no long-text note.
     const noValue = { kind: spec.kind, text: spec.text, parties: spec.parties };

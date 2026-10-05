@@ -566,7 +566,7 @@ test.describe('boss guide', () => {
     await expect(hp.locator('.guide-hp__phase').first()).toBeHidden();
   });
 
-  test('the Recommended tile lists one figure per party size, its basis underneath', async ({ page }) => {
+  test('Recommended is one tile per party size, each with its basis', async ({ page }) => {
     const doc = structuredClone(GUIDE_DOC);
     Object.assign(doc.difficulties[0]!.recommended_spec, { parties: [{ party: 'Solo', value: '≈ 120k' }, { party: 'Duo', value: '≈ 95k' }, { party: '6 players', value: '≈ 60k' }] });
     await page.route(/\/api\/admin\/bosses\/MaleficStar\/knowledge$/, async (route) => {
@@ -574,11 +574,10 @@ test.describe('boss guide', () => {
       await route.fulfill({ response, json: { ...(await response.json()), doc, missions: GUIDE_MISSIONS } });
     });
     await go(page, '/bosses/MaleficStar/knowledge');
-    const tile = page.locator('.guide-tile').filter({ hasText: 'Recommended' });
-    const rows = tile.getByRole('list', { name: 'Recommended by party size' }).getByRole('listitem');
-    await expect(rows).toHaveText(['Solo≈ 120k', 'Duo≈ 95k', '6 players≈ 60k']);
-    await expect(tile.locator('.guide-tile__value')).toHaveCount(0);
-    await expect(tile.locator('.guide-tile__sub')).toHaveText('Invented, 2026');
+    const tiles = page.locator('.guide-tile').filter({ hasText: 'Recommended' });
+    await expect(tiles.locator('dt')).toHaveText(['Recommended · Solo', 'Recommended · Duo', 'Recommended · 6 players']);
+    await expect(tiles.locator('.guide-tile__value')).toHaveText(['≈ 120k', '≈ 95k', '≈ 60k']);
+    await expect(tiles.locator('.guide-tile__sub')).toHaveText(['Invented, 2026', 'Invented, 2026', 'Invented, 2026']);
   });
 
   test('Destiny and Champion in the difficulty switch carry no rim, and their plate when selected', async ({ page }) => {

@@ -247,6 +247,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- Boss guides: each party size's recommended figure is its own fact tile
+  ("Recommended · Trio", "Recommended · Duo", …), each with its basis.
+- Difficulty pills: Easy is a slate pill (white on dark grey; light grey with
+  dark text at night) so it no longer blends into grey cards.
 - Docs: the v5 contracts, design spec, decisions and evaluations moved from
   `docs/v5/` to the private `docs/notes/`; tracked code and docs now point there.
 - The dev-only PWA mock server moved to `devtools/pwa-mock/` (was

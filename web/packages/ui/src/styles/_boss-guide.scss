@@ -58,10 +58,6 @@
 .guide-tile dd { margin: 0; }
 .guide-tile__value { font-size: var(--fs-lg); font-weight: 700; }
 .guide-tile__sub { color: var(--dim-text); font-size: var(--fs-mini); }
-// A recommendation per party size: one row each, the figure right-aligned.
-.guide-tile__rows ul { display: grid; gap: 2px; margin: 2px 0 0; padding: 0; list-style: none; }
-.guide-tile__rows li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0 10px; font-size: var(--fs-small); }
-.guide-tile__rows .mono { font-size: var(--fs-body); font-weight: 700; white-space: nowrap; }
 // HP breakdown: a pane titled "HP"; the stored total; per phase a dark label
 // bar over one bar per target, equal widths, wrapping into rows of equal bars.
 .guide-hp { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: var(--r); background: var(--pane); }
