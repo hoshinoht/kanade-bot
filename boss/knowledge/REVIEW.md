@@ -1,7 +1,7 @@
 # Boss knowledge review: MapleSEA refresh (2026-10-02)
 
 The previous import note (iSIingGunz import, 2026-09-24) is in git history.
-This refresh follows `docs/v5/boss-knowledge-proposal.md`, which the user
+This refresh follows `docs/notes/boss-knowledge-proposal.md`, which the user
 approved. The research reports, with facts tables, terminology tables and
 sources, are in the git-ignored `data/research/boss-guides/research-2026-10-02/`.
 All text is our own paraphrase. `validate.py` passes for every file, and the

@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 
 /**
  * In-page text clipping audit, the app's counterpart of the boards'
- * `render/measure.mjs` (docs/v5/design/verification.md "Measuring text in the
+ * `render/measure.mjs` (docs/notes/design/verification.md "Measuring text in the
  * app"). For every rendered element that holds its own text:
  *
  *   clip-x / clip-y  its content is wider/taller than its own box under overflow hidden/clip

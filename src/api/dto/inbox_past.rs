@@ -1,5 +1,5 @@
 //! `inbox.json#/$defs/PastPage`: closed proposals and member requests for
-//! the Inbox's read-only Past tab (`docs/v5/admin-api.md` "Inbox (A6)").
+//! the Inbox's read-only Past tab (`docs/notes/admin-api.md` "Inbox (A6)").
 //! Closed drafts never change, so their last update is when they closed.
 
 use chrono::{DateTime, Utc};

@@ -33,7 +33,7 @@ except ModuleNotFoundError:  # pragma: no cover - package execution fallback
 
 ROOT = Path(__file__).resolve().parents[1]
 V4_ROOT = ROOT / "legacy" / "python"
-INVENTORY = ROOT / "docs" / "v5" / "inventory.json"
+INVENTORY = ROOT / "docs" / "notes" / "inventory.json"
 DISPOSITIONS = {"Retain", "Import-only", "Remove", "Defer"}
 
 

@@ -273,7 +273,7 @@ export interface Refusal {
   last_at: string;
 }
 
-// ── History (docs/v5/history.md, format kanade.change.v1) ─────────────────
+// ── History (docs/notes/history.md, format kanade.change.v1) ─────────────────
 
 export type ActorKind = 'member' | 'admin' | 'system';
 export type Surface =

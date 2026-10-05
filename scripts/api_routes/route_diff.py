@@ -5,7 +5,7 @@ routes the Rust `serve` mounts (`src/api`).
 Dependency-free and source-only: it parses `.route("…", get(…).post(…))`
 calls and the string/template literals under `web/apps` and `web/packages`
 that start with `/api/`. Exits 1 when a gap is not one of the documented
-exceptions below (see docs/v5/admin-api.md "Wiring inventory").
+exceptions below (see docs/notes/admin-api.md "Wiring inventory").
 
 Usage (from the repository root): python3 scripts/api_routes/route_diff.py
 """

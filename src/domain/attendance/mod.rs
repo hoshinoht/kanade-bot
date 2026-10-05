@@ -1,7 +1,7 @@
 //! The attendance model (v5): standing answers, a per-timing default,
 //! derived answer states, status and ping rules, tallies and recorded
 //! attendance. Pure rules only; storage and the write path build on these.
-//! Contract: `docs/v5/attendance.md`.
+//! Contract: `docs/notes/attendance.md`.
 //!
 //! In [`AttendanceMode::V4Compat`] there are no standing answers and every
 //! timing is opt-in, so every rule reduces exactly to v4's.

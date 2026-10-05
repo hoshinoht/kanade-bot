@@ -1,4 +1,4 @@
-//! Token usage on the extraction log row (`docs/v5/extraction-orchestration.md`
+//! Token usage on the extraction log row (`docs/notes/extraction-orchestration.md`
 //! "Token usage"): the reported pair sums the attempts whose reply carried
 //! usage and the estimate covers those same attempts; without any reported
 //! usage the estimate covers every sent attempt; nothing sent, nothing logged.

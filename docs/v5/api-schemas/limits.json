@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kanade.invalid/api-schemas/limits.json",
-  "title": "Model backend groups, admission refusals and member allowances (docs/v5/limits-contract.md)",
+  "title": "Model backend groups, admission refusals and member allowances (docs/notes/limits-contract.md)",
   "$defs": {
     "BackendGroup": {
       "type": "object",

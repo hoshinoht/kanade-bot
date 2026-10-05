@@ -1,4 +1,4 @@
-//! The extraction log outcome of one call (`docs/v5/admin-api.md` filters).
+//! The extraction log outcome of one call (`docs/notes/admin-api.md` filters).
 
 use super::call::Failure;
 use crate::domain::model_log::ExtractionOutcome;

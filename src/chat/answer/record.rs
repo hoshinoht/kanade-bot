@@ -1,5 +1,5 @@
 //! A question as one `chat_interactions` row with its rounds (D1), with the
-//! Chat page's outcome (`docs/v5/admin-api.md`).
+//! Chat page's outcome (`docs/notes/admin-api.md`).
 
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};

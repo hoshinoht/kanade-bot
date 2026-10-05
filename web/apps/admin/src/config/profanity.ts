@@ -1,6 +1,6 @@
 import type { ConfigView } from '@kanade/api-types';
 
-/** Bounds the server holds `profanity` to (docs/v5/admin-api.md, Config). */
+/** Bounds the server holds `profanity` to (docs/notes/admin-api.md, Config). */
 export const MAX_WORDS = 100;
 export const WORD_CHARS = { min: 2, max: 32 } as const;
 export const MAX_LINE_CHARS = 200;

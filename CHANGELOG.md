@@ -247,6 +247,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- Docs: the v5 contracts, design spec, decisions and evaluations moved from
+  `docs/v5/` to the private `docs/notes/`; tracked code and docs now point there.
 - The dev-only PWA mock server moved to `devtools/pwa-mock/` (was
   `tools/pwa-mock/`) and is labelled as developer tooling that never ships.
 - `docs/v5/` now publishes only the setup guides (`runtime-bootstrap.md`,

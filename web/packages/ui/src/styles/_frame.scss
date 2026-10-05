@@ -1,7 +1,7 @@
 // The fixed 100dvh frame (v4 portal/_panes.scss `body.framed`), now at every
 // width: document, masthead, page head and tab strip never scroll; only the
 // selected panel does. v4 let phones fall back to body scrolling and stacked
-// panels -- v5 deliberately does not (see docs/v5/pwa-design-guidelines.md).
+// panels -- v5 deliberately does not (see docs/notes/pwa-design-guidelines.md).
 
 .frame {
   // Positioned so it is the containing block its overflow clips: otherwise

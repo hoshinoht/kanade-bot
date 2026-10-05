@@ -1,7 +1,7 @@
 # Draft operation vectors
 
 `draft_ops.json` pins the stored encoding of draft operations, format
-`kanade.draft_op.v1` (see "Drafts" in `docs/v5/history.md`): one sample of
+`kanade.draft_op.v1` (see "Drafts" in `docs/notes/history.md`): one sample of
 every operation, covering `null` optionals, created and existing targets,
 per-run and update-all choices, and quotes in text.
 

@@ -1,4 +1,4 @@
-//! One question's delivery (`docs/v5/chat-orchestration.md`, "Delivery"):
+//! One question's delivery (`docs/notes/chat-orchestration.md`, "Delivery"):
 //! a silent staging placeholder replying to the question, typing while the
 //! answer runs, then the answer edited into the placeholder (part 1) and
 //! posted as silent continuations. State lives in memory only; the

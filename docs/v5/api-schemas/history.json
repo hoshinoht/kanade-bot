@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kanade.invalid/api-schemas/history.json",
-  "title": "History (kanade.change.v1, docs/v5/history.md): pages, records, rollback plans, checkpoints, blame",
+  "title": "History (kanade.change.v1, docs/notes/history.md): pages, records, rollback plans, checkpoints, blame",
   "$defs": {
     "Actor": {
       "type": "object",

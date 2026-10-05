@@ -1,5 +1,5 @@
 <!--
-  One dialog for the three rollbacks in docs/v5/history.md: revert records,
+  One dialog for the three rollbacks in docs/notes/history.md: revert records,
   restore a week to a point, revert one actor's changes. It always previews
   first; strict apply is offered when nothing conflicts, otherwise the
   conflict report is shown and Force needs an explicit acknowledgement. A

@@ -1,6 +1,6 @@
 /**
  * One run's change log (`GET /api/admin/history?run=<id>`) in people's words.
- * A record carries full domain rows (docs/v5/history.md); the run's own
+ * A record carries full domain rows (docs/notes/history.md); the run's own
  * before → after is its `runs` row and its `rsvps` rows. Fields are named as
  * the server's per-field index names them: `slot`, `bosses`, `participants`,
  * `channel`, `status`, `status_pin`, `rsvp:<member id>`, `attended:<member id>`.

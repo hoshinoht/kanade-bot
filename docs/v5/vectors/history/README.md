@@ -1,7 +1,7 @@
 # Change-history vectors
 
 `golden.json` pins the canonical encoding and hashes of change-history
-format `kanade.change.v1` (see `docs/v5/history.md`): a genesis record and one
+format `kanade.change.v1` (see `docs/notes/history.md`): a genesis record and one
 record exercising non-ASCII text, control characters (NUL, U+0001, tab,
 newline, DEL), quotes, `null` optionals, sub-second instants and `refs`.
 

@@ -1,4 +1,4 @@
-//! Change history in the shape of docs/v5/history.md (`kanade.change.v1`):
+//! Change history in the shape of docs/notes/history.md (`kanade.change.v1`):
 //! one record per mutation with row before/after values, rollbacks as new
 //! records with `refs`. The hash is a stand-in (FNV), not the real SHA-256
 //! canonical encoding; the API shape is what the PWA is built against.

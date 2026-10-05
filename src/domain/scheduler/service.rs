@@ -511,7 +511,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
 
     /// A portal answer (v4 `api/service.py set_rsvp`): set (source `chat`) or
     /// clear one participant's answer, then re-derive the run's status. Unlike
-    /// a reaction it never ends a status pin (`docs/v5/attendance.md`), and any
+    /// a reaction it never ends a status pin (`docs/notes/attendance.md`), and any
     /// answer, `maybe` included, can be cleared. Returns whether the status
     /// changed.
     ///

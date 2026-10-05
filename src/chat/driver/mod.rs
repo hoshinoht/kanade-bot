@@ -4,7 +4,7 @@
 //! the answer and its delivery (`delivery.rs`: staging placeholder, typing,
 //! the answer edited in and continued), `conclude` with the reservation it
 //! holds and the chat-log row. The model side is an [`Answerer`], Discord a
-//! [`Surface`] (`docs/v5/chat-orchestration.md`, "Serve composition").
+//! [`Surface`] (`docs/notes/chat-orchestration.md`, "Serve composition").
 
 mod delivery;
 mod events;

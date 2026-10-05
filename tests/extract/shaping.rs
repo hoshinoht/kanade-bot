@@ -1,5 +1,5 @@
 //! Named deviation D-SHAPING: extraction requests go through the v5 runner's
-//! request shaping and wire encoding (docs/v5/provider-contract.md) instead of
+//! request shaping and wire encoding (docs/notes/provider-contract.md) instead of
 //! v4's `extraction_body`. Each rewrite asserts the frozen v4 value first.
 //!
 //! - sampled requests carry `max_tokens` (the runner's output reservation) and

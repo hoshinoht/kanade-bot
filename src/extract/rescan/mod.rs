@@ -18,7 +18,7 @@ use crate::domain::scheduler::StoreError;
 use crate::extract::pipeline::IncomingMessage;
 use crate::extract::window::{WindowError, clamp_window};
 
-/// Admin API spellings (`docs/v5/admin-api.md`), mapped onto v4's windows.
+/// Admin API spellings (`docs/notes/admin-api.md`), mapped onto v4's windows.
 pub const API_WINDOWS: [&str; 3] = ["week", "since_reset", "two_weeks"];
 
 /// Attempts per burst while the governor turns the rescan away.

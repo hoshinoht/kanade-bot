@@ -1,5 +1,5 @@
 //! `inbox.json`: extractor/chat proposals and member requests as one list
-//! (`docs/v5/admin-api.md` "Inbox (A6)").
+//! (`docs/notes/admin-api.md` "Inbox (A6)").
 
 use std::collections::BTreeSet;
 

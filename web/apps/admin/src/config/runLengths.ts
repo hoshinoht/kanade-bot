@@ -1,6 +1,6 @@
 import type { BossRow, ConfigView, Difficulty } from '@kanade/api-types';
 
-/** Bounds the server holds `run_lengths` to (docs/v5/admin-api.md, Config). */
+/** Bounds the server holds `run_lengths` to (docs/notes/admin-api.md, Config). */
 export const DEFAULT_RANGE = { min: 5, max: 240 } as const;
 export const OVERRIDE_RANGE = { min: 5, max: 480 } as const;
 

@@ -1,6 +1,6 @@
 /**
  * Every v4 portal section as a v5 admin route, in v4's nav order and groups.
- * Every page is built; docs/v5/pwa-parity.md tracks what each still lacks.
+ * Every page is built; docs/notes/pwa-parity.md tracks what each still lacks.
  */
 
 import type { IconName } from '@kanade/ui';

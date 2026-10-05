@@ -3,7 +3,7 @@ import { SCREENS, SIZES, screenUrl } from './frames';
 import { ADMIN, PUBLIC, expect, settle, test } from './support';
 import { auditText, type Finding } from './text-audit';
 
-// General text-clipping check (docs/v5/design/verification.md "Measuring text
+// General text-clipping check (docs/notes/design/verification.md "Measuring text
 // in the app"): every admin and public screen, plus the main states behind a
 // tab or a pick, at the five layout frames. Any clipped, cut, spilled or
 // off-screen text fails unless ALLOW names it; an ellipsis needs an ALLOW entry too.

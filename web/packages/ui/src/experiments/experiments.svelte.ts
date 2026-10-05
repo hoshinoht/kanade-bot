@@ -1,4 +1,4 @@
-// Revertible design experiments (docs/v5/pwa-design-guidelines.md "Experiments").
+// Revertible design experiments (docs/notes/pwa-design-guidelines.md "Experiments").
 // One switch: `?experiments=on|off` (remembered) or the palette command; off
 // restores today's behaviour at every usage site.
 

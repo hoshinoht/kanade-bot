@@ -1,5 +1,5 @@
 /**
- * Plain-language lines for a change record's rows (docs/v5/history.md).
+ * Plain-language lines for a change record's rows (docs/notes/history.md).
  * Row values are full domain rows (`kanade.change.v1`: run instants in UTC,
  * weekly timings with Monday = 0), so a line never needs another lookup;
  * member names come from the roster when it is loaded.

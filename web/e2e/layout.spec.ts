@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { SCREENS, SIZES, screenUrl } from './frames';
 import { ADMIN, expect, settle, test } from './support';
 
-// docs/v5/pwa-design-guidelines.md "Area follows importance" (user rule): the
+// docs/notes/pwa-design-guidelines.md "Area follows importance" (user rule): the
 // one scrolling area keeps ≥ 55% of the viewport height and never less than
 // 360 px where the viewport can hold that (below 655 px tall the 55% share
 // is the floor), and the document itself never scrolls. Frames and screens:

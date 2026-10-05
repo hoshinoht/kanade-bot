@@ -1,5 +1,5 @@
 //! `RescanJob` from a job and its per-channel results
-//! (`docs/v5/extraction-orchestration.md` "Rescan jobs"). Result errors can
+//! (`docs/notes/extraction-orchestration.md` "Rescan jobs"). Result errors can
 //! carry store or Discord text, so each channel's `errors` are fixed
 //! sentences naming what went wrong, never the recorded text.
 //!
