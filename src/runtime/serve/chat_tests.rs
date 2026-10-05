@@ -719,8 +719,10 @@ async fn live_chat_uses_the_shared_checked_in_strategy_guides() {
             guide.starts_with("# Radiant Malefic Star (MaleficStar)"),
             "{guide}"
         );
-        assert!(guide.contains("### Hard"), "{guide}");
-        assert!(!guide.contains("## Sources"), "{guide}");
+        // The model log caps tool results at 8 KiB, so check the parts before
+        // the cap; full rendering is covered by tests/chat/strategy_guides.rs.
+        assert!(guide.contains("\n## Strategies\n"), "{guide}");
+        assert!(!guide.contains("https://"), "{guide}");
         let unknown = rows
             .iter()
             .find(|row| row.message_id.as_deref() == Some("5202"))
