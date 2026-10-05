@@ -9,7 +9,7 @@
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/settings.scss';
   import type { ConfigView, Role, RoleProfileWrite } from '@kanade/api-types';
-  import { COLORWAYS, currentColorway, Icon, LiveRegion, LoadingState, RowContent, SINGLE_PANE_QUERY, Toaster } from '@kanade/ui';
+  import { COLORWAYS, currentColorway, Icon, LiveRegion, LoadError, LoadingState, RowContent, SINGLE_PANE_QUERY, Toaster } from '@kanade/ui';
   import { tick } from 'svelte';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { directory } from '../names/directory.svelte';
@@ -427,7 +427,8 @@
       {#if !shown.length}<p class="settings__none" aria-hidden="true">No settings match “{query}”.</p>{/if}
     </div>
     <div class="settings__detail" data-fid="cfg-detail">
-      {#if config.error}<p class="flash flash--error" role="status">{config.error}</p>{/if}
+      <!-- A failed first read fills the open panel below; a failed re-read keeps the drafts and says so here. -->
+      {#if config.error && config.data}<p class="flash flash--error" role="status">{config.error}</p>{/if}
       {#each SECTIONS as item (item.key)}
         {#if visited.has(item.key)}
           <div
@@ -532,6 +533,8 @@
               {:else}
                 <EnvSection env={c.env} {toaster} />
               {/if}
+            {:else if config.error}
+              <LoadError thing="the settings" reason={config.error} onretry={() => void config.load()} level={3} />
             {:else if config.loading}
               <LoadingState text="Loading the settings…" />
             {/if}

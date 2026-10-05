@@ -2,7 +2,7 @@
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
   import type { Boss, BossRow, EventBoss, FixedRow, Knowledge, Run, Week } from '@kanade/api-types';
-  import { DIFFICULTY_WORDS, LoadingState, Portrait, RowContent, SINGLE_PANE_QUERY, StatusChip, dayLabel, enter } from '@kanade/ui';
+  import { DIFFICULTY_WORDS, LoadError, LoadingState, Portrait, RowContent, SINGLE_PANE_QUERY, StatusChip, dayLabel, enter } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import BossGrid from './BossGrid.svelte';
   import KnowledgeGuide from './KnowledgeGuide.svelte';
@@ -176,7 +176,7 @@
   {#if !compact}<div class="card__head" data-fid="window-bar"><h2 class="card__title" id="bosses-title">The in-game list</h2><span class="bosses-window__order">level order</span></div>{/if}
   <div class="bosses-window__body">
     <nav data-fid="boss-list" class="bosses-list" aria-label="Boss catalog" class:bosses-list--hidden={phone && Boolean(selectedKey)} bind:this={navEl} {@attach tagPicks}>
-      {#if bosses.error}<p class="flash flash--error" role="alert">{bosses.error}</p>
+      {#if bosses.error}<LoadError thing="the boss list" reason={bosses.error} onretry={() => void bosses.load()} level={3} />
       {:else if bosses.data}<BossGrid rows={catalog} readonly active={activeKey} {infoOnly} />
         {#if eventRows.length}
           <h3 class="cap bosses-list__event-title">Event bosses</h3>

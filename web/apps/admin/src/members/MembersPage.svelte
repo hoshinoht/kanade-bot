@@ -2,7 +2,7 @@
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/members.scss';
   import type { MemberRow, Persona, PingLevel, Week } from '@kanade/api-types';
-  import { LoadError, Presence, RowContent, Select, TWO_PANE_QUERY } from '@kanade/ui';
+  import { LoadError, LoadingState, Presence, RowContent, Select, TWO_PANE_QUERY } from '@kanade/ui';
   import '@kanade/ui/styles/select.scss';
   import Pager from '../pages/Pager.svelte';
   import { paged } from '../pages/paging';
@@ -104,7 +104,9 @@
     <div class="members-roster" data-fid="members-list">
       {#if members.error}
         <LoadError thing="members" reason={members.error} onretry={() => void members.load()} />
-      {:else if members.data && rows.length === 0}
+      {:else if !members.data}
+        <LoadingState text="Loading the roster…" />
+      {:else if rows.length === 0}
         <div class="empty">
           <strong>Nothing matches “{query}”.</strong>The search reads the Discord name, the server nickname and the chat aliases.
         </div>

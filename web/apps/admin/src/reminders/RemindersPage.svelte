@@ -10,7 +10,7 @@
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
   import type { ReminderRow, Reminders } from '@kanade/api-types';
-  import { LoadError } from '@kanade/ui';
+  import { LoadError, LoadingState } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
   import ReminderFilters, { NO_FILTER, type ReminderFilter } from './ReminderFilters.svelte';
@@ -155,6 +155,8 @@
       {:else}
         <p class="empty">{current.empty}{narrowed ? ' that matches' : ''}.</p>
       {/if}
+    {:else}
+      <LoadingState text="Loading reminders…" />
     {/if}
   </div>
   <footer class="reminders-window__foot" data-fid="reminders-foot">

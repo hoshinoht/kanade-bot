@@ -9,7 +9,7 @@
 <script lang="ts">
   import '@kanade/ui/styles/panes.scss';
   import '@kanade/ui/styles/extract.scss';
-  import { Icon, LoadingState, SINGLE_PANE_QUERY } from '@kanade/ui';
+  import { Icon, LoadError, LoadingState, SINGLE_PANE_QUERY } from '@kanade/ui';
   import type { Channel, Extractions } from '@kanade/api-types';
   import { tick, untrack } from 'svelte';
   import { activeCount, parseFilter, toSearch, type LogFilter } from '../logs/filters';
@@ -217,16 +217,15 @@
   <div class="extract-window__body" class:extract-window__body--single={phone || !view || rows.length === 0}>
     <div class="extract-list" data-fid="extract-list" hidden={phone && Boolean(call)}>
       {#if extractions.error}
-        <p class="flash flash--error" role="alert">{extractions.error}</p>
-      {/if}
-      {#if view}
+        <LoadError thing="the calls" reason={extractions.error} onretry={() => void extractions.load()} level={3} />
+      {:else if view}
         {#if rows.length === 0}
           <div class="empty"><strong>Nothing matches these filters.</strong>Remove a chip above, or Clear them all.</div>
         {:else}
           <CallList bind:this={list} rows={shown.rows} selected={chosen} follow={!phone} timeZone={tz} onpick={pick} />
           <Pager bind:page pages={shown.pages} total={rows.length} noun="call" />
         {/if}
-      {:else if !extractions.error}
+      {:else}
         <LoadingState text="Loading calls…" />
       {/if}
     </div>

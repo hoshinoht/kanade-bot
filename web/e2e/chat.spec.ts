@@ -77,3 +77,13 @@ test('chat on a phone: the list, then the turn with "‹ Chat" in the top bar; B
   await expect(page).toHaveURL(`${ADMIN}/chat?sw=off`);
   await expect(list).toBeVisible();
 });
+
+test('chat Raw tab: the turn as stored, in its own scrolling panel', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/chat/c-move?sw=off`);
+  await page.getByRole('tab', { name: 'Raw' }).click();
+  await expect(page.getByRole('tab', { name: 'Raw' })).toHaveAttribute('aria-selected', 'true');
+  const raw = page.locator('.chat__detail pre.chat-raw');
+  await expect(raw).toBeVisible();
+  expect((await raw.textContent())!.trim().length).toBeGreaterThan(0);
+});

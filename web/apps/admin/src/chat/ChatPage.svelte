@@ -10,7 +10,7 @@
   // Its global `pre` (prompts, raw replies, traces) styles the turn's code text.
   import '@kanade/ui/styles/evidence.scss';
   import '@kanade/ui/styles/chat.scss';
-  import { LoadingState, SINGLE_PANE_QUERY, enter, type Toaster } from '@kanade/ui';
+  import { LoadError, LoadingState, SINGLE_PANE_QUERY, enter, type Toaster } from '@kanade/ui';
   import { tick, untrack } from 'svelte';
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
@@ -160,16 +160,15 @@
   <div class="chat__body" class:chat__body--detail={narrow && Boolean(id)} class:chat__body--list={narrow && !id}>
     <div class="chat__list" data-fid="chat-list" hidden={narrow && Boolean(id)} {@attach enter(returns || null, 'backward')}>
       {#if chat.error}
-        <p class="flash flash--error" role="alert">{chat.error}</p>
-      {/if}
-      {#if view}
+        <LoadError thing="interactions" reason={chat.error} onretry={() => void chat.load()} level={3} />
+      {:else if view}
         {#if rows.length === 0}
           <div class="empty"><strong>Nothing matches these filters.</strong>Remove a chip above, or Clear them all.</div>
         {:else}
           <ChatList bind:this={list} rows={shown.rows} selected={chosenId} follow={!narrow} timeZone={tz} onpick={pick} />
           <Pager bind:page pages={shown.pages} total={rows.length} noun="interaction" />
         {/if}
-      {:else if !chat.error}
+      {:else}
         <LoadingState text="Loading interactions…" />
       {/if}
     </div>

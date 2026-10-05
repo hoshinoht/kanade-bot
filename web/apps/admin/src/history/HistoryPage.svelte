@@ -10,7 +10,7 @@
   import { createClient } from '@kanade/client';
   import { SvelteSet } from 'svelte/reactivity';
   import { onMount } from 'svelte';
-  import { DatePicker, Icon, Presence, RowContent, Select, serverClock, Toaster, TWO_PANE_QUERY, weekStartLabel, type SelectOption } from '@kanade/ui';
+  import { DatePicker, Icon, LoadError, LoadingState, Presence, RowContent, Select, serverClock, Toaster, TWO_PANE_QUERY, weekStartLabel, type SelectOption } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
   import { SURFACE_LABELS, actorName, describe, localAt, weekDate } from './describe';
@@ -35,6 +35,8 @@
   let total = $state(0);
   let error = $state('');
   let loading = $state(false);
+  // A first read that failed shows the failed pane; a later failure keeps the rows and says so above them.
+  let loaded = $state(false);
   let selectedSeq = $state<number | null>(null);
   let selectedConfig = $state<number | null>(null);
   let selectedWeek = $state('');
@@ -61,6 +63,7 @@
       total = page.total;
       settingsTotal = page.settings_total;
       error = '';
+      loaded = true;
     } catch (e) {
       error = e instanceof Error ? e.message : 'Could not load the history.';
     } finally {
@@ -311,7 +314,7 @@
       <div class="history-list-region">
         <div class="history-list-region__scroll" data-fid="history-list">
           <!-- B_History: with a change open on a wide screen, this tool sits at the foot of its pane. -->
-          {#if !(wide && selected)}
+          {#if loaded && !(wide && selected)}
             <details class="history__member">
               <summary class="btn">Revert a member's changes…</summary>
               <form class="formrow" onsubmit={revertMember}>
@@ -321,7 +324,9 @@
               </form>
             </details>
           {/if}
-          {#if error}<p class="flash flash--error" role="alert">{error}</p>{/if}
+          {#if error && !loaded}<LoadError thing="the history" reason={error} onretry={() => void load()} level={3} />
+          {:else if error}<p class="flash flash--error" role="alert">{error}</p>
+          {:else if !loaded}<LoadingState text="Loading the history…" />{/if}
           {#each groups as group (group.week)}
             {#if group.items.length}
               <section class="history__week" aria-labelledby="history-week-{weekDate(group.week, tz)}">
@@ -347,7 +352,7 @@
             {/if}
           {/each}
            {#if loose.length && weeks.length}<section class="history__week" aria-labelledby="history-week-none"><h3 class="pane__section" data-fid="history-group" id="history-week-none">Weekly timings and other changes</h3><ol class="history-timeline">{#each loose as record (record.seq)}<li><button class="history-row expandable-row" class:history-row--active={active(record, '')} type="button" aria-current={active(record, '') ? 'true' : undefined} data-history={record.seq} data-history-week="" onclick={(event) => open(record, event, '')}>{@render rowBody(record, active(record, ''))}</button></li>{/each}</ol></section>{/if}
-          {#if !loading && records.length === 0 && settings.length === 0}<div class="empty"><strong>No changes match.</strong></div>{/if}
+          {#if loaded && !loading && records.length === 0 && settings.length === 0}<div class="empty"><strong>No changes match.</strong></div>{/if}
         </div>
         {#if nextBefore !== null}<div class="history-list-region__pager"><button class="btn" type="button" disabled={loading} onclick={() => void load(true)}>Older changes</button></div>{/if}
       </div>

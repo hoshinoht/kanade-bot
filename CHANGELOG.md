@@ -262,6 +262,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- Admin: Chat, Extractions, History, Bosses and Config show the standard
+  "Couldn't load …" pane (reason, Try again, Copy details) when their first
+  read fails, and Members, Reminders and History show loading words while
+  their first read is slow, as the other pages already did.
 - Boss guides: accuracy pass from the 2026-10-05 strategy review. Limbo
   fusions, Baldrix Phase 2 pillars and Ragnarok timing, Black Mage i-frames
   and Destruction bonus are corrected or marked unverified; Malefic Star

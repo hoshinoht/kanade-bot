@@ -41,3 +41,15 @@ test('extractions on a wide screen: picking a call replaces the entry', async ({
   await page.goBack();
   await expect(page).toHaveURL(`${ADMIN}/chat?sw=off`);
 });
+
+test('extractions Raw tab: the response pretty-printed in the code viewer', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/extractions?call=x-kalos&sw=off`);
+  await page.getByRole('tab', { name: 'Raw' }).click();
+  const panel = page.getByRole('tabpanel', { name: 'Raw' });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole('heading', { name: 'Raw response' })).toBeVisible();
+  // Pretty-printed: a space after each key's colon, which the stored compact JSON lacks.
+  await expect(panel).toContainText('"amendments": [');
+  await expect(panel.getByRole('button', { name: 'Copy' })).toBeVisible();
+});
