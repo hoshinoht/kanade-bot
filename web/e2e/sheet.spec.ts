@@ -32,7 +32,7 @@ test('admin run pane: status, answers, roster and preview ping', async ({ page }
   await expect(notice).toContainText('Posted the morning card for HLimbo in #limbo-trio as a TEST message.');
 });
 
-test('admin run sheet below 840 px: status, answers and roster in one modal', async ({ page }) => {
+test('admin run sheet below 900 px: status, answers and roster in one modal', async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 800 });
   await page.goto(`${ADMIN}/?sw=off`);
   await page.locator('[data-run="r-limbo"] .plan-card__open').click();

@@ -66,16 +66,15 @@ paint by `theme-boot.js`; mode System / Light / Dark. `colorways.ts`,
 ## Type
 
 Faces (self-hosted, `fonts.css`): **Solway** 700/800 (`--display`: names,
-titles), **Zilla Slab** 400/500/600 (`--body`: prose, controls), **Maple
-Mono** 400/500/600 (`--mono`: times, ids, counts, latencies). Boards use
+titles), **Zilla Slab** 400/500/600/700 (`--body`: prose, controls), **Maple
+Mono** 400/500/600/700 (`--mono`: times, ids, counts, latencies). Boards use
 Sometype Mono because Maple Mono is not on Google Fonts; the app keeps Maple
 Mono. `[old §The mockups are not code]`.
 
-Weight 700 on Zilla Slab and Maple Mono is **synthesised** today (no 700 face
-is loaded), so it renders heavier and wider than the boards' real bold.
-**Planned (user decision 2026-10-05):** load real 700 faces for Zilla Slab and
-Maple Mono in `fonts.css` (self-hosted, latin subset); re-run
-`e2e/fonts.spec.ts` and the clipping checks after, since widths change.
+Weight 700 on Zilla Slab and Maple Mono is a real self-hosted face (latin
+subset, user decision 2026-10-05), never synthesised; `e2e/fonts.spec.ts`
+checks both 700 faces load. They add about 101 KiB (woff2) to each app's
+precache.
 
 Scale (never raw px): `_tokens.scss`
 

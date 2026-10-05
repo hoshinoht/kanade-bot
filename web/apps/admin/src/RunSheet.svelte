@@ -87,7 +87,7 @@
   let moreOpen = $state(false);
   const sheetTabs: Record<string, HTMLButtonElement> = {};
   // The pane's pop-out: the same run in the full sheet (the modal used below
-  // 840 px), with the pane gone meanwhile. Closing it returns to the pane on
+  // 900 px), with the pane gone meanwhile. Closing it returns to the pane on
   // the same tab, focus on the pop-out button; the run stays selected.
   let popped = $state(false);
   let popButton = $state<HTMLButtonElement>();
@@ -671,7 +671,7 @@
   <!-- A backdrop click closes it unless something is still unsaved: a typed Move
        target or an open swap picker (everything else saves on press), or a
        change still on its way. Escape and × close it as before. -->
-  <!-- Below 840 px the sheet itself, full screen (HeroPhone); from 840 px the
+  <!-- Below 900 px the sheet itself, full screen (HeroPhone); from 900 px the
        pane's pop-out (HeroSheet), whose close goes back to the pane. -->
   <Modal
     bind:open={() => (wide ? popped && open : open), (value) => (wide ? (popped = value) : (open = value))}

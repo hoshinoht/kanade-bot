@@ -2,7 +2,7 @@
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/members.scss';
   import type { MemberRow, Persona, PingLevel, Week } from '@kanade/api-types';
-  import { LoadError, Presence, RowContent, Select } from '@kanade/ui';
+  import { LoadError, Presence, RowContent, Select, TWO_PANE_QUERY } from '@kanade/ui';
   import '@kanade/ui/styles/select.scss';
   import Pager from '../pages/Pager.svelte';
   import { paged } from '../pages/paging';
@@ -58,7 +58,7 @@
   const paneRuns = $derived(paneMember && week.data ? memberRuns(week.data, paneMember.id) : null);
 
   $effect(() => {
-    const query = window.matchMedia('(min-width: 840px)');
+    const query = window.matchMedia(TWO_PANE_QUERY);
     const update = () => (wide = query.matches);
     update();
     query.addEventListener('change', update);

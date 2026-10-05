@@ -2,6 +2,7 @@
 // "Area follows importance"): v4's "N runs · This/Next week" row also carries
 // v5's view switch, move help and, when compact, the filters; the board sits
 // straight under the filter card with no window chrome, as in v4.
+@use "breakpoints" as *;
 
 .week-head {
   align-items: center;
@@ -166,7 +167,7 @@
 
 // Compact frames: tighter segments, and a disabled Undo is noise (the toast
 // after a move offers Undo, and Ctrl/Cmd-Z works).
-@media (max-width: 899px), (max-height: 700px) {
+@media #{$single-pane}, (max-height: 700px) {
   .week-head .seg a,
   .week-head .seg button {
     padding: 0.3rem 0.55rem;

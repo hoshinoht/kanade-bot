@@ -2,6 +2,7 @@
 // the list of turns (400 px) beside the open turn. The list and the turn's
 // tab panel scroll on their own; the window, its title bar, the turn's
 // header and its pill tabs never do. Narrow screens show one at a time.
+@use "breakpoints" as *;
 
 .chat {
   display: flex;
@@ -750,7 +751,7 @@
   }
 }
 
-@media (max-width: 899px) {
+@media #{$single-pane} {
   .chat__bar {
     flex-wrap: wrap;
   }

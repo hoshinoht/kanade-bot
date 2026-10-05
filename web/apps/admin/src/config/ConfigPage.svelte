@@ -9,7 +9,7 @@
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/settings.scss';
   import type { ConfigView, Role, RoleProfileWrite } from '@kanade/api-types';
-  import { COLORWAYS, currentColorway, Icon, LiveRegion, LoadingState, RowContent, Toaster } from '@kanade/ui';
+  import { COLORWAYS, currentColorway, Icon, LiveRegion, LoadingState, RowContent, SINGLE_PANE_QUERY, Toaster } from '@kanade/ui';
   import { tick } from 'svelte';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { directory } from '../names/directory.svelte';
@@ -145,7 +145,7 @@
   // Same breakpoint as _settings.scss: a sideways strip on phones, a column otherwise.
   let narrow = $state(false);
   $effect(() => {
-    const query = window.matchMedia('(max-width: 899px)');
+    const query = window.matchMedia(SINGLE_PANE_QUERY);
     const update = () => (narrow = query.matches);
     update();
     query.addEventListener('change', update);
@@ -285,12 +285,11 @@
     config.data = result.value;
     const notes = result.value.notices ?? [];
     const message = notes.length ? `${done} ${notes.join(' ')}` : done;
-    // Switches and visibility apply at once: their toast offers Undo for 10 s.
+    // Switches and visibility apply at once: their toast offers Undo (10 s by default).
     if (undo)
       toaster.show({
         message,
         tone: 'ok',
-        timeoutMs: 10_000,
         action: { label: 'Undo', run: () => void undoChange(undo) },
       });
     else toaster.show({ message, tone: 'ok' });
@@ -403,7 +402,7 @@
               onclick={() => onsection?.(item.key)}
               onkeydown={(event) => onKeydown(event, index)}
             >
-              <!-- The sideways strip (≤ 899 px) keeps every tab one line tall. -->
+              <!-- The sideways strip (below 900 px) keeps every tab one line tall. -->
               <RowContent expanded={selected === item.key && !narrow}>
                 {#snippet compact()}<span class="settings__scan"><span class="settings__label">{item.label}</span>{#if hint(item.key)}<span class="settings__hint">{hint(item.key)}</span>{/if}</span>{/snippet}
                 <span class="settings__expanded"><span class="settings__label">{item.label}</span><span class="settings__summary">{#each facts(item.key).shown as fact, i (i)}<span>{#if i}<span class="vh">, </span>{/if}{fact}</span>{/each}{#if facts(item.key).more}<span class="settings__more"><span class="vh">, </span>+{facts(item.key).more} more</span>{/if}</span></span>

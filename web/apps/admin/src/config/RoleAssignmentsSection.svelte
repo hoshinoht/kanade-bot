@@ -530,7 +530,8 @@
     display: none;
   }
 
-  @media (max-width: 899px) {
+  /* $single-pane in @kanade/ui _breakpoints.scss (plain CSS here). */
+  @media (width < 900px) {
     .role-profile__cols {
       display: none;
     }

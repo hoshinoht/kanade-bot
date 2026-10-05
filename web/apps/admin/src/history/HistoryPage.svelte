@@ -68,7 +68,7 @@
     void load();
   });
   $effect(() => {
-    const media = window.matchMedia('(min-width: 840px)');
+    const media = window.matchMedia('(width >= 900px)');
     const update = () => (wide = media.matches);
     update();
     media.addEventListener('change', update);

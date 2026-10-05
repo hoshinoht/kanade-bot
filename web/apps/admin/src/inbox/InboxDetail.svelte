@@ -42,7 +42,7 @@
     /** "Edit, then approve": the picked slot as text ("wed 22:30"), parsed by the page. */
     onmove: (text: string) => void;
     onreject: () => void;
-    /** Narrow frames (≤ 899 px): the decision is the bottom action bar. */
+    /** Narrow frames (below 900 px): the decision is the bottom action bar. */
     bar?: boolean;
     /** The server's clock (`Week.generated_at`) for the expiry bar; empty hides it. */
     now?: string;

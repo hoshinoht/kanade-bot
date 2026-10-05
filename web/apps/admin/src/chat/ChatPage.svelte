@@ -10,7 +10,7 @@
   // Its global `pre` (prompts, raw replies, traces) styles the turn's code text.
   import '@kanade/ui/styles/evidence.scss';
   import '@kanade/ui/styles/chat.scss';
-  import { LoadingState, enter, type Toaster } from '@kanade/ui';
+  import { LoadingState, SINGLE_PANE_QUERY, enter, type Toaster } from '@kanade/ui';
   import { tick, untrack } from 'svelte';
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
@@ -90,7 +90,7 @@
   // Below 900 px the list and the turn take turns (as the Inbox).
   let narrow = $state(false);
   $effect(() => {
-    const media = window.matchMedia('(max-width: 899px)');
+    const media = window.matchMedia(SINGLE_PANE_QUERY);
     const update = () => (narrow = media.matches);
     update();
     media.addEventListener('change', update);

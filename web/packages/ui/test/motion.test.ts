@@ -1,7 +1,7 @@
 import { render } from 'svelte/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import LoadingState from '../src/components/LoadingState.svelte';
-import { Toaster } from '../src/components/toaster.svelte';
+import { TOAST_ACTION_MS, TOAST_MS, Toaster } from '../src/components/toaster.svelte';
 import { experiments } from '../src/experiments/experiments.svelte';
 import { Delay, LOADING_DELAY_MS } from '../src/motion/delay.svelte';
 import { SPRING, SPRING_MS } from '../src/motion/easing';
@@ -185,6 +185,49 @@ describe('enter (pane forward/backward)', () => {
   });
 });
 
+describe('Toaster timing', () => {
+  const timeout = (toast: Parameters<Toaster['show']>[0]) => {
+    const toaster = new Toaster();
+    const id = toaster.show(toast);
+    return toaster.items.find((t) => t.id === id)?.timeoutMs;
+  };
+  const undo = { label: 'Undo', run: () => {} };
+
+  it('success and info hide after 6 s, 10 s with an action; errors stay', () => {
+    expect(timeout({ message: 'Saved.', tone: 'ok' })).toBe(TOAST_MS);
+    expect(timeout({ message: 'Note.' })).toBe(TOAST_MS);
+    expect(timeout({ message: 'Moved HFA.', tone: 'ok', action: undo })).toBe(TOAST_ACTION_MS);
+    expect(timeout({ message: 'Failed.', tone: 'error' })).toBeNull();
+    expect(timeout({ message: 'Failed.', tone: 'error', action: undo })).toBeNull();
+    expect([TOAST_MS, TOAST_ACTION_MS]).toEqual([6000, 10_000]);
+  });
+
+  it('over the cap a timed toast goes first, so errors and Reload prompts stay', () => {
+    const toaster = new Toaster();
+    const error = toaster.show({ message: 'Failed.', tone: 'error' });
+    const saved = toaster.show({ message: 'Saved.', tone: 'ok' });
+    const moved = toaster.show({ message: 'Moved.', tone: 'ok' });
+    expect(toaster.items.map((t) => t.id)).toEqual([error, moved]);
+    expect(toaster.leaving.map((t) => t.id)).toEqual([saved]);
+    const reload = toaster.show({ message: 'New version.', timeoutMs: null, action: { label: 'Reload', run: () => {} } });
+    expect(toaster.items.map((t) => t.id)).toEqual([error, reload]);
+  });
+
+  it('when every older toast is persistent, the oldest goes', () => {
+    const toaster = new Toaster();
+    const first = toaster.show({ message: 'Failed.', tone: 'error' });
+    const second = toaster.show({ message: 'Failed again.', tone: 'error' });
+    const third = toaster.show({ message: 'Saved.', tone: 'ok' });
+    expect(toaster.items.map((t) => t.id)).toEqual([second, third]);
+    expect(toaster.leaving.map((t) => t.id)).toEqual([first]);
+  });
+
+  it('an explicit timeout wins, including null', () => {
+    expect(timeout({ message: 'Re-reading…', timeoutMs: null })).toBeNull();
+    expect(timeout({ message: 'x', tone: 'error', timeoutMs: 3000 })).toBe(3000);
+  });
+});
+
 describe('Toaster exit', () => {
   it('a dismissed toast leaves the live list at once but stays shown until its exit ends', () => {
     const toaster = new Toaster();
@@ -197,9 +240,9 @@ describe('Toaster exit', () => {
     expect(toaster.shown.map((t) => t.id)).toEqual([second]);
   });
 
-  it('the fallback removes it, and the fourth toast pushes the oldest out through its exit', () => {
+  it('the fallback removes it, and the third toast pushes the oldest out through its exit', () => {
     const toaster = new Toaster();
-    const ids = [1, 2, 3, 4].map((n) => toaster.show({ message: `t${n}` }));
+    const ids = [1, 2, 3].map((n) => toaster.show({ message: `t${n}` }));
     expect(toaster.items.map((t) => t.id)).toEqual(ids.slice(1));
     expect(toaster.leaving.map((t) => t.id)).toEqual([ids[0]]);
     vi.advanceTimersByTime(EXIT_FALLBACK_MS);

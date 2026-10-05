@@ -19,7 +19,8 @@ Code: `apps/admin/src/history/` (`HistoryPage`, `HistoryDetail`,
   chips (backup snapshot anchors; "reverted by #n" / revert markers); one
   active row per week group; no window or document scroll on open.
   `[DR 2026-10-04]`, `HistoryPage.svelte:225`
-- Change pane `.side-pane--history` `min(400px, 40vw)` from 840 px: compact
+- Change pane `.side-pane--history` `min(400px, 40vw)` from 900 px
+  (below, a modal; the shared single-pane switch, `[DR 2026-10-05]`): compact
   changed-field diffs (`field | was | → | now`), "Show raw JSON" in a modal
   (Chat pattern), Revert… (risk key) and the member-revert box at the pane
   foot, whose "Since" is the single-date picker (`DatePicker mode="single"`).
@@ -30,7 +31,5 @@ Code: `apps/admin/src/history/` (`HistoryPage`, `HistoryDetail`,
 
 ## Known gaps / Planned
 
-- **Planned (2026-10-05):** the pane/single-pane switch moves from 840 px to
-  the shared 900 px breakpoint (`../shell-and-components.md`).
 - **Planned:** the populated Checkpoints view (verification card, glyph
   table, Verify again) with backup manifests (A5-9). `[DR 2026-10-02]`

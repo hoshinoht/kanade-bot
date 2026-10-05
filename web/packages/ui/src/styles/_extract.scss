@@ -4,6 +4,7 @@
 // call: eyebrow, time heading and meta with pill tabs at the end; Changes and
 // Chat read beside a 250 px outcome card, Prompt and Raw in a code viewer.
 // The list, the thread and the code body each scroll on their own.
+@use "breakpoints" as *;
 
 .extract-window {
   display: flex;
@@ -649,7 +650,7 @@
 }
 
 // Phones and narrow windows: the list, or the chosen call, alone.
-@media (max-width: 899px) {
+@media #{$single-pane} {
   .extract-window__head {
     flex-wrap: wrap;
     padding-block: 6px;

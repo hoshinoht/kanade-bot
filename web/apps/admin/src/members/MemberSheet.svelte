@@ -114,7 +114,7 @@
 />
 
 <!-- The same editor is a non-modal side pane on wide screens and a full-screen
-     dialog below the approved 840px breakpoint. -->
+     dialog below the shared 900 px single-pane breakpoint. -->
 {#snippet content()}
   <div class="membersheet__content">
     <dl class="membersheet__grid" data-fid="members-facts">

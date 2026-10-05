@@ -12,7 +12,11 @@ Code: `apps/admin/src/bosses/` (`BossesPage`, `BossWorkspace`, `BossGrid`,
 `_boss-knowledge.scss`, `_boss-grid.scss`, `_bosses.scss`.
 
 - List pane 330 px (`.bosses-list`) beside the knowledge detail;
-  `/bosses/:key/knowledge` deep link; below 840 px one at a time.
+  `/bosses/:key/knowledge` deep link; below 900 px (the shared single-pane
+  switch) one at a time, as Chat: a pick pushes a tagged entry and focuses
+  the detail; the "← Back to the catalog" button (rail frame) or the top
+  bar's back (phone frame) pops it, or replaces a deep link with `/bosses`,
+  and focus returns to the boss's link. `[DR 2026-10-05]`
 - Knowledge header is one aligned line: title · Lv · researched date · source
   `[DR 2026-10-02]`; aside 240 px with weekly timings using the boss.
 - Seasonal bosses carry a tonal chip "Seasonal boss · Challengers World
@@ -25,8 +29,6 @@ Code: `apps/admin/src/bosses/` (`BossesPage`, `BossWorkspace`, `BossGrid`,
 
 ## Known gaps / Planned
 
-- **Planned (2026-10-05):** the pane/single-pane switch moves from 840 px to
-  the shared 900 px breakpoint (`../shell-and-components.md`).
 - **Planned:** port this screen to the public portal (signed-in members only,
   read-only guide + "your runs with this boss this week"); see
   `../../public-portal-plan.md`. `[DR 2026-10-04]`

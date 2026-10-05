@@ -3,6 +3,7 @@
 // "empty days collapse to a spine" shape from flex classes instead. Below
 // 900px the board stacks days vertically inside the scrolling panel, under
 // the week rail (`_week-rail.scss`, sticky there; v4 body-scrolled both).
+@use "breakpoints" as *;
 
 .board {
   display: flex;
@@ -15,7 +16,7 @@
 // rather than squeezing a column below what a card needs. 230px is v4's
 // populated track (`minmax(230px, 1fr)`), wide enough for a long boss token,
 // its pill and the planner grip on one line.
-@media (min-width: 900px) {
+@media #{$two-pane} {
   .board {
     overflow-x: auto;
   }
@@ -245,7 +246,7 @@ button.runcard:hover,
   flex: none;
 }
 
-@media (max-width: 899px) {
+@media #{$single-pane} {
   .board {
     flex-direction: column;
     min-height: 0;

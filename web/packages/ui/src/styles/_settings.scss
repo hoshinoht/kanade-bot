@@ -3,6 +3,7 @@
 // vertical ARIA tablist; on phones the list becomes a sideways strip. Each
 // section is a heading, settings cards that scroll, and a save bar that does
 // not (config/SettingsPanel.svelte, SaveBar.svelte, SwitchCard.svelte).
+@use "breakpoints" as *;
 
 .settings {
   display: flex;
@@ -927,7 +928,7 @@
 
 // ── Narrow ─────────────────────────────────────────────────────────────────
 
-@media (max-width: 899px) {
+@media #{$single-pane} {
   .settings__headline,
   .settings__card--row,
   .rate {

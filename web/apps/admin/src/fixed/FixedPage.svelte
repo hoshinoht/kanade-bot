@@ -1,7 +1,7 @@
 <script lang="ts">
   import PageLine from '../shell/PageLine.svelte';
   import type { BossRow, FixedRow } from '@kanade/api-types';
-  import { BossStack, BossTag, Icon, LoadError, LoadingState, Modal, Presence, RowContent, Toaster } from '@kanade/ui';
+  import { BossStack, BossTag, Icon, LoadError, LoadingState, Modal, Presence, RowContent, Toaster, TWO_PANE_QUERY } from '@kanade/ui';
   import '@kanade/ui/styles/fixed.scss';
   import Name from '../names/Name.svelte';
   import { directory } from '../names/directory.svelte';
@@ -99,7 +99,7 @@
   });
 
   $effect(() => {
-    const media = window.matchMedia('(min-width: 840px)');
+    const media = window.matchMedia(TWO_PANE_QUERY);
     const update = () => (wide = media.matches);
     update();
     media.addEventListener('change', update);

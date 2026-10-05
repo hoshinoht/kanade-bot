@@ -31,16 +31,28 @@ and `web/packages/ui/src/styles/`. Board names refer to
 | ≥ 1440 wide | expanded rail 240 (unless collapsed; `localStorage` `rail`) | list + detail + side pane |
 | 1200–1439 | rail 96 | list + detail; Week keeps its Glance pane |
 | 900–1199 | rail 96 | two panes; Week Glance folds into the footer below 1200 |
-| 600–899 | rail 96 | one pane; detail replaces the list with Back (840–899 still two panes on some screens until the Planned fix below) |
+| 600–899 | rail 96 | one pane; detail replaces the list with Back, or opens as a modal sheet |
 | < 600 wide **or** ≤ 500 tall | phone frame: top bar + drawer | one pane |
 
 **Single-pane switch: 900 px for every list-detail screen** (user decision
-2026-10-05). As built it still differs: Inbox, Chat, Extractions and Config
-switch below 900 px (`max-width: 899px`); Members, Fixed, History, Bosses and
-the Week run pane below 840 px. **Planned (queued):** one shared breakpoint
-constant (next to `PHONE_QUERY` in `packages/ui/src/media.ts`) used by every
-list-detail screen, moving the 840 px ones to 900 px. The dropdown's native
-picker query (`select.ts` `NATIVE_QUERY`, 840 px) is not a pane breakpoint.
+2026-10-05). One shared breakpoint: `SINGLE_PANE_QUERY` (`width < 900px`)
+and `TWO_PANE_QUERY` (`width >= 900px`; range syntax, so no gap at fractional
+widths) next to `PHONE_QUERY` in
+`packages/ui/src/media.ts`, and `$single-pane` / `$two-pane` in
+`packages/ui/src/styles/_breakpoints.scss` (change both together). Inbox,
+Chat, Extractions, Config, Members, Fixed, History, Bosses, the Week board
+and the Week run pane all use it; below 900 px Inbox, Chat, Extractions and
+Bosses show the list or the item (Back in the window, or in the top bar in
+the phone frame), Members, Fixed, History and the run open a modal sheet,
+and Config folds its sections into a sideways strip. Component `<style>`
+blocks are plain CSS and repeat the literal with a pointer to the variable.
+`e2e/single-pane.spec.ts` checks every screen at 880, 899 and 900 px. A
+single-pane pick pushes a tagged history entry; Back pops it (or replaces a
+deep link with the list), focus moves into the detail after a pick and back
+to the opened row on return. Not pane
+breakpoints, so left alone: the dropdown's native picker
+(`select.ts` `NATIVE_QUERY`, 840 px) and the Reminders title-bar wrap
+(`_reminders.scss`, 840 px, paired with the native pickers).
 The phone frame applies below 600 px wide **or** at ≤ 500 px tall (phone
 landscape; `[DR 2026-10-01]`; the old spec's "< 600 px" is stale).
 `PHONE_QUERY = '(max-width: 599px), (max-height: 500px)'` in
@@ -131,7 +143,7 @@ of a page-head card.
 | Selected row | per screen (`*--active`) | `--select` fill, `--select-edge`, radius 16–18, title 700; "open" label screen-reader only |
 | Grouped rows | e.g. Glance, Config | first `16 16 4 4`, middle 4, last `4 4 16 16` |
 | Detail pane | per screen | `.cap` eyebrow, `--display` 800 heading, meta line; key action at the header end; pill tabs (30 px, radius 15, `--select` when active) are a `tablist` |
-| Side pane | `components/SidePane.svelte`, `.side-pane` | `aside` with a label, border-left 1.5 px `--line`, `--surface`, scrolls alone; widths: default `min(380px, 38vw)` (Members), `--history` 400, `--fixed` 420, Week run pane `clamp(380px, 32vw, 480px)` (340 at 840–999) |
+| Side pane | `components/SidePane.svelte`, `.side-pane` | `aside` with a label, border-left 1.5 px `--line`, `--surface`, scrolls alone; widths: default `min(380px, 38vw)` (Members), `--history` 400, `--fixed` 420, Week run pane `clamp(380px, 32vw, 480px)` (340 at 900–999) |
 | Thread panel | `components/ThreadPanel.svelte`, `.thread-panel` | radius 20, `--row`, inset `--line` ring; message rows with flower avatars; "used" rows `--select` + label |
 | Decision card | `components/DecisionCard.svelte`, `.decision-card` | radius 28, `--select`, padding 18; key Approve; Reject… apart at the foot |
 | Code viewer | `extractions/CodeViewer.svelte` | `--mono` `--fs-mini`, line numbers, Wrap, Copy, find |
@@ -195,7 +207,7 @@ of a page-head card.
 | Error / retry | `components/LoadError.svelte` (`.state-note--error`) | 72 px glyph on a risk wash, "Couldn't load …", reason, Try again + Copy details; filters and drafts kept |
 | Unmounted route | Limits pattern (`_limits.scss`) | "This isn't available on this server yet" + key link; use for any admin route the API has not mounted `[lesson]` |
 | Loading | `LoadingState.svelte` | see `foundations.md` |
-| Toasts | `toaster.svelte.ts`, `ToastRegion.svelte`, `_toast.scss` | bottom-centre, never over focus; **at most two stacked, newest on top; success hides after 6 s, 10 s when it offers Undo**; errors stay until dismissed and offer the fix; announced via `LiveRegion` (`[old §Shared states]`, user decision 2026-10-05). **Planned fix (queued):** the code still stacks three and defaults to 8 s (`toaster.svelte.ts:38-41`). |
+| Toasts | `toaster.svelte.ts`, `ToastRegion.svelte`, `_toast.scss` | bottom-centre, never over focus; **at most two stacked, newest on top** (on screen and in reading order; over the cap the oldest *timed* toast goes first, and a persistent one — an error, a Reload prompt — only when every older toast is persistent); success/info hide after 6 s, 10 s when it offers an action (Undo) — the default rule in `Toaster.show` (`TOAST_MS`, `TOAST_ACTION_MS`, `TOAST_MAX`), callers pass `timeoutMs` only to differ (`null` for a progress toast); errors stay until dismissed and offer the fix; the timer pauses on hover/focus; announced via `LiveRegion` (`[old §Shared states]`, user decision 2026-10-05). `e2e/toasts.spec.ts` |
 | Offline | service worker shell, `e2e/offline.spec.ts` | the app shows its own "You're offline" state ("Nothing private is stored on this device.") with Try again; the SW never caches `/api/`; the page-line chip turns Offline |
 
 ## Command palette

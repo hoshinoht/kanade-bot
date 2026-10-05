@@ -2,16 +2,26 @@
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
   import type { Boss, BossRow, Difficulty, DifficultyFacts, EventBoss, FixedRow, Knowledge, Run, Week } from '@kanade/api-types';
-  import { DIFFICULTY_WORDS, LoadingState, Portrait, RowContent, StatusChip, dayLabel, enter } from '@kanade/ui';
+  import { DIFFICULTY_WORDS, LoadingState, Portrait, RowContent, SINGLE_PANE_QUERY, StatusChip, dayLabel, enter } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import BossGrid from './BossGrid.svelte';
   import StrategyList from './StrategyList.svelte';
   import { eventAsBoss, seasonTag } from './event';
   import { heroArt } from './heroArt';
   import { prefersReducedMotion } from 'svelte/motion';
+  import { tick, untrack } from 'svelte';
   import '@kanade/ui/styles/boss-knowledge.scss';
 
-  let { selectedKey = '', difficulty = '' }: { selectedKey?: string; difficulty?: string } = $props();
+  let {
+    selectedKey = '',
+    difficulty = '',
+    onselect,
+  }: {
+    selectedKey?: string;
+    difficulty?: string;
+    /** Opens a boss (empty: the catalog); `open` pushes a history entry (single pane: Back returns to the catalog). */
+    onselect?: (key: string, open: boolean) => void;
+  } = $props();
   const bosses = new Resource<BossRow[]>('/api/admin/bosses');
   const events = new Resource<EventBoss[]>('/api/admin/bosses/events');
   const fixed = new Resource<FixedRow[]>('/api/admin/fixed');
@@ -59,7 +69,7 @@
   const chrome = getChrome();
   let phone = $state(false);
   $effect(() => {
-    const query = window.matchMedia('(max-width: 839px)');
+    const query = window.matchMedia(SINGLE_PANE_QUERY);
     const update = () => (phone = query.matches);
     update();
     query.addEventListener('change', update);
@@ -68,8 +78,44 @@
   const compact = $derived(phone && Boolean(selectedKey) && Boolean(chrome?.phone));
   $effect(() => {
     if (!compact || !chrome) return;
-    chrome.back({ label: 'Bosses', name: 'Back to the catalog (Bosses)', go: () => history.back() });
+    chrome.back({ label: 'Bosses', name: 'Back to the catalog (Bosses)', go: () => leaveDetail() });
     return () => chrome.back(null);
+  });
+
+  // Whether the open boss's entry came from a pick here (so leaving pops it) or a deep link.
+  const pushedHere = () => (history.state as { bossDetail?: boolean } | null)?.bossDetail === true;
+  function leaveDetail() {
+    if (pushedHere()) history.back();
+    else onselect?.('', false);
+  }
+
+  /** Single pane: a catalog pick pushes a tagged entry instead of the router's plain one. */
+  function tagPicks(nav: HTMLElement) {
+    const onclick = (event: MouseEvent) => {
+      if (!phone || !onselect || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null;
+      const key = link ? /^\/bosses\/([^/]+)\/knowledge$/.exec(link.pathname)?.[1] : undefined;
+      if (!key) return;
+      event.preventDefault();
+      onselect(decodeURIComponent(key), true);
+    };
+    nav.addEventListener('click', onclick);
+    return () => nav.removeEventListener('click', onclick);
+  }
+
+  // Single pane swaps catalog and detail: focus follows into the detail after
+  // a pick, and back to the opened boss's link on return.
+  let detailEl = $state<HTMLElement>();
+  let navEl = $state<HTMLElement>();
+  let was = untrack(() => selectedKey);
+  $effect(() => {
+    const now = selectedKey;
+    const before = was;
+    was = now;
+    if (!phone || now === before) return;
+    if (now && !before) void tick().then(() => detailEl?.focus({ preventScroll: true }));
+    else if (!now && before)
+      void tick().then(() => navEl?.querySelector<HTMLElement>(`a[href="/bosses/${CSS.escape(before)}/knowledge"]`)?.focus({ preventScroll: true }));
   });
 
   let artFailed = $state(false);
@@ -130,7 +176,7 @@
 <section data-fid="window" class="card bosses-window window-fill" aria-labelledby="bosses-title" class:bosses-window--compact={compact}>
   {#if !compact}<div class="card__head" data-fid="window-bar"><h2 class="card__title" id="bosses-title">The in-game list</h2><span class="bosses-window__order">level order</span></div>{/if}
   <div class="bosses-window__body">
-    <nav data-fid="boss-list" class="bosses-list" aria-label="Boss catalog" class:bosses-list--hidden={compact}>
+    <nav data-fid="boss-list" class="bosses-list" aria-label="Boss catalog" class:bosses-list--hidden={phone && Boolean(selectedKey)} bind:this={navEl} {@attach tagPicks}>
       {#if bosses.error}<p class="flash flash--error" role="alert">{bosses.error}</p>
       {:else if bosses.data}<BossGrid rows={catalog} readonly active={activeKey} />
         {#if eventRows.length}
@@ -143,7 +189,9 @@
         {/if}
       {:else}<LoadingState text="Loading the boss list…" />{/if}
     </nav>
-    <article data-fid="knowledge-detail" class="knowledge-detail" class:knowledge-detail--hidden={!selectedKey && phone} tabindex="-1" {@attach enter(shownKey)}>
+    <article data-fid="knowledge-detail" class="knowledge-detail" class:knowledge-detail--hidden={!selectedKey && phone} tabindex="-1" bind:this={detailEl} {@attach enter(shownKey)}>
+      <!-- One pane below 900 px: the rail frame's way back (the phone frame's is in the top bar). -->
+      {#if phone && selectedKey && !compact}<button type="button" class="btn btn--ghost knowledge-detail__back" onclick={leaveDetail}><span aria-hidden="true">←</span> Back to the catalog</button>{/if}
       {#if knowledge.error}<div class="empty" role="alert"><strong>No knowledge for “{activeKey}”.</strong>{knowledge.error}</div>
       {:else if doc && knowledge.data}
         <header data-fid="knowledge-head" class="knowledge-hero">

@@ -1,11 +1,14 @@
-/* Self-hosted OFL faces at the exact weights v4 requested from Google Fonts
-   (Solway 700/800, Zilla Slab 400/500/600); the code face is Maple Mono
-   400/500/600 (replacing v4's Sometype Mono by user choice). Latin subset only. No third-party origin is ever contacted (font-src 'self'). */
+/* Self-hosted OFL faces: Solway 700/800, Zilla Slab 400/500/600/700 and the
+   code face Maple Mono 400/500/600/700 (replacing v4's Sometype Mono by user
+   choice). 700 is a real face, never synthesised (user decision 2026-10-05).
+   Latin subset only. No third-party origin is ever contacted (font-src 'self'). */
 @import "@fontsource/solway/latin-700.css";
 @import "@fontsource/solway/latin-800.css";
 @import "@fontsource/zilla-slab/latin-400.css";
 @import "@fontsource/zilla-slab/latin-500.css";
 @import "@fontsource/zilla-slab/latin-600.css";
+@import "@fontsource/zilla-slab/latin-700.css";
 @import "@fontsource/maple-mono/latin-400.css";
 @import "@fontsource/maple-mono/latin-500.css";
 @import "@fontsource/maple-mono/latin-600.css";
+@import "@fontsource/maple-mono/latin-700.css";

@@ -12,7 +12,7 @@
   import '@kanade/ui/styles/evidence.scss';
   import '@kanade/ui/styles/inbox.scss';
   import type { ApproveRequest, InboxTab, Proposal } from '@kanade/api-types';
-  import { Icon, LoadError, LoadingState, Modal, PendingLabel, Toaster, enter } from '@kanade/ui';
+  import { Icon, LoadError, LoadingState, Modal, PendingLabel, SINGLE_PANE_QUERY, Toaster, enter } from '@kanade/ui';
   import { tick, untrack } from 'svelte';
   import { Resource, send } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
@@ -60,7 +60,7 @@
 
   let phone = $state(false);
   $effect(() => {
-    const query = window.matchMedia('(max-width: 899px)');
+    const query = window.matchMedia(SINGLE_PANE_QUERY);
     const update = () => (phone = query.matches);
     update();
     query.addEventListener('change', update);

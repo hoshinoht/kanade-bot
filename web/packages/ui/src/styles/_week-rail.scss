@@ -2,12 +2,13 @@
 // v5 edits: it sits at the top of the scrolling panel (sticky) rather than
 // above a body-scrolled list, so it is compact; finished runs' pips use the
 // faint token instead of 50% opacity; the reset day is an accent edge.
+@use "breakpoints" as *;
 
 .rail {
   display: none;
 }
 
-@media (max-width: 899px) {
+@media #{$single-pane} {
   .rail {
     position: sticky;
     top: 0;

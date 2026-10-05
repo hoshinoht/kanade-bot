@@ -5,7 +5,7 @@
 Budget order: time, bosses, party, status > roster edits > card timeline, ids.
 `[guide]`
 
-**Boards:** `B_WeekSel` (pane), `HeroSheet` (full sheet, from 840 px),
+**Boards:** `B_WeekSel` (pane), `HeroSheet` (full sheet, from 900 px),
 `HeroPhone` (phone sheet), picker boards `Main`, `P_MoveWidths`,
 `P_MoveStates`, `P_MovePhone`. Pairs: week-sel, hero-sheet, hero-phone,
 move-pane, move-widths, move-phone.
@@ -17,8 +17,9 @@ Code: `apps/admin/src/RunSheet.svelte` (pane and sheet), `sheet/`
 styles `_run-sheet.scss`, `_runs.scss`, `_week.scss` (`.week-pane`),
 `_move-picker.scss`.
 
-- **Pane (≥ 840 px):** a side pane in the Week window, width
-  `clamp(380px, 32vw, 480px)` (340 px at 840–999), with pill tabs
+- **Pane (≥ 900 px, the shared single-pane switch `[DR 2026-10-05]`):** a
+  side pane in the Week window, width `clamp(380px, 32vw, 480px)` (340 px at
+  900–999, so the board keeps two 230 px columns from about 930 px), with pill tabs
   **Run / Answers n / Changes**, close, and a pop-out button that opens the
   same run and tab in the full sheet. `[DR 2026-10-04]`
 - **Full sheet:** the `Modal` (`flush`, `wide`) is the one window, light
@@ -61,8 +62,4 @@ styles `_run-sheet.scss`, `_runs.scss`, `_week.scss` (`.week-pane`),
 
 ## Phone
 
-Below 840 px the run opens as the full-screen sheet (`HeroPhone`).
-
-**Planned (2026-10-05):** the pane/sheet switch moves from 840 px to the
-shared 900 px breakpoint (`../shell-and-components.md`); the 840–999 px
-340 px pane width is revisited with it.
+Below 900 px the run opens as the full-screen sheet (`HeroPhone`).

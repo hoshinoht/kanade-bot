@@ -12,6 +12,7 @@
     setOvershoot,
     ToastRegion,
     Toaster,
+    TWO_PANE_QUERY,
     whenLabel,
     type Command,
   } from '@kanade/ui';
@@ -77,8 +78,8 @@
   const phoneQuery = window.matchMedia(PHONE_QUERY);
   let phone = $state(phoneQuery.matches);
   let drawerOpen = $state(false);
-  // Gate G4: from 840 px the run sheet is a side pane in the Week window; below, a full-screen sheet.
-  const paneQuery = new MediaQuery('(min-width: 840px)', true);
+  // Gate G4: from 900 px the run sheet is a side pane in the Week window; below, a full-screen sheet.
+  const paneQuery = new MediaQuery(TWO_PANE_QUERY, true);
   const sheetWide = $derived(paneQuery.current && !phone);
   let menuButton = $state<HTMLButtonElement>();
   $effect(() => {
@@ -230,8 +231,15 @@
             void store.refresh();
           },
         };
+      case 'bosses':
       case 'boss-knowledge':
-        return { selectedKey: params.boss ?? '', difficulty: router.query.get('difficulty') ?? '' };
+        return {
+          selectedKey: params.boss ?? '',
+          difficulty: router.query.get('difficulty') ?? '',
+          // As Chat: a single-pane pick pushes a tagged entry, so Back returns to the catalog.
+          onselect: (boss: string, open: boolean) =>
+            router.go(boss ? `/bosses/${encodeURIComponent(boss)}/knowledge` : '/bosses', { replace: !open, state: open ? { bossDetail: true } : null }),
+        };
       case 'extraction':
         return { id: params.id ?? '', timeZone: store.week?.timezone ?? 'Asia/Kuala_Lumpur', toaster };
       case 'reminders':
@@ -248,13 +256,14 @@
   });
 
   // A route change (not the first load) moves focus to the page, as a page load would.
-  // Chat's list and its open interaction are one page, which places focus itself.
-  const inChat = (path: string) => /^\/chat(\/|$)/.test(path);
+  // Chat's and Bosses' list and open item are one page each, which places focus itself.
+  const onePage = (path: string) => /^\/(chat|bosses)(\/|$)/.exec(path)?.[1];
   let lastPath = router.path;
   $effect(() => {
     const path = router.path;
     if (path === lastPath) return;
-    const within = inChat(path) && inChat(lastPath);
+    const page = onePage(path);
+    const within = page !== undefined && page === onePage(lastPath);
     lastPath = path;
     if (within) return;
     void tick().then(() => document.getElementById('main')?.focus({ preventScroll: true }));
@@ -312,8 +321,7 @@
     return toaster.show({
       message: outcome.message,
       tone: outcome.ok ? 'ok' : 'error',
-      // Ten seconds, paused on hover/focus; Ctrl/Cmd+Z and the palette also undo moves.
-      timeoutMs: outcome.ok ? 10_000 : null,
+      // The default timing: 10 s with Undo, paused on hover/focus; Ctrl/Cmd+Z and the palette also undo moves.
       action: outcome.ok && undo ? { label: 'Undo', run: undo } : undefined,
     });
   }
@@ -378,7 +386,7 @@
     const pending = toaster.show({ message: `Re-reading ${run.channel}…`, timeoutMs: null });
     const outcome = await rereadChannel(run);
     toaster.dismiss(pending);
-    toaster.show({ message: outcome.message, tone: outcome.ok ? 'ok' : 'error', timeoutMs: outcome.ok ? 8000 : null });
+    toaster.show({ message: outcome.message, tone: outcome.ok ? 'ok' : 'error' });
   }
 
   const commands = $derived<Command[]>([

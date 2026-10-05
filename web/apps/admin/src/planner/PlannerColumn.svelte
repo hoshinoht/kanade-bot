@@ -42,7 +42,8 @@
     background: var(--accent-wash);
   }
 
-  @media (min-width: 900px) {
+  /* $two-pane in @kanade/ui _breakpoints.scss (plain CSS here). */
+  @media (width >= 900px) {
     :global(.board__col--target.board__col--empty) {
       flex: 1 1 0;
     }

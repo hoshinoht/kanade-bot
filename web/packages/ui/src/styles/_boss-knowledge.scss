@@ -1,5 +1,6 @@
 // B_Bosses: one master/detail window. The catalog and detail own their own
 // scrolling regions so the fixed shell and title bar never move.
+@use "breakpoints" as *;
 .bosses-window { display: flex; flex-direction: column; overflow: clip; }
 .frame--rail .bosses-window > .card__head { flex: none; flex-wrap: nowrap; gap: 4px; border-radius: 0; }
 .bosses-window__order { margin-left: auto; color: var(--win-ink); font-size: var(--fs-mini); }
@@ -115,7 +116,8 @@
 .knowledge-detail aside .pill { flex: none; min-height: 18px; padding: 0 6px; font-size: var(--fs-micro); }
 .knowledge-aside__others { min-width: 0; overflow: hidden; font-size: var(--fs-mini); text-overflow: ellipsis; white-space: nowrap; }
 .knowledge-aside__count { margin: 0; font-size: var(--fs-small); }
-@media (max-width: 839px) {
+.knowledge-detail__back { flex: none; align-self: flex-start; margin: 10px 14px 0; }
+@media #{$single-pane} {
   .bosses-window--compact { margin: calc(-1 * var(--gutter)) calc(-1 * var(--gutter)) 0; }
   .bosses-window--compact .bosses-window__body { min-height: 100%; }
   .bosses-list { flex: 1 1 auto; border-right: 0; }

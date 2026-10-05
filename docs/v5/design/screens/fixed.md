@@ -13,10 +13,11 @@ Code: `apps/admin/src/fixed/` (`FixedPage`, `FixedEditor`, `snapshot.svelte.ts`)
 - Page line: count + key **Add a weekly timing** (plus icon).
 - List: `When | Bosses | Party` grid rows; selection fills the whole row; flag
   words (amended, created from chat) are not uppercase. `[DR 2026-10-02]`
-- Editor: side pane `.side-pane--fixed` `min(420px, 42vw)` from 840 px;
+- Editor: side pane `.side-pane--fixed` `min(420px, 42vw)` from 900 px
+  (the shared single-pane switch, `[DR 2026-10-05]`);
   modal below. Bosses picker shows each boss's difficulties **on one line**
   `[DR 2026-10-02]`; typed bosses and Note kept; Day / Time / **Owner** grid
-  (Owner: rostered non-bot bossing member; stacked below 840 px)
+  (Owner: rostered non-bot bossing member; stacked below 900 px)
   `[DR 2026-10-03]`; home channel dropdown; party pick chips; footer
   Retire… | Cancel | Save.
 
@@ -27,8 +28,6 @@ Editor as a modal; Day, Time and Owner fit without overlap
 
 ## Known gaps / Planned
 
-- **Planned (2026-10-05):** the pane/single-pane switch moves from 840 px to
-  the shared 900 px breakpoint (`../shell-and-components.md`).
 - **Planned (`[DR 2026-10-05]`):** the Time field uses the Move picker's
   `TimeStepper` (steps by Run lengths, PgUp/PgDn ±1 h, wraps at midnight)
   beside the weekday strip; typed entry keeps working. Today it is a plain

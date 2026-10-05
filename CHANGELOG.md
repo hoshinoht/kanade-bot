@@ -845,6 +845,11 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- v5 PWA: at most two toasts stack, newest on top, hiding after 6 s (10 s
+  with Undo) while errors stay until dismissed; every admin list-detail
+  screen and the Week run pane switch to one pane at a shared 900 px
+  breakpoint (Bosses gains a Back link in the rail frame); Zilla Slab and
+  Maple Mono load real 700 faces instead of synthesised bold.
 - v5 admin run pane and run sheet: boss art stays inside the identity card
   and fades into it (no hard cut behind Move), only where there is no text:
   behind the actions on the laptop sheet, a top-right corner by the clock in

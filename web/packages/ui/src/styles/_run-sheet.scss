@@ -1,5 +1,5 @@
 // The full run sheet (boards HeroSheet, HeroPhone): the pane's "larger view"
-// from 840 px and the sheet itself below. The modal is the one window (its
+// from 900 px and the sheet itself below. The modal is the one window (its
 // title bar holds the dots, title and close): the identity card (entry art,
 // clock, bosses, chips, Move) sits flush on its surface, then a strip of
 // Party / Answers / Cards / Changes tabs; only the selected panel scrolls.
@@ -23,13 +23,13 @@ dialog.runsheet .modal__body {
   background: var(--surface);
 }
 
-// From 840 px: nearly the whole frame, as the board's page.
+// From 900 px: nearly the whole frame, as the board's page.
 dialog.modal.runsheet--wide {
   width: min(1232px, calc(100% - 48px));
   height: calc(100dvh - 24px);
 }
 
-// Below 840 px: a tall card over the page, and full screen in the phone frame
+// Below 900 px: a tall card over the page, and full screen in the phone frame
 // (spec "Side pane": they may stay full-screen sheets).
 dialog.modal.runsheet--narrow {
   width: min(46rem, calc(100% - 1.6rem));
@@ -647,7 +647,7 @@ dialog.runsheet--narrow .modal__head {
   font-weight: 600;
 }
 
-/* ── below 840 px: the phone's card and window (HeroPhone) ──────────────── */
+/* ── below 900 px: the phone's card and window (HeroPhone) ──────────────── */
 
 .runsheet--narrow .runsheet__hero {
   flex-direction: column;

@@ -1,6 +1,7 @@
 // M3E weekly timings: the tabular list and editor are sibling scroll owners.
 // `overflow: clip`, not hidden: a hidden box is still a programmatic scroll
 // container, so focusing a row could scroll the window under its title bar.
+@use "breakpoints" as *;
 .fixed-window { display: flex; flex-direction: column; overflow: clip; }
 // The Add key (mockup `.key`): bold, its plus 8 px from the words.
 .pageline .fixed-add { gap: 8px; font-weight: 700; }
@@ -153,7 +154,7 @@
 .choice__opt { display: flex; align-items: center; gap: 0.4rem; min-height: 2rem; }
 .field--grow { flex: 1 1 10rem; }
 
-@media (max-width: 839px) {
+@media #{$single-pane} {
   dialog.modal--narrow.fixedsheet { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; }
   dialog.fixedsheet .modal__panel { min-height: 100dvh; }
   .fixed-window__search { flex: 1 1 auto; margin-left: 0; }

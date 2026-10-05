@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import type { Run, Week } from '@kanade/api-types';
-  import { AnswerBar, answerCounts, answerWords, BossTag, Icon, RowContent, RunCardBody, runAccessibleName, runTitle } from '@kanade/ui';
+  import { AnswerBar, answerCounts, answerWords, BossTag, Icon, RowContent, RunCardBody, runAccessibleName, runTitle, TWO_PANE_QUERY } from '@kanade/ui';
   import { PICK_KEY } from './keyboardMove';
   import { openPlaces } from '../week/waiting';
 
@@ -63,7 +63,7 @@
   const HOVER = '(hover: hover) and (pointer: fine)';
 
   function canGrow(li: HTMLElement) {
-    return matchMedia('(min-width: 900px)').matches && !li.closest('.week-window--phone');
+    return matchMedia(TWO_PANE_QUERY).matches && !li.closest('.week-window--phone');
   }
 
   $effect(() => {
@@ -284,7 +284,8 @@
     display: none;
   }
 
-  @media (max-width: 899px) {
+  /* $single-pane in @kanade/ui _breakpoints.scss (plain CSS here). */
+  @media (width < 900px) {
     .plan-card__reread {
       flex: none;
       display: inline-flex;

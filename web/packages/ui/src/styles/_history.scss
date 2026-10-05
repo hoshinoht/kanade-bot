@@ -2,6 +2,7 @@
 // direct sibling, so audit scanning remains available while reviewing a diff.
 // `overflow: clip`, not hidden: a hidden box is still a programmatic scroll
 // container, so focusing a row could scroll the whole window under the head.
+@use "breakpoints" as *;
 .history-window { display: flex; flex-direction: column; overflow: clip; }
 // Title bar = the shared window tab strip (Inbox) plus compact filter buttons.
 .history-window__head.tabs__strip { align-items: flex-end; }
@@ -128,7 +129,7 @@
 .history-backups__note .icon { flex: none; width: 16px; height: 16px; margin-top: 2px; }
 .history-backups__note strong { color: var(--ink); }
 
-@media (max-width: 839px) {
+@media #{$single-pane} {
   .history-checkpoints { padding: 12px; }
   .history-verify { flex-wrap: wrap; padding: 12px 14px; }
   // The pinned name wraps so the other columns keep room to scroll past it.

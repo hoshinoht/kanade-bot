@@ -28,7 +28,7 @@ export { default as ToastRegion } from './components/ToastRegion.svelte';
 export { Toaster, type Toast, type ToastAction, type ToastTone } from './components/toaster.svelte';
 export * from './format';
 export { initial } from './initial';
-export { PHONE_QUERY } from './media';
+export { PHONE_QUERY, SINGLE_PANE_QUERY, TWO_PANE_QUERY } from './media';
 export { CHECK_TONE, RUN_TONE, type Tone } from './tone';
 export {
   applyColorway,

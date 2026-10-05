@@ -9,7 +9,7 @@
 <script lang="ts">
   import '@kanade/ui/styles/panes.scss';
   import '@kanade/ui/styles/extract.scss';
-  import { Icon, LoadingState } from '@kanade/ui';
+  import { Icon, LoadingState, SINGLE_PANE_QUERY } from '@kanade/ui';
   import type { Channel, Extractions } from '@kanade/api-types';
   import { tick, untrack } from 'svelte';
   import { activeCount, parseFilter, toSearch, type LogFilter } from '../logs/filters';
@@ -96,7 +96,7 @@
 
   let phone = $state(false);
   $effect(() => {
-    const media = window.matchMedia('(max-width: 899px)');
+    const media = window.matchMedia(SINGLE_PANE_QUERY);
     const update = () => (phone = media.matches);
     update();
     media.addEventListener('change', update);

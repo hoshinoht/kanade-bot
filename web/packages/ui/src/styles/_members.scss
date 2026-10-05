@@ -1,5 +1,6 @@
 // M3E roster (mockup B_Members): table scan on the left, member editor in the
 // shared side pane.
+@use "breakpoints" as *;
 .members-window {
   display: flex;
   flex-direction: column;
@@ -177,7 +178,7 @@
 .membersheet__notice { margin: 0; color: var(--ok-text); font-size: var(--fs-small); }
 .membersheet__notice:empty { margin-top: -16px; }
 
-@media (max-width: 839px) {
+@media #{$single-pane} {
   dialog.modal--narrow.membersheet { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; }
   dialog.membersheet .modal__panel { min-height: 100dvh; }
   dialog.membersheet .membersheet__content { padding: 0; }

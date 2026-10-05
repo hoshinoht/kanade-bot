@@ -4,6 +4,7 @@
 // Admin only; values from the boards, sizes on the type-scale tokens.
 
 @use "easing" as *;
+@use "breakpoints" as *;
 
 .week-window {
   display: flex;
@@ -375,7 +376,7 @@ a.week-foot__item:hover,
 // pill and three party names (v4's 230 px track; user decision 2026-10-04,
 // replacing B_WeekSel's 190 px squeeze). Busier weeks scroll sideways, and
 // an edge with more board past it fades out.
-@media (min-width: 900px) {
+@media #{$two-pane} {
   .week-window .board__col:not(.board__col--empty) {
     min-width: 14.375rem;
   }
@@ -735,7 +736,8 @@ a.week-foot__item:hover,
   overflow: hidden;
 }
 
-// 840-999 px: a 380 px pane would leave the board under two columns.
+// 900-999 px: a 380 px pane would leave the board under two 230 px columns
+// until about 970 px; 340 px gives two from about 930 px.
 @media (max-width: 999px) {
   .side-pane.week-pane {
     flex-basis: 340px;
@@ -1398,7 +1400,7 @@ a.week-foot__item:hover,
 }
 
 // The board's cards are blocks; the phone's re-read button sits beside the face.
-@media (min-width: 900px) {
+@media #{$two-pane} {
   .week-window .board .plan-card {
     display: block;
     gap: normal;

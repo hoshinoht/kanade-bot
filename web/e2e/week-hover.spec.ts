@@ -4,7 +4,7 @@ import { ADMIN, expect, settle, test, choose, openList, optionLabels } from './s
 // Week mini cards grow on hover (fine pointers) and keyboard focus, in flow:
 // the cards below in that day move down rather than being covered (an
 // overlay once hid the next card's clock, 2026-10-04); a click only opens the
-// run. The run sheet (below 840 px) closes on a backdrop click unless it holds
+// run. The run sheet (below 900 px) closes on a backdrop click unless it holds
 // unsaved input.
 
 // Layout boxes (offset*), so the hover lift's 1 px transform does not count.

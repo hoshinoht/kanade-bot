@@ -82,8 +82,8 @@ limits, chat, extractions, login).
 ## Drift found (still open)
 
 Resolved items moved into their files with their decision dates: overshoot
-stays opt-in, toasts 2 deep / 6 s / 10 s with Undo, single-pane switch at
-900 px, real 700 faces, the phone Limits and HeroPhone board fixes, the
+stays opt-in, toasts 2 deep / 6 s / 10 s with Undo, the single-pane switch at
+900 px and the real 700 faces (all three built 2026-10-05), the phone Limits and HeroPhone board fixes, the
 `web/AGENTS.md` Week-window line and the one-window run sheet (all
 2026-10-05), coral retired (2026-10-04), and the phone frame query
 (2026-10-01).
