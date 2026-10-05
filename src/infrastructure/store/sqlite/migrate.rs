@@ -914,4 +914,120 @@ mod tests {
             "children still reference the rebuilt table"
         );
     }
+
+    /// Shipped migrations are frozen byte for byte: a deployed store refuses
+    /// to open when an applied migration's checksum changes (a comment edit
+    /// once took production down). Append new versions; never edit old ones.
+    #[test]
+    fn shipped_migrations_never_change() {
+        const SHIPPED: &[(i64, &str)] = &[
+            (
+                1,
+                "af627f54aca2d991cbf018410782ad8694b9a2d0ef681424e2e2c426d33884a1",
+            ),
+            (
+                2,
+                "a73db1e033e3093c46928dde2f9bc8d97578b967acbc387d35a5224758237521",
+            ),
+            (
+                3,
+                "4273dc1f916a8b2e36f3479b00aee8f3015ef5aacdd0f5a28d390011a2d7dda8",
+            ),
+            (
+                4,
+                "84632cd590244046b32f3635dc1496bff02b8c74f67da326b1e2d4a5b52e6b33",
+            ),
+            (
+                5,
+                "169b322d784e50d0444ea0fc6e60f99b394f49bb49c8236390cb2a5e0d53a522",
+            ),
+            (
+                6,
+                "894fcc6610ca0964bf9d95573c1f68269f70e736251ea6101520270221e17539",
+            ),
+            (
+                7,
+                "9d7284dd8cc0195ecfb0cc65875ac9ff62466c6ac4e52fa12c6bc2b52c342869",
+            ),
+            (
+                8,
+                "3f8e01e0ce526d853d9ac08697999152aa59324e4694132c74f84311c1df5a97",
+            ),
+            (
+                9,
+                "f2b69064c75bc424f8742f003380dbf917468bd2a5df26e2bd04f286861c2676",
+            ),
+            (
+                10,
+                "83ad2adac9c829e82697268cc8747acfd659b8df5f108b6e40fe8089c42ebd64",
+            ),
+            (
+                11,
+                "d3f619353cb49e52e13469268fe652c462d595f2cfb6d342cc957657d787aa69",
+            ),
+            (
+                12,
+                "d1361933a094edb7bb25759b8e762516ac40cd9606cd6b6ccf8b25f078632a3d",
+            ),
+            (
+                13,
+                "fae7047988d3992bba878ab0f817840c16299c51fbe61e08dc619d06cc2f68c6",
+            ),
+            (
+                14,
+                "d059a2aaea6841fe6ca6ba20d956367860b3a9466a46bac96c91e12fe855cfe1",
+            ),
+            (
+                15,
+                "f3cdc32e9f712a4f0ed4fd3232cf248c9ba1d0084a0cf4ae2a6ab32b5e282a7c",
+            ),
+            (
+                16,
+                "99017fd262b149fb129937aea2bf3d2ba8fa67099cd32ec9fc10764b069909f1",
+            ),
+            (
+                17,
+                "b6f9838f7491c655e2a7c8dc1da991cb7a6d50af643ad73dfc848c39132177bf",
+            ),
+            (
+                18,
+                "6d0d1c8dd0af2b052599dc4b98bd3084a91e71c1511bbccf7d0ddcb6c9ed4677",
+            ),
+            (
+                19,
+                "1f0963e7d81e4168cbe358dcfc8bba9ec02cee6c6ad64cbfdd06e5cc24587e98",
+            ),
+            (
+                20,
+                "331ed693c86a13f89fa871ff0db2442ee8b883c9afd1e11b78750441778b259e",
+            ),
+            (
+                21,
+                "ff347aead1d6c499d37b3890e099cf071c489b8fe099179130cb26094e7e2cd2",
+            ),
+            (
+                22,
+                "db6806e9835448c44e2bf6c4c8d75152efff4b0fcbb4b5a6db78a6dd79a178ee",
+            ),
+            (
+                23,
+                "f0f30dc1d0e4aa05ae9cf7e82bd371ea04e24ca07aba862eebf9a565ba63af01",
+            ),
+            (
+                24,
+                "276cbefd3cc6d1d93c38a83bd51c8373a0109aa60f0ac708d661f78a44f2aae2",
+            ),
+        ];
+        for (version, sum) in SHIPPED {
+            let migration = MIGRATIONS
+                .iter()
+                .find(|m| m.version == *version)
+                .unwrap_or_else(|| panic!("migration {version} is gone"));
+            assert_eq!(
+                checksum(migration.sql),
+                *sum,
+                "migration {version} changed; add a new migration instead"
+            );
+        }
+    }
 }

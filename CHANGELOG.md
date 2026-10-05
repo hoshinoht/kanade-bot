@@ -348,6 +348,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- Store: migration 0006 is restored byte for byte (a comment path edit in the
+  docs move changed its checksum, so an existing store refused to open); a
+  test now pins every shipped migration's checksum.
 - Saving a Config switch no longer freezes the env-seeded channel lists into
   stored settings.
 - v5 chat: a `request_tools` call with the wrong argument shape is now told

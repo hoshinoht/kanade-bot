@@ -1,4 +1,4 @@
--- v5 attendance (domain::attendance, docs/notes/attendance.md): a weekly
+-- v5 attendance (domain::attendance, docs/v5/attendance.md): a weekly
 -- timing's default for unanswered members, members' standing answers
 -- ("always in") per timing, and attendance recorded per run.
 
