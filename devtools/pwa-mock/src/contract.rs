@@ -316,13 +316,15 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         )
         .await;
     }
-    h.ok(
-        "GET",
-        "/api/admin/summary",
-        None,
-        "week.json#/$defs/Summary",
-    )
-    .await;
+    let summary = h
+        .ok(
+            "GET",
+            "/api/admin/summary",
+            None,
+            "week.json#/$defs/Summary",
+        )
+        .await;
+    assert_eq!(summary["quiet_mode"], false, "quiet mode starts off");
     let members = h
         .ok(
             "GET",
@@ -1158,6 +1160,15 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "config.json#/$defs/ConfigView",
     )
     .await;
+    let quiet = h
+        .ok(
+            "GET",
+            "/api/admin/summary",
+            None,
+            "week.json#/$defs/Summary",
+        )
+        .await;
+    assert_eq!(quiet["quiet_mode"], true, "the summary follows the config");
     let lengths = h
         .ok(
             "PATCH",

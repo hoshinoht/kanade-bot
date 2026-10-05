@@ -39,12 +39,15 @@
     section = '',
     onsection,
     onrunlengths,
+    onquiet,
   }: {
     toaster: Toaster;
     section?: string;
     onsection?: (key: string) => void;
     /** Run lengths saved: the planner's keyboard step follows the new default. */
     onrunlengths?: (defaultMinutes: number) => void;
+    /** A save answered: the shell's quiet-mode chip follows the saved value at once. */
+    onquiet?: (on: boolean) => void;
   } = $props();
 
   // `terms` hold the cards' own titles too, so a search names a setting, not only a section.
@@ -291,6 +294,7 @@
     // A refusal stays inline, next to the fields or switch that caused it.
     if (!result.ok) return result.message;
     config.data = result.value;
+    onquiet?.(result.value.notifications.quiet_mode);
     const notes = result.value.notices ?? [];
     const message = notes.length ? `${done} ${notes.join(' ')}` : done;
     // Switches and visibility apply at once: their toast offers Undo (10 s by default).

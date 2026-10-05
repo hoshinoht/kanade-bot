@@ -67,19 +67,24 @@ export class AdminWeek {
   #holding = false;
   /** Newest snapshot that arrived while a lift or move was open. */
   #buffered: Snapshot | null = null;
+  /** Bumped by each Config save's quiet-mode answer (`setQuiet`). */
+  #quietSaves = 0;
 
   constructor() {
     this.#poller = createPoller<Snapshot>({
       task: async (signal) => {
         const which = this.which;
         const query = `?week=${which}`;
-        const [week, stats, summary, current] = await Promise.all([
+        const quietSaves = this.#quietSaves;
+        const [week, stats, read, current] = await Promise.all([
           this.#client.get<Week>(`/api/admin/week${query}`, { signal }),
           this.#client.get<Stats>(`/api/admin/stats${query}`, { signal }),
           this.#client.get<Summary>('/api/admin/summary', { signal }),
           // Next week on screen: the Glance's next run still lives in this week.
           which === 'next' ? this.#client.get<Week>('/api/admin/week?week=this', { signal }) : null,
         ]);
+        // A save answered while this read was out is newer than the read's quiet mode.
+        const summary = quietSaves !== this.#quietSaves && this.summary ? { ...read, quiet_mode: this.summary.quiet_mode } : read;
         // The tiles describe "right now", not the board, so they never wait for a hold.
         if (JSON.stringify(this.summary) !== JSON.stringify(summary)) this.summary = summary;
         if (current && !same(this.#current, current)) this.#current = current;
@@ -213,6 +218,21 @@ export class AdminWeek {
   /** The loaded week's (This or Next) runs still to come, unfiltered: the drawer's Week count. */
   get openRuns(): number | null {
     return this.week ? this.week.runs.filter((r) => !isPast(r)).length : null;
+  }
+
+  /**
+   * The "Quiet mode on" chip replaces the Live chip (B_States) while the
+   * polled summary says quiet mode is on; Loading, Retrying, Offline and
+   * "Can't reach" still show, as the summary may be out of date then.
+   */
+  get quietChip(): boolean {
+    return this.fresh === 'live' && this.summary?.quiet_mode === true;
+  }
+
+  /** A Config save's answer: the chip follows it now rather than on the next poll. */
+  setQuiet(on: boolean): void {
+    this.#quietSaves++;
+    if (this.summary && this.summary.quiet_mode !== on) this.summary = { ...this.summary, quiet_mode: on };
   }
 
   /** B_PhoneNav counts by section key; each is absent until its source loads. */

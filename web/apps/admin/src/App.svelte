@@ -117,6 +117,9 @@
     get timezone() {
       return store.week?.timezone ?? '';
     },
+    get quiet() {
+      return store.quietChip;
+    },
     palette: () => void togglePalette(true),
     back: (step) => (pageBack = step),
   });
@@ -235,6 +238,7 @@
             store.runStep = minutes;
             void store.refresh();
           },
+          onquiet: (on: boolean) => store.setQuiet(on),
         };
       case 'bosses':
       case 'boss-knowledge':
@@ -512,6 +516,7 @@
         fresh={store.fresh}
         updated={store.updated}
         timezone={store.week?.timezone ?? ''}
+        quiet={store.quietChip}
         drawerId="nav-drawer"
         back={pageBack}
         bind:menu={menuButton}

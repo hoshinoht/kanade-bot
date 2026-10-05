@@ -448,6 +448,16 @@ async fn admin_week(config: &Config, query: &str) -> Value {
     value
 }
 
+async fn admin_summary(config: &Config) -> Value {
+    let reply = config
+        .send("GET", "/api/admin/summary", None, &json!({}))
+        .await;
+    assert_eq!(reply.status, 200, "{}", reply.text());
+    let value = reply.json();
+    assert_valid("week.json#/$defs/Summary", "admin summary", &value);
+    value
+}
+
 #[tokio::test]
 async fn get_shows_settings_models_personas_and_env_facts() {
     let config = Config::new().await;
@@ -1652,6 +1662,34 @@ async fn run_lengths_are_validated_saved_once_and_apply_to_the_next_week_read() 
     let no_op = config.patch(body).await;
     assert_eq!(no_op["run_lengths"]["default_minutes"], 20);
     assert!(!changes.has_changed().unwrap());
+}
+
+#[tokio::test]
+async fn summary_reports_the_running_quiet_mode() {
+    let config = Config::new().await;
+    assert_eq!(
+        admin_summary(&config).await["quiet_mode"],
+        false,
+        "default off"
+    );
+
+    config
+        .patch(json!({"notifications": {"quiet_mode": true}}))
+        .await;
+    assert_eq!(
+        admin_summary(&config).await["quiet_mode"],
+        true,
+        "the next read sees the save, no restart"
+    );
+
+    config
+        .patch(json!({"notifications": {"quiet_mode": false}}))
+        .await;
+    assert_eq!(
+        admin_summary(&config).await["quiet_mode"],
+        false,
+        "off again"
+    );
 }
 
 #[tokio::test]

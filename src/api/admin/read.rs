@@ -98,8 +98,16 @@ async fn summary(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
     let inbox = state.store.inbox_count().await.map_err(unavailable)?;
     let profiles = state.store.members().await.map_err(unavailable)?;
     let members = dto::members::bossers(&profiles, &state.access);
+    // The config desk's running settings, so a save shows on the next read.
+    let quiet_mode = match &state.config {
+        Some(desk) => desk.settings().await.notifications.quiet_mode,
+        None => false,
+    };
     let ctx = context(&site, state, roster(&[]), now);
-    Ok(Json(dto::week::summary(&ctx, &snapshot, inbox, members)).into_response())
+    Ok(Json(dto::week::summary(
+        &ctx, &snapshot, inbox, members, quiet_mode,
+    ))
+    .into_response())
 }
 
 async fn fixed(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {

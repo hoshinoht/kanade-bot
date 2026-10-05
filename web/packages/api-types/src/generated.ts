@@ -94,7 +94,11 @@ members: number,
 /**
  * `/api/admin/reminders` `upcoming` rows over the same two weeks.
  */
-reminders: number, model: ModelBusy, };
+reminders: number, model: ModelBusy, 
+/**
+ * Notifications `quiet_mode` as the running settings hold it (the shell's chip).
+ */
+quiet_mode: boolean, };
 
 /**
  * The signed-out sign-in strip: no names, ids, answers, party, channel or version.

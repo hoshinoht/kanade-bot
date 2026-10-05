@@ -152,6 +152,8 @@ pub struct Summary {
     pub members: usize,
     pub reminders: usize,
     pub model: Model,
+    /// Config → Notifications quiet mode, as the last config PATCH left it.
+    pub quiet_mode: bool,
 }
 
 /// The signed-out sign-in strip: time, boss names and the aggregate tally only.

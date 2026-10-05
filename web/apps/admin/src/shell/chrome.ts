@@ -8,6 +8,8 @@ export interface Chrome {
   readonly fresh: FreshState;
   readonly updated: string;
   readonly timezone: string;
+  /** Quiet mode is on and the data is live: the "Quiet mode on" chip stands in for the Live chip. */
+  readonly quiet: boolean;
   palette(): void;
   /**
    * Phone frame: a page's own back step in the top bar (an open Inbox item:

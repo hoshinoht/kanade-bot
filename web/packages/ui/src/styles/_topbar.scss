@@ -111,15 +111,21 @@
   white-space: nowrap;
 }
 
-.topbar__fresh .fresh {
+.topbar__fresh .fresh,
+.topbar__fresh .quiet {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
-.topbar__fresh .fresh .icon {
+.topbar__fresh .fresh .icon,
+.topbar__fresh .quiet .icon {
   width: 14px;
   height: 14px;
+}
+
+.topbar__fresh--quiet {
+  background: var(--chip-fill);
 }
 
 // Live shows the mark and the bold time only: the spaces around the

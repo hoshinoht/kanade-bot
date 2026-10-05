@@ -6,6 +6,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Admin: a "Quiet mode on" chip (bell-off icon and words) takes the Live
+  chip's place in the page line and phone top bar while quiet mode is on,
+  updating as soon as Config saves; `GET /api/admin/summary` gains
+  `quiet_mode`.
 - Deploy: an optional cloudflared sidecar (`--profile public`) on an
   internal `kanade_public` network, reading its tunnel token from the
   `kanade-cloudflared` secret file; the bot joins that network but opens its

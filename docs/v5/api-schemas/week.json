@@ -171,7 +171,7 @@
     "Summary": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["next", "unanswered", "inbox", "members", "reminders", "model"],
+      "required": ["next", "unanswered", "inbox", "members", "reminders", "model", "quiet_mode"],
       "properties": {
         "next": {
           "anyOf": [
@@ -203,7 +203,8 @@
             "busy": { "type": "boolean" },
             "holder": { "$ref": "common.json#/$defs/NullableString" }
           }
-        }
+        },
+        "quiet_mode": { "type": "boolean" }
       }
     },
     "Tonight": {

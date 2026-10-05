@@ -187,6 +187,15 @@
   color: var(--risk-text);
 }
 
+// Quiet mode (B_States): a known setting, not an alarm, so neutral ink on
+// the tonal chip fill; the bell-off mark and the words carry it.
+.quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--ink);
+}
+
 .chip__id {
   font-family: var(--mono);
   font-size: var(--fs-micro);

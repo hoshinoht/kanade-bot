@@ -445,6 +445,8 @@ pub struct Summary {
     /// `/api/admin/reminders` `upcoming` rows over the same two weeks.
     pub reminders: usize,
     pub model: Model,
+    /// Notifications `quiet_mode` as the running settings hold it (the shell's chip).
+    pub quiet_mode: bool,
 }
 
 fn is_ahead(run: &Run, now: DateTime<Utc>) -> bool {
@@ -476,6 +478,7 @@ pub fn summary(
     snapshot: &ScheduleSnapshot,
     inbox: u64,
     members: usize,
+    quiet_mode: bool,
 ) -> Summary {
     let next = next_run(snapshot, ctx.now).map(|run| NextRun {
         run_id: run.id.clone(),
@@ -508,6 +511,7 @@ pub fn summary(
             busy: false,
             holder: None,
         },
+        quiet_mode,
     }
 }
 

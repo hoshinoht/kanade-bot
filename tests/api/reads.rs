@@ -987,6 +987,7 @@ async fn stats_summary_and_reminders() {
     );
     assert_eq!(summary["inbox"], 0);
     assert_eq!(summary["members"], 3, "Alice, Bob, Dan; never the bot");
+    assert_eq!(summary["quiet_mode"], false, "no config desk: the default");
 
     let reminders = reads
         .read("/api/admin/reminders", "reminders.json#/$defs/Reminders")

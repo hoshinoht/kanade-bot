@@ -421,6 +421,7 @@ impl Store {
                 busy: true,
                 holder: Some("extractor"),
             },
+            quiet_mode: self.config.quiet_mode,
         }
     }
 

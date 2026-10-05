@@ -2,8 +2,8 @@
   The 36 px page line that replaced the page-head card (M3E spec "Frame",
   gate G2), unboxed on the ground as in the mockups: the page's title, its
   heading (an h1: the count, its numeral in `.pageline__num`, or the state)
-  and short context, the page's own controls, then the Live chip and the
-  command palette.
+  and short context, the page's own controls, then the Live chip (or
+  "Quiet mode on" in its place) and the command palette.
   On a phone the top bar carries the title and the Live chip, so the line
   keeps only the page's own part.
 -->
@@ -11,6 +11,7 @@
   import { Freshness, Icon } from '@kanade/ui';
   import type { Snippet } from 'svelte';
   import { getChrome } from './chrome';
+  import QuietMode from './QuietMode.svelte';
 
   let {
     title = '',
@@ -41,11 +42,12 @@
       <!-- The zone is printed from 1440 px; below that this tooltip (and the footnote on tall frames) carries it. -->
       <span
         class="mchip mchip--status"
+        class:mchip--quiet={chrome.quiet}
         role="group"
         aria-label="Status"
         title={chrome.timezone ? `Every time here is ${chrome.timezone}` : undefined}
       >
-        <Freshness state={chrome.fresh} updated={chrome.updated} />
+        {#if chrome.quiet}<QuietMode />{:else}<Freshness state={chrome.fresh} updated={chrome.updated} />{/if}
         {#if chrome.timezone}<span class="masthead__tz">{chrome.timezone}</span>{/if}
       </span>
       <button

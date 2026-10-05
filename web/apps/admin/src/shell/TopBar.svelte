@@ -6,6 +6,7 @@
 <script lang="ts">
   import { Freshness, Icon, type FreshState } from '@kanade/ui';
   import type { BackStep } from './chrome';
+  import QuietMode from './QuietMode.svelte';
 
   let {
     title,
@@ -15,6 +16,7 @@
     fresh,
     updated = '',
     timezone = '',
+    quiet = false,
     drawerId,
     back = null,
     menu = $bindable(),
@@ -29,6 +31,8 @@
     fresh: FreshState;
     updated?: string;
     timezone?: string;
+    /** "Quiet mode on" in place of the Live chip. */
+    quiet?: boolean;
     drawerId: string;
     /** A page's own back step (an open Inbox item), in place of the menu and title. */
     back?: BackStep | null;
@@ -59,7 +63,9 @@
   </button>
   <p class="topbar__title" data-fid="topbar-title">{title}</p>
   {/if}
-  <span class="topbar__fresh" data-fid="topbar-fresh" title={timezone ? `Every time here is ${timezone}` : undefined}><Freshness state={fresh} {updated} /></span>
+  <span class="topbar__fresh" class:topbar__fresh--quiet={quiet} data-fid="topbar-fresh" title={timezone ? `Every time here is ${timezone}` : undefined}
+    >{#if quiet}<QuietMode />{:else}<Freshness state={fresh} {updated} />{/if}</span
+  >
   <a class="topbar__inbox" data-fid="topbar-inbox" href="/inbox" aria-current={onInbox ? 'page' : undefined} aria-label={inbox > 0 ? `Inbox ${inbox} waiting` : 'Inbox'}>
     <Icon name="inbox" />
     <span class="vh">Inbox</span>
