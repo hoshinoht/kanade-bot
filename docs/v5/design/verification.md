@@ -74,7 +74,8 @@ caught. It runs with placeholder art (layout only). Allowed today:
 | Selector | Where | Why |
 |---|---|---|
 | `.skip` | everywhere | the skip link waits above the frame until focused |
-| `.knowledge-detail` | Bosses, Carling guide | Bosses guide redesign in progress (workspace/guide-ui) |
+| `.knowledge-hero__meta` | Bosses knowledge header | one-line header (DR 2026-10-02): the source path gives way; titled |
+| `.knowledge-aside__others` | Bosses knowledge aside | a timing's other bosses give way to its time and pill; titled |
 | `.modelstats__chips` | Chat at 1000×670 | a chip that does not fit is dropped, not cut; "+n models" lists all |
 | `.row-content__compact` | Inbox, History rows | one-line row summary; the opened row shows it in full |
 | `.extract-row__facts` | Extractions rows | one-line call facts; the opened call shows them |

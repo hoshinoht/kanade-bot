@@ -32,8 +32,10 @@ supports were kept.
   Stage 5 tornado danger.
 - Schema: `difficulties` up to 7, `sources` up to 14; API contract
   `docs/v5/api-schemas/bosses.json` accepts Champion/Destiny.
-- Open: Destiny Mode HP after OVERDRIVE; SEA trial bosses/limits; Black Mage
-  trial limit in SEA (45 min presumed); Jupiter Resolve labels.
+- Open: Destiny Mode HP after OVERDRIVE; Jupiter Resolve labels.
+- Confirmed by the owner (2026-10-05): SEA Union Champion trials are Lotus B,
+  Black Mage S, Seren SS, Kalos SSS, each 20 minutes except Black Mage's 45;
+  Extreme Black Mage sets the Phase 4 state at random every 30 s.
 
 ## Decisions applied
 

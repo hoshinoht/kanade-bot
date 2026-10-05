@@ -1,11 +1,12 @@
 <script lang="ts">
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
-  import type { Boss, BossRow, Difficulty, DifficultyFacts, EventBoss, FixedRow, GuideItem, Knowledge, Run, Week } from '@kanade/api-types';
+  import type { Boss, BossRow, EventBoss, FixedRow, Knowledge, Run, Week } from '@kanade/api-types';
   import { DIFFICULTY_WORDS, LoadingState, Portrait, RowContent, SINGLE_PANE_QUERY, StatusChip, dayLabel, enter } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import BossGrid from './BossGrid.svelte';
-  import StrategyList from './StrategyList.svelte';
+  import KnowledgeGuide from './KnowledgeGuide.svelte';
+  import { LETTER } from './guide';
   import { eventAsBoss, seasonTag } from './event';
   import { heroArt } from './heroArt';
   import { prefersReducedMotion } from 'svelte/motion';
@@ -50,20 +51,9 @@
   // The boss whose knowledge is on screen: its pane content enters when it changes.
   const shownKey = $derived(doc && knowledge.data ? knowledge.data.key : null);
   const facts = $derived(doc?.difficulties ?? []);
-  const lists = $derived<[string, GuideItem[]][]>(doc ? [['Core', doc.core ?? doc.phases?.flatMap((phase) => phase.items) ?? []], ['Danger', doc.danger], ['Tips', doc.tips]] : []);
-  const say = (item: GuideItem) => (typeof item === 'string' ? item : `${item.title}. ${item.text}`);
-  const LETTER: Record<string, Difficulty> = { Easy: 'e', Normal: 'n', Hard: 'h', Chaos: 'c', Extreme: 'x' };
   /** Knowledge-only difficulties (never scheduled): no catalog letter, own tick colours. */
   const infoOnly = $derived(facts.filter((fact) => !LETTER[fact.name]).map((fact) => fact.name));
   const tickClass = (name: string) => LETTER[name] ?? name.toLowerCase();
-  let chosen = $state<string | null>(null);
-  const selected = $derived.by(() => {
-    const inUse = knowledge.data?.in_use ?? [];
-    const wanted = chosen ?? difficulty;
-    return facts.find((fact) => fact.name === wanted || LETTER[fact.name] === wanted) ?? facts.find((fact) => inUse.includes(LETTER[fact.name]!)) ?? facts[0] ?? null;
-  });
-  const letter = $derived(selected ? LETTER[selected.name] : undefined);
-  const note = $derived(letter ? doc?.difficulty_notes?.[letter] : undefined);
   const relatedFixed = $derived((fixed.data ?? []).filter((row) => row.bosses.some((boss) => boss.key === activeKey)));
   const relatedRuns = $derived(
     [...(week.data?.runs ?? [])]
@@ -128,22 +118,10 @@
     void activeKey;
     artFailed = false;
     videoFailed = false;
-    chosen = null;
   });
   const art = $derived(heroArt({ key: activeKey, animated: knowledge.data?.animated ?? null, reducedMotion: prefersReducedMotion.current, videoFailed, stillFailed: artFailed }));
   const asBoss = (row: BossRow): Boss => ({ token: row.key, key: row.key, name: row.name, difficulty: 'n', level: row.level, portrait: row.portrait, portrait_sm: row.portrait, art: null, hue: row.hue });
   const activePortrait = $derived(knowledge.data ? { token: knowledge.data.key, key: knowledge.data.key, name: knowledge.data.name, difficulty: 'n' as const, level: knowledge.data.level, portrait: knowledge.data.portrait, portrait_sm: knowledge.data.portrait, art: null, hue: knowledge.data.hue } : activeBoss ? asBoss(activeBoss) : activeEvent ? eventAsBoss(activeEvent) : null);
-  function rows(fact: DifficultyFacts): [string, string][] {
-    const out: [string, string][] = [];
-    if (fact.entry_level) out.push(['Entry level', String(fact.entry_level)]);
-    if (fact.boss_level) out.push(['Boss level', String(fact.boss_level)]);
-    if (fact.force) out.push([fact.force.kind === 'sacred' ? 'Sacred force' : 'Arcane force', String(fact.force.value)]);
-    if (fact.pdr_percent !== undefined) out.push(['Defence (PDR)', `${fact.pdr_percent}%`]);
-    if (fact.party_max) out.push(['Party', fact.party_max === 1 ? 'Solo only' : `Up to ${fact.party_max}`]);
-    return out;
-  }
-  const factRows = $derived(selected ? [...rows(selected), ...(selected.hp?.filter((hp) => hp.phase === 'total').map((hp) => ['HP (total)', hp.value] as [string, string]) ?? [])] : []);
-  const phaseHp = $derived(selected?.hp?.filter((hp) => hp.phase !== 'total') ?? []);
   const nextRun = $derived.by(() => {
     const current = week.data;
     if (!current) return null;
@@ -165,6 +143,8 @@
     list.addEventListener('click', onclick);
     return () => list.removeEventListener('click', onclick);
   }
+  // The header is one line (cut with an ellipsis on narrow frames); the title holds it whole.
+  const heroMeta = $derived(knowledge.data ? `${knowledge.data.level ? `Lv. ${knowledge.data.level} · ` : ''}researched ${knowledge.data.researched_as_of ?? 'undated'} · ${knowledge.data.path}` : '');
   const runWhen = (run: Run) => `${dayLabel(week.data!, run.day)} ${run.time ?? 'own time'}`;
   const timingBoss = (timing: FixedRow) => timing.bosses.find((boss) => boss.key === activeKey) ?? null;
   const otherBosses = (timing: FixedRow) => timing.bosses.filter((boss) => boss.key !== activeKey).map((boss) => boss.name);
@@ -206,22 +186,16 @@
           {/key}
           <div class="knowledge-hero__identity">
             {#if activePortrait}<Portrait boss={activePortrait} size="md" />{/if}
-            <div><p class="cap">Checked-in boss knowledge</p><h2>{knowledge.data.name}</h2><p class="knowledge-hero__meta">{knowledge.data.level ? `Lv. ${knowledge.data.level} · ` : ''}researched {knowledge.data.researched_as_of ?? 'undated'} · <code>{knowledge.data.path}</code></p></div>
+            <div><p class="cap">Checked-in boss knowledge</p><h2>{knowledge.data.name}</h2><p class="knowledge-hero__meta" title={heroMeta}>{knowledge.data.level ? `Lv. ${knowledge.data.level} · ` : ''}researched {knowledge.data.researched_as_of ?? 'undated'} · <code>{knowledge.data.path}</code></p></div>
             {#if doc.event}<StatusChip>Seasonal boss · <abbr title={doc.event.name}>{seasonTag(doc.event)}</abbr></StatusChip>{/if}
           </div>
         </header>
         <div data-fid="knowledge-body" class="knowledge-detail__body">
           <div class="knowledge-detail__main">
-            {#if facts.length}<div class="knowledge__switch"><span class="cap" id="difficulty-label">Difficulty</span><div class="seg" role="group" aria-labelledby="difficulty-label">{#each facts as fact (fact.name)}<button type="button" aria-pressed={selected?.name === fact.name} onclick={() => (chosen = fact.name)}>{fact.name}{#if knowledge.data.in_use.includes(LETTER[fact.name]!)}<span class="vh"> (the guild runs it)</span> ✓{/if}</button>{/each}</div></div>{/if}
-            <p class="knowledge__summary">{doc.summary}</p>
-            {#if doc.event}<p class="flash flash--ok"><strong>Event boss.</strong> {doc.event.availability}</p>{/if}
-            {#if selected}<section aria-labelledby="facts-heading"><h2 class="vh" id="facts-heading">{selected.name} facts</h2><dl class="knowledge-facts">{#each factRows as [label, value] (label)}<div><dt class="cap">{label}</dt><dd>{value}</dd></div>{/each}</dl>{#if selected.recommended_spec}<section class="knowledge-recommended"><h3 class="cap">Recommended · hexa-converted stat</h3><p>{selected.recommended_spec.text}</p></section>{/if}{#each phaseHp as hp (hp.phase)}<p class="knowledge__detail"><strong>HP phase {hp.phase}:</strong> {hp.value}</p>{/each}{#if note || selected.notes?.length}<section class="knowledge-callouts" aria-labelledby="difficulty-notes-heading"><h3 class="cap" id="difficulty-notes-heading">{selected.name} notes</h3><ul>{#if note}<li>{say(note)}</li>{/if}{#each selected.notes ?? [] as item, index (index)}<li>{say(item)}</li>{/each}</ul></section>{/if}</section>{/if}
-            {#each lists as [title, items] (title)}{#if items.length}<section class="knowledge-notes"><h2 class="cap">{title}</h2><ul>{#each items as item, index (index)}<li>{say(item)}</li>{/each}</ul></section>{/if}{/each}
-            {#if doc.strategies?.length}<StrategyList strategies={doc.strategies} />{/if}
-            {#if doc.notes?.length}<section class="knowledge-notes"><h2 class="cap">Notes</h2><ul>{#each doc.notes as item, index (index)}<li>{say(item)}</li>{/each}</ul></section>{/if}
-            <section class="knowledge-notes"><h2 class="cap">Sources</h2><ul class="knowledge-sources">{#each doc.sources as source (source.url)}<li><a href={source.url} rel="noopener noreferrer" target="_blank">{source.title}</a><span>by {source.author} · {source.kind} · fetched {source.fetched}{#if source.updated} · updated {source.updated}{/if}</span></li>{/each}</ul><p class="note">Our own paraphrase of these sources; the authors are credited above.</p></section>
+            <!-- Keyed by boss: the difficulty and open steps start fresh, the tab is read again from the address. -->
+            {#key knowledge.data.key}<KnowledgeGuide knowledge={knowledge.data} {difficulty} />{/key}
           </div>
-          <aside data-fid="knowledge-aside" aria-label="Weekly timings"><h2 class="cap">Weekly timings</h2>{#if relatedFixed.length}<ul>{#each relatedFixed as timing (timing.id)}{@const boss = timingBoss(timing)}{@const others = otherBosses(timing)}<li><a href="/fixed?open={encodeURIComponent(timing.id)}"><strong>{timing.weekday_name.slice(0, 3)} {timing.time}</strong>{#if boss}<span class="pill pill--{boss.difficulty}">{DIFFICULTY_WORDS[boss.difficulty].toUpperCase()}</span>{/if}{#if others.length}<span class="knowledge-aside__others">+ {others.join(' · ')}</span>{/if}</a></li>{/each}</ul>{:else}<p class="note">No weekly timing uses this boss.</p>{/if}<h2 class="cap">This week</h2><p class="knowledge-aside__count">{relatedRuns.length} run{relatedRuns.length === 1 ? '' : 's'}{#if nextRun} · next <strong>{runWhen(nextRun)}</strong>{/if}</p></aside>
+          <aside data-fid="knowledge-aside" aria-label="Weekly timings"><h2 class="cap">Weekly timings</h2>{#if relatedFixed.length}<ul>{#each relatedFixed as timing (timing.id)}{@const boss = timingBoss(timing)}{@const others = otherBosses(timing)}<li><a href="/fixed?open={encodeURIComponent(timing.id)}"><strong>{timing.weekday_name.slice(0, 3)} {timing.time}</strong>{#if boss}<span class="pill pill--{boss.difficulty}">{DIFFICULTY_WORDS[boss.difficulty].toUpperCase()}</span>{/if}{#if others.length}<span class="knowledge-aside__others" title={others.join(' · ')}>+ {others.join(' · ')}</span>{/if}</a></li>{/each}</ul>{:else}<p class="note">No weekly timing uses this boss.</p>{/if}<h2 class="cap">This week</h2><p class="knowledge-aside__count">{relatedRuns.length} run{relatedRuns.length === 1 ? '' : 's'}{nextRun ? ' · next ' : ''}{#if nextRun}<strong>{runWhen(nextRun)}</strong>{/if}</p></aside>
         </div>
       {:else}<LoadingState text="Loading checked-in knowledge…" />{/if}
     </article>

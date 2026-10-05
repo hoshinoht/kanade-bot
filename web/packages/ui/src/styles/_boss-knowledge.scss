@@ -1,6 +1,7 @@
 // B_Bosses: one master/detail window. The catalog and detail own their own
 // scrolling regions so the fixed shell and title bar never move.
 @use "breakpoints" as *;
+@use "boss-guide"; // the guide column inside the knowledge detail
 .bosses-window { display: flex; flex-direction: column; overflow: clip; }
 .frame--rail .bosses-window > .card__head { flex: none; flex-wrap: nowrap; gap: 4px; border-radius: 0; }
 .bosses-window__order { margin-left: auto; color: var(--win-ink); font-size: var(--fs-mini); }
@@ -55,7 +56,7 @@
 .bosses-events li:has(> .row-content--expanded) > a { min-height: 52px; max-width: 100%; }
 .bosses-events li > .row-content--expanded { flex-basis: 100%; }
 .bosses-events .row-content__full .bossrow__difficulties { padding-left: 42px; }
-.knowledge-detail { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; overflow: clip; background: var(--surface); }
+.knowledge-detail { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; overflow: clip; background: var(--surface); container: knowledge / inline-size; }
 .knowledge-hero { position: relative; flex: none; min-height: 150px; overflow: hidden; border-bottom: 1.5px solid var(--line); }
 .knowledge-hero > * { position: relative; }
 .knowledge-hero__art { position: absolute; top: 0; right: 0; width: 62%; height: 100%; object-fit: cover; object-position: center 30%; opacity: .62; -webkit-mask-image: linear-gradient(90deg, transparent, #000 80%); mask-image: linear-gradient(90deg, transparent, #000 80%); }
@@ -68,43 +69,8 @@
 .knowledge-hero__meta code { font-family: var(--mono); font-size: var(--fs-mini); }
 .knowledge-hero__identity > .status-chip { align-self: flex-start; margin-top: 16px; }
 .knowledge-detail__body { display: flex; flex: 1 1 auto; gap: 18px; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 22px; }
-.knowledge-detail__main { flex: 1 1 auto; min-width: 0; max-width: 72ch; }
-.knowledge__switch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 14px; }
-.knowledge__summary { margin: 0 0 14px; font-size: var(--fs-body); line-height: 1.55; }
-.knowledge-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
-.knowledge-facts > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 42px; padding: 10px 14px; border-radius: 12px; background: var(--pane); }
-.knowledge-facts dt { min-width: 0; }
-.knowledge-facts dd { margin: 0; font-family: var(--mono); font-size: var(--fs-small); font-weight: 700; text-align: right; }
-.knowledge__detail { margin: 10px 0 0; font-size: var(--fs-small); line-height: 1.45; }
-.knowledge-recommended { max-width: 62ch; margin-top: 14px; }
-.knowledge-recommended h3, .knowledge-recommended p { margin: 0; }
-.knowledge-recommended p { margin-top: 4px; font-size: var(--fs-small); line-height: 1.5; }
-// Difficulty notes: separate accent-edged callouts rather than loose paragraphs.
-.knowledge-callouts { margin-top: 16px; }
-.knowledge-callouts h3 { margin: 0 0 6px; }
-.knowledge-callouts ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.knowledge-callouts li { padding: 8px 12px; border-left: 3px solid var(--accent); border-radius: 4px 10px 10px 4px; background: var(--pane); font-size: var(--fs-small); line-height: 1.5; }
-.knowledge-notes { margin-top: 16px; }
-.knowledge-notes h2 { margin: 0 0 6px; }
-.knowledge-notes ul { margin: 0; padding-left: 1.25rem; }
-.knowledge-notes li + li { margin-top: 4px; }
-// Strategies: one pane-filled card each, like the fact tiles; chips carry the
-// level in words, the risk tone is only a second cue.
-.knowledge-strategies > ul { display: grid; gap: 8px; padding: 0; list-style: none; }
-.knowledge-strategies .strategy + .strategy { margin-top: 0; }
-.strategy { padding: 12px 14px; border-radius: 12px; background: var(--pane); }
-.strategy__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-.strategy__head h3 { flex: 1 1 auto; min-width: 0; margin: 0; font-size: var(--fs-body); font-weight: 700; line-height: 1.3; }
-.strategy__chips { display: flex; flex-wrap: wrap; gap: 6px; }
-// The default chip fill nearly matches --pane; the surface keeps the chip's shape readable.
-.strategy .status-chip--neutral { background: var(--surface); }
-.strategy dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 8px 0 0; font-size: var(--fs-small); line-height: 1.45; }
-.strategy dl > div { display: contents; }
-.strategy dt { padding-top: 2px; }
-.strategy dd { margin: 0; }
-.strategy ol { margin: 8px 0 0; padding-left: 1.4rem; font-size: var(--fs-small); line-height: 1.5; }
-.strategy ol li + li { margin-top: 2px; }
-.knowledge-sources span { display: block; color: var(--dim-text); font-size: var(--fs-small); }
+.knowledge-detail__main { display: flex; flex: 1 1 auto; flex-direction: column; gap: 16px; min-width: 0; max-width: 80ch; }
+.knowledge__switch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
 .knowledge-detail aside { display: flex; flex: 0 0 240px; flex-direction: column; gap: 8px; }
 .knowledge-detail aside h2 { margin: 0 0 8px; }
 .knowledge-detail aside h2:not(:first-child) { margin-top: 16px; }
@@ -119,6 +85,12 @@
 .knowledge-aside__others { min-width: 0; overflow: hidden; font-size: var(--fs-mini); text-overflow: ellipsis; white-space: nowrap; }
 .knowledge-aside__count { margin: 0; font-size: var(--fs-small); }
 .knowledge-detail__back { flex: none; align-self: flex-start; margin: 10px 14px 0; }
+// A narrow detail (1000 px frames: rail, list and detail side by side) puts
+// the timings aside under the guide rather than squeezing the guide.
+@container knowledge (max-width: 760px) {
+  .knowledge-detail__body { display: block; }
+  .knowledge-detail aside { margin-top: 18px; }
+}
 @media #{$single-pane} {
   .bosses-window--compact { margin: calc(-1 * var(--gutter)) calc(-1 * var(--gutter)) 0; }
   .bosses-window--compact .bosses-window__body { min-height: 100%; }
@@ -130,5 +102,4 @@
   .knowledge-hero__identity .portrait--md { width: 56px; height: 56px; border-radius: 16px; }
   .knowledge-hero__identity h2 { font-size: var(--fs-lg); }
   .knowledge-hero__identity > .status-chip { display: none; }
-  .knowledge-facts { grid-template-columns: 1fr; }
 }

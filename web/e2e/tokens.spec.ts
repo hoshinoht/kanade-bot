@@ -35,6 +35,8 @@ const PAIRS: [string, string, number][] = [
   ['--ink', '--row-hover', 4.5],
   ['--dim-text', '--row-hover', 4.5],
   ['--accent-text', '--row-hover', 4.5],
+  // Boss-guide tones: zone and band labels on their fills.
+  ...(['red', 'yellow', 'green', 'blue', 'neutral', 'risk', 'safe'] as const).map((tone): [string, string, number] => [`--guide-${tone}-ink`, `--guide-${tone}`, 4.5]),
 ];
 
 /** Fills a hovered row must stay apart from: [token, minimum CIE76 ΔE] (≈2.3 is a just-noticeable step). */

@@ -64,7 +64,7 @@ for (const [colorway, theme] of CONTRAST_LOOKS) {
     await page.getByRole('link', { name: 'Bosses' }).click();
     await expect(page.locator('.bossrow').first()).toBeVisible();
     await page.getByRole('link', { name: 'Carling' }).click();
-    await expect(page.getByRole('heading', { name: 'Sources' })).toBeVisible();
+    await expect(page.getByRole('tablist', { name: 'Guide sections' })).toBeVisible();
     await contrast('admin knowledge');
     await page.getByRole('link', { name: 'Members' }).click();
     await page.getByRole('button', { name: /^Asahi/ }).click();
@@ -186,7 +186,7 @@ for (const theme of THEMES) {
     await expect(page.locator('.bossrow').first()).toBeVisible();
     await serious(page, 'admin bosses');
     await page.getByRole('link', { name: 'Carling' }).click();
-    await expect(page.getByRole('heading', { name: 'Sources' })).toBeVisible();
+    await expect(page.getByRole('tablist', { name: 'Guide sections' })).toBeVisible();
     await serious(page, 'admin knowledge');
     await page.getByRole('link', { name: 'Members' }).click();
     await page.getByRole('button', { name: /^Asahi/ }).click();

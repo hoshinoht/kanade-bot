@@ -1,0 +1,207 @@
+// The boss guide: the knowledge detail's main column (user-approved mockup
+// boss-guides/research-2026-10-05/design/Main.dc.html, on the M3E
+// primitives). Mission card, lead, fact tiles, HP by phase, the difficulty's
+// notes, then pill tabs over Overview / Phases / Strategies / Notes / Sources.
+// Colour is never the only cue: every tone, pip and segment has its words.
+
+// Knowledge-only difficulties (Champion, Destiny) are outlined in the switch.
+// Six difficulties do not fit a phone's line: the group wraps.
+.knowledge__switch .seg { display: flex; flex-wrap: wrap; row-gap: 4px; }
+.seg button.seg__info { box-shadow: inset 0 0 0 1.5px var(--pill-destiny-edge); }
+
+// The column is stretched to the scrolling body's height: its parts keep their
+// own height (the tab strip, a scroll container, would otherwise shrink away).
+.knowledge-detail__main > * { flex: none; }
+.guide-lead { max-width: 68ch; margin: 0; font-size: var(--fs-lg); line-height: 1.5; }
+.knowledge-detail__main > .flash { margin: 0; }
+
+/* ── mission card (Destiny Weapon, Union Champion) ─────────────────────── */
+
+.guide-mission { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; border-radius: var(--r-win); background: var(--select); box-shadow: inset 0 0 0 1.5px var(--select-edge); }
+.guide-mission__head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 8px 12px; }
+.guide-mission__head p { margin: 0; }
+.guide-mission h3 { margin: 4px 0 0; font-family: var(--display); font-size: var(--fs-lg); font-weight: 800; line-height: 1.25; }
+.guide-mission .boss-tick { min-height: 22px; padding: 0 10px; }
+.guide-mission__mod { display: inline-flex; flex-wrap: wrap; align-items: baseline; align-self: flex-start; gap: 2px 10px; margin: 0; padding: 8px 14px; border-radius: var(--r); font-size: var(--fs-body); }
+.guide-mission__mod strong { font-size: var(--fs-lg); }
+.guide-mission__mod--up { background: color-mix(in srgb, var(--ok) 10%, var(--surface)); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ok) 40%, var(--surface)); color: var(--ok-text); }
+.guide-mission__mod--down { background: color-mix(in srgb, var(--risk) 10%, var(--surface)); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--risk) 40%, var(--surface)); color: var(--risk-text); }
+.guide-mission__dir { font-size: var(--fs-small); font-weight: 600; }
+// One row of stops when the card is wide enough; rows of three (pairs for four) on a phone.
+.guide-mission { container-type: inline-size; }
+.guide-mission__track { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 0; padding: 0; list-style: none; }
+// Narrow, never a lone stop on a row: one or two stops share a row, four make two pairs.
+.guide-mission__track--n1 { grid-template-columns: minmax(0, 1fr); }
+.guide-mission__track--n2, .guide-mission__track--n4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@container (min-width: 420px) {
+  .guide-mission__track--n4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@container (min-width: 600px) {
+  .guide-mission__track { grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; grid-template-columns: none; }
+}
+.guide-mission__track li { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 8px 10px; border-radius: var(--r-sm); background: var(--row); font-size: var(--fs-small); overflow-wrap: break-word; }
+.guide-mission__num { color: var(--dim-text); font-size: var(--fs-micro); font-weight: 700; text-transform: uppercase; }
+.guide-mission__track .guide-mission__here { background: var(--accent-fill); color: var(--accent-ink); font-weight: 700; }
+.guide-mission__here .guide-mission__num { color: var(--accent-ink); }
+.guide-mission__chips,
+.guide-source-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.guide-source-kinds .status-chip { gap: 5px; }
+
+/* ── facts: tiles, HP by phase, the difficulty's notes ─────────────────── */
+
+.guide-facts { display: flex; flex-direction: column; gap: 14px; }
+.guide-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 8px; margin: 0; }
+.guide-tile { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 10px 14px; border-radius: var(--r); background: var(--pane); }
+.guide-tile dd { margin: 0; }
+.guide-tile__value { font-size: var(--fs-lg); font-weight: 700; }
+.guide-tile__sub { color: var(--dim-text); font-size: var(--fs-mini); }
+// HP breakdown: a pane titled "HP"; the stored total; per phase a dark label
+// bar over one bar per target, equal widths, wrapping into rows of equal bars.
+.guide-hp { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: var(--r); background: var(--pane); }
+.guide-hp h3, .guide-hp p { margin: 0; }
+.guide-hp__total,
+.guide-hp__label { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 12px; }
+.guide-hp__total { font-weight: 700; }
+.guide-hp__total .mono { font-size: var(--fs-lg); }
+.guide-hp__phases { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.guide-hp__phase { display: flex; flex-direction: column; gap: 4px; }
+.guide-hp__label { min-height: 32px; padding: 5px 12px; border-radius: 16px; background: var(--win); color: var(--win-ink); font-size: var(--fs-small); font-weight: 700; }
+.guide-hp__bars { display: grid; grid-template-columns: repeat(auto-fit, minmax(76px, 1fr)); gap: 4px; margin: 0; padding: 0; list-style: none; }
+.guide-hp__bar { display: flex; align-items: center; justify-content: center; min-height: 30px; padding: 4px 8px; border-radius: 15px; font-size: var(--fs-small); font-weight: 700; text-align: center; overflow-wrap: anywhere; }
+// The difficulty's pill colours (the game's, contrast-tuned in _contrast.scss).
+@each $tone in "e", "n", "h", "c", "x", "champion", "destiny" {
+  .guide-hp__bar--#{$tone} { background: var(--pill-#{$tone}-bg); color: var(--pill-#{$tone}-fg); }
+}
+.guide-hp__bar--destiny { box-shadow: inset 0 0 0 1px var(--pill-destiny-edge); }
+.guide-notes h3,
+.guide-list h3 { margin: 0 0 8px; }
+
+/* ── titled rows (danger, tips, core, notes) ───────────────────────────── */
+
+.guide-rows { display: flex; flex-direction: column; gap: 3px; margin: 0; padding: 0; list-style: none; }
+.guide-row { display: flex; align-items: flex-start; gap: 12px; padding: 10px 14px; border-radius: 6px; background: var(--row); box-shadow: inset 0 0 0 1px var(--line); }
+.guide-row:first-child { border-top-left-radius: 16px; border-top-right-radius: 16px; }
+.guide-row:last-child { border-bottom-left-radius: 16px; border-bottom-right-radius: 16px; }
+.guide-row__words { display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: var(--fs-body-sm); line-height: 1.45; overflow-wrap: anywhere; }
+.guide-row__mark { display: grid; flex: none; place-items: center; width: 28px; height: 28px; border-radius: var(--r-sm); }
+.guide-row__mark .icon { width: 16px; height: 16px; }
+.guide-row__mark--risk { background: color-mix(in srgb, var(--risk) 12%, var(--surface)); color: var(--risk-text); }
+.guide-row__mark--ok { background: color-mix(in srgb, var(--ok) 12%, var(--surface)); color: var(--ok-text); }
+
+/* ── tabs and panel ────────────────────────────────────────────────────── */
+
+// The run pane's `.ptab` pills; on phones the strip scrolls sideways.
+.guide-tabs { display: flex; gap: 4px; padding: 2px 2px 10px; overflow-x: auto; border-bottom: 1.5px solid var(--line); scrollbar-width: none; }
+.guide-tabs .ptab { flex: none; min-height: 34px; padding: 0 14px; border-radius: 17px; }
+.guide-tabs .ptab:focus-visible { outline-offset: -2px; }
+.guide-tabs .ptab__count { padding: 1px 6px; border-radius: 9px; background: var(--chip-fill); color: var(--ink); }
+.guide-panel { display: flex; flex-direction: column; gap: 16px; }
+.guide-panel:focus-visible { outline-offset: 4px; }
+.guide-panel > p { margin: 0; }
+
+/* ── cards: mechanics, phases, strategies ──────────────────────────────── */
+
+.guide-card { min-width: 0; padding: 16px 18px; border-radius: var(--r-win); background: var(--row); box-shadow: inset 0 0 0 1px var(--line); }
+.guide-card h3 { margin: 0; font-family: var(--display); font-size: var(--fs-body); font-weight: 700; line-height: 1.3; }
+// Real ledgers and scales carry long figures and band labels: two columns only when each card gets 320 px.
+.guide-mechanics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 12px; }
+.guide-mechanic { display: flex; flex-direction: column; gap: 10px; }
+.guide-mechanic__note { margin: 0; font-size: var(--fs-small); }
+.guide-ledger { display: flex; flex-direction: column; gap: 3px; margin: 0; padding: 0; list-style: none; }
+.guide-ledger li { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 10px; padding: 7px 12px; border-radius: 6px; background: var(--pane); font-size: var(--fs-body-sm); }
+.guide-ledger li:first-child { border-top-left-radius: var(--r); border-top-right-radius: var(--r); }
+.guide-ledger li:last-child { border-bottom-left-radius: var(--r); border-bottom-right-radius: var(--r); }
+// The figure stays whole on one line; its label wraps instead.
+.guide-ledger li > span:first-child { flex: 1 1 auto; min-width: 0; }
+.guide-ledger__value { flex: none; font-weight: 700; text-align: right; white-space: nowrap; }
+.guide-ledger__value > span { margin-right: 4px; font-size: var(--fs-micro); }
+.guide-up { color: var(--ok-text); }
+.guide-down { color: var(--risk-text); }
+// Zones sit side by side; four make two pairs on a narrow card (never a lone zone on a row).
+.guide-mechanic { container-type: inline-size; }
+.guide-zones { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 4px; margin: 0; padding: 0; list-style: none; }
+.guide-zones--n4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@container (min-width: 440px) {
+  .guide-zones--n4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.guide-zones li { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px; border-radius: var(--r-sm); font-size: var(--fs-body-sm); text-align: center; }
+.guide-zones li span { font-size: var(--fs-mini); }
+// Band widths come from the data (CSSOM flex-grow); a band never shrinks under its label.
+// Bands that cannot share one line wrap onto the next; each band rounds its own outer ends.
+.guide-scale { display: flex; flex-wrap: wrap; gap: 2px; min-height: 26px; margin: 0; padding: 0; font-family: var(--mono); font-size: var(--fs-micro); font-weight: 700; list-style: none; }
+.guide-scale li { display: flex; flex: 1 1 0; align-items: center; justify-content: center; padding: 4px 6px; border-radius: 4px; line-height: 1.2; text-align: center; }
+.guide-scale li:first-child { border-radius: 13px 4px 4px 13px; }
+.guide-scale li:last-child { border-radius: 4px 13px 13px 4px; }
+@each $tone in "red", "yellow", "green", "blue", "neutral", "risk", "safe" {
+  .guide-tone--#{$tone} { background: var(--guide-#{$tone}); color: var(--guide-#{$tone}-ink); }
+}
+
+// The Phases timeline: one bar of equal segments that picks a phase.
+// Mobile first it is vertical (a rail of full-width rows under each group's
+// label); a container query lays it out as one horizontal bar once each
+// segment gets about 92 px, groups bracketed over their segments.
+.guide-timeline { display: flex; flex-direction: column; gap: 12px; container: timeline / inline-size; }
+.guide-timeline__bar { display: flex; flex-direction: column; gap: 8px; }
+.guide-timeline__run { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.guide-timeline__run--group { padding-left: 10px; border-left: 2px solid var(--off); }
+.guide-timeline__bracket { display: flex; align-items: center; gap: 4px; color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-micro); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.guide-timeline__bracket:empty { display: none; }
+.guide-timeline__loop { font-size: var(--fs-small); letter-spacing: 0; }
+.guide-timeline__seg { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; min-height: 44px; padding: 6px 12px; border: 0; border-radius: var(--r-sm); font: inherit; font-size: var(--fs-small); line-height: 1.25; text-align: start; overflow-wrap: anywhere; cursor: pointer; }
+.guide-timeline__seg--plain { background: var(--seg-fill); color: var(--ink); }
+.guide-timeline__tag { font-size: var(--fs-mini); }
+// Selected: a ring and a heavier name, not colour alone; plain segments also take the selection fill.
+.guide-timeline__seg[aria-selected="true"] { box-shadow: inset 0 0 0 2.5px var(--ink); }
+.guide-timeline__seg--plain[aria-selected="true"] { background: var(--select); color: var(--select-ink); }
+.guide-timeline__seg:focus-visible { outline-offset: 2px; }
+@mixin timeline-across {
+  .guide-timeline__bar { display: grid; grid-auto-flow: column; grid-template-rows: auto 1fr; gap: 0 3px; }
+  .guide-timeline__run { display: grid; grid-row: span 2; grid-template-columns: subgrid; grid-template-rows: subgrid; gap: 0 3px; padding: 0; border: 0; }
+  .guide-timeline__bracket { grid-column: 1 / -1; justify-content: center; margin-bottom: 4px; padding: 2px 6px 4px; border: 2px solid transparent; border-bottom: 0; border-radius: 8px 8px 0 0; text-align: center; }
+  .guide-timeline__run--group .guide-timeline__bracket { border-color: var(--off); }
+  &.guide-timeline--labelled .guide-timeline__bracket:empty { display: block; }
+  .guide-timeline__seg { align-items: center; justify-content: center; min-height: 52px; padding: 6px 8px; text-align: center; }
+  .guide-timeline__run:first-child .guide-timeline__seg:first-of-type { border-radius: 16px var(--r-sm) var(--r-sm) 16px; }
+  .guide-timeline__run:last-child .guide-timeline__seg:last-of-type { border-radius: var(--r-sm) 16px 16px var(--r-sm); }
+}
+@for $n from 1 through 6 {
+  .guide-timeline--n#{$n} .guide-timeline__bar { grid-template-columns: repeat(#{$n}, minmax(0, 1fr)); }
+  @container timeline (min-width: #{max(300, $n * 92)}px) {
+    .guide-timeline--n#{$n} { @include timeline-across; }
+  }
+}
+.guide-phase__tag { margin: 2px 0 0; color: var(--dim-text); font-size: var(--fs-small); }
+.guide-phase__head p.cap { display: flex; align-items: center; gap: 4px; margin: 0; }
+.guide-phase { display: flex; flex-direction: column; gap: 10px; }
+.guide-phase__head { display: flex; flex-direction: column; gap: 2px; }
+.guide-phase ul { display: flex; flex-direction: column; gap: 6px; margin: 0; padding-left: 18px; font-size: var(--fs-body-sm); line-height: 1.4; }
+
+.guide-strategies { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); align-items: start; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.guide-strategy { display: flex; flex-direction: column; gap: 12px; }
+.guide-strategy h3 { font-weight: 800; }
+.guide-strategy dl { margin: 0; }
+.guide-strategy__meters { display: grid; gap: 6px; }
+.guide-meter { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 8px; }
+.guide-meter dd { display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--fs-small); }
+.guide-pips { display: flex; flex: 1 1 auto; gap: 3px; max-width: 120px; }
+.guide-pips i { flex: 1; height: 8px; border-radius: 4px; background: var(--seg-fill); }
+.guide-pips--risk-low i.on { background: var(--ok); }
+.guide-pips--risk-medium i.on { background: var(--warn); }
+.guide-pips--risk-high i.on { background: var(--risk); }
+[class*="guide-pips--damage"] i.on { background: var(--accent-fill); }
+.guide-meter strong { min-width: 4.5em; }
+.guide-strategy__when { display: grid; gap: 8px; font-size: var(--fs-body-sm); line-height: 1.45; }
+.guide-strategy__when dd { margin: 2px 0 0; }
+.guide-steps { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; font-size: var(--fs-body-sm); line-height: 1.4; list-style: none; }
+.guide-steps[hidden] { display: none; }
+.guide-steps li { display: flex; gap: 10px; }
+.guide-steps__num { display: grid; flex: none; place-items: center; width: 24px; height: 24px; border-radius: var(--r-sm); background: var(--chip-fill); font-size: var(--fs-micro); font-weight: 700; }
+.guide-strategy__toggle { align-self: flex-start; border-color: transparent; background: var(--seg-fill); }
+
+/* ── sources ───────────────────────────────────────────────────────────── */
+
+.guide-sources { display: flex; flex-direction: column; gap: 3px; margin: 0; padding: 0; list-style: none; }
+.guide-sources li { display: flex; flex-direction: column; gap: 2px; padding: 9px 14px; border-radius: 6px; background: var(--row); box-shadow: inset 0 0 0 1px var(--line); font-size: var(--fs-body-sm); overflow-wrap: anywhere; }
+.guide-sources li:first-child { border-top-left-radius: 16px; border-top-right-radius: 16px; }
+.guide-sources li:last-child { border-bottom-left-radius: 16px; border-bottom-right-radius: 16px; }
+.guide-sources__meta { color: var(--dim-text); font-size: var(--fs-mini); }

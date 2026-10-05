@@ -1,0 +1,36 @@
+<!--
+  HP breakdown for the selected difficulty: the stored total, then one row per
+  phase in data order, a dark label bar (name, plus the phase's HP when it is
+  split between targets) over one
+  bar per target in the difficulty's pill colours. Values stay short as
+  stored; each carries its spelled-out form in a title and for screen readers.
+-->
+<script lang="ts">
+  import { LETTER, spellHp, type HpBreakdown } from './guide';
+
+  let { hp, difficulty }: { hp: HpBreakdown; difficulty: string } = $props();
+  const tone = $derived(LETTER[difficulty] ?? difficulty.toLowerCase());
+</script>
+
+{#snippet amount(value: string)}
+  <span class="mono" title={spellHp(value)}><span aria-hidden="true">{value}</span><span class="vh">{spellHp(value)}</span></span>
+{/snippet}
+
+<section class="guide-hp" aria-labelledby="guide-hp-heading">
+  <h3 class="cap" id="guide-hp-heading">HP</h3>
+  {#if hp.total}<p class="guide-hp__total"><span>Total HP</span>{@render amount(hp.total)}</p>{/if}
+  <ol class="guide-hp__phases">
+    {#each hp.phases as phase, index (index)}
+      <li class="guide-hp__phase">
+        <p class="guide-hp__label"><span>{phase.name}</span>{#if phase.total}{@render amount(phase.total)}{/if}</p>
+        {#if phase.bars.length > 1}
+          <ul class="guide-hp__bars" aria-label="{phase.bars.length} targets, each">
+            {#each phase.bars as bar, at (at)}<li class="guide-hp__bar guide-hp__bar--{tone}">{@render amount(bar)}</li>{/each}
+          </ul>
+        {:else}
+          <p class="guide-hp__bars"><span class="guide-hp__bar guide-hp__bar--{tone}">{@render amount(phase.bars[0]!)}</span></p>
+        {/if}
+      </li>
+    {/each}
+  </ol>
+</section>

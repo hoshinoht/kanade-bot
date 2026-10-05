@@ -3,28 +3,83 @@ event:
   name: Challengers World Season 3
   availability: 'MapleSEA: ran in Challengers World Season 3 only, from 3 Jun 2026 (after the v251 patch) until it ended at the 30 Sep 2026 maintenance; solo only. Not currently available.'
 summary: 'Time Wanderer Kai is a solo dodging fight: bank Chrono Gauge, spend it on Chrono Break during Time Distortion, and reach 10,000 Fever for big cooldown refunds and a groggy window.'
+lead: 'Solo dodge fight: spend Chrono Gauge on Chrono Break during Time Distortion and push Fever to 10,000 for refunds and a groggy.'
 core:
-- Solo only, with a 20-minute limit and 5 lives. One HP bar; at 50% damage pauses while he transforms into Phase 2. One clear per week per Maple ID (resets Wednesday 23:59 SGT), separate from the weekly boss clear limit.
-- Chrono Gauge (max 1000) refills 24 per second while Chrono Break is off and drops when you are hit.
-- When the side timer expires Kai enters Time Distortion (about 20s, stretched to about 33s by Chrono Break). His attacks there are too fast to react to without Chrono Break (Tab by default), which costs 90 Chrono Gauge to start and 30 per second after 3s.
-- Chrono Step (Space by default) is a dodge similar to FA's parry but with no damage reward. It holds 3 charges on a 5s recharge, and a successful dodge during Chrono Break refunds one charge. Hold down while using it to dodge in place.
-- 'Fever Count rises during Time Distortion and drops when you are hit. At the end: 6,000 cuts all cooldowns by 10s, 8,000 by 20s, 10,000 by 40s plus a 10s groggy.'
-- He cannot be bound during Time Distortion or groggy (Origin absolute binds excepted). Reaching 50% HP mid-Distortion ends it early with a partial refund.
+- title: Rules
+  text: 'Solo, 20 minutes, 5 lives. One HP bar; at 50% damage pauses while he becomes Phase 2.'
+  detail: Solo only, with a 20-minute limit and 5 lives. One HP bar; at 50% damage pauses while he transforms into Phase 2.
+- title: Weekly clear
+  text: 'One per Maple ID (reset Wednesday 23:59 SGT), outside the weekly boss limit.'
+  detail: One clear per week per Maple ID (resets Wednesday 23:59 SGT), separate from the weekly boss clear limit.
+- title: Chrono Gauge
+  text: 'Max 1000; refills while Chrono Break is off, drops when you are hit.'
+  detail: Chrono Gauge (max 1000) refills 24 per second while Chrono Break is off and drops when you are hit.
+- title: Time Distortion
+  text: 'When the side timer ends (about 20s, 33s with Chrono Break). Too fast to dodge without Chrono Break (Tab).'
+  detail: When the side timer expires Kai enters Time Distortion (about 20s, stretched to about 33s by Chrono Break). His attacks there are too fast to react to without Chrono Break (Tab by default), which costs 90 Chrono Gauge to start and 30 per second after 3s.
+- title: Chrono Step
+  text: 'Space: a dodge like FA''s parry, no damage reward. 3 charges, 5s recharge; hold down to dodge in place.'
+  detail: Chrono Step (Space by default) is a dodge similar to FA's parry but with no damage reward. It holds 3 charges on a 5s recharge, and a successful dodge during Chrono Break refunds one charge. Hold down while using it to dodge in place.
+- title: Fever Count
+  text: 'Rises in Time Distortion, drops on hits; the end total cuts cooldowns.'
+  detail: 'Fever Count rises during Time Distortion and drops when you are hit. At the end: 6,000 cuts all cooldowns by 10s, 8,000 by 20s, 10,000 by 40s plus a 10s groggy.'
+- title: No binds in Distortion
+  text: 'Nor in groggy (Origin absolute binds excepted). Reaching 50% mid-Distortion ends it early.'
+  detail: He cannot be bound during Time Distortion or groggy (Origin absolute binds excepted). Reaching 50% HP mid-Distortion ends it early with a partial refund.
+mechanics:
+- kind: ledger
+  title: Chrono Gauge · max 1000
+  rows:
+  - {label: Chrono Break off, value: +24 per second, direction: up}
+  - {label: Start Chrono Break, value: −90, direction: down}
+  - {label: Keep it on (after 3s), value: −30 per second, direction: down}
+  - {label: Getting hit, value: drops, direction: down}
+  - {label: Dodge during Chrono Break, value: +1 Step charge, direction: up}
+- kind: ledger
+  title: Fever Count at the end of Distortion
+  rows:
+  - {label: '6,000', value: −10s cooldowns, direction: up}
+  - {label: '8,000', value: −20s cooldowns, direction: up}
+  - {label: '10,000', value: −40s CDs + 10s groggy, direction: up}
 danger:
-- 'Phase 1 Holographic Afterimage: three sets of four strikes, then a noticeably delayed final strike; the hardest Phase 1 pattern.'
-- Time Distortion lasers cost the most Fever; a single hit on Hard can rule out 10,000.
-- Phase 2 High Speed Slash throws about 126 slashes, and Chrono Step refunds are capped at five during it.
-- Green laser walls guard both map edges, so do not camp corners.
-- On Hard, Swiftness teleports to you and stuns for 4s, and common map patterns also drain Chrono Gauge.
+- title: Holographic Afterimage
+  text: 'Phase 1''s hardest: three sets of four strikes, then a late final strike.'
+  detail: 'Phase 1 Holographic Afterimage: three sets of four strikes, then a noticeably delayed final strike; the hardest Phase 1 pattern.'
+- title: Distortion lasers
+  text: 'Cost the most Fever; on Hard one hit can rule out 10,000.'
+  detail: Time Distortion lasers cost the most Fever; a single hit on Hard can rule out 10,000.
+- title: High Speed Slash
+  text: 'Phase 2: about 126 slashes; Step refunds cap at five.'
+  detail: Phase 2 High Speed Slash throws about 126 slashes, and Chrono Step refunds are capped at five during it.
+- title: Edge laser walls
+  text: 'Green walls guard both edges; do not camp corners.'
+  detail: Green laser walls guard both map edges, so do not camp corners.
+- title: Hard extras
+  text: 'Swiftness teleports in and stuns 4s; map patterns drain Chrono Gauge.'
+  detail: On Hard, Swiftness teleports to you and stuns for 4s, and common map patterns also drain Chrono Gauge.
 tips:
-- Play with sound on and Step to the rhythm of Holographic Afterimage.
-- For sweeping or rotating lasers, stand mid-map and Step toward the laser coming at you.
-- Dragon Thunder can be dodged by standing on a warning and Stepping in place, or Stepping into it as it fires.
-- During Great Whirlwind, Step near the blue safe zones to earn refunds for the later hits.
-- Standing on top of him avoids the Phase 2 Recall Strike hologram and trailing sword waves.
-- A full 10,000 Fever run gives roughly 1.5x the usual number of bursts, so time bursts around the groggy.
+- title: Sound on
+  text: 'Step to the rhythm of Holographic Afterimage.'
+  detail: Play with sound on and Step to the rhythm of Holographic Afterimage.
+- title: Sweeping lasers
+  text: 'Stand mid-map; Step toward the incoming laser.'
+  detail: For sweeping or rotating lasers, stand mid-map and Step toward the laser coming at you.
+- title: Dragon Thunder
+  text: 'Step in place on a warning, or Step into it as it fires.'
+  detail: Dragon Thunder can be dodged by standing on a warning and Stepping in place, or Stepping into it as it fires.
+- title: Great Whirlwind
+  text: 'Step near the blue safe zones for refunds on later hits.'
+  detail: During Great Whirlwind, Step near the blue safe zones to earn refunds for the later hits.
+- title: Stand on him
+  text: 'Avoids the Phase 2 Recall Strike hologram and sword waves.'
+  detail: Standing on top of him avoids the Phase 2 Recall Strike hologram and trailing sword waves.
+- title: Burst around groggy
+  text: 'A 10,000 Fever run gives about 1.5x the bursts.'
+  detail: A full 10,000 Fever run gives roughly 1.5x the usual number of bursts, so time bursts around the groggy.
 notes:
-- Not in the boss catalog. The MapleSEA season ended at the 30 Sep 2026 maintenance; kept for reference in case Kai returns.
+- title: Season over
+  text: 'Not in the boss catalog; the MapleSEA season ended on 30 Sep 2026. Kept in case Kai returns.'
+  detail: Not in the boss catalog. The MapleSEA season ended at the 30 Sep 2026 maintenance; kept for reference in case Kai returns.
 difficulties:
 - name: Normal
   entry_level: 270
@@ -34,7 +89,7 @@ difficulties:
   hp:
   - {phase: '1', value: 63t}
   - {phase: '2', value: 63t}
-  recommended_spec: {kind: HEXA-converted stat, text: Solo in the low-to-mid 20k range (with Sol Hecate).}
+  recommended_spec: {kind: HEXA-converted stat, value: low-to-mid 20k, basis: Solo with Sol Hecate, text: Solo in the low-to-mid 20k range (with Sol Hecate).}
 - name: Hard
   entry_level: 280
   boss_level: 280
@@ -43,7 +98,7 @@ difficulties:
   hp:
   - {phase: '1', value: 241.5t}
   - {phase: '2', value: 241.5t}
-  recommended_spec: {kind: HEXA-converted stat, text: Solo from about 38k up to the low 40k range (with Sol Hecate).}
+  recommended_spec: {kind: HEXA-converted stat, value: ≈ 38k to low 40k, basis: Solo with Sol Hecate, text: Solo from about 38k up to the low 40k range (with Sol Hecate).}
 sources:
 - url: https://docs.google.com/document/d/1oPyMyovLuS8aPh87MP3B_vJJcbnYoXWXrLp8Q4By0BI/edit
   title: MapleStory Complete Kai Guide

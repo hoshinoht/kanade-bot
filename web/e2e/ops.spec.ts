@@ -15,12 +15,13 @@ test('knowledge: opens on the difficulty the guild runs, switches, credits sourc
   await go(page, '/bosses/MaleficStar/knowledge');
   const switcher = page.getByRole('group', { name: 'Difficulty' });
   await expect(switcher.getByRole('button', { name: /^Hard/ })).toHaveAttribute('aria-pressed', 'true');
-  const force = page.locator('.knowledge-facts > div').filter({ has: page.getByText('Sacred force', { exact: true }) });
+  const force = page.locator('.guide-tile').filter({ has: page.getByText('Authentic Force', { exact: true }) });
   await expect(page.getByRole('heading', { name: 'Hard facts' })).toBeAttached();
   await expect(force.locator('dd')).toHaveText('550');
   await switcher.getByRole('button', { name: /^Normal/ }).click();
   await expect(page.getByRole('heading', { name: 'Normal facts' })).toBeAttached();
   await expect(force.locator('dd')).toHaveText('400');
+  await page.getByRole('tablist', { name: 'Guide sections' }).getByRole('tab', { name: /^Sources/ }).click();
   await expect(page.getByText(/by iSIingGunz · guide · fetched \d{4}-\d{2}-\d{2}/).first()).toBeVisible();
 
   await go(page, '/bosses/MaleficStar/knowledge?difficulty=n');
@@ -31,7 +32,7 @@ test('knowledge: opens on the difficulty the guild runs, switches, credits sourc
   await expect(page.getByRole('heading', { level: 2, name: 'Kai', exact: true })).toBeVisible();
   await expect(page.locator('.knowledge-hero .status-chip')).toHaveText('Seasonal boss · CW3');
   await expect(page.getByText('Event boss.')).toBeVisible();
-  await expect(page.locator('.knowledge-facts > div').filter({ has: page.getByText('Party', { exact: true }) }).locator('dd')).toHaveText('Solo only');
+  await expect(page.locator('.guide-tile').filter({ has: page.getByText('Party', { exact: true }) }).locator('dd')).toHaveText('Solo');
 });
 
 test('inbox: extractor tab — list and detail, edit then approve, reject, a chat proposal', async ({ page }) => {

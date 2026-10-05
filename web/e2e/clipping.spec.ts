@@ -20,8 +20,6 @@ interface Allow {
   reason: string;
 }
 
-const GUIDE = 'Bosses guide redesign in progress (workspace/guide-ui)';
-
 const CHAT = ['admin/chat', 'admin/chat/c-move', 'admin/chat/c-when', 'admin/chat/c-safe-line'];
 const INBOX = ['admin/inbox', 'admin/inbox?tab=self_service', 'admin/inbox (item open)'];
 const EXTRACTIONS = ['admin/extractions', 'admin/extractions/x-kalos'];
@@ -38,11 +36,18 @@ const ALLOW: Allow[] = [
     reason: 'the skip link waits above the frame until it takes focus (_base.scss .skip)',
   },
   {
-    selector: '.knowledge-detail',
-    screens: ['admin/bosses', 'admin/bosses/Carling/knowledge'],
+    selector: '.knowledge-hero__meta',
+    screens: '*',
     sizes: '*',
-    kinds: ['spill', 'cut', 'hidden', 'clip-x', 'clip-y', 'off-screen', 'ellipsis', 'ellipsis-bare'],
-    reason: GUIDE,
+    kinds: ['ellipsis'],
+    reason: "the knowledge header is one line (DR 2026-10-02): level · researched · source path; the path gives way, the title holds it whole",
+  },
+  {
+    selector: '.knowledge-aside__others',
+    screens: '*',
+    sizes: '*',
+    kinds: ['ellipsis'],
+    reason: "a weekly timing's other bosses give way to its time and pill; titled, and the timing opens in Fixed",
   },
   {
     selector: '.modelstats__chips',
@@ -142,6 +147,23 @@ const STATES: Screen[] = [
     url: screenUrl(ADMIN, '/'),
     open: async (page) => {
       await page.getByRole('tab', { name: /^Answers/ }).click();
+    },
+  },
+  // The boss guide on real content (tracked boss/knowledge): other bosses, a mission, the other tabs.
+  ...['BM', 'Bellona', 'Kalos'].map((key) => ({ name: `admin/bosses/${key}/knowledge`, url: screenUrl(ADMIN, `/bosses/${key}/knowledge`) })),
+  { name: 'admin/bosses/Carling/knowledge?difficulty=Destiny', url: screenUrl(ADMIN, '/bosses/Carling/knowledge?difficulty=Destiny') },
+  { name: 'admin/bosses/Lotus/knowledge?difficulty=Champion', url: screenUrl(ADMIN, '/bosses/Lotus/knowledge?difficulty=Champion') },
+  { name: 'admin/bosses/Limbo/knowledge', url: screenUrl(ADMIN, '/bosses/Limbo/knowledge') },
+  { name: 'admin/bosses/Carling/knowledge?difficulty=Extreme', url: screenUrl(ADMIN, '/bosses/Carling/knowledge?difficulty=Extreme') },
+  { name: 'admin/bosses/Seren/knowledge?tab=phases', url: screenUrl(ADMIN, '/bosses/Seren/knowledge?tab=phases') },
+  { name: 'admin/bosses/BM/knowledge?tab=phases', url: screenUrl(ADMIN, '/bosses/BM/knowledge?tab=phases') },
+  { name: 'admin/bosses/Meilin/knowledge?tab=notes', url: screenUrl(ADMIN, '/bosses/Meilin/knowledge?tab=notes') },
+  { name: 'admin/bosses/Carling/knowledge?tab=sources', url: screenUrl(ADMIN, '/bosses/Carling/knowledge?tab=sources') },
+  {
+    name: 'admin/bosses/BM/knowledge?tab=strategies (steps open)',
+    url: screenUrl(ADMIN, '/bosses/BM/knowledge?tab=strategies'),
+    open: async (page) => {
+      await page.getByRole('button', { name: /^Show \d+ steps?$/ }).first().click();
     },
   },
   {

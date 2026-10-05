@@ -123,6 +123,24 @@
   --pill-destiny-fg: #ffffff;
   --pill-destiny-edge: #b9b4c2;
 
+  /* Boss-guide tones (knowledge schema `tone`): fills and their text for
+     zones and range bands. Like the pills, the game's colours (a red, yellow
+     or green Peril), so no colourway moves them; the label is always printed. */
+  --guide-red: #f6dcdc;
+  --guide-red-ink: #7a2420;
+  --guide-yellow: #f6ecd0;
+  --guide-yellow-ink: #634604;
+  --guide-green: #dbeee3;
+  --guide-green-ink: #1f5e44;
+  --guide-blue: #d8e8f1;
+  --guide-blue-ink: #1d4b5b;
+  --guide-neutral: #ebe7e3;
+  --guide-neutral-ink: #3d3a40;
+  --guide-risk: #a83c30;
+  --guide-risk-ink: #ffffff;
+  --guide-safe: #cfe6d9;
+  --guide-safe-ink: #1f5e44;
+
   /* The boss monogram's tint, as numbers rather than colours: the hue is set
      per boss on the element (`--mono-hue`), and only the saturation and
      lightness change between the two faces. */
@@ -444,6 +462,21 @@
     --pill-destiny-fg: #ffffff;
     --pill-destiny-edge: #8c8796;
 
+    --guide-red: #4d2629;
+    --guide-red-ink: #ffcdc8;
+    --guide-yellow: #473b18;
+    --guide-yellow-ink: #f5dc94;
+    --guide-green: #1f3e31;
+    --guide-green-ink: #b7e7cb;
+    --guide-blue: #1d3746;
+    --guide-blue-ink: #b9ddf0;
+    --guide-neutral: #3c4152;
+    --guide-neutral-ink: #ece4cd;
+    --guide-risk: #e4857b;
+    --guide-risk-ink: #2b0b08;
+    --guide-safe: #2b5242;
+    --guide-safe-ink: #d4f3e1;
+
     --mono-s: 32%;
     --mono-l: 24%;
     --mono-ink-s: 65%;
@@ -675,6 +708,21 @@
   --pill-destiny-bg: #0e0d12;
   --pill-destiny-fg: #ffffff;
   --pill-destiny-edge: #8c8796;
+
+  --guide-red: #4d2629;
+  --guide-red-ink: #ffcdc8;
+  --guide-yellow: #473b18;
+  --guide-yellow-ink: #f5dc94;
+  --guide-green: #1f3e31;
+  --guide-green-ink: #b7e7cb;
+  --guide-blue: #1d3746;
+  --guide-blue-ink: #b9ddf0;
+  --guide-neutral: #3c4152;
+  --guide-neutral-ink: #ece4cd;
+  --guide-risk: #e4857b;
+  --guide-risk-ink: #2b0b08;
+  --guide-safe: #2b5242;
+  --guide-safe-ink: #d4f3e1;
 
   --mono-s: 32%;
   --mono-l: 24%;

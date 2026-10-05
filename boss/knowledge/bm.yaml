@@ -1,29 +1,120 @@
 boss: BM
 summary: Black Mage is a curse-management fight over four phases with 12 lives each; never take a Creation and a Destruction hit within 6 seconds of each other, solve the Phase 2 and 3 full-map checks by position, then hold the right Phase 4 affinity.
+lead: 'Four phases of curse management: never take white and black hits within 6 s, solve the full-map checks by position, then hold the right Phase 4 colour.'
 core:
-- 'Hits apply the Curse of Creation (also called Creative Curse; white: heal-over-time, -10% damage, burning aura) or the Curse of Destruction (also called Destructive Curse; black: +15% damage taken, +10% damage, no potions) for 6s. Taking the opposite curse while one is active costs a life, deals +50% HP damage and seals skills for 5s.'
-- 'Phase 1: Aion of Creation (also called Aeonian Rise; white curse) and Yaldabaoth of Destruction (also called Tanadian Ruin; black curse) share one HP bar. Walls close in from the edges and spawning on you is lethal, so avoid corners; Red Lightning cages you for 15s.'
-- 'Phase 2: dodge the chain volleys first. For the full-map Laser Jail, a left-hand (red) charge means stand at the far left, right-hand (purple) the far right, both hands directly under him (watch his touch knockback).'
-- 'Phase 3: stay inside his shield bubble (outside it you deal half damage). His Creation ultimate (white snowfall) is survived under a platform; Destruction (floor vortex) is survived standing on a platform, ideally the farthest. Crouch to avoid his Push.'
-- 'Phase 4: party members are hidden. The Harvest key swaps your affinity: Creation ignores white attacks, Destruction ignores black ones. Every 30s a pillar check kills anyone on the wrong colour, then he regains a barrier.'
-- Only Origin skills can bind Black Mage from Phase 2 onward; normal binds still work on the Phase 1 knights.
+- title: Two curses
+  text: 'Hits apply white Creation or black Destruction for 6 s; taking the other while one is active costs a life.'
+  detail: 'Hits apply the Curse of Creation (also called Creative Curse; white: heal-over-time, -10% damage, burning aura) or the Curse of Destruction (also called Destructive Curse; black: +15% damage taken, +10% damage, no potions) for 6s. Taking the opposite curse while one is active costs a life, deals +50% HP damage and seals skills for 5s.'
+- title: Origin binds only
+  text: 'From Phase 2, only Origin skills bind him; normal binds still work on the Phase 1 knights.'
+  detail: Only Origin skills can bind Black Mage from Phase 2 onward; normal binds still work on the Phase 1 knights.
+phases:
+- name: Phase 1
+  tag: two knights
+  items:
+  - title: Two knights
+    text: 'Aion of Creation (white) and Yaldabaoth of Destruction (black) share one HP bar.'
+    detail: 'Phase 1: Aion of Creation (also called Aeonian Rise; white curse) and Yaldabaoth of Destruction (also called Tanadian Ruin; black curse) share one HP bar.'
+  - title: Closing walls
+    text: 'They close in from the edges and spawning on you is lethal; avoid corners.'
+  - title: Red Lightning
+    text: 'Cages you for 15 s.'
+- name: Phase 2
+  tag: Laser Jail
+  items:
+  - title: Chain volleys
+    text: 'Dodge these first.'
+  - title: Laser Jail
+    text: 'Full-map check: stand where the charging hand says (see Laser Jail).'
+    detail: 'Phase 2: dodge the chain volleys first. For the full-map Laser Jail, a left-hand (red) charge means stand at the far left, right-hand (purple) the far right, both hands directly under him (watch his touch knockback).'
+- name: Phase 3
+  tag: shield bubble
+  items:
+  - title: Shield bubble
+    text: 'Stay inside it; outside you deal half damage.'
+  - title: Ultimates
+    text: 'White snowfall: under a platform. Floor vortex: on one, ideally the farthest.'
+    detail: 'Phase 3: stay inside his shield bubble (outside it you deal half damage). His Creation ultimate (white snowfall) is survived under a platform; Destruction (floor vortex) is survived standing on a platform, ideally the farthest. Crouch to avoid his Push.'
+  - title: Push
+    text: 'Crouch to avoid it.'
+- name: Phase 4
+  tag: pick a state
+  items:
+  - title: Hidden party
+    text: 'Party members are hidden.'
+  - title: Pick a state
+    text: 'Black (Destruction): hits give Creation, safer and slower. White (Creation): hits give Destruction, faster and riskier. Harvest key swaps.'
+    detail: 'Phase 4: pick a state with the Harvest key. Destruction (Black) State ignores black attacks, and hits you take give the Creation curse (heal-over-time, -10% damage, burning aura). Creation (White) State ignores white attacks, and hits give the Destruction curse (+10% damage, +15% damage taken, no potions).'
+  - title: Pillar check
+    text: 'Every 30 s, wrong colour dies; then he regains a barrier.'
+    detail: 'Phase 4: party members are hidden. The Harvest key swaps your affinity: Creation ignores white attacks, Destruction ignores black ones. Every 30s a pillar check kills anyone on the wrong colour, then he regains a barrier.'
+mechanics:
+- kind: ledger
+  title: Curses · 6 s each
+  rows:
+  - {label: 'Creation (white): heal-over-time, burning aura', value: −10% damage, direction: down}
+  - {label: 'Destruction (black): +15% damage taken, no potions', value: +10% damage, direction: up}
+  - {label: Opposite curse while one is active, value: −1 life · +50% HP hit, direction: down}
+  note: 'Crossing curses also seals skills for 5 s.'
+- kind: zones
+  title: Laser Jail (Phase 2)
+  zones:
+  - {name: Far left, sub: left hand · red, tone: red}
+  - {name: Under him, sub: both hands, tone: neutral}
+  - {name: Far right, sub: right hand · purple, tone: blue}
+  note: 'Watch his touch knockback under him.'
+- kind: ledger
+  title: Arcane Force
+  rows:
+  - {label: Entry, value: '1320'}
+  - {label: +10% final damage, value: '1452', direction: up}
+  - {label: +30% final damage, value: '1716', direction: up}
+  - {label: +50% final damage, value: '1980', direction: up}
 danger:
-- Curse crossing removes a life without a normal death and is the main way runs fail.
-- Phase 2 and 3 full-map attacks and Phase 1 wall spawns are instant kills when positioned wrong; walking into Red Lightning is near-lethal, and lethal while you hold the Curse of Destruction.
-- An Origin bind in Phase 2 can hide which hand is charging Laser Jail; know the timer instead.
-- Phase 3 Push, pull and lasers can chain curses; stop attacking when pink lasers appear and avoid double-jumping near him.
-- In Phase 4, bullets and explosions are the main life drains, and nobody can see your mistakes to call them.
+- title: Curse crossing
+  text: 'Costs a life without dying; the main way runs fail.'
+  detail: Curse crossing removes a life without a normal death and is the main way runs fail.
+- title: Instant kills
+  text: 'Misplaced in a full-map attack or wall spawn means death. Red Lightning is near-lethal, lethal under Destruction.'
+  detail: Phase 2 and 3 full-map attacks and Phase 1 wall spawns are instant kills when positioned wrong; walking into Red Lightning is near-lethal, and lethal while you hold the Curse of Destruction.
+- title: Hidden hand
+  text: 'A Phase 2 Origin bind can hide the Laser Jail hand; know the timer.'
+  detail: An Origin bind in Phase 2 can hide which hand is charging Laser Jail; know the timer instead.
+- title: Phase 3 chains
+  text: 'Push, pull and lasers chain curses; stop attacking at pink lasers, no double-jumps near him.'
+  detail: Phase 3 Push, pull and lasers can chain curses; stop attacking when pink lasers appear and avoid double-jumping near him.
+- title: Phase 4 drains
+  text: 'Bullets and explosions take most lives, and nobody sees your mistakes.'
+  detail: In Phase 4, bullets and explosions are the main life drains, and nobody can see your mistakes to call them.
 tips:
-- Before taking any intentional hit, check which curse you currently have.
-- In Phase 1, bind and burst when both knights overlap; their dive makes them briefly untargetable, so bind only when sure.
-- In Phase 4, default to Destruction so you are immune to black attacks and can still use potions; swap only for pillar checks.
-- After the final kill, break the Egg of the Beginning (also called Genesis Crux) with basic attacks to collect rewards; the clear counts on the last-phase kill (MapleSEA v214).
+- title: Check your curse
+  text: 'Before any intentional hit.'
+  detail: Before taking any intentional hit, check which curse you currently have.
+- title: Knights overlap
+  text: 'Phase 1: bind and burst on overlap; their dive makes them briefly untargetable.'
+  detail: In Phase 1, bind and burst when both knights overlap; their dive makes them briefly untargetable, so bind only when sure.
+- title: Default to Destruction
+  text: 'Phase 4 Black State: immune to black attacks, and hits give Creation, so potions still work. Swap only for pillars.'
+  detail: In Phase 4, default to Destruction (Black) State so you are immune to black attacks and hits only give the Creation curse, so you can still use potions; swap only for pillar checks.
+- title: Break the Egg
+  text: 'Basic-attack the Egg of the Beginning for rewards; the clear counts on the final kill.'
+  detail: After the final kill, break the Egg of the Beginning (also called Genesis Crux) with basic attacks to collect rewards; the clear counts on the last-phase kill (MapleSEA v214).
 difficulty_notes:
-  x: Extreme forces your Phase 4 affinity to swap every 30 seconds after a warning, and has a 30 minute limit instead of Hard's 60 (before OVERDRIVE).
+  x:
+    title: Extreme
+    text: 'Every 30 s, after a warning, your Phase 4 state is set at random (it may stay the same). 30-minute limit, not 60.'
+    detail: Extreme sets your Phase 4 state at random every 30 seconds after a warning (it can stay the same), and has a 30 minute limit instead of Hard's 60 (before OVERDRIVE).
 notes:
-- HP rows are KMS values before OVERDRIVE, which match MapleSEA now. Clears are monthly, shared between Hard and Extreme. Arcane Force 1320 (+10% final damage at 1452, +30% at 1716, +50% at 1980).
-- 'MapleSEA changes: v244 stopped the Phase 3 Creation ultimate overlapping the absorption pattern; v246 removed the entry item; v249 removed Dark Falling and Morning Starfall from Phases 2 and 3.'
-- Entry level 255 per the wiki and guides; MapleTools lists 275 (unconfirmed which is right).
+- title: Monthly clear
+  text: 'Hard and Extreme share one clear per month.'
+- title: HP rows
+  text: 'KMS values before OVERDRIVE, which match MapleSEA now.'
+- title: MapleSEA changes
+  text: 'v244 stopped the Phase 3 ultimate overlapping absorption, v246 dropped the entry item, v249 cut two Phase 2-3 patterns.'
+  detail: 'MapleSEA changes: v244 stopped the Phase 3 Creation ultimate overlapping the absorption pattern; v246 removed the entry item; v249 removed Dark Falling and Morning Starfall from Phases 2 and 3.'
+- title: Entry level
+  text: '255 per wiki and guides; MapleTools says 275 (unconfirmed).'
+  detail: Entry level 255 per the wiki and guides; MapleTools lists 275 (unconfirmed which is right).
 difficulties:
 - name: Hard
   entry_level: 255
@@ -37,7 +128,7 @@ difficulties:
   - {phase: '3', value: 157.5t}
   - {phase: '4', value: 136.5t}
   - {phase: total, value: 472.5t}
-  recommended_spec: {kind: HEXA-converted stat, text: 'KMS solo minimum-cut clears around 45k (Aug 2024, before OVERDRIVE).'}
+  recommended_spec: {kind: HEXA-converted stat, value: ≈ 45k, basis: 'KMS, Aug 2024', text: 'KMS solo minimum-cut clears around 45k (Aug 2024, before OVERDRIVE).'}
   notes:
   - Phase 1 HP is one bar shared by both knights, plus white shields. 12 lives per player, 60 minute limit. Boss level 265 in phases 1 and 4.
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 166t total, 20-minute limit.'
@@ -53,17 +144,31 @@ difficulties:
   - {phase: '3', value: 1.285q}
   - {phase: '4', value: 1.155q}
   - {phase: total, value: 4.811q}
-  recommended_spec: {kind: HEXA-converted stat, text: 'KMS solo clears reported around 96k (minimum cut, 99% of HP) to 110k (Sep 2025), before OVERDRIVE; single clears, not a cut table.'}
+  recommended_spec: {kind: HEXA-converted stat, value: 96–110k, basis: 'KMS, Sep 2025', text: 'KMS solo clears reported around 96k (minimum cut, 99% of HP) to 110k (Sep 2025), before OVERDRIVE; single clears, not a cut table.'}
   notes:
   - 12 lives per player, 30 minute limit. Boss level 275 in Phase 1.
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 3.26q total, 20-minute limit.'
 - name: Champion
   entry_level: 260
   party_max: 1
+  mission:
+    series: union-champion
+    order: 3
+    title: Rank S trial
+    needs: A Rank A champion
+    rules: [Solo, 45-minute limit, Practice Mode clears count]
   notes:
-  - 'Union Champion Rank S trial (Champion Evaluation Match): Hard Black Mage solo in Champion Mode, after Rank A. The limit was 45 minutes at KMS launch and is 20 since KMS OVERDRIVE; MapleSEA presumably still has 45. The S insignia gives every character +5% Boss Damage.'
-  - 'Practice Mode clears count and add Hamcelot''s Protection (25% less damage taken). After OVERDRIVE, KMS adds Hamcelot''s Trial (Final Damage -30%, -25% on Black Mage); not in MapleSEA yet. MapleSEA notes do not list the trial bosses, so the boss and limit here are KMS''s.'
-  - In KMS a 5th champion slot needs four Rank S champions, i.e. four Hard Black Mage solos.
+  - title: S insignia
+    text: '+5% Boss Damage for every character. Hard Black Mage solo in Champion Mode (Champion Evaluation Match).'
+    detail: 'Union Champion Rank S trial (Champion Evaluation Match): Hard Black Mage solo in Champion Mode, after Rank A. The S insignia gives every character +5% Boss Damage.'
+  - title: 45-minute limit
+    text: 'The other trials allow 20 minutes. After OVERDRIVE, KMS cut this one to 20 as well.'
+    detail: 'The Rank S trial has a 45-minute limit; the other trials allow 20 minutes. After OVERDRIVE, KMS cut it to 20 as well.'
+  - title: Practice Mode
+    text: 'Clears count and add Hamcelot''s Protection: 25% less damage taken.'
+    detail: 'Practice Mode clears count and add Hamcelot''s Protection (25% less damage taken). After OVERDRIVE, KMS adds Hamcelot''s Trial (Final Damage -30%, -25% on Black Mage); not in MapleSEA yet.'
+  - title: 5th champion slot
+    text: 'In KMS it needs four Rank S champions, i.e. four Hard Black Mage solos.'
 strategies:
 - name: Phase 4 burst-only
   when: Hard with clear-time slack (60 minute limit)
@@ -82,6 +187,24 @@ strategies:
   steps:
   - Save the invincibility for Laser Jail (or a Phase 3 ultimate) and keep attacking through it.
   - Damage stops about 2s before the effect visually ends, so be in the safe spot by then.
+- name: Black State (Destruction)
+  when: Phase 4, for a safer clear
+  risk: low
+  damage: high
+  payoff: Hits give only the Creation curse, so healing and potions stay available and mistakes are punished less; its -10% damage makes the phase slower.
+  steps:
+  - Pick Destruction (Black) State with the Harvest key as Phase 4 starts.
+  - Dodge white attacks; a hit gives Creation (heal-over-time, -10% damage), so potions stay usable.
+  - Swap only for pillar checks, then return to Black.
+- name: White State (Creation)
+  when: Phase 4, for a faster clear when you can dodge cleanly
+  risk: high
+  damage: medium
+  payoff: Faster, since hits give the Destruction curse's +10% damage, but no potions while it lasts and 15% more damage taken.
+  steps:
+  - Pick Creation (White) State with the Harvest key as Phase 4 starts.
+  - Dodge black attacks; a hit gives Destruction (+10% damage, +15% damage taken, no potions).
+  - Swap only for pillar checks, then return to White.
 sources:
 - url: https://maplestorywiki.net/w/Black_Mage/Monster
   title: MapleStory Wiki - Black Mage/Monster

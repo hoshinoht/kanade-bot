@@ -1,27 +1,97 @@
 boss: Kalos
 summary: Gatekeeper Kalos (also called Kalos the Guardian or Watcher Kalos) is a system-control fight. T-Boy keeps switching on four tower weapons and the party must shoot them off with Will of Kalos; if all four stay on, the run fails. Phase 2 adds a safe-dome test after every 25% of HP.
+lead: 'T-Boy keeps switching on four weapons and the party shoots them off with Will of Kalos; Phase 2 adds a safe-dome test every 25% of HP.'
 core:
-- 'Four weapons, each with a dot on the gauge: Eye of Restraint (left tower, stun laser; also called Eye of Penitence), Eye of the Abyss (right tower, darkness arrows), Bombardment Fighter (top drone, downward beam; also called Beam Strafe Maneuver) and the Odium sphere (bouncing ball).'
-- One weapon switches on every 80 s (Easy), 70 s (Normal) or 60 s (Chaos/Extreme), and every Watcher's Roar (also called Guardian's Roar or FMA, the full-map attack) switches on one more.
-- Press the NPC/Gather key to aim Will of Kalos (also called Kalos's Will) and press again to fire. It refills about every 10 s (the wiki says 15 s on Easy), auto-fires after 10 s and does not charge while you are dead; since SEA v251 its crosshair stays fixed. Shoot the Eyes directly; for the drone and the ball, shoot the generator above or below them as they pass.
-- Hits needed scale with party size. Eyes take 2 per member on Easy and Normal (3 on Chaos and Extreme); the drone takes 1 on Easy and Normal (2 on Chaos and Extreme); the ball takes 1 on Easy and 2 on Chaos and Extreme (Normal unconfirmed).
-- If all four weapons are still active when the next activation timer ends, the party is ejected. Freeing any one resets it.
-- Phase 2 HP is split into four 25% segments. Each segment ends in a test of three safe domes; any death fails it and heals Kalos 5%, while success gives a 15 s groggy with all timers paused.
+- title: Four weapons
+  text: 'Eye of Restraint (left, stun laser), Eye of the Abyss (right, dark arrows), Bombardment Fighter (top drone) and the bouncing Odium sphere.'
+  detail: 'Four weapons, each with a dot on the gauge: Eye of Restraint (left tower, stun laser; also called Eye of Penitence), Eye of the Abyss (right tower, darkness arrows), Bombardment Fighter (top drone, downward beam; also called Beam Strafe Maneuver) and the Odium sphere (bouncing ball).'
+- title: Activation
+  text: 'One more switches on per timer (set by difficulty) and per Watcher''s Roar.'
+  detail: 'One weapon switches on every 80 s (Easy), 70 s (Normal) or 60 s (Chaos/Extreme), and every Watcher''s Roar (also called Guardian''s Roar or FMA, the full-map attack) switches on one more.'
+- title: Will of Kalos
+  text: 'NPC/Gather key to aim, again to fire; refills about every 10 s.'
+  detail: 'Press the NPC/Gather key to aim Will of Kalos (also called Kalos''s Will) and press again to fire. It refills about every 10 s (the wiki says 15 s on Easy), auto-fires after 10 s and does not charge while you are dead; since SEA v251 its crosshair stays fixed. Shoot the Eyes directly; for the drone and the ball, shoot the generator above or below them as they pass.'
+- title: Shots needed
+  text: 'Scale with party size and difficulty.'
+  detail: 'Hits needed scale with party size. Eyes take 2 per member on Easy and Normal (3 on Chaos and Extreme); the drone takes 1 on Easy and Normal (2 on Chaos and Extreme); the ball takes 1 on Easy and 2 on Chaos and Extreme (Normal unconfirmed).'
+- title: All four on
+  text: 'All four still on when the next timer ends ejects the party; freeing any one resets it.'
+  detail: If all four weapons are still active when the next activation timer ends, the party is ejected. Freeing any one resets it.
+phases:
+- name: Phase 2
+  tag: dome test every 25%
+  items:
+  - title: Dome tests
+    text: 'Each 25% segment ends in a three-dome test. A death heals Kalos 5%; success gives a 15 s groggy, timers paused.'
+    detail: 'Phase 2 HP is split into four 25% segments. Each segment ends in a test of three safe domes; any death fails it and heals Kalos 5%, while success gives a 15 s groggy with all timers paused.'
+mechanics:
+- kind: zones
+  title: Four weapons
+  zones:
+  - {name: Eye of Restraint, sub: left · stun laser, tone: risk}
+  - {name: Bombardment Fighter, sub: top · drone beam, tone: neutral}
+  - {name: Odium sphere, sub: bouncing ball, tone: neutral}
+  - {name: Eye of the Abyss, sub: right · dark arrows, tone: neutral}
+  note: 'Shoot the Eyes directly; hit the drone and ball through the generator above or below them as they pass.'
+- kind: ledger
+  title: Weapon activation
+  rows:
+  - {label: Easy, value: every 80 s}
+  - {label: Normal, value: every 70 s}
+  - {label: Chaos and Extreme, value: every 60 s}
+  - {label: Watcher's Roar, value: +1 weapon, direction: down}
+  note: 'MapleSEA v251 slowed Easy and Normal from 60 s.'
+- kind: ledger
+  title: Shots per party member
+  rows:
+  - {label: Each Eye, value: 2 · Chaos/Extreme 3}
+  - {label: Drone, value: 1 · Chaos/Extreme 2}
+  - {label: Ball, value: Easy 1 · Chaos/Extreme 2}
+  note: 'Normal ball count unconfirmed. A weapon''s colour counts its shots left: red, then purple, then dark blue.'
+- kind: scale
+  title: Phase 2 segments
+  bands:
+  - {label: 2-1 · 100–75%, span: 25, tone: neutral}
+  - {label: 2-2 · 75–50%, span: 25, tone: neutral}
+  - {label: 2-3 · 50–25%, span: 25, tone: neutral}
+  - {label: 2-4 · curses, span: 25, tone: risk}
+  note: 'Each segment ends in a dome test; segment 2-4 adds a curse every minute.'
 danger:
-- Eye of Restraint's laser stuns and can chain into Kalos's attacks; it keeps firing during the dome test. Since SEA v251, freeing it cancels its current shot.
-- On Chaos and Extreme, three or more active weapons empower all of them; empowered arrows can kill in two hits.
-- Watcher's Roar (about every 2.5 min) is a one-shot that also adds a weapon; every bind delays it by the bind's length.
-- Phase 2 Laser Breath kills through Heaven's Door and reaches one floor up; his dive lands on a random player.
-- 'Below 25% HP (segment 2-4) a curse lands every minute: two stacks raise damage taken, a third kills a random player. Harvest the armguard to clear curses.'
+- title: Eye of Restraint
+  text: 'Stun laser that chains into his attacks, even in dome tests. Freeing it cancels the shot (SEA v251).'
+  detail: Eye of Restraint's laser stuns and can chain into Kalos's attacks; it keeps firing during the dome test. Since SEA v251, freeing it cancels its current shot.
+- title: Empowered weapons
+  text: 'Chaos/Extreme: three or more active empower all; empowered arrows kill in two hits.'
+  detail: On Chaos and Extreme, three or more active weapons empower all of them; empowered arrows can kill in two hits.
+- title: Watcher's Roar
+  text: 'One-shot every ~2.5 min that adds a weapon; binds delay it by their length.'
+  detail: Watcher's Roar (about every 2.5 min) is a one-shot that also adds a weapon; every bind delays it by the bind's length.
+- title: Breath and dive
+  text: 'Phase 2 Laser Breath kills through Heaven''s Door, one floor up too; the dive picks a random player.'
+  detail: Phase 2 Laser Breath kills through Heaven's Door and reaches one floor up; his dive lands on a random player.
+- title: Curses below 25%
+  text: 'Segment 2-4: a curse every minute; two stacks raise damage taken, a third kills. Harvest the armguard to clear.'
+  detail: 'Below 25% HP (segment 2-4) a curse lands every minute: two stacks raise damage taken, a third kills a random player. Harvest the armguard to clear curses.'
 tips:
-- Assign a caller to watch Kalos after every teleport and one player to run timers (Roar, breath, dive, next system).
-- Call generator numbers 1-5 for drone and ball shots so two people never spend shots on the same one.
-- Fire at the ball when it is about halfway to its generator; the barrier lasts only about 2 s.
-- Read a weapon's colour to count the shots left (red, then purple, then dark blue).
-- Use Hero's Will before the left tower's laser lands to avoid its stun.
-- 'Authentic Symbol: Hotel Arcs Lv 11 adds +20% damage against Kalos (SEA v251).'
+- title: Caller and timer
+  text: 'One watches Kalos after each teleport; one times Roar, breath, dive and next system.'
+  detail: Assign a caller to watch Kalos after every teleport and one player to run timers (Roar, breath, dive, next system).
+- title: Number the generators
+  text: 'Call 1-5 for drone and ball shots so nobody doubles up.'
+  detail: Call generator numbers 1-5 for drone and ball shots so two people never spend shots on the same one.
+- title: Ball timing
+  text: 'Fire when it is halfway to its generator; the barrier lasts about 2 s.'
+  detail: Fire at the ball when it is about halfway to its generator; the barrier lasts only about 2 s.
+- title: Hero's Will
+  text: 'Use it before the left tower''s laser lands.'
+  detail: Use Hero's Will before the left tower's laser lands to avoid its stun.
+- title: Authentic Symbol
+  text: 'Hotel Arcs Lv 11: +20% damage to Kalos (SEA v251).'
+  detail: 'Authentic Symbol: Hotel Arcs Lv 11 adds +20% damage against Kalos (SEA v251).'
 notes:
-- 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Normal 10, Chaos 70, Extreme 400.'
+- title: Destiny Resolve per clear
+  text: 'Normal 10 · Chaos 70 · Extreme 400, split among everyone who entered.'
+  detail: 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Normal 10, Chaos 70, Extreme 400.'
 difficulties:
 - name: Easy
   entry_level: 265
@@ -82,16 +152,39 @@ difficulties:
   boss_level: 285
   pdr_percent: 380
   party_max: 1
+  mission:
+    series: destiny-weapon
+    order: 2
+    title: Battle, Gatekeeper Kalos
+    modifier: {text: Death Count 3 (from 8), direction: down}
+    needs: 2,500 Adversary's Resolve
+    rules: [Solo, Practice Mode clears count, No Cross World]
   notes:
-  - 'Destiny Weapon mission "Battle, Gatekeeper Kalos" (MapleSEA v244): Chaos Kalos solo in Destiny Mode with the Death Count cut from 8 to 3. Second mission; needs 2,500 Adversary''s Resolve.'
-  - 'Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
+  - title: The second mission
+    text: 'Chaos Kalos solo in Destiny Mode (MapleSEA v244), after Chosen Serene.'
+    detail: 'Destiny Weapon mission "Battle, Gatekeeper Kalos" (MapleSEA v244): Chaos Kalos solo in Destiny Mode with the Death Count cut from 8 to 3. Second mission, after Chosen Serene; needs 2,500 Adversary''s Resolve.'
+  - title: Practice Mode
+    text: 'Practice clears count (MapleSEA v249), but not in Cross World. OVERDRIVE''s phase-specific practice will not count.'
+    detail: 'Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
 - name: Champion
   entry_level: 260
   party_max: 1
+  mission:
+    series: union-champion
+    order: 5
+    title: Rank SSS trial
+    needs: A Rank SS champion
+    rules: [Solo, 20-minute limit, Practice Mode clears count]
   notes:
-  - 'Union Champion Rank SSS trial (Champion Evaluation Match): Normal Kalos solo in Champion Mode within 20 minutes, after Rank SS. The SSS insignia gives every character +5% Ignore Enemy DEF.'
-  - 'Practice Mode clears count and add Hamcelot''s Protection (25% less damage taken). After OVERDRIVE, KMS adds Hamcelot''s Trial (Final Damage -30%, -25% on Black Mage); not in MapleSEA yet. MapleSEA notes do not list the trial bosses, so the boss and limit here are KMS''s.'
-  - 'Community view: a Normal Kalos solo needs more spec than Hard Serene for only +5% IED, so many players stop at Rank SS.'
+  - title: SSS insignia
+    text: '+5% Ignore Enemy DEF for every character. Normal Kalos solo in Champion Mode (Champion Evaluation Match).'
+    detail: 'Union Champion Rank SSS trial (Champion Evaluation Match): Normal Kalos solo in Champion Mode within 20 minutes, after Rank SS. The SSS insignia gives every character +5% Ignore Enemy DEF.'
+  - title: Practice Mode
+    text: 'Clears count and add Hamcelot''s Protection: 25% less damage taken.'
+    detail: 'Practice Mode clears count and add Hamcelot''s Protection (25% less damage taken). After OVERDRIVE, KMS adds Hamcelot''s Trial (Final Damage -30%, -25% on Black Mage); not in MapleSEA yet.'
+  - title: Many stop at SS
+    text: 'Community view: Normal Kalos solo needs more spec than Hard Serene, for only +5% IED.'
+    detail: 'Community view: a Normal Kalos solo needs more spec than Hard Serene for only +5% IED, so many players stop at Rank SS.'
 strategies:
 - name: Left-first control
   when: Easy and Normal, learning parties or low shot accuracy

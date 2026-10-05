@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
+import { GUIDE_DOC, GUIDE_MISSIONS } from './guide-fixture';
 import { ADMIN, REAL_ART, expect, settle, test } from './support';
 
 // Event bosses (knowledge documents with an `event`, outside the catalog: Kai,
@@ -102,43 +103,41 @@ test('bosses: selected rows reveal every difficulty and detail keeps timing and 
   await expect(star.locator('.boss-tick--more')).toBeHidden();
   const catalog = await (await page.request.get(`${ADMIN}/api/admin/bosses`)).json() as { key: string; difficulties: unknown[] }[];
   await expect(star.locator('.row-content__full .boss-tick')).toHaveCount(catalog.find((boss) => boss.key === 'MaleficStar')!.difficulties.length);
-  const facts = page.locator('.knowledge-facts');
-  await expect(facts).toContainText('HP (total)');
-  await expect(facts).not.toContainText('Recommended');
-  await expect(page.locator('.knowledge-recommended .cap')).toHaveText('Recommended · hexa-converted stat');
+  // The tracked document's facts: tiles, and the guild's difficulty open.
+  await expect(page.locator('.guide-tile dt').first()).toHaveText('Boss level');
   const timing = page.locator('.knowledge-detail aside li').first();
   await expect(timing.locator('strong')).toHaveText(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d\d:\d\d$/);
   await expect(timing.locator('.pill')).toHaveText(/^(EASY|NORMAL|HARD|CHAOS|EXTREME)$/);
   await expect(page.locator('.knowledge-aside__count')).toContainText('next');
 });
 
-test('bosses: knowledge strategies render when the document has them and not otherwise', async ({ page }) => {
+test('bosses: knowledge strategies get a tab when the document has them and not otherwise', async ({ page }) => {
   const knowledge = await (await page.request.get(`${ADMIN}/api/admin/bosses/Lotus/knowledge`)).json() as { doc: { strategies?: { name: string; risk: string; damage: string; when: string; payoff: string; steps: string[] }[] } };
   const expected = knowledge.doc.strategies ?? [];
   expect(expected.length).toBeGreaterThan(0);
   await go(page, '/bosses/Lotus/knowledge');
-  const section = page.getByRole('region', { name: 'Strategies' });
-  await expect(section).toBeVisible();
-  const cards = section.locator('.strategy');
+  const tabs = page.getByRole('tablist', { name: 'Guide sections' });
+  await tabs.getByRole('tab', { name: /^Strategies/ }).click();
+  await expect(page).toHaveURL(/[?&]tab=strategies/);
+  const cards = page.locator('.guide-strategy');
   await expect(cards).toHaveCount(expected.length);
+  const words = { low: 'Low', medium: 'Medium', high: 'High' } as Record<string, string>;
   for (const [index, strategy] of expected.entries()) {
     const card = cards.nth(index);
     await expect(card.getByRole('heading', { level: 3 })).toHaveText(strategy.name);
-    await expect(card.locator('.status-chip')).toHaveText([`Risk: ${strategy.risk}`, `Damage needed: ${strategy.damage}`]);
-    await expect(card.locator('dd')).toHaveText([strategy.when, strategy.payoff]);
-    await expect(card.getByRole('list', { name: `Steps for ${strategy.name}` }).getByRole('listitem')).toHaveCount(strategy.steps.length);
+    await expect(card.locator('.guide-meter strong')).toHaveText([words[strategy.risk]!, words[strategy.damage]!]);
+    await expect(card.locator('.guide-strategy__when dd')).toHaveText([strategy.when, strategy.payoff]);
+    // Steps stay folded until asked for.
+    await expect(card.locator('ol.guide-steps > li')).toHaveCount(strategy.steps.length);
+    await expect(card.getByRole('button', { name: `Show ${strategy.steps.length} step${strategy.steps.length === 1 ? '' : 's'}` })).toHaveAttribute('aria-expanded', 'false');
   }
-  // Strategies sit between Tips and Notes/Sources.
-  const headings = await page.locator('.knowledge-detail__main h2.cap').allTextContents();
-  expect(headings.indexOf('Strategies')).toBeGreaterThan(headings.indexOf('Tips'));
-  expect(headings.indexOf('Strategies')).toBeLessThan(headings.indexOf('Sources'));
 
-  // Kai's document declares no strategies.
+  // Kai's document declares no strategies: no tab for them.
   const kai = await (await page.request.get(`${ADMIN}/api/admin/bosses/Kai/knowledge`)).json() as { doc: { strategies?: unknown[] } };
   expect(kai.doc.strategies ?? []).toHaveLength(0);
   await go(page, '/bosses/Kai/knowledge');
-  await expect(page.getByRole('heading', { level: 2, name: 'Sources' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Strategies' })).toHaveCount(0);
+  await expect(tabs.getByRole('tab', { name: /^Sources/ })).toBeVisible();
+  await expect(tabs.getByRole('tab', { name: /^Strategies/ })).toHaveCount(0);
 });
 
 test('bosses: a whole catalog row selects its boss, not only the name', async ({ page }) => {
@@ -245,7 +244,7 @@ test.describe('info-only difficulties', () => {
       const switcher = page.getByRole('group', { name: 'Difficulty' });
       await switcher.getByRole('button', { name: 'Champion', exact: true }).click();
       await expect(page.locator('#facts-heading')).toHaveText('Champion facts');
-      await expect(page.locator('.knowledge-facts')).toContainText('285');
+      await expect(page.locator('.guide-tiles')).toContainText('285');
       await switcher.getByRole('button', { name: 'Destiny', exact: true }).click();
       await expect(page.locator('#difficulty-notes-heading')).toHaveText('Destiny notes');
 
@@ -338,5 +337,346 @@ test.describe('animated knowledge hero', () => {
     expect(ranged.fromServiceWorker()).toBe(false);
     const cached = await page.evaluate(async () => (await Promise.all((await caches.keys()).map(async (name) => (await (await caches.open(name)).keys()).map((r) => r.url)))).flat());
     expect(cached.filter((url) => url.includes('/art/animated/'))).toEqual([]);
+  });
+});
+
+// The tabbed guide (user-approved redesign, 2026-10-05), over an invented
+// document in the new shapes; MaleficStar's tracked document is the old shape.
+test.describe('boss guide', () => {
+  test.skip(REAL_ART, 'fixture-specific assertions');
+
+  async function inject(page: Page, missions: unknown[] = GUIDE_MISSIONS) {
+    await page.route(/\/api\/admin\/bosses\/MaleficStar\/knowledge$/, async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as Record<string, unknown>;
+      await route.fulfill({ response, json: { ...body, doc: GUIDE_DOC, missions } });
+    });
+  }
+  const tablist = (page: Page) => page.getByRole('tablist', { name: 'Guide sections' });
+
+  test('pill tabs carry counts, hide empty sections and follow ?tab=', async ({ page }) => {
+    await inject(page);
+    await go(page, '/bosses/MaleficStar/knowledge');
+    const tabs = tablist(page).getByRole('tab');
+    await expect(tabs).toHaveText(['Overview', /^Phases\s*4$/, /^Strategies\s*2$/, /^Notes\s*2$/, /^Sources\s*3$/]);
+    await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('.guide-lead')).toHaveText(GUIDE_DOC.lead);
+
+    await tablist(page).getByRole('tab', { name: /^Phases/ }).click();
+    await expect(page).toHaveURL(/\/bosses\/MaleficStar\/knowledge\?(.+&)?tab=phases$/);
+    // The timeline opens on the first phase; its items show below.
+    await expect(page.getByRole('tablist', { name: 'Phases' }).getByRole('tab').first()).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('.guide-phase h3')).toHaveText('Lamp rooms');
+    await expect(page.locator('.guide-phase li')).toHaveText(['Split up Two per room.', 'A plain phase line.']);
+    await tablist(page).getByRole('tab', { name: /^Phases/ }).focus();
+    // Arrow keys move along the tabs and take the panel with them.
+    await page.keyboard.press('ArrowRight');
+    await expect(tablist(page).getByRole('tab', { name: /^Strategies/ })).toBeFocused();
+    await expect(page).toHaveURL(/[?&]tab=strategies$/);
+    await page.keyboard.press('End');
+    await expect(tablist(page).getByRole('tab', { name: /^Sources/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('list', { name: 'Sources by kind' }).getByRole('listitem')).toHaveText(['Official 1', 'Guide 1', 'Wiki 1']);
+    await expect(page.locator('.guide-sources li').nth(1)).toContainText('by Someone · guide · fetched 2026-10-05 · updated 2026-10-01');
+    await page.keyboard.press('Home');
+    await expect(page).not.toHaveURL(/tab=/);
+
+    await go(page, '/bosses/MaleficStar/knowledge?tab=notes');
+    await expect(tablist(page).getByRole('tab', { name: /^Notes/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('list', { name: 'Notes' }).getByRole('listitem')).toHaveText(['Old buildNo longer works after the room rule.', 'A plain note line.']);
+    // A tab the document cannot fill falls back to Overview.
+    await go(page, '/bosses/Kai/knowledge?tab=strategies');
+    await expect(tablist(page).getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  test('Overview: mechanic blocks, then danger and tips as titled rows; the bot-only detail never shows', async ({ page }) => {
+    await inject(page);
+    await go(page, '/bosses/MaleficStar/knowledge');
+    const panel = page.getByRole('tabpanel');
+    await expect(panel.locator('.guide-mechanic h3')).toHaveText(['Pool · 1000 shared', 'Room zones', 'Lamp scale']);
+    await expect(panel.locator('.guide-ledger li > span:first-child')).toHaveText(['Death', 'Clean phase', 'Neutral row']);
+    await expect(panel.locator('.guide-ledger__value')).toHaveText([/▼\s*−100/, /▲\s*\+300/, '0']);
+    await expect(panel.locator('.guide-ledger .guide-down')).toHaveCount(1);
+    await expect(panel.locator('.guide-zones li')).toHaveText(['Leftred', 'Centreyellow', 'Rightgreen']);
+    await expect(panel.locator('.guide-zones li').first()).toHaveClass(/guide-tone--red/);
+    await expect(panel.locator('.guide-scale li')).toHaveText(['0', 'low', '250 – 750 safe', 'high', '1000']);
+    // Band widths follow `span` (6 : 50), never under the label.
+    const [edge, middle] = [await panel.locator('.guide-scale li').first().boundingBox(), await panel.locator('.guide-scale li').nth(2).boundingBox()];
+    expect(middle!.width).toBeGreaterThan(edge!.width * 3);
+    const danger = page.getByRole('region', { name: 'Danger' });
+    await expect(danger.locator('.guide-row__mark--risk')).toHaveCount(2);
+    await expect(danger.locator('.guide-row strong')).toHaveText(['Lamp flare']);
+    await expect(danger.locator('.guide-row').nth(1)).toHaveText('A plain danger line.');
+    await expect(page.getByRole('region', { name: 'Tips' }).locator('.guide-row__mark--ok')).toHaveCount(1);
+    await expect(page.getByRole('region', { name: 'Core' })).toHaveCount(0);
+    await expect(page.locator('.knowledge-detail')).not.toContainText('BOT-ONLY');
+    await tablist(page).getByRole('tab', { name: /^Phases/ }).click();
+    await expect(page.locator('.knowledge-detail')).not.toContainText('BOT-ONLY');
+  });
+
+  test('facts: tiles, the HP breakdown per phase and target, and the difficulty notes', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await inject(page);
+    await go(page, '/bosses/MaleficStar/knowledge');
+    await expect(page.getByRole('group', { name: 'Difficulty' }).getByRole('button', { name: /^Hard/ })).toHaveAttribute('aria-pressed', 'true');
+    const tiles = page.locator('.guide-tile');
+    await expect(tiles.locator('dt')).toHaveText(['Boss level', 'Defence (PDR)', 'Authentic Force', 'Party', 'Recommended']);
+    await expect(tiles.first().locator('dd')).toHaveText(['285', 'entry 275']);
+    await expect(tiles.last().locator('dd')).toHaveText(['≈ 99k', 'Invented, 2026']);
+    const hp = page.getByRole('region', { name: 'HP', exact: true });
+    // Short values as stored on screen; spelled out in the title and for screen readers.
+    const shown = (scope: typeof hp) => scope.locator('[aria-hidden="true"]');
+    await expect(hp.locator('.guide-hp__total > span').first()).toHaveText('Total HP');
+    await expect(shown(hp.locator('.guide-hp__total'))).toHaveText('6q');
+    await expect(hp.locator('.guide-hp__total .vh')).toHaveText('6 quadrillion');
+    await expect(hp.locator('.guide-hp__total .mono')).toHaveAttribute('title', '6 quadrillion');
+    const labels = hp.locator('.guide-hp__label');
+    await expect(labels.locator('> span:first-child')).toHaveText(['Phase 1 (Lamps)', 'Phase 2', 'Phase 3 (Lamps)', 'Phase 3 (Keeper)']);
+    // Split phases carry their total (stored decimals kept: 2 × 1.05q is 2.10q); a single target shows its value once, on its bar.
+    await expect(shown(labels.nth(0))).toHaveText('2.7q');
+    await expect(shown(labels.nth(2))).toHaveText('2.10q');
+    await expect(labels.nth(1).locator('.mono')).toHaveCount(0);
+    await expect(labels.nth(3).locator('.mono')).toHaveCount(0);
+    const phases = hp.locator('.guide-hp__phase');
+    await expect(shown(phases.nth(1).locator('.guide-hp__bar'))).toHaveText('1.2q');
+    await expect(shown(phases.nth(0).locator('.guide-hp__bar'))).toHaveText(['900t', '900t', '900t']);
+    await expect(phases.nth(0).getByRole('list', { name: '3 targets, each' })).toBeVisible();
+    await expect(shown(phases.nth(2).locator('.guide-hp__bar'))).toHaveText(['1.05q', '1.05q']);
+    await expect(phases.nth(3).locator('.guide-hp__bar .vh')).toHaveText('2.1 quadrillion');
+    await expect(hp.locator('.guide-hp__bar').first()).toHaveClass(/guide-hp__bar--h/);
+    await settle(page);
+    // Targets of a phase share its width equally; a lone target fills it.
+    const widths = async (index: number) => phases.nth(index).locator('.guide-hp__bar').evaluateAll((bars) => bars.map((bar) => Math.round(bar.getBoundingClientRect().width)));
+    const [first] = await widths(0);
+    expect(await widths(0)).toEqual([first, first, first]);
+    const label = (await labels.nth(1).boundingBox())!.width;
+    expect((await widths(1))[0]).toBeCloseTo(label, -1);
+    await expect(page.locator('.guide-notes .guide-row')).toHaveText(['Hard twistA random second room is hit.', 'Invented Hard note.']);
+    // Wide, the column is stretched to the body's height: the tab strip keeps its full height.
+    const strip = await page.locator('.guide-tabs').evaluate((element) => [element.clientHeight, element.scrollHeight]);
+    expect(strip[0]).toBeGreaterThanOrEqual(40);
+    expect(strip[1]).toBeLessThanOrEqual(strip[0]!);
+  });
+
+  test('a Destiny mission card shows the series track from the API, or just its number', async ({ page }) => {
+    await inject(page);
+    await go(page, '/bosses/MaleficStar/knowledge');
+    const switcher = page.getByRole('group', { name: 'Difficulty' });
+    await expect(switcher.getByRole('button', { name: 'Destiny', exact: true })).toHaveClass(/seg__info/);
+    await expect(page.getByRole('region', { name: 'Invented mission title' })).toHaveCount(0);
+    await switcher.getByRole('button', { name: 'Destiny', exact: true }).click();
+    const card = page.getByRole('region', { name: 'Invented mission title' });
+    await expect(card.locator('.cap').first()).toHaveText('Destiny Weapon mission · 2 of 3');
+    await expect(card.locator('.boss-tick--destiny')).toHaveText('DESTINY');
+    await expect(card.locator('.guide-mission__mod--up')).toHaveText(/\+20% Final Damage\s*in your favour/);
+    const track = card.getByRole('list', { name: 'Mission order' }).getByRole('listitem');
+    await expect(track).toHaveText(['1Invented First', '2 · nowInvented Second', '3Invented Third']);
+    await expect(track.nth(1)).toHaveAttribute('aria-current', 'step');
+    await expect(card.locator('.guide-mission__chips li')).toHaveText(['Needs 3,000 Invented Resolve', 'Practice counts', 'No Cross World']);
+    await expect(page.locator('.guide-tile dt')).toContainText(['Party']);
+    await expect(page.locator('.guide-tile').filter({ hasText: 'Party' }).locator('dd')).toHaveText('Solo');
+
+    await page.unrouteAll();
+    await inject(page, []);
+    await go(page, '/bosses/MaleficStar/knowledge?difficulty=Destiny');
+    await expect(page.getByRole('region', { name: 'Invented mission title' }).locator('.cap').first()).toHaveText('Destiny Weapon mission · Mission 2');
+    await expect(page.getByRole('list', { name: 'Mission order' })).toHaveCount(0);
+  });
+
+  test('Phases: one timeline bar picks a phase; groups bracket their segments with the loop cue in words', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await inject(page);
+    await go(page, '/bosses/MaleficStar/knowledge?tab=phases');
+    const bar = page.getByRole('tablist', { name: 'Phases' });
+    const segments = bar.getByRole('tab');
+    // Names, the group in the accessible name, tags after them.
+    await expect(segments).toHaveText(['Lamp rooms, two per room', 'The keeper · repeats: Day, gauge fills', 'The keeper · repeats: Night, burst · no gauge', 'Last stand']);
+    await expect(bar.locator('.guide-timeline__bracket')).toHaveText(['', '↻The keeper · repeats', '']);
+    // Tone tints from data; untoned segments stay plain.
+    await expect(segments.nth(1)).toHaveClass(/guide-tone--yellow/);
+    await expect(segments.nth(2)).toHaveClass(/guide-tone--blue/);
+    await expect(segments.nth(0)).toHaveClass(/guide-timeline__seg--plain/);
+    await settle(page);
+    // One horizontal bar of equal segments; the bracket spans its group's two.
+    const boxes = await segments.evaluateAll((list) => list.map((seg) => seg.getBoundingClientRect()).map((r) => ({ top: Math.round(r.top), width: Math.round(r.width) })));
+    expect(new Set(boxes.map((box) => box.top)).size).toBe(1);
+    expect(new Set(boxes.map((box) => box.width)).size).toBe(1);
+    const bracket = (await bar.locator('.guide-timeline__run--group .guide-timeline__bracket').boundingBox())!;
+    expect(bracket.width).toBeGreaterThan(boxes[0]!.width * 2 - 2);
+
+    const panel = page.getByRole('tabpanel', { name: /Lamp rooms/ });
+    await expect(panel.locator('h3')).toHaveText('Lamp rooms');
+    await segments.nth(2).click();
+    await expect(page).toHaveURL(/[?&]phase=3(&|$)/);
+    const night = page.locator('.guide-phase');
+    await expect(night.locator('.cap')).toHaveText(/↻\s*The keeper · repeats/);
+    await expect(night.locator('h3')).toHaveText('Night');
+    await expect(night.locator('.guide-phase__tag')).toHaveText('burst · no gauge');
+    await expect(night.locator('li')).toHaveText(['Invented night line.']);
+    await expect(page.locator('.guide-phase')).toHaveCount(1);
+    // Keyboard: arrows move and select, Home/End jump; focus follows.
+    await page.keyboard.press('ArrowRight');
+    await expect(segments.nth(3)).toBeFocused();
+    await expect(segments.nth(3)).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('ArrowRight');
+    await expect(segments.nth(0)).toBeFocused();
+    await page.keyboard.press('End');
+    await expect(night.locator('h3')).toHaveText('Last stand');
+    await page.keyboard.press('Home');
+    await expect(night.locator('h3')).toHaveText('Lamp rooms');
+    await expect(page).not.toHaveURL(/phase=/);
+    // Deep link, and leaving the tab drops it.
+    await go(page, '/bosses/MaleficStar/knowledge?tab=phases&phase=2');
+    await expect(segments.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(night.locator('h3')).toHaveText('Day');
+    await tablist(page).getByRole('tab', { name: /^Notes/ }).click();
+    await expect(page).not.toHaveURL(/phase=/);
+  });
+
+  test('a single phase shows just its card: no timeline bar, no tablist', async ({ page }) => {
+    const doc = { ...structuredClone(GUIDE_DOC), phases: [{ name: 'Only phase', tag: 'one tag', items: ['Invented only line.'] }] };
+    await page.route(/\/api\/admin\/bosses\/MaleficStar\/knowledge$/, async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), doc, missions: GUIDE_MISSIONS } });
+    });
+    await go(page, '/bosses/MaleficStar/knowledge?tab=phases');
+    await expect(page.locator('.guide-phase h3')).toHaveText('Only phase');
+    await expect(page.locator('.guide-phase__tag')).toHaveText('one tag');
+    await expect(page.locator('.guide-phase li')).toHaveText(['Invented only line.']);
+    await expect(page.getByRole('tablist', { name: 'Phases' })).toHaveCount(0);
+    await expect(page.locator('.guide-timeline__bar')).toHaveCount(0);
+    await expect(page.locator('.guide-phase')).not.toHaveAttribute('role', 'tabpanel');
+  });
+
+  test('Phases on a phone: the timeline turns vertical and nothing is cut', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await inject(page);
+    await go(page, '/bosses/MaleficStar/knowledge?tab=phases');
+    const segments = page.getByRole('tablist', { name: 'Phases' }).getByRole('tab');
+    await expect(segments).toHaveCount(4);
+    await settle(page);
+    const boxes = await segments.evaluateAll((list) => list.map((seg) => ({ top: Math.round(seg.getBoundingClientRect().top), fits: seg.scrollWidth <= seg.clientWidth })));
+    expect(new Set(boxes.map((box) => box.top)).size).toBe(4);
+    expect(boxes.every((box) => box.fits)).toBe(true);
+    await expect(page.locator('.guide-timeline__run--group .guide-timeline__bracket')).toHaveText('↻The keeper · repeats');
+    await segments.nth(1).click();
+    await expect(page.locator('.guide-phase h3')).toHaveText('Day');
+  });
+
+  test('a Union Champion track labels ranks by letter and shows only the tracked ranks', async ({ page }) => {
+    // Tracked documents (the mock fills `missions`): Lotus B, Black Mage S, Seren SS, Kalos SSS; rank A is not tracked.
+    await go(page, '/bosses/Seren/knowledge?difficulty=Champion');
+    const card = page.locator('.guide-mission');
+    await expect(card.locator('.cap').first()).toHaveText('Union Champion mission · Rank SS');
+    const track = card.getByRole('list', { name: 'Mission order' }).getByRole('listitem');
+    await expect(track.locator('.guide-mission__num')).toHaveText(['B', 'S', 'SS · now', 'SSS']);
+    await expect(track.nth(2)).toHaveAttribute('aria-current', 'step');
+    // The same boss's Destiny mission keeps numbers.
+    await page.getByRole('group', { name: 'Difficulty' }).getByRole('button', { name: 'Destiny', exact: true }).click();
+    await expect(card.locator('.cap').first()).toHaveText('Destiny Weapon mission · 1 of 6');
+    await expect(card.locator('.guide-mission__num')).toHaveText(['1 · now', '2', '3', '4', '5', '6']);
+  });
+
+  test('strategy steps fold behind a toggle', async ({ page }) => {
+    await inject(page);
+    await go(page, '/bosses/MaleficStar/knowledge?tab=strategies');
+    const card = page.locator('.guide-strategy').first();
+    await expect(card.locator('.guide-meter')).toHaveText([/Risk\s*Low/, /Damage need\s*High/]);
+    const steps = card.getByRole('list', { name: 'Steps for Balanced lamps' });
+    const toggle = card.getByRole('button', { name: 'Show 3 steps' });
+    await expect(steps).toBeHidden();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await toggle.click();
+    await expect(steps.getByRole('listitem')).toHaveText(['1Step one.', '2Step two.', '3Step three.']);
+    await expect(card.getByRole('button', { name: 'Hide steps' })).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('.guide-strategy').nth(1).getByRole('button', { name: 'Show 1 step' })).toBeVisible();
+  });
+
+  test('an old-shape document keeps core rows on Overview and has no Phases tab', async ({ page }) => {
+    // The pre-redesign shape (plain strings, core, no lead/phases/mechanics; a lone HP total; a recommendation with no figure).
+    const OLD = {
+      boss: 'MaleficStar',
+      summary: 'Invented old summary.',
+      core: ['Invented core one.', 'Invented core two.'],
+      danger: ['Invented danger.'],
+      tips: ['Invented tip.'],
+      difficulties: [{ name: 'Hard', boss_level: 280, hp: [{ phase: 'total', value: '14.74q' }], recommended_spec: { kind: 'HEXA-converted stat', text: 'Invented long recommendation.' } }],
+      sources: [{ url: 'https://example.invalid/old', title: 'Invented', author: 'Nobody', kind: 'guide', fetched: '2026-10-01' }],
+    };
+    await page.route(/\/api\/admin\/bosses\/MaleficStar\/knowledge$/, async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), doc: OLD, missions: [] } });
+    });
+    await go(page, '/bosses/MaleficStar/knowledge');
+    await expect(tablist(page).getByRole('tab')).toHaveText(['Overview', /^Sources\s*1$/]);
+    await expect(page.getByRole('region', { name: 'Core' }).locator('.guide-row')).toHaveText(OLD.core);
+    await expect(page.locator('.guide-lead')).toHaveText(OLD.summary);
+    await expect(page.locator('.guide-hp')).toHaveCount(0); // a lone total is a tile
+    await expect(page.locator('.guide-tile').filter({ hasText: 'HP (total)' }).locator('dd')).toHaveText('14.74q');
+    await expect(page.locator('.guide-tile').filter({ hasText: 'Recommended' })).toHaveCount(0);
+    await expect(page.locator('.guide-notes .guide-row')).toHaveText(['Recommended · HEXA-converted statInvented long recommendation.']);
+  });
+
+  for (const scheme of ['light', 'dark'] as const) {
+    test(`the guide passes axe (${scheme})`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await inject(page);
+      await go(page, '/bosses/MaleficStar/knowledge');
+      await settle(page);
+      const check = async () => {
+        const axe = await new AxeBuilder({ page }).include('.knowledge-detail').analyze();
+        expect(axe.violations.map((violation) => `${violation.id}: ${violation.nodes.map((node) => node.target.join(' ')).join(', ')}`)).toEqual([]);
+      };
+      await check();
+      await page.getByRole('group', { name: 'Difficulty' }).getByRole('button', { name: 'Destiny', exact: true }).click();
+      await tablist(page).getByRole('tab', { name: /^Strategies/ }).click();
+      await page.getByRole('button', { name: 'Show 3 steps' }).click();
+      await settle(page);
+      await check();
+      for (const tab of ['Phases', 'Notes', 'Sources']) {
+        await tablist(page).getByRole('tab', { name: new RegExp(`^${tab}`) }).click();
+        await settle(page);
+        await check();
+      }
+    });
+  }
+
+  test('phone: six targets wrap into rows of equal bars, never cut', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const doc = structuredClone(GUIDE_DOC);
+    (doc.difficulties[0]!.hp as unknown[])[0] = { phase: '1', value: '1,234.5t', count: 6, target: 'Many lamps' };
+    await page.route(/\/api\/admin\/bosses\/MaleficStar\/knowledge$/, async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), doc, missions: GUIDE_MISSIONS } });
+    });
+    await go(page, '/bosses/MaleficStar/knowledge');
+    const bars = page.locator('.guide-hp__phase').first().locator('.guide-hp__bar');
+    await expect(bars).toHaveCount(6);
+    await settle(page);
+    const boxes = await bars.evaluateAll((list) => list.map((bar) => ({ top: Math.round(bar.getBoundingClientRect().top), width: Math.round(bar.getBoundingClientRect().width), fits: bar.scrollWidth <= bar.clientWidth })));
+    expect(new Set(boxes.map((box) => box.top)).size).toBeGreaterThan(1);
+    expect(new Set(boxes.map((box) => box.width)).size).toBe(1);
+    expect(boxes.every((box) => box.fits)).toBe(true);
+    await expect(page.locator('.guide-hp__phase').first().locator('.guide-hp__label [aria-hidden="true"]')).toHaveText('7.407q');
+  });
+
+  test('phone: tabs scroll sideways inside the one scrolling panel and cards stack', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await inject(page);
+    await go(page, '/bosses/MaleficStar/knowledge?tab=strategies');
+    const strip = page.locator('.guide-tabs');
+    await expect(strip).toBeVisible();
+    // The detail's enter motion slides it in; measure once it has landed.
+    await settle(page);
+    expect(await page.evaluate(() => document.scrollingElement!.scrollHeight <= window.innerHeight)).toBe(true);
+    const box = (await strip.boundingBox())!;
+    expect(box.x + box.width).toBeLessThanOrEqual(390);
+    // The strip scrolls; the panel around it never does sideways.
+    expect(await page.locator('.knowledge-detail__body').evaluate((body) => body.scrollWidth <= body.clientWidth)).toBe(true);
+    const [first, second] = await page.locator('.guide-strategy').evaluateAll((cards) => cards.map((card) => card.getBoundingClientRect().top));
+    expect(second!).toBeGreaterThan(first!);
+    // The last tab can be reached by scrolling the strip itself.
+    await tablist(page).getByRole('tab', { name: /^Sources/ }).click();
+    await expect(page).toHaveURL(/[?&]tab=sources(&|$)/);
   });
 });

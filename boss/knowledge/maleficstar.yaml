@@ -1,25 +1,103 @@
 boss: MaleficStar
 summary: Keep the party's Predation below 1000 by having the Awakener catch every Essence of Illusion, and pick a route that sets how much Illusion Magic you carry into Reality in exchange for up to +30% final damage.
+lead: 'Keep shared Predation under 1000: the Awakener catches every Essence, and your route trades Illusion Magic for up to +30% damage.'
 core:
-- Predation (also called Hunger in GMS) is shared, starts at 0 and fails the run at 1000; a normal 5-life count also applies. Every Essence caught removes 40 Predation. MapleSEA names for these mechanics are unconfirmed.
-- One designated player, the Awakener (also called Awakened), is the only one who sees and catches Essences, picks altars and swaps rooms. Pick it at the preparation-room orb, otherwise it is the party leader; it only passes on if that player dies out, disconnects or leaves. The swap (NPC/Gather key) has a 30s cooldown and is locked while an Essence pattern or altar choice is up.
-- 'Illusion room: Illusion Magic (also called Illusory Magic) starts at 1000 and each Essence caught removes 200. Final damage is fixed at 100%. Any hit on any player pushes the next Essence back (base 15s, capped at 35s).'
-- 'Reality room: Essences come every 15s regardless of hits. Each catch opens two altars for 7s, picked by pressing the NPC/Gather key on the left or right half of the map: left lowers Illusion Magic by 250 for -5 to -15% final damage, right raises it by 250 for +5 to +15% (more at a higher gauge), within -10% to +30% overall.'
-- 'Reality penalties scale with Illusion Magic: from 250 every hit adds Predation, from 500 the Floating Disaster joins (one source says 750), from 750 you take more damage.'
-- Each room forces a swap after roughly 3:40. Phases are HP thresholds on one bar (Phase 2 at 80%, Phase 3 at 40%). Predation and gauge numbers here are solo values; a duo takes about half and a trio about a third (an Essence-pattern hit is 60/30/20 Predation for 1/2/3 players).
+- title: Predation
+  text: 'Shared; 1000 fails the run. Each Essence caught removes 40. The usual 5 lives also apply.'
+  detail: Predation (also called Hunger in GMS) is shared, starts at 0 and fails the run at 1000; a normal 5-life count also applies. Every Essence caught removes 40 Predation. MapleSEA names for these mechanics are unconfirmed.
+- title: The Awakener
+  text: 'The one player who sees Essences, picks altars and swaps rooms. Chosen at the prep-room orb, else the leader.'
+  detail: 'One designated player, the Awakener (also called Awakened), is the only one who sees and catches Essences, picks altars and swaps rooms. Pick it at the preparation-room orb, otherwise it is the party leader; it only passes on if that player dies out, disconnects or leaves.'
+- title: Room swap
+  text: 'NPC/Gather key, 30s cooldown, locked during Essence patterns and altars. Forced after about 3:40.'
+  detail: The swap (NPC/Gather key) has a 30s cooldown and is locked while an Essence pattern or altar choice is up. Each room forces a swap after roughly 3:40.
+- title: Phases and party size
+  text: 'Phase 2 at 80%, Phase 3 at 40%. Numbers are solo; duos take about half, trios a third.'
+  detail: Phases are HP thresholds on one bar (Phase 2 at 80%, Phase 3 at 40%). Predation and gauge numbers here are solo values; a duo takes about half and a trio about a third (an Essence-pattern hit is 60/30/20 Predation for 1/2/3 players).
+phases:
+- name: Illusion room
+  group: Two rooms
+  cycle: true
+  tag: empty the gauge
+  tone: blue
+  items:
+  - title: Empty the gauge
+    text: 'Illusion Magic starts at 1000; each catch removes 200. Damage fixed at 100%.'
+    detail: 'Illusion room: Illusion Magic (also called Illusory Magic) starts at 1000 and each Essence caught removes 200. Final damage is fixed at 100%.'
+  - title: Hits delay Essences
+    text: 'Any player''s hit pushes the next one back (15s base, 35s cap).'
+    detail: Any hit on any player pushes the next Essence back (base 15s, capped at 35s).
+- name: Reality room
+  group: Two rooms
+  cycle: true
+  tag: −10% to +30% via altars
+  tone: yellow
+  items:
+  - title: Steady Essences
+    text: 'Every 15s, hits or not.'
+    detail: 'Reality room: Essences come every 15s regardless of hits.'
+  - title: Altars
+    text: 'Each catch opens two for 7s. Left: −250 gauge, less damage. Right: +250, more damage (−10% to +30%).'
+    detail: 'Each catch opens two altars for 7s, picked by pressing the NPC/Gather key on the left or right half of the map: left lowers Illusion Magic by 250 for -5 to -15% final damage, right raises it by 250 for +5 to +15% (more at a higher gauge), within -10% to +30% overall.'
+  - title: Penalties rise with the gauge
+    text: 'See the scale: higher Illusion Magic brings Predation per hit, the Floating Disaster, then more damage taken.'
+    detail: 'Reality penalties scale with Illusion Magic: from 250 every hit adds Predation, from 500 the Floating Disaster joins (one source says 750), from 750 you take more damage.'
+mechanics:
+- kind: scale
+  title: Illusion Magic in Reality
+  bands:
+  - {label: 0–249 base, span: 25, tone: safe}
+  - {label: 250+ hits add Predation, span: 25, tone: neutral}
+  - {label: 500+ Floating Disaster, span: 25, tone: yellow}
+  - {label: 750+ more damage taken, span: 25, tone: red}
+  - {label: 1000 locked in, span: 5, tone: risk}
+  note: 'One source puts the Floating Disaster at 750. At 1000 you cannot swap out and a 40s countdown starts.'
+- kind: ledger
+  title: Predation · shared, fails at 1000 (solo)
+  rows:
+  - {label: Essence caught, value: −40, direction: up}
+  - {label: Essence-pattern hit (1/2/3 players), value: +60/30/20, direction: down}
+  - {label: Missed Essence in Reality, value: +50/60, direction: down}
+  - {label: Last minute in Illusion, value: +2 per second, direction: down}
+  - {label: 1000 Illusion Magic countdown, value: +1 per second, direction: down}
+  - {label: Forced swap from Reality, value: +160/200, direction: down}
 danger:
-- A missed Essence adds 100/200 Illusion Magic in Illusion or 50/60 Predation in Reality (whether these also split by party size is unconfirmed), and Essence patterns add Predation and Illusion Magic when they connect.
-- In the final minute of an Illusion stay Predation rises 2 per second. At 1000 Illusion Magic in Reality you cannot swap out, a 40s countdown starts and Predation rises 1 per second; the forced swap plays a roughly 5s cutscene and then costs 160/200 Predation.
-- Swapping into Reality with any Illusion Magic left starts you at -10% final damage.
-- Ready to Eat (Phase 3, Reality) sends one minion per player toward her; anyone can body-block them and every one must be stopped. If any arrive she follows up with a full-map blast whose only safe spot is the small triangle directly beneath her.
-- Breath of Radiance (Phase 3) and Hard-only Sonata of the Nebula each spawn two Essences, and both must be caught to count. Dodge the pink lasers and stand inside the purple ones.
+- title: Missed Essences
+  text: 'Each miss adds 100/200 Illusion Magic (Illusion) or 50/60 Predation (Reality).'
+  detail: A missed Essence adds 100/200 Illusion Magic in Illusion or 50/60 Predation in Reality (whether these also split by party size is unconfirmed), and Essence patterns add Predation and Illusion Magic when they connect.
+- title: Overstaying
+  text: 'Predation climbs in Illusion''s last minute; 1000 Illusion Magic in Reality locks you in until a costly forced swap.'
+  detail: In the final minute of an Illusion stay Predation rises 2 per second. At 1000 Illusion Magic in Reality you cannot swap out, a 40s countdown starts and Predation rises 1 per second; the forced swap plays a roughly 5s cutscene and then costs 160/200 Predation.
+- title: Entry penalty
+  text: 'Entering Reality with any Illusion Magic left starts you at −10% damage.'
+  detail: Swapping into Reality with any Illusion Magic left starts you at -10% final damage.
+- title: Ready to Eat
+  text: 'Phase 3, Reality: body-block every minion, or a full-map blast follows (safe only right under her).'
+  detail: Ready to Eat (Phase 3, Reality) sends one minion per player toward her; anyone can body-block them and every one must be stopped. If any arrive she follows up with a full-map blast whose only safe spot is the small triangle directly beneath her.
+- title: Double Essences
+  text: 'Breath of Radiance (Phase 3) and Sonata of the Nebula (Hard) spawn two; catch both.'
+  detail: Breath of Radiance (Phase 3) and Hard-only Sonata of the Nebula each spawn two Essences, and both must be caught to count. Dodge the pink lasers and stand inside the purple ones.
 tips:
-- 'Awakener: play a mobile class, stay near her so Essence patterns fire, check the minimap for edge spawns, and save i-frames for Essence and altar moments (each Essence lasts only about 1s). Bind the NPC/Gather key where you cannot hit it by accident; re-using the prep-room orb undoes a wrong pick.'
-- Always swap by hand before a room's timer runs out rather than eating the forced swap.
-- Dodge carefully in Illusion; every hit delays Essences for the whole party.
-- Keep a Predation buffer large enough that one failed Ready to Eat does not end the run.
-- Binding her before an Essence spawns delays it until the bind ends; her body attacks stop while bound but map patterns keep firing.
-- 'Heavenly Waltz tell: both arms raised means spikes in front of her, one arm raised means spikes behind.'
+- title: Awakener
+  text: 'Mobile class, stay near her, watch the minimap; save i-frames for Essences (about 1s each) and altars.'
+  detail: 'Awakener: play a mobile class, stay near her so Essence patterns fire, check the minimap for edge spawns, and save i-frames for Essence and altar moments (each Essence lasts only about 1s). Bind the NPC/Gather key where you cannot hit it by accident; re-using the prep-room orb undoes a wrong pick.'
+- title: Safe key binding
+  text: 'Put the NPC/Gather key out of accidental reach; the prep-room orb undoes a wrong pick.'
+- title: Swap by hand
+  text: 'Always beat the room timer rather than eat the forced swap.'
+  detail: Always swap by hand before a room's timer runs out rather than eating the forced swap.
+- title: Dodge in Illusion
+  text: 'Every hit delays Essences for the party.'
+  detail: Dodge carefully in Illusion; every hit delays Essences for the whole party.
+- title: Predation buffer
+  text: 'Enough that one failed Ready to Eat does not end the run.'
+  detail: Keep a Predation buffer large enough that one failed Ready to Eat does not end the run.
+- title: Binds delay Essences
+  text: 'Bound before a spawn, the Essence waits; map patterns keep firing.'
+  detail: Binding her before an Essence spawns delays it until the bind ends; her body attacks stop while bound but map patterns keep firing.
+- title: Heavenly Waltz tell
+  text: 'Both arms up: spikes in front. One arm up: spikes behind.'
+  detail: 'Heavenly Waltz tell: both arms raised means spikes in front of her, one arm raised means spikes behind.'
 strategies:
 - name: Fully safe route
   when: Party damage well above the requirement; first clears.
@@ -61,8 +139,12 @@ strategies:
   - Do not bind her during a burst while an Essence or altar is still due; stall the 7s altar pick instead.
   - In Illusion catch two Essences without being hit, swap back just before the third, and arrive 30-40s before the next burst.
 notes:
-- 30-minute limit in MapleSEA now (20 minutes after OVERDRIVE) and 10-second potion cooldown; she cannot be slowed and resists Zero's critical bind.
-- The area's Authentic Symbol at Growth Level 11 gives +20% damage against her (MapleSEA v251).
+- title: Limits
+  text: '30 min now (20 after OVERDRIVE), 10s potions; no slows, and she resists Zero''s critical bind.'
+  detail: 30-minute limit in MapleSEA now (20 minutes after OVERDRIVE) and 10-second potion cooldown; she cannot be slowed and resists Zero's critical bind.
+- title: Symbol bonus
+  text: 'The area''s Authentic Symbol at Growth Level 11: +20% damage to her.'
+  detail: The area's Authentic Symbol at Growth Level 11 gives +20% damage against her (MapleSEA v251).
 difficulties:
 - name: Normal
   entry_level: 280
@@ -74,6 +156,8 @@ difficulties:
   - {phase: total, value: 3.288q}
   recommended_spec:
     kind: HEXA-converted stat
+    value: 49k trio
+    basis: With Reality bonus held
     text: Trio 49k, duo 57k, solo 76k with Sol Hecate, assuming you hold the Reality final-damage bonus; add about 3k for a safer clear.
   notes:
   - 3.288q is the KMS value after its Feb 2026 Normal HP cut (about 30% from 4.697q). GMS launched with it a week before MapleSEA (25 Jun 2026); MapleSEA notes give no HP, so SEA is expected to match KMS.
@@ -88,6 +172,8 @@ difficulties:
   - {phase: total, value: 14.74q}
   recommended_spec:
     kind: HEXA-converted stat
+    value: 89k trio
+    basis: With Reality bonus held
     text: Trio 89k, duo 104k, solo 123k with Sol Hecate, assuming you hold the Reality final-damage bonus; add about 3k for a safer clear.
   notes:
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 10.0q, 20-minute limit.'

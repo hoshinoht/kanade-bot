@@ -1,29 +1,105 @@
 boss: Seren
 summary: Chosen Serene (also called Chosen Seren) is a Sun Gauge fight. Getting hit fills your gauge and a full gauge stuns you; in Phase 2 every stun also shrinks the party's Midnight segment, and losing Midnight entirely fails the run. Midnight is the safe burst window.
+lead: 'Hits fill your Sun Gauge and a full gauge stuns you; in Phase 2 every stun also shrinks Midnight, the party''s burst window.'
 core:
-- Getting hit by almost anything fills your personal Sun Gauge. When it fills you are stunned (8 s per the wiki, 5 s in older write-ups; status resistance shortens it) and cannot heal. The gauge resets when Phase 2 starts (SEA v246).
-- Phase 2 cycles Noon, Sunset, Midnight and Dawn on a clock. Each Sun's Curse (full gauge) shrinks the Midnight segment; at each time change Midnight grows back in proportion to how many members stayed uncursed (SEA v244). If Midnight reaches zero, the whole party fails regardless of lives.
-- Midnight attacks barely hurt and do not fill the gauge, so it is the main burst window.
-- Sunset cuts healing from items and skills by 80% and hits very hard; Decent Holy Fountain still heals normally.
-- Dawn gives Seren a shield (about 10% of her HP) that grows over time and when players are hit; any shield left at Noon is healed back. Deer (Nerota's Incarnation) chase you, and blue Nerota's Power orbs explode near you.
-- 'At the end of every segment a transition check leaves one safe spot: the Mithra''s Power pattern (also called Ray of Light; the SEA name match is unconfirmed). Everyone must stand in it or the whole party takes a lethal hit and a full gauge.'
+- title: Sun Gauge
+  text: 'Almost any hit fills it; full means a stun with no healing.'
+  detail: 'Getting hit by almost anything fills your personal Sun Gauge. When it fills you are stunned (8 s per the wiki, 5 s in older write-ups; status resistance shortens it) and cannot heal. The gauge resets when Phase 2 starts (SEA v246).'
+- title: Midnight shrinks
+  text: 'Every full gauge shrinks Midnight; it regrows by how many stayed uncursed. At zero the party fails, lives or not.'
+  detail: 'Phase 2 cycles Noon, Sunset, Midnight and Dawn on a clock. Each Sun''s Curse (full gauge) shrinks the Midnight segment; at each time change Midnight grows back in proportion to how many members stayed uncursed (SEA v244). If Midnight reaches zero, the whole party fails regardless of lives.'
+- title: Mithra's Power
+  text: 'Each segment ends with one safe spot; one miss gives the whole party a lethal hit and a full gauge.'
+  detail: 'At the end of every segment a transition check leaves one safe spot: the Mithra''s Power pattern (also called Ray of Light; the SEA name match is unconfirmed). Everyone must stand in it or the whole party takes a lethal hit and a full gauge.'
+phases:
+- name: Phase 1
+  tag: light pillars
+  items:
+  - title: Gauge reset
+    text: 'The Sun Gauge clears when Phase 2 starts (SEA v246).'
+- name: Noon
+  group: Phase 2
+  cycle: true
+  tag: gauge fills
+  tone: yellow
+  items:
+  - title: Shield heal
+    text: 'Dawn shield left at Noon heals Seren.'
+    detail: Any Dawn shield still up when Noon begins is healed back to Seren.
+- name: Sunset
+  group: Phase 2
+  cycle: true
+  tag: −80% healing · heavy hits
+  tone: red
+  items:
+  - title: Healing cut
+    text: 'Healing −80% and heavy hits; Decent Holy Fountain heals normally.'
+    detail: 'Sunset cuts healing from items and skills by 80% and hits very hard; Decent Holy Fountain still heals normally.'
+- name: Midnight
+  group: Phase 2
+  cycle: true
+  tag: burst · no gauge
+  tone: safe
+  items:
+  - title: Burst window
+    text: 'Weak attacks that never fill the gauge.'
+    detail: 'Midnight attacks barely hurt and do not fill the gauge, so it is the main burst window.'
+- name: Dawn
+  group: Phase 2
+  cycle: true
+  tag: shield · deer · orbs
+  tone: blue
+  items:
+  - title: Shield
+    text: 'About 10% of her HP; grows over time and when players are hit.'
+    detail: 'Dawn gives Seren a shield (about 10% of her HP) that grows over time and when players are hit; any shield left at Noon is healed back.'
+  - title: Deer and orbs
+    text: 'Deer (Nerota''s Incarnation) chase you; blue orbs explode nearby.'
+    detail: Deer (Nerota's Incarnation) chase you, and blue Nerota's Power orbs explode near you.
 danger:
-- Phase 1 light pillars erupt almost instantly and keep spawning even while Seren is bound; many players find Phase 1 the hardest part.
-- Sunset's triple slash deals 200% HP on Hard and Extreme (90% on Normal) and its sword pillars deal 70-90%; duck the slashes rather than tanking them.
-- A stun during Sunset is very likely to kill you, so avoid entering Sunset with a nearly full gauge.
-- Dawn stacks knockback, stuns, slows and orb hits; one hit often chains into several more and also feeds her shield.
-- Midnight shrinks every time any member is cursed; repeated curses can end the run with lives remaining.
+- title: Phase 1 pillars
+  text: 'Near-instant and still spawning while she is bound; many find Phase 1 hardest.'
+  detail: Phase 1 light pillars erupt almost instantly and keep spawning even while Seren is bound; many players find Phase 1 the hardest part.
+- title: Sunset slashes
+  text: 'Triple slash 200% HP on Hard/Extreme (Normal 90%); sword pillars 70-90%. Duck them.'
+  detail: Sunset's triple slash deals 200% HP on Hard and Extreme (90% on Normal) and its sword pillars deal 70-90%; duck the slashes rather than tanking them.
+- title: Stunned at Sunset
+  text: 'Usually fatal; don''t enter Sunset with a near-full gauge.'
+  detail: A stun during Sunset is very likely to kill you, so avoid entering Sunset with a nearly full gauge.
+- title: Dawn chains
+  text: 'Knockback, stuns, slows and orbs chain hits, and each feeds her shield.'
+  detail: Dawn stacks knockback, stuns, slows and orb hits; one hit often chains into several more and also feeds her shield.
+- title: Midnight drain
+  text: 'Repeated curses end the run with lives left.'
+  detail: Midnight shrinks every time any member is cursed; repeated curses can end the run with lives remaining.
 tips:
-- Crouch is your key defensive input. It dodges her stab, rush, the Noon front laser and all three Sunset slashes, but it shifts your hitbox forward.
-- Bind Seren in Dawn to make the deer vanish (SEA v251); the orbs also have about 90% less HP since that patch, so clear them quickly.
-- If your gauge is nearly full late in Noon, step away from her stab and rush, take a cheap hit on purpose so the stun lands in Noon, hold crouch as it ends and potion straight away.
-- Call the Mithra's Power safe spot early every cycle; lag can make a late player fail it for everyone.
-- Keep Decent Holy Fountain ready for Sunset, and do not fight her pinned against a wall she is facing, because her charge lingers there.
-- Use Hero's Will on blindness or accuracy-down before you burst.
+- title: Crouch
+  text: 'Dodges her stab, rush, Noon front laser and Sunset slashes; shifts your hitbox forward.'
+  detail: Crouch is your key defensive input. It dodges her stab, rush, the Noon front laser and all three Sunset slashes, but it shifts your hitbox forward.
+- title: Bind at Dawn
+  text: 'Binding removes the deer (SEA v251); orbs have ~90% less HP since.'
+  detail: Bind Seren in Dawn to make the deer vanish (SEA v251); the orbs also have about 90% less HP since that patch, so clear them quickly.
+- title: Stun on your terms
+  text: 'Near-full late in Noon? Take a cheap hit so the stun lands in Noon, crouch out of it, potion.'
+  detail: If your gauge is nearly full late in Noon, step away from her stab and rush, take a cheap hit on purpose so the stun lands in Noon, hold crouch as it ends and potion straight away.
+- title: Call the safe spot
+  text: 'Call Mithra''s Power early; one lagging player fails it for all.'
+  detail: Call the Mithra's Power safe spot early every cycle; lag can make a late player fail it for everyone.
+- title: Sunset prep
+  text: 'Keep Decent Holy Fountain ready; avoid walls she faces, where her charge lingers.'
+  detail: Keep Decent Holy Fountain ready for Sunset, and do not fight her pinned against a wall she is facing, because her charge lingers there.
+- title: Hero's Will
+  text: 'Clear blindness or accuracy-down before bursting.'
+  detail: Use Hero's Will on blindness or accuracy-down before you burst.
 difficulty_notes:
-  x: Extreme fills the gauge faster, including passively and from Phase 1 diagonal lasers, and has more Noon sun rays and tougher Dawn deer. SEA v244 halved the gauge gain from its light of judgement pattern.
+  x:
+    title: Extreme
+    text: 'Faster gauge, more Noon sun rays, tougher deer. SEA v244 halved light of judgement''s gauge gain.'
+    detail: Extreme fills the gauge faster, including passively and from Phase 1 diagonal lasers, and has more Noon sun rays and tougher Dawn deer. SEA v244 halved the gauge gain from its light of judgement pattern.
 notes:
-- 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Hard 6, Extreme 80.'
+- title: Destiny Resolve per clear
+  text: 'Hard 6 · Extreme 80, split among everyone who entered.'
+  detail: 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Hard 6, Extreme 80.'
 difficulties:
 - name: Normal
   entry_level: 260
@@ -61,7 +137,7 @@ difficulties:
   hp:
   - {phase: '1', value: 1.32q}
   - {phase: '2', value: 5.16q}
-  recommended_spec: {kind: Combat power, text: 'CMS lists 800M combat power solo (about 86M each in a 6-party) as a rough reference. Run 250 Authentic Force for the full +25%.'}
+  recommended_spec: {kind: Combat power, value: ≈ 800M solo, basis: CMS reference, text: 'CMS lists 800M combat power solo (about 86M each in a 6-party) as a rough reference. Run 250 Authentic Force for the full +25%.'}
   notes:
   - 8 lives in MapleSEA, 30 minutes. Phase 1 is level 275 and Phase 2 level 280.
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 896t / 3.50q (32.1% less), 20-minute limit.'
@@ -71,16 +147,37 @@ difficulties:
   pdr_percent: 380
   party_max: 1
   force: {kind: sacred, value: 200}
+  mission:
+    series: destiny-weapon
+    order: 1
+    title: Battle, Chosen Serene
+    modifier: {text: -80% Final Damage, direction: down}
+    needs: 2,000 Adversary's Resolve
+    rules: [Solo, Practice Mode clears count, No Cross World]
   notes:
-  - 'Destiny Weapon mission "Battle, Chosen Serene" (MapleSEA v244): Hard Serene solo in Destiny Mode with Final Damage reduced by 80%. It is the first mission and needs 2,000 Adversary''s Resolve.'
-  - 'Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
+  - title: The first mission
+    text: 'Hard Serene solo in Destiny Mode (MapleSEA v244); Gatekeeper Kalos comes next.'
+    detail: 'Destiny Weapon mission "Battle, Chosen Serene" (MapleSEA v244): Hard Serene solo in Destiny Mode with Final Damage reduced by 80%. It is the first mission (Gatekeeper Kalos is next) and needs 2,000 Adversary''s Resolve.'
+  - title: Practice Mode
+    text: 'Practice clears count (MapleSEA v249), but not in Cross World. OVERDRIVE''s phase-specific practice will not count.'
+    detail: 'Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
 - name: Champion
   entry_level: 260
   boss_level: 275
   party_max: 1
+  mission:
+    series: union-champion
+    order: 4
+    title: Rank SS trial
+    needs: A Rank S champion
+    rules: [Solo, 20-minute limit, Practice Mode clears count]
   notes:
-  - 'Union Champion Rank SS trial (Champion Evaluation Match): Hard Serene solo in Champion Mode within 20 minutes, after the champion reaches Rank S. The SS insignia gives every character +3% Critical Damage.'
-  - 'Practice Mode clears count and add Hamcelot''s Protection (25% less damage taken). After OVERDRIVE, KMS adds Hamcelot''s Trial (Final Damage -30%, -25% on Black Mage); not in MapleSEA yet. MapleSEA notes do not list the trial bosses, so the boss and limit here are KMS''s.'
+  - title: SS insignia
+    text: '+3% Critical Damage for every character. Hard Serene solo in Champion Mode (Champion Evaluation Match).'
+    detail: 'Union Champion Rank SS trial (Champion Evaluation Match): Hard Serene solo in Champion Mode within 20 minutes, after the champion reaches Rank S. The SS insignia gives every character +3% Critical Damage.'
+  - title: Practice Mode
+    text: 'Clears count and add Hamcelot''s Protection: 25% less damage taken.'
+    detail: 'Practice Mode clears count and add Hamcelot''s Protection (25% less damage taken). After OVERDRIVE, KMS adds Hamcelot''s Trial (Final Damage -30%, -25% on Black Mage); not in MapleSEA yet.'
 strategies:
 - name: Midnight burst (party)
   when: Parties of 2-6, especially Normal and Hard with mixed damage

@@ -6,6 +6,15 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Bosses knowledge page is a shorter tabbed guide (Overview, Phases,
+  Strategies, Notes, Sources; `?tab=` and `?phase=` deep links): a mission
+  card with its series track (Destiny numbers, Union Champion rank letters),
+  fact tiles, an HP breakdown by phase and target, one-line titled bullets,
+  mechanic cards, a phase timeline that picks one phase (repeating groups
+  marked), and strategy cards with folded steps. All 13 guides are rewritten
+  in this shape with every old fact kept in the text or the chatbot-only
+  detail; Black Mage gains Black/White State strategies and Baldrix the
+  forced-rotation room order.
 - Boss guide contract for the redesign: the knowledge API lists every boss in
   a guide's mission series (`missions`, by order); the chatbot reads titled
   items with their full `detail`, phases (with timeline group and tag),

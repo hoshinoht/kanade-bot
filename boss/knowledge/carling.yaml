@@ -1,34 +1,143 @@
 boss: Carling
 summary: 'Carling (also called Kaling) replaces deaths with a shared 1000 Mental Strength pool and three linked Balance of Season gauges, one per Peril: Tiger (Do''oul), Bird (Gunggi) and Dog (Hondon). A gauge reaching 0 or 1000 locks and costs 350, so runs are won by gauge control more than raw damage.'
+lead: 'Deaths drain a shared 1000 Mental Strength pool; three linked gauges (Tiger, Bird, Dog) decide the run more than raw damage.'
 core:
-- 'Mental Strength (also called Willpower) is shared: 1000 at the start, and the run fails at 0. Each death costs 160/100/80/70/60/50 for parties of 1-6 (MapleSEA v249). Phase 2 spirits (-30) and the Scroll trap (about -50) also drain it. The only refill is +300 for finishing Phase 1 with no gauge broken.'
-- 'Callouts: Tiger = Do''oul (Summer, also called Dool), Bird = Gunggi (Spring, also called Goongi), Dog = Hondon (Autumn, also called Hundun or Chaos), after how the models look. Gauges start at 500 and are linked: a Bird hit raises Bird and lowers Dog, Tiger raises Tiger and lowers Bird, Dog raises Dog and lowers Tiger. A gauge at 0 or 1000 locks and costs 350; three breaks end the run.'
-- 'The Four Gentlemen laser flowers (also called Four Gracious Plants) move gauges by colour: red = Bird, green = Tiger, yellow = Dog.'
-- 'Phase 1 splits the party into three Peril rooms (max 2 each). While alive, Bird drains Mental Strength every 30s, Tiger shields the other two every 45s, and Dog makes the others hit 25% harder. Killing a Peril with its gauge unbroken grants its blessing: Bird blocks one lethal hit, Tiger gives a Purification cleanse for Phase 2, Dog gives +10% final damage.'
-- 'Tiger takes 50% less damage unless you light three Tesla coils in a triangle and lure it into the current; clear electric puddles with the mini coils (Harvest key) before Tiger absorbs them as a shield.'
-- 'Phase 2 Carling uses all three Perils'' attacks. After her flight she teleports; bait it toward the third of the map whose laser colour you need (left Bird, centre Tiger, right Dog). Purification (Harvest key) clears Confusion and fits the Vengeful Spirits wave each minute.'
-- 'Phase 3: Bird (left), Dog (centre) and Tiger (right) have fixed zones. Only the Peril in your zone takes damage (Ascent skills excepted; MapleSEA v251), and standing in a zone pushes its gauge every 6s. Outside Carling''s zone you take +80% damage and cannot use potions. Each Peril kill unlocks the next 25% of Carling''s HP.'
+- title: Mental Strength
+  text: 'Replaces deaths: one pool for the whole party (also called Willpower), and the run fails at 0.'
+  detail: 'Mental Strength (also called Willpower) is shared: 1000 at the start, and the run fails at 0. Each death costs 160/100/80/70/60/50 for parties of 1-6 (MapleSEA v249). Phase 2 spirits (-30) and the Scroll trap (about -50) also drain it. The only refill is +300 for finishing Phase 1 with no gauge broken.'
+- title: Callouts
+  text: 'Tiger = Do''oul (Summer), Bird = Gunggi (Spring), Dog = Hondon (Autumn), named after how the models look.'
+  detail: 'Callouts: Tiger = Do''oul (Summer, also called Dool), Bird = Gunggi (Spring, also called Goongi), Dog = Hondon (Autumn, also called Hundun or Chaos), after how the models look. Gauges start at 500 and are linked: a Bird hit raises Bird and lowers Dog, Tiger raises Tiger and lowers Bird, Dog raises Dog and lowers Tiger. A gauge at 0 or 1000 locks and costs 350; three breaks end the run.'
+- title: Laser flowers
+  text: 'The Four Gentlemen flowers move gauges by colour: red Bird, green Tiger, yellow Dog.'
+  detail: 'The Four Gentlemen laser flowers (also called Four Gracious Plants) move gauges by colour: red = Bird, green = Tiger, yellow = Dog.'
+phases:
+- name: Three Peril rooms
+  tag: max 2 per room
+  items:
+  - title: Split rooms
+    text: 'Max 2 per room. While alive, Bird drains Mental Strength, Tiger shields the others and Dog makes them hit harder.'
+    detail: 'Phase 1 splits the party into three Peril rooms (max 2 each). While alive, Bird drains Mental Strength every 30s, Tiger shields the other two every 45s, and Dog makes the others hit 25% harder.'
+  - title: Blessings
+    text: 'Kill a Peril with its gauge unbroken: Bird blocks a lethal hit, Tiger cleanses in Phase 2, Dog gives +10% final damage.'
+    detail: 'Killing a Peril with its gauge unbroken grants its blessing: Bird blocks one lethal hit, Tiger gives a Purification cleanse for Phase 2, Dog gives +10% final damage.'
+  - title: Tiger's shield
+    text: 'Tiger takes 50% less damage unless lured into the current of three lit Tesla coils.'
+    detail: 'Tiger takes 50% less damage unless you light three Tesla coils in a triangle and lure it into the current; clear electric puddles with the mini coils (Harvest key) before Tiger absorbs them as a shield.'
+  - title: Clean finish
+    text: 'No gauge broken in Phase 1: +300 Mental Strength, the only refill.'
+- name: Carling
+  tag: all three Perils
+  items:
+  - title: All three Perils
+    text: 'Carling uses every Peril''s attacks.'
+  - title: Teleport bait
+    text: 'After her flight, bait the teleport to the third whose laser colour you need: left Bird, centre Tiger, right Dog.'
+    detail: 'Phase 2 Carling uses all three Perils'' attacks. After her flight she teleports; bait it toward the third of the map whose laser colour you need (left Bird, centre Tiger, right Dog).'
+  - title: Purification
+    text: 'Harvest key; clears Confusion. Time it for the Vengeful Spirits wave each minute.'
+    detail: 'Purification (Harvest key) clears Confusion and fits the Vengeful Spirits wave each minute.'
+- name: Zones
+  tag: 'only your zone''s Peril'
+  items:
+  - title: Fixed zones
+    text: 'Bird left, Dog centre, Tiger right. Only the Peril in your zone takes damage.'
+    detail: 'Phase 3: Bird (left), Dog (centre) and Tiger (right) have fixed zones. Only the Peril in your zone takes damage (Ascent skills excepted; MapleSEA v251), and standing in a zone pushes its gauge every 6s.'
+  - title: Gauge push
+    text: 'Standing in a zone pushes its gauge every 6s.'
+  - title: Outside Carling's zone
+    text: '+80% damage taken and no potions.'
+    detail: 'Outside Carling''s zone you take +80% damage and cannot use potions.'
+  - title: HP unlocks
+    text: 'Each Peril kill unlocks the next 25% of Carling''s HP.'
+  - title: Then Aura Overflow
+    text: 'Once all three Perils die, Aura Overflow hits every 30s.'
+mechanics:
+- kind: ledger
+  title: Linked gauges
+  rows:
+  - {label: Hit Bird, value: ▲ Bird ▼ Dog}
+  - {label: Hit Tiger, value: ▲ Tiger ▼ Bird}
+  - {label: Hit Dog, value: ▲ Dog ▼ Tiger}
+- kind: ledger
+  title: Mental Strength · 1000 shared
+  rows:
+  - {label: Death (party of 1 → 6), value: −160/100/80/70/60/50, direction: down}
+  - {label: Gauge break, value: −350, direction: down}
+  - {label: Vengeful Spirit (Phase 2), value: −30, direction: down}
+  - {label: Scroll trap (Phase 2), value: ≈ −50, direction: down}
+  - {label: Phase 1 with no break, value: '+300', direction: up}
+  note: 'The run fails at 0. Death costs as of MapleSEA v249.'
+- kind: scale
+  title: Gauge scale
+  bands:
+  - {label: '0', span: 6, tone: risk}
+  - {label: 1–249, span: 22, tone: neutral}
+  - {label: 250–750, span: 44, tone: safe}
+  - {label: 751–999, span: 22, tone: neutral}
+  - {label: '1000', span: 6, tone: risk}
+  note: 'Starts at 500. A gauge at 0 or 1000 locks: −350 Mental Strength, and three breaks end the run. Extreme adds +30% damage from a Peril outside 250–750.'
+- kind: zones
+  title: Phase 3 zones
+  zones:
+  - {name: Bird, sub: left · red, tone: red}
+  - {name: Dog, sub: centre · yellow · Carling, tone: yellow}
+  - {name: Tiger, sub: right · green, tone: green}
+  note: 'Only the Peril in your zone takes damage. Outside Carling''s zone: +80% damage taken, no potions.'
 danger:
-- After all three Phase 3 Perils die, Aura Overflow kills everyone in Carling's zone every 30s (plus one random zone on Hard/Extreme), ignoring most invincibility; plan the last kill and leave the flagged zone. MapleSEA's name for it is unconfirmed.
-- Phase 2 Vengeful Spirits (each minute) and the Scroll imprisonment cost Mental Strength directly; a Scroll catch often chains into a spirit hit.
-- Tiger's Phase 3 lightning stuns long enough for a second bolt; outside Carling's zone the follow-up can kill outright.
-- Bird's hide-and-seek wipes the room if nobody hits the right Torn Spring painting within 15s.
-- Repeatedly taking one Peril's attacks maxes its gauge and bottoms out its neighbour at the same time.
+- title: Aura Overflow
+  text: 'Once all three Phase 3 Perils die, it kills everyone in Carling''s zone every 30s (plus a random zone on Hard/Extreme). Plan the last kill.'
+  detail: After all three Phase 3 Perils die, Aura Overflow kills everyone in Carling's zone every 30s (plus one random zone on Hard/Extreme), ignoring most invincibility; plan the last kill and leave the flagged zone. MapleSEA's name for it is unconfirmed.
+- title: Spirits and Scroll
+  text: 'Phase 2 spirits (−30) and the Scroll trap (≈ −50) drain Mental Strength directly; a Scroll often chains into a spirit.'
+  detail: Phase 2 Vengeful Spirits (each minute) and the Scroll imprisonment cost Mental Strength directly; a Scroll catch often chains into a spirit hit.
+- title: Tiger's lightning
+  text: 'The Phase 3 stun lasts long enough for a second bolt; outside Carling''s zone it can kill.'
+  detail: Tiger's Phase 3 lightning stuns long enough for a second bolt; outside Carling's zone the follow-up can kill outright.
+- title: Bird's hide-and-seek
+  text: 'Hit the right Torn Spring painting within 15s or the room wipes.'
+- title: One-sided hits
+  text: 'Taking one Peril''s attacks maxes its gauge and bottoms out its neighbour at once.'
+  detail: Repeatedly taking one Peril's attacks maxes its gauge and bottoms out its neighbour at the same time.
 tips:
-- Name one gauge caller who calls numbers; before leaving a room, pre-load the gauge the next room will push down.
-- Never break a gauge in Phase 1; losing the blessings and the +300 refill usually means restarting.
-- In Phase 3, switch on the zone statue (Harvest key) before single-target bursts so they hit the Peril, not Carling.
-- In Phase 2, burst right after Carling's flight and dodge spirits by staying airborne or high up.
-- A full party pays less per death but shares one pool, so it has fewer total spare deaths than it looks.
-- 'Balanced gauges are the safest for Mental Strength but the hardest to execute: you watch three linked gauges and walk zones all fight. A two-gauge break is simpler afterwards but spends most of your margin, so deaths become far more costly.'
+- title: One gauge caller
+  text: 'Call numbers; pre-load the gauge the next room pushes down.'
+  detail: Name one gauge caller who calls numbers; before leaving a room, pre-load the gauge the next room will push down.
+- title: Never break in Phase 1
+  text: 'You lose the blessings and the +300 refill.'
+  detail: Never break a gauge in Phase 1; losing the blessings and the +300 refill usually means restarting.
+- title: Statue before burst
+  text: 'Switch on the zone statue so single-target skills hit the Peril.'
+  detail: In Phase 3, switch on the zone statue (Harvest key) before single-target bursts so they hit the Peril, not Carling.
+- title: Burst after her flight
+  text: 'Dodge spirits airborne or high up.'
+  detail: In Phase 2, burst right after Carling's flight and dodge spirits by staying airborne or high up.
+- title: Count spare deaths
+  text: 'A full party pays less per death but shares one pool.'
+  detail: A full party pays less per death but shares one pool, so it has fewer total spare deaths than it looks.
+- title: Balance or break
+  text: 'Balanced gauges save Mental Strength but are hardest; a two-gauge break is simpler but spends most of the margin.'
+  detail: 'Balanced gauges are the safest for Mental Strength but the hardest to execute: you watch three linked gauges and walk zones all fight. A two-gauge break is simpler afterwards but spends most of your margin, so deaths become far more costly.'
 difficulty_notes:
-  h: On Hard and Extreme, Aura Overflow hits Carling's zone plus a random second zone, and Bird's Phase 3 tornado order is random (fixed on Easy/Normal).
-  x: Extreme adds +30% damage taken from a Peril's element whenever its gauge is outside 250-750, and Tiger's Phase 1 shields double to 2% HP.
+  h:
+    title: Hard and Extreme
+    text: 'Aura Overflow also hits a random second zone, and Bird''s Phase 3 tornado order is random (fixed on Easy/Normal).'
+  x:
+    title: Extreme
+    text: '+30% damage taken from a Peril''s element while its gauge is outside 250-750; Tiger''s Phase 1 shields double to 2% HP.'
 notes:
-- HP rows are KMS values before OVERDRIVE (what MapleSEA has now, including the v244 and v251 cuts). Phase 1 and 3-1 rows are per Peril (three each); 3-2 is Carling; Phase 3 rows are rounded.
-- 30 minute limit before OVERDRIVE. Bindable since MapleSEA v244. MapleSEA caps boss clears at 12 per week (v249).
-- 'The Tiger + Dog break (stand in Dog''s zone, hit both side Perils, manage only Bird) was the easy build in 2025, but MapleSEA v251''s Phase 3 zone rule ended it: managing Bird now means walking between the two zones furthest apart.'
-- 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Normal 20, Hard 160, Extreme 1,200.'
+- title: Tiger + Dog break is dead
+  text: 'The 2025 easy build stopped working with MapleSEA v251''s Phase 3 zone rule.'
+  detail: 'The Tiger + Dog break (stand in Dog''s zone, hit both side Perils, manage only Bird) was the easy build in 2025, but MapleSEA v251''s Phase 3 zone rule ended it: managing Bird now means walking between the two zones furthest apart.'
+- title: Destiny Resolve per clear
+  text: 'Normal 20 · Hard 160 · Extreme 1,200, split among everyone who entered.'
+  detail: 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Normal 20, Hard 160, Extreme 1,200.'
+- title: Limits
+  text: '30 min before OVERDRIVE; bindable since MapleSEA v244; 12 boss clears per week (v249).'
+  detail: 30 minute limit before OVERDRIVE. Bindable since MapleSEA v244. MapleSEA caps boss clears at 12 per week (v249).
+- title: HP rows
+  text: 'KMS values before OVERDRIVE, which is what MapleSEA has now. Perils rows show one bar per Peril.'
+  detail: HP rows are KMS values before OVERDRIVE (what MapleSEA has now, including the v244 and v251 cuts). Phase 1 and 3-1 rows are per Peril (three each); 3-2 is Carling; Phase 3 rows are rounded.
 difficulties:
 - name: Easy
   entry_level: 275
@@ -37,12 +146,12 @@ difficulties:
   party_max: 6
   force: {kind: sacred, value: 230}
   hp:
-  - {phase: '1', value: 96.6t}
+  - {phase: '1', value: 96.6t, count: 3, target: Perils}
   - {phase: '2', value: 105t}
-  - {phase: 3-1, value: 93.2t}
-  - {phase: 3-2, value: 111t}
+  - {phase: 3-1, value: 93.2t, count: 3, target: Perils}
+  - {phase: 3-2, value: 111t, target: Carling}
   - {phase: total, value: 786t}
-  recommended_spec: {kind: HEXA-converted stat, text: 'KMS solo minimum-cut clears around 51k (May 2025, before the Phase 3 HP cut MapleSEA now has); treat as a rough floor.'}
+  recommended_spec: {kind: HEXA-converted stat, value: ≈ 51k, basis: 'KMS, May 2025', text: 'KMS solo minimum-cut clears around 51k (May 2025, before the Phase 3 HP cut MapleSEA now has); treat as a rough floor.'}
   notes:
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 533t total, 20-minute limit.'
 - name: Normal
@@ -52,12 +161,12 @@ difficulties:
   party_max: 6
   force: {kind: sacred, value: 330}
   hp:
-  - {phase: '1', value: 399t}
+  - {phase: '1', value: 399t, count: 3, target: Perils}
   - {phase: '2', value: 468t}
-  - {phase: 3-1, value: 399t}
-  - {phase: 3-2, value: 462t}
+  - {phase: 3-1, value: 399t, count: 3, target: Perils}
+  - {phase: 3-2, value: 462t, target: Carling}
   - {phase: total, value: 3.33q}
-  recommended_spec: {kind: HEXA-converted stat, text: 'KMS solo minimum-cut clear about 86k (Oct 2025, before the March 2026 Phase 3 cut that MapleSEA has), so slightly less should work.'}
+  recommended_spec: {kind: HEXA-converted stat, value: ≈ 86k, basis: 'KMS, Oct 2025', text: 'KMS solo minimum-cut clear about 86k (Oct 2025, before the March 2026 Phase 3 cut that MapleSEA has), so slightly less should work.'}
   notes:
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 2.26q total, 20-minute limit.'
 - name: Hard
@@ -67,12 +176,12 @@ difficulties:
   party_max: 6
   force: {kind: sacred, value: 350}
   hp:
-  - {phase: '1', value: 920t}
+  - {phase: '1', value: 920t, count: 3, target: Perils}
   - {phase: '2', value: 1.404q}
-  - {phase: 3-1, value: 1.407q}
-  - {phase: 3-2, value: 1.883q}
+  - {phase: 3-1, value: 1.407q, count: 3, target: Perils}
+  - {phase: 3-2, value: 1.883q, target: Carling}
   - {phase: total, value: 10.27q}
-  recommended_spec: {kind: HEXA-converted stat, text: 'KMS solo clear at about 113k right after the March 2026 Phase 3 cut (the state MapleSEA is in); a single sample, not a cut table.'}
+  recommended_spec: {kind: HEXA-converted stat, value: ≈ 113k, basis: 'KMS, Mar 2026', text: 'KMS solo clear at about 113k right after the March 2026 Phase 3 cut (the state MapleSEA is in); a single sample, not a cut table.'}
   notes:
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 6.96q total, 20-minute limit.'
 - name: Extreme
@@ -82,10 +191,10 @@ difficulties:
   party_max: 6
   force: {kind: sacred, value: 480}
   hp:
-  - {phase: '1', value: 6.018q}
+  - {phase: '1', value: 6.018q, count: 3, target: Perils}
   - {phase: '2', value: 6.93q}
-  - {phase: 3-1, value: 5.198q}
-  - {phase: 3-2, value: 6.497q}
+  - {phase: 3-1, value: 5.198q, count: 3, target: Perils}
+  - {phase: 3-2, value: 6.497q, target: Carling}
   - {phase: total, value: 47.1q}
   notes:
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 31.9q total, 20-minute limit.'
@@ -95,12 +204,26 @@ difficulties:
   pdr_percent: 380
   party_max: 1
   force: {kind: sacred, value: 350}
-  recommended_spec: {kind: HEXA-converted stat, text: 'KMS minimum clears fell from about 115-122k (Aug 2025) to about 104-112k (Feb 2026; Kain 104k up to Hero 112k); a MapleSEA Captain cleared at about 114k.'}
+  recommended_spec: {kind: HEXA-converted stat, value: 104–112k, basis: 'KMS, Feb 2026', text: 'KMS minimum clears fell from about 115-122k (Aug 2025) to about 104-112k (Feb 2026; Kain 104k up to Hero 112k); a MapleSEA Captain cleared at about 114k.'}
+  mission:
+    series: destiny-weapon
+    order: 3
+    title: Battle, Apostle Carling
+    modifier: {text: +20% Final Damage, direction: up}
+    needs: 3,000 Adversary's Resolve
+    rules: [Solo, Practice Mode clears count, No Cross World]
   notes:
-  - 'Destiny Weapon mission "Battle, Apostle Carling" (MapleSEA v244): Hard Carling solo in Destiny Mode with +20% Final Damage, the only mission modifier in your favour. Third mission, after Chosen Serene and Gatekeeper Kalos; needs 3,000 Adversary''s Resolve.'
-  - 'Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
-  - 'Of 322 Destiny clear builds tracked by MapleBossLab, about 88% used the Tiger + Bird break; the most common Phase 1 order was Dog, Tiger, Bird (43%).'
-  - KMS players reported Destiny Carling felt harder after OVERDRIVE's 20-minute limit; Destiny Mode HP after OVERDRIVE is unconfirmed.
+  - title: The only helpful modifier
+    text: 'Hard Carling solo in Destiny Mode; the third mission, after Chosen Serene and Gatekeeper Kalos (MapleSEA v244).'
+    detail: 'Destiny Weapon mission "Battle, Apostle Carling" (MapleSEA v244): Hard Carling solo in Destiny Mode with +20% Final Damage, the only mission modifier in your favour. Third mission, after Chosen Serene and Gatekeeper Kalos; needs 3,000 Adversary''s Resolve.'
+  - title: Practice Mode
+    text: 'Practice clears count (MapleSEA v249), but not in Cross World. OVERDRIVE''s phase-specific practice will not count.'
+    detail: 'Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
+  - title: Clear builds
+    text: 'About 88% of 322 tracked Destiny clears used the Tiger + Bird break; the top Phase 1 order was Dog, Tiger, Bird (43%).'
+    detail: 'Of 322 Destiny clear builds tracked by MapleBossLab, about 88% used the Tiger + Bird break; the most common Phase 1 order was Dog, Tiger, Bird (43%).'
+  - title: After OVERDRIVE
+    text: 'KMS players found it harder under the 20-minute limit; Destiny Mode HP after OVERDRIVE is unconfirmed.'
 strategies:
 - name: Balanced gauges
   when: Parties, first clears and practice runs, or any spec with room to spare

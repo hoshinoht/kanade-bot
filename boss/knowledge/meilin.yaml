@@ -4,31 +4,102 @@ event:
   availability: 'KMS Challengers World Season 4 ran 18 Jun – 17 Sep 2026. Expected in MapleSEA around Nov 2026 (not yet announced); MapleSEA names may differ.'
   aliases: [Maerin, 메이린]
 summary: 'Meilin (also called Maerin), Guide of Destiny, is a solo fortune-teller fight: clear her Destiny patterns to fill Remnants of Destiny, borrow another class''s burst skill (Chaos) at the altar, and match three class icons to earn a powerful Tab skill (Order).'
+lead: 'Solo fortune-teller fight: clear Destiny patterns to fill the gauge, borrow other classes'' bursts (Chaos) and earn an Order skill.'
 core:
-- Challengers World characters only. Solo, 20-minute limit, 5 lives, 10s potion cooldown, 380% PDR. One HP bar; at 50% she becomes immune, strips all debuffs and binds, and transforms into Phase 2. One clear per Maple ID per week, shared by Normal and Hard (KMS reset Thursday 00:00), not counted in the weekly boss limit.
-- Remnants of Destiny gauge (0 to 1,000) fills slowly over time and by a large amount for each Destiny pattern you clear. Her hits and failed Destiny patterns drain it; on Hard the diagonal map explosions drain it too. Hard gives far less gauge per cleared pattern than Normal.
-- A full gauge spawns the Altar of Destiny mid-map; interact quickly or the gauge resets. Pick one of three random other-class burst skills (Chaos) and fire it once with the NPC/Gather key. Taking a new one deletes the one you hold, even mid-effect.
-- 'Three class icons sit by the gauge. Pick Chaos skills from all three classes to get one random Order skill on Tab: +1 Ascent use, reset Origin cooldown, reset all 5th-job-and-below cooldowns, +20% final damage for 15s, or an extra 10s bind that ignores bind resistance.'
-- Every 55s she casts a Destiny pattern. She is defenceless but immune to binds during it, so clear the mechanic first and use the window for normal damage. Phase 1 has four (Area of Rest, Flame and Freeze swords, Arrows, Cards); Phase 2 adds Swallowing Storm and Soul Swords.
-- Fight glued to her. Most body-pattern blind spots are on her, and if you get about 700px away or jump about 300px high she teleports onto you and blasts the spot.
+- title: Rules
+  text: 'Challengers World characters only. Solo, 20 minutes, 5 lives, 10s potions, 380% PDR.'
+  detail: Challengers World characters only. Solo, 20-minute limit, 5 lives, 10s potion cooldown, 380% PDR. One HP bar; at 50% she becomes immune, strips all debuffs and binds, and transforms into Phase 2.
+- title: Weekly clear
+  text: 'One per Maple ID across Normal and Hard (KMS reset Thursday 00:00), outside the boss limit.'
+  detail: One clear per Maple ID per week, shared by Normal and Hard (KMS reset Thursday 00:00), not counted in the weekly boss limit.
+- title: Remnants of Destiny
+  text: '0–1,000 gauge, filled mostly by clearing Destiny patterns (far less on Hard).'
+  detail: Remnants of Destiny gauge (0 to 1,000) fills slowly over time and by a large amount for each Destiny pattern you clear. Her hits and failed Destiny patterns drain it; on Hard the diagonal map explosions drain it too. Hard gives far less gauge per cleared pattern than Normal.
+- title: Altar and Chaos
+  text: 'A full gauge spawns the altar: take one of three other-class bursts and fire it once.'
+  detail: A full gauge spawns the Altar of Destiny mid-map; interact quickly or the gauge resets. Pick one of three random other-class burst skills (Chaos) and fire it once with the NPC/Gather key. Taking a new one deletes the one you hold, even mid-effect.
+- title: Order
+  text: 'Chaos from all three icon classes earns one random Tab skill.'
+  detail: 'Three class icons sit by the gauge. Pick Chaos skills from all three classes to get one random Order skill on Tab: +1 Ascent use, reset Origin cooldown, reset all 5th-job-and-below cooldowns, +20% final damage for 15s, or an extra 10s bind that ignores bind resistance.'
+- title: Destiny patterns
+  text: 'Every 55s; she is defenceless but bind-immune. Clear the mechanic, then hit her.'
+  detail: Every 55s she casts a Destiny pattern. She is defenceless but immune to binds during it, so clear the mechanic first and use the window for normal damage. Phase 1 has four (Area of Rest, Flame and Freeze swords, Arrows, Cards); Phase 2 adds Swallowing Storm and Soul Swords.
+- title: Stay glued to her
+  text: 'Blind spots are on her; about 700px away or 300px up and she teleports onto you.'
+  detail: Fight glued to her. Most body-pattern blind spots are on her, and if you get about 700px away or jump about 300px high she teleports onto you and blasts the spot.
+phases:
+- name: Phase 1
+  tag: four Destiny patterns
+  items:
+  - title: Four Destiny patterns
+    text: 'Area of Rest, Flame and Freeze swords, Arrows of Destiny, Cards of Truth and Lies.'
+  - title: Area of Rest
+    text: 'No movement skills. Walk the top platform; touch each blue section as its ring closes.'
+    detail: Area of Rest needs no movement skills; teleports skip the rings and earn nothing. Walk on the top platform and touch each blue section as the ring closes (3 rings on Normal, 5 on Hard).
+  - title: Flame and Freeze
+    text: 'Ignore her swing; stand in the slanted zone matching your head icon until it hits 0.'
+    detail: For Flame and Freeze, ignore which sword she swings and stand in the slanted zone matching the icon over your head until its count hits 0. Standing at the pillar left of her and jumping in place is a known shortcut.
+  - title: Arrows of Destiny
+    text: 'Drag each arrow through a purple spirit; pull them through the middle near her.'
+    detail: For Arrows of Destiny, drag each arrow so it passes through a purple spirit. Firing points sweep from one side to the other (and back on Hard), so pulling arrows through the middle near her hits the spirits reliably.
+- name: Phase 2 (from 50%)
+  tag: two more patterns
+  items:
+  - title: Transformation
+    text: 'At 50% she turns immune, strips all debuffs and binds, and transforms.'
+  - title: Two more patterns
+    text: 'Swallowing Storm and Soul Swords join the rotation.'
+  - title: Doubled attacks
+    text: 'Wave attack and teleport blast each fire twice.'
+mechanics:
+- kind: ledger
+  title: Remnants of Destiny · 0–1,000
+  rows:
+  - {label: Over time, value: slow fill, direction: up}
+  - {label: Destiny pattern cleared, value: large fill, direction: up}
+  - {label: Her hits, value: drains, direction: down}
+  - {label: Destiny pattern failed, value: drains, direction: down}
+  - {label: Diagonal explosions (Hard), value: drains, direction: down}
+  note: 'Full gauge: altar mid-map; use it quickly or the gauge resets.'
 danger:
-- 'Cards of Truth and Lies: 7 face-down cards shuffle 4 times on Normal, 6 on Hard. Every card except the true one becomes a floor-to-ceiling blade: 80% max HP on Normal, 1000% (death) on Hard.'
-- 'Swallowing Storm (Phase 2): a gust shoves you sideways about 3s after the warning, then blades cover the map. Only the golden barrier is safe; outside it is 80%/1000% (death on Hard). The ceiling laser shows the wind direction; a purple swirl on it means a strong push.'
-- Soul Swords (Phase 2) is widely called her worst pattern. Three swords flash 3 times on Normal, 5 on Hard, then slam in that order. The sweeps reach past the neighbouring sword and also hit behind, so wall-hugging fails. Any hit fails the pattern.
-- 'Phase 2 Hand of Fate: after the two hand pushes, a circle tracks you above or below for about 3s, then a hand stabs from it for 50%/55% plus a stun (from above) or launch (from below). Sources rate it the trickiest body pattern.'
-- 'Teleport: if you stray too far or jump too high she blinks to your x-position and releases a blast (25%/30%; Phase 2 fires twice at 40%/50%). The blink itself does no damage, so move off the spot at once.'
-- 'Wave attack: an eye icon above her decides it. Open eye, face her; closed eye, face away. Getting it wrong costs 30%/40% and a stun. In Phase 2 it fires twice, always one open and one closed.'
+- title: Cards of Truth and Lies
+  text: '7 cards shuffle 4 times (6 on Hard); every false card becomes a blade: 80% HP, death on Hard.'
+  detail: 'Cards of Truth and Lies: 7 face-down cards shuffle 4 times on Normal, 6 on Hard. Every card except the true one becomes a floor-to-ceiling blade: 80% max HP on Normal, 1000% (death) on Hard.'
+- title: Swallowing Storm
+  text: 'Phase 2: a gust shoves you, then blades fill the map. Only the golden barrier is safe.'
+  detail: 'Swallowing Storm (Phase 2): a gust shoves you sideways about 3s after the warning, then blades cover the map. Only the golden barrier is safe; outside it is 80%/1000% (death on Hard). The ceiling laser shows the wind direction; a purple swirl on it means a strong push.'
+- title: Soul Swords
+  text: 'Phase 2, her worst: three swords flash, then slam in order. Sweeps reach behind; any hit fails.'
+  detail: Soul Swords (Phase 2) is widely called her worst pattern. Three swords flash 3 times on Normal, 5 on Hard, then slam in that order. The sweeps reach past the neighbouring sword and also hit behind, so wall-hugging fails. Any hit fails the pattern.
+- title: Hand of Fate
+  text: 'Phase 2: a circle tracks you about 3s, then a hand stabs (50%/55%) with stun or launch.'
+  detail: 'Phase 2 Hand of Fate: after the two hand pushes, a circle tracks you above or below for about 3s, then a hand stabs from it for 50%/55% plus a stun (from above) or launch (from below). Sources rate it the trickiest body pattern.'
+- title: Teleport blast
+  text: 'Stray or jump too high and she blinks to you and blasts. The blink is harmless; move off.'
+  detail: 'Teleport: if you stray too far or jump too high she blinks to your x-position and releases a blast (25%/30%; Phase 2 fires twice at 40%/50%). The blink itself does no damage, so move off the spot at once.'
+- title: Wave attack
+  text: 'Eye open: face her. Eye closed: face away. Wrong costs 30%/40% and a stun.'
+  detail: 'Wave attack: an eye icon above her decides it. Open eye, face her; closed eye, face away. Getting it wrong costs 30%/40% and a stun. In Phase 2 it fires twice, always one open and one closed.'
 tips:
-- Stay on top of her. Shadow Sword Aquila's blades, the charge and the hand pushes are all easier to avoid point-blank. Jump the charge when the dark-blue half is on top, crouch when it is below.
-- Area of Rest needs no movement skills; teleports skip the rings and earn nothing. Walk on the top platform and touch each blue section as the ring closes (3 rings on Normal, 5 on Hard).
-- For Flame and Freeze, ignore which sword she swings and stand in the slanted zone matching the icon over your head until its count hits 0. Standing at the pillar left of her and jumping in place is a known shortcut.
-- For Arrows of Destiny, drag each arrow so it passes through a purple spirit. Firing points sweep from one side to the other (and back on Hard), so pulling arrows through the middle near her hits the spirits reliably.
-- 'Best Chaos picks: Evan Zodiac Ray (strongest) and Hoyoung Mountain Spirit Summon (30s summon), then buff skills such as Angelic Buster Spotlight or Phantom Joker. Avoid Night Lord Spread Throw, which forces you into melee range. Since 23 Jul 2026, Chaos skills no longer trigger your own additional-hit skills.'
-- Most players save Order for a 2-minute or Origin burst. Stack the bind Order with your existing binds; reset-Origin also resets her Origin bind resistance. Reset-5th lets you run a second normal burst at once, but her bind resistance is not reset. +1 Ascent is the weakest roll.
+- title: Stay on top of her
+  text: 'Blades, charge and pushes are easier point-blank. Charge: dark blue on top, jump; below, crouch.'
+  detail: Stay on top of her. Shadow Sword Aquila's blades, the charge and the hand pushes are all easier to avoid point-blank. Jump the charge when the dark-blue half is on top, crouch when it is below.
+- title: Best Chaos picks
+  text: 'Evan Zodiac Ray, Hoyoung Mountain Spirit Summon, then buffs. Skip Night Lord Spread Throw.'
+  detail: 'Best Chaos picks: Evan Zodiac Ray (strongest) and Hoyoung Mountain Spirit Summon (30s summon), then buff skills such as Angelic Buster Spotlight or Phantom Joker. Avoid Night Lord Spread Throw, which forces you into melee range. Since 23 Jul 2026, Chaos skills no longer trigger your own additional-hit skills.'
+- title: Spend Order on a burst
+  text: 'A 2-minute or Origin burst. Bind Order stacks with your binds; +1 Ascent is the weakest roll.'
+  detail: Most players save Order for a 2-minute or Origin burst. Stack the bind Order with your existing binds; reset-Origin also resets her Origin bind resistance. Reset-5th lets you run a second normal burst at once, but her bind resistance is not reset. +1 Ascent is the weakest roll.
 notes:
-- Not in the boss catalog; it is a KMS seasonal boss that MapleSEA has not released. Pattern names follow Orange Mushroom's KMS translations (which spell her Maerin) and may differ in MapleSEA.
-- All values are KMS values. She launched alongside KMS OVERDRIVE, so there are no separate pre-OVERDRIVE numbers; the 20-minute limit is her own.
-- A clear only counts after you also defeat the Forbidden Sacred Object in the reward map, which takes fixed damage per hit.
+- title: KMS seasonal boss
+  text: 'Not in the catalog or MapleSEA yet; names follow Orange Mushroom (who spells her Maerin).'
+  detail: Not in the boss catalog; it is a KMS seasonal boss that MapleSEA has not released. Pattern names follow Orange Mushroom's KMS translations (which spell her Maerin) and may differ in MapleSEA.
+- title: KMS values only
+  text: 'She launched with OVERDRIVE; the 20-minute limit is her own.'
+  detail: All values are KMS values. She launched alongside KMS OVERDRIVE, so there are no separate pre-OVERDRIVE numbers; the 20-minute limit is her own.
+- title: Clear credit
+  text: 'Also defeat the Forbidden Sacred Object in the reward map (fixed damage per hit).'
+  detail: A clear only counts after you also defeat the Forbidden Sacred Object in the reward map, which takes fixed damage per hit.
 difficulties:
 - name: Normal
   entry_level: 270
@@ -38,7 +109,7 @@ difficulties:
   hp:
   - {phase: '1', value: 58.925t}
   - {phase: '2', value: 58.925t}
-  recommended_spec: {kind: HEXA-converted stat, text: 'About 21k for a full-time (100%) solo clear in KMS (approximate community figure); rated between Hard Jin Hilla and Normal Seren.'}
+  recommended_spec: {kind: HEXA-converted stat, value: ≈ 21k, basis: 'KMS solo, full-time', text: 'About 21k for a full-time (100%) solo clear in KMS (approximate community figure); rated between Hard Jin Hilla and Normal Seren.'}
 - name: Hard
   entry_level: 280
   boss_level: 280
@@ -47,7 +118,7 @@ difficulties:
   hp:
   - {phase: '1', value: 290t}
   - {phase: '2', value: 290t}
-  recommended_spec: {kind: HEXA-converted stat, text: 'About 46k for a full-time (100%) solo clear in KMS (approximate community figure); rated between Easy Kaling and Normal Kalos. Lucky Order rolls let some players clear below that.'}
+  recommended_spec: {kind: HEXA-converted stat, value: ≈ 46k, basis: 'KMS solo, full-time', text: 'About 46k for a full-time (100%) solo clear in KMS (approximate community figure); rated between Easy Kaling and Normal Kalos. Lucky Order rolls let some players clear below that.'}
   notes:
   - Cards and Storm failures are lethal (1000% max HP) on Hard only; Hard also adds rings, arrows and sword swings and speeds up the Flame and Freeze swings.
 strategies:
