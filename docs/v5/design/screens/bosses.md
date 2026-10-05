@@ -100,8 +100,9 @@ Code: `apps/admin/src/bosses/` (`BossesPage`, `BossWorkspace`, `BossGrid`,
     tab (on the columns, since a scroll container's end padding does not
     extend its scroll range); the panel lays guide and aside out as a grid
     row sized to the guide.
-  - HP is a disclosure ("HP" button with a chevron, `aria-expanded`), open by
-    default; closed, "Total HP" stays in its head when there is a total.
+  - HP is a disclosure ("HP" button with a chevron, `aria-expanded`), closed by
+    default (`[DR 2026-10-05]`); closed, "Total HP" stays in its head when there
+    is a total.
   - The difficulty switch draws no rim on Destiny/Champion; selected, they
     take their plate (`--pill-destiny-bg` / `--pill-champion-bg`). The ticks
     in the catalog keep the Destiny rim.

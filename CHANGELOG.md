@@ -6,6 +6,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Boss guides: the HP breakdown starts folded, showing only "Total HP" in its
+  head until opened.
 - Admin Account page: `GET /api/admin/me` (admin listener only) shows how you
   signed in; a Discord sign-in also shows its chatbot access, bossing role,
   server role names and the same chat allowance Limits shows, while the admin

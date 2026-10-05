@@ -11,8 +11,8 @@
   let { hp, difficulty }: { hp: HpBreakdown; difficulty: string } = $props();
   const tone = $derived(LETTER[difficulty] ?? difficulty.toLowerCase());
   const uid = $props.id();
-  // A disclosure, open by default; collapsed, the total stays in the head.
-  let open = $state(true);
+  // A disclosure, closed by default (user, 2026-10-05); closed, the total stays in the head.
+  let open = $state(false);
 </script>
 
 {#snippet amount(value: string)}

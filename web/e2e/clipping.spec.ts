@@ -157,13 +157,13 @@ const STATES: Screen[] = [
     name: 'admin/bosses/Carling/knowledge (scrolled, compact hero, HP closed)',
     url: screenUrl(ADMIN, '/bosses/Carling/knowledge'),
     open: async (page) => {
-      await page.locator('.guide-hp__toggle').first().click();
       await page.locator('.knowledge-detail__body').evaluate((body) => body.scrollTo(0, 400));
       await expect(page.locator('.knowledge-hero--compact')).toHaveCount(1);
     },
   },
-  { name: 'admin/bosses/Limbo/knowledge', url: screenUrl(ADMIN, '/bosses/Limbo/knowledge') },
-  { name: 'admin/bosses/Carling/knowledge?difficulty=Extreme', url: screenUrl(ADMIN, '/bosses/Carling/knowledge?difficulty=Extreme') },
+  // HP is closed by default: these two open it so the breakdown is audited.
+  { name: 'admin/bosses/Limbo/knowledge (HP open)', url: screenUrl(ADMIN, '/bosses/Limbo/knowledge'), open: async (page) => { await page.locator('.guide-hp__toggle').first().click(); await expect(page.locator('.guide-hp__phase').first()).toBeVisible(); } },
+  { name: 'admin/bosses/Carling/knowledge?difficulty=Extreme (HP open)', url: screenUrl(ADMIN, '/bosses/Carling/knowledge?difficulty=Extreme'), open: async (page) => { await page.locator('.guide-hp__toggle').first().click(); await expect(page.locator('.guide-hp__phase').first()).toBeVisible(); } },
   { name: 'admin/bosses/Seren/knowledge?tab=phases', url: screenUrl(ADMIN, '/bosses/Seren/knowledge?tab=phases') },
   { name: 'admin/bosses/BM/knowledge?tab=phases', url: screenUrl(ADMIN, '/bosses/BM/knowledge?tab=phases') },
   { name: 'admin/bosses/Meilin/knowledge?tab=notes', url: screenUrl(ADMIN, '/bosses/Meilin/knowledge?tab=notes') },

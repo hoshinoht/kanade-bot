@@ -423,6 +423,7 @@ test.describe('boss guide', () => {
     await expect(tiles.first().locator('dd')).toHaveText(['285', 'entry 275']);
     await expect(tiles.last().locator('dd')).toHaveText(['≈ 99k', 'Invented, 2026']);
     const hp = page.getByRole('region', { name: 'HP', exact: true });
+    await hp.getByRole('button', { name: 'HP' }).click();
     // Short values as stored on screen; spelled out in the title and for screen readers.
     const shown = (scope: typeof hp) => scope.locator('[aria-hidden="true"]');
     await expect(hp.locator('.guide-hp__total > span').first()).toHaveText('Total HP');
@@ -547,20 +548,22 @@ test.describe('boss guide', () => {
     await expect(page.locator('.guide-phase')).not.toHaveAttribute('role', 'tabpanel');
   });
 
-  test('HP is a disclosure, open by default; closed, the total stays in its head', async ({ page }) => {
+  test('HP is a disclosure, closed by default with the total in its head', async ({ page }) => {
     await inject(page);
     await go(page, '/bosses/MaleficStar/knowledge');
     const hp = page.getByRole('region', { name: 'HP', exact: true });
     const toggle = hp.getByRole('button', { name: 'HP' });
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    await expect(hp.locator('.guide-hp__phase')).toHaveCount(4);
-    await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await expect(hp.locator('.guide-hp__phase').first()).toBeHidden();
     await expect(hp.locator('.guide-hp__head .guide-hp__total [aria-hidden="true"]')).toHaveText('6q');
-    await page.keyboard.press('Enter');
+    await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(hp.locator('.guide-hp__phase')).toHaveCount(4);
     await expect(hp.locator('.guide-hp__phase').first()).toBeVisible();
+    await expect(hp.locator('.guide-hp__head .guide-hp__total')).toHaveCount(0);
+    await page.keyboard.press('Enter');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(hp.locator('.guide-hp__phase').first()).toBeHidden();
   });
 
   test('the Recommended tile lists one figure per party size, its basis underneath', async ({ page }) => {
@@ -809,6 +812,7 @@ test.describe('boss guide', () => {
       await route.fulfill({ response, json: { ...(await response.json()), doc, missions: GUIDE_MISSIONS } });
     });
     await go(page, '/bosses/MaleficStar/knowledge');
+    await page.locator('.guide-hp__toggle').click();
     const bars = page.locator('.guide-hp__phase').first().locator('.guide-hp__bar');
     await expect(bars).toHaveCount(6);
     await settle(page);
