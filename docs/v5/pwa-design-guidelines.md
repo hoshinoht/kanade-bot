@@ -1,5 +1,7 @@
 # Kanade v5 PWA design migration
 
+> Superseded as the current reference by [`design/`](design/README.md) (2026-10-05); kept as history.
+
 Status: migration requirements, not a completed visual review.
 
 ## Direction
