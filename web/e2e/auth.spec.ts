@@ -5,7 +5,7 @@ import { ADMIN, expect, test } from './support';
 // break-glass token, the Discord browser flow and its login_error codes,
 // 401 → sign in → back, method-based proposal controls, sign-out.
 
-/** The mock's break-glass token (tools/pwa-mock `auth::MOCK_TOKEN`). */
+/** The mock's break-glass token (devtools/pwa-mock `auth::MOCK_TOKEN`). */
 const TOKEN = 'kanade-mock-token';
 
 async function signOutBehind(page: Page) {

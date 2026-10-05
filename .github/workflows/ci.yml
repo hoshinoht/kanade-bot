@@ -49,7 +49,7 @@ jobs:
             web:
               - .github/workflows/ci.yml
               - web/**
-              - tools/pwa-mock/**
+              - devtools/pwa-mock/**
               - boss/knowledge/**
               - docs/v5/api-schemas/**
 
@@ -70,7 +70,7 @@ jobs:
       - name: Release build
         run: cargo build --locked --release
 
-  # The Svelte PWAs (web/) and their dev-only mock server (tools/pwa-mock).
+  # The Svelte PWAs (web/) and their dev-only mock server (devtools/pwa-mock).
   web:
     needs: changes
     if: needs.changes.outputs.web == 'true'
@@ -103,17 +103,17 @@ jobs:
         run: bun run build
 
       - name: Mock server format
-        working-directory: tools/pwa-mock
+        working-directory: devtools/pwa-mock
         run: cargo fmt --check
       - name: Mock server lint
-        working-directory: tools/pwa-mock
+        working-directory: devtools/pwa-mock
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Mock server tests
-        working-directory: tools/pwa-mock
+        working-directory: devtools/pwa-mock
         run: cargo test --locked
       # Built ahead so Playwright's webServer start stays well inside its timeout.
       - name: Mock server build
-        working-directory: tools/pwa-mock
+        working-directory: devtools/pwa-mock
         run: cargo build --locked --release
 
       # ubuntu-latest ships Google Chrome, which the suite uses (channel 'chrome');

@@ -136,7 +136,7 @@ def main() -> int:
     rust = axum_routes(sorted((ROOT / "src/api").rglob("*.rs")))
     mock = {
         route
-        for route in axum_routes([ROOT / "tools/pwa-mock/src/main.rs"])
+        for route in axum_routes([ROOT / "devtools/pwa-mock/src/main.rs"])
         if not route[1].startswith(MOCK_CONTROL_PREFIXES)
     }
     web = web_paths()

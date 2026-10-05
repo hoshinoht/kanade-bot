@@ -5,8 +5,8 @@ edition = "2024"
 license = "GPL-3.0-only"
 publish = false
 
-# Dev-only mock API/static server for web/apps/{admin,public}; not part of the
-# root crate. Retired once the Rust binary serves the apps.
+# Developer tool (devtools/): mock API/static server for web/apps/{admin,public}
+# dev servers, e2e and captures. Not part of the root crate; never shipped.
 # Exact pins, matching the repository rule for Rust dependencies.
 [dependencies]
 axum = "=0.8.9"

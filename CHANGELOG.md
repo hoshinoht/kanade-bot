@@ -247,6 +247,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- The dev-only PWA mock server moved to `devtools/pwa-mock/` (was
+  `tools/pwa-mock/`) and is labelled as developer tooling that never ships.
 - `docs/v5/` now publishes only the setup guides (`runtime-bootstrap.md`,
   `v4-import.md`) and the test data (`vectors/`, `api-schemas/`); contracts,
   design specs and evaluations are git-ignored and kept locally.

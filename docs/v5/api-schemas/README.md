@@ -12,7 +12,7 @@ register every file as an in-memory resource under its `$id`.
   revisions and latencies are `integer` (≥ 0 where they cannot be negative);
   scores, rates and seconds stay `number`.
 - Every non-2xx JSON body on both origins is `error.json#/$defs/ApiError`.
-- `tools/pwa-mock` validates every endpoint below against these files
+- `devtools/pwa-mock` validates every endpoint below against these files
   (`src/contract.rs`); the Rust API slices validate against the same files.
 
 ## Endpoint → schema

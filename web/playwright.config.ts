@@ -41,7 +41,7 @@ export default defineConfig({
     const adminPort = String(base + 2 * i);
     const publicPort = String(base + 2 * i + 1);
     return {
-      command: 'cargo run --quiet --release --manifest-path ../tools/pwa-mock/Cargo.toml',
+      command: 'cargo run --quiet --release --manifest-path ../devtools/pwa-mock/Cargo.toml',
       url: `http://127.0.0.1:${adminPort}/`,
       // Never drive a stray server: start our own, and the fixture checks it
       // is a pinned-clock mock (`/__mock/whoami`) before every test.

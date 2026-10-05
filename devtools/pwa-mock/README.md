@@ -1,6 +1,6 @@
 # pwa-mock
 
-Dev-only server for the web PWAs: serves `web/apps/admin/dist` on :4173 and
+Developer tool (`devtools/`, never shipped): a dev-only server for the web PWAs: serves `web/apps/admin/dist` on :4173 and
 `web/apps/public/dist` on :4174 with the production CSP, a CSP report sink, a
 synthetic in-memory boss week and same-origin boss/identity art. The e2e suite
 starts its own copy on :4373/:4374 (:4383/:4384 for real-art captures) and
