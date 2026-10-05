@@ -227,21 +227,8 @@ where
         else {
             return false;
         };
-        let content = if posted.record.kind == DAY_OF_KIND {
-            IntentContent::DayOf {
-                run_ids: posted.run_ids.clone(),
-            }
-        } else {
-            let (Some(minutes), Some(run_id)) = (
-                countdown_minutes(&posted.record.kind),
-                posted.run_ids.first(),
-            ) else {
-                return false;
-            };
-            IntentContent::Countdown {
-                run_id: run_id.clone(),
-                minutes,
-            }
+        let Some(content) = posted_content(posted) else {
+            return false;
         };
         let ctx = self.context(schedule);
         // A test card keeps its `test` audience and prefix (v4 `_rebuild_test_card`).
@@ -251,7 +238,7 @@ where
                 None => return false,
             }
         } else {
-            self.mentioned(&ctx, &content)
+            posted_mentions(&ctx, &content)
         };
         let Some(mut card) =
             cards::build(&content, &ctx, posted.record.heading.as_deref(), &mentioned)
@@ -268,40 +255,54 @@ where
             .await
             .is_delivered()
     }
+}
 
-    /// Who the card names as a mention, planned as dispatch plans it, so an
-    /// edit reads like a fresh post (it notifies nobody either way).
-    fn mentioned(&self, ctx: &CardContext<'_>, content: &IntentContent) -> Vec<String> {
-        if ctx.quiet {
-            return Vec::new();
+/// What a posted card shows: its record's kind over the runs it was posted
+/// for (its card→run rows), never the runs' current grouping.
+pub fn posted_content(posted: &PostedCard) -> Option<IntentContent> {
+    if posted.record.kind == DAY_OF_KIND {
+        return Some(IntentContent::DayOf {
+            run_ids: posted.run_ids.clone(),
+        });
+    }
+    Some(IntentContent::Countdown {
+        run_id: posted.run_ids.first()?.clone(),
+        minutes: countdown_minutes(&posted.record.kind)?,
+    })
+}
+
+/// Who the card names as a mention, planned as dispatch plans it, so an
+/// edit reads like a fresh post (it notifies nobody either way).
+pub fn posted_mentions(ctx: &CardContext<'_>, content: &IntentContent) -> Vec<String> {
+    if ctx.quiet {
+        return Vec::new();
+    }
+    let members: &dyn Directory = ctx.members;
+    match content {
+        IntentContent::DayOf { run_ids } => {
+            let runs = cards::card_runs(ctx, run_ids);
+            let candidates = match ctx.attendance.mode {
+                AttendanceMode::V4Compat => {
+                    everyone_on(runs.iter().map(|run| run.participants.as_slice()))
+                }
+                AttendanceMode::V5 => {
+                    let unknown: Vec<Vec<String>> = runs
+                        .iter()
+                        .map(|run| morning_mentions(&ctx.states(run)))
+                        .collect();
+                    everyone_on(unknown.iter().map(Vec::as_slice))
+                }
+            };
+            resolve_mentions(members, &candidates, &PingKind::DayOf)
         }
-        let members: &dyn Directory = &*self.members;
-        match content {
-            IntentContent::DayOf { run_ids } => {
-                let runs = cards::card_runs(ctx, run_ids);
-                let candidates = match ctx.attendance.mode {
-                    AttendanceMode::V4Compat => {
-                        everyone_on(runs.iter().map(|run| run.participants.as_slice()))
-                    }
-                    AttendanceMode::V5 => {
-                        let unknown: Vec<Vec<String>> = runs
-                            .iter()
-                            .map(|run| morning_mentions(&ctx.states(run)))
-                            .collect();
-                        everyone_on(unknown.iter().map(Vec::as_slice))
-                    }
-                };
-                resolve_mentions(members, &candidates, &PingKind::DayOf)
-            }
-            IntentContent::Countdown { run_id, .. } => match ctx.run(run_id) {
-                Some(run) => resolve_mentions(
-                    members,
-                    &countdown_mentions(&ctx.states(run)),
-                    &PingKind::Countdown,
-                ),
-                None => Vec::new(),
-            },
-            _ => Vec::new(),
-        }
+        IntentContent::Countdown { run_id, .. } => match ctx.run(run_id) {
+            Some(run) => resolve_mentions(
+                members,
+                &countdown_mentions(&ctx.states(run)),
+                &PingKind::Countdown,
+            ),
+            None => Vec::new(),
+        },
+        _ => Vec::new(),
     }
 }

@@ -876,7 +876,8 @@ impl Store {
     }
 
     pub fn checkpoints(&self) -> Value {
-        const SCHEMA_VERSION: i64 = 21;
+        // The server's store schema (migration 0025).
+        const SCHEMA_VERSION: i64 = 25;
         let at = |seq: u64| {
             self.history
                 .get(seq as usize)
@@ -886,12 +887,20 @@ impl Store {
         let backup = |seq: u64, anchor: &str| {
             at(seq).map(|(revision, hash, when)| {
                 let (hash, schema) = match anchor {
-                    "mismatch" => ("0".repeat(64), SCHEMA_VERSION),
+                    // A head from a forked history: plausible, never in this chain.
+                    "mismatch" => (hash.chars().rev().collect(), SCHEMA_VERSION),
                     "older_schema" => (hash, SCHEMA_VERSION - 1),
                     _ => (hash, SCHEMA_VERSION),
                 };
+                // As the deploy runbook names snapshots: kanade-<stamp>-pre-<sha>.sqlite.
+                let stamp: String = when[..16].chars().filter(char::is_ascii_digit).collect();
+                let sha = match anchor {
+                    "mismatch" => "a59bc67",
+                    "older_schema" => "630803c",
+                    _ => "8c30b19",
+                };
                 json!({
-                    "file": format!("kanade-{}-{anchor}.sqlite", &when[..10]),
+                    "file": format!("kanade-{}-{}-pre-{sha}.sqlite", &stamp[..8], &stamp[8..]),
                     "format": "kanade.backup.v1",
                     "created_at": when,
                     "history_head": { "seq": seq, "hash": hash },
@@ -911,7 +920,7 @@ impl Store {
         .flatten()
         .collect();
         json!({
-            "verified": { "ok": true, "checked": self.history.len(), "head": self.head() },
+            "verified": { "ok": true, "checked": self.history.len(), "head": self.head(), "first_broken": null },
             "backup_dir_configured": true,
             "backups": backups,
         })

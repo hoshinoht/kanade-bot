@@ -15,7 +15,10 @@ use twilight_model::id::{Id, marker::UserMarker};
 
 use super::auth::Clock;
 use crate::{
-    bot::commands::{AccessPolicy, Invoker},
+    bot::{
+        commands::{AccessPolicy, Invoker},
+        delivery::cards::{CardRecord, PostedCard, ReminderCardStore},
+    },
     domain::{
         catalog::BossTable,
         drafts::{
@@ -159,6 +162,11 @@ pub trait ReadStore: Send + Sync {
     /// Record a History entry that writes no settings row (a Limits window
     /// clear, section `limits`); returns its id.
     fn record_settings_change(&self, change: SettingsChange) -> ReadFuture<'_, u64>;
+    /// The stored reminder card record (heading) under a send's native
+    /// dedupe key; read only.
+    fn card_record(&self, dedupe_key: String) -> ReadFuture<'_, Option<CardRecord>>;
+    /// The bound reminder cards naming `run_id` (and their records); read only.
+    fn posted_cards(&self, run_id: String) -> ReadFuture<'_, Vec<PostedCard>>;
 }
 
 /// A closed Inbox item: a proposal (with its stored facts) or a member
@@ -189,6 +197,7 @@ where
         + ModelLogStore
         + DeliveryJournal
         + SettingsStore
+        + ReminderCardStore
         + Send
         + Sync,
 {
@@ -439,6 +448,14 @@ where
 
     fn record_settings_change(&self, change: SettingsChange) -> ReadFuture<'_, u64> {
         Box::pin(self.put_settings_rows_recorded(Vec::new(), change))
+    }
+
+    fn card_record(&self, dedupe_key: String) -> ReadFuture<'_, Option<CardRecord>> {
+        Box::pin(async move { ReminderCardStore::card_record(self, &dedupe_key).await })
+    }
+
+    fn posted_cards(&self, run_id: String) -> ReadFuture<'_, Vec<PostedCard>> {
+        Box::pin(async move { ReminderCardStore::posted_cards(self, &run_id).await })
     }
 }
 

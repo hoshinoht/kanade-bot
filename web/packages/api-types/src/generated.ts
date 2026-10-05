@@ -154,9 +154,54 @@ export type ValidateResult = { bosses: Array<Boss>, };
  */
 export type ReminderState = "queued" | "due" | "sent" | "stale";
 
-export type ReminderRow = { id: string, run_id: string, run_short_id: string, kind: CardKind, state: ReminderState, at: string, bosses: Array<Boss>, party: Array<string>, url: string | null, };
+export type ReminderRow = { id: string, run_id: string, run_short_id: string, kind: CardKind, state: ReminderState, 
+/**
+ * The guild wall-clock label ("Tue 29 Sep 21:00").
+ */
+at: string, 
+/**
+ * The exact fire instant (ISO, UTC), for "In" on the server clock.
+ */
+fire_at: string, bosses: Array<Boss>, party: Array<string>, url: string | null, };
 
-export type Reminders = { upcoming: Array<ReminderRow>, sent: Array<ReminderRow>, };
+export type Reminders = { upcoming: Array<ReminderRow>, sent: Array<ReminderRow>, 
+/**
+ * The server's now when this was read: relative times count from it,
+ * never from the browser's clock.
+ */
+generated_at: string, };
+
+/**
+ * One embed field of a previewed card.
+ */
+export type CardField = { name: string, value: string, };
+
+/**
+ * A reminder card as the bot posts it: the message text (mentions as
+ * `<@id>`) and its one embed. Art is a same-origin `/art/` URL.
+ */
+export type CardPreview = { content: string, 
+/**
+ * `#rrggbb`, the embed's colour bar.
+ */
+color: string, description: string | null, fields: Array<CardField>, footer: string | null, thumbnail: string | null, image: string | null, 
+/**
+ * The heading line stored for this card (posted or prepared to post);
+ * `false` while it is the seed line the bot may reword when it posts.
+ */
+heading_final: boolean, };
+
+/**
+ * `GET /api/admin/reminders/{id}/preview`: the row and its card; `card` is
+ * null for a reminder that posts none (cancelled run, unknown kind), one
+ * retired without posting, and a card posted before records were kept.
+ */
+export type ReminderPreview = { reminder: ReminderRow, card: CardPreview | null, 
+/**
+ * The run has started (for a posted card, every run it names): it is no
+ * longer edited, so Discord keeps its last edit from before then.
+ */
+run_started: boolean, generated_at: string, };
 
 export type DifficultyOption = { letter: Difficulty, name: string, token: string, in_use: boolean, };
 
@@ -873,7 +918,11 @@ export type BackupRow = { file: string, format: 'kanade.backup.v1', created_at: 
  */
 anchored: boolean, anchor: BackupAnchor, };
 
-export type Verified = { ok: boolean, checked: number, head: ChainHead, };
+export type Verified = { ok: boolean, checked: number, head: ChainHead, 
+/**
+ * The first record that breaks the chain; null while it is intact.
+ */
+first_broken: number | null, };
 
 export type Checkpoints = { verified: Verified, 
 /**

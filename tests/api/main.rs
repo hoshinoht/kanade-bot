@@ -17,6 +17,7 @@ mod origins;
 mod outbox;
 mod proxy;
 mod reads;
+mod reminders;
 mod schemas;
 mod support;
 mod tonight;

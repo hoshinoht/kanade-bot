@@ -1,5 +1,6 @@
+import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, PINNED_NOW, test, choose, optionLabels } from './support';
+import { ADMIN, expect, PINNED_NOW, settle, test, choose, optionLabels } from './support';
 
 type Row = { id: string; party: string[]; kind: string; at: string };
 
@@ -126,4 +127,84 @@ test('reminder rows highlight across every cell on hover', async ({ page }) => {
   // The row reaches the table's edges: the highlight cannot stop short.
   const [tr, table] = await Promise.all([row.boundingBox(), row.locator('xpath=ancestor::table').boundingBox()]);
   expect(Math.abs(tr!.width - table!.width)).toBeLessThan(2);
+});
+
+test('reminders: In follows the server clock, not a skewed browser clock', async ({ page }) => {
+  // Four days ahead of the server: the browser's own now must not matter.
+  await page.clock.setFixedTime('2026-10-03T08:30:00Z');
+  await page.goto(`${ADMIN}/reminders?sw=off`);
+  const first = queuedRows(page).first();
+  await expect(first.getByRole('cell').nth(1)).toHaveText('9 h');
+  await expect(groupRows(page).first()).toHaveText(/^Tue 29 Sep · today\s*\d+$/);
+  await expect(page.locator('footer', { hasText: 'shown' })).toContainText(/Next\s*in 9 h/);
+});
+
+test('reminders: a row opens its Discord card beside the list; Escape closes it and focus returns', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/reminders?sw=off`);
+  const row = queuedRows(page).first();
+  const open = row.locator('.reminder__open');
+  await open.click();
+  await expect(row).toHaveClass(/reminder--active/);
+  await expect(open).toHaveAttribute('aria-current', 'true');
+  const pane = page.locator('aside.side-pane--reminder');
+  await expect(pane).toBeVisible();
+  const card = pane.getByRole('article', { name: 'The card as posted in Discord' });
+  await expect(card).toBeVisible();
+  await expect(card.locator('.dcard__author')).toContainText('APP');
+  const embed = card.locator('.dcard__embed');
+  await expect(embed).toBeVisible();
+  // The colour bar comes through CSSOM, not a style attribute.
+  expect(await embed.evaluate((el) => getComputedStyle(el).borderLeftWidth)).toBe('4px');
+  await expect(pane.locator('.reminder-pane__note')).toContainText('nobody is pinged');
+  // Mentions read as names.
+  await expect(card.locator('.dcard__content')).not.toContainText('<@');
+  // Only the list and the pane scroll; the document does not.
+  expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1)).toBe(true);
+  await settle(page);
+  const axe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
+  expect(axe.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => `${v.id} ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
+
+  await page.keyboard.press('Escape');
+  await expect(pane).toBeHidden();
+  await expect(open).toBeFocused();
+});
+
+test('reminders: a sent card links to its message', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/reminders?sw=off`);
+  await page.getByRole('tab', { name: /^Sent/ }).click();
+  const sent = page.getByRole('table', { name: 'Sent reminders' });
+  const read = page.waitForResponse(/\/api\/admin\/reminders\/[^/]+\/preview$/);
+  await sent.locator('tbody tr:has(td)').first().locator('td.reminders-table__kind').click();
+  const { run_started } = (await (await read).json()) as { run_started: boolean };
+  const pane = page.locator('aside.side-pane--reminder');
+  await expect(pane.getByRole('article', { name: 'The card as posted in Discord' })).toBeVisible();
+  await expect(pane.getByRole('link', { name: 'Open in Discord' })).toHaveAttribute('href', /^https:\/\/discord\.com\/channels\//);
+  // A started run's card is no longer edited: the note says so.
+  await expect(pane.locator('.reminder-pane__note')).toContainText(
+    run_started ? 'Discord keeps the last edit from before the run started' : 'As it reads in Discord now',
+  );
+});
+
+test('reminders: on a phone the card opens as a sheet', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${ADMIN}/reminders?sw=off`);
+  const open = queuedRows(page).first().locator('.reminder__open');
+  await open.click();
+  const sheet = page.getByRole('dialog');
+  await expect(sheet.getByRole('article', { name: 'The card as posted in Discord' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(sheet).toBeHidden();
+  await expect(open).toBeFocused();
+});
+
+test('reminders: a reminder retired without posting has no card', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/reminders?sw=off`);
+  await page.getByRole('tab', { name: /^Stale & other/ }).click();
+  await page.getByRole('table', { name: 'Stale and other reminders' }).locator('.reminder__open').first().click();
+  const pane = page.locator('aside.side-pane--reminder');
+  await expect(pane).toContainText('Retired without posting: no card was sent');
+  await expect(pane.getByRole('article')).toHaveCount(0);
 });

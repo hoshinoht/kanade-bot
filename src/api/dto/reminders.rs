@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 use super::{
-    Boss,
+    Boss, iso_instant,
     week::{CardKind, CardState, Context, card_label, card_state, message_url},
     when,
 };
@@ -31,7 +31,10 @@ pub struct ReminderRow {
     pub run_short_id: String,
     pub kind: CardKind,
     pub state: ReminderState,
+    /// The guild wall-clock label ("Tue 29 Sep 21:00").
     pub at: String,
+    /// The exact fire instant (ISO, UTC), for "In" on the server clock.
+    pub fire_at: String,
     pub bosses: Vec<Boss>,
     pub party: Vec<String>,
     pub url: Option<String>,
@@ -42,6 +45,49 @@ pub struct ReminderRow {
 pub struct Reminders {
     pub upcoming: Vec<ReminderRow>,
     pub sent: Vec<ReminderRow>,
+    /// The server's now when this was read: relative times count from it,
+    /// never from the browser's clock.
+    pub generated_at: String,
+}
+
+/// One embed field of a previewed card.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct CardField {
+    pub name: String,
+    pub value: String,
+}
+
+/// A reminder card as the bot posts it: the message text (mentions as
+/// `<@id>`) and its one embed. Art is a same-origin `/art/` URL.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct CardPreview {
+    pub content: String,
+    /// `#rrggbb`, the embed's colour bar.
+    pub color: String,
+    pub description: Option<String>,
+    pub fields: Vec<CardField>,
+    pub footer: Option<String>,
+    pub thumbnail: Option<String>,
+    pub image: Option<String>,
+    /// The heading line stored for this card (posted or prepared to post);
+    /// `false` while it is the seed line the bot may reword when it posts.
+    pub heading_final: bool,
+}
+
+/// `GET /api/admin/reminders/{id}/preview`: the row and its card; `card` is
+/// null for a reminder that posts none (cancelled run, unknown kind), one
+/// retired without posting, and a card posted before records were kept.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct ReminderPreview {
+    pub reminder: ReminderRow,
+    pub card: Option<CardPreview>,
+    /// The run has started (for a posted card, every run it names): it is no
+    /// longer edited, so Discord keeps its last edit from before then.
+    pub run_started: bool,
+    pub generated_at: String,
 }
 
 /// Upcoming (queued, or due and not yet posted) soonest first; sent and stale newest first.
@@ -49,19 +95,7 @@ pub fn reminders(ctx: &Context<'_>, snapshot: &ScheduleSnapshot) -> Reminders {
     let mut upcoming = Vec::new();
     let mut sent = Vec::new();
     for (reminder, run, kind, state) in classified(ctx, snapshot) {
-        let row = ReminderRow {
-            id: reminder.id.clone(),
-            run_id: run.id.clone(),
-            run_short_id: short_id(&run.id),
-            kind,
-            state,
-            at: when(reminder.fire_at, ctx.zone),
-            bosses: ctx.bosses(&run.bosses),
-            party: run.participants.iter().map(|id| ctx.name(id)).collect(),
-            url: (state == ReminderState::Sent)
-                .then(|| message_url(ctx, run, reminder))
-                .flatten(),
-        };
+        let row = row(ctx, reminder, run, kind, state);
         let key = (reminder.fire_at, reminder.id.clone());
         if is_upcoming(&state) {
             upcoming.push((key, row));
@@ -74,6 +108,30 @@ pub fn reminders(ctx: &Context<'_>, snapshot: &ScheduleSnapshot) -> Reminders {
     Reminders {
         upcoming: upcoming.into_iter().map(|(_, row)| row).collect(),
         sent: sent.into_iter().map(|(_, row)| row).collect(),
+        generated_at: iso_instant(ctx.now),
+    }
+}
+
+pub fn row(
+    ctx: &Context<'_>,
+    reminder: &Reminder,
+    run: &Run,
+    kind: CardKind,
+    state: ReminderState,
+) -> ReminderRow {
+    ReminderRow {
+        id: reminder.id.clone(),
+        run_id: run.id.clone(),
+        run_short_id: short_id(&run.id),
+        kind,
+        state,
+        at: when(reminder.fire_at, ctx.zone),
+        fire_at: iso_instant(reminder.fire_at),
+        bosses: ctx.bosses(&run.bosses),
+        party: run.participants.iter().map(|id| ctx.name(id)).collect(),
+        url: (state == ReminderState::Sent)
+            .then(|| message_url(ctx, run, reminder))
+            .flatten(),
     }
 }
 
@@ -89,7 +147,7 @@ pub(super) fn is_upcoming(state: &ReminderState) -> bool {
 }
 
 /// Each listable reminder with its run, card label and row state.
-pub(super) fn classified<'s>(
+pub fn classified<'s>(
     ctx: &Context<'_>,
     snapshot: &'s ScheduleSnapshot,
 ) -> impl Iterator<Item = (&'s Reminder, &'s Run, CardKind, ReminderState)> {

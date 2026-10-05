@@ -181,6 +181,8 @@ pub struct Verified {
     pub ok: bool,
     pub checked: u64,
     pub head: ChainHead,
+    /// The first record that breaks the chain; null while it is intact.
+    pub first_broken: Option<u64>,
 }
 
 #[derive(Serialize)]

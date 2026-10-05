@@ -6,6 +6,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Admin: a Reminders row opens its Discord card preview (side pane, or a sheet on phones) through a read-only `GET /api/admin/reminders/{id}/preview`. Unsent cards are built as the delivery tick will post them; posted cards as the refresh worker edits them, from the runs they were posted for and with their stored heading. Stale rows show no card.
+- Admin: History → Checkpoints names the first bad record when the chain check fails (`Verified.first_broken`), and its populated backups view is covered end to end.
 - Admin: Discord links (Inbox evidence and cards, run sheet cards, sent reminders, last digest, chat cards) open in the Discord app via `discord://` by default; turn off "Open Discord links in the app" on Account to keep https links on that device.
 - Admin pages update live: `GET /api/admin/events` sends change hints over SSE (schedule, inbox, chat, extraction, delivery, settings, rescan, members), fed by the store's write hook. Pages re-read in place and apply only newer data; untouched Config forms follow saved changes while edits in progress are kept. Polling slows to 60 s while the stream is open and returns to 15 s when it drops; hidden tabs close the stream, and a stream never extends the session's idle time.
 - Admin: member and admin portraits. Discord avatars are cached by image
@@ -280,6 +282,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- Admin: Reminders "In", "today" and "Next in" follow the server clock (`generated_at`, `fire_at`), not the browser's.
 - Admin: Re-read buttons on the Week board, run pane and sheet, Extractions
   and Config → Re-read are off with the server's reason shown before any
   press while extraction is switched off, or when the server runs no

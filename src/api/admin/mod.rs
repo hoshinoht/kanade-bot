@@ -13,6 +13,7 @@ mod inbox;
 pub mod limits;
 mod logs;
 mod read;
+mod reminders;
 mod tonight;
 mod write;
 
@@ -41,6 +42,7 @@ pub fn routes() -> Router<Arc<Site>> {
         .merge(avatars::routes())
         .merge(tonight::routes())
         .merge(read::routes())
+        .merge(reminders::routes())
         .merge(write::routes())
         .merge(history::routes())
         .merge(inbox::routes())

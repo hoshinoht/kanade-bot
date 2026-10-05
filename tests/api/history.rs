@@ -391,8 +391,29 @@ async fn checkpoints_report_the_verified_chain() {
     assert_eq!(checkpoints["verified"]["ok"], true);
     assert_eq!(checkpoints["verified"]["checked"], 3, "genesis, seed, move");
     assert_eq!(checkpoints["verified"]["head"]["seq"], 2);
+    assert_eq!(checkpoints["verified"]["first_broken"], json!(null));
     assert_eq!(checkpoints["backup_dir_configured"], true);
     assert_eq!(checkpoints["backups"], json!([]));
+
+    // A record edited behind the API (triggers dropped) names the first break.
+    let mut conn = sqlx::sqlite::SqliteConnectOptions::new()
+        .filename(&reads.db_path)
+        .connect()
+        .await
+        .unwrap();
+    sqlx::raw_sql(
+        "DROP TRIGGER change_log_no_update;
+         UPDATE change_log SET actor_id = 'impostor' WHERE seq = 1;",
+    )
+    .execute(&mut conn)
+    .await
+    .unwrap();
+    sqlx::Connection::close(conn).await.unwrap();
+    let broken = reads
+        .read("/api/admin/history/checkpoints", CHECKPOINTS)
+        .await;
+    assert_eq!(broken["verified"]["ok"], false);
+    assert_eq!(broken["verified"]["first_broken"], 1);
 }
 
 const CHECKPOINTS: &str = "history.json#/$defs/Checkpoints";

@@ -515,6 +515,11 @@ async fn seed(store: &SqliteStore, reset: NaiveTime) {
 }
 
 impl Reads {
+    /// The seeded boss catalog.
+    pub fn catalog(&self) -> BossTable {
+        catalog()
+    }
+
     pub async fn new() -> Self {
         Self::with_reset(NaiveTime::MIN).await
     }

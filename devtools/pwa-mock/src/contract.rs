@@ -439,11 +439,35 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         );
     }
     assert!(knowledge > 0, "no knowledge page validated");
-    h.ok(
+    let reminders = h
+        .ok(
+            "GET",
+            "/api/admin/reminders",
+            None,
+            "reminders.json#/$defs/Reminders",
+        )
+        .await;
+    // Every row's card preview, queued and sent.
+    for list in ["upcoming", "sent"] {
+        for row in reminders[list].as_array().unwrap() {
+            let preview = h
+                .ok(
+                    "GET",
+                    &format!("/api/admin/reminders/{}/preview", s(&row["id"])),
+                    None,
+                    "reminders.json#/$defs/ReminderPreview",
+                )
+                .await;
+            assert_eq!(preview["reminder"]["id"], row["id"]);
+        }
+    }
+    h.expect(
+        false,
         "GET",
-        "/api/admin/reminders",
+        "/api/admin/reminders/nope/preview",
         None,
-        "reminders.json#/$defs/Reminders",
+        StatusCode::NOT_FOUND,
+        "",
     )
     .await;
     h.ok(

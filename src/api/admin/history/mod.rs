@@ -231,6 +231,7 @@ async fn checkpoints(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
             ok: verification.is_intact(),
             checked: verification.records,
             head: (&head).into(),
+            first_broken: verification.first_broken.map(|broken| broken.seq),
         },
         backup_dir_configured: state.backups.dir.is_some(),
         backups: listed,

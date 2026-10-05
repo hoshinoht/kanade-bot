@@ -35,7 +35,7 @@
     if (checkpoints.error || !data) return;
     checkedAt = now = Date.now();
     const v = data.verified;
-    message = v.ok ? `Chain verified: ${records(v.checked)}, head #${v.head.seq}.` : `Chain check failed: the history no longer matches its hash chain.`;
+    message = v.ok ? `Chain verified: ${records(v.checked)}, head #${v.head.seq}.` : `Chain check failed: the history no longer matches its hash chain${brokenAt(v.first_broken)}.`;
   }
 
   onMount(() => {
@@ -44,6 +44,8 @@
     return () => clearInterval(id);
   });
 
+  // Older servers send no `first_broken`; then the failure names no record.
+  const brokenAt = (seq: number | null | undefined) => (seq === null || seq === undefined ? '' : ` from record #${seq}`);
   const records = (n: number) => `${n.toLocaleString('en')} record${n === 1 ? '' : 's'}`;
   const short = (hash: string) => hash.slice(0, 12);
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -65,7 +67,7 @@
       <p class="history-verify__text">
         <strong>{v.ok ? 'Chain verified' : 'Chain check failed'}</strong>
         <span>
-          {#if !v.ok}The history no longer matches its hash chain ·{/if}
+          {#if !v.ok}The history no longer matches its hash chain{brokenAt(v.first_broken)} ·{/if}
           {records(v.checked)} · head <span class="mono">#{v.head.seq} · {short(v.head.hash)}</span>
           {#if checked}· checked {checked}{/if}
         </span>

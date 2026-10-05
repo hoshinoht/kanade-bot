@@ -213,6 +213,10 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         .route("/api/admin/history/revert-actor", post(api::revert_actor))
         .route("/api/admin/history/{seq}", get(api::history_record))
         .route("/api/admin/reminders", get(api::reminders))
+        .route(
+            "/api/admin/reminders/{id}/preview",
+            get(api::reminder_preview),
+        )
         .route("/api/admin/runs/{id}/reset", post(api::reset_run))
         .route("/api/admin/channels", get(api::channels))
         .route("/api/admin/roles", get(api::roles))

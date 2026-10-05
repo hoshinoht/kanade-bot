@@ -969,20 +969,21 @@ test('history checkpoints: empty states without backups, and no timeline filters
 });
 
 // B_HistoryCk: a failed check turns the card to the risk wash and says so in
-// words; the API names no first bad record, so neither does the card.
+// words, naming the first bad record the server reports.
 test('history checkpoints: a failed chain check', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.route(/\/api\/admin\/history\/checkpoints$/, async (route) => {
     const response = await route.fetch();
-    const json = (await response.json()) as { verified: { ok: boolean } };
+    const json = (await response.json()) as { verified: { ok: boolean; first_broken: number | null } };
     json.verified.ok = false;
+    json.verified.first_broken = 2;
     await route.fulfill({ response, json });
   });
   await page.goto(`${ADMIN}/history?sw=off`);
   await page.getByRole('tab', { name: 'Checkpoints' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Chain check failed' })).toBeAttached();
   await expect(page.getByText('Chain check failed', { exact: true })).toBeVisible();
-  await expect(page.getByText(/The history no longer matches its hash chain/).first()).toBeVisible();
+  await expect(page.getByText(/The history no longer matches its hash chain from record #2/).first()).toBeVisible();
   await expect(page.locator('.history-verify--risk')).toBeVisible();
 });
 

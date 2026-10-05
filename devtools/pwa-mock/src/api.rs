@@ -177,6 +177,13 @@ pub async fn reminders(State(app): State<App>) -> Response {
     Json(app.store.lock().await.reminders()).into_response()
 }
 
+pub async fn reminder_preview(State(app): State<App>, Path(id): Path<String>) -> Response {
+    match app.store.lock().await.reminder_preview(&id) {
+        Some(preview) => Json(preview).into_response(),
+        None => not_found().await,
+    }
+}
+
 #[derive(Deserialize)]
 pub struct VersionBody {
     version: u64,

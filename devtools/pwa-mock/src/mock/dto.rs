@@ -332,6 +332,8 @@ pub struct ReminderRow {
     pub state: &'static str,
     /// Local `Tue 29 Sep 21:00`.
     pub at: String,
+    /// The exact instant (UTC ISO), as the server's `iso_instant`.
+    pub fire_at: String,
     pub bosses: Vec<Boss>,
     pub party: Vec<&'static str>,
     pub url: Option<String>,
@@ -341,4 +343,6 @@ pub struct ReminderRow {
 pub struct Reminders {
     pub upcoming: Vec<ReminderRow>,
     pub sent: Vec<ReminderRow>,
+    /// The mock clock's now.
+    pub generated_at: String,
 }

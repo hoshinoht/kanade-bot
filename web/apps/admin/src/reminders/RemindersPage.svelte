@@ -2,7 +2,9 @@
   Reminders (B_Reminders): every card the bot will post or already posted, in
   one window. Title-bar tabs Queued / Sent / Stale & other, the search and
   "Filters (n)"; one day-grouped table per tab, each keeping its own scroll
-  position; the footer names the next card and how many rows are shown.
+  position; the footer names the next card and how many rows are shown. A
+  row opens its card preview beside the list (a sheet below 900 px). Relative
+  times run on the server's clock (`generated_at`), never the browser's.
 -->
 <script lang="ts">
   import '@kanade/ui/styles/reminders.scss';
@@ -10,26 +12,35 @@
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
   import type { ReminderRow, Reminders } from '@kanade/api-types';
-  import { LoadError, LoadingState } from '@kanade/ui';
+  import { LoadError, LoadingState, Presence, TWO_PANE_QUERY } from '@kanade/ui';
+  import { artUrl } from '../shared/identity';
+  import ReminderPane from './ReminderPane.svelte';
   import { Resource } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
   import ReminderFilters, { NO_FILTER, type ReminderFilter } from './ReminderFilters.svelte';
   import ReminderTable from './ReminderTable.svelte';
-  import { dayOf, span } from './when';
+  import { dayOf, serverNow, span } from './when';
 
   let { store, run = '' }: { store?: AdminWeek; run?: string } = $props();
 
   const reminders = new Resource<Reminders>('/api/admin/reminders', { topics: ['schedule', 'delivery'] });
   $effect(() => reminders.watch());
 
-  // Relative times read the guild's wall clock against now, refreshed each half minute.
+  // Relative times: the server's now when the list arrived, advanced by
+  // monotonic time (never the browser's wall clock), refreshed each half minute.
   const chrome = getChrome();
-  const zone = $derived(chrome?.timezone || undefined);
-  let now = $state(new Date());
+  const zone = $derived(chrome?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone);
+  let receivedAt = $state(performance.now());
+  let monotonic = $state(performance.now());
   $effect(() => {
-    const id = setInterval(() => (now = new Date()), 30_000);
+    if (reminders.data) receivedAt = monotonic = performance.now();
+  });
+  $effect(() => {
+    const id = setInterval(() => (monotonic = performance.now()), 30_000);
     return () => clearInterval(id);
   });
+  const now = $derived(reminders.data ? serverNow(reminders.data.generated_at, receivedAt, monotonic) : null);
+
 
   let query = $state('');
   const q = $derived(query.trim().toLowerCase());
@@ -76,6 +87,33 @@
   const narrowed = $derived(Boolean(q || Object.values(filter).some(Boolean)));
   const next = $derived(lists.queued.find((r) => r.state === 'queued' && (!run || r.run_id === run)) ?? null);
   const runLabel = $derived(run ? (all.find((r) => r.run_id === run)?.run_short_id ?? run) : '');
+
+  // The card preview: a side pane from 900 px, a sheet below; focus goes back to the row.
+  let openId = $state<string | null>(null);
+  let wide = $state(false);
+  $effect(() => {
+    const query = window.matchMedia(TWO_PANE_QUERY);
+    const update = () => (wide = query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  });
+  const opened = $derived(openId ? (all.find((r) => r.id === openId) ?? null) : null);
+  const pane = new Presence<ReminderRow>();
+  $effect(() => pane.set(opened));
+  let restore = '';
+  function open(row: ReminderRow) {
+    restore = row.id;
+    openId = row.id;
+  }
+  function close() {
+    openId = null;
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLButtonElement>(`[data-reminder="${CSS.escape(restore)}"] .reminder__open`)?.focus({ preventScroll: true }),
+    );
+  }
+  const bot = $derived(store?.identity?.name ?? 'Kanade');
+  const avatar = $derived(store?.identity ? artUrl(store.identity.avatar, store.identity) : null);
 
   // Each tab keeps its own scroll position.
   let scroller = $state<HTMLDivElement>();
@@ -138,6 +176,7 @@
       <ReminderFilters bind:filter {kinds} {runs} {people} {days} />
     </div>
   </div>
+  <div class="reminders-window__body">
   <div
     class="reminders-window__list"
     data-fid="reminders-list"
@@ -151,7 +190,7 @@
       <LoadError thing="reminders" reason={reminders.error} onretry={() => void reminders.load()} />
     {:else if reminders.data}
       {#if shown.length}
-        <ReminderTable rows={shown} {tab} caption={current.caption} {now} {zone} />
+        <ReminderTable rows={shown} {tab} caption={current.caption} {now} {zone} active={openId} onopen={open} />
       {:else}
         <p class="empty">{current.empty}{narrowed ? ' that matches' : ''}.</p>
       {/if}
@@ -159,9 +198,13 @@
       <LoadingState text="Loading reminders…" />
     {/if}
   </div>
+  {#if pane.shown}
+    <ReminderPane {wide} row={opened ?? pane.shown} {bot} {avatar} onclose={close} leaving={pane.leaving} onleft={(event) => pane.done(event)} />
+  {/if}
+  </div>
   <footer class="reminders-window__foot" data-fid="reminders-foot">
     {#if next}
-      <span class="cap">Next</span><b class="mono reminders-window__next">in {span(next.at, now, zone)}</b><span>{next.kind} · {next.bosses.map((b) => b.token).join(' + ')}</span>
+      <span class="cap">Next</span><b class="mono reminders-window__next">in {now === null ? '' : span(next.fire_at, now, zone)}</b><span>{next.kind} · {next.bosses.map((b) => b.token).join(' + ')}</span>
     {:else if reminders.data}
       <span>Nothing queued</span>
     {/if}

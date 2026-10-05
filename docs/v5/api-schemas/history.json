@@ -161,11 +161,15 @@
         "verified": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["ok", "checked", "head"],
+          "required": ["ok", "checked", "head", "first_broken"],
           "properties": {
             "ok": { "type": "boolean" },
             "checked": { "type": "integer", "minimum": 0 },
-            "head": { "$ref": "common.json#/$defs/Head" }
+            "head": { "$ref": "common.json#/$defs/Head" },
+            "first_broken": {
+              "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }],
+              "description": "The seq of the first record that breaks the chain; null while it is intact."
+            }
           }
         },
         "backup_dir_configured": {

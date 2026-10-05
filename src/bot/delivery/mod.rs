@@ -13,6 +13,7 @@ mod executor;
 mod notice_text;
 mod notices;
 mod ports;
+pub mod preview;
 mod refresh;
 mod render;
 mod tick;
