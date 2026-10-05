@@ -13,9 +13,9 @@ for commands, configuration, and unavailable product capabilities.
 ## v4 rollback
 
 Operators with a local `legacy/python/` (restore it with
-`git archive 487c4ed legacy/python | tar -x`) run its commands from there; see
-[`docs/v5/legacy-relocation.md`](docs/v5/legacy-relocation.md) for rollback
-mount requirements. v5 container files live in the root `deploy/` directory.
+`git archive 487c4ed legacy/python | tar -x`) run its commands from there.
+v5 container files live in the root `deploy/` directory; the deploy runbook is
+[`deploy/README.md`](deploy/README.md).
 
 ## License
 

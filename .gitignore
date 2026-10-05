@@ -69,3 +69,11 @@ tools/pwa-mock/target/
 
 # Frozen v4 rollback tree: local only, never tracked again (in git history up to 487c4ed).
 /legacy/python/
+
+# docs/v5: only the setup guides and the test data (frozen vectors, API
+# schemas) are public; contracts, design specs and evaluations stay local.
+/docs/v5/*
+!/docs/v5/runtime-bootstrap.md
+!/docs/v5/v4-import.md
+!/docs/v5/vectors/
+!/docs/v5/api-schemas/

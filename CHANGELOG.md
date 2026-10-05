@@ -247,6 +247,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- `docs/v5/` now publishes only the setup guides (`runtime-bootstrap.md`,
+  `v4-import.md`) and the test data (`vectors/`, `api-schemas/`); contracts,
+  design specs and evaluations are git-ignored and kept locally.
 - The frozen v4 rollback tree `legacy/python/` is no longer tracked (git-ignored,
   kept locally; in history up to `487c4ed`): CI drops the Python and v4 image
   jobs, the legacy-only git hooks are removed, and the boss-knowledge
