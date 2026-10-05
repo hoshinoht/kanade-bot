@@ -87,8 +87,8 @@ export interface DifficultyFacts {
   pdr_percent?: number;
   party_max?: number;
   force?: { kind: 'arcane' | 'sacred'; value: number };
-  /** `count`: copies at this HP (e.g. three Perils). */
-  hp?: { phase: string; value: string; count?: number }[];
+  /** `count`: copies at this HP (e.g. three Perils); `target`: whose HP it is when a phase is split. */
+  hp?: { phase: string; value: string; count?: number; target?: string }[];
   /** `value`: a short tile figure (`≈ 86k`); `basis`: where it comes from. */
   recommended_spec?: { kind: string; text: string; value?: string; basis?: string };
   notes?: GuideItem[];
@@ -100,6 +100,12 @@ export type GuideItem = string | { title: string; text: string; detail?: string 
 
 export interface GuidePhase {
   name: string;
+  /** Timeline group shared by adjacent phases. */
+  group?: string;
+  /** The group repeats (a clock or alternating states). */
+  cycle?: boolean;
+  tag?: string;
+  tone?: GuideTone;
   items: GuideItem[];
 }
 

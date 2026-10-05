@@ -179,6 +179,8 @@ pub struct Reads {
     pub backup_dir: Option<PathBuf>,
     /// The store's SQLite file, for tests that alter rows behind the API.
     pub db_path: PathBuf,
+    /// `KANADE_KNOWLEDGE_DIR`, re-read per request.
+    pub knowledge_dir: PathBuf,
     _fixture: Fixture,
     _dir: TempDir,
 }
@@ -676,7 +678,7 @@ impl Reads {
                 role_directory_connected,
             )),
             access,
-            knowledge_dir: Some(knowledge),
+            knowledge_dir: Some(knowledge.clone()),
             guild_id: Some("900".into()),
             clock: Arc::new(move || pinned),
             rescans: Some(Arc::new(RescanDesk::new(rescans.clone()))),
@@ -729,6 +731,7 @@ impl Reads {
             digest_posts,
             backup_dir,
             db_path: dir.0.join("kanade.sqlite3"),
+            knowledge_dir: knowledge,
             _fixture: fixture,
             _dir: dir,
         }
@@ -1179,6 +1182,104 @@ async fn bosses_events_and_knowledge() {
             "{path}"
         );
     }
+}
+
+/// An invented document whose `Destiny`/`Champion` difficulty runs a mission.
+fn mission_doc(key: &str, difficulty: &str, series: &str, order: u8) -> String {
+    format!(
+        "boss: {key}
+summary: Invented.
+core: [Invented.]
+danger: [Invented.]
+tips: [Invented.]
+difficulties:
+- name: Hard
+- name: {difficulty}
+  mission: {{series: {series}, order: {order}, title: Invented mission}}
+sources: []
+"
+    )
+}
+
+#[tokio::test]
+async fn knowledge_lists_the_missions_in_the_doc_series_in_order() {
+    let reads = Reads::new().await;
+    let dir = &reads.knowledge_dir;
+    // Only invented documents, so tracked content cannot join a series.
+    for entry in std::fs::read_dir(dir).unwrap().flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.ends_with(".yaml") && !name.starts_with('_') {
+            std::fs::remove_file(entry.path()).unwrap();
+        }
+    }
+    let write = |file: &str, text: &str| std::fs::write(dir.join(file), text).unwrap();
+    write(
+        "maleficstar.yaml",
+        &mission_doc("MaleficStar", "Destiny", "destiny-weapon", 2),
+    );
+    write(
+        "kalos.yaml",
+        &mission_doc("Kalos", "Destiny", "destiny-weapon", 1),
+    );
+    // An event boss, tied on order with MaleficStar: key order breaks the tie.
+    write(
+        "starwyrm.yaml",
+        &format!(
+            "{}event: {{name: Wyrmfall Trials Season 9, availability: Invented.}}\n",
+            mission_doc("StarWyrm", "Destiny", "destiny-weapon", 2)
+        ),
+    );
+    write(
+        "zenith.yaml",
+        &mission_doc("Zenith", "Champion", "union-champion", 1),
+    );
+    write(
+        "quiet.yaml",
+        STAR_WYRM.replace("StarWyrm", "Quiet").as_str(),
+    );
+    // Siblings that never join a list: broken YAML and a misnamed file.
+    write("broken.yaml", "boss: [\n");
+    write(
+        "ghost.yaml",
+        &mission_doc("Phantom", "Destiny", "destiny-weapon", 1),
+    );
+
+    let reads = &reads;
+    let missions = |key: &'static str| async move {
+        let page = reads
+            .read(
+                &format!("/api/admin/bosses/{key}/knowledge"),
+                "bosses.json#/$defs/Knowledge",
+            )
+            .await;
+        page["missions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|stop| {
+                format!(
+                    "{} {} {} {} {}",
+                    stop["series"].as_str().unwrap(),
+                    stop["order"],
+                    stop["key"].as_str().unwrap(),
+                    stop["name"].as_str().unwrap(),
+                    stop["difficulty"].as_str().unwrap()
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let destiny = [
+        "destiny-weapon 1 Kalos Gatekeeper Kalos Destiny",
+        "destiny-weapon 2 MaleficStar Radiant Malefic Star Destiny",
+        "destiny-weapon 2 StarWyrm StarWyrm Destiny",
+    ];
+    assert_eq!(missions("MaleficStar").await, destiny);
+    assert_eq!(missions("StarWyrm").await, destiny);
+    assert_eq!(
+        missions("Zenith").await,
+        ["union-champion 1 Zenith Zenith Champion"]
+    );
+    assert!(missions("Quiet").await.is_empty());
 }
 
 #[tokio::test]

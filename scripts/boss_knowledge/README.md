@@ -31,8 +31,14 @@ uv run --no-project --with pyyaml --with jsonschema scripts/boss_knowledge/valid
   phases are unique, dates are real and not in the future, and difficulties and
   `difficulty_notes` exist in the boss catalog (`--catalog`, default
   `legacy/python/boss/bosses.yaml`). Non-catalog bosses must declare `event`.
-- Anti-copy guard: fails any text value that shares at least `--ngram` (default
-  12) consecutive words with a cached guide, and reports each file's longest
+  Phase names and mechanic titles are unique, a phase `group` covers adjacent
+  phases only and all of them set the same `cycle` (which needs a group), a document has at most one
+  mission per series, and no two bosses share an `order` in a mission series
+  (every boss involved fails). These checks run only on documents that pass the
+  schema, so a malformed document reports its schema errors instead.
+- Anti-copy guard: fails any text value (at any depth, so item titles, text and
+  `detail`, phases, missions and mechanic labels and notes too) that shares at
+  least `--ngram` (default 12) consecutive words with a cached guide, and reports each file's longest
   shared run. It is skipped with a warning when the cache is missing.
 
 Exit status is non-zero if any file fails.

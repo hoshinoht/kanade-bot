@@ -229,6 +229,36 @@ async fn an_explicit_self_schedule_recovers_only_unrecognized_model_mentions() {
     assert_eq!(recognized_member.output, other.output);
 }
 
+/// Every tracked knowledge document renders for the bot, whole and per
+/// difficulty letter, so a content edit can never leave a boss unreadable.
+#[test]
+fn every_tracked_guide_renders_for_every_difficulty() {
+    use std::path::Path;
+
+    use kanade::chat::tools::read::render_guide;
+    use kanade::domain::catalog::BossReference;
+    use kanade::infrastructure::files::{load_catalog, load_knowledge_dir};
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let catalog = load_catalog(&root.join("boss/bosses.yaml")).expect("shipped catalog");
+    let knowledge = load_knowledge_dir(&root.join("boss/knowledge")).expect("knowledge");
+    assert!(!knowledge.keys.is_empty());
+    for key in &knowledge.keys {
+        let (document, researched) = knowledge
+            .guide_source(key)
+            .expect("readable")
+            .expect("tracked document");
+        for difficulty in [None, Some("e"), Some("n"), Some("h"), Some("c"), Some("x")] {
+            let reference = BossReference {
+                short: key.clone(),
+                difficulty: difficulty.map(str::to_owned),
+            };
+            let text = render_guide(&document, &researched, &catalog, &reference);
+            assert!(text.is_some(), "{key} {difficulty:?} is unreadable");
+        }
+    }
+}
+
 /// The live guide over tracked schema v2 knowledge: v4's section shape,
 /// letter-keyed `difficulty_notes` under their difficulty, never sources.
 #[test]

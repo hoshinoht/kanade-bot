@@ -101,7 +101,8 @@ pub struct Knowledge {
     pub in_use: Vec<String>,
     #[cfg_attr(test, ts(type = "KnowledgeDoc"))]
     pub doc: Value,
-    /// Every boss in the series of a mission this doc defines, by `order`.
+    /// Every boss in the series of a mission this doc defines, sorted by
+    /// series, `order` and key; empty when the doc has no mission.
     pub missions: Vec<MissionStop>,
 }
 
@@ -116,6 +117,74 @@ pub struct MissionStop {
     pub name: String,
     #[cfg_attr(test, ts(type = "DifficultyName"))]
     pub difficulty: String,
+}
+
+const SERIES: [&str; 2] = ["destiny-weapon", "union-champion"];
+const DIFFICULTY_NAMES: [&str; 7] = [
+    "Easy", "Normal", "Hard", "Chaos", "Extreme", "Champion", "Destiny",
+];
+
+/// `(series, order, difficulty name)` of each well-formed mission in `doc`;
+/// anything outside the contract's vocabulary is skipped, never an error.
+fn doc_missions(doc: &Value) -> Vec<(&str, u8, &str)> {
+    doc.get("difficulties")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|facts| {
+            let mission = facts.get("mission")?;
+            let series = mission.get("series")?.as_str()?;
+            let order = u8::try_from(mission.get("order")?.as_u64()?).ok()?;
+            let difficulty = facts.get("name")?.as_str()?;
+            (SERIES.contains(&series) && DIFFICULTY_NAMES.contains(&difficulty))
+                .then_some((series, order, difficulty))
+        })
+        .collect()
+}
+
+/// Every boss in `dir` with a mission in a series `doc` has one in, sorted
+/// by series, `order` and key. Sibling documents are re-read per request;
+/// an unreadable one, or one not at its lowercased `boss` stem, is skipped.
+fn mission_stops(dir: &Path, catalog: &BossTable, doc: &Value) -> Vec<MissionStop> {
+    let wanted: Vec<&str> = doc_missions(doc)
+        .into_iter()
+        .map(|(series, ..)| series)
+        .collect();
+    if wanted.is_empty() {
+        return Vec::new();
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut stops: Vec<MissionStop> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().into_string().ok()?;
+            let stem = name
+                .strip_suffix(".yaml")
+                .filter(|_| !name.starts_with('_'))?;
+            let sibling = read_yaml(&entry.path())?;
+            let key = sibling.get("boss")?.as_str()?;
+            (key.to_ascii_lowercase() == stem).then_some(())?;
+            let name = catalog.boss(key).map_or(key, |boss| boss.full());
+            Some(
+                doc_missions(&sibling)
+                    .into_iter()
+                    .filter(|(series, ..)| wanted.contains(series))
+                    .map(|(series, order, difficulty)| MissionStop {
+                        series: series.to_owned(),
+                        order,
+                        key: key.to_owned(),
+                        name: name.to_owned(),
+                        difficulty: difficulty.to_owned(),
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .flatten()
+        .collect();
+    stops.sort_by(|a, b| (&a.series, a.order, &a.key).cmp(&(&b.series, b.order, &b.key)));
+    stops
 }
 
 pub fn knowledge(
@@ -156,9 +225,9 @@ pub fn knowledge(
                     .collect()
             })
             .unwrap_or_default(),
+        missions: mission_stops(dir, catalog, &doc),
         key,
         doc,
-        missions: Vec::new(),
     })
 }
 

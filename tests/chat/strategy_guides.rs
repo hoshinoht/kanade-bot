@@ -154,7 +154,15 @@ impl StrategyGuides for Guides<'_> {
 
 /// Calls `get_boss_strategy` with `args` over the fixture.
 async fn strategy(args: Value) -> Result<String, String> {
+    strategy_with(&[], args).await
+}
+
+/// As [`strategy`], with `extra` `(file, text)` documents added to the fixture.
+async fn strategy_with(extra: &[(&str, &str)], args: Value) -> Result<String, String> {
     let fixture = Fixture::new();
+    for (file, text) in extra {
+        fs::write(fixture.0.join(file), format!("{text}{SOURCE}")).unwrap();
+    }
     let knowledge = load_knowledge_dir(&fixture.0).expect("fixture knowledge");
     let catalog = catalog();
     let guides = Guides {
@@ -331,6 +339,171 @@ async fn catalog_bosses_keep_their_catalog_heading() {
     assert!(!guide.contains("## Strategies"), "{guide}");
     assert!(
         guide.contains("### Hard\n- Entry level: 280\n- Authentic Force: 550"),
+        "{guide}"
+    );
+}
+
+/// An invented document with every new shape (titled items with and without
+/// `detail`, phases beside cross-phase `core`, mechanics, hp `count`, spec
+/// figures and a mission).
+const NEW_SHAPES: &str = "boss: Kalos
+lead: An invented page lead the bot never reads.
+summary: An invented summary the bot reads.
+core:
+- Invented cross-phase rule.
+- title: Shared gauge
+  text: Invented short gauge text.
+  detail: Invented long gauge wording only the bot reads.
+phases:
+- name: Phase 1
+  items:
+  - Invented opener.
+  - title: Orb sweep
+    text: Invented short sweep text.
+- name: Phase 2
+  group: Invented loop
+  cycle: true
+  tag: Invented tag
+  tone: safe
+  items:
+  - title: Floor split
+    text: Invented short split text.
+    detail: Invented long split wording.
+danger:
+- title: Wipe beam
+  text: Invented beam text.
+tips:
+- Invented tip.
+difficulty_notes:
+  x:
+    title: Extreme limit
+    text: Invented short extreme note.
+    detail: Invented long extreme note.
+  n: Invented plain normal note.
+notes:
+- title: Naming
+  text: Invented naming note.
+mechanics:
+- kind: ledger
+  title: Invented gauge ledger
+  rows:
+  - {label: Invented fall, value: '-200', direction: down}
+  - {label: Invented clear, value: '-150', direction: up}
+  - {label: Idle, value: '0'}
+  note: Invented ledger note.
+- kind: zones
+  title: Invented arena
+  zones:
+  - {name: Left, sub: Beam side, tone: risk}
+  - {name: Right, tone: safe}
+  - {name: Centre, sub: Neutral, tone: blue}
+- kind: scale
+  title: Invented HP bands
+  bands:
+  - {label: Early, span: 20, tone: green}
+  - {label: Late, span: 80}
+difficulties:
+- name: Extreme
+  entry_level: 265
+  hp:
+  - {phase: '1', value: '100.5t'}
+  - {phase: '2', value: '20t', count: 3, target: Invented guards}
+  recommended_spec:
+    kind: Combat power
+    text: Invented spec text.
+    value: '≈ 86k'
+    basis: Invented basis
+  notes:
+  - title: Extreme item
+    text: Invented short.
+    detail: Invented long extreme detail.
+- name: Destiny
+  mission:
+    series: destiny-weapon
+    order: 3
+    title: Invented mission title
+    modifier: {text: Invented modifier, direction: up}
+    needs: Invented needs
+    rules: [Invented rule one, Invented rule two]
+";
+
+const NEW_SHAPES_GUIDE: &str = "# Gatekeeper Kalos (Kalos)
+_Researched as of 2031-04-05._
+
+An invented summary the bot reads.
+
+## Core
+- Invented cross-phase rule.
+- Shared gauge: Invented long gauge wording only the bot reads.
+
+## Phases
+### Phase 1
+- Invented opener.
+- Orb sweep: Invented short sweep text.
+### Phase 2 (Invented loop, repeating): Invented tag
+- Floor split: Invented long split wording.
+
+## Danger
+- Wipe beam: Invented beam text.
+
+## Tips
+- Invented tip.
+
+## Mechanics
+### Invented gauge ledger
+- Invented fall: -200 (against you)
+- Invented clear: -150 (in your favour)
+- Idle: 0
+- Note: Invented ledger note.
+### Invented arena
+- Left: Beam side (risky)
+- Right (safe)
+- Centre: Neutral
+### Invented HP bands
+- Early: 20/100
+- Late: 80/100
+
+## Difficulty notes
+### Extreme
+- Entry level: 265
+- HP: 1 100.5t, 2 20t ×3 (Invented guards)
+- Recommended (Combat power): Invented spec text. (≈ 86k; Invented basis)
+- Extreme item: Invented long extreme detail.
+Extreme limit: Invented long extreme note.
+### Destiny
+- Mission: Invented mission title (Destiny Weapon mission 3)
+- Mission modifier: Invented modifier (in your favour)
+- Mission needs: Invented needs
+- Mission rules: Invented rule one; Invented rule two
+### Normal
+Invented plain normal note.
+
+## Notes
+- Naming: Invented naming note.";
+
+#[tokio::test]
+async fn a_new_shape_guide_renders_details_phases_missions_and_mechanics() {
+    let guide = strategy_with(&[("kalos.yaml", NEW_SHAPES)], json!({"boss": "kalos"}))
+        .await
+        .unwrap();
+    assert_eq!(guide, NEW_SHAPES_GUIDE);
+    assert!(!guide.contains("page lead"), "lead is UI-only");
+}
+
+#[tokio::test]
+async fn phases_without_core_skip_the_core_heading() {
+    let doc = NEW_SHAPES.replacen(
+        "core:\n- Invented cross-phase rule.\n- title: Shared gauge\n  text: Invented short gauge text.\n  detail: Invented long gauge wording only the bot reads.\n",
+        "",
+        1,
+    );
+    assert_ne!(doc, NEW_SHAPES);
+    let guide = strategy_with(&[("kalos.yaml", &doc)], json!({"boss": "kalos"}))
+        .await
+        .unwrap();
+    assert!(!guide.contains("## Core"), "{guide}");
+    assert!(
+        guide.contains("An invented summary the bot reads.\n\n## Phases\n### Phase 1\n"),
         "{guide}"
     );
 }

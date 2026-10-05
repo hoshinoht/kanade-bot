@@ -163,7 +163,8 @@ export type Knowledge = { key: string, name: string, level: number | null, portr
  */
 animated: string | null, hue: number, researched_as_of: string | null, path: string, in_use: Difficulty[], doc: KnowledgeDoc, 
 /**
- * Every boss in the series of a mission this doc defines, by `order`.
+ * Every boss in the series of a mission this doc defines, sorted by
+ * series, `order` and key; empty when the doc has no mission.
  */
 missions: Array<MissionStop>, };
 

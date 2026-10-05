@@ -104,6 +104,45 @@ def check_dates(doc: dict, errors: list[str]) -> None:
                     errors.append(f"sources[{index}].{field} is in the future")
 
 
+def missions(doc: dict) -> list[tuple[str, int, str]]:
+    """`(series, order, difficulty)` of each mission in a document."""
+    found = []
+    for d in doc.get("difficulties", []):
+        mission = d.get("mission") if isinstance(d, dict) else None
+        if isinstance(mission, dict):
+            found.append((mission.get("series"), mission.get("order"), d.get("name")))
+    return found
+
+
+def check_mission_orders(stops: dict[tuple, list[tuple[str, list[str]]]]) -> None:
+    """Fail every boss that shares a place in a mission series with another."""
+    for (series, order), holders in stops.items():
+        if len(holders) > 1:
+            names = ", ".join(sorted(boss for boss, _ in holders))
+            for _, errors in holders:
+                errors.append(f"{series} order {order} is shared by {names}")
+
+
+def phase_groups(phases: list) -> list[str]:
+    """Timeline groups: adjacent phases only, `cycle` only with a group, one cycle value per group."""
+    errors: list[str] = []
+    seen: set[str] = set()
+    cycles: dict[str, bool] = {}
+    last = None
+    for p in phases:
+        group = p.get("group")
+        if "cycle" in p and group is None:
+            errors.append(f"phase {p.get('name')!r} sets cycle without a group")
+        if group is not None:
+            if group in seen and group != last:
+                errors.append(f"phase group {group!r} is not adjacent")
+            seen.add(group)
+            if cycles.setdefault(group, p.get("cycle", False)) != p.get("cycle", False):
+                errors.append(f"phase group {group!r} mixes cycle values")
+        last = group
+    return errors
+
+
 def check_semantics(path: Path, doc: dict, catalog: dict, errors: list[str]) -> None:
     boss = doc.get("boss")
     if isinstance(boss, str) and path.stem != boss.lower():
@@ -121,6 +160,16 @@ def check_semantics(path: Path, doc: dict, catalog: dict, errors: list[str]) -> 
     strategies = [s.get("name") for s in doc.get("strategies", []) if isinstance(s, dict)]
     if len(strategies) != len(set(strategies)):
         errors.append("duplicate strategy name")
+    phase_names = [p.get("name") for p in doc.get("phases", []) if isinstance(p, dict)]
+    if len(phase_names) != len(set(phase_names)):
+        errors.append("duplicate phase name")
+    errors.extend(phase_groups(doc.get("phases", [])))
+    mechanics = [m.get("title") for m in doc.get("mechanics", []) if isinstance(m, dict)]
+    if len(mechanics) != len(set(mechanics)):
+        errors.append("duplicate mechanic title")
+    series = [series for series, _, _ in missions(doc)]
+    if len(series) != len(set(series)):
+        errors.append("more than one mission in the same series")
     aliases = [a.casefold() for a in doc.get("event", {}).get("aliases", []) if isinstance(a, str)]
     if len(aliases) != len(set(aliases)):
         errors.append("duplicate event alias")
@@ -179,23 +228,26 @@ def main(argv: list[str] | None = None) -> int:
     if not guides:
         print(f"WARN anti-copy guard skipped: no cached guides in {args.cache} (run fetch.py)")
 
-    failures = 0
+    stops: dict[tuple, list[tuple[str, list[str]]]] = {}
+    reports: list[tuple[Path, list[str], str]] = []
     files = sorted(p for p in args.dir.iterdir() if p.suffix in {".yaml", ".yml"})
     for path in files:
         errors: list[str] = []
         try:
             doc = yaml.load(path.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
         except yaml.YAMLError as exc:
-            print(f"FAIL {path.name}: invalid YAML: {exc}")
-            failures += 1
+            reports.append((path, [f"invalid YAML: {exc}"], ""))
             continue
         validator = meta_validator if path.name == "_meta.yaml" else doc_validator
         for error in sorted(validator.iter_errors(doc), key=lambda e: list(e.absolute_path)):
             where = ".".join(map(str, error.absolute_path)) or "<root>"
             errors.append(f"{where}: {error.message}")
-        if path.name != "_meta.yaml" and isinstance(doc, dict):
+        # Semantic checks assume the schema's shapes, so they run on valid documents only.
+        if not errors and path.name != "_meta.yaml" and isinstance(doc, dict):
             check_dates(doc, errors)
             check_semantics(path, doc, catalog, errors)
+            for series, order, _ in missions(doc):
+                stops.setdefault((series, order), []).append((str(doc.get("boss")), errors))
 
         longest = (0, "", "")
         for field, text in strings(doc):
@@ -214,6 +266,11 @@ def main(argv: list[str] | None = None) -> int:
             if longest[0]
             else ""
         )
+        reports.append((path, errors, overlap))
+    check_mission_orders(stops)
+
+    failures = 0
+    for path, errors, overlap in reports:
         if errors:
             failures += 1
             print(f"FAIL {path.name}{overlap}")

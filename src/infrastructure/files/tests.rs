@@ -155,6 +155,117 @@ fn knowledge_accepts_info_only_difficulties() {
     load_knowledge_dir(&dir).expect_err("unknown difficulty");
 }
 
+/// An invented document using every new shape: titled items, phases with
+/// no `core`, hp `count`, spec figures, a mission and all mechanic kinds.
+const NEW_SHAPES: &str = "boss: MaleficStar
+lead: Invented page lead.
+summary: Invented summary.
+phases:
+- name: Phase 1
+  items:
+  - Invented plain item.
+  - title: Invented title
+    text: Invented short text.
+    detail: Invented long detail.
+danger:
+- title: Invented danger
+  text: Invented danger text.
+tips: [Invented tip.]
+difficulty_notes:
+  n: {title: Invented note, text: Invented note text.}
+notes:
+- {title: Invented notes item, text: Invented text.}
+mechanics:
+- kind: ledger
+  title: Invented ledger
+  rows: [{label: Invented row, value: '+1', direction: up}]
+  note: Invented note.
+- kind: zones
+  title: Invented zones
+  zones: [{name: Left, tone: risk}, {name: Right, sub: Invented, tone: safe}]
+- kind: scale
+  title: Invented scale
+  bands: [{label: Low, span: 30}, {label: High, span: 70, tone: red}]
+difficulties:
+- name: Hard
+  hp: [{phase: '1', value: '10t', count: 3}]
+  recommended_spec: {kind: Invented, text: Invented spec., value: '≈ 1k', basis: Invented basis}
+  notes: [{title: Invented, text: Invented.}]
+- name: Destiny
+  mission:
+    series: destiny-weapon
+    order: 2
+    title: Invented mission
+    modifier: {text: Invented modifier, direction: down}
+    needs: Invented needs
+    rules: [Invented rule]
+sources:
+- url: https://example.invalid/guide
+  title: Invented guide
+  author: Fixture
+  kind: guide
+  fetched: '2031-04-01'
+";
+
+#[test]
+fn knowledge_accepts_new_shapes_beside_plain_documents() {
+    let temp = Temp::new();
+    let dir = knowledge_fixture(&temp);
+    let star = fs::read_to_string(dir.join("maleficstar.yaml")).expect("read");
+    fs::write(
+        dir.join("zeta.yaml"),
+        star.replace("boss: MaleficStar", "boss: Zeta"),
+    )
+    .expect("plain copy");
+    fs::write(dir.join("maleficstar.yaml"), NEW_SHAPES).expect("write");
+    assert_eq!(
+        load_knowledge_dir(&dir).expect("both shapes").keys,
+        ["MaleficStar", "Zeta"]
+    );
+
+    // `core` may sit beside `phases` with the cross-phase items.
+    fs::write(
+        dir.join("maleficstar.yaml"),
+        NEW_SHAPES.replace("phases:\n", "core: [Invented cross-phase item.]\nphases:\n"),
+    )
+    .expect("write");
+    load_knowledge_dir(&dir).expect("core and phases");
+}
+
+#[test]
+fn knowledge_refuses_bad_new_shapes() {
+    let temp = Temp::new();
+    let dir = knowledge_fixture(&temp);
+    let doc = dir.join("maleficstar.yaml");
+    let long_title = "x".repeat(41);
+    for (case, text) in [
+        (
+            "title over 40",
+            NEW_SHAPES.replace("title: Invented danger", &format!("title: {long_title}")),
+        ),
+        (
+            "unknown mechanic kind",
+            NEW_SHAPES.replace("kind: zones", "kind: pie"),
+        ),
+        (
+            "mission without series",
+            NEW_SHAPES.replace("    series: destiny-weapon\n", ""),
+        ),
+        (
+            "neither core nor phases",
+            NEW_SHAPES.replace(
+                "phases:\n- name: Phase 1\n  items:\n  - Invented plain item.\n  - title: Invented title\n    text: Invented short text.\n    detail: Invented long detail.\n",
+                "",
+            ),
+        ),
+    ] {
+        assert_ne!(text, NEW_SHAPES, "{case}: fixture edit applied");
+        fs::write(&doc, text).expect("write");
+        let error = load_knowledge_dir(&dir).expect_err(case);
+        assert_eq!(error.file, doc.display().to_string(), "{case}");
+    }
+}
+
 #[test]
 fn knowledge_requires_schema_v2_meta() {
     let temp = Temp::new();

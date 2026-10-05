@@ -6,6 +6,12 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Boss guide contract for the redesign: the knowledge API lists every boss in
+  a guide's mission series (`missions`, by order); the chatbot reads titled
+  items with their full `detail`, phases (with timeline group and tag),
+  mechanic blocks, mission lines, HP targets and `×count`, and spec figures;
+  `validate.py` fails shared mission orders, duplicate phase names or
+  mechanic titles, more than one mission per series and split phase groups.
 - v5 web e2e `clipping.spec.ts`: every admin and public screen (plus Config
   sections, Inbox items, Week tabs and an open run) is audited at the five
   layout frames for cut, clipped, spilled and off-screen text, with one

@@ -128,7 +128,8 @@
             "properties": {
               "phase": { "type": "string" },
               "value": { "type": "string" },
-              "count": { "type": "integer" }
+              "count": { "type": "integer" },
+              "target": { "type": "string" }
             }
           }
         },
@@ -175,7 +176,14 @@
             "type": "object",
             "additionalProperties": false,
             "required": ["name", "items"],
-            "properties": { "name": { "type": "string" }, "items": { "$ref": "#/$defs/GuideItems" } }
+            "properties": {
+              "name": { "type": "string" },
+              "group": { "type": "string" },
+              "cycle": { "type": "boolean" },
+              "tag": { "type": "string" },
+              "tone": { "enum": ["red", "yellow", "green", "blue", "neutral", "risk", "safe"] },
+              "items": { "$ref": "#/$defs/GuideItems" }
+            }
           }
         },
         "danger": { "$ref": "#/$defs/GuideItems" },

@@ -48,6 +48,28 @@ fn stem(key: &str) -> Option<String> {
     (!key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric())).then(|| key.to_lowercase())
 }
 
+const SERIES: [&str; 2] = ["destiny-weapon", "union-champion"];
+const DIFFICULTY_NAMES: [&str; 7] = [
+    "Easy", "Normal", "Hard", "Chaos", "Extreme", "Champion", "Destiny",
+];
+
+/// `(series, order, difficulty name)` of each well-formed mission in `doc`.
+fn missions(doc: &Value) -> Vec<(&str, u64, &str)> {
+    doc.get("difficulties")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|facts| {
+            let mission = facts.get("mission")?;
+            let series = mission.get("series")?.as_str()?;
+            let order = mission.get("order")?.as_u64().filter(|o| *o <= 255)?;
+            let difficulty = facts.get("name")?.as_str()?;
+            (SERIES.contains(&series) && DIFFICULTY_NAMES.contains(&difficulty))
+                .then_some((series, order, difficulty))
+        })
+        .collect()
+}
+
 pub struct KnowledgeDir(pub PathBuf);
 
 impl KnowledgeDir {
@@ -69,6 +91,58 @@ impl KnowledgeDir {
         self.doc(key).is_some_and(|(doc, _)| {
             doc.get("event").is_some() && doc.get("boss").and_then(Value::as_str) == Some(key)
         })
+    }
+
+    /// As the server: every boss with a mission in a series `doc` has one in,
+    /// by series, `order` and key; unreadable or misnamed siblings are skipped.
+    pub fn mission_stops(&self, doc: &Value, name: impl Fn(&str) -> String) -> Vec<Value> {
+        let wanted: Vec<&str> = missions(doc).into_iter().map(|(s, ..)| s).collect();
+        if wanted.is_empty() {
+            return Vec::new();
+        }
+        let Ok(entries) = std::fs::read_dir(&self.0) else {
+            return Vec::new();
+        };
+        let mut stops: Vec<(String, u64, String, String, String)> = Vec::new();
+        for entry in entries.flatten() {
+            let file = entry.file_name().to_string_lossy().into_owned();
+            let Some(stem) = file
+                .strip_suffix(".yaml")
+                .filter(|_| !file.starts_with('_'))
+            else {
+                continue;
+            };
+            let Some(sibling) = read(&entry.path()) else {
+                continue;
+            };
+            let Some(key) = sibling.get("boss").and_then(Value::as_str) else {
+                continue;
+            };
+            if key.to_lowercase() != stem {
+                continue;
+            }
+            for (series, order, difficulty) in missions(&sibling) {
+                if wanted.contains(&series) {
+                    stops.push((
+                        series.to_owned(),
+                        order,
+                        key.to_owned(),
+                        name(key),
+                        difficulty.to_owned(),
+                    ));
+                }
+            }
+        }
+        stops.sort_by(|a, b| (&a.0, a.1, &a.2).cmp(&(&b.0, b.1, &b.2)));
+        stops
+            .into_iter()
+            .map(|(series, order, key, name, difficulty)| {
+                serde_json::json!({
+                    "series": series, "order": order, "key": key,
+                    "name": name, "difficulty": difficulty,
+                })
+            })
+            .collect()
     }
 
     /// Documents that declare an `event` (bosses outside the catalog, e.g. Kai).
@@ -111,7 +185,13 @@ impl Store {
             .and_then(Value::as_str)
             .unwrap_or(key)
             .to_owned();
-        let row = self.boss_rows().into_iter().find(|r| r.key == key);
+        let rows = self.boss_rows();
+        let missions = dir.mission_stops(&doc, |key| {
+            rows.iter()
+                .find(|r| r.key == key)
+                .map_or_else(|| key.to_owned(), |r| r.name.to_owned())
+        });
+        let row = rows.into_iter().find(|r| r.key == key);
         let (portrait, animated) = match &row {
             Some(r) => (r.portrait.clone(), self.catalog().url(Kind::Animated, &key)),
             None if doc.get("event").is_some() => (
@@ -141,7 +221,7 @@ impl Store {
             path,
             key,
             doc,
-            missions: Vec::new(),
+            missions,
         })
     }
 }
@@ -262,5 +342,83 @@ mod tests {
             plain.portrait, None,
             "only event documents lend their key to art"
         );
+    }
+
+    /// An invented document whose `difficulty` runs a mission.
+    fn mission_doc(key: &str, difficulty: &str, series: &str, order: u8) -> String {
+        format!(
+            "boss: {key}\nsummary: Invented.\ncore: [Invented.]\ndanger: [Invented.]\ntips: [Invented.]\n\
+             difficulties:\n- name: Hard\n- name: {difficulty}\n  \
+             mission: {{series: {series}, order: {order}, title: Invented mission}}\nsources: []\n"
+        )
+    }
+
+    #[test]
+    fn missions_list_the_doc_series_in_order() {
+        let root = std::env::temp_dir().join(format!("pwa-mock-missions-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        for (file, text) in [
+            (
+                "maleficstar.yaml",
+                mission_doc("MaleficStar", "Destiny", "destiny-weapon", 2),
+            ),
+            (
+                "kalos.yaml",
+                mission_doc("Kalos", "Destiny", "destiny-weapon", 1),
+            ),
+            (
+                "starwyrm.yaml",
+                format!(
+                    "{}event: {{name: Invented season, availability: Invented.}}\n",
+                    mission_doc("StarWyrm", "Destiny", "destiny-weapon", 2)
+                ),
+            ),
+            (
+                "zenith.yaml",
+                mission_doc("Zenith", "Champion", "union-champion", 1),
+            ),
+            ("quiet.yaml", "boss: Quiet\nsummary: Invented.\n".to_owned()),
+            ("broken.yaml", "boss: [\n".to_owned()),
+            (
+                "ghost.yaml",
+                mission_doc("Phantom", "Destiny", "destiny-weapon", 1),
+            ),
+        ] {
+            std::fs::write(root.join(file), text).unwrap();
+        }
+        let dir = KnowledgeDir(root.clone());
+        let missions = |key: &str| -> Vec<String> {
+            store()
+                .knowledge_v2(&dir, key)
+                .ok()
+                .unwrap()
+                .missions
+                .iter()
+                .map(|stop| {
+                    format!(
+                        "{} {} {} {} {}",
+                        stop["series"].as_str().unwrap(),
+                        stop["order"],
+                        stop["key"].as_str().unwrap(),
+                        stop["name"].as_str().unwrap(),
+                        stop["difficulty"].as_str().unwrap()
+                    )
+                })
+                .collect()
+        };
+        let destiny = [
+            "destiny-weapon 1 Kalos Gatekeeper Kalos Destiny",
+            "destiny-weapon 2 MaleficStar Radiant Malefic Star Destiny",
+            "destiny-weapon 2 StarWyrm StarWyrm Destiny",
+        ];
+        assert_eq!(missions("MaleficStar"), destiny);
+        assert_eq!(missions("StarWyrm"), destiny);
+        assert_eq!(
+            missions("Zenith"),
+            ["union-champion 1 Zenith Zenith Champion"]
+        );
+        assert!(missions("Quiet").is_empty());
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -91,6 +91,10 @@
       "required": ["name", "items"],
       "properties": {
         "name": { "$ref": "#/$defs/label" },
+        "group": { "description": "Timeline group shared by adjacent phases (e.g. 'Phase 2' for Seren's clock).", "$ref": "#/$defs/label" },
+        "cycle": { "description": "The group repeats; every phase in the group sets the same value.", "type": "boolean" },
+        "tag": { "description": "Short timeline caption.", "$ref": "#/$defs/label" },
+        "tone": { "$ref": "#/$defs/tone" },
         "items": { "type": "array", "minItems": 1, "maxItems": 5, "items": { "$ref": "#/$defs/item" } }
       }
     },
@@ -136,7 +140,7 @@
                 "properties": {
                   "label": { "$ref": "#/$defs/tag" },
                   "value": { "$ref": "#/$defs/figure" },
-                  "direction": { "enum": ["up", "down"] }
+                  "direction": { "description": "up: in the player's favour.", "enum": ["up", "down"] }
                 }
               }
             },
@@ -265,7 +269,8 @@
                 "type": "string",
                 "pattern": "^[0-9]+(\\.[0-9]+)?[bmtq]$"
               },
-              "count": { "description": "Copies at this HP (e.g. three Perils).", "type": "integer", "minimum": 2, "maximum": 6 }
+              "count": { "description": "Copies at this HP (e.g. three Perils).", "type": "integer", "minimum": 2, "maximum": 6 },
+              "target": { "description": "What this row's HP belongs to when a phase is split between targets, e.g. 'Perils' or 'Carling'; shown as 'Phase 3 (Perils)'.", "$ref": "#/$defs/label" }
             }
           }
         },
