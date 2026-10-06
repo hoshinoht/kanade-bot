@@ -23,6 +23,7 @@ mod staging;
 mod strategy_guides;
 mod support;
 mod tool_schemas;
+mod voice_mention;
 mod wire;
 mod world;
 
