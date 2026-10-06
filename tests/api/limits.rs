@@ -64,6 +64,76 @@ async fn limits_project_live_groups_and_allowances_without_secrets() {
     assert!(!reply.dump().contains(TOKEN));
 }
 
+async fn allowance_row(reads: &Reads, member: &str) -> serde_json::Value {
+    let limits = reads.read(LIMITS, "limits.json#/$defs/Limits").await;
+    limits["allowances"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["member"]["id"] == member)
+        .cloned()
+        .unwrap()
+}
+
+/// `resets_at` is when the oldest counted answer leaves the window, against
+/// the server clock paired with the snapshot (`generated_at`, 04:00:00Z at
+/// monotonic second 0 here); null for staff and an empty window.
+#[tokio::test]
+async fn resets_at_is_when_the_oldest_answer_leaves_the_window() {
+    let reads = Reads::new().await;
+    // Eve (pilot), idle; Cara (staff) is exempt even with answers counted.
+    assert_eq!(
+        allowance_row(&reads, "1006").await["resets_at"],
+        json!(null)
+    );
+    reads.chat.spend_at("1003", -10.0);
+    let cara = allowance_row(&reads, "1003").await;
+    assert_eq!(
+        (cara["staff"].clone(), cara["used"].clone()),
+        (json!(true), json!(0))
+    );
+    assert_eq!(cara["resets_at"], json!(null));
+
+    // Several answers: the oldest one counts (default window 300 s).
+    for at in [-100.0, -40.0, -5.5] {
+        reads.chat.spend_at("1006", at);
+    }
+    let eve = allowance_row(&reads, "1006").await;
+    assert_eq!(eve["used"], 3);
+    assert_eq!(eve["resets_at"], "2026-09-29T04:03:20Z", "-100 + 300");
+
+    // At the boundary the oldest has left, and the next oldest counts.
+    *reads.chat.now.lock().unwrap() = 200.0;
+    let eve = allowance_row(&reads, "1006").await;
+    assert_eq!(eve["used"], 2);
+    // The fixture's wall clock stays at 04:00:00 while monotonic time moved on.
+    assert_eq!(eve["resets_at"], "2026-09-29T04:01:00Z", "-40 + 300 - 200");
+    // A fraction of a second rounds up, never early.
+    *reads.chat.now.lock().unwrap() = 260.0;
+    let eve = allowance_row(&reads, "1006").await;
+    assert_eq!(eve["used"], 1);
+    assert_eq!(eve["resets_at"], "2026-09-29T04:00:35Z", "-5.5 + 300 - 260");
+    *reads.chat.now.lock().unwrap() = 294.5;
+    let eve = allowance_row(&reads, "1006").await;
+    assert_eq!(
+        (eve["used"].clone(), eve["resets_at"].clone()),
+        (json!(0), json!(null))
+    );
+}
+
+#[tokio::test]
+async fn an_override_window_sets_resets_at() {
+    let reads = Reads::new().await;
+    reads.chat.override_allowance("1006", 20, 3_600_000);
+    reads.chat.spend_at("1006", -1200.0);
+    reads.chat.spend_at("1006", -60.0);
+    let eve = allowance_row(&reads, "1006").await;
+    assert_eq!(eve["override"], true);
+    assert_eq!(eve["allowance"], json!({"count": 20, "per_s": 3600.0}));
+    assert_eq!(eve["used"], 2);
+    assert_eq!(eve["resets_at"], "2026-09-29T04:40:00Z", "-1200 + 3600");
+}
+
 #[tokio::test]
 async fn resetting_a_window_needs_csrf_and_replays_once() {
     let reads = Reads::new().await;

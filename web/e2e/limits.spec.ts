@@ -130,6 +130,37 @@ test('Allowances: after a Reset from the keyboard, focus lands on that member, n
   await expect(page.getByRole('region', { name: 'Notifications' })).toContainText(`${name}'s window is reset.`);
 });
 
+test('Allowances: "resets in" counts down on the server clock, only where answers count', async ({ page }) => {
+  // A browser clock days away from the mock's: the countdown must not follow it.
+  await page.clock.install({ time: new Date('2026-10-02T21:13:00Z') });
+  await page.clock.pauseAt(new Date('2026-10-02T21:13:01Z'));
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await open(page);
+  await page.getByRole('tab', { name: /Allowances/ }).click();
+  const table = page.getByRole('table', { name: 'Chatbot allowances' });
+  const row = (id: string) => table.locator('tbody tr', { has: page.locator(`#limits-allowance-${id}`) });
+  // Rin runs on her own 20 per 6 h; Ren on the guild's 4 per 5 min.
+  await expect(row('1010')).toContainText('7 used, 13 left · resets in 5 h 12 m');
+  await expect(row('1002')).toContainText('2 used, 2 left · resets in 2 m 12 s');
+  // The allowance is a bar of answers used against the count, the window in words.
+  const rin = row('1010').getByRole('progressbar', { name: "Rin's answers used" });
+  await expect(rin).toHaveAttribute('aria-valuenow', '7');
+  await expect(rin).toHaveAttribute('aria-valuemax', '20');
+  await expect(rin).toHaveAttribute('aria-valuetext', '7 of 20 answers used, 6 h window');
+  await expect(row('1010')).toContainText('20 per 6 h');
+  await expect(row('1002')).toContainText('4 per 5 min');
+  await expect(table).not.toContainText(/per \d+s/);
+  await expect(row('1001').getByRole('progressbar')).toHaveCount(0);
+  await expect(row('1001')).toContainText('exempt');
+  // Staff and an idle window have nothing to reset.
+  await expect(row('1001')).not.toContainText('resets');
+  await expect(row('1014')).toContainText('idle');
+  await expect(row('1014')).not.toContainText('resets');
+  // Monotonic time since the snapshot moves it; the next poll is 5 s away.
+  await page.clock.runFor(3000);
+  await expect(row('1002')).toContainText('resets in 2 m 9 s');
+});
+
 test('footer: the server clock at the snapshot, never the browser clock', async ({ page }) => {
   // A browser clock a day and a few hours away from the mock's.
   await page.clock.setFixedTime('2026-09-30T09:37:00Z');

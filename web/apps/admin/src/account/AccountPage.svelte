@@ -21,6 +21,7 @@
   import ReplyPicker from './ReplyPicker.svelte';
   import SessionsTab from './SessionsTab.svelte';
   import { TABS, diagnostics, methodLong, tabOf, type AccountTab } from './account';
+  import { serverNow } from '../reminders/when';
 
   let {
     toaster,
@@ -133,6 +134,31 @@
     toaster.show({ message: `Saved ${name} as your reply style.${role}`, tone: 'ok' });
   }
 
+  // The allowance's "resets in" runs on the read's server clock advanced by
+  // monotonic time (as Reminders), ticking each second while a reset is
+  // pending; once due, one quiet re-read brings the new window.
+  let receivedAt = $state(performance.now());
+  let monotonic = $state(performance.now());
+  $effect(() => {
+    if (me.data) receivedAt = monotonic = performance.now();
+  });
+  const resetsAt = $derived(me.data?.member?.allowance?.resets_at ?? null);
+  $effect(() => {
+    if (!resetsAt) return;
+    const id = setInterval(() => (monotonic = performance.now()), 1000);
+    return () => clearInterval(id);
+  });
+  const now = $derived(me.data ? serverNow(me.data.server_time, receivedAt, monotonic) : null);
+  let reread = '';
+  $effect(() => {
+    if (!resetsAt || now === null || now < Date.parse(resetsAt) || reread === resetsAt) return;
+    reread = resetsAt;
+    // An unchanged answer keeps the shown object, so restart the clock here too.
+    void me.refresh().then((failed) => {
+      if (!failed) receivedAt = monotonic = performance.now();
+    });
+  });
+
   const name = $derived(me.data ? (me.data.member?.name ?? me.data.display) : '');
   const count = $derived(sessions.data?.sessions.length ?? null);
   const style = $derived(me.data?.member?.reply_style ?? null);
@@ -176,7 +202,7 @@
       {:else if tab === 'sessions'}
         <SessionsTab {sessions} {timeZone} {compact} {busy} onend={(handle, device) => void endSession(handle, device)} onendothers={() => void endOthers()} />
       {:else}
-        <ProfileTab me={me.data} {compact} {checking} onrecheck={() => void recheck()} onstyle={openPicker} oncopy={() => void copyDiagnostics()} {onsignout} />
+        <ProfileTab me={me.data} {now} {compact} {checking} onrecheck={() => void recheck()} onstyle={openPicker} oncopy={() => void copyDiagnostics()} {onsignout} />
       {/if}
     </div>
   </div>

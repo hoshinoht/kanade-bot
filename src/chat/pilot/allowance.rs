@@ -175,3 +175,69 @@ impl Allowance {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use chrono::DateTime;
+
+    use super::*;
+
+    fn spend(allowance: &mut Allowance, member: &str, at: f64) {
+        let budgets = allowance.budgets(at);
+        assert!(budgets.person.unwrap().allow(member, at));
+    }
+
+    fn usage(allowance: &Allowance, member: &str, now: f64) -> MemberUsage {
+        allowance
+            .snapshot(now)
+            .members
+            .into_iter()
+            .find(|usage| usage.member_id == member)
+            .unwrap()
+    }
+
+    /// `resets_in_s` counts down to the oldest answer still in the window;
+    /// the Limits API turns it into `resets_at`.
+    #[test]
+    fn resets_in_follows_the_oldest_answer_in_the_window() {
+        let mut allowance = Allowance::default();
+        for at in [10.0, 40.0, 90.0] {
+            spend(&mut allowance, "ren", at);
+        }
+        let ren = usage(&allowance, "ren", 100.0);
+        assert_eq!((ren.used, ren.window_s), (3, 300.0));
+        assert_eq!(ren.resets_in_s, 210.0, "10 + 300 - 100");
+
+        // At oldest + window that answer has left: the next one counts.
+        let ren = usage(&allowance, "ren", 310.0);
+        assert_eq!((ren.used, ren.resets_in_s), (2, 30.0));
+        let ren = usage(&allowance, "ren", 389.5);
+        assert_eq!((ren.used, ren.resets_in_s), (1, 0.5));
+        assert!(allowance.snapshot(390.0).members.is_empty());
+    }
+
+    #[test]
+    fn an_override_window_sets_when_the_oldest_answer_leaves() {
+        let mut allowance = Allowance::default();
+        allowance.apply(
+            DEFAULT_MEMBER_ALLOWANCE,
+            DEFAULT_POOL_ALLOWANCE,
+            &[AllowanceOverride {
+                member_id: "rin".into(),
+                count: 20,
+                window_ms: 3_600_000,
+                updated_at: DateTime::UNIX_EPOCH,
+            }],
+        );
+        let idle = usage(&allowance, "rin", 0.0);
+        assert_eq!(
+            (idle.used, idle.resets_in_s, idle.overridden),
+            (0, 0.0, true)
+        );
+        spend(&mut allowance, "rin", 5.0);
+        spend(&mut allowance, "rin", 1000.0);
+        let rin = usage(&allowance, "rin", 1200.0);
+        assert_eq!((rin.used, rin.window_s), (2, 3600.0));
+        assert_eq!(rin.resets_in_s, 2405.0, "5 + 3600 - 1200");
+    }
+}

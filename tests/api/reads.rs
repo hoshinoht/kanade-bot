@@ -32,7 +32,10 @@ use kanade::{
     bot::{commands::AccessPolicy, identity::Image},
     chat::{
         driver::{ChatHandle, ChatView},
-        pilot::{ChatPilot, GuardLimits, LimitsView, TrafficLimits},
+        pilot::{
+            ChatPilot, DEFAULT_MEMBER_ALLOWANCE, DEFAULT_POOL_ALLOWANCE, GuardLimits, LimitsView,
+            TrafficLimits,
+        },
     },
     domain::{
         attendance::AttendanceDefault,
@@ -40,6 +43,7 @@ use kanade::{
         history::{Actor, ChangeMeta, Origin, Surface},
         ids::RandomIds,
         members::{Member, MemberProfile, MemberStore, PingLevel},
+        model_log::AllowanceOverride,
         schedule::{
             Change, ChangeSet, FixedRun, Reminder, ReminderPolicy, Rsvp, RsvpSource, RsvpState,
             Run, RunSource, RunStatus, SchedulePolicy,
@@ -253,6 +257,8 @@ impl AvatarFetch for SharedCdn {
 
 pub struct FakeChat {
     pilot: Mutex<ChatPilot>,
+    /// The pilot's monotonic now (seconds) when Limits reads it.
+    pub now: Mutex<f64>,
     pub resets: Mutex<Vec<String>>,
 }
 
@@ -264,6 +270,7 @@ impl Default for FakeChat {
                 TrafficLimits::default(),
                 GuardLimits::default(),
             )),
+            now: Mutex::new(0.0),
             resets: Mutex::new(Vec::new()),
         }
     }
@@ -272,15 +279,35 @@ impl Default for FakeChat {
 impl FakeChat {
     /// One answer in `member`'s live window.
     pub fn spend(&self, member: &str) {
+        self.spend_at(member, 0.0);
+    }
+
+    /// One answer in `member`'s window at monotonic second `at`.
+    pub fn spend_at(&self, member: &str, at: f64) {
         let mut pilot = self.pilot.lock().unwrap();
-        let budgets = pilot.allowance.budgets(0.0);
-        assert!(budgets.person.unwrap().allow(member, 0.0));
+        let budgets = pilot.allowance.budgets(at);
+        assert!(budgets.person.unwrap().allow(member, at));
+    }
+
+    /// Give `member` their own `(count, window)` allowance.
+    pub fn override_allowance(&self, member: &str, count: u32, window_ms: u64) {
+        let row = AllowanceOverride {
+            member_id: member.into(),
+            count,
+            window_ms,
+            updated_at: DateTime::UNIX_EPOCH,
+        };
+        let mut pilot = self.pilot.lock().unwrap();
+        pilot
+            .allowance
+            .apply(DEFAULT_MEMBER_ALLOWANCE, DEFAULT_POOL_ALLOWANCE, &[row]);
     }
 }
 
 impl ChatView for FakeChat {
     fn limits(&self) -> LimitsView {
-        self.pilot.lock().unwrap().limits(0.0)
+        let now = *self.now.lock().unwrap();
+        self.pilot.lock().unwrap().limits(now)
     }
 
     fn reset_allowance(&self, member_id: &str) {

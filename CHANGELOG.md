@@ -6,6 +6,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Admin: chat allowances carry `resets_at`, when the member's oldest counted answer leaves the window; Limits → Allowances and Account → Chat allowance show "resets in 5 h 12 m", counting down on the server's clock. Limits shows each allowance as a bar of answers used with the window in words ("4 per 5 min").
 - Admin: a "Reduce motion" switch on Account › This browser makes the app move exactly as under the device's reduced-motion setting (still shapes, flat bars, no pane, card or scroll animation), live and from the first paint. It is kept in this browser only; off, the app follows the device, which can still reduce motion on its own.
 - Admin: Account › Sessions lists your own live sessions with browser and system, and signs out one or all others (`/api/admin/me/sessions`; store migration 0026 adds `web_sessions.device`, a short label derived from the User-Agent, never the raw header).
 - Admin JSON reads carry a strong ETag and answer `304 Not Modified` to a matching `If-None-Match`; the admin app revalidates the reads that live hints trigger and keeps unchanged data on screen.

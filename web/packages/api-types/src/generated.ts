@@ -792,7 +792,13 @@ export type Allowance = { member: Member, staff: boolean,
 /**
  * Null for staff (no limit).
  */
-allowance: Quota | null, used: number, override: boolean, };
+allowance: Quota | null, used: number, override: boolean, 
+/**
+ * When the oldest counted answer leaves the window and `used` drops by
+ * one (ISO-8601 UTC, rounded up to the second); null for staff and an
+ * empty window.
+ */
+resets_at: string | null, };
 
 export type Limits = { groups: Array<BackendGroup>, admission: AdmissionWindow, allowances: Array<Allowance>, 
 /**

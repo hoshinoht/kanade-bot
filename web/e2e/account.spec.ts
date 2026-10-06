@@ -186,6 +186,41 @@ test('this browser: look, Reduce motion, Discord links, Experiments and the shor
   await axe(page, 'account browser');
 });
 
+test('a metered member sees when the oldest answer frees up, on the server clock, and a due reset re-reads', async ({ page }) => {
+  // A browser clock days away from the mock's, paused so only runFor moves it.
+  await page.clock.install({ time: new Date('2026-10-02T21:13:00Z') });
+  await page.clock.pauseAt(new Date('2026-10-02T21:13:01Z'));
+  await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'discord', user: '1010' } });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/account?sw=off`);
+  const allowance = panel(page).getByRole('region', { name: 'Chat allowance' });
+  await expect(allowance).toContainText('7 of 20 answers used');
+  await expect(allowance).toContainText('resets in 5 h 12 m');
+  await expect(allowance).toContainText('Your own allowance (overridden)');
+
+  // Ren: the guild's 5 min window, oldest answer freeing up in 2 m 12 s.
+  await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'discord', user: '1002' } });
+  let reads = 0;
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/admin/me') reads += 1;
+  });
+  await page.reload();
+  await expect(allowance).toContainText('2 of 4 answers used');
+  await expect(allowance).toContainText('resets in 2 m 12 s');
+  await page.clock.runFor(2000);
+  await expect(allowance).toContainText('resets in 2 m 10 s');
+  const before = reads;
+  // Due: one quiet re-read brings the window as the server sees it now.
+  await page.clock.runFor(131_000);
+  await expect.poll(() => reads).toBe(before + 1);
+  // The fresh window counts from the re-read (the rest of runFor ticks on).
+  await expect(allowance).toContainText(/resets in 2 m 1[12] s/);
+  await page.clock.runFor(5000);
+  expect(reads).toBe(before + 1);
+  await page.clock.resume();
+  await axe(page, 'account metered allowance');
+});
+
 for (const [method, how, name] of [
   ['token', 'signed in with a token', 'Break-glass token'],
   ['tailscale', 'signed in with Tailscale', 'ops@example.test'],

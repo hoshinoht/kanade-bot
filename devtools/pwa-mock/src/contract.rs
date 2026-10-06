@@ -1263,7 +1263,15 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
             "limits.json#/$defs/Limits",
         )
         .await;
-    let who = s(&limits["allowances"][0]["member"]["id"]).to_owned();
+    // A window with answers in it (staff are exempt, so never counted).
+    let counted = limits["allowances"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["used"].as_u64() > Some(0))
+        .unwrap();
+    assert!(counted["resets_at"].as_str().is_some(), "{counted}");
+    let who = s(&counted["member"]["id"]).to_owned();
     h.ok(
         "DELETE",
         &format!("/api/admin/limits/windows/{who}"),

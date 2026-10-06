@@ -32,13 +32,8 @@ export const ACCESS: Record<string, { label: string; sub: string }> = {
   none: { label: 'None', sub: "Kanade doesn't answer you in chat" },
 };
 
-/** "5 min" windows read as the Limits page does: seconds into words. */
-export function windowWords(perS: number): string {
-  if (perS % 86_400 === 0) return `${perS / 86_400} d`;
-  if (perS % 3600 === 0) return `${perS / 3600} h`;
-  if (perS % 60 === 0) return `${perS / 60} min`;
-  return `${perS} s`;
-}
+/** "5 min" windows, worded as on the Limits page (one shared formatter). */
+export { windowWords } from '../limits/view';
 
 /** "now" within a minute, else "12 min ago" / "3 h ago" against the server's clock. */
 export function seenWords(iso: string, now: string): string {

@@ -124,7 +124,11 @@ pub fn iso_date(days: i64) -> String {
 }
 
 pub fn iso_now() -> String {
-    let secs = now_secs();
+    iso_secs(now_secs())
+}
+
+/// A Unix second as an ISO-8601 UTC instant (`2026-09-29T04:03:12Z`).
+pub fn iso_secs(secs: i64) -> String {
     let (days, rem) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
     format!(
         "{}T{:02}:{:02}:{:02}Z",

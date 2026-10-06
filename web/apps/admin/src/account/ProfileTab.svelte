@@ -8,9 +8,11 @@
   import type { Me } from '@kanade/api-types';
   import { Icon } from '@kanade/ui';
   import { ACCESS, inEffectName, windowWords } from './account';
+  import { resetSpan } from '../limits/view';
 
   let {
     me,
+    now = null,
     compact = false,
     checking = false,
     onrecheck,
@@ -19,6 +21,8 @@
     onsignout,
   }: {
     me: Me;
+    /** The server's clock (epoch ms) for "resets in". */
+    now?: number | null;
     compact?: boolean;
     checking?: boolean;
     onrecheck: () => void;
@@ -30,6 +34,7 @@
   const member = $derived(me.member);
   const access = $derived(member ? (ACCESS[member.access] ?? ACCESS.none!) : null);
   const allowance = $derived(member?.allowance ?? null);
+  const resets = $derived(resetSpan(allowance?.resets_at, now));
   const style = $derived(member && member.access !== 'none' ? member.reply_style : null);
   const roleWords = $derived(style?.role_name ? `your ${style.role_name} role` : 'your role');
   // The phone row's one line: who sets it, then the saved style.
@@ -117,7 +122,11 @@
           {@const quota = allowance.allowance}
           <div class="account-grp">
             <div class="account-row account-row--stack">
-              <span class="account-allow__line"><span><b>{allowance.used}</b> of <b>{quota.count}</b> answers used</span></span>
+              <span class="account-allow__line"
+                ><span><b>{allowance.used}</b> of <b>{quota.count}</b> answers used</span> {#if resets !== null}<span
+                    class="account-allow__resets">{#if resets}resets in <b>{resets}</b>{:else}resets now{/if}</span
+                  >{/if}</span
+              >
               <div
                 class="account-meter"
                 class:account-meter--empty={allowance.used === 0}
@@ -218,3 +227,11 @@
     </section>
   {/if}
 </div>
+
+<style>
+  .account-allow__resets {
+    margin-left: auto;
+    color: var(--dim-text);
+    font-size: var(--fs-small);
+  }
+</style>

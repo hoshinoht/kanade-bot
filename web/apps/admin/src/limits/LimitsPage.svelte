@@ -4,7 +4,8 @@
   chat allowances, in one window with title-bar tabs. Backends stacks one
   row card per group in the configured order (phones: open, then half-open
   breakers first); only the selected tab's panel scrolls. Polled every 5 s;
-  the footer prints the server's clock (`generated_at`), never the browser's.
+  the footer prints the server's clock (`generated_at`), never the browser's,
+  and allowance "resets in" countdowns run on it too.
   A failed first read shows the shared failed state; a failed refresh keeps
   the snapshot under a Retrying chip (phones: under the tabs).
 -->
@@ -23,6 +24,7 @@
   import AllowancesTab from './AllowancesTab.svelte';
   import { wavingGroups } from './permits';
   import { atCapacity, GUILD_ZONE, phoneOrder, plural, serverTime } from './view';
+  import { serverNow } from '../reminders/when';
 
   let { toaster }: { toaster: Toaster } = $props();
 
@@ -47,6 +49,7 @@
     onState: (state) => (stopped = state === 'stopped'),
     onData: (next) => {
       limits = next;
+      receivedAt = monotonic = performance.now();
       fresh = 'live';
       failure = '';
     },
@@ -61,6 +64,19 @@
     },
   });
   const retry = () => void poller.refresh();
+
+  // "resets in" counts down on the snapshot's server clock, advanced by
+  // monotonic time since it arrived (as Reminders), ticking each second
+  // while a window has use; a due reset waits for the next poll.
+  let receivedAt = $state(performance.now());
+  let monotonic = $state(performance.now());
+  const counting = $derived(limits?.allowances.some((a) => a.resets_at) ?? false);
+  $effect(() => {
+    if (!counting) return;
+    const id = setInterval(() => (monotonic = performance.now()), 1000);
+    return () => clearInterval(id);
+  });
+  const now = $derived(limits?.generated_at ? serverNow(limits.generated_at, receivedAt, monotonic) : null);
   const lastClock = $derived(limits?.generated_at ? clockTime(limits.generated_at, zone, false) : '');
   $effect(() => {
     poller.start();
@@ -256,7 +272,7 @@
       {:else if tab === 'admission'}
         <AdmissionTab refusals={limits.admission.refusals} {zone} {phone} />
       {:else}
-        <AllowancesTab rows={limits.allowances} {phone} onreset={reset} />
+        <AllowancesTab rows={limits.allowances} {phone} {now} onreset={reset} />
       {/if}
     </div>
     <footer class="limits-window__foot" class:limits-window__foot--phone={phone} data-fid="limits-foot">

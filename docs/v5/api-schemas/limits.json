@@ -81,7 +81,7 @@
     "Allowance": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["member", "staff", "allowance", "used", "override"],
+      "required": ["member", "staff", "allowance", "used", "override", "resets_at"],
       "properties": {
         "member": { "$ref": "common.json#/$defs/Member" },
         "staff": { "type": "boolean" },
@@ -100,7 +100,11 @@
           ]
         },
         "used": { "type": "integer", "minimum": 0 },
-        "override": { "type": "boolean" }
+        "override": { "type": "boolean" },
+        "resets_at": {
+          "type": ["string", "null"],
+          "description": "When the oldest counted answer leaves the window and `used` drops by one (ISO-8601 UTC instant, rounded up to the second, on the clock of the response's generated_at/server_time); null for staff and when `used` is 0."
+        }
       }
     },
     "Limits": {

@@ -10,6 +10,7 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
+use chrono::{DateTime, TimeDelta, Timelike, Utc};
 use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::Mutex;
@@ -29,7 +30,7 @@ use crate::{
         listeners::Site,
         state::{ApiState, DigestPostRequest, DigestPostResult},
     },
-    chat::pilot::{Allowance, AllowanceSnapshot},
+    chat::pilot::{Allowance, AllowanceSnapshot, MemberUsage},
     domain::{
         members::MemberProfile,
         settings::{RowDiff, SettingsChange},
@@ -107,32 +108,57 @@ fn digest_result(result: DigestPostResult) -> Result<(), Refusal> {
     }
 }
 
-fn allowance(snapshot: &AllowanceSnapshot, member_id: &str) -> (usize, usize, f64, bool) {
+/// One member's window; the default allowance, unused, when it has no answers.
+fn allowance(snapshot: &AllowanceSnapshot, member_id: &str) -> MemberUsage {
     snapshot
         .members
         .iter()
         .find(|usage| usage.member_id == member_id)
-        .map(|usage| (usage.used, usage.limit, usage.window_s, usage.overridden))
-        .unwrap_or((
-            0,
-            snapshot.member_default.0,
-            snapshot.member_default.1,
-            false,
-        ))
+        .cloned()
+        .unwrap_or_else(|| MemberUsage {
+            member_id: member_id.to_owned(),
+            used: 0,
+            limit: snapshot.member_default.0,
+            window_s: snapshot.member_default.1,
+            resets_in_s: 0.0,
+            overridden: false,
+        })
 }
 
-/// The chat pilot's live allowance snapshot (the default allowance offline).
-pub(super) fn allowance_snapshot(state: &ApiState) -> AllowanceSnapshot {
-    state.chat.as_ref().map_or_else(
+/// The chat pilot's live allowance snapshot (the default allowance offline)
+/// and the wall clock read right after it. The snapshot runs on monotonic
+/// seconds; its offsets become instants only against this one pair, so a
+/// system clock change cannot skew `resets_at`.
+pub(super) fn allowance_snapshot(state: &ApiState) -> (AllowanceSnapshot, DateTime<Utc>) {
+    let snapshot = state.chat.as_ref().map_or_else(
         || Allowance::default().snapshot(0.0),
         |chat| chat.allowance(),
-    )
+    );
+    (snapshot, state.now())
 }
 
-/// One member's Limits allowance row; `None` without chatbot access (and for bots).
+/// `at` plus `seconds`, rounded up to a whole second so a countdown to it
+/// never reaches zero before the answer has actually left the window.
+fn instant_after(at: DateTime<Utc>, seconds: f64) -> DateTime<Utc> {
+    // `as` saturates; an absurd override window lands on the last instant.
+    let millis = (seconds.max(0.0) * 1000.0).ceil() as i64;
+    let later = TimeDelta::try_milliseconds(millis)
+        .and_then(|offset| at.checked_add_signed(offset))
+        .unwrap_or(DateTime::<Utc>::MAX_UTC);
+    match later.with_nanosecond(0) {
+        Some(whole) if whole < later => whole
+            .checked_add_signed(TimeDelta::seconds(1))
+            .unwrap_or(later),
+        _ => later,
+    }
+}
+
+/// One member's Limits allowance row; `None` without chatbot access (and for
+/// bots). `at` is the wall clock paired with `snapshot`.
 pub(super) fn allowance_row(
     state: &ApiState,
     snapshot: &AllowanceSnapshot,
+    at: DateTime<Utc>,
     profile: &MemberProfile,
 ) -> Option<AllowanceRow> {
     let access = state.access.access(profile);
@@ -141,16 +167,21 @@ pub(super) fn allowance_row(
         let member_id = member.user_id.clone();
         let member_name = member.name().unwrap_or(&member_id).to_owned();
         let staff = access == "staff";
-        let (used, count, per_s, overridden) = allowance(snapshot, &member_id);
+        let usage = allowance(snapshot, &member_id);
+        let used = if staff { 0 } else { usage.used };
         AllowanceRow {
             member: Named {
                 id: member_id,
                 name: member_name,
             },
             staff,
-            allowance: (!staff).then_some(Quota { count, per_s }),
-            used: if staff { 0 } else { used },
-            overridden,
+            allowance: (!staff).then_some(Quota {
+                count: usage.limit,
+                per_s: usage.window_s,
+            }),
+            used,
+            overridden: usage.overridden,
+            resets_at: (used > 0).then(|| iso_instant(instant_after(at, usage.resets_in_s))),
         }
     })
 }
@@ -162,12 +193,11 @@ async fn read(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
         .members()
         .await
         .map_err(super::context::unavailable)?;
-    let snapshot = allowance_snapshot(state);
+    let (snapshot, now) = allowance_snapshot(state);
     let allowances: Vec<AllowanceRow> = profiles
         .iter()
-        .filter_map(|profile| allowance_row(state, &snapshot, profile))
+        .filter_map(|profile| allowance_row(state, &snapshot, now, profile))
         .collect();
-    let now = state.now();
     let groups = state
         .model_limits
         .as_ref()
@@ -253,7 +283,13 @@ async fn clear_window(
 ) -> Result<(), Refusal> {
     let chat = state.chat.as_ref().ok_or(ApiError::UNAVAILABLE)?;
     let view = chat.limits().ok_or(ApiError::UNAVAILABLE)?;
-    let (used, limit, per_s, overridden) = allowance(&view.allowance, member_id);
+    let MemberUsage {
+        used,
+        limit,
+        window_s: per_s,
+        overridden,
+        ..
+    } = allowance(&view.allowance, member_id);
     if used > 0 {
         let origin = session.origin();
         let change = SettingsChange {
@@ -364,4 +400,25 @@ async fn digest(
     }
     digest_result(post(request).await)?;
     Ok(message(applied))
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{DateTime, TimeZone, Utc};
+
+    use super::{instant_after, iso_instant};
+
+    #[test]
+    fn reset_instants_round_up_to_the_whole_second() {
+        let at = Utc.with_ymd_and_hms(2026, 9, 29, 4, 0, 0).unwrap();
+        let reset = |seconds: f64| iso_instant(instant_after(at, seconds));
+        assert_eq!(reset(210.0), "2026-09-29T04:03:30Z");
+        assert_eq!(reset(0.5), "2026-09-29T04:00:01Z");
+        assert_eq!(reset(18_720.001), "2026-09-29T09:12:01Z");
+        let mid = at + chrono::TimeDelta::milliseconds(400);
+        assert_eq!(iso_instant(instant_after(mid, 1.0)), "2026-09-29T04:00:02Z");
+        assert_eq!(iso_instant(instant_after(mid, 0.6)), "2026-09-29T04:00:01Z");
+        // An absurd override window saturates instead of panicking.
+        assert_eq!(instant_after(at, f64::MAX), DateTime::<Utc>::MAX_UTC);
+    }
 }

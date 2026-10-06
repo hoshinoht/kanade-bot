@@ -48,6 +48,8 @@ async fn me(
     session: AdminSession,
 ) -> Result<axum::response::Response, ApiError> {
     let state = state(&site)?;
+    // One (snapshot, clock) pair: `server_time` is the clock `resets_at` counts from.
+    let (snapshot, now) = allowance_snapshot(state);
     let member = match session.discord_user() {
         Some(id) => match state
             .store
@@ -56,22 +58,19 @@ async fn me(
             .map_err(unavailable)?
             .filter(|profile| !profile.member.is_bot)
         {
-            Some(profile) => {
-                let snapshot = allowance_snapshot(state);
-                Some(MeMember {
-                    id: profile.member.user_id.clone(),
-                    name: profile
-                        .member
-                        .name()
-                        .unwrap_or(&profile.member.user_id)
-                        .to_owned(),
-                    access: state.access.access(&profile),
-                    bossing: profile.member.has_role,
-                    roles: named_roles(state, &profile.roles),
-                    allowance: allowance_row(state, &snapshot, &profile),
-                    reply_style: reply::style(state, &profile).await,
-                })
-            }
+            Some(profile) => Some(MeMember {
+                id: profile.member.user_id.clone(),
+                name: profile
+                    .member
+                    .name()
+                    .unwrap_or(&profile.member.user_id)
+                    .to_owned(),
+                access: state.access.access(&profile),
+                bossing: profile.member.has_role,
+                roles: named_roles(state, &profile.roles),
+                allowance: allowance_row(state, &snapshot, now, &profile),
+                reply_style: reply::style(state, &profile).await,
+            }),
             None => None,
         },
         None => None,
@@ -80,7 +79,7 @@ async fn me(
         display: session.display,
         method: session.method.as_str(),
         member,
-        server_time: iso_instant(state.now()),
+        server_time: iso_instant(now),
         version: env!("CARGO_PKG_VERSION"),
     })
     .into_response())

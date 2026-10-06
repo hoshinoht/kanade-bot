@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { atCapacity, GUILD_ZONE, phoneOrder, refusalGroups, serverTime } from '../src/limits/view';
+import { atCapacity, GUILD_ZONE, phoneOrder, refusalGroups, resetSpan, serverTime, windowWords } from '../src/limits/view';
 
 describe('limits view', () => {
   it('prints a server instant on the guild clock with fixed English names', () => {
@@ -44,5 +44,40 @@ describe('limits view', () => {
       ['Gateway key', 3, 2],
     ]);
     expect(refusalGroups([])).toEqual([]);
+  });
+});
+
+describe('allowance reset countdown', () => {
+  const now = Date.parse('2026-09-29T04:00:00Z');
+  it('reads like the boards: days and hours, hours and minutes, minutes and seconds', () => {
+    expect(resetSpan('2026-09-29T09:12:00Z', now)).toBe('5 h 12 m');
+    expect(resetSpan('2026-09-30T07:00:00Z', now)).toBe('1 d 3 h');
+    expect(resetSpan('2026-09-29T04:02:12Z', now)).toBe('2 m 12 s');
+    expect(resetSpan('2026-09-29T04:00:45Z', now)).toBe('45 s');
+    // Hours round up to the minute: one second gone still reads 5 h 12 m.
+    expect(resetSpan('2026-09-29T09:12:00Z', now + 1000)).toBe('5 h 12 m');
+    expect(resetSpan('2026-09-29T09:11:00Z', now)).toBe('5 h 11 m');
+    expect(resetSpan('2026-09-29T05:00:00Z', now)).toBe('1 h 0 m');
+    expect(resetSpan('2026-09-29T04:59:59Z', now)).toBe('59 m 59 s');
+    expect(resetSpan('2026-09-30T03:59:59Z', now)).toBe('1 d 0 h');
+    // A part second left still reads as a second, never as due.
+    expect(resetSpan('2026-09-29T04:00:01Z', now + 200)).toBe('1 s');
+  });
+
+  it('is due at the instant, and absent without a reset or a server clock', () => {
+    expect(resetSpan('2026-09-29T04:00:00Z', now)).toBe('');
+    expect(resetSpan('2026-09-29T03:59:00Z', now)).toBe('');
+    expect(resetSpan(null, now)).toBeNull();
+    expect(resetSpan('soon', now)).toBeNull();
+    expect(resetSpan('2026-09-29T04:01:00Z', null)).toBeNull();
+  });
+});
+
+describe('allowance windows in words', () => {
+  it('reads seconds as the largest whole unit, shared with Account', () => {
+    expect(windowWords(21_600)).toBe('6 h');
+    expect(windowWords(300)).toBe('5 min');
+    expect(windowWords(172_800)).toBe('2 d');
+    expect(windowWords(90)).toBe('90 s');
   });
 });

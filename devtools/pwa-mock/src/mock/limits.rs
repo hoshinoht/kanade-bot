@@ -3,11 +3,32 @@
 //! admission refusals by kind. Synthetic, shaped for the admin view. Times
 //! are ISO instants, as the Rust server's `iso_instant`.
 
-use super::clock::{iso_now, iso_z};
+use super::clock::{iso_now, iso_secs, iso_z, now_secs};
 use super::config::Group;
 use super::seed;
 use super::{MoveError, Store};
 use serde_json::{Value, json};
+
+/// The guild allowance and Rin's own (20 answers per 6 h, seven used).
+const DEFAULT_ALLOWANCE: (u32, i64) = (4, 300);
+const OWN_ALLOWANCE: (u32, i64) = (20, 21_600);
+const OVERRIDDEN: &str = "1010";
+
+/// As the server: when the oldest counted answer leaves the window, null
+/// with none counted. Seeded against the pinned clock: in the 5 min window
+/// the oldest answer is `60 × used + 48` s old (Ren, two used: resets in
+/// 2 m 12 s); in Rin's 6 h window it resets in 5 h 12 m.
+fn resets_at(used: u32, per_s: i64) -> Value {
+    if used == 0 {
+        return Value::Null;
+    }
+    let left = if per_s > 3600 {
+        18_720
+    } else {
+        per_s - 60 * i64::from(used) - 48
+    };
+    json!(iso_secs(now_secs() + left))
+}
 
 impl Store {
     pub fn limits(&self) -> Value {
@@ -18,13 +39,23 @@ impl Store {
             .iter()
             .filter(|m| m.seed.access != "none")
             .map(|m| {
-                let used = if self.limit_resets.contains(&m.seed.id) { 0 } else { (m.seed.id.as_bytes()[3] % 4) as u32 };
+                let staff = m.seed.access == "staff";
+                let overridden = m.seed.id == OVERRIDDEN;
+                let used = if staff || self.limit_resets.contains(&m.seed.id) {
+                    0
+                } else if overridden {
+                    7
+                } else {
+                    u32::from(m.seed.id.as_bytes()[3] % 4)
+                };
+                let (count, per_s) = if overridden { OWN_ALLOWANCE } else { DEFAULT_ALLOWANCE };
                 json!({
                     "member": { "id": m.seed.id, "name": m.seed.name },
-                    "staff": m.seed.access == "staff",
-                    "allowance": if m.seed.access == "staff" { Value::Null } else { json!({ "count": 4, "per_s": 300 }) },
+                    "staff": staff,
+                    "allowance": if staff { Value::Null } else { json!({ "count": count, "per_s": per_s }) },
                     "used": used,
-                    "override": m.seed.id == "1010",
+                    "override": overridden,
+                    "resets_at": resets_at(used, per_s),
                 })
             })
             .collect();
@@ -213,6 +244,56 @@ mod tests {
         assert!(!s.seed_limit_groups("four"));
         assert!(s.seed_limit_groups("default"));
         assert_eq!(s.limits()["groups"][0]["name"], "gateway");
+    }
+
+    #[test]
+    fn resets_at_follows_the_pinned_clock_and_is_null_when_nothing_counts() {
+        let mut s = store();
+        let limits = s.limits();
+        let row = |id: &str| {
+            limits["allowances"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["member"]["id"] == id)
+                .unwrap()
+                .clone()
+        };
+        let asahi = row("1001");
+        assert_eq!(
+            (asahi["staff"].clone(), asahi["used"].clone()),
+            (true.into(), 0.into())
+        );
+        assert_eq!(asahi["resets_at"], serde_json::Value::Null);
+        // Kohane (pilot) has nothing counted.
+        assert_eq!(row("1014")["used"], 0);
+        assert_eq!(row("1014")["resets_at"], serde_json::Value::Null);
+        // Ren: two of four used, the oldest 2 m 48 s old in a 5 min window.
+        assert_eq!(row("1002")["used"], 2);
+        assert_eq!(row("1002")["resets_at"], "2026-09-29T04:02:12Z");
+        // Rin's own 20 per 6 h allowance resets in 5 h 12 m.
+        let rin = row("1010");
+        assert_eq!(
+            (rin["override"].clone(), rin["used"].clone()),
+            (true.into(), 7.into())
+        );
+        assert_eq!(
+            rin["allowance"],
+            serde_json::json!({ "count": 20, "per_s": 21600 })
+        );
+        assert_eq!(rin["resets_at"], "2026-09-29T09:12:00Z");
+        assert!(s.reset_window("1002").is_ok());
+        let ren = s.limits()["allowances"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["member"]["id"] == "1002")
+            .unwrap()
+            .clone();
+        assert_eq!(
+            (ren["used"].clone(), ren["resets_at"].clone()),
+            (0.into(), serde_json::Value::Null)
+        );
     }
 
     #[test]
