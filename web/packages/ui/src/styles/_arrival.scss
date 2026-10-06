@@ -6,6 +6,7 @@
 // (badges stay still). Transform, opacity and colour only.
 
 @use "easing" as *;
+@use "motion-query" as *;
 
 @keyframes arrive-tint {
   from {
@@ -40,7 +41,7 @@
   animation: tick-colour 0.6s $standard;
 }
 
-@media (prefers-reduced-motion: no-preference) {
+@include motion-ok {
   [data-new] {
     animation:
       arrive-settle $enter-ms $standard,
@@ -53,7 +54,7 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@include motion-reduce {
   .navlist__badge[data-tick],
   .topbar__badge[data-tick] {
     animation: none;

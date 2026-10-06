@@ -1,4 +1,5 @@
 @use "easing" as *;
+@use "motion-query" as *;
 // The boss guide: the knowledge detail's main column (user-approved mockup
 // boss-guides/research-2026-10-05/design/Main.dc.html, on the M3E
 // primitives). Mission card, lead, fact tiles, HP by phase, the difficulty's
@@ -71,7 +72,7 @@
 .guide-hp--closed .guide-hp__chevron { transform: rotate(-45deg); }
 .guide-hp__body { display: flex; flex-direction: column; gap: 8px; }
 .guide-hp__body[hidden] { display: none; }
-@media (prefers-reduced-motion: no-preference) {
+@include motion-ok {
   .guide-hp__chevron { transition: transform 160ms ease; }
 }
 .guide-hp__total,
@@ -181,7 +182,7 @@
 .guide-timeline__seg[aria-selected="true"] .guide-timeline__tag { font-weight: 600; }
 .guide-timeline__seg:not([aria-selected="true"]):hover { filter: brightness(0.97); }
 .guide-timeline__seg:focus-visible { outline-offset: 2px; }
-@media (prefers-reduced-motion: no-preference) {
+@include motion-ok {
   .guide-timeline__seg { transition: border-radius $spring-ms $spring; }
 }
 @mixin timeline-across {

@@ -1,10 +1,10 @@
 <!--
   Account › This browser (A9, A10): settings kept in this browser only —
-  colourway and mode (Config's theme tiles), Experiments, how Discord links
-  open — and the keyboard shortcuts.
+  colourway and mode (Config's theme tiles), Reduce motion, how Discord links
+  open, Experiments — and the keyboard shortcuts.
 -->
 <script lang="ts">
-  import { experiments, Icon, setExperiments } from '@kanade/ui';
+  import { experiments, Icon, motionPreference, setExperiments } from '@kanade/ui';
   import ThemeTiles from '../config/ThemeTiles.svelte';
   import { discordLinks } from '../shared/discordLink.svelte';
 
@@ -42,8 +42,15 @@
     </div>
     <div class="account-browser__col">
       <section class="account-sec" aria-labelledby="account-device">
-        <div class="account-sec__head"><h3 class="cap" id="account-device">Links and trials</h3></div>
+        <div class="account-sec__head"><h3 class="cap" id="account-device">Motion, links and trials</h3></div>
         <div class="account-grp">
+          {@render toggle(
+            'account-motion',
+            'Reduce motion',
+            'Still shapes and flat bars, even if your system allows motion',
+            motionPreference.reduce,
+            () => motionPreference.set(!motionPreference.reduce),
+          )}
           {@render toggle(
             'account-links',
             'Open Discord links in the app',

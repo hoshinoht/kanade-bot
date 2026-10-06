@@ -9,6 +9,8 @@
   T-1h and T-15m); `tone="warn"` takes the warning colour.
 -->
 <script lang="ts">
+  import { motionPreference } from '../motion/preference.svelte';
+
   let {
     value,
     max,
@@ -79,7 +81,8 @@
     const moving = wavy;
     const holdFull = fullWave;
     if (!w) return;
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    // Reactive: turning on Reduce motion (or the device setting) stills a drifting wave at once.
+    if (motionPreference.reduced) {
       shown = goal;
       amp = 0;
       draw(w);

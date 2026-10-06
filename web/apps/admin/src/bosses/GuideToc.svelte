@@ -9,6 +9,7 @@
 <script lang="ts">
   import type { GuideTab, TocSection } from './guide';
   import { tick } from 'svelte';
+  import { reducedMotion } from '@kanade/ui';
 
   let {
     main,
@@ -65,7 +66,7 @@
   function reveal(el: HTMLElement) {
     if (!panel) return;
     const top = el.getBoundingClientRect().top - panel.getBoundingClientRect().top + panel.scrollTop - 8;
-    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const still = reducedMotion();
     panel.scrollTo({ top: Math.max(0, top), behavior: still ? 'auto' : 'smooth' });
   }
 

@@ -5,6 +5,7 @@
 // Animations in packages/ui/src/motion/.
 
 @use "easing" as *;
+@use "motion-query" as *;
 
 @keyframes settle {
   from {
@@ -33,7 +34,7 @@ dialog.modal[open] {
 // Press shape-morph (Experiment D, approved on by default): key and connected
 // group buttons step their corners down while pressed and spring back on
 // release. Radius only; reduced motion keeps the shape still.
-@media (prefers-reduced-motion: no-preference) {
+@include motion-ok {
   .btn--primary,
   .btn--key,
   .btn--risk,
@@ -129,10 +130,14 @@ dialog.drawer:not([open])::backdrop {
   font-size: var(--fs-body-sm);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+@include motion-reduce {
+  // `&` is <html>: with `& *` this is every element, as a bare `*` was.
+  &,
+  &::before,
+  &::after,
+  & *,
+  & *::before,
+  & *::after {
     animation-duration: 0.001ms !important;
     animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;

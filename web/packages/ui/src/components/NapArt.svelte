@@ -78,10 +78,10 @@
 .nap-text{font-family:var(--nap-font,ui-rounded,'SF Pro Rounded',system-ui,-apple-system,'Segoe UI',sans-serif);font-weight:800}
 .nap-shadow{flood-color:var(--nap-shadow,#2A2C57);flood-opacity:.14}
 @media (prefers-reduced-motion: no-preference){
-#nap-cal{animation:nap-breathe 4.6s ease-in-out infinite;transform-origin:240px 200px}
-#nap-pom{animation:nap-bob 4.6s ease-in-out infinite}
-.nap-z{animation:nap-drift 3.9s ease-out infinite;opacity:0}
-#nap-z2{animation-delay:1.3s}#nap-z3{animation-delay:2.6s}
+:where(:root:not([data-motion=reduce])) #nap-cal{animation:nap-breathe 4.6s ease-in-out infinite;transform-origin:240px 200px}
+:where(:root:not([data-motion=reduce])) #nap-pom{animation:nap-bob 4.6s ease-in-out infinite}
+:where(:root:not([data-motion=reduce])) .nap-z{animation:nap-drift 3.9s ease-out infinite;opacity:0}
+:where(:root:not([data-motion=reduce])) #nap-z2{animation-delay:1.3s}:where(:root:not([data-motion=reduce])) #nap-z3{animation-delay:2.6s}
 }
 @keyframes nap-breathe{0%,100%{transform:rotate(-3deg) scale(1)}50%{transform:rotate(-3deg) scale(1.012)}}
 @keyframes nap-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(3px)}}

@@ -1,6 +1,7 @@
 // Selection-led disclosure; grid tracks animate intrinsic height in every engine.
 // Selected-row containment: the row's corners spring to the selected shape.
 @use "easing" as *;
+@use "motion-query" as *;
 
 .expandable-row { transition: border-radius $spring-ms $spring; overflow-anchor: none; }
 .row-content { display: grid; min-width: 0; width: 100%; text-align: inherit; }
@@ -20,6 +21,6 @@
 .boss-stack__pills { display: flex; flex: none; gap: 3px; }
 .boss-stack__pills .pill { padding: 0 5px; font-size: var(--fs-micro); letter-spacing: 0; }
 
-@media (prefers-reduced-motion: reduce) {
+@include motion-reduce {
   .expandable-row, .row-content__reveal { transition: none !important; }
 }

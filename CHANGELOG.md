@@ -6,6 +6,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Admin: a "Reduce motion" switch on Account › This browser makes the app move exactly as under the device's reduced-motion setting (still shapes, flat bars, no pane, card or scroll animation), live and from the first paint. It is kept in this browser only; off, the app follows the device, which can still reduce motion on its own.
 - Admin: Account › Sessions lists your own live sessions with browser and system, and signs out one or all others (`/api/admin/me/sessions`; store migration 0026 adds `web_sessions.device`, a short label derived from the User-Agent, never the raw header).
 - Admin JSON reads carry a strong ETag and answer `304 Not Modified` to a matching `If-None-Match`; the admin app revalidates the reads that live hints trigger and keeps unchanged data on screen.
 - Arrival motion for changes made elsewhere: Week cards glide to where another admin moved them, new Week runs and Inbox, Chat and Extractions rows are marked once, and changed Inbox counts pulse. Your own writes never animate this way, and reduced motion keeps only a colour fade.

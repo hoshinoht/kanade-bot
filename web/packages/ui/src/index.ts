@@ -61,6 +61,7 @@ export { Presence, EXIT_FALLBACK_MS } from './motion/presence.svelte';
 export { Delay, LOADING_DELAY_MS } from './motion/delay.svelte';
 export { pulse, replay, ARRIVAL_FALLBACK_MS } from './motion/arrival';
 export { reducedMotion, SPRING, SPRING_BOUNCY, SPRING_BOUNCY_MS, SPRING_MS, STANDARD } from './motion/easing';
+export { motionPreference } from './motion/preference.svelte';
 // M3E empty and failed panes (B_Empty, B_States).
 export { default as StateNote } from './components/StateNote.svelte';
 export { default as LoadError } from './components/LoadError.svelte';

@@ -2,14 +2,13 @@
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
   import type { Boss, BossRow, EventBoss, FixedRow, Knowledge, Run, Week } from '@kanade/api-types';
-  import { DIFFICULTY_WORDS, LoadError, LoadingState, Portrait, RowContent, SINGLE_PANE_QUERY, StatusChip, dayLabel, enter } from '@kanade/ui';
+  import { DIFFICULTY_WORDS, LoadError, LoadingState, Portrait, RowContent, SINGLE_PANE_QUERY, StatusChip, dayLabel, enter, motionPreference } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import BossGrid from './BossGrid.svelte';
   import KnowledgeGuide from './KnowledgeGuide.svelte';
   import { LETTER } from './guide';
   import { eventAsBoss, seasonTag } from './event';
   import { heroArt } from './heroArt';
-  import { prefersReducedMotion } from 'svelte/motion';
   import { tick, untrack } from 'svelte';
   import '@kanade/ui/styles/boss-knowledge.scss';
 
@@ -119,7 +118,7 @@
     artFailed = false;
     videoFailed = false;
   });
-  const art = $derived(heroArt({ key: activeKey, animated: knowledge.data?.animated ?? null, reducedMotion: prefersReducedMotion.current, videoFailed, stillFailed: artFailed }));
+  const art = $derived(heroArt({ key: activeKey, animated: knowledge.data?.animated ?? null, reducedMotion: motionPreference.reduced, videoFailed, stillFailed: artFailed }));
   const asBoss = (row: BossRow): Boss => ({ token: row.key, key: row.key, name: row.name, difficulty: 'n', level: row.level, portrait: row.portrait, portrait_sm: row.portrait, art: null, hue: row.hue });
   const activePortrait = $derived(knowledge.data ? { token: knowledge.data.key, key: knowledge.data.key, name: knowledge.data.name, difficulty: 'n' as const, level: knowledge.data.level, portrait: knowledge.data.portrait, portrait_sm: knowledge.data.portrait, art: null, hue: knowledge.data.hue } : activeBoss ? asBoss(activeBoss) : activeEvent ? eventAsBoss(activeEvent) : null);
   const nextRun = $derived.by(() => {

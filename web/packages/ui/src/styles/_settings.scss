@@ -4,6 +4,7 @@
 // section is a heading, settings cards that scroll, and a save bar that does
 // not (config/SettingsPanel.svelte, SaveBar.svelte, SwitchCard.svelte).
 @use "breakpoints" as *;
+@use "motion-query" as *;
 
 .settings {
   display: flex;
@@ -417,7 +418,7 @@
   outline-offset: 2px;
 }
 
-@media (prefers-reduced-motion: reduce) {
+@include motion-reduce {
   .switch__knob {
     transition: none;
   }
@@ -649,7 +650,7 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@include motion-reduce {
   .settings__found {
     animation: none;
   }

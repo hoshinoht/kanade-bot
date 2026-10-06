@@ -16,6 +16,9 @@
     // A retired colourway (coral) or junk: forget it, so the page wears marigold.
     else if (c !== null) localStorage.removeItem("colorway");
     if (t === "light" || t === "dark") root.dataset.theme = t;
+    // This browser's "Reduce motion" switch (motion/preference.svelte.ts), set
+    // before first paint so no animation starts and then stops.
+    if (localStorage.getItem("kanade.motion") === "reduce") root.dataset.motion = "reduce";
     // The Dynamic palette last derived from the avatar (theme.ts refreshes it),
     // applied through the CSSOM so the first paint already wears it.
     var cached = JSON.parse(localStorage.getItem("colorway-dynamic") || "null");

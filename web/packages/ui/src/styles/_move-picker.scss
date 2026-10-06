@@ -2,6 +2,7 @@
 // DayStrip, TimeStepper and the admin's sheet/MovePicker.svelte, plus the
 // weekday-only strip in the Fixed editor. Imported by the components' users.
 @use "easing";
+@use "motion-query" as *;
 
 /* ── the day strip: one connected group, Thu-first ───────────────────────── */
 
@@ -615,7 +616,7 @@
 
 // Reduced motion: no morph and no travel; fills change at once; the clash box
 // still fades in over 120 ms (it outranks motion.scss's global cut on purpose).
-@media (prefers-reduced-motion: reduce) {
+@include motion-reduce {
   .daystrip__day,
   .timestep__btn,
   .movepick__idea,

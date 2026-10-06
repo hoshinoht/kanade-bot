@@ -2,6 +2,7 @@
 // through an inline `style` attribute; v5 names them per colourway instead.
 
 @use "easing" as *;
+@use "motion-query" as *;
 
 .swatches {
   display: flex;
@@ -208,7 +209,7 @@
   overflow-clip-margin: 6px;
 }
 
-@media (prefers-reduced-motion: no-preference) {
+@include motion-ok {
   .setbody {
     transition:
       grid-template-rows $exit-ms $exit,

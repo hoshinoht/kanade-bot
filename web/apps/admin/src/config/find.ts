@@ -2,6 +2,8 @@
 // section that best matches the search, then brings it into view. Matching
 // reads the rendered words, so a setting is found by what its card says.
 
+import { reducedMotion } from '@kanade/ui';
+
 /** The things a search can land on, most specific last. */
 const CANDIDATES = '.settings__card, .rescan__card, .settings__table tbody tr';
 const TITLE = '.settings__cardtitle, legend, h3, h4, th[scope="row"], b';
@@ -70,7 +72,7 @@ async function reveal(el: HTMLElement, title: HTMLElement | null, section: HTMLE
     document.getElementById(panel.getAttribute('aria-labelledby') ?? '')?.click();
     await frame();
   }
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduced = reducedMotion();
   // Scroll only the panel's own scroller: scrollIntoView could move the fixed frame.
   const scroller = el.closest<HTMLElement>('.settings__scroll');
   if (scroller) {

@@ -18,8 +18,14 @@ export const SPRING_BOUNCY =
   'linear(0, 0.044, 0.149, 0.28, 0.417, 0.546, 0.66, 0.755, 0.832, 0.891, 0.935, 0.967, 0.988, 1.002, 1.01, 1.014, 1.015, 1.015, 1.013, 1.011, 1.009, 1.007, 1.005, 1.004, 1.003, 1.002, 1.001, 1.001, 1, 1, 1)';
 export const SPRING_BOUNCY_MS = 500;
 
-/** True when the user asked for reduced motion (and in environments without matchMedia). */
+/**
+ * True when the device or this browser's "Reduce motion" switch (the root's
+ * `data-motion`, see preference.svelte.ts) asks for reduced motion, and in
+ * environments without matchMedia. Read at call time; for a reactive value use
+ * `motionPreference.reduced`.
+ */
 export function reducedMotion(): boolean {
+  if (typeof document !== 'undefined' && document.documentElement.dataset.motion === 'reduce') return true;
   if (typeof matchMedia !== 'function') return true;
   return matchMedia('(prefers-reduced-motion: reduce)').matches;
 }

@@ -168,11 +168,14 @@ test('reply style: the picker passes axe while open', async ({ page }) => {
   await axe(page, 'account reply picker');
 });
 
-test('this browser: look, Discord links, Experiments and the shortcuts', async ({ page }) => {
+test('this browser: look, Reduce motion, Discord links, Experiments and the shortcuts', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(`${ADMIN}/account?tab=browser&sw=off`);
   const p = panel(page);
   await expect(p.getByRole('radio', { name: 'Otonose' })).toBeVisible();
+  // Off by default (the device decides); reduce-motion.spec covers what it does.
+  await expect(p.getByRole('switch', { name: 'Reduce motion' })).toHaveAttribute('aria-checked', 'false');
+  await expect(p.getByRole('switch', { name: 'Reduce motion' })).toHaveAccessibleDescription(/even if your system allows motion/);
   await expect(p.getByRole('switch', { name: 'Open Discord links in the app' })).toHaveAttribute('aria-checked', 'true');
   const exp = p.getByRole('switch', { name: 'Experiments' });
   const before = await exp.getAttribute('aria-checked');

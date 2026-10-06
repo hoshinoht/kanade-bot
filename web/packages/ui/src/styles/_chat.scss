@@ -3,6 +3,7 @@
 // tab panel scroll on their own; the window, its title bar, the turn's
 // header and its pill tabs never do. Narrow screens show one at a time.
 @use "breakpoints" as *;
+@use "motion-query" as *;
 
 .chat {
   display: flex;
@@ -479,7 +480,7 @@
   transform: rotate(90deg);
 }
 
-@media (prefers-reduced-motion: reduce) {
+@include motion-reduce {
   .chat-modelview__toggle .icon {
     transition: none;
   }

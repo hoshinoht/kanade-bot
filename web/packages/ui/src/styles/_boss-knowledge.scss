@@ -1,6 +1,7 @@
 // B_Bosses: one master/detail window. The catalog and detail own their own
 // scrolling regions so the fixed shell and title bar never move.
 @use "breakpoints" as *;
+@use "motion-query" as *;
 @use "easing" as *;
 @use "boss-guide"; // the guide column inside the knowledge detail
 .bosses-window { display: flex; flex-direction: column; overflow: clip; }
@@ -84,7 +85,7 @@
 .knowledge-hero--compact .knowledge-hero__art { opacity: 0; }
 .knowledge-hero--compact .knowledge-hero__pill { display: inline-flex; }
 .knowledge-hero--compact .knowledge-hero__identity > .status-chip { display: none; }
-@media (prefers-reduced-motion: no-preference) {
+@include motion-ok {
   .knowledge-hero__identity,
   .knowledge-hero__identity .portrait--md { transition: min-height 220ms $standard, padding 220ms $standard, width 220ms $standard, height 220ms $standard; }
   .knowledge-hero__art,

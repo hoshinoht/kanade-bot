@@ -4,6 +4,7 @@
 // so the filter popover's and the base `.btn`/`input`/`:focus-visible` rules
 // around the trigger never reshape it.
 @use "easing" as *;
+@use "motion-query" as *;
 
 /* ── trigger (board `.dd`) ─────────────────────────────────────────────── */
 
@@ -663,7 +664,7 @@
 }
 
 // Reduced motion: a 120 ms fade on the popover only; months and picks change at once.
-@media (prefers-reduced-motion: reduce) {
+@include motion-reduce {
   // Wins over _motion's blanket 0.001ms: the spec keeps this one opacity-only fade.
   .datepick[open],
   .datepick--sheet[open] {

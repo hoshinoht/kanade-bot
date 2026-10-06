@@ -4,6 +4,7 @@
 // graduated to `_progress.scss` (always on, 2026-10-04).
 
 @use "easing" as *;
+@use "motion-query" as *;
 
 // Shapes come from our own radius language: circle, pill (like the chips) and
 // a rounded square (like --r on a window). A pill is a squashed square whose
@@ -108,14 +109,15 @@
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  [data-experiments="on"][data-overshoot="on"] .plan-card--lifted,
-  [data-experiments="on"][data-overshoot="on"] .dnd-ghost--on {
+@include motion-ok {
+  // The switches live on <html>, so `&` joins them to the root (see _motion-query).
+  &[data-experiments="on"][data-overshoot="on"] .plan-card--lifted,
+  &[data-experiments="on"][data-overshoot="on"] .dnd-ghost--on {
     animation: xp-pickup 320ms $standard;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@include motion-reduce {
   .xp-loading,
   .xp-loading__shape {
     animation: none;
