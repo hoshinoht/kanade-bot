@@ -73,6 +73,13 @@ async fn cleared_rsvp_keeps_blame_version<S: ScheduleStore + ChangeHistory + Bla
         version.versions.contains_key(&rsvp_field("1")),
         "clear is blamed"
     );
+    let field = rsvp_field("1");
+    let last = store.last_changes(&target).await.expect("last changes");
+    assert_eq!(
+        last.get(&field),
+        version.versions.get(&field),
+        "last_changes and read_versioned retain the same clear version"
+    );
 }
 
 #[derive(Clone, Default)]

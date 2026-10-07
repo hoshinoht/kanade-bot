@@ -1,16 +1,21 @@
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
+use kanade::bot::cards::{Authority, CardDesk, CardOutbox, CardSettings, DeskDeps};
 use kanade::bot::delivery::{AlertRecorder, FixedClock};
 use kanade::bot::rsvp_replay::RsvpReplay;
 use kanade::bot::transport::{FakeDiscord, MessageId};
-use kanade::domain::history::{Actor, Origin, Surface};
+use kanade::domain::history::{Actor, ChangeMeta, Origin, Surface};
 use kanade::domain::ids::RandomIds;
+use kanade::domain::members::{Directory, Member};
 use kanade::domain::notify::{
     AttemptId, Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, Lease,
     NotificationIntent, Receipt,
 };
-use kanade::domain::schedule::{NewRun, ReminderPolicy, RunSource, RunStatus, SchedulePolicy};
+use kanade::domain::proposals::Approver;
+use kanade::domain::schedule::{
+    Change, ChangeSet, NewRun, Reminder, ReminderPolicy, RunSource, RunStatus, SchedulePolicy,
+};
 use kanade::domain::scheduler::{ScheduleStore, SchedulerService};
 use kanade::infrastructure::store::MemoryScheduleStore;
 use twilight_model::id::Id;
@@ -18,6 +23,32 @@ use twilight_model::id::Id;
 pub const CHANNEL: u64 = 300;
 pub const SELF: u64 = 900;
 pub const MEMBER: u64 = 1001;
+pub const OTHER: u64 = 1002;
+
+struct TestDirectory;
+
+impl Directory for TestDirectory {
+    fn member(&self, _user_id: &str) -> Option<Member> {
+        None
+    }
+
+    fn is_watched(&self, _channel_id: &str) -> bool {
+        true
+    }
+}
+
+struct TestAuthority;
+
+impl Authority for TestAuthority {
+    fn approver(&self, user_id: &str) -> Approver {
+        Approver {
+            user_id: user_id.to_owned(),
+            has_role: false,
+            is_admin: false,
+            via_portal: false,
+        }
+    }
+}
 
 pub fn now() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 8, 30, 12, 0, 0)
@@ -139,6 +170,59 @@ impl World {
             .unwrap();
         self.fake.seed_message(Id::new(CHANNEL), Id::new(message));
         (lease, attempt)
+    }
+
+    pub async fn unbound_card_mapping(&self, run: &str, message: u64) {
+        let snapshot = self.snapshot(run).await;
+        let at = self.clock.get();
+        self.store
+            .commit(
+                snapshot.revision,
+                ChangeSet {
+                    changes: vec![Change::PutReminder(Reminder {
+                        id: format!("unbound-{message}"),
+                        run_id: run.to_owned(),
+                        kind: format!("countdown_{message}"),
+                        fire_at: at,
+                        sent_at: Some(at),
+                        message_id: Some(message.to_string()),
+                    })],
+                },
+                ChangeMeta {
+                    origin: Origin::new(Actor::admin("test"), Surface::AdminPortal),
+                    at,
+                    notices: Vec::new(),
+                    refs: Vec::new(),
+                    request_digest: None,
+                    expect: Default::default(),
+                    outbox: Vec::new(),
+                },
+            )
+            .await
+            .unwrap();
+        self.fake.seed_message(Id::new(CHANNEL), Id::new(message));
+    }
+
+    pub fn card_outbox(
+        &self,
+    ) -> CardOutbox<MemoryScheduleStore, FakeDiscord, RandomIds, AlertRecorder> {
+        CardOutbox(Arc::new(CardDesk::new(
+            DeskDeps {
+                store: Arc::clone(&self.store),
+                transport: Arc::clone(&self.fake),
+                ids: RandomIds,
+                clock: Arc::new(FixedClock(self.clock.get())),
+                directory: Arc::new(TestDirectory),
+                authority: Arc::new(TestAuthority),
+                alerts: Arc::clone(&self.alerts),
+                decline_retraction: None,
+            },
+            CardSettings {
+                zone: chrono_tz::UTC,
+                policy: policy(),
+                instance_id: "rsvp-replay-tests".into(),
+            },
+        )))
     }
 
     pub async fn carded_run(&self) -> (String, MessageId) {

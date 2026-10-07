@@ -22,6 +22,9 @@ use super::{
     OutgoingMessage, Presence, RejectionKind,
 };
 
+#[cfg(any(test, feature = "test-support"))]
+type ScriptedReactionPages = BTreeMap<(MessageId, String, u8), VecDeque<Vec<Id<UserMarker>>>>;
+
 /// Operation kinds a [`Step`] can be scripted for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Op {
@@ -230,6 +233,8 @@ struct State {
     history: BTreeMap<ChannelId, Vec<Message>>,
     channels: BTreeMap<Id<GuildMarker>, Vec<Channel>>,
     reactions: BTreeMap<(MessageId, String, u8), Vec<Id<UserMarker>>>,
+    #[cfg(any(test, feature = "test-support"))]
+    reaction_pages: ScriptedReactionPages,
 }
 
 /// First id handed out; large enough to look like a real snowflake.
@@ -375,6 +380,21 @@ impl FakeDiscord {
         self.state()
             .reactions
             .insert((message, emoji.to_owned(), kind.into()), users);
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn script_reaction_page(
+        &self,
+        message: MessageId,
+        emoji: &str,
+        kind: ReactionType,
+        users: Vec<Id<UserMarker>>,
+    ) {
+        self.state()
+            .reaction_pages
+            .entry((message, emoji.to_owned(), kind.into()))
+            .or_default()
+            .push_back(users);
     }
 
     /// Members [`DiscordTransport::list_members`] pages through.
@@ -681,10 +701,20 @@ impl DiscordTransport for FakeDiscord {
         self.gate(Op::ReactionUsers).await;
         let mut state = self.state();
         let exists = state.messages.get(&message) == Some(&channel);
-        let outcome = state.read(
-            Op::ReactionUsers,
-            (1..=super::MAX_REACTIONS_PAGE).contains(&limit),
-            |state| {
+        let valid = (1..=super::MAX_REACTIONS_PAGE).contains(&limit);
+        #[cfg(any(test, feature = "test-support"))]
+        let scripted = state
+            .reaction_pages
+            .get_mut(&(message, emoji.to_owned(), kind.into()))
+            .and_then(VecDeque::pop_front);
+        #[cfg(not(any(test, feature = "test-support")))]
+        let scripted: Option<Vec<Id<UserMarker>>> = None;
+        let outcome = if !valid {
+            Outcome::DefinitelyRejected(RejectionKind::Invalid)
+        } else if let Some(page) = scripted {
+            state.read(Op::ReactionUsers, true, |_| page)
+        } else {
+            state.read(Op::ReactionUsers, true, |state| {
                 let mut users: Vec<_> = state
                     .reactions
                     .get(&(message, emoji.to_owned(), kind.into()))
@@ -697,8 +727,8 @@ impl DiscordTransport for FakeDiscord {
                 users.dedup();
                 users.truncate(usize::from(limit));
                 users
-            },
-        );
+            })
+        };
         let outcome = match outcome {
             Outcome::Delivered(_) if !exists => {
                 Outcome::DefinitelyRejected(RejectionKind::UnknownMessage)

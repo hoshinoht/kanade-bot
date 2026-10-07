@@ -692,7 +692,7 @@ async fn card_runs_survive_a_reminder_rebuild<S: ScheduleStore + DeliveryJournal
 }
 
 async fn replay_cards_keep_all_mappings_but_select_fresh_evidence<
-    S: ScheduleStore + DeliveryJournal + ReplayCards + ReminderCardStore,
+    S: ScheduleStore + DeliveryJournal + ReplayCards + ReminderCardStore + DebugCardStore,
 >(
     store: &S,
 ) {
@@ -716,11 +716,86 @@ async fn replay_cards_keep_all_mappings_but_select_fresh_evidence<
         .bind(&lease, &attempt, &receipt(HOME, "5001"), None, at(8))
         .await
         .expect("bind");
+    commit(
+        store,
+        vec![Change::PutReminder(Reminder {
+            id: "m-3".into(),
+            run_id: "r-1".into(),
+            kind: "countdown_30".into(),
+            fire_at: at(8),
+            sent_at: Some(at(8)),
+            message_id: Some("5003".into()),
+        })],
+    )
+    .await;
+    let debug_intent = NotificationIntent {
+        effect: EffectKind::DebugCard,
+        effect_context: Vec::new(),
+        channel_id: HOME.into(),
+        targets: vec![DeliveryTarget::DebugCard {
+            run_id: "r-1".into(),
+            kind: "day_of".into(),
+        }],
+        mentions: Vec::new(),
+        content: IntentContent::Plain,
+        warnings: Vec::new(),
+    };
+    let debug_lease = store
+        .begin_lease("debug-replay", "delivery", at(7))
+        .await
+        .expect("debug lease");
+    let debug_attempt = fresh(store, &debug_lease, &debug_intent).await;
+    store
+        .bind(
+            &debug_lease,
+            &debug_attempt,
+            &receipt(HOME, "5002"),
+            None,
+            at(8),
+        )
+        .await
+        .expect("debug card bind");
+    assert!(
+        store
+            .clear_debug_card("5002", at(9))
+            .await
+            .expect("clear debug card")
+    );
     let cards = store.replay_cards(at(1)).await.expect("replay cards");
     assert_eq!(cards.len(), 1, "fresh bound reminder is a candidate");
     assert_eq!(cards[0].run_id, "r-1");
-    assert_eq!(cards[0].cards.len(), 1, "grouped card is read once");
-    assert!(cards[0].cards[0].evidence);
+    assert_eq!(
+        cards[0].cards.len(),
+        3,
+        "the run keeps every mapped message"
+    );
+    let fresh = cards[0]
+        .cards
+        .iter()
+        .find(|card| card.message_id == "5001")
+        .expect("bound reminder mapping");
+    assert!(fresh.evidence);
+    let cleared = cards[0]
+        .cards
+        .iter()
+        .find(|card| card.message_id == "5002")
+        .expect("cleared debug mapping is retained");
+    assert!(!cleared.evidence);
+    let unbound = cards[0]
+        .cards
+        .iter()
+        .find(|card| card.message_id == "5003")
+        .expect("unbound reminder mapping is retained");
+    assert!(!unbound.evidence);
+    assert_eq!(unbound.channel_id, None);
+    assert!(
+        store
+            .replay_cards(at(9))
+            .await
+            .expect("old cutoff")
+            .is_empty(),
+        "cleared and unbound mappings never become evidence"
+    );
 }
 
 async fn unsent_release_frees_the_target_for_a_fresh_claim<S: ScheduleStore + DeliveryJournal>(
