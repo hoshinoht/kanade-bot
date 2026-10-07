@@ -65,7 +65,13 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
             )
             .await;
         match outcome {
-            Ok(outcome) => Ok(outcome),
+            Ok(outcome) => match check_request(&self.service.store, &meta).await {
+                // A successful write records this operation itself; an exact
+                // competing no-op replay is equally successful. Neither may
+                // replace the value with `AlreadyApplied`.
+                Ok(()) | Err(SchedulerError::AlreadyApplied { .. }) => Ok(outcome),
+                Err(error) => Err(error),
+            },
             Err(error) => match check_request(&self.service.store, &meta).await {
                 // `transact_as` may discover a no-op or planning refusal after
                 // another writer recorded this key. Replay identity still wins.
