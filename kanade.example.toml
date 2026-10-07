@@ -70,6 +70,10 @@ bossing_role_id = "223456789012345678"
 # admin_role_id = "323456789012345678"
 # chat_pilot_role_id = "423456789012345678"
 debug_user_ids = []
+# Where `/debug ping` and `/debug header` post without `channel:`; unset:
+# a run's home channel (samples and `/debug header`: the invoking channel).
+# A run's test card posted elsewhere than its home channel is display only.
+# test_channel = "523456789012345678"
 
 [store]
 # Absolute paths without `..`.

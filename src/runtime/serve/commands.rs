@@ -40,6 +40,8 @@ pub struct DebugParts {
     pub roster: Arc<LiveRoster>,
     pub quiet: Arc<AtomicBool>,
     pub post_channel: Arc<RwLock<Option<String>>>,
+    /// `[discord] test_channel`.
+    pub test_channel: Option<String>,
     pub instance_id: String,
 }
 
@@ -92,6 +94,7 @@ pub fn factory<T: GatewayTransport>(
         policy: state.policy.clone(),
         quiet: debug.quiet,
         post_channel: debug.post_channel,
+        test_channel: debug.test_channel,
         instance_id: debug.instance_id,
         now: Arc::clone(&state.clock),
         throttle: AlertThrottle::new(),

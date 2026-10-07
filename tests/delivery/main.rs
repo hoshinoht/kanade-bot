@@ -8,6 +8,7 @@ mod attendance;
 mod cards;
 mod checkpoints;
 mod debug;
+mod debug_tools;
 mod declines;
 mod digest_replay;
 mod dispatch_replay;

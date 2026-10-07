@@ -1,12 +1,18 @@
 //! `/debug` (v4 `DebugGroup`). `ping` and `clear_test` post and delete real
-//! test cards, prefixed `🧪 TEST — `, whose ✅/❌ drive the real RSVP flow and
-//! which never touch the run's reminder rows; posting goes through the
-//! [`DebugCards`](super::context::DebugCards) port. `reminders` lists stored
+//! test cards, prefixed `🧪 TEST — `, which never touch the run's reminder
+//! rows; in the run's home channel their ✅/❌ drive the real RSVP flow,
+//! elsewhere (and for sample runs and digests) they are display only.
+//! `header` tries the persona header rewrite and posts the verdicts. All
+//! three go through the [`DebugCards`](super::context::DebugCards) port.
+//! `reminders` lists stored
 //! reminder rows (read only); `materialise` runs the scheduler writer's
 //! idempotent materialisation, the same write `/fixed add` makes. `status`,
 //! `upcoming` and `extract` are dropped (the admin app replaces them), and
 //! `tick` is omitted: the delivery loop owns its one `Delivery` and lease and
 //! ticks every `KANADE_TICK_SECONDS` (30 s), with no on-demand seam to call.
+
+mod header;
+mod ping;
 
 use std::sync::Arc;
 
@@ -14,8 +20,8 @@ use chrono::TimeDelta;
 use twilight_model::application::command::Command;
 
 use super::access::Gate;
-use super::build::{choices, command, picked, subcommand};
-use super::context::{CommandContext, TestKind, TestPosted};
+use super::build::{command, picked, subcommand};
+use super::context::{CommandContext, TestKind, TestPosted, TestReport, TestSubject};
 use super::dispatch::{ChoicesFuture, CommandError, CommandFuture, SlashCommand};
 use super::invocation::Invocation;
 use super::lookup::{RunPicker, everything, refused, run_choices};
@@ -66,6 +72,30 @@ fn reminder_rows(reminders: &[&Reminder], zone: chrono_tz::Tz) -> String {
         .join("\n")
 }
 
+/// The style and header notes after a ping's reply.
+fn notes(request: &super::context::PingRequest, report: &TestReport) -> String {
+    let mut text = String::new();
+    if !matches!(
+        report.posted,
+        TestPosted::Posted { .. } | TestPosted::Sandboxed { .. }
+    ) {
+        return text;
+    }
+    if let Some(style) = request.style {
+        text.push_str(&format!(" Style: `{}` (this post only).", style.as_str()));
+    }
+    match &report.header {
+        Some(note) if note.rewritten => text.push_str(" Header: fresh rewrite (not stored)."),
+        Some(note) => text.push_str(&format!(" Header: the seed ({}).", note.reason)),
+        None if request.rewrite => text.push_str(&format!(
+            " Header: `{}` has none to rewrite.",
+            request.kind.as_str()
+        )),
+        None => {}
+    }
+    text
+}
+
 pub struct DebugCommand {
     ctx: Arc<CommandContext>,
 }
@@ -80,44 +110,61 @@ impl DebugCommand {
     }
 
     async fn ping(&self, invocation: &Invocation) -> Result<InteractionReply, CommandError> {
-        let args = Args(&invocation.options);
-        let raw = args.text("run_id").unwrap_or_default();
-        let snapshot = everything(&self.ctx).await?;
-        // /debug reaches any run.
-        let Ok(run_id) = resolve_id(raw, snapshot.runs.iter().map(|run| run.id.as_str())) else {
-            return Err(CommandError::User(format!("No run matches `{raw}`.")));
-        };
-        let wanted = args.text("kind").unwrap_or_default();
-        let Some(kind) = TestKind::parse(wanted) else {
-            return Err(CommandError::User(format!(
-                "Don't know how to render `{wanted}`."
-            )));
-        };
+        let request = ping::request(&self.ctx, invocation).await?;
         let cards = self
             .ctx
             .debug_cards
             .as_ref()
             .ok_or_else(Self::unavailable)?;
-        let posted = cards
-            .post(run_id.to_owned(), kind, id_text(invocation.invoker.user_id))
+        let report = cards
+            .ping(request.clone())
             .await
             .map_err(CommandError::Internal)?;
-        Ok(InteractionReply::ephemeral(match posted {
+        let kind = request.kind.as_str();
+        let what = match &request.subject {
+            TestSubject::Run(run_id) if request.kind == TestKind::Digest => {
+                format!("`{kind}` test of run `#{}`'s boss week", short_id(run_id))
+            }
+            TestSubject::Run(run_id) => format!("`{kind}` test for run `#{}`", short_id(run_id)),
+            TestSubject::Sample(_) => format!("sample `{kind}` test"),
+            TestSubject::Week => format!("`{kind}` test of this boss week"),
+        };
+        let mut text = match &report.posted {
             TestPosted::Posted { channel_id } => format!(
-                "✅ Posted a `{}` test for run `#{}` in <#{channel_id}>. Its ✅/❌ drive the real \
-                 RSVP flow; the scheduled reminders are untouched.",
-                kind.as_str(),
-                short_id(run_id)
+                "✅ Posted a {what} in <#{channel_id}>. Its ✅/❌ drive the real RSVP flow; the \
+                 scheduled reminders are untouched."
             ),
+            TestPosted::Sandboxed { channel_id } => {
+                let sandbox = if matches!(request.subject, TestSubject::Run(_))
+                    && request.kind != TestKind::Digest
+                {
+                    "sandbox "
+                } else {
+                    ""
+                };
+                format!(
+                    "✅ Posted a {sandbox}{what} in <#{channel_id}> (display only: nothing is \
+                     stored for it and reactions do nothing here)."
+                )
+            }
             TestPosted::Unreachable => {
+                let home =
+                    request.channel.is_none() && matches!(request.subject, TestSubject::Run(_));
                 return Err(CommandError::User(
-                    "That run's home channel isn't reachable.".into(),
+                    if home {
+                        "That run's home channel isn't reachable."
+                    } else {
+                        "That channel isn't reachable."
+                    }
+                    .into(),
                 ));
             }
             TestPosted::Unconfirmed => "⚠️ Delivery of the test message was not confirmed. \
                                         Check the channel before retrying."
                 .to_owned(),
-        }))
+        };
+        text.push_str(&notes(&request, &report));
+        Ok(InteractionReply::ephemeral(text))
     }
 
     /// v4 `reminders`: one run's rows, else every row soonest first.
@@ -222,15 +269,8 @@ impl SlashCommand for DebugCommand {
             vec![
                 subcommand(
                     "ping",
-                    "Post a test reminder for a run right now",
-                    vec![
-                        picked(
-                            "run_id",
-                            "Pick from the dropdown, or paste an id like `a1b2c3d4`",
-                            true,
-                        ),
-                        choices("kind", "Which message to post", true, &kinds),
-                    ],
+                    "Post a test reminder for a run (or a sample run) right now",
+                    ping::options(&kinds),
                 ),
                 subcommand(
                     "clear_test",
@@ -246,6 +286,11 @@ impl SlashCommand for DebugCommand {
                     "materialise",
                     "Force materialisation of both weeks",
                     Vec::new(),
+                ),
+                subcommand(
+                    "header",
+                    "Try the persona header rewrite and post each verdict",
+                    header::options(),
                 ),
             ],
         )
@@ -266,6 +311,7 @@ impl SlashCommand for DebugCommand {
                 Some("clear_test") => self.clear_test(invocation).await,
                 Some("reminders") => self.reminders(invocation).await,
                 Some("materialise") => self.materialise(invocation).await,
+                Some("header") => header::run(&self.ctx, invocation).await,
                 other => Err(CommandError::Internal(format!(
                     "unknown /debug subcommand {other:?}"
                 ))),

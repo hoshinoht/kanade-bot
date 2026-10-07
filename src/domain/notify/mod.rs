@@ -31,7 +31,8 @@ pub use dispatch::{
 };
 pub use intent::{
     ChannelChoice, ChannelDirectory, DeliveryTarget, DeliveryWarning, EffectKind, IntentContent,
-    JournalView, NotificationIntent, PlannedSend, SendDisposition, choose_channel,
+    JournalView, NotificationIntent, PlannedSend, SANDBOX_PREFIX, SendDisposition, choose_channel,
+    is_sandbox_kind, sandbox_kind,
 };
 pub use journal::{
     ActiveClaims, AttemptId, AttemptRecord, AttemptState, Claim, DECLINE_RETRACTION_ACTOR,

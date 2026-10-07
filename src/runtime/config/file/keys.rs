@@ -101,6 +101,7 @@ pub(super) const KEYS: &[(&str, &str, Kind)] = &[
         Id,
     ),
     ("discord.debug_user_ids", "KANADE_DEBUG_USER_IDS", Ids),
+    ("discord.test_channel", "KANADE_TEST_CHANNEL_ID", Id),
     ("store.db_path", "KANADE_DB_PATH", Text),
     ("store.owner_lock_dir", "KANADE_OWNER_LOCK_DIR", Text),
     ("files.catalog_file", "KANADE_CATALOG_FILE", Text),

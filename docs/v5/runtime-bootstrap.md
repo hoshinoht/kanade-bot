@@ -108,6 +108,7 @@ lists are comma-separated.
 | `KANADE_GUILD_ID`, `KANADE_BOSSING_ROLE_ID` | required | Snowflakes. |
 | `KANADE_ADMIN_ROLE_ID`, `KANADE_CHAT_PILOT_ROLE_ID` | unset | Snowflakes. |
 | `KANADE_DEBUG_USER_IDS` | empty | Snowflake list. |
+| `KANADE_TEST_CHANNEL_ID` | unset | Snowflake. Where `/debug ping` and `/debug header` post without `channel:`. Unset: a run's home channel (else the post channel); sample runs and `/debug header` use the invoking channel, the week's `digest` the post channel. A run's test card posted anywhere but its home channel is display only (reactions do nothing, never refreshed). |
 | `KANADE_DB_PATH`, `KANADE_OWNER_LOCK_DIR` | required | Absolute paths without `..`. The lock directory and the database's directory are created `0700` when absent (existing ones are never re-moded); ownership, symlink and mode checks run when the store opens. A second process on the same store is refused. |
 | `KANADE_BACKUP_DIR` | unset | Absolute path without `..`. Serve only reads it: History checkpoints (`GET /api/admin/history/checkpoints`) list the `kanade backup` manifests there on every request; unset reports `backup_dir_configured: false`. Compose mounts it read-only at `/backups`. |
 | `KANADE_CATALOG_FILE` | `boss/bosses.yaml` | Boss catalog. |
@@ -206,6 +207,7 @@ Each key sets one variable below, whose rules apply unchanged
 | `discord.admin_role_id` | `KANADE_ADMIN_ROLE_ID` | snowflake (string or integer) |
 | `discord.chat_pilot_role_id` | `KANADE_CHAT_PILOT_ROLE_ID` | snowflake (string or integer) |
 | `discord.debug_user_ids` | `KANADE_DEBUG_USER_IDS` | snowflake list |
+| `discord.test_channel` | `KANADE_TEST_CHANNEL_ID` | snowflake (string or integer) |
 | `store.db_path` | `KANADE_DB_PATH` | string |
 | `store.owner_lock_dir` | `KANADE_OWNER_LOCK_DIR` | string |
 | `files.catalog_file` | `KANADE_CATALOG_FILE` | string |

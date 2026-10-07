@@ -43,6 +43,13 @@ impl<'a> Args<'a> {
         }
     }
 
+    pub fn integer(&self, name: &str) -> Option<i64> {
+        match self.value(name)? {
+            CommandOptionValue::Integer(value) => Some(*value),
+            _ => None,
+        }
+    }
+
     pub fn flag(&self, name: &str) -> Option<bool> {
         match self.value(name)? {
             CommandOptionValue::Boolean(value) => Some(*value),

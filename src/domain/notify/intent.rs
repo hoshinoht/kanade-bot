@@ -22,8 +22,22 @@ pub enum DeliveryTarget {
     Decline { run_id: String, user_id: String },
     /// A `/debug ping` test card for a run (v4 `DeliveryTarget.debug_card`).
     /// Not a native row: it holds nothing, is claimed per operation and is
-    /// registered for the run only once bound.
+    /// registered for the run only once bound, unless its kind is a
+    /// [`sandbox_kind`] (display only: never registered, the run need not exist).
     DebugCard { run_id: String, kind: String },
+}
+
+/// Kind prefix of a display-only test card.
+pub const SANDBOX_PREFIX: &str = "sandbox_";
+
+/// The stored kind of a display-only test card of `kind`.
+pub fn sandbox_kind(kind: &str) -> String {
+    format!("{SANDBOX_PREFIX}{kind}")
+}
+
+/// Whether a stored test card kind is display only.
+pub fn is_sandbox_kind(kind: &str) -> bool {
+    kind.starts_with(SANDBOX_PREFIX)
 }
 
 impl DeliveryTarget {
@@ -164,6 +178,11 @@ impl NotificationIntent {
     /// Operation-scoped: no native target (notices, test cards).
     pub fn operation_scoped(&self) -> bool {
         self.targets.iter().all(|target| !target.is_native())
+    }
+
+    /// A display-only test card: no reactions, never registered.
+    pub fn sandboxed(&self) -> bool {
+        matches!(self.debug_card(), Ok(Some((_, kind))) if is_sandbox_kind(kind))
     }
 
     /// The test card this intent posts, if any: `(run_id, kind)`.

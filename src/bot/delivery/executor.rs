@@ -375,10 +375,12 @@ where
             self.journal.mark_indeterminate(self.lease, attempt).await?;
             return Ok(SendOutcome::Uncertain);
         }
+        // A sandbox test card's reactions would do nothing: none are seeded.
         if matches!(
             intent.effect,
             EffectKind::Reminder | EffectKind::Card | EffectKind::DebugCard
-        ) && let Some(channel) = parse_id(&intent.channel_id)
+        ) && !intent.sandboxed()
+            && let Some(channel) = parse_id(&intent.channel_id)
         {
             // Best effort, as v4: a card without reactions still counts.
             for emoji in [EMOJI_YES, EMOJI_NO] {

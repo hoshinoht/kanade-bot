@@ -18,7 +18,7 @@ use crate::domain::notify::{
     ActiveClaims, AttemptId, AttemptRecord, AttemptState, Claim, DIGEST_REPLACEMENT_ACTOR,
     DIGEST_REPLACEMENT_REASON, DedupeKey, DeliveryJournal, DeliveryTarget, DigestLog, EffectKind,
     JournalError, Lease, NOT_SENT_ACTOR, NotificationIntent, REJECTED_ACTOR, Receipt, Recovery,
-    WeeklyDigest, check_resolution, effect_ordinal,
+    WeeklyDigest, check_resolution, effect_ordinal, is_sandbox_kind,
 };
 use crate::domain::scheduler::StoreError;
 use crate::domain::time::{from_iso, to_iso};
@@ -331,6 +331,7 @@ fn claim_in(
                     )));
                 }
             }
+            DeliveryTarget::DebugCard { kind, .. } if is_sandbox_kind(kind) => {}
             DeliveryTarget::DebugCard { run_id, .. } => {
                 if !tables.runs.contains_key(run_id) {
                     return Err(JournalError::TargetUnavailable(format!(
@@ -534,11 +535,13 @@ fn bind_in(
     {
         debug.message_id = Some(receipt.message_id.clone());
         debug.posted_at = Some(super::micros(at));
-        let run_id = debug.run_id.clone();
-        tables
-            .journal
-            .card_runs
-            .insert((receipt.message_id.clone(), run_id));
+        if !is_sandbox_kind(&debug.kind) {
+            let run_id = debug.run_id.clone();
+            tables
+                .journal
+                .card_runs
+                .insert((receipt.message_id.clone(), run_id));
+        }
     }
     if let Some(week) = record_week {
         tables.journal.raise_marker(week, at)?;

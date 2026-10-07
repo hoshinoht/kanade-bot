@@ -432,6 +432,7 @@ where
         roster: Arc::clone(&roster),
         quiet: Arc::clone(&quiet),
         post_channel: Arc::clone(&post_channel),
+        test_channel: config.guild.test_channel_id.map(|id| id.to_string()),
         instance_id: config.instance_id.clone(),
     };
     let refresh = Arc::new(CardRefresh {

@@ -11,6 +11,8 @@ pub struct GuildSettings {
     pub admin_role_id: Option<u64>,
     pub chat_pilot_role_id: Option<u64>,
     pub debug_user_ids: Vec<u64>,
+    /// Where `/debug ping` and `/debug header` post without `channel:`.
+    pub test_channel_id: Option<u64>,
 }
 
 impl GuildSettings {
@@ -21,6 +23,7 @@ impl GuildSettings {
             admin_role_id: optional(values, "KANADE_ADMIN_ROLE_ID")?,
             chat_pilot_role_id: optional(values, "KANADE_CHAT_PILOT_ROLE_ID")?,
             debug_user_ids: list(values, "KANADE_DEBUG_USER_IDS")?,
+            test_channel_id: optional(values, "KANADE_TEST_CHANNEL_ID")?,
         })
     }
 }

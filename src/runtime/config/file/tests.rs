@@ -270,3 +270,50 @@ fn groups_feed_the_model_settings() {
          (kanade.toml `models.permits`)"
     );
 }
+
+#[test]
+fn the_debug_test_channel_is_an_optional_snowflake() {
+    let channel = |line: &str| {
+        let text = EXAMPLE.replace(
+            "debug_user_ids = []",
+            &format!("debug_user_ids = []\n{line}"),
+        );
+        let resolved = merge(&text, BTreeMap::new())?;
+        ServeConfig::from_mapping(&resolved.values).map(|config| config.guild.test_channel_id)
+    };
+    assert_eq!(channel("").unwrap(), None);
+    assert_eq!(
+        channel("test_channel = \"523456789012345678\"").unwrap(),
+        Some(523456789012345678)
+    );
+    assert_eq!(
+        channel("test_channel = 523456789012345678").unwrap(),
+        Some(523456789012345678)
+    );
+    assert_eq!(
+        channel("test_channel = \"#bot-tests\"")
+            .unwrap_err()
+            .to_string(),
+        "KANADE_TEST_CHANNEL_ID must be a Discord snowflake"
+    );
+    assert_eq!(
+        channel("test_channel = true").unwrap_err().to_string(),
+        "kanade.toml `discord.test_channel` must be a snowflake string or integer"
+    );
+    // The environment overrides the file, like every key.
+    let resolved = merge(
+        &EXAMPLE.replace(
+            "debug_user_ids = []",
+            "debug_user_ids = []\ntest_channel = \"5\"",
+        ),
+        env(&[("KANADE_TEST_CHANNEL_ID", "6")]),
+    )
+    .unwrap();
+    assert_eq!(
+        ServeConfig::from_mapping(&resolved.values)
+            .unwrap()
+            .guild
+            .test_channel_id,
+        Some(6)
+    );
+}

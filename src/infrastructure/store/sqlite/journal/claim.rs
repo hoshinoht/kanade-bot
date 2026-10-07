@@ -7,7 +7,7 @@ use sqlx::error::ErrorKind;
 use super::{backend, check_live, encode, iso};
 use crate::domain::notify::{
     AttemptId, Claim, DedupeKey, DeliveryTarget, JournalError, Lease, NotificationIntent,
-    REQUEST_FINGERPRINT_VERSION, claim_key, effect_ordinal, request_fingerprint,
+    REQUEST_FINGERPRINT_VERSION, claim_key, effect_ordinal, is_sandbox_kind, request_fingerprint,
 };
 
 fn unavailable(detail: String) -> JournalError {
@@ -175,6 +175,8 @@ async fn check_targets(
                     Some((None, false)) => {}
                 }
             }
+            // A sandbox card is display only and may show a sample run.
+            DeliveryTarget::DebugCard { kind, .. } if is_sandbox_kind(kind) => {}
             DeliveryTarget::DebugCard { run_id, .. } => {
                 let exists: Option<i64> = sqlx::query_scalar("SELECT 1 FROM runs WHERE id = ?1")
                     .bind(run_id)

@@ -26,8 +26,9 @@ use std::sync::Arc;
 
 pub use access::{AccessPolicy, Denial, Gate, Invoker};
 pub use context::{
-    ChatAllowance, Clock, CommandContext, DebugCards, GuildChannels, MemberRows, PortFuture,
-    TestKind, TestPosted,
+    ChatAllowance, Clock, CommandContext, DebugCards, GuildChannels, HeaderNote, HeaderRequest,
+    HeaderTrialKind, HeaderTrials, MemberRows, PingRequest, PortFuture, SampleRun, TestKind,
+    TestPosted, TestReport, TestSubject,
 };
 pub use debug::{DebugCommand, TEST_CARDS_UNAVAILABLE, TEST_PREFIX};
 pub use dispatch::{

@@ -52,8 +52,40 @@ async fn only_the_retained_commands_are_registered_for_the_guild() {
     let debug = &payload[1];
     assert_eq!(
         names(&debug["options"]),
-        ["ping", "clear_test", "reminders", "materialise"]
+        ["ping", "clear_test", "reminders", "materialise", "header"]
     );
+    let ping = &debug["options"][0]["options"];
+    assert_eq!(
+        names(ping),
+        [
+            "kind", "run_id", "channel", "style", "header", "bosses", "time", "party", "in", "out",
+            "status"
+        ]
+    );
+    assert_eq!(ping[0]["required"], json!(true));
+    for option in ping.as_array().unwrap().iter().skip(1) {
+        assert!(option.get("required").is_none(), "{option}");
+    }
+    assert_eq!(ping[6]["min_value"], json!(-1440));
+    assert_eq!(
+        names(&debug["options"][4]["options"]),
+        ["kind", "tries", "channel"]
+    );
+    // Discord caps a command's names, descriptions and choice values at 4000 characters.
+    fn text_size(value: &Value) -> usize {
+        match value {
+            Value::Object(map) => map
+                .iter()
+                .map(|(key, value)| match (key.as_str(), value) {
+                    ("name" | "description" | "value", Value::String(text)) => text.chars().count(),
+                    _ => text_size(value),
+                })
+                .sum(),
+            Value::Array(items) => items.iter().map(text_size).sum(),
+            _ => 0,
+        }
+    }
+    assert!(text_size(debug) <= 4000, "{}", text_size(debug));
     let fixed = &payload[0];
     assert_eq!(names(&fixed["options"]), ["add", "list", "edit", "remove"]);
 

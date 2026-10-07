@@ -20,7 +20,9 @@ mod render;
 mod tick;
 
 pub use alerts::{ALERT_WINDOW, AdminAlert, AlertRecorder, AlertSink, AlertThrottle, LogAlerts};
-pub use debug::{DebugCardStore, DebugDesk, PostedDebugCard, TEST_PREFIX};
+pub use debug::{
+    DebugCardStore, DebugDesk, MAX_HEADER_TRIES, PostedDebugCard, SAMPLE_RUN_ID, TEST_PREFIX,
+};
 pub use declines::DeclineReport;
 pub use executor::{Executor, Replacement, SendFailure, SendOutcome, SendReport};
 pub use notice_text::render_notice;

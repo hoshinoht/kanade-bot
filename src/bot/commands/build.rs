@@ -3,7 +3,7 @@
 
 use twilight_model::application::command::{
     Command, CommandOption, CommandOptionChoice, CommandOptionChoiceValue, CommandOptionType,
-    CommandType,
+    CommandOptionValue, CommandType,
 };
 use twilight_model::application::interaction::InteractionContextType;
 use twilight_model::channel::ChannelType;
@@ -121,6 +121,15 @@ pub fn text_channel(name: &str, description: &str) -> CommandOption {
     CommandOption {
         channel_types: Some(vec![ChannelType::GuildText]),
         ..option(CommandOptionType::Channel, name, description)
+    }
+}
+
+/// An optional integer option within `min..=max`.
+pub fn integer(name: &str, description: &str, min: i64, max: i64) -> CommandOption {
+    CommandOption {
+        min_value: Some(CommandOptionValue::Integer(min)),
+        max_value: Some(CommandOptionValue::Integer(max)),
+        ..option(CommandOptionType::Integer, name, description)
     }
 }
 

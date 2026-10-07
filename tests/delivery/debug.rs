@@ -29,9 +29,9 @@ use crate::cards::{
 };
 use crate::intercept::Intercept;
 use crate::scenarios::{self, HOME, POST, World, now};
-use crate::support::{self, Store, TempDir};
+use crate::support::{self, Store};
 
-fn desk<S: Store + DebugCardStore + 'static>(
+pub(crate) fn desk<S: Store + DebugCardStore + 'static>(
     store: &Arc<S>,
     fake: &Arc<FakeDiscord>,
     world: &World,
@@ -49,6 +49,7 @@ fn desk<S: Store + DebugCardStore + 'static>(
         policy: scenarios::config().policy,
         quiet: Arc::new(AtomicBool::new(false)),
         post_channel: Arc::new(RwLock::new(post.map(str::to_owned))),
+        test_channel: None,
         instance_id: support::INSTANCE.into(),
         now: Arc::new(now),
         throttle: AlertThrottle::new(),
@@ -58,8 +59,11 @@ fn desk<S: Store + DebugCardStore + 'static>(
 /// Run `$f(Arc<store>)` on a fresh memory store, then a fresh SQLite store.
 macro_rules! on_both_arcs {
     ($f:path) => {{
-        $f(Arc::new(MemoryScheduleStore::new())).await;
-        let dir = TempDir::new();
+        $f(Arc::new(
+            kanade::infrastructure::store::MemoryScheduleStore::new(),
+        ))
+        .await;
+        let dir = $crate::support::TempDir::new();
         let sqlite = Arc::new(dir.open().await);
         $f(Arc::clone(&sqlite)).await;
         Arc::try_unwrap(sqlite)
@@ -70,6 +74,7 @@ macro_rules! on_both_arcs {
             .expect("close store");
     }};
 }
+pub(crate) use on_both_arcs;
 
 async fn ping<S: Store + DebugCardStore + 'static>(
     desk: &DebugDesk<S, FakeDiscord>,
@@ -91,7 +96,7 @@ fn content(fake: &FakeDiscord) -> String {
 
 /// The Malefic Star run tonight (1001 pings at `all`, 1002 never) with its
 /// real day-of reminder due.
-async fn star<S: Store>(store: &S) -> String {
+pub(crate) async fn star<S: Store>(store: &S) -> String {
     let id = run(
         store,
         &["HMaleficStar"],
@@ -511,6 +516,7 @@ async fn a_post_the_journal_could_not_record_is_unconfirmed() {
         policy: base.policy,
         quiet: base.quiet,
         post_channel: base.post_channel,
+        test_channel: base.test_channel,
         instance_id: base.instance_id,
         now: base.now,
         throttle: base.throttle,

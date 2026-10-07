@@ -7,11 +7,15 @@ use serde_json::json;
 
 use kanade::api::rescan::{RescanFuture, RescanRunner, RescanView};
 use kanade::bot::commands::{
-    ChatAllowance, DebugCards, PortFuture, STAFF_LIMITS_REPLY, TestKind, TestPosted,
+    ChatAllowance, DebugCards, HeaderNote, HeaderRequest, HeaderTrialKind, HeaderTrials,
+    PingRequest, PortFuture, STAFF_LIMITS_REPLY, SampleRun, TestKind, TestPosted, TestReport,
+    TestSubject,
 };
 use kanade::bot::transport::{Call, Op, RejectionKind, Step};
 use kanade::chat::pilot::{AllowanceSnapshot, MemberUsage, PoolUsage};
 use kanade::domain::model_log::{RescanJob, RescanStatus};
+use kanade::domain::schedule::RunStatus;
+use kanade::domain::settings::MessageStyle;
 use kanade::extract::rescan::RescanRequest;
 
 use super::super::support::{ADMIN_ROLE, BOSSING_ROLE};
@@ -200,28 +204,26 @@ async fn rescan_queues_through_the_runner() {
     ));
 }
 
-/// Records posts; `clear` reports what it was asked.
+/// Records requests; answers with `reply` (default: posted in the party
+/// channel) and `trials`.
 #[derive(Default)]
 struct Cards {
-    posted: Mutex<Vec<(String, TestKind, String)>>,
+    posted: Mutex<Vec<PingRequest>>,
+    headers: Mutex<Vec<HeaderRequest>>,
+    reply: Mutex<Option<TestReport>>,
+    trials: Mutex<Option<HeaderTrials>>,
 }
 
 impl DebugCards for Cards {
-    fn post(
-        &self,
-        run_id: String,
-        kind: TestKind,
-        requested_by: String,
-    ) -> PortFuture<'_, Result<TestPosted, String>> {
-        self.posted
-            .lock()
-            .unwrap()
-            .push((run_id, kind, requested_by));
-        Box::pin(async {
-            Ok(TestPosted::Posted {
+    fn ping(&self, request: PingRequest) -> PortFuture<'_, Result<TestReport, String>> {
+        self.posted.lock().unwrap().push(request);
+        let reply = self.reply.lock().unwrap().clone().unwrap_or(TestReport {
+            posted: TestPosted::Posted {
                 channel_id: KALOS.to_string(),
-            })
-        })
+            },
+            header: None,
+        });
+        Box::pin(async move { Ok(reply) })
     }
 
     fn clear(
@@ -232,6 +234,17 @@ impl DebugCards for Cards {
         assert_eq!(channel_id, KALOS.to_string());
         assert_eq!(now() - since, chrono::TimeDelta::hours(24));
         Box::pin(async { Ok((2, 1)) })
+    }
+
+    fn headers(&self, request: HeaderRequest) -> PortFuture<'_, Result<HeaderTrials, String>> {
+        self.headers.lock().unwrap().push(request);
+        let trials = self
+            .trials
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or(HeaderTrials::Disabled);
+        Box::pin(async move { Ok(trials) })
     }
 }
 
@@ -258,7 +271,10 @@ async fn debug_posts_test_cards_through_the_port() {
     );
     assert_eq!(
         cards.posted.lock().unwrap().as_slice(),
-        [(R_KALOS.to_owned(), TestKind::Countdown60, DAN.to_string())]
+        [PingRequest {
+            invoked_in: Some(KALOS.to_string()),
+            ..PingRequest::run(R_KALOS.to_owned(), TestKind::Countdown60, DAN.to_string())
+        }]
     );
     assert_eq!(
         slash.run(DAN, "debug", ping("nope", "day_of")).await,
@@ -278,6 +294,252 @@ async fn debug_posts_test_cards_through_the_port() {
         )
         .await;
     assert_eq!(choices.len(), 3);
+}
+
+fn channel_opt(name: &str, id: u64) -> serde_json::Value {
+    json!({ "name": name, "type": 7, "value": id.to_string() })
+}
+
+fn int_opt(name: &str, value: i64) -> serde_json::Value {
+    json!({ "name": name, "type": 4, "value": value })
+}
+
+#[tokio::test]
+async fn debug_ping_options_reach_the_port_and_shape_the_reply() {
+    let cards = Arc::new(Cards::default());
+    let slash = Slash::with(Ports {
+        debug_cards: Some(cards.clone()),
+        ..Ports::default()
+    })
+    .await;
+    let last = || {
+        cards
+            .posted
+            .lock()
+            .unwrap()
+            .last()
+            .cloned()
+            .expect("a ping")
+    };
+
+    // Another channel, a style override and a rewrite that fell back.
+    *cards.reply.lock().unwrap() = Some(TestReport {
+        posted: TestPosted::Sandboxed {
+            channel_id: LOUNGE.to_string(),
+        },
+        header: Some(HeaderNote {
+            rewritten: false,
+            reason: "rejected (markup)".into(),
+        }),
+    });
+    let reply = slash
+        .run(
+            DAN,
+            "debug",
+            sub(
+                "ping",
+                json!([
+                    opt("kind", "day_of"),
+                    opt("run_id", R_KALOS),
+                    channel_opt("channel", LOUNGE),
+                    opt("style", "redesigned"),
+                    opt("header", "rewrite"),
+                ]),
+            ),
+        )
+        .await;
+    assert_eq!(
+        reply,
+        "✅ Posted a sandbox `day_of` test for run `#11111111` in <#302> (display only: nothing \
+         is stored for it and reactions do nothing here). Style: `redesigned` (this post only). \
+         Header: the seed (rejected (markup))."
+    );
+    let request = last();
+    assert_eq!(request.channel.as_deref(), Some("302"));
+    assert_eq!(request.style, Some(MessageStyle::Redesigned));
+    assert!(request.rewrite);
+
+    // A sample run from options; nobody named in `party` means the invoker.
+    *cards.reply.lock().unwrap() = Some(TestReport {
+        posted: TestPosted::Sandboxed {
+            channel_id: KALOS.to_string(),
+        },
+        header: Some(HeaderNote {
+            rewritten: true,
+            reason: "accepted".into(),
+        }),
+    });
+    let reply = slash
+        .run(
+            DAN,
+            "debug",
+            sub(
+                "ping",
+                json!([
+                    opt("kind", "countdown_15"),
+                    opt("bosses", "hard star, xkalos"),
+                    int_opt("time", 30),
+                    opt("party", "<@1001> <@1002>"),
+                    opt("in", "<@1001>"),
+                    opt("out", "<@1006>"),
+                    opt("status", "at_risk"),
+                    opt("header", "rewrite"),
+                ]),
+            ),
+        )
+        .await;
+    assert_eq!(
+        reply,
+        "✅ Posted a sample `countdown_15` test in <#301> (display only: nothing is stored for \
+         it and reactions do nothing here). Header: fresh rewrite (not stored)."
+    );
+    assert_eq!(
+        last().subject,
+        TestSubject::Sample(SampleRun {
+            bosses: vec!["HMaleficStar".into(), "XKalos".into()],
+            at: now() + chrono::TimeDelta::minutes(30),
+            party: vec!["1001".into(), "1002".into()],
+            yes: vec!["1001".into()],
+            no: vec!["1006".into()],
+            status: RunStatus::AtRisk,
+        })
+    );
+    slash
+        .run(
+            DAN,
+            "debug",
+            sub(
+                "ping",
+                json!([opt("kind", "amend"), opt("bosses", "normal star")]),
+            ),
+        )
+        .await;
+    let TestSubject::Sample(sample) = last().subject else {
+        panic!("a sample");
+    };
+    assert_eq!(sample.party, [DAN.to_string()]);
+    assert_eq!(sample.at, now() + chrono::TimeDelta::minutes(120));
+    assert_eq!(sample.status, RunStatus::Planned);
+
+    // The week's digest needs no run; other kinds need a run or bosses.
+    *cards.reply.lock().unwrap() = Some(TestReport {
+        posted: TestPosted::Sandboxed {
+            channel_id: KALOS.to_string(),
+        },
+        header: None,
+    });
+    assert_eq!(
+        slash
+            .run(DAN, "debug", sub("ping", json!([opt("kind", "digest")])))
+            .await,
+        "✅ Posted a `digest` test of this boss week in <#301> (display only: nothing is stored \
+         for it and reactions do nothing here)."
+    );
+    assert_eq!(last().subject, TestSubject::Week);
+    let before = cards.posted.lock().unwrap().len();
+    for (options, refusal) in [
+        (
+            json!([opt("kind", "day_of")]),
+            "❌ Give a `run_id`, or `bosses` for a sample run.",
+        ),
+        (
+            json!([opt("kind", "day_of"), opt("party", "<@1001>")]),
+            "❌ A sample run needs `bosses`.",
+        ),
+        (
+            json!([
+                opt("kind", "day_of"),
+                opt("run_id", R_KALOS),
+                opt("bosses", "xkalos")
+            ]),
+            "❌ Give either `run_id` or sample run options, not both.",
+        ),
+        (
+            json!([
+                opt("kind", "day_of"),
+                opt("bosses", "xkalos"),
+                opt("in", "Bob")
+            ]),
+            "❌ `in` needs member mentions like <@123>.",
+        ),
+    ] {
+        assert_eq!(slash.run(DAN, "debug", sub("ping", options)).await, refusal);
+    }
+    assert!(
+        slash
+            .run(
+                DAN,
+                "debug",
+                sub(
+                    "ping",
+                    json!([opt("kind", "day_of"), opt("bosses", "hard kalos")])
+                ),
+            )
+            .await
+            .starts_with("❌ "),
+        "the catalog's own parse error"
+    );
+    assert_eq!(
+        cards.posted.lock().unwrap().len(),
+        before,
+        "refused before the port"
+    );
+}
+
+#[tokio::test]
+async fn debug_header_tries_through_the_port() {
+    let cards = Arc::new(Cards::default());
+    let slash = Slash::with(Ports {
+        debug_cards: Some(cards.clone()),
+        ..Ports::default()
+    })
+    .await;
+    assert_eq!(
+        slash
+            .run(DAN, "debug", sub("header", json!([opt("kind", "day_of")])))
+            .await,
+        "Header rewrites aren't set up here (no rewrite model or persona), so there is nothing \
+         to try."
+    );
+    *cards.trials.lock().unwrap() = Some(HeaderTrials::Posted {
+        channel_id: LOUNGE.to_string(),
+        accepted: 1,
+    });
+    assert_eq!(
+        slash
+            .run(
+                DAN,
+                "debug",
+                sub(
+                    "header",
+                    json!([
+                        opt("kind", "countdown"),
+                        int_opt("tries", 2),
+                        channel_opt("channel", LOUNGE)
+                    ]),
+                ),
+            )
+            .await,
+        "✅ Tried the `countdown` header rewrite 2 time(s), 1 accepted; results posted in \
+         <#302>. Nothing was stored."
+    );
+    assert_eq!(
+        cards.headers.lock().unwrap().as_slice(),
+        [
+            HeaderRequest {
+                kind: HeaderTrialKind::DayOf,
+                tries: 3,
+                channel: None,
+                invoked_in: Some(KALOS.to_string()),
+            },
+            HeaderRequest {
+                kind: HeaderTrialKind::Countdown,
+                tries: 2,
+                channel: Some(LOUNGE.to_string()),
+                invoked_in: Some(KALOS.to_string()),
+            }
+        ]
+    );
 }
 
 #[tokio::test]
