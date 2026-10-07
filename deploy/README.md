@@ -23,6 +23,16 @@ Base images are pinned by digest; bump tag and digest together
 (`docker buildx imagetools inspect <image:tag>`). Nothing private is baked in:
 personas, art, the store and secrets are mounted at runtime.
 
+Every image has OCI revision, version and source labels. Set them from the
+commit being built; Compose passes the same optional variables through to its
+build:
+
+```sh
+export KANADE_IMAGE_REVISION="$(git rev-parse HEAD)"
+export KANADE_IMAGE_VERSION="$(git describe --always --dirty)"
+export KANADE_IMAGE_SOURCE="https://github.com/hoshinoht/kanade-bot"
+```
+
 ## Host prerequisites
 
 Run everything from the repository root of the live checkout; relative mounts
@@ -45,7 +55,11 @@ resolve from it.
 
 ```sh
 docker compose -f deploy/compose.yaml build
-# or: docker build -f deploy/Dockerfile -t kanade-v5:local .
+# or: docker build -f deploy/Dockerfile \
+#   --build-arg KANADE_IMAGE_REVISION="$(git rev-parse HEAD)" \
+#   --build-arg KANADE_IMAGE_VERSION="$(git describe --always --dirty)" \
+#   --build-arg KANADE_IMAGE_SOURCE="https://github.com/hoshinoht/kanade-bot" \
+#   -t kanade-v5:local .
 ```
 
 ## Start (cut over from v4)

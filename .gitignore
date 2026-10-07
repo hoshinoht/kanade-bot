@@ -57,6 +57,7 @@ DESIGN.md
 web/**/node_modules/
 web/**/dist/
 web/e2e/.results/
+web/e2e/.results-rust/
 web/e2e/.captures/
 web/**/*.tsbuildinfo
 devtools/pwa-mock/target/

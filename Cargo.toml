@@ -37,6 +37,11 @@ webpki-roots = { version = "=1.0.9", default-features = false }
 # Generates web/packages/api-types/src/generated.ts from the API DTOs (unit test only).
 ts-rs = { version = "=12.0.1", default-features = false, features = ["serde-compat"] }
 
+[[example]]
+name = "rust_e2e_fixture"
+path = "examples/rust_e2e_fixture.rs"
+required-features = ["test-support"]
+
 [[test]]
 name = "provider_contract"
 path = "tests/provider/main.rs"

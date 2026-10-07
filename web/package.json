@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "e2e": "playwright test",
+    "e2e:rust": "playwright test -c playwright.rust.config.ts",
     "leak": "playwright test e2e/bundle.spec.ts",
     "measure": "bun scripts/measure.ts",
     "fidelity": "bun scripts/fidelity.ts",

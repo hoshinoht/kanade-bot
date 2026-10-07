@@ -2,6 +2,8 @@
 //! store, break-glass sign-in and the admin API over real state, run as the
 //! shipped binary.
 
+mod restore;
+
 use std::{
     fs,
     io::{Read, Write},

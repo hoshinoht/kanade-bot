@@ -75,6 +75,41 @@ jobs:
       - name: Release build
         run: cargo build --locked --release
 
+  # Browser smoke tests against the real Rust listener and an invented scratch
+  # store. The fixture and server both run offline; no private configuration is used.
+  rust-e2e:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.98.1
+      - name: Build Rust server
+        run: cargo build --locked --release
+      - name: Build Rust E2E fixture
+        run: cargo build --locked --example rust_e2e_fixture --features test-support
+      - name: Install web workspace
+        working-directory: web
+        run: bun install --frozen-lockfile
+      - name: Build web apps
+        working-directory: web
+        run: bun run build
+      - name: Rust end-to-end
+        working-directory: web
+        run: KANADE_E2E_PORT_BASE=5073 bun run e2e:rust
+      - name: Keep Rust Playwright traces and server log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-playwright-results
+          path: web/e2e/.results-rust
+          include-hidden-files: true
+          retention-days: 7
+
   # The Svelte PWAs (web/) and their dev-only mock server (devtools/pwa-mock).
   web:
     needs: changes

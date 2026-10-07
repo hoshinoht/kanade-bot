@@ -8,6 +8,10 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
+      args:
+        KANADE_IMAGE_REVISION: ${KANADE_IMAGE_REVISION:-unknown}
+        KANADE_IMAGE_VERSION: ${KANADE_IMAGE_VERSION:-dev}
+        KANADE_IMAGE_SOURCE: ${KANADE_IMAGE_SOURCE:-https://github.com/hoshinoht/kanade-bot}
     image: kanade-v5:local
     container_name: kanade-v5
     # Live serve: owns the store and connects the gateway (KANADE_EXPECT_V4_STOPPED=1).
