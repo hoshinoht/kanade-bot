@@ -668,6 +668,34 @@ test.describe('boss guide', () => {
     await expect(hero).not.toHaveClass(/knowledge-hero--compact/);
   });
 
+  for (const [width, height] of [[1280, 800], [1000, 670], [1280, 600], [390, 844], [844, 390]]) {
+    test(`switching bosses resets the compact hero and guide scroll at ${width}×${height}`, async ({ page }) => {
+      await page.setViewportSize({ width: width!, height: height! });
+      await page.route(/\/api\/admin\/bosses\/(MaleficStar|Kalos)\/knowledge$/, async (route) => {
+        const response = await route.fetch(unconditional(route));
+        const body = (await response.json()) as Record<string, unknown>;
+        await route.fulfill({ response, json: { ...body, doc: GUIDE_DOC, missions: GUIDE_MISSIONS } });
+      });
+      await go(page, '/bosses/MaleficStar/knowledge');
+      const hero = page.locator('.knowledge-hero');
+      const panel = page.locator('.knowledge-detail__body');
+      await expect(hero).not.toHaveClass(/knowledge-hero--compact/);
+      await panel.evaluate((body) => body.scrollTo(0, 400));
+      await expect(hero).toHaveClass(/knowledge-hero--compact/);
+      // Navigate through the catalog, not a reload that would clear component state.
+      if (width! < 900) await page.getByRole('button', { name: /Back to the catalog/ }).click();
+      await page.locator('.bosses-list a.bossrow__name', { hasText: /Kalos/ }).click();
+      await expect(hero.getByRole('heading', { level: 2, name: /Kalos/ })).toBeVisible();
+      await expect(hero).not.toHaveClass(/knowledge-hero--compact/);
+      await expect.poll(() => panel.evaluate((body) => body.scrollTop)).toBe(0);
+      await panel.evaluate((body) => body.scrollTo(0, 400));
+      await expect(hero).toHaveClass(/knowledge-hero--compact/);
+      await panel.evaluate((body) => body.scrollTo(0, 0));
+      await expect(hero).not.toHaveClass(/knowledge-hero--compact/);
+      expect(await page.evaluate(() => document.scrollingElement!.scrollTop)).toBe(0);
+    });
+  }
+
   test('the phase bar is a connected button group: round outer ends, small inner corners, the selected one a pill', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await inject(page);

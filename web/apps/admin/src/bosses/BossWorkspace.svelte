@@ -149,6 +149,10 @@
   // (the panel grows) cannot flip it back; never for content that barely scrolls.
   let heroCompact = $state(false);
   function collapseHero(panel: HTMLElement) {
+    // Reattach for a new boss, not for scrolling or same-boss guide changes.
+    void shownKey;
+    heroCompact = false;
+    panel.scrollTop = 0;
     const onscroll = () => {
       const room = panel.scrollHeight - panel.clientHeight;
       if (!heroCompact && panel.scrollTop > 96 && room > 160) heroCompact = true;
