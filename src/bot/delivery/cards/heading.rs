@@ -1,5 +1,5 @@
 //! Persona-voiced reminder headers. Day-of keeps its original rewrite contract;
-//! countdown and digest accept only a small, non-factual interjection.
+//! countdown and digest accept a short persona phrase that states no facts.
 //! Rewrites run ahead of the send (`delivery::pregen`); a send never calls
 //! the model and uses the stored line or the seed.
 
@@ -24,53 +24,9 @@ pub const DAY_OF_HEADING_SEED: &str = "Today — {day}";
 pub const COUNTDOWN_PHRASE_SEED: &str = "Onward!";
 pub const DIGEST_PHRASE_SEED: &str = "Let's go!";
 const DAY: &str = "{day}";
-const MAX_PHRASE_CHARS: usize = 48;
-
-const SAFE_PHRASES: &[&[&str]] = &[
-    &["ah"],
-    &["aha"],
-    &["aah"],
-    &["oh"],
-    &["ooh"],
-    &["woo"],
-    &["yay"],
-    &["whee"],
-    &["yippee"],
-    &["hurray"],
-    &["hooray"],
-    &["tada"],
-    &["wow"],
-    &["whoa"],
-    &["hey"],
-    &["hiya"],
-    &["yo"],
-    &["eek"],
-    &["eep"],
-    &["hmm"],
-    &["hm"],
-    &["ha"],
-    &["haha"],
-    &["hehe"],
-    &["gosh"],
-    &["onward"],
-    &["go"],
-    &["let's", "go"],
-    &["here", "we", "go"],
-    &["ta", "da"],
-    &["woo", "hoo"],
-    &["woohoo"],
-    &["yahoo"],
-    &["oh", "my"],
-    &["oh", "wow"],
-    &["waku"],
-    &["waku", "waku"],
-    &["わくわく"],
-    &["やった"],
-    &["よし"],
-    &["よっしゃ"],
-    &["ふふ"],
-    &["えへへ"],
-];
+/// A header phrase: a short line, never a sentence of news.
+const MAX_PHRASE_CHARS: usize = 60;
+const MAX_PHRASE_WORDS: usize = 8;
 
 const FACT_WORDS: &[&str] = &[
     "today",
@@ -154,7 +110,6 @@ const FACT_WORDS: &[&str] = &[
     "set",
     "done",
     "cleared",
-    "clear",
     "complete",
     "completed",
     "planned",
@@ -213,7 +168,10 @@ pub enum PhraseRejection {
     UnsafeLine(Rejection),
     FactualTerm,
     CatalogTerm,
-    NotAnInterjection,
+    /// No word at all (only emoji or punctuation).
+    NoWords,
+    /// Over [`MAX_PHRASE_WORDS`] words or [`MAX_PHRASE_CHARS`] characters.
+    TooLong,
 }
 
 /// Which header a rewrite is for.
@@ -286,7 +244,8 @@ impl Verdict {
             }
             Self::PhraseRejected(PhraseRejection::FactualTerm) => Some("factual term"),
             Self::PhraseRejected(PhraseRejection::CatalogTerm) => Some("catalog term"),
-            Self::PhraseRejected(PhraseRejection::NotAnInterjection) => Some("not an interjection"),
+            Self::PhraseRejected(PhraseRejection::NoWords) => Some("no words"),
+            Self::PhraseRejected(PhraseRejection::TooLong) => Some("too long"),
             _ => None,
         }
     }
@@ -339,8 +298,9 @@ pub fn seed_heading(day: &str) -> String {
     DAY_OF_HEADING_SEED.replace(DAY, day)
 }
 
-/// Accept only a short, code-bounded interjection; unknown prose is not
-/// treated as safe merely because it lacks an obvious date or status word.
+/// Accept a short persona phrase: the shared line rules, then no digits, no
+/// date, time or status word and no catalog name; emoji, `~`, dashes and
+/// ellipses are fine.
 pub fn accept_phrase(
     output: &str,
     seed: &str,
@@ -360,9 +320,12 @@ pub fn accept_phrase_with(
     if line.chars().any(char::is_numeric) {
         return Err(PhraseRejection::FactualTerm);
     }
-    let tokens = phrase_tokens(&line).ok_or(PhraseRejection::NotAnInterjection)?;
-    if tokens.is_empty() || line.chars().count() > MAX_PHRASE_CHARS || tokens.len() > 3 {
-        return Err(PhraseRejection::NotAnInterjection);
+    let tokens = phrase_tokens(&line);
+    if tokens.is_empty() {
+        return Err(PhraseRejection::NoWords);
+    }
+    if tokens.len() > MAX_PHRASE_WORDS || line.chars().count() > MAX_PHRASE_CHARS {
+        return Err(PhraseRejection::TooLong);
     }
     if tokens
         .iter()
@@ -373,19 +336,12 @@ pub fn accept_phrase_with(
     if catalog.is_some_and(|catalog| names_catalog_entry(&tokens, catalog)) {
         return Err(PhraseRejection::CatalogTerm);
     }
-    if !SAFE_PHRASES.contains(
-        &tokens
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>()
-            .as_slice(),
-    ) {
-        return Err(PhraseRejection::NotAnInterjection);
-    }
     Ok(line)
 }
 
-fn phrase_tokens(line: &str) -> Option<Vec<String>> {
+/// Lowercase words (letters with inner apostrophes); everything else
+/// (punctuation, `~`, dashes, emoji) separates them.
+fn phrase_tokens(line: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut word = String::new();
     for character in line.chars() {
@@ -393,20 +349,14 @@ fn phrase_tokens(line: &str) -> Option<Vec<String>> {
             word.extend(character.to_lowercase());
         } else if matches!(character, '\'' | '’') && !word.is_empty() {
             word.push('\'');
-        } else if character.is_whitespace()
-            || matches!(character, '!' | '?' | '.' | ',' | '！' | '？' | '。' | '，')
-        {
-            if !word.is_empty() {
-                tokens.push(std::mem::take(&mut word));
-            }
-        } else {
-            return None;
+        } else if !word.is_empty() {
+            tokens.push(std::mem::take(&mut word));
         }
     }
     if !word.is_empty() {
         tokens.push(word);
     }
-    Some(tokens)
+    tokens
 }
 
 fn names_catalog_entry(tokens: &[String], catalog: &BossTable) -> bool {
@@ -471,7 +421,7 @@ impl HeadingRewrite {
     pub fn prompt(&self) -> Option<RewritePrompt> {
         self.rewriter.as_ref()?;
         let persona = (self.persona.as_ref()?)()?;
-        Some(RewritePrompt::build(
+        Some(RewritePrompt::header(
             &persona,
             NudgeMood::Playful,
             DAY_OF_HEADING_SEED,
@@ -649,7 +599,7 @@ impl HeadingRewrite {
                 false,
             );
         };
-        let prompt = RewritePrompt::build(&persona, NudgeMood::Playful, seed);
+        let prompt = RewritePrompt::header(&persona, NudgeMood::Playful, seed);
         let call = tokio::time::timeout(deadline, rewriter.rewrite_detailed(&prompt, deadline));
         let outcome = match stop {
             None => call.await,
@@ -756,30 +706,56 @@ mod tests {
     }
 
     #[test]
-    fn phrase_gate_accepts_only_safe_interjections() {
+    fn phrase_gate_accepts_persona_phrases_and_refuses_facts() {
         let catalog = catalog();
-        for phrase in ["Waku waku!", "Let's go!", "Onward!"] {
+        for phrase in [
+            "Onward, Papa~ Let’s charge!",
+            "Kyahho~ Kirarin V!",
+            "Mou... fine, go clear it!",
+            "Hmph — fine, onward 🎉",
+            "Eh… fine–let's roll ✨",
+            "Waku waku!",
+            "Let's go!",
+            "Onward!",
+        ] {
             assert_eq!(
                 accept_phrase(phrase, COUNTDOWN_PHRASE_SEED, Some(&catalog)),
                 Ok(phrase.to_owned()),
                 "{phrase}"
             );
         }
-        for fact in [
-            "20:14",
-            "Thu 10 Sep",
-            "Confirmed!",
-            "yes!",
-            "XKalos!",
-            "Gatekeeper Kalos",
-            "Two runs are ready",
-            "https://example.test",
-            "<@1001>",
-            "**wow**",
+        let long = format!("Wa{}h!", "a".repeat(MAX_PHRASE_CHARS));
+        for (line, refusal) in [
+            ("20:14", PhraseRejection::FactualTerm),
+            ("Thu 10 Sep", PhraseRejection::FactualTerm),
+            ("Thu, Sep!", PhraseRejection::FactualTerm),
+            ("Confirmed!", PhraseRejection::FactualTerm),
+            ("yes!", PhraseRejection::FactualTerm),
+            ("Two runs are ready", PhraseRejection::FactualTerm),
+            ("XKalos!", PhraseRejection::CatalogTerm),
+            ("Gatekeeper Kalos", PhraseRejection::CatalogTerm),
+            ("Go, Extreme crew~", PhraseRejection::CatalogTerm),
+            (
+                "https://example.test",
+                PhraseRejection::UnsafeLine(Rejection::LineRules),
+            ),
+            (
+                "Go <@1001>!",
+                PhraseRejection::UnsafeLine(Rejection::LineRules),
+            ),
+            (
+                "Onward!\nGo",
+                PhraseRejection::UnsafeLine(Rejection::LineRules),
+            ),
+            ("**wow**", PhraseRejection::UnsafeLine(Rejection::Markup)),
+            ("🎉✨", PhraseRejection::NoWords),
+            ("Go go go go, go go go go go!", PhraseRejection::TooLong),
+            (long.as_str(), PhraseRejection::TooLong),
         ] {
-            assert!(
-                accept_phrase(fact, COUNTDOWN_PHRASE_SEED, Some(&catalog)).is_err(),
-                "{fact}"
+            assert_eq!(
+                accept_phrase(line, COUNTDOWN_PHRASE_SEED, Some(&catalog)),
+                Err(refusal),
+                "{line}"
             );
         }
     }

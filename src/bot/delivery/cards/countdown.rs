@@ -1,13 +1,13 @@
-//! v4 `countdown_card`: names the party bar whoever already declined.
-//! Pending (someone still to answer), someone out, or all set; only the last
-//! is green, and the react hint shows only while answers are pending.
+//! v4 `countdown_card`, v4-exact (no persona phrase): names the party bar
+//! whoever already declined. Pending (someone still to answer), someone out,
+//! or all set; only the last is green, and the react hint shows only while
+//! answers are pending.
 
 use super::art::lead_portrait;
 use super::common::{
     COLOUR_ALL_SET, COLOUR_COUNTDOWN, CardContext, People, REACT_HINT, boss_detail, declined,
     format_bosses, format_offset, lead_colour, local_time, not_declined, status_line, unanswered,
 };
-use super::heading::COUNTDOWN_PHRASE_SEED;
 use super::{Card, CardEmbed};
 use crate::domain::schedule::Run;
 
@@ -16,7 +16,6 @@ pub fn countdown_card(
     run: &Run,
     minutes: i64,
     mentioned: &[String],
-    phrase: Option<&str>,
 ) -> Card {
     let states = ctx.states(run);
     let pending = unanswered(&states);
@@ -40,8 +39,7 @@ pub fn countdown_card(
         }
     };
     let content = format!(
-        "⏰ {} · **{}** in {} ({}) — {waiting}",
-        phrase.unwrap_or(COUNTDOWN_PHRASE_SEED),
+        "⏰ **{}** in {} ({}) — {waiting}",
         format_bosses(&run.bosses),
         format_offset(minutes),
         local_time(run.datetime, ctx.zone)

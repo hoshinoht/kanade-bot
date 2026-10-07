@@ -1,7 +1,8 @@
 //! The classic style is byte-exact: day-of, countdown and digest posts and a
 //! day-of edit in both attendance modes, quiet and not, with art, against
 //! `classic_cards.json` (captured from the cards before message styles
-//! existed).
+//! existed; the countdown and digest persona phrase was removed since, as v4
+//! never showed one, so a stored phrase must not appear).
 
 use kanade::bot::delivery::cards::{self, Card, fetch_art};
 use kanade::domain::attendance::AttendancePolicy;
@@ -64,12 +65,12 @@ async fn cases() -> Map<String, Value> {
         (
             "countdown_settled",
             countdown(KALOS, 60),
-            Some("Onward!"),
+            Some("Onward, Papa~ Let’s charge!"),
             vec!["1001"],
         ),
         ("countdown_at_risk", countdown(RISKY, 90), None, vec![]),
         ("countdown_cleared", countdown(CLEARED, 15), None, vec![]),
-        ("digest", digest, Some("Let's go!"), vec![]),
+        ("digest", digest, Some("Kyahho~ Kirarin V!"), vec![]),
         ("digest_empty", empty, None, vec![]),
     ];
     let mut out = Map::new();

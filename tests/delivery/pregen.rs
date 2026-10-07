@@ -1,7 +1,7 @@
 //! Reminder header pre-generation: the daily batch at the configured time
 //! (24 h ahead, no cap), catch-up for cards the batch had not seen, the
 //! startup batch, time changes, busy and failure retries, the digest's week
-//! rules and the disabled default.
+//! rules, the classic style's day-of-only rule and the disabled default.
 
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -28,7 +28,10 @@ use kanade::domain::schedule::RunStatus;
 use kanade::infrastructure::store::MemoryScheduleStore;
 use tokio::sync::watch;
 
-use crate::cards::{Script, Scripted, before_due, created, kit, pregen, rewriting, run, world};
+use crate::cards::{
+    Script, Scripted, before_due, created, kit, pregen, redesigned, rewriting, run, seed_day_of,
+    shows_phrase, world,
+};
 use crate::scenarios::{self, now, previous_week, week};
 use crate::support::{self, seed_digest, with_lease};
 
@@ -111,9 +114,15 @@ fn clock(hour: u32, minute: u32) -> NaiveTime {
     NaiveTime::from_hms_opt(hour, minute, 0).unwrap()
 }
 
+/// Rewriting cards in the redesigned style, whose countdowns and digests
+/// carry a phrase (classic ones are v4-exact and are never rewritten).
+fn phrasing(rewriter: &Arc<Scripted>) -> CardKit {
+    redesigned(rewriting(rewriter))
+}
+
 /// The cards with a rewrite log, so tests can read each row's stage.
 fn logged(rewriter: &Arc<Scripted>, logs: &Arc<MemoryScheduleStore>) -> CardKit {
-    let mut cards = rewriting(rewriter);
+    let mut cards = phrasing(rewriter);
     cards.heading.log = Some(Arc::new(StoreRewriteSink::new(
         Arc::clone(logs),
         Arc::new(now),
@@ -213,7 +222,7 @@ async fn a_start_after_the_days_batch_time_runs_a_batch_at_once() {
     let store = Arc::new(MemoryScheduleStore::new());
     let key = countdown_at(&store, kl(10, 22, 0)).await;
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
-    let cards = rewriting(&rewriter);
+    let cards = phrasing(&rewriter);
     // 09:00 has passed at 20:00: this process has run no batch yet.
     let missed = Rig::new(&store, &cards, kl(10, 20, 0), clock(9, 0));
     let report = missed.worker.pass().await;
@@ -230,7 +239,7 @@ async fn a_start_after_the_days_batch_time_runs_a_batch_at_once() {
 async fn a_changed_time_applies_from_its_next_occurrence() {
     let store = Arc::new(MemoryScheduleStore::new());
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
-    let rig = Rig::new(&store, &rewriting(&rewriter), kl(10, 20, 0), NaiveTime::MIN);
+    let rig = Rig::new(&store, &phrasing(&rewriter), kl(10, 20, 0), NaiveTime::MIN);
     assert!(rig.worker.pass().await.batch, "00:00 has passed today");
     // Moved to 19:00, already past today: tomorrow's 19:00 is the next.
     *rig.time.lock().unwrap() = clock(19, 0);
@@ -252,7 +261,7 @@ async fn a_batch_has_no_cap_but_catch_up_does() {
         keys.push(countdown_at(&store, kl(10, 21, 0) + TimeDelta::hours(hour)).await);
     }
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
-    let rig = Rig::new(&store, &rewriting(&rewriter), kl(10, 21, 0), clock(21, 0));
+    let rig = Rig::new(&store, &phrasing(&rewriter), kl(10, 21, 0), clock(21, 0));
     let batch = rig.worker.pass().await;
     assert_eq!((batch.batch, batch.stored, batch.deferred), (true, 6, 0));
     for key in &keys {
@@ -320,7 +329,7 @@ async fn a_busy_permit_retries_on_later_ticks_without_spending_attempts() {
             rewriter: Some(SharedRewriter(busy.clone())),
             ..rewriting(&Scripted::new(Script::Fail)).heading
         },
-        ..kit(None)
+        ..redesigned(kit(None))
     };
     let rig = Rig::new(&store, &cards, kl(10, 21, 0), clock(21, 0));
     let first = rig.worker.pass().await;
@@ -353,7 +362,7 @@ async fn a_stored_line_is_never_rewritten() {
         .await
         .expect("seed stored by a send");
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
-    let rig = Rig::new(&store, &rewriting(&rewriter), kl(10, 21, 0), clock(21, 0));
+    let rig = Rig::new(&store, &phrasing(&rewriter), kl(10, 21, 0), clock(21, 0));
     assert!(rig.worker.pass().await.batch);
     *rig.time.lock().unwrap() = clock(21, 30);
     rig.at(kl(10, 21, 30)).pass().await;
@@ -374,7 +383,7 @@ async fn failed_rewrites_store_nothing_and_stop_after_the_attempt_budget() {
         let world = world();
         let key = countdown_at(&store, now() - TimeDelta::minutes(1)).await;
         let rewriter = Scripted::new(script);
-        let cards = rewriting(&rewriter);
+        let cards = phrasing(&rewriter);
         let worker = pregen(&store, &world, &cards, before_due());
         for _ in 0..MAX_ATTEMPTS_PER_KEY + 2 {
             worker.pass().await;
@@ -386,8 +395,7 @@ async fn failed_rewrites_store_nothing_and_stop_after_the_attempt_budget() {
         assert!(
             created(&world.fake)
                 .pop()
-                .and_then(|message| message.content)
-                .is_some_and(|content| content.starts_with("⏰ Onward! · **XKalos**"))
+                .is_some_and(|message| shows_phrase(message.content.as_deref(), "Onward!"))
         );
         assert_eq!(heading(&store, &key).await, Some("Onward!".into()));
         assert_eq!(rewriter.calls(), MAX_ATTEMPTS_PER_KEY as usize);
@@ -400,9 +408,9 @@ async fn without_a_rewriter_or_persona_nothing_is_pregenerated() {
     let world = world();
     let key = countdown_at(&store, now() + TimeDelta::hours(1)).await;
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
-    let mut no_persona = rewriting(&rewriter);
+    let mut no_persona = phrasing(&rewriter);
     no_persona.heading.persona = None;
-    for cards in [kit(None), no_persona] {
+    for cards in [redesigned(kit(None)), no_persona] {
         let worker = pregen(&store, &world, &cards, now());
         assert_eq!(worker.pass().await, PregenReport::default());
         // The worker returns at once, before any pass.
@@ -419,7 +427,7 @@ async fn a_running_worker_stops_mid_rewrite() {
     let world = world();
     let key = countdown_at(&store, now() + TimeDelta::hours(1)).await;
     let rewriter = Scripted::new(Script::Hang);
-    let worker = pregen(&store, &world, &rewriting(&rewriter), now());
+    let worker = pregen(&store, &world, &phrasing(&rewriter), now());
     let (stop, stopped) = watch::channel(false);
     let running = worker.run(stopped);
     tokio::pin!(running);
@@ -511,7 +519,7 @@ async fn a_failure_finished_before_the_stop_still_counts() {
     let key = countdown_at(&store, now() + TimeDelta::hours(1)).await;
     let rewriter = Scripted::new(Script::Fail);
     let (stop, stopped) = watch::channel(false);
-    let mut cards = rewriting(&rewriter);
+    let mut cards = phrasing(&rewriter);
     cards.heading.log = Some(Arc::new(StopOnLog {
         inner: StoreRewriteSink::new(Arc::clone(&logs), Arc::new(now)),
         stop,
@@ -574,7 +582,7 @@ async fn the_digest_phrase_is_pregenerated_only_for_an_unposted_coming_week() {
     let store = Arc::new(MemoryScheduleStore::new());
     let world = world();
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
-    let cards = rewriting(&rewriter);
+    let cards = phrasing(&rewriter);
     let early = week() - HEADER_HORIZON - TimeDelta::minutes(1);
     assert_eq!(pregen(&store, &world, &cards, early).pass().await.stored, 0);
     assert_eq!(
@@ -621,4 +629,73 @@ async fn the_digest_phrase_is_pregenerated_only_for_an_unposted_coming_week() {
         );
     }
     assert_eq!(rewriter.calls(), 1);
+}
+
+/// Classic countdown and digest cards show no phrase (v4), so while the
+/// live style is classic the worker rewrites neither; day-of headings are
+/// rewritten in both styles.
+#[tokio::test]
+async fn under_the_classic_style_only_day_of_headings_are_pregenerated() {
+    let world = world();
+    let rewriter = Scripted::new(Script::Reply("Waku waku!"));
+    let classic = rewriting(&rewriter);
+    let idle = PregenReport {
+        batch: true,
+        ..PregenReport::default()
+    };
+    let countdowns = Arc::new(MemoryScheduleStore::new());
+    let countdown = countdown_at(&countdowns, now() + TimeDelta::hours(1)).await;
+    assert_eq!(
+        pregen(&countdowns, &world, &classic, now()).pass().await,
+        idle
+    );
+    assert_eq!(heading(&countdowns, &countdown).await, None);
+    let digests = Arc::new(MemoryScheduleStore::new());
+    let before_reset = week() - TimeDelta::minutes(1);
+    let digest_key = DedupeKey::native(&[DeliveryTarget::Digest(week())]).expect("digest key");
+    assert_eq!(
+        pregen(&digests, &world, &classic, before_reset)
+            .pass()
+            .await,
+        idle
+    );
+    assert_eq!(
+        digests
+            .digest_phrase(digest_key.as_str())
+            .await
+            .expect("phrase"),
+        None
+    );
+    assert_eq!(rewriter.calls(), 0, "classic shows neither phrase");
+
+    // The same cards once the style is redesigned: both phrases.
+    let redesign = phrasing(&rewriter);
+    assert_eq!(
+        pregen(&countdowns, &world, &redesign, now())
+            .pass()
+            .await
+            .stored,
+        1
+    );
+    assert_eq!(
+        pregen(&digests, &world, &redesign, before_reset)
+            .pass()
+            .await
+            .stored,
+        1
+    );
+    assert_eq!(rewriter.calls(), 2);
+
+    let day_of = Scripted::new(Script::Reply("Rise and shine, it's {day}!"));
+    let mornings = Arc::new(MemoryScheduleStore::new());
+    seed_day_of(&*mornings).await;
+    assert_eq!(
+        pregen(&mornings, &world, &rewriting(&day_of), before_due())
+            .pass()
+            .await
+            .stored,
+        1,
+        "classic day-of headings are still rewritten"
+    );
+    assert_eq!(day_of.calls(), 1);
 }

@@ -132,7 +132,8 @@ impl std::fmt::Debug for CardKit {
 
 /// The card for `content` in `ctx.style`; `None` for kinds rendered
 /// elsewhere. `header` is the stored day-of heading or countdown/digest
-/// phrase; `mentioned` is the allow-list, already quiet-gated.
+/// phrase (classic countdown and digest show no phrase, as v4);
+/// `mentioned` is the allow-list, already quiet-gated.
 pub fn build(
     content: &IntentContent,
     ctx: &CardContext<'_>,
@@ -162,7 +163,7 @@ pub fn build(
             Some(if redesigned {
                 redesign::countdown_card(ctx, run, mentioned, header)
             } else {
-                countdown_card(ctx, run, *minutes, mentioned, header)
+                countdown_card(ctx, run, *minutes, mentioned)
             })
         }
         IntentContent::Digest {
@@ -171,7 +172,7 @@ pub fn build(
         } => Some(if redesigned {
             redesign::digest_card(ctx, *week_start, inclusion, header)
         } else {
-            digest_card(ctx, *week_start, inclusion, header)
+            digest_card(ctx, *week_start, inclusion)
         }),
         IntentContent::Notice(_) | IntentContent::ProposalCard { .. } | IntentContent::Plain => {
             None

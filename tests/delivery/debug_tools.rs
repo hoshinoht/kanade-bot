@@ -313,32 +313,32 @@ async fn style_and_header_overrides_touch_no_setting_or_record() {
     );
     assert_eq!(shine.calls(), 1);
 
-    // Countdown and digest phrases.
+    // Countdown and digest phrases: only the redesigned style shows them.
     let waku = Scripted::new(Script::Reply("Waku waku!"));
     let phrases = desk_with(&store, &fake, &world, rewriting(&waku));
     phrases
         .ping(PingRequest {
+            style: Some(MessageStyle::Redesigned),
             rewrite: true,
             ..run(TestKind::Countdown60)
         })
         .await
         .expect("ping");
     assert!(
-        content(&fake).starts_with(&format!(
-            "{TEST_PREFIX}⏰ Waku waku! · **HMaleficStar** in 1h"
-        )),
+        content(&fake).contains(":R> · Waku waku! "),
         "{}",
         content(&fake)
     );
     phrases
         .ping(PingRequest {
+            style: Some(MessageStyle::Redesigned),
             rewrite: true,
             ..run(TestKind::Digest)
         })
         .await
         .expect("ping");
     assert!(
-        content(&fake).starts_with(&format!("{TEST_PREFIX}🗓️ Waku waku! — Boss week of ")),
+        content(&fake).contains("🗓️ **Waku waku!**"),
         "{}",
         content(&fake)
     );
@@ -419,7 +419,7 @@ async fn the_week_digest_is_a_test_copy<S: Store + DebugCardStore + 'static>(sto
     let card = created(&fake).pop().expect("digest");
     assert_eq!(
         card.content.as_deref(),
-        Some(format!("{TEST_PREFIX}🗓️ Let's go! — Boss week of Wed 09 Sep").as_str())
+        Some(format!("{TEST_PREFIX}🗓️ Boss week of Wed 09 Sep").as_str())
     );
     let embed = &card.embeds[0];
     assert!(

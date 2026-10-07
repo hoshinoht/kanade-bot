@@ -291,7 +291,7 @@ impl Store {
             let waiting = run.participants.iter().any(|p| p.answer == "waiting");
             json!({
                 "content": format!(
-                    "⏰ Onward! · **{}** in {offset} ({time}) — {}",
+                    "⏰ **{}** in {offset} ({time}) — {}",
                     bosses_text(&run),
                     mentions.join(", ")
                 ),

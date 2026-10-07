@@ -1,12 +1,12 @@
-//! v4 `digest_card`: the guild's boss week grouped by local day, unsettled
-//! runs marked. Names nobody and carries no art (v4).
+//! v4 `digest_card`, v4-exact (no persona phrase): the guild's boss week
+//! grouped by local day, unsettled runs marked. Names nobody and carries no
+//! art (v4).
 
 use chrono::{DateTime, Utc};
 
 use super::common::{
     COLOUR_DIGEST, CardContext, answers_text, format_bosses, local_day, local_time,
 };
-use super::heading::DIGEST_PHRASE_SEED;
 use super::{Card, CardEmbed, CardField};
 use crate::domain::ids::short_id;
 use crate::domain::notify::DigestInclusion;
@@ -55,13 +55,8 @@ pub fn digest_card(
     ctx: &CardContext<'_>,
     week_start: DateTime<Utc>,
     inclusion: &DigestInclusion,
-    phrase: Option<&str>,
 ) -> Card {
-    let title = format!(
-        "🗓️ {} — Boss week of {}",
-        phrase.unwrap_or(DIGEST_PHRASE_SEED),
-        local_day(week_start, ctx.zone)
-    );
+    let title = format!("🗓️ Boss week of {}", local_day(week_start, ctx.zone));
     let fields: Vec<CardField> = inclusion
         .days
         .iter()

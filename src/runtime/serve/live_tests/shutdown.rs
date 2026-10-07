@@ -1095,19 +1095,15 @@ async fn a_header_rewrite_hanging_at_the_cutoff_still_ends_by_it() {
                     .await
                     .unwrap();
             }
-            // A countdown firing in 2 h: inside the pre-generation horizon,
-            // not yet due for the tick.
+            // A day-of reminder firing in 2 h: inside the pre-generation
+            // horizon, not yet due for the tick, and rewritten in every
+            // message style (classic countdowns carry no phrase).
             let start = now + chrono::Duration::hours(3);
             let run = create_run(store, &policy, now, HOME_A, start).await;
             SchedulerService::new(store, RandomIds, FixedClock(now))
                 .with_attendance(policy.attendance)
                 .as_origin(Origin::for_tests())
-                .add_reminder(
-                    &run,
-                    "countdown_60",
-                    start - chrono::Duration::minutes(60),
-                    None,
-                )
+                .add_reminder(&run, "day_of", start - chrono::Duration::minutes(60), None)
                 .await
                 .unwrap()
                 .expect("a new reminder");
@@ -1194,7 +1190,7 @@ async fn a_header_rewrite_hanging_at_the_cutoff_still_ends_by_it() {
         cut.iter().any(|line| line["phase"] == "rewrite"),
         "{cut:?}\n{breakdown}"
     );
-    let phrase = logged("reminder_header_phrase");
+    let phrase = logged("day_of_heading");
     assert!(
         phrase.iter().any(|line| line["stage"] == "batch"
             && line["source"] == "seed"

@@ -21,7 +21,7 @@ use kanade::bot::transport::{
     Call, FakeDiscord, MessageEdit, Op, OutgoingMessage, RejectionKind, Step,
 };
 use kanade::chat::nudge::{NudgeRewriter, RewriteFailure, RewritePrompt, SharedRewriter};
-use kanade::chat::persona::{CompiledPersona, PersonaId, PersonaRoot};
+use kanade::chat::persona::{CompiledPersona, PersonaId, PersonaRoot, parse_bundle};
 use kanade::domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec};
 use kanade::domain::drafts::{DraftCreated, DraftKind, DraftStore, MergeCommit, NewDraft};
 use kanade::domain::history::{Actor, Origin, Surface};
@@ -34,6 +34,7 @@ use kanade::domain::schedule::{
     RunStatus,
 };
 use kanade::domain::scheduler::StoreError;
+use kanade::domain::settings::MessageStyle;
 use kanade::infrastructure::files::BossArt;
 use kanade::infrastructure::store::MemoryScheduleStore;
 use tokio::sync::Notify;
@@ -99,6 +100,23 @@ pub(crate) fn kit(art: Option<&TempDir>) -> CardKit {
         heading: HeadingRewrite::default(),
         ..CardKit::default()
     }
+}
+
+/// `cards` in the redesigned style, the only one whose countdown and digest
+/// show a persona phrase (classic is v4-exact).
+pub(crate) fn redesigned(cards: CardKit) -> CardKit {
+    CardKit {
+        style: Some(Arc::new(|| MessageStyle::Redesigned)),
+        ..cards
+    }
+}
+
+/// Whether a redesigned countdown's content carries `phrase` after its
+/// live countdown (`⏰ **…** <t:…:R> · {phrase} …`).
+pub(crate) fn shows_phrase(content: Option<&str>, phrase: &str) -> bool {
+    content.is_some_and(|content| {
+        content.starts_with("⏰ **") && content.contains(&format!(":R> · {phrase} "))
+    })
 }
 
 /// 1001 "Aria" wants every ping; 1002 "Bex" none (named, never tagged).
@@ -404,7 +422,7 @@ async fn countdown_states_match_v4<S: Store>(store: &S) {
     let pending = countdown(store, &world, kit(Some(&art)), &[]).await;
     assert_eq!(
         pending.content.as_deref(),
-        Some("⏰ Onward! · **XKalos** in 15m (20:14) — <@1001> Bex")
+        Some("⏰ **XKalos** in 15m (20:14) — <@1001> Bex")
     );
     let embed = &pending.embeds[0];
     assert_eq!(
@@ -439,7 +457,7 @@ async fn countdown_states_match_v4<S: Store>(store: &S) {
     .await;
     assert_eq!(
         out.content.as_deref(),
-        Some("⏰ Onward! · **XKalos** in 15m (20:14) — <@1001> · Bex out")
+        Some("⏰ **XKalos** in 15m (20:14) — <@1001> · Bex out")
     );
     let embed = &out.embeds[0];
     assert_eq!(
@@ -459,7 +477,7 @@ async fn countdown_states_match_v4<S: Store>(store: &S) {
     .await;
     assert_eq!(
         set.content.as_deref(),
-        Some("⏰ Onward! · **XKalos** in 15m (20:14) — everyone's confirmed ✅")
+        Some("⏰ **XKalos** in 15m (20:14) — everyone's confirmed ✅")
     );
     let embed = &set.embeds[0];
     assert_eq!(
@@ -502,7 +520,7 @@ async fn digest_matches_v4<S: Store>(store: &S) {
     };
     assert_eq!(
         message.content.as_deref(),
-        Some("🗓️ Let's go! — Boss week of Wed 09 Sep")
+        Some("🗓️ Boss week of Wed 09 Sep")
     );
     let embed = &message.embeds[0];
     assert_eq!(
@@ -604,7 +622,7 @@ async fn a_legacy_digest_replacement_keeps_the_fixed_phrase_on_delete_failure() 
     assert_eq!(refresh.refresh(std::slice::from_ref(&run_id)).await, 1);
     assert_eq!(
         edits(&fake).last().and_then(|edit| edit.content.as_deref()),
-        Some("🗓️ Let's go! — Boss week of Wed 09 Sep")
+        Some("🗓️ Boss week of Wed 09 Sep")
     );
     assert_eq!(
         rewriter.calls(),
@@ -672,7 +690,7 @@ async fn quiet_cards_tag_nobody<S: Store>(store: &S) {
     let message = created(&world.fake).pop().expect("posted");
     assert_eq!(
         message.content.as_deref(),
-        Some(format!("⏰ Onward! · **XKalos** in 15m (20:14) — Aria {UNNAMED}").as_str())
+        Some(format!("⏰ **XKalos** in 15m (20:14) — Aria {UNNAMED}").as_str())
     );
     let description = message.embeds[0].description.clone().unwrap_or_default();
     assert!(!description.contains("<@"), "{description}");
@@ -940,9 +958,14 @@ async fn pregenerated_countdown(kit: CardKit) -> OutgoingMessage {
 }
 
 #[tokio::test(start_paused = true)]
-async fn countdown_header_rewrites_only_safe_phrases_and_keeps_facts_out_of_the_prompt() {
+async fn countdown_header_rewrites_persona_phrases_and_keeps_facts_out_of_the_prompt() {
     for (script, phrase, calls) in [
         (Script::Reply("Waku waku!"), "Waku waku!", 1),
+        (
+            Script::Reply("Onward, Papa~ Let’s charge!"),
+            "Onward, Papa~ Let’s charge!",
+            1,
+        ),
         (Script::Reply("confirmed!"), "Onward!", 1),
         (Script::Reply("20:14"), "Onward!", 1),
         (Script::Reply("XKalos!"), "Onward!", 1),
@@ -951,12 +974,9 @@ async fn countdown_header_rewrites_only_safe_phrases_and_keeps_facts_out_of_the_
         (Script::Hang, "Onward!", 1),
     ] {
         let rewriter = Scripted::new(script);
-        let message = pregenerated_countdown(rewriting(&rewriter)).await;
+        let message = pregenerated_countdown(redesigned(rewriting(&rewriter))).await;
         assert!(
-            message
-                .content
-                .as_deref()
-                .is_some_and(|content| content.starts_with(&format!("⏰ {phrase} · **XKalos**"))),
+            shows_phrase(message.content.as_deref(), phrase),
             "{phrase}: {:?}",
             message.content
         );
@@ -984,13 +1004,73 @@ async fn countdown_header_rewrites_only_safe_phrases_and_keeps_facts_out_of_the_
             }
         }
     }
-    let message = pregenerated_countdown(kit(None)).await;
-    assert!(
-        message
-            .content
-            .as_deref()
-            .is_some_and(|content| content.starts_with("⏰ Onward! · **XKalos**"))
+    let message = pregenerated_countdown(redesigned(kit(None))).await;
+    assert!(shows_phrase(message.content.as_deref(), "Onward!"));
+
+    // Classic is v4-exact: no phrase, so nothing to rewrite.
+    let rewriter = Scripted::new(Script::Reply("Waku waku!"));
+    let message = pregenerated_countdown(rewriting(&rewriter)).await;
+    assert_eq!(
+        message.content.as_deref(),
+        Some("⏰ **XKalos** in 15m (20:14) — <@1001> Bex")
     );
+    assert_eq!(rewriter.calls(), 0);
+}
+
+/// Every header rewrite sends the bundle's `compact.header_rewrite` (its
+/// `nudge_rewrite` is for nudges) under the code-owned header instruction,
+/// which forbids the markdown the bundle's text asks for.
+#[tokio::test(start_paused = true)]
+async fn header_rewrites_send_the_bundle_header_prompt_not_its_nudge_prompt() {
+    let compiled = persona()().expect("persona");
+    let header = compiled.prompt_compact().expect("header_rewrite").trim();
+    let nudge = compiled.nudge_rewrite().expect("nudge_rewrite").trim();
+    assert!(
+        header.contains("*Mon 21 Sep*"),
+        "the bundle asks for markdown"
+    );
+
+    let day_of = Scripted::new(Script::Reply("Rise and shine, it's {day}!"));
+    morning_content(rewriting(&day_of)).await;
+    let phrase = Scripted::new(Script::Reply("Waku waku!"));
+    pregenerated_countdown(redesigned(rewriting(&phrase))).await;
+    for rewriter in [&day_of, &phrase] {
+        let prompts = rewriter.prompts.lock().unwrap().clone();
+        let [(system, _)] = prompts.as_slice() else {
+            panic!("one rewrite: {prompts:?}");
+        };
+        assert!(system.contains(header), "{system}");
+        assert!(!system.contains(nudge), "{system}");
+        assert!(system.contains("Never use asterisks"), "{system}");
+        assert!(
+            system.find("Never use asterisks") < system.find(header),
+            "the code-owned rule comes first"
+        );
+    }
+
+    // A bundle without `header_rewrite` falls back to its `nudge_rewrite`.
+    let yaml = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("config/personas/bundles/kanade.yaml"),
+    )
+    .unwrap();
+    let start = yaml.find("  header_rewrite: |").expect("header_rewrite");
+    let end = yaml.find("  nudge_rewrite: |").expect("nudge_rewrite");
+    let id = PersonaId::parse("kanade").expect("id");
+    let bundle = parse_bundle(&format!("{}{}", &yaml[..start], &yaml[end..]), &id).unwrap();
+    let fallback = Arc::new(CompiledPersona::compile(&bundle, None));
+    let rewriter = Scripted::new(Script::Reply("Rise and shine, it's {day}!"));
+    let cards = CardKit {
+        heading: HeadingRewrite {
+            persona: Some(Arc::new(move || Some((*fallback).clone()))),
+            ..rewriting(&rewriter).heading
+        },
+        ..kit(None)
+    };
+    morning_content(cards).await;
+    let prompts = rewriter.prompts.lock().unwrap().clone();
+    assert!(prompts[0].0.contains(nudge), "{}", prompts[0].0);
+    assert!(!prompts[0].0.contains(header));
 }
 
 #[tokio::test]
@@ -1014,7 +1094,7 @@ async fn digest_header_rewrite_has_only_persona_and_seed_and_refresh_keeps_facts
     })
     .await;
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
-    let cards = rewriting(&rewriter);
+    let cards = redesigned(rewriting(&rewriter));
     // The pass before the reset writes the coming week's phrase.
     let report = pregen(&store, &world, &cards, week() - TimeDelta::minutes(1))
         .pass()
@@ -1026,10 +1106,7 @@ async fn digest_header_rewrite_has_only_persona_and_seed_and_refresh_keeps_facts
     let [message] = posts.as_slice() else {
         panic!("one digest post: {:?}", created(&fake));
     };
-    assert_eq!(
-        message.content.as_deref(),
-        Some("🗓️ Waku waku! — Boss week of Wed 09 Sep")
-    );
+    assert_eq!(message.content.as_deref(), Some("🗓️ **Waku waku!**"));
     assert_eq!(rewriter.calls(), 1);
     let prompts = rewriter.prompts.lock().unwrap().clone();
     let (system, seed) = &prompts[0];
@@ -1080,13 +1157,10 @@ async fn digest_header_rewrite_has_only_persona_and_seed_and_refresh_keeps_facts
     let [edit] = refreshed.as_slice() else {
         panic!("one digest edit: {:?}", edits(&fake));
     };
-    assert_eq!(
-        edit.content.as_deref(),
-        Some("🗓️ Waku waku! — Boss week of Wed 09 Sep")
-    );
+    assert_eq!(edit.content.as_deref(), Some("🗓️ **Waku waku!**"));
     let embed = &edit.embeds.as_ref().expect("embed")[0];
     assert!(
-        embed.fields[0].value.contains("1/1 ✅"),
+        embed.fields[0].value.contains("· 1 in"),
         "{:?}",
         embed.fields[0]
     );
@@ -1328,7 +1402,7 @@ async fn a_send_during_a_pregeneration_uses_the_seed_which_then_wins() {
     let fake = Arc::new(support::fake());
     let (run_id, key) = countdown_key(&store).await;
     let rewriter = GateRewriter::new();
-    let cards = gated_cards(&rewriter);
+    let cards = redesigned(gated_cards(&rewriter));
     let worker = pregen(&store, &world, &cards, before_due());
     let mut pass = Box::pin(worker.pass());
     let started = rewriter.started.notified();
@@ -1343,10 +1417,7 @@ async fn a_send_during_a_pregeneration_uses_the_seed_which_then_wins() {
     delivery.dispatch_reminders(now()).await.expect("dispatch");
     let posted = created(&fake).pop().expect("countdown posted");
     assert!(
-        posted
-            .content
-            .as_deref()
-            .is_some_and(|content| content.starts_with("⏰ Onward! · **XKalos**")),
+        shows_phrase(posted.content.as_deref(), "Onward!"),
         "{:?}",
         posted.content
     );
@@ -1383,9 +1454,7 @@ async fn a_send_during_a_pregeneration_uses_the_seed_which_then_wins() {
     assert_eq!(refresh.refresh(std::slice::from_ref(&run_id)).await, 1);
     let edit = edits(&fake).pop().expect("countdown refresh");
     assert!(
-        edit.content
-            .as_deref()
-            .is_some_and(|content| content.starts_with("⏰ Onward! · **XKalos**")),
+        shows_phrase(edit.content.as_deref(), "Onward!"),
         "a posted card keeps its heading: {:?}",
         edit.content
     );
@@ -1483,7 +1552,7 @@ async fn a_digest_posted_during_a_pregeneration_keeps_the_seed() {
     })
     .await;
     let rewriter = GateRewriter::new();
-    let cards = gated_cards(&rewriter);
+    let cards = redesigned(gated_cards(&rewriter));
     let worker = pregen(&store, &world, &cards, week() - TimeDelta::minutes(1));
     let mut pass = Box::pin(worker.pass());
     let started = rewriter.started.notified();
@@ -1500,7 +1569,7 @@ async fn a_digest_posted_during_a_pregeneration_keeps_the_seed() {
             .pop()
             .and_then(|message| message.content)
             .as_deref(),
-        Some("🗓️ Let's go! — Boss week of Wed 09 Sep")
+        Some("🗓️ **Let's go!**")
     );
     rewriter.release.notify_one();
     assert_eq!(pass.await.lost, 1);
@@ -1517,7 +1586,7 @@ async fn a_cancelled_pregeneration_stores_nothing_and_a_later_pass_retries() {
     let world = world();
     let (_, key) = countdown_key(&store).await;
     let rewriter = GateRewriter::new();
-    let cards = gated_cards(&rewriter);
+    let cards = redesigned(gated_cards(&rewriter));
     let worker = pregen(&store, &world, &cards, before_due());
     {
         let mut pass = Box::pin(worker.pass());
@@ -1538,7 +1607,7 @@ async fn a_cancelled_pregeneration_stores_nothing_and_a_later_pass_retries() {
         created(&world.fake)
             .pop()
             .and_then(|message| message.content)
-            .is_some_and(|content| content.starts_with("⏰ Waku waku! · **XKalos**"))
+            .is_some_and(|content| shows_phrase(Some(&content), "Waku waku!"))
     );
     assert_eq!(
         rewriter.calls.load(Ordering::SeqCst),
@@ -1563,7 +1632,7 @@ async fn countdown_phrase_survives_not_sent_restart_and_refresh_without_rewrite(
     .await;
     due(&*store, &run_id, "countdown_15").await;
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
-    let cards = rewriting(&rewriter);
+    let cards = redesigned(rewriting(&rewriter));
     assert_eq!(
         pregen(&store, &world, &cards, before_due())
             .pass()
@@ -1624,7 +1693,7 @@ async fn countdown_phrase_survives_not_sent_restart_and_refresh_without_rewrite(
     assert!(
         edit.content
             .as_deref()
-            .is_some_and(|content| content.starts_with("⏰ Waku waku! · **XKalos**")),
+            .is_some_and(|content| shows_phrase(Some(content), "Waku waku!")),
         "{:?}",
         edit.content
     );
@@ -1633,7 +1702,7 @@ async fn countdown_phrase_survives_not_sent_restart_and_refresh_without_rewrite(
         embed
             .description
             .as_deref()
-            .is_some_and(|description| description.contains("1/2 ✅")),
+            .is_some_and(|description| description.contains("✅ 1 in")),
         "{:?}",
         embed.description
     );

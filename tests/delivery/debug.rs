@@ -168,7 +168,7 @@ async fn every_kind_posts_the_real_message_prefixed<S: Store + DebugCardStore + 
     );
     assert_eq!(
         content(&fake),
-        format!("{TEST_PREFIX}⏰ Onward! · **HMaleficStar** in 1h (21:00) — <@1001> Bex")
+        format!("{TEST_PREFIX}⏰ **HMaleficStar** in 1h (21:00) — <@1001> Bex")
     );
     assert_eq!(
         ping(&desk, &run_id, TestKind::Countdown15, "1002").await,
@@ -176,12 +176,9 @@ async fn every_kind_posts_the_real_message_prefixed<S: Store + DebugCardStore + 
     );
     let countdown = created(&fake).pop().expect("countdown");
     assert!(
-        countdown
-            .content
-            .as_deref()
-            .is_some_and(|text| text.starts_with(&format!(
-                "{TEST_PREFIX}⏰ Onward! · **HMaleficStar** in 15m"
-            ))),
+        countdown.content.as_deref().is_some_and(
+            |text| text.starts_with(&format!("{TEST_PREFIX}⏰ **HMaleficStar** in 15m"))
+        ),
         "{countdown:?}"
     );
     assert_eq!(pictures(&countdown.embeds[0]).1, None, "no entry art");

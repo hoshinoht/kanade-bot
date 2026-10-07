@@ -31,9 +31,14 @@ are rejected. Block scalars (`|`) keep their internal newlines.
   (`schedule`, `guide`, `guide_named`, `write`, `generic`), optional
   `compact`, optional `nudges` and optional `failures`. `compact` holds v5-only prompts (text of
   any length) that ask a small model to rewrite a single line: at least one
-  of `header_rewrite` (reminder header lines) and `nudge_rewrite`
-  (self-service nudge lead-ins). The tracked Kanade bundle carries
-  `header_rewrite` only.
+  of `header_rewrite`, which drives the reminder header rewrites (day-of
+  headings and the redesigned countdown/digest phrases), and `nudge_rewrite`,
+  which drives the self-service nudge rewrites. Headers fall back to
+  `nudge_rewrite` when a bundle has no `header_rewrite`; nudges never read
+  `header_rewrite`. A code-owned instruction always comes first and wins:
+  header rewrites are one plain-text line (no markdown, asterisks, quotes,
+  links or mentions) that keep `{day}` exactly, whatever the persona text
+  asks. The tracked Kanade bundle carries both.
 - **Profile:** `id` (matching the filename), `label`, optional `voice`,
   `prompt`, optional partial `staging` and optional `nudges`; missing staging
   keys come from the selected bundle.
