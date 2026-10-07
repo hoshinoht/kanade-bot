@@ -123,7 +123,7 @@ async fn the_adapter_sends_one_plain_request_and_returns_the_line() {
     assert!(matches!(
         request.messages.as_slice(),
         [Message::System { .. }, Message::User { content }]
-            if content == "Hmph. Everything you need is right here."
+            if content == "Line to rewrite: Hmph. Everything you need is right here."
     ));
     assert_eq!(request.messages, prompt.messages());
 }

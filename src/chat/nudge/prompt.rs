@@ -20,6 +20,11 @@ pub const GENTLE_MOOD: &str = "Mood: gentle. Something went wrong or the member 
 
 pub const VOICE_LABEL: &str = "Voice: ";
 
+/// Prefixes the seed in the request: a bare short line ("Let's go!") reads
+/// as a conversation turn, and a model then asks for the line instead of
+/// rewriting it (2026-10-08: 3 of 5 replies to a bare "Let's go!").
+pub const SEED_LABEL: &str = "Line to rewrite: ";
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct RewritePrompt {
     system: String,
@@ -92,18 +97,49 @@ impl RewritePrompt {
         &self.system
     }
 
+    /// The line itself, placeholders unfilled.
     pub fn seed(&self) -> &str {
         &self.seed
     }
 
+    /// The system prompt, then the seed under [`SEED_LABEL`].
     pub fn messages(&self) -> Vec<Message> {
         vec![
             Message::System {
                 content: self.system.clone(),
             },
             Message::User {
-                content: self.seed.clone(),
+                content: format!("{SEED_LABEL}{}", self.seed),
             },
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chat::persona::{PersonaId, parse_bundle};
+
+    /// The model is told which text is the line, so a short seed that reads
+    /// like a chat turn is not answered as one; the seed itself stays bare.
+    #[test]
+    fn the_request_labels_the_line_to_rewrite() {
+        let bundle = parse_bundle(
+            include_str!("../../../config/personas/bundles/kanade.yaml"),
+            &PersonaId::parse("kanade").unwrap(),
+        )
+        .unwrap();
+        let persona = CompiledPersona::compile(&bundle, None);
+        for prompt in [
+            RewritePrompt::header(&persona, NudgeMood::Playful, "Let's go!"),
+            RewritePrompt::build(&persona, NudgeMood::Gentle, "Fix {boss} here."),
+        ] {
+            let messages = prompt.messages();
+            let Some(Message::User { content }) = messages.last() else {
+                panic!("the seed is the last, user message: {messages:?}");
+            };
+            assert_eq!(content, &format!("Line to rewrite: {}", prompt.seed()));
+            assert!(!prompt.seed().starts_with(SEED_LABEL));
+        }
     }
 }
