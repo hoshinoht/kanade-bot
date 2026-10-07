@@ -285,6 +285,12 @@ where
         )
         .with_attendance(policy.attendance),
     );
+    let rsvp_replay = crate::bot::rsvp_replay::RsvpReplay::new(
+        Arc::clone(&store),
+        Arc::clone(&wiring.transport),
+        Arc::clone(&wiring.clock),
+        Arc::new(LogAlerts),
+    );
     let (reaction_jobs, reaction_queue) = mpsc::unbounded_channel();
 
     let (guild_ready, ready) = watch::channel(false);
@@ -512,6 +518,7 @@ where
             Reactions {
                 desk,
                 rsvp,
+                rsvp_replay: Some(rsvp_replay),
                 follow_up: Some(follow_up),
                 decline_retraction: composition.admin.state.decline_retraction.clone(),
                 clock: Arc::clone(&wiring.clock),

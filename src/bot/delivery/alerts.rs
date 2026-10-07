@@ -78,6 +78,9 @@ pub enum AdminAlert {
     /// Outbox notices older than the configured age were retired unsent
     /// this tick (how many).
     StaleNoticesRetired { count: usize },
+    /// RSVP replay could not read one or more cards because Discord denied
+    /// channel access or reaction history.
+    RsvpReplayPermissionDenied { messages: usize },
 }
 
 impl AdminAlert {
@@ -115,6 +118,7 @@ impl AdminAlert {
                 source, ordinal, ..
             } => format!("notice-undecodable:{source}#{ordinal}"),
             Self::StaleNoticesRetired { .. } => "notice-stale".to_owned(),
+            Self::RsvpReplayPermissionDenied { .. } => "rsvp-replay-permission".to_owned(),
         }
     }
 }

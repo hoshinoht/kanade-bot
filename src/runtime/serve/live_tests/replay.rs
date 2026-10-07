@@ -144,6 +144,76 @@ async fn offline_cards_replay_after_startup_and_second_ready_only_after_current_
 }
 
 #[tokio::test]
+async fn fresh_ready_replays_bound_rsvp_cards_after_the_proposal_pass() {
+    let harness = Harness::new();
+    seed_members(&harness);
+    let (mut discord, ctx) = harness.start_with_clock(Arc::new(now)).await;
+    drive(&mut discord, async {
+        let run = create_run(
+            &ctx.store,
+            &policy(&harness),
+            now(),
+            HOME_C,
+            now() + chrono::Duration::hours(30),
+        )
+        .await;
+        let lease = ctx
+            .store
+            .begin_lease("rsvp-replay", "delivery", now())
+            .await
+            .unwrap();
+        let intent = NotificationIntent {
+            effect: EffectKind::DebugCard,
+            effect_context: Vec::new(),
+            channel_id: HOME_C.to_string(),
+            targets: vec![DeliveryTarget::DebugCard {
+                run_id: run.clone(),
+                kind: "day_of".into(),
+            }],
+            mentions: Vec::new(),
+            content: IntentContent::Plain,
+            warnings: Vec::new(),
+        };
+        let Claim::Fresh(attempt) = ctx.store.claim(&lease, &intent, None, now()).await.unwrap()
+        else {
+            panic!("fresh card claim");
+        };
+        let message = Id::new(880);
+        ctx.store
+            .bind(
+                &lease,
+                &attempt,
+                &Receipt {
+                    channel_id: HOME_C.to_string(),
+                    message_id: message.to_string(),
+                },
+                None,
+                now(),
+            )
+            .await
+            .unwrap();
+        harness.fake.seed_message(Id::new(HOME_C), message);
+        harness
+            .fake
+            .seed_reactions(message, "✅", ReactionType::Normal, vec![Id::new(ALICE)]);
+        ctx.events.send(ready()).unwrap();
+        ctx.events.send(guild_create(&[HOME_C])).unwrap();
+        eventually!(
+            "rsvp replay",
+            ctx.store
+                .load(&Scope::Run(run.clone()))
+                .await
+                .unwrap()
+                .rsvps
+                .iter()
+                .any(|rsvp| rsvp.user_id == ALICE.to_string() && rsvp.state == RsvpState::Yes)
+        );
+    })
+    .await;
+    finish(&harness, ctx).await;
+}
+
+#[tokio::test]
 async fn later_ready_coalesces_while_http_replay_is_in_flight() {
     let harness = Harness::new();
     seed_members(&harness);

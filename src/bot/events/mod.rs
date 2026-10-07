@@ -28,8 +28,8 @@ pub use guild::{AdminRoles, GuildRoles};
 pub use members::{RosterUpdate, member_update, roster_update};
 pub use messages::{DeletedMessages, GuildMessage};
 pub use reactions::{
-    CardIndex, LookupError, ReactionRouter, ReactionSink, RouteError, RsvpAnswer, RsvpReaction,
-    rsvp_reaction,
+    CardIndex, LookupError, ReactionRouter, ReactionSink, ReplayCard, ReplayCards, ReplayRunCards,
+    RouteError, RsvpAnswer, RsvpReaction, rsvp_reaction,
 };
 
 /// Which guild the adapter serves, and its bossing role.

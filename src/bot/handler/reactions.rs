@@ -2,6 +2,7 @@
 //! [`CardDesk`]; on any other message it is an RSVP through the card index.
 //! Sequential so a member's add and remove are applied in order.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use serde_json::json;
@@ -14,9 +15,11 @@ use crate::bot::delivery::AlertSink;
 use crate::bot::events::{CardIndex, ReactionRouter, ReactionSink, RsvpReaction};
 use crate::bot::gateway::ConnectionStatus;
 use crate::bot::ids::id_text;
+use crate::bot::rsvp_replay::RsvpReplay;
 use crate::bot::transport::DiscordTransport;
 use crate::chat::driver::{FollowUpCard, FollowUpRequest, RejectionFollowUp};
 use crate::domain::drafts::ProposalStore;
+use crate::domain::history::{BlameIndex, ChangeHistory};
 use crate::domain::notify::DeliveryJournal;
 use crate::domain::proposals::ProposalCardStore;
 use crate::domain::scheduler::{IdSource, ScheduleStore};
@@ -36,6 +39,7 @@ pub struct Reactions<S, T, I, A, X, K> {
     /// Shared with extraction's card outbox.
     pub desk: Arc<CardDesk<S, T, I, A>>,
     pub rsvp: ReactionRouter<X, K>,
+    pub rsvp_replay: Option<RsvpReplay<S, T, A>>,
     /// Optional while chat is unavailable; rejection follow-ups never delay
     /// the sequential reaction worker beyond their scope checks.
     pub follow_up: Option<Arc<dyn RejectionFollowUp>>,
@@ -47,12 +51,16 @@ pub struct Reactions<S, T, I, A, X, K> {
 impl<S, T, I, A, X, K> Reactions<S, T, I, A, X, K>
 where
     S: ScheduleStore
+        + ChangeHistory
+        + BlameIndex
+        + crate::bot::events::ReplayCards
         + crate::domain::notify::DeclineNoticeStore
         + ProposalStore
         + ProposalCardStore
         + DeliveryJournal
         + Send
-        + Sync,
+        + Sync
+        + 'static,
     T: DiscordTransport,
     I: IdSource + Clone + Send + Sync,
     A: AlertSink,
@@ -140,8 +148,17 @@ where
         reactions: &mut mpsc::UnboundedReceiver<RsvpReaction>,
     ) -> ReplayReport {
         let desk = Arc::clone(&self.desk);
-        desk.replay_reactions_with(self_id, current, &mut (self, reactions))
-            .await
+        let proposal = desk
+            .replay_reactions_with(self_id, &current, &mut (&mut *self, &mut *reactions))
+            .await;
+        let Some(mut rsvp) = self.rsvp_replay.take() else {
+            return proposal;
+        };
+        let _ = rsvp
+            .replay(self_id, &current, &mut (&mut *self, &mut *reactions))
+            .await;
+        self.rsvp_replay = Some(rsvp);
+        proposal
     }
 
     /// Replay and live events share one worker, so neither two passes nor a
@@ -191,26 +208,30 @@ impl<S, T, I, A, X, K> ReplayLive
     )
 where
     S: ScheduleStore
+        + ChangeHistory
+        + BlameIndex
+        + crate::bot::events::ReplayCards
         + crate::domain::notify::DeclineNoticeStore
         + ProposalStore
         + ProposalCardStore
         + DeliveryJournal
         + Send
-        + Sync,
+        + Sync
+        + 'static,
     T: DiscordTransport,
     I: IdSource + Clone + Send + Sync,
     A: AlertSink,
     X: CardIndex,
     K: ReactionSink,
 {
-    async fn drain(&mut self, message_id: &str) -> bool {
-        let mut touched = false;
+    async fn drain(&mut self) -> BTreeSet<String> {
+        let mut touched = BTreeSet::new();
         // Drain a snapshot, not an unbounded stream that could starve replay.
         for _ in 0..self.1.len() {
             let Ok(reaction) = self.1.try_recv() else {
                 break;
             };
-            touched |= id_text(reaction.message_id) == message_id;
+            touched.insert(id_text(reaction.message_id));
             self.0.apply(&reaction).await;
         }
         touched

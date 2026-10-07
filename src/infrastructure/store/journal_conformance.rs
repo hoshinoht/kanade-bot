@@ -8,7 +8,7 @@ use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
 use crate::bot::delivery::cards::{CardRecord, DigestPhraseStore, PostedCard, ReminderCardStore};
 use crate::bot::delivery::{DebugCardStore, PostedDebugCard};
-use crate::bot::events::CardIndex;
+use crate::bot::events::{CardIndex, ReplayCards};
 use crate::domain::notify::{
     AttemptId, AttemptState, Claim, DedupeKey, DeliverySettings, DeliveryTarget, DigestPostInput,
     EffectKind, IntentContent, JournalError, JournalView, Lease, NotificationIntent, PlannedSend,
@@ -28,6 +28,7 @@ pub async fn run_suite<
     S: ScheduleStore
         + DeliveryJournal
         + CardIndex
+        + ReplayCards
         + ReminderCardStore
         + DigestPhraseStore
         + DebugCardStore,
@@ -47,6 +48,7 @@ pub async fn run_suite<
     rejected_digest_raises_the_marker(&make().await).await;
     unproven_digest_raises_the_marker(&make().await).await;
     card_runs_survive_a_reminder_rebuild(&make().await).await;
+    replay_cards_keep_all_mappings_but_select_fresh_evidence(&make().await).await;
     unsent_release_frees_the_target_for_a_fresh_claim(&make().await).await;
     digest_week_is_recorded_without_a_post(&make().await).await;
     older_digests_are_retired_and_kept(&make().await).await;
@@ -687,6 +689,38 @@ async fn card_runs_survive_a_reminder_rebuild<S: ScheduleStore + DeliveryJournal
         "card_runs_survive_a_reminder_rebuild"
     );
     assert!(runs(5002).await.expect("lookup").is_empty());
+}
+
+async fn replay_cards_keep_all_mappings_but_select_fresh_evidence<
+    S: ScheduleStore + DeliveryJournal + ReplayCards + ReminderCardStore,
+>(
+    store: &S,
+) {
+    seed(store).await;
+    let lease = lease(store).await;
+    let intent = intent(&["m-1", "m-2"], HOME);
+    let key = DedupeKey::native(&intent.targets).expect("key");
+    store
+        .save_card_record(
+            key.as_str(),
+            &CardRecord {
+                kind: "day_of".into(),
+                heading: None,
+            },
+            at(7),
+        )
+        .await
+        .expect("record");
+    let attempt = fresh(store, &lease, &intent).await;
+    store
+        .bind(&lease, &attempt, &receipt(HOME, "5001"), None, at(8))
+        .await
+        .expect("bind");
+    let cards = store.replay_cards(at(1)).await.expect("replay cards");
+    assert_eq!(cards.len(), 1, "fresh bound reminder is a candidate");
+    assert_eq!(cards[0].run_id, "r-1");
+    assert_eq!(cards[0].cards.len(), 1, "grouped card is read once");
+    assert!(cards[0].cards[0].evidence);
 }
 
 async fn unsent_release_frees_the_target_for_a_fresh_claim<S: ScheduleStore + DeliveryJournal>(

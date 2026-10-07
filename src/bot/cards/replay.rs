@@ -5,7 +5,6 @@ use std::future::Future;
 use std::sync::PoisonError;
 
 use serde_json::json;
-use twilight_model::channel::message::ReactionType;
 use twilight_model::id::{Id, marker::UserMarker};
 
 use super::react::{CHANGED_SINCE_CARD, OUT_OF_DATE_NOTICE};
@@ -13,7 +12,8 @@ use super::{CardDesk, CardReaction};
 use crate::bot::delivery::AlertSink;
 use crate::bot::events::RsvpAnswer;
 use crate::bot::ids::{id_text, parse_id};
-use crate::bot::transport::{ChannelId, DiscordTransport, MAX_REACTIONS_PAGE, MessageId, Outcome};
+use crate::bot::reaction_read;
+use crate::bot::transport::DiscordTransport;
 use crate::domain::drafts::{DraftStatus, ProposalStore};
 use crate::domain::notify::{DeclineNoticeStore, DeliveryJournal};
 use crate::domain::proposals::{ProposalCardStore, StoredCard};
@@ -37,13 +37,13 @@ pub struct ReplayReport {
 }
 
 /// Give queued gateway decisions precedence over an HTTP snapshot.
-pub(crate) trait ReplayLive: Send {
-    fn drain(&mut self, message_id: &str) -> impl Future<Output = bool> + Send;
+pub trait ReplayLive: Send {
+    fn drain(&mut self) -> impl Future<Output = BTreeSet<String>> + Send;
 }
 
 impl ReplayLive for () {
-    async fn drain(&mut self, _message_id: &str) -> bool {
-        false
+    async fn drain(&mut self) -> BTreeSet<String> {
+        BTreeSet::new()
     }
 }
 
@@ -114,7 +114,7 @@ where
             let mut stale = false;
             let mut reported_conflicts = BTreeSet::new();
             'retry: for retry in 0..=MAX_LIVE_REACTION_RETRIES {
-                if live_reactions.drain(&message).await {
+                if live_reactions.drain().await.contains(&message) {
                     live_retry(&message, retry, &mut report);
                     continue 'retry;
                 }
@@ -125,22 +125,29 @@ where
                     report.skipped += 1;
                     continue 'messages;
                 };
-                let (yes, no) = match self
-                    .read_answers(channel, message_id, self_id, &current)
-                    .await
+                let answers = match reaction_read::read_answers(
+                    &*self.transport,
+                    channel,
+                    message_id,
+                    self_id,
+                    MAX_REACTION_PAGES,
+                    &current,
+                )
+                .await
                 {
                     Ok(answers) => answers,
-                    Err(reason) => {
+                    Err(error) => {
                         if !current() {
                             report.aborted = true;
                             break 'messages;
                         }
-                        skipped(Some(&message), &reason);
+                        skipped(Some(&message), &error.reason);
                         report.skipped += 1;
                         continue 'messages;
                     }
                 };
-                if live_reactions.drain(&message).await {
+                let (yes, no) = (answers.yes, answers.no);
+                if live_reactions.drain().await.contains(&message) {
                     live_retry(&message, retry, &mut report);
                     continue 'retry;
                 }
@@ -182,7 +189,7 @@ where
                     report.skipped += 1;
                     continue 'messages;
                 }
-                if live_reactions.drain(&message).await {
+                if live_reactions.drain().await.contains(&message) {
                     live_retry(&message, retry, &mut report);
                     continue 'retry;
                 }
@@ -233,7 +240,7 @@ where
                         report.aborted = true;
                         break 'messages;
                     }
-                    if live_reactions.drain(&message).await {
+                    if live_reactions.drain().await.contains(&message) {
                         live_retry(&message, retry, &mut report);
                         continue 'retry;
                     }
@@ -271,55 +278,6 @@ where
         report.aborted |= !current();
         finished(&report);
         report
-    }
-
-    async fn read_answers(
-        &self,
-        channel: ChannelId,
-        message: MessageId,
-        self_id: Id<UserMarker>,
-        current: &impl Fn() -> bool,
-    ) -> Result<(BTreeSet<Id<UserMarker>>, BTreeSet<Id<UserMarker>>), String> {
-        let mut answers = [BTreeSet::new(), BTreeSet::new()];
-        for (emoji, users) in ["✅", "❌"].into_iter().zip(&mut answers) {
-            // Live gateway reactions include super reactions too.
-            for kind in [ReactionType::Normal, ReactionType::Burst] {
-                let mut after = None;
-                let mut complete = false;
-                for _ in 0..MAX_REACTION_PAGES {
-                    if !current() {
-                        return Err("stale_generation".into());
-                    }
-                    let outcome = self
-                        .transport
-                        .reaction_users(channel, message, emoji, kind, after, MAX_REACTIONS_PAGE)
-                        .await;
-                    let page = match outcome {
-                        Outcome::Delivered(page) => page,
-                        outcome => return Err(outcome.failure_label().unwrap_or_default()),
-                    };
-                    if page.len() > usize::from(MAX_REACTIONS_PAGE)
-                        || page
-                            .iter()
-                            .any(|id| after.is_some_and(|after| *id <= after))
-                    {
-                        return Err("invalid_page".into());
-                    }
-                    let next = page.iter().max().copied();
-                    users.extend(page.iter().filter(|id| **id != self_id).copied());
-                    if page.len() < usize::from(MAX_REACTIONS_PAGE) {
-                        complete = true;
-                        break;
-                    }
-                    after = next;
-                }
-                if !complete {
-                    return Err("page_cap".into());
-                }
-            }
-        }
-        let [yes, no] = answers;
-        Ok((yes, no))
     }
 }
 

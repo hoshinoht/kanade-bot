@@ -18,5 +18,7 @@ pub mod handler;
 pub mod identity;
 pub mod ids;
 pub mod mentions;
+pub(crate) mod reaction_read;
 pub mod roster;
+pub mod rsvp_replay;
 pub mod transport;

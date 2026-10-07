@@ -13,5 +13,6 @@ mod mentions;
 mod messages;
 mod reactions;
 mod replies;
+mod rsvp_replay;
 mod slash;
 mod support;

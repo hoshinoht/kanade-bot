@@ -16,5 +16,5 @@ pub use format::{
 };
 pub use outbox::CardOutbox;
 pub use react::{CardFollowUp, CardReaction, FollowUpCard};
-pub(crate) use replay::ReplayLive;
+pub use replay::ReplayLive;
 pub use replay::{OFFLINE_CONFLICT_NOTICE, ReplayReport};

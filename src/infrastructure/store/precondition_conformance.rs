@@ -39,6 +39,40 @@ pub async fn run_suite<S: ScheduleStore + ChangeHistory + BlameIndex + Sync>(
     overrides_must_change_their_field_and_be_admin(make().await).await;
     never_existing_targets_are_unknown(make().await).await;
     expectations_survive_a_revision_conflict(make().await).await;
+    cleared_rsvp_keeps_blame_version(make().await).await;
+}
+
+async fn cleared_rsvp_keeps_blame_version<S: ScheduleStore + ChangeHistory + BlameIndex + Sync>(
+    store: S,
+) {
+    let (_fixed, run) = seed(&store).await;
+    let target = BlameTarget::Run(run.clone());
+    editor(&store)
+        .as_origin(admin("answer"))
+        .set_rsvp(&run, "1", RsvpState::Yes, RsvpSource::Chat)
+        .await
+        .expect("answer");
+    editor(&store)
+        .as_origin(admin("clear"))
+        .portal_answer(&run, "1", None)
+        .await
+        .expect("clear");
+    let version = store
+        .read_versioned(std::slice::from_ref(&target))
+        .await
+        .expect("versioned")
+        .pop()
+        .expect("run");
+    assert!(
+        version
+            .answers
+            .iter()
+            .all(|row| !matches!(row, RowValue::Rsvp(rsvp) if rsvp.user_id == "1"))
+    );
+    assert!(
+        version.versions.contains_key(&rsvp_field("1")),
+        "clear is blamed"
+    );
 }
 
 #[derive(Clone, Default)]

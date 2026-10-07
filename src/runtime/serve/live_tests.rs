@@ -46,7 +46,10 @@ use crate::{
         history::Origin,
         ids::RandomIds,
         members::{GatewayMember, MemberStore, Roster},
-        notify::{Claim, DeliveryJournal, DeliverySettings, NoticeOutbox, WeekReset, plan_notice},
+        notify::{
+            Claim, DeliveryJournal, DeliverySettings, DeliveryTarget, EffectKind, IntentContent,
+            NoticeOutbox, NotificationIntent, Receipt, WeekReset, plan_notice,
+        },
         proposals::{Approver, ChangeKind, ProposedChange},
         schedule::{NewRun, RsvpState, RunSource, RunStatus, SchedulePolicy, StatusChange},
         scheduler::{ProposalRequest, ScheduleStore, SchedulerService, Scope, Supersede},

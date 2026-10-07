@@ -13,7 +13,7 @@ use crate::bot::delivery::cards::{
     CardRecord, DAY_OF_KIND, DigestPhraseStore, PostedCard, ReminderCardStore,
 };
 use crate::bot::delivery::debug::{DebugCardStore, PostedDebugCard};
-use crate::bot::events::{CardIndex, LookupError};
+use crate::bot::events::{CardIndex, LookupError, ReplayCard, ReplayCards, ReplayRunCards};
 use crate::domain::notify::{
     ActiveClaims, AttemptId, AttemptRecord, AttemptState, Claim, DIGEST_REPLACEMENT_ACTOR,
     DIGEST_REPLACEMENT_REASON, DedupeKey, DeliveryJournal, DeliveryTarget, DigestLog, EffectKind,
@@ -55,6 +55,7 @@ struct AttemptRow {
     resolved_by: Option<String>,
     reason: String,
     intended_at: DateTime<Utc>,
+    resolved_at: Option<DateTime<Utc>>,
     targets: Vec<TargetRow>,
 }
 
@@ -363,6 +364,7 @@ fn claim_in(
             resolved_by: None,
             reason: String::new(),
             intended_at: at,
+            resolved_at: None,
             targets: targets
                 .into_iter()
                 .map(|target| TargetRow {
@@ -433,6 +435,7 @@ fn claim_source_in(
             resolved_by: None,
             reason: String::new(),
             intended_at: at,
+            resolved_at: None,
             targets: Vec::new(),
         },
     );
@@ -463,6 +466,7 @@ fn bind_in(
     }
     row.state = AttemptState::Bound;
     row.message_id = Some(receipt.message_id.clone());
+    row.resolved_at = Some(at);
     let targets = row.targets.clone();
     for target in &targets {
         match &target.target {
@@ -1022,6 +1026,105 @@ impl CardIndex for MemoryScheduleStore {
     }
 }
 
+impl ReplayCards for MemoryScheduleStore {
+    async fn replay_cards(
+        &self,
+        not_before: DateTime<Utc>,
+    ) -> Result<Vec<ReplayRunCards>, LookupError> {
+        let tables = self.tables();
+        let journal = &tables.journal;
+        let mut mapped: BTreeMap<(String, String), ReplayCard> = BTreeMap::new();
+        let mut add = |run_id: String,
+                       message_id: String,
+                       channel_id: Option<String>,
+                       evidence: bool,
+                       resolved_at: Option<DateTime<Utc>>| {
+            let card = mapped
+                .entry((run_id, message_id.clone()))
+                .or_insert(ReplayCard {
+                    channel_id,
+                    message_id,
+                    evidence: false,
+                    resolved_at: None,
+                });
+            card.evidence |= evidence;
+            if evidence {
+                card.resolved_at = resolved_at;
+            }
+        };
+        for (message, run_id) in &journal.card_runs {
+            for row in journal
+                .attempts
+                .values()
+                .filter(|row| row.message_id.as_deref() == Some(message))
+            {
+                let reminder = journal.reminder_cards.get(row.dedupe_key.as_str());
+                let debug = journal
+                    .debug_cards
+                    .values()
+                    .find(|debug| debug.message_id.as_deref() == Some(message));
+                let kind = reminder
+                    .map(|card| card.kind.as_str())
+                    .or_else(|| debug.map(|card| card.kind.as_str()));
+                let cleared = debug.is_some_and(|card| card.cleared_at.is_some());
+                let evidence = row.state == AttemptState::Bound
+                    && row.resolved_at.is_some_and(|at| at >= not_before)
+                    && !cleared
+                    && kind
+                        .is_some_and(|kind| kind == DAY_OF_KIND || kind.starts_with("countdown_"));
+                add(
+                    run_id.clone(),
+                    message.clone(),
+                    Some(row.channel_id.clone()),
+                    evidence,
+                    row.resolved_at,
+                );
+            }
+        }
+        for reminder in tables
+            .reminders
+            .values()
+            .filter(|row| row.message_id.is_some())
+        {
+            let message = reminder.message_id.clone().expect("filtered");
+            let attempt = journal
+                .attempts
+                .values()
+                .find(|row| row.message_id.as_deref() == Some(&message));
+            let evidence = attempt.is_some_and(|row| {
+                row.state == AttemptState::Bound
+                    && row.resolved_at.is_some_and(|at| at >= not_before)
+                    && journal
+                        .reminder_cards
+                        .get(row.dedupe_key.as_str())
+                        .is_some_and(|card| {
+                            card.kind == DAY_OF_KIND || card.kind.starts_with("countdown_")
+                        })
+            });
+            add(
+                reminder.run_id.clone(),
+                message,
+                attempt.map(|row| row.channel_id.clone()),
+                evidence,
+                attempt.and_then(|row| row.resolved_at),
+            );
+        }
+        let mut runs: BTreeMap<String, Vec<ReplayCard>> = BTreeMap::new();
+        for ((run_id, _), card) in mapped {
+            runs.entry(run_id).or_default().push(card);
+        }
+        Ok(runs
+            .into_iter()
+            .filter_map(|(run_id, cards)| {
+                cards
+                    .iter()
+                    .any(|card| card.evidence)
+                    .then_some(ReplayRunCards { run_id, cards })
+            })
+            .collect())
+    }
+}
+
 /// SQLite's `reminder_cards` CHECKs.
 fn valid_record(dedupe_key: &str, record: &CardRecord) -> bool {
     let key = dedupe_key.len() == 64
@@ -1042,6 +1145,23 @@ fn valid_phrase(dedupe_key: &str, phrase: &str) -> bool {
 }
 
 impl MemoryScheduleStore {
+    /// Test support for a grouped day-of card. Production bindings create
+    /// these rows atomically; tests use this to model one message for runs.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn test_map_card_run(&self, message_id: &str, run_id: &str) {
+        self.tables()
+            .journal
+            .card_runs
+            .insert((message_id.to_owned(), run_id.to_owned()));
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn test_retire_bound_attempt(&self, attempt: &AttemptId) {
+        let mut tables = self.tables();
+        let row = tables.journal.attempt(attempt).expect("attempt");
+        retire(row, "test", "test retirement");
+    }
+
     pub fn fail_next_card_record_read(&self) {
         self.tables().journal.card_record_read_failures += 1;
     }

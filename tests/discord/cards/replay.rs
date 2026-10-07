@@ -51,6 +51,7 @@ fn worker(world: &World, follow_up: &Arc<FollowUps>) -> Worker {
                 FixedClock(now()),
             ),
         ),
+        rsvp_replay: None,
         follow_up: Some(follow_up.clone()),
         decline_retraction: None,
         clock: Arc::new(now),

@@ -7,6 +7,7 @@
 use std::fmt;
 use std::future::Future;
 
+use chrono::{DateTime, Utc};
 use twilight_model::channel::message::EmojiReactionType;
 use twilight_model::gateway::GatewayReaction;
 use twilight_model::id::{
@@ -120,6 +121,34 @@ pub trait CardIndex: Send + Sync {
         &self,
         message: Id<MessageMarker>,
     ) -> impl Future<Output = Result<Vec<String>, LookupError>> + Send;
+}
+
+/// One remotely readable message that still maps to a run. `evidence` is the
+/// narrow, fresh bound-card subset; every row remains mapped for removal
+/// guards and conflict detection.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReplayCard {
+    pub channel_id: Option<String>,
+    pub message_id: String,
+    pub evidence: bool,
+    pub resolved_at: Option<DateTime<Utc>>,
+}
+
+/// All message mappings for one candidate run.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReplayRunCards {
+    pub run_id: String,
+    pub cards: Vec<ReplayCard>,
+}
+
+/// The journal view needed for bounded RSVP recovery.
+pub trait ReplayCards: Send + Sync {
+    /// Returns only runs with at least one fresh evidence card, but each
+    /// returned run carries every mapped message needed by the removal guard.
+    fn replay_cards(
+        &self,
+        not_before: DateTime<Utc>,
+    ) -> impl Future<Output = Result<Vec<ReplayRunCards>, LookupError>> + Send;
 }
 
 /// Where reaction RSVPs are applied.

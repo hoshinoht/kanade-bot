@@ -46,7 +46,11 @@ where
                 let origin = Origin::new(Actor::member(user_id.clone()), Surface::Discord);
                 let mut service = self.service(now);
                 let Ok(result) = service
-                    .as_origin(origin.clone())
+                    .as_origin(
+                        origin
+                            .clone()
+                            .with_request_id(format!("extract-answer:{}", uuid::Uuid::new_v4())),
+                    )
                     .apply_reaction_with_decline(
                         &answer.run_id,
                         user_id,
