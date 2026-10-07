@@ -10,6 +10,83 @@ use super::dto::*;
 use super::{Store, clock::minutes};
 
 const REACT_HINT: &str = "React \u{2705} if you're on, \u{274c} if not.";
+const INK_BLUE: &str = "#4d5c9e";
+
+/// The redesigned style's boss label: `Hard Radiant Malefic Star`.
+fn labels(run: &Run) -> String {
+    run.bosses
+        .iter()
+        .map(|boss| {
+            let word = match boss.difficulty {
+                "e" => "Easy",
+                "n" => "Normal",
+                "h" => "Hard",
+                "c" => "Chaos",
+                "x" => "Extreme",
+                other => other,
+            };
+            format!("{word} {}", boss.name)
+        })
+        .collect::<Vec<_>>()
+        .join(" + ")
+}
+
+/// One redesigned day-of embed: In / Waiting / Out side by side, the run id
+/// and levels below; the entry art on the day's first run only.
+fn redesigned_embed(run: &Run, first: bool) -> Value {
+    let names = |answer: &str| {
+        let names: Vec<&str> = run
+            .participants
+            .iter()
+            .filter(|p| p.answer == answer)
+            .map(|p| p.name)
+            .collect();
+        if names.is_empty() {
+            "—".to_owned()
+        } else {
+            names.join(", ")
+        }
+    };
+    let waiting = run
+        .participants
+        .iter()
+        .filter(|p| p.answer == "waiting")
+        .count();
+    let state = match run.status {
+        "at_risk" => "❗ at risk".to_owned(),
+        "done" => "🏁 done".to_owned(),
+        _ if waiting > 0 => format!("⚠️ waiting on {waiting}"),
+        _ => "✅ all in".to_owned(),
+    };
+    let when = match &run.time {
+        Some(time) => format!("🕘 **{time}**"),
+        None => "🕒 own time".to_owned(),
+    };
+    let levels: Vec<String> = run
+        .bosses
+        .iter()
+        .filter_map(|boss| boss.level.map(|level| format!("Lv{level}")))
+        .collect();
+    let footer = if levels.is_empty() {
+        format!("#{}", run.short_id)
+    } else {
+        format!("#{} · {}", run.short_id, levels.join(" + "))
+    };
+    let lead = run.bosses.first();
+    json!({
+        "color": colour(run, INK_BLUE),
+        "title": labels(run),
+        "description": format!("{when} · {state}"),
+        "fields": [
+            { "name": "In ✅", "value": names("yes"), "inline": true },
+            { "name": "Waiting", "value": names("waiting"), "inline": true },
+            { "name": "Out ❌", "value": names("no"), "inline": true },
+        ],
+        "footer": footer,
+        "thumbnail": lead.and_then(|boss| boss.portrait.clone()),
+        "image": if first { lead.and_then(|boss| boss.art.clone()) } else { None },
+    })
+}
 
 fn bosses_text(run: &Run) -> String {
     run.bosses
@@ -150,6 +227,41 @@ impl Store {
         // As the server: a row retired without posting has no card.
         let card = if run.status == "cancelled" || row.state == "stale" {
             Value::Null
+        } else if row.kind == "morning" && self.config.message_style == "redesigned" {
+            // Every run whose morning card fires at the same minute shares it.
+            let mut day: Vec<(i64, Run)> = self
+                .reminder_rows()
+                .into_iter()
+                .filter(|(other, _, run, row)| {
+                    *other == at && row.kind == "morning" && run.status != "cancelled"
+                })
+                .map(|(_, start, run, _)| (start, run))
+                .collect();
+            day.sort_by_key(|(start, _)| *start);
+            let mut embeds = day
+                .iter()
+                .enumerate()
+                .map(|(index, (_, run))| redesigned_embed(run, index == 0));
+            let mut card = embeds
+                .next()
+                .unwrap_or_else(|| redesigned_embed(&run, true));
+            let waiting: Vec<String> = day
+                .iter()
+                .flat_map(|(_, run)| &run.participants)
+                .filter(|p| p.answer == "waiting")
+                .map(|p| format!("<@{}>", p.id))
+                .collect();
+            let line = if waiting.is_empty() {
+                "react ✅ in / ❌ out".to_owned()
+            } else {
+                format!("Waiting on {} · react ✅ in / ❌ out", waiting.join(" "))
+            };
+            let day = Self::when(at);
+            let day = day.rsplit_once(' ').map_or(day.as_str(), |(day, _)| day);
+            card["content"] = json!(format!("📅 **Today — {day}**\n-# {line}"));
+            card["more_embeds"] = json!(embeds.collect::<Vec<_>>());
+            card["heading_final"] = json!(sent);
+            card
         } else if row.kind == "morning" {
             let day = Self::when(at);
             let day = day.rsplit_once(' ').map_or(day.as_str(), |(day, _)| day);
@@ -160,14 +272,17 @@ impl Store {
             json!({
                 "content": format!("📅 **Today — {day}**\n{}", mentions.join(", ")),
                 "color": colour(&run, "#5865f2"),
+                "title": null,
                 "description": null,
                 "fields": [{
                     "name": format!("🕘 {time}  ·  {}", bosses_text(&run)),
                     "value": detail(&run).join("\n"),
+                    "inline": false,
                 }],
                 "footer": REACT_HINT,
                 "thumbnail": lead.and_then(|boss| boss.portrait.clone()),
                 "image": lead.and_then(|boss| boss.art.clone()),
+                "more_embeds": [],
                 "heading_final": sent,
             })
         } else {
@@ -181,11 +296,13 @@ impl Store {
                     mentions.join(", ")
                 ),
                 "color": colour(&run, if waiting { "#fee75c" } else { "#57f287" }),
+                "title": null,
                 "description": detail(&run).join("\n"),
                 "fields": [],
                 "footer": if waiting { Some(REACT_HINT) } else { None },
                 "thumbnail": lead.and_then(|boss| boss.portrait.clone()),
                 "image": null,
+                "more_embeds": [],
                 "heading_final": sent,
             })
         };

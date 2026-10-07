@@ -528,6 +528,54 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
             assert_eq!(preview["reminder"]["id"], row["id"]);
         }
     }
+    // The redesigned style: every preview still matches the schema, and a
+    // morning card shows one embed per run with inline answer fields.
+    let styled = h
+        .ok(
+            "PATCH",
+            "/api/admin/config",
+            Some(json!({ "notifications": { "message_style": "redesigned" } })),
+            "config.json#/$defs/ConfigView",
+        )
+        .await;
+    assert_eq!(styled["notifications"]["message_style"], "redesigned");
+    let mut mornings = 0;
+    for list in ["upcoming", "sent"] {
+        for row in reminders[list].as_array().unwrap() {
+            let preview = h
+                .ok(
+                    "GET",
+                    &format!("/api/admin/reminders/{}/preview", s(&row["id"])),
+                    None,
+                    "reminders.json#/$defs/ReminderPreview",
+                )
+                .await;
+            let card = &preview["card"];
+            if row["kind"] == "morning" && !card.is_null() {
+                mornings += 1;
+                assert!(s(&card["content"]).contains("\n-# "), "{card}");
+                assert_eq!(card["fields"][0]["inline"], true, "{card}");
+                assert!(card["title"].is_string(), "{card}");
+            }
+        }
+    }
+    assert!(mornings > 0, "no redesigned morning card validated");
+    h.expect(
+        false,
+        "PATCH",
+        "/api/admin/config",
+        Some(json!({ "notifications": { "message_style": "fancy" } })),
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "error.json#/$defs/ApiError",
+    )
+    .await;
+    h.ok(
+        "PATCH",
+        "/api/admin/config",
+        Some(json!({ "notifications": { "message_style": "classic" } })),
+        "config.json#/$defs/ConfigView",
+    )
+    .await;
     h.expect(
         false,
         "GET",

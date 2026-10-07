@@ -9,8 +9,8 @@ use chrono::{NaiveTime, Timelike, Weekday};
 use super::SettingsError;
 use super::keys;
 use super::model::{
-    Chatbot, ContextSettings, MAX_CONTEXT_TOKENS, MAX_ROLE_PROFILE_ASSIGNMENTS, Models,
-    Notifications, OVERRIDE_RUN_MINUTES, Persona, Pings, Posting, Profanity, RUN_MINUTES,
+    Chatbot, ContextSettings, MAX_CONTEXT_TOKENS, MAX_ROLE_PROFILE_ASSIGNMENTS, MessageStyle,
+    Models, Notifications, OVERRIDE_RUN_MINUTES, Persona, Pings, Posting, Profanity, RUN_MINUTES,
     Reasoning, RoleModel, RoleProfileAssignment, RunLengths, RuntimeSettings, Schedule,
     SelfService, SelfServiceMode, Watching,
 };
@@ -383,6 +383,10 @@ fn apply(out: &mut RuntimeSettings, key: &'static str, value: &str) -> Result<()
         keys::CHAT_GLOBAL_RATE_COUNT => out.chatbot.guild_rate.count = count(key, value, 1)?,
         keys::CHAT_GLOBAL_RATE_WINDOW => out.chatbot.guild_rate.window_s = window(key, value)?,
         keys::QUIET_MODE => out.notifications.quiet_mode = flag(key, value)?,
+        keys::MESSAGE_STYLE => {
+            out.notifications.message_style = MessageStyle::parse(value)
+                .ok_or_else(|| malformed(key, value, "expected classic or redesigned"))?;
+        }
         keys::SELF_SERVICE_MODE => {
             out.self_service.mode = SelfServiceMode::parse(value)
                 .ok_or_else(|| malformed(key, value, "unknown self-service mode"))?;
@@ -470,7 +474,13 @@ pub(super) fn encode(section: &Section) -> Rows {
             ),
         ],
         Section::Notifications(notifications) => {
-            vec![(keys::QUIET_MODE, flag_text(notifications.quiet_mode))]
+            vec![
+                (keys::QUIET_MODE, flag_text(notifications.quiet_mode)),
+                (
+                    keys::MESSAGE_STYLE,
+                    notifications.message_style.as_str().to_owned(),
+                ),
+            ]
         }
         Section::SelfService(service) => vec![
             (keys::SELF_SERVICE_MODE, service.mode.as_str().to_owned()),

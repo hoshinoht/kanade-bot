@@ -1,7 +1,7 @@
 // Generated from the Rust API DTOs by src/api/ts_bindings.rs; do not edit.
 // Regenerate: KANADE_WRITE_TS=1 cargo test --all-features --lib ts_bindings
 
-import type { ActorKind, Answer, ChangeRecord, ChatOutcome, ChatRoute, ContextSource, Difficulty, DifficultyName, ExtractionOutcome, IdListSource, KnowledgeDoc, MissionSeries, PingLevel, ProposalKind, Refusal, RowKey, RunStatus, SelfServiceMode, SignInMethod, Surface } from './manual';
+import type { ActorKind, Answer, ChangeRecord, ChatOutcome, ChatRoute, ContextSource, Difficulty, DifficultyName, ExtractionOutcome, IdListSource, KnowledgeDoc, MessageStyle, MissionSeries, PingLevel, ProposalKind, Refusal, RowKey, RunStatus, SelfServiceMode, SignInMethod, Surface } from './manual';
 
 /**
  * `common.json#/$defs/Boss`.
@@ -178,22 +178,40 @@ generated_at: string, };
 /**
  * One embed field of a previewed card.
  */
-export type CardField = { name: string, value: string, };
+export type CardField = { name: string, value: string, 
+/**
+ * Shown side by side with the neighbouring inline fields.
+ */
+inline: boolean, };
 
 /**
  * A reminder card as the bot posts it: the message text (mentions as
- * `<@id>`) and its one embed. Art is a same-origin `/art/` URL.
+ * `<@id>`), its first embed and any further ones (the redesigned day-of
+ * card has one per run). Art is a same-origin `/art/` URL.
  */
 export type CardPreview = { content: string, 
 /**
  * `#rrggbb`, the embed's colour bar.
  */
-color: string, description: string | null, fields: Array<CardField>, footer: string | null, thumbnail: string | null, image: string | null, 
+color: string, title: string | null, description: string | null, fields: Array<CardField>, footer: string | null, thumbnail: string | null, image: string | null, 
+/**
+ * The embeds after the first, in order.
+ */
+more_embeds: Array<EmbedPreview>, 
 /**
  * The heading line stored for this card (posted or prepared to post);
  * `false` while it is the seed line the bot may reword when it posts.
  */
 heading_final: boolean, };
+
+/**
+ * A further embed of a previewed card.
+ */
+export type EmbedPreview = { 
+/**
+ * `#rrggbb`.
+ */
+color: string, title: string | null, description: string | null, fields: Array<CardField>, footer: string | null, thumbnail: string | null, image: string | null, };
 
 /**
  * `GET /api/admin/reminders/{id}/preview`: the row and its card; `card` is
@@ -340,7 +358,7 @@ export type Chatbot = { enabled: boolean, configured: boolean, missing_env: Arra
  */
 category_ids: Array<string>, category_ids_source: IdListSource, };
 
-export type Notifications = { quiet_mode: boolean, };
+export type Notifications = { quiet_mode: boolean, message_style: MessageStyle, };
 
 export type SelfServiceSettings = { mode: SelfServiceMode, effective_mode: SelfServiceMode, public_portal: boolean, };
 

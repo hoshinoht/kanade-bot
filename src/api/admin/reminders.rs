@@ -19,20 +19,20 @@ use crate::{
         auth::AdminSession,
         dto::{
             iso_instant,
-            reminders::{CardField, CardPreview, ReminderPreview, ReminderState, classified, row},
+            reminders::{
+                CardField, CardPreview, EmbedPreview, ReminderPreview, ReminderState, classified,
+                row,
+            },
+            week::Context,
         },
         error::ApiError,
         listeners::Site,
     },
     bot::delivery::{
-        cards::{Card, CardContext, card_runs},
+        cards::{Card, CardContext, redesign::NO_MARKS},
         preview::{posted, record_key, reminder_card, reminder_intent},
     },
-    domain::{
-        notify::{DeliverySettings, IntentContent},
-        scheduler::Scope,
-        settings::RuntimeSettings,
-    },
+    domain::{notify::DeliverySettings, scheduler::Scope, settings::RuntimeSettings},
 };
 
 pub fn routes() -> Router<Arc<Site>> {
@@ -73,6 +73,8 @@ async fn preview(
         quiet: settings.notifications.quiet_mode,
         members: &ctx.roster,
         catalog: Some(&state.catalog),
+        style: settings.notifications.message_style,
+        marks: &NO_MARKS,
     };
     // Whether Discord's copy is frozen: refresh edits a posted card while any
     // of its runs is still ahead (`refresh.rs`); otherwise the reminder's run.
@@ -133,25 +135,8 @@ async fn preview(
         },
     };
     let card = source.and_then(|(content, mentions, heading)| {
-        let lead = match &content {
-            IntentContent::DayOf { run_ids } => card_runs(&cards, run_ids)
-                .first()
-                .map(|run| run.bosses.clone()),
-            IntentContent::Countdown { run_id, .. } => {
-                cards.run(run_id).map(|run| run.bosses.clone())
-            }
-            _ => None,
-        }
-        .unwrap_or_default();
-        let lead = ctx.bosses(&lead).into_iter().next();
-        reminder_card(&content, &mentions, &cards, heading.as_deref()).map(|card| {
-            view(
-                card,
-                heading.is_some(),
-                lead.as_ref().and_then(|boss| boss.portrait.clone()),
-                lead.and_then(|boss| boss.art),
-            )
-        })
+        reminder_card(&content, &mentions, &cards, heading.as_deref())
+            .map(|card| view(&ctx, card, heading.is_some()))
     });
     Ok(Json(ReminderPreview {
         reminder: reminder_row,
@@ -162,26 +147,52 @@ async fn preview(
     .into_response())
 }
 
-/// The card's art is shown only where it would be attached: the lead boss's
-/// portrait and (day-of) entry art, when the file exists.
-fn view(
-    card: Card,
-    heading_final: bool,
-    portrait: Option<String>,
-    entry: Option<String>,
-) -> CardPreview {
+/// The card's art is shown only where it would be attached: each embed's
+/// lead boss portrait and (day-of) entry art, when the file exists.
+fn view(ctx: &Context<'_>, card: Card, heading_final: bool) -> CardPreview {
+    let mut embeds = card.embeds.into_iter().map(|embed| {
+        let boss = embed
+            .lead
+            .and_then(|token| ctx.bosses(&[token]).into_iter().next());
+        EmbedPreview {
+            color: format!("#{:06x}", embed.colour & 0x00ff_ffff),
+            title: embed.title,
+            thumbnail: embed
+                .thumbnail
+                .and(boss.as_ref().and_then(|boss| boss.portrait.clone())),
+            image: embed.image.and(boss.and_then(|boss| boss.art)),
+            description: embed.description,
+            fields: embed
+                .fields
+                .into_iter()
+                .map(|field| CardField {
+                    name: field.name,
+                    value: field.value,
+                    inline: field.inline,
+                })
+                .collect(),
+            footer: embed.footer,
+        }
+    });
+    let first = embeds.next().unwrap_or_else(|| EmbedPreview {
+        color: "#000000".to_owned(),
+        title: None,
+        description: None,
+        fields: Vec::new(),
+        footer: None,
+        thumbnail: None,
+        image: None,
+    });
     CardPreview {
-        color: format!("#{:06x}", card.colour & 0x00ff_ffff),
-        thumbnail: card.thumbnail.and(portrait),
-        image: card.image.and(entry),
         content: card.content,
-        description: card.description,
-        fields: card
-            .fields
-            .into_iter()
-            .map(|(name, value)| CardField { name, value })
-            .collect(),
-        footer: card.footer,
+        color: first.color,
+        title: first.title,
+        description: first.description,
+        fields: first.fields,
+        footer: first.footer,
+        thumbnail: first.thumbnail,
+        image: first.image,
+        more_embeds: embeds.collect(),
         heading_final,
     }
 }

@@ -94,6 +94,7 @@ pub(crate) fn kit(art: Option<&TempDir>) -> CardKit {
         catalog: Some(Arc::new(catalog())),
         art: art.map(|dir| Arc::new(BossArt::new(dir.path())) as Arc<dyn ArtSource>),
         heading: HeadingRewrite::default(),
+        ..CardKit::default()
     }
 }
 

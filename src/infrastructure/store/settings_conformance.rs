@@ -8,7 +8,7 @@ use crate::domain::attendance::AttendanceMode;
 use crate::domain::history::{Actor, Surface};
 use crate::domain::scheduler::StoreError;
 use crate::domain::settings::{
-    IdList, Reasoning, RuntimeSettings, Section, SelfServiceMode, SettingsChange,
+    IdList, MessageStyle, Reasoning, RuntimeSettings, Section, SelfServiceMode, SettingsChange,
     SettingsChangeQuery, SettingsError, SettingsStore, diff_rows, keys, load_settings,
     save_section, save_section_recorded,
 };
@@ -24,6 +24,35 @@ pub async fn run_suite<S: SettingsStore>(make: impl AsyncFn() -> S) {
     recorded_saves_append_one_change_with_their_rows(make().await).await;
     refused_recorded_saves_record_nothing(make().await).await;
     rowless_records_leave_the_settings_alone(make().await).await;
+    message_style_is_stored_as_text(make().await).await;
+}
+
+/// `v5.message_style` reads `classic` when unset, round-trips as text and
+/// refuses anything else.
+async fn message_style_is_stored_as_text<S: SettingsStore>(store: S) {
+    let seed = RuntimeSettings::default();
+    let unset = load_settings(&store, &seed).await.expect("load");
+    assert_eq!(unset.notifications.message_style, MessageStyle::Classic);
+    let mut notifications = unset.notifications;
+    notifications.message_style = MessageStyle::Redesigned;
+    save_section(&store, &Section::Notifications(notifications))
+        .await
+        .expect("save");
+    let rows = store.settings_rows().await.expect("rows");
+    assert_eq!(
+        rows.get(keys::MESSAGE_STYLE).map(String::as_str),
+        Some("redesigned")
+    );
+    let loaded = load_settings(&store, &seed).await.expect("load");
+    assert_eq!(loaded.notifications.message_style, MessageStyle::Redesigned);
+    store
+        .put_settings_rows(raw(&[(keys::MESSAGE_STYLE, "fancy")]))
+        .await
+        .expect("raw row");
+    assert!(matches!(
+        load_settings(&store, &seed).await,
+        Err(SettingsError::Malformed { key, .. }) if key == keys::MESSAGE_STYLE
+    ));
 }
 
 /// A Limits window clear: a `limits` record with no settings row.

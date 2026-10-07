@@ -238,6 +238,32 @@ pub struct Rate {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Notifications {
     pub quiet_mode: bool,
+    pub message_style: MessageStyle,
+}
+
+/// How the bot's Discord posts look (`v5.message_style`). Presentation only:
+/// the attendance mode still decides tallies, assumed answers and pings.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MessageStyle {
+    /// The v4 layouts, byte for byte.
+    #[default]
+    Classic,
+    Redesigned,
+}
+
+impl MessageStyle {
+    pub const ALL: [Self; 2] = [Self::Classic, Self::Redesigned];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Classic => "classic",
+            Self::Redesigned => "redesigned",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|style| style.as_str() == value)
+    }
 }
 
 /// Mirrors `extract::redirect::SelfServiceMode` (the domain cannot depend on

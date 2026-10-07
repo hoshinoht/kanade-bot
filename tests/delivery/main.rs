@@ -18,6 +18,7 @@ mod notices;
 mod outage;
 mod outbox_policy;
 mod proposals;
+mod redesign;
 mod scenarios;
 
 // Vector loading, pinned clock/ids and snapshots shared with other targets.

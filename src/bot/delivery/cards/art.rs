@@ -59,40 +59,71 @@ pub struct Picture {
     pub bytes: Option<Arc<[u8]>>,
 }
 
-/// The card's thumbnail and image, resolved.
+/// One embed's thumbnail and image, resolved.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct CardArt {
+pub struct EmbedArt {
     pub thumbnail: Option<Picture>,
     pub image: Option<Picture>,
 }
 
-/// Resolve (and with `read`, read) the card's pictures on the blocking pool.
-/// Any failure leaves the picture off.
+/// The card's pictures, resolved, one entry per embed.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CardArt {
+    pub embeds: Vec<EmbedArt>,
+}
+
+/// Resolve (and with `read`, read) the card's pictures on the blocking pool,
+/// each distinct picture once. Any failure leaves the picture off.
 pub async fn fetch_art(art: Option<&Arc<dyn ArtSource>>, card: &Card, read: bool) -> CardArt {
     let Some(art) = art.cloned() else {
         return CardArt::default();
     };
-    let wanted = [card.thumbnail.clone(), card.image.clone()];
-    if wanted.iter().all(Option::is_none) {
+    let mut wanted: Vec<ArtRef> = Vec::new();
+    for embed in &card.embeds {
+        for picture in [&embed.thumbnail, &embed.image].into_iter().flatten() {
+            if !wanted.contains(picture) {
+                wanted.push(picture.clone());
+            }
+        }
+    }
+    if wanted.is_empty() {
         return CardArt::default();
     }
     let found = tokio::task::spawn_blocking(move || {
-        wanted.map(|wanted| {
-            let wanted = wanted?;
-            let file = art.find(wanted.kind, &wanted.basename, read)?;
-            if read && file.bytes.is_none() {
-                return None;
-            }
-            Some(Picture {
-                attachment: attachment_name(wanted.kind, &file.file_name),
-                bytes: file.bytes.map(Arc::from),
+        wanted
+            .into_iter()
+            .map(|wanted| {
+                let picture = art
+                    .find(wanted.kind, &wanted.basename, read)
+                    .filter(|file| !read || file.bytes.is_some())
+                    .map(|file| Picture {
+                        attachment: attachment_name(wanted.kind, &file.file_name),
+                        bytes: file.bytes.map(Arc::from),
+                    });
+                (wanted, picture)
             })
-        })
+            .collect::<Vec<_>>()
     })
     .await;
-    match found {
-        Ok([thumbnail, image]) => CardArt { thumbnail, image },
-        Err(_) => CardArt::default(),
+    let Ok(found) = found else {
+        return CardArt::default();
+    };
+    let picture = |wanted: &Option<ArtRef>| {
+        let wanted = wanted.as_ref()?;
+        found
+            .iter()
+            .find(|(art, _)| art == wanted)
+            .and_then(|(_, picture)| picture.clone())
+    };
+    CardArt {
+        embeds: card
+            .embeds
+            .iter()
+            .map(|embed| EmbedArt {
+                thumbnail: picture(&embed.thumbnail),
+                image: picture(&embed.image),
+            })
+            .collect(),
     }
 }
 

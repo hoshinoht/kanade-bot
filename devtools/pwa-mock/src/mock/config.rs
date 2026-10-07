@@ -67,6 +67,8 @@ pub struct Config {
     pub member_rate: (u32, u32),
     pub guild_rate: (u32, u32),
     pub quiet_mode: bool,
+    /// `classic` or `redesigned` (`v5.message_style`).
+    pub message_style: String,
     pub self_service_mode: String,
     pub public_portal: bool,
     pub persona: String,
@@ -507,6 +509,7 @@ pub fn defaults() -> Config {
         member_rate: (4, 300),
         guild_rate: (12, 900),
         quiet_mode: false,
+        message_style: "classic".into(),
         self_service_mode: "cards_and_link".into(),
         public_portal: true,
         persona: "kanade".into(),
@@ -797,7 +800,7 @@ impl Store {
                 "guild_rate": { "count": c.guild_rate.0, "window_s": c.guild_rate.1 },
                 "category_ids": c.chat_categories().0, "category_ids_source": c.chat_categories().1,
             },
-            "notifications": { "quiet_mode": c.quiet_mode },
+            "notifications": { "quiet_mode": c.quiet_mode, "message_style": c.message_style },
             "self_service": { "mode": c.self_service_mode, "effective_mode": effective_mode(c), "public_portal": c.public_portal },
             "persona": {
                 "active": c.persona,
@@ -946,6 +949,12 @@ impl Store {
             .and_then(Value::as_bool)
         {
             next.quiet_mode = v;
+        }
+        if let Some(v) = patch.pointer("/notifications/message_style") {
+            match v.as_str() {
+                Some(style @ ("classic" | "redesigned")) => next.message_style = style.into(),
+                _ => return Err(bad("Message style is classic or redesigned.")),
+            }
         }
         if let Some(p) = patch.get("self_service") {
             if let Some(mode) = p.get("mode").and_then(Value::as_str) {
@@ -1391,6 +1400,7 @@ pub fn stored_rows(c: &Config) -> std::collections::BTreeMap<&'static str, Strin
             c.guild_rate.1.to_string(),
         ),
         ("quiet_mode", flag(c.quiet_mode)),
+        ("v5.message_style", c.message_style.clone()),
         ("v5.self_service_mode", c.self_service_mode.clone()),
         ("v5.public_portal", flag(c.public_portal)),
         ("persona", c.persona.clone()),
@@ -1434,7 +1444,7 @@ fn check_patch_keys(patch: &Value) -> Result<(), MoveError> {
             ],
             "models" => &["roles", "groups", "context"],
             "self_service" => &["mode", "public_portal"],
-            "notifications" => &["quiet_mode"],
+            "notifications" => &["quiet_mode", "message_style"],
             "run_lengths" => &["default_minutes", "overrides"],
             "profanity" => &[
                 "extra_words",

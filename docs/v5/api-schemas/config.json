@@ -12,6 +12,7 @@
       "description": "`saved` once an explicit list save stored the list (it then overrides the env seed); `env` while it follows the seed.",
       "enum": ["saved", "env"]
     },
+    "MessageStyle": { "enum": ["classic", "redesigned"], "description": "How reminder and digest cards look in Discord; presentation only." },
     "SelfServiceMode": { "enum": ["cards_and_link", "link_first", "cards_only"] },
     "Rate": {
       "type": "object",
@@ -281,8 +282,11 @@
         "notifications": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["quiet_mode"],
-          "properties": { "quiet_mode": { "type": "boolean" } }
+          "required": ["quiet_mode", "message_style"],
+          "properties": {
+            "quiet_mode": { "type": "boolean" },
+            "message_style": { "$ref": "#/$defs/MessageStyle" }
+          }
         },
         "self_service": {
           "type": "object",

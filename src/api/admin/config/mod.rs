@@ -241,7 +241,9 @@ async fn update(
             fields,
             &desk.missing_env(&current),
         )?),
-        "notifications" => Section::Notifications(patch::notifications(fields)?),
+        "notifications" => {
+            Section::Notifications(patch::notifications(&current.notifications, fields)?)
+        }
         "self_service" => Section::SelfService(patch::self_service(&current.self_service, fields)?),
         "persona" => {
             if fields.contains_key("role_profiles") {

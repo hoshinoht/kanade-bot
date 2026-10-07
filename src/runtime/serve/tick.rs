@@ -21,7 +21,9 @@ use crate::{
         delivery::{
             DEFAULT_MAX_SENDS_PER_TICK, Delivery, DeliveryConfig, DeliveryError, LogAlerts,
             TickReport,
-            cards::{ArtSource, CardKit, HeadingRewrite, PersonaSource},
+            cards::{
+                ArtSource, CardKit, DifficultyMarks, HeadingRewrite, PersonaSource, StyleSource,
+            },
         },
         gateway::DeliveryEligibility,
         guild_cache::{GuildCache, WatchList},
@@ -148,6 +150,9 @@ pub fn card_kit(
     personas: Arc<PersonaStore>,
     settings: watch::Receiver<SettingsChanged>,
 ) -> CardKit {
+    // The live message style, read per card like quiet mode per tick.
+    let styles = settings.clone();
+    let style: StyleSource = Arc::new(move || styles.borrow().settings.notifications.message_style);
     // The live profanity list, read per rewrite like chat reads it per question.
     let live = settings.clone();
     let words: WordSource = Arc::new(move || {
@@ -185,6 +190,8 @@ pub fn card_kit(
             persona: Some(persona),
             words: Some(words),
         },
+        style: Some(style),
+        marks: DifficultyMarks::default(),
     }
 }
 

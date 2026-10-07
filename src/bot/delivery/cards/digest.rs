@@ -3,11 +3,11 @@
 
 use chrono::{DateTime, Utc};
 
-use super::Card;
 use super::common::{
     COLOUR_DIGEST, CardContext, answers_text, format_bosses, local_day, local_time,
 };
 use super::heading::DIGEST_PHRASE_SEED;
+use super::{Card, CardEmbed, CardField};
 use crate::domain::ids::short_id;
 use crate::domain::notify::DigestInclusion;
 use crate::domain::schedule::{Run, RunStatus};
@@ -62,23 +62,28 @@ pub fn digest_card(
         phrase.unwrap_or(DIGEST_PHRASE_SEED),
         local_day(week_start, ctx.zone)
     );
-    let fields: Vec<(String, String)> = inclusion
+    let fields: Vec<CardField> = inclusion
         .days
         .iter()
         .filter_map(|day| {
             let runs: Vec<&Run> = day.run_ids.iter().filter_map(|id| ctx.run(id)).collect();
             let first = runs.first()?;
             let lines: Vec<String> = runs.iter().map(|run| digest_line(ctx, run)).collect();
-            Some((local_day(first.datetime, ctx.zone), lines.join("\n\n")))
+            Some(CardField::wide(
+                local_day(first.datetime, ctx.zone),
+                lines.join("\n\n"),
+            ))
         })
         .collect();
     if inclusion.live == 0 {
-        return Card {
-            content: title,
-            description: Some(DIGEST_EMPTY.to_owned()),
-            colour: COLOUR_DIGEST,
-            ..Card::default()
-        };
+        return Card::single(
+            title,
+            CardEmbed {
+                description: Some(DIGEST_EMPTY.to_owned()),
+                colour: COLOUR_DIGEST,
+                ..CardEmbed::default()
+            },
+        );
     }
     let mut summary = format!(
         "**{}/{} Cleared** · {} run(s) across {} day(s)",
@@ -96,13 +101,14 @@ pub fn digest_card(
     if inclusion.at_risk > 0 {
         summary.push_str(&format!(" · **{}** at risk ❗", inclusion.at_risk));
     }
-    Card {
-        content: title,
-        description: Some(summary),
-        fields,
-        footer: Some(DIGEST_FOOTER.to_owned()),
-        colour: COLOUR_DIGEST,
-        thumbnail: None,
-        image: None,
-    }
+    Card::single(
+        title,
+        CardEmbed {
+            description: Some(summary),
+            fields,
+            footer: Some(DIGEST_FOOTER.to_owned()),
+            colour: COLOUR_DIGEST,
+            ..CardEmbed::default()
+        },
+    )
 }

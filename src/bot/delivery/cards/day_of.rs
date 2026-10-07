@@ -2,12 +2,12 @@
 //! The heading line (v4 `Today — <day>`) is passed in: it may be the
 //! persona rewrite (see `heading.rs`).
 
-use super::Card;
 use super::art::{lead_entry_art, lead_portrait};
 use super::common::{
     COLOUR_DAY_OF, CardContext, People, REACT_HINT, boss_detail, everyone_on, format_bosses,
     lead_colour, local_time, status_line, unanswered,
 };
+use super::{Card, CardEmbed, CardField};
 use crate::domain::schedule::{Run, RunStatus};
 
 /// The runs a day-of card names, in time order (missing runs skipped).
@@ -43,19 +43,23 @@ pub fn day_of_card(
                 lines.push(format!("Still to answer: {}", who.list(&waiting)));
             }
             let value = lines.join("\n");
-            (format!("{when}  ·  {}", format_bosses(&run.bosses)), value)
+            CardField::wide(format!("{when}  ·  {}", format_bosses(&run.bosses)), value)
         })
         .collect();
     let lead: &[String] = runs.first().map_or(&[], |run| &run.bosses);
-    Card {
-        content: format!("📅 **{heading}**\n{}", who.list(&everyone)),
-        description: None,
-        fields,
-        footer: Some(REACT_HINT.to_owned()),
-        colour: lead_colour(lead, ctx.catalog, COLOUR_DAY_OF),
-        thumbnail: lead_portrait(lead, ctx.catalog),
-        // The one card with the big picture (v4): read once, scrolled back
-        // to; repeated or list cards stay small.
-        image: lead_entry_art(lead, ctx.catalog),
-    }
+    Card::single(
+        format!("📅 **{heading}**\n{}", who.list(&everyone)),
+        CardEmbed {
+            title: None,
+            description: None,
+            fields,
+            footer: Some(REACT_HINT.to_owned()),
+            colour: lead_colour(lead, ctx.catalog, COLOUR_DAY_OF),
+            thumbnail: lead_portrait(lead, ctx.catalog),
+            // The one card with the big picture (v4): read once, scrolled back
+            // to; repeated or list cards stay small.
+            image: lead_entry_art(lead, ctx.catalog),
+            lead: lead.first().cloned(),
+        },
+    )
 }

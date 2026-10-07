@@ -33,25 +33,47 @@
     "CardField": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "value"],
+      "required": ["name", "value", "inline"],
       "properties": {
         "name": { "type": "string" },
-        "value": { "type": "string" }
+        "value": { "type": "string" },
+        "inline": { "type": "boolean" }
       }
     },
     "CardPreview": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["content", "color", "description", "fields", "footer", "thumbnail", "image", "heading_final"],
+      "required": ["content", "color", "title", "description", "fields", "footer", "thumbnail", "image", "more_embeds", "heading_final"],
       "properties": {
         "content": { "type": "string" },
         "color": { "type": "string", "pattern": "^#[0-9a-f]{6}$" },
+        "title": { "$ref": "common.json#/$defs/NullableString" },
         "description": { "$ref": "common.json#/$defs/NullableString" },
         "fields": { "type": "array", "items": { "$ref": "#/$defs/CardField" } },
         "footer": { "$ref": "common.json#/$defs/NullableString" },
         "thumbnail": { "$ref": "common.json#/$defs/NullableString" },
         "image": { "$ref": "common.json#/$defs/NullableString" },
+        "more_embeds": {
+          "type": "array",
+          "maxItems": 9,
+          "items": { "$ref": "#/$defs/EmbedPreview" },
+          "description": "The embeds after the first (the redesigned day-of card has one per run)."
+        },
         "heading_final": { "type": "boolean" }
+      }
+    },
+    "EmbedPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["color", "title", "description", "fields", "footer", "thumbnail", "image"],
+      "properties": {
+        "color": { "type": "string", "pattern": "^#[0-9a-f]{6}$" },
+        "title": { "$ref": "common.json#/$defs/NullableString" },
+        "description": { "$ref": "common.json#/$defs/NullableString" },
+        "fields": { "type": "array", "items": { "$ref": "#/$defs/CardField" } },
+        "footer": { "$ref": "common.json#/$defs/NullableString" },
+        "thumbnail": { "$ref": "common.json#/$defs/NullableString" },
+        "image": { "$ref": "common.json#/$defs/NullableString" }
       }
     },
     "ReminderPreview": {

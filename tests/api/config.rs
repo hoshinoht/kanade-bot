@@ -3055,3 +3055,187 @@ async fn account_reply_style_shows_role_overrides_and_the_saved_public_choice() 
         "the first assignment Cara holds, even a private profile"
     );
 }
+
+#[tokio::test]
+async fn message_style_saves_live_and_records_only_its_row() {
+    let config = Config::new().await;
+    let mut changes = config.desk.subscribe();
+    assert_eq!(
+        config.get().await["notifications"],
+        json!({"quiet_mode": false, "message_style": "classic"}),
+        "classic by default"
+    );
+    let saved = config
+        .patch(json!({"notifications": {"message_style": "redesigned"}}))
+        .await;
+    assert_eq!(
+        saved["notifications"],
+        json!({"quiet_mode": false, "message_style": "redesigned"})
+    );
+    assert_eq!(
+        changes
+            .borrow_and_update()
+            .settings
+            .notifications
+            .message_style
+            .as_str(),
+        "redesigned",
+        "published live"
+    );
+    let rows = config.reads.store.settings_rows().await.unwrap();
+    assert_eq!(rows[keys::MESSAGE_STYLE], "redesigned");
+    let recorded = config
+        .reads
+        .store
+        .settings_changes(Default::default())
+        .await
+        .unwrap();
+    assert_eq!(recorded[0].section, "notifications");
+    assert_eq!(
+        recorded[0].values.keys().collect::<Vec<_>>(),
+        [keys::MESSAGE_STYLE]
+    );
+    assert_eq!(recorded[0].values[keys::MESSAGE_STYLE].from, "classic");
+    assert_eq!(recorded[0].values[keys::MESSAGE_STYLE].to, "redesigned");
+
+    // A quiet-mode save keeps the style, and the style keeps quiet mode.
+    let quiet = config
+        .patch(json!({"notifications": {"quiet_mode": true}}))
+        .await;
+    assert_eq!(quiet["notifications"]["message_style"], "redesigned");
+    let back = config
+        .patch(json!({"notifications": {"message_style": "classic"}}))
+        .await;
+    assert_eq!(
+        back["notifications"],
+        json!({"quiet_mode": true, "message_style": "classic"})
+    );
+
+    for bad in [json!("fancy"), json!("Classic"), json!(true)] {
+        config
+            .refused(
+                json!({"notifications": {"message_style": bad}}),
+                422,
+                "invalid",
+            )
+            .await;
+    }
+    assert_eq!(
+        config
+            .desk
+            .settings()
+            .await
+            .notifications
+            .message_style
+            .as_str(),
+        "classic",
+        "a refused save changes nothing"
+    );
+}
+
+/// The admin preview follows the saved style: a redesigned day-of card for
+/// two runs previews as two embeds, one per run in time order, with inline
+/// In / Waiting / Out fields and the entry art on the first only.
+#[tokio::test]
+async fn a_redesigned_day_of_previews_one_embed_per_run() {
+    use chrono::{TimeZone, Utc};
+    use kanade::domain::history::{Actor, ChangeMeta, Origin, Surface};
+    use kanade::domain::schedule::{Change, ChangeSet, Reminder, Run};
+    use kanade::domain::scheduler::{ScheduleStore, Scope};
+
+    let config = Config::new().await;
+    config
+        .patch(json!({"notifications": {"message_style": "redesigned"}}))
+        .await;
+    let store = &config.reads.store;
+    let schedule = store.load(&Scope::All).await.unwrap();
+    let kalos = schedule
+        .runs
+        .iter()
+        .find(|run| run.id == "r-kalos")
+        .unwrap()
+        .clone();
+    let fire = Utc.with_ymd_and_hms(2026, 9, 29, 5, 0, 0).unwrap();
+    let day_of = |id: &str, run: &str| Reminder {
+        id: id.into(),
+        run_id: run.into(),
+        kind: "day_of".into(),
+        fire_at: fire,
+        sent_at: None,
+        message_id: None,
+    };
+    let twin = Run {
+        id: "r-twin".into(),
+        fixed_run_id: None,
+        datetime: Utc.with_ymd_and_hms(2026, 9, 29, 12, 0, 0).unwrap(),
+        bosses: vec!["NMaleficStar".into()],
+        ..kalos
+    };
+    store
+        .commit(
+            schedule.revision,
+            ChangeSet {
+                changes: vec![
+                    Change::PutReminder(day_of("m-kalos-day", "r-kalos")),
+                    Change::PutRun(twin),
+                    Change::PutReminder(day_of("m-twin-day", "r-twin")),
+                ],
+            },
+            ChangeMeta {
+                origin: Origin::new(Actor::admin("test"), Surface::AdminPortal),
+                at: fire,
+                notices: Vec::new(),
+                refs: Vec::new(),
+                request_digest: None,
+                expect: Default::default(),
+                outbox: Vec::new(),
+            },
+        )
+        .await
+        .unwrap();
+
+    let reply = request(
+        config.reads.admin,
+        "GET",
+        ADMIN_HOST,
+        "/api/admin/reminders/m-kalos-day/preview",
+        &[("Cookie", &config.reads.cookie)],
+    )
+    .await;
+    assert_eq!(reply.status, 200, "{}", reply.text());
+    let preview = reply.json();
+    assert_valid("reminders.json#/$defs/ReminderPreview", "preview", &preview);
+    let card = &preview["card"];
+    let content = card["content"].as_str().unwrap();
+    assert!(content.starts_with("📅 **"), "{content}");
+    assert!(content.contains("\n-# "), "{content}");
+    let more = card["more_embeds"].as_array().unwrap();
+    assert_eq!(more.len(), 1, "{card}");
+    for embed in [card, &more[0]] {
+        let fields: Vec<(&str, bool)> = embed["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|field| (field["name"].as_str().unwrap(), field["inline"] == true))
+            .collect();
+        assert_eq!(
+            fields,
+            [("In ✅", true), ("Waiting", true), ("Out ❌", true)]
+        );
+        assert!(embed["description"].as_str().unwrap().contains("<t:"));
+    }
+    let titles = [
+        card["title"].as_str().unwrap(),
+        more[0]["title"].as_str().unwrap(),
+    ];
+    assert!(
+        titles[0].contains("Malefic Star"),
+        "earliest run first: {titles:?}"
+    );
+    assert!(titles[1].contains("Kalos"), "{titles:?}");
+    assert_eq!(
+        more[0]["image"],
+        Value::Null,
+        "entry art on the first run only"
+    );
+}

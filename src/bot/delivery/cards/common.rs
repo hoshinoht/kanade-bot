@@ -12,6 +12,9 @@ use crate::domain::catalog::BossTable;
 use crate::domain::members::Directory;
 use crate::domain::notify::display_names;
 use crate::domain::schedule::{Run, RunStatus, ScheduleSnapshot};
+use crate::domain::settings::MessageStyle;
+
+use super::redesign::DifficultyMarks;
 
 /// v4 `REACT_HINT`.
 pub const REACT_HINT: &str = "React \u{2705} if you're on, \u{274c} if not.";
@@ -39,6 +42,10 @@ pub struct CardContext<'a> {
     pub members: &'a (dyn Directory + Sync),
     /// Boss detail lines, colours and art; `None` renders v4's no-table forms.
     pub catalog: Option<&'a BossTable>,
+    /// Presentation only; the attendance policy still decides tallies and pings.
+    pub style: MessageStyle,
+    /// Difficulty emojis for redesigned boss labels.
+    pub marks: &'a DifficultyMarks,
 }
 
 impl CardContext<'_> {
@@ -236,11 +243,12 @@ impl People {
         if users.is_empty() {
             return "(nobody)".to_owned();
         }
-        users
-            .iter()
-            .map(|user| self.one(user))
-            .collect::<Vec<_>>()
-            .join(" ")
+        self.each(users).join(" ")
+    }
+
+    /// Each user as [`Self::list`] renders them.
+    pub fn each(&self, users: &[String]) -> Vec<String> {
+        users.iter().map(|user| self.one(user)).collect()
     }
 }
 

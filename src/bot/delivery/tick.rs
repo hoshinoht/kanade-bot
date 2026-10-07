@@ -355,6 +355,8 @@ where
             quiet: self.config.quiet_mode,
             members: self.members,
             catalog: self.cards.catalog.as_deref(),
+            style: self.cards.style(),
+            marks: &self.cards.marks,
         }
     }
 

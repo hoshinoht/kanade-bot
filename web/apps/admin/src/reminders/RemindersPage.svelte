@@ -199,7 +199,7 @@
     {/if}
   </div>
   {#if pane.shown}
-    <ReminderPane {wide} row={opened ?? pane.shown} {bot} {avatar} onclose={close} leaving={pane.leaving} onleft={(event) => pane.done(event)} />
+    <ReminderPane {wide} row={opened ?? pane.shown} {bot} {avatar} {zone} onclose={close} leaving={pane.leaving} onleft={(event) => pane.done(event)} />
   {/if}
   </div>
   <footer class="reminders-window__foot" data-fid="reminders-foot">

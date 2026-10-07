@@ -19,6 +19,7 @@
   import ChatbotSection from './ChatbotSection.svelte';
   import DigestSection from './DigestSection.svelte';
   import EnvSection from './EnvSection.svelte';
+  import MessageStyleCard from './MessageStyleCard.svelte';
   import ModelsSection from './ModelsSection.svelte';
   import PersonaSection from './PersonaSection.svelte';
   import PingsSection from './PingsSection.svelte';
@@ -63,7 +64,7 @@
     { key: 'persona', label: 'Persona', group: 'Bot', terms: 'active persona reply profiles visibility roles role overrides assignments' },
     { key: 'models', label: 'Models', group: 'Bot', terms: 'roles reasoning context windows capacity groups kanata extraction rewrite' },
     { key: 'self-service', label: 'Self-service', group: 'Members', terms: 'public portal cards links how members are answered' },
-    { key: 'notifications', label: 'Notifications', group: 'Members', terms: 'quiet mode pings' },
+    { key: 'notifications', label: 'Notifications', group: 'Members', terms: 'quiet mode pings discord message style classic redesigned' },
     { key: 'digest', label: 'Weekly digest', group: 'Members', terms: 'post channel week' },
     { key: 'channels', label: 'Channels', group: 'Server', terms: 'watched channels categories chat categories ids environment seed' },
     { key: 'rescan', label: 'Re-read', group: 'Server', terms: 'channels extractor running' },
@@ -532,6 +533,7 @@
                     >While on, the bot posts everything as usual but notifies nobody: names still show, no pings go out, and each message is marked 🔕 in
                     Discord.</SwitchCard
                   >
+                  <MessageStyleCard style={c.notifications.message_style} {save} />
                   <p class="settings__box">Applies at once, with Undo for 10 s.</p>
                 </SettingsPanel>
               {:else}

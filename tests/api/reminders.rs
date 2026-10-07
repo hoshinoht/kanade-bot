@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use chrono::{DateTime, TimeZone, Utc};
 use kanade::{
     bot::delivery::{
-        cards::{CardContext, CardRecord, ReminderCardStore},
+        cards::{CardContext, CardRecord, ReminderCardStore, redesign::NO_MARKS},
         render,
     },
     domain::{
@@ -21,6 +21,7 @@ use kanade::{
         },
         schedule::{Change, ChangeSet, Reminder, Run},
         scheduler::{ScheduleStore, Scope},
+        settings::MessageStyle,
     },
 };
 use serde_json::Value;
@@ -88,6 +89,8 @@ async fn tick_post(
         quiet: false,
         members: &members,
         catalog: Some(&reads.catalog()),
+        style: MessageStyle::Classic,
+        marks: &NO_MARKS,
     };
     let message = render(&intent, &ctx, heading, None).await;
     (intent, message)

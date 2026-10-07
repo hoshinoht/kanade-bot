@@ -21,7 +21,7 @@ use super::{
 const TARGET: &str = "web/packages/api-types/src/generated.ts";
 
 /// Hand-written vocabulary (`manual.ts`) the `#[ts(type)]` overrides name.
-const MANUAL: [&str; 20] = [
+const MANUAL: [&str; 21] = [
     "ActorKind",
     "Answer",
     "ChangeRecord",
@@ -33,6 +33,7 @@ const MANUAL: [&str; 20] = [
     "ExtractionOutcome",
     "IdListSource",
     "KnowledgeDoc",
+    "MessageStyle",
     "MissionSeries",
     "PingLevel",
     "ProposalKind",
@@ -110,6 +111,7 @@ fn bindings() -> String {
         .add::<reminders::Reminders>()
         .add::<reminders::CardField>()
         .add::<reminders::CardPreview>()
+        .add::<reminders::EmbedPreview>()
         .add::<reminders::ReminderPreview>()
         .add::<bosses::DifficultyOption>()
         .add::<bosses::BossRow>()

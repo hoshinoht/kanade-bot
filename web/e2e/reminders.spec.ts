@@ -210,3 +210,28 @@ test('reminders: a reminder retired without posting has no card', async ({ page 
   await expect(pane).toContainText('Retired without posting: no card was sent');
   await expect(pane.getByRole('article')).toHaveCount(0);
 });
+
+test('reminders: the redesigned message style previews one embed per run with inline answers', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/config?section=notifications&sw=off`);
+  const style = page.getByRole('group', { name: 'Discord message style' });
+  await expect(style.getByRole('button', { name: 'Classic' })).toHaveAttribute('aria-pressed', 'true');
+  await style.getByRole('button', { name: 'Redesigned' }).click();
+  await expect(style.getByRole('button', { name: 'Redesigned' })).toHaveAttribute('aria-pressed', 'true');
+
+  await page.goto(`${ADMIN}/reminders?sw=off`);
+  const morning = queuedRows(page).filter({ has: page.locator('td.reminders-table__kind', { hasText: 'morning' }) }).first();
+  await morning.locator('.reminder__open').click();
+  const card = page.locator('aside.side-pane--reminder').getByRole('article', { name: 'The card as posted in Discord' });
+  await expect(card.locator('.dcard__content .dcard__line--sub')).toBeVisible();
+  await expect(card.locator('.dcard__embed').first().locator('.dcard__title')).toBeVisible();
+  const inline = card.locator('.dcard__embed').first().locator('.dcard__field--inline');
+  await expect(inline).toHaveCount(3);
+  // In / Waiting / Out sit side by side.
+  const tops = await inline.evaluateAll((all) => all.map((el) => Math.round(el.getBoundingClientRect().top)));
+  expect(new Set(tops).size).toBe(1);
+  expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1)).toBe(true);
+  await settle(page);
+  const axe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
+  expect(axe.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => `${v.id} ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
+});

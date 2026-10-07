@@ -171,6 +171,8 @@ where
             quiet,
             members: &*self.members,
             catalog: self.cards.catalog.as_deref(),
+            style: self.cards.style(),
+            marks: &self.cards.marks,
         };
         let card_content = match kind {
             TestKind::DayOf => Some(IntentContent::DayOf {

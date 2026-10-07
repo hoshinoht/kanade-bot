@@ -19,3 +19,44 @@ export function cardLines(text: string): Run[][] {
     return parts.map((part, i) => ({ bold: i % 2 === 1, text: part })).filter((run) => run.text !== '');
   });
 }
+
+/** One line of card text: bold/plain runs, `sub` for a `-# ` subtext line. */
+export type Line = { sub: boolean; runs: Run[] };
+
+const RELATIVE: [Intl.RelativeTimeFormatUnit, number][] = [
+  ['day', 86_400],
+  ['hour', 3_600],
+  ['minute', 60],
+  ['second', 1],
+];
+
+/**
+ * Discord timestamps (`<t:unix:t|R|F>`) as Discord draws them for the
+ * reader: `t` the clock and `F` the full date in `zone`, `R` relative to
+ * `now` (the server's clock, never the browser's).
+ */
+export function stamps(text: string, now: number, zone?: string): string {
+  return text.replace(/<t:(-?\d+):([tRF])>/g, (_, unix: string, style: string) => {
+    const at = Number(unix) * 1000;
+    if (style === 'R') {
+      const seconds = Math.round((at - now) / 1000);
+      const [unit, size] = RELATIVE.find(([, size]) => Math.abs(seconds) >= size) ?? RELATIVE[3]!;
+      return new Intl.RelativeTimeFormat('en', { numeric: 'always' }).format(Math.trunc(seconds / size), unit);
+    }
+    const options: Intl.DateTimeFormatOptions =
+      style === 't'
+        ? { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: zone }
+        : { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: zone };
+    return new Intl.DateTimeFormat('en-GB', options).format(at);
+  });
+}
+
+/** Card text as lines, timestamps drawn and `-# ` lines marked as subtext. */
+export function cardText(text: string, now: number, zone?: string): Line[] {
+  return stamps(text, now, zone)
+    .split('\n')
+    .map((line) => {
+      const sub = line.startsWith('-# ');
+      return { sub, runs: cardLines(sub ? line.slice(3) : line)[0] ?? [] };
+    });
+}

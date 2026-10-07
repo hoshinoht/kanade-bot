@@ -18,9 +18,9 @@ use crate::{
     },
     domain::settings::{
         Chatbot, ContextSettings, IdList, MAX_DEFLECTION_CHARS, MAX_PROFANITY_WORDS,
-        MAX_ROLE_PROFILE_ASSIGNMENTS, Notifications, OVERRIDE_RUN_MINUTES, PROFANITY_WORD_CHARS,
-        Persona, Pings, Profanity, RUN_MINUTES, Rate, RoleProfileAssignment, RunLengthOverride,
-        RunLengths, SelfService, SelfServiceMode, Watching, is_profanity_word,
+        MAX_ROLE_PROFILE_ASSIGNMENTS, MessageStyle, Notifications, OVERRIDE_RUN_MINUTES,
+        PROFANITY_WORD_CHARS, Persona, Pings, Profanity, RUN_MINUTES, Rate, RoleProfileAssignment,
+        RunLengthOverride, RunLengths, SelfService, SelfServiceMode, Watching, is_profanity_word,
     },
 };
 
@@ -133,7 +133,7 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
                     "chatbot",
                     "enabled" | "member_rate" | "guild_rate" | "category_ids"
                 )
-                | ("notifications", "quiet_mode")
+                | ("notifications", "quiet_mode" | "message_style")
                 | ("self_service", "mode" | "public_portal")
                 | ("persona", "active" | "visibility" | "role_profiles")
                 | ("models", "roles" | "context")
@@ -505,10 +505,21 @@ pub fn chatbot(
     Ok(next)
 }
 
-pub fn notifications(body: &Map<String, Value>) -> Result<Notifications, PatchError> {
-    Ok(Notifications {
-        quiet_mode: flag(&body["quiet_mode"], "notifications.quiet_mode")?,
-    })
+pub fn notifications(
+    current: &Notifications,
+    body: &Map<String, Value>,
+) -> Result<Notifications, PatchError> {
+    let mut next = *current;
+    if let Some(value) = body.get("quiet_mode") {
+        next.quiet_mode = flag(value, "notifications.quiet_mode")?;
+    }
+    if let Some(value) = body.get("message_style") {
+        next.message_style = value
+            .as_str()
+            .and_then(MessageStyle::parse)
+            .ok_or_else(|| PatchError::invalid("Message style is classic or redesigned."))?;
+    }
+    Ok(next)
 }
 
 pub fn self_service(

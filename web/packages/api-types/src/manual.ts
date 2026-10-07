@@ -322,6 +322,8 @@ export interface RollbackMode {
 
 export type ModelRole = 'extraction' | 'chat' | 'rewrite';
 export type SelfServiceMode = 'cards_and_link' | 'link_first' | 'cards_only';
+/** How reminder and digest cards look in Discord (`notifications.message_style`). */
+export type MessageStyle = 'classic' | 'redesigned';
 
 /** A Config id list: `saved` once an explicit list save stored it, else it follows its env seed. */
 export type IdListSource = 'saved' | 'env';

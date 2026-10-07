@@ -15,6 +15,7 @@
     row,
     bot,
     avatar,
+    zone,
     onclose,
     leaving = false,
     onleft,
@@ -24,6 +25,8 @@
     /** The bot's display name and avatar URL, as the card's author. */
     bot: string;
     avatar: string | null;
+    /** The guild time zone Discord timestamps are drawn in. */
+    zone?: string;
     onclose: () => void;
     leaving?: boolean;
     onleft?: (event: AnimationEvent) => void;
@@ -39,6 +42,8 @@
   });
   const title = $derived(row.bosses.map((b) => b.token).join(' + ') || `#${row.run_short_id}`);
   const card = $derived(preview?.data?.card ?? null);
+  // Relative Discord timestamps count from the server's clock.
+  const now = $derived(Date.parse(preview?.data?.generated_at ?? ''));
   const time = $derived(row.at.replace(/^.*\s(\d{1,2}:\d{2})$/, '$1'));
 </script>
 
@@ -58,7 +63,7 @@
     {:else if !preview?.data}
       <LoadingState text="Rendering the card…" />
     {:else if card}
-      <CardPreview {card} {bot} {avatar} at={time} />
+      <CardPreview {card} {bot} {avatar} at={time} {now} {zone} />
       <p class="reminder-pane__note" data-fid="reminder-note">
         <Icon name="info" />
         <span>

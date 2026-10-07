@@ -39,10 +39,11 @@ pub const SELF_SERVICE_MODE: &str = "v5.self_service_mode";
 pub const PUBLIC_PORTAL: &str = "v5.public_portal";
 pub const PROFILE_VISIBILITY: &str = "v5.profile_visibility";
 pub const ROLE_PROFILES: &str = "v5.role_profiles";
+pub const MESSAGE_STYLE: &str = "v5.message_style";
 
 /// Every settings key. Other `config` rows (the digest marker, v4
 /// bookkeeping) are never read or written through the settings port.
-pub const ALL: [&str; 31] = [
+pub const ALL: [&str; 32] = [
     DAY_OF_PING_TIME,
     COUNTDOWN_MINUTES,
     PAUSED,
@@ -74,6 +75,7 @@ pub const ALL: [&str; 31] = [
     PUBLIC_PORTAL,
     PROFILE_VISIBILITY,
     ROLE_PROFILES,
+    MESSAGE_STYLE,
 ];
 
 pub fn is_setting(key: &str) -> bool {

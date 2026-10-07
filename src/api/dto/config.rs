@@ -103,6 +103,8 @@ pub struct Chatbot {
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Notifications {
     pub quiet_mode: bool,
+    #[cfg_attr(test, ts(type = "MessageStyle"))]
+    pub message_style: &'static str,
 }
 
 #[derive(Clone, Debug, Serialize)]

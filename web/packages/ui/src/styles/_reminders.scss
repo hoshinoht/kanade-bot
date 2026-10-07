@@ -385,7 +385,7 @@ td.reminders-table__run a {
 .reminder-pane__note .icon { flex: none; margin-top: 2px; }
 .reminder-pane__link { align-self: flex-start; }
 
-// One Discord message (avatar, author line, text) holding one rich embed.
+// One Discord message (avatar, author line, text) holding its rich embeds.
 .dcard {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr);
@@ -411,6 +411,7 @@ td.reminders-table__run a {
 .dcard__message { min-width: 0; }
 .dcard p { margin: 0; }
 .dcard__line { display: block; min-height: 1em; overflow-wrap: anywhere; }
+.dcard__line--sub { color: var(--dim-text); font-size: var(--fs-mini); }
 
 .dcard__author { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
 .dcard__author strong { font-size: var(--fs-body-sm); }
@@ -442,7 +443,10 @@ td.reminders-table__run a {
 }
 
 .dcard__body { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding-top: 4px; }
-.dcard__fields { display: flex; flex-direction: column; gap: 8px; margin: 0; }
+.dcard__title { font-weight: 700; font-size: var(--fs-body-sm); }
+.dcard__fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; margin: 0; }
+.dcard__field { grid-column: 1 / -1; min-width: 0; }
+.dcard__field--inline { grid-column: auto; }
 .dcard__field dt { margin: 0; font-weight: 700; }
 .dcard__field dd { margin: 2px 0 0; }
 

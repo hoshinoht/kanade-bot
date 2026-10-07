@@ -415,6 +415,7 @@ impl ConfigDesk {
             },
             notifications: dto::Notifications {
                 quiet_mode: settings.notifications.quiet_mode,
+                message_style: settings.notifications.message_style.as_str(),
             },
             self_service: dto::self_service(settings),
             persona,

@@ -218,6 +218,8 @@ where
             quiet: self.quiet.load(Ordering::Relaxed),
             members: &*self.members,
             catalog: self.cards.catalog.as_deref(),
+            style: self.cards.style(),
+            marks: &self.cards.marks,
         }
     }
 

@@ -2,13 +2,13 @@
 //! Pending (someone still to answer), someone out, or all set; only the last
 //! is green, and the react hint shows only while answers are pending.
 
-use super::Card;
 use super::art::lead_portrait;
 use super::common::{
     COLOUR_ALL_SET, COLOUR_COUNTDOWN, CardContext, People, REACT_HINT, boss_detail, declined,
     format_bosses, format_offset, lead_colour, local_time, not_declined, status_line, unanswered,
 };
 use super::heading::COUNTDOWN_PHRASE_SEED;
+use super::{Card, CardEmbed};
 use crate::domain::schedule::Run;
 
 pub fn countdown_card(
@@ -51,21 +51,25 @@ pub fn countdown_card(
         detail.push(format!("Still to answer: {}", who.list(&pending)));
     }
     let settled = pending.is_empty() && out.is_empty();
-    Card {
+    Card::single(
         content,
-        description: Some(detail.join("\n")),
-        fields: Vec::new(),
-        footer: (!pending.is_empty()).then(|| REACT_HINT.to_owned()),
-        colour: lead_colour(
-            &run.bosses,
-            ctx.catalog,
-            if settled {
-                COLOUR_ALL_SET
-            } else {
-                COLOUR_COUNTDOWN
-            },
-        ),
-        thumbnail: lead_portrait(&run.bosses, ctx.catalog),
-        image: None,
-    }
+        CardEmbed {
+            title: None,
+            description: Some(detail.join("\n")),
+            fields: Vec::new(),
+            footer: (!pending.is_empty()).then(|| REACT_HINT.to_owned()),
+            colour: lead_colour(
+                &run.bosses,
+                ctx.catalog,
+                if settled {
+                    COLOUR_ALL_SET
+                } else {
+                    COLOUR_COUNTDOWN
+                },
+            ),
+            thumbnail: lead_portrait(&run.bosses, ctx.catalog),
+            image: None,
+            lead: run.bosses.first().cloned(),
+        },
+    )
 }

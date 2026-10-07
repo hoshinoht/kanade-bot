@@ -56,24 +56,44 @@ pub struct Reminders {
 pub struct CardField {
     pub name: String,
     pub value: String,
+    /// Shown side by side with the neighbouring inline fields.
+    pub inline: bool,
 }
 
 /// A reminder card as the bot posts it: the message text (mentions as
-/// `<@id>`) and its one embed. Art is a same-origin `/art/` URL.
+/// `<@id>`), its first embed and any further ones (the redesigned day-of
+/// card has one per run). Art is a same-origin `/art/` URL.
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct CardPreview {
     pub content: String,
     /// `#rrggbb`, the embed's colour bar.
     pub color: String,
+    pub title: Option<String>,
     pub description: Option<String>,
     pub fields: Vec<CardField>,
     pub footer: Option<String>,
     pub thumbnail: Option<String>,
     pub image: Option<String>,
+    /// The embeds after the first, in order.
+    pub more_embeds: Vec<EmbedPreview>,
     /// The heading line stored for this card (posted or prepared to post);
     /// `false` while it is the seed line the bot may reword when it posts.
     pub heading_final: bool,
+}
+
+/// A further embed of a previewed card.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct EmbedPreview {
+    /// `#rrggbb`.
+    pub color: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub fields: Vec<CardField>,
+    pub footer: Option<String>,
+    pub thumbnail: Option<String>,
+    pub image: Option<String>,
 }
 
 /// `GET /api/admin/reminders/{id}/preview`: the row and its card; `card` is
