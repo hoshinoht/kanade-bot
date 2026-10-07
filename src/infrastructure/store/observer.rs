@@ -22,6 +22,8 @@ pub enum Written {
     Inbox,
     Chat,
     Extraction,
+    /// A rewrite attempt was logged.
+    Rewrite,
     /// A delivery attempt was bound to its posted message.
     Delivery,
     Settings,

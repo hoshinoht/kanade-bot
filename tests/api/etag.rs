@@ -41,6 +41,7 @@ async fn hot_reads_revalidate_with_strong_tags() {
         "/api/admin/members",
         "/api/admin/chat",
         "/api/admin/extractions",
+        "/api/admin/rewrites",
     ] {
         let first = get(&reads, path, None).await;
         assert_eq!(first.status, 200, "{path}: {}", first.text());

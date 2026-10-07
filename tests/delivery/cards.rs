@@ -756,6 +756,7 @@ pub(crate) fn rewriting(rewriter: &Arc<Scripted>) -> CardKit {
             rewriter: Some(SharedRewriter(rewriter.clone())),
             persona: Some(persona()),
             words: None,
+            log: None,
         },
         ..kit(None)
     }
@@ -861,6 +862,7 @@ async fn failure_timeout_rejection_or_no_rewriter_keep_the_v4_heading() {
             rewriter: Some(SharedRewriter(Scripted::new(Script::Reply("x {day}")))),
             persona: None,
             words: None,
+            log: None,
         },
         ..kit(None)
     };
@@ -1292,6 +1294,7 @@ fn gated_cards(rewriter: &Arc<GateRewriter>) -> CardKit {
             rewriter: Some(SharedRewriter(rewriter.clone())),
             persona: Some(persona()),
             words: None,
+            log: None,
         },
         ..kit(None)
     }
@@ -1389,7 +1392,10 @@ async fn a_send_during_a_pregeneration_uses_the_seed_which_then_wins() {
     let later = pregen(&store, &world, &cards, before_due()).pass().await;
     assert_eq!(
         later,
-        PregenReport::default(),
+        PregenReport {
+            batch: true,
+            ..PregenReport::default()
+        },
         "a sent card is never pre-generated"
     );
 }

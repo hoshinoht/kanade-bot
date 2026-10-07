@@ -18,6 +18,7 @@ pub mod past;
 mod people;
 mod profanity;
 mod reminders;
+mod rewrites;
 mod seed;
 
 use catalog::{BossRef, Catalog};

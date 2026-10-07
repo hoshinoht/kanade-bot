@@ -10,8 +10,10 @@ use crate::bot::delivery::cards::{Trial, Verdict};
 /// Shown characters of one try's line.
 const LINE_CHARS: usize = 200;
 
-/// A verdict in words: `accepted`, `rejected (markup)`, `timeout`, …
-pub fn verdict_text(verdict: Verdict) -> String {
+/// A trial's verdict in words: `accepted`, `rejected (markup)`, `timeout`,
+/// `unavailable (budget_exceeded)`, …
+pub fn verdict_text(trial: &Trial) -> String {
+    let verdict = trial.verdict;
     match verdict {
         Verdict::Accepted => "accepted".to_owned(),
         Verdict::Rejected(_) | Verdict::PhraseRejected(_) => {
@@ -19,7 +21,11 @@ pub fn verdict_text(verdict: Verdict) -> String {
         }
         Verdict::NoRewriter => "no rewriter".to_owned(),
         Verdict::NoPersona => "no persona".to_owned(),
-        Verdict::Timeout | Verdict::Failed(_) => verdict.reason().to_owned(),
+        Verdict::Timeout => verdict.reason().to_owned(),
+        Verdict::Failed(_) => match trial.code() {
+            Some(code) => format!("{} ({code})", verdict.reason()),
+            None => verdict.reason().to_owned(),
+        },
     }
 }
 
@@ -76,7 +82,7 @@ pub fn report(kind: HeaderTrialKind, tries: &[(Trial, Duration)]) -> String {
             "{}. {} {} · {} ms{line}",
             index + 1,
             mark(trial.verdict),
-            verdict_text(trial.verdict),
+            verdict_text(trial),
             latency.as_millis()
         ));
     }

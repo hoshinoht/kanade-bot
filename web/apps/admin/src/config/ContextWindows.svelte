@@ -11,7 +11,7 @@
   import '@kanade/ui/styles/select.scss';
   import { tick } from 'svelte';
   import { ROLES } from './capacity';
-  import { clampNotes, isLocal, LOCAL_WARNING, MAX_CONTEXT_TOKENS, overrideMax, SOURCE_LABELS, tokens } from './context';
+  import { clampNotes, isLocal, LOCAL_WARNING, MAX_CONTEXT_TOKENS, MAX_RESERVE, overrideMax, reserveHelp, SOURCE_LABELS, tokens } from './context';
   import { changes as listChanges, type Change } from './dirty';
   import { followSaved } from './follow.svelte';
   import type { Save } from './save';
@@ -203,7 +203,8 @@
     {@const r = draft.roles[role.id]}
     <fieldset class="settings__card">
       <legend class="settings__cardtitle">{role.name} limits</legend>
-      <TokenSlider label="{role.name} reply reserve" bind:value={r.reserve} max={MAX_CONTEXT_TOKENS} disabled={!models.reachable} />
+      <TokenSlider label="{role.name} reply reserve" bind:value={r.reserve} max={MAX_RESERVE} disabled={!models.reachable} />
+      <p class="note">{reserveHelp()}</p>
       <label class="ctx__check">
         <input type="checkbox" checked={r.capped} disabled={!models.reachable} onchange={(e) => toggleCap(role.id, e.currentTarget.checked)} />
         Cap the {role.name.toLowerCase()} window

@@ -32,7 +32,8 @@ use crate::{
         members::{MemberProfile, MemberStore, PortalEdit},
         model_log::{
             ChatFilter, ChatInteraction, ExtractionFilter, ExtractionLog, LogFacets, LogPage,
-            MaskedTurn, ModelLogStore, WatchedMessage,
+            MaskedTurn, ModelLogStore, RewriteFacets, RewriteFilter, RewriteLog, RewriteLogStore,
+            WatchedMessage,
         },
         notify::{DeliveryJournal, WeeklyDigest},
         proposals::{ProposalCardStore, StoredCard},
@@ -155,6 +156,9 @@ pub trait ReadStore: Send + Sync {
     fn chat_log_facets(&self) -> ReadFuture<'_, LogFacets>;
     /// The Model view stored with a masked chat turn.
     fn masked_chat(&self, id: String) -> ReadFuture<'_, Option<MaskedTurn>>;
+    fn rewrite_logs(&self, filter: RewriteFilter) -> ReadFuture<'_, LogPage<RewriteLog>>;
+    fn rewrite_log(&self, id: String) -> ReadFuture<'_, Option<RewriteLog>>;
+    fn rewrite_log_facets(&self) -> ReadFuture<'_, RewriteFacets>;
     /// Every weekly digest card, active or retired (the Config page's last post).
     fn digests(&self) -> ReadFuture<'_, Vec<WeeklyDigest>>;
     /// Recorded Config section saves, newest first.
@@ -195,6 +199,7 @@ where
         + ProposalStore
         + ProposalCardStore
         + ModelLogStore
+        + RewriteLogStore
         + DeliveryJournal
         + SettingsStore
         + ReminderCardStore
@@ -431,6 +436,18 @@ where
 
     fn masked_chat(&self, id: String) -> ReadFuture<'_, Option<MaskedTurn>> {
         Box::pin(async move { self.load_masked_chat(&id).await })
+    }
+
+    fn rewrite_logs(&self, filter: RewriteFilter) -> ReadFuture<'_, LogPage<RewriteLog>> {
+        Box::pin(async move { self.list_rewrites(&filter).await })
+    }
+
+    fn rewrite_log(&self, id: String) -> ReadFuture<'_, Option<RewriteLog>> {
+        Box::pin(async move { self.load_rewrite(&id).await })
+    }
+
+    fn rewrite_log_facets(&self) -> ReadFuture<'_, RewriteFacets> {
+        Box::pin(self.rewrite_facets())
     }
 
     fn digests(&self) -> ReadFuture<'_, Vec<WeeklyDigest>> {

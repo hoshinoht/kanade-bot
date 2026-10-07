@@ -411,6 +411,41 @@ fn toggle_sections_never_write_their_id_lists() {
 }
 
 #[test]
+fn header_generation_time_defaults_to_midnight_round_trips_and_refuses_bad_clocks() {
+    let midnight = chrono::NaiveTime::MIN;
+    assert_eq!(
+        RuntimeSettings::default()
+            .notifications
+            .header_generation_time,
+        midnight
+    );
+    let at = chrono::NaiveTime::from_hms_opt(3, 30, 0).unwrap();
+    let section = Section::Notifications(Notifications {
+        header_generation_time: at,
+        ..Notifications::default()
+    });
+    let written = encode_checked(&section).expect("stored form");
+    assert!(written.contains(&(keys::HEADER_GENERATION_TIME, "03:30".to_owned())));
+    let pairs: Vec<(&str, &str)> = written
+        .iter()
+        .map(|(key, value)| (*key, value.as_str()))
+        .collect();
+    let read = resolve(&rows(&pairs), &RuntimeSettings::default()).expect("readable");
+    assert_eq!(read.notifications.header_generation_time, at);
+    for bad in ["", "24:00", "03:60", "noon"] {
+        let error = resolve(
+            &rows(&[(keys::HEADER_GENERATION_TIME, bad)]),
+            &RuntimeSettings::default(),
+        )
+        .expect_err("refused");
+        assert!(
+            matches!(&error, SettingsError::Malformed { key, .. } if *key == keys::HEADER_GENERATION_TIME),
+            "{bad:?}: {error:?}"
+        );
+    }
+}
+
+#[test]
 fn message_style_round_trips_and_refuses_unknown_text() {
     assert_eq!(
         RuntimeSettings::default().notifications.message_style,
@@ -420,6 +455,7 @@ fn message_style_round_trips_and_refuses_unknown_text() {
         let section = Section::Notifications(Notifications {
             quiet_mode: true,
             message_style: style,
+            ..Notifications::default()
         });
         let written = encode_checked(&section).expect("stored form");
         assert!(written.contains(&(keys::MESSAGE_STYLE, style.as_str().to_owned())));

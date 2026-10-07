@@ -29,8 +29,8 @@ pub use notice_text::render_notice;
 pub use notices::{NoticeReport, NoticeSend};
 pub use ports::{FixedClock, IdsRef, StoreRef};
 pub use pregen::{
-    HeaderPregen, MAX_ATTEMPTS_PER_KEY, MAX_REWRITES_PER_PASS, PREGEN_DEADLINE, PREGEN_HORIZON,
-    PREGEN_INTERVAL, PregenReport,
+    HEADER_HORIZON, HeaderPregen, HeaderTime, MAX_ATTEMPTS_PER_KEY, MAX_BUSY_RETRIES,
+    MAX_CATCHUP_PER_TICK, PREGEN_DEADLINE, PREGEN_INTERVAL, PregenReport, SEEN_HORIZON,
 };
 pub use refresh::{CardRefresh, MAX_PENDING_RUNS, Now, RefreshQueue};
 pub use render::render;

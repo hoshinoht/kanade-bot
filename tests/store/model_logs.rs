@@ -313,7 +313,13 @@ async fn retention_runs_in_bounded_batches_until_done() {
              withheld, guardrail, request_count) VALUES ('c-new', '2026-09-20T00:00:00+00:00', \
              'q', 'a', 'answered', 0, 0, '{{}}', 1);
              INSERT INTO messages (id, channel_id, author_id, created_at, content) VALUES \
-             ('m-pending', '900', '1', '2026-01-01T00:00:00+00:00', 'x');"
+             ('m-pending', '900', '1', '2026-01-01T00:00:00+00:00', 'x');
+             WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < {old})
+             INSERT INTO rewrites (id, at, kind, stage, verdict, seed) \
+             SELECT printf('r-%05d', i), printf('2026-01-01T00:%02d:%02d+00:00', i / 60, i % 60), \
+             'day_of', 'batch', 'unavailable', 'Today — {{day}}' FROM n;
+             INSERT INTO rewrites (id, at, kind, stage, verdict, seed) VALUES ('r-new', \
+             '2026-09-20T00:00:00+00:00', 'nudge', 'nudge', 'accepted', 'Hi');"
         ),
     )
     .await;
@@ -330,6 +336,7 @@ async fn retention_runs_in_bounded_batches_until_done() {
             chats: old,
             messages: old,
             notices: 0,
+            rewrites: old,
         },
         "more than two batches of each"
     );
@@ -345,6 +352,7 @@ async fn retention_runs_in_bounded_batches_until_done() {
         ("chat_rounds", 0),
         ("chat_tools", 0),
         ("messages", 1),
+        ("rewrites", 1),
     ] {
         assert_eq!(count(&config, table).await, left, "{table}");
     }
@@ -383,7 +391,8 @@ async fn rows_logged_before_context_facts_still_read_after_a_reopen() {
          ALTER TABLE web_sessions DROP COLUMN device;
          ALTER TABLE web_sessions DROP COLUMN avatar_hash;
          DROP TABLE settings_changes;
-         DELETE FROM schema_migrations WHERE version IN (21, 22, 23, 24, 25, 26);
+         DROP TABLE rewrites;
+         DELETE FROM schema_migrations WHERE version IN (21, 22, 23, 24, 25, 26, 27);
          UPDATE store_meta SET schema_version = 20;",
     )
     .await;
@@ -448,7 +457,7 @@ async fn rows_logged_before_context_facts_still_read_after_a_reopen() {
     let store = SqliteStore::open(&config)
         .await
         .expect("reopen after additive migration");
-    assert_eq!(store.schema_version().await.expect("version"), 26);
+    assert_eq!(store.schema_version().await.expect("version"), 27);
     let mut extraction = extraction;
     extraction.id = "x-reasoning".into();
     extraction.reasoning_content = Some("Stored extraction reasoning.".into());
@@ -515,12 +524,13 @@ async fn the_profanity_migration_keeps_existing_chat_rows_and_their_children() {
          ALTER TABLE web_sessions DROP COLUMN device;
          ALTER TABLE web_sessions DROP COLUMN avatar_hash;
          DROP TABLE settings_changes;
+         DROP TABLE rewrites;
          DELETE FROM schema_migrations WHERE version >= 22;
          UPDATE store_meta SET schema_version = 21;",
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 26);
+    assert_eq!(store.schema_version().await.expect("version"), 27);
     let plain = store
         .load_chat("c-plain")
         .await

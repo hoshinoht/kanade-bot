@@ -1,0 +1,395 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/rewrites.json",
+  "title": "Rewrites log: persona rewrite attempts and one attempt",
+  "$defs": {
+    "RewriteKind": {
+      "enum": [
+        "day_of",
+        "countdown",
+        "digest",
+        "nudge"
+      ]
+    },
+    "RewriteStage": {
+      "enum": [
+        "batch",
+        "catchup",
+        "debug",
+        "nudge"
+      ]
+    },
+    "RewriteVerdict": {
+      "enum": [
+        "accepted",
+        "rejected",
+        "timeout",
+        "unavailable",
+        "refused",
+        "misconfigured",
+        "no_rewriter",
+        "no_persona"
+      ]
+    },
+    "TokenCount": {
+      "description": "A provider-reported token count; null = not reported, never 0 for unknown.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "RewriteFacets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "models",
+        "kinds",
+        "stages",
+        "verdicts"
+      ],
+      "properties": {
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "kinds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RewriteKind"
+          }
+        },
+        "stages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RewriteStage"
+          }
+        },
+        "verdicts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RewriteVerdict"
+          }
+        }
+      }
+    },
+    "RewriteSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "count",
+        "accepted",
+        "prompt_tokens",
+        "completion_tokens",
+        "reported",
+        "est_ratio"
+      ],
+      "properties": {
+        "model": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "accepted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "prompt_tokens": {
+          "$ref": "#/$defs/TokenCount"
+        },
+        "completion_tokens": {
+          "$ref": "#/$defs/TokenCount"
+        },
+        "reported": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "est_ratio": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Median of reported prompt tokens / prompt estimate, two decimals; null when none."
+        }
+      }
+    },
+    "RewriteRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "short_id",
+        "at",
+        "kind",
+        "stage",
+        "context",
+        "verdict",
+        "rule",
+        "code",
+        "latency_ms",
+        "model",
+        "reasoning",
+        "prompt_tokens",
+        "completion_tokens",
+        "reasoning_tokens",
+        "reservation",
+        "budget",
+        "seed",
+        "line"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "short_id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/RewriteKind"
+        },
+        "stage": {
+          "$ref": "#/$defs/RewriteStage"
+        },
+        "context": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "A card key, digest week, /debug command or nudge purpose and mood; never a member name or id."
+        },
+        "verdict": {
+          "$ref": "#/$defs/RewriteVerdict"
+        },
+        "rule": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "The gate rule that refused the line (rejected only)."
+        },
+        "code": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "The specific failure, e.g. budget_exceeded, busy, empty_reply, shutdown."
+        },
+        "latency_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Null when no call was attempted."
+        },
+        "model": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "The alias the request named; null when nothing was sent."
+        },
+        "reasoning": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "Reasoning effort as sent."
+        },
+        "prompt_tokens": {
+          "$ref": "#/$defs/TokenCount"
+        },
+        "completion_tokens": {
+          "$ref": "#/$defs/TokenCount"
+        },
+        "reasoning_tokens": {
+          "$ref": "#/$defs/TokenCount"
+        },
+        "reservation": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "The runner's token reservation (prompt estimate + max_tokens) the reported usage was checked against."
+        },
+        "budget": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "The call token budget the reservation exceeded when the runner refused it before sending; null otherwise."
+        },
+        "seed": {
+          "type": "string"
+        },
+        "line": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "The line used (accepted rewrite or seed), placeholders unfilled."
+        }
+      }
+    },
+    "Rewrites": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "rows",
+        "total",
+        "facets"
+      ],
+      "properties": {
+        "summary": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RewriteSummary"
+          }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RewriteRow"
+          }
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "facets": {
+          "$ref": "#/$defs/RewriteFacets"
+        }
+      }
+    },
+    "Rewrite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "short_id",
+        "at",
+        "kind",
+        "stage",
+        "context",
+        "verdict",
+        "rule",
+        "code",
+        "latency_ms",
+        "model",
+        "reasoning",
+        "prompt_tokens",
+        "completion_tokens",
+        "reasoning_tokens",
+        "reservation",
+        "budget",
+        "seed",
+        "line",
+        "reply",
+        "reasoning_content",
+        "max_output_tokens",
+        "prompt_estimate",
+        "request_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "short_id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/RewriteKind"
+        },
+        "stage": {
+          "$ref": "#/$defs/RewriteStage"
+        },
+        "context": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "A card key, digest week, /debug command or nudge purpose and mood; never a member name or id."
+        },
+        "verdict": {
+          "$ref": "#/$defs/RewriteVerdict"
+        },
+        "rule": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "The gate rule that refused the line (rejected only)."
+        },
+        "code": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "The specific failure, e.g. budget_exceeded, busy, empty_reply, shutdown."
+        },
+        "latency_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Null when no call was attempted."
+        },
+        "model": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "The alias the request named; null when nothing was sent."
+        },
+        "reasoning": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "Reasoning effort as sent."
+        },
+        "prompt_tokens": {
+          "$ref": "#/$defs/TokenCount"
+        },
+        "completion_tokens": {
+          "$ref": "#/$defs/TokenCount"
+        },
+        "reasoning_tokens": {
+          "$ref": "#/$defs/TokenCount"
+        },
+        "reservation": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "The runner's token reservation (prompt estimate + max_tokens) the reported usage was checked against."
+        },
+        "budget": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "The call token budget the reservation exceeded when the runner refused it before sending; null otherwise."
+        },
+        "seed": {
+          "type": "string"
+        },
+        "line": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "The line used (accepted rewrite or seed), placeholders unfilled."
+        },
+        "reply": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "The model's raw reply, capped at 8 KiB with a visible marker."
+        },
+        "reasoning_content": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "Response-only reasoning text, capped at 64 KiB."
+        },
+        "max_output_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "prompt_estimate": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "The reservation less max_tokens."
+        },
+        "request_id": {
+          "$ref": "common.json#/$defs/NullableString"
+        }
+      }
+    }
+  }
+}

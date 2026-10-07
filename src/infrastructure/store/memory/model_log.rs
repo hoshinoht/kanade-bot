@@ -9,7 +9,8 @@ use super::{MemoryScheduleStore, micros};
 use crate::domain::model_log::{
     AllowanceOverride, ChatFilter, ChatInteraction, ChatOutcome, ExtractionFilter, ExtractionLog,
     LogCursor, LogFacets, LogPage, MaskedTurn, MessageUpsert, ModelLogStore, PruneCounts,
-    ReadMessage, RescanJob, WatchedMessage, in_order, page_size,
+    ReadMessage, RescanJob, RewriteFacets, RewriteFilter, RewriteLog, RewriteLogStore,
+    WatchedMessage, in_order, page_size,
 };
 use crate::domain::scheduler::StoreError;
 
@@ -22,6 +23,7 @@ pub(super) struct LogTables {
     rescans: BTreeMap<String, RescanJob>,
     allowances: BTreeMap<String, AllowanceOverride>,
     tips: BTreeSet<(String, DateTime<Utc>)>,
+    rewrites: BTreeMap<String, RewriteLog>,
     /// Test hook: `mark_read_exact` fails as a backend error.
     fail_exact_marks: bool,
 }
@@ -398,12 +400,15 @@ impl ModelLogStore for MemoryScheduleStore {
         let messages = logs.messages.len();
         logs.messages
             .retain(|_, message| message.processed_at.is_none() || message.created_at >= before);
+        let rewrites = logs.rewrites.len();
+        logs.rewrites.retain(|_, log| log.at >= before);
         let notices = self.tables().outbox.purge_drained(before);
         Ok(PruneCounts {
             extractions: (extractions - logs.extractions.len()) as u64,
             chats: (chats - logs.chats.len()) as u64,
             messages: (messages - logs.messages.len()) as u64,
             notices,
+            rewrites: (rewrites - logs.rewrites.len()) as u64,
         })
     }
 
@@ -524,5 +529,80 @@ impl super::MemoryScheduleStore {
         };
         logs.chats.insert(interaction.id.clone(), interaction);
         Ok(())
+    }
+}
+
+impl RewriteLogStore for MemoryScheduleStore {
+    async fn record_rewrite(&self, log: RewriteLog) -> Result<(), StoreError> {
+        let result = (|| {
+            log.check_shape()?;
+            let mut logs = self.logs();
+            if logs.rewrites.contains_key(&log.id) {
+                return Err(StoreError::Constraint(format!("rewrite {} exists", log.id)));
+            }
+            let log = RewriteLog {
+                at: micros(log.at),
+                ..log
+            };
+            logs.rewrites.insert(log.id.clone(), log);
+            Ok(())
+        })();
+        self.written
+            .after(crate::infrastructure::store::Written::Rewrite, result)
+    }
+
+    async fn load_rewrite(&self, id: &str) -> Result<Option<RewriteLog>, StoreError> {
+        Ok(self.logs().rewrites.get(id).cloned())
+    }
+
+    async fn list_rewrites(
+        &self,
+        filter: &RewriteFilter,
+    ) -> Result<LogPage<RewriteLog>, StoreError> {
+        let text =
+            |value: &Option<String>, q: &str| value.as_deref().is_some_and(|v| contains(v, q));
+        let mut found: Vec<RewriteLog> = self
+            .logs()
+            .rewrites
+            .values()
+            .filter(|log| {
+                filter
+                    .model
+                    .as_ref()
+                    .is_none_or(|model| log.model.as_ref() == Some(model))
+                    && in_range(log.at, filter.from, filter.to)
+                    && (filter.verdicts.is_empty() || filter.verdicts.contains(&log.verdict))
+                    && filter.kind.is_none_or(|kind| log.kind == kind)
+                    && filter.stage.is_none_or(|stage| log.stage == stage)
+                    && filter.q.as_ref().is_none_or(|q| {
+                        contains(&log.seed, q)
+                            || text(&log.reply, q)
+                            || text(&log.line, q)
+                            || text(&log.context, q)
+                            || text(&log.rule, q)
+                            || text(&log.code, q)
+                    })
+                    && after_cursor(log.at, &log.id, filter.cursor.as_ref())
+            })
+            .cloned()
+            .collect();
+        found.sort_by(|a, b| (b.at, &b.id).cmp(&(a.at, &a.id)));
+        found.truncate(page_size(filter.limit) as usize + 1);
+        for log in &mut found {
+            log.reasoning_content = None;
+        }
+        Ok(page(found, filter.limit, RewriteLog::cursor))
+    }
+
+    async fn rewrite_facets(&self) -> Result<RewriteFacets, StoreError> {
+        let logs = self.logs();
+        let all = || logs.rewrites.values();
+        Ok(RewriteFacets {
+            total: all().count() as u64,
+            models: sorted(all().filter_map(|log| log.model.clone())),
+            kinds: sorted(all().map(|log| log.kind.as_str().to_owned())),
+            stages: sorted(all().map(|log| log.stage.as_str().to_owned())),
+            verdicts: sorted(all().map(|log| log.verdict.clone())),
+        })
     }
 }

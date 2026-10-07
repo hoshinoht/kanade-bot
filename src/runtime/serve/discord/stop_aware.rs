@@ -11,8 +11,8 @@
 //!
 //! The cards' heading and phrase rewrites (model calls, made only by the
 //! `HeaderPregen` worker, each capped by `PREGEN_DEADLINE`) end by the
-//! cutoff through [`cards`]: a cut or late rewrite fails as `Unavailable`,
-//! so nothing is stored and the send keeps its seed text, exactly as on a
+//! cutoff through [`cards`]: a cut or late rewrite fails as `Unavailable`
+//! (code `shutdown` in the Rewrites log), so nothing is stored and the send keeps its seed text, exactly as on a
 //! model timeout. Nothing a tick awaits is cut: its store reads fail at once
 //! past the cutoff (the store refuses them, see
 //! `ShutdownClock::refusing_reads`) and its writes are atomic and short.
@@ -37,7 +37,9 @@ use crate::bot::transport::{
     AmbiguousKind, ChannelId, DiscordTransport, HistoryPage, InteractionRef, InteractionReply,
     MessageEdit, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind,
 };
-use crate::chat::nudge::{NudgeRewriter, RewriteFailure, RewritePrompt, SharedRewriter};
+use crate::chat::nudge::{
+    NudgeRewriter, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriter,
+};
 use twilight_model::application::command::{Command, CommandOptionChoice};
 
 pub struct StopAware<T> {
@@ -102,17 +104,29 @@ impl NudgeRewriter for StopAwareRewrite {
         prompt: &RewritePrompt,
         deadline: Duration,
     ) -> Result<String, RewriteFailure> {
+        self.rewrite_detailed(prompt, deadline).await.result
+    }
+
+    /// A cut call keeps nothing of the inner call but says why: `shutdown`.
+    async fn rewrite_detailed(&self, prompt: &RewritePrompt, deadline: Duration) -> RewriteOutcome {
+        let shutdown = || RewriteOutcome {
+            result: Err(RewriteFailure::Unavailable),
+            detail: RewriteDetail {
+                code: Some("shutdown"),
+                ..RewriteDetail::default()
+            },
+        };
         let expired = self.clock.expired();
         tokio::pin!(expired);
         if already(&mut expired) {
-            return Err(RewriteFailure::Unavailable);
+            return shutdown();
         }
         tokio::select! {
             biased;
-            text = self.inner.rewrite(prompt, deadline) => text,
+            outcome = self.inner.rewrite_detailed(prompt, deadline) => outcome,
             () = &mut expired => {
                 self.clock.cut("rewrite");
-                Err(RewriteFailure::Unavailable)
+                shutdown()
             }
         }
     }
@@ -302,6 +316,50 @@ mod tests {
 
     /// A pass-through until shutdown; then a write in flight at the send cut
     /// may have landed (`Timeout`), and every later call is not sent.
+    struct Hangs;
+
+    impl NudgeRewriter for Hangs {
+        async fn rewrite(&self, _: &RewritePrompt, _: Duration) -> Result<String, RewriteFailure> {
+            std::future::pending().await
+        }
+    }
+
+    /// A rewrite still running at the cutoff ends `unavailable` with code
+    /// `shutdown`, and one begun after it never reaches the model.
+    #[tokio::test(start_paused = true)]
+    async fn a_rewrite_cut_by_shutdown_says_so() {
+        use crate::bot::delivery::cards::{CardKit, HeadingRewrite};
+        use crate::chat::persona::{CompiledPersona, NudgeMood, PersonaId, parse_bundle};
+
+        let clock = ShutdownClock::default();
+        let kit = cards(
+            CardKit {
+                heading: HeadingRewrite {
+                    rewriter: Some(SharedRewriter(Arc::new(Hangs))),
+                    ..HeadingRewrite::default()
+                },
+                ..CardKit::default()
+            },
+            clock.clone(),
+        );
+        let rewriter = kit.heading.rewriter.expect("wrapped");
+        let text = include_str!("../../../../config/personas/bundles/kanade.yaml");
+        let bundle = parse_bundle(text, &PersonaId::parse("kanade").unwrap()).unwrap();
+        let prompt = RewritePrompt::build(
+            &CompiledPersona::compile(&bundle, None),
+            NudgeMood::Playful,
+            "Onward!",
+        );
+        let deadline = Duration::from_secs(60);
+        let (outcome, ()) = tokio::join!(rewriter.rewrite_detailed(&prompt, deadline), async {
+            clock.start_at(Instant::now());
+        });
+        assert_eq!(outcome.result, Err(RewriteFailure::Unavailable));
+        assert_eq!(outcome.detail.code, Some("shutdown"));
+        let late = rewriter.rewrite_detailed(&prompt, deadline).await;
+        assert_eq!(late.detail.code, Some("shutdown"));
+    }
+
     #[tokio::test]
     async fn calls_pass_through_until_the_send_cut_then_end_as_a_timeout() {
         let fake = Arc::new(FakeDiscord::new());

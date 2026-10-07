@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { EffectiveContext, ModelInfo } from "@kanade/api-types";
 import {
   MAX_CONTEXT_TOKENS,
+  MAX_RESERVE,
   clampNotes,
+  reserveHelp,
   isLocal,
   overrideMax,
   stopIndex,
@@ -89,5 +91,13 @@ describe("clampNotes", () => {
     expect(clampNotes(effective({ clamped_by_hard_cap: true }), 1024)).toEqual([
       "held to the 131,072 limit",
     ]);
+  });
+});
+
+describe('reserve limit', () => {
+  it('names the effective limit and the call budget behind it', () => {
+    expect(MAX_RESERVE).toBe(15_359);
+    expect(reserveHelp()).toBe("At most 15,359: each call's token budget is 16,384, and at least 1,024 of it stays for the prompt.");
+    expect(tokenStops(MAX_RESERVE).at(-1)).toBe(MAX_RESERVE);
   });
 });

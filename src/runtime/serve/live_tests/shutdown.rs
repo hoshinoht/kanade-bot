@@ -1196,9 +1196,9 @@ async fn a_header_rewrite_hanging_at_the_cutoff_still_ends_by_it() {
     );
     let phrase = logged("reminder_header_phrase");
     assert!(
-        phrase
-            .iter()
-            .any(|line| line["stage"] == "pregen" && line["source"] == "seed"),
+        phrase.iter().any(|line| line["stage"] == "batch"
+            && line["source"] == "seed"
+            && line["detail"] == "shutdown"),
         "the cut rewrite failed to the seed, storing nothing: {phrase:?}"
     );
     assert_eq!(model.calls().1, 1, "no rewrite started after the cut");

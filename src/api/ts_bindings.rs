@@ -21,7 +21,7 @@ use super::{
 const TARGET: &str = "web/packages/api-types/src/generated.ts";
 
 /// Hand-written vocabulary (`manual.ts`) the `#[ts(type)]` overrides name.
-const MANUAL: [&str; 21] = [
+const MANUAL: [&str; 24] = [
     "ActorKind",
     "Answer",
     "ChangeRecord",
@@ -38,6 +38,9 @@ const MANUAL: [&str; 21] = [
     "PingLevel",
     "ProposalKind",
     "Refusal",
+    "RewriteKind",
+    "RewriteStage",
+    "RewriteVerdict",
     "RowKey",
     "RunStatus",
     "SelfServiceMode",
@@ -178,6 +181,11 @@ fn bindings() -> String {
         .add::<logs::CallContext>()
         .add::<logs::ExtractionRefusal>()
         .add::<logs::Extraction>()
+        .add::<logs::RewriteFacets>()
+        .add::<logs::RewriteSummary>()
+        .add::<logs::RewriteRow>()
+        .add::<logs::Rewrites>()
+        .add::<logs::Rewrite>()
         .add::<rescan::JobState>()
         .add::<rescan::ChannelState>()
         .add::<rescan::RescanChannel>()

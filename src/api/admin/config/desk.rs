@@ -416,6 +416,9 @@ impl ConfigDesk {
             notifications: dto::Notifications {
                 quiet_mode: settings.notifications.quiet_mode,
                 message_style: settings.notifications.message_style.as_str(),
+                header_generation_time: crate::api::dto::hhmm(
+                    settings.notifications.header_generation_time,
+                ),
             },
             self_service: dto::self_service(settings),
             persona,

@@ -2685,6 +2685,34 @@ async fn invalid_context_settings_are_refused_with_422() {
         )
         .await;
     assert!(message.contains("models.context.rewrite"), "{message}");
+    // A reserve that leaves no prompt room in the call token budget, even
+    // where the window would hold it (the user's saved 16000 failed every
+    // rewrite before sending).
+    for (role, reserve) in [("rewrite", 16_000), ("chat", 15_360)] {
+        let message = config
+            .refused(
+                json!({"models": {"context": context(json!({
+                    "cloud_default": 65_536,
+                    "local_default": 65_536,
+                    role: {"reserve": reserve, "cap": null},
+                }))}}),
+                422,
+                "invalid",
+            )
+            .await;
+        assert_eq!(
+            message,
+            format!(
+                "The {role} reserve ({reserve}) must be below 15360: each call's token budget is 16384 and at least 1024 of it stays for the prompt."
+            )
+        );
+    }
+    bare.patch(json!({"models": {"context": context(json!({
+        "cloud_default": 65_536,
+        "local_default": 65_536,
+        "rewrite": {"reserve": 15_359, "cap": null},
+    }))}}))
+    .await;
     // `overrides` may be omitted; it defaults to none.
     let mut without = context(json!({}));
     without.as_object_mut().unwrap().remove("overrides");
@@ -3062,7 +3090,7 @@ async fn message_style_saves_live_and_records_only_its_row() {
     let mut changes = config.desk.subscribe();
     assert_eq!(
         config.get().await["notifications"],
-        json!({"quiet_mode": false, "message_style": "classic"}),
+        json!({"quiet_mode": false, "message_style": "classic", "header_generation_time": "00:00"}),
         "classic by default"
     );
     let saved = config
@@ -3070,7 +3098,7 @@ async fn message_style_saves_live_and_records_only_its_row() {
         .await;
     assert_eq!(
         saved["notifications"],
-        json!({"quiet_mode": false, "message_style": "redesigned"})
+        json!({"quiet_mode": false, "message_style": "redesigned", "header_generation_time": "00:00"})
     );
     assert_eq!(
         changes
@@ -3108,7 +3136,7 @@ async fn message_style_saves_live_and_records_only_its_row() {
         .await;
     assert_eq!(
         back["notifications"],
-        json!({"quiet_mode": true, "message_style": "classic"})
+        json!({"quiet_mode": true, "message_style": "classic", "header_generation_time": "00:00"})
     );
 
     for bad in [json!("fancy"), json!("Classic"), json!(true)] {
@@ -3129,6 +3157,61 @@ async fn message_style_saves_live_and_records_only_its_row() {
             .message_style
             .as_str(),
         "classic",
+        "a refused save changes nothing"
+    );
+}
+
+#[tokio::test]
+async fn header_generation_time_saves_live_records_its_row_and_refuses_bad_clocks() {
+    let config = Config::new().await;
+    let mut changes = config.desk.subscribe();
+    let saved = config
+        .patch(json!({"notifications": {"header_generation_time": "03:30"}}))
+        .await;
+    assert_eq!(saved["notifications"]["header_generation_time"], "03:30");
+    assert_eq!(saved["notifications"]["message_style"], "classic", "kept");
+    assert_eq!(
+        changes
+            .borrow_and_update()
+            .settings
+            .notifications
+            .header_generation_time,
+        chrono::NaiveTime::from_hms_opt(3, 30, 0).unwrap(),
+        "published live"
+    );
+    let rows = config.reads.store.settings_rows().await.unwrap();
+    assert_eq!(rows[keys::HEADER_GENERATION_TIME], "03:30");
+    let recorded = config
+        .reads
+        .store
+        .settings_changes(Default::default())
+        .await
+        .unwrap();
+    assert_eq!(
+        recorded[0].values.keys().collect::<Vec<_>>(),
+        [keys::HEADER_GENERATION_TIME]
+    );
+    assert_eq!(
+        recorded[0].values[keys::HEADER_GENERATION_TIME].from,
+        "00:00"
+    );
+    assert_eq!(recorded[0].values[keys::HEADER_GENERATION_TIME].to, "03:30");
+    for bad in [json!("3:30"), json!("24:00"), json!("03:61"), json!(330)] {
+        let message = config
+            .refused(
+                json!({"notifications": {"header_generation_time": bad}}),
+                422,
+                "invalid",
+            )
+            .await;
+        assert_eq!(
+            message,
+            "The header generation time is HH:MM, for example 03:30."
+        );
+    }
+    assert_eq!(
+        config.get().await["notifications"]["header_generation_time"],
+        "03:30",
         "a refused save changes nothing"
     );
 }

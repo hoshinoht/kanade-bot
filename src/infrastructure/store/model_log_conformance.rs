@@ -1,6 +1,6 @@
 //! The model-log storage every store must keep: the message cache, the
-//! extraction and chat logs with their filters and keyset pages, rescan
-//! jobs, allowance overrides and self-service tips. Each check runs against
+//! extraction, chat and rewrite logs with their filters and keyset pages,
+//! rescan jobs, allowance overrides and self-service tips. Each check runs against
 //! a fresh store; failures panic with the check name.
 
 use chrono::{DateTime, TimeZone, Utc};
@@ -9,12 +9,13 @@ use serde_json::json;
 use crate::domain::model_log::{
     AllowanceOverride, ChatFilter, ChatInteraction, ChatOutcome, ChatRound, ExtractionFilter,
     ExtractionLog, ExtractionOutcome, ExtractionRefusal, LogFacets, MaskedName, MaskedRound,
-    MaskedTurn, MessageUpsert, ModelLogStore, ReadMessage, RescanJob, RescanStatus, WatchedMessage,
+    MaskedTurn, MessageUpsert, ModelLogStore, REPLY_CAP, ReadMessage, RescanJob, RescanStatus,
+    RewriteFilter, RewriteKind, RewriteLog, RewriteLogStore, RewriteStage, WatchedMessage,
 };
 use crate::domain::scheduler::StoreError;
 
 /// Run every check, each against a fresh store from `make`.
-pub async fn run_suite<S: ModelLogStore + Sync>(make: impl AsyncFn() -> S) {
+pub async fn run_suite<S: ModelLogStore + RewriteLogStore + Sync>(make: impl AsyncFn() -> S) {
     messages_cache_edits_and_windows(make().await).await;
     read_marks_skip_messages_edited_since(make().await).await;
     exact_read_marks_are_all_or_nothing(make().await).await;
@@ -32,6 +33,9 @@ pub async fn run_suite<S: ModelLogStore + Sync>(make: impl AsyncFn() -> S) {
     allowance_overrides_replace_and_clear(make().await).await;
     tips_are_claimed_once_per_member_and_week(make().await).await;
     retention_prunes_old_logs_and_processed_messages(make().await).await;
+    rewrite_logs_round_trip_and_refuse_bad_rows(make().await).await;
+    rewrite_filters_combine_and_page(make().await).await;
+    retention_prunes_rewrites(make().await).await;
 }
 
 async fn retention_prunes_old_logs_and_processed_messages<S: ModelLogStore>(store: S) {
@@ -71,6 +75,7 @@ async fn retention_prunes_old_logs_and_processed_messages<S: ModelLogStore>(stor
             chats: 1,
             messages: 1,
             notices: 0,
+            rewrites: 0,
         },
         "retention: strictly before the cutoff; unprocessed messages stay"
     );
@@ -1427,4 +1432,242 @@ async fn concurrent_claims<S: ModelLogStore + Sync>(store: &S, week: DateTime<Ut
         store.claim_tip("1", week, utc(20, 9, 2)),
     );
     vec![a.expect("claim"), b.expect("claim"), c.expect("claim")]
+}
+
+pub(crate) fn rewrite(id: &str, at: DateTime<Utc>) -> RewriteLog {
+    RewriteLog {
+        id: id.into(),
+        at,
+        kind: RewriteKind::DayOf,
+        stage: RewriteStage::Batch,
+        context: Some("day_of:r-1:2026-09-20".into()),
+        verdict: "accepted".into(),
+        rule: None,
+        code: None,
+        latency_ms: Some(640),
+        model: Some("kanata/rewrite".into()),
+        reasoning: Some("low".into()),
+        prompt_tokens: Some(210),
+        completion_tokens: Some(9),
+        reasoning_tokens: Some(4),
+        reservation: Some(282),
+        budget: None,
+        max_output_tokens: Some(96),
+        seed: "Today — {day}".into(),
+        reply: Some("Waku waku — {day}".into()),
+        reasoning_content: Some("Keep {day}.".into()),
+        line: Some("Waku waku — {day}".into()),
+        request_id: Some("kanade-rewrite-0000abcd-1-1".into()),
+    }
+}
+
+async fn rewrite_logs_round_trip_and_refuse_bad_rows<S: RewriteLogStore>(store: S) {
+    let at = utc(20, 12, 0) + chrono::TimeDelta::nanoseconds(1_234_567);
+    store
+        .record_rewrite(rewrite("r-1", at))
+        .await
+        .expect("record");
+    let mut failed = rewrite("r-2", utc(20, 13, 0));
+    failed.verdict = "unavailable".into();
+    failed.code = Some("budget_exceeded".into());
+    failed.reply = Some("x".repeat(REPLY_CAP));
+    failed.line = None;
+    failed.reasoning_tokens = None;
+    // Refused before sending: the reservation against the call budget.
+    (failed.prompt_tokens, failed.completion_tokens) = (None, None);
+    (failed.reservation, failed.budget) = (Some(17_000), Some(16_384));
+    store.record_rewrite(failed.clone()).await.expect("record");
+    let loaded = store.load_rewrite("r-1").await.expect("load").expect("row");
+    assert_eq!(
+        loaded,
+        RewriteLog {
+            at: utc(20, 12, 0) + chrono::TimeDelta::microseconds(1_234),
+            ..rewrite("r-1", at)
+        },
+        "rewrites: microsecond instants"
+    );
+    assert_eq!(store.load_rewrite("r-2").await.expect("load"), Some(failed));
+    assert_eq!(store.load_rewrite("r-9").await.expect("load"), None);
+    type Spoil = fn(&mut RewriteLog);
+    let bad: [(&str, Spoil); 7] = [
+        ("duplicate id", |_| {}),
+        ("verdict", |log| log.verdict = "sent".into()),
+        ("half pair", |log| log.completion_tokens = None),
+        ("empty code", |log| log.code = Some(String::new())),
+        ("long context", |log| log.context = Some("c".repeat(201))),
+        ("long reply", |log| {
+            log.reply = Some("r".repeat(REPLY_CAP + 1))
+        }),
+        ("request id", |log| log.request_id = Some("a b".into())),
+    ];
+    for (what, spoil) in bad {
+        let mut log = rewrite(
+            if what == "duplicate id" {
+                "r-1"
+            } else {
+                "r-bad"
+            },
+            at,
+        );
+        spoil(&mut log);
+        assert!(
+            matches!(
+                store.record_rewrite(log).await,
+                Err(StoreError::Constraint(_))
+            ),
+            "rewrites: refuses {what}"
+        );
+    }
+    assert_eq!(store.rewrite_facets().await.expect("facets").total, 2);
+}
+
+async fn rewrite_filters_combine_and_page<S: RewriteLogStore>(store: S) {
+    let mut rows = Vec::new();
+    for (index, (kind, stage, verdict)) in [
+        (RewriteKind::DayOf, RewriteStage::Batch, "accepted"),
+        (RewriteKind::Countdown, RewriteStage::Batch, "rejected"),
+        (RewriteKind::Digest, RewriteStage::Debug, "unavailable"),
+        (RewriteKind::Nudge, RewriteStage::Nudge, "timeout"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut log = rewrite(&format!("r-{index}"), utc(20, 10 + index as u32, 0));
+        log.kind = kind;
+        log.stage = stage;
+        log.verdict = verdict.into();
+        if verdict == "rejected" {
+            log.rule = Some("not an interjection".into());
+            log.reply = Some("Twenty Past Eight".into());
+        }
+        if verdict == "unavailable" {
+            log.code = Some("budget_exceeded".into());
+            log.model = Some("kanata/other".into());
+        }
+        rows.push(log.clone());
+        store.record_rewrite(log).await.expect("record");
+    }
+    let list = async |filter: RewriteFilter| {
+        let page = store.list_rewrites(&filter).await.expect("list");
+        assert!(
+            page.items.iter().all(|log| log.reasoning_content.is_none()),
+            "rewrites: pages leave out reasoning"
+        );
+        ids(&page.items, |log| &log.id)
+    };
+    let all = RewriteFilter {
+        limit: 50,
+        ..RewriteFilter::default()
+    };
+    assert_eq!(list(all.clone()).await, ["r-3", "r-2", "r-1", "r-0"]);
+    for (filter, expected) in [
+        (
+            RewriteFilter {
+                kind: Some(RewriteKind::Countdown),
+                ..all.clone()
+            },
+            vec!["r-1"],
+        ),
+        (
+            RewriteFilter {
+                stage: Some(RewriteStage::Batch),
+                ..all.clone()
+            },
+            vec!["r-1", "r-0"],
+        ),
+        (
+            RewriteFilter {
+                verdicts: vec!["timeout".into(), "accepted".into()],
+                ..all.clone()
+            },
+            vec!["r-3", "r-0"],
+        ),
+        (
+            RewriteFilter {
+                model: Some("kanata/other".into()),
+                ..all.clone()
+            },
+            vec!["r-2"],
+        ),
+        (
+            RewriteFilter {
+                q: Some("BUDGET_".into()),
+                ..all.clone()
+            },
+            vec!["r-2"],
+        ),
+        (
+            RewriteFilter {
+                q: Some("twenty past".into()),
+                ..all.clone()
+            },
+            vec!["r-1"],
+        ),
+        (
+            RewriteFilter {
+                from: Some(utc(20, 11, 0)),
+                to: Some(utc(20, 13, 0)),
+                ..all.clone()
+            },
+            vec!["r-2", "r-1"],
+        ),
+        (
+            RewriteFilter {
+                stage: Some(RewriteStage::Nudge),
+                verdicts: vec!["accepted".into()],
+                ..all.clone()
+            },
+            vec![],
+        ),
+    ] {
+        assert_eq!(list(filter.clone()).await, expected, "rewrites: {filter:?}");
+    }
+    let first = store
+        .list_rewrites(&RewriteFilter {
+            limit: 3,
+            ..RewriteFilter::default()
+        })
+        .await
+        .expect("page");
+    assert_eq!(ids(&first.items, |log| &log.id), ["r-3", "r-2", "r-1"]);
+    let rest = store
+        .list_rewrites(&RewriteFilter {
+            limit: 3,
+            cursor: first.next.clone(),
+            ..RewriteFilter::default()
+        })
+        .await
+        .expect("page");
+    assert_eq!(ids(&rest.items, |log| &log.id), ["r-0"]);
+    assert_eq!(rest.next, None);
+    let facets = store.rewrite_facets().await.expect("facets");
+    assert_eq!(facets.total, 4);
+    assert_eq!(facets.models, ["kanata/other", "kanata/rewrite"]);
+    assert_eq!(facets.kinds, ["countdown", "day_of", "digest", "nudge"]);
+    assert_eq!(facets.stages, ["batch", "debug", "nudge"]);
+    assert_eq!(
+        facets.verdicts,
+        ["accepted", "rejected", "timeout", "unavailable"]
+    );
+    let detail = store.load_rewrite("r-0").await.expect("load").expect("row");
+    assert_eq!(detail, rows[0], "rewrites: the detail keeps reasoning");
+}
+
+async fn retention_prunes_rewrites<S: ModelLogStore + RewriteLogStore>(store: S) {
+    let cutoff = utc(20, 0, 0);
+    for (id, at) in [
+        ("r-old", cutoff - chrono::TimeDelta::microseconds(1)),
+        ("r-edge", cutoff),
+    ] {
+        store.record_rewrite(rewrite(id, at)).await.expect("record");
+    }
+    assert_eq!(
+        store.prune_model_logs(cutoff).await.expect("prune"),
+        crate::domain::model_log::PruneCounts {
+            rewrites: 1,
+            ..Default::default()
+        }
+    );
+    assert_eq!(store.load_rewrite("r-old").await.expect("load"), None);
+    assert!(store.load_rewrite("r-edge").await.expect("load").is_some());
 }

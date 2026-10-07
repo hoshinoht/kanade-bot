@@ -23,6 +23,7 @@ interface Allow {
 const CHAT = ['admin/chat', 'admin/chat/c-move', 'admin/chat/c-when', 'admin/chat/c-safe-line'];
 const INBOX = ['admin/inbox', 'admin/inbox?tab=self_service', 'admin/inbox (item open)'];
 const EXTRACTIONS = ['admin/extractions', 'admin/extractions/x-kalos'];
+const REWRITES = ['admin/rewrites', 'admin/rewrites?attempt=rw-over'];
 const SECTIONS = ['pings', 'run-lengths', 'watching', 'chatbot', 'profanity', 'persona', 'models', 'self-service', 'notifications', 'digest', 'channels', 'rescan', 'access', 'theme', 'env'];
 const CONFIG = ['admin/config', ...SECTIONS.map((key) => `admin/config?section=${key}`)];
 
@@ -69,6 +70,13 @@ const ALLOW: Allow[] = [
     sizes: '*',
     kinds: ['ellipsis', 'ellipsis-bare'],
     reason: "a call row's one-line facts; the opened call shows each in full",
+  },
+  {
+    selector: '.extract-row__facts',
+    screens: REWRITES,
+    sizes: '*',
+    kinds: ['ellipsis', 'ellipsis-bare'],
+    reason: "a rewrite row's one-line facts (stage, code, latency, tokens); the opened attempt shows each in full",
   },
   {
     selector: '.chat-row__q',

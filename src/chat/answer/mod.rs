@@ -29,10 +29,8 @@ use crate::chat::tools::read::{PendingCard, StrategyGuides};
 use crate::chat::tools::{ProposalCard, ToolContext, ToolOutcome};
 use crate::domain::catalog::BossTable;
 use crate::domain::members::{Directory, Member};
-use crate::infrastructure::llm::governor::{
-    Charge, Refused, SentRequest, SessionError, SessionFailure,
-};
-use crate::infrastructure::llm::{Effort, ErrorCode, Message};
+use crate::infrastructure::llm::governor::{Charge, SentRequest, SessionError};
+use crate::infrastructure::llm::{Effort, Message};
 
 /// v4's reply when a posted card could not be delivered.
 pub const CARD_NOT_POSTED: &str = "The change was recorded but the card could not be posted to the channel. Tell them to check with an admin.";
@@ -170,25 +168,6 @@ pub enum AnswerFailure {
     Session(SessionError),
 }
 
-fn model_code(code: ErrorCode) -> &'static str {
-    match code {
-        ErrorCode::RequestInvalid => "request_invalid",
-        ErrorCode::BudgetExceeded => "budget_exceeded",
-        ErrorCode::DeadlineExceeded => "deadline_exceeded",
-        ErrorCode::ProviderPermanent => "provider_permanent",
-        ErrorCode::ProviderAuthentication => "provider_authentication",
-        ErrorCode::InvalidOutput => "invalid_output",
-        ErrorCode::ModelMismatch => "model_mismatch",
-        ErrorCode::Incomplete => "incomplete",
-        ErrorCode::ContentFiltered => "content_filtered",
-        ErrorCode::UnsupportedCapability => "unsupported_capability",
-        ErrorCode::AdmissionRefused => "admission_refused",
-        ErrorCode::BackendUnavailable => "backend_unavailable",
-        ErrorCode::UpstreamTimeout => "upstream_timeout",
-        ErrorCode::KeyExpired => "key_expired",
-    }
-}
-
 impl AnswerFailure {
     /// A stable code for the log and the admin transcript.
     pub fn code(&self) -> &'static str {
@@ -198,24 +177,7 @@ impl AnswerFailure {
             Self::Timeout { .. } => "timeout",
             Self::ContentBlocked => "content_blocked",
             Self::Malformed => "malformed",
-            Self::Session(error) => match &error.failure {
-                SessionFailure::Refused(refused) => match refused {
-                    Refused::UnknownRole => "unknown_role",
-                    Refused::Ungrouped => "ungrouped",
-                    Refused::ExternalForbidden => "external_forbidden",
-                    Refused::MustNotWait => "must_not_wait",
-                    Refused::Busy => "busy",
-                    Refused::Timeout => "queue_timeout",
-                    Refused::Unavailable { .. } => "backend_unavailable",
-                    Refused::RateLimited { .. } => "rate_ceiling",
-                    Refused::RetryBudgetExhausted => "retry_budget_exhausted",
-                },
-                SessionFailure::RequestsExhausted => "requests_exhausted",
-                SessionFailure::Ended => "session_ended",
-                SessionFailure::CleanRetryUnavailable => "clean_retry_unavailable",
-                SessionFailure::AnswerRetryUnavailable => "answer_retry_unavailable",
-                SessionFailure::Model(model) => model_code(model.code),
-            },
+            Self::Session(error) => error.code(),
         }
     }
 
@@ -322,5 +284,82 @@ impl Generation {
     /// Tool outcomes without their rounds.
     pub fn tool_outcomes(&self) -> Vec<ToolOutcome> {
         self.outcomes.iter().map(|o| o.outcome.clone()).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::infrastructure::llm::governor::{Refused, SessionFailure};
+    use crate::infrastructure::llm::{ErrorCode, LlmError};
+
+    /// The chat log's codes, byte-identical to the table they had before
+    /// `SessionError::code` became their single source.
+    #[test]
+    fn session_failure_codes_are_unchanged() {
+        let failed = |failure| {
+            AnswerFailure::Session(SessionError {
+                failure,
+                charge: Charge::Refunded,
+            })
+            .code()
+        };
+        let refused = [
+            (Refused::UnknownRole, "unknown_role"),
+            (Refused::Ungrouped, "ungrouped"),
+            (Refused::ExternalForbidden, "external_forbidden"),
+            (Refused::MustNotWait, "must_not_wait"),
+            (Refused::Busy, "busy"),
+            (Refused::Timeout, "queue_timeout"),
+            (
+                Refused::Unavailable { retry_at: None },
+                "backend_unavailable",
+            ),
+            (
+                Refused::RateLimited {
+                    wait: Duration::ZERO,
+                },
+                "rate_ceiling",
+            ),
+            (Refused::RetryBudgetExhausted, "retry_budget_exhausted"),
+        ];
+        for (refused, code) in refused {
+            assert_eq!(failed(SessionFailure::Refused(refused)), code);
+        }
+        for (failure, code) in [
+            (SessionFailure::RequestsExhausted, "requests_exhausted"),
+            (SessionFailure::Ended, "session_ended"),
+            (
+                SessionFailure::CleanRetryUnavailable,
+                "clean_retry_unavailable",
+            ),
+            (
+                SessionFailure::AnswerRetryUnavailable,
+                "answer_retry_unavailable",
+            ),
+        ] {
+            assert_eq!(failed(failure), code);
+        }
+        for (error, code) in [
+            (ErrorCode::RequestInvalid, "request_invalid"),
+            (ErrorCode::BudgetExceeded, "budget_exceeded"),
+            (ErrorCode::DeadlineExceeded, "deadline_exceeded"),
+            (ErrorCode::ProviderPermanent, "provider_permanent"),
+            (ErrorCode::ProviderAuthentication, "provider_authentication"),
+            (ErrorCode::InvalidOutput, "invalid_output"),
+            (ErrorCode::ModelMismatch, "model_mismatch"),
+            (ErrorCode::Incomplete, "incomplete"),
+            (ErrorCode::ContentFiltered, "content_filtered"),
+            (ErrorCode::UnsupportedCapability, "unsupported_capability"),
+            (ErrorCode::AdmissionRefused, "admission_refused"),
+            (ErrorCode::BackendUnavailable, "backend_unavailable"),
+            (ErrorCode::UpstreamTimeout, "upstream_timeout"),
+            (ErrorCode::KeyExpired, "key_expired"),
+        ] {
+            assert_eq!(
+                failed(SessionFailure::Model(LlmError::new(error, "test"))),
+                code
+            );
+        }
     }
 }

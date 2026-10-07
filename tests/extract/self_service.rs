@@ -657,3 +657,105 @@ async fn each_rewrite_reads_the_live_reserve_and_a_rewrite_in_flight_keeps_its_o
         "the next rewrite reads the save"
     );
 }
+
+fn answered(content: &str, prompt_tokens: u32, completion_tokens: u32) -> FakeAction {
+    FakeAction::Response(kanade::infrastructure::llm::CompletionResponse {
+        reasoning_content: Some("Keep it short.".into()),
+        reasoning_tokens: Some(3),
+        model: ALIAS.into(),
+        content: Some(content.to_owned()),
+        tool_calls: Vec::new(),
+        finish_reason: kanade::infrastructure::llm::FinishReason::Stop,
+        usage: Some(kanade::infrastructure::llm::Usage {
+            prompt_tokens,
+            completion_tokens,
+        }),
+    })
+}
+
+/// The detailed rewrite reports the route, `max_tokens`, the reservation the
+/// usage was checked against, the reply and its reasoning.
+#[tokio::test(start_paused = true)]
+async fn the_detailed_rewrite_reports_route_usage_and_reservation() {
+    use kanade::chat::nudge::REWRITE_MAX_OUTPUT_TOKENS;
+
+    let (_, client) = client(vec![answered("Fine. Fix it yourself.", 40, 6)], true);
+    let outcome = adapter(client)
+        .rewrite_detailed(&rewrite_prompt(), DEADLINE)
+        .await;
+    assert_eq!(outcome.result.as_deref(), Ok("Fine. Fix it yourself."));
+    let detail = outcome.detail;
+    assert_eq!(detail.code, None);
+    assert_eq!(detail.alias.as_deref(), Some(ALIAS));
+    assert_eq!(detail.max_output_tokens, Some(REWRITE_MAX_OUTPUT_TOKENS));
+    let reservation = detail.reservation.expect("reservation");
+    assert!(reservation > REWRITE_MAX_OUTPUT_TOKENS, "{reservation}");
+    assert_eq!(
+        detail
+            .usage
+            .map(|usage| (usage.prompt_tokens, usage.completion_tokens)),
+        Some((40, 6))
+    );
+    assert_eq!(detail.reasoning.as_deref(), Some("Keep it short."));
+    assert_eq!(detail.reasoning_tokens, Some(3));
+    assert_eq!(detail.reply.as_deref(), Some("Fine. Fix it yourself."));
+}
+
+/// The live failure: the gateway answered, but the reported usage exceeds
+/// the runner's reservation. The rejection is unchanged (`unavailable`, the
+/// seed is used); the detail names `budget_exceeded` and keeps what the
+/// model reported, so the log shows "used > reserved".
+#[tokio::test(start_paused = true)]
+async fn a_reply_over_its_reservation_is_unavailable_with_budget_exceeded_and_its_usage() {
+    let (provider, client) = client(vec![answered("Waku waku!", 5_000, 412)], true);
+    let outcome = adapter(client)
+        .rewrite_detailed(&rewrite_prompt(), DEADLINE)
+        .await;
+    assert_eq!(outcome.result, Err(RewriteFailure::Unavailable));
+    assert_eq!(provider.requests().len(), 1, "no retry");
+    let detail = outcome.detail;
+    assert_eq!(detail.code, Some("budget_exceeded"));
+    let reservation = detail.reservation.expect("reservation");
+    assert!(5_412 > reservation, "{reservation}");
+    assert_eq!(
+        detail
+            .usage
+            .map(|usage| (usage.prompt_tokens, usage.completion_tokens)),
+        Some((5_000, 412))
+    );
+    assert_eq!(detail.reply.as_deref(), Some("Waku waku!"));
+    assert_eq!(detail.reasoning.as_deref(), Some("Keep it short."));
+    assert_eq!(detail.budget, None, "sent within budget");
+}
+
+/// Refusals before anything is sent carry the governor's code.
+#[tokio::test(start_paused = true)]
+async fn a_refused_rewrite_carries_the_governor_code() {
+    let (_, client) = rewrite_client(false, false, vec![reply("unused")]);
+    let outcome = adapter(client)
+        .rewrite_detailed(&rewrite_prompt(), DEADLINE)
+        .await;
+    assert_eq!(outcome.result, Err(RewriteFailure::Misconfigured));
+    assert_eq!(outcome.detail.code, Some("ungrouped"));
+    assert_eq!(outcome.detail.reservation, None);
+}
+
+/// A reserve that leaves the reservation over the call token budget is
+/// refused before anything is sent; the detail names the budget, so the log
+/// shows "reserved N > budget 16384".
+#[tokio::test(start_paused = true)]
+async fn a_reservation_over_the_call_budget_is_refused_before_sending() {
+    use kanade::infrastructure::llm::CALL_TOKEN_BUDGET;
+
+    let (provider, client) = client(vec![reply("unused")], true);
+    let rewriter = GovernedRewriter::new(client).with_reserve(Arc::new(|_: &str| 16_384));
+    let outcome = rewriter.rewrite_detailed(&rewrite_prompt(), DEADLINE).await;
+    assert_eq!(outcome.result, Err(RewriteFailure::Unavailable));
+    assert!(provider.requests().is_empty(), "nothing sent");
+    let detail = outcome.detail;
+    assert_eq!(detail.code, Some("budget_exceeded"));
+    assert_eq!(detail.budget, Some(CALL_TOKEN_BUDGET));
+    let reservation = detail.reservation.expect("reservation");
+    assert!(reservation > CALL_TOKEN_BUDGET, "{reservation}");
+    assert_eq!(detail.usage, None);
+}

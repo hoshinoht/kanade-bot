@@ -194,6 +194,8 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         )
         .route("/api/admin/chat", get(api::chat))
         .route("/api/admin/chat/{id}", get(api::chat_turn))
+        .route("/api/admin/rewrites", get(api::rewrites))
+        .route("/api/admin/rewrites/{id}", get(api::rewrite))
         .route("/api/admin/limits", get(api::limits))
         .route("/api/admin/limits/windows/{id}", delete(api::reset_window))
         .route(

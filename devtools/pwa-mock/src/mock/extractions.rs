@@ -252,7 +252,7 @@ impl Store {
         self.arrived_extraction = true;
     }
 
-    fn hour_minute(h: i64) -> i64 {
+    pub(super) fn hour_minute(h: i64) -> i64 {
         Self::start(false) * 1440 - 8 * 60 + h * 60
     }
 

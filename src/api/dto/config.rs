@@ -105,6 +105,9 @@ pub struct Notifications {
     pub quiet_mode: bool,
     #[cfg_attr(test, ts(type = "MessageStyle"))]
     pub message_style: &'static str,
+    /// `HH:MM` in the guild's zone: when the daily reminder-header rewrite
+    /// batch runs.
+    pub header_generation_time: String,
 }
 
 #[derive(Clone, Debug, Serialize)]

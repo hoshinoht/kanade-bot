@@ -60,7 +60,7 @@ use crate::{
         identity,
         roster::{LiveRoster, RosterTask},
     },
-    chat::driver::DriverConfig,
+    chat::{driver::DriverConfig, nudge::StoreRewriteSink},
     domain::{ids::RandomIds, schedule::SchedulePolicy, scheduler::SchedulerService},
     infrastructure::store::SqliteStore,
     runtime::{config::ServeConfig, error::Error, logging},
@@ -357,6 +357,10 @@ where
             composition.models.as_ref(),
             Arc::clone(&composition.personas),
             settings_changes(composition),
+            Arc::new(StoreRewriteSink::new(
+                Arc::clone(&store),
+                Arc::clone(&wiring.clock),
+            )),
         ),
         shutdown.clone(),
     );
@@ -449,14 +453,24 @@ where
     let refresh_queue = Arc::new(RefreshQueue::default());
     let queued = Arc::clone(&refresh_queue);
     store.observe_run_writes(Arc::new(move |runs: &[String]| queued.request(runs)));
-    // Persona headers are rewritten ahead of their sends, never on them.
+    // Persona headers are rewritten ahead of their sends (a daily batch and
+    // catch-up), never on them.
+    // The daily batch time is read live, like the message style.
+    let header_time = settings_changes(composition);
     let pregen = HeaderPregen::new(
         Arc::clone(&store),
         roster.clone(),
         cards.clone(),
         policy.clone(),
         Arc::clone(&wiring.clock),
-    );
+    )
+    .with_time(Arc::new(move || {
+        header_time
+            .borrow()
+            .settings
+            .notifications
+            .header_generation_time
+    }));
     let tick = TickLoop {
         store: Arc::clone(&store),
         transport: Arc::clone(&transport),

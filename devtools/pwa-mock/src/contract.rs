@@ -576,6 +576,24 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "config.json#/$defs/ConfigView",
     )
     .await;
+    let timed = h
+        .ok(
+            "PATCH",
+            "/api/admin/config",
+            Some(json!({ "notifications": { "header_generation_time": "03:30" } })),
+            "config.json#/$defs/ConfigView",
+        )
+        .await;
+    assert_eq!(timed["notifications"]["header_generation_time"], "03:30");
+    h.expect(
+        false,
+        "PATCH",
+        "/api/admin/config",
+        Some(json!({ "notifications": { "header_generation_time": "25:00" } })),
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "error.json#/$defs/ApiError",
+    )
+    .await;
     h.expect(
         false,
         "GET",
@@ -686,6 +704,49 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
             .await;
         }
     }
+    for q in [
+        "",
+        "?stage=batch&verdict=unavailable,accepted",
+        "?kind=nudge",
+    ] {
+        let r = h
+            .ok(
+                "GET",
+                &format!("/api/admin/rewrites{q}"),
+                None,
+                "rewrites.json#/$defs/Rewrites",
+            )
+            .await;
+        for row in r["rows"].as_array().unwrap() {
+            h.ok(
+                "GET",
+                &format!("/api/admin/rewrites/{}", s(&row["id"])),
+                None,
+                "rewrites.json#/$defs/Rewrite",
+            )
+            .await;
+        }
+    }
+    for bad in ["?verdict=bogus", "?kind=send", "?outcome=accepted"] {
+        h.expect(
+            false,
+            "GET",
+            &format!("/api/admin/rewrites{bad}"),
+            None,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "",
+        )
+        .await;
+    }
+    h.expect(
+        false,
+        "GET",
+        "/api/admin/rewrites/rw-missing",
+        None,
+        StatusCode::NOT_FOUND,
+        "",
+    )
+    .await;
     h.expect(
         false,
         "GET",

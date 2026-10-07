@@ -1,8 +1,8 @@
 //! What extraction and chat need persisted: the watched-message cache, the
 //! extraction and chat logs the admin Extractions/Chat pages filter
 //! (`docs/notes/admin-api.md`), rescan jobs, per-member chat allowance
-//! overrides and the one-tip-per-boss-week self-service record. Types and
-//! the store port only; nothing here does I/O.
+//! overrides, the one-tip-per-boss-week self-service record and the
+//! Rewrites log. Types and the store ports only; nothing here does I/O.
 
 mod filter;
 mod masked;
@@ -11,6 +11,7 @@ mod port;
 mod reasoning;
 mod records;
 mod retention;
+mod rewrite;
 
 pub use filter::{
     ChatFilter, ExtractionFilter, LogCursor, LogFacets, LogPage, MAX_PAGE, page_size,
@@ -24,3 +25,7 @@ pub use records::{
     PROFILE_SOURCES, ROUTES, RescanJob, WatchedMessage, in_order, is_correlation_id,
 };
 pub use retention::{DEFAULT_LOG_RETENTION, PRUNE_BATCH, PruneCounts, retention_cutoff};
+pub use rewrite::{
+    CODE_CAP, CONTEXT_CAP, LINE_CAP, REPLY_CAP, REPLY_TRUNCATED, REWRITE_VERDICTS, RewriteFacets,
+    RewriteFilter, RewriteKind, RewriteLog, RewriteLogStore, RewriteStage, capped_reply,
+};

@@ -33,7 +33,10 @@ use crate::{
         transport::DiscordTransport,
     },
     chat::{
-        nudge::{GovernedRewriter, RewriteReserve, SharedRewriter, WordFilter, WordSource},
+        nudge::{
+            GovernedRewriter, RewriteReserve, SharedRewriteSink, SharedRewriter, WordFilter,
+            WordSource,
+        },
         persona::{CompiledPersona, PersonaStore},
     },
     domain::notify::DeliveryJournal,
@@ -143,13 +146,14 @@ pub fn heading_rewriter<P: LlmProvider + 'static>(
 /// Card inputs for the tick and card edits: the catalog, the boss art
 /// directory (none: no pictures) and the day-of heading rewrite (the
 /// `rewrite` role through the nudge rewriter, the guild's default persona;
-/// no role or no persona: v4's heading).
+/// no role or no persona: v4's heading), each trial logged to `log`.
 pub fn card_kit(
     boss_dir: Option<&Path>,
     catalog: Arc<BossTable>,
     models: Option<&Arc<ModelStack>>,
     personas: Arc<PersonaStore>,
     settings: watch::Receiver<SettingsChanged>,
+    log: SharedRewriteSink,
 ) -> CardKit {
     // The live message style, read per card like quiet mode per tick.
     let styles = settings.clone();
@@ -190,6 +194,7 @@ pub fn card_kit(
             rewriter,
             persona: Some(persona),
             words: Some(words),
+            log: Some(log),
         },
         style: Some(style),
         marks: DifficultyMarks::default(),

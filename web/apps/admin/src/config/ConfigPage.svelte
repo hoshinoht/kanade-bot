@@ -19,6 +19,7 @@
   import ChatbotSection from './ChatbotSection.svelte';
   import DigestSection from './DigestSection.svelte';
   import EnvSection from './EnvSection.svelte';
+  import HeaderTimeCard from './HeaderTimeCard.svelte';
   import MessageStyleCard from './MessageStyleCard.svelte';
   import ModelsSection from './ModelsSection.svelte';
   import PersonaSection from './PersonaSection.svelte';
@@ -64,7 +65,7 @@
     { key: 'persona', label: 'Persona', group: 'Bot', terms: 'active persona reply profiles visibility roles role overrides assignments' },
     { key: 'models', label: 'Models', group: 'Bot', terms: 'roles reasoning context windows capacity groups kanata extraction rewrite' },
     { key: 'self-service', label: 'Self-service', group: 'Members', terms: 'public portal cards links how members are answered' },
-    { key: 'notifications', label: 'Notifications', group: 'Members', terms: 'quiet mode pings discord message style classic redesigned' },
+    { key: 'notifications', label: 'Notifications', group: 'Members', terms: 'quiet mode pings discord message style classic redesigned header rewrites generation time' },
     { key: 'digest', label: 'Weekly digest', group: 'Members', terms: 'post channel week' },
     { key: 'channels', label: 'Channels', group: 'Server', terms: 'watched channels categories chat categories ids environment seed' },
     { key: 'rescan', label: 'Re-read', group: 'Server', terms: 'channels extractor running' },
@@ -534,6 +535,7 @@
                     Discord.</SwitchCard
                   >
                   <MessageStyleCard style={c.notifications.message_style} {save} />
+                  <HeaderTimeCard time={c.notifications.header_generation_time ?? '00:00'} {save} />
                   <p class="settings__box">Applies at once, with Undo for 10 s.</p>
                 </SettingsPanel>
               {:else}

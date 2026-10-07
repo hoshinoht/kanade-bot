@@ -125,6 +125,28 @@ impl SessionError {
             _ => false,
         }
     }
+
+    /// A stable snake-case code for logs and transcripts.
+    pub fn code(&self) -> &'static str {
+        match &self.failure {
+            SessionFailure::Refused(refused) => match refused {
+                Refused::UnknownRole => "unknown_role",
+                Refused::Ungrouped => "ungrouped",
+                Refused::ExternalForbidden => "external_forbidden",
+                Refused::MustNotWait => "must_not_wait",
+                Refused::Busy => "busy",
+                Refused::Timeout => "queue_timeout",
+                Refused::Unavailable { .. } => "backend_unavailable",
+                Refused::RateLimited { .. } => "rate_ceiling",
+                Refused::RetryBudgetExhausted => "retry_budget_exhausted",
+            },
+            SessionFailure::RequestsExhausted => "requests_exhausted",
+            SessionFailure::Ended => "session_ended",
+            SessionFailure::CleanRetryUnavailable => "clean_retry_unavailable",
+            SessionFailure::AnswerRetryUnavailable => "answer_retry_unavailable",
+            SessionFailure::Model(model) => model.code.as_str(),
+        }
+    }
 }
 
 fn refunded(failure: SessionFailure) -> SessionError {
@@ -273,6 +295,9 @@ impl<P: LlmProvider> ModelClient<P> {
             answer_retry_used: false,
             ended: false,
             last_sent: None,
+            last_reservation: None,
+            overrun: None,
+            over_budget: None,
             request_ids: Vec::new(),
             id: self.next_id(CallKind::Chat),
         })
@@ -346,6 +371,9 @@ impl<P: LlmProvider> ModelClient<P> {
             answer_retry_used: false,
             ended: false,
             last_sent: None,
+            last_reservation: None,
+            overrun: None,
+            over_budget: None,
             request_ids: Vec::new(),
             id: self.next_id(CallKind::Extraction),
         })
@@ -419,6 +447,9 @@ impl<P: LlmProvider> ModelClient<P> {
             answer_retry_used: true,
             ended: false,
             last_sent: None,
+            last_reservation: None,
+            overrun: None,
+            over_budget: None,
             request_ids: Vec::new(),
             id: self.next_id(CallKind::Rewrite),
         })
@@ -458,6 +489,12 @@ pub struct Session<'c, P> {
     answer_retry_used: bool,
     ended: bool,
     last_sent: Option<SentRequest>,
+    /// The token reservation of the last request admitted.
+    last_reservation: Option<u32>,
+    /// The last reply refused for exceeding its reservation (diagnostics only).
+    overrun: Option<CompletionResponse>,
+    /// The call budget the last reservation exceeded (nothing was sent).
+    over_budget: Option<u32>,
     /// Every `x-request-id` sent, in order (retries and requeues included).
     request_ids: Vec<String>,
     id: String,
@@ -483,6 +520,24 @@ impl<P: LlmProvider> Session<'_, P> {
     /// What the last request this session sent carried (alias, effort).
     pub fn last_sent(&self) -> Option<&SentRequest> {
         self.last_sent.as_ref()
+    }
+
+    /// The token reservation (prompt estimate + `max_tokens`) the last
+    /// admitted request was checked against.
+    pub fn last_reservation(&self) -> Option<u32> {
+        self.last_reservation
+    }
+
+    /// The last reply the runner refused because its reported usage exceeded
+    /// the reservation (`budget_exceeded`); for logs, never for answers.
+    pub fn overrun(&self) -> Option<&CompletionResponse> {
+        self.overrun.as_ref()
+    }
+
+    /// The call token budget the last reservation exceeded, when the runner
+    /// refused it before sending (`budget_exceeded`, `attempt-reservation`).
+    pub fn over_budget(&self) -> Option<u32> {
+        self.over_budget
     }
 
     pub fn max_requests(&self) -> u32 {
@@ -612,6 +667,12 @@ impl<P: LlmProvider> Session<'_, P> {
             let result = self.client.runner.run(request, &mut gate).await;
             if let Some(sent) = gate.take_sent() {
                 self.last_sent = Some(sent);
+            }
+            let measured = gate.take_measured();
+            if measured.reservation.is_some() {
+                self.last_reservation = measured.reservation;
+                self.overrun = measured.overrun;
+                self.over_budget = measured.budget;
             }
             drop(gate);
             let failure = match result {

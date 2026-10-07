@@ -54,6 +54,7 @@
     extraction: () => import('./extractions/ExtractionPage.svelte'),
     chat: loadChat,
     'chat-interaction': loadChat,
+    rewrites: () => import('./rewrites/RewritesPage.svelte'),
     limits: () => import('./limits/LimitsPage.svelte'),
     members: () => import('./members/MembersPage.svelte'),
     reminders: () => import('./reminders/RemindersPage.svelte'),
@@ -238,6 +239,15 @@
           // As Chat: a pick on a phone pushes an entry, so Back closes the call.
           onselect: (search: string, open: boolean) =>
             router.go(`/extractions${search}`, { replace: !open, state: open ? { extractDetail: true } : null }),
+        };
+      case 'rewrites':
+        return {
+          store,
+          search: router.search,
+          onsearch: (search: string) => router.go(`/rewrites${search}`, { replace: true }),
+          // As Extractions: a pick on a phone pushes an entry, so Back closes the attempt.
+          onselect: (search: string, open: boolean) =>
+            router.go(`/rewrites${search}`, { replace: !open, state: open ? { rewriteDetail: true } : null }),
         };
       case 'config':
         return {

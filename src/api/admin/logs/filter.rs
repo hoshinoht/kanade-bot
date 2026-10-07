@@ -1,8 +1,8 @@
 //! Log filters from the query string. Every refusal is `422 invalid_filter`:
-//! an unknown, repeated or undecodable key, an unknown outcome, a malformed
-//! or inverted date range, a `min_ms` that is not whole milliseconds, or a
-//! Chat-only filter on Extractions. Empty values mean "not set" (the mock's
-//! rule).
+//! an unknown, repeated or undecodable key, an unknown outcome, kind, stage
+//! or verdict, a malformed or inverted date range, a `min_ms` that is not
+//! whole milliseconds, or a Chat-only filter on Extractions. Empty values
+//! mean "not set" (the mock's rule).
 
 use axum::http::{StatusCode, Uri};
 use chrono::{DateTime, Days, NaiveDate, NaiveTime, TimeZone, Utc};
@@ -11,11 +11,15 @@ use chrono_tz::Tz;
 use super::super::{history::parse::date, write::Refusal};
 use crate::{
     api::auth::wire,
-    domain::model_log::{ChatFilter, ChatOutcome, ExtractionFilter, ExtractionOutcome, MAX_PAGE},
+    domain::model_log::{
+        ChatFilter, ChatOutcome, ExtractionFilter, ExtractionOutcome, MAX_PAGE, REWRITE_VERDICTS,
+        RewriteFilter, RewriteKind, RewriteStage,
+    },
 };
 
 const COMMON: [&str; 7] = ["model", "from", "to", "outcome", "channel", "member", "q"];
 const CHAT_ONLY: [&str; 2] = ["tool", "min_ms"];
+const REWRITE_KEYS: [&str; 7] = ["model", "from", "to", "kind", "stage", "verdict", "q"];
 
 pub fn invalid(message: impl Into<String>) -> Refusal {
     Refusal::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid_filter", message)
@@ -29,7 +33,8 @@ struct Query {
 }
 
 impl Query {
-    fn read(uri: &Uri, chat: bool) -> Result<Self, Refusal> {
+    /// Every pair, decoded; a pair that does not decode refuses the whole query.
+    fn pairs(uri: &Uri) -> Result<Vec<(String, String)>, Refusal> {
         let pairs = wire::query_pairs(uri.query());
         let sent = uri.query().map_or(0, |query| {
             query.split('&').filter(|pair| !pair.is_empty()).count()
@@ -37,6 +42,30 @@ impl Query {
         if pairs.len() != sent {
             return Err(invalid("A filter could not be read."));
         }
+        Ok(pairs)
+    }
+
+    fn once(pairs: &[(String, String)], index: usize, key: &str) -> Result<(), Refusal> {
+        if pairs[..index].iter().any(|(earlier, _)| earlier == key) {
+            return Err(invalid(format!("Send “{key}” once.")));
+        }
+        Ok(())
+    }
+
+    /// The Rewrites log's keys only.
+    fn rewrites(uri: &Uri) -> Result<Self, Refusal> {
+        let pairs = Self::pairs(uri)?;
+        for (index, (key, _)) in pairs.iter().enumerate() {
+            if !REWRITE_KEYS.contains(&key.as_str()) {
+                return Err(invalid(format!("Unknown filter “{key}”.")));
+            }
+            Self::once(&pairs, index, key)?;
+        }
+        Ok(Self { pairs })
+    }
+
+    fn read(uri: &Uri, chat: bool) -> Result<Self, Refusal> {
+        let pairs = Self::pairs(uri)?;
         for (index, (key, value)) in pairs.iter().enumerate() {
             if CHAT_ONLY.contains(&key.as_str()) && !chat {
                 if value.trim().is_empty() {
@@ -47,9 +76,7 @@ impl Query {
             if !COMMON.contains(&key.as_str()) && !CHAT_ONLY.contains(&key.as_str()) {
                 return Err(invalid(format!("Unknown filter “{key}”.")));
             }
-            if pairs[..index].iter().any(|(earlier, _)| earlier == key) {
-                return Err(invalid(format!("Send “{key}” once.")));
-            }
+            Self::once(&pairs, index, key)?;
         }
         Ok(Self { pairs })
     }
@@ -63,16 +90,26 @@ impl Query {
     }
 
     fn outcomes<T>(&self, parse: impl Fn(&str) -> Option<T>) -> Result<Vec<T>, Refusal> {
-        let Some(list) = self.get("outcome") else {
+        self.list("outcome", parse)
+    }
+
+    /// A comma-separated `key`, each value parsed (any of).
+    fn list<T>(&self, key: &str, parse: impl Fn(&str) -> Option<T>) -> Result<Vec<T>, Refusal> {
+        let Some(list) = self.get(key) else {
             return Ok(Vec::new());
         };
         list.split(',')
             .map(str::trim)
-            .filter(|outcome| !outcome.is_empty())
-            .map(|outcome| {
-                parse(outcome).ok_or_else(|| invalid(format!("Unknown outcome “{outcome}”.")))
-            })
+            .filter(|value| !value.is_empty())
+            .map(|value| parse(value).ok_or_else(|| invalid(format!("Unknown {key} “{value}”."))))
             .collect()
+    }
+
+    /// One `key` value, parsed.
+    fn one<T>(&self, key: &str, parse: impl Fn(&str) -> Option<T>) -> Result<Option<T>, Refusal> {
+        self.get(key)
+            .map(|value| parse(&value).ok_or_else(|| invalid(format!("Unknown {key} “{value}”."))))
+            .transpose()
     }
 
     /// `from` and `to` as `[from 00:00, day after to 00:00)` in the guild zone.
@@ -161,6 +198,26 @@ pub fn chats(uri: &Uri, zone: Tz) -> Result<ChatFilter, Refusal> {
         q: query.get("q"),
         tool: query.get("tool"),
         min_ms: query.min_ms()?,
+        cursor: None,
+        limit: MAX_PAGE,
+    })
+}
+
+pub fn rewrites(uri: &Uri, zone: Tz) -> Result<RewriteFilter, Refusal> {
+    let query = Query::rewrites(uri)?;
+    let (from, to) = query.range(zone)?;
+    Ok(RewriteFilter {
+        model: query.get("model"),
+        from,
+        to,
+        kind: query.one("kind", RewriteKind::parse)?,
+        stage: query.one("stage", RewriteStage::parse)?,
+        verdicts: query.list("verdict", |verdict| {
+            REWRITE_VERDICTS
+                .contains(&verdict)
+                .then(|| verdict.to_owned())
+        })?,
+        q: query.get("q"),
         cursor: None,
         limit: MAX_PAGE,
     })

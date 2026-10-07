@@ -11,7 +11,7 @@ use crate::{
     api::dto::config::CapacityCheck,
     domain::settings::{ContextSettings, MAX_CONTEXT_TOKENS, Models, Reasoning, RoleModel},
     infrastructure::llm::{
-        Effort,
+        CALL_TOKEN_BUDGET, Effort, PROMPT_FLOOR_TOKENS, RESERVE_LIMIT,
         governor::Role as LiveRole,
         setup::{CapacityGroup, CatalogModel, CatalogSnapshot, resolve_context},
     },
@@ -58,6 +58,12 @@ pub fn validate_context(
         if !valid(role.reserve) || role.cap.is_some_and(|cap| !valid(cap)) {
             return Err(PatchError::invalid(format!(
                 "models.context.{name} reserve and cap must be 1..=131072 tokens."
+            )));
+        }
+        if role.reserve >= RESERVE_LIMIT {
+            return Err(PatchError::invalid(format!(
+                "The {name} reserve ({}) must be below {RESERVE_LIMIT}: each call's token budget is {CALL_TOKEN_BUDGET} and at least {PROMPT_FLOOR_TOKENS} of it stays for the prompt.",
+                role.reserve
             )));
         }
     }

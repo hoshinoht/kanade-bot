@@ -1,6 +1,6 @@
 //! `ModelLogStore` over migration 0007: the message cache, extraction and
 //! chat logs with their filter queries, rescan jobs, allowance overrides and
-//! self-service tips. Every statement is constant SQL with bound
+//! self-service tips; `RewriteLogStore` over 0027. Every statement is constant SQL with bound
 //! parameters; writes take one `BEGIN IMMEDIATE` each.
 
 mod chat;
@@ -11,6 +11,7 @@ mod messages;
 mod plans;
 mod prune;
 mod refresh;
+mod rewrites;
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -23,7 +24,7 @@ use super::schedule::store_error;
 use crate::domain::model_log::{
     AllowanceOverride, ChatFilter, ChatInteraction, ExtractionFilter, ExtractionLog, LogFacets,
     LogPage, MaskedTurn, MessageUpsert, ModelLogStore, PRUNE_BATCH, PruneCounts, ReadMessage,
-    RescanJob, WatchedMessage,
+    RescanJob, RewriteFacets, RewriteFilter, RewriteLog, RewriteLogStore, WatchedMessage,
 };
 use crate::domain::scheduler::StoreError;
 use crate::infrastructure::store::Written;
@@ -218,11 +219,13 @@ impl ModelLogStore for SqliteStore {
             total.chats += done.chats;
             total.messages += done.messages;
             total.notices += done.notices;
+            total.rewrites += done.rewrites;
             let full = u64::from(PRUNE_BATCH);
             if done.extractions < full
                 && done.chats < full
                 && done.messages < full
                 && done.notices < full
+                && done.rewrites < full
             {
                 return Ok(total);
             }
@@ -276,5 +279,28 @@ impl ModelLogStore for SqliteStore {
 
     async fn release_tip(&self, member_id: &str, week: DateTime<Utc>) -> Result<bool, StoreError> {
         write_txn!(self, tx, jobs::release_tip(&mut tx, member_id, &week))
+    }
+}
+
+impl RewriteLogStore for SqliteStore {
+    async fn record_rewrite(&self, log: RewriteLog) -> Result<(), StoreError> {
+        log.check_shape()?;
+        let result = write_txn!(self, tx, rewrites::insert(&mut tx, &log));
+        self.written().after(Written::Rewrite, result)
+    }
+
+    async fn load_rewrite(&self, id: &str) -> Result<Option<RewriteLog>, StoreError> {
+        read_txn!(self, tx, rewrites::load(&mut tx, id))
+    }
+
+    async fn list_rewrites(
+        &self,
+        filter: &RewriteFilter,
+    ) -> Result<LogPage<RewriteLog>, StoreError> {
+        read_txn!(self, tx, rewrites::list(&mut tx, filter))
+    }
+
+    async fn rewrite_facets(&self) -> Result<RewriteFacets, StoreError> {
+        read_txn!(self, tx, rewrites::facets(&mut tx))
     }
 }

@@ -67,6 +67,8 @@ Pointers are `<file>#/$defs/<Name>`.
 | `POST /api/admin/rescan`, `GET`/`DELETE /api/admin/rescan/{id}` | `extractions.json#/$defs/RescanJob` |
 | `GET /api/admin/chat?…` | `chat.json#/$defs/Chat` (422 `invalid_filter`) |
 | `GET /api/admin/chat/{id}` | `chat.json#/$defs/ChatTurn` |
+| `GET /api/admin/rewrites?…` | `rewrites.json#/$defs/Rewrites` (422 `invalid_filter`) |
+| `GET /api/admin/rewrites/{id}` | `rewrites.json#/$defs/Rewrite` |
 | `GET /api/admin/limits` | `limits.json#/$defs/Limits` |
 | `DELETE /api/admin/limits/windows/{id}` | `common.json#/$defs/Message` |
 | `GET`/`PATCH /api/admin/config` | `config.json#/$defs/ConfigView` (PATCH may add `notices`) |
@@ -77,7 +79,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/admin/history/{seq}` | `history.json#/$defs/ChangeRecord` |
 | `POST /api/admin/history/revert`, `/restore-week`, `/revert-actor` | `history.json#/$defs/RevertPlan` |
 | `GET /api/admin/history/checkpoints` | `history.json#/$defs/Checkpoints` |
-| `GET /api/admin/events` | `text/event-stream`, not JSON: a `ready` event `{seq, boot}` (`EventReady`; a new `boot` means the server restarted), then one message per change `{topic, seq}` (`EventHint`, topics `schedule`, `inbox`, `chat`, `extraction`, `delivery`, `settings`, `rescan`; no data) and `: keep-alive` comments; `429 too_many_streams` at the connection cap |
+| `GET /api/admin/events` | `text/event-stream`, not JSON: a `ready` event `{seq, boot}` (`EventReady`; a new `boot` means the server restarted), then one message per change `{topic, seq}` (`EventHint`, topics `schedule`, `inbox`, `chat`, `extraction`, `rewrite`, `delivery`, `settings`, `rescan`; no data) and `: keep-alive` comments; `429 too_many_streams` at the connection cap |
 | any non-2xx | `error.json#/$defs/ApiError` |
 
 ## Files
@@ -85,8 +87,8 @@ Pointers are `<file>#/$defs/<Name>`.
 `common.json` (enums, `Boss`, `Tally`, `Member`, `Channel`, `WeekDay`, `Head`,
 `Message`, `ReloadResult`, `LogFacets`), `error.json`, `identity.json`,
 `week.json`, `members.json`, `fixed.json`, `bosses.json`, `reminders.json`,
-`inbox.json`, `extractions.json`, `chat.json`, `limits.json`, `history.json`,
-`config.json`.
+`inbox.json`, `extractions.json`, `chat.json`, `rewrites.json`, `limits.json`,
+`history.json`, `config.json`.
 
 ## Changes since A0
 
@@ -128,3 +130,6 @@ Pointers are `<file>#/$defs/<Name>`.
 - Sign-in strip: `week.json#/$defs/Tonight` for `GET /api/admin/auth/tonight`
   (owner decision 2026-10-04): today's next run as time, boss names and the
   aggregate tally only, answered without a session.
+- Rewrites log: `rewrites.json` (`Rewrites`, `Rewrite`) for
+  `GET /api/admin/rewrites` and `/api/admin/rewrites/{id}`; the events stream
+  adds topic `rewrite`.

@@ -449,6 +449,17 @@ pub async fn chat_turn(State(app): State<App>, Path(id): Path<String>) -> Respon
     outcome(app.store.lock().await.chat_turn(&id))
 }
 
+pub async fn rewrites(
+    State(app): State<App>,
+    Query(q): Query<std::collections::BTreeMap<String, String>>,
+) -> Response {
+    outcome(app.store.lock().await.rewrites(&q))
+}
+
+pub async fn rewrite(State(app): State<App>, Path(id): Path<String>) -> Response {
+    outcome(app.store.lock().await.rewrite(&id))
+}
+
 pub async fn limits(State(app): State<App>) -> Response {
     Json(app.store.lock().await.limits()).into_response()
 }

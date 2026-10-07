@@ -8,6 +8,7 @@ use super::{
     safety::{self, Hit, WordFilter},
 };
 use crate::chat::persona::{NUDGE_FIELDS, check_nudge_line};
+use crate::infrastructure::llm::{Effort, Usage};
 
 /// User decision: the rewrite gets ~2 s, then the seed line is used.
 pub const REWRITE_DEADLINE: Duration = Duration::from_secs(2);
@@ -27,6 +28,50 @@ pub enum RewriteFailure {
     Misconfigured,
 }
 
+/// What the governed layer saw of one rewrite call, for the Rewrites log.
+/// Every field is optional: a call refused before sending has only `code`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RewriteDetail {
+    /// The specific failure (`SessionError::code`, `empty_reply`,
+    /// `no_route`, `shutdown`); `None` on success.
+    pub code: Option<&'static str>,
+    /// The alias and reasoning effort as sent (else as requested).
+    pub alias: Option<String>,
+    pub effort: Option<Effort>,
+    /// Provider-reported usage, also for a reply refused for exceeding
+    /// `reservation`.
+    pub usage: Option<Usage>,
+    pub reasoning_tokens: Option<u64>,
+    /// The model's raw reply text and its reasoning text.
+    pub reply: Option<String>,
+    pub reasoning: Option<String>,
+    /// The runner's token reservation (prompt estimate + `max_tokens`).
+    pub reservation: Option<u32>,
+    /// The call token budget the reservation exceeded, when the runner
+    /// refused it before sending.
+    pub budget: Option<u32>,
+    pub max_output_tokens: Option<u32>,
+    /// The `x-request-id` the request carried.
+    pub request_id: Option<String>,
+}
+
+/// A rewrite's result with its [`RewriteDetail`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RewriteOutcome {
+    pub result: Result<String, RewriteFailure>,
+    pub detail: RewriteDetail,
+}
+
+impl RewriteOutcome {
+    /// A result with nothing known about the call.
+    pub fn plain(result: Result<String, RewriteFailure>) -> Self {
+        Self {
+            result,
+            detail: RewriteDetail::default(),
+        }
+    }
+}
+
 /// A governed one-line rewrite. Implementations take the `rewrite` role's
 /// permit with `try_acquire` only (never queue), send at most one request with
 /// no retries, and give up by `deadline`; the caller also enforces it.
@@ -36,6 +81,17 @@ pub trait NudgeRewriter: Send + Sync {
         prompt: &RewritePrompt,
         deadline: Duration,
     ) -> impl Future<Output = Result<String, RewriteFailure>> + Send;
+
+    /// As [`Self::rewrite`], with what the call reported. Wrappers must
+    /// forward it so no layer drops the detail.
+    fn rewrite_detailed(
+        &self,
+        prompt: &RewritePrompt,
+        deadline: Duration,
+    ) -> impl Future<Output = RewriteOutcome> + Send {
+        let call = self.rewrite(prompt, deadline);
+        async move { RewriteOutcome::plain(call.await) }
+    }
 }
 
 impl<T: NudgeRewriter + ?Sized> NudgeRewriter for &T {
@@ -45,6 +101,14 @@ impl<T: NudgeRewriter + ?Sized> NudgeRewriter for &T {
         deadline: Duration,
     ) -> impl Future<Output = Result<String, RewriteFailure>> + Send {
         (**self).rewrite(prompt, deadline)
+    }
+
+    fn rewrite_detailed(
+        &self,
+        prompt: &RewritePrompt,
+        deadline: Duration,
+    ) -> impl Future<Output = RewriteOutcome> + Send {
+        (**self).rewrite_detailed(prompt, deadline)
     }
 }
 
@@ -75,6 +139,18 @@ pub enum Rejection {
     /// A deny-listed word (the matched built-in entry, not the line; an
     /// admin-added word reports [`CUSTOM_WORD`]).
     Denied(&'static str),
+}
+
+impl Rejection {
+    /// The gate rule in words, for logs and `/debug` (never the line).
+    pub fn rule(self) -> &'static str {
+        match self {
+            Self::LineRules => "line rules",
+            Self::Placeholders => "placeholders",
+            Self::Markup => "markup",
+            Self::Denied(_) => "deny-listed word",
+        }
+    }
 }
 
 /// What [`Rejection::Denied`] names for an admin-added word.

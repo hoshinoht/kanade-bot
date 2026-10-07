@@ -2,7 +2,7 @@ import { ADMIN, expect, test, HEADING, choose } from './support';
 
 const SECTIONS = {
   Schedule: ['Week', 'Fixed', 'Bosses'],
-  Kanade: ['Inbox', 'Extractions', 'Chat', 'Limits'],
+  Kanade: ['Inbox', 'Extractions', 'Chat', 'Rewrites', 'Limits'],
   Operate: ['Members', 'Reminders', 'Config', 'History'],
 };
 
@@ -13,7 +13,7 @@ test('admin: grouped nav has every v4 section as a real route', async ({ page })
     const links = nav.getByRole('group', { name: group });
     await expect(links.getByRole('link')).toHaveText(labels.map((l) => new RegExp(`^\\s*${l}`)));
   }
-  for (const label of ['Inbox', 'Extractions', 'Chat', 'Limits']) {
+  for (const label of ['Inbox', 'Extractions', 'Chat', 'Rewrites', 'Limits']) {
     await expect(nav.getByRole('link', { name: new RegExp(`^${label}`) })).toBeVisible();
   }
   await expect(nav.getByRole('link', { name: 'Week' })).toHaveAttribute('aria-current', 'page');
@@ -33,6 +33,7 @@ test('admin: grouped nav has every v4 section as a real route', async ({ page })
     ['Inbox', '9 changes waiting'],
     ['Extractions', '34 model calls'],
     ['Chat', '16 interactions'],
+    ['Rewrites', '8 rewrites'],
     ['Limits', 'gateway is at capacity'],
   ] as const) {
     await nav.getByRole('link', { name: label }).click();
@@ -40,7 +41,7 @@ test('admin: grouped nav has every v4 section as a real route', async ({ page })
   }
 
   await page.goBack();
-  await expect(page).toHaveURL(`${ADMIN}/chat`);
+  await expect(page).toHaveURL(`${ADMIN}/rewrites`);
   // v4's /audit now lands on History.
   await page.goto(`${ADMIN}/audit?sw=off`);
   await expect(page).toHaveURL(`${ADMIN}/history`);

@@ -285,7 +285,12 @@
           "required": ["quiet_mode", "message_style"],
           "properties": {
             "quiet_mode": { "type": "boolean" },
-            "message_style": { "$ref": "#/$defs/MessageStyle" }
+            "message_style": { "$ref": "#/$defs/MessageStyle" },
+            "header_generation_time": {
+              "description": "HH:MM in the guild's zone: when the daily reminder-header rewrite batch runs (default 00:00). Always sent by the server; optional so earlier fixtures stay valid.",
+              "type": "string",
+              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+            }
           }
         },
         "self_service": {

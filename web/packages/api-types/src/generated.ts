@@ -1,7 +1,7 @@
 // Generated from the Rust API DTOs by src/api/ts_bindings.rs; do not edit.
 // Regenerate: KANADE_WRITE_TS=1 cargo test --all-features --lib ts_bindings
 
-import type { ActorKind, Answer, ChangeRecord, ChatOutcome, ChatRoute, ContextSource, Difficulty, DifficultyName, ExtractionOutcome, IdListSource, KnowledgeDoc, MessageStyle, MissionSeries, PingLevel, ProposalKind, Refusal, RowKey, RunStatus, SelfServiceMode, SignInMethod, Surface } from './manual';
+import type { ActorKind, Answer, ChangeRecord, ChatOutcome, ChatRoute, ContextSource, Difficulty, DifficultyName, ExtractionOutcome, IdListSource, KnowledgeDoc, MessageStyle, MissionSeries, PingLevel, ProposalKind, Refusal, RewriteKind, RewriteStage, RewriteVerdict, RowKey, RunStatus, SelfServiceMode, SignInMethod, Surface } from './manual';
 
 /**
  * `common.json#/$defs/Boss`.
@@ -358,7 +358,12 @@ export type Chatbot = { enabled: boolean, configured: boolean, missing_env: Arra
  */
 category_ids: Array<string>, category_ids_source: IdListSource, };
 
-export type Notifications = { quiet_mode: boolean, message_style: MessageStyle, };
+export type Notifications = { quiet_mode: boolean, message_style: MessageStyle, 
+/**
+ * `HH:MM` in the guild's zone: when the daily reminder-header rewrite
+ * batch runs.
+ */
+header_generation_time: string, };
 
 export type SelfServiceSettings = { mode: SelfServiceMode, effective_mode: SelfServiceMode, public_portal: boolean, };
 
@@ -564,6 +569,135 @@ prompt_tokens?: number | null, completion_tokens?: number | null,
  * Provider-reported reasoning tokens over reporting attempts; null = unknown.
  */
 reasoning_tokens?: number | null, };
+
+/**
+ * Every value the filters can offer (all rows, not only the filtered ones).
+ */
+export type RewriteFacets = { models: Array<string>, kinds: Array<string>, stages: Array<string>, verdicts: Array<string>, };
+
+/**
+ * Per model over the listed attempts: how many, how many were accepted,
+ * and their reported usage.
+ */
+export type RewriteSummary = { model: string, count: number, accepted: number, prompt_tokens: number | null, completion_tokens: number | null, reported: number, est_ratio: number | null, };
+
+export type RewriteRow = { id: string, short_id: string, at: string, kind: RewriteKind, stage: RewriteStage, 
+/**
+ * A card key, digest week, `/debug` command or nudge purpose.
+ */
+context: string | null, verdict: RewriteVerdict, 
+/**
+ * The gate rule that refused the line (`rejected` only).
+ */
+rule: string | null, 
+/**
+ * The specific failure: `budget_exceeded`, `busy`, `shutdown`, …
+ */
+code: string | null, latency_ms: number | null, 
+/**
+ * The alias the request named; null when nothing was sent.
+ */
+model: string | null, 
+/**
+ * Reasoning effort as sent.
+ */
+reasoning: string | null, 
+/**
+ * Provider-reported tokens; null = not reported (never 0).
+ */
+prompt_tokens: number | null, completion_tokens: number | null, reasoning_tokens: number | null, 
+/**
+ * The runner's token reservation the reported usage was checked against.
+ */
+reservation: number | null, 
+/**
+ * The call token budget the reservation exceeded when the runner refused
+ * it before sending; null otherwise.
+ */
+budget: number | null, 
+/**
+ * The seed line the model was asked to rewrite.
+ */
+seed: string, 
+/**
+ * The line used (accepted rewrite or seed), placeholders unfilled.
+ */
+line: string | null, };
+
+/**
+ * Query params of `GET /api/admin/rewrites`, all optional and combinable:
+ * `model`, `from`/`to` (guild-local YYYY-MM-DD), `kind`, `stage`,
+ * `verdict` (comma-separated, any of), `q`. Unknown values or malformed
+ * dates: 422 invalid_filter.
+ */
+export type Rewrites = { 
+/**
+ * Per model over the filtered attempts that reached one.
+ */
+summary: Array<RewriteSummary>, rows: Array<RewriteRow>, 
+/**
+ * Rows before filtering.
+ */
+total: number, facets: RewriteFacets, };
+
+export type Rewrite = { 
+/**
+ * The model's raw reply, capped at 8 KiB with a visible marker.
+ */
+reply: string | null, 
+/**
+ * Response-only reasoning text, capped at 64 KiB.
+ */
+reasoning_content: string | null, 
+/**
+ * `max_tokens` as requested.
+ */
+max_output_tokens: number | null, 
+/**
+ * The local prompt estimate: the reservation less `max_tokens`.
+ */
+prompt_estimate: number | null, request_id: string | null, id: string, short_id: string, at: string, kind: RewriteKind, stage: RewriteStage, 
+/**
+ * A card key, digest week, `/debug` command or nudge purpose.
+ */
+context: string | null, verdict: RewriteVerdict, 
+/**
+ * The gate rule that refused the line (`rejected` only).
+ */
+rule: string | null, 
+/**
+ * The specific failure: `budget_exceeded`, `busy`, `shutdown`, …
+ */
+code: string | null, latency_ms: number | null, 
+/**
+ * The alias the request named; null when nothing was sent.
+ */
+model: string | null, 
+/**
+ * Reasoning effort as sent.
+ */
+reasoning: string | null, 
+/**
+ * Provider-reported tokens; null = not reported (never 0).
+ */
+prompt_tokens: number | null, completion_tokens: number | null, reasoning_tokens: number | null, 
+/**
+ * The runner's token reservation the reported usage was checked against.
+ */
+reservation: number | null, 
+/**
+ * The call token budget the reservation exceeded when the runner refused
+ * it before sending; null otherwise.
+ */
+budget: number | null, 
+/**
+ * The seed line the model was asked to rewrite.
+ */
+seed: string, 
+/**
+ * The line used (accepted rewrite or seed), placeholders unfilled.
+ */
+line: string | null, };
 
 export type JobState = "running" | "done" | "cancelled";
 
@@ -1028,7 +1162,7 @@ backups: Array<BackupRow>, };
 /**
  * What kind of data changed.
  */
-export type EventTopic = "schedule" | "inbox" | "chat" | "extraction" | "delivery" | "settings" | "rescan" | "members";
+export type EventTopic = "schedule" | "inbox" | "chat" | "extraction" | "rewrite" | "delivery" | "settings" | "rescan" | "members";
 
 /**
  * The default (`message`) event: one hint. `seq` counts hints since the

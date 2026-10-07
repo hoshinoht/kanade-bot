@@ -387,6 +387,9 @@ fn apply(out: &mut RuntimeSettings, key: &'static str, value: &str) -> Result<()
             out.notifications.message_style = MessageStyle::parse(value)
                 .ok_or_else(|| malformed(key, value, "expected classic or redesigned"))?;
         }
+        keys::HEADER_GENERATION_TIME => {
+            out.notifications.header_generation_time = clock(key, value)?;
+        }
         keys::SELF_SERVICE_MODE => {
             out.self_service.mode = SelfServiceMode::parse(value)
                 .ok_or_else(|| malformed(key, value, "unknown self-service mode"))?;
@@ -479,6 +482,10 @@ pub(super) fn encode(section: &Section) -> Rows {
                 (
                     keys::MESSAGE_STYLE,
                     notifications.message_style.as_str().to_owned(),
+                ),
+                (
+                    keys::HEADER_GENERATION_TIME,
+                    clock_text(notifications.header_generation_time),
                 ),
             ]
         }

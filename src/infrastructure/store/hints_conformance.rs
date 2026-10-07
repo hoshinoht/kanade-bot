@@ -9,7 +9,7 @@ use chrono::{TimeZone, Utc};
 use super::{WriteObserver, Written, conformance, members_conformance, model_log_conformance};
 use crate::domain::{
     members::{MemberStore, PortalEdit},
-    model_log::ModelLogStore,
+    model_log::{ModelLogStore, RewriteLogStore},
     schedule::{Change, ChangeSet},
     scheduler::{ScheduleStore, Scope},
     settings::{SettingsStore, keys},
@@ -18,7 +18,7 @@ use crate::domain::{
 /// Run the checks against `store`, after `observe` installs the hook on it.
 pub async fn run_suite<S>(store: &S, observe: impl FnOnce(&S, WriteObserver) -> bool)
 where
-    S: ScheduleStore + MemberStore + ModelLogStore + SettingsStore,
+    S: ScheduleStore + MemberStore + ModelLogStore + RewriteLogStore + SettingsStore,
 {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&seen);
@@ -100,13 +100,18 @@ where
         .insert_rescan_job(model_log_conformance::rescan("hint-job", at))
         .await
         .unwrap();
+    store
+        .record_rewrite(model_log_conformance::rewrite("hint-rewrite", at))
+        .await
+        .unwrap();
     assert_eq!(
         take(),
         [
             Written::Chat,
             Written::Chat,
             Written::Extraction,
-            Written::Rescan
+            Written::Rescan,
+            Written::Rewrite
         ],
         "log rows"
     );

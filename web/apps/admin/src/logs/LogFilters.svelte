@@ -1,5 +1,5 @@
 <!--
-  The log filter bar (Chat, Extractions): one row under the window's title
+  The log filter bar (Chat, Extractions, Rewrites): one row under the window's title
   bar — "Filters (n)", the active filters as removable chips, Clear — with
   every field in a panel only while open (area budget: rows > filters >
   summary). The text search lives on the title bar, as before.
@@ -7,7 +7,7 @@
 <script lang="ts">
   import type { LogFacets, Member, Week } from '@kanade/api-types';
   import '@kanade/ui/styles/date-picker.scss';
-  import { activeCount, NO_LOG_FILTER, OUTCOME_LABEL, type LogFilter } from './filters';
+  import { activeCount, KIND_LABEL, NO_LOG_FILTER, OUTCOME_LABEL, STAGE_LABEL, type LogFilter } from './filters';
   import { directory, memberLabel } from '../names/directory.svelte';
   import '@kanade/ui/styles/select.scss';
   import { DatePicker, Icon, Select, serverClock, type SelectOption } from '@kanade/ui';
@@ -18,6 +18,7 @@
     members,
     week,
     chat = false,
+    rewrites = null,
     onchange,
   }: {
     filter: LogFilter;
@@ -26,6 +27,8 @@
     week: Week | null;
     /** Chat adds tool used and minimum latency. */
     chat?: boolean;
+    /** Rewrites: kind and stage in place of channel and member; outcomes are verdicts. */
+    rewrites?: { kinds: string[]; stages: string[] } | null;
     onchange: (next: LogFilter) => void;
   } = $props();
   const uid = $props.id();
@@ -57,8 +60,14 @@
   const chips = $derived.by(() => {
     const out: Chip[] = [];
     if (filter.model) out.push({ key: 'model', label: `Model: ${filter.model}`, clear: { model: '' } });
+    if (filter.kind) out.push({ key: 'kind', label: `Kind: ${KIND_LABEL[filter.kind] ?? filter.kind}`, clear: { kind: '' } });
+    if (filter.stage) out.push({ key: 'stage', label: `Stage: ${STAGE_LABEL[filter.stage] ?? filter.stage}`, clear: { stage: '' } });
     if (filter.outcome.length)
-      out.push({ key: 'outcome', label: `Outcome: ${filter.outcome.map((o) => OUTCOME_LABEL[o] ?? o).join(', ')}`, clear: { outcome: [] } });
+      out.push({
+        key: 'outcome',
+        label: `${rewrites ? 'Verdict' : 'Outcome'}: ${filter.outcome.map((o) => OUTCOME_LABEL[o] ?? o).join(', ')}`,
+        clear: { outcome: [] },
+      });
     if (filter.channel) out.push({ key: 'channel', label: `Channel: ${channelName(filter.channel)}`, clear: { channel: '' } });
     if (filter.member) out.push({ key: 'member', label: `Member: ${memberName(filter.member)}`, clear: { member: '' } });
     if (filter.tool) out.push({ key: 'tool', label: `Tool: ${filter.tool}`, clear: { tool: '' } });
@@ -79,6 +88,14 @@
     }),
   ]);
   const toolOptions = $derived<SelectOption[]>([{ value: '', label: 'any tool' }, ...(facets?.tools ?? []).map((t) => ({ value: t, label: t }))]);
+  const kindOptions = $derived<SelectOption[]>([
+    { value: '', label: 'any kind' },
+    ...(rewrites?.kinds ?? []).map((k) => ({ value: k, label: KIND_LABEL[k] ?? k })),
+  ]);
+  const stageOptions = $derived<SelectOption[]>([
+    { value: '', label: 'any stage' },
+    ...(rewrites?.stages ?? []).map((k) => ({ value: k, label: STAGE_LABEL[k] ?? k })),
+  ]);
 
   // Today and the boss week come from the server's clock, never the browser's.
   const clock = $derived(serverClock(week));
@@ -119,8 +136,13 @@
   {#if open}
     <div class="filters logfilters__panel" id="{uid}-panel" role="group" aria-label="Filters">
       <Select size="bar" label="Model" options={modelOptions} value={filter.model} onchange={(model) => set({ model })} noun="models" />
-      <Select size="bar" label="Channel" options={channelOptions} value={filter.channel} onchange={(channel) => set({ channel })} noun="channels" />
-      <Select size="bar" label="Member" options={memberOptions} value={filter.member} onchange={(member) => set({ member })} noun="members" />
+      {#if rewrites}
+        <Select size="bar" label="Kind" options={kindOptions} value={filter.kind} onchange={(kind) => set({ kind })} noun="kinds" />
+        <Select size="bar" label="Stage" options={stageOptions} value={filter.stage} onchange={(stage) => set({ stage })} noun="stages" />
+      {:else}
+        <Select size="bar" label="Channel" options={channelOptions} value={filter.channel} onchange={(channel) => set({ channel })} noun="channels" />
+        <Select size="bar" label="Member" options={memberOptions} value={filter.member} onchange={(member) => set({ member })} noun="members" />
+      {/if}
       {#if chat}
         <Select size="bar" label="Tool used" options={toolOptions} value={filter.tool} onchange={(tool) => set({ tool })} noun="tools" />
         <label class="field"
@@ -129,7 +151,7 @@
         >
       {/if}
       <fieldset class="field logfilters__outcomes">
-        <legend>Outcome (any of)</legend>
+        <legend>{rewrites ? 'Verdict' : 'Outcome'} (any of)</legend>
         {#each facets?.outcomes ?? [] as o (o)}
           <label class="logfilters__outcome"
             ><input type="checkbox" checked={filter.outcome.includes(o)} onchange={(e) => toggleOutcome(o, e.currentTarget.checked)} />

@@ -979,3 +979,94 @@ fn the_rotation_remembers_a_bounded_number_of_channels() {
     assert_eq!(rotation.pick(&recent, &lines), Some("b"));
     assert_eq!(rotation.channels(), MAX_CHANNELS);
 }
+
+/// Every lead-in writes one Rewrites-log row: kind and stage `nudge`, the
+/// member-free purpose and mood as context, the verdict with its gate rule,
+/// and the unfilled line used (no boss, day or time values).
+#[tokio::test(start_paused = true)]
+async fn each_lead_in_logs_one_member_free_rewrite_row() {
+    use kanade::chat::nudge::StoreRewriteSink;
+    use kanade::domain::model_log::{RewriteFilter, RewriteKind, RewriteLogStore, RewriteStage};
+
+    let logs = Arc::new(MemoryScheduleStore::new());
+    let at = utc(20, 12);
+    let fake = GovernedFake::new(
+        governor(),
+        vec![
+            Step::Reply("Ehh, drag {boss} to {day} {time} yourself!"),
+            Step::Reply("**Drag {boss} now**"),
+            Step::Fail,
+        ],
+    );
+    let nudger = Nudger::new(Arc::new(Fixed(0)), &fake).with_log(Arc::new(StoreRewriteSink::new(
+        Arc::clone(&logs),
+        Arc::new(move || at),
+    )));
+    let persona = persona(SEEDS);
+    for _ in 0..3 {
+        nudger.lead_in(&persona, &facts(NudgeMood::Playful)).await;
+    }
+    let mut rows = logs
+        .list_rewrites(&RewriteFilter {
+            limit: 10,
+            ..RewriteFilter::default()
+        })
+        .await
+        .expect("list")
+        .items;
+    assert_eq!(rows.len(), 3, "one row per lead-in");
+    rows.sort_by_key(|row| (row.verdict.clone(), row.line.clone()));
+    let summary: Vec<_> = rows
+        .iter()
+        .map(|row| {
+            (
+                row.kind,
+                row.stage,
+                row.context.as_deref(),
+                row.verdict.as_str(),
+                row.rule.as_deref(),
+                row.reply.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        summary,
+        [
+            (
+                RewriteKind::Nudge,
+                RewriteStage::Nudge,
+                Some("self_service · playful"),
+                "accepted",
+                None,
+                Some("Ehh, drag {boss} to {day} {time} yourself!"),
+            ),
+            (
+                RewriteKind::Nudge,
+                RewriteStage::Nudge,
+                Some("self_service · playful"),
+                "rejected",
+                Some("markup"),
+                Some("**Drag {boss} now**"),
+            ),
+            (
+                RewriteKind::Nudge,
+                RewriteStage::Nudge,
+                Some("self_service · playful"),
+                "unavailable",
+                None,
+                None,
+            ),
+        ]
+    );
+    for row in &rows {
+        let line = row.line.as_deref().expect("line");
+        assert!(row.seed.contains("{boss}"), "{row:?}");
+        for value in ["Hard Lucid", "Sat", "21:00", MEMBER, CHANNEL] {
+            assert!(
+                !line.contains(value) && !row.seed.contains(value),
+                "{value} logged: {row:?}"
+            );
+        }
+        assert_eq!(row.at, at);
+    }
+}

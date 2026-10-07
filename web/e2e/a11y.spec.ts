@@ -180,6 +180,10 @@ const WALK: { name: string; walk: (page: Page) => Promise<void> }[] = [
       await page.goto(`${ADMIN}/chat/c-safe-line?sw=off`);
       await expect(page.getByRole('region', { name: 'Profanity in the reply' })).toBeVisible();
       await serious(page, 'admin chat profanity turn');
+      await page.goto(`${ADMIN}/rewrites?attempt=rw-over&sw=off`);
+      await expect(page.getByRole('complementary', { name: 'Verdict' })).toContainText('budget_exceeded');
+      await page.getByText(/^Reasoning/).click();
+      await serious(page, 'admin rewrites');
       await page.goto(`${ADMIN}/limits?sw=off`);
       await expect(page.getByRole('heading', { level: 3, name: 'gateway' })).toBeVisible();
       await serious(page, 'admin limits');

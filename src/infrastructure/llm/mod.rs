@@ -19,7 +19,10 @@ pub use capabilities::{
     parse_models_list, reasoning_floor, resolve as resolve_capabilities,
 };
 pub use error::{ErrorCode, LlmError};
-pub use execution::{CompletionRunner, ExecutionLimits, RetryPolicy};
+pub use execution::{
+    CALL_TOKEN_BUDGET, CompletionRunner, ExecutionLimits, PROMPT_FLOOR_TOKENS, RESERVE_LIMIT,
+    RetryPolicy,
+};
 #[cfg(any(test, feature = "test-support"))]
 pub use fake::{FakeAction, FakeProvider};
 pub use http::{

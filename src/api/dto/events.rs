@@ -18,6 +18,8 @@ pub enum Topic {
     Chat,
     /// An extraction call was logged.
     Extraction,
+    /// A rewrite attempt was logged.
+    Rewrite,
     /// The delivery tick posted a card.
     Delivery,
     /// A Config section was saved.
@@ -35,6 +37,7 @@ impl From<Written> for Topic {
             Written::Inbox => Self::Inbox,
             Written::Chat => Self::Chat,
             Written::Extraction => Self::Extraction,
+            Written::Rewrite => Self::Rewrite,
             Written::Delivery => Self::Delivery,
             Written::Settings => Self::Settings,
             Written::Rescan => Self::Rescan,

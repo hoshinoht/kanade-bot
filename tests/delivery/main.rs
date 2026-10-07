@@ -21,6 +21,7 @@ mod outbox_policy;
 mod pregen;
 mod proposals;
 mod redesign;
+mod rewrite_log;
 mod scenarios;
 
 // Vector loading, pinned clock/ids and snapshots shared with other targets.

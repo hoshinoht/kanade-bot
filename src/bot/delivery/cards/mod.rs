@@ -34,9 +34,9 @@ pub use countdown::countdown_card;
 pub use day_of::{card_runs, day_of_card};
 pub use digest::{DIGEST_EMPTY, DIGEST_FOOTER, digest_card};
 pub use heading::{
-    COUNTDOWN_PHRASE_SEED, DAY_OF_HEADING_SEED, DIGEST_PHRASE_SEED, HeaderKind, HeadingRewrite,
-    HeadingSource, PersonaSource, PhraseKind, PhraseRejection, Trial, Verdict, accept_phrase,
-    accept_phrase_with, failure_reason, seed_heading,
+    COUNTDOWN_PHRASE_SEED, Chosen, DAY_OF_HEADING_SEED, DIGEST_PHRASE_SEED, HeaderKind,
+    HeadingRewrite, HeadingSource, PersonaSource, PhraseKind, PhraseRejection, Trial, TrialOrigin,
+    Verdict, accept_phrase, accept_phrase_with, failure_reason, seed_heading,
 };
 pub use record::{CardRecord, DAY_OF_KIND, DigestPhraseStore, PostedCard, ReminderCardStore};
 pub use redesign::{DifficultyMarks, StyleSource};

@@ -1,15 +1,27 @@
-//! Reminder header pre-generation: the 12 h horizon, the per-pass cap,
-//! failure retries, the digest's week rules and the disabled default.
+//! Reminder header pre-generation: the daily batch at the configured time
+//! (24 h ahead, no cap), catch-up for cards the batch had not seen, the
+//! startup batch, time changes, busy and failure retries, the digest's week
+//! rules and the disabled default.
 
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use chrono::{DateTime, TimeDelta, Utc};
-use kanade::bot::delivery::cards::{DigestPhraseStore, ReminderCardStore};
+use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc};
+use kanade::bot::delivery::cards::{
+    CardKit, CardRecord, DigestPhraseStore, HeadingRewrite, ReminderCardStore,
+};
 use kanade::bot::delivery::{
-    MAX_ATTEMPTS_PER_KEY, MAX_REWRITES_PER_PASS, PREGEN_DEADLINE, PREGEN_HORIZON, PregenReport,
+    HEADER_HORIZON, HeaderPregen, MAX_ATTEMPTS_PER_KEY, MAX_BUSY_RETRIES, MAX_CATCHUP_PER_TICK,
+    PREGEN_DEADLINE, PregenReport, SEEN_HORIZON,
+};
+use kanade::chat::nudge::{
+    NudgeRewriter, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriter,
+    StoreRewriteSink,
 };
 use kanade::domain::history::Origin;
 use kanade::domain::ids::RandomIds;
+use kanade::domain::model_log::{RewriteFilter, RewriteLogStore, RewriteStage};
 use kanade::domain::notify::{DedupeKey, DeliveryJournal, DeliveryTarget};
 use kanade::domain::schedule::RunStatus;
 use kanade::infrastructure::store::MemoryScheduleStore;
@@ -50,59 +62,303 @@ async fn heading(store: &MemoryScheduleStore, key: &str) -> Option<String> {
         .and_then(|record| record.heading)
 }
 
+/// A worker whose clock and batch time the test moves.
+struct Rig {
+    clock: Arc<Mutex<DateTime<Utc>>>,
+    time: Arc<Mutex<NaiveTime>>,
+    worker: HeaderPregen<MemoryScheduleStore>,
+}
+
+impl Rig {
+    fn new(
+        store: &Arc<MemoryScheduleStore>,
+        cards: &CardKit,
+        at: DateTime<Utc>,
+        time: NaiveTime,
+    ) -> Self {
+        let clock = Arc::new(Mutex::new(at));
+        let batch_time = Arc::new(Mutex::new(time));
+        let now = Arc::clone(&clock);
+        let read = Arc::clone(&batch_time);
+        let worker = HeaderPregen::new(
+            Arc::clone(store),
+            Arc::new(world().roster.clone()),
+            cards.clone(),
+            scenarios::config().policy,
+            Arc::new(move || *now.lock().unwrap()),
+        )
+        .with_time(Arc::new(move || *read.lock().unwrap()));
+        Self {
+            clock,
+            time: batch_time,
+            worker,
+        }
+    }
+
+    fn at(&self, at: DateTime<Utc>) -> &HeaderPregen<MemoryScheduleStore> {
+        *self.clock.lock().unwrap() = at;
+        &self.worker
+    }
+}
+
+/// `hh:mm` in Kuala Lumpur (UTC+8) on `day` September 2026.
+fn kl(day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(2026, 9, day, hour, minute, 0).unwrap() - TimeDelta::hours(8)
+}
+
+fn clock(hour: u32, minute: u32) -> NaiveTime {
+    NaiveTime::from_hms_opt(hour, minute, 0).unwrap()
+}
+
+/// The cards with a rewrite log, so tests can read each row's stage.
+fn logged(rewriter: &Arc<Scripted>, logs: &Arc<MemoryScheduleStore>) -> CardKit {
+    let mut cards = rewriting(rewriter);
+    cards.heading.log = Some(Arc::new(StoreRewriteSink::new(
+        Arc::clone(logs),
+        Arc::new(now),
+    )));
+    cards
+}
+
+async fn stages(logs: &MemoryScheduleStore) -> Vec<(String, RewriteStage)> {
+    let mut rows: Vec<_> = logs
+        .list_rewrites(&RewriteFilter {
+            limit: 100,
+            ..RewriteFilter::default()
+        })
+        .await
+        .expect("list")
+        .items
+        .into_iter()
+        .map(|row| (row.context.unwrap_or_default(), row.stage))
+        .collect();
+    rows.sort();
+    rows
+}
+
 #[test]
 fn the_window_and_budgets_are_pinned() {
-    assert_eq!(PREGEN_HORIZON, TimeDelta::hours(12));
+    assert_eq!(HEADER_HORIZON, TimeDelta::hours(24));
+    assert_eq!(SEEN_HORIZON, TimeDelta::days(8));
     assert_eq!(PREGEN_DEADLINE, std::time::Duration::from_secs(30));
-    assert_eq!(MAX_REWRITES_PER_PASS, 4);
+    assert_eq!(MAX_CATCHUP_PER_TICK, 4);
     assert_eq!(MAX_ATTEMPTS_PER_KEY, 3);
+    assert_eq!(MAX_BUSY_RETRIES, 30);
 }
 
 #[tokio::test]
-async fn only_cards_firing_within_the_horizon_are_pregenerated() {
+async fn the_batch_at_the_configured_time_covers_the_next_24_hours_only() {
     let store = Arc::new(MemoryScheduleStore::new());
-    let world = world();
-    let at = now();
-    let inside = countdown_at(&store, at + PREGEN_HORIZON).await;
-    let outside = countdown_at(&store, at + PREGEN_HORIZON + TimeDelta::minutes(1)).await;
-    let past = countdown_at(&store, at - TimeDelta::minutes(1)).await;
+    let logs = Arc::new(MemoryScheduleStore::new());
+    let batch = kl(10, 21, 0);
+    let soon = countdown_at(&store, batch + TimeDelta::hours(23)).await;
+    let later = countdown_at(&store, batch + TimeDelta::hours(25)).await;
+    let past = countdown_at(&store, batch - TimeDelta::minutes(1)).await;
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
-    let report = pregen(&store, &world, &rewriting(&rewriter), at)
-        .pass()
-        .await;
+    let rig = Rig::new(&store, &logged(&rewriter, &logs), batch, clock(21, 0));
+
+    let report = rig.at(batch).pass().await;
+    assert!(report.batch, "{report:?}");
     assert_eq!(report.stored, 1, "{report:?}");
-    assert_eq!(rewriter.calls(), 1);
-    assert_eq!(heading(&store, &inside).await, Some("Waku waku!".into()));
-    assert_eq!(heading(&store, &outside).await, None);
+    assert_eq!(heading(&store, &soon).await, Some("Waku waku!".into()));
+    assert_eq!(heading(&store, &later).await, None, "25 h ahead");
     assert_eq!(
         heading(&store, &past).await,
         None,
         "due cards are the send's"
     );
+
+    // Within 24 h two hours later, but the batch saw it: the next batch's.
+    let between = rig.at(batch + TimeDelta::hours(2)).pass().await;
+    assert_eq!((between.batch, between.stored), (false, 0));
+    assert_eq!(heading(&store, &later).await, None);
+    let next = rig.at(batch + TimeDelta::days(1)).pass().await;
+    assert_eq!((next.batch, next.stored), (true, 1));
+    assert_eq!(heading(&store, &later).await, Some("Waku waku!".into()));
+    assert_eq!(rewriter.calls(), 2);
+    assert_eq!(
+        stages(&logs).await,
+        [(later, RewriteStage::Batch), (soon, RewriteStage::Batch)]
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+    );
 }
 
 #[tokio::test]
-async fn each_pass_rewrites_at_most_its_cap_earliest_first() {
+async fn catch_up_rewrites_only_cards_the_last_batch_had_not_seen() {
     let store = Arc::new(MemoryScheduleStore::new());
-    let world = world();
+    let logs = Arc::new(MemoryScheduleStore::new());
+    let batch = kl(10, 3, 0);
+    let known = countdown_at(&store, batch + TimeDelta::hours(30)).await;
+    let rewriter = Scripted::new(Script::Reply("Waku waku!"));
+    let rig = Rig::new(&store, &logged(&rewriter, &logs), batch, clock(3, 0));
+    assert!(rig.at(batch).pass().await.batch);
+    // A run added after the batch, firing in 5 h: caught up at once.
+    let added = countdown_at(&store, batch + TimeDelta::hours(6)).await;
+    let tick = rig.at(batch + TimeDelta::hours(1)).pass().await;
+    assert_eq!((tick.batch, tick.stored), (false, 1));
+    assert_eq!(heading(&store, &added).await, Some("Waku waku!".into()));
+    // The card the batch saw 30 h out waits for the next batch even once due.
+    let later = rig.at(batch + TimeDelta::hours(7)).pass().await;
+    assert_eq!((later.batch, later.stored), (false, 0));
+    assert_eq!(heading(&store, &known).await, None);
+    assert_eq!(stages(&logs).await, [(added, RewriteStage::Catchup)]);
+}
+
+#[tokio::test]
+async fn a_start_after_the_days_batch_time_runs_a_batch_at_once() {
+    let store = Arc::new(MemoryScheduleStore::new());
+    let key = countdown_at(&store, kl(10, 22, 0)).await;
+    let rewriter = Scripted::new(Script::Reply("Waku waku!"));
+    let cards = rewriting(&rewriter);
+    // 09:00 has passed at 20:00: this process has run no batch yet.
+    let missed = Rig::new(&store, &cards, kl(10, 20, 0), clock(9, 0));
+    let report = missed.worker.pass().await;
+    assert_eq!((report.batch, report.stored), (true, 1));
+    assert_eq!(heading(&store, &key).await, Some("Waku waku!".into()));
+    assert!(!missed.worker.pass().await.batch, "once a day");
+    // 21:00 has not: no batch until then.
+    let ahead = Rig::new(&store, &cards, kl(10, 20, 0), clock(21, 0));
+    assert!(!ahead.worker.pass().await.batch);
+    assert!(ahead.at(kl(10, 21, 0)).pass().await.batch);
+}
+
+#[tokio::test]
+async fn a_changed_time_applies_from_its_next_occurrence() {
+    let store = Arc::new(MemoryScheduleStore::new());
+    let rewriter = Scripted::new(Script::Reply("Waku waku!"));
+    let rig = Rig::new(&store, &rewriting(&rewriter), kl(10, 20, 0), NaiveTime::MIN);
+    assert!(rig.worker.pass().await.batch, "00:00 has passed today");
+    // Moved to 19:00, already past today: tomorrow's 19:00 is the next.
+    *rig.time.lock().unwrap() = clock(19, 0);
+    assert!(!rig.at(kl(10, 20, 1)).pass().await.batch);
+    assert!(!rig.at(kl(11, 18, 59)).pass().await.batch);
+    assert!(rig.at(kl(11, 19, 0)).pass().await.batch);
+    // Moved to 22:00 at 20:00: tonight's 22:00 is the next.
+    *rig.time.lock().unwrap() = clock(22, 0);
+    assert!(!rig.at(kl(11, 20, 0)).pass().await.batch);
+    assert!(rig.at(kl(11, 22, 0)).pass().await.batch);
+    assert!(!rig.at(kl(11, 23, 0)).pass().await.batch);
+}
+
+#[tokio::test]
+async fn a_batch_has_no_cap_but_catch_up_does() {
+    let store = Arc::new(MemoryScheduleStore::new());
     let mut keys = Vec::new();
     for hour in 1..=6 {
-        keys.push(countdown_at(&store, now() + TimeDelta::hours(hour)).await);
+        keys.push(countdown_at(&store, kl(10, 21, 0) + TimeDelta::hours(hour)).await);
     }
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
-    let worker = pregen(&store, &world, &rewriting(&rewriter), now());
-    let first = worker.pass().await;
-    assert_eq!((first.stored, first.deferred), (MAX_REWRITES_PER_PASS, 2));
-    for key in &keys[..4] {
+    let rig = Rig::new(&store, &rewriting(&rewriter), kl(10, 21, 0), clock(21, 0));
+    let batch = rig.worker.pass().await;
+    assert_eq!((batch.batch, batch.stored, batch.deferred), (true, 6, 0));
+    for key in &keys {
         assert!(heading(&store, key).await.is_some());
     }
-    for key in &keys[4..] {
-        assert_eq!(heading(&store, key).await, None);
+    // Six runs added after the batch: four per catch-up tick, earliest first.
+    let mut added = Vec::new();
+    for hour in 1..=6 {
+        added.push(countdown_at(&store, kl(10, 21, 30) + TimeDelta::hours(hour)).await);
     }
-    let second = worker.pass().await;
+    let first = rig.at(kl(10, 21, 1)).pass().await;
+    assert_eq!((first.stored, first.deferred), (MAX_CATCHUP_PER_TICK, 2));
+    for key in &added[..4] {
+        assert!(heading(&store, key).await.is_some());
+    }
+    let second = rig.at(kl(10, 21, 2)).pass().await;
     assert_eq!((second.stored, second.deferred), (2, 0));
-    assert_eq!(worker.pass().await, PregenReport::default(), "nothing left");
-    assert_eq!(rewriter.calls(), 6);
+    assert_eq!(
+        rig.at(kl(10, 21, 3)).pass().await,
+        PregenReport::default(),
+        "nothing left"
+    );
+    assert_eq!(rewriter.calls(), 12);
+}
+
+/// Busy the first `busy` calls (a governor refusal), then a valid phrase.
+struct Busy {
+    busy: usize,
+    calls: AtomicUsize,
+}
+
+impl NudgeRewriter for Busy {
+    async fn rewrite(
+        &self,
+        prompt: &RewritePrompt,
+        deadline: Duration,
+    ) -> Result<String, RewriteFailure> {
+        self.rewrite_detailed(prompt, deadline).await.result
+    }
+
+    async fn rewrite_detailed(&self, _: &RewritePrompt, _: Duration) -> RewriteOutcome {
+        if self.calls.fetch_add(1, Ordering::SeqCst) < self.busy {
+            return RewriteOutcome {
+                result: Err(RewriteFailure::Unavailable),
+                detail: RewriteDetail {
+                    code: Some("busy"),
+                    ..RewriteDetail::default()
+                },
+            };
+        }
+        RewriteOutcome::plain(Ok("Waku waku!".into()))
+    }
+}
+
+#[tokio::test]
+async fn a_busy_permit_retries_on_later_ticks_without_spending_attempts() {
+    let store = Arc::new(MemoryScheduleStore::new());
+    let key = countdown_at(&store, kl(10, 23, 0)).await;
+    let busy = Arc::new(Busy {
+        busy: MAX_ATTEMPTS_PER_KEY as usize + 1,
+        calls: AtomicUsize::new(0),
+    });
+    let cards = CardKit {
+        heading: HeadingRewrite {
+            rewriter: Some(SharedRewriter(busy.clone())),
+            ..rewriting(&Scripted::new(Script::Fail)).heading
+        },
+        ..kit(None)
+    };
+    let rig = Rig::new(&store, &cards, kl(10, 21, 0), clock(21, 0));
+    let first = rig.worker.pass().await;
+    assert_eq!((first.batch, first.failed), (true, 1));
+    for minute in 1..=MAX_ATTEMPTS_PER_KEY + 1 {
+        let retry = rig.at(kl(10, 21, minute)).pass().await;
+        assert!(!retry.batch);
+        assert_eq!(retry.failed + retry.stored, 1, "retried every tick");
+    }
+    assert_eq!(heading(&store, &key).await, Some("Waku waku!".into()));
+    assert_eq!(
+        busy.calls.load(Ordering::SeqCst),
+        MAX_ATTEMPTS_PER_KEY as usize + 2
+    );
+}
+
+#[tokio::test]
+async fn a_stored_line_is_never_rewritten() {
+    let store = Arc::new(MemoryScheduleStore::new());
+    let key = countdown_at(&store, kl(10, 23, 0)).await;
+    store
+        .save_card_record(
+            &key,
+            &CardRecord {
+                kind: "countdown_15".into(),
+                heading: Some("Onward!".into()),
+            },
+            now(),
+        )
+        .await
+        .expect("seed stored by a send");
+    let rewriter = Scripted::new(Script::Reply("Waku waku!"));
+    let rig = Rig::new(&store, &rewriting(&rewriter), kl(10, 21, 0), clock(21, 0));
+    assert!(rig.worker.pass().await.batch);
+    *rig.time.lock().unwrap() = clock(21, 30);
+    rig.at(kl(10, 21, 30)).pass().await;
+    rig.at(kl(10, 21, 31)).pass().await;
+    assert_eq!(rewriter.calls(), 0);
+    assert_eq!(heading(&store, &key).await, Some("Onward!".into()));
 }
 
 #[tokio::test(start_paused = true)]
@@ -186,7 +442,7 @@ async fn the_digest_phrase_is_pregenerated_only_for_an_unposted_coming_week() {
     let world = world();
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
     let cards = rewriting(&rewriter);
-    let early = week() - PREGEN_HORIZON - TimeDelta::minutes(1);
+    let early = week() - HEADER_HORIZON - TimeDelta::minutes(1);
     assert_eq!(pregen(&store, &world, &cards, early).pass().await.stored, 0);
     assert_eq!(
         pregen(&store, &world, &cards, before_reset)
@@ -218,7 +474,10 @@ async fn the_digest_phrase_is_pregenerated_only_for_an_unposted_coming_week() {
     for store in [legacy, marked] {
         assert_eq!(
             pregen(&store, &world, &cards, before_reset).pass().await,
-            PregenReport::default()
+            PregenReport {
+                batch: true,
+                ..PregenReport::default()
+            }
         );
         assert_eq!(
             store

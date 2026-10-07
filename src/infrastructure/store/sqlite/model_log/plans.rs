@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use sqlx::{Connection, Row, SqliteConnection};
 
-use super::{chat, extractions, messages, prune};
+use super::{chat, extractions, messages, prune, rewrites};
 
 async fn schema() -> SqliteConnection {
     let mut conn = SqliteConnection::connect("sqlite::memory:")
@@ -34,6 +34,7 @@ fn statements() -> Vec<String> {
         extractions::list_sql(true),
         chat::list_sql(),
         chat::rounds_sql(),
+        rewrites::list_sql(),
         messages::by_ids_sql(),
         messages::in_channel_sql(false),
         messages::in_channel_sql(true),
@@ -41,6 +42,7 @@ fn statements() -> Vec<String> {
     .into_iter()
     .chain(extractions::FACET_SQL.iter().map(|sql| (*sql).to_owned()))
     .chain(chat::FACET_SQL.iter().map(|sql| (*sql).to_owned()))
+    .chain(rewrites::FACET_SQL.iter().map(|sql| (*sql).to_owned()))
     .chain(prune::statements().into_iter().map(|(sql, _)| sql))
     .collect()
 }
@@ -58,6 +60,7 @@ async fn lists_walk_the_time_index_without_sorting() {
             "SCAN e USING INDEX extractions_recent",
         ),
         (chat::list_sql(), "SCAN c USING INDEX chat_recent"),
+        (rewrites::list_sql(), "SCAN r USING INDEX rewrites_recent"),
     ] {
         let plan = plan(&mut conn, &sql).await;
         assert!(plan.contains(index), "{plan}");
@@ -90,7 +93,7 @@ async fn no_log_index_is_dead() {
     let indexes: Vec<String> = sqlx::query_scalar(
         "SELECT name FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL \
          AND tbl_name IN ('messages', 'extractions', 'extraction_members', \
-         'chat_interactions', 'chat_rounds', 'chat_tools')",
+         'chat_interactions', 'chat_rounds', 'chat_tools', 'rewrites')",
     )
     .fetch_all(&mut conn)
     .await

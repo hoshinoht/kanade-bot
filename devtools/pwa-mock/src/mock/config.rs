@@ -69,6 +69,8 @@ pub struct Config {
     pub quiet_mode: bool,
     /// `classic` or `redesigned` (`v5.message_style`).
     pub message_style: String,
+    /// `HH:MM` guild time of the daily header batch (`v5.header_generation_time`).
+    pub header_generation_time: String,
     pub self_service_mode: String,
     pub public_portal: bool,
     pub persona: String,
@@ -510,6 +512,7 @@ pub fn defaults() -> Config {
         guild_rate: (12, 900),
         quiet_mode: false,
         message_style: "classic".into(),
+        header_generation_time: "00:00".into(),
         self_service_mode: "cards_and_link".into(),
         public_portal: true,
         persona: "kanade".into(),
@@ -800,7 +803,7 @@ impl Store {
                 "guild_rate": { "count": c.guild_rate.0, "window_s": c.guild_rate.1 },
                 "category_ids": c.chat_categories().0, "category_ids_source": c.chat_categories().1,
             },
-            "notifications": { "quiet_mode": c.quiet_mode, "message_style": c.message_style },
+            "notifications": { "quiet_mode": c.quiet_mode, "message_style": c.message_style, "header_generation_time": c.header_generation_time },
             "self_service": { "mode": c.self_service_mode, "effective_mode": effective_mode(c), "public_portal": c.public_portal },
             "persona": {
                 "active": c.persona,
@@ -954,6 +957,16 @@ impl Store {
             match v.as_str() {
                 Some(style @ ("classic" | "redesigned")) => next.message_style = style.into(),
                 _ => return Err(bad("Message style is classic or redesigned.")),
+            }
+        }
+        if let Some(v) = patch.pointer("/notifications/header_generation_time") {
+            match v.as_str().filter(|t| super::clock::valid_time(t)) {
+                Some(time) => next.header_generation_time = time.into(),
+                None => {
+                    return Err(bad(
+                        "The header generation time is HH:MM, for example 03:30.",
+                    ));
+                }
             }
         }
         if let Some(p) = patch.get("self_service") {
@@ -1401,6 +1414,10 @@ pub fn stored_rows(c: &Config) -> std::collections::BTreeMap<&'static str, Strin
         ),
         ("quiet_mode", flag(c.quiet_mode)),
         ("v5.message_style", c.message_style.clone()),
+        (
+            "v5.header_generation_time",
+            c.header_generation_time.clone(),
+        ),
         ("v5.self_service_mode", c.self_service_mode.clone()),
         ("v5.public_portal", flag(c.public_portal)),
         ("persona", c.persona.clone()),
@@ -1444,7 +1461,7 @@ fn check_patch_keys(patch: &Value) -> Result<(), MoveError> {
             ],
             "models" => &["roles", "groups", "context"],
             "self_service" => &["mode", "public_portal"],
-            "notifications" => &["quiet_mode", "message_style"],
+            "notifications" => &["quiet_mode", "message_style", "header_generation_time"],
             "run_lengths" => &["default_minutes", "overrides"],
             "profanity" => &[
                 "extra_words",

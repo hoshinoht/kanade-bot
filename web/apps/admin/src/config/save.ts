@@ -21,7 +21,7 @@ export interface ConfigPatch {
   /** `context` is always the complete object; a partial one is refused. */
   models?: { roles?: Partial<Record<ModelRole, { alias?: string; reasoning?: string }>>; groups?: CapacityGroup[]; context?: ContextSettings };
   self_service?: { mode?: SelfServiceMode; public_portal?: boolean };
-  notifications?: { quiet_mode?: boolean; message_style?: MessageStyle };
+  notifications?: { quiet_mode?: boolean; message_style?: MessageStyle; header_generation_time?: string };
   /** Both keys optional; `overrides` replaces the list whole. */
   run_lengths?: Partial<ConfigView['run_lengths']>;
   /** Lists replace whole; `builtin_words` is read-only (422). */

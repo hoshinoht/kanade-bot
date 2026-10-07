@@ -7,10 +7,10 @@ use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 
 use super::{
     prompt::RewritePrompt,
-    rewrite::{NudgeRewriter, RewriteFailure},
+    rewrite::{NudgeRewriter, RewriteDetail, RewriteFailure, RewriteOutcome},
 };
 use crate::infrastructure::llm::governor::{ModelClient, Role, SessionError, SessionFailure};
-use crate::infrastructure::llm::{ChatRequest, ErrorCode, LlmProvider, Message};
+use crate::infrastructure::llm::{ChatRequest, ErrorCode, LlmProvider};
 
 /// One short line; a few tokens of slack for the model's wording. The
 /// default rewrite reserve when no live context resolver is attached.
@@ -71,45 +71,86 @@ impl<P: LlmProvider> NudgeRewriter for GovernedRewriter<P> {
         prompt: &RewritePrompt,
         deadline: Duration,
     ) -> Result<String, RewriteFailure> {
-        let route = self
-            .client
-            .governor()
-            .route(Role::Rewrite)
-            .ok_or(RewriteFailure::Misconfigured)?;
-        let messages = vec![
-            Message::System {
-                content: prompt.system().to_owned(),
-            },
-            Message::User {
-                content: prompt.seed().to_owned(),
-            },
-        ];
-        let mut session = self
-            .client
-            .open_rewrite_on(&route, "nudge", deadline)
-            .map_err(|error| classify(&error))?;
+        self.rewrite_detailed(prompt, deadline).await.result
+    }
+
+    async fn rewrite_detailed(&self, prompt: &RewritePrompt, deadline: Duration) -> RewriteOutcome {
+        let Some(route) = self.client.governor().route(Role::Rewrite) else {
+            return RewriteOutcome {
+                result: Err(RewriteFailure::Misconfigured),
+                detail: RewriteDetail {
+                    code: Some("no_route"),
+                    ..RewriteDetail::default()
+                },
+            };
+        };
+        // Read once with the route: a save applies to the next rewrite.
+        let max_output_tokens = self
+            .reserve
+            .as_ref()
+            .map_or(REWRITE_MAX_OUTPUT_TOKENS, |reserve| reserve(&route.alias));
+        let mut detail = RewriteDetail {
+            alias: Some(route.alias.clone()),
+            // The rewrite role's live level (read once, with the alias).
+            effort: route.effort,
+            max_output_tokens: Some(max_output_tokens),
+            ..RewriteDetail::default()
+        };
+        let mut session = match self.client.open_rewrite_on(&route, "nudge", deadline) {
+            Ok(session) => session,
+            Err(error) => {
+                detail.code = Some(error.code());
+                return RewriteOutcome {
+                    result: Err(classify(&error)),
+                    detail,
+                };
+            }
+        };
         let request = ChatRequest {
             model: route.alias.clone(),
-            messages,
+            messages: prompt.messages(),
             tools: Vec::new(),
             output_schema: None,
-            // Read once with the route: a save applies to the next rewrite.
-            max_output_tokens: self
-                .reserve
-                .as_ref()
-                .map_or(REWRITE_MAX_OUTPUT_TOKENS, |reserve| reserve(&route.alias)),
-            // The rewrite role's live level (read once, with the alias).
+            max_output_tokens,
             reasoning: route.effort,
             sampling: None,
         };
-        let response = session
-            .complete(&request)
-            .await
-            .map_err(|error| classify(&error))?;
-        match response.content {
-            Some(text) if !text.trim().is_empty() => Ok(text),
-            _ => Err(RewriteFailure::Refused),
+        let response = session.complete(&request).await;
+        if let Some(sent) = session.last_sent() {
+            detail.alias = Some(sent.alias.clone());
+            detail.effort = sent.effort;
         }
+        detail.reservation = session.last_reservation();
+        detail.budget = session.over_budget();
+        detail.request_id = session.request_ids().last().cloned();
+        let result = match response {
+            Ok(response) => {
+                detail.usage = response.usage;
+                detail.reasoning_tokens = response.reasoning_tokens;
+                detail.reasoning = response.reasoning_content;
+                detail.reply = response.content.clone();
+                match response.content {
+                    Some(text) if !text.trim().is_empty() => Ok(text),
+                    _ => {
+                        detail.code = Some("empty_reply");
+                        Err(RewriteFailure::Refused)
+                    }
+                }
+            }
+            Err(error) => {
+                detail.code = Some(error.code());
+                // A reply refused for exceeding its reservation still shows
+                // what the model reported.
+                if let Some(overrun) = session.overrun() {
+                    detail.usage = overrun.usage.clone();
+                    detail.reasoning_tokens = overrun.reasoning_tokens;
+                    detail.reasoning = overrun.reasoning_content.clone();
+                    detail.reply = overrun.content.clone();
+                }
+                Err(classify(&error))
+            }
+        };
+        RewriteOutcome { result, detail }
     }
 }
 
@@ -120,7 +161,7 @@ pub trait DynRewrite: Send + Sync {
         &'a self,
         prompt: &'a RewritePrompt,
         deadline: Duration,
-    ) -> Pin<Box<dyn Future<Output = Result<String, RewriteFailure>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = RewriteOutcome> + Send + 'a>>;
 }
 
 impl<T: NudgeRewriter> DynRewrite for T {
@@ -128,8 +169,8 @@ impl<T: NudgeRewriter> DynRewrite for T {
         &'a self,
         prompt: &'a RewritePrompt,
         deadline: Duration,
-    ) -> Pin<Box<dyn Future<Output = Result<String, RewriteFailure>> + Send + 'a>> {
-        Box::pin(self.rewrite(prompt, deadline))
+    ) -> Pin<Box<dyn Future<Output = RewriteOutcome> + Send + 'a>> {
+        Box::pin(self.rewrite_detailed(prompt, deadline))
     }
 }
 
@@ -149,6 +190,10 @@ impl NudgeRewriter for SharedRewriter {
         prompt: &RewritePrompt,
         deadline: Duration,
     ) -> Result<String, RewriteFailure> {
+        self.0.rewrite_boxed(prompt, deadline).await.result
+    }
+
+    async fn rewrite_detailed(&self, prompt: &RewritePrompt, deadline: Duration) -> RewriteOutcome {
         self.0.rewrite_boxed(prompt, deadline).await
     }
 }

@@ -7,6 +7,7 @@ mod chat;
 mod extractions;
 pub mod fake;
 mod rescan;
+mod rewrites;
 
 use std::sync::Arc;
 

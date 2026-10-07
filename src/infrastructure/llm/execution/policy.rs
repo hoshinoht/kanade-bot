@@ -12,6 +12,17 @@ const MAX_ATTEMPTS: u8 = 5;
 const MAX_DEADLINE: Duration = Duration::from_secs(300);
 pub(super) const MAX_BACKOFF: Duration = Duration::from_secs(10);
 
+/// Tokens one runner call may reserve (prompt estimate + `max_tokens`), the
+/// default [`ExecutionLimits::token_budget`].
+pub const CALL_TOKEN_BUDGET: u32 = 16_384;
+/// Tokens of every call's budget a context reserve must leave for the
+/// prompt: the rewrite role's smallest prompt (code instruction, persona
+/// rewrite text, voice and seed) estimates at a few hundred tokens, so 1024
+/// keeps it and modest chat or extraction prompts sendable.
+pub const PROMPT_FLOOR_TOKENS: u32 = 1_024;
+/// A context reserve must be below this, or no prompt fits the call budget.
+pub const RESERVE_LIMIT: u32 = CALL_TOKEN_BUDGET - PROMPT_FLOOR_TOKENS;
+
 #[derive(Clone, Debug)]
 pub struct ExecutionLimits {
     pub max_messages: usize,
@@ -38,7 +49,7 @@ impl Default for ExecutionLimits {
             max_request_bytes: 512 * 1024,
             max_response_bytes: 512 * 1024,
             max_value_nodes: 20_000,
-            token_budget: 16_384,
+            token_budget: CALL_TOKEN_BUDGET,
         }
     }
 }

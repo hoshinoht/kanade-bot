@@ -1,4 +1,4 @@
-//! The Chat and Extractions logs and rescan jobs (A7). Lists return every
+//! The Chat, Extractions and Rewrites logs and rescan jobs (A7). Lists return every
 //! match, newest first (the PWA pages client-side; cursor paging stays
 //! proposed), with the unfiltered `total` and the filter facets.
 
@@ -6,6 +6,7 @@ mod chat;
 mod extractions;
 mod filter;
 pub(super) mod rescan;
+mod rewrites;
 
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -30,6 +31,8 @@ pub fn routes() -> Router<Arc<Site>> {
         .route("/api/admin/chat/{id}", get(chat::detail))
         .route("/api/admin/extractions", get(extractions::list))
         .route("/api/admin/extractions/{id}", get(extractions::detail))
+        .route("/api/admin/rewrites", get(rewrites::list))
+        .route("/api/admin/rewrites/{id}", get(rewrites::detail))
         .route("/api/admin/rescan/targets", get(rescan::targets))
         .route("/api/admin/rescan", axum::routing::post(rescan::submit))
         .route(

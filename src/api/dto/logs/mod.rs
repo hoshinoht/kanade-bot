@@ -1,10 +1,12 @@
-//! Chat and extraction log rows (`chat.json`, `extractions.json`). A
+//! Chat, extraction and rewrite log rows (`chat.json`, `extractions.json`,
+//! `rewrites.json`). A
 //! withheld chat question is never shown: the admin sees the placeholder the
 //! model sees, and the model output and tool arguments and results of that
 //! turn are withheld with it, as they may quote the question.
 
 mod chat;
 mod extraction;
+mod rewrite;
 
 use std::collections::BTreeMap;
 
@@ -19,6 +21,10 @@ pub use extraction::{
     Amendment, CALL_FAILED, CallContext, Extraction, ExtractionBase, ExtractionRefusal,
     ExtractionRow, ExtractionSummary, Extractions, Proposed, ReadMessage, call_error, extraction,
     extraction_row, extraction_summary,
+};
+pub use rewrite::{
+    Rewrite, RewriteFacets, RewriteRow, RewriteSummary, Rewrites, rewrite, rewrite_row,
+    rewrite_summary,
 };
 
 use super::Named;

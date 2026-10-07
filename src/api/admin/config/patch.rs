@@ -133,7 +133,10 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
                     "chatbot",
                     "enabled" | "member_rate" | "guild_rate" | "category_ids"
                 )
-                | ("notifications", "quiet_mode" | "message_style")
+                | (
+                    "notifications",
+                    "quiet_mode" | "message_style" | "header_generation_time"
+                )
                 | ("self_service", "mode" | "public_portal")
                 | ("persona", "active" | "visibility" | "role_profiles")
                 | ("models", "roles" | "context")
@@ -377,7 +380,12 @@ fn flag(value: &Value, path: &str) -> Result<bool, PatchError> {
 
 /// Exactly `HH:MM`, 24-hour.
 fn clock(value: &Value) -> Result<NaiveTime, PatchError> {
-    let bad = || PatchError::invalid("The morning ping is HH:MM, for example 09:00.");
+    clock_as(value, "The morning ping is HH:MM, for example 09:00.")
+}
+
+/// Exactly `HH:MM`, 24-hour; `refusal` otherwise.
+fn clock_as(value: &Value, refusal: &'static str) -> Result<NaiveTime, PatchError> {
+    let bad = || PatchError::invalid(refusal);
     let text = value.as_str().ok_or_else(bad)?.trim();
     let bytes = text.as_bytes();
     if bytes.len() != 5 || bytes[2] != b':' {
@@ -518,6 +526,12 @@ pub fn notifications(
             .as_str()
             .and_then(MessageStyle::parse)
             .ok_or_else(|| PatchError::invalid("Message style is classic or redesigned."))?;
+    }
+    if let Some(value) = body.get("header_generation_time") {
+        next.header_generation_time = clock_as(
+            value,
+            "The header generation time is HH:MM, for example 03:30.",
+        )?;
     }
     Ok(next)
 }

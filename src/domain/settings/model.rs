@@ -239,6 +239,9 @@ pub struct Rate {
 pub struct Notifications {
     pub quiet_mode: bool,
     pub message_style: MessageStyle,
+    /// When the daily reminder-header rewrite batch runs, in the guild's
+    /// zone (`v5.header_generation_time`, default 00:00).
+    pub header_generation_time: NaiveTime,
 }
 
 /// How the bot's Discord posts look (`v5.message_style`). Presentation only:

@@ -592,6 +592,7 @@ fn stepping(steps: Vec<Step>) -> CardKit {
             rewriter: Some(SharedRewriter(Arc::new(Steps(Mutex::new(steps.into()))))),
             persona: Some(persona()),
             words: None,
+            log: None,
         },
         ..kit(None)
     }

@@ -37,7 +37,7 @@ pub use store::{DebugCardStore, PostedDebugCard};
 
 use super::alerts::{AlertThrottle, LogAlerts};
 use super::cards::{
-    self, CardContext, CardKit, HeaderKind, PhraseKind, Verdict, fetch_art, local_day,
+    self, CardContext, CardKit, HeaderKind, PhraseKind, TrialOrigin, Verdict, fetch_art, local_day,
 };
 use super::executor::{Executor, SendOutcome};
 use super::notice_text::QUIET_NOTE;
@@ -51,6 +51,7 @@ use crate::bot::ids::parse_id;
 use crate::bot::mentions;
 use crate::bot::transport::{DiscordTransport, Outcome, OutgoingMessage, RejectionKind};
 use crate::domain::members::Directory;
+use crate::domain::model_log::RewriteStage;
 use crate::domain::notify::{
     ChannelChoice, ChannelDirectory, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent,
     NotificationIntent, PingKind, PlannedSend, SendDisposition, WeekReset, choose_channel,
@@ -286,14 +287,19 @@ where
             return (None, None);
         }
         let catalog = self.cards.catalog.as_deref();
+        let context = match run {
+            Some(run) => format!("/debug ping {} · run {}", request.kind.as_str(), run.id),
+            None => format!("/debug ping {}", request.kind.as_str()),
+        };
+        let origin = TrialOrigin::new(RewriteStage::Debug, context);
         let trial = self
             .cards
             .heading
-            .trial(kind, catalog, PREGEN_DEADLINE)
+            .trial(kind, catalog, PREGEN_DEADLINE, &origin)
             .await;
         let note = HeaderNote {
             rewritten: trial.verdict == Verdict::Accepted,
-            reason: header::verdict_text(trial.verdict),
+            reason: header::verdict_text(&trial),
         };
         if !note.rewritten {
             return (None, Some(note));
@@ -447,13 +453,21 @@ where
             HeaderTrialKind::Digest => HeaderKind::Phrase(PhraseKind::Digest),
         };
         let catalog = self.cards.catalog.as_deref();
+        let count = request.tries.clamp(1, MAX_HEADER_TRIES);
         let mut tries = Vec::new();
-        for _ in 0..request.tries.clamp(1, MAX_HEADER_TRIES) {
+        for index in 1..=count {
+            let origin = TrialOrigin::new(
+                RewriteStage::Debug,
+                format!(
+                    "/debug header {} · try {index}/{count}",
+                    request.kind.as_str()
+                ),
+            );
             let started = Instant::now();
             let trial = self
                 .cards
                 .heading
-                .trial(kind, catalog, PREGEN_DEADLINE)
+                .trial(kind, catalog, PREGEN_DEADLINE, &origin)
                 .await;
             tries.push((trial, started.elapsed()));
         }

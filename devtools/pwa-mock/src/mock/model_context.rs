@@ -126,6 +126,12 @@ impl Settings {
                     "models.context.{name} reserve and cap must be 1..=131072 tokens."
                 ));
             }
+            if role.reserve >= RESERVE_LIMIT {
+                return Err(format!(
+                    "The {name} reserve ({}) must be below {RESERVE_LIMIT}: each call's token budget is 16384 and at least 1024 of it stays for the prompt.",
+                    role.reserve
+                ));
+            }
         }
         for (alias, window) in &self.overrides {
             if alias.trim().is_empty() {
@@ -163,6 +169,9 @@ impl Settings {
 }
 
 /// A PATCH carries the complete object; anything else is the server's one refusal.
+/// As the server's runner: a call's token budget less the prompt floor.
+const RESERVE_LIMIT: u32 = 16_384 - 1_024;
+
 pub fn parse(value: &Value) -> Result<Settings, String> {
     serde_json::from_value(value.clone())
         .map_err(|_| "models.context must be a complete context settings object.".into())
@@ -177,6 +186,31 @@ mod tests {
         context_tokens: None,
         max_output_tokens: Some(512),
     };
+
+    #[test]
+    fn a_reserve_without_prompt_room_in_the_call_budget_is_refused() {
+        let mut s = Settings {
+            local_default: 65_536,
+            ..Settings::default()
+        };
+        s.rewrite.reserve = 16_000;
+        let err = s
+            .validate([("chat", ""), ("extraction", ""), ("rewrite", "")], |_| {
+                None
+            })
+            .unwrap_err();
+        assert!(
+            err.starts_with("The rewrite reserve (16000) must be below 15360"),
+            "{err}"
+        );
+        s.rewrite.reserve = 15_359;
+        assert!(
+            s.validate([("chat", ""), ("extraction", ""), ("rewrite", "")], |_| {
+                None
+            })
+            .is_ok()
+        );
+    }
 
     #[test]
     fn resolution_follows_override_catalog_then_zone_default() {
@@ -231,8 +265,15 @@ mod tests {
         assert!(
             s.validate(roles, published)
                 .unwrap_err()
+                .contains("must be below 15360")
+        );
+        (s.chat.reserve, s.chat.cap) = (8_192, Some(8_192));
+        assert!(
+            s.validate(roles, published)
+                .unwrap_err()
                 .contains("chat.reserve must be smaller")
         );
+        s.chat.cap = None;
         s.chat.reserve = 131_073;
         assert!(
             s.validate(roles, published)

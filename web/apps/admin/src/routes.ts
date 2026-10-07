@@ -60,6 +60,14 @@ export const SECTIONS: Section[] = [
     icon: 'message-square',
   },
   {
+    key: 'rewrites',
+    href: '/rewrites',
+    label: 'Rewrites',
+    group: 'Kanade',
+    title: 'Rewrites',
+    icon: 'edit',
+  },
+  {
     key: 'limits',
     href: '/limits',
     label: 'Limits',

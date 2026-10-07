@@ -6,6 +6,7 @@
 
 mod compose;
 mod governed;
+mod log;
 mod prompt;
 mod rewrite;
 mod rotation;
@@ -18,12 +19,16 @@ pub use compose::{
 pub use governed::{
     DynRewrite, GovernedRewriter, REWRITE_MAX_OUTPUT_TOKENS, RewriteReserve, SharedRewriter,
 };
+pub use log::{
+    LOG_WRITE_DEADLINE, RewriteAttempt, RewriteSink, SharedRewriteSink, StoreRewriteSink,
+    failure_verdict,
+};
 pub use prompt::{
     GENTLE_MOOD, NUDGE_REWRITE_INSTRUCTION, PLAYFUL_MOOD, RewritePrompt, VOICE_LABEL,
 };
 pub use rewrite::{
-    CUSTOM_WORD, NoRewrite, NudgeRewriter, REWRITE_DEADLINE, Rejection, RewriteFailure,
-    accept_rewrite, accept_rewrite_with,
+    CUSTOM_WORD, NoRewrite, NudgeRewriter, REWRITE_DEADLINE, Rejection, RewriteDetail,
+    RewriteFailure, RewriteOutcome, accept_rewrite, accept_rewrite_with,
 };
 pub use rotation::{MAX_CHANNELS, RECENT_PER_CHANNEL, SeedRotation};
 pub use safety::{

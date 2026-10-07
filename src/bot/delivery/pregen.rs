@@ -2,18 +2,31 @@
 //! card's day-of heading or countdown/digest phrase, stored before its send
 //! under the key the send path reads (`card_records`).
 //!
+//! A daily batch at the configured guild-local time
+//! (`notifications.header_generation_time`, read live) rewrites every card
+//! firing within [`HEADER_HORIZON`], plus the coming week's digest when its
+//! reset falls in that window. Between batches a [`PREGEN_INTERVAL`] tick
+//! catches up on cards the last batch had not seen (runs added or moved
+//! since, re-grouped cards) once they fire within the horizon, and retries
+//! the batch's own failures. A process whose batch time has passed today
+//! without a batch runs one at once; a changed time applies from its next
+//! occurrence and never re-generates stored lines.
+//!
 //! The intents come from the admin preview's planner (`plan_dispatch` at each
 //! reminder's fire time), so grouping and keys match the tick's. Writes are
 //! insert-if-absent and no lock is held across the model call: a seed stored
 //! by a send first always wins, and a stored line never changes afterwards.
-//! A failed rewrite stores nothing; the key is retried on later passes up to
-//! [`MAX_ATTEMPTS_PER_KEY`] times, after which the send uses the seed.
+//! A failed rewrite stores nothing and is retried up to
+//! [`MAX_ATTEMPTS_PER_KEY`] times; a busy rewrite permit (a governor
+//! refusal) is retried on later ticks without spending an attempt, at most
+//! [`MAX_BUSY_RETRIES`] times. After that the send uses the seed.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use chrono::{DateTime, TimeDelta, Utc};
+use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc};
+use chrono_tz::Tz;
 use serde_json::json;
 use tokio::sync::watch;
 use tokio::time::MissedTickBehavior;
@@ -26,6 +39,7 @@ use super::cards::{
 use super::preview::{record_key, reminder_intent};
 use super::refresh::Now;
 use crate::domain::members::Directory;
+use crate::domain::model_log::RewriteStage;
 use crate::domain::notify::{
     DeliveryJournal, DeliverySettings, DeliveryTarget, DigestLog, IntentContent, JournalView,
     WeekReset,
@@ -35,27 +49,37 @@ use crate::domain::scheduler::{ScheduleStore, Scope};
 use crate::domain::time::from_iso;
 use crate::runtime::logging;
 
-/// Cards firing within this window are pre-generated.
-pub const PREGEN_HORIZON: TimeDelta = TimeDelta::hours(12);
+/// Cards firing within this window are rewritten (by a batch or catch-up).
+pub const HEADER_HORIZON: TimeDelta = TimeDelta::hours(24);
+/// How far ahead a batch records the cards it has seen, so catch-up leaves
+/// them to the next batch.
+pub const SEEN_HORIZON: TimeDelta = TimeDelta::days(8);
 /// One rewrite's budget; within the governor's 300 s session cap.
 pub const PREGEN_DEADLINE: Duration = Duration::from_secs(30);
-/// How often a pass runs.
+/// How often the worker checks for a due batch and catches up.
 pub const PREGEN_INTERVAL: Duration = Duration::from_secs(60);
-/// Sequential rewrites per pass; the rest wait for the next pass.
-pub const MAX_REWRITES_PER_PASS: usize = 4;
+/// Sequential catch-up rewrites per tick (a batch has no cap); the rest wait.
+pub const MAX_CATCHUP_PER_TICK: usize = 4;
 /// Failed rewrites per key in this process before it is left to the seed.
 pub const MAX_ATTEMPTS_PER_KEY: u32 = 3;
+/// Busy-permit retries per key before it is left to the seed.
+pub const MAX_BUSY_RETRIES: u32 = 30;
 
-/// What one pass did.
+/// The configured batch time, read per tick (`None` source: 00:00).
+pub type HeaderTime = Arc<dyn Fn() -> NaiveTime + Send + Sync>;
+
+/// What one tick did.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PregenReport {
+    /// A daily batch ran.
+    pub batch: bool,
     /// Rewrites stored.
     pub stored: usize,
     /// Rewrites that failed, timed out or were rejected (nothing stored).
     pub failed: usize,
     /// Rewrites whose key a send stored first.
     pub lost: usize,
-    /// Keys left for a later pass by the per-pass cap.
+    /// Catch-up keys left for a later tick by the per-tick cap.
     pub deferred: usize,
 }
 
@@ -83,15 +107,53 @@ fn digest_open(log: &DigestLog, week: DateTime<Utc>) -> bool {
     !recorded && !log.digests.iter().any(|digest| digest.week_start == week)
 }
 
+/// Governor refusals of a try-only rewrite: the permit or rate token was
+/// not free right now, so the key is retried without spending an attempt.
+fn busy(code: Option<&str>) -> bool {
+    matches!(code, Some("busy" | "rate_ceiling" | "backend_unavailable"))
+}
+
+/// Today's batch instant in `zone` (01:00 when the time falls in a DST gap).
+fn occurrence(now: DateTime<Utc>, time: NaiveTime, zone: Tz) -> Option<DateTime<Utc>> {
+    let day = now.with_timezone(&zone).date_naive();
+    [time, time + TimeDelta::hours(1)]
+        .into_iter()
+        .find_map(|at| zone.from_local_datetime(&day.and_time(at)).earliest())
+        .map(|at| at.with_timezone(&Utc))
+}
+
+#[derive(Default)]
+struct Plan {
+    /// The occurrence the last batch ran for.
+    last_batch: Option<DateTime<Utc>>,
+    /// The configured time as last read, and when it last changed.
+    time: Option<NaiveTime>,
+    changed_at: Option<DateTime<Utc>>,
+    /// Every card key the last batch saw, within [`SEEN_HORIZON`].
+    seen: HashSet<String>,
+    /// The last batch's keys still to store (failed, busy or cut by stop).
+    pending: HashSet<String>,
+    attempts: HashMap<String, u32>,
+    busy: HashMap<String, u32>,
+}
+
+enum Done {
+    Stored,
+    Lost,
+    Failed { busy: bool },
+    Stopped,
+}
+
 /// The pre-generation worker. A rewriter and persona must both be set,
-/// otherwise a pass does nothing and sends keep the seed.
+/// otherwise a tick does nothing and sends keep the seed.
 pub struct HeaderPregen<S> {
     pub store: Arc<S>,
     pub members: Arc<dyn Directory + Send + Sync>,
     pub cards: CardKit,
     pub policy: SchedulePolicy,
     pub now: Now,
-    attempts: Mutex<HashMap<String, u32>>,
+    time: Option<HeaderTime>,
+    plan: Mutex<Plan>,
 }
 
 impl<S> HeaderPregen<S>
@@ -111,11 +173,19 @@ where
             cards,
             policy,
             now,
-            attempts: Mutex::new(HashMap::new()),
+            time: None,
+            plan: Mutex::new(Plan::default()),
         }
     }
 
-    /// A pass every [`PREGEN_INTERVAL`] until `stop`; at stop a pass in
+    /// Read the batch time live (the Config setting); unset is 00:00.
+    #[must_use]
+    pub fn with_time(mut self, time: HeaderTime) -> Self {
+        self.time = Some(time);
+        self
+    }
+
+    /// A tick every [`PREGEN_INTERVAL`] until `stop`; at stop a tick in
     /// flight abandons its model call and its remaining keys, never a store
     /// write.
     pub async fn run(&self, mut stop: watch::Receiver<bool>) {
@@ -137,10 +207,29 @@ where
         }
     }
 
-    /// One pass at the clock's reading: rewrite at most
-    /// [`MAX_REWRITES_PER_PASS`] missing headers, earliest first.
+    /// One tick at the clock's reading: the daily batch when it is due,
+    /// else catch-up and the last batch's retries.
     pub async fn pass(&self) -> PregenReport {
         self.pass_until(None).await
+    }
+
+    fn plan(&self) -> std::sync::MutexGuard<'_, Plan> {
+        self.plan.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Whether today's batch is due at `now`, noting a changed time first.
+    fn batch_due(&self, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
+        let time = self.time.as_ref().map_or(NaiveTime::MIN, |time| time());
+        let mut plan = self.plan();
+        if plan.time.is_some_and(|seen| seen != time) {
+            plan.changed_at = Some(now);
+        }
+        plan.time = Some(time);
+        let at = occurrence(now, time, self.policy.zone())?;
+        let due = at <= now
+            && plan.last_batch.is_none_or(|last| last < at)
+            && plan.changed_at.is_none_or(|changed| changed < at);
+        due.then_some(at)
     }
 
     async fn pass_until(&self, stop: Option<&watch::Receiver<bool>>) -> PregenReport {
@@ -149,52 +238,99 @@ where
             return report;
         }
         let now = (self.now)();
-        let Some(candidates) = self.candidates(now).await else {
+        let batch = self.batch_due(now);
+        let Some(candidates) = self.candidates(now, now + SEEN_HORIZON).await else {
             logging::event("WARN", "header_pregen_failed", json!({"operation": "plan"}));
             return report;
         };
-        let keys: HashSet<&str> = candidates.iter().map(|c| c.key.as_str()).collect();
-        self.attempts().retain(|key, _| keys.contains(key.as_str()));
+        let due: Vec<&Candidate> = candidates
+            .iter()
+            .filter(|candidate| candidate.at <= now + HEADER_HORIZON)
+            .collect();
+        {
+            let mut plan = self.plan();
+            if let Some(at) = batch {
+                plan.last_batch = Some(at);
+                plan.seen = candidates.iter().map(|c| c.key.clone()).collect();
+                plan.pending = due.iter().map(|c| c.key.clone()).collect();
+                plan.busy.clear();
+            }
+            let keys: HashSet<&str> = candidates.iter().map(|c| c.key.as_str()).collect();
+            plan.attempts.retain(|key, _| keys.contains(key.as_str()));
+            plan.busy.retain(|key, _| keys.contains(key.as_str()));
+            plan.pending.retain(|key| keys.contains(key.as_str()));
+        }
+        report.batch = batch.is_some();
         let mut calls = 0;
-        for candidate in &candidates {
+        for candidate in due {
             if stop.is_some_and(|stop| *stop.borrow()) {
                 break;
             }
-            if self.attempts().get(&candidate.key).copied().unwrap_or(0) >= MAX_ATTEMPTS_PER_KEY {
-                continue;
-            }
-            // Stored (or unreadable): leave it to the send path.
-            if !matches!(self.missing(candidate).await, Some(true)) {
-                continue;
-            }
-            if calls == MAX_REWRITES_PER_PASS {
-                report.deferred += 1;
-                continue;
-            }
-            calls += 1;
-            match self.generate(candidate, stop).await {
-                Some(true) => report.stored += 1,
-                Some(false) => report.lost += 1,
-                None => {
-                    report.failed += 1;
-                    *self.attempts().entry(candidate.key.clone()).or_default() += 1;
+            let stage = {
+                let plan = self.plan();
+                let spent = plan.attempts.get(&candidate.key).copied().unwrap_or(0)
+                    >= MAX_ATTEMPTS_PER_KEY
+                    || plan.busy.get(&candidate.key).copied().unwrap_or(0) >= MAX_BUSY_RETRIES;
+                if spent {
+                    continue;
                 }
+                if batch.is_some() || plan.pending.contains(&candidate.key) {
+                    RewriteStage::Batch
+                } else if plan.seen.contains(&candidate.key) {
+                    // Seen by the last batch beyond its window: the next batch's.
+                    continue;
+                } else {
+                    RewriteStage::Catchup
+                }
+            };
+            // Stored (or unreadable): leave it to the send path.
+            match self.missing(candidate).await {
+                Some(true) => {}
+                Some(false) => {
+                    self.plan().pending.remove(&candidate.key);
+                    continue;
+                }
+                None => continue,
+            }
+            if batch.is_none() {
+                if calls == MAX_CATCHUP_PER_TICK {
+                    report.deferred += 1;
+                    continue;
+                }
+                calls += 1;
+            }
+            let done = self.generate(candidate, stage, stop).await;
+            let mut plan = self.plan();
+            match done {
+                Done::Stored => {
+                    report.stored += 1;
+                    plan.pending.remove(&candidate.key);
+                }
+                Done::Lost => {
+                    report.lost += 1;
+                    plan.pending.remove(&candidate.key);
+                }
+                Done::Failed { busy } => {
+                    report.failed += 1;
+                    let count = if busy {
+                        &mut plan.busy
+                    } else {
+                        &mut plan.attempts
+                    };
+                    *count.entry(candidate.key.clone()).or_default() += 1;
+                }
+                Done::Stopped => {}
             }
         }
         report
     }
 
-    fn attempts(&self) -> std::sync::MutexGuard<'_, HashMap<String, u32>> {
-        self.attempts.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// Unsent cards firing in `(now, now + horizon]` and no journal claim,
-    /// plus the next boss week's digest when its reset is in the window and
-    /// that week has no digest yet; earliest first.
-    async fn candidates(&self, now: DateTime<Utc>) -> Option<Vec<Candidate>> {
+    /// Unsent cards firing in `(now, until]` and no journal claim, plus the
+    /// coming boss week's digest when that week has no digest yet; earliest
+    /// first.
+    async fn candidates(&self, now: DateTime<Utc>, until: DateTime<Utc>) -> Option<Vec<Candidate>> {
         let schedule = self.store.load(&Scope::All).await.ok()?;
         let view = self.store.load_view().await.ok()?;
-        let until = now + PREGEN_HORIZON;
         let mut upcoming: Vec<&Reminder> = schedule
             .reminders
             .iter()
@@ -216,8 +352,9 @@ where
             weekday: self.policy.reset_weekday,
             time: self.policy.reset_time,
         };
-        let next = reset.current_week(until).ok()?;
-        if next > reset.current_week(now).ok()? {
+        // The week starting at the first reset after `now`.
+        let next = reset.current_week(now + TimeDelta::days(7)).ok()?;
+        if next > reset.current_week(now).ok()? && next <= until {
             let log = self.store.load_digests().await.ok()?;
             if digest_open(&log, next)
                 && let Some(key) = digest_phrase_key(next)
@@ -326,50 +463,56 @@ where
         }
     }
 
-    /// Rewrite and store insert-if-absent: `Some(true)` stored, `Some(false)`
-    /// a send stored first, `None` no rewrite (or the write failed).
+    /// Rewrite and store insert-if-absent.
     async fn generate(
         &self,
         candidate: &Candidate,
+        stage: RewriteStage,
         stop: Option<&watch::Receiver<bool>>,
-    ) -> Option<bool> {
+    ) -> Done {
         let heading = &self.cards.heading;
         let catalog = self.cards.catalog.as_deref();
+        let key = candidate.key.as_str();
         let chosen = async {
             match &candidate.header {
-                Header::DayOf { day } => heading.choose(day, PREGEN_DEADLINE).await,
+                Header::DayOf { day } => heading.choose(day, key, stage, PREGEN_DEADLINE).await,
                 Header::Countdown { .. } => {
                     heading
-                        .choose_phrase(PhraseKind::Countdown, catalog, PREGEN_DEADLINE)
+                        .choose_phrase(PhraseKind::Countdown, catalog, key, stage, PREGEN_DEADLINE)
                         .await
                 }
                 Header::Digest { .. } => {
                     heading
-                        .choose_phrase(PhraseKind::Digest, catalog, PREGEN_DEADLINE)
+                        .choose_phrase(PhraseKind::Digest, catalog, key, stage, PREGEN_DEADLINE)
                         .await
                 }
             }
         };
         // Stop cuts only the model call; the store work below finishes unless serve
         // aborts the worker at its shutdown cutoff, which rolls the save back whole.
-        let (line, source) = match stop {
+        let chosen = match stop {
             Some(stop) => {
                 let mut stop = stop.clone();
                 tokio::select! {
                     biased;
-                    _ = stop.wait_for(|stop| *stop) => return None,
+                    _ = stop.wait_for(|stop| *stop) => return Done::Stopped,
                     chosen = chosen => chosen,
                 }
             }
             None => chosen.await,
         };
-        if source != HeadingSource::Rewrite {
-            return None;
+        if chosen.source != HeadingSource::Rewrite {
+            return Done::Failed {
+                busy: busy(chosen.code),
+            };
         }
+        let line = chosen.line;
         // A send may have claimed the card during the call; its line (stored
         // or, after a failed record write, unsaved) must stay the posted one.
-        if self.claimed(candidate).await? {
-            return Some(false);
+        match self.claimed(candidate).await {
+            Some(true) => return Done::Lost,
+            Some(false) => {}
+            None => return Done::Failed { busy: false },
         }
         let at = (self.now)();
         let saved = match &candidate.header {
@@ -394,14 +537,15 @@ where
             }
         };
         match saved {
-            Ok(won) => Some(won),
+            Ok(true) => Done::Stored,
+            Ok(false) => Done::Lost,
             Err(_) => {
                 logging::event(
                     "WARN",
                     "header_pregen_failed",
                     json!({"operation": "write"}),
                 );
-                None
+                Done::Failed { busy: false }
             }
         }
     }

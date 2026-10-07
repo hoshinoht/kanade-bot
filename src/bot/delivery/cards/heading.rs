@@ -9,11 +9,13 @@ use std::time::Duration;
 use serde_json::json;
 
 use crate::chat::nudge::{
-    NudgeRewriter, Rejection, RewriteFailure, RewritePrompt, SharedRewriter, WordFilter,
-    WordSource, accept_rewrite_with,
+    NudgeRewriter, Rejection, RewriteAttempt, RewriteDetail, RewriteFailure, RewritePrompt,
+    SharedRewriteSink, SharedRewriter, WordFilter, WordSource, accept_rewrite_with,
+    failure_verdict,
 };
 use crate::chat::persona::{CompiledPersona, NudgeMood};
 use crate::domain::catalog::BossTable;
+use crate::domain::model_log::{RewriteKind, RewriteStage};
 use crate::runtime::logging;
 
 /// v4's heading, with the day left for after the rewrite.
@@ -166,6 +168,15 @@ const FACT_WORDS: &[&str] = &[
 /// The guild default persona (bundle, no member profile), if chat has one.
 pub type PersonaSource = Arc<dyn Fn() -> Option<CompiledPersona> + Send + Sync>;
 
+/// A header rewritten ahead of its send: the line (the day filled in for
+/// day-of), where it came from and the failure code behind a seed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Chosen {
+    pub line: String,
+    pub source: HeadingSource,
+    pub code: Option<&'static str>,
+}
+
 /// Where a heading came from, for the `day_of_heading` log line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HeadingSource {
@@ -211,6 +222,33 @@ pub enum HeaderKind {
     Phrase(PhraseKind),
 }
 
+impl HeaderKind {
+    fn log_kind(self) -> RewriteKind {
+        match self {
+            Self::DayOf => RewriteKind::DayOf,
+            Self::Phrase(PhraseKind::Countdown) => RewriteKind::Countdown,
+            Self::Phrase(PhraseKind::Digest) => RewriteKind::Digest,
+        }
+    }
+}
+
+/// Where a trial runs and what it is for, for the Rewrites log: a card key,
+/// a digest week or a `/debug` command, never a member.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TrialOrigin {
+    pub stage: RewriteStage,
+    pub context: Option<String>,
+}
+
+impl TrialOrigin {
+    pub fn new(stage: RewriteStage, context: impl Into<String>) -> Self {
+        Self {
+            stage,
+            context: Some(context.into()),
+        }
+    }
+}
+
 /// The outcome of one rewrite attempt, with the gate rule that refused it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Verdict {
@@ -240,15 +278,11 @@ impl Verdict {
 
     /// The gate rule that refused the line, if one did.
     pub fn rule(self) -> Option<&'static str> {
-        let line = |rejection| match rejection {
-            Rejection::LineRules => "line rules",
-            Rejection::Placeholders => "placeholders",
-            Rejection::Markup => "markup",
-            Rejection::Denied(_) => "deny-listed word",
-        };
         match self {
             Self::Rejected(rejection)
-            | Self::PhraseRejected(PhraseRejection::UnsafeLine(rejection)) => Some(line(rejection)),
+            | Self::PhraseRejected(PhraseRejection::UnsafeLine(rejection)) => {
+                Some(rejection.rule())
+            }
             Self::PhraseRejected(PhraseRejection::FactualTerm) => Some("factual term"),
             Self::PhraseRejected(PhraseRejection::CatalogTerm) => Some("catalog term"),
             Self::PhraseRejected(PhraseRejection::NotAnInterjection) => Some("not an interjection"),
@@ -258,15 +292,23 @@ impl Verdict {
 }
 
 /// One rewrite attempt: the model's raw reply (if any), the line to use
-/// (the accepted rewrite or the seed; day-of keeps `{day}`) and the verdict.
+/// (the accepted rewrite or the seed; day-of keeps `{day}`), the verdict and
+/// what the call reported (its error code above all).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Trial {
     pub output: Option<String>,
     pub line: String,
     pub verdict: Verdict,
+    pub detail: RewriteDetail,
 }
 
 impl Trial {
+    /// The specific failure behind an `unavailable`/`refused`/`misconfigured`
+    /// verdict (`budget_exceeded`, `busy`, `shutdown`, …).
+    pub fn code(&self) -> Option<&'static str> {
+        self.detail.code
+    }
+
     pub fn source(&self) -> HeadingSource {
         if self.verdict == Verdict::Accepted {
             HeadingSource::Rewrite
@@ -288,11 +330,7 @@ impl HeadingSource {
 /// The `day_of_heading` log reason for a rewriter failure; operator
 /// settings stay distinguishable from outages.
 pub fn failure_reason(failure: RewriteFailure) -> &'static str {
-    match failure {
-        RewriteFailure::Unavailable => "unavailable",
-        RewriteFailure::Refused => "refused",
-        RewriteFailure::Misconfigured => "misconfigured",
-    }
+    failure_verdict(failure)
 }
 
 /// v4's heading for `day`.
@@ -399,12 +437,14 @@ fn names_catalog_entry(tokens: &[String], catalog: &BossTable) -> bool {
 }
 
 /// The rewriter and persona; either missing means the seed. `words` is the
-/// live profanity list, read per rewrite (`None`: the built-in list).
+/// live profanity list, read per rewrite (`None`: the built-in list); `log`
+/// receives one Rewrites-log row per trial (`None`: nothing is logged).
 #[derive(Clone, Default)]
 pub struct HeadingRewrite {
     pub rewriter: Option<SharedRewriter>,
     pub persona: Option<PersonaSource>,
     pub words: Option<WordSource>,
+    pub log: Option<SharedRewriteSink>,
 }
 
 impl std::fmt::Debug for HeadingRewrite {
@@ -413,6 +453,7 @@ impl std::fmt::Debug for HeadingRewrite {
             .field("rewriter", &self.rewriter.is_some())
             .field("persona", &self.persona.is_some())
             .field("words", &self.words.is_some())
+            .field("log", &self.log.is_some())
             .finish()
     }
 }
@@ -442,40 +483,66 @@ impl HeadingRewrite {
     }
 
     /// The heading for `day` (e.g. `Fri 25 Sep`), rewritten ahead of the
-    /// send; never slower than `deadline`. Logs the source, never the text.
-    pub async fn choose(&self, day: &str, deadline: Duration) -> (String, HeadingSource) {
-        let trial = self.trial(HeaderKind::DayOf, None, deadline).await;
+    /// send for the card under `key` by `stage` (a batch or a catch-up);
+    /// never slower than `deadline`. Logs the source and the failure code,
+    /// never the text.
+    pub async fn choose(
+        &self,
+        day: &str,
+        key: &str,
+        stage: RewriteStage,
+        deadline: Duration,
+    ) -> Chosen {
+        let origin = TrialOrigin::new(stage, key);
+        let trial = self.trial(HeaderKind::DayOf, None, deadline, &origin).await;
         logging::event(
             "INFO",
             "day_of_heading",
-            json!({"stage": "pregen", "source": trial.source().as_str(), "reason": trial.verdict.reason()}),
+            json!({
+                "stage": stage.as_str(),
+                "source": trial.source().as_str(),
+                "reason": trial.verdict.reason(),
+                "detail": trial.code(),
+            }),
         );
-        (trial.line.replace(DAY, day), trial.source())
+        Chosen {
+            line: trial.line.replace(DAY, day),
+            source: trial.source(),
+            code: trial.code(),
+        }
     }
 
-    /// A countdown or digest phrase rewritten ahead of the send. Its prompt
-    /// contains only the persona and the code-owned seed.
+    /// A countdown or digest phrase rewritten ahead of the send for the card
+    /// or digest under `key`. Its prompt contains only the persona and the
+    /// code-owned seed.
     pub async fn choose_phrase(
         &self,
         kind: PhraseKind,
         catalog: Option<&BossTable>,
+        key: &str,
+        stage: RewriteStage,
         deadline: Duration,
-    ) -> (String, HeadingSource) {
+    ) -> Chosen {
+        let origin = TrialOrigin::new(stage, key);
         let trial = self
-            .trial(HeaderKind::Phrase(kind), catalog, deadline)
+            .trial(HeaderKind::Phrase(kind), catalog, deadline, &origin)
             .await;
         logging::event(
             "INFO",
             "reminder_header_phrase",
             json!({
-                "stage": "pregen",
+                "stage": stage.as_str(),
                 "kind": kind.as_str(),
                 "source": trial.source().as_str(),
                 "reason": trial.verdict.reason(),
+                "detail": trial.code(),
             }),
         );
-        let source = trial.source();
-        (trial.line, source)
+        Chosen {
+            source: trial.source(),
+            code: trial.code(),
+            line: trial.line,
+        }
     }
 
     /// Logs a send that found no stored line and stores the seed.
@@ -499,34 +566,82 @@ impl HeadingRewrite {
     }
 
     /// One rewrite of `kind`'s seed through its gate, never slower than
-    /// `deadline`. Stores and logs nothing.
+    /// `deadline`. Stores nothing; writes one Rewrites-log row for `origin`
+    /// when a log is attached.
     pub async fn trial(
         &self,
         kind: HeaderKind,
         catalog: Option<&BossTable>,
         deadline: Duration,
+        origin: &TrialOrigin,
     ) -> Trial {
-        let seed = match kind {
-            HeaderKind::DayOf => DAY_OF_HEADING_SEED,
-            HeaderKind::Phrase(phrase) => phrase.seed(),
-        };
-        let fallback = |output, verdict| Trial {
+        let started = tokio::time::Instant::now();
+        let (trial, called) = self.attempt(kind, catalog, deadline).await;
+        if let Some(log) = &self.log {
+            log.record(RewriteAttempt {
+                kind: kind.log_kind(),
+                stage: origin.stage,
+                context: origin.context.clone(),
+                seed: seed_of(kind).to_owned(),
+                verdict: trial.verdict.reason(),
+                rule: trial.verdict.rule(),
+                latency: called.then(|| started.elapsed()),
+                line: Some(trial.line.clone()),
+                detail: RewriteDetail {
+                    reply: trial.output.clone().or_else(|| trial.detail.reply.clone()),
+                    ..trial.detail.clone()
+                },
+            })
+            .await;
+        }
+        trial
+    }
+
+    /// The trial and whether the model was called.
+    async fn attempt(
+        &self,
+        kind: HeaderKind,
+        catalog: Option<&BossTable>,
+        deadline: Duration,
+    ) -> (Trial, bool) {
+        let seed = seed_of(kind);
+        let fallback = |output, verdict, detail| Trial {
             output,
             line: seed.to_owned(),
             verdict,
+            detail,
         };
         let Some(rewriter) = &self.rewriter else {
-            return fallback(None, Verdict::NoRewriter);
+            return (
+                fallback(None, Verdict::NoRewriter, RewriteDetail::default()),
+                false,
+            );
         };
         let Some(persona) = self.persona.as_ref().and_then(|source| source()) else {
-            return fallback(None, Verdict::NoPersona);
+            return (
+                fallback(None, Verdict::NoPersona, RewriteDetail::default()),
+                false,
+            );
         };
         let prompt = RewritePrompt::build(&persona, NudgeMood::Playful, seed);
-        let call = rewriter.rewrite(&prompt, deadline);
-        let text = match tokio::time::timeout(deadline, call).await {
-            Err(_) => return fallback(None, Verdict::Timeout),
-            Ok(Err(failure)) => return fallback(None, Verdict::Failed(failure)),
-            Ok(Ok(text)) => text,
+        let call = rewriter.rewrite_detailed(&prompt, deadline);
+        let outcome = match tokio::time::timeout(deadline, call).await {
+            Err(_) => {
+                return (
+                    fallback(None, Verdict::Timeout, RewriteDetail::default()),
+                    true,
+                );
+            }
+            Ok(outcome) => outcome,
+        };
+        let text = match outcome.result {
+            Err(failure) => {
+                return (
+                    fallback(None, Verdict::Failed(failure), outcome.detail),
+                    true,
+                );
+            }
+            Ok(text) => text,
         };
         let words = self.words();
         let accepted = match kind {
@@ -537,14 +652,23 @@ impl HeadingRewrite {
                 accept_phrase_with(&text, seed, catalog, &words).map_err(Verdict::PhraseRejected)
             }
         };
-        match accepted {
+        let trial = match accepted {
             Ok(line) => Trial {
                 output: Some(text),
                 line,
                 verdict: Verdict::Accepted,
+                detail: outcome.detail,
             },
-            Err(verdict) => fallback(Some(text), verdict),
-        }
+            Err(verdict) => fallback(Some(text), verdict, outcome.detail),
+        };
+        (trial, true)
+    }
+}
+
+fn seed_of(kind: HeaderKind) -> &'static str {
+    match kind {
+        HeaderKind::DayOf => DAY_OF_HEADING_SEED,
+        HeaderKind::Phrase(phrase) => phrase.seed(),
     }
 }
 

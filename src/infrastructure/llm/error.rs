@@ -25,6 +25,28 @@ pub enum ErrorCode {
     KeyExpired,
 }
 
+impl ErrorCode {
+    /// A stable snake-case name for logs and transcripts.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::RequestInvalid => "request_invalid",
+            Self::BudgetExceeded => "budget_exceeded",
+            Self::DeadlineExceeded => "deadline_exceeded",
+            Self::ProviderPermanent => "provider_permanent",
+            Self::ProviderAuthentication => "provider_authentication",
+            Self::InvalidOutput => "invalid_output",
+            Self::ModelMismatch => "model_mismatch",
+            Self::Incomplete => "incomplete",
+            Self::ContentFiltered => "content_filtered",
+            Self::UnsupportedCapability => "unsupported_capability",
+            Self::AdmissionRefused => "admission_refused",
+            Self::BackendUnavailable => "backend_unavailable",
+            Self::UpstreamTimeout => "upstream_timeout",
+            Self::KeyExpired => "key_expired",
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct LlmError {
     pub code: ErrorCode,

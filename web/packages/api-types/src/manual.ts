@@ -244,6 +244,22 @@ export type ExtractionOutcome =
   | 'self_service_link'
   | 'identity_leak';
 
+// ── Rewrites ──────────────────────────────────────────────────────────────
+
+/** Which line a persona rewrite was for. */
+export type RewriteKind = 'day_of' | 'countdown' | 'digest' | 'nudge';
+/** Where it ran: the daily header batch, its catch-up, a `/debug` trial or a self-service nudge. */
+export type RewriteStage = 'batch' | 'catchup' | 'debug' | 'nudge';
+export type RewriteVerdict =
+  | 'accepted'
+  | 'rejected'
+  | 'timeout'
+  | 'unavailable'
+  | 'refused'
+  | 'misconfigured'
+  | 'no_rewriter'
+  | 'no_persona';
+
 // ── Chat ──────────────────────────────────────────────────────────────────
 
 export type ChatOutcome =

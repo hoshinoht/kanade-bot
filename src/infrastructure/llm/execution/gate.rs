@@ -1,5 +1,6 @@
 use tokio::time::Instant;
 
+use super::super::CompletionResponse;
 use super::super::governor::{Attempt, CallKind, Outcome, Permit, Random, Refused, SentRequest};
 
 /// Admission for one runner call: every provider request passes the permit's
@@ -22,6 +23,19 @@ pub(in crate::infrastructure::llm) struct Gate<'a> {
     /// Every correlation id handed to the provider, in order; the session's
     /// own list, so a cancelled call still keeps the id it sent.
     sent_ids: Option<&'a mut Vec<String>>,
+    /// The last admitted request's token reservation.
+    reservation: Option<u32>,
+    /// A reply refused for reporting more tokens than its reservation.
+    overrun: Option<CompletionResponse>,
+    /// The call budget left when a reservation was refused before sending.
+    budget: Option<u32>,
+}
+
+/// What [`Gate::take_measured`] hands the session.
+pub(in crate::infrastructure::llm) struct Measured {
+    pub(in crate::infrastructure::llm) reservation: Option<u32>,
+    pub(in crate::infrastructure::llm) overrun: Option<CompletionResponse>,
+    pub(in crate::infrastructure::llm) budget: Option<u32>,
 }
 
 pub(in crate::infrastructure::llm) enum Denied {
@@ -53,6 +67,9 @@ impl<'a> Gate<'a> {
             tag: None,
             sent: None,
             sent_ids: None,
+            reservation: None,
+            overrun: None,
+            budget: None,
         }
     }
 
@@ -75,6 +92,30 @@ impl<'a> Gate<'a> {
 
     pub(super) fn note_sent(&mut self, sent: SentRequest) {
         self.sent = Some(sent);
+    }
+
+    pub(super) fn note_reservation(&mut self, reservation: u32) {
+        self.reservation = Some(reservation);
+    }
+
+    pub(super) fn note_overrun(&mut self, response: CompletionResponse) {
+        self.overrun = Some(response);
+    }
+
+    /// A reservation larger than the call budget left: nothing is sent.
+    pub(super) fn note_over_budget(&mut self, reservation: u32, budget: u32) {
+        self.reservation = Some(reservation);
+        self.budget = Some(budget);
+    }
+
+    /// The last request's reservation; if its reply exceeded it, that reply;
+    /// if it was refused before sending, the budget it exceeded.
+    pub(in crate::infrastructure::llm) fn take_measured(&mut self) -> Measured {
+        Measured {
+            reservation: self.reservation.take(),
+            overrun: self.overrun.take(),
+            budget: self.budget.take(),
+        }
     }
 
     /// What the last admitted request sent (alias and reasoning effort).
@@ -101,6 +142,9 @@ impl<'a> Gate<'a> {
             tag: None,
             sent: None,
             sent_ids: None,
+            reservation: None,
+            overrun: None,
+            budget: None,
         }
     }
 

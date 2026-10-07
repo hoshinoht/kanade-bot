@@ -147,6 +147,7 @@ impl<P: LlmProvider> CompletionRunner<P> {
             let reservation = estimate(request_bytes, current.max_output_tokens)
                 .map_err(|error| failed(error, charged))?;
             if reservation > remaining {
+                gate.note_over_budget(reservation, remaining);
                 return Err(failed(
                     LlmError::new(ErrorCode::BudgetExceeded, "attempt-reservation"),
                     charged,
@@ -160,6 +161,7 @@ impl<P: LlmProvider> CompletionRunner<P> {
             }
             retry = false;
             remaining -= reservation;
+            gate.note_reservation(reservation);
             // The alias and the effort as the wire body carries them (the
             // same rule `chat_body` applies); unknown capabilities send the
             // request's effort as is.
@@ -214,6 +216,8 @@ impl<P: LlmProvider> CompletionRunner<P> {
                     if let Some(used) = known
                         && used > reservation
                     {
+                        // Kept for logs; the rejection itself is unchanged.
+                        gate.note_overrun(response);
                         return Err(charge(LlmError::new(
                             ErrorCode::BudgetExceeded,
                             "usage-reservation",

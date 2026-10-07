@@ -6,8 +6,12 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 
 use super::{
+    log::{RewriteAttempt, SharedRewriteSink, failure_verdict},
     prompt::RewritePrompt,
-    rewrite::{NudgeRewriter, REWRITE_DEADLINE, Rejection, RewriteFailure, accept_rewrite_with},
+    rewrite::{
+        NudgeRewriter, REWRITE_DEADLINE, Rejection, RewriteDetail, RewriteFailure,
+        accept_rewrite_with,
+    },
     rotation::SeedRotation,
     safety::{self, WordFilter},
 };
@@ -15,7 +19,7 @@ use crate::chat::persona::{
     CompiledPersona, NudgeMood, NudgePurpose, NudgeSource, check_nudge_line, fill_nudge,
 };
 use crate::chat::prompts::builtin_nudges;
-use crate::domain::model_log::ModelLogStore;
+use crate::domain::model_log::{ModelLogStore, RewriteKind, RewriteStage};
 use crate::domain::notify::WeekReset;
 use crate::domain::scheduler::StoreError;
 use crate::infrastructure::llm::governor::Random;
@@ -119,6 +123,7 @@ pub struct Nudger<R> {
     rotation: SeedRotation,
     rewriter: R,
     words: WordSource,
+    log: Option<SharedRewriteSink>,
 }
 
 impl<R> std::fmt::Debug for Nudger<R> {
@@ -136,12 +141,20 @@ impl<R: NudgeRewriter> Nudger<R> {
             rotation: SeedRotation::new(random),
             rewriter,
             words: Arc::new(move || Arc::clone(&builtin)),
+            log: None,
         }
     }
 
     #[must_use]
     pub fn with_words(mut self, words: WordSource) -> Self {
         self.words = words;
+        self
+    }
+
+    /// Log each rewrite attempt (one row per lead-in) to the Rewrites log.
+    #[must_use]
+    pub fn with_log(mut self, log: SharedRewriteSink) -> Self {
+        self.log = Some(log);
         self
     }
 
@@ -176,23 +189,27 @@ impl<R: NudgeRewriter> Nudger<R> {
             .pick(facts.channel_id, &seeds.lines)
             .unwrap_or(builtin[0]);
         let prompt = RewritePrompt::build(persona, facts.mood, seed);
+        let started = tokio::time::Instant::now();
         let attempt = tokio::time::timeout(
             REWRITE_DEADLINE,
-            self.rewriter.rewrite(&prompt, REWRITE_DEADLINE),
+            self.rewriter.rewrite_detailed(&prompt, REWRITE_DEADLINE),
         )
         .await;
-        let (template, line) = match attempt {
-            Err(_) => (seed.to_owned(), LineSource::Seed(SeedReason::TimedOut)),
-            Ok(Err(RewriteFailure::Unavailable)) => {
-                (seed.to_owned(), LineSource::Seed(SeedReason::Unavailable))
-            }
-            Ok(Err(RewriteFailure::Refused)) => {
-                (seed.to_owned(), LineSource::Seed(SeedReason::Refused))
-            }
-            Ok(Err(RewriteFailure::Misconfigured)) => {
-                (seed.to_owned(), LineSource::Seed(SeedReason::Misconfigured))
-            }
-            Ok(Ok(output)) => match accept_rewrite_with(&output, seed, &(self.words)()) {
+        let (detail, output) = match attempt {
+            Err(_) => (RewriteDetail::default(), Err(SeedReason::TimedOut)),
+            Ok(outcome) => (
+                outcome.detail,
+                outcome.result.map_err(|failure| match failure {
+                    RewriteFailure::Unavailable => SeedReason::Unavailable,
+                    RewriteFailure::Refused => SeedReason::Refused,
+                    RewriteFailure::Misconfigured => SeedReason::Misconfigured,
+                }),
+            ),
+        };
+        let latency = started.elapsed();
+        let (template, line) = match &output {
+            Err(reason) => (seed.to_owned(), LineSource::Seed(*reason)),
+            Ok(output) => match accept_rewrite_with(output, seed, &(self.words)()) {
                 Ok(line) => (line, LineSource::Rewritten),
                 Err(rejection) => (
                     seed.to_owned(),
@@ -219,6 +236,64 @@ impl<R: NudgeRewriter> Nudger<R> {
                 }
             },
         };
+        if let Some(log) = &self.log {
+            let (verdict, rule) = match line {
+                LineSource::Rewritten => ("accepted", None),
+                LineSource::Seed(SeedReason::Rejected(rejection)) => {
+                    ("rejected", Some(rejection.rule()))
+                }
+                LineSource::Seed(SeedReason::UnsafeFill) => ("rejected", Some("unsafe fill")),
+                LineSource::Seed(SeedReason::TimedOut) => ("timeout", None),
+                LineSource::Seed(SeedReason::Unavailable) => {
+                    (failure_verdict(RewriteFailure::Unavailable), None)
+                }
+                LineSource::Seed(SeedReason::Refused) => {
+                    (failure_verdict(RewriteFailure::Refused), None)
+                }
+                LineSource::Seed(SeedReason::Misconfigured) => {
+                    (failure_verdict(RewriteFailure::Misconfigured), None)
+                }
+                // The seed's fill was unsafe too: the attempt's own verdict.
+                LineSource::FieldFree => match &output {
+                    Ok(_) => ("accepted", None),
+                    Err(SeedReason::TimedOut) => ("timeout", None),
+                    Err(SeedReason::Refused) => ("refused", None),
+                    Err(SeedReason::Misconfigured) => ("misconfigured", None),
+                    Err(_) => ("unavailable", None),
+                },
+            };
+            // The template as used, before `{boss}`/`{day}`/`{time}` are filled.
+            let used = match line {
+                LineSource::Rewritten => template.clone(),
+                LineSource::Seed(_) => seed.to_owned(),
+                LineSource::FieldFree => lead_in.clone(),
+            };
+            log.record(RewriteAttempt {
+                kind: RewriteKind::Nudge,
+                stage: RewriteStage::Nudge,
+                context: Some(format!(
+                    "{} · {}",
+                    match facts.purpose {
+                        NudgePurpose::SelfService => "self_service",
+                        NudgePurpose::RequestForm => "request_form",
+                    },
+                    match facts.mood {
+                        NudgeMood::Playful => "playful",
+                        NudgeMood::Gentle => "gentle",
+                    }
+                )),
+                seed: seed.to_owned(),
+                verdict,
+                rule,
+                latency: Some(latency),
+                line: Some(used),
+                detail: RewriteDetail {
+                    reply: output.as_ref().ok().cloned().or(detail.reply.clone()),
+                    ..detail
+                },
+            })
+            .await;
+        }
         Nudge {
             lead_in,
             line,

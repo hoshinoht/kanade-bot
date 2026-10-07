@@ -1,8 +1,10 @@
 //! The `[models.context]` seed (`KANADE_MODEL_CONTEXT`): windows above the
 //! hard cap are clamped (and reported so serve can log it); anything else
-//! invalid refuses startup.
+//! invalid refuses startup, a reserve that leaves no prompt room in the
+//! call token budget included.
 
 use crate::domain::settings::{ContextRole, ContextSettings, MAX_CONTEXT_TOKENS};
+use crate::infrastructure::llm::{CALL_TOKEN_BUDGET, PROMPT_FLOOR_TOKENS, RESERVE_LIMIT};
 
 use super::Error;
 
@@ -53,6 +55,12 @@ pub(super) fn parse(value: &str) -> Result<(ContextSettings, Vec<String>), Error
         if role.reserve > MAX_CONTEXT_TOKENS {
             return Err(Error::Configuration(format!(
                 "models.context.{name}.reserve must be at most {MAX_CONTEXT_TOKENS}"
+            )));
+        }
+        if role.reserve >= RESERVE_LIMIT {
+            return Err(Error::Configuration(format!(
+                "models.context.{name}.reserve ({}) must be below {RESERVE_LIMIT}: a call's token budget is {CALL_TOKEN_BUDGET} and {PROMPT_FLOOR_TOKENS} of it stays for the prompt",
+                role.reserve
             )));
         }
         let window = role.cap.map_or(floor, |cap| cap.min(floor));
@@ -137,9 +145,22 @@ mod tests {
                 serde_json::json!({"extraction": {"reserve": 8192}}),
                 "models.context.extraction.reserve (8192) must be smaller than its window (8192)",
             ),
+            // Windows big enough, but no prompt fits the call token budget.
+            (
+                serde_json::json!({"local_default": 65_536, "rewrite": {"reserve": 16_000}}),
+                "models.context.rewrite.reserve (16000) must be below 15360: a call's token budget is 16384 and 1024 of it stays for the prompt",
+            ),
+            (
+                serde_json::json!({"local_default": 65_536, "chat": {"reserve": 15_360}}),
+                "models.context.chat.reserve (15360) must be below 15360: a call's token budget is 16384 and 1024 of it stays for the prompt",
+            ),
         ] {
             assert_eq!(parsed(patch.clone()).unwrap_err(), message, "{patch}");
         }
+        let (fits, _) =
+            parsed(serde_json::json!({"local_default": 65_536, "rewrite": {"reserve": 15_359}}))
+                .unwrap();
+        assert_eq!(fits.rewrite.reserve, 15_359, "just below the limit starts");
         let unknown = parse(r#"{"cloud_default": 1}"#).unwrap_err().to_string();
         assert!(unknown.starts_with("KANADE_MODEL_CONTEXT is not valid context settings"));
     }

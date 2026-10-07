@@ -118,7 +118,10 @@ reasoning = "inherit"
 # but `cap` and `overrides` are required. A window (default, cap, override)
 # above 131072 is clamped to 131072 with a startup warning; a zero value or a
 # reserve not smaller than its role's window (its cap, else the smaller zone
-# default) refuses startup. Reserves are sent as max_tokens, clamped to the
+# default) refuses startup, as does a reserve of 15360 or more: every model
+# call reserves its prompt estimate plus max_tokens out of a 16384-token
+# budget, and at least 1024 of it must stay for the prompt (the Config API
+# refuses the same with 422). Reserves are sent as max_tokens, clamped to the
 # route's published output maximum. Local routes over 16384 warn but run.
 # Override keys match aliases exactly: an override on "kanata/chat" does not
 # apply to a "kanata/chat:high" variant.

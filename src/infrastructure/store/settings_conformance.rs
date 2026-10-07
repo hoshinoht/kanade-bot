@@ -28,13 +28,14 @@ pub async fn run_suite<S: SettingsStore>(make: impl AsyncFn() -> S) {
 }
 
 /// `v5.message_style` reads `classic` when unset, round-trips as text and
-/// refuses anything else.
+/// refuses anything else; `v5.header_generation_time` is stored beside it.
 async fn message_style_is_stored_as_text<S: SettingsStore>(store: S) {
     let seed = RuntimeSettings::default();
     let unset = load_settings(&store, &seed).await.expect("load");
     assert_eq!(unset.notifications.message_style, MessageStyle::Classic);
     let mut notifications = unset.notifications;
     notifications.message_style = MessageStyle::Redesigned;
+    notifications.header_generation_time = chrono::NaiveTime::from_hms_opt(3, 30, 0).unwrap();
     save_section(&store, &Section::Notifications(notifications))
         .await
         .expect("save");
@@ -43,8 +44,16 @@ async fn message_style_is_stored_as_text<S: SettingsStore>(store: S) {
         rows.get(keys::MESSAGE_STYLE).map(String::as_str),
         Some("redesigned")
     );
+    assert_eq!(
+        rows.get(keys::HEADER_GENERATION_TIME).map(String::as_str),
+        Some("03:30")
+    );
     let loaded = load_settings(&store, &seed).await.expect("load");
     assert_eq!(loaded.notifications.message_style, MessageStyle::Redesigned);
+    assert_eq!(
+        loaded.notifications.header_generation_time,
+        notifications.header_generation_time
+    );
     store
         .put_settings_rows(raw(&[(keys::MESSAGE_STYLE, "fancy")]))
         .await

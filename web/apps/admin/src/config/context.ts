@@ -2,6 +2,18 @@ import type { ContextSource, EffectiveContext, ModelInfo } from '@kanade/api-typ
 
 /** The server's hard limit for every window, cap and reserve. */
 export const MAX_CONTEXT_TOKENS = 131_072;
+/** Each model call's token budget (prompt estimate + reply reserve), as the server's runner checks it. */
+export const CALL_TOKEN_BUDGET = 16_384;
+/** Of that budget, what a reserve must leave for the prompt (the server's `PROMPT_FLOOR_TOKENS`). */
+export const PROMPT_FLOOR_TOKENS = 1_024;
+/** The largest reply reserve the server accepts: one below budget − floor. */
+export const MAX_RESERVE = CALL_TOKEN_BUDGET - PROMPT_FLOOR_TOKENS - 1;
+
+/** The reserve fields' help: the effective limit and why. */
+export function reserveHelp(): string {
+  return `At most ${tokens(MAX_RESERVE)}: each call's token budget is ${tokens(CALL_TOKEN_BUDGET)}, and at least ${tokens(PROMPT_FLOOR_TOKENS)} of it stays for the prompt.`;
+}
+
 /** Past this a local route warns (never blocks). */
 export const LOCAL_WARNING_TOKENS = 16_384;
 /** The server's own notice text, shown inline beside the slider. */

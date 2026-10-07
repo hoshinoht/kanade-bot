@@ -120,7 +120,7 @@ lists are comma-separated.
 | `KANADE_EXTRACT_REASONING`, `KANADE_CHAT_REASONING`, `KANADE_REWRITE_REASONING` | unset | Reasoning seeds (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; chat and rewrite also `inherit` = extraction's level): used only where no `extract_reasoning` / `chat_pilot_think` / `v5.rewrite_reasoning` row is saved (row → env → default: extraction `off`, chat/rewrite `inherit`). Need `KANADE_MODEL_BASE_URL`. |
 | `KANADE_MODEL_PERMITS` | `2` | Concurrent model calls in the single `gateway` group, 1–16. |
 | `KANADE_MODEL_GROUPS` | unset | Capacity groups as a JSON list of `{name, permits, aliases}` (normally `[[models.groups]]` in `kanade.toml`): names unique, ≤ 64 of `[A-Za-z0-9._-]`; permits 1–16; each alias in one group. Non-empty replaces the `gateway` group; exclusive with `KANADE_MODEL_PERMITS`; needs `KANADE_MODEL_BASE_URL`. A role whose alias is in no group starts with an `ungrouped` warning and its calls are refused; switching a role to such an alias in the config API is refused. Without groups, an alias a role is switched to live joins the `gateway` group. The admin config view reports the groups the governor runs (`models.groups`, read-only). |
-| `KANADE_MODEL_CONTEXT` | unset | JSON seed from `[models.context]`: cloud/local defaults, per-role `{reserve, cap?}` and alias overrides, all required except `cap` and `overrides`. Override keys match route aliases exactly, so an override on a base alias does not apply to its `<base>:<level>` variants. It applies only when `v5.model_context` is unsaved; the Config API is the live writer. A window (default, cap or override) above 131072 is clamped to 131072 and logged once when the seed applies (`model_context_clamped`, WARN, `fields`, `max`). A zero window or reserve, a reserve above 131072, an unknown field, or a reserve not smaller than its role's seed window (its cap, else the smaller zone default) refuses startup naming the field. Needs `KANADE_MODEL_BASE_URL`. |
+| `KANADE_MODEL_CONTEXT` | unset | JSON seed from `[models.context]`: cloud/local defaults, per-role `{reserve, cap?}` and alias overrides, all required except `cap` and `overrides`. Override keys match route aliases exactly, so an override on a base alias does not apply to its `<base>:<level>` variants. It applies only when `v5.model_context` is unsaved; the Config API is the live writer. A window (default, cap or override) above 131072 is clamped to 131072 and logged once when the seed applies (`model_context_clamped`, WARN, `fields`, `max`). A zero window or reserve, a reserve above 131072, an unknown field, a reserve not smaller than its role's seed window (its cap, else the smaller zone default), or a reserve of 15360 or more refuses startup naming the field: each model call reserves its prompt estimate (request bytes / 4) plus `max_tokens` out of a 16384-token call budget and must leave at least 1024 for the prompt, else every call fails before sending (`budget_exceeded`). A Config save of such a reserve answers 422 naming the role, reserve and budget. Needs `KANADE_MODEL_BASE_URL`. |
 | `KANADE_RUN_LENGTHS` | unset | JSON seed from `[settings.run_lengths]`: `{default_minutes, overrides}`. It applies only when `v5.run_lengths` is unsaved; Config is the live writer. The default is 5-240 minutes; each `{boss, difficulty, minutes}` override is 5-480 and must name an exact catalog key and valid lowercase difficulty when saved through Config. Every admin run, including own-time runs, reports the sum across its bosses. |
 | `KANADE_TICK_SECONDS` | `30` | Scheduler tick, 5–300. |
 | `KANADE_INSTANCE_ID` | `kanade-<random>` | ≤ 64 of `[A-Za-z0-9._-]`. |
@@ -306,7 +306,12 @@ request, each from the settings saved at that moment and the cached catalog;
 a call in flight keeps what it started with. The window is
 `min(override | published | zone default, published, 131072, role cap)` and
 each role's `max_tokens` is its reserve clamped to the route's published
-`max_output_tokens` (rewrite defaults to 96).
+`max_output_tokens` (rewrite defaults to 96). A reserve must stay below 15360
+(the 16384-token call budget less a 1024-token prompt floor); the runner
+refuses a call whose prompt estimate plus `max_tokens` exceeds the budget
+before sending it, and the Rewrites log shows it as "reserved N > budget B"
+(a reply whose reported usage exceeds the reservation shows as "used N >
+reserved M").
 Extraction and the heading rewriter are still composed at startup: a role
 with no alias then gets its route live, but extraction and heading rewrites
 for it start only after a restart — the save says so in `notices` ("The
@@ -477,7 +482,15 @@ lets the caller record the outcome through its usual journal path before
 workers are aborted and reads are refused; a manual digest's HTTP request
 then answers, and the store close waits for it. The tick never calls the
 model: card headings are rewritten ahead of time by the header
-pre-generation worker. A rewrite of its in flight at 22 s (or started later)
+pre-generation worker: a daily batch at `notifications.header_generation_time`
+(Config → Notifications, guild time, default 00:00, read live; a change
+applies from its next occurrence) writes the lines for every card firing in
+the next 24 h and the coming week's digest when its reset falls in that
+window, a run of the process whose batch time has passed today without a
+batch runs one at once, and a 60 s catch-up tick writes lines only for cards
+the last batch had not seen (runs added or moved since) and retries the
+batch's failures (a busy rewrite permit without spending one of the three
+attempts). A rewrite of its in flight at 22 s (or started later)
 fails as unavailable and stores nothing, so the send uses the seed text; the
 worker's own stop abandons a rewrite earlier but always lets a store write
 it began finish. The tick's waits are store work. Reads fail at once
