@@ -1,5 +1,5 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
-import { forbidModules, stripFidelityTags, themeBoot } from '@kanade/ui/vite';
+import { forbidModules, precompress, stripFidelityTags, themeBoot } from '@kanade/ui/vite';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { ADMIN_ONLY_MODULES } from './admin-only.ts';
@@ -40,6 +40,8 @@ export default defineConfig({
       },
       devOptions: { enabled: false },
     }),
+    // After VitePWA: compresses dist once sw.js is written.
+    precompress(),
   ],
   build: {
     target: 'es2023',

@@ -35,8 +35,18 @@ fn expected(public: bool) -> Vec<(&'static str, &'static str)> {
 }
 
 fn assert_exact(reply: &support::Reply, public: bool, cache: &str) {
+    assert_with(reply, public, cache, &[]);
+}
+
+/// Static app files of a compressible type also vary on `Accept-Encoding`.
+fn assert_static(reply: &support::Reply, public: bool, cache: &str) {
+    assert_with(reply, public, cache, &[("vary", "Accept-Encoding")]);
+}
+
+fn assert_with(reply: &support::Reply, public: bool, cache: &str, extra: &[(&str, &str)]) {
     let mut expected = expected(public);
     expected.push(("cache-control", cache));
+    expected.extend_from_slice(extra);
     for (name, value) in &expected {
         assert_eq!(reply.header(name), Some(*value), "{name}");
     }
@@ -67,8 +77,8 @@ async fn each_origin_sends_exactly_the_mock_security_headers() {
         false,
         "no-store",
     );
-    assert_exact(&get(admin, ADMIN_HOST, "/").await, false, "no-cache");
-    assert_exact(
+    assert_static(&get(admin, ADMIN_HOST, "/").await, false, "no-cache");
+    assert_static(
         &get(admin, ADMIN_HOST, "/assets/app-abc123.js").await,
         false,
         "public, max-age=31536000, immutable",
@@ -91,7 +101,7 @@ async fn each_origin_sends_exactly_the_mock_security_headers() {
         true,
         "no-store",
     );
-    assert_exact(&get(public, PUBLIC_HOST, "/week").await, true, "no-cache");
+    assert_static(&get(public, PUBLIC_HOST, "/week").await, true, "no-cache");
     assert_exact(
         &get(public, PUBLIC_HOST, "/art/entry/Carling").await,
         true,

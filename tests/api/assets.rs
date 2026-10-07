@@ -360,3 +360,151 @@ async fn still_kinds_never_serve_video_and_animated_never_serves_stills() {
         assert!(!reply.text().contains(SECRET), "{path}");
     }
 }
+
+/// Invented stand-ins for the build's siblings: the server never decodes them.
+fn with_siblings(fixture: &Fixture) {
+    let dist = fixture.path("web/apps/admin/dist");
+    std::fs::write(dist.join("assets/app-abc123.js.br"), b"BR-BYTES").unwrap();
+    std::fs::write(dist.join("assets/app-abc123.js.gz"), b"GZIP-BYTES").unwrap();
+    // The shell has only a gzip sibling (the build drops a variant that is not smaller).
+    std::fs::write(dist.join("index.html.gz"), b"GZIP-SHELL").unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(
+        fixture.path("secret.txt"),
+        dist.join("manifest.webmanifest.br"),
+    )
+    .unwrap();
+}
+
+#[tokio::test]
+async fn static_files_serve_the_best_precompressed_sibling() {
+    let fixture = Fixture::new();
+    with_siblings(&fixture);
+    let admin = support::admin(&fixture.http()).await;
+    let script = "/assets/app-abc123.js";
+    let raw = read(&fixture.path("web/apps/admin/dist/assets/app-abc123.js"));
+
+    for (accept, encoding, body) in [
+        (
+            Some("gzip, deflate, br, zstd"),
+            Some("br"),
+            &b"BR-BYTES"[..],
+        ),
+        (Some("br"), Some("br"), b"BR-BYTES"),
+        (Some("gzip"), Some("gzip"), b"GZIP-BYTES"),
+        (Some("br;q=0, gzip"), Some("gzip"), b"GZIP-BYTES"),
+        (Some("br;q=0.5, gzip"), Some("gzip"), b"GZIP-BYTES"),
+        (Some("*"), Some("br"), b"BR-BYTES"),
+        (Some("br;q=0, gzip;q=0"), None, &raw),
+        (Some("*;q=0"), None, &raw),
+        (Some("identity"), None, &raw),
+        (Some("deflate"), None, &raw),
+        (None, None, &raw),
+    ] {
+        let headers: Vec<(&str, &str)> =
+            accept.map(|a| ("Accept-Encoding", a)).into_iter().collect();
+        let reply = request(admin, "GET", ADMIN_HOST, script, &headers).await;
+        assert_eq!(reply.status, 200, "{accept:?}");
+        assert_eq!(reply.header("content-encoding"), encoding, "{accept:?}");
+        assert_eq!(reply.body, body, "{accept:?}");
+        assert_eq!(
+            reply.header("content-type"),
+            Some("text/javascript; charset=utf-8"),
+            "{accept:?}"
+        );
+        assert_eq!(
+            reply.header("content-length"),
+            Some(body.len().to_string().as_str()),
+            "{accept:?}"
+        );
+        assert_eq!(reply.header("vary"), Some("Accept-Encoding"), "{accept:?}");
+        assert_eq!(
+            reply.header("cache-control"),
+            Some("public, max-age=31536000, immutable"),
+            "{accept:?}"
+        );
+    }
+
+    let head = request(
+        admin,
+        "HEAD",
+        ADMIN_HOST,
+        script,
+        &[("Accept-Encoding", "br")],
+    )
+    .await;
+    assert_eq!(head.status, 200);
+    assert_eq!(head.header("content-encoding"), Some("br"));
+    assert_eq!(head.header("content-length"), Some("8"));
+    assert_eq!(head.header("vary"), Some("Accept-Encoding"));
+    assert!(head.body.is_empty());
+}
+
+#[tokio::test]
+async fn the_spa_shell_is_negotiated_and_missing_siblings_fall_back_to_identity() {
+    let fixture = Fixture::new();
+    with_siblings(&fixture);
+    let admin = support::admin(&fixture.http()).await;
+
+    for path in ["/", "/week", "/index.html"] {
+        let gzip = request(
+            admin,
+            "GET",
+            ADMIN_HOST,
+            path,
+            &[("Accept-Encoding", "gzip, br")],
+        )
+        .await;
+        assert_eq!(gzip.header("content-encoding"), Some("gzip"), "{path}");
+        assert_eq!(gzip.body, b"GZIP-SHELL", "{path}");
+        assert_eq!(
+            gzip.header("content-type"),
+            Some("text/html; charset=utf-8")
+        );
+        assert_eq!(gzip.header("vary"), Some("Accept-Encoding"), "{path}");
+        assert_eq!(gzip.header("cache-control"), Some("no-cache"), "{path}");
+
+        // No br sibling: identity, still varying.
+        let br = request(admin, "GET", ADMIN_HOST, path, &[("Accept-Encoding", "br")]).await;
+        assert_eq!(br.header("content-encoding"), None, "{path}");
+        assert_eq!(br.text(), "<!doctype html>admin shell", "{path}");
+        assert_eq!(br.header("vary"), Some("Accept-Encoding"), "{path}");
+        assert_eq!(br.header("cache-control"), Some("no-cache"), "{path}");
+    }
+
+    // A symlinked sibling is never followed.
+    let manifest = request(
+        admin,
+        "GET",
+        ADMIN_HOST,
+        "/manifest.webmanifest",
+        &[("Accept-Encoding", "br")],
+    )
+    .await;
+    assert_eq!(manifest.header("content-encoding"), None);
+    assert_eq!(manifest.text(), "{}");
+    assert_eq!(manifest.header("vary"), Some("Accept-Encoding"));
+
+    // The siblings are encodings, not resources: a direct request is a 404.
+    for path in [
+        "/assets/app-abc123.js.br",
+        "/assets/app-abc123.js.gz",
+        "/index.html.GZ",
+    ] {
+        let reply = request(admin, "GET", ADMIN_HOST, path, &[("Accept-Encoding", "br")]).await;
+        assert_eq!(reply.status, 404, "{path}");
+        assert_eq!(reply.api_error(), "not_found", "{path}");
+    }
+
+    // Images are never negotiated.
+    let portrait = request(
+        admin,
+        "GET",
+        ADMIN_HOST,
+        "/art/portraits/Carling",
+        &[("Accept-Encoding", "br, gzip")],
+    )
+    .await;
+    assert_eq!(portrait.header("content-encoding"), None);
+    assert_eq!(portrait.header("vary"), None);
+}

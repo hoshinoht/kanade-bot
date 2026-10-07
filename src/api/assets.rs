@@ -17,7 +17,12 @@ use axum::{
 use ring::digest::{Context, SHA256, digest};
 use serde::Serialize;
 
-use super::{dto::bosses::is_event, error::ApiError, listeners::Site};
+use super::{
+    dto::bosses::is_event,
+    encoding::{self, Coding},
+    error::ApiError,
+    listeners::Site,
+};
 
 const ART_SUFFIXES: [&str; 4] = ["png", "webp", "jpg", "jpeg"];
 /// The `animated` kind only; still kinds never serve video.
@@ -188,7 +193,7 @@ pub async fn art(
     };
     match art_file(site.boss_dir.as_deref(), &kind, &basename) {
         Some(path) if kind == "animated" => send_ranged(&path, &request).await,
-        Some(path) => send(&path).await,
+        Some(path) => send(&path, &request).await,
         None => ApiError::NOT_FOUND.into_response(),
     }
 }
@@ -343,9 +348,14 @@ fn reserved(path: &str) -> bool {
         || path.starts_with("//")
 }
 
-pub async fn fallback(State(site): State<Arc<Site>>, method: Method, uri: Uri) -> Response {
+pub async fn fallback(
+    State(site): State<Arc<Site>>,
+    method: Method,
+    uri: Uri,
+    request: HeaderMap,
+) -> Response {
     let path = uri.path();
-    if reserved(path) {
+    if reserved(path) || precompressed(path) {
         return ApiError::NOT_FOUND.into_response();
     }
     if method != Method::GET && method != Method::HEAD {
@@ -358,14 +368,22 @@ pub async fn fallback(State(site): State<Arc<Site>>, method: Method, uri: Uri) -
     // Extensionless paths are client routes; a missing asset stays a 404, never HTML.
     if !last.contains('.') {
         return match contained(root, Path::new("index.html")) {
-            Some(file) => send(&file).await,
+            Some(file) => send(&file, &request).await,
             None => ApiError::NOT_FOUND.into_response(),
         };
     }
     match relative(path).and_then(|relative| contained(root, &relative)) {
-        Some(file) => send(&file).await,
+        Some(file) => send(&file, &request).await,
         None => ApiError::NOT_FOUND.into_response(),
     }
+}
+
+/// The build's `.br`/`.gz` siblings are encodings of another URL, never resources of their own.
+fn precompressed(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    [Coding::Brotli, Coding::Gzip]
+        .iter()
+        .any(|coding| lower.ends_with(&format!(".{}", coding.suffix())))
 }
 
 /// Plain segments only: no traversal, dotfiles, encodings, backslashes or empty parts.
@@ -393,16 +411,71 @@ fn contained(root: &Path, relative: &Path) -> Option<PathBuf> {
     (file.starts_with(&root) && file.is_file()).then_some(file)
 }
 
-async fn send(path: &Path) -> Response {
+/// The file, or its best precompressed sibling for the request's `Accept-Encoding`.
+/// Compressible types always carry `Vary`, so a cache never hands one client another's coding.
+async fn send(path: &Path, request: &HeaderMap) -> Response {
+    let content_type = content_type(path);
+    if !compressible(path) {
+        return match tokio::fs::read(path).await {
+            Ok(bytes) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, content_type)],
+                bytes,
+            )
+                .into_response(),
+            Err(_) => ApiError::NOT_FOUND.into_response(),
+        };
+    }
+    let accept = request
+        .get(header::ACCEPT_ENCODING)
+        .and_then(|value| value.to_str().ok());
+    for coding in encoding::preferred(accept) {
+        if let Some(bytes) = sibling(path, coding).await {
+            return (
+                StatusCode::OK,
+                [
+                    (header::CONTENT_TYPE, content_type),
+                    (header::CONTENT_ENCODING, coding.token()),
+                    (header::VARY, "Accept-Encoding"),
+                ],
+                bytes,
+            )
+                .into_response();
+        }
+    }
     match tokio::fs::read(path).await {
         Ok(bytes) => (
             StatusCode::OK,
-            [(header::CONTENT_TYPE, content_type(path))],
+            [
+                (header::CONTENT_TYPE, content_type),
+                (header::VARY, "Accept-Encoding"),
+            ],
             bytes,
         )
             .into_response(),
         Err(_) => ApiError::NOT_FOUND.into_response(),
     }
+}
+
+/// The types the web build precompresses (`precompress()` in `web/packages/ui/src/vite`).
+fn compressible(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|extension| extension.to_str()),
+        Some("html" | "js" | "mjs" | "css" | "svg" | "webmanifest" | "json")
+    )
+}
+
+/// A regular-file sibling of the (already contained, canonical) file; a symlink is never followed.
+async fn sibling(path: &Path, coding: Coding) -> Option<Vec<u8>> {
+    let mut name = path.file_name()?.to_os_string();
+    name.push(".");
+    name.push(coding.suffix());
+    let sibling = path.with_file_name(name);
+    let meta = tokio::fs::symlink_metadata(&sibling).await.ok()?;
+    if !meta.is_file() {
+        return None;
+    }
+    tokio::fs::read(&sibling).await.ok()
 }
 
 fn content_type(path: &Path) -> &'static str {

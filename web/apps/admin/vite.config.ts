@@ -1,5 +1,5 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte';
-import { stripFidelityTags, themeBoot } from '@kanade/ui/vite';
+import { precompress, stripFidelityTags, themeBoot } from '@kanade/ui/vite';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
@@ -38,6 +38,8 @@ export default defineConfig({
       },
       devOptions: { enabled: false },
     }),
+    // After VitePWA: compresses dist once sw.js is written.
+    precompress(),
   ],
   build: {
     target: 'es2023',

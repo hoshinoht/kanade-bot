@@ -82,3 +82,5 @@ export function stripFidelityTags(keep = process.env.KANADE_FIDELITY === '1'): P
     },
   };
 }
+
+export { precompress, precompressDir } from './precompress.ts';
