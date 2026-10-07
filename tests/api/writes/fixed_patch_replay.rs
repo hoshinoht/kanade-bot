@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use chrono::{NaiveTime, TimeZone, Utc, Weekday};
 use kanade::{
-    api::write::ApiClock,
+    api::write::{ApiClock, FixedPatchLookupGate},
     domain::{
         history::{Actor, Origin, Surface},
         ids::RandomIds,
@@ -19,6 +19,8 @@ use crate::{
     reads::EDGE_HEADERS,
     support::{ADMIN_HOST, Reply, send},
 };
+
+static LOOKUP_GATE_TESTS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 async fn other_call(reads: &Reads, method: &str, path: &str, body: Value) -> Reply {
     let (cookie, csrf) = reads.tailscale_session().await;
@@ -72,6 +74,89 @@ async fn fixed_patch_replay_survives_an_interleaved_other_admin_edit() {
     assert_eq!(replay.status, 200, "{}", replay.text());
     assert_eq!(replay.json()["note"], "interleaved");
     assert_unchanged(&reads, after_interleave, notices).await;
+}
+
+/// The retry can begin before the first request commits. Once the first write
+/// lands and a participant loses their role, the held handler must recover the
+/// recorded identity instead of refusing strict current-roster validation.
+#[tokio::test]
+async fn concurrently_recorded_fixed_patch_replays_after_roster_loss() {
+    let _serial = LOOKUP_GATE_TESTS.lock().await;
+    let reads = Arc::new(Reads::with_logins().await);
+    let version = reads.version().await;
+    let original = timing(version, "21:30", "seed");
+    let key = "fixed-race-roster";
+    let gate = FixedPatchLookupGate::install(key);
+    let held = {
+        let reads = Arc::clone(&reads);
+        let original = original.clone();
+        tokio::spawn(async move {
+            reads
+                .call(
+                    "PATCH",
+                    "/api/admin/fixed/f-kalos",
+                    original,
+                    &[("Idempotency-Key", key)],
+                )
+                .await
+        })
+    };
+    gate.reached().await;
+
+    let first = reads
+        .call(
+            "PATCH",
+            "/api/admin/fixed/f-kalos",
+            original,
+            &[("Idempotency-Key", key)],
+        )
+        .await;
+    assert_eq!(first.status, 200, "{}", first.text());
+    reads.demote("1002").await;
+    let revision = reads.version().await;
+    let notices = reads.store.outbox_notices().await.unwrap().len();
+    gate.release();
+
+    let replay = held.await.unwrap();
+    assert_eq!(replay.status, 200, "{}", replay.text());
+    assert_eq!(replay.json()["note"], "seed");
+    assert_unchanged(&reads, revision, notices).await;
+}
+
+/// A key that is still unseen after the same boundary never receives the
+/// replay-only roster relaxation and remains an ordinary strict refusal.
+#[tokio::test]
+async fn unseen_fixed_patch_after_roster_loss_stays_strict_and_writes_nothing() {
+    let _serial = LOOKUP_GATE_TESTS.lock().await;
+    let reads = Arc::new(Reads::with_logins().await);
+    let version = reads.version().await;
+    let key = "fixed-race-fresh";
+    let gate = FixedPatchLookupGate::install(key);
+    let held = {
+        let reads = Arc::clone(&reads);
+        tokio::spawn(async move {
+            reads
+                .call(
+                    "PATCH",
+                    "/api/admin/fixed/f-kalos",
+                    timing(version, "21:30", "seed"),
+                    &[("Idempotency-Key", key)],
+                )
+                .await
+        })
+    };
+    gate.reached().await;
+    reads.demote("1002").await;
+    let revision = reads.version().await;
+    let notices = reads.store.outbox_notices().await.unwrap().len();
+    gate.release();
+
+    let refused = held.await.unwrap();
+    assert_eq!(
+        (refused.status, refused.api_error()),
+        (422, "invalid".into())
+    );
+    assert_unchanged(&reads, revision, notices).await;
 }
 
 /// A reused key is refused before a current-row no-op can make a changed body

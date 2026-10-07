@@ -4,8 +4,13 @@
 
 use std::{collections::BTreeSet, fmt, future::Future, pin::Pin, sync::Arc};
 
+#[cfg(any(test, feature = "test-support"))]
+use std::sync::{Mutex as StdMutex, OnceLock};
+
 use chrono::{DateTime, Utc};
 use tokio::sync::Mutex;
+#[cfg(any(test, feature = "test-support"))]
+use tokio::sync::Notify;
 
 use super::{auth::Clock as ApiClockFn, state::ReadStore};
 use crate::domain::{
@@ -54,6 +59,86 @@ impl FixedPatchReplay {
 
     fn identity(&self) -> &str {
         &self.0
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+#[derive(Clone)]
+struct FixedPatchLookupGateInner {
+    request_id: String,
+    reached: Arc<Notify>,
+    release: Arc<Notify>,
+}
+
+#[cfg(any(test, feature = "test-support"))]
+fn fixed_patch_lookup_gate() -> &'static StdMutex<Option<FixedPatchLookupGateInner>> {
+    static GATE: OnceLock<StdMutex<Option<FixedPatchLookupGateInner>>> = OnceLock::new();
+    GATE.get_or_init(|| StdMutex::new(None))
+}
+
+/// Test-only gate immediately after the fixed-PATCH handler's initial key
+/// lookup. It is consumed once, so a first writer can pass while its retry is held.
+#[cfg(any(test, feature = "test-support"))]
+pub struct FixedPatchLookupGate(FixedPatchLookupGateInner);
+
+#[cfg(any(test, feature = "test-support"))]
+impl FixedPatchLookupGate {
+    pub fn install(request_id: impl Into<String>) -> Self {
+        let gate = FixedPatchLookupGateInner {
+            request_id: request_id.into(),
+            reached: Arc::new(Notify::new()),
+            release: Arc::new(Notify::new()),
+        };
+        let mut slot = fixed_patch_lookup_gate()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert!(slot.is_none(), "one fixed-PATCH lookup gate at a time");
+        *slot = Some(gate.clone());
+        Self(gate)
+    }
+
+    pub async fn reached(&self) {
+        self.0.reached.notified().await;
+    }
+
+    pub fn release(&self) {
+        self.0.release.notify_one();
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl Drop for FixedPatchLookupGate {
+    fn drop(&mut self) {
+        let mut slot = fixed_patch_lookup_gate()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot
+            .as_ref()
+            .is_some_and(|active| active.request_id == self.0.request_id)
+        {
+            *slot = None;
+        }
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub async fn hold_fixed_patch_after_lookup(origin: &Origin) {
+    let gate = {
+        let mut slot = fixed_patch_lookup_gate()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot
+            .as_ref()
+            .is_some_and(|gate| origin.request_id.as_deref() == Some(&gate.request_id))
+        {
+            slot.take()
+        } else {
+            None
+        }
+    };
+    if let Some(gate) = gate {
+        gate.reached.notify_one();
+        gate.release.notified().await;
     }
 }
 
