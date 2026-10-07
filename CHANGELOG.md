@@ -402,6 +402,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- Admin: the Config → Notifications "Generate daily at" field is wide enough for its whole HH:MM (it clipped to "00:6"), the same width as the morning ping field.
 - Config and startup refuse a context reserve of 15360 tokens or more for any role (422 naming the role, reserve and the 16384-token call budget; the `[models.context.*]` seed refuses startup): each call reserves its prompt estimate plus the reserve out of that budget, so such a reserve failed every call before sending. The Config reserve fields show the limit, and the Rewrites log tells "reserved N > budget B" apart from "used N > reserved M".
 
 - Reminder cards: persona-voiced day-of headings and countdown/digest phrases are rewritten ahead of time by a background pass (cards firing within 12 h, the coming week's digest; 30 s per rewrite, at most 4 per minute) instead of at send time, where the 2 s budget almost always fell back to the plain line. A send never calls the model: it uses the stored line, else the plain one, which then stays. Logs gain `stage` (`pregen`/`send`).

@@ -83,7 +83,8 @@
     gap: 8px;
   }
 
+  /* As the morning ping's field: room for HH:MM inside the padding and border. */
   .headertime__field input {
-    width: 6ch;
+    width: 6.25rem;
   }
 </style>

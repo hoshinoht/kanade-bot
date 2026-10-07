@@ -10,6 +10,9 @@ test('header generation time: saves, refuses a bad clock, undoes', async ({ page
   await expect(card).toContainText('Lines for the next 24 h are written then; runs added or moved later get theirs when first seen.');
   const field = card.getByRole('textbox', { name: /Generate daily at/ });
   await expect(field).toHaveValue('00:00');
+  // The whole HH:MM shows; the field never scrolls its own text.
+  await field.fill('23:59');
+  expect(await field.evaluate((el: HTMLInputElement) => el.scrollWidth <= el.clientWidth)).toBe(true);
 
   await field.fill('3:30');
   await card.getByRole('button', { name: 'Save' }).click();
