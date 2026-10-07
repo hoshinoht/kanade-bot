@@ -165,6 +165,9 @@ fn store(error: &StoreError) -> Refusal {
 }
 
 #[cfg(test)]
+mod atomic_fixed_patch_proof;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::domain::history::BlameTarget;
