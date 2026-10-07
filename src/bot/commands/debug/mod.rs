@@ -4,7 +4,8 @@
 //! elsewhere (and for sample runs and digests) they are display only.
 //! `header` tries the persona header rewrite and posts the verdicts. All
 //! three go through the [`DebugCards`](super::context::DebugCards) port.
-//! `reminders` lists stored
+//! `rewrite` rewrites every header posted this boss week in place
+//! (`delivery::ManualRewrite`) and posts a summary when done. `reminders` lists stored
 //! reminder rows (read only); `materialise` runs the scheduler writer's
 //! idempotent materialisation, the same write `/fixed add` makes. `status`,
 //! `upcoming` and `extract` are dropped (the admin app replaces them), and
@@ -13,6 +14,7 @@
 
 mod header;
 mod ping;
+mod rewrite;
 
 use std::sync::Arc;
 
@@ -292,6 +294,11 @@ impl SlashCommand for DebugCommand {
                     "Try the persona header rewrite and post each verdict",
                     header::options(),
                 ),
+                subcommand(
+                    "rewrite",
+                    "Rewrite every header posted this boss week and edit the posts",
+                    Vec::new(),
+                ),
             ],
         )
     }
@@ -312,6 +319,7 @@ impl SlashCommand for DebugCommand {
                 Some("reminders") => self.reminders(invocation).await,
                 Some("materialise") => self.materialise(invocation).await,
                 Some("header") => header::run(&self.ctx, invocation).await,
+                Some("rewrite") => rewrite::run(&self.ctx, invocation).await,
                 other => Err(CommandError::Internal(format!(
                     "unknown /debug subcommand {other:?}"
                 ))),

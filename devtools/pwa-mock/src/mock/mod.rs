@@ -86,6 +86,9 @@ pub struct Store {
     limit_resets: Vec<&'static str>,
     /// The newest manually posted digest week (`false` this, `true` next).
     digest_week: Option<bool>,
+    /// When the last manual header rewrite started (wall time); it counts as
+    /// running for `rewrites::MANUAL_RUN`.
+    header_rewrite: Option<std::time::Instant>,
     config: config::Config,
     /// `POST /__mock/arrive` added a chat turn / an extraction call.
     arrived_chat: bool,
@@ -114,6 +117,7 @@ impl Store {
             jobs: Vec::new(),
             limit_resets: Vec::new(),
             digest_week: None,
+            header_rewrite: None,
             config: config::defaults(),
             arrived_chat: false,
             arrived_extraction: false,
@@ -149,6 +153,7 @@ impl Store {
         self.jobs.clear();
         self.limit_resets.clear();
         self.digest_week = None;
+        self.header_rewrite = None;
         self.config = config::defaults();
         self.settings_changes.clear();
         self.arrived_chat = false;

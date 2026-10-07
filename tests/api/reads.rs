@@ -206,6 +206,9 @@ pub struct Reads {
     pub decline_retractions: Arc<Mutex<Vec<(String, String)>>>,
     pub chat: Arc<FakeChat>,
     pub digest_posts: Arc<Mutex<Vec<kanade::api::state::DigestPostRequest>>>,
+    /// The manual header rewrite port's calls, answered with `header_rewrite_answer`.
+    pub header_rewrites: Arc<Mutex<Vec<kanade::bot::delivery::ManualRequest>>>,
+    pub header_rewrite_answer: Arc<Mutex<kanade::bot::delivery::ManualStart>>,
     /// `KANADE_BACKUP_DIR`, an empty directory unless built `without_backup_dir`.
     pub backup_dir: Option<PathBuf>,
     /// The store's SQLite file, for tests that alter rows behind the API.
@@ -820,6 +823,21 @@ impl Reads {
                 })
             })
         };
+        let header_rewrites = Arc::new(Mutex::new(Vec::new()));
+        let header_rewrite_answer =
+            Arc::new(Mutex::new(kanade::bot::delivery::ManualStart::Started(3)));
+        let header_rewrite: kanade::api::state::HeaderRewritePort = {
+            let calls = Arc::clone(&header_rewrites);
+            let answer = Arc::clone(&header_rewrite_answer);
+            Arc::new(move |request| {
+                let calls = Arc::clone(&calls);
+                let answer = *answer.lock().unwrap();
+                Box::pin(async move {
+                    calls.lock().unwrap().push(request);
+                    answer
+                })
+            })
+        };
         let avatar_dir = fixture.root.join("identity/members");
         let cdn = Arc::new(FakeCdn::default());
         let avatars = Arc::new(AvatarCache::new(
@@ -873,6 +891,7 @@ impl Reads {
             proposal_refresh: Some(proposal_refresh),
             decline_retraction: Some(decline_retraction),
             digest_post: digest_delivery.then_some(digest_post),
+            header_rewrite: digest_delivery.then_some(header_rewrite),
             backups: BackupDir {
                 dir: backup_dir.clone(),
                 schema_version: store.schema_version().await.unwrap(),
@@ -915,6 +934,8 @@ impl Reads {
             decline_retractions,
             chat,
             digest_posts,
+            header_rewrites,
+            header_rewrite_answer,
             backup_dir,
             db_path: dir.0.join("kanade.sqlite3"),
             knowledge_dir: knowledge,

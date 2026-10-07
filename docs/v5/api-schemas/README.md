@@ -74,6 +74,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET`/`PATCH /api/admin/config` | `config.json#/$defs/ConfigView` (PATCH may add `notices`) |
 | `POST /api/admin/config/profiles/reload` | `common.json#/$defs/ReloadResult` |
 | `POST /api/admin/digest` | `common.json#/$defs/Message` |
+| `POST /api/admin/headers/rewrite` | `202` `common.json#/$defs/Message` (the run continues in the background; `200` when nothing posted this boss week has a header; 409 `ApiError` `rewrite_running`/`rewrite_off`) |
 | `GET /api/admin/access`, `POST /api/admin/access/recheck` | `config.json#/$defs/AccessReport` |
 | `GET /api/admin/history?week=&actor=&run=&before=&limit=` | `history.json#/$defs/HistoryPage` |
 | `GET /api/admin/history/{seq}` | `history.json#/$defs/ChangeRecord` |

@@ -120,6 +120,7 @@ export const STAGE_LABEL: Record<string, string> = {
   catchup: 'catch-up',
   debug: '/debug',
   nudge: 'self-service nudge',
+  manual: 'manual',
 };
 
 /** The pill profile for a log outcome (the word is always shown too). */

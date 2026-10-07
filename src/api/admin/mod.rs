@@ -9,6 +9,7 @@ pub mod config;
 mod context;
 mod etag;
 mod events;
+mod headers;
 mod history;
 mod inbox;
 pub mod limits;
@@ -49,6 +50,7 @@ pub fn routes() -> Router<Arc<Site>> {
         .merge(inbox::routes())
         .merge(logs::routes())
         .merge(limits::routes())
+        .merge(headers::routes())
         .merge(config::routes())
         .merge(events::routes())
         .route_layer(axum::middleware::from_fn(etag::revalidate))

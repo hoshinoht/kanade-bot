@@ -123,6 +123,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 27,
         sql: include_str!("migrations/0027_rewrite_log.sql"),
     },
+    Migration {
+        version: 28,
+        sql: include_str!("migrations/0028_header_overrides.sql"),
+    },
 ];
 
 /// The migration that adds `change_fields`, which is backfilled from the
@@ -213,6 +217,111 @@ mod tests {
 
     struct RemoveFile(PathBuf);
 
+    /// 0028 rebuilds `rewrites` for stage `manual` with its rows, index and
+    /// insert-only trigger, and adds the insert-only `header_overrides`
+    /// beside the original reminder heading, which it never touches.
+    #[tokio::test]
+    async fn migration_28_widens_rewrite_stages_and_adds_insert_only_overrides() {
+        let mut conn = SqliteConnectOptions::new()
+            .filename(":memory:")
+            .connect()
+            .await
+            .expect("db");
+        conn.execute(LEDGER).await.expect("ledger");
+        for migration in &MIGRATIONS[..27] {
+            conn.execute(migration.sql).await.expect("v27 migration");
+            sqlx::query("INSERT INTO schema_migrations VALUES (?1, ?2, 'then')")
+                .bind(migration.version)
+                .bind(checksum(migration.sql))
+                .execute(&mut conn)
+                .await
+                .expect("ledger");
+        }
+        let key = "a".repeat(64);
+        conn.execute(
+            format!(
+                "INSERT INTO rewrites (id, at, kind, stage, context, verdict, rule, latency_ms, \
+                 model, prompt_tokens, completion_tokens, seed, reply, line) VALUES \
+                 ('w-1', '2026-09-01T00:00:00.000000+00:00', 'digest', 'catchup', 'week', \
+                  'rejected', 'factual term', 12, 'kanata/rewrite', 5, 2, 'Let''s go!', \
+                  'Raid at 9!', 'Let''s go!'), \
+                 ('w-2', '2026-09-02T00:00:00.000000+00:00', 'nudge', 'nudge', NULL, \
+                  'accepted', NULL, NULL, NULL, NULL, NULL, 'seed', NULL, 'Hi');
+                 INSERT INTO reminder_cards VALUES ('{key}', 'day_of', 'Today — Tue 29 Sep', \
+                  '2026-09-01T00:00:00.000000+00:00');"
+            )
+            .as_str(),
+        )
+        .await
+        .expect("v27 rows");
+        assert_eq!(apply(&mut conn).await.expect("0028"), 28);
+        // Each row's columns, joined, as 0027 stored them.
+        let kept: Vec<String> = sqlx::query_scalar(
+            "SELECT id || '|' || stage || '|' || verdict || '|' || coalesce(rule, '-') || '|' \
+             || coalesce(prompt_tokens, '-') || '|' || line FROM rewrites ORDER BY id",
+        )
+        .fetch_all(&mut conn)
+        .await
+        .expect("rows");
+        assert_eq!(
+            kept,
+            [
+                "w-1|catchup|rejected|factual term|5|Let's go!",
+                "w-2|nudge|accepted|-|-|Hi"
+            ]
+        );
+        let insert = |id: &str, stage: &str| {
+            format!(
+                "INSERT INTO rewrites (id, at, kind, stage, verdict, seed) VALUES \
+                 ('{id}', '2026-09-03T00:00:00.000000+00:00', 'day_of', '{stage}', \
+                  'accepted', 'seed')"
+            )
+        };
+        conn.execute(insert("w-3", "manual").as_str())
+            .await
+            .expect("manual stage");
+        assert!(conn.execute(insert("w-4", "later").as_str()).await.is_err());
+        assert!(
+            conn.execute("UPDATE rewrites SET verdict = 'rejected'")
+                .await
+                .is_err(),
+            "insert-only trigger remains"
+        );
+        let index: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'rewrites_recent'",
+        )
+        .fetch_one(&mut conn)
+        .await
+        .expect("index");
+        assert_eq!(index, 1);
+
+        let put = |line: &str| {
+            format!(
+                "INSERT INTO header_overrides (dedupe_key, line, actor, created_at) VALUES \
+                 ('{key}', '{line}', 'admin:1', '2026-09-29T00:00:00.000000+00:00')"
+            )
+        };
+        conn.execute(put("Kanade says hi — Tue 29 Sep").as_str())
+            .await
+            .expect("override");
+        assert!(
+            conn.execute(put("  ").as_str()).await.is_err(),
+            "blank line"
+        );
+        assert!(
+            conn.execute("UPDATE header_overrides SET line = 'changed'")
+                .await
+                .is_err()
+        );
+        assert!(conn.execute("DELETE FROM header_overrides").await.is_err());
+        let original: String = sqlx::query_scalar("SELECT heading FROM reminder_cards")
+            .fetch_one(&mut conn)
+            .await
+            .expect("original");
+        assert_eq!(original, "Today — Tue 29 Sep");
+        conn.close().await.expect("close");
+    }
+
     #[tokio::test]
     async fn migration_24_is_additive_and_checks_correlation_shapes() {
         let mut conn = SqliteConnectOptions::new()
@@ -242,7 +351,7 @@ mod tests {
         )
         .await
         .expect("v23 rows");
-        assert_eq!(apply(&mut conn).await.expect("additive"), 27);
+        assert_eq!(apply(&mut conn).await.expect("additive"), 28);
         let old: (
             Option<String>,
             Option<String>,
@@ -312,7 +421,7 @@ mod tests {
         }
         let insert = "INSERT INTO extractions (id, at, member_ids, model, reasoning, prompt, raw_response, request_count, outcome, guardrail, message_ids, proposal_ids";
         conn.execute(format!("{insert}) VALUES ('old', '2026-09-01T00:00:00+00:00', '[]', 'm', 'low', 'p', 'r', 1, 'unknown', '{{}}', '[]', '[]')").as_str()).await.expect("old row");
-        assert_eq!(apply(&mut conn).await.expect("additive"), 27);
+        assert_eq!(apply(&mut conn).await.expect("additive"), 28);
         let old: (String, Option<String>, Option<i64>) = sqlx::query_as("SELECT reasoning, reasoning_content, reasoning_tokens FROM extractions WHERE id = 'old'").fetch_one(&mut conn).await.expect("old row preserved");
         assert_eq!(old, ("low".into(), None, None));
         for (id, text, count, valid) in [
@@ -370,7 +479,7 @@ mod tests {
         )
         .await
         .expect("v14 rows");
-        assert_eq!(apply(&mut conn).await.expect("remaining migrations"), 27);
+        assert_eq!(apply(&mut conn).await.expect("remaining migrations"), 28);
         let kept: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM extractions e JOIN extraction_members m \
              ON m.extraction_id = e.id WHERE e.id = 'x-1' AND e.refusals = '[]'",
@@ -449,7 +558,7 @@ mod tests {
         .await
         .expect("v17 cards");
 
-        assert_eq!(apply(&mut conn).await.expect("v18"), 27);
+        assert_eq!(apply(&mut conn).await.expect("v18"), 28);
         let rows: Vec<(String, Option<String>)> =
             sqlx::query_as("SELECT kind, heading FROM reminder_cards ORDER BY dedupe_key")
                 .fetch_all(&mut conn)
@@ -484,7 +593,7 @@ mod tests {
             .connect()
             .await
             .expect("reopen v18 file");
-        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 27);
+        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 28);
         let rows: Vec<(String, Option<String>)> =
             sqlx::query_as("SELECT kind, heading FROM reminder_cards ORDER BY dedupe_key")
                 .fetch_all(&mut conn)
@@ -565,7 +674,7 @@ mod tests {
         .await
         .expect("v18 rows");
 
-        assert_eq!(apply(&mut conn).await.expect("v19"), 27);
+        assert_eq!(apply(&mut conn).await.expect("v19"), 28);
         let usage = "prompt_tokens IS NULL AND completion_tokens IS NULL \
             AND prompt_estimate IS NULL";
         let unreported: i64 = sqlx::query_scalar(&format!(
@@ -648,7 +757,7 @@ mod tests {
             .connect()
             .await
             .expect("reopen v19 file");
-        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 27);
+        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 28);
         let rows: Vec<UsageRow<String>> = sqlx::query_as(
             "SELECT id, prompt_tokens, completion_tokens, prompt_estimate, \
              typeof(prompt_tokens) || ',' || typeof(completion_tokens) || ',' \
@@ -730,7 +839,7 @@ mod tests {
         )
         .await
         .expect("v15 rows");
-        assert_eq!(apply(&mut conn).await.expect("0016+"), 27);
+        assert_eq!(apply(&mut conn).await.expect("0016+"), 28);
         let row = sqlx::query(
             "SELECT c.persona, c.profile, c.profile_source, c.error_code, r.route, r.clean, \
              r.model FROM chat_interactions c JOIN chat_rounds r ON r.interaction_id = c.id",
@@ -821,7 +930,7 @@ mod tests {
         )
         .await
         .expect("v21 rows");
-        assert_eq!(apply(&mut conn).await.expect("0022"), 27);
+        assert_eq!(apply(&mut conn).await.expect("0022"), 28);
         let rows: Vec<(String, String, i64, i64, String, Option<String>)> = sqlx::query_as(
             "SELECT id, outcome, clean_retry, withheld, guardrail, persona \
              FROM chat_interactions ORDER BY id",
@@ -1040,6 +1149,10 @@ mod tests {
             (
                 27,
                 "ef1e9a99490b4c67d4edf4014e19907df34c19af17fd71d5729511dbc40c9173",
+            ),
+            (
+                28,
+                "527c207da9ef1d338d7ce737cab111a7932a706a17d7d86a3ff218d4e50c8cf2",
             ),
         ];
         for (version, sum) in SHIPPED {

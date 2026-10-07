@@ -79,6 +79,16 @@ pub enum DigestPostResult {
     Unavailable,
 }
 
+/// The delivery-owned manual header rewrite (`POST /api/admin/headers/rewrite`,
+/// `/debug rewrite`): plans and queues one run and answers at once.
+pub type HeaderRewritePort = Arc<
+    dyn Fn(
+            crate::bot::delivery::ManualRequest,
+        ) -> Pin<Box<dyn Future<Output = crate::bot::delivery::ManualStart> + Send>>
+        + Send
+        + Sync,
+>;
+
 /// Live governor snapshots for the Limits page. `None` means model serving is
 /// not composed; allowance rows still remain useful.
 pub type ModelLimits = Arc<
@@ -689,6 +699,8 @@ pub struct ApiState {
     pub decline_retraction: Option<DeclineRetraction>,
     /// The delivery-owned manual digest port, absent while Discord is offline.
     pub digest_post: Option<DigestPost>,
+    /// The delivery-owned manual header rewrite, absent while Discord is offline.
+    pub header_rewrite: Option<HeaderRewritePort>,
     pub backups: BackupDir,
     /// Member and admin portraits; `None` serves monograms only.
     pub avatars: Option<Arc<super::avatars::AvatarCache>>,

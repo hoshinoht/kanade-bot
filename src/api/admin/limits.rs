@@ -40,29 +40,34 @@ use crate::{
 const REMEMBERED_KEYS: usize = 256;
 
 #[derive(Clone)]
-struct Remembered {
-    actor: String,
-    key: String,
-    digest: String,
-    message: String,
+pub(super) struct Remembered {
+    pub(super) actor: String,
+    pub(super) key: String,
+    pub(super) digest: String,
+    pub(super) message: String,
 }
 
-/// Small process-local replay memory for effects that are not schedule writes.
-/// The underlying allowance is deliberately in-memory, and delivery owns the
-/// durable no-duplicate guarantee for digest sends.
+/// Small process-local replay memory for effects that are not schedule writes
+/// (window resets, the manual digest and header rewrite). The underlying
+/// allowance is deliberately in-memory, and delivery owns the durable
+/// no-duplicate guarantee for digest sends.
 #[derive(Default)]
 pub struct LimitsDesk {
-    keys: Mutex<VecDeque<Remembered>>,
+    pub(super) keys: Mutex<VecDeque<Remembered>>,
 }
 
 impl LimitsDesk {
-    fn recall(keys: &VecDeque<Remembered>, actor: &str, key: &str) -> Option<Remembered> {
+    pub(super) fn recall(
+        keys: &VecDeque<Remembered>,
+        actor: &str,
+        key: &str,
+    ) -> Option<Remembered> {
         keys.iter()
             .find(|entry| entry.actor == actor && entry.key == key)
             .cloned()
     }
 
-    fn remember(keys: &mut VecDeque<Remembered>, entry: Remembered) {
+    pub(super) fn remember(keys: &mut VecDeque<Remembered>, entry: Remembered) {
         keys.push_back(entry);
         while keys.len() > REMEMBERED_KEYS {
             keys.pop_front();
@@ -82,11 +87,11 @@ pub fn routes() -> Router<Arc<Site>> {
         .route("/api/admin/digest", post(digest))
 }
 
-fn actor(session: &AdminSession) -> String {
+pub(super) fn actor(session: &AdminSession) -> String {
     format!("{}:{}", session.actor.kind(), session.actor.id())
 }
 
-fn mismatch() -> Refusal {
+pub(super) fn mismatch() -> Refusal {
     Refusal::new(
         StatusCode::UNPROCESSABLE_ENTITY,
         "idempotency_mismatch",

@@ -20,6 +20,7 @@
   import DigestSection from './DigestSection.svelte';
   import EnvSection from './EnvSection.svelte';
   import HeaderTimeCard from './HeaderTimeCard.svelte';
+  import RewriteHeadersCard from './RewriteHeadersCard.svelte';
   import MessageStyleCard from './MessageStyleCard.svelte';
   import ModelsSection from './ModelsSection.svelte';
   import PersonaSection from './PersonaSection.svelte';
@@ -537,6 +538,7 @@
                   <MessageStyleCard style={c.notifications.message_style} {save} />
                   <HeaderTimeCard time={c.notifications.header_generation_time ?? '00:00'} {save} />
                   <p class="settings__box">Applies at once, with Undo for 10 s.</p>
+                  <RewriteHeadersCard {toaster} />
                 </SettingsPanel>
               {:else}
                 <EnvSection env={c.env} {toaster} />

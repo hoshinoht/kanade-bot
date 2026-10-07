@@ -52,7 +52,14 @@ async fn only_the_retained_commands_are_registered_for_the_guild() {
     let debug = &payload[1];
     assert_eq!(
         names(&debug["options"]),
-        ["ping", "clear_test", "reminders", "materialise", "header"]
+        [
+            "ping",
+            "clear_test",
+            "reminders",
+            "materialise",
+            "header",
+            "rewrite"
+        ]
     );
     let ping = &debug["options"][0]["options"];
     assert_eq!(

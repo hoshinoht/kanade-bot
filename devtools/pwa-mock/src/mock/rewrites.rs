@@ -1,8 +1,10 @@
 //! Rewrites (the persona rewrite log): the daily reminder-header batch and catch-up,
-//! `/debug` trials and self-service nudges, each with its verdict, gate rule
-//! or error code, route, usage against the reservation and the reply.
+//! `/debug` trials, self-service nudges and manual runs, each with its verdict, gate
+//! rule or error code, route, usage against the reservation and the reply. Also the
+//! manual header rewrite trigger (`POST /api/admin/headers/rewrite`).
 
 use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
 
 use super::clock::{iso_date, valid_date};
 use super::extractions::usage_summary;
@@ -11,7 +13,11 @@ use serde_json::{Value, json};
 
 const MODEL: &str = "kanata/rewrite";
 const KINDS: [&str; 4] = ["day_of", "countdown", "digest", "nudge"];
-const STAGES: [&str; 4] = ["batch", "catchup", "debug", "nudge"];
+const STAGES: [&str; 5] = ["batch", "catchup", "debug", "nudge", "manual"];
+/// How long a manual header rewrite counts as running (wall time).
+const MANUAL_RUN: Duration = Duration::from_secs(15);
+/// The headers a manual run rewrites: the seeded week's posted cards and digest.
+const MANUAL_HEADERS: usize = 4;
 const VERDICTS: [&str; 8] = [
     "accepted",
     "rejected",
@@ -412,6 +418,26 @@ impl Store {
         );
         Ok(Value::Object(row))
     }
+
+    /// `POST /api/admin/headers/rewrite`: queued at once (`202`), refused while
+    /// the previous run is still going.
+    pub fn rewrite_headers(&mut self) -> Result<Value, MoveError> {
+        if self
+            .header_rewrite
+            .is_some_and(|at| at.elapsed() < MANUAL_RUN)
+        {
+            return Err(MoveError::Coded(
+                409,
+                "rewrite_running",
+                "A header rewrite is already running; wait for it to finish (see the Rewrites log)."
+                    .into(),
+            ));
+        }
+        self.header_rewrite = Some(Instant::now());
+        Ok(json!({
+            "message": format!("Rewriting {MANUAL_HEADERS} header(s); see the Rewrites log.")
+        }))
+    }
 }
 
 #[cfg(test)]
@@ -471,5 +497,25 @@ mod tests {
         );
         assert_eq!(rows("q=waku+waku"), 2, "`+` is a space");
         assert_eq!(rows("stage=%62atch"), 4);
+        assert_eq!(refusal("stage=later"), "Unknown stage “later”.");
+        assert_eq!(rows("stage=manual"), 0);
+    }
+
+    #[test]
+    fn a_manual_rewrite_runs_one_at_a_time() {
+        let mut store = store();
+        let Ok(started) = store.rewrite_headers() else {
+            panic!("started");
+        };
+        assert_eq!(
+            started["message"],
+            "Rewriting 4 header(s); see the Rewrites log."
+        );
+        assert!(matches!(
+            store.rewrite_headers(),
+            Err(MoveError::Coded(409, "rewrite_running", _))
+        ));
+        store.reset();
+        assert!(store.rewrite_headers().is_ok(), "a reset ends it");
     }
 }

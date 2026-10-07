@@ -248,8 +248,8 @@ export type ExtractionOutcome =
 
 /** Which line a persona rewrite was for. */
 export type RewriteKind = 'day_of' | 'countdown' | 'digest' | 'nudge';
-/** Where it ran: the daily header batch, its catch-up, a `/debug` trial or a self-service nudge. */
-export type RewriteStage = 'batch' | 'catchup' | 'debug' | 'nudge';
+/** Where it ran: the daily header batch, its catch-up, a `/debug` trial, a self-service nudge or a manual rewrite of the week's posted headers. */
+export type RewriteStage = 'batch' | 'catchup' | 'debug' | 'nudge' | 'manual';
 export type RewriteVerdict =
   | 'accepted'
   | 'rejected'

@@ -9,8 +9,10 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::MessageMarker;
 
 use super::{MemoryScheduleStore, Tables};
+#[cfg(any(test, feature = "test-support"))]
+use crate::bot::delivery::cards::HeaderHistory;
 use crate::bot::delivery::cards::{
-    CardRecord, DAY_OF_KIND, DigestPhraseStore, PostedCard, ReminderCardStore,
+    CardRecord, DAY_OF_KIND, DigestPhraseStore, HeaderOverrideStore, PostedCard, ReminderCardStore,
 };
 use crate::bot::delivery::debug::{DebugCardStore, PostedDebugCard};
 use crate::bot::events::{CardIndex, LookupError, ReplayCard, ReplayCards, ReplayRunCards};
@@ -71,6 +73,9 @@ pub(super) struct JournalTables {
     reminder_cards: BTreeMap<String, CardRecord>,
     /// Digest phrases by native target dedupe key, independent of bound digests.
     digest_phrases: BTreeMap<String, String>,
+    /// Manual overrides `(dedupe_key, line, actor)` in insertion order, as
+    /// SQLite `header_overrides`; the last one of a key is in effect.
+    header_overrides: Vec<(String, String, String)>,
     card_record_read_failures: usize,
     card_record_write_failures: usize,
     digest_phrase_read_failures: usize,
@@ -1130,21 +1135,53 @@ impl ReplayCards for MemoryScheduleStore {
 
 /// SQLite's `reminder_cards` CHECKs.
 fn valid_record(dedupe_key: &str, record: &CardRecord) -> bool {
-    let key = dedupe_key.len() == 64
-        && dedupe_key
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
     let kind = record.kind == DAY_OF_KIND || record.kind.starts_with("countdown_");
-    key && kind
+    valid_key(dedupe_key) && kind
 }
 
-fn valid_phrase(dedupe_key: &str, phrase: &str) -> bool {
+fn valid_key(dedupe_key: &str) -> bool {
     dedupe_key.len() == 64
         && dedupe_key
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        && !phrase.trim_matches(' ').is_empty()
-        && phrase.chars().count() <= 48
+}
+
+fn valid_phrase(dedupe_key: &str, phrase: &str) -> bool {
+    valid_key(dedupe_key) && !phrase.trim_matches(' ').is_empty() && phrase.chars().count() <= 48
+}
+
+/// SQLite's `header_overrides` CHECKs (`trim` strips spaces only).
+fn valid_override(dedupe_key: &str, line: &str, actor: &str) -> bool {
+    valid_key(dedupe_key)
+        && !line.trim_matches(' ').is_empty()
+        && line.len() <= 1024
+        && (1..=128).contains(&actor.len())
+}
+
+impl JournalTables {
+    /// The latest manual override of `dedupe_key`.
+    fn override_of(&self, dedupe_key: &str) -> Option<&String> {
+        self.header_overrides
+            .iter()
+            .rev()
+            .find(|(key, _, _)| key == dedupe_key)
+            .map(|(_, line, _)| line)
+    }
+
+    /// The record under `dedupe_key` with its effective heading.
+    fn effective_record(&self, dedupe_key: &str) -> Option<CardRecord> {
+        let mut record = self.reminder_cards.get(dedupe_key)?.clone();
+        if let Some(line) = self.override_of(dedupe_key) {
+            record.heading = Some(line.clone());
+        }
+        Some(record)
+    }
+
+    fn effective_phrase(&self, dedupe_key: &str) -> Option<String> {
+        self.override_of(dedupe_key)
+            .or_else(|| self.digest_phrases.get(dedupe_key))
+            .cloned()
+    }
 }
 
 impl MemoryScheduleStore {
@@ -1191,7 +1228,7 @@ impl ReminderCardStore for MemoryScheduleStore {
                 "injected reminder card record read failure".into(),
             ));
         }
-        Ok(tables.journal.reminder_cards.get(dedupe_key).cloned())
+        Ok(tables.journal.effective_record(dedupe_key))
     }
 
     async fn save_card_record(
@@ -1212,12 +1249,14 @@ impl ReminderCardStore for MemoryScheduleStore {
                 "reminder card record is invalid".into(),
             ));
         }
-        Ok(tables
-            .journal
+        let journal = &mut tables.journal;
+        journal
             .reminder_cards
             .entry(dedupe_key.to_owned())
-            .or_insert_with(|| record.clone())
-            .clone())
+            .or_insert_with(|| record.clone());
+        Ok(journal
+            .effective_record(dedupe_key)
+            .expect("record was just stored"))
     }
 
     async fn posted_cards(&self, run_id: &str) -> Result<Vec<PostedCard>, StoreError> {
@@ -1233,7 +1272,7 @@ impl ReminderCardStore for MemoryScheduleStore {
                     .card_runs
                     .contains(&(message.clone(), run_id.to_owned()))
                     .then_some(())?;
-                let record = journal.reminder_cards.get(row.dedupe_key.as_str())?;
+                let record = journal.effective_record(row.dedupe_key.as_str())?;
                 Some(PostedCard {
                     channel_id: row.channel_id.clone(),
                     run_ids: journal
@@ -1243,7 +1282,8 @@ impl ReminderCardStore for MemoryScheduleStore {
                         .map(|(_, run)| run.clone())
                         .collect(),
                     message_id: message,
-                    record: record.clone(),
+                    record,
+                    dedupe_key: Some(row.dedupe_key.as_str().to_owned()),
                     test: false,
                 })
             })
@@ -1263,6 +1303,7 @@ impl ReminderCardStore for MemoryScheduleStore {
                         kind: row.kind.clone(),
                         heading: None,
                     },
+                    dedupe_key: None,
                     test: true,
                 })
             })?
@@ -1281,7 +1322,7 @@ impl DigestPhraseStore for MemoryScheduleStore {
                 "injected digest phrase read failure".into(),
             ));
         }
-        Ok(tables.journal.digest_phrases.get(dedupe_key).cloned())
+        Ok(tables.journal.effective_phrase(dedupe_key))
     }
 
     async fn save_digest_phrase(
@@ -1302,12 +1343,53 @@ impl DigestPhraseStore for MemoryScheduleStore {
                 "digest card phrase record is invalid".into(),
             ));
         }
-        Ok(tables
-            .journal
+        let journal = &mut tables.journal;
+        journal
             .digest_phrases
             .entry(dedupe_key.to_owned())
-            .or_insert_with(|| phrase.to_owned())
-            .clone())
+            .or_insert_with(|| phrase.to_owned());
+        Ok(journal
+            .effective_phrase(dedupe_key)
+            .expect("phrase was just stored"))
+    }
+}
+
+impl HeaderOverrideStore for MemoryScheduleStore {
+    async fn override_header(
+        &self,
+        dedupe_key: &str,
+        line: &str,
+        actor: &str,
+        _at: DateTime<Utc>,
+    ) -> Result<(), StoreError> {
+        if !valid_override(dedupe_key, line, actor) {
+            return Err(StoreError::Constraint("header override is invalid".into()));
+        }
+        self.tables().journal.header_overrides.push((
+            dedupe_key.to_owned(),
+            line.to_owned(),
+            actor.to_owned(),
+        ));
+        Ok(())
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    async fn header_history(&self, dedupe_key: &str) -> Result<HeaderHistory, StoreError> {
+        let tables = self.tables();
+        let journal = &tables.journal;
+        Ok(HeaderHistory {
+            original: journal
+                .reminder_cards
+                .get(dedupe_key)
+                .and_then(|record| record.heading.clone())
+                .or_else(|| journal.digest_phrases.get(dedupe_key).cloned()),
+            overrides: journal
+                .header_overrides
+                .iter()
+                .filter(|(key, _, _)| key == dedupe_key)
+                .map(|(_, line, actor)| (line.clone(), actor.clone()))
+                .collect(),
+        })
     }
 }
 

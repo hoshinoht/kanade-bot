@@ -1,6 +1,9 @@
 //! What a reminder card was posted as, stored before its claim (keyed by
 //! the send's native dedupe key) so a retry and every later edit render the
 //! same card: its kind and saved header (day-of heading or short phrase).
+//! A manual rewrite appends an override (migration 0028): every read of a
+//! record or digest phrase returns the latest override instead of the
+//! original line, which is kept.
 
 use std::future::Future;
 
@@ -16,7 +19,8 @@ pub const DAY_OF_KIND: &str = "day_of";
 pub struct CardRecord {
     /// `day_of` or `countdown_<minutes>`.
     pub kind: String,
-    /// Day-of heading without framing, or the short countdown phrase.
+    /// Day-of heading without framing, or the short countdown phrase; the
+    /// latest manual override when one exists.
     pub heading: Option<String>,
 }
 
@@ -28,6 +32,8 @@ pub struct PostedCard {
     /// Every run the card is for (its card→run rows).
     pub run_ids: Vec<String>,
     pub record: CardRecord,
+    /// The record's dedupe key; `None` for a test card.
+    pub dedupe_key: Option<String>,
     /// A `/debug ping` test card (no record row; the heading is the seed).
     pub test: bool,
 }
@@ -70,4 +76,35 @@ pub trait DigestPhraseStore: Send + Sync {
         phrase: &str,
         at: DateTime<Utc>,
     ) -> impl Future<Output = Result<String, StoreError>> + Send;
+}
+
+/// Manual header rewrites (migration 0028 `header_overrides`), keyed by a
+/// reminder card's or a digest's native dedupe key. Insert-only: the latest
+/// override of a key is what [`ReminderCardStore`] and [`DigestPhraseStore`]
+/// read back; the original line stays as history.
+pub trait HeaderOverrideStore: Send + Sync {
+    /// Append `line` (non-blank, at most 1 KiB) for `dedupe_key` by `actor`.
+    fn override_header(
+        &self,
+        dedupe_key: &str,
+        line: &str,
+        actor: &str,
+        at: DateTime<Utc>,
+    ) -> impl Future<Output = Result<(), StoreError>> + Send;
+
+    /// The original line and every override, oldest first.
+    #[cfg(any(test, feature = "test-support"))]
+    fn header_history(
+        &self,
+        dedupe_key: &str,
+    ) -> impl Future<Output = Result<HeaderHistory, StoreError>> + Send;
+}
+
+/// A key's original line (record heading or digest phrase) and its overrides.
+#[cfg(any(test, feature = "test-support"))]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HeaderHistory {
+    pub original: Option<String>,
+    /// `(line, actor)`, oldest first; the last one is in effect.
+    pub overrides: Vec<(String, String)>,
 }

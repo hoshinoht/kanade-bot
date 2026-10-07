@@ -115,7 +115,7 @@
       }
     },
     "Message": {
-      "description": "`{ message }` acknowledgements (ping, approve, reject, digest, window reset).",
+      "description": "`{ message }` acknowledgements (ping, approve, reject, digest, header rewrite, window reset).",
       "type": "object",
       "additionalProperties": false,
       "required": ["message"],

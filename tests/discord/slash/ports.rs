@@ -11,6 +11,7 @@ use kanade::bot::commands::{
     PingRequest, PortFuture, STAFF_LIMITS_REPLY, SampleRun, TestKind, TestPosted, TestReport,
     TestSubject,
 };
+use kanade::bot::delivery::{ManualRequest, ManualStart};
 use kanade::bot::transport::{Call, Op, RejectionKind, Step};
 use kanade::chat::pilot::{AllowanceSnapshot, MemberUsage, PoolUsage};
 use kanade::domain::model_log::{RescanJob, RescanStatus};
@@ -539,6 +540,60 @@ async fn debug_header_tries_through_the_port() {
                 invoked_in: Some(KALOS.to_string()),
             }
         ]
+    );
+}
+
+#[tokio::test]
+async fn debug_rewrite_starts_one_run_through_the_port_and_reports_refusals() {
+    let unavailable = Slash::new().await;
+    assert_eq!(
+        unavailable
+            .run(DAN, "debug", sub("rewrite", json!([])))
+            .await,
+        "❌ Header rewrites aren't available right now."
+    );
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let answers = Arc::new(Mutex::new(vec![
+        ManualStart::Nothing,
+        ManualStart::Running,
+        ManualStart::Started(4),
+    ]));
+    let port: kanade::api::state::HeaderRewritePort = {
+        let (calls, answers) = (Arc::clone(&calls), Arc::clone(&answers));
+        Arc::new(move |request: ManualRequest| {
+            calls.lock().unwrap().push(request);
+            let answer = answers.lock().unwrap().pop().expect("an answer");
+            Box::pin(async move { answer })
+        })
+    };
+    let slash = Slash::with(Ports {
+        header_rewrite: Some(port),
+        ..Ports::default()
+    })
+    .await;
+    let rewrite = || sub("rewrite", json!([]));
+    assert_eq!(
+        slash.run(DAN, "debug", rewrite()).await,
+        "✏️ Rewriting 4 header(s) posted this boss week; the posts are edited in place and a \
+         summary follows here when it ends. Every call is in the Rewrites log."
+    );
+    assert_eq!(
+        slash.run(DAN, "debug", rewrite()).await,
+        "❌ A header rewrite is already running; its summary is posted when it ends."
+    );
+    assert_eq!(
+        slash.run(DAN, "debug", rewrite()).await,
+        "Nothing posted this boss week has a header to rewrite."
+    );
+    let calls = calls.lock().unwrap().clone();
+    assert_eq!(calls.len(), 3);
+    assert_eq!(
+        calls[0],
+        ManualRequest {
+            actor: format!("member:{DAN}"),
+            report_to: Some(KALOS.to_string()),
+        },
+        "the summary goes to the invoking channel"
     );
 }
 

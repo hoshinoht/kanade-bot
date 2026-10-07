@@ -10,6 +10,7 @@ pub mod cards;
 pub mod debug;
 mod declines;
 mod executor;
+mod manual;
 mod notice_text;
 mod notices;
 mod ports;
@@ -25,6 +26,7 @@ pub use debug::{
 };
 pub use declines::DeclineReport;
 pub use executor::{Executor, Replacement, SendFailure, SendOutcome, SendReport};
+pub use manual::{ManualReport, ManualRequest, ManualRewrite, ManualStart};
 pub use notice_text::render_notice;
 pub use notices::{NoticeReport, NoticeSend};
 pub use ports::{FixedClock, IdsRef, StoreRef};

@@ -15,6 +15,7 @@ mod dispatch_replay;
 mod drafts;
 mod failures;
 mod intercept;
+mod manual;
 mod notices;
 mod outage;
 mod outbox_policy;

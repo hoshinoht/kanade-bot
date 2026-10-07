@@ -6,7 +6,10 @@ use std::collections::BTreeSet;
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
-use crate::bot::delivery::cards::{CardRecord, DigestPhraseStore, PostedCard, ReminderCardStore};
+use crate::bot::delivery::cards::{
+    CardRecord, DigestPhraseStore, HeaderHistory, HeaderOverrideStore, PostedCard,
+    ReminderCardStore,
+};
 use crate::bot::delivery::{DebugCardStore, PostedDebugCard};
 use crate::bot::events::{CardIndex, ReplayCards};
 use crate::domain::notify::{
@@ -31,6 +34,7 @@ pub async fn run_suite<
         + ReplayCards
         + ReminderCardStore
         + DigestPhraseStore
+        + HeaderOverrideStore
         + DebugCardStore,
 >(
     make: impl AsyncFn() -> S,
@@ -54,6 +58,7 @@ pub async fn run_suite<
     older_digests_are_retired_and_kept(&make().await).await;
     reminder_card_records_are_written_once_and_found_when_bound(&make().await).await;
     digest_phrase_records_are_written_once(&make().await).await;
+    header_overrides_win_over_the_kept_original(&make().await).await;
     test_cards_are_per_operation_registered_and_cleared(&make().await).await;
 }
 
@@ -1049,6 +1054,7 @@ async fn reminder_card_records_are_written_once_and_found_when_bound<
             message_id: "5001".into(),
             run_ids: vec!["r-1".into()],
             record: first,
+            dedupe_key: Some(key.as_str().to_owned()),
             test: false,
         }]
     );
@@ -1107,6 +1113,131 @@ async fn digest_phrase_records_are_written_once<S: DeliveryJournal + DigestPhras
             .digests
             .is_empty(),
         "phrase storage does not bind or create weekly_digests"
+    );
+}
+
+/// A manual rewrite appends an override: every read returns the latest one
+/// (card record, posted card, digest phrase, the insert-if-absent saves),
+/// the original line is kept, and refused overrides write nothing.
+async fn header_overrides_win_over_the_kept_original<
+    S: ScheduleStore + DeliveryJournal + ReminderCardStore + DigestPhraseStore + HeaderOverrideStore,
+>(
+    store: &S,
+) {
+    seed(store).await;
+    let day_of = intent(&["m-1"], HOME);
+    let key = DedupeKey::native(&day_of.targets).expect("key");
+    let key = key.as_str();
+    let original = CardRecord {
+        kind: "day_of".into(),
+        heading: Some("Today — Mon 31 Aug".into()),
+    };
+    store
+        .save_card_record(key, &original, at(8))
+        .await
+        .expect("save");
+    let lease = lease(store).await;
+    let attempt = fresh(store, &lease, &day_of).await;
+    store
+        .bind(&lease, &attempt, &receipt(HOME, "5001"), None, at(8))
+        .await
+        .expect("bind");
+    let rewritten = |line: &str| CardRecord {
+        kind: "day_of".into(),
+        heading: Some(line.into()),
+    };
+    store
+        .override_header(key, "Kanade is up — Mon 31 Aug", "admin:1", at(9))
+        .await
+        .expect("override");
+    store
+        .override_header(key, "Up and at 'em — Mon 31 Aug", "member:2", at(9))
+        .await
+        .expect("second override");
+    let latest = rewritten("Up and at 'em — Mon 31 Aug");
+    assert_eq!(
+        store.card_record(key).await.expect("read"),
+        Some(latest.clone()),
+        "the latest override wins"
+    );
+    assert_eq!(
+        store.posted_cards("r-1").await.expect("posted")[0].record,
+        latest,
+        "refreshes read the override"
+    );
+    assert_eq!(
+        store
+            .save_card_record(key, &rewritten("Other — Mon 31 Aug"), at(10))
+            .await
+            .expect("save again"),
+        latest,
+        "a later save keeps the stored record and its override"
+    );
+    let long = "x".repeat(1025);
+    let refused = [
+        ("A".repeat(64), "Fine line", "admin:1"),
+        (key.to_owned(), "   ", "admin:1"),
+        (key.to_owned(), long.as_str(), "admin:1"),
+        (key.to_owned(), "Fine line", ""),
+    ];
+    for (bad_key, line, actor) in &refused {
+        assert!(
+            store
+                .override_header(bad_key, line, actor, at(10))
+                .await
+                .is_err(),
+            "{bad_key} {line:?} {actor:?} is refused"
+        );
+    }
+    assert_eq!(
+        store.header_history(key).await.expect("history"),
+        HeaderHistory {
+            original: Some("Today — Mon 31 Aug".into()),
+            overrides: vec![
+                ("Kanade is up — Mon 31 Aug".into(), "admin:1".into()),
+                ("Up and at 'em — Mon 31 Aug".into(), "member:2".into()),
+            ],
+        },
+        "the original is kept and refused overrides wrote nothing"
+    );
+
+    let digest = DedupeKey::native(&[DeliveryTarget::Digest(week())]).expect("digest key");
+    let digest = digest.as_str();
+    store
+        .save_digest_phrase(digest, "Let's go!", at(8))
+        .await
+        .expect("phrase");
+    store
+        .override_header(digest, "Waku waku!", "admin:1", at(9))
+        .await
+        .expect("digest override");
+    assert_eq!(
+        store.digest_phrase(digest).await.expect("read"),
+        Some("Waku waku!".into())
+    );
+    assert_eq!(
+        store
+            .save_digest_phrase(digest, "Onward!", at(10))
+            .await
+            .expect("save again"),
+        "Waku waku!"
+    );
+    assert_eq!(
+        store.header_history(digest).await.expect("history"),
+        HeaderHistory {
+            original: Some("Let's go!".into()),
+            overrides: vec![("Waku waku!".into(), "admin:1".into())],
+        }
+    );
+    // A legacy digest posted before phrases existed reads its override.
+    let legacy = "e".repeat(64);
+    store
+        .override_header(&legacy, "Hello!", "admin:1", at(9))
+        .await
+        .expect("legacy override");
+    assert_eq!(
+        store.digest_phrase(&legacy).await.expect("read"),
+        Some("Hello!".into())
     );
 }
 

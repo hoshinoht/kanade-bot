@@ -9,6 +9,7 @@ mod avatars;
 mod config;
 mod etag;
 mod events;
+mod header_rewrite;
 mod headers;
 mod history;
 mod inbox;

@@ -330,6 +330,7 @@ pub struct Ports {
     pub rescans: Option<Arc<dyn RescanRunner>>,
     pub allowance: Option<Arc<dyn ChatAllowance>>,
     pub debug_cards: Option<Arc<dyn DebugCards>>,
+    pub header_rewrite: Option<kanade::api::state::HeaderRewritePort>,
     pub closed: Vec<String>,
     /// The saved message style (classic by default).
     pub style: MessageStyle,
@@ -398,6 +399,7 @@ impl Slash {
             allowance: ports.allowance,
             debug_cards: ports.debug_cards,
             decline_retraction: None,
+            header_rewrite: ports.header_rewrite,
             bot_name: Some("Kanade".into()),
             clock: Arc::new(move || pinned),
         });

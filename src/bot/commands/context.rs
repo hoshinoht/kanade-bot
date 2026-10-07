@@ -320,6 +320,8 @@ pub struct CommandContext {
     pub debug_cards: Option<Arc<dyn DebugCards>>,
     /// Live best-effort decline retraction; absent in offline composition.
     pub decline_retraction: Option<DeclineRetraction>,
+    /// `/debug rewrite`'s manual header rewrite; absent offline.
+    pub header_rewrite: Option<crate::api::state::HeaderRewritePort>,
     /// The bot's own name for access problems (v4 falls back to "the bot").
     pub bot_name: Option<String>,
     pub clock: Clock,

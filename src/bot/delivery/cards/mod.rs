@@ -38,7 +38,11 @@ pub use heading::{
     HeadingRewrite, HeadingSource, PersonaSource, PhraseKind, PhraseRejection, Trial, TrialOrigin,
     Verdict, accept_phrase, accept_phrase_with, failure_reason, seed_heading,
 };
-pub use record::{CardRecord, DAY_OF_KIND, DigestPhraseStore, PostedCard, ReminderCardStore};
+#[cfg(any(test, feature = "test-support"))]
+pub use record::HeaderHistory;
+pub use record::{
+    CardRecord, DAY_OF_KIND, DigestPhraseStore, HeaderOverrideStore, PostedCard, ReminderCardStore,
+};
 pub use redesign::{DifficultyMarks, StyleSource};
 
 use crate::bot::mentions;

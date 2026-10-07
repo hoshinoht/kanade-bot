@@ -16,7 +16,8 @@
         "batch",
         "catchup",
         "debug",
-        "nudge"
+        "nudge",
+        "manual"
       ]
     },
     "RewriteVerdict": {

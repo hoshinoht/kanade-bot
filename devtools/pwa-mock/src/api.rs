@@ -621,6 +621,14 @@ pub async fn digest(State(app): State<App>, Json(req): Json<DigestRequest>) -> R
     )
 }
 
+/// The manual header rewrite answers `202` at once, as the server does.
+pub async fn rewrite_headers(State(app): State<App>) -> Response {
+    match app.store.lock().await.rewrite_headers() {
+        Ok(value) => (StatusCode::ACCEPTED, Json(value)).into_response(),
+        Err(error) => outcome::<serde_json::Value>(Err(error)),
+    }
+}
+
 pub async fn access(State(app): State<App>) -> Response {
     Json(app.store.lock().await.access()).into_response()
 }

@@ -203,6 +203,7 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
             get(api::config).patch(api::patch_config),
         )
         .route("/api/admin/digest", post(api::digest))
+        .route("/api/admin/headers/rewrite", post(api::rewrite_headers))
         .route(
             "/api/admin/config/profiles/reload",
             post(api::reload_profiles),

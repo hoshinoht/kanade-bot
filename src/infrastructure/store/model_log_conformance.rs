@@ -1468,6 +1468,7 @@ async fn rewrite_logs_round_trip_and_refuse_bad_rows<S: RewriteLogStore>(store: 
         .await
         .expect("record");
     let mut failed = rewrite("r-2", utc(20, 13, 0));
+    failed.stage = RewriteStage::Manual;
     failed.verdict = "unavailable".into();
     failed.code = Some("budget_exceeded".into());
     failed.reply = Some("x".repeat(REPLY_CAP));

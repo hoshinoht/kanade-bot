@@ -4,8 +4,9 @@
 //! task ([`CardRefresh::run`]) drains them in coalesced batches, off the
 //! reaction worker and the tick. Per batch: each bound reminder card with a
 //! record naming a run still ahead is edited from current answers (same
-//! heading, art referenced by its posted names, nothing uploaded, nobody
-//! notified), then the active digest of each touched week. Cards posted
+//! heading or phrase, the latest manual override when there is one; art
+//! referenced by its posted names, nothing uploaded, nobody notified), then
+//! the active digest of each touched week. Cards posted
 //! before records existed (plain text) are left alone. `/debug ping` test
 //! cards of day-of/countdown kind are refreshed too, keeping their prefix.
 
@@ -28,8 +29,8 @@ use crate::bot::transport::DiscordTransport;
 use crate::domain::attendance::{AttendanceMode, countdown_mentions, morning_mentions};
 use crate::domain::members::Directory;
 use crate::domain::notify::{
-    DeliveryJournal, IntentContent, PingKind, countdown_minutes, digest_inclusion, everyone_on,
-    resolve_mentions,
+    DeliveryJournal, IntentContent, PingKind, WeeklyDigest, countdown_minutes, digest_inclusion,
+    everyone_on, resolve_mentions,
 };
 use crate::domain::schedule::{SchedulePolicy, ScheduleSnapshot};
 use crate::domain::scheduler::{ScheduleStore, Scope};
@@ -164,53 +165,59 @@ where
         let Ok(log) = self.store.load_digests().await else {
             return 0;
         };
-        let zone = self.policy.zone();
         let mut edited = 0;
         for digest in log
             .digests
             .iter()
             .filter(|digest| digest.retired_at.is_none() && weeks.contains(&digest.week_start))
         {
-            let (Some(channel), Some(message), Ok(inclusion)) = (
-                parse_id(&digest.channel_id),
-                parse_id(&digest.message_id),
-                digest_inclusion(&schedule.runs, digest.week_start, zone),
-            ) else {
-                continue;
-            };
-            let content = IntentContent::Digest {
-                week_start: digest.week_start,
-                inclusion,
-            };
-            let Some(key) = card_records::digest_phrase_key(digest.week_start) else {
-                continue;
-            };
-            let phrase = match self.store.digest_phrase(&key).await {
-                Ok(phrase) => phrase,
-                Err(_) => {
-                    logging::event("WARN", "digest_phrase_failed", json!({"operation": "read"}));
-                    continue;
-                }
-            };
-            let Some(card) =
-                cards::build(&content, &self.context(schedule), phrase.as_deref(), &[])
-            else {
-                continue;
-            };
-            let edit = card.edit(&CardArt::default());
-            if self
-                .transport
-                .edit_message(channel, message, &edit)
-                .await
-                .is_delivered()
-            {
+            if self.edit_digest(schedule, digest).await {
                 edited += 1;
             }
         }
         edited
     }
 
-    fn context<'s>(&'s self, schedule: &'s ScheduleSnapshot) -> CardContext<'s> {
+    /// Re-render a posted digest from current runs and its stored phrase
+    /// (the latest manual override, else the original); whether it landed.
+    pub(super) async fn edit_digest(
+        &self,
+        schedule: &ScheduleSnapshot,
+        digest: &WeeklyDigest,
+    ) -> bool {
+        let (Some(channel), Some(message), Ok(inclusion)) = (
+            parse_id(&digest.channel_id),
+            parse_id(&digest.message_id),
+            digest_inclusion(&schedule.runs, digest.week_start, self.policy.zone()),
+        ) else {
+            return false;
+        };
+        let content = IntentContent::Digest {
+            week_start: digest.week_start,
+            inclusion,
+        };
+        let Some(key) = card_records::digest_phrase_key(digest.week_start) else {
+            return false;
+        };
+        let phrase = match self.store.digest_phrase(&key).await {
+            Ok(phrase) => phrase,
+            Err(_) => {
+                logging::event("WARN", "digest_phrase_failed", json!({"operation": "read"}));
+                return false;
+            }
+        };
+        let Some(card) = cards::build(&content, &self.context(schedule), phrase.as_deref(), &[])
+        else {
+            return false;
+        };
+        let edit = card.edit(&CardArt::default());
+        self.transport
+            .edit_message(channel, message, &edit)
+            .await
+            .is_delivered()
+    }
+
+    pub(super) fn context<'s>(&'s self, schedule: &'s ScheduleSnapshot) -> CardContext<'s> {
         CardContext {
             schedule,
             attendance: self.policy.attendance,
@@ -223,7 +230,9 @@ where
         }
     }
 
-    async fn edit(&self, schedule: &ScheduleSnapshot, posted: &PostedCard) -> bool {
+    /// Re-render a posted card from current answers with its record's
+    /// heading; whether the edit landed.
+    pub(super) async fn edit(&self, schedule: &ScheduleSnapshot, posted: &PostedCard) -> bool {
         let (Some(channel), Some(message)) =
             (parse_id(&posted.channel_id), parse_id(&posted.message_id))
         else {

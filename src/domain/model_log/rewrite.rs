@@ -50,10 +50,18 @@ pub enum RewriteStage {
     Debug,
     /// A chat self-service nudge.
     Nudge,
+    /// An admin's manual rewrite of the current boss week's posted headers.
+    Manual,
 }
 
 impl RewriteStage {
-    pub const ALL: [Self; 4] = [Self::Batch, Self::Catchup, Self::Debug, Self::Nudge];
+    pub const ALL: [Self; 5] = [
+        Self::Batch,
+        Self::Catchup,
+        Self::Debug,
+        Self::Nudge,
+        Self::Manual,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -61,6 +69,7 @@ impl RewriteStage {
             Self::Catchup => "catchup",
             Self::Debug => "debug",
             Self::Nudge => "nudge",
+            Self::Manual => "manual",
         }
     }
 

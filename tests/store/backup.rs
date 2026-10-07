@@ -29,7 +29,7 @@ async fn backup_restores_to_an_equal_store_and_never_overwrites() {
         .await
         .expect("restores");
     assert_eq!(restored.load(&Scope::All).await.expect("load"), live);
-    assert_eq!(restored.schema_version().await.expect("version"), 27);
+    assert_eq!(restored.schema_version().await.expect("version"), 28);
     restored.close().await.expect("close");
 
     let occupied = SqliteStore::restore(&copy, &dir.config("live"))
@@ -151,7 +151,7 @@ async fn restore_validates_the_copy_before_publishing() {
         .expect("close");
     tamper(
         &future,
-        "INSERT INTO schema_migrations VALUES (28, 'next', '2027-01-01T00:00:00+00:00')",
+        "INSERT INTO schema_migrations VALUES (29, 'next', '2027-01-01T00:00:00+00:00')",
     )
     .await;
     let error = refused_restore(&dir, &future.db_path, "from-future").await;
@@ -159,8 +159,8 @@ async fn restore_validates_the_copy_before_publishing() {
         matches!(
             error,
             SqliteStoreError::FutureVersion {
-                found: 28,
-                known: 27
+                found: 29,
+                known: 28
             }
         ),
         "{error}"
@@ -211,6 +211,7 @@ async fn a_pre_v20_backup_restores_and_migrates() {
          ALTER TABLE web_sessions DROP COLUMN avatar_hash;
          DROP TABLE settings_changes;
          DROP TABLE rewrites;
+         DROP TABLE header_overrides;
          DELETE FROM schema_migrations WHERE version >= 19;
          ALTER TABLE extractions DROP COLUMN reasoning_content;
          ALTER TABLE extractions DROP COLUMN reasoning_tokens;
@@ -222,7 +223,7 @@ async fn a_pre_v20_backup_restores_and_migrates() {
     let restored = SqliteStore::restore(&old.db_path, &dir.config("from-pre-v19"))
         .await
         .expect("restores");
-    assert_eq!(restored.schema_version().await.expect("version"), 27);
+    assert_eq!(restored.schema_version().await.expect("version"), 28);
     assert_eq!(restored.foreign_key_violations().await.expect("check"), 0);
     let decline = restored
         .decline_notice("old-run", "old-member")

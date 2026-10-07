@@ -8,8 +8,8 @@
 //! registration tasks) → chat stops (waiting questions refunded, running
 //! ones finish within the grace or are cut, each concluded) → extraction
 //! (feed, pipeline, `Rescans::close`; calls in flight cancelled) → roster and
-//! reaction, card-refresh and header pre-generation workers drain (a header
-//! rewrite in flight is abandoned) → the running tick finishes (polled throughout) →
+//! reaction, card-refresh, header pre-generation and manual header rewrite
+//! workers drain (a header rewrite in flight is abandoned) → the running tick finishes (polled throughout) →
 //! (caller) HTTP drain → store close.
 
 mod late;
@@ -46,13 +46,16 @@ use crate::{
         rescan::RescanDesk,
         state::{
             DeclineRetraction, DigestPost, DigestPostRequest, DigestPostResult, GuildAccess,
-            ProposalCardRefresh,
+            HeaderRewritePort, ProposalCardRefresh,
         },
         write::ApiClock,
     },
     bot::{
         cards::{CardDesk, CardSettings, DeskDeps},
-        delivery::{CardRefresh, Delivery, DigestOutcome, HeaderPregen, LogAlerts, RefreshQueue},
+        delivery::{
+            CardRefresh, Delivery, DigestOutcome, HeaderPregen, LogAlerts, ManualRequest,
+            ManualRewrite, RefreshQueue,
+        },
         events::{GuildScope, ReactionRouter, Router},
         gateway::{ConnectionStatus, EventSource, GatewayError, Live, RunExit, run_live},
         guild_cache::GuildCache,
@@ -448,6 +451,25 @@ where
         quiet: Arc::clone(&quiet),
         now: Arc::clone(&wiring.clock),
     });
+    // `/debug rewrite` and the admin portal's manual header rewrite: one
+    // worker, editing through the refresh path.
+    let manual = Arc::new(ManualRewrite::new(Arc::clone(&refresh)));
+    let header_rewrite: HeaderRewritePort = {
+        let manual = Arc::clone(&manual);
+        Arc::new(move |request: ManualRequest| {
+            let manual = Arc::clone(&manual);
+            Box::pin(async move { manual.start(request).await })
+        })
+    };
+    match Arc::get_mut(&mut composition.admin.state) {
+        Some(state) => state.header_rewrite = Some(header_rewrite),
+        None => {
+            extraction.stop(&ShutdownClock::default()).await;
+            return Err(Error::Startup(
+                "the manual header rewrite could not be attached".into(),
+            ));
+        }
+    }
     // Every committed run write (reactions, commands, API, chat, proposals,
     // the tick) queues a card refresh; one task drains it.
     let refresh_queue = Arc::new(RefreshQueue::default());
@@ -581,6 +603,8 @@ where
     }));
     let pregen_stop = stopped.clone();
     workers.push(tokio::spawn(async move { pregen.run(pregen_stop).await }));
+    let manual_stop = stopped.clone();
+    workers.push(tokio::spawn(async move { manual.run(manual_stop).await }));
     let identity_dir = config.runtime.http.identity_dir.as_deref();
     workers.extend(identity::spawn(
         identity_dir,

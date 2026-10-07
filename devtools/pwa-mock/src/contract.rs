@@ -1478,6 +1478,26 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "common.json#/$defs/Message",
     )
     .await;
+    h.expect(
+        false,
+        "POST",
+        "/api/admin/headers/rewrite",
+        None,
+        StatusCode::ACCEPTED,
+        "common.json#/$defs/Message",
+    )
+    .await;
+    let running = h
+        .expect(
+            false,
+            "POST",
+            "/api/admin/headers/rewrite",
+            None,
+            StatusCode::CONFLICT,
+            "",
+        )
+        .await;
+    assert_eq!(running["error"], "rewrite_running");
     h.ok(
         "POST",
         "/api/admin/access/recheck",
