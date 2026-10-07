@@ -53,7 +53,9 @@ fn every_default_bodied_method_is_delegated() {
             "reaction_users",
             "followup",
             "autocomplete",
-            "current_user"
+            "current_user",
+            "application_emojis",
+            "create_application_emoji"
         ],
         "update `defaults_reach_discord` for new default-bodied methods"
     );
@@ -61,8 +63,11 @@ fn every_default_bodied_method_is_delegated() {
         .split_whitespace()
         .collect::<String>();
     for name in &names {
+        // `application_emojis` has its own pre-READY path but still hands
+        // over to the ready transport.
         assert!(
-            late.contains(&format!("delegate!(self,{name}(")),
+            late.contains(&format!("delegate!(self,{name}("))
+                || late.contains(&format!("inner.{name}()")),
             "LateTransport does not delegate `{name}`"
         );
     }
@@ -177,9 +182,15 @@ async fn defaults_reach_discord_once_ready_and_are_refused_unsent_before() {
     not_invalid(late.followup(&interaction, &reply).await.failure_label());
     not_invalid(late.autocomplete(&interaction, &[]).await.failure_label());
     not_invalid(late.current_user().await.failure_label());
+    not_invalid(late.application_emojis().await.failure_label());
+    not_invalid(
+        late.create_application_emoji("diff_n", b"\x89PNG\r\n\x1a\n")
+            .await
+            .failure_label(),
+    );
     assert_eq!(
         seen.load(Ordering::SeqCst),
-        6,
+        8,
         "every default-bodied call was sent"
     );
 }

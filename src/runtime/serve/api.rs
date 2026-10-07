@@ -259,6 +259,7 @@ pub(super) async fn compose_with(
             config.runtime.http.identity_dir.as_deref(),
         ))),
         events,
+        marks: Default::default(),
     };
     Ok(Composition {
         admin: LiveAdmin {

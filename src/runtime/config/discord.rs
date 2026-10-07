@@ -27,7 +27,7 @@ fn flag(values: &BTreeMap<String, String>, key: &str, default: bool) -> Result<b
 }
 
 impl DiscordSettings {
-    pub(super) fn from_mapping(values: &BTreeMap<String, String>) -> Result<Self, Error> {
+    pub fn from_mapping(values: &BTreeMap<String, String>) -> Result<Self, Error> {
         refuse_plain_token(values)?;
         let v4_stopped = flag(values, "KANADE_EXPECT_V4_STOPPED", false)?;
         let gateway = flag(values, "KANADE_DISCORD_GATEWAY", true)?;

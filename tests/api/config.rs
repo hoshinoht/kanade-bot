@@ -33,7 +33,7 @@ use kanade::{
 use serde_json::{Value, json};
 
 use crate::{
-    reads::{EDGE_HEADERS, Reads},
+    reads::{EDGE_HEADERS, NORMAL_PILL, Reads},
     schemas::assert_valid,
     support::{ADMIN_HOST, Reply, request, send},
 };
@@ -3316,6 +3316,13 @@ async fn a_redesigned_day_of_previews_one_embed_per_run() {
         "earliest run first: {titles:?}"
     );
     assert!(titles[1].contains("Kalos"), "{titles:?}");
+    // The marks serve listed at startup: the Normal pill replaces its word,
+    // a difficulty without one stays written out.
+    assert!(
+        titles[0].contains(&format!("{NORMAL_PILL} ")) && !titles[0].contains("Normal "),
+        "{titles:?}"
+    );
+    assert!(!titles[1].contains("<:diff_"), "{titles:?}");
     assert_eq!(
         more[0]["image"],
         Value::Null,

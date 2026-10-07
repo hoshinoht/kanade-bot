@@ -2,7 +2,8 @@
 //! `KANADE_TICK_SECONDS` under its own lease. The outbox drain, reminders,
 //! digests and expiry all run inside `Delivery::tick_at` in v4's order.
 //! A tick is never cancelled midway: stopping waits for the running one.
-//! Cards read the boss catalog and art; their persona headers are rewritten
+//! Cards read the boss catalog, art and the difficulty marks listed at
+//! startup ([`difficulty_marks`]); their persona headers are rewritten
 //! ahead of the send by the `HeaderPregen` worker through the `rewrite`
 //! model role ([`card_kit`]).
 
@@ -19,6 +20,7 @@ use super::settings;
 use crate::{
     api::{admin::config::SettingsChanged, auth::Clock},
     bot::{
+        cards::emojis::{self, PILLS},
         delivery::{
             DEFAULT_MAX_SENDS_PER_TICK, Delivery, DeliveryConfig, DeliveryError, LogAlerts,
             TickReport,
@@ -30,7 +32,7 @@ use crate::{
         guild_cache::{GuildCache, WatchList},
         ids::parse_id,
         roster::LiveRoster,
-        transport::DiscordTransport,
+        transport::{DiscordTransport, Outcome},
     },
     chat::{
         nudge::{
@@ -143,13 +145,44 @@ pub fn heading_rewriter<P: LlmProvider + 'static>(
     ))
 }
 
+/// How long serve waits at startup for the application's emoji list.
+const MARKS_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// The difficulty pills among the application's emojis, listed once at
+/// startup. A missing pill, or any failure, leaves that label written out.
+pub async fn difficulty_marks<T: DiscordTransport>(transport: &T) -> DifficultyMarks {
+    let listed = tokio::time::timeout(MARKS_TIMEOUT, emojis::difficulty_marks(transport)).await;
+    let reason = match listed {
+        Ok(Outcome::Delivered(marks)) => {
+            let missing: Vec<&str> = PILLS
+                .iter()
+                .filter(|(letter, _)| marks.get(letter).is_none())
+                .map(|(_, name)| *name)
+                .collect();
+            let level = if missing.is_empty() { "INFO" } else { "WARN" };
+            logging::event(level, "difficulty_marks", json!({"missing": missing}));
+            return marks;
+        }
+        Ok(failed) => failed.failure_label().unwrap_or_default(),
+        Err(_) => "timeout".to_owned(),
+    };
+    logging::event(
+        "WARN",
+        "difficulty_marks_unavailable",
+        json!({"reason": reason}),
+    );
+    DifficultyMarks::default()
+}
+
 /// Card inputs for the tick and card edits: the catalog, the boss art
-/// directory (none: no pictures) and the day-of heading rewrite (the
-/// `rewrite` role through the nudge rewriter, the guild's default persona;
-/// no role or no persona: v4's heading), each trial logged to `log`.
+/// directory (none: no pictures), the difficulty marks and the day-of
+/// heading rewrite (the `rewrite` role through the nudge rewriter, the
+/// guild's default persona; no role or no persona: v4's heading), each
+/// trial logged to `log`.
 pub fn card_kit(
     boss_dir: Option<&Path>,
     catalog: Arc<BossTable>,
+    marks: DifficultyMarks,
     models: Option<&Arc<ModelStack>>,
     personas: Arc<PersonaStore>,
     settings: watch::Receiver<SettingsChanged>,
@@ -197,7 +230,7 @@ pub fn card_kit(
             log: Some(log),
         },
         style: Some(style),
-        marks: DifficultyMarks::default(),
+        marks,
     }
 }
 

@@ -54,7 +54,7 @@ use crate::{
         cards::{CardDesk, CardSettings, DeskDeps},
         delivery::{
             CardRefresh, Delivery, DigestOutcome, HeaderPregen, LogAlerts, ManualRequest,
-            ManualRewrite, RefreshQueue,
+            ManualRewrite, RefreshQueue, cards::CardKit,
         },
         events::{GuildScope, ReactionRouter, Router},
         gateway::{ConnectionStatus, EventSource, GatewayError, Live, RunExit, run_live},
@@ -147,7 +147,8 @@ pub struct Discord {
     pub shutdown: ShutdownClock,
 }
 
-/// One card desk (journalled posts, ✅/❌ answers) over the shared store.
+/// One card desk (journalled posts, ✅/❌ answers) over the shared store,
+/// rendering in the card kit's live style.
 #[allow(clippy::too_many_arguments)]
 fn card_desk<T: GatewayTransport>(
     config: &ServeConfig,
@@ -158,6 +159,7 @@ fn card_desk<T: GatewayTransport>(
     access: &Arc<GuildAccess>,
     policy: &SchedulePolicy,
     decline_retraction: Option<DeclineRetraction>,
+    cards: CardKit,
 ) -> ChatDesk<T> {
     CardDesk::new(
         DeskDeps {
@@ -179,11 +181,13 @@ fn card_desk<T: GatewayTransport>(
             instance_id: config.instance_id.clone(),
         },
     )
+    .with_cards(cards)
 }
 
-/// Recover the delivery journal, then start everything. Nothing connects
+/// Recover the delivery journal, list the application's emojis for the
+/// difficulty marks, then start everything. Nothing else calls Discord
 /// until the gateway task first polls the source. Attaches the rescan
-/// runner to the API state, so call it before HTTP serves.
+/// runner and the marks to the API state, so call it before HTTP serves.
 pub async fn start<S, T>(
     config: &ServeConfig,
     store: Arc<SqliteStore>,
@@ -198,6 +202,8 @@ where
     // Before anything that can send: the reaction worker and commands post
     // as soon as the gateway is up, not only the tick.
     tick::recover(&store, (wiring.clock)()).await?;
+    // Read once, before the card kit and the admin preview are composed.
+    let marks = tick::difficulty_marks(&*wiring.transport).await;
     let Prepared {
         cache,
         tick_status,
@@ -269,6 +275,25 @@ where
             })
         })
     };
+    // Every card user (tick, refresh, digest post, debug, header
+    // pre-generation, the only one that calls the model, and the proposal
+    // card desk) shares the kit, so no heading rewrite outlasts the
+    // shutdown deadline.
+    let cards = stop_aware::cards(
+        card_kit(
+            config.runtime.http.boss_dir.as_deref(),
+            Arc::clone(&composition.admin.state.catalog),
+            marks.clone(),
+            composition.models.as_ref(),
+            Arc::clone(&composition.personas),
+            settings_changes(composition),
+            Arc::new(StoreRewriteSink::new(
+                Arc::clone(&store),
+                Arc::clone(&wiring.clock),
+            )),
+        ),
+        shutdown.clone(),
+    );
     // One desk for extraction cards, chat cards and the reaction worker's
     // ✅/❌, which all read the same stored cards.
     let desk = Arc::new(card_desk(
@@ -280,6 +305,7 @@ where
         &access,
         &policy,
         Some(Arc::clone(&decline_retraction)),
+        cards.clone(),
     ));
     let proposal_refresh: ProposalCardRefresh = {
         let desk = Arc::clone(&desk);
@@ -292,6 +318,7 @@ where
         Some(state) => {
             state.proposal_refresh = Some(proposal_refresh);
             state.decline_retraction = Some(decline_retraction);
+            state.marks = marks;
         }
         None => {
             return Err(Error::Startup(
@@ -350,23 +377,7 @@ where
             ));
         }
     }
-    // Every card user (tick, refresh, digest post, debug, header
-    // pre-generation, the only one that calls the model) shares the kit, so
-    // no heading rewrite outlasts the shutdown deadline.
-    let cards = stop_aware::cards(
-        card_kit(
-            config.runtime.http.boss_dir.as_deref(),
-            Arc::clone(&composition.admin.state.catalog),
-            composition.models.as_ref(),
-            Arc::clone(&composition.personas),
-            settings_changes(composition),
-            Arc::new(StoreRewriteSink::new(
-                Arc::clone(&store),
-                Arc::clone(&wiring.clock),
-            )),
-        ),
-        shutdown.clone(),
-    );
+    // The kit composed above, shared with every card user below.
     let quiet = Arc::new(AtomicBool::new(
         composition.settings.notifications.quiet_mode,
     ));

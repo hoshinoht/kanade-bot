@@ -1,0 +1,2218 @@
+{
+  "cases": [
+    {
+      "case_id": "open-move-asks-the-question",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "colour": 15418782,
+              "content": "📋 **Move Hard The First Adversary?** kanon asked to push it to Thursday 10pm.",
+              "description": "-# Not yet answered: Alvin, MY",
+              "fields": [
+                [
+                  "From",
+                  "~~Wed 09 Sep 21:30~~",
+                  true
+                ],
+                [
+                  "To",
+                  "**<t:1789048800:F>**",
+                  true
+                ],
+                [
+                  "Party",
+                  "kanon, Alvin, MY",
+                  true
+                ]
+              ],
+              "footer": "#a1b2c3d4 · 87% sure · ✅ apply · ❌ reject · /amend to edit",
+              "mention_users": []
+            }
+          },
+          {
+            "value": {
+              "colour": 15418782,
+              "content": "📋 **Move <:diff_h:2001> The First Adversary?** kanon asked to push it to Thursday 10pm.",
+              "description": "-# Not yet answered: Alvin, MY",
+              "fields": [
+                [
+                  "From",
+                  "~~Wed 09 Sep 21:30~~",
+                  true
+                ],
+                [
+                  "To",
+                  "**<t:1789048800:F>**",
+                  true
+                ],
+                [
+                  "Party",
+                  "kanon, Alvin, MY",
+                  true
+                ]
+              ],
+              "footer": "#a1b2c3d4 · 87% sure · ✅ apply · ❌ reject · /amend to edit",
+              "mention_users": []
+            }
+          },
+          {
+            "value": {
+              "colour": 15418782,
+              "content": "📋 **Move Hard The First Adversary?** kanon asked to push it to Thursday 10pm.",
+              "description": null,
+              "fields": [
+                [
+                  "From",
+                  "~~Wed 09 Sep 21:30~~",
+                  true
+                ],
+                [
+                  "To",
+                  "**<t:1789048800:F>**",
+                  true
+                ],
+                [
+                  "Party",
+                  "<@12>, <@11>, <@13>",
+                  true
+                ]
+              ],
+              "footer": "#a1b2c3d4 · ✅ apply · ❌ reject · /amend to edit",
+              "mention_users": []
+            }
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [],
+              "full": "The First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [],
+              "full": "Radiant Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [],
+              "full": "Limbo",
+              "short": "Limbo"
+            },
+            {
+              "aliases": [],
+              "full": "Gatekeeper Kalos",
+              "short": "Kalos"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "steps": [
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "HFA"
+                ],
+                "confidence": 0.87,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000001",
+                "is_question": false,
+                "kind": "move",
+                "new_datetime": "2026-09-10T22:00:00+08:00",
+                "participants": [
+                  "12"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "summary": "kanon asked to push it to Thursday 10pm.",
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [],
+              "names": {
+                "11": "Alvin",
+                "12": "kanon",
+                "13": "MY",
+                "14": "Rin"
+              }
+            },
+            "confidence": 0.87,
+            "marks": {},
+            "op": "styled_card",
+            "runs": [
+              {
+                "bosses": [
+                  "HFA"
+                ],
+                "channel_id": "300",
+                "datetime": "2026-09-09T21:30:00+08:00",
+                "id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "participants": [
+                  "12",
+                  "11",
+                  "13"
+                ],
+                "status": "planned",
+                "week_start": "2026-09-03T00:00:00+08:00"
+              }
+            ],
+            "state": {
+              "closures": [],
+              "notes": [],
+              "open": true
+            },
+            "unanswered": [
+              "11",
+              "13"
+            ]
+          },
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "HFA"
+                ],
+                "confidence": 0.87,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000001",
+                "is_question": false,
+                "kind": "move",
+                "new_datetime": "2026-09-10T22:00:00+08:00",
+                "participants": [
+                  "12"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "summary": "kanon asked to push it to Thursday 10pm.",
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [],
+              "names": {
+                "11": "Alvin",
+                "12": "kanon",
+                "13": "MY",
+                "14": "Rin"
+              }
+            },
+            "confidence": 0.87,
+            "marks": {
+              "h": "<:diff_h:2001>"
+            },
+            "op": "styled_card",
+            "runs": [
+              {
+                "bosses": [
+                  "HFA"
+                ],
+                "channel_id": "300",
+                "datetime": "2026-09-09T21:30:00+08:00",
+                "id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "participants": [
+                  "12",
+                  "11",
+                  "13"
+                ],
+                "status": "planned",
+                "week_start": "2026-09-03T00:00:00+08:00"
+              }
+            ],
+            "state": {
+              "closures": [],
+              "notes": [],
+              "open": true
+            },
+            "unanswered": [
+              "11",
+              "13"
+            ]
+          },
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "HFA"
+                ],
+                "confidence": 0.87,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000001",
+                "is_question": false,
+                "kind": "move",
+                "new_datetime": "2026-09-10T22:00:00+08:00",
+                "participants": [
+                  "12"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "summary": "kanon asked to push it to Thursday 10pm.",
+                "time_ref": null
+              }
+            ],
+            "audience": null,
+            "confidence": null,
+            "marks": {},
+            "op": "styled_card",
+            "runs": [
+              {
+                "bosses": [
+                  "HFA"
+                ],
+                "channel_id": "300",
+                "datetime": "2026-09-09T21:30:00+08:00",
+                "id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "participants": [
+                  "12",
+                  "11",
+                  "13"
+                ],
+                "status": "planned",
+                "week_start": "2026-09-03T00:00:00+08:00"
+              }
+            ],
+            "state": {
+              "closures": [],
+              "notes": [],
+              "open": true
+            },
+            "unanswered": null
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "applied-turns-green",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "colour": 3908956,
+              "content": "📋 **Move Hard The First Adversary?** kanon asked to push it to Thursday 10pm.\n-# ✅ Applied by MY at 14:09",
+              "description": null,
+              "fields": [
+                [
+                  "From",
+                  "~~Wed 09 Sep 21:30~~",
+                  true
+                ],
+                [
+                  "To",
+                  "**<t:1789048800:F>**",
+                  true
+                ],
+                [
+                  "Party",
+                  "kanon, Alvin, MY",
+                  true
+                ]
+              ],
+              "footer": "#a1b2c3d4 · applied",
+              "mention_users": []
+            }
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [],
+              "full": "The First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [],
+              "full": "Radiant Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [],
+              "full": "Limbo",
+              "short": "Limbo"
+            },
+            {
+              "aliases": [],
+              "full": "Gatekeeper Kalos",
+              "short": "Kalos"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "steps": [
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "HFA"
+                ],
+                "confidence": 0.87,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000001",
+                "is_question": false,
+                "kind": "move",
+                "new_datetime": "2026-09-10T22:00:00+08:00",
+                "participants": [
+                  "12"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "summary": "kanon asked to push it to Thursday 10pm.",
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [],
+              "names": {
+                "11": "Alvin",
+                "12": "kanon",
+                "13": "MY",
+                "14": "Rin"
+              }
+            },
+            "confidence": 0.87,
+            "marks": {},
+            "op": "styled_card",
+            "runs": [
+              {
+                "bosses": [
+                  "HFA"
+                ],
+                "channel_id": "300",
+                "datetime": "2026-09-09T21:30:00+08:00",
+                "id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "participants": [
+                  "12",
+                  "11",
+                  "13"
+                ],
+                "status": "planned",
+                "week_start": "2026-09-03T00:00:00+08:00"
+              }
+            ],
+            "state": {
+              "closures": [
+                {
+                  "at": "2026-09-08T14:09:00+08:00",
+                  "by": "MY",
+                  "kind": "applied"
+                }
+              ],
+              "notes": [],
+              "open": false
+            },
+            "unanswered": [
+              "11",
+              "13"
+            ]
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "rejected-greys-and-strikes",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "colour": 5132376,
+              "content": "📋 ~~**Move Hard The First Adversary?**~~ kanon asked to push it to Thursday 10pm.\n-# ❌ Rejected by Alvin at 14:11 · run unchanged",
+              "description": null,
+              "fields": [
+                [
+                  "From",
+                  "~~Wed 09 Sep 21:30~~",
+                  true
+                ],
+                [
+                  "To",
+                  "**<t:1789048800:F>**",
+                  true
+                ],
+                [
+                  "Party",
+                  "kanon, Alvin, MY",
+                  true
+                ]
+              ],
+              "footer": "#a1b2c3d4 · rejected",
+              "mention_users": []
+            }
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [],
+              "full": "The First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [],
+              "full": "Radiant Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [],
+              "full": "Limbo",
+              "short": "Limbo"
+            },
+            {
+              "aliases": [],
+              "full": "Gatekeeper Kalos",
+              "short": "Kalos"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "steps": [
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "HFA"
+                ],
+                "confidence": 0.87,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000001",
+                "is_question": false,
+                "kind": "move",
+                "new_datetime": "2026-09-10T22:00:00+08:00",
+                "participants": [
+                  "12"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "summary": "kanon asked to push it to Thursday 10pm.",
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [],
+              "names": {
+                "11": "Alvin",
+                "12": "kanon",
+                "13": "MY",
+                "14": "Rin"
+              }
+            },
+            "confidence": 0.87,
+            "marks": {},
+            "op": "styled_card",
+            "runs": [
+              {
+                "bosses": [
+                  "HFA"
+                ],
+                "channel_id": "300",
+                "datetime": "2026-09-09T21:30:00+08:00",
+                "id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "participants": [
+                  "12",
+                  "11",
+                  "13"
+                ],
+                "status": "planned",
+                "week_start": "2026-09-03T00:00:00+08:00"
+              }
+            ],
+            "state": {
+              "closures": [
+                {
+                  "at": "2026-09-08T06:11:00Z",
+                  "by": "Alvin",
+                  "kind": "rejected"
+                }
+              ],
+              "notes": [],
+              "open": false
+            },
+            "unanswered": [
+              "11",
+              "13"
+            ]
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "superseded-greys-and-strikes",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "colour": 5132376,
+              "content": "📋 ~~**Move Hard The First Adversary?**~~ kanon asked to push it to Thursday 10pm.\n-# ↪ Superseded by a newer card · run unchanged",
+              "description": null,
+              "fields": [
+                [
+                  "From",
+                  "~~Wed 09 Sep 21:30~~",
+                  true
+                ],
+                [
+                  "To",
+                  "**<t:1789048800:F>**",
+                  true
+                ],
+                [
+                  "Party",
+                  "kanon, Alvin, MY",
+                  true
+                ]
+              ],
+              "footer": "#a1b2c3d4 · superseded",
+              "mention_users": []
+            }
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [],
+              "full": "The First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [],
+              "full": "Radiant Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [],
+              "full": "Limbo",
+              "short": "Limbo"
+            },
+            {
+              "aliases": [],
+              "full": "Gatekeeper Kalos",
+              "short": "Kalos"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "steps": [
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "HFA"
+                ],
+                "confidence": 0.87,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000001",
+                "is_question": false,
+                "kind": "move",
+                "new_datetime": "2026-09-10T22:00:00+08:00",
+                "participants": [
+                  "12"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "summary": "kanon asked to push it to Thursday 10pm.",
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [],
+              "names": {
+                "11": "Alvin",
+                "12": "kanon",
+                "13": "MY",
+                "14": "Rin"
+              }
+            },
+            "confidence": 0.87,
+            "marks": {},
+            "op": "styled_card",
+            "runs": [
+              {
+                "bosses": [
+                  "HFA"
+                ],
+                "channel_id": "300",
+                "datetime": "2026-09-09T21:30:00+08:00",
+                "id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "participants": [
+                  "12",
+                  "11",
+                  "13"
+                ],
+                "status": "planned",
+                "week_start": "2026-09-03T00:00:00+08:00"
+              }
+            ],
+            "state": {
+              "closures": [
+                {
+                  "kind": "superseded"
+                }
+              ],
+              "notes": [],
+              "open": false
+            },
+            "unanswered": null
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "stale-greys-while-open",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "colour": 5132376,
+              "content": "📋 ~~**Move Hard The First Adversary?**~~ kanon asked to push it to Thursday 10pm.\n-# ⚠️ Out of date · run unchanged\n-# ⚠️ Both ✅ and ❌ were added while Kanade was offline. An approver should remove and re-add the intended one.",
+              "description": null,
+              "fields": [
+                [
+                  "From",
+                  "~~Wed 09 Sep 21:30~~",
+                  true
+                ],
+                [
+                  "To",
+                  "**<t:1789048800:F>**",
+                  true
+                ],
+                [
+                  "Party",
+                  "kanon, Alvin, MY",
+                  true
+                ]
+              ],
+              "footer": "#a1b2c3d4 · out of date",
+              "mention_users": []
+            }
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [],
+              "full": "The First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [],
+              "full": "Radiant Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [],
+              "full": "Limbo",
+              "short": "Limbo"
+            },
+            {
+              "aliases": [],
+              "full": "Gatekeeper Kalos",
+              "short": "Kalos"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "steps": [
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "HFA"
+                ],
+                "confidence": 0.87,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000001",
+                "is_question": false,
+                "kind": "move",
+                "new_datetime": "2026-09-10T22:00:00+08:00",
+                "participants": [
+                  "12"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "summary": "kanon asked to push it to Thursday 10pm.",
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [],
+              "names": {
+                "11": "Alvin",
+                "12": "kanon",
+                "13": "MY",
+                "14": "Rin"
+              }
+            },
+            "confidence": 0.87,
+            "marks": {},
+            "op": "styled_card",
+            "runs": [
+              {
+                "bosses": [
+                  "HFA"
+                ],
+                "channel_id": "300",
+                "datetime": "2026-09-09T21:30:00+08:00",
+                "id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "participants": [
+                  "12",
+                  "11",
+                  "13"
+                ],
+                "status": "planned",
+                "week_start": "2026-09-03T00:00:00+08:00"
+              }
+            ],
+            "state": {
+              "closures": [
+                {
+                  "kind": "stale"
+                }
+              ],
+              "notes": [
+                "⚠️ Both ✅ and ❌ were added while Kanade was offline. An approver should remove and re-add the intended one."
+              ],
+              "open": true
+            },
+            "unanswered": null
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "open-kinds-keep-their-colours",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "colour": 16426522,
+              "content": "💡 **Move Hard The First Adversary?** could we do thursday?",
+              "description": "-# Not yet answered: Alvin, MY",
+              "fields": [
+                [
+                  "From",
+                  "~~Wed 09 Sep 21:30~~",
+                  true
+                ],
+                [
+                  "To",
+                  "**thu** — time **TBD**",
+                  true
+                ],
+                [
+                  "Party",
+                  "kanon, Alvin, MY",
+                  true
+                ]
+              ],
+              "footer": "#a1b2c3d4 · 87% sure · ✅ apply · ❌ reject · /amend to edit",
+              "mention_users": []
+            }
+          },
+          {
+            "value": {
+              "colour": 10181046,
+              "content": "📌 **Make Extreme Gatekeeper Kalos weekly?**",
+              "description": null,
+              "fields": [
+                [
+                  "Every",
+                  "**every Wed 23:00**\n-# recurring, not a one-off; this week's run is added if that night is still ahead",
+                  true
+                ],
+                [
+                  "Party",
+                  "Alvin, MY, Rin",
+                  true
+                ]
+              ],
+              "footer": "87% sure · ✅ apply · ❌ reject · /amend to edit",
+              "mention_users": []
+            }
+          },
+          {
+            "value": {
+              "colour": 10181046,
+              "content": "📌 **Change the weekly timing of Extreme Gatekeeper Kalos?**",
+              "description": null,
+              "fields": [
+                [
+                  "From",
+                  "~~every Wed 23:00~~",
+                  true
+                ],
+                [
+                  "To",
+                  "**every Thu 22:30**\n-# every week from now on; this week's run moves with it",
+                  true
+                ],
+                [
+                  "Party",
+                  "Alvin, MY, Rin → Alvin, MY",
+                  true
+                ]
+              ],
+              "footer": "#e5f6a7b8 · 87% sure · ✅ apply · ❌ reject · /amend to edit",
+              "mention_users": []
+            }
+          },
+          {
+            "value": {
+              "colour": 10181046,
+              "content": "📌 **Stop scheduling Extreme Gatekeeper Kalos every week?**",
+              "description": null,
+              "fields": [
+                [
+                  "Every",
+                  "~~Wed 23:00~~",
+                  true
+                ],
+                [
+                  "Change",
+                  "**Stop scheduling weekly**\n-# this week's run is cancelled",
+                  true
+                ],
+                [
+                  "Party",
+                  "Alvin, MY, Rin",
+                  true
+                ]
+              ],
+              "footer": "#e5f6a7b8 · 87% sure · ✅ apply · ❌ reject · /amend to edit",
+              "mention_users": []
+            }
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [],
+              "full": "The First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [],
+              "full": "Radiant Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [],
+              "full": "Limbo",
+              "short": "Limbo"
+            },
+            {
+              "aliases": [],
+              "full": "Gatekeeper Kalos",
+              "short": "Kalos"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "steps": [
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "HFA"
+                ],
+                "confidence": 0.87,
+                "day_ref": "thu",
+                "id": "f0f0f0f0-0000-4000-8000-000000000002",
+                "is_question": true,
+                "kind": "move",
+                "new_datetime": null,
+                "participants": [
+                  "12"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "summary": "could we do thursday?",
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [],
+              "names": {
+                "11": "Alvin",
+                "12": "kanon",
+                "13": "MY",
+                "14": "Rin"
+              }
+            },
+            "confidence": 0.87,
+            "marks": {},
+            "op": "styled_card",
+            "runs": [
+              {
+                "bosses": [
+                  "HFA"
+                ],
+                "channel_id": "300",
+                "datetime": "2026-09-09T21:30:00+08:00",
+                "id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "participants": [
+                  "12",
+                  "11",
+                  "13"
+                ],
+                "status": "planned",
+                "week_start": "2026-09-03T00:00:00+08:00"
+              }
+            ],
+            "state": {
+              "closures": [],
+              "notes": [],
+              "open": true
+            },
+            "unanswered": [
+              "11",
+              "13"
+            ]
+          },
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "XKalos"
+                ],
+                "confidence": 0.87,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000003",
+                "is_question": false,
+                "kind": "fix",
+                "new_datetime": null,
+                "participants": [
+                  "11",
+                  "13",
+                  "14"
+                ],
+                "payload": {
+                  "time": "23:00",
+                  "weekday": 2
+                },
+                "rsvp": null,
+                "run_id": null,
+                "summary": null,
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [],
+              "names": {
+                "11": "Alvin",
+                "12": "kanon",
+                "13": "MY",
+                "14": "Rin"
+              }
+            },
+            "confidence": 0.87,
+            "marks": {},
+            "op": "styled_card",
+            "runs": [],
+            "state": {
+              "closures": [],
+              "notes": [],
+              "open": true
+            },
+            "unanswered": null
+          },
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "XKalos"
+                ],
+                "confidence": 0.87,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000004",
+                "is_question": false,
+                "kind": "fix",
+                "new_datetime": null,
+                "participants": [
+                  "11",
+                  "13",
+                  "14"
+                ],
+                "payload": {
+                  "op": "edit",
+                  "participants": [
+                    "11",
+                    "13"
+                  ],
+                  "time": "22:30",
+                  "weekday": 3,
+                  "weekly_when": "Wed 23:00"
+                },
+                "rsvp": null,
+                "run_id": "e5f6a7b8-0000-4000-8000-000000000003",
+                "summary": null,
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [],
+              "names": {
+                "11": "Alvin",
+                "12": "kanon",
+                "13": "MY",
+                "14": "Rin"
+              }
+            },
+            "confidence": 0.87,
+            "marks": {},
+            "op": "styled_card",
+            "runs": [
+              {
+                "bosses": [
+                  "XKalos"
+                ],
+                "channel_id": "300",
+                "datetime": "2026-09-09T23:00:00+08:00",
+                "id": "e5f6a7b8-0000-4000-8000-000000000003",
+                "participants": [
+                  "11",
+                  "13",
+                  "14"
+                ],
+                "status": "planned",
+                "week_start": "2026-09-03T00:00:00+08:00"
+              }
+            ],
+            "state": {
+              "closures": [],
+              "notes": [],
+              "open": true
+            },
+            "unanswered": null
+          },
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "XKalos"
+                ],
+                "confidence": 0.87,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000005",
+                "is_question": false,
+                "kind": "fix",
+                "new_datetime": null,
+                "participants": [],
+                "payload": {
+                  "op": "remove",
+                  "weekly_when": "Wed 23:00"
+                },
+                "rsvp": null,
+                "run_id": "e5f6a7b8-0000-4000-8000-000000000003",
+                "summary": null,
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [],
+              "names": {
+                "11": "Alvin",
+                "12": "kanon",
+                "13": "MY",
+                "14": "Rin"
+              }
+            },
+            "confidence": 0.87,
+            "marks": {},
+            "op": "styled_card",
+            "runs": [
+              {
+                "bosses": [
+                  "XKalos"
+                ],
+                "channel_id": "300",
+                "datetime": "2026-09-09T23:00:00+08:00",
+                "id": "e5f6a7b8-0000-4000-8000-000000000003",
+                "participants": [
+                  "11",
+                  "13",
+                  "14"
+                ],
+                "status": "planned",
+                "week_start": "2026-09-03T00:00:00+08:00"
+              }
+            ],
+            "state": {
+              "closures": [],
+              "notes": [],
+              "open": true
+            },
+            "unanswered": null
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "one-change-each-kind",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "colour": 15418782,
+              "content": "📋 **Add Normal Radiant Malefic Star?**",
+              "description": null,
+              "fields": [
+                [
+                  "To",
+                  "**<t:1788613200:F>**",
+                  true
+                ],
+                [
+                  "Party",
+                  "Rin, MY",
+                  true
+                ]
+              ],
+              "footer": "87% sure · ✅ apply · ❌ reject · /amend to edit",
+              "mention_users": []
+            }
+          },
+          {
+            "value": {
+              "colour": 16426522,
+              "content": "💡 **Cancel Hard Limbo this week?**",
+              "description": null,
+              "fields": [
+                [
+                  "When",
+                  "<t:1788876000:F>",
+                  true
+                ],
+                [
+                  "Change",
+                  "**Off this week**",
+                  true
+                ],
+                [
+                  "Party",
+                  "MY, kanon, Alvin",
+                  true
+                ]
+              ],
+              "footer": "#f1e2d3c4 · 87% sure · ✅ apply · ❌ reject · /amend to edit",
+              "mention_users": []
+            }
+          },
+          {
+            "value": {
+              "colour": 16426522,
+              "content": "💡 **Put Hard Limbo on own time?**",
+              "description": null,
+              "fields": [
+                [
+                  "When",
+                  "<t:1788876000:F>",
+                  true
+                ],
+                [
+                  "Change",
+                  "**Own time**\n-# no countdown pings",
+                  true
+                ],
+                [
+                  "Party",
+                  "MY, kanon, Alvin",
+                  true
+                ]
+              ],
+              "footer": "#f1e2d3c4 · 87% sure · ✅ apply · ❌ reject · /amend to edit",
+              "mention_users": []
+            }
+          },
+          {
+            "value": {
+              "colour": 16426522,
+              "content": "💡 **Swap Alvin for kanon on Hard Limbo?**",
+              "description": null,
+              "fields": [
+                [
+                  "When",
+                  "<t:1788876000:F>",
+                  true
+                ],
+                [
+                  "Out",
+                  "Alvin",
+                  true
+                ],
+                [
+                  "In",
+                  "kanon",
+                  true
+                ]
+              ],
+              "footer": "#f1e2d3c4 · 87% sure · ✅ apply · ❌ reject · /amend to edit",
+              "mention_users": []
+            }
+          },
+          {
+            "value": {
+              "colour": 16426522,
+              "content": "💡 **Count MY out of Hard Limbo?**",
+              "description": null,
+              "fields": [
+                [
+                  "When",
+                  "<t:1788876000:F>",
+                  true
+                ],
+                [
+                  "Out",
+                  "MY",
+                  true
+                ],
+                [
+                  "In",
+                  "—",
+                  true
+                ]
+              ],
+              "footer": "#f1e2d3c4 · 87% sure · ✅ apply · ❌ reject · /amend to edit",
+              "mention_users": []
+            }
+          },
+          {
+            "value": {
+              "colour": 16426522,
+              "content": "💡 **Count Rin out of Extreme Gatekeeper Kalos?**",
+              "description": "-# Also mentioned: own time",
+              "fields": [
+                [
+                  "When",
+                  "<t:1788966000:F>",
+                  true
+                ],
+                [
+                  "Answer",
+                  "**Can't make it**",
+                  true
+                ],
+                [
+                  "Who",
+                  "Rin",
+                  true
+                ]
+              ],
+              "footer": "#e5f6a7b8 · 87% sure · ✅ apply · ❌ reject · /amend to edit",
+              "mention_users": []
+            }
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [],
+              "full": "The First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [],
+              "full": "Radiant Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [],
+              "full": "Limbo",
+              "short": "Limbo"
+            },
+            {
+              "aliases": [],
+              "full": "Gatekeeper Kalos",
+              "short": "Kalos"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "steps": [
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "NMaleficStar"
+                ],
+                "confidence": 0.87,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000006",
+                "is_question": false,
+                "kind": "add",
+                "new_datetime": "2026-09-05T21:00:00+08:00",
+                "participants": [
+                  "14",
+                  "13"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": null,
+                "summary": null,
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [],
+              "names": {
+                "11": "Alvin",
+                "12": "kanon",
+                "13": "MY",
+                "14": "Rin"
+              }
+            },
+            "confidence": 0.87,
+            "marks": {},
+            "op": "styled_card",
+            "runs": [],
+            "state": {
+              "closures": [],
+              "notes": [],
+              "open": true
+            },
+            "unanswered": null
+          },
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "HLimbo"
+                ],
+                "confidence": 0.87,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000007",
+                "is_question": false,
+                "kind": "cancel",
+                "new_datetime": null,
+                "participants": [],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "f1e2d3c4-0000-4000-8000-000000000002",
+                "summary": null,
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [],
+              "names": {
+                "11": "Alvin",
+                "12": "kanon",
+                "13": "MY",
+                "14": "Rin"
+              }
+            },
+            "confidence": 0.87,
+            "marks": {},
+            "op": "styled_card",
+            "runs": [
+              {
+                "bosses": [
+                  "HLimbo"
+                ],
+                "channel_id": "300",
+                "datetime": "2026-09-08T22:00:00+08:00",
+                "id": "f1e2d3c4-0000-4000-8000-000000000002",
+                "participants": [
+                  "13",
+                  "12",
+                  "11"
+                ],
+                "status": "planned",
+                "week_start": "2026-09-03T00:00:00+08:00"
+              }
+            ],
+            "state": {
+              "closures": [],
+              "notes": [],
+              "open": true
+            },
+            "unanswered": null
+          },
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "HLimbo"
+                ],
+                "confidence": 0.87,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000008",
+                "is_question": false,
+                "kind": "otot",
+                "new_datetime": null,
+                "participants": [],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "f1e2d3c4-0000-4000-8000-000000000002",
+                "summary": null,
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [],
+              "names": {
+                "11": "Alvin",
+                "12": "kanon",
+                "13": "MY",
+                "14": "Rin"
+              }
+            },
+            "confidence": 0.87,
+            "marks": {},
+            "op": "styled_card",
+            "runs": [
+              {
+                "bosses": [
+                  "HLimbo"
+                ],
+                "channel_id": "300",
+                "datetime": "2026-09-08T22:00:00+08:00",
+                "id": "f1e2d3c4-0000-4000-8000-000000000002",
+                "participants": [
+                  "13",
+                  "12",
+                  "11"
+                ],
+                "status": "planned",
+                "week_start": "2026-09-03T00:00:00+08:00"
+              }
+            ],
+            "state": {
+              "closures": [],
+              "notes": [],
+              "open": true
+            },
+            "unanswered": null
+          },
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "HLimbo"
+                ],
+                "confidence": 0.87,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000009",
+                "is_question": false,
+                "kind": "sub",
+                "new_datetime": null,
+                "participants": [
+                  "11"
+                ],
+                "payload": {
+                  "add": [
+                    "12"
+                  ],
+                  "remove": [
+                    "11"
+                  ]
+                },
+                "rsvp": null,
+                "run_id": "f1e2d3c4-0000-4000-8000-000000000002",
+                "summary": null,
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [],
+              "names": {
+                "11": "Alvin",
+                "12": "kanon",
+                "13": "MY",
+                "14": "Rin"
+              }
+            },
+            "confidence": 0.87,
+            "marks": {},
+            "op": "styled_card",
+            "runs": [
+              {
+                "bosses": [
+                  "HLimbo"
+                ],
+                "channel_id": "300",
+                "datetime": "2026-09-08T22:00:00+08:00",
+                "id": "f1e2d3c4-0000-4000-8000-000000000002",
+                "participants": [
+                  "13",
+                  "12",
+                  "11"
+                ],
+                "status": "planned",
+                "week_start": "2026-09-03T00:00:00+08:00"
+              }
+            ],
+            "state": {
+              "closures": [],
+              "notes": [],
+              "open": true
+            },
+            "unanswered": null
+          },
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "HLimbo"
+                ],
+                "confidence": 0.87,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000010",
+                "is_question": false,
+                "kind": "sub",
+                "new_datetime": null,
+                "participants": [
+                  "13"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "f1e2d3c4-0000-4000-8000-000000000002",
+                "summary": null,
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [],
+              "names": {
+                "11": "Alvin",
+                "12": "kanon",
+                "13": "MY",
+                "14": "Rin"
+              }
+            },
+            "confidence": 0.87,
+            "marks": {},
+            "op": "styled_card",
+            "runs": [
+              {
+                "bosses": [
+                  "HLimbo"
+                ],
+                "channel_id": "300",
+                "datetime": "2026-09-08T22:00:00+08:00",
+                "id": "f1e2d3c4-0000-4000-8000-000000000002",
+                "participants": [
+                  "13",
+                  "12",
+                  "11"
+                ],
+                "status": "planned",
+                "week_start": "2026-09-03T00:00:00+08:00"
+              }
+            ],
+            "state": {
+              "closures": [],
+              "notes": [],
+              "open": true
+            },
+            "unanswered": null
+          },
+          {
+            "amendments": [
+              {
+                "also_mentioned": [
+                  "otot"
+                ],
+                "bosses": [
+                  "XKalos"
+                ],
+                "confidence": 0.87,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000011",
+                "is_question": false,
+                "kind": "rsvp",
+                "new_datetime": null,
+                "participants": [
+                  "14"
+                ],
+                "payload": {},
+                "rsvp": "no",
+                "run_id": "e5f6a7b8-0000-4000-8000-000000000003",
+                "summary": null,
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [],
+              "names": {
+                "11": "Alvin",
+                "12": "kanon",
+                "13": "MY",
+                "14": "Rin"
+              }
+            },
+            "confidence": 0.87,
+            "marks": {},
+            "op": "styled_card",
+            "runs": [
+              {
+                "bosses": [
+                  "XKalos"
+                ],
+                "channel_id": "300",
+                "datetime": "2026-09-09T23:00:00+08:00",
+                "id": "e5f6a7b8-0000-4000-8000-000000000003",
+                "participants": [
+                  "11",
+                  "13",
+                  "14"
+                ],
+                "status": "planned",
+                "week_start": "2026-09-03T00:00:00+08:00"
+              }
+            ],
+            "state": {
+              "closures": [],
+              "notes": [],
+              "open": true
+            },
+            "unanswered": null
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "multi-change-one-group-each",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "colour": 16426522,
+              "content": "💡 **Apply 2 changes?**",
+              "description": "-# Not yet answered: Alvin, MY",
+              "fields": [
+                [
+                  "Move Hard The First Adversary?",
+                  "-# kanon asked to push it to Thursday 10pm. · #a1b2c3d4",
+                  false
+                ],
+                [
+                  "From",
+                  "~~Wed 09 Sep 21:30~~",
+                  true
+                ],
+                [
+                  "To",
+                  "**<t:1789048800:F>**",
+                  true
+                ],
+                [
+                  "Party",
+                  "kanon, Alvin, MY",
+                  true
+                ],
+                [
+                  "Swap Alvin for kanon on Hard Limbo?",
+                  "-# kanon stands in for Alvin · #f1e2d3c4",
+                  false
+                ],
+                [
+                  "When",
+                  "<t:1788876000:F>",
+                  true
+                ],
+                [
+                  "Out",
+                  "Alvin",
+                  true
+                ],
+                [
+                  "In",
+                  "kanon",
+                  true
+                ]
+              ],
+              "footer": "#a1b2c3d4 · #f1e2d3c4 · 72% sure · ✅ apply · ❌ reject · /amend to edit",
+              "mention_users": []
+            }
+          },
+          {
+            "value": {
+              "colour": 3908956,
+              "content": "💡 **Apply 2 changes?**\n-# ✅ Applied by MY at 14:09\n-# ↪ Superseded by a newer card",
+              "description": null,
+              "fields": [
+                [
+                  "Move Hard The First Adversary?",
+                  "-# kanon asked to push it to Thursday 10pm. · #a1b2c3d4",
+                  false
+                ],
+                [
+                  "From",
+                  "~~Wed 09 Sep 21:30~~",
+                  true
+                ],
+                [
+                  "To",
+                  "**<t:1789048800:F>**",
+                  true
+                ],
+                [
+                  "Party",
+                  "kanon, Alvin, MY",
+                  true
+                ],
+                [
+                  "Swap Alvin for kanon on Hard Limbo?",
+                  "-# #f1e2d3c4",
+                  false
+                ],
+                [
+                  "When",
+                  "<t:1788876000:F>",
+                  true
+                ],
+                [
+                  "Out",
+                  "Alvin",
+                  true
+                ],
+                [
+                  "In",
+                  "kanon",
+                  true
+                ]
+              ],
+              "footer": "#a1b2c3d4 · #f1e2d3c4 · applied",
+              "mention_users": []
+            }
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [],
+              "full": "The First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [],
+              "full": "Radiant Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [],
+              "full": "Limbo",
+              "short": "Limbo"
+            },
+            {
+              "aliases": [],
+              "full": "Gatekeeper Kalos",
+              "short": "Kalos"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "steps": [
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "HFA"
+                ],
+                "confidence": 0.87,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000001",
+                "is_question": false,
+                "kind": "move",
+                "new_datetime": "2026-09-10T22:00:00+08:00",
+                "participants": [
+                  "12"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "summary": "kanon asked to push it to Thursday 10pm.",
+                "time_ref": null
+              },
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "HLimbo"
+                ],
+                "confidence": 0.72,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000012",
+                "is_question": false,
+                "kind": "sub",
+                "new_datetime": null,
+                "participants": [
+                  "11"
+                ],
+                "payload": {
+                  "add": [
+                    "12"
+                  ],
+                  "remove": [
+                    "11"
+                  ]
+                },
+                "rsvp": null,
+                "run_id": "f1e2d3c4-0000-4000-8000-000000000002",
+                "summary": "kanon stands in for Alvin",
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [],
+              "names": {
+                "11": "Alvin",
+                "12": "kanon",
+                "13": "MY",
+                "14": "Rin"
+              }
+            },
+            "confidence": 0.72,
+            "marks": {},
+            "op": "styled_card",
+            "runs": [
+              {
+                "bosses": [
+                  "HFA"
+                ],
+                "channel_id": "300",
+                "datetime": "2026-09-09T21:30:00+08:00",
+                "id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "participants": [
+                  "12",
+                  "11",
+                  "13"
+                ],
+                "status": "planned",
+                "week_start": "2026-09-03T00:00:00+08:00"
+              },
+              {
+                "bosses": [
+                  "HLimbo"
+                ],
+                "channel_id": "300",
+                "datetime": "2026-09-08T22:00:00+08:00",
+                "id": "f1e2d3c4-0000-4000-8000-000000000002",
+                "participants": [
+                  "13",
+                  "12",
+                  "11"
+                ],
+                "status": "planned",
+                "week_start": "2026-09-03T00:00:00+08:00"
+              }
+            ],
+            "state": {
+              "closures": [],
+              "notes": [],
+              "open": true
+            },
+            "unanswered": [
+              "11",
+              "13"
+            ]
+          },
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "HFA"
+                ],
+                "confidence": 0.87,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000001",
+                "is_question": false,
+                "kind": "move",
+                "new_datetime": "2026-09-10T22:00:00+08:00",
+                "participants": [
+                  "12"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "summary": "kanon asked to push it to Thursday 10pm.",
+                "time_ref": null
+              },
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "HLimbo"
+                ],
+                "confidence": 0.72,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000012",
+                "is_question": false,
+                "kind": "sub",
+                "new_datetime": null,
+                "participants": [
+                  "11"
+                ],
+                "payload": {
+                  "add": [
+                    "12"
+                  ],
+                  "remove": [
+                    "11"
+                  ]
+                },
+                "rsvp": null,
+                "run_id": "f1e2d3c4-0000-4000-8000-000000000002",
+                "summary": null,
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [],
+              "names": {
+                "11": "Alvin",
+                "12": "kanon",
+                "13": "MY",
+                "14": "Rin"
+              }
+            },
+            "confidence": 0.72,
+            "marks": {},
+            "op": "styled_card",
+            "runs": [
+              {
+                "bosses": [
+                  "HFA"
+                ],
+                "channel_id": "300",
+                "datetime": "2026-09-09T21:30:00+08:00",
+                "id": "a1b2c3d4-0000-4000-8000-000000000001",
+                "participants": [
+                  "12",
+                  "11",
+                  "13"
+                ],
+                "status": "planned",
+                "week_start": "2026-09-03T00:00:00+08:00"
+              },
+              {
+                "bosses": [
+                  "HLimbo"
+                ],
+                "channel_id": "300",
+                "datetime": "2026-09-08T22:00:00+08:00",
+                "id": "f1e2d3c4-0000-4000-8000-000000000002",
+                "participants": [
+                  "13",
+                  "12",
+                  "11"
+                ],
+                "status": "planned",
+                "week_start": "2026-09-03T00:00:00+08:00"
+              }
+            ],
+            "state": {
+              "closures": [
+                {
+                  "at": "2026-09-08T14:09:00+08:00",
+                  "by": "MY",
+                  "kind": "applied"
+                },
+                {
+                  "kind": "superseded"
+                }
+              ],
+              "notes": [],
+              "open": false
+            },
+            "unanswered": null
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    }
+  ],
+  "family": "cards_redesigned",
+  "provenance": {
+    "functions": [
+      "kanade::bot::cards::styled_card"
+    ],
+    "source": "v5 (no v4 oracle): the redesigned message style",
+    "spec": "docs/notes/discord-redesign-handoff.md dr-proposal (private)"
+  },
+  "schema_version": "v5-extract-cards_redesigned-v1"
+}

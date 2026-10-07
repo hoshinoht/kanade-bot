@@ -1,8 +1,10 @@
 //! The production transport, built once `READY` names the application.
 //! Nothing calls Discord before the gateway is ready (registration,
 //! interactions, roster paging and the tick all wait for it); a call that
-//! did is refused unsent. Every trait method is delegated, including the
-//! ones with a default body (a missed one would be refused `Invalid`).
+//! did is refused unsent. The one exception is the startup list of the
+//! application's emojis, which reads the application id over HTTP itself.
+//! Every trait method is delegated, including the ones with a default body
+//! (a missed one would be refused `Invalid`).
 
 use std::sync::OnceLock;
 
@@ -17,8 +19,8 @@ use twilight_model::id::{
 use twilight_model::user::CurrentUser;
 
 use crate::bot::transport::{
-    ChannelId, DiscordTransport, HistoryPage, InteractionRef, InteractionReply, MessageEdit,
-    MessageId, Outcome, OutgoingMessage, Presence, RejectionKind, TransportConfig,
+    ApplicationEmoji, ChannelId, DiscordTransport, HistoryPage, InteractionRef, InteractionReply,
+    MessageEdit, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind, TransportConfig,
     TwilightTransport,
 };
 use crate::runtime::secrets::Redacted;
@@ -202,6 +204,28 @@ impl DiscordTransport for LateTransport {
 
     async fn current_user(&self) -> Outcome<CurrentUser> {
         delegate!(self, current_user())
+    }
+
+    async fn application_emojis(&self) -> Outcome<Vec<ApplicationEmoji>> {
+        if let Some(inner) = self.inner.get() {
+            return inner.application_emojis().await;
+        }
+        // Before READY: a throwaway transport for the token's application,
+        // so the refusal of every other early call stays in place.
+        match TwilightTransport::for_current_application(
+            self.token.expose().to_owned(),
+            TransportConfig::default(),
+        )
+        .await
+        {
+            Outcome::Delivered(early) => early.application_emojis().await,
+            Outcome::DefinitelyRejected(kind) => Outcome::DefinitelyRejected(kind),
+            Outcome::Ambiguous(kind) => Outcome::Ambiguous(kind),
+        }
+    }
+
+    async fn create_application_emoji(&self, name: &str, png: &[u8]) -> Outcome<ApplicationEmoji> {
+        delegate!(self, create_application_emoji(name, png))
     }
 }
 

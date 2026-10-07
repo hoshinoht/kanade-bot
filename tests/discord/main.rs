@@ -3,6 +3,7 @@
 
 mod cards;
 mod commands;
+mod emojis;
 mod fake_transport;
 mod gateway;
 mod guild;

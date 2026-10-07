@@ -5,9 +5,11 @@
 //! `claims` races them for one admission per message version.
 //! `redirect` and `nudge` cover the v5 self-service redirect and its persona
 //! nudges (no v4 vectors); `self_service` wires them through the governed
-//! rewrite and the pipeline. `cards` replays the proposal card text.
+//! rewrite and the pipeline. `cards` replays the proposal card text;
+//! `cards_redesigned` the v5 redesigned card (its own vectors, no oracle).
 
 mod cards;
+mod cards_redesigned;
 mod claims;
 mod commit;
 mod fakes;

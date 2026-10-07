@@ -1,3 +1,4 @@
+pub mod emojis;
 pub mod healthcheck;
 pub mod models;
 
@@ -14,7 +15,7 @@ pub enum Command {
     ImportV4(ImportV4Args),
     Backup(BackupArgs),
     Models(models::Args),
-    Reserved { name: &'static str },
+    CtlEmojis(emojis::Args),
 }
 
 pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Command, Error> {
@@ -26,7 +27,10 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Command, Err
         "serve" => parse_serve(&arguments[1..]),
         "healthcheck" => parse_healthcheck(&arguments[1..]),
         "models" => models::parse(&arguments[1..]).map(Command::Models),
-        "ctl" if arguments.len() == 1 => Ok(Command::Reserved { name: "ctl" }),
+        "ctl" => match arguments.get(1).map(String::as_str) {
+            Some("emojis") => emojis::parse(&arguments[2..]).map(Command::CtlEmojis),
+            _ => Err(usage()),
+        },
         "import" => parse_import(&arguments[1..]),
         "backup" => parse_backup(&arguments[1..]),
         _ => Err(usage()),
@@ -140,7 +144,7 @@ fn parse_backup(arguments: &[String]) -> Result<Command, Error> {
 }
 
 fn usage() -> Error {
-    Error::Usage("usage: kanade {serve [--offline]|healthcheck [--url http://127.0.0.1:8080/healthz]|models check [--probe]|import v4 --from PATH [--since YYYY-MM-DD] [--refresh-logs] [--apply]|backup [--name FILE]|ctl}".into())
+    Error::Usage("usage: kanade {serve [--offline]|healthcheck [--url http://127.0.0.1:8080/healthz]|models check [--probe]|import v4 --from PATH [--since YYYY-MM-DD] [--refresh-logs] [--apply]|backup [--name FILE]|ctl emojis [--dry-run] [--dir PATH]}".into())
 }
 
 #[cfg(test)]
@@ -157,11 +161,16 @@ mod tests {
     }
 
     #[test]
-    fn ctl_stays_reserved_and_export_is_gone() {
+    fn ctl_takes_the_emojis_subcommand_and_export_is_gone() {
         assert_eq!(
-            parse(["ctl".into()]).unwrap(),
-            Command::Reserved { name: "ctl" }
+            parse(["ctl".into(), "emojis".into(), "--dry-run".into()]).unwrap(),
+            Command::CtlEmojis(emojis::Args {
+                dry_run: true,
+                dir: PathBuf::from(emojis::DEFAULT_DIR),
+            })
         );
+        assert!(parse(["ctl".into()]).is_err());
+        assert!(parse(["ctl".into(), "other".into()]).is_err());
         assert!(parse(["export".into()]).is_err());
     }
 

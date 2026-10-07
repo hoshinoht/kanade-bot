@@ -34,8 +34,8 @@ use super::super::budget::ShutdownClock;
 use super::GatewayTransport;
 use crate::bot::delivery::cards::CardKit;
 use crate::bot::transport::{
-    AmbiguousKind, ChannelId, DiscordTransport, HistoryPage, InteractionRef, InteractionReply,
-    MessageEdit, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind,
+    AmbiguousKind, ApplicationEmoji, ChannelId, DiscordTransport, HistoryPage, InteractionRef,
+    InteractionReply, MessageEdit, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind,
 };
 use crate::chat::nudge::{
     NudgeRewriter, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriter,
@@ -291,6 +291,15 @@ impl<T: DiscordTransport> DiscordTransport for StopAware<T> {
 
     async fn current_user(&self) -> Outcome<CurrentUser> {
         self.race(false, self.inner.current_user()).await
+    }
+
+    async fn application_emojis(&self) -> Outcome<Vec<ApplicationEmoji>> {
+        self.race(false, self.inner.application_emojis()).await
+    }
+
+    async fn create_application_emoji(&self, name: &str, png: &[u8]) -> Outcome<ApplicationEmoji> {
+        self.race(true, self.inner.create_application_emoji(name, png))
+            .await
     }
 }
 

@@ -20,7 +20,9 @@ use twilight_model::channel::{Channel, Message};
 use twilight_model::guild::Member;
 use twilight_model::id::{
     Id,
-    marker::{ChannelMarker, GuildMarker, InteractionMarker, MessageMarker, UserMarker},
+    marker::{
+        ChannelMarker, EmojiMarker, GuildMarker, InteractionMarker, MessageMarker, UserMarker,
+    },
 };
 use twilight_model::user::CurrentUser;
 
@@ -165,6 +167,22 @@ impl InteractionReply {
 
 pub type ChannelId = Id<ChannelMarker>;
 pub type MessageId = Id<MessageMarker>;
+
+/// One of the application's own emojis (usable in any guild the bot is in).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApplicationEmoji {
+    pub id: Id<EmojiMarker>,
+    pub name: String,
+    pub animated: bool,
+}
+
+impl ApplicationEmoji {
+    /// The message markup that shows it: `<:name:id>` (`<a:name:id>` animated).
+    pub fn markup(&self) -> String {
+        let animated = if self.animated { "a" } else { "" };
+        format!("<{animated}:{}:{}>", self.name, self.id)
+    }
+}
 
 /// Discord operations with classified outcomes.
 ///
@@ -325,6 +343,24 @@ pub trait DiscordTransport: Send + Sync {
     /// The bot's own user (`GET /users/@me`: the banner `READY` may omit).
     /// Test doubles that never refresh identity art may keep the default.
     fn current_user(&self) -> impl Future<Output = Outcome<CurrentUser>> + Send {
+        async { Outcome::DefinitelyRejected(RejectionKind::Invalid) }
+    }
+
+    /// The application's own emojis. Test doubles that never list them may
+    /// keep the default.
+    fn application_emojis(&self) -> impl Future<Output = Outcome<Vec<ApplicationEmoji>>> + Send {
+        async { Outcome::DefinitelyRejected(RejectionKind::Invalid) }
+    }
+
+    /// Upload one application emoji from a PNG (Discord: at most 128×128
+    /// and 256 KiB). An ambiguous upload may have landed: list before
+    /// trying again.
+    fn create_application_emoji(
+        &self,
+        name: &str,
+        png: &[u8],
+    ) -> impl Future<Output = Outcome<ApplicationEmoji>> + Send {
+        let _ = (name, png);
         async { Outcome::DefinitelyRejected(RejectionKind::Invalid) }
     }
 }

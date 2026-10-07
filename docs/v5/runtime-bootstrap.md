@@ -633,8 +633,24 @@ emit only safe configuration-error descriptions, not environment values.
 
 Live `serve` runs the Discord gateway, roster sync, the chat pilot,
 extraction and the delivery tick, chat and extraction each behind its
-settings switch (see "Live serve"). `ctl` is a reserved command that
-returns a nonzero not-implemented result; there is no `export` command.
+settings switch (see "Live serve"). There is no `export` command.
+`ctl emojis [--dry-run] [--dir PATH]` uploads the difficulty pills
+(`assets/emojis/diff_{n,h,c,x}.png`, drawn by `scripts/emojis/draw_pills.py`)
+as application emojis: it needs only `KANADE_DISCORD_TOKEN_FILE`, reads the
+application from `GET /applications/@me`, lists its emojis and uploads only
+the fixed names `diff_n`, `diff_h`, `diff_c`, `diff_x` that are missing,
+from `PATH/<name>.png` (default `assets/emojis`, relative to the working
+directory). It never deletes or renames an emoji and is safe to rerun; it
+prints one line per pill (`present`, `uploaded`, `missing` on a dry run,
+`not uploaded`, `upload failed (<label>)`) and exits nonzero when the list
+fails or a pill is not in place (a dry run's missing pills are not a
+failure). An ambiguous upload may have landed: rerun, which lists first.
+It opens no gateway session, so it can run beside a live bot. Live `serve`
+lists the application's emojis once at startup and maps the pills it finds
+to the redesigned cards' and the admin preview's difficulty marks; a
+missing pill or a failed list keeps the written label
+(`difficulty_marks`/`difficulty_marks_unavailable`). Restart serve after
+uploading.
 `import v4` is the one-off testing import from a v4 snapshot
 (`v4-import.md`). `backup [--name FILE]` is the deploy-time snapshot:
 it needs only `KANADE_DB_PATH`, `KANADE_OWNER_LOCK_DIR` and
@@ -729,3 +745,5 @@ JSON lines on stderr (`level`, `event`, fields). None carries question or reply 
 | `former_names_evicted` | WARN (historical) | `remembered` | retired masked-chat name-history event; current calls do not emit it |
 | `chat_members_unreadable` | WARN | no additional fields | the roster could not be loaded; chat uses an empty roster and this is not a masking refusal |
 | `chat_cancelled` | INFO | `interaction_id`, `reason` (`deleted`/`shutdown`/`expired`/`not_admitted`/`not_ready`/`aborted`) | an admitted question ended without an answer |
+| `difficulty_marks` | INFO; WARN when a pill is missing | `missing` (pill names not found) | serve startup, after listing the application's emojis |
+| `difficulty_marks_unavailable` | WARN | `reason` (transport label or `timeout`) | serve startup when the emoji list failed; every difficulty is written out |

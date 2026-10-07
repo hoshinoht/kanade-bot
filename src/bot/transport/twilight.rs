@@ -29,10 +29,11 @@ use twilight_http::error::{Error, ErrorType};
 use twilight_http::request::channel::reaction::RequestReactionType;
 use twilight_http::response::{Response, ResponseFuture};
 use twilight_http::{Client, api_error::ApiError};
+use twilight_model::application::EmojiList;
 use twilight_model::application::command::{Command, CommandOptionChoice};
 use twilight_model::channel::message::{Embed, MessageFlags};
 use twilight_model::channel::{Channel, Message};
-use twilight_model::guild::Member;
+use twilight_model::guild::{Emoji, Member};
 use twilight_model::http::attachment::Attachment;
 use twilight_model::http::interaction::{
     InteractionResponse, InteractionResponseData, InteractionResponseType,
@@ -44,10 +45,11 @@ use twilight_model::id::{
 use twilight_model::user::CurrentUser;
 
 use super::{
-    AmbiguousKind, CREATE_FLAGS, ChannelId, DiscordTransport, HistoryPage, InteractionRef,
-    InteractionReply, MessageEdit, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind,
-    classify_status,
+    AmbiguousKind, ApplicationEmoji, CREATE_FLAGS, ChannelId, DiscordTransport, HistoryPage,
+    InteractionRef, InteractionReply, MessageEdit, MessageId, Outcome, OutgoingMessage, Presence,
+    RejectionKind, classify_status,
 };
+use crate::api::auth::crypto::base64_standard;
 use crate::bot::mentions;
 
 /// One send plus at most three re-sends after 429.
@@ -126,6 +128,26 @@ impl TwilightTransport {
             application_id,
             config,
         }
+    }
+
+    /// A production transport for the token's own application, its id read
+    /// from `GET /applications/@me` (for callers that run before, or
+    /// without, a gateway `READY`).
+    pub async fn for_current_application(token: String, config: TransportConfig) -> Outcome<Self> {
+        /// The only field read back from the application.
+        #[derive(Deserialize)]
+        struct Me {
+            id: Id<ApplicationMarker>,
+        }
+        // The placeholder id is never sent: `/applications/@me` names none.
+        let mut transport = Self::new(token, Id::new(1), config);
+        let me: Outcome<Me> = transport
+            .fetch(transport.client.current_user_application())
+            .await;
+        me.map(|me| {
+            transport.application_id = me.id;
+            transport
+        })
     }
 
     /// Install the send guard on a request.
@@ -224,6 +246,14 @@ impl TwilightTransport {
 #[derive(Deserialize)]
 struct Created {
     id: MessageId,
+}
+
+fn application_emoji(emoji: Emoji) -> ApplicationEmoji {
+    ApplicationEmoji {
+        id: emoji.id,
+        name: emoji.name,
+        animated: emoji.animated,
+    }
 }
 
 /// Classify a failed Twilight request.
@@ -580,5 +610,21 @@ impl DiscordTransport for TwilightTransport {
 
     async fn current_user(&self) -> Outcome<CurrentUser> {
         self.fetch(self.client.current_user()).await
+    }
+
+    async fn application_emojis(&self) -> Outcome<Vec<ApplicationEmoji>> {
+        self.fetch(self.client.get_application_emojis(self.application_id))
+            .await
+            .map(|list: EmojiList| list.items.into_iter().map(application_emoji).collect())
+    }
+
+    async fn create_application_emoji(&self, name: &str, png: &[u8]) -> Outcome<ApplicationEmoji> {
+        let image = format!("data:image/png;base64,{}", base64_standard(png));
+        self.fetch(
+            self.client
+                .add_application_emoji(self.application_id, name, &image),
+        )
+        .await
+        .map(application_emoji)
     }
 }

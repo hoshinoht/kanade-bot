@@ -240,6 +240,8 @@ pub struct FakeCdn {
 }
 
 pub const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
+/// The admin state's one difficulty mark (the Normal pill).
+pub const NORMAL_PILL: &str = "<:diff_n:4242>";
 
 struct SharedCdn(Arc<FakeCdn>);
 
@@ -898,6 +900,8 @@ impl Reads {
             },
             avatars: Some(avatars),
             events: events.clone(),
+            // As serve would list them: only the Normal pill uploaded.
+            marks: kanade::bot::delivery::cards::DifficultyMarks::new().with("n", NORMAL_PILL),
         };
         let mut http = fixture.http();
         if logins {

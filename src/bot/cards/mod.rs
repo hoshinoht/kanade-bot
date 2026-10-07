@@ -1,12 +1,15 @@
-//! Extraction proposal cards (slice E5): v4's card text (`format`), posting
-//! and refreshing through the delivery journal (`desk`), ✅/❌ approval
-//! (`react`) and the extract `Outbox` (`outbox`).
+//! Extraction proposal cards (slice E5): v4's card text (`format`), the
+//! redesigned card (`styled`), posting and refreshing through the delivery
+//! journal (`desk`), ✅/❌ approval (`react`), the extract `Outbox`
+//! (`outbox`) and the difficulty-pill application emojis (`emojis`).
 
 mod desk;
+pub mod emojis;
 pub mod format;
 mod outbox;
 mod react;
 mod replay;
+mod styled;
 
 pub use desk::{Authority, CardDesk, CardSettings, DeskDeps};
 pub use format::{
@@ -18,3 +21,4 @@ pub use outbox::CardOutbox;
 pub use react::{CardFollowUp, CardReaction, FollowUpCard};
 pub use replay::ReplayLive;
 pub use replay::{OFFLINE_CONFLICT_NOTICE, ReplayReport};
+pub use styled::{CLOSED_GREY, CardState, Closure, Look, StyledCard, styled_card};

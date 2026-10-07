@@ -13,7 +13,8 @@ The generator writes every `<family>.json`, its `<family>.schema.json` and
 `scripts/v5_vectors/extract/families/*.py` (shared pieces in `contract.py` and
 `fixtures.py`) and `--check` holds schemas, vectors and the index to their
 checked-in bytes. Never hand-edit any of them; change the generator and
-regenerate. This README is the only hand-written file here.
+regenerate. This README is the only hand-written file here, apart from the
+v5 set below.
 
 ## Discipline
 
@@ -49,6 +50,19 @@ regenerate. This README is the only hand-written file here.
 | `plan` | 8 / 14 | `plan_burst` from a raw scripted model response: boss normalisation, injected explicit RSVPs, merge/resolve/match, split across runs with volunteers, `move`/`split` → `add` conversion, later-week filtering, drop reasons (confidence floor, no run, ambiguous, stated add without day/time, already passed, already scheduled), `inherit_from_run`, payloads, `one_per_run`; `consolidate` across rescan bursts |
 | `commit` | 10 / 120 | `may_commit`; `commit` for every kind (applied effects on runs, reminders, RSVPs, fixed timings; exact refusal texts), sibling `supersede` on commit, channel-scoped `supersede`, `reject`, `expire_stale` at the 24 h boundary; fixed create/adoption/edit/remove with the live `materialise_weeks` callback |
 | `cards` | 4 / 35 | `when_text`, `proposal_line` per kind (incl. weekly create/edit/remove, audience rendering, `also_mentioned`), `card_kind`, `Pipeline._unanswered`, `proposal_card` (one card for a burst), notices |
+
+## v5 set (no v4 oracle)
+
+`cards_redesigned.json` and its schema sit beside the frozen families but are
+not generated from v4 and not listed in `index.json`: they pin the redesigned
+proposal card (`kanade::bot::cards::styled_card`, message style
+`redesigned`), 8 cases / 19 steps covering the open card (written labels,
+difficulty marks, no audience), applied, rejected, superseded and out of
+date, the suggestion and weekly-timing colours, every change kind and
+multi-change cards. The classic card stays on `cards.json`, byte-exact.
+`tests/extract/cards_redesigned.rs` replays it; never regenerate it to absorb
+a change. `KANADE_PRINT_GOLDEN=1 cargo test --all-features --test extract
+cards_redesigned -- --nocapture` prints each replayed value for review.
 
 ## Portability notes
 

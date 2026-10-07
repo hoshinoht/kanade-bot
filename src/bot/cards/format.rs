@@ -50,7 +50,7 @@ pub struct Audience {
 }
 
 impl Audience {
-    fn name_for(&self, user_id: &str) -> String {
+    pub(crate) fn name_for(&self, user_id: &str) -> String {
         if self.mentioned.iter().any(|id| id == user_id) {
             return mention(user_id);
         }
@@ -98,7 +98,7 @@ pub fn boss_labels(bosses: &[String]) -> String {
     labels.join(" + ")
 }
 
-fn local_day(at: DateTime<Utc>, zone: Tz) -> String {
+pub(crate) fn local_day(at: DateTime<Utc>, zone: Tz) -> String {
     let local = at.with_timezone(&zone);
     format!(
         "{} {:02} {}",
@@ -108,12 +108,12 @@ fn local_day(at: DateTime<Utc>, zone: Tz) -> String {
     )
 }
 
-fn local_time(at: DateTime<Utc>, zone: Tz) -> String {
+pub(crate) fn local_time(at: DateTime<Utc>, zone: Tz) -> String {
     let local = at.with_timezone(&zone);
     format!("{:02}:{:02}", local.hour(), local.minute())
 }
 
-fn kind_verb(kind: &str) -> &str {
+pub(crate) fn kind_verb(kind: &str) -> &str {
     match kind {
         "add" => "new run",
         "otot" => "own time",
@@ -139,7 +139,7 @@ pub fn when_text(details: &CardDetails, zone: Tz) -> String {
     }
 }
 
-fn weekday_name(weekday: u8) -> &'static str {
+pub(crate) fn weekday_name(weekday: u8) -> &'static str {
     WEEKDAY_NAMES[usize::from(weekday) % 7]
 }
 
@@ -330,6 +330,12 @@ impl CardKind {
             Self::Suggestion => ("💡 Suggested amendment", COLOUR_SUGGESTION),
             Self::Fix => ("📌 New fixed timing", COLOUR_FIXED),
         }
+    }
+
+    /// The header's emoji and colour, for the redesigned card.
+    pub(crate) fn mark(self) -> (&'static str, u32) {
+        let (title, colour) = self.header();
+        (title.split(' ').next().unwrap_or(title), colour)
     }
 }
 

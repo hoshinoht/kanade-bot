@@ -1159,7 +1159,14 @@ async fn chat_off_ignores_questions_and_health_says_disabled() {
     let (live, discord) = live(&stub, &[("KANADE_CHAT_ENABLED", "0")]).await;
     drive(live, discord, async |live| {
         connect(live);
-        eventually!("the guild", !live.fake.calls().is_empty());
+        // The startup emoji list precedes the gateway; wait for a guild call.
+        eventually!(
+            "the guild",
+            live.fake
+                .calls()
+                .iter()
+                .any(|call| call.op() != Op::ApplicationEmojis)
+        );
         assert_eq!(live.health.health().await.chat, Some("disabled"));
         live.events.send(question(5001, &[PILOT_ROLE])).unwrap();
         sleep(Duration::from_millis(200)).await;

@@ -17,9 +17,9 @@ use twilight_model::id::{
 };
 
 use super::{
-    AmbiguousKind, CREATE_FLAGS, ChannelId, DiscordTransport, HistoryPage, InteractionRef,
-    InteractionReply, MAX_MEMBERS_PAGE, MAX_MESSAGES_PAGE, MessageEdit, MessageId, Outcome,
-    OutgoingMessage, Presence, RejectionKind,
+    AmbiguousKind, ApplicationEmoji, CREATE_FLAGS, ChannelId, DiscordTransport, HistoryPage,
+    InteractionRef, InteractionReply, MAX_MEMBERS_PAGE, MAX_MESSAGES_PAGE, MessageEdit, MessageId,
+    Outcome, OutgoingMessage, Presence, RejectionKind,
 };
 
 #[cfg(any(test, feature = "test-support"))]
@@ -45,6 +45,8 @@ pub enum Op {
     GuildChannels,
     Typing,
     ReactionUsers,
+    ApplicationEmojis,
+    CreateApplicationEmoji,
 }
 
 /// A scripted result for the next call of one [`Op`]. Unscripted calls
@@ -156,6 +158,14 @@ pub enum Call {
         channel: ChannelId,
         outcome: Outcome<()>,
     },
+    ApplicationEmojis {
+        outcome: Outcome<Vec<ApplicationEmoji>>,
+    },
+    CreateApplicationEmoji {
+        name: String,
+        png: Vec<u8>,
+        outcome: Outcome<ApplicationEmoji>,
+    },
 }
 
 impl Call {
@@ -178,6 +188,8 @@ impl Call {
             Self::ChannelMessages { .. } => Op::ChannelMessages,
             Self::GuildChannels { .. } => Op::GuildChannels,
             Self::Typing { .. } => Op::Typing,
+            Self::ApplicationEmojis { .. } => Op::ApplicationEmojis,
+            Self::CreateApplicationEmoji { .. } => Op::CreateApplicationEmoji,
         }
     }
 }
@@ -233,12 +245,17 @@ struct State {
     history: BTreeMap<ChannelId, Vec<Message>>,
     channels: BTreeMap<Id<GuildMarker>, Vec<Channel>>,
     reactions: BTreeMap<(MessageId, String, u8), Vec<Id<UserMarker>>>,
+    /// The application's emojis, in upload order.
+    application_emojis: Vec<ApplicationEmoji>,
+    next_emoji_id: u64,
     #[cfg(any(test, feature = "test-support"))]
     reaction_pages: ScriptedReactionPages,
 }
 
 /// First id handed out; large enough to look like a real snowflake.
 const FIRST_MESSAGE_ID: u64 = 1_000_000_000_000_000_001;
+/// First application emoji id handed out.
+const FIRST_EMOJI_ID: u64 = 2_000_000_000_000_000_001;
 
 #[derive(Debug, Default)]
 pub struct FakeDiscord {
@@ -418,6 +435,16 @@ impl FakeDiscord {
     /// Channels [`DiscordTransport::guild_channels`] returns.
     pub fn seed_channels(&self, guild: Id<GuildMarker>, channels: Vec<Channel>) {
         self.state().channels.insert(guild, channels);
+    }
+
+    /// Application emojis that already exist remotely.
+    pub fn seed_application_emojis(&self, emojis: Vec<ApplicationEmoji>) {
+        self.state().application_emojis.extend(emojis);
+    }
+
+    /// The application's emojis now, landed uploads included.
+    pub fn application_emojis(&self) -> Vec<ApplicationEmoji> {
+        self.state().application_emojis.clone()
     }
 }
 
@@ -832,6 +859,49 @@ impl DiscordTransport for FakeDiscord {
         });
         state.calls.push(Call::GuildChannels {
             guild,
+            outcome: outcome.clone(),
+        });
+        outcome
+    }
+
+    async fn application_emojis(&self) -> Outcome<Vec<ApplicationEmoji>> {
+        self.gate(Op::ApplicationEmojis).await;
+        let mut state = self.state();
+        let outcome = state.read(Op::ApplicationEmojis, true, |state| {
+            state.application_emojis.clone()
+        });
+        state.calls.push(Call::ApplicationEmojis {
+            outcome: outcome.clone(),
+        });
+        outcome
+    }
+
+    async fn create_application_emoji(&self, name: &str, png: &[u8]) -> Outcome<ApplicationEmoji> {
+        self.gate(Op::CreateApplicationEmoji).await;
+        let mut state = self.state();
+        let upload = |state: &mut State| {
+            let emoji = ApplicationEmoji {
+                id: Id::new(FIRST_EMOJI_ID + state.next_emoji_id),
+                name: name.to_owned(),
+                animated: false,
+            };
+            state.next_emoji_id += 1;
+            state.application_emojis.push(emoji.clone());
+            emoji
+        };
+        let outcome = match state.next_step(Op::CreateApplicationEmoji) {
+            Step::Succeed => Outcome::Delivered(upload(&mut state)),
+            Step::Reject(kind) => Outcome::DefinitelyRejected(kind),
+            Step::Ambiguous { kind, applied } => {
+                if applied {
+                    upload(&mut state);
+                }
+                Outcome::Ambiguous(kind)
+            }
+        };
+        state.calls.push(Call::CreateApplicationEmoji {
+            name: name.to_owned(),
+            png: png.to_vec(),
             outcome: outcome.clone(),
         });
         outcome

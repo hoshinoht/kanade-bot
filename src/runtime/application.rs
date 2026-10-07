@@ -66,9 +66,7 @@ async fn dispatch(command: Command, environment: &BTreeMap<String, String>) -> R
             Ok(())
         }
         Command::Models(args) => cli::models::run(args, environment).await,
-        Command::Reserved { name } => Err(Error::Unavailable(format!(
-            "{name} is not implemented in the runtime bootstrap"
-        ))),
+        Command::CtlEmojis(args) => cli::emojis::run(&args, environment).await,
     }
 }
 

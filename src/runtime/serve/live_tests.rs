@@ -936,7 +936,19 @@ async fn the_tick_sends_due_work_once_and_never_resends_an_interrupted_send() {
         })
         .await;
 
+    let pill = crate::bot::transport::ApplicationEmoji {
+        id: Id::new(7),
+        name: "diff_h".into(),
+        animated: false,
+    };
+    harness.fake.seed_application_emojis(vec![pill.clone()]);
     let (mut discord, ctx) = harness.start().await;
+    // Listed once at startup, into the admin preview's marks (and the kit's).
+    assert_eq!(
+        ctx.composition.admin.state.marks.get("h"),
+        Some("<:diff_h:7>")
+    );
+    assert_eq!(ctx.composition.admin.state.marks.get("n"), None);
     drive(&mut discord, async {
         // Recovery ran in `start`, before the gateway, reactions or commands
         // could send: nothing is left in flight to recover now.
@@ -947,9 +959,12 @@ async fn the_tick_sends_due_work_once_and_never_resends_an_interrupted_send() {
             .unwrap();
         assert!(again.indeterminate.is_empty() && again.orphaned_leases == 0);
         sleep(TICK * 4).await;
-        assert!(
-            harness.fake.calls().is_empty(),
-            "nothing is sent before the gateway is ready"
+        assert_eq!(
+            harness.fake.calls(),
+            [Call::ApplicationEmojis {
+                outcome: crate::bot::transport::Outcome::Delivered(vec![pill]),
+            }],
+            "nothing but the startup emoji list before the gateway is ready"
         );
         ctx.events.send(ready()).unwrap();
         ctx.events

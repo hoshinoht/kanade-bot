@@ -2,7 +2,7 @@
 //! posts it (unsent: the tick's planner) or edits it (posted: the refresh
 //! worker's content), through the delivery card builder
 //! (`bot::delivery::preview`). A row retired without posting has no card. Read only: no record is written, no heading
-//! is generated, no art is read and nothing goes to Discord.
+//! is generated, no art is read and nothing goes to Discord. Difficulty marks are the ones serve listed at startup.
 
 use std::sync::Arc;
 
@@ -29,7 +29,7 @@ use crate::{
         listeners::Site,
     },
     bot::delivery::{
-        cards::{Card, CardContext, redesign::NO_MARKS},
+        cards::{Card, CardContext},
         preview::{posted, record_key, reminder_card, reminder_intent},
     },
     domain::{notify::DeliverySettings, scheduler::Scope, settings::RuntimeSettings},
@@ -74,7 +74,7 @@ async fn preview(
         members: &ctx.roster,
         catalog: Some(&state.catalog),
         style: settings.notifications.message_style,
-        marks: &NO_MARKS,
+        marks: &state.marks,
     };
     // Whether Discord's copy is frozen: refresh edits a posted card while any
     // of its runs is still ahead (`refresh.rs`); otherwise the reminder's run.

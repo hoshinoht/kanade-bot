@@ -4,6 +4,7 @@
 //! scheduler's approval rules, card refreshes and chat answers.
 
 mod replay;
+mod styled;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;

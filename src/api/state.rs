@@ -707,6 +707,9 @@ pub struct ApiState {
     /// Change hints for open admin pages (`GET /api/admin/events`), fed by
     /// the store's write hook.
     pub events: Arc<super::events::Hub>,
+    /// Difficulty emojis for redesigned card previews, as the bot listed
+    /// them at startup; empty (written labels) until Discord composes.
+    pub marks: crate::bot::delivery::cards::DifficultyMarks,
 }
 
 impl std::fmt::Debug for ApiState {

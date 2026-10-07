@@ -2,7 +2,9 @@
 //! send → bind or resolve, through the delivery [`Executor`]); an ambiguous
 //! send stays held and is never replayed. A card is re-rendered from its
 //! stored details and its proposals' states, so it can be refreshed after a
-//! restart; allowed mentions are empty (names only).
+//! restart; allowed mentions are empty (names only). The message style is
+//! read per render from the card kit: classic is v4's card, redesigned is
+//! `styled.rs`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -16,7 +18,10 @@ use super::format::{
     Audience, CardView, SUPERSEDED_NOTICE, applied_notice, proposal_card, rejected_notice,
     unanswered,
 };
+use super::react::OUT_OF_DATE_NOTICE;
+use super::styled::{CardState, Closure, Look, StyledCard, styled_card};
 use crate::api::state::DeclineRetraction;
+use crate::bot::delivery::cards::CardKit;
 use crate::bot::delivery::{
     AdminAlert, AlertSink, AlertThrottle, Executor, FixedClock, SendFailure, SendOutcome, StoreRef,
 };
@@ -38,6 +43,7 @@ use crate::domain::schedule::{Run, SchedulePolicy};
 use crate::domain::scheduler::{
     Clock, IdSource, ScheduleStore, SchedulerService, Scope, StoreError,
 };
+use crate::domain::settings::MessageStyle;
 use crate::extract::pipeline::{CardEntry, PostResult, Redirected};
 
 /// The reacting member's standing, from the gateway (roles, Administrator,
@@ -78,6 +84,8 @@ pub struct CardDesk<S, T, I, A> {
     pub(super) decline_retraction: Option<DeclineRetraction>,
     throttle: AlertThrottle,
     pub(super) settings: CardSettings,
+    /// The live message style, the catalog and the difficulty marks.
+    cards: CardKit,
     /// Rebuilt from HTTP on each fresh session; retained across other refreshes.
     pub(super) replay_conflicts: Mutex<BTreeSet<String>>,
 }
@@ -113,34 +121,70 @@ fn posted(outcome: Option<Result<SendOutcome, SendFailure>>) -> PostResult {
     }
 }
 
-pub(super) fn embed(view: &CardView) -> Embed {
+fn rich(
+    colour: u32,
+    title: Option<String>,
+    description: Option<String>,
+    fields: Vec<EmbedField>,
+    footer: Option<String>,
+) -> Embed {
     Embed {
         author: None,
-        color: Some(view.colour),
-        description: view.description.clone(),
-        fields: view
-            .fields
-            .iter()
-            .map(|(name, value)| EmbedField {
-                inline: false,
-                name: name.clone(),
-                value: value.clone(),
-            })
-            .collect(),
-        footer: view.footer.as_ref().map(|text| EmbedFooter {
+        color: Some(colour),
+        description,
+        fields,
+        footer: footer.map(|text| EmbedFooter {
             icon_url: None,
             proxy_icon_url: None,
-            text: text.clone(),
+            text,
         }),
         image: None,
         kind: "rich".to_owned(),
         provider: None,
         thumbnail: None,
         timestamp: None,
-        title: view.title.clone(),
+        title,
         url: None,
         video: None,
     }
+}
+
+fn embed(view: &CardView) -> Embed {
+    let fields = view
+        .fields
+        .iter()
+        .map(|(name, value)| EmbedField {
+            inline: false,
+            name: name.clone(),
+            value: value.clone(),
+        })
+        .collect();
+    rich(
+        view.colour,
+        view.title.clone(),
+        view.description.clone(),
+        fields,
+        view.footer.clone(),
+    )
+}
+
+fn styled_embed(card: &StyledCard) -> Embed {
+    let fields = card
+        .fields
+        .iter()
+        .map(|field| EmbedField {
+            inline: field.inline,
+            name: field.name.clone(),
+            value: field.value.clone(),
+        })
+        .collect();
+    rich(
+        card.colour,
+        None,
+        card.description.clone(),
+        fields,
+        Some(card.footer.clone()),
+    )
 }
 
 fn with_notices(content: &str, notices: &[String]) -> String {
@@ -150,6 +194,59 @@ fn with_notices(content: &str, notices: &[String]) -> String {
         text.push_str(notice);
     }
     text
+}
+
+/// What has been decided on a card, for either style: classic's appended
+/// notice lines, and the redesigned outcomes and extra subtext lines.
+#[derive(Debug, Default)]
+struct Decisions {
+    notices: Vec<String>,
+    closures: Vec<Closure>,
+    notes: Vec<String>,
+    /// Some change on the card still waits for an answer.
+    open: bool,
+}
+
+impl Decisions {
+    fn fresh() -> Self {
+        Self {
+            open: true,
+            ..Self::default()
+        }
+    }
+
+    fn notice(&mut self, notice: String) {
+        if !self.notices.contains(&notice) {
+            self.notices.push(notice);
+        }
+    }
+
+    fn close(&mut self, closure: Closure) {
+        if !self.closures.contains(&closure) {
+            self.closures.push(closure);
+        }
+    }
+
+    /// A line beyond the proposals' own states (the offline conflict, a
+    /// refused ✅'s out-of-date note).
+    fn extra(&mut self, line: &str) {
+        if self.notices.iter().any(|notice| notice == line) {
+            return;
+        }
+        self.notices.push(line.to_owned());
+        if line == OUT_OF_DATE_NOTICE {
+            self.close(Closure::Stale);
+        } else {
+            self.notes.push(line.to_owned());
+        }
+    }
+}
+
+/// A card ready to post or edit.
+struct Rendered {
+    content: String,
+    embed: Embed,
+    mention_users: Vec<String>,
 }
 
 impl<S, T, I, A> CardDesk<S, T, I, A>
@@ -177,8 +274,17 @@ where
             decline_retraction: deps.decline_retraction,
             throttle: AlertThrottle::new(),
             settings,
+            cards: CardKit::default(),
             replay_conflicts: Mutex::default(),
         }
+    }
+
+    /// Render with this kit's live style, catalog and difficulty marks
+    /// (default: classic).
+    #[must_use]
+    pub fn with_cards(mut self, cards: CardKit) -> Self {
+        self.cards = cards;
+        self
     }
 
     pub(super) fn now(&self) -> DateTime<Utc> {
@@ -310,8 +416,13 @@ where
         }
     }
 
-    /// The card for these proposals against the runs as they stand now.
-    pub(super) async fn view(&self, cards: &[StoredCard]) -> Result<CardView, StoreError> {
+    /// The card for these proposals against the runs as they stand now, in
+    /// the live message style.
+    async fn render(
+        &self,
+        cards: &[StoredCard],
+        decisions: &Decisions,
+    ) -> Result<Rendered, StoreError> {
         let mut runs: Vec<Run> = Vec::new();
         for card in cards {
             let Some(run_id) = &card.details.run_id else {
@@ -334,14 +445,42 @@ where
                 Some(low.map_or(value, |low| low.min(value)))
             });
         let who = self.audience(cards, &runs);
-        Ok(proposal_card(
-            &details,
-            &by_id,
-            self.settings.zone,
-            Some(&waiting),
-            confidence,
-            Some(&who),
-        ))
+        Ok(match self.cards.style() {
+            MessageStyle::Classic => {
+                let view = proposal_card(
+                    &details,
+                    &by_id,
+                    self.settings.zone,
+                    Some(&waiting),
+                    confidence,
+                    Some(&who),
+                );
+                Rendered {
+                    content: with_notices(&view.content, &decisions.notices),
+                    embed: embed(&view),
+                    mention_users: view.mention_users,
+                }
+            }
+            MessageStyle::Redesigned => {
+                let look = Look {
+                    zone: self.settings.zone,
+                    catalog: self.cards.catalog.as_deref(),
+                    marks: &self.cards.marks,
+                    who: Some(&who),
+                };
+                let state = CardState {
+                    closures: &decisions.closures,
+                    open: decisions.open,
+                    notes: &decisions.notes,
+                };
+                let card = styled_card(&details, &by_id, look, Some(&waiting), confidence, state);
+                Rendered {
+                    embed: styled_embed(&card),
+                    content: card.content,
+                    mention_users: card.mention_users,
+                }
+            }
+        })
     }
 
     /// Claim, send and bind one journalled post under its own lease.
@@ -393,14 +532,13 @@ where
         cards: &[StoredCard],
         now: DateTime<Utc>,
     ) -> PostResult {
-        let view = match self.view(cards).await {
-            Ok(view) => view,
-            Err(_) => return PostResult::NotPosted,
+        let Ok(card) = self.render(cards, &Decisions::fresh()).await else {
+            return PostResult::NotPosted;
         };
         let message = OutgoingMessage {
-            content: Some(view.content.clone()),
-            embeds: vec![embed(&view)],
-            allowed_mentions: mentions::allow_users(&view.mention_users),
+            content: Some(card.content),
+            embeds: vec![card.embed],
+            allowed_mentions: mentions::allow_users(&card.mention_users),
             reply_to: None,
             attachments: Vec::new(),
         };
@@ -412,7 +550,7 @@ where
                 .iter()
                 .map(|card| DeliveryTarget::Card(card.proposal_id.clone()))
                 .collect(),
-            mentions: view.mention_users.clone(),
+            mentions: card.mention_users,
             content: IntentContent::ProposalCard {
                 proposal_ids: cards.iter().map(|card| card.proposal_id.clone()).collect(),
             },
@@ -506,7 +644,8 @@ where
     }
 
     /// Re-render one posted card from its details, with a line per decision
-    /// taken on it (v4's appended "applied by" / "rejected by" / superseded).
+    /// taken on it (classic: v4's appended "applied by" / "rejected by" /
+    /// superseded; redesigned: a recolour and an outcome subtext line).
     /// `false` when it could not be edited.
     pub async fn refresh(&self, message_id: &str) -> bool {
         self.refresh_with(message_id, &[]).await
@@ -525,7 +664,7 @@ where
         else {
             return false;
         };
-        let mut notices: Vec<String> = Vec::new();
+        let mut decisions = Decisions::default();
         let mut conflict = false;
         for card in &cards {
             let Ok(Some((loaded, _))) = self.store.load_proposal(&card.proposal_id).await else {
@@ -543,34 +682,39 @@ where
                     conflict |= conflicts.contains(&card.proposal_id);
                 }
             }
-            let notice = match draft.status {
-                DraftStatus::Merged => applied_notice(&self.actor_name(draft.closed_by.as_ref())),
+            // A closed proposal's last update is its closing.
+            let at = draft.updated_at;
+            match draft.status {
+                DraftStatus::Submitted => decisions.open = true,
+                DraftStatus::Merged => {
+                    let by = self.actor_name(draft.closed_by.as_ref());
+                    decisions.notice(applied_notice(&by));
+                    decisions.close(Closure::Applied { by, at });
+                }
                 DraftStatus::Rejected => {
-                    rejected_notice(&self.actor_name(draft.closed_by.as_ref()))
+                    let by = self.actor_name(draft.closed_by.as_ref());
+                    decisions.notice(rejected_notice(&by));
+                    decisions.close(Closure::Rejected { by, at });
                 }
                 DraftStatus::Discarded if draft.close_reason.as_deref() == Some(SUPERSEDED) => {
-                    SUPERSEDED_NOTICE.to_owned()
+                    decisions.notice(SUPERSEDED_NOTICE.to_owned());
+                    decisions.close(Closure::Superseded);
                 }
-                _ => continue,
-            };
-            if !notices.contains(&notice) {
-                notices.push(notice);
+                _ => {}
             }
         }
         if conflict {
-            notices.push(super::replay::OFFLINE_CONFLICT_NOTICE.to_owned());
+            decisions.extra(super::replay::OFFLINE_CONFLICT_NOTICE);
         }
         for line in extra {
-            if !notices.iter().any(|notice| notice == line) {
-                notices.push((*line).to_owned());
-            }
+            decisions.extra(line);
         }
-        let Ok(view) = self.view(&cards).await else {
+        let Ok(card) = self.render(&cards, &decisions).await else {
             return false;
         };
         let edit = MessageEdit {
-            content: Some(with_notices(&view.content, &notices)),
-            embeds: Some(vec![embed(&view)]),
+            content: Some(card.content),
+            embeds: Some(vec![card.embed]),
             allowed_mentions: mentions::none(),
         };
         self.transport
