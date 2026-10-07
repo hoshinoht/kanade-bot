@@ -28,6 +28,8 @@ use crate::domain::schedule::{
 };
 use crate::domain::time::AwareDateTime;
 
+mod fixed_patch;
+
 /// A rule refusal or a store failure.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SchedulerError {

@@ -2,10 +2,15 @@
 //! mutex, so admin mutations are serialised; reads never take it. The port is
 //! object-safe so `ApiState` stays non-generic.
 
-use std::{collections::BTreeSet, future::Future, pin::Pin, sync::Arc};
+use std::{collections::BTreeSet, fmt, future::Future, pin::Pin, sync::Arc};
+
+#[cfg(any(test, feature = "test-support"))]
+use std::sync::{Mutex as StdMutex, OnceLock};
 
 use chrono::{DateTime, Utc};
 use tokio::sync::Mutex;
+#[cfg(any(test, feature = "test-support"))]
+use tokio::sync::Notify;
 
 use super::{auth::Clock as ApiClockFn, state::ReadStore};
 use crate::domain::{
@@ -40,6 +45,119 @@ pub struct WriteContext {
     pub policy: SchedulePolicy,
     /// Members and watched channels, for participant and channel checks.
     pub directory: Roster,
+}
+
+/// The admin fixed-PATCH's complete, normalised identity. It is deliberately
+/// opaque: only that handler may replace the scheduler's derived edit digest.
+#[derive(Clone)]
+pub struct FixedPatchReplay(String);
+
+impl FixedPatchReplay {
+    pub(crate) fn from_normalized(identity: impl fmt::Debug) -> Self {
+        Self(format!("{identity:?}"))
+    }
+
+    fn identity(&self) -> &str {
+        &self.0
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+#[derive(Clone)]
+struct FixedPatchLookupGateInner {
+    request_id: String,
+    lost_channel: Option<String>,
+    reached: Arc<Notify>,
+    release: Arc<Notify>,
+}
+
+#[cfg(any(test, feature = "test-support"))]
+fn fixed_patch_lookup_gate() -> &'static StdMutex<Option<FixedPatchLookupGateInner>> {
+    static GATE: OnceLock<StdMutex<Option<FixedPatchLookupGateInner>>> = OnceLock::new();
+    GATE.get_or_init(|| StdMutex::new(None))
+}
+
+/// Test-only gate immediately after the fixed-PATCH handler's initial key
+/// lookup. It is consumed once, so a first writer can pass while its retry is held.
+#[cfg(any(test, feature = "test-support"))]
+pub struct FixedPatchLookupGate(FixedPatchLookupGateInner);
+
+#[cfg(any(test, feature = "test-support"))]
+impl FixedPatchLookupGate {
+    pub fn install(request_id: impl Into<String>) -> Self {
+        Self::install_inner(request_id.into(), None)
+    }
+
+    /// Simulate a watched-channel cache loss only in the held handler's
+    /// strict validation path; replay normalization must recover it.
+    pub fn install_lost_channel(
+        request_id: impl Into<String>,
+        channel_id: impl Into<String>,
+    ) -> Self {
+        Self::install_inner(request_id.into(), Some(channel_id.into()))
+    }
+
+    fn install_inner(request_id: String, lost_channel: Option<String>) -> Self {
+        let gate = FixedPatchLookupGateInner {
+            request_id,
+            lost_channel,
+            reached: Arc::new(Notify::new()),
+            release: Arc::new(Notify::new()),
+        };
+        let mut slot = fixed_patch_lookup_gate()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        assert!(slot.is_none(), "one fixed-PATCH lookup gate at a time");
+        *slot = Some(gate.clone());
+        Self(gate)
+    }
+
+    pub async fn reached(&self) {
+        self.0.reached.notified().await;
+    }
+
+    pub fn release(&self) {
+        self.0.release.notify_one();
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl Drop for FixedPatchLookupGate {
+    fn drop(&mut self) {
+        let mut slot = fixed_patch_lookup_gate()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot
+            .as_ref()
+            .is_some_and(|active| active.request_id == self.0.request_id)
+        {
+            *slot = None;
+        }
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub async fn hold_fixed_patch_after_lookup(origin: &Origin) -> Option<String> {
+    let gate = {
+        let mut slot = fixed_patch_lookup_gate()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot
+            .as_ref()
+            .is_some_and(|gate| origin.request_id.as_deref() == Some(&gate.request_id))
+        {
+            slot.take()
+        } else {
+            None
+        }
+    };
+    if let Some(gate) = gate {
+        gate.reached.notify_one();
+        gate.release.notified().await;
+        gate.lost_channel
+    } else {
+        None
+    }
 }
 
 /// One run edit.
@@ -101,6 +219,25 @@ pub trait Writer: Send + Sync {
         expect: Expect,
         request: FixedEditRequest,
         ctx: &'a WriteContext,
+    ) -> WriteFuture<'a, ()>;
+
+    /// Fixed-PATCH only: preserve the full request identity before the handler
+    /// reduces it to a diff against the current row.
+    fn edit_fixed_patch<'a>(
+        &'a self,
+        origin: Origin,
+        expect: Expect,
+        request: FixedEditRequest,
+        replay: FixedPatchReplay,
+        ctx: &'a WriteContext,
+    ) -> WriteFuture<'a, ()>;
+
+    /// Re-check a keyed fixed PATCH that became a no-op or whose recorded
+    /// request must answer before the current-row diff is examined.
+    fn verify_fixed_patch_replay<'a>(
+        &'a self,
+        origin: Origin,
+        replay: FixedPatchReplay,
     ) -> WriteFuture<'a, ()>;
 
     /// Cancels the timing's live runs in the materialised weeks.
@@ -341,6 +478,39 @@ where
                 .apply_fixed_edit(&request, &ctx.directory, &ctx.policy)
                 .await
                 .map(|_| ())
+        })
+    }
+
+    fn edit_fixed_patch<'a>(
+        &'a self,
+        origin: Origin,
+        expect: Expect,
+        request: FixedEditRequest,
+        replay: FixedPatchReplay,
+        ctx: &'a WriteContext,
+    ) -> WriteFuture<'a, ()> {
+        Box::pin(async move {
+            let mut service = self.service.lock().await;
+            service
+                .as_origin(origin)
+                .expecting(expect)
+                .apply_fixed_patch_edit(&request, replay.identity(), &ctx.directory, &ctx.policy)
+                .await
+                .map(|_| ())
+        })
+    }
+
+    fn verify_fixed_patch_replay<'a>(
+        &'a self,
+        origin: Origin,
+        replay: FixedPatchReplay,
+    ) -> WriteFuture<'a, ()> {
+        Box::pin(async move {
+            let mut service = self.service.lock().await;
+            service
+                .as_origin(origin)
+                .verify_fixed_patch_replay(replay.identity())
+                .await
         })
     }
 

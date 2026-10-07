@@ -26,7 +26,7 @@ use crate::{
         error::ApiError,
         listeners::Site,
         state::ApiState,
-        write::WriteContext,
+        write::{FixedPatchReplay, WriteContext},
     },
     domain::{
         history::{Actor, BlameTarget, ChangeRecord, Origin, RowKey},
@@ -38,6 +38,10 @@ use crate::{
         scheduler::{SchedulerError, Scope},
     },
 };
+
+mod replay;
+
+use replay::{FixedPatchIdentity, RefusalReplay};
 
 type Reply = Result<Response, Refusal>;
 
@@ -274,38 +278,90 @@ pub async fn update(
     body: Result<Json<FixedRequest>, JsonRejection>,
 ) -> Reply {
     let Json(request) = body.map_err(bad_body)?;
-    // The week version the screen loaded: without it a stale full-body edit
-    // would silently revert fields someone else changed (user decision).
-    let version = request.version.ok_or_else(|| {
-        Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "version_required",
-            "Send the week version the timing was loaded at.",
-        )
-    })?;
     let state = state(&site)?;
     let origin = origin(&session, &headers)?;
+    let first = recorded(state, &origin).await?.is_some();
+    #[cfg(any(test, feature = "test-support"))]
+    let lost_channel = crate::api::write::hold_fixed_patch_after_lookup(&origin).await;
+    // Keep the established fresh-request refusal order, while letting a used
+    // key compare its complete identity before version-dependent handling.
+    let version = if first {
+        None
+    } else {
+        Some(request.version.ok_or_else(|| {
+            Refusal::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "version_required",
+                "Send the week version the timing was loaded at.",
+            )
+        })?)
+    };
     let (mut ctx, profiles) = write_context(state).await?;
-    if recorded(state, &origin).await?.is_some() {
+    if first {
         as_first_seen(&mut ctx, &request);
     }
-    let timing = checked(state, &request, &ctx.directory)?;
+    let refusal_replay = RefusalReplay {
+        site: &site,
+        state,
+        origin: &origin,
+        fixed_id: &fixed_id,
+        request: &request,
+        profiles: &profiles,
+    };
+    let strict = {
+        #[cfg(any(test, feature = "test-support"))]
+        if lost_channel.as_deref() == Some(request.channel_id.as_str()) {
+            Err(scheduler(
+                ScheduleError::ChannelNotWatched(request.channel_id.clone()).into(),
+            ))
+        } else {
+            checked(state, &request, &ctx.directory)
+        }
+        #[cfg(not(any(test, feature = "test-support")))]
+        checked(state, &request, &ctx.directory)
+    };
+    let timing = match strict {
+        Ok(timing) => timing,
+        Err(refusal) => return refusal_replay.recover(&mut ctx, refusal).await,
+    };
+    let replay = FixedPatchReplay::from_normalized(FixedPatchIdentity::new(
+        fixed_id.clone(),
+        &timing,
+        &request,
+    ));
+    if first {
+        return match state.writer.verify_fixed_patch_replay(origin, replay).await {
+            Err(SchedulerError::AlreadyApplied { .. }) => {
+                row(&site, state, &fixed_id, &profiles).await
+            }
+            Err(error) => Err(scheduler(error)),
+            Ok(()) => Err(Refusal::from(ApiError::UNAVAILABLE)),
+        };
+    }
+    // The week version the screen loaded: without it a stale full-body edit
+    // would silently revert fields someone else changed (user decision).
+    let version = version.expect("fresh request checked above");
     let snapshot = state
         .store
         .snapshot(Scope::Weeks(Vec::new()))
         .await
         .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
-    let current = snapshot
+    let Some(current) = snapshot
         .fixed_runs
         .iter()
         .find(|fixed| fixed.id == fixed_id)
-        .ok_or_else(|| {
-            Refusal::new(
-                StatusCode::NOT_FOUND,
-                "not_found",
-                "That weekly timing no longer exists.",
+    else {
+        return refusal_replay
+            .recover(
+                &mut ctx,
+                Refusal::new(
+                    StatusCode::NOT_FOUND,
+                    "not_found",
+                    "That weekly timing no longer exists.",
+                ),
             )
-        })?;
+            .await;
+    };
     // Only fields that differ, so an untouched field never conflicts.
     let mut fields = Vec::new();
     let mut edit = FixedEdit::default();
@@ -334,10 +390,26 @@ pub async fn update(
         fields.push("note");
     }
     if let Some(owner_id) = timing.owner_id.filter(|owner| *owner != current.owner_id) {
-        edit.owner_id = Some(rostered_owner(&ctx.directory, &owner_id)?);
+        edit.owner_id = Some(match rostered_owner(&ctx.directory, &owner_id) {
+            Ok(owner_id) => owner_id,
+            Err(refusal) => return refusal_replay.recover(&mut ctx, refusal).await,
+        });
         fields.push("owner");
     }
     if fields.is_empty() {
+        if origin.request_id.is_some() {
+            match state
+                .writer
+                .verify_fixed_patch_replay(origin.clone(), replay.clone())
+                .await
+            {
+                Ok(()) => {}
+                Err(SchedulerError::AlreadyApplied { .. }) => {
+                    return row(&site, state, &fixed_id, &profiles).await;
+                }
+                Err(error) => return Err(scheduler(error)),
+            }
+        }
         return row(&site, state, &fixed_id, &profiles).await;
     }
     let mut choices = BTreeMap::new();
@@ -345,23 +417,34 @@ pub async fn update(
         let choice = match decision.as_str() {
             "update" => AmendedRunChoice::UpdateToFixed,
             "keep" => AmendedRunChoice::KeepForThisWeek,
-            _ => return Err(Refusal::invalid("Each decision is update or keep.")),
+            _ => {
+                return refusal_replay
+                    .recover(
+                        &mut ctx,
+                        Refusal::invalid("Each decision is update or keep."),
+                    )
+                    .await;
+            }
         };
         choices.insert(run_id.clone(), choice);
     }
     let fields: Vec<String> = fields.into_iter().map(str::to_owned).collect();
-    let expect = expectations(
+    let expect = match expectations(
         state.store.as_ref(),
         BlameTarget::FixedRun(fixed_id.clone()),
         &fields,
         Some(version),
         &Explicit {
-            expect: request.expect,
-            overrides: request.overrides,
+            expect: request.expect.clone(),
+            overrides: request.overrides.clone(),
         },
         origin.request_id.is_some(),
     )
-    .await?;
+    .await
+    {
+        Ok(expect) => expect,
+        Err(refusal) => return refusal_replay.recover(&mut ctx, refusal).await,
+    };
     let edit = FixedEditRequest {
         fixed_id: fixed_id.clone(),
         edit,
@@ -369,7 +452,11 @@ pub async fn update(
         // with `choices_required` rather than silently moving them (v4).
         choices: FixedEditChoices::PerRun(choices),
     };
-    match state.writer.edit_fixed(origin, expect, edit, &ctx).await {
+    match state
+        .writer
+        .edit_fixed_patch(origin, expect, edit, replay, &ctx)
+        .await
+    {
         Ok(()) | Err(SchedulerError::AlreadyApplied { .. }) => {}
         Err(error) => return Err(scheduler(error)),
     }
