@@ -40,6 +40,8 @@ async function shot(page: Page, name: string) {
 for (const vp of VIEWPORTS) {
   for (const look of LOOKS) {
     test(`capture ${vp.name} ${look.name}`, async ({ page }) => {
+      // About thirty settled shots: well past 30 s on a loaded 4-vCPU runner.
+      test.setTimeout(120_000);
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.addInitScript(
         ([c, t]) => {

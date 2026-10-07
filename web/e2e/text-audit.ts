@@ -94,12 +94,17 @@ export function auditText(page: Page, allow: string[]): Promise<Finding[]> {
       const push = (kind: string, detail: string, at: Element = el) =>
         out.push({ kind, path: path(el), text, detail, allowed: allowedBy(el, at) });
 
-      // The own text's extent (child elements are measured on their own).
-      const rects = nodes.flatMap((n) => {
-        const range = document.createRange();
-        range.selectNodeContents(n);
-        return [...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0);
-      });
+      // The own text's extent (child elements are measured on their own), from
+      // its visible characters only: under `white-space: pre-wrap` a space at a
+      // soft wrap hangs past the line box without drawing anything.
+      const range = document.createRange();
+      const rects = nodes.flatMap((n) =>
+        [...n.textContent!.matchAll(/\S+/g)].flatMap((m) => {
+          range.setStart(n, m.index);
+          range.setEnd(n, m.index + m[0].length);
+          return [...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0);
+        }),
+      );
       if (!rects.length) continue;
       const t = {
         left: Math.min(...rects.map((r) => r.left)),

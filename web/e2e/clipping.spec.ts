@@ -253,3 +253,32 @@ test('text clipping: the audit catches a clip, a cut, a spill, an ellipsis and o
   const kinds = (await auditText(page, [])).filter((f) => f.path.includes('probe-')).map((f) => `${f.path.split('.').pop()} ${f.kind}`);
   expect(kinds).toEqual(expect.arrayContaining(['probe-clip clip-x', 'probe-cut cut', 'probe-spill spill', 'probe-ellipsis ellipsis-bare', 'probe-off off-screen']));
 });
+
+// Negative control: spaces that hang past a `pre-wrap` line draw nothing, so
+// they are not a spill; a visible word that runs past the same box still is.
+test('text clipping: hanging pre-wrap spaces are not a spill, visible overflow still is', async ({ page }) => {
+  await page.goto(screenUrl(PUBLIC, '/'));
+  await expect(page.getByRole('heading').first()).toBeVisible();
+  const hang = await page.evaluate(() => {
+    const host = document.createElement('div');
+    for (const [key, value] of Object.entries({ position: 'fixed', top: '0', left: '0', 'z-index': '9' })) host.style.setProperty(key, value);
+    document.body.append(host);
+    const add = (className: string, text: string) => {
+      const el = document.createElement('div');
+      el.className = className;
+      el.textContent = text;
+      for (const [key, value] of Object.entries({ width: '80px', 'white-space': 'pre-wrap', 'font-size': '16px' })) el.style.setProperty(key, value);
+      host.append(el);
+      return el;
+    };
+    const hanging = add('probe-hang', `Calm${' '.repeat(40)}words`);
+    add('probe-word', `Calm${' '.repeat(40)}Supercalifragilistic`);
+    // The premise: the whole text node's extent (spaces included) does run past the box.
+    const range = document.createRange();
+    range.selectNodeContents(hanging.firstChild!);
+    return Math.max(...[...range.getClientRects()].map((r) => r.right)) - hanging.getBoundingClientRect().right;
+  });
+  expect(hang, 'the hanging spaces overflow the box').toBeGreaterThan(1);
+  const kinds = (await auditText(page, [])).filter((f) => f.path.includes('probe-h') || f.path.includes('probe-w')).map((f) => `${f.path.split('.').pop()} ${f.kind}`);
+  expect(kinds).toEqual(['probe-word spill']);
+});

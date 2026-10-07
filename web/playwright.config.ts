@@ -22,6 +22,8 @@ if (!Number.isInteger(workers) || workers < 1 || workers > MAX_WORKERS)
   throw new Error(`KANADE_E2E_WORKERS must be 1..${MAX_WORKERS} (one mock port pair per worker), got ${process.env.KANADE_E2E_WORKERS}`);
 const base = Number(process.env.KANADE_E2E_PORT_BASE ?? '4373') + (real ? 10 : 0);
 process.env.KANADE_E2E_ORIGIN_BASE = String(base);
+// Exactly motion.spec.ts (not reduce-motion.spec.ts).
+const MOTION = /(^|[\\/])motion\.spec\.ts$/;
 
 export default defineConfig({
   testDir: './e2e',
@@ -35,6 +37,13 @@ export default defineConfig({
     trace: 'retain-on-failure',
     viewport: { width: 1280, height: 800 },
   },
+  // motion.spec.ts measures frame rates, so it runs one test at a time instead
+  // of competing with itself for CPU. CI runs the two projects as separate
+  // steps (ci.yml), so there motion also has the machine to itself.
+  projects: [
+    { name: 'main', testIgnore: MOTION },
+    { name: 'motion', testMatch: MOTION, workers: 1 },
+  ],
   // Servers start one after another (Playwright awaits each before the next),
   // so the first `cargo run` builds the release mock and the rest only start it.
   webServer: Array.from({ length: workers }, (_, i) => {

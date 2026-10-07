@@ -77,6 +77,8 @@ test('reminders: Queued, Sent and Stale & other tabs, each keeping its scroll', 
 test('queued reminders: kind, run, member and day filters narrow and clear', async ({ page }) => {
   await page.goto(`${ADMIN}/reminders?sw=off`);
   const rows = queuedRows(page);
+  // Count only once the queued table has loaded (a slow runner counts the empty table otherwise).
+  await expect(rows.first()).toBeVisible();
   const all = await rows.count();
   await page.getByRole('button', { name: 'Filters (0)' }).click();
   const filters = page.getByRole('group', { name: 'Filter reminders' });

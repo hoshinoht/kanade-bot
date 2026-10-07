@@ -126,12 +126,23 @@ jobs:
       # ubuntu-latest ships Google Chrome, which the suite uses (channel 'chrome');
       # no browser download, no secrets. Boss art is the committed synthetic fixture set.
       - name: End-to-end
+        id: e2e
         working-directory: web
-        run: bun run e2e
+        run: bun run e2e --project=main
+      # Frame-timing checks run alone, on one worker and one mock, after the rest
+      # (also when the main suite failed). Their fps floors are reported, not enforced, on CI.
+      - name: End-to-end (motion)
+        if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
+        working-directory: web
+        env:
+          KANADE_E2E_WORKERS: '1'
+        run: bun run e2e --project=motion --output e2e/.results/motion
       - name: Keep Playwright traces
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-results
           path: web/e2e/.results
+          # `.results` is a hidden directory, which upload-artifact@v4 skips by default.
+          include-hidden-files: true
           retention-days: 7

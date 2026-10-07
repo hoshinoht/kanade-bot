@@ -656,204 +656,247 @@ test('history: restore a week to a point, revert a member, and a run’s change 
   await expect(rows.first()).toContainText('#2');
 });
 
-test('config: pings, watching, chatbot, persona catalog, models, self-service, portal gate, notifications save', async ({ page }) => {
-  await go(page, '/config');
+// The Config sections, one test each so they spread across workers (as one
+// test they outran the default budget on CI). Every test opens Config afresh
+// on a reset mock.
+test.describe('config sections save', () => {
+  test.describe.configure({ mode: 'parallel' });
+
   // Sections mount on first visit and stay mounted (unsaved edits survive
   // tab switches), so in-section selectors scope to the visible panel.
-  const panel = page.locator('.settings__panel:not([hidden])');
+  async function config(page: Page) {
+    await go(page, '/config');
+    return page.locator('.settings__panel:not([hidden])');
+  }
 
-  // Section deep-link.
-  await expect(page.getByRole('tab', { name: 'Pings' })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByRole('tablist', { name: 'Settings sections' })).toHaveAttribute('aria-orientation', 'vertical');
-  await page.getByRole('tab', { name: 'Weekly digest' }).click();
-  await expect(page).toHaveURL(`${ADMIN}/config?section=digest`);
-  await page.goto(`${ADMIN}/config?section=chatbot&sw=off`);
-  await expect(page.getByRole('tab', { name: 'Chatbot' })).toHaveAttribute('aria-selected', 'true');
-
-  // Pings: bad time refused inline, fields kept; good values toast and stay.
-  await page.getByRole('tab', { name: 'Pings' }).click();
-  const time = panel.getByRole('textbox', { name: 'Morning ping' });
-  await time.fill('whenever');
-  await panel.getByRole('button', { name: 'Save pings', exact: true }).click();
-  await expect(panel.getByRole('alert')).toContainText('HH:MM');
-  await expect(time).toHaveValue('whenever');
-  await expect(time).toHaveAttribute('aria-invalid', 'true');
-  await expect(panel.getByRole('textbox', { name: 'Add a countdown (minutes)' })).toHaveAttribute('aria-invalid', 'false');
-  await time.fill('08:30');
-  const removes = panel.getByRole('list', { name: 'Countdowns' }).getByRole('button', { name: /^Remove the/ });
-  while ((await removes.count()) > 0) await removes.first().click();
-  // A typed, un-added value is part of the draft, as the comma field was.
-  await panel.getByRole('textbox', { name: 'Add a countdown (minutes)' }).fill('45, 10');
-  await panel.getByRole('button', { name: 'Save pings', exact: true }).click();
-  // The server applies pings on restart; the toast says so rather than claiming a re-place.
-  await expect(toast(page, 'Pings saved; they take effect when the bot restarts.')).toBeVisible();
-  await expect(panel.getByRole('textbox', { name: 'Morning ping' })).toHaveValue('08:30');
-
-  // Watching switches apply at once; turning one off asks first.
-  await page.getByRole('tab', { name: 'Chat watching' }).click();
-  const watching = panel.getByRole('switch', { name: /^Watching/ });
-  await watching.click();
-  await page.getByRole('dialog', { name: 'Pause watching?' }).getByRole('button', { name: 'Pause watching' }).click();
-  await expect(toast(page, 'Watching paused.')).toBeVisible();
-  await expect(watching).toHaveAttribute('aria-checked', 'false');
-  await expect(panel.getByText('paused', { exact: true })).toBeVisible();
-  await watching.click();
-  await expect(toast(page, 'Watching resumed.')).toBeVisible();
-  await expect(watching).toHaveAttribute('aria-checked', 'true');
-  expect(((await (await page.request.get(`${ADMIN}/api/admin/config`)).json()) as { watching: { paused: boolean } }).watching.paused).toBe(false);
-
-  // Chatbot rate save.
-  await page.getByRole('tab', { name: 'Chatbot' }).click();
-  await panel.getByRole('spinbutton', { name: 'Answers per person' }).fill('5');
-  await expect(panel.getByText(/1 unsaved change · Per person answers/)).toBeVisible();
-  await panel.getByRole('button', { name: 'Save chatbot', exact: true }).click();
-  await expect(toast(page, /Answer limits saved/)).toBeVisible();
-
-  // Persona catalog, profile visibility, reload, role order.
-  await page.getByRole('tab', { name: /^Persona/ }).click();
-  await expect(panel.getByText(/Effective:.*Kanade/)).toBeVisible();
-  await choose(panel.getByRole('combobox', { name: 'Active persona' }), 'plain');
-  await panel.getByRole('button', { name: 'Use this persona', exact: true }).click();
-  await page.getByRole('dialog').getByRole('button', { name: /^Use (?!this)/ }).click();
-  await expect(toast(page, /Plain/)).toBeVisible();
-  await choose(panel.getByRole('combobox', { name: 'Active persona' }), 'kanade');
-  await panel.getByRole('button', { name: 'Use this persona', exact: true }).click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Use Kanade' }).click();
-  await expect(panel.getByText(/Effective:.*Kanade/)).toBeVisible();
-  // Reply profiles: label, voice as written, a one-line plain-text prompt preview, visibility.
-  const profiles = panel.getByRole('table', { name: 'Reply profiles' });
-  await expect(profiles.getByRole('columnheader')).toHaveText(['', 'Profile', 'Voice', 'Prompt', 'Visibility', 'Change visibility']);
-  const kanade = profiles.getByRole('row', { name: /^Select Kanade\b/ });
-  // Cells after the selection box: voice first.
-  await expect(kanade.getByRole('cell').nth(1)).toHaveText('comedy.');
-  await expect(kanade).toContainText('Kanade Teases lightly');
-  await expect(kanade).not.toContainText('**');
-  await expect(profiles).not.toContainText('config/personas/profiles/kanade');
-  // Visibility is editable and profile text stays file-backed.
-  const sparkly = profiles.getByRole('row', { name: /^Select Sparkly\b/ });
-  await expect(sparkly).toContainText('private');
-  await expect(sparkly.getByRole('button', { name: 'Publish' })).toBeVisible();
-  // Role assignments use the current named guild directory; IDs are not picker input.
-  await panel.getByRole('tab', { name: /^Role overrides/ }).click();
-  const roleAssignments = panel.getByRole('list', { name: 'Role assignments in precedence order' });
-  await expect(roleAssignments.getByRole('listitem')).toHaveCount(2);
-  await expect(roleAssignments.getByRole('listitem').nth(0)).toContainText('@staff');
-  await expect(panel.getByRole('combobox', { name: 'New assignment role' })).toBeEnabled();
-  await expect(panel.getByText(/The first matching role.*overrides a member's saved reply style/)).toBeVisible();
-  const published = await page.request.patch(`${ADMIN}/api/admin/config`, {
-    headers: await csrf(page.request),
-    data: { persona: { visibility: [{ key: 'sparkly', public: true }] } },
+  test('section deep links and the vertical section list', async ({ page }) => {
+    await config(page);
+    // Section deep-link.
+    await expect(page.getByRole('tab', { name: 'Pings' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tablist', { name: 'Settings sections' })).toHaveAttribute('aria-orientation', 'vertical');
+    await page.getByRole('tab', { name: 'Weekly digest' }).click();
+    await expect(page).toHaveURL(`${ADMIN}/config?section=digest`);
+    await page.goto(`${ADMIN}/config?section=chatbot&sw=off`);
+    await expect(page.getByRole('tab', { name: 'Chatbot' })).toHaveAttribute('aria-selected', 'true');
   });
-  const publishedView = (await published.json()) as { persona: { profiles: { key: string; public: boolean }[] } };
-  const restored = await page.request.patch(`${ADMIN}/api/admin/config`, {
-    headers: await csrf(page.request),
-    data: { persona: { visibility: [{ key: 'sparkly', public: false }] } },
+
+  test('pings: a bad time is refused inline, good values save', async ({ page }) => {
+    const panel = await config(page);
+    // Pings: bad time refused inline, fields kept; good values toast and stay.
+    await page.getByRole('tab', { name: 'Pings' }).click();
+    const time = panel.getByRole('textbox', { name: 'Morning ping' });
+    await time.fill('whenever');
+    await panel.getByRole('button', { name: 'Save pings', exact: true }).click();
+    await expect(panel.getByRole('alert')).toContainText('HH:MM');
+    await expect(time).toHaveValue('whenever');
+    await expect(time).toHaveAttribute('aria-invalid', 'true');
+    await expect(panel.getByRole('textbox', { name: 'Add a countdown (minutes)' })).toHaveAttribute('aria-invalid', 'false');
+    await time.fill('08:30');
+    const removes = panel.getByRole('list', { name: 'Countdowns' }).getByRole('button', { name: /^Remove the/ });
+    while ((await removes.count()) > 0) await removes.first().click();
+    // A typed, un-added value is part of the draft, as the comma field was.
+    await panel.getByRole('textbox', { name: 'Add a countdown (minutes)' }).fill('45, 10');
+    await panel.getByRole('button', { name: 'Save pings', exact: true }).click();
+    // The server applies pings on restart; the toast says so rather than claiming a re-place.
+    await expect(toast(page, 'Pings saved; they take effect when the bot restarts.')).toBeVisible();
+    await expect(panel.getByRole('textbox', { name: 'Morning ping' })).toHaveValue('08:30');
   });
-  const restoredView = (await restored.json()) as typeof publishedView;
-  const publicState = (view: typeof publishedView) => view.persona.profiles.find((profile) => profile.key === 'sparkly')?.public;
-  expect([published.status(), publicState(publishedView)]).toEqual([200, true]);
-  expect([restored.status(), publicState(restoredView)]).toEqual([200, false]);
-  // Reload re-reads the files.
-  await panel.getByRole('tab', { name: 'Active persona & profiles' }).click();
-  await panel.getByRole('button', { name: 'Reload profiles' }).click();
-  await expect(toast(page, /Reloaded 4 reply profiles/)).toBeVisible();
 
-  // Models: external and unknown routes state that raw member data leaves.
-  await page.getByRole('tab', { name: 'Models' }).click();
-  // The server's own startup check is shown; the saved seed passes it.
-  await expect(page.getByRole('tab', { name: 'Models' }).locator('.settings__flag')).toHaveCount(0);
-  await panel.getByRole('tab', { name: 'Capacity' }).click();
-  await expect(panel.locator('.models__groups .tone--danger')).toHaveCount(0);
-  await expect(panel.getByRole('row', { name: /gateway/ }).locator('.models__check .tone').first()).toBeVisible();
-  await panel.getByRole('tab', { name: 'Roles' }).click();
-  const models = panel.getByRole('combobox', { name: /^Model/ });
-  const reasonings = panel.getByRole('combobox', { name: /^Reasoning/ });
-  await choose(models.first(), 'kanata/chat-cloud');
-  await expect(panel.getByText(/go to an external provider/)).toBeVisible();
-  await expect(panel.getByText(/raw member names, IDs, messages, and URLs leave the homelab/i)).toBeVisible();
-  await expect(panel).not.toContainText(/pseudonym|provider testing|ALLOW_EXTERNAL_UNMASKED|PSEUDONYMIZE/i);
-  await choose(models.first(), 'kanata/extract');
-  // An unknown trust zone is treated as external with the raw-data warning.
-  await choose(models.nth(2), 'kanata/legacy');
-  await expect(panel.getByText(/publishes no trust zone/)).toBeVisible();
-  await choose(models.nth(2), 'kanata/rewrite-small');
-
-  // Reasoning offers only the model's published efforts: the small rewrite
-  // model publishes none, and extraction runs medium, so its picker is off only.
-  expect(await optionLabels(reasonings.nth(2))).toEqual(['Off']);
-  // `null` efforts: Kanata restricts nothing, so every level is offered.
-  await choose(models.nth(2), 'kanata/legacy');
-  expect(await optionLabels(reasonings.nth(2))).toEqual(['Same as extraction', 'Off', 'Minimal', 'Low', 'Medium', 'High', 'Xhigh', 'Max']);
-  await expect(panel.getByText('reasoning: any level')).toBeVisible();
-  await choose(models.nth(2), 'kanata/rewrite-small');
-  // Inherit is offered only while the extraction effort fits the role model.
-  expect((await optionLabels(reasonings.nth(1)))[0]).toBe('Same as extraction');
-  await choose(reasonings.first(), 'high');
-  expect((await optionLabels(reasonings.nth(1)))[0]).toBe('Off');
-  await choose(models.first(), 'kanata/extract');
-  await choose(reasonings.first(), 'medium');
-  // Chat needs tools: the tool-less model is offered disabled, with why.
-  await expect(optionIn(await openList(models.nth(1)), 'kanata/rewrite-small')).toHaveAttribute('aria-disabled', 'true');
-  await models.nth(1).press('Escape');
-  await panel.getByRole('button', { name: 'Save models' }).click();
-  await expect(toast(page, /Models saved; the next question uses them\./)).toBeVisible();
-
-  // Capacity groups are read-only (kanade.toml): a table, no editor.
-  await expect(panel.getByRole('button', { name: 'Save groups' })).toHaveCount(0);
-  await expect(panel.getByRole('spinbutton', { name: /Permits/ })).toHaveCount(0);
-  const groups = await page.request.patch(`${ADMIN}/api/admin/config`, {
-    headers: await csrf(page.request),
-    data: { models: { groups: [] } },
+  test('chat watching: pausing asks first, resuming applies at once', async ({ page }) => {
+    const panel = await config(page);
+    // Watching switches apply at once; turning one off asks first.
+    await page.getByRole('tab', { name: 'Chat watching' }).click();
+    const watching = panel.getByRole('switch', { name: /^Watching/ });
+    await watching.click();
+    await page.getByRole('dialog', { name: 'Pause watching?' }).getByRole('button', { name: 'Pause watching' }).click();
+    await expect(toast(page, 'Watching paused.')).toBeVisible();
+    await expect(watching).toHaveAttribute('aria-checked', 'false');
+    await expect(panel.getByText('paused', { exact: true })).toBeVisible();
+    await watching.click();
+    await expect(toast(page, 'Watching resumed.')).toBeVisible();
+    await expect(watching).toHaveAttribute('aria-checked', 'true');
+    expect(((await (await page.request.get(`${ADMIN}/api/admin/config`)).json()) as { watching: { paused: boolean } }).watching.paused).toBe(false);
   });
-  expect([groups.status(), ((await groups.json()) as { error: string }).error]).toEqual([422, 'read_only']);
-  const badKey = await page.request.patch(`${ADMIN}/api/admin/config`, {
-    headers: await csrf(page.request),
-    data: { models: { kanata_limits: [] } },
+
+  test('chatbot: answer limits save', async ({ page }) => {
+    const panel = await config(page);
+    // Chatbot rate save.
+    await page.getByRole('tab', { name: 'Chatbot' }).click();
+    await panel.getByRole('spinbutton', { name: 'Answers per person' }).fill('5');
+    await expect(panel.getByText(/1 unsaved change · Per person answers/)).toBeVisible();
+    await panel.getByRole('button', { name: 'Save chatbot', exact: true }).click();
+    await expect(toast(page, /Answer limits saved/)).toBeVisible();
   });
-  await expect(badKey.status()).toBe(422);
-  expect(await badKey.text()).toContain('Unknown or read-only');
-  // An unwatched channel has nothing to re-read.
-  const reread = await page.request.post(`${ADMIN}/api/admin/rescan`, { headers: await csrf(page.request), data: { channels: ['bm-trio'], window: 'week' } });
-  expect(await reread.text()).toContain('not watched');
 
-  // Notifications.
-  await page.getByRole('tab', { name: 'Notifications' }).click();
-  const quiet = panel.getByRole('switch', { name: /^Quiet mode/ });
-  await quiet.click();
-  await expect(toast(page, 'Quiet mode is on.')).toBeVisible();
-  await expect(panel.getByText(/marked 🔕 in/)).toBeVisible();
-  await quiet.click();
-  await page.getByRole('dialog', { name: 'Turn quiet mode off?' }).getByRole('button', { name: 'Turn quiet mode off' }).click();
-  await expect(quiet).toHaveAttribute('aria-checked', 'false');
+  test('persona: catalog, profiles, visibility, reload and role order', async ({ page }) => {
+    const panel = await config(page);
+    // Persona catalog, profile visibility, reload, role order.
+    await page.getByRole('tab', { name: /^Persona/ }).click();
+    await expect(panel.getByText(/Effective:.*Kanade/)).toBeVisible();
+    await choose(panel.getByRole('combobox', { name: 'Active persona' }), 'plain');
+    await panel.getByRole('button', { name: 'Use this persona', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: /^Use (?!this)/ }).click();
+    await expect(toast(page, /Plain/)).toBeVisible();
+    await choose(panel.getByRole('combobox', { name: 'Active persona' }), 'kanade');
+    await panel.getByRole('button', { name: 'Use this persona', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Use Kanade' }).click();
+    await expect(panel.getByText(/Effective:.*Kanade/)).toBeVisible();
+    // Reply profiles: label, voice as written, a one-line plain-text prompt preview, visibility.
+    const profiles = panel.getByRole('table', { name: 'Reply profiles' });
+    await expect(profiles.getByRole('columnheader')).toHaveText(['', 'Profile', 'Voice', 'Prompt', 'Visibility', 'Change visibility']);
+    const kanade = profiles.getByRole('row', { name: /^Select Kanade\b/ });
+    // Cells after the selection box: voice first.
+    await expect(kanade.getByRole('cell').nth(1)).toHaveText('comedy.');
+    await expect(kanade).toContainText('Kanade Teases lightly');
+    await expect(kanade).not.toContainText('**');
+    await expect(profiles).not.toContainText('config/personas/profiles/kanade');
+    // Visibility is editable and profile text stays file-backed.
+    const sparkly = profiles.getByRole('row', { name: /^Select Sparkly\b/ });
+    await expect(sparkly).toContainText('private');
+    await expect(sparkly.getByRole('button', { name: 'Publish' })).toBeVisible();
+    // Role assignments use the current named guild directory; IDs are not picker input.
+    await panel.getByRole('tab', { name: /^Role overrides/ }).click();
+    const roleAssignments = panel.getByRole('list', { name: 'Role assignments in precedence order' });
+    await expect(roleAssignments.getByRole('listitem')).toHaveCount(2);
+    await expect(roleAssignments.getByRole('listitem').nth(0)).toContainText('@staff');
+    await expect(panel.getByRole('combobox', { name: 'New assignment role' })).toBeEnabled();
+    await expect(panel.getByText(/The first matching role.*overrides a member's saved reply style/)).toBeVisible();
+    const published = await page.request.patch(`${ADMIN}/api/admin/config`, {
+      headers: await csrf(page.request),
+      data: { persona: { visibility: [{ key: 'sparkly', public: true }] } },
+    });
+    const publishedView = (await published.json()) as { persona: { profiles: { key: string; public: boolean }[] } };
+    const restored = await page.request.patch(`${ADMIN}/api/admin/config`, {
+      headers: await csrf(page.request),
+      data: { persona: { visibility: [{ key: 'sparkly', public: false }] } },
+    });
+    const restoredView = (await restored.json()) as typeof publishedView;
+    const publicState = (view: typeof publishedView) => view.persona.profiles.find((profile) => profile.key === 'sparkly')?.public;
+    expect([published.status(), publicState(publishedView)]).toEqual([200, true]);
+    expect([restored.status(), publicState(restoredView)]).toEqual([200, false]);
+    // Reload re-reads the files.
+    await panel.getByRole('tab', { name: 'Active persona & profiles' }).click();
+    await panel.getByRole('button', { name: 'Reload profiles' }).click();
+    await expect(toast(page, /Reloaded 4 reply profiles/)).toBeVisible();
+  });
 
-  // Self-service: link-first saves, and closing the portal forces cards-only.
-  await page.getByRole('tab', { name: 'Self-service' }).click();
-  await expect(panel.getByText('How self-service works')).toBeVisible();
-  await page.getByText('Link first', { exact: true }).click();
-  await panel.getByRole('button', { name: 'Save self-service', exact: true }).click();
-  await expect(toast(page, /link first/)).toBeVisible();
-  // Closing applies at once (only opening asks).
-  await panel.getByRole('switch', { name: /^Public portal/ }).click();
-  await expect(toast(page, 'The public portal is closed.')).toBeVisible();
-  await expect(panel.getByText(/serves only the app shell/)).toBeVisible();
-  await expect(panel.getByText(/cards-only applies/)).toBeVisible();
+  test('models: raw-data warnings, reasoning efforts, save, read-only groups', async ({ page }) => {
+    const panel = await config(page);
+    // Models: external and unknown routes state that raw member data leaves.
+    await page.getByRole('tab', { name: 'Models' }).click();
+    // The server's own startup check is shown; the saved seed passes it.
+    await expect(page.getByRole('tab', { name: 'Models' }).locator('.settings__flag')).toHaveCount(0);
+    await panel.getByRole('tab', { name: 'Capacity' }).click();
+    await expect(panel.locator('.models__groups .tone--danger')).toHaveCount(0);
+    await expect(panel.getByRole('row', { name: /gateway/ }).locator('.models__check .tone').first()).toBeVisible();
+    await panel.getByRole('tab', { name: 'Roles' }).click();
+    const models = panel.getByRole('combobox', { name: /^Model/ });
+    const reasonings = panel.getByRole('combobox', { name: /^Reasoning/ });
+    await choose(models.first(), 'kanata/chat-cloud');
+    await expect(panel.getByText(/go to an external provider/)).toBeVisible();
+    await expect(panel.getByText(/raw member names, IDs, messages, and URLs leave the homelab/i)).toBeVisible();
+    await expect(panel).not.toContainText(/pseudonym|provider testing|ALLOW_EXTERNAL_UNMASKED|PSEUDONYMIZE/i);
+    await choose(models.first(), 'kanata/extract');
+    // An unknown trust zone is treated as external with the raw-data warning.
+    await choose(models.nth(2), 'kanata/legacy');
+    await expect(panel.getByText(/publishes no trust zone/)).toBeVisible();
+    await choose(models.nth(2), 'kanata/rewrite-small');
 
-  // Digest posts.
-  await page.getByRole('tab', { name: 'Weekly digest' }).click();
-  await choose(panel.getByRole('combobox', { name: 'Channel' }), 'fa-night');
-  await panel.getByRole('button', { name: 'Post it now…' }).click();
-  await page.getByRole('dialog', { name: /digest to #?fa-night/ }).getByRole('button', { name: 'Post it now' }).click();
-  await expect(toast(page, /Posted this week's digest in #fa-night/)).toBeVisible();
+    // Reasoning offers only the model's published efforts: the small rewrite
+    // model publishes none, and extraction runs medium, so its picker is off only.
+    expect(await optionLabels(reasonings.nth(2))).toEqual(['Off']);
+    // `null` efforts: Kanata restricts nothing, so every level is offered.
+    await choose(models.nth(2), 'kanata/legacy');
+    expect(await optionLabels(reasonings.nth(2))).toEqual(['Same as extraction', 'Off', 'Minimal', 'Low', 'Medium', 'High', 'Xhigh', 'Max']);
+    await expect(panel.getByText('reasoning: any level')).toBeVisible();
+    await choose(models.nth(2), 'kanata/rewrite-small');
+    // Inherit is offered only while the extraction effort fits the role model.
+    expect((await optionLabels(reasonings.nth(1)))[0]).toBe('Same as extraction');
+    await choose(reasonings.first(), 'high');
+    expect((await optionLabels(reasonings.nth(1)))[0]).toBe('Off');
+    await choose(models.first(), 'kanata/extract');
+    await choose(reasonings.first(), 'medium');
+    // Chat needs tools: the tool-less model is offered disabled, with why.
+    await expect(optionIn(await openList(models.nth(1)), 'kanata/rewrite-small')).toHaveAttribute('aria-disabled', 'true');
+    await models.nth(1).press('Escape');
+    await panel.getByRole('button', { name: 'Save models' }).click();
+    await expect(toast(page, /Models saved; the next question uses them\./)).toBeVisible();
 
-  // Read-only table: values, reasons, and no inputs at all.
-  await page.getByRole('tab', { name: 'Set in the environment' }).click();
-  await expect(panel.getByRole('row', { name: /Timezone/ })).toContainText('Asia/Kuala_Lumpur');
-  await expect(panel.getByRole('row', { name: /Timezone/ })).toContainText('a change needs a restart');
-  // The id lists moved to Channels, where the env values are only seeds.
-  await expect(panel.getByRole('row', { name: /Watched categories/ })).toHaveCount(0);
-  await expect(panel.getByRole('row', { name: /Digest channel/ })).toContainText('KANADE_POST_CHANNEL_ID');
-  await expect(panel.getByRole('row', { name: /Model gateway/ })).not.toContainText('secret');
-  await expect(panel.locator('input, select, [role="combobox"]')).toHaveCount(0);
+    // Capacity groups are read-only (kanade.toml): a table, no editor.
+    await expect(panel.getByRole('button', { name: 'Save groups' })).toHaveCount(0);
+    await expect(panel.getByRole('spinbutton', { name: /Permits/ })).toHaveCount(0);
+    const groups = await page.request.patch(`${ADMIN}/api/admin/config`, {
+      headers: await csrf(page.request),
+      data: { models: { groups: [] } },
+    });
+    expect([groups.status(), ((await groups.json()) as { error: string }).error]).toEqual([422, 'read_only']);
+    const badKey = await page.request.patch(`${ADMIN}/api/admin/config`, {
+      headers: await csrf(page.request),
+      data: { models: { kanata_limits: [] } },
+    });
+    await expect(badKey.status()).toBe(422);
+    expect(await badKey.text()).toContain('Unknown or read-only');
+    // An unwatched channel has nothing to re-read.
+    const reread = await page.request.post(`${ADMIN}/api/admin/rescan`, { headers: await csrf(page.request), data: { channels: ['bm-trio'], window: 'week' } });
+    expect(await reread.text()).toContain('not watched');
+  });
+
+  test('notifications: quiet mode on and off', async ({ page }) => {
+    const panel = await config(page);
+    // Notifications.
+    await page.getByRole('tab', { name: 'Notifications' }).click();
+    const quiet = panel.getByRole('switch', { name: /^Quiet mode/ });
+    await quiet.click();
+    await expect(toast(page, 'Quiet mode is on.')).toBeVisible();
+    await expect(panel.getByText(/marked 🔕 in/)).toBeVisible();
+    await quiet.click();
+    await page.getByRole('dialog', { name: 'Turn quiet mode off?' }).getByRole('button', { name: 'Turn quiet mode off' }).click();
+    await expect(quiet).toHaveAttribute('aria-checked', 'false');
+  });
+
+  test('self-service: link first saves', async ({ page }) => {
+    const panel = await config(page);
+    // Self-service: link-first saves, and closing the portal forces cards-only.
+    await page.getByRole('tab', { name: 'Self-service' }).click();
+    await expect(panel.getByText('How self-service works')).toBeVisible();
+    await page.getByText('Link first', { exact: true }).click();
+    await panel.getByRole('button', { name: 'Save self-service', exact: true }).click();
+    await expect(toast(page, /link first/)).toBeVisible();
+  });
+
+  test('self-service: closing the public portal forces cards-only', async ({ page }) => {
+    const panel = await config(page);
+    await page.getByRole('tab', { name: 'Self-service' }).click();
+    await expect(panel.getByText('How self-service works')).toBeVisible();
+    // Closing applies at once (only opening asks).
+    await panel.getByRole('switch', { name: /^Public portal/ }).click();
+    await expect(toast(page, 'The public portal is closed.')).toBeVisible();
+    await expect(panel.getByText(/serves only the app shell/)).toBeVisible();
+    await expect(panel.getByText(/cards-only applies/)).toBeVisible();
+  });
+
+  test('weekly digest: posts now', async ({ page }) => {
+    const panel = await config(page);
+    // Digest posts.
+    await page.getByRole('tab', { name: 'Weekly digest' }).click();
+    await choose(panel.getByRole('combobox', { name: 'Channel' }), 'fa-night');
+    await panel.getByRole('button', { name: 'Post it now…' }).click();
+    await page.getByRole('dialog', { name: /digest to #?fa-night/ }).getByRole('button', { name: 'Post it now' }).click();
+    await expect(toast(page, /Posted this week's digest in #fa-night/)).toBeVisible();
+  });
+
+  test('set in the environment: read-only values with reasons', async ({ page }) => {
+    const panel = await config(page);
+    // Read-only table: values, reasons, and no inputs at all.
+    await page.getByRole('tab', { name: 'Set in the environment' }).click();
+    await expect(panel.getByRole('row', { name: /Timezone/ })).toContainText('Asia/Kuala_Lumpur');
+    await expect(panel.getByRole('row', { name: /Timezone/ })).toContainText('a change needs a restart');
+    // The id lists moved to Channels, where the env values are only seeds.
+    await expect(panel.getByRole('row', { name: /Watched categories/ })).toHaveCount(0);
+    await expect(panel.getByRole('row', { name: /Digest channel/ })).toContainText('KANADE_POST_CHANNEL_ID');
+    await expect(panel.getByRole('row', { name: /Model gateway/ })).not.toContainText('secret');
+    await expect(panel.locator('input, select, [role="combobox"]')).toHaveCount(0);
+  });
 });
 
 test('config: unreachable catalog and disconnected access render fallbacks', async ({ page }) => {

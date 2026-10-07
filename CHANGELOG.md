@@ -287,6 +287,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Changed**
 
+- Web CI: the e2e suite is steadier on the 4-vCPU runner. Motion tests run in their own one-worker step with frame-rate floors reported, not enforced, on CI; the long accessibility walk and Config save tests are split; capture tests get 120 s; the text audit ignores spaces hanging at a pre-wrap line end; three timing races are fixed (queued reminders, the 200 ms loading delay, the pane exit); failure traces are now uploaded (`include-hidden-files`).
 - Web: the admin and public PWAs are served precompressed. The web build writes `.br` (quality 11) and `.gz` (level 9) siblings for JS, CSS, HTML, SVG, manifest and JSON files of 1 KB or more, kept only when smaller and never precached by the service worker; the server picks br, then gzip, then the plain file by `Accept-Encoding` q-values, the SPA shell included, with `Vary: Accept-Encoding` and unchanged cache headers. The admin entry script drops from 160 KB to 47 KB on the wire on both origins. Direct requests for `.br`/`.gz` files are 404.
 - Admin: the Account page is rebuilt as one window with Profile / Sessions / This browser tabs: access and a recheck, an allowance meter, the reply style in effect next to your saved one (with a searchable picker of public styles), diagnostics, and per-browser look, Discord links and shortcuts.
 - Admin: Reminders "In", "today" and "Next in" follow the server clock (`generated_at`, `fire_at`), not the browser's.
