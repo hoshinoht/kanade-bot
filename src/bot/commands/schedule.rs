@@ -1,5 +1,7 @@
 //! `/schedule`: a boss week's runs as a public embed that pings nobody
-//! (v4 `commands.schedule`).
+//! (v4 `commands.schedule`), or the redesigned embed
+//! (`delivery::cards::redesign::schedule_embed`) while the live message
+//! style is `redesigned`.
 
 use std::sync::Arc;
 
@@ -15,11 +17,15 @@ use super::invocation::Invocation;
 use super::lookup::{involves_run, materialised_weeks};
 use super::options::Args;
 use super::text::{group_by_day, local_day, roster_delta, schedule_line};
+use crate::bot::delivery::cards::redesign::{
+    NO_MARKS, ScheduleScope, ScheduleWeek, schedule_embed,
+};
 use crate::bot::ids::id_text;
 use crate::bot::transport::InteractionReply;
 use crate::domain::members::MemberProfile;
 use crate::domain::schedule::{RsvpState, Run, ScheduleSnapshot};
 use crate::domain::scheduler::Scope;
+use crate::domain::settings::MessageStyle;
 
 /// discord.py `Colour.blurple()`.
 const BLURPLE: u32 = 0x5865F2;
@@ -88,6 +94,20 @@ impl ScheduleCommand {
         Self { ctx }
     }
 
+    /// The live message style (the saved setting, read per command).
+    fn style(&self) -> MessageStyle {
+        self.ctx
+            .config
+            .as_ref()
+            .map_or(MessageStyle::Classic, |desk| {
+                desk.subscribe()
+                    .borrow()
+                    .settings
+                    .notifications
+                    .message_style
+            })
+    }
+
     async fn schedule(&self, invocation: &Invocation) -> Result<InteractionReply, CommandError> {
         let args = Args(&invocation.options);
         let channel = invocation.channel_id.map(id_text).unwrap_or_default();
@@ -115,6 +135,28 @@ impl ScheduleCommand {
             .filter(|run| scope != "channel" || run.channel_id.as_deref() == Some(&channel))
             .collect();
         let show_past = args.flag("show_past").unwrap_or(false);
+        if self.style() == MessageStyle::Redesigned {
+            let name = self.ctx.channels.name(&channel);
+            let view = ScheduleWeek {
+                snapshot: &snapshot,
+                runs: &everything,
+                show_past,
+                week_start: week,
+                next: args.text("week") == Some("next"),
+                scope: match scope {
+                    "mine" => ScheduleScope::Mine,
+                    "all" => ScheduleScope::All,
+                    _ => ScheduleScope::Channel(name.as_deref()),
+                },
+                zone: self.ctx.policy.zone(),
+                attendance: self.ctx.policy.attendance.mode,
+                catalog: Some(self.ctx.catalog.as_ref()),
+                marks: &NO_MARKS,
+                empty: empty_text(scope),
+            };
+            let embed = schedule_embed(&view, &|user| member_name(&profiles, user));
+            return Ok(InteractionReply::public("").with_embed(embed));
+        }
         let runs: Vec<&Run> = everything
             .iter()
             .copied()

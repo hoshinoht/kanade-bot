@@ -6,6 +6,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Discord (redesigned style): change notices, the decline notice and `/schedule` follow the redesign. Notices read emoji, boss, what happened, who, with the old slot, source, quiet mode and react hint in one subtext line, new times as Discord timestamps and weekly timings as their result ("is now every Wednesday 21:30"); the decline notice leads with who declined, shows the run's time relative and offers `/amend` and `/swap`; `/schedule` is one ink-blue embed per boss week with names instead of mentions. The same people are pinged as in classic.
 - Discord: bounded RSVP reaction recovery after fresh READY, with guarded removals, local-answer precedence and stale-edit checks; RESUMED and the delivery startup gate stay unchanged.
 - Verification: isolated browser smoke tests against the real Rust server and a binary backup/validated restore/restart drill, using invented temporary state only.
 - Container builds support OCI revision, version and source labels through documented build arguments.

@@ -1,6 +1,7 @@
 //! Durable decline notice delivery and retraction over both stores.
 
 use chrono::Duration;
+use kanade::bot::mentions::allow_users;
 use kanade::bot::transport::{AmbiguousKind, Call, Op, RejectionKind, Step};
 use kanade::domain::history::{ChangeHistory, ChangeMeta, Origin};
 use kanade::domain::ids::RandomIds;
@@ -9,8 +10,10 @@ use kanade::domain::schedule::{
     Change, ChangeSet, Rsvp, RsvpSource, RsvpState, Run, RunSource, RunStatus,
 };
 use kanade::domain::scheduler::{DeclineNoticeContext, Scope};
+use kanade::domain::settings::MessageStyle;
 
 use crate::intercept::Intercept;
+use crate::redesign::notices::styled;
 use crate::scenarios::{HOME, delivery, now, week, world};
 use crate::support::{Store, on_both_stores};
 
@@ -165,6 +168,40 @@ async fn posts_v4_text_as_a_reply<S: Store>(store: &S) {
 #[tokio::test]
 async fn decline_notice_uses_exact_text_and_source_reply() {
     on_both_stores!(posts_v4_text_as_a_reply);
+}
+
+/// The decline notice in `style`, posted as a reply to the decline; the
+/// redesign leads with the decliner and tells the rest in subtext, pinging
+/// the same people.
+async fn posts_in_style<S: Store>(store: &S, style: MessageStyle) {
+    let world = world();
+    seed(store).await;
+    let mut delivery = delivery(store, &world, &world.fake).with_cards(styled(style));
+    delivery.drain_decline_notices(now()).await.expect("drain");
+    let calls = world.fake.calls();
+    let [Call::Create { message, .. }] = calls.as_slice() else {
+        panic!("one create: {calls:?}");
+    };
+    assert_eq!(message.reply_to.expect("reply").get(), 700000000000000009);
+    let expected = match style {
+        MessageStyle::Classic => {
+            "<@1002> Decliner can't make **Kalos** (Thu 10 Sep 20:14) — reschedule? \
+             `/amend run_id:decliner to:...`"
+        }
+        // The run is at 12:14Z, fourteen minutes from now.
+        MessageStyle::Redesigned => {
+            "❌ **Decliner** can't make Kalos <t:1789042440:R>. Eh? Reschedule, or find a \
+             stand-in?\n-# for <@1002> · `/amend run_id:decliner` · `/swap`"
+        }
+    };
+    assert_eq!(message.content.as_deref(), Some(expected));
+    assert_eq!(message.allowed_mentions, allow_users(&["1002".to_owned()]));
+}
+
+#[tokio::test]
+async fn decline_notice_follows_the_live_message_style() {
+    on_both_stores!(posts_in_style, MessageStyle::Classic);
+    on_both_stores!(posts_in_style, MessageStyle::Redesigned);
 }
 
 async fn ambiguous_never_reposts<S: Store>(store: &S) {

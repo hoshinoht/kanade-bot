@@ -166,6 +166,7 @@ where
                 self.members,
                 zone,
                 self.config.quiet_mode,
+                &self.cards,
             ) else {
                 let Some(mut operation) = self.admit().await else {
                     break;

@@ -1,22 +1,26 @@
-//! Outbox notice text. Kinds v4 announced render v4's
-//! `bot.agent.formatting` notices byte for byte (`amend_notice`,
+//! Outbox notice text. In the classic style, kinds v4 announced render
+//! v4's `bot.agent.formatting` notices byte for byte (`amend_notice`,
 //! `cancel_notice`, `otot_notice`, `done_notice`, `restore_notice`, the
 //! `confirmed` line of `service.status_notice`, `swap_notice`,
 //! `fixed_notice`), with `via_portal` and `quiet_line` appended as v4's
 //! `_announce` and `send_operation_payload` did. Rollback, reset, merge and
 //! request-decision notices are v5-only and keep short texts of their own.
+//! The redesigned style (read live from the [`CardKit`]) renders every kind
+//! through `cards::redesign::notice_text`.
 //!
 //! People are rendered through v4's `Audience` before the quiet-mode gate
 //! (v4 named mentions in the text and emptied only the allow-list); the
-//! allow-list is the intent's, already quiet-gated. Bosses and slots come
-//! from the schedule at drain time; a notice whose run or timing is gone
-//! renders nothing.
+//! allow-list is the intent's, already quiet-gated, in both styles. Bosses
+//! and slots come from the schedule at drain time; a notice whose run or
+//! timing is gone renders nothing.
 
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Datelike, Timelike, Utc, Weekday};
 use chrono_tz::Tz;
 
+use super::cards::CardKit;
+use super::cards::redesign::{self, NoticeLook};
 use crate::bot::cards::format::{Audience, format_participants};
 use crate::bot::mentions;
 use crate::bot::transport::OutgoingMessage;
@@ -25,6 +29,7 @@ use crate::domain::notify::{NotificationIntent, PingKind, display_names, resolve
 use crate::domain::schedule::{
     EMOJI_NO, EMOJI_YES, Notice, NoticeChange, RequestDecision, RunStatus, ScheduleSnapshot,
 };
+use crate::domain::settings::MessageStyle;
 
 const WEEKDAY_NAMES: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const MONTH_NAMES: [&str; 12] = [
@@ -248,8 +253,9 @@ fn body(notice: &Notice, schedule: &ScheduleSnapshot, who: &Audience, zone: Tz) 
     })
 }
 
-/// The post for an outbox `notice` planned as `intent`, or `None` when the
-/// notice posts nothing now (see the module docs).
+/// The post for an outbox `notice` planned as `intent`, in the style `kit`
+/// reads now, or `None` when the notice posts nothing now (see the module
+/// docs).
 pub fn render_notice(
     notice: &Notice,
     intent: &NotificationIntent,
@@ -257,15 +263,31 @@ pub fn render_notice(
     members: &dyn Directory,
     zone: Tz,
     quiet: bool,
+    kit: &CardKit,
 ) -> Option<OutgoingMessage> {
     let who = audience(notice, members);
-    let mut content = body(notice, schedule, &who, zone)?;
-    if notice.via_portal {
-        content = format!("{content}\n{VIA_PORTAL}");
-    }
-    if quiet {
-        content = format!("{content}\n_{QUIET_NOTE}_");
-    }
+    let content = match kit.style() {
+        MessageStyle::Classic => {
+            let mut content = body(notice, schedule, &who, zone)?;
+            if notice.via_portal {
+                content = format!("{content}\n{VIA_PORTAL}");
+            }
+            if quiet {
+                content = format!("{content}\n_{QUIET_NOTE}_");
+            }
+            content
+        }
+        MessageStyle::Redesigned => {
+            let look = NoticeLook {
+                schedule,
+                zone,
+                catalog: kit.catalog.as_deref(),
+                marks: &kit.marks,
+                quiet,
+            };
+            redesign::notice_text(notice, &look, &who)?
+        }
+    };
     Some(OutgoingMessage {
         content: Some(content),
         embeds: Vec::new(),
@@ -357,10 +379,18 @@ mod tests {
             listed: listed.iter().map(|id| (*id).to_owned()).collect(),
             via_portal,
         };
-        render_notice(&notice, &intent(), &schedule(), &roster(), zone(), quiet)
-            .expect("renders")
-            .content
-            .expect("text")
+        render_notice(
+            &notice,
+            &intent(),
+            &schedule(),
+            &roster(),
+            zone(),
+            quiet,
+            &CardKit::default(),
+        )
+        .expect("renders")
+        .content
+        .expect("text")
     }
 
     fn status(to: RunStatus) -> NoticeChange {
@@ -473,22 +503,44 @@ mod tests {
     }
 
     #[test]
-    fn nothing_renders_for_a_derived_status_or_a_vanished_run() {
+    fn nothing_renders_for_a_derived_status_or_a_vanished_run_in_either_style() {
         let notice = |change| Notice {
             change,
             channel_id: None,
             listed: Vec::new(),
             via_portal: true,
         };
-        let render = |notice: &Notice| {
-            render_notice(notice, &intent(), &schedule(), &roster(), zone(), false)
-        };
-        assert_eq!(render(&notice(status(RunStatus::AtRisk))), None);
-        let gone = NoticeChange::RunStatus {
-            run_id: "gone".into(),
-            from: RunStatus::Planned,
-            to: RunStatus::Cancelled,
-        };
-        assert_eq!(render(&notice(gone)), None);
+        for style in [MessageStyle::Classic, MessageStyle::Redesigned] {
+            let kit = CardKit {
+                style: Some(std::sync::Arc::new(move || style)),
+                ..CardKit::default()
+            };
+            let render = |notice: &Notice| {
+                render_notice(
+                    notice,
+                    &intent(),
+                    &schedule(),
+                    &roster(),
+                    zone(),
+                    false,
+                    &kit,
+                )
+            };
+            assert_eq!(render(&notice(status(RunStatus::AtRisk))), None);
+            let gone = NoticeChange::RunStatus {
+                run_id: "gone".into(),
+                from: RunStatus::Planned,
+                to: RunStatus::Cancelled,
+            };
+            assert_eq!(render(&notice(gone)), None);
+            let timing_gone = NoticeChange::FixedChanged {
+                fixed_id: "gone".into(),
+                fields: vec![FixedField::Time],
+                weekday: Weekday::Wed,
+                time: NaiveTime::from_hms_opt(21, 30, 0).unwrap(),
+                participants: Vec::new(),
+            };
+            assert_eq!(render(&notice(timing_gone)), None);
+        }
     }
 }

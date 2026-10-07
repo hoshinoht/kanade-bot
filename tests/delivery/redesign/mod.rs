@@ -1,8 +1,10 @@
-//! Message style: the classic cards pinned byte-exact, and the redesigned
-//! day-of, countdown and digest cards over one fixed boss week.
+//! Message style: the classic cards pinned byte-exact, the redesigned
+//! day-of, countdown and digest cards over one fixed boss week, and change
+//! notices in both styles.
 
 mod classic;
 mod live;
+pub(crate) mod notices;
 mod styled;
 
 use std::sync::Arc;
