@@ -129,6 +129,8 @@ impl Tables {
 #[derive(Debug, Default)]
 pub struct MemoryScheduleStore {
     tables: Mutex<Tables>,
+    #[cfg(any(test, feature = "test-support"))]
+    commit_failure_after: Mutex<Option<usize>>,
     logs: Mutex<model_log::LogTables>,
     sessions: Mutex<BTreeMap<String, crate::infrastructure::store::web_sessions::WebSession>>,
     members: Mutex<BTreeMap<String, crate::domain::members::MemberProfile>>,
@@ -153,6 +155,33 @@ impl MemoryScheduleStore {
         self.written.set(observer)
     }
 
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn fail_commit_after(&self, successful_commits: usize) {
+        *self
+            .commit_failure_after
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(successful_commits);
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    fn injected_commit_failure(&self) -> bool {
+        let mut after = self
+            .commit_failure_after
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match *after {
+            Some(0) => {
+                *after = None;
+                true
+            }
+            Some(remaining) => {
+                *after = Some(remaining - 1);
+                false
+            }
+            None => false,
+        }
+    }
+
     fn tables(&self) -> std::sync::MutexGuard<'_, Tables> {
         // A panic mid-commit never leaves partial state: commits swap whole tables.
         self.tables
@@ -168,6 +197,12 @@ impl MemoryScheduleStore {
         candidates: Vec<crate::domain::notify::DeclineNotice>,
         retractions: Vec<(String, String)>,
     ) -> Result<Option<Committed>, StoreError> {
+        #[cfg(any(test, feature = "test-support"))]
+        if self.injected_commit_failure() {
+            return Err(StoreError::Backend(
+                "injected schedule commit failure".into(),
+            ));
+        }
         let runs = super::observer::touched_runs(&changes);
         let result: Result<Option<Committed>, StoreError> = (|| {
             let mut tables = self.tables();
