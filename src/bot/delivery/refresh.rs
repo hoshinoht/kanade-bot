@@ -10,13 +10,13 @@
 //! before records existed (plain text) are left alone. `/debug ping` test
 //! cards of day-of/countdown kind are refreshed too, keeping their prefix.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, LazyLock, Mutex, PoisonError, Weak};
 
 use chrono::{DateTime, Utc};
 use serde_json::json;
-use tokio::sync::{Notify, watch};
+use tokio::sync::{Mutex as AsyncMutex, Notify, watch};
 
 use super::card_records;
 use super::cards::{
@@ -41,6 +41,23 @@ pub type Now = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
 /// Distinct runs held for the next batch; more are dropped (and logged):
 /// a stale tally is cosmetic, an unbounded queue is not.
 pub const MAX_PENDING_RUNS: usize = 1024;
+
+static EDIT_LOCKS: LazyLock<Mutex<HashMap<String, Weak<AsyncMutex<()>>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// One edit at a time per posted message: the refresh worker and a manual
+/// rewrite each re-read the stored line under it, so the later edit always
+/// shows the latest override and a stale render never lands after it.
+fn edit_lock(message_id: &str) -> Arc<AsyncMutex<()>> {
+    let mut locks = EDIT_LOCKS.lock().unwrap_or_else(PoisonError::into_inner);
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    if let Some(lock) = locks.get(message_id).and_then(Weak::upgrade) {
+        return lock;
+    }
+    let lock = Arc::new(AsyncMutex::new(()));
+    locks.insert(message_id.to_owned(), Arc::downgrade(&lock));
+    lock
+}
 
 /// Runs whose posted cards need a re-render. Requests coalesce: a run
 /// queued many times before the task wakes is refreshed once.
@@ -179,7 +196,8 @@ where
     }
 
     /// Re-render a posted digest from current runs and its stored phrase
-    /// (the latest manual override, else the original); whether it landed.
+    /// (the latest manual override, else the original), read under the
+    /// message's edit lock; whether it landed.
     pub(super) async fn edit_digest(
         &self,
         schedule: &ScheduleSnapshot,
@@ -199,6 +217,8 @@ where
         let Some(key) = card_records::digest_phrase_key(digest.week_start) else {
             return false;
         };
+        let lock = edit_lock(&digest.message_id);
+        let _held = lock.lock().await;
         let phrase = match self.store.digest_phrase(&key).await {
             Ok(phrase) => phrase,
             Err(_) => {
@@ -231,7 +251,8 @@ where
     }
 
     /// Re-render a posted card from current answers with its record's
-    /// heading; whether the edit landed.
+    /// heading, re-read under the message's edit lock (a manual override
+    /// written since `posted` was listed wins); whether the edit landed.
     pub(super) async fn edit(&self, schedule: &ScheduleSnapshot, posted: &PostedCard) -> bool {
         let (Some(channel), Some(message)) =
             (parse_id(&posted.channel_id), parse_id(&posted.message_id))
@@ -251,9 +272,17 @@ where
         } else {
             posted_mentions(&ctx, &content)
         };
-        let Some(mut card) =
-            cards::build(&content, &ctx, posted.record.heading.as_deref(), &mentioned)
-        else {
+        let lock = edit_lock(&posted.message_id);
+        let _held = lock.lock().await;
+        let heading = match &posted.dedupe_key {
+            Some(key) => match self.store.card_record(key).await {
+                Ok(Some(record)) => record.heading,
+                Ok(None) => posted.record.heading.clone(),
+                Err(_) => return false,
+            },
+            None => posted.record.heading.clone(),
+        };
+        let Some(mut card) = cards::build(&content, &ctx, heading.as_deref(), &mentioned) else {
             return false;
         };
         if posted.test {

@@ -12,7 +12,7 @@ use kanade::bot::delivery::cards::{
     CardKit, HeaderHistory, HeaderOverrideStore, HeadingRewrite, ReminderCardStore,
 };
 use kanade::bot::delivery::{CardRefresh, ManualReport, ManualRequest, ManualRewrite, ManualStart};
-use kanade::bot::transport::FakeDiscord;
+use kanade::bot::transport::{FakeDiscord, Op};
 use kanade::chat::nudge::{
     NudgeRewriter, RewriteFailure, RewritePrompt, SharedRewriter, StoreRewriteSink,
 };
@@ -291,6 +291,71 @@ async fn the_classic_style_rewrites_only_day_of_headings() {
             .map(|text| text.lines().next().unwrap_or_default()),
         Some("📅 **Rise and shine, it's Thu 10 Sep!**")
     );
+}
+
+/// A refresh whose card and digest edits are on the wire (old lines) when a
+/// manual run stores its overrides: the manual edits wait for them and land
+/// last, so the posts end with the new lines, never a stale render.
+#[tokio::test]
+async fn a_refresh_in_flight_never_lands_after_a_manual_edit() {
+    let posted = Posted::new(MessageStyle::Redesigned).await;
+    let rewriter = BySeed::new(Ok("Rise and shine, it's {day}!"), "Waku waku!");
+    answer(
+        &*posted.store,
+        &posted.star,
+        "1002",
+        true,
+        now() + TimeDelta::minutes(1),
+    )
+    .await;
+    let card_edit = posted.fake.hold(Op::Edit);
+    let refresh = posted.refresh(&rewriter);
+    let star = posted.star.clone();
+    let stale = tokio::spawn(async move { refresh.refresh(std::slice::from_ref(&star)).await });
+    card_edit.entered().await;
+
+    let manual = posted.manual(&rewriter);
+    let (stop, stopped) = watch::channel(false);
+    let worker = {
+        let manual = Arc::clone(&manual);
+        tokio::spawn(async move { manual.run(stopped).await })
+    };
+    let mut finished = manual.finished();
+    assert_eq!(manual.start(request()).await, ManualStart::Started(2));
+    // Both overrides are stored while the refresh still holds the card.
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while rewriter.calls.load(Ordering::SeqCst) < 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the manual run started");
+    card_edit.release();
+    assert_eq!(stale.await.expect("no panic"), 2, "card and digest");
+    tokio::time::timeout(Duration::from_secs(5), finished.changed())
+        .await
+        .expect("the run ends")
+        .expect("open");
+    stop.send_replace(true);
+    worker.await.expect("no panic");
+
+    let edited: Vec<String> = edits(&posted.fake)
+        .into_iter()
+        .map(|edit| edit.content.unwrap_or_default())
+        .collect();
+    let last_card = edited
+        .iter()
+        .rfind(|text| text.starts_with("📅"))
+        .expect("a card edit");
+    let last_digest = edited
+        .iter()
+        .rfind(|text| text.starts_with("🗓️"))
+        .expect("a digest edit");
+    assert!(
+        last_card.starts_with("📅 **Rise and shine, it's Thu 10 Sep!**"),
+        "{edited:?}"
+    );
+    assert!(last_digest.starts_with("🗓️ **Waku waku!**"), "{edited:?}");
 }
 
 #[tokio::test]

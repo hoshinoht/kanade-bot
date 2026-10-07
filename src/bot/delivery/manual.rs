@@ -453,24 +453,21 @@ where
                 continue;
             }
             report.accepted += 1;
-            if !self.apply(target, chosen.line).await {
+            if !self.apply(target).await {
                 report.unedited += 1;
             }
         }
         report
     }
 
-    /// Edit the post with its new line through the refresh path.
-    async fn apply(&self, target: &Target, line: String) -> bool {
+    /// Edit the post through the refresh path, which re-reads the stored
+    /// line (now this override) under the message's edit lock.
+    async fn apply(&self, target: &Target) -> bool {
         let Ok(schedule) = self.refresh.store.load(&Scope::All).await else {
             return false;
         };
         match target {
-            Target::Card { card, .. } => {
-                let mut card = card.clone();
-                card.record.heading = Some(line);
-                self.refresh.edit(&schedule, &card).await
-            }
+            Target::Card { card, .. } => self.refresh.edit(&schedule, card).await,
             Target::Digest { digest, .. } => self.refresh.edit_digest(&schedule, digest).await,
         }
     }
