@@ -33,6 +33,41 @@ async fn row_24_generation_cancellation_between_calls_aborts_without_writing() {
         }
     );
     assert!(report.aborted);
+    assert_eq!(report.requests, world.fake.count(Op::ReactionUsers));
+    assert_eq!(report.requests, 1, "the held HTTP request is counted");
+    assert!(world.snapshot(&run).await.rsvps.is_empty());
+}
+
+#[tokio::test]
+async fn cancellation_between_mapped_cards_keeps_prior_and_inflight_request_counts() {
+    let world = World::new();
+    let (run, first) = world.carded_run().await;
+    let second = Id::new(401);
+    world.card(&run, second.get()).await;
+    for message in [first, second] {
+        world
+            .fake
+            .seed_reactions(message, "✅", ReactionType::Normal, vec![Id::new(MEMBER)]);
+    }
+    let current = Arc::new(AtomicBool::new(true));
+    let holds: Vec<_> = (0..5).map(|_| world.fake.hold(Op::ReactionUsers)).collect();
+    let mut replay = world.replay();
+    let mut live = ();
+    let (report, ()) = tokio::join!(
+        replay.replay(Id::new(SELF), || current.load(Ordering::SeqCst), &mut live),
+        async {
+            for hold in holds.iter().take(4) {
+                hold.entered().await;
+                hold.release();
+            }
+            holds[4].entered().await;
+            current.store(false, Ordering::SeqCst);
+            holds[4].release();
+        }
+    );
+    assert!(report.aborted);
+    assert_eq!(world.fake.count(Op::ReactionUsers), 5);
+    assert_eq!(report.requests, world.fake.count(Op::ReactionUsers));
     assert!(world.snapshot(&run).await.rsvps.is_empty());
 }
 

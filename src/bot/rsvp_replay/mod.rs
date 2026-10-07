@@ -68,6 +68,18 @@ enum ApplyRun {
     Restart,
 }
 
+enum ReadRun {
+    Complete {
+        answers: Vec<plan::CardAnswer>,
+        requests: usize,
+        permissions: usize,
+    },
+    Aborted {
+        requests: usize,
+        permissions: usize,
+    },
+}
+
 struct ApplyInput<'a, L> {
     message_ids: &'a BTreeSet<String>,
     current: &'a (dyn Fn() -> bool + Send + Sync),
@@ -174,12 +186,24 @@ where
                     }
                     continue;
                 }
-                let Some((answers, requests, permissions)) = self
+                let (answers, requests, permissions) = match self
                     .read_run(&prepared, self_id, &current, &mut cache)
                     .await
-                else {
-                    report.aborted = true;
-                    break;
+                {
+                    ReadRun::Complete {
+                        answers,
+                        requests,
+                        permissions,
+                    } => (answers, requests, permissions),
+                    ReadRun::Aborted {
+                        requests,
+                        permissions,
+                    } => {
+                        report.requests += requests;
+                        permission_failures += permissions;
+                        report.aborted = true;
+                        break;
+                    }
                 };
                 report.requests += requests;
                 permission_failures += permissions;
@@ -298,13 +322,16 @@ where
         self_id: Id<UserMarker>,
         current: &impl Fn() -> bool,
         cache: &mut BTreeMap<String, plan::CardAnswer>,
-    ) -> Option<(Vec<plan::CardAnswer>, usize, usize)> {
+    ) -> ReadRun {
         let mut answers = Vec::with_capacity(prepared.cards.len());
         let mut requests = 0;
         let mut permissions = 0;
         for card in &prepared.cards {
             if !current() {
-                return None;
+                return ReadRun::Aborted {
+                    requests,
+                    permissions,
+                };
             }
             if let Some(cached) = cache.get(&card.message_id) {
                 let mut answer = cached.clone();
@@ -348,7 +375,13 @@ where
                         own_no: read.own_no,
                     }
                 }
-                Err(error) if error.reason == "stale_generation" => return None,
+                Err(error) if error.reason == "stale_generation" => {
+                    requests += error.requests;
+                    return ReadRun::Aborted {
+                        requests,
+                        permissions,
+                    };
+                }
                 Err(error) => {
                     requests += error.requests;
                     permissions += usize::from(
@@ -365,7 +398,11 @@ where
             cache.insert(card.message_id.clone(), answer.clone());
             answers.push(answer);
         }
-        Some((answers, requests, permissions))
+        ReadRun::Complete {
+            answers,
+            requests,
+            permissions,
+        }
     }
 
     async fn apply_run<L: ReplayLive>(
