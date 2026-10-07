@@ -1351,3 +1351,4 @@ async fn retained_commands_and_their_autocomplete_dispatch_through_the_registry(
 mod extraction;
 mod outage;
 mod replay;
+mod shutdown;
