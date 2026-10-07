@@ -109,7 +109,7 @@ fn access(guild: &GuildSettings) -> GuildAccess {
     )
 }
 
-fn model_stack(
+pub(super) fn model_stack(
     models: &ModelSettings,
     settings: &RuntimeSettings,
 ) -> Result<Option<Arc<ModelStack>>, Error> {
@@ -139,6 +139,19 @@ pub async fn compose(
     channels: Arc<dyn ChannelList>,
     health: LiveHealth,
 ) -> Result<Composition, Error> {
+    compose_with(config, store, channels, health, None).await
+}
+
+/// [`compose`]; a `shared` model stack (built once by the caller from the same
+/// config) replaces building one, and its listing and refresh stay the
+/// caller's.
+pub(super) async fn compose_with(
+    config: &ServeConfig,
+    store: Arc<SqliteStore>,
+    channels: Arc<dyn ChannelList>,
+    health: LiveHealth,
+    shared: Option<Arc<ModelStack>>,
+) -> Result<Composition, Error> {
     let catalog = load_catalog(&config.files.catalog_file).map_err(file_error)?;
     let knowledge = config
         .files
@@ -159,9 +172,15 @@ pub async fn compose(
         validate_run_lengths_seed(config.seeds.run_lengths.as_ref(), &catalog)?;
     }
     let sources = model_report::seed_roles(&mut settings, &config.models, &stored);
-    let models = model_stack(&config.models, &settings)?;
-    let model_tasks =
-        model_report::start(models.as_ref(), sources, settings.models.context.clone());
+    let (models, model_tasks) = match shared {
+        Some(stack) => (Some(stack), ModelTasks::default()),
+        None => {
+            let models = model_stack(&config.models, &settings)?;
+            let tasks =
+                model_report::start(models.as_ref(), sources, settings.models.context.clone());
+            (models, tasks)
+        }
+    };
     let personas = load_personas(
         &config.files.persona_dir,
         settings::persona(&settings)?.as_ref(),

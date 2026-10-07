@@ -78,6 +78,14 @@ impl Transport {
         let request = self.request(method, suffix, body, request_id)?;
         tokio::time::timeout(self.timeout, async {
             let tcp = self.connect().await?;
+            #[cfg(feature = "test-support")]
+            if !super::observe::admit(&super::observe::SentRequest {
+                method: request.method().as_str(),
+                path: request.uri().path(),
+                peer: tcp.peer_addr().ok(),
+            }) {
+                return Err(failure(ProviderFailureKind::Permanent, "request-hook"));
+            }
             match (&self.tls, &self.endpoint.server_name) {
                 (Some(tls), Some(name)) => {
                     let stream = tls

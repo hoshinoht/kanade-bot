@@ -86,3 +86,9 @@ required-features = ["test-support"]
 name = "chat"
 path = "tests/chat/main.rs"
 required-features = ["test-support"]
+
+# The V02 live quality harness; run explicitly, never by the suite or CI.
+[[example]]
+name = "v02_quality"
+path = "examples/v02_quality/main.rs"
+required-features = ["test-support"]

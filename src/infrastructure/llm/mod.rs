@@ -26,6 +26,8 @@ pub use http::{
     BearerKey, HttpConfigError, HttpLimits, HttpProviderConfig, OpenAiCompatibleProvider,
     TrustRoots,
 };
+#[cfg(feature = "test-support")]
+pub use http::{RequestHook, SentRequest, set_request_hook};
 pub use provider::{
     CapabilityFuture, CompletionFuture, LlmProvider, ProviderFailure, ProviderFailureKind,
 };

@@ -11,6 +11,8 @@ mod commands;
 mod context;
 pub mod discord;
 pub mod extract;
+#[cfg(feature = "test-support")]
+pub mod harness;
 mod health;
 pub mod models;
 mod persona_log;

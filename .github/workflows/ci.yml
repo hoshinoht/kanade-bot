@@ -37,6 +37,8 @@ jobs:
               - .github/workflows/ci.yml
               - src/**
               - tests/**
+              # Built by clippy and test --all-targets (the V02 harness).
+              - examples/**
               - Cargo.toml
               - Cargo.lock
               - rust-toolchain.toml

@@ -1,5 +1,7 @@
 mod config;
 mod endpoint;
+#[cfg(feature = "test-support")]
+mod observe;
 mod transport;
 
 use std::{
@@ -14,6 +16,8 @@ use serde_json::Value;
 use tokio::time::Instant;
 
 pub use config::{BearerKey, HttpConfigError, HttpLimits, HttpProviderConfig, TrustRoots};
+#[cfg(feature = "test-support")]
+pub use observe::{RequestHook, SentRequest, set_request_hook};
 
 use super::{
     Capability, CapabilityFuture, ChatRequest, CompletionFuture, CompletionResponse, ListedModel,
