@@ -413,6 +413,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- `kanade ctl emojis` works inside the container: the image ships the pill PNGs at `/app/assets/emojis` (`KANADE_EMOJI_DIR`), where the command now looks without `--dir`; before, it looked under `/data` and could not upload them. A dry run now also reads each missing pill's PNG, so a wrong directory fails before the real run.
 - Admin weekly timings: fixed-PATCH retries recognize the normalized full request across interleaved edits and no-op races without duplicate effects. Changed or pre-fix keys return `idempotency_mismatch`; reload and use a fresh key.
 - Tests: live-extraction move fixtures now explicitly target their seeded tomorrow run, with a reset-eve regression; production extraction rules are unchanged.
 - Admin Bosses: picking another boss restores its full hero and resets the knowledge panel to the top, even after scrolling the previous guide into its compact header.

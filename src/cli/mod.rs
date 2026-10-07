@@ -166,7 +166,7 @@ mod tests {
             parse(["ctl".into(), "emojis".into(), "--dry-run".into()]).unwrap(),
             Command::CtlEmojis(emojis::Args {
                 dry_run: true,
-                dir: PathBuf::from(emojis::DEFAULT_DIR),
+                dir: None,
             })
         );
         assert!(parse(["ctl".into()]).is_err());

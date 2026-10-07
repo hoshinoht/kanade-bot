@@ -9,7 +9,7 @@ use kanade::bot::cards::emojis::{self, PILLS};
 use kanade::bot::transport::{
     AmbiguousKind, ApplicationEmoji, Call, FakeDiscord, Op, Outcome, RejectionKind, Step,
 };
-use kanade::cli::emojis::{Args, sync};
+use kanade::cli::emojis::sync;
 use twilight_model::id::Id;
 
 fn assets() -> PathBuf {
@@ -40,11 +40,7 @@ fn names(list: &[ApplicationEmoji]) -> Vec<&str> {
 
 async fn run(fake: &FakeDiscord, dir: &Path, dry_run: bool) -> (Result<(), String>, String) {
     let mut out = Vec::new();
-    let args = Args {
-        dry_run,
-        dir: dir.to_path_buf(),
-    };
-    let result = sync(fake, &args, &mut out)
+    let result = sync(fake, dir, dry_run, &mut out)
         .await
         .map_err(|error| error.to_string());
     (result, String::from_utf8(out).unwrap())
@@ -106,7 +102,7 @@ async fn uploads_only_the_missing_pills_and_leaves_others_alone() {
 async fn a_dry_run_lists_and_uploads_nothing() {
     let fake = FakeDiscord::new();
     fake.seed_application_emojis(vec![emoji(7, "diff_x")]);
-    let (result, report) = run(&fake, Path::new("/nonexistent"), true).await;
+    let (result, report) = run(&fake, &assets(), true).await;
     assert_eq!(result, Ok(()), "missing pills are not a dry-run failure");
     assert_eq!(fake.count(Op::CreateApplicationEmoji), 0);
     assert_eq!(
@@ -117,6 +113,19 @@ async fn a_dry_run_lists_and_uploads_nothing() {
          diff_c: missing (dry run, not uploaded)\n\
          diff_x: present (7)\n"
     );
+}
+
+/// A dry run against the wrong directory fails the way the real run would,
+/// before anything is uploaded (the image once shipped no PNGs).
+#[tokio::test]
+async fn a_dry_run_reports_pills_it_could_not_read() {
+    let fake = FakeDiscord::new();
+    fake.seed_application_emojis(vec![emoji(7, "diff_x")]);
+    let (result, report) = run(&fake, Path::new("/nonexistent"), true).await;
+    assert!(result.is_err(), "{report}");
+    assert_eq!(report.matches(": not uploaded (").count(), 3, "{report}");
+    assert!(report.contains("diff_x: present (7)"), "{report}");
+    assert_eq!(fake.count(Op::CreateApplicationEmoji), 0);
 }
 
 #[tokio::test]

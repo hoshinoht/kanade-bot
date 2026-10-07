@@ -42,7 +42,7 @@ pub enum PillStep {
     /// Already uploaded; left alone.
     Present(ApplicationEmoji),
     Uploaded(ApplicationEmoji),
-    /// Missing; a dry run uploads nothing.
+    /// Missing, its PNG readable; a dry run uploads nothing.
     Missing,
     /// The PNG could not be read.
     Unreadable(String),
@@ -75,8 +75,10 @@ impl std::fmt::Display for SyncReport {
 }
 
 /// List the application's emojis, then upload each pill missing by name
-/// from `dir/<name>.png` (none with `dry_run`). `Err` is the list's failure
-/// label: nothing is uploaded without a successful list.
+/// from `dir/<name>.png`. A dry run uploads nothing but still reads each
+/// missing pill's PNG, so a wrong directory shows before the real run.
+/// `Err` is the list's failure label: nothing is uploaded without a
+/// successful list.
 pub async fn sync<T: DiscordTransport>(
     transport: &T,
     dir: &Path,
@@ -90,12 +92,11 @@ pub async fn sync<T: DiscordTransport>(
     for (_, name) in PILLS {
         let step = if let Some(emoji) = listed.iter().find(|emoji| emoji.name == name) {
             PillStep::Present(emoji.clone())
-        } else if dry_run {
-            PillStep::Missing
         } else {
             let path = dir.join(format!("{name}.png"));
             match std::fs::read(&path) {
                 Err(error) => PillStep::Unreadable(format!("{}: {error}", path.display())),
+                Ok(_) if dry_run => PillStep::Missing,
                 Ok(png) => match transport.create_application_emoji(name, &png).await {
                     Outcome::Delivered(emoji) => PillStep::Uploaded(emoji),
                     failed => PillStep::Failed(failed.failure_label().unwrap_or_default()),

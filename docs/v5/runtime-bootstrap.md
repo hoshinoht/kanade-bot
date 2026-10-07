@@ -639,12 +639,16 @@ settings switch (see "Live serve"). There is no `export` command.
 as application emojis: it needs only `KANADE_DISCORD_TOKEN_FILE`, reads the
 application from `GET /applications/@me`, lists its emojis and uploads only
 the fixed names `diff_n`, `diff_h`, `diff_c`, `diff_x` that are missing,
-from `PATH/<name>.png` (default `assets/emojis`, relative to the working
-directory). It never deletes or renames an emoji and is safe to rerun; it
-prints one line per pill (`present`, `uploaded`, `missing` on a dry run,
-`not uploaded`, `upload failed (<label>)`) and exits nonzero when the list
-fails or a pill is not in place (a dry run's missing pills are not a
-failure). An ambiguous upload may have landed: rerun, which lists first.
+from `PATH/<name>.png`. Without `--dir` it reads `KANADE_EMOJI_DIR` (the
+image sets `/app/assets/emojis`, where it ships the PNGs), else
+`assets/emojis` relative to the working directory. It never deletes or
+renames an emoji and is safe to rerun; it prints one line per pill
+(`present`, `uploaded`, `missing` on a dry run, `not uploaded (<path>:
+<error>)`, `upload failed (<label>)`) and exits nonzero when the list fails
+or a pill is not in place. A dry run uploads nothing but still reads each
+missing pill's PNG, so an unreadable one fails the dry run too; its readable
+missing pills are not a failure. An ambiguous upload may have landed: rerun,
+which lists first.
 It opens no gateway session, so it can run beside a live bot. Live `serve`
 lists the application's emojis once at startup and maps the pills it finds
 to the redesigned cards' and the admin preview's difficulty marks; a

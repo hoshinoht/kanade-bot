@@ -1,9 +1,11 @@
 //! `kanade ctl emojis [--dry-run] [--dir PATH]`: lists the application's
 //! emojis and uploads the difficulty pills missing by their fixed names
 //! (`diff_n`, `diff_h`, `diff_c`, `diff_x`) from `PATH/<name>.png` (default
-//! `assets/emojis`). Idempotent; never deletes or renames an emoji;
-//! `--dry-run` only lists. Live Discord HTTP with the bot token from
-//! `KANADE_DISCORD_TOKEN_FILE`; no gateway session.
+//! `KANADE_EMOJI_DIR`, set to `/app/assets/emojis` in the image, else
+//! `assets/emojis` from the checkout). Idempotent; never deletes or renames
+//! an emoji; `--dry-run` only lists, but still says which PNGs it could not
+//! read. Live Discord HTTP with the bot token from `KANADE_DISCORD_TOKEN_FILE`;
+//! no gateway session.
 
 use std::{collections::BTreeMap, io::Write, path::PathBuf};
 
@@ -16,11 +18,27 @@ use crate::{
 };
 
 pub const DEFAULT_DIR: &str = "assets/emojis";
+/// Where the image ships the pills (`deploy/Dockerfile`).
+pub const DIR_KEY: &str = "KANADE_EMOJI_DIR";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Args {
     pub dry_run: bool,
-    pub dir: PathBuf,
+    /// `--dir`; `None` uses [`DIR_KEY`], else [`DEFAULT_DIR`].
+    pub dir: Option<PathBuf>,
+}
+
+impl Args {
+    pub fn dir(&self, environment: &BTreeMap<String, String>) -> PathBuf {
+        self.dir.clone().unwrap_or_else(|| {
+            PathBuf::from(
+                environment
+                    .get(DIR_KEY)
+                    .filter(|value| !value.is_empty())
+                    .map_or(DEFAULT_DIR, String::as_str),
+            )
+        })
+    }
 }
 
 fn usage() -> Error {
@@ -47,13 +65,11 @@ pub fn parse(arguments: &[String]) -> Result<Args, Error> {
             _ => return Err(usage()),
         }
     }
-    Ok(Args {
-        dry_run,
-        dir: dir.unwrap_or_else(|| PathBuf::from(DEFAULT_DIR)),
-    })
+    Ok(Args { dry_run, dir })
 }
 
 pub async fn run(args: &Args, environment: &BTreeMap<String, String>) -> Result<(), Error> {
+    let dir = args.dir(environment);
     let token = DiscordSettings::from_mapping(environment)?.read_token()?;
     let transport = match TwilightTransport::for_current_application(
         token.expose().to_owned(),
@@ -69,7 +85,7 @@ pub async fn run(args: &Args, environment: &BTreeMap<String, String>) -> Result<
             )));
         }
     };
-    sync(&transport, args, &mut std::io::stdout()).await
+    sync(&transport, &dir, args.dry_run, &mut std::io::stdout()).await
 }
 
 /// Sync through `transport` and write what was done to `out`. Fails when
@@ -77,10 +93,11 @@ pub async fn run(args: &Args, environment: &BTreeMap<String, String>) -> Result<
 /// pills are not a failure.
 pub async fn sync<T: DiscordTransport>(
     transport: &T,
-    args: &Args,
+    dir: &std::path::Path,
+    dry_run: bool,
     out: &mut impl Write,
 ) -> Result<(), Error> {
-    let report = emojis::sync(transport, &args.dir, args.dry_run)
+    let report = emojis::sync(transport, dir, dry_run)
         .await
         .map_err(|label| Error::Unavailable(format!("ctl emojis: listing failed ({label})")))?;
     write!(out, "{report}").map_err(|_| Error::Unavailable("could not write the report".into()))?;
@@ -116,14 +133,14 @@ mod tests {
             args("").unwrap(),
             Args {
                 dry_run: false,
-                dir: PathBuf::from(DEFAULT_DIR)
+                dir: None
             }
         );
         assert_eq!(
             args("--dir /pills --dry-run").unwrap(),
             Args {
                 dry_run: true,
-                dir: PathBuf::from("/pills")
+                dir: Some(PathBuf::from("/pills"))
             }
         );
         for bad in [
@@ -135,5 +152,24 @@ mod tests {
         ] {
             assert!(args(bad).is_err(), "{bad}");
         }
+    }
+
+    /// `--dir` beats `KANADE_EMOJI_DIR` (what the image sets), which beats
+    /// the checkout's `assets/emojis`.
+    #[test]
+    fn the_pill_directory_comes_from_the_flag_then_the_image_then_the_checkout() {
+        let image = BTreeMap::from([(DIR_KEY.to_owned(), "/app/assets/emojis".to_owned())]);
+        let none = BTreeMap::new();
+        assert_eq!(
+            args("").unwrap().dir(&image),
+            PathBuf::from("/app/assets/emojis")
+        );
+        assert_eq!(args("").unwrap().dir(&none), PathBuf::from(DEFAULT_DIR));
+        assert_eq!(
+            args("--dir /pills").unwrap().dir(&image),
+            PathBuf::from("/pills")
+        );
+        let blank = BTreeMap::from([(DIR_KEY.to_owned(), String::new())]);
+        assert_eq!(args("").unwrap().dir(&blank), PathBuf::from(DEFAULT_DIR));
     }
 }

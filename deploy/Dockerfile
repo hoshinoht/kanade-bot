@@ -40,11 +40,14 @@ COPY --from=web /web/apps/public/dist /app/web/apps/public/dist
 # Tracked catalog knowledge only; private portraits/artwork are mounted at runtime.
 COPY boss/bosses.yaml /app/boss/bosses.yaml
 COPY boss/knowledge /app/boss/knowledge
+# Difficulty pills for `kanade ctl emojis`.
+COPY assets/emojis /app/assets/emojis
 # Owned by the runtime user so a fresh named volume at /data inherits it.
 COPY --from=rust --chown=65532:65532 /out/data /data
 
 ENV KANADE_WEB_DIR=/app/web \
     KANADE_BOSS_DIR=/app/boss \
+    KANADE_EMOJI_DIR=/app/assets/emojis \
     KANADE_HEALTHCHECK_URL=http://127.0.0.1:8080/healthz
 USER 65532:65532
 WORKDIR /data
