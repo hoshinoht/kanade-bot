@@ -28,6 +28,7 @@ pub async fn render(
             allowed_mentions: mentions::for_intent(intent),
             reply_to: None,
             attachments: Vec::new(),
+            components: Vec::new(),
         },
     }
 }
@@ -41,5 +42,6 @@ pub(super) fn unrendered() -> OutgoingMessage {
         allowed_mentions: mentions::none(),
         reply_to: None,
         attachments: Vec::new(),
+        components: Vec::new(),
     }
 }

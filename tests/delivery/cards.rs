@@ -1106,7 +1106,15 @@ async fn digest_header_rewrite_has_only_persona_and_seed_and_refresh_keeps_facts
     let [message] = posts.as_slice() else {
         panic!("one digest post: {:?}", created(&fake));
     };
-    assert_eq!(message.content.as_deref(), Some("🗓️ **Waku waku!**"));
+    // The redesigned digest pings nobody: it goes out as Components V2.
+    assert_eq!(
+        support::v2_digest_phrase(&message.components).as_deref(),
+        Some("Waku waku!")
+    );
+    assert_eq!(
+        (message.content.as_deref(), message.embeds.len()),
+        (None, 0)
+    );
     assert_eq!(rewriter.calls(), 1);
     let prompts = rewriter.prompts.lock().unwrap().clone();
     let (system, seed) = &prompts[0];
@@ -1157,13 +1165,13 @@ async fn digest_header_rewrite_has_only_persona_and_seed_and_refresh_keeps_facts
     let [edit] = refreshed.as_slice() else {
         panic!("one digest edit: {:?}", edits(&fake));
     };
-    assert_eq!(edit.content.as_deref(), Some("🗓️ **Waku waku!**"));
-    let embed = &edit.embeds.as_ref().expect("embed")[0];
-    assert!(
-        embed.fields[0].value.contains("· 1 in"),
-        "{:?}",
-        embed.fields[0]
+    let components = edit.components.as_deref().expect("a V2 edit");
+    assert_eq!(
+        support::v2_digest_phrase(components).as_deref(),
+        Some("Waku waku!")
     );
+    let texts = support::v2_texts(components);
+    assert!(texts[1].contains("· 1 in"), "{texts:?}");
     assert_eq!(rewriter.calls(), 1, "refresh reuses the saved phrase");
 }
 
@@ -1567,9 +1575,9 @@ async fn a_digest_posted_during_a_pregeneration_keeps_the_seed() {
     assert_eq!(
         created(&world.fake)
             .pop()
-            .and_then(|message| message.content)
+            .and_then(|message| support::v2_digest_phrase(&message.components))
             .as_deref(),
-        Some("🗓️ **Let's go!**")
+        Some("Let's go!")
     );
     rewriter.release.notify_one();
     assert_eq!(pass.await.lost, 1);
@@ -1895,7 +1903,7 @@ fn refresh_requests_coalesce_and_are_bounded() {
     );
 }
 
-fn refresher(
+pub(crate) fn refresher(
     store: &Arc<MemoryScheduleStore>,
     fake: &Arc<FakeDiscord>,
     world: &World,

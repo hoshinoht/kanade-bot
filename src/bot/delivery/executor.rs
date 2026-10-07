@@ -302,7 +302,14 @@ where
         let refused = |error| (error, false);
         match outcome {
             Outcome::Delivered(message_id) => self
-                .bind(intent, attempt, message_id, record_week, now)
+                .bind(
+                    intent,
+                    attempt,
+                    message_id,
+                    record_week,
+                    now,
+                    message.components.is_empty(),
+                )
                 .await
                 .map_err(maybe),
             Outcome::Ambiguous(_) => {
@@ -354,6 +361,8 @@ where
         }
     }
 
+    /// `seed` is false for a Components V2 post: its buttons replace the
+    /// ✅/❌ reactions.
     async fn bind(
         &self,
         intent: &NotificationIntent,
@@ -361,6 +370,7 @@ where
         message_id: MessageId,
         record_week: Option<DateTime<Utc>>,
         now: DateTime<Utc>,
+        seed: bool,
     ) -> Result<SendOutcome, JournalError> {
         let receipt = Receipt {
             channel_id: intent.channel_id.clone(),
@@ -376,10 +386,12 @@ where
             return Ok(SendOutcome::Uncertain);
         }
         // A sandbox test card's reactions would do nothing: none are seeded.
-        if matches!(
-            intent.effect,
-            EffectKind::Reminder | EffectKind::Card | EffectKind::DebugCard
-        ) && !intent.sandboxed()
+        if seed
+            && matches!(
+                intent.effect,
+                EffectKind::Reminder | EffectKind::Card | EffectKind::DebugCard
+            )
+            && !intent.sandboxed()
             && let Some(channel) = parse_id(&intent.channel_id)
         {
             // Best effort, as v4: a card without reactions still counts.

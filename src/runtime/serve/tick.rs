@@ -231,6 +231,8 @@ pub fn card_kit(
         },
         style: Some(style),
         marks,
+        // The avatar and portal are filled in by the Discord side.
+        v2: Default::default(),
     }
 }
 

@@ -369,6 +369,7 @@ where
             catalog: self.cards.catalog.as_deref(),
             style: shown.style,
             marks: &self.cards.marks,
+            v2: Some(&self.cards.v2),
         };
         let card_content = match (kind, shown.run) {
             (TestKind::Digest, _) => Some(IntentContent::Digest {
@@ -400,10 +401,7 @@ where
         if let Some(content) = card_content {
             let card = cards::build(&content, &ctx, shown.header, mentioned)
                 .ok_or_else(|| format!("no {} card", kind.as_str()))?;
-            let card = cards::Card {
-                content: format!("{TEST_PREFIX}{}", card.content),
-                ..card
-            };
+            let card = card.prefixed(TEST_PREFIX);
             let pictures = fetch_art(self.cards.art.as_ref(), &card, true).await;
             return Ok(card.message(mentioned, &pictures));
         }
@@ -431,6 +429,7 @@ where
             allowed_mentions: mentions::allow_users(mentioned),
             reply_to: None,
             attachments: Vec::new(),
+            components: Vec::new(),
         })
     }
 
@@ -481,6 +480,7 @@ where
             allowed_mentions: mentions::none(),
             reply_to: None,
             attachments: Vec::new(),
+            components: Vec::new(),
         };
         Ok(
             if self

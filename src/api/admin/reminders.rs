@@ -75,6 +75,8 @@ async fn preview(
         catalog: Some(&state.catalog),
         style: settings.notifications.message_style,
         marks: &state.marks,
+        // The preview keeps the embed rendering of a V2 digest.
+        v2: None,
     };
     // Whether Discord's copy is frozen: refresh edits a posted card while any
     // of its runs is still ahead (`refresh.rs`); otherwise the reminder's run.

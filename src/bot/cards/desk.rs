@@ -4,15 +4,20 @@
 //! stored details and its proposals' states, so it can be refreshed after a
 //! restart; allowed mentions are empty (names only). The message style is
 //! read per render from the card kit: classic is v4's card, redesigned is
-//! `styled.rs`.
+//! `styled.rs`, posted as its Components V2 layout (`v2.rs`, Apply/Reject
+//! buttons instead of seeded ✅/❌; the embed when the layout does not fit).
+//! A card keeps the format it was posted in: a V2 card is re-rendered as V2
+//! whatever the style (Discord cannot take the flag off), a legacy one as
+//! the style's embed card (it keeps its reactions).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use chrono::{DateTime, Timelike, Utc};
 use chrono_tz::Tz;
-use twilight_model::channel::message::Embed;
+use serde_json::json;
 use twilight_model::channel::message::embed::{EmbedField, EmbedFooter};
+use twilight_model::channel::message::{Component, Embed};
 
 use super::format::{
     Audience, CardView, SUPERSEDED_NOTICE, applied_notice, proposal_card, rejected_notice,
@@ -20,14 +25,19 @@ use super::format::{
 };
 use super::react::OUT_OF_DATE_NOTICE;
 use super::styled::{CardState, Closure, Look, StyledCard, styled_card};
+use super::v2::card_components;
 use crate::api::state::DeclineRetraction;
 use crate::bot::delivery::cards::CardKit;
+use crate::bot::delivery::cards::redesign::learn_after_refusal;
 use crate::bot::delivery::{
     AdminAlert, AlertSink, AlertThrottle, Executor, FixedClock, SendFailure, SendOutcome, StoreRef,
+    edit_lock,
 };
-use crate::bot::ids::parse_id;
+use crate::bot::ids::{id_text, parse_id};
 use crate::bot::mentions;
-use crate::bot::transport::{DiscordTransport, MessageEdit, OutgoingMessage};
+use crate::bot::transport::{
+    ChannelId, DiscordTransport, MessageEdit, MessageId, Outcome, OutgoingMessage, RejectionKind,
+};
 use crate::chat::nudge::render as render_tip;
 use crate::domain::drafts::{DraftStatus, ProposalStore, SUPERSEDED};
 use crate::domain::history::Actor;
@@ -45,6 +55,7 @@ use crate::domain::scheduler::{
 };
 use crate::domain::settings::MessageStyle;
 use crate::extract::pipeline::{CardEntry, PostResult, Redirected};
+use crate::runtime::logging;
 
 /// The reacting member's standing, from the gateway (roles, Administrator,
 /// guild owner) and the roster.
@@ -84,8 +95,9 @@ pub struct CardDesk<S, T, I, A> {
     pub(super) decline_retraction: Option<DeclineRetraction>,
     throttle: AlertThrottle,
     pub(super) settings: CardSettings,
-    /// The live message style, the catalog and the difficulty marks.
-    cards: CardKit,
+    /// The live message style, the catalog, the difficulty marks and which
+    /// posted cards are V2.
+    pub(super) cards: CardKit,
     /// Rebuilt from HTTP on each fresh session; retained across other refreshes.
     pub(super) replay_conflicts: Mutex<BTreeSet<String>>,
 }
@@ -242,11 +254,53 @@ impl Decisions {
     }
 }
 
-/// A card ready to post or edit.
+/// A card ready to post or edit: `components` set means its Components V2
+/// layout is sent instead of the content and embed.
 struct Rendered {
     content: String,
     embed: Embed,
     mention_users: Vec<String>,
+    components: Vec<Component>,
+}
+
+impl Rendered {
+    fn message(self) -> OutgoingMessage {
+        if !self.components.is_empty() {
+            return OutgoingMessage::v2(
+                self.components,
+                mentions::allow_users(&self.mention_users),
+            );
+        }
+        OutgoingMessage {
+            content: Some(self.content),
+            embeds: vec![self.embed],
+            allowed_mentions: mentions::allow_users(&self.mention_users),
+            reply_to: None,
+            attachments: Vec::new(),
+            components: Vec::new(),
+        }
+    }
+
+    fn edit(self) -> MessageEdit {
+        if !self.components.is_empty() {
+            return MessageEdit::v2(self.components, mentions::none());
+        }
+        MessageEdit {
+            content: Some(self.content),
+            embeds: Some(vec![self.embed]),
+            allowed_mentions: mentions::none(),
+            components: None,
+        }
+    }
+}
+
+/// Which layout a render is for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Layout {
+    /// The live style's embed card (classic or redesigned).
+    Legacy,
+    /// The redesigned card as Components V2, whatever the live style.
+    V2,
 }
 
 impl<S, T, I, A> CardDesk<S, T, I, A>
@@ -416,12 +470,14 @@ where
         }
     }
 
-    /// The card for these proposals against the runs as they stand now, in
-    /// the live message style.
+    /// The card for these proposals against the runs as they stand now: the
+    /// live style's embed card, or the V2 layout (`None` components when it
+    /// does not fit).
     async fn render(
         &self,
         cards: &[StoredCard],
         decisions: &Decisions,
+        layout: Layout,
     ) -> Result<Rendered, StoreError> {
         let mut runs: Vec<Run> = Vec::new();
         for card in cards {
@@ -445,41 +501,45 @@ where
                 Some(low.map_or(value, |low| low.min(value)))
             });
         let who = self.audience(cards, &runs);
-        Ok(match self.cards.style() {
-            MessageStyle::Classic => {
-                let view = proposal_card(
-                    &details,
-                    &by_id,
-                    self.settings.zone,
-                    Some(&waiting),
-                    confidence,
-                    Some(&who),
-                );
-                Rendered {
-                    content: with_notices(&view.content, &decisions.notices),
-                    embed: embed(&view),
-                    mention_users: view.mention_users,
-                }
+        if layout == Layout::Legacy && self.cards.style() == MessageStyle::Classic {
+            let view = proposal_card(
+                &details,
+                &by_id,
+                self.settings.zone,
+                Some(&waiting),
+                confidence,
+                Some(&who),
+            );
+            return Ok(Rendered {
+                content: with_notices(&view.content, &decisions.notices),
+                embed: embed(&view),
+                mention_users: view.mention_users,
+                components: Vec::new(),
+            });
+        }
+        let look = Look {
+            zone: self.settings.zone,
+            catalog: self.cards.catalog.as_deref(),
+            marks: &self.cards.marks,
+            who: Some(&who),
+        };
+        let state = CardState {
+            closures: &decisions.closures,
+            open: decisions.open,
+            notes: &decisions.notes,
+        };
+        let card = styled_card(&details, &by_id, look, Some(&waiting), confidence, state);
+        let components = match (layout, cards.first()) {
+            (Layout::V2, Some(first)) => {
+                card_components(&card, &first.proposal_id).unwrap_or_default()
             }
-            MessageStyle::Redesigned => {
-                let look = Look {
-                    zone: self.settings.zone,
-                    catalog: self.cards.catalog.as_deref(),
-                    marks: &self.cards.marks,
-                    who: Some(&who),
-                };
-                let state = CardState {
-                    closures: &decisions.closures,
-                    open: decisions.open,
-                    notes: &decisions.notes,
-                };
-                let card = styled_card(&details, &by_id, look, Some(&waiting), confidence, state);
-                Rendered {
-                    embed: styled_embed(&card),
-                    content: card.content,
-                    mention_users: card.mention_users,
-                }
-            }
+            _ => Vec::new(),
+        };
+        Ok(Rendered {
+            embed: styled_embed(&card),
+            content: card.content.clone(),
+            mention_users: card.mention_users.clone(),
+            components,
         })
     }
 
@@ -532,16 +592,18 @@ where
         cards: &[StoredCard],
         now: DateTime<Utc>,
     ) -> PostResult {
-        let Ok(card) = self.render(cards, &Decisions::fresh()).await else {
+        // A redesigned card goes out as V2 when it fits; otherwise (and in
+        // the classic style) as the embed card with seeded reactions.
+        let layout = match self.cards.style() {
+            MessageStyle::Classic => Layout::Legacy,
+            MessageStyle::Redesigned => Layout::V2,
+        };
+        let Ok(card) = self.render(cards, &Decisions::fresh(), layout).await else {
             return PostResult::NotPosted;
         };
-        let message = OutgoingMessage {
-            content: Some(card.content),
-            embeds: vec![card.embed],
-            allowed_mentions: mentions::allow_users(&card.mention_users),
-            reply_to: None,
-            attachments: Vec::new(),
-        };
+        let v2 = !card.components.is_empty();
+        let mention_users = card.mention_users.clone();
+        let message = card.message();
         let intent = NotificationIntent {
             effect: EffectKind::Card,
             effect_context: Vec::new(),
@@ -550,13 +612,17 @@ where
                 .iter()
                 .map(|card| DeliveryTarget::Card(card.proposal_id.clone()))
                 .collect(),
-            mentions: card.mention_users,
+            mentions: mention_users,
             content: IntentContent::ProposalCard {
                 proposal_ids: cards.iter().map(|card| card.proposal_id.clone()).collect(),
             },
             warnings: Vec::new(),
         };
-        posted(self.execute(intent, &message, now).await)
+        let outcome = self.execute(intent, &message, now).await;
+        if let Some(Ok(SendOutcome::Bound(id))) = &outcome {
+            self.cards.v2.formats.record(&id_text(*id), v2);
+        }
+        posted(outcome)
     }
 
     /// Save the new proposals' card details and post one card for them (after
@@ -709,18 +775,63 @@ where
         for line in extra {
             decisions.extra(line);
         }
-        let Ok(card) = self.render(&cards, &decisions).await else {
-            return false;
+        let lock = edit_lock(message_id);
+        let _held = lock.lock().await;
+        let formats = &self.cards.v2.formats;
+        let layout = if formats.is_v2(message_id) {
+            Layout::V2
+        } else {
+            Layout::Legacy
         };
-        let edit = MessageEdit {
-            content: Some(card.content),
-            embeds: Some(vec![card.embed]),
-            allowed_mentions: mentions::none(),
+        let outcome = match self.render(&cards, &decisions, layout).await {
+            Ok(card) => self.edit_card(channel, message, layout, card).await,
+            Err(_) => return false,
         };
-        self.transport
-            .edit_message(channel, message, &edit)
+        if outcome.is_delivered() {
+            return true;
+        }
+        // A V2 card this process has not seen refuses the legacy edit.
+        if layout == Layout::Legacy
+            && learn_after_refusal(
+                formats,
+                &*self.transport,
+                &first.channel_id,
+                message_id,
+                &outcome,
+            )
             .await
-            .is_delivered()
+            && let Ok(card) = self.render(&cards, &decisions, Layout::V2).await
+        {
+            return self
+                .edit_card(channel, message, Layout::V2, card)
+                .await
+                .is_delivered();
+        }
+        false
+    }
+
+    /// Send one re-render; a V2 card whose layout no longer fits is left
+    /// as posted (refused unsent, noted once).
+    async fn edit_card(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+        layout: Layout,
+        card: Rendered,
+    ) -> Outcome<()> {
+        if layout == Layout::V2 && card.components.is_empty() {
+            if self.cards.v2.formats.first_note(&id_text(message)) {
+                logging::event(
+                    "WARN",
+                    "proposal_card_v2_over_budget",
+                    json!({"message_id": id_text(message), "left": "as posted"}),
+                );
+            }
+            return Outcome::DefinitelyRejected(RejectionKind::Invalid);
+        }
+        self.transport
+            .edit_message(channel, message, &card.edit())
+            .await
     }
 
     /// A journalled plain message with no mentions (a self-service link, an
@@ -733,6 +844,7 @@ where
             allowed_mentions: mentions::none(),
             reply_to: None,
             attachments: Vec::new(),
+            components: Vec::new(),
         };
         let intent = NotificationIntent {
             effect: EffectKind::Notice(kind.to_owned()),

@@ -125,6 +125,10 @@ impl DiscordTransport for LateTransport {
         delegate!(self, message_presence(channel, message))
     }
 
+    async fn message_flags(&self, channel: ChannelId, message: MessageId) -> Outcome<MessageFlags> {
+        delegate!(self, message_flags(channel, message))
+    }
+
     async fn respond(&self, interaction: &InteractionRef, reply: &InteractionReply) -> Outcome<()> {
         delegate!(self, respond(interaction, reply))
     }
@@ -139,6 +143,10 @@ impl DiscordTransport for LateTransport {
 
     async fn defer(&self, interaction: &InteractionRef, ephemeral: bool) -> Outcome<()> {
         delegate!(self, defer(interaction, ephemeral))
+    }
+
+    async fn defer_update(&self, interaction: &InteractionRef) -> Outcome<()> {
+        delegate!(self, defer_update(interaction))
     }
 
     async fn followup(

@@ -1,16 +1,19 @@
 //! The one sequential reaction worker: a ✅/❌ on a proposal card goes to the
 //! [`CardDesk`]; on any other message it is an RSVP through the card index.
-//! Sequential so a member's add and remove are applied in order.
+//! Sequential so a member's add and remove are applied in order. Apply /
+//! Reject presses on V2 proposal cards ([`PressJob`]) are answered here
+//! too, in the same order as reactions and with the same follow-ups.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use serde_json::json;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::api::auth::Clock;
 use crate::api::state::DeclineRetraction;
-use crate::bot::cards::{CardDesk, CardReaction, ReplayLive, ReplayReport};
+use crate::bot::cards::{CardDesk, CardPress, CardReaction, Pressed, ReplayLive, ReplayReport};
+use crate::bot::commands::CardPresses;
 use crate::bot::delivery::AlertSink;
 use crate::bot::events::{CardIndex, ReactionRouter, ReactionSink, RsvpReaction};
 use crate::bot::gateway::ConnectionStatus;
@@ -33,6 +36,26 @@ pub enum Reacted {
     /// RSVP results, one per run on the card.
     Rsvp(usize),
     Failed,
+}
+
+/// One Apply/Reject press for the worker, and where its result goes.
+#[derive(Debug)]
+pub struct PressJob {
+    pub press: CardPress,
+    pub done: oneshot::Sender<Pressed>,
+}
+
+/// The dispatcher's way into the worker's press queue: `None` once the
+/// worker is gone.
+pub fn press_port(jobs: mpsc::UnboundedSender<PressJob>) -> CardPresses {
+    Arc::new(move |press| {
+        let jobs = jobs.clone();
+        Box::pin(async move {
+            let (done, result) = oneshot::channel();
+            jobs.send(PressJob { press, done }).ok()?;
+            result.await.ok()
+        })
+    })
 }
 
 pub struct Reactions<S, T, I, A, X, K> {
@@ -78,29 +101,13 @@ where
             )
             .await;
         if card != CardReaction::NotACard {
-            if let CardReaction::Rejected { proposal_ids } = &card
-                && let (Some(follow_up), Some(facts)) = (
-                    &self.follow_up,
-                    self.desk.rejection_follow_up(proposal_ids).await,
+            if let CardReaction::Rejected { proposal_ids } = &card {
+                self.rejected(
+                    &id_text(reaction.message_id),
+                    &id_text(reaction.user_id),
+                    proposal_ids,
                 )
-            {
-                follow_up
-                    .rejected(FollowUpRequest {
-                        card_message_id: id_text(reaction.message_id),
-                        channel_id: facts.channel_id,
-                        reactor_id: id_text(reaction.user_id),
-                        source_ids: facts.source_ids,
-                        cards: facts
-                            .cards
-                            .into_iter()
-                            .map(|card| FollowUpCard {
-                                summary: card.summary,
-                                bosses: card.bosses,
-                                participants: card.participants,
-                            })
-                            .collect(),
-                    })
-                    .await;
+                .await;
             }
             return Reacted::Card(card);
         }
@@ -129,6 +136,43 @@ where
                 logging::event("WARN", "rsvp_failed", json!({"kind": kind}));
                 Reacted::Failed
             }
+        }
+    }
+
+    /// An Apply/Reject press, answered as ✅/❌ by the presser would be.
+    pub async fn press(&mut self, press: &CardPress) -> Pressed {
+        let pressed = self.desk.on_press(press).await;
+        if let Pressed::Answered(CardReaction::Rejected { proposal_ids }) = &pressed {
+            self.rejected(&press.message_id, &press.user_id, proposal_ids)
+                .await;
+        }
+        pressed
+    }
+
+    /// A successful ❌ may ask an all-chat card's author what they want
+    /// instead (the chat driver's scope checks decide).
+    async fn rejected(&mut self, message_id: &str, user_id: &str, proposal_ids: &[String]) {
+        if let (Some(follow_up), Some(facts)) = (
+            &self.follow_up,
+            self.desk.rejection_follow_up(proposal_ids).await,
+        ) {
+            follow_up
+                .rejected(FollowUpRequest {
+                    card_message_id: message_id.to_owned(),
+                    channel_id: facts.channel_id,
+                    reactor_id: user_id.to_owned(),
+                    source_ids: facts.source_ids,
+                    cards: facts
+                        .cards
+                        .into_iter()
+                        .map(|card| FollowUpCard {
+                            summary: card.summary,
+                            bosses: card.bosses,
+                            participants: card.participants,
+                        })
+                        .collect(),
+                })
+                .await;
         }
     }
 
@@ -163,9 +207,12 @@ where
 
     /// Replay and live events share one worker, so neither two passes nor a
     /// queued gateway decision can race. Watch keeps only the latest READY.
+    /// Presses wait for a replay pass like reactions do; once stopping,
+    /// queued presses are dropped (their interaction was acknowledged).
     pub(crate) async fn run_with_replay(
         mut self,
         mut reactions: mpsc::UnboundedReceiver<RsvpReaction>,
+        mut presses: mpsc::UnboundedReceiver<PressJob>,
         connection: ConnectionStatus,
         mut stop: watch::Receiver<bool>,
     ) {
@@ -194,6 +241,10 @@ where
                     reaction = reactions.recv() => {
                         let Some(reaction) = reaction else { return; };
                         self.apply(&reaction).await;
+                    }
+                    Some(job) = presses.recv() => {
+                        let pressed = self.press(&job.press).await;
+                        let _ = job.done.send(pressed);
                     }
                 }
             }

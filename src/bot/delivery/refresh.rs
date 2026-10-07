@@ -19,6 +19,7 @@ use serde_json::json;
 use tokio::sync::{Mutex as AsyncMutex, Notify, watch};
 
 use super::card_records;
+use super::cards::redesign::learn_after_refusal;
 use super::cards::{
     self, CardArt, CardContext, CardKit, DAY_OF_KIND, DigestPhraseStore, PostedCard,
     ReminderCardStore, fetch_art,
@@ -47,8 +48,10 @@ static EDIT_LOCKS: LazyLock<Mutex<HashMap<String, Weak<AsyncMutex<()>>>>> =
 
 /// One edit at a time per posted message: the refresh worker and a manual
 /// rewrite each re-read the stored line under it, so the later edit always
-/// shows the latest override and a stale render never lands after it.
-fn edit_lock(message_id: &str) -> Arc<AsyncMutex<()>> {
+/// shows the latest override and a stale render never lands after it. The
+/// proposal card desk takes it too, so a button press and a reaction never
+/// land their renders out of order.
+pub(crate) fn edit_lock(message_id: &str) -> Arc<AsyncMutex<()>> {
     let mut locks = EDIT_LOCKS.lock().unwrap_or_else(PoisonError::into_inner);
     locks.retain(|_, lock| lock.strong_count() > 0);
     if let Some(lock) = locks.get(message_id).and_then(Weak::upgrade) {
@@ -198,6 +201,14 @@ where
     /// Re-render a posted digest from current runs and its stored phrase
     /// (the latest manual override, else the original), read under the
     /// message's edit lock; whether it landed.
+    ///
+    /// A redesigned digest is sent as Components V2, which converts a live
+    /// legacy digest on the first refresh after the style flips. Discord
+    /// cannot take the flag off again: while a V2 digest is live and the
+    /// card renders as an embed (the style flipped back to classic, or the
+    /// week outgrew the V2 budget), the digest is left as posted until next
+    /// week's replaces it, noted once in the log. A V2 digest this process
+    /// has not seen yet is found out by Discord refusing the embed edit.
     pub(super) async fn edit_digest(
         &self,
         schedule: &ScheduleSnapshot,
@@ -230,11 +241,46 @@ where
         else {
             return false;
         };
+        let formats = &self.cards.v2.formats;
+        let v2 = !card.components.is_empty();
+        if !v2 && formats.is_v2(&digest.message_id) {
+            self.left_as_posted(digest);
+            return false;
+        }
         let edit = card.edit(&CardArt::default());
-        self.transport
-            .edit_message(channel, message, &edit)
+        let outcome = self.transport.edit_message(channel, message, &edit).await;
+        if outcome.is_delivered() {
+            formats.record(&digest.message_id, v2);
+            return true;
+        }
+        if !v2
+            && learn_after_refusal(
+                formats,
+                &*self.transport,
+                &digest.channel_id,
+                &digest.message_id,
+                &outcome,
+            )
             .await
-            .is_delivered()
+        {
+            self.left_as_posted(digest);
+        }
+        false
+    }
+
+    /// A live V2 digest that renders as an embed now stays as posted.
+    fn left_as_posted(&self, digest: &WeeklyDigest) {
+        if self.cards.v2.formats.first_note(&digest.message_id) {
+            logging::event(
+                "INFO",
+                "digest_v2_left_as_posted",
+                json!({
+                    "week_start": digest.week_start.timestamp(),
+                    "style": self.cards.style().as_str(),
+                    "until": "next week's digest",
+                }),
+            );
+        }
     }
 
     pub(super) fn context<'s>(&'s self, schedule: &'s ScheduleSnapshot) -> CardContext<'s> {
@@ -247,6 +293,7 @@ where
             catalog: self.cards.catalog.as_deref(),
             style: self.cards.style(),
             marks: &self.cards.marks,
+            v2: Some(&self.cards.v2),
         }
     }
 

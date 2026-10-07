@@ -51,6 +51,8 @@ fn every_default_bodied_method_is_delegated() {
             "create_flagged_message",
             "trigger_typing",
             "reaction_users",
+            "message_flags",
+            "defer_update",
             "followup",
             "autocomplete",
             "current_user",
@@ -144,6 +146,7 @@ async fn defaults_reach_discord_once_ready_and_are_refused_unsent_before() {
         allowed_mentions: mentions::none(),
         reply_to: None,
         attachments: Vec::new(),
+        components: Vec::new(),
     };
     let interaction = InteractionRef::new(Id::new(7), "synthetic-interaction".into());
     let reply = InteractionReply::public("part two");
@@ -179,6 +182,12 @@ async fn defaults_reach_discord_once_ready_and_are_refused_unsent_before() {
         .await
         .failure_label(),
     );
+    not_invalid(
+        late.message_flags(channel, Id::new(123))
+            .await
+            .failure_label(),
+    );
+    not_invalid(late.defer_update(&interaction).await.failure_label());
     not_invalid(late.followup(&interaction, &reply).await.failure_label());
     not_invalid(late.autocomplete(&interaction, &[]).await.failure_label());
     not_invalid(late.current_user().await.failure_label());
@@ -190,7 +199,7 @@ async fn defaults_reach_discord_once_ready_and_are_refused_unsent_before() {
     );
     assert_eq!(
         seen.load(Ordering::SeqCst),
-        8,
+        10,
         "every default-bodied call was sent"
     );
 }

@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use twilight_model::application::command::{Command, CommandOptionChoice};
 use twilight_model::channel::message::ReactionType;
-use twilight_model::channel::message::{AllowedMentions, Embed, MessageFlags};
+use twilight_model::channel::message::{AllowedMentions, Component, Embed, MessageFlags};
 use twilight_model::channel::{Channel, Message};
 use twilight_model::guild::Member;
 use twilight_model::id::{
@@ -40,11 +40,33 @@ pub const MAX_REACTIONS_PAGE: u16 = 100;
 
 /// The only flags Discord accepts on a created message; any other bit is
 /// refused unsent (`RejectionKind::Invalid`).
-pub const CREATE_FLAGS: MessageFlags =
-    MessageFlags::SUPPRESS_EMBEDS.union(MessageFlags::SUPPRESS_NOTIFICATIONS);
+pub const CREATE_FLAGS: MessageFlags = MessageFlags::SUPPRESS_EMBEDS
+    .union(MessageFlags::SUPPRESS_NOTIFICATIONS)
+    .union(MessageFlags::IS_COMPONENTS_V2);
 
 /// A post that notifies nobody (Discord's `@silent`).
 pub const SILENT: MessageFlags = MessageFlags::SUPPRESS_NOTIFICATIONS;
+
+/// A Components V2 message (`1 << 15`). Transports set it for every message
+/// that carries components (only V2 layouts are sent; legacy component rows
+/// never are) and refuse it unsent without them. Discord can add it on an
+/// edit but never remove it.
+pub const COMPONENTS_V2: MessageFlags = MessageFlags::IS_COMPONENTS_V2;
+
+/// Whether a body is sendable as far as Components V2 goes: one with
+/// components has no content and no embeds (Discord answers 400 otherwise),
+/// and an explicit V2 flag needs components.
+pub fn v2_body_valid(
+    content: Option<&str>,
+    embeds: &[Embed],
+    components: &[Component],
+    flags: MessageFlags,
+) -> bool {
+    if components.is_empty() {
+        return !flags.contains(COMPONENTS_V2);
+    }
+    content.is_none_or(str::is_empty) && embeds.is_empty()
+}
 
 /// A new message. `allowed_mentions` is required so no post can fall back to
 /// Discord's parse-everything default; build it with [`crate::bot::mentions`].
@@ -60,6 +82,23 @@ pub struct OutgoingMessage {
     /// Files posted with the message (multipart); an embed refers to one as
     /// `attachment://<filename>`.
     pub attachments: Vec<Upload>,
+    /// A Components V2 layout; non-empty makes the post V2 (see
+    /// [`COMPONENTS_V2`]), so `content` and `embeds` must then be empty.
+    pub components: Vec<Component>,
+}
+
+impl OutgoingMessage {
+    /// A Components V2 post: the layout alone, no content or embeds.
+    pub fn v2(components: Vec<Component>, allowed_mentions: AllowedMentions) -> Self {
+        Self {
+            content: None,
+            embeds: Vec::new(),
+            allowed_mentions,
+            reply_to: None,
+            attachments: Vec::new(),
+            components,
+        }
+    }
 }
 
 /// One uploaded file. Filenames are ASCII alphanumerics, `.`, `-` and `_`
@@ -91,11 +130,49 @@ pub enum HistoryPage {
 /// An edit; `None` fields are left unchanged. Attachments are never sent
 /// with an edit, so the message keeps the files it was posted with and a
 /// re-rendered embed's `attachment://` references keep resolving.
+///
+/// `components: Some(non-empty)` makes it a Components V2 edit: the V2 flag
+/// is set and the content and embeds are cleared (`null` and `[]`), which
+/// also converts a legacy message. `content` and `embeds` must then be
+/// `None` or empty. A legacy edit of a V2 message is refused by Discord.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MessageEdit {
     pub content: Option<String>,
     pub embeds: Option<Vec<Embed>>,
     pub allowed_mentions: AllowedMentions,
+    pub components: Option<Vec<Component>>,
+}
+
+impl MessageEdit {
+    /// A Components V2 edit (see the type's docs).
+    pub fn v2(components: Vec<Component>, allowed_mentions: AllowedMentions) -> Self {
+        Self {
+            content: None,
+            embeds: None,
+            allowed_mentions,
+            components: Some(components),
+        }
+    }
+
+    /// The V2 layout this edit sends, if it is a V2 edit.
+    pub fn v2_components(&self) -> Option<&[Component]> {
+        self.components
+            .as_deref()
+            .filter(|components| !components.is_empty())
+    }
+
+    /// See [`v2_body_valid`]; `components: Some([])` is refused too.
+    pub fn valid(&self) -> bool {
+        match &self.components {
+            None => true,
+            Some(components) => v2_body_valid(
+                self.content.as_deref(),
+                self.embeds.as_deref().unwrap_or_default(),
+                components,
+                COMPONENTS_V2,
+            ),
+        }
+    }
 }
 
 /// Whether a message still exists.
@@ -139,6 +216,9 @@ pub struct InteractionReply {
     pub ephemeral: bool,
     /// Mentions inside embeds never notify anyone.
     pub embeds: Vec<Embed>,
+    /// A Components V2 layout; non-empty makes the reply V2, so `content`
+    /// and `embeds` must then be empty.
+    pub components: Vec<Component>,
 }
 
 impl InteractionReply {
@@ -147,6 +227,7 @@ impl InteractionReply {
             content: content.into(),
             ephemeral: true,
             embeds: Vec::new(),
+            components: Vec::new(),
         }
     }
 
@@ -162,6 +243,37 @@ impl InteractionReply {
     pub fn with_embed(mut self, embed: Embed) -> Self {
         self.embeds.push(embed);
         self
+    }
+
+    /// A Components V2 reply with this visibility.
+    pub fn v2(components: Vec<Component>, ephemeral: bool) -> Self {
+        Self {
+            components,
+            ephemeral,
+            ..Self::ephemeral("")
+        }
+    }
+
+    /// The message flags this reply is sent with.
+    pub fn flags(&self) -> MessageFlags {
+        let mut flags = MessageFlags::empty();
+        if self.ephemeral {
+            flags |= MessageFlags::EPHEMERAL;
+        }
+        if !self.components.is_empty() {
+            flags |= COMPONENTS_V2;
+        }
+        flags
+    }
+
+    /// See [`v2_body_valid`].
+    pub fn valid(&self) -> bool {
+        v2_body_valid(
+            Some(&self.content),
+            &self.embeds,
+            &self.components,
+            MessageFlags::empty(),
+        )
     }
 }
 
@@ -263,6 +375,18 @@ pub trait DiscordTransport: Send + Sync {
         message: MessageId,
     ) -> impl Future<Output = Outcome<Presence>> + Send;
 
+    /// A posted message's flags (`GET` the message), to tell a Components V2
+    /// post from a legacy one. Test doubles that never ask may keep the
+    /// default.
+    fn message_flags(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+    ) -> impl Future<Output = Outcome<MessageFlags>> + Send {
+        let _ = (channel, message);
+        async { Outcome::DefinitelyRejected(RejectionKind::Invalid) }
+    }
+
     /// The initial interaction response; must land within Discord's 3 s.
     fn respond(
         &self,
@@ -277,6 +401,17 @@ pub trait DiscordTransport: Send + Sync {
         interaction: &InteractionRef,
         ephemeral: bool,
     ) -> impl Future<Output = Outcome<()>> + Send;
+
+    /// Acknowledge a button press without a new message (response type 6,
+    /// deferred update); answer later with [`Self::followup`]. Test doubles
+    /// that never see a button may keep the default.
+    fn defer_update(
+        &self,
+        interaction: &InteractionRef,
+    ) -> impl Future<Output = Outcome<()>> + Send {
+        let _ = interaction;
+        async { Outcome::DefinitelyRejected(RejectionKind::Invalid) }
+    }
 
     /// Fill in a deferred response (edits the original response).
     fn complete_deferred(

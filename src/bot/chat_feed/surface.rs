@@ -76,6 +76,7 @@ impl<T: DiscordTransport + 'static> Surface for DiscordSurface<T> {
             allowed_mentions: mentions::none(),
             reply_to: post.reply_to.and_then(parse_id),
             attachments: Vec::new(),
+            components: Vec::new(),
         };
         let outcome = if post.silent {
             self.0
@@ -95,6 +96,7 @@ impl<T: DiscordTransport + 'static> Surface for DiscordSurface<T> {
             content: Some(text.to_owned()),
             embeds: None,
             allowed_mentions: mentions::none(),
+            components: None,
         };
         let outcome = self.0.edit_message(channel, message, &edit).await;
         effect("chat_edit_failed", outcome, |()| ())

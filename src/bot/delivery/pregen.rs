@@ -430,6 +430,7 @@ where
                     catalog: self.cards.catalog.as_deref(),
                     style: self.cards.style(),
                     marks: &self.cards.marks,
+                    v2: None,
                 };
                 let first = card_runs(&ctx, run_ids).first()?.datetime;
                 Header::DayOf {

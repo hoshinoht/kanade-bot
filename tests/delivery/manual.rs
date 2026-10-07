@@ -12,7 +12,7 @@ use kanade::bot::delivery::cards::{
     CardKit, HeaderHistory, HeaderOverrideStore, HeadingRewrite, ReminderCardStore,
 };
 use kanade::bot::delivery::{CardRefresh, ManualReport, ManualRequest, ManualRewrite, ManualStart};
-use kanade::bot::transport::{FakeDiscord, Op};
+use kanade::bot::transport::{FakeDiscord, MessageEdit, Op};
 use kanade::chat::nudge::{
     NudgeRewriter, RewriteFailure, RewritePrompt, SharedRewriter, StoreRewriteSink,
 };
@@ -177,6 +177,12 @@ fn request() -> ManualRequest {
     }
 }
 
+/// A V2 digest edit's phrase (the line under its title); `None` for any
+/// other edit.
+fn digest_phrase(edit: &MessageEdit) -> Option<String> {
+    support::v2_digest_phrase(edit.components.as_deref()?)
+}
+
 /// Start the worker, trigger one run and wait for its report.
 async fn run_once(
     manual: &Arc<ManualRewrite<MemoryScheduleStore, FakeDiscord>>,
@@ -213,13 +219,12 @@ async fn a_run_edits_the_posted_card_and_digest_in_place_and_a_refresh_keeps_it(
         }
     );
     let heading = "📅 **Rise and shine, it's Thu 10 Sep!**";
-    let edited: Vec<String> = edits(&posted.fake)
-        .into_iter()
-        .map(|edit| edit.content.unwrap_or_default())
-        .collect();
+    let edited = edits(&posted.fake);
     assert_eq!(edited.len(), 2, "{edited:?}");
-    assert!(edited[0].starts_with(heading), "{edited:?}");
-    assert!(edited[1].starts_with("🗓️ **Waku waku!**"), "{edited:?}");
+    let card = edited[0].content.as_deref().unwrap_or_default();
+    assert!(card.starts_with(heading), "{edited:?}");
+    // The redesigned digest pings nobody: it is edited as Components V2.
+    assert_eq!(digest_phrase(&edited[1]).as_deref(), Some("Waku waku!"));
     for edit in edits(&posted.fake) {
         assert_eq!(
             serde_json::to_value(&edit.allowed_mentions).unwrap(),
@@ -263,13 +268,10 @@ async fn a_run_edits_the_posted_card_and_digest_in_place_and_a_refresh_keeps_it(
     .await;
     let refresh = posted.refresh(&rewriter);
     assert_eq!(refresh.refresh(std::slice::from_ref(&posted.star)).await, 2);
-    let latest: Vec<String> = edits(&posted.fake)
-        .into_iter()
-        .skip(2)
-        .map(|edit| edit.content.unwrap_or_default())
-        .collect();
-    assert!(latest[0].starts_with(heading), "{latest:?}");
-    assert!(latest[1].starts_with("🗓️ **Waku waku!**"), "{latest:?}");
+    let latest = edits(&posted.fake).split_off(2);
+    let card = latest[0].content.as_deref().unwrap_or_default();
+    assert!(card.starts_with(heading), "{latest:?}");
+    assert_eq!(digest_phrase(&latest[1]).as_deref(), Some("Waku waku!"));
     assert_eq!(
         rewriter.calls.load(Ordering::SeqCst),
         2,
@@ -339,23 +341,22 @@ async fn a_refresh_in_flight_never_lands_after_a_manual_edit() {
     stop.send_replace(true);
     worker.await.expect("no panic");
 
-    let edited: Vec<String> = edits(&posted.fake)
-        .into_iter()
-        .map(|edit| edit.content.unwrap_or_default())
-        .collect();
+    let edited = edits(&posted.fake);
     let last_card = edited
         .iter()
+        .filter_map(|edit| edit.content.as_deref())
         .rfind(|text| text.starts_with("📅"))
         .expect("a card edit");
     let last_digest = edited
         .iter()
-        .rfind(|text| text.starts_with("🗓️"))
+        .rev()
+        .find_map(digest_phrase)
         .expect("a digest edit");
     assert!(
         last_card.starts_with("📅 **Rise and shine, it's Thu 10 Sep!**"),
         "{edited:?}"
     );
-    assert!(last_digest.starts_with("🗓️ **Waku waku!**"), "{edited:?}");
+    assert_eq!(last_digest, "Waku waku!", "{edited:?}");
 }
 
 #[tokio::test]

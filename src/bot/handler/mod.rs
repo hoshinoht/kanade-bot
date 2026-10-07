@@ -29,7 +29,7 @@ use crate::bot::transport::{DiscordTransport, Outcome};
 use crate::domain::members::Directory;
 use crate::runtime::logging;
 
-pub use reactions::{Reacted, Reactions};
+pub use reactions::{PressJob, Reacted, Reactions, press_port};
 
 const TASK_DRAIN_GRACE: Duration = Duration::from_secs(2);
 
@@ -192,14 +192,19 @@ impl<T: DiscordTransport + 'static> Fanout<T> {
         });
     }
 
-    /// A command or autocomplete for a command registered to this guild;
-    /// global commands, other guilds and other interaction kinds are ignored.
+    /// A command or autocomplete for a command registered to this guild, or
+    /// a button press in this guild (only the bot's own messages carry
+    /// buttons; the dispatcher checks their ids); global commands, other
+    /// guilds and other interaction kinds are ignored.
     fn is_ours(&self, interaction: &Interaction) -> bool {
         interaction.guild_id == Some(self.guild)
-            && matches!(
-                &interaction.data,
-                Some(InteractionData::ApplicationCommand(data)) if data.guild_id == Some(self.guild)
-            )
+            && match &interaction.data {
+                Some(InteractionData::ApplicationCommand(data)) => {
+                    data.guild_id == Some(self.guild)
+                }
+                Some(InteractionData::MessageComponent(_)) => true,
+                _ => false,
+            }
     }
 
     fn interaction(&mut self, interaction: Box<Interaction>) {

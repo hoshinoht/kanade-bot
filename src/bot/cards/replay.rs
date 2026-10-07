@@ -10,6 +10,7 @@ use twilight_model::id::{Id, marker::UserMarker};
 use super::react::{CHANGED_SINCE_CARD, OUT_OF_DATE_NOTICE};
 use super::{CardDesk, CardReaction};
 use crate::bot::delivery::AlertSink;
+use crate::bot::delivery::cards::redesign::known_or_fetched;
 use crate::bot::events::RsvpAnswer;
 use crate::bot::ids::{id_text, parse_id};
 use crate::bot::reaction_read;
@@ -109,6 +110,11 @@ where
                 report.aborted = true;
                 break;
             }
+            // A V2 card has buttons, not reactions: nothing to replay.
+            if self.cards.v2.formats.is_v2(&message) {
+                v2_ignored(&message);
+                continue;
+            }
             report.messages += 1;
             let mut changed_note = false;
             let mut stale = false;
@@ -147,6 +153,21 @@ where
                     }
                 };
                 let (yes, no) = (answers.yes, answers.no);
+                // Without the bot's own ✅/❌ this may be a V2 card posted
+                // before a restart: read its flags once.
+                if !(answers.own_yes || answers.own_no)
+                    && known_or_fetched(
+                        &self.cards.v2.formats,
+                        &*self.transport,
+                        &cards[0].channel_id,
+                        &message,
+                    )
+                    .await
+                        == Some(true)
+                {
+                    v2_ignored(&message);
+                    continue 'messages;
+                }
                 if live_reactions.drain().await.contains(&message) {
                     live_retry(&message, retry, &mut report);
                     continue 'retry;
@@ -305,5 +326,13 @@ fn skipped(message: Option<&str>, reason: &str) {
         "WARN",
         "proposal_replay_skipped",
         json!({"message_id": message, "reason": reason}),
+    );
+}
+
+fn v2_ignored(message: &str) {
+    logging::event(
+        "INFO",
+        "proposal_replay_v2_card",
+        json!({"message_id": message}),
     );
 }

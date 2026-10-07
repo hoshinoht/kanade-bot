@@ -2,7 +2,9 @@
 //! reject every proposal on it the member may answer; anyone else is ignored
 //! in silence. Approval rules, refusal wording and follow-ups are the
 //! scheduler's (`approve_proposal`); this re-renders the cards and posts one
-//! "⚠️" notice for changes that no longer apply.
+//! "⚠️" notice for changes that no longer apply. A V2 card's Apply/Reject
+//! button ([`CardPress`]) takes exactly the same path; only its presser is
+//! told (ephemerally) when they may not answer or the button is stale.
 
 use crate::bot::delivery::{AdminAlert, AlertSink};
 use crate::bot::events::RsvpAnswer;
@@ -62,6 +64,34 @@ impl CardReaction {
             _ => Vec::new(),
         }
     }
+}
+
+/// An Apply (`Yes`) or Reject (`No`) press on a V2 proposal card.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CardPress {
+    pub message_id: String,
+    /// The proposal the button names (the first on its card).
+    pub proposal_id: String,
+    pub user_id: String,
+    pub answer: RsvpAnswer,
+}
+
+/// What a press did, for the presser's answer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Pressed {
+    /// Answered as the matching reaction would have been (`Ignored` when
+    /// every proposal on it was already closed).
+    Answered(CardReaction),
+    /// The presser may not answer any proposal on the card: nothing changed.
+    NotYours,
+    /// The button names no proposal on this message (stale or forged).
+    Inactive,
+}
+
+/// An answer and how many of its proposals refused the member outright.
+struct Answer {
+    reaction: CardReaction,
+    unauthorised: usize,
 }
 
 /// User decision 2026-09-25: a ✅ refused because the run was edited after
@@ -174,6 +204,29 @@ where
         self.answer_cards(message_id, user_id, answer, &cards).await
     }
 
+    /// A V2 card's Apply/Reject press: the same scheduler calls, refusals,
+    /// alerts and refresh as a ✅/❌ by the same member.
+    pub async fn on_press(&self, press: &CardPress) -> Pressed {
+        let Ok(cards) = self.store.cards_on_message(&press.message_id).await else {
+            return Pressed::Inactive;
+        };
+        if !cards
+            .iter()
+            .any(|card| card.proposal_id == press.proposal_id)
+        {
+            return Pressed::Inactive;
+        }
+        // Only a V2 card has buttons: refresh it as one.
+        self.cards.v2.formats.record(&press.message_id, true);
+        let answer = self
+            .answer(&press.message_id, &press.user_id, press.answer, &cards)
+            .await;
+        match answer.reaction {
+            CardReaction::Ignored if answer.unauthorised > 0 => Pressed::NotYours,
+            reaction => Pressed::Answered(reaction),
+        }
+    }
+
     /// Live and replayed answers share the same scheduler calls and refreshes;
     /// replay can select one proposal on a grouped card without deciding its siblings.
     pub(super) async fn answer_cards(
@@ -183,10 +236,23 @@ where
         answer: RsvpAnswer,
         cards: &[StoredCard],
     ) -> CardReaction {
+        self.answer(message_id, user_id, answer, cards)
+            .await
+            .reaction
+    }
+
+    async fn answer(
+        &self,
+        message_id: &str,
+        user_id: &str,
+        answer: RsvpAnswer,
+        cards: &[StoredCard],
+    ) -> Answer {
         let approver = self.authority.approver(user_id);
         let now = self.now();
         let mut service = self.service(now);
-        match answer {
+        let mut unauthorised = 0;
+        let reaction = match answer {
             RsvpAnswer::No => {
                 let mut rejected = Vec::new();
                 for card in cards {
@@ -195,6 +261,8 @@ where
                         // Member-facing refusals (e.g. an expired card) are
                         // routine on ❌; only faults reach the admins.
                         Err(error) => {
+                            unauthorised +=
+                                usize::from(matches!(error, ProposalError::Unauthorised));
                             if let Failure::Private = failure(&error) {
                                 self.alert_failure(&card.proposal_id, &error, now);
                             }
@@ -203,11 +271,12 @@ where
                 }
                 drop(service);
                 if rejected.is_empty() {
-                    return CardReaction::Ignored;
-                }
-                self.refresh(message_id).await;
-                CardReaction::Rejected {
-                    proposal_ids: rejected,
+                    CardReaction::Ignored
+                } else {
+                    self.refresh(message_id).await;
+                    CardReaction::Rejected {
+                        proposal_ids: rejected,
+                    }
                 }
             }
             RsvpAnswer::Yes => {
@@ -231,7 +300,10 @@ where
                         Err(error) => error,
                     };
                     match failure(&error) {
-                        Failure::Silent => {}
+                        Failure::Silent => {
+                            unauthorised +=
+                                usize::from(matches!(error, ProposalError::Unauthorised));
+                        }
                         Failure::Public { text, stale: out } => {
                             stale |= out;
                             if !problems.contains(&text) {
@@ -243,7 +315,10 @@ where
                 }
                 drop(service);
                 if approved.is_empty() && problems.is_empty() {
-                    return CardReaction::Ignored;
+                    return Answer {
+                        reaction: CardReaction::Ignored,
+                        unauthorised,
+                    };
                 }
                 let extra: &[&str] = if stale { &[OUT_OF_DATE_NOTICE] } else { &[] };
                 if !approved.is_empty() || stale {
@@ -265,6 +340,10 @@ where
                 }
                 CardReaction::Approved { approved, problems }
             }
+        };
+        Answer {
+            reaction,
+            unauthorised,
         }
     }
 

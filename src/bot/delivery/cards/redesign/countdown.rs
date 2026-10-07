@@ -57,5 +57,6 @@ pub fn countdown_card(
             lead: run.bosses.first().cloned(),
             ..CardEmbed::default()
         }],
+        components: Vec::new(),
     }
 }

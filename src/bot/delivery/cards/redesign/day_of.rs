@@ -46,6 +46,7 @@ pub fn day_of_card(
     Card {
         content: format!("📅 **{heading}**\n{}", subtext(&line)),
         embeds: fit(ctx, &runs, full),
+        components: Vec::new(),
     }
 }
 

@@ -1,7 +1,8 @@
 //! Command registry and dispatch: gate first, then run, with every refusal
 //! or failure answered ephemerally and without mentions. Autocomplete goes
 //! through the same gate (a refusal lists nothing), and a redelivered
-//! interaction id is answered only once.
+//! interaction id is answered only once. Button presses on the bot's V2
+//! messages (`components.rs`) share the scope, gates and dedupe.
 
 use std::collections::VecDeque;
 use std::fmt;
@@ -14,15 +15,19 @@ use tokio::task::JoinHandle;
 use twilight_model::application::command::{
     Command, CommandOptionChoice, CommandOptionChoiceValue,
 };
-use twilight_model::application::interaction::Interaction;
+use twilight_model::application::interaction::{Interaction, InteractionType};
 use twilight_model::id::{
     Id,
     marker::{GuildMarker, InteractionMarker, UserMarker},
 };
 
 use super::access::{AccessPolicy, Denial, Gate};
+use super::components::{CardPresses, INACTIVE, Press, press_follow_up};
 use super::invocation::Invocation;
 use super::split::split_reply;
+use crate::bot::cards::{CardReaction, Pressed};
+use crate::bot::delivery::cards::redesign::ButtonId;
+use crate::bot::events::RsvpAnswer;
 use crate::bot::transport::{
     DiscordTransport, InteractionRef, InteractionReply, Outcome, RejectionKind,
 };
@@ -121,6 +126,9 @@ pub struct Dispatcher {
     policy: AccessPolicy,
     commands: Vec<(String, Box<dyn SlashCommand>)>,
     seen: Mutex<VecDeque<Id<InteractionMarker>>>,
+    /// Where proposal-card Apply/Reject presses go; `None` answers them as
+    /// no longer active.
+    presses: Option<CardPresses>,
 }
 
 impl fmt::Debug for Dispatcher {
@@ -135,6 +143,7 @@ impl fmt::Debug for Dispatcher {
                     .map(|(name, _)| name)
                     .collect::<Vec<_>>(),
             )
+            .field("presses", &self.presses.is_some())
             .finish()
     }
 }
@@ -145,7 +154,15 @@ impl Dispatcher {
             policy,
             commands: Vec::new(),
             seen: Mutex::new(VecDeque::new()),
+            presses: None,
         }
+    }
+
+    /// Answer proposal-card button presses through `presses`.
+    #[must_use]
+    pub fn with_card_presses(mut self, presses: CardPresses) -> Self {
+        self.presses = Some(presses);
+        self
     }
 
     pub fn policy(&self) -> &AccessPolicy {
@@ -268,8 +285,9 @@ impl Dispatcher {
         }
     }
 
-    /// Answer a guild command interaction through `transport`. Returns `None`
-    /// for interactions that are not guild slash commands for `guild`.
+    /// Answer a guild command interaction (or a press of one of the bot's
+    /// buttons) through `transport`. Returns `None` for interactions that
+    /// are neither, or not for `guild`.
     ///
     /// Refusals answer at once. A deferring command is acknowledged first and
     /// runs only if the acknowledgement was delivered; the returned outcome
@@ -281,6 +299,9 @@ impl Dispatcher {
         interaction: &Interaction,
         owner_id: Option<Id<UserMarker>>,
     ) -> Handled {
+        if interaction.kind == InteractionType::MessageComponent {
+            return self.press(transport, guild, interaction, owner_id).await;
+        }
         let mut invocation = Invocation::from_interaction(interaction)
             .filter(|invocation| invocation.guild_id == guild)?;
         invocation.owner_id = owner_id;
@@ -317,6 +338,108 @@ impl Dispatcher {
             disposition,
             deliver(transport, target, &reply, Some(ephemeral)).await,
         ))
+    }
+
+    /// A press of one of the bot's buttons; see `components.rs`.
+    async fn press<T: DiscordTransport>(
+        &self,
+        transport: &T,
+        guild: Id<GuildMarker>,
+        interaction: &Interaction,
+        owner_id: Option<Id<UserMarker>>,
+    ) -> Handled {
+        let press = Press::from_interaction(interaction).filter(|press| press.guild_id == guild)?;
+        if !self.first_delivery(interaction.id) {
+            return Some((
+                Disposition::Duplicate,
+                Outcome::DefinitelyRejected(RejectionKind::NotSent),
+            ));
+        }
+        let target = &press.interaction;
+        let inactive = || InteractionReply::ephemeral(INACTIVE);
+        let (proposal_id, answer) = match ButtonId::parse(&press.custom_id) {
+            None => {
+                return Some((
+                    Disposition::Unknown,
+                    transport.respond(target, &inactive()).await,
+                ));
+            }
+            Some(ButtonId::DigestMine) => {
+                return Some(self.my_runs(transport, &press, owner_id).await);
+            }
+            Some(ButtonId::CardApply(id)) => (id, RsvpAnswer::Yes),
+            Some(ButtonId::CardReject(id)) => (id, RsvpAnswer::No),
+        };
+        let (Some(presses), Some(card)) = (&self.presses, press.card(&proposal_id, answer)) else {
+            return Some((
+                Disposition::Unknown,
+                transport.respond(target, &inactive()).await,
+            ));
+        };
+        // Within Discord's 3 s; the answer may wait on the reaction worker.
+        let acknowledged = transport.defer_update(target).await;
+        if !acknowledged.is_delivered() {
+            return Some((Disposition::NotAcknowledged, acknowledged));
+        }
+        let (disposition, follow_up) = match presses(card).await {
+            None => (
+                Disposition::Failed("card press worker unavailable".into()),
+                Some(COMPLETION_FALLBACK),
+            ),
+            Some(pressed) => {
+                let follow_up = press_follow_up(&pressed);
+                let disposition = match pressed {
+                    Pressed::NotYours => Disposition::UserError,
+                    Pressed::Inactive | Pressed::Answered(CardReaction::Ignored) => {
+                        Disposition::Unknown
+                    }
+                    Pressed::Answered(_) => Disposition::Ran,
+                };
+                (disposition, follow_up)
+            }
+        };
+        let outcome = match follow_up {
+            Some(text) => {
+                transport
+                    .followup(target, &InteractionReply::ephemeral(text))
+                    .await
+            }
+            None => acknowledged,
+        };
+        Some((disposition, outcome))
+    }
+
+    /// "My runs": `/schedule scope:mine` for the presser through the
+    /// command's own gate, answered ephemerally.
+    async fn my_runs<T: DiscordTransport>(
+        &self,
+        transport: &T,
+        press: &Press,
+        owner_id: Option<Id<UserMarker>>,
+    ) -> (Disposition, Outcome<()>) {
+        let mut invocation = press.schedule_mine();
+        invocation.owner_id = owner_id;
+        let target = &press.interaction;
+        let command = match self.authorise(&invocation, owner_id) {
+            Ok(command) => command,
+            Err((reply, disposition)) => {
+                return (disposition, deliver(transport, target, &reply, None).await);
+            }
+        };
+        if command.defer().is_some() {
+            let acknowledged = transport.defer(target, true).await;
+            if !acknowledged.is_delivered() {
+                return (Disposition::NotAcknowledged, acknowledged);
+            }
+            let (reply, disposition) = Self::execute(command, &invocation).await;
+            return (
+                disposition,
+                deliver(transport, target, &reply, Some(true)).await,
+            );
+        }
+        let (mut reply, disposition) = Self::execute(command, &invocation).await;
+        reply.ephemeral = true;
+        (disposition, deliver(transport, target, &reply, None).await)
     }
 }
 

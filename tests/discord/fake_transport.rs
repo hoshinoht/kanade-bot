@@ -5,10 +5,12 @@ use std::sync::Arc;
 use twilight_model::channel::message::MessageFlags;
 use twilight_model::id::Id;
 
+use kanade::bot::delivery::cards::redesign::{container, text};
 use kanade::bot::mentions;
 use kanade::bot::transport::{
-    AmbiguousKind, Call, DiscordTransport, FakeDiscord, HistoryPage, MessageEdit, Op, Outcome,
-    OutgoingMessage, Presence, RejectionKind, SILENT, Step,
+    AmbiguousKind, COMPONENTS_V2, Call, DiscordTransport, FakeDiscord, HistoryPage, InteractionRef,
+    InteractionReply, MessageEdit, Op, Outcome, OutgoingMessage, Presence, RejectionKind, SILENT,
+    Step,
 };
 
 use super::support::{
@@ -23,6 +25,7 @@ fn message(text: &str) -> OutgoingMessage {
         allowed_mentions: mentions::allow_users(&["1001"]),
         reply_to: None,
         attachments: Vec::new(),
+        components: Vec::new(),
     }
 }
 
@@ -97,6 +100,7 @@ async fn edits_deletes_and_presence_follow_remote_state() {
         content: Some("b".into()),
         embeds: None,
         allowed_mentions: mentions::none(),
+        components: None,
     };
     assert_eq!(
         fake.edit_message(channel, id, &edit).await,
@@ -126,6 +130,136 @@ async fn edits_deletes_and_presence_follow_remote_state() {
         fake.edit_message(channel, id, &edit).await,
         Outcome::DefinitelyRejected(RejectionKind::UnknownMessage)
     );
+}
+
+fn layout(line: &str) -> Vec<twilight_model::channel::message::Component> {
+    vec![container(0x4D5C9E, vec![text(line)])]
+}
+
+#[tokio::test]
+async fn components_v2_posts_carry_the_flag_and_nothing_else() {
+    let fake = FakeDiscord::new();
+    let channel = Id::new(CHANNEL);
+    let post = OutgoingMessage::v2(layout("hi"), mentions::none());
+    let Outcome::Delivered(id) = fake.create_message(channel, &post).await else {
+        panic!("created");
+    };
+    assert_eq!(fake.create_flags(), [COMPONENTS_V2], "the flag is recorded");
+    assert!(fake.is_v2(id));
+    let Some(Call::Create { message: sent, .. }) = fake.calls().pop() else {
+        panic!("a create");
+    };
+    assert_eq!(sent.components, layout("hi"));
+    assert_eq!((sent.content, sent.embeds.len()), (None, 0));
+    assert_eq!(
+        fake.message_flags(channel, id).await,
+        Outcome::Delivered(COMPONENTS_V2)
+    );
+
+    // Content or embeds beside a V2 layout are refused unsent (no step
+    // used), and so is the flag without components.
+    fake.script(Op::Create, Step::Reject(RejectionKind::MissingAccess));
+    let mixed = OutgoingMessage {
+        content: Some("also text".into()),
+        ..post.clone()
+    };
+    assert_eq!(
+        fake.create_message(channel, &mixed).await,
+        Outcome::DefinitelyRejected(RejectionKind::Invalid)
+    );
+    assert_eq!(
+        fake.create_flagged_message(channel, &message("plain"), COMPONENTS_V2)
+            .await,
+        Outcome::DefinitelyRejected(RejectionKind::Invalid)
+    );
+    assert_eq!(
+        fake.create_message(channel, &message("next")).await,
+        Outcome::DefinitelyRejected(RejectionKind::MissingAccess),
+        "the scripted step was still waiting"
+    );
+}
+
+#[tokio::test]
+async fn a_v2_edit_converts_and_a_legacy_edit_cannot_undo_it() {
+    let fake = FakeDiscord::new();
+    let channel = Id::new(CHANNEL);
+    let Outcome::Delivered(id) = fake.create_message(channel, &message("a")).await else {
+        panic!("created");
+    };
+    assert_eq!(
+        fake.message_flags(channel, id).await,
+        Outcome::Delivered(MessageFlags::empty())
+    );
+    let legacy = MessageEdit {
+        content: Some("b".into()),
+        embeds: None,
+        allowed_mentions: mentions::none(),
+        components: None,
+    };
+    let mixed = MessageEdit {
+        content: Some("b".into()),
+        ..MessageEdit::v2(layout("b"), mentions::none())
+    };
+    assert_eq!(
+        fake.edit_message(channel, id, &mixed).await,
+        Outcome::DefinitelyRejected(RejectionKind::Invalid),
+        "content beside a V2 layout is refused unsent"
+    );
+    assert!(!fake.is_v2(id));
+    assert_eq!(
+        fake.edit_message(channel, id, &MessageEdit::v2(layout("b"), mentions::none()))
+            .await,
+        Outcome::Delivered(())
+    );
+    assert!(fake.is_v2(id), "converted");
+    assert_eq!(
+        fake.edit_message(channel, id, &legacy).await,
+        Outcome::DefinitelyRejected(RejectionKind::Http {
+            status: 400,
+            code: Some(50035)
+        }),
+        "Discord cannot take the flag off"
+    );
+    assert_eq!(
+        fake.message_flags(channel, Id::new(99)).await,
+        Outcome::DefinitelyRejected(RejectionKind::UnknownMessage)
+    );
+}
+
+#[tokio::test]
+async fn v2_replies_and_deferred_updates_are_recorded() {
+    let fake = FakeDiscord::new();
+    let interaction = InteractionRef::new(Id::new(7), "token".into());
+    let reply = InteractionReply::v2(layout("runs"), true);
+    assert_eq!(
+        fake.respond(&interaction, &reply).await,
+        Outcome::Delivered(())
+    );
+    assert_eq!(
+        reply.flags(),
+        MessageFlags::EPHEMERAL | COMPONENTS_V2,
+        "ephemeral and V2"
+    );
+    let mixed = InteractionReply {
+        content: "and text".into(),
+        ..reply.clone()
+    };
+    for outcome in [
+        fake.respond(&interaction, &mixed).await,
+        fake.followup(&interaction, &mixed).await,
+        fake.complete_deferred(&interaction, &mixed).await,
+    ] {
+        assert_eq!(outcome, Outcome::DefinitelyRejected(RejectionKind::Invalid));
+    }
+    assert_eq!(
+        fake.defer_update(&interaction).await,
+        Outcome::Delivered(())
+    );
+    assert_eq!(fake.count(Op::DeferUpdate), 1);
+    assert!(matches!(
+        fake.calls().first(),
+        Some(Call::Respond { reply: sent, .. }) if *sent == reply
+    ));
 }
 
 #[tokio::test]
@@ -399,6 +533,7 @@ async fn a_hold_released_early_lets_the_call_through_and_a_cancelled_one_does_no
         content: Some("later".into()),
         embeds: None,
         allowed_mentions: mentions::none(),
+        components: None,
     };
     let parked = tokio::time::timeout(
         std::time::Duration::from_millis(20),

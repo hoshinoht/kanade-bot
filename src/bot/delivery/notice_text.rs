@@ -294,6 +294,7 @@ pub fn render_notice(
         allowed_mentions: mentions::for_intent(intent),
         reply_to: None,
         attachments: Vec::new(),
+        components: Vec::new(),
     })
 }
 

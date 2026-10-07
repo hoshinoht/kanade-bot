@@ -337,10 +337,16 @@ async fn style_and_header_overrides_touch_no_setting_or_record() {
         })
         .await
         .expect("ping");
-    assert!(
-        content(&fake).contains("🗓️ **Waku waku!**"),
-        "{}",
-        content(&fake)
+    // The redesigned digest pings nobody: its test copy is V2 too, labelled
+    // as a test above the header.
+    let digest = created(&fake).pop().expect("a digest post");
+    assert_eq!((digest.content.as_deref(), digest.embeds.len()), (None, 0));
+    let texts = support::v2_texts(&digest.components);
+    assert_eq!(texts[0], "-# 🧪 TEST", "{texts:?}");
+    assert_eq!(
+        texts[1].lines().nth(1),
+        Some("Waku waku!"),
+        "the phrase under the title: {texts:?}"
     );
     assert_eq!(
         store

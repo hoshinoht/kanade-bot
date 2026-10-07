@@ -76,6 +76,21 @@ impl GuildCache {
         }
     }
 
+    /// The avatar to show as a Discord CDN URL (a V2 digest's thumbnail);
+    /// `None` before `READY` or without an avatar.
+    pub fn self_avatar_url(&self) -> Option<String> {
+        let user = self.read().self_id?;
+        Some(match self.self_avatar()? {
+            SelfAvatar::Guild(hash) => format!(
+                "https://cdn.discordapp.com/guilds/{}/users/{user}/avatars/{hash}.png?size=128",
+                self.guild_id()
+            ),
+            SelfAvatar::User(hash) => {
+                format!("https://cdn.discordapp.com/avatars/{user}/{hash}.png?size=128")
+            }
+        })
+    }
+
     /// Changes after this call; one already signalled counts as pending.
     pub fn profile_changes(&self) -> watch::Receiver<u64> {
         let mut changes = self.profile.subscribe();
@@ -148,6 +163,27 @@ mod tests {
         assert!(
             cache.profile_changes().has_changed().unwrap(),
             "late subscriber sees it"
+        );
+    }
+
+    #[test]
+    fn the_avatar_url_points_at_the_cdn() {
+        let cache = GuildCache::new(Id::new(1));
+        assert_eq!(cache.self_avatar_url(), None, "nothing before READY");
+        cache.set_self_user(&user("k", None));
+        assert_eq!(
+            cache.self_avatar_url().as_deref(),
+            Some(
+                "https://cdn.discordapp.com/avatars/42/a_0123456789abcdef0123456789abcdef.png?size=128"
+            )
+        );
+        let guild: ImageHash = "0123456789abcdef0123456789abcdef".parse().unwrap();
+        cache.member_profile(Id::new(42), None, Some(guild));
+        assert_eq!(
+            cache.self_avatar_url().as_deref(),
+            Some(
+                "https://cdn.discordapp.com/guilds/1/users/42/avatars/0123456789abcdef0123456789abcdef.png?size=128"
+            )
         );
     }
 }

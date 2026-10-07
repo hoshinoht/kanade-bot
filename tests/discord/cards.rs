@@ -1,10 +1,13 @@
 //! Proposal cards end to end on the fake transport and the memory store:
 //! journalled posting (claim → send → bind; ambiguous sends held, never
 //! replayed; refused sends reposted with the next card), ✅/❌ through the
-//! scheduler's approval rules, card refreshes and chat answers.
+//! scheduler's approval rules, card refreshes and chat answers; the
+//! redesigned embed (`styled`) and Components V2 card with its buttons
+//! (`v2`).
 
 mod replay;
 mod styled;
+mod v2;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;

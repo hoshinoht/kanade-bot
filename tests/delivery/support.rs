@@ -20,6 +20,7 @@ use kanade::domain::schedule::{ReminderPolicy, SchedulePolicy, ScheduleSnapshot}
 use kanade::domain::scheduler::{ScheduleStore, SchedulerService, Scope};
 use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
 use serde_json::{Value, json};
+use twilight_model::channel::message::Component;
 
 use crate::common::{clock_time, countdowns, strings, text, weekday, zone};
 
@@ -305,4 +306,28 @@ pub async fn register_materialised(
             run_refs.insert(format!("{key}@{week_text}"), run.id.clone());
         }
     }
+}
+
+/// Every text display of a Components V2 layout, in order (sections and
+/// containers opened).
+pub fn v2_texts(components: &[Component]) -> Vec<String> {
+    let mut out = Vec::new();
+    for component in components {
+        match component {
+            Component::TextDisplay(text) => out.push(text.content.clone()),
+            Component::Container(container) => out.extend(v2_texts(&container.components)),
+            Component::Section(section) => out.extend(v2_texts(&section.components)),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// A V2 digest's phrase: the line under its `## Boss week` title.
+pub fn v2_digest_phrase(components: &[Component]) -> Option<String> {
+    v2_texts(components)
+        .first()?
+        .lines()
+        .nth(1)
+        .map(str::to_owned)
 }

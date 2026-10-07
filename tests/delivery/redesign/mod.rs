@@ -182,6 +182,7 @@ pub(crate) fn context<'a>(
         catalog: Some(catalog),
         style: MessageStyle::Classic,
         marks: &NO_MARKS,
+        v2: None,
     }
 }
 

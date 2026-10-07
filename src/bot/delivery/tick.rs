@@ -30,7 +30,7 @@ use super::ports::{FixedClock, IdsRef, StoreRef};
 use super::render::{render, unrendered};
 use crate::bot::{
     gateway::{DeliveryEligibility, DeliveryOperation},
-    transport::DiscordTransport,
+    transport::{DiscordTransport, OutgoingMessage},
 };
 use crate::domain::drafts::ProposalStore;
 use crate::domain::history::{
@@ -357,6 +357,18 @@ where
             catalog: self.cards.catalog.as_deref(),
             style: self.cards.style(),
             marks: &self.cards.marks,
+            v2: Some(&self.cards.v2),
+        }
+    }
+
+    /// Remember whether a posted digest is Components V2, so its refreshes
+    /// never send it a legacy edit Discord would refuse.
+    fn note_format(&self, outcome: &SendOutcome, message: &OutgoingMessage) {
+        if let SendOutcome::Bound(id) = outcome {
+            self.cards
+                .v2
+                .formats
+                .record(&id.get().to_string(), !message.components.is_empty());
         }
     }
 
@@ -727,6 +739,7 @@ where
             Err(failure) => Err(failure),
         };
         let outcome = settle(result)?;
+        self.note_format(&outcome, &content);
         report.outcome = DigestOutcome::Attempted;
         report.send = Some(SendReport {
             intent: post.send.intent,
@@ -907,6 +920,7 @@ where
             Err(failure) => Err(failure),
         };
         let outcome = settle(result)?;
+        self.note_format(&outcome, &message);
         report.outcome = DigestOutcome::Attempted;
         report.send = Some(SendReport {
             intent: post.send.intent,

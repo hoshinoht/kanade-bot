@@ -164,6 +164,7 @@ where
                 allowed_mentions: allow_users(&intent.mentions),
                 reply_to: notice.reference_id.as_deref().and_then(parse_id),
                 attachments: Vec::new(),
+                components: Vec::new(),
             };
             let send = PlannedSend {
                 intent: intent.clone(),

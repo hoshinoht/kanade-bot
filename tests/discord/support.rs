@@ -4,6 +4,7 @@
 use serde_json::{Value, json};
 use twilight_gateway::Event;
 use twilight_model::application::interaction::Interaction;
+use twilight_model::channel::message::Component;
 use twilight_model::channel::{Channel, Message};
 use twilight_model::gateway::GatewayReaction;
 use twilight_model::gateway::payload::incoming::{
@@ -462,4 +463,81 @@ pub fn role_delete(guild_id: u64, role_id: u64) -> Event {
     Event::RoleDelete(parse::<RoleDelete>(
         json!({ "guild_id": guild_id.to_string(), "role_id": role_id.to_string() }),
     ))
+}
+
+/// A press of the button `custom_id` on the bot's message `message_id` in
+/// `channel_id` (a `MessageComponent` interaction); `id` is the
+/// interaction id, so redeliveries can be told apart.
+pub fn button_interaction(
+    id: u64,
+    invoker: u64,
+    roles: &[u64],
+    channel_id: u64,
+    message_id: u64,
+    custom_id: &str,
+) -> Interaction {
+    let mut member = member_json(user_json(invoker, "someone", None, false), None, roles);
+    member["permissions"] = json!("0");
+    let mut message = message_json(message_id, channel_id, Some(GUILD), "");
+    message["author"] = user_json(SELF_ID, "kanade", None, true);
+    parse(json!({
+        "application_id": "9",
+        "authorizing_integration_owners": {},
+        "entitlements": [],
+        "id": id.to_string(),
+        "type": 3,
+        "token": "interaction-secret-token",
+        "guild_id": GUILD.to_string(),
+        "channel": { "id": channel_id.to_string(), "type": 0 },
+        "member": member,
+        "message": message,
+        "data": { "custom_id": custom_id, "component_type": 2 },
+    }))
+}
+
+/// Every text display of a Components V2 layout, in order.
+pub fn v2_texts(components: &[Component]) -> Vec<String> {
+    let mut out = Vec::new();
+    for component in components {
+        match component {
+            Component::TextDisplay(text) => out.push(text.content.clone()),
+            Component::Container(container) => out.extend(v2_texts(&container.components)),
+            Component::Section(section) => out.extend(v2_texts(&section.components)),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// One button as `(label, custom id or url, disabled)`.
+pub type ButtonView = (String, String, bool);
+
+/// Every button of a Components V2 layout, in order.
+pub fn v2_buttons(components: &[Component]) -> Vec<ButtonView> {
+    let mut out = Vec::new();
+    for component in components {
+        match component {
+            Component::Button(button) => out.push((
+                button.label.clone().unwrap_or_default(),
+                button
+                    .custom_id
+                    .clone()
+                    .or_else(|| button.url.clone())
+                    .unwrap_or_default(),
+                button.disabled,
+            )),
+            Component::ActionRow(row) => out.extend(v2_buttons(&row.components)),
+            Component::Container(container) => out.extend(v2_buttons(&container.components)),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The accent colour of a layout's one top-level container.
+pub fn v2_accent(components: &[Component]) -> Option<u32> {
+    match components {
+        [Component::Container(container)] => container.accent_color.flatten(),
+        _ => None,
+    }
 }

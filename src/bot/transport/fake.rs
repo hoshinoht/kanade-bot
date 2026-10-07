@@ -2,7 +2,7 @@
 //! scripted outcomes per operation, assigns sequential message ids and can
 //! park a call mid-flight ([`FakeDiscord::hold`]).
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use tokio::sync::Notify;
@@ -17,9 +17,9 @@ use twilight_model::id::{
 };
 
 use super::{
-    AmbiguousKind, ApplicationEmoji, CREATE_FLAGS, ChannelId, DiscordTransport, HistoryPage,
-    InteractionRef, InteractionReply, MAX_MEMBERS_PAGE, MAX_MESSAGES_PAGE, MessageEdit, MessageId,
-    Outcome, OutgoingMessage, Presence, RejectionKind,
+    AmbiguousKind, ApplicationEmoji, COMPONENTS_V2, CREATE_FLAGS, ChannelId, DiscordTransport,
+    HistoryPage, InteractionRef, InteractionReply, MAX_MEMBERS_PAGE, MAX_MESSAGES_PAGE,
+    MessageEdit, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind, v2_body_valid,
 };
 
 #[cfg(any(test, feature = "test-support"))]
@@ -34,8 +34,10 @@ pub enum Op {
     AddReaction,
     RemoveReaction,
     Presence,
+    Flags,
     Respond,
     Defer,
+    DeferUpdate,
     CompleteDeferred,
     Followup,
     Autocomplete,
@@ -108,6 +110,11 @@ pub enum Call {
         message: MessageId,
         outcome: Outcome<Presence>,
     },
+    Flags {
+        channel: ChannelId,
+        message: MessageId,
+        outcome: Outcome<MessageFlags>,
+    },
     Respond {
         interaction: InteractionRef,
         reply: InteractionReply,
@@ -116,6 +123,10 @@ pub enum Call {
     Defer {
         interaction: InteractionRef,
         ephemeral: bool,
+        outcome: Outcome<()>,
+    },
+    DeferUpdate {
+        interaction: InteractionRef,
         outcome: Outcome<()>,
     },
     CompleteDeferred {
@@ -178,8 +189,10 @@ impl Call {
             Self::AddReaction { .. } => Op::AddReaction,
             Self::RemoveReaction { .. } => Op::RemoveReaction,
             Self::Presence { .. } => Op::Presence,
+            Self::Flags { .. } => Op::Flags,
             Self::Respond { .. } => Op::Respond,
             Self::Defer { .. } => Op::Defer,
+            Self::DeferUpdate { .. } => Op::DeferUpdate,
             Self::CompleteDeferred { .. } => Op::CompleteDeferred,
             Self::Followup { .. } => Op::Followup,
             Self::Autocomplete { .. } => Op::Autocomplete,
@@ -240,6 +253,8 @@ struct State {
     defaults: BTreeMap<Op, Step>,
     /// Messages that exist remotely, by id, with their channel.
     messages: BTreeMap<MessageId, ChannelId>,
+    /// Messages carrying the Components V2 flag (posted or edited as V2).
+    v2: BTreeSet<MessageId>,
     /// What the read operations serve, per guild or channel.
     members: BTreeMap<Id<GuildMarker>, Vec<Member>>,
     history: BTreeMap<ChannelId, Vec<Message>>,
@@ -343,18 +358,30 @@ impl FakeDiscord {
     ) -> Outcome<MessageId> {
         self.gate(Op::Create).await;
         let mut state = self.state();
-        let outcome = if CREATE_FLAGS.contains(flags) {
-            match state.next_step(Op::Create) {
-                Step::Succeed => {
-                    let id = state.mint();
-                    state.messages.insert(id, channel);
-                    Outcome::Delivered(id)
+        let v2 = !message.components.is_empty();
+        let flags = if v2 { flags | COMPONENTS_V2 } else { flags };
+        let valid = CREATE_FLAGS.contains(flags)
+            && v2_body_valid(
+                message.content.as_deref(),
+                &message.embeds,
+                &message.components,
+                flags,
+            );
+        let outcome = if valid {
+            let post = |state: &mut State| {
+                let id = state.mint();
+                state.messages.insert(id, channel);
+                if v2 {
+                    state.v2.insert(id);
                 }
+                id
+            };
+            match state.next_step(Op::Create) {
+                Step::Succeed => Outcome::Delivered(post(&mut state)),
                 Step::Reject(kind) => Outcome::DefinitelyRejected(kind),
                 Step::Ambiguous { kind, applied } => {
                     if applied {
-                        let id = state.mint();
-                        state.messages.insert(id, channel);
+                        post(&mut state);
                     }
                     Outcome::Ambiguous(kind)
                 }
@@ -384,6 +411,18 @@ impl FakeDiscord {
     /// Pretend a message already exists (e.g. posted before a restart).
     pub fn seed_message(&self, channel: ChannelId, message: MessageId) {
         self.state().messages.insert(message, channel);
+    }
+
+    /// Pretend a Components V2 message already exists.
+    pub fn seed_v2_message(&self, channel: ChannelId, message: MessageId) {
+        let mut state = self.state();
+        state.messages.insert(message, channel);
+        state.v2.insert(message);
+    }
+
+    /// Whether `message` carries the Components V2 flag now.
+    pub fn is_v2(&self, message: MessageId) -> bool {
+        self.state().v2.contains(&message)
     }
 
     /// Replace the reactors for one emoji on an existing message.
@@ -510,6 +549,16 @@ impl State {
             Step::Ambiguous { kind, .. } => Outcome::Ambiguous(kind),
         }
     }
+
+    /// An interaction answer: a V2 reply with content or embeds is refused
+    /// unsent, like the real transport, without consuming a step.
+    fn reply(&mut self, op: Op, reply: &InteractionReply) -> Outcome<()> {
+        if reply.valid() {
+            self.plain(op)
+        } else {
+            Outcome::DefinitelyRejected(RejectionKind::Invalid)
+        }
+    }
 }
 
 impl DiscordTransport for FakeDiscord {
@@ -549,7 +598,28 @@ impl DiscordTransport for FakeDiscord {
     ) -> Outcome<()> {
         self.gate(Op::Edit).await;
         let mut state = self.state();
-        let outcome = state.on_message(Op::Edit, channel, message, |_| {});
+        let v2 = edit.v2_components().is_some();
+        let outcome = if edit.valid() {
+            let legacy_on_v2 = !v2 && state.v2.contains(&message);
+            match state.on_message(Op::Edit, channel, message, |state| {
+                if v2 {
+                    state.v2.insert(message);
+                }
+            }) {
+                // Discord refuses content or embeds on a V2 message (the flag
+                // cannot be removed).
+                Outcome::Delivered(()) if legacy_on_v2 => {
+                    Outcome::DefinitelyRejected(RejectionKind::Http {
+                        status: 400,
+                        code: Some(50035),
+                    })
+                }
+                outcome => outcome,
+            }
+        } else {
+            // Refused unsent like the real transport; no step is consumed.
+            Outcome::DefinitelyRejected(RejectionKind::Invalid)
+        };
         state.calls.push(Call::Edit {
             channel,
             message,
@@ -628,10 +698,33 @@ impl DiscordTransport for FakeDiscord {
         outcome
     }
 
+    async fn message_flags(&self, channel: ChannelId, message: MessageId) -> Outcome<MessageFlags> {
+        self.gate(Op::Flags).await;
+        let mut state = self.state();
+        let outcome = match state.next_step(Op::Flags) {
+            Step::Reject(kind) => Outcome::DefinitelyRejected(kind),
+            Step::Ambiguous { kind, .. } => Outcome::Ambiguous(kind),
+            Step::Succeed if state.messages.get(&message) == Some(&channel) => {
+                Outcome::Delivered(if state.v2.contains(&message) {
+                    COMPONENTS_V2
+                } else {
+                    MessageFlags::empty()
+                })
+            }
+            Step::Succeed => Outcome::DefinitelyRejected(RejectionKind::UnknownMessage),
+        };
+        state.calls.push(Call::Flags {
+            channel,
+            message,
+            outcome: outcome.clone(),
+        });
+        outcome
+    }
+
     async fn respond(&self, interaction: &InteractionRef, reply: &InteractionReply) -> Outcome<()> {
         self.gate(Op::Respond).await;
         let mut state = self.state();
-        let outcome = state.plain(Op::Respond);
+        let outcome = state.reply(Op::Respond, reply);
         state.calls.push(Call::Respond {
             interaction: interaction.clone(),
             reply: reply.clone(),
@@ -652,6 +745,17 @@ impl DiscordTransport for FakeDiscord {
         outcome
     }
 
+    async fn defer_update(&self, interaction: &InteractionRef) -> Outcome<()> {
+        self.gate(Op::DeferUpdate).await;
+        let mut state = self.state();
+        let outcome = state.plain(Op::DeferUpdate);
+        state.calls.push(Call::DeferUpdate {
+            interaction: interaction.clone(),
+            outcome: outcome.clone(),
+        });
+        outcome
+    }
+
     async fn complete_deferred(
         &self,
         interaction: &InteractionRef,
@@ -659,7 +763,7 @@ impl DiscordTransport for FakeDiscord {
     ) -> Outcome<()> {
         self.gate(Op::CompleteDeferred).await;
         let mut state = self.state();
-        let outcome = state.plain(Op::CompleteDeferred);
+        let outcome = state.reply(Op::CompleteDeferred, reply);
         state.calls.push(Call::CompleteDeferred {
             interaction: interaction.clone(),
             reply: reply.clone(),
@@ -675,7 +779,7 @@ impl DiscordTransport for FakeDiscord {
     ) -> Outcome<()> {
         self.gate(Op::Followup).await;
         let mut state = self.state();
-        let outcome = state.plain(Op::Followup);
+        let outcome = state.reply(Op::Followup, reply);
         state.calls.push(Call::Followup {
             interaction: interaction.clone(),
             reply: reply.clone(),

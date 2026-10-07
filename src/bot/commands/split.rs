@@ -152,12 +152,18 @@ pub fn fit_embed(embed: &Embed) -> Vec<Embed> {
 }
 
 /// The messages that carry `reply`, in order: content pieces first (the
-/// first also carries the first embed), then one embed per message.
+/// first also carries the first embed), then one embed per message. A
+/// Components V2 reply is one message as it stands (its layout is already
+/// within budget, see `delivery::cards::redesign::within_budget`).
 pub fn split_reply(reply: &InteractionReply) -> Vec<InteractionReply> {
+    if !reply.components.is_empty() {
+        return vec![reply.clone()];
+    }
     let message = |content: String, embeds: Vec<Embed>| InteractionReply {
         content,
         ephemeral: reply.ephemeral,
         embeds,
+        components: Vec::new(),
     };
     let mut embeds = reply.embeds.iter().flat_map(fit_embed);
     let mut out: Vec<InteractionReply> = if reply.content.is_empty() {

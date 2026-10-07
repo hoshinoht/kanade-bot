@@ -34,6 +34,7 @@ pub use pregen::{
     HEADER_HORIZON, HeaderPregen, HeaderTime, MAX_ATTEMPTS_PER_KEY, MAX_BUSY_RETRIES,
     MAX_CATCHUP_PER_TICK, PREGEN_DEADLINE, PREGEN_INTERVAL, PregenReport, SEEN_HORIZON,
 };
+pub(crate) use refresh::edit_lock;
 pub use refresh::{CardRefresh, MAX_PENDING_RUNS, Now, RefreshQueue};
 pub use render::render;
 pub use tick::{

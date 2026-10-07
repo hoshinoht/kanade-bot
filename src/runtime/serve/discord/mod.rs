@@ -59,7 +59,7 @@ use crate::{
         events::{GuildScope, ReactionRouter, Router},
         gateway::{ConnectionStatus, EventSource, GatewayError, Live, RunExit, run_live},
         guild_cache::GuildCache,
-        handler::{Fanout, MessageCounts, Reactions},
+        handler::{Fanout, MessageCounts, Reactions, press_port},
         identity,
         roster::{LiveRoster, RosterTask},
     },
@@ -278,22 +278,32 @@ where
     // Every card user (tick, refresh, digest post, debug, header
     // pre-generation, the only one that calls the model, and the proposal
     // card desk) shares the kit, so no heading rewrite outlasts the
-    // shutdown deadline.
-    let cards = stop_aware::cards(
-        card_kit(
-            config.runtime.http.boss_dir.as_deref(),
-            Arc::clone(&composition.admin.state.catalog),
-            marks.clone(),
-            composition.models.as_ref(),
-            Arc::clone(&composition.personas),
-            settings_changes(composition),
-            Arc::new(StoreRewriteSink::new(
-                Arc::clone(&store),
-                Arc::clone(&wiring.clock),
-            )),
-        ),
-        shutdown.clone(),
+    // shutdown deadline, and all of them share one record of which posts
+    // are Components V2.
+    let mut kit = card_kit(
+        config.runtime.http.boss_dir.as_deref(),
+        Arc::clone(&composition.admin.state.catalog),
+        marks.clone(),
+        composition.models.as_ref(),
+        Arc::clone(&composition.personas),
+        settings_changes(composition),
+        Arc::new(StoreRewriteSink::new(
+            Arc::clone(&store),
+            Arc::clone(&wiring.clock),
+        )),
     );
+    kit.v2.avatar = Some({
+        let cache = Arc::clone(&cache);
+        Arc::new(move || cache.self_avatar_url())
+    });
+    // Members open the public portal; the admin host is tailnet-only, so
+    // without a public listener the digest has no portal button.
+    kit.v2.portal = config
+        .runtime
+        .public_bind
+        .and(config.runtime.http.public_host.as_deref())
+        .map(|host| format!("https://{host}"));
+    let cards = stop_aware::cards(kit, shutdown.clone());
     // One desk for extraction cards, chat cards and the reaction worker's
     // ✅/❌, which all read the same stored cards.
     let desk = Arc::new(card_desk(
@@ -342,6 +352,8 @@ where
         Arc::new(LogAlerts),
     );
     let (reaction_jobs, reaction_queue) = mpsc::unbounded_channel();
+    // V2 proposal-card presses go to the same sequential worker.
+    let (press_jobs, press_queue) = mpsc::unbounded_channel();
 
     let (guild_ready, ready) = watch::channel(false);
     let state = &composition.admin.state;
@@ -529,6 +541,7 @@ where
         Arc::clone(&cache),
         Arc::clone(&transport),
         debug,
+        press_port(press_jobs),
     ) {
         Ok(dispatcher) => dispatcher,
         Err(error) => {
@@ -605,7 +618,12 @@ where
                 decline_retraction: composition.admin.state.decline_retraction.clone(),
                 clock: Arc::clone(&wiring.clock),
             }
-            .run_with_replay(reaction_queue, connection.clone(), stopped.clone()),
+            .run_with_replay(
+                reaction_queue,
+                press_queue,
+                connection.clone(),
+                stopped.clone(),
+            ),
         ),
     ];
     let refresh_stop = stopped.clone();

@@ -283,6 +283,7 @@ where
                     allowed_mentions: mentions::none(),
                     reply_to: None,
                     attachments: Vec::new(),
+                    components: Vec::new(),
                 };
                 if !self
                     .refresh

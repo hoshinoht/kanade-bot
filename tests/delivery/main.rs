@@ -11,6 +11,7 @@ mod debug;
 mod debug_tools;
 mod declines;
 mod digest_replay;
+mod digest_v2;
 mod dispatch_replay;
 mod drafts;
 mod failures;

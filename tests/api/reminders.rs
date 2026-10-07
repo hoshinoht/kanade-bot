@@ -91,6 +91,7 @@ async fn tick_post(
         catalog: Some(&reads.catalog()),
         style: MessageStyle::Classic,
         marks: &NO_MARKS,
+        v2: None,
     };
     let message = render(&intent, &ctx, heading, None).await;
     (intent, message)

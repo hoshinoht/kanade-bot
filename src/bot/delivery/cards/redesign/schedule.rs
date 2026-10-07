@@ -3,12 +3,13 @@
 //! of the boss week, then one field per day in the digest's run shape: a
 //! headline (state, guild-zone time, bosses) and a subtext line (the party
 //! by answer, a one-week stand-in, the run id). Names, never tags: the
-//! reply pings nobody.
+//! reply pings nobody. [`schedule_components`] lays the same parts out as
+//! Components V2 text displays inside one ink-blue container.
 
 use chrono::{DateTime, Datelike, TimeDelta, Utc};
 use chrono_tz::Tz;
-use twilight_model::channel::message::Embed;
 use twilight_model::channel::message::embed::{EmbedField, EmbedFooter};
+use twilight_model::channel::message::{Component, Embed};
 
 use crate::domain::attendance::{AnswerState, AttendanceMode, snapshot_states};
 use crate::domain::catalog::BossTable;
@@ -16,6 +17,7 @@ use crate::domain::ids::short_id;
 use crate::domain::schedule::{Run, RunStatus, ScheduleSnapshot};
 
 use super::super::common::{local_day, local_time};
+use super::v2::{container, separator, text};
 use super::vocab::{DifficultyMarks, INK_BLUE, boss_labels, subtext};
 
 /// The footer with runs hidden, and without.
@@ -166,8 +168,16 @@ fn run_lines(week: &ScheduleWeek<'_>, run: &Run, name: &dyn Fn(&str) -> String) 
     )
 }
 
-/// The reply's embed; `name` is how a member is written.
-pub fn schedule_embed(week: &ScheduleWeek<'_>, name: &dyn Fn(&str) -> String) -> Embed {
+/// What either rendering shows.
+struct Parts {
+    title: String,
+    description: String,
+    /// `(day, lines)` in time order.
+    days: Vec<(String, String)>,
+    footer: Option<&'static str>,
+}
+
+fn parts(week: &ScheduleWeek<'_>, name: &dyn Fn(&str) -> String) -> Parts {
     let mut shown: Vec<&Run> = week
         .runs
         .iter()
@@ -177,20 +187,16 @@ pub fn schedule_embed(week: &ScheduleWeek<'_>, name: &dyn Fn(&str) -> String) ->
     shown.sort_by_key(|run| run.datetime);
     let hidden = week.runs.len() - shown.len();
     let mut description = subtext(&summary(week));
-    let mut fields: Vec<EmbedField> = Vec::new();
+    let mut days: Vec<(String, String)> = Vec::new();
     for run in &shown {
         let day = local_day(run.datetime, week.zone);
         let lines = run_lines(week, run, name);
-        match fields.last_mut() {
-            Some(field) if field.name == day => {
-                field.value.push('\n');
-                field.value.push_str(&lines);
+        match days.last_mut() {
+            Some((heading, value)) if *heading == day => {
+                value.push('\n');
+                value.push_str(&lines);
             }
-            _ => fields.push(EmbedField {
-                inline: false,
-                name: day,
-                value: lines,
-            }),
+            _ => days.push((day, lines)),
         }
     }
     let footer = match (shown.is_empty(), hidden > 0) {
@@ -202,12 +208,31 @@ pub fn schedule_embed(week: &ScheduleWeek<'_>, name: &dyn Fn(&str) -> String) ->
         description.push('\n');
         description.push_str(week.empty);
     }
+    Parts {
+        title: title(week.scope, week.next),
+        description,
+        days,
+        footer,
+    }
+}
+
+/// The reply's embed; `name` is how a member is written.
+pub fn schedule_embed(week: &ScheduleWeek<'_>, name: &dyn Fn(&str) -> String) -> Embed {
+    let parts = parts(week, name);
     Embed {
         author: None,
         color: Some(INK_BLUE),
-        description: Some(description),
-        fields,
-        footer: footer.map(|text| EmbedFooter {
+        description: Some(parts.description),
+        fields: parts
+            .days
+            .into_iter()
+            .map(|(name, value)| EmbedField {
+                inline: false,
+                name,
+                value,
+            })
+            .collect(),
+        footer: parts.footer.map(|text| EmbedFooter {
             icon_url: None,
             proxy_icon_url: None,
             text: text.to_owned(),
@@ -217,10 +242,35 @@ pub fn schedule_embed(week: &ScheduleWeek<'_>, name: &dyn Fn(&str) -> String) ->
         provider: None,
         thumbnail: None,
         timestamp: None,
-        title: Some(title(week.scope, week.next)),
+        title: Some(parts.title),
         url: None,
         video: None,
     }
+}
+
+/// The reply as one Components V2 container: the title and summary, a
+/// text display per day, the footer as subtext. The caller checks the
+/// budget and falls back to [`schedule_embed`].
+pub fn schedule_components(
+    week: &ScheduleWeek<'_>,
+    name: &dyn Fn(&str) -> String,
+) -> Vec<Component> {
+    let parts = parts(week, name);
+    let mut children = vec![text(format!("## {}\n{}", parts.title, parts.description))];
+    if !parts.days.is_empty() {
+        children.push(separator());
+    }
+    children.extend(
+        parts
+            .days
+            .into_iter()
+            .map(|(day, lines)| text(format!("### {day}\n{lines}"))),
+    );
+    if let Some(footer) = parts.footer {
+        children.push(separator());
+        children.push(text(subtext(footer)));
+    }
+    vec![container(INK_BLUE, children)]
 }
 
 #[cfg(test)]

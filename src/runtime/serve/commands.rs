@@ -10,8 +10,8 @@ use crate::{
     api::state::ApiState,
     bot::{
         commands::{
-            ChatAllowance, CommandContext, DebugCards, Dispatcher, DuplicateCommand, MemberRows,
-            register_retained,
+            CardPresses, ChatAllowance, CommandContext, DebugCards, Dispatcher, DuplicateCommand,
+            MemberRows, register_retained,
         },
         delivery::{AlertThrottle, DebugDesk, cards::CardKit},
         guild_cache::GuildCache,
@@ -31,6 +31,8 @@ struct Commands<T> {
     channels: Arc<GuildCache>,
     transport: Arc<T>,
     debug: Arc<dyn DebugCards>,
+    /// V2 proposal-card presses, answered by the reaction worker.
+    presses: CardPresses,
 }
 
 /// What `/debug ping` shares with the tick: its card kit, the live roster
@@ -70,7 +72,8 @@ impl<T: GatewayTransport> Commands<T> {
             clock: Arc::clone(&state.clock),
         });
         register_retained(
-            Dispatcher::new(state.access.policy.clone()),
+            Dispatcher::new(state.access.policy.clone())
+                .with_card_presses(Arc::clone(&self.presses)),
             &ctx,
             Arc::clone(&self.transport),
         )
@@ -85,6 +88,7 @@ pub fn factory<T: GatewayTransport>(
     channels: Arc<GuildCache>,
     transport: Arc<T>,
     debug: DebugParts,
+    presses: CardPresses,
 ) -> Result<CommandsFn, Error> {
     let desk: Arc<dyn DebugCards> = Arc::new(DebugDesk {
         store: Arc::clone(&members),
@@ -106,6 +110,7 @@ pub fn factory<T: GatewayTransport>(
         channels,
         transport,
         debug: desk,
+        presses,
     };
     let checked = Arc::new(
         commands

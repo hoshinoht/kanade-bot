@@ -3,7 +3,9 @@
 //! tally in v5 mode, and their redesigned forms (`redesign/`) when the
 //! message style asks for them. A [`Card`] is plain data; [`Card::message`]
 //! turns it into a post with its art uploaded, [`Card::edit`] into an edit
-//! that keeps the posted attachments.
+//! that keeps the posted attachments. A card with a Components V2 layout
+//! (the redesigned digest) is posted and edited as that layout; its embed
+//! stays the fallback and the admin preview's rendering.
 
 mod art;
 mod common;
@@ -16,10 +18,10 @@ pub mod redesign;
 
 use std::sync::Arc;
 
-use twilight_model::channel::message::Embed;
 use twilight_model::channel::message::embed::{
     EmbedField, EmbedFooter, EmbedImage, EmbedThumbnail,
 };
+use twilight_model::channel::message::{Component, Embed};
 
 pub use art::{
     ArtFile, ArtKind, ArtRef, ArtSource, CardArt, EmbedArt, IMAGE_PREFIX, MAX_ART_BYTES, Picture,
@@ -43,7 +45,7 @@ pub use record::HeaderHistory;
 pub use record::{
     CardRecord, DAY_OF_KIND, DigestPhraseStore, HeaderOverrideStore, PostedCard, ReminderCardStore,
 };
-pub use redesign::{DifficultyMarks, StyleSource};
+pub use redesign::{DifficultyMarks, StyleSource, V2Kit};
 
 use crate::bot::mentions;
 use crate::bot::transport::{MessageEdit, OutgoingMessage, Upload};
@@ -52,11 +54,13 @@ use crate::domain::notify::IntentContent;
 use crate::domain::settings::MessageStyle;
 
 /// A card as plain data (v4 `Card`); mentions live in `content` only. The
-/// classic style has exactly one embed.
+/// classic style has exactly one embed. `components`, when set, is the
+/// Components V2 form that is sent instead of the content and embeds.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Card {
     pub content: String,
     pub embeds: Vec<CardEmbed>,
+    pub components: Vec<Component>,
 }
 
 /// One embed of a card.
@@ -101,8 +105,9 @@ impl CardField {
 }
 
 /// What cards read besides the schedule: the catalog, the art, the header
-/// rewrite, the live message style and the difficulty marks. The default
-/// uses fixed phrase fallbacks and the classic style.
+/// rewrite, the live message style, the difficulty marks and the
+/// Components V2 parts. The default uses fixed phrase fallbacks and the
+/// classic style.
 #[derive(Clone, Default)]
 pub struct CardKit {
     pub catalog: Option<Arc<BossTable>>,
@@ -111,6 +116,9 @@ pub struct CardKit {
     /// Read per card; `None` is classic.
     pub style: Option<StyleSource>,
     pub marks: DifficultyMarks,
+    /// The avatar, portal origin and which posted messages are V2; shared
+    /// by every clone of the kit.
+    pub v2: V2Kit,
 }
 
 impl CardKit {
@@ -233,13 +241,35 @@ impl Card {
         Self {
             content,
             embeds: vec![embed],
+            components: Vec::new(),
         }
+    }
+
+    /// `prefix` before the content, or as a first line of a V2 layout's
+    /// container (a `/debug ping` test card).
+    #[must_use]
+    pub fn prefixed(mut self, prefix: &str) -> Self {
+        self.content = format!("{prefix}{}", self.content);
+        if let Some(Component::Container(container)) = self.components.first_mut() {
+            let label = prefix.trim().trim_end_matches('—').trim();
+            container
+                .components
+                .insert(0, redesign::text(redesign::subtext(label)));
+            if !redesign::within_budget(&self.components) {
+                self.components.clear();
+            }
+        }
+        self
     }
 
     /// The post, with the pictures [`fetch_art`] read (`read = true`); a
     /// picture that could not be read is left off rather than failing it.
     /// A picture several embeds show is uploaded once.
     pub fn message(&self, mentioned: &[String], art: &CardArt) -> OutgoingMessage {
+        if !self.components.is_empty() {
+            // A V2 layout shows no art: nothing is uploaded.
+            return OutgoingMessage::v2(self.components.clone(), mentions::allow_users(mentioned));
+        }
         let mut uploads: Vec<Upload> = Vec::new();
         let mut attach = |picture: Option<&Picture>| {
             let picture = picture?;
@@ -271,13 +301,18 @@ impl Card {
             allowed_mentions: mentions::allow_users(mentioned),
             reply_to: None,
             attachments: uploads,
+            components: Vec::new(),
         }
     }
 
     /// A re-render of a posted card: nothing is uploaded again and nobody is
     /// notified. Pictures (from [`fetch_art`] with `read = false`) are
-    /// referenced by the name they were posted under.
+    /// referenced by the name they were posted under. A V2 layout is sent
+    /// as a V2 edit, which also converts a legacy post.
     pub fn edit(&self, art: &CardArt) -> MessageEdit {
+        if !self.components.is_empty() {
+            return MessageEdit::v2(self.components.clone(), mentions::none());
+        }
         let name = |picture: Option<&Picture>| picture.map(|p| p.attachment.clone());
         let embeds = self
             .embeds
@@ -295,6 +330,7 @@ impl Card {
             content: Some(self.content.clone()),
             embeds: Some(embeds),
             allowed_mentions: mentions::none(),
+            components: None,
         }
     }
 }

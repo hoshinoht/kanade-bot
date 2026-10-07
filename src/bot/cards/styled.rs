@@ -69,7 +69,8 @@ impl CardState<'static> {
     };
 }
 
-/// A rendered redesigned card (one embed).
+/// A rendered redesigned card (one embed), with the pieces its Components
+/// V2 layout (`v2.rs`) shows differently.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StyledCard {
     pub content: String,
@@ -79,6 +80,15 @@ pub struct StyledCard {
     pub colour: u32,
     /// Who the post may notify (its allowed mentions).
     pub mention_users: Vec<String>,
+    /// The V2 title (`### 📋 Move …?`, struck through once closed).
+    pub title: String,
+    /// The summary, then the outcome and note lines (as subtext).
+    pub lines: Vec<String>,
+    /// The footer without the reaction hints (buttons answer a V2 card).
+    pub footer_v2: String,
+    /// What the one disabled button says once nothing is left to answer
+    /// (`Applied by MY`); `None` while the card is open.
+    pub decided: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -322,6 +332,17 @@ fn closure_line(closure: &Closure, zone: Tz, unchanged: Option<&str>) -> String 
     }
 }
 
+/// The disabled button of a decided V2 card: its first outcome.
+fn decided_label(closures: &[Closure]) -> String {
+    match closures.first() {
+        Some(Closure::Applied { by, .. }) => format!("Applied by {by}"),
+        Some(Closure::Rejected { by, .. }) => format!("Rejected by {by}"),
+        Some(Closure::Superseded) => "Superseded".to_owned(),
+        Some(Closure::Stale) => "Out of date".to_owned(),
+        None => "Closed".to_owned(),
+    }
+}
+
 /// The footer word of a closed card: its first non-applied outcome.
 fn closed_word(closures: &[Closure]) -> &'static str {
     closures
@@ -369,16 +390,24 @@ pub fn styled_card(
         [one] => question(one, &labels(one), look.who),
         _ => format!("Apply {} changes?", details.len()),
     };
-    let mut content = if tone == Tone::Closed {
-        format!("{emoji} ~~**{heading}**~~")
+    let (mut content, title) = if tone == Tone::Closed {
+        (
+            format!("{emoji} ~~**{heading}**~~"),
+            format!("### {emoji} ~~{heading}~~"),
+        )
     } else {
-        format!("{emoji} **{heading}**")
+        (
+            format!("{emoji} **{heading}**"),
+            format!("### {emoji} {heading}"),
+        )
     };
+    let mut v2_lines = Vec::new();
     if let [one] = details
         && let Some(summary) = filled(one.summary.as_deref())
     {
         content.push(' ');
         content.push_str(summary);
+        v2_lines.push(summary.to_owned());
     }
     let applied = state
         .closures
@@ -397,6 +426,7 @@ pub fn styled_card(
     for line in lines {
         content.push('\n');
         content.push_str(&subtext(&line));
+        v2_lines.push(subtext(&line));
     }
 
     let mut fields = Vec::new();
@@ -450,18 +480,27 @@ pub fn styled_card(
     }
 
     let mut footer: Vec<String> = ran.iter().map(|run| tag(&run.id)).collect();
+    let mut footer_v2 = footer.clone();
     match tone {
         Tone::Open => {
             if let Some(confidence) = confidence {
                 let percent = (confidence * 100.0).round().clamp(0.0, 100.0);
                 footer.push(format!("{percent}% sure"));
+                footer_v2.push(format!("{percent}% sure"));
             }
             footer.push(format!("{EMOJI_YES} apply"));
             footer.push(format!("{EMOJI_NO} reject"));
             footer.push("/amend to edit".to_owned());
+            footer_v2.push("/amend to edit".to_owned());
         }
-        Tone::Applied => footer.push("applied".to_owned()),
-        Tone::Closed => footer.push(closed_word(state.closures).to_owned()),
+        Tone::Applied => {
+            footer.push("applied".to_owned());
+            footer_v2.push("applied".to_owned());
+        }
+        Tone::Closed => {
+            footer.push(closed_word(state.closures).to_owned());
+            footer_v2.push(closed_word(state.closures).to_owned());
+        }
     }
 
     StyledCard {
@@ -478,5 +517,9 @@ pub fn styled_card(
             .who
             .map(|who| who.mentioned.clone())
             .unwrap_or_default(),
+        title,
+        lines: v2_lines,
+        footer_v2: footer_v2.join(" · "),
+        decided: (tone != Tone::Open).then(|| decided_label(state.closures)),
     }
 }

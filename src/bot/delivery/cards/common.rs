@@ -14,7 +14,7 @@ use crate::domain::notify::display_names;
 use crate::domain::schedule::{Run, RunStatus, ScheduleSnapshot};
 use crate::domain::settings::MessageStyle;
 
-use super::redesign::DifficultyMarks;
+use super::redesign::{DifficultyMarks, V2Kit};
 
 /// v4 `REACT_HINT`.
 pub const REACT_HINT: &str = "React \u{2705} if you're on, \u{274c} if not.";
@@ -46,6 +46,10 @@ pub struct CardContext<'a> {
     pub style: MessageStyle,
     /// Difficulty emojis for redesigned boss labels.
     pub marks: &'a DifficultyMarks,
+    /// Where a redesigned card that pings nobody (the digest) may also be
+    /// laid out as Components V2; `None` keeps the embed (the admin
+    /// preview, header pre-generation).
+    pub v2: Option<&'a V2Kit>,
 }
 
 impl CardContext<'_> {

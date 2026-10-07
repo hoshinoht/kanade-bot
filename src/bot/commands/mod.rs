@@ -2,9 +2,12 @@
 //! dispatcher that answers refusals and failures ephemerally, and the v4
 //! commands v5 retains (user decision 2026-09-25). Every write goes through
 //! the shared scheduler writer; notices reach the outbox with the change.
+//! Presses of the bot's Components V2 buttons are dispatched here too
+//! (`components.rs`).
 
 mod access;
 mod build;
+mod components;
 mod context;
 mod debug;
 mod dispatch;
@@ -25,6 +28,7 @@ mod text;
 use std::sync::Arc;
 
 pub use access::{AccessPolicy, Denial, Gate, Invoker};
+pub use components::{CardPresses, INACTIVE, NOT_YOURS, Press};
 pub use context::{
     ChatAllowance, Clock, CommandContext, DebugCards, GuildChannels, HeaderNote, HeaderRequest,
     HeaderTrialKind, HeaderTrials, MemberRows, PingRequest, PortFuture, SampleRun, TestKind,

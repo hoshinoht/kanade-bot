@@ -1,10 +1,12 @@
 //! `/schedule`: a boss week's runs as a public embed that pings nobody
-//! (v4 `commands.schedule`), or the redesigned embed
-//! (`delivery::cards::redesign::schedule_embed`) while the live message
-//! style is `redesigned`.
+//! (v4 `commands.schedule`), or, while the live message style is
+//! `redesigned`, the redesigned layout as one Components V2 container
+//! (`delivery::cards::redesign::schedule_components`); a week over the V2
+//! budget gets the redesigned embed (`schedule_embed`) instead.
 
 use std::sync::Arc;
 
+use serde_json::json;
 use twilight_model::application::command::Command;
 use twilight_model::channel::message::Embed;
 use twilight_model::channel::message::embed::{EmbedField, EmbedFooter};
@@ -18,7 +20,8 @@ use super::lookup::{involves_run, materialised_weeks};
 use super::options::Args;
 use super::text::{group_by_day, local_day, roster_delta, schedule_line};
 use crate::bot::delivery::cards::redesign::{
-    NO_MARKS, ScheduleScope, ScheduleWeek, schedule_embed,
+    NO_MARKS, ScheduleScope, ScheduleWeek, component_count, schedule_components, schedule_embed,
+    text_chars, within_budget,
 };
 use crate::bot::ids::id_text;
 use crate::bot::transport::InteractionReply;
@@ -26,6 +29,7 @@ use crate::domain::members::MemberProfile;
 use crate::domain::schedule::{RsvpState, Run, ScheduleSnapshot};
 use crate::domain::scheduler::Scope;
 use crate::domain::settings::MessageStyle;
+use crate::runtime::logging;
 
 /// discord.py `Colour.blurple()`.
 const BLURPLE: u32 = 0x5865F2;
@@ -154,7 +158,21 @@ impl ScheduleCommand {
                 marks: &NO_MARKS,
                 empty: empty_text(scope),
             };
-            let embed = schedule_embed(&view, &|user| member_name(&profiles, user));
+            let name = |user: &str| member_name(&profiles, user);
+            let components = schedule_components(&view, &name);
+            if within_budget(&components) {
+                return Ok(InteractionReply::v2(components, false));
+            }
+            logging::event(
+                "WARN",
+                "schedule_v2_over_budget",
+                json!({
+                    "components": component_count(&components),
+                    "chars": text_chars(&components),
+                    "fallback": "embed",
+                }),
+            );
+            let embed = schedule_embed(&view, &name);
             return Ok(InteractionReply::public("").with_embed(embed));
         }
         let runs: Vec<&Run> = everything

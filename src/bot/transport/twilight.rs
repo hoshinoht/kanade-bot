@@ -31,7 +31,7 @@ use twilight_http::response::{Response, ResponseFuture};
 use twilight_http::{Client, api_error::ApiError};
 use twilight_model::application::EmojiList;
 use twilight_model::application::command::{Command, CommandOptionChoice};
-use twilight_model::channel::message::{Embed, MessageFlags};
+use twilight_model::channel::message::{Component, Embed, MessageFlags};
 use twilight_model::channel::{Channel, Message};
 use twilight_model::guild::{Emoji, Member};
 use twilight_model::http::attachment::Attachment;
@@ -45,9 +45,9 @@ use twilight_model::id::{
 use twilight_model::user::CurrentUser;
 
 use super::{
-    AmbiguousKind, ApplicationEmoji, CREATE_FLAGS, ChannelId, DiscordTransport, HistoryPage,
-    InteractionRef, InteractionReply, MessageEdit, MessageId, Outcome, OutgoingMessage, Presence,
-    RejectionKind, classify_status,
+    AmbiguousKind, ApplicationEmoji, COMPONENTS_V2, CREATE_FLAGS, ChannelId, DiscordTransport,
+    HistoryPage, InteractionRef, InteractionReply, MessageEdit, MessageId, Outcome,
+    OutgoingMessage, Presence, RejectionKind, classify_status, v2_body_valid,
 };
 use crate::api::auth::crypto::base64_standard;
 use crate::bot::mentions;
@@ -248,6 +248,13 @@ struct Created {
     id: MessageId,
 }
 
+/// The only field read back from a fetched message's flags.
+#[derive(Deserialize)]
+struct Flagged {
+    #[serde(default)]
+    flags: Option<MessageFlags>,
+}
+
 fn application_emoji(emoji: Emoji) -> ApplicationEmoji {
     ApplicationEmoji {
         id: emoji.id,
@@ -297,18 +304,27 @@ fn unicode(emoji: &str) -> RequestReactionType<'_> {
     RequestReactionType::Unicode { name: emoji }
 }
 
+/// A response body; a V2 reply carries its layout and no content or embeds.
 fn interaction_data(
     content: Option<String>,
     embeds: &[Embed],
-    ephemeral: bool,
+    components: &[Component],
+    flags: MessageFlags,
 ) -> InteractionResponseData {
     InteractionResponseData {
         allowed_mentions: Some(mentions::none()),
         content,
         embeds: (!embeds.is_empty()).then(|| embeds.to_vec()),
-        flags: ephemeral.then_some(MessageFlags::EPHEMERAL),
+        components: (!components.is_empty()).then(|| components.to_vec()),
+        flags: (!flags.is_empty()).then_some(flags),
         ..InteractionResponseData::default()
     }
+}
+
+/// The content a reply sends: none for a V2 or embed-only reply.
+fn reply_content(reply: &InteractionReply) -> Option<&str> {
+    (reply.components.is_empty() && (!reply.content.is_empty() || reply.embeds.is_empty()))
+        .then_some(reply.content.as_str())
 }
 
 impl TwilightTransport {
@@ -318,18 +334,38 @@ impl TwilightTransport {
         message: &OutgoingMessage,
         flags: MessageFlags,
     ) -> Outcome<MessageId> {
+        let flags = if message.components.is_empty() {
+            flags
+        } else {
+            flags | COMPONENTS_V2
+        };
         // Twilight forwards any bits; refuse what Discord would reject.
-        if !CREATE_FLAGS.contains(flags) {
+        if !CREATE_FLAGS.contains(flags)
+            || !v2_body_valid(
+                message.content.as_deref(),
+                &message.embeds,
+                &message.components,
+                flags,
+            )
+        {
             return Outcome::DefinitelyRejected(RejectionKind::Invalid);
         }
         let mut request = self
             .client
             .create_message(channel)
             .allowed_mentions(Some(&message.allowed_mentions));
+        // Before the components: Twilight validates them by the V2 flag.
         if !flags.is_empty() {
             request = request.flags(flags);
         }
-        if let Some(content) = &message.content {
+        if !message.components.is_empty() {
+            request = request.components(&message.components);
+        }
+        if let Some(content) = message
+            .content
+            .as_deref()
+            .filter(|_| message.components.is_empty())
+        {
             request = request.content(content);
         }
         if !message.embeds.is_empty() {
@@ -392,10 +428,25 @@ impl DiscordTransport for TwilightTransport {
         message: MessageId,
         edit: &MessageEdit,
     ) -> Outcome<()> {
+        if !edit.valid() {
+            return Outcome::DefinitelyRejected(RejectionKind::Invalid);
+        }
         let mut request = self
             .client
             .update_message(channel, message)
             .allowed_mentions(Some(&edit.allowed_mentions));
+        if let Some(components) = edit.v2_components() {
+            // Discord: setting the flag needs `content: null` and `embeds: []`.
+            return self
+                .settle(
+                    request
+                        .flags(COMPONENTS_V2)
+                        .content(None)
+                        .embeds(Some(&[][..]))
+                        .components(Some(components)),
+                )
+                .await;
+        }
         if let Some(content) = &edit.content {
             request = request.content(Some(content));
         }
@@ -445,15 +496,24 @@ impl DiscordTransport for TwilightTransport {
         }
     }
 
+    async fn message_flags(&self, channel: ChannelId, message: MessageId) -> Outcome<MessageFlags> {
+        self.fetch(self.client.message(channel, message))
+            .await
+            .map(|read: Flagged| read.flags.unwrap_or_else(MessageFlags::empty))
+    }
+
     async fn respond(&self, interaction: &InteractionRef, reply: &InteractionReply) -> Outcome<()> {
+        if !reply.valid() {
+            return Outcome::DefinitelyRejected(RejectionKind::Invalid);
+        }
         let response = InteractionResponse {
             kind: InteractionResponseType::ChannelMessageWithSource,
             data: Some(interaction_data(
                 // An embed-only reply sends no content at all.
-                (!reply.content.is_empty() || reply.embeds.is_empty())
-                    .then(|| reply.content.clone()),
+                reply_content(reply).map(str::to_owned),
                 &reply.embeds,
-                reply.ephemeral,
+                &reply.components,
+                reply.flags(),
             )),
         };
         self.settle_interaction(
@@ -465,9 +525,27 @@ impl DiscordTransport for TwilightTransport {
     }
 
     async fn defer(&self, interaction: &InteractionRef, ephemeral: bool) -> Outcome<()> {
+        let flags = if ephemeral {
+            MessageFlags::EPHEMERAL
+        } else {
+            MessageFlags::empty()
+        };
         let response = InteractionResponse {
             kind: InteractionResponseType::DeferredChannelMessageWithSource,
-            data: Some(interaction_data(None, &[], ephemeral)),
+            data: Some(interaction_data(None, &[], &[], flags)),
+        };
+        self.settle_interaction(
+            self.client
+                .interaction(self.application_id)
+                .create_response(interaction.id, interaction.token(), &response),
+        )
+        .await
+    }
+
+    async fn defer_update(&self, interaction: &InteractionRef) -> Outcome<()> {
+        let response = InteractionResponse {
+            kind: InteractionResponseType::DeferredUpdateMessage,
+            data: None,
         };
         self.settle_interaction(
             self.client
@@ -482,19 +560,28 @@ impl DiscordTransport for TwilightTransport {
         interaction: &InteractionRef,
         reply: &InteractionReply,
     ) -> Outcome<()> {
+        if !reply.valid() {
+            return Outcome::DefinitelyRejected(RejectionKind::Invalid);
+        }
         let none = mentions::none();
-        self.settle(
-            self.client
-                .interaction(self.application_id)
-                .update_response(interaction.token())
-                .content(
-                    (!reply.content.is_empty() || reply.embeds.is_empty())
-                        .then_some(reply.content.as_str()),
+        let client = self.client.interaction(self.application_id);
+        let mut request = client
+            .update_response(interaction.token())
+            .allowed_mentions(Some(&none));
+        if !reply.components.is_empty() {
+            // The deferral fixed the visibility; only the V2 flag is added.
+            return self
+                .settle(
+                    request
+                        .flags(COMPONENTS_V2)
+                        .components(Some(&reply.components)),
                 )
-                .embeds((!reply.embeds.is_empty()).then_some(reply.embeds.as_slice()))
-                .allowed_mentions(Some(&none)),
-        )
-        .await
+                .await;
+        }
+        request = request
+            .content(reply_content(reply))
+            .embeds((!reply.embeds.is_empty()).then_some(reply.embeds.as_slice()));
+        self.settle(request).await
     }
 
     async fn followup(
@@ -502,19 +589,27 @@ impl DiscordTransport for TwilightTransport {
         interaction: &InteractionRef,
         reply: &InteractionReply,
     ) -> Outcome<()> {
+        if !reply.valid() {
+            return Outcome::DefinitelyRejected(RejectionKind::Invalid);
+        }
         let none = mentions::none();
         let client = self.client.interaction(self.application_id);
+        let flags = reply.flags();
         let mut request = client
             .create_followup(interaction.token())
             .allowed_mentions(Some(&none));
+        // Before the components: Twilight validates them by the V2 flag.
+        if !flags.is_empty() {
+            request = request.flags(flags);
+        }
+        if !reply.components.is_empty() {
+            request = request.components(&reply.components);
+        }
         if !reply.content.is_empty() {
             request = request.content(&reply.content);
         }
         if !reply.embeds.is_empty() {
             request = request.embeds(&reply.embeds);
-        }
-        if reply.ephemeral {
-            request = request.flags(MessageFlags::EPHEMERAL);
         }
         self.settle(request).await
     }

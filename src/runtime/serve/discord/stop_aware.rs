@@ -219,6 +219,11 @@ impl<T: DiscordTransport> DiscordTransport for StopAware<T> {
             .await
     }
 
+    async fn message_flags(&self, channel: ChannelId, message: MessageId) -> Outcome<MessageFlags> {
+        self.race(false, self.inner.message_flags(channel, message))
+            .await
+    }
+
     async fn respond(&self, interaction: &InteractionRef, reply: &InteractionReply) -> Outcome<()> {
         self.race(true, self.inner.respond(interaction, reply))
             .await
@@ -227,6 +232,10 @@ impl<T: DiscordTransport> DiscordTransport for StopAware<T> {
     async fn defer(&self, interaction: &InteractionRef, ephemeral: bool) -> Outcome<()> {
         self.race(true, self.inner.defer(interaction, ephemeral))
             .await
+    }
+
+    async fn defer_update(&self, interaction: &InteractionRef) -> Outcome<()> {
+        self.race(true, self.inner.defer_update(interaction)).await
     }
 
     async fn complete_deferred(
@@ -320,6 +329,7 @@ mod tests {
             allowed_mentions: crate::bot::mentions::none(),
             reply_to: None,
             attachments: Vec::new(),
+            components: Vec::new(),
         }
     }
 
