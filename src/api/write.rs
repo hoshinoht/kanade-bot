@@ -66,6 +66,7 @@ impl FixedPatchReplay {
 #[derive(Clone)]
 struct FixedPatchLookupGateInner {
     request_id: String,
+    lost_channel: Option<String>,
     reached: Arc<Notify>,
     release: Arc<Notify>,
 }
@@ -84,8 +85,22 @@ pub struct FixedPatchLookupGate(FixedPatchLookupGateInner);
 #[cfg(any(test, feature = "test-support"))]
 impl FixedPatchLookupGate {
     pub fn install(request_id: impl Into<String>) -> Self {
+        Self::install_inner(request_id.into(), None)
+    }
+
+    /// Simulate a watched-channel cache loss only in the held handler's
+    /// strict validation path; replay normalization must recover it.
+    pub fn install_lost_channel(
+        request_id: impl Into<String>,
+        channel_id: impl Into<String>,
+    ) -> Self {
+        Self::install_inner(request_id.into(), Some(channel_id.into()))
+    }
+
+    fn install_inner(request_id: String, lost_channel: Option<String>) -> Self {
         let gate = FixedPatchLookupGateInner {
-            request_id: request_id.into(),
+            request_id,
+            lost_channel,
             reached: Arc::new(Notify::new()),
             release: Arc::new(Notify::new()),
         };
@@ -122,7 +137,7 @@ impl Drop for FixedPatchLookupGate {
 }
 
 #[cfg(any(test, feature = "test-support"))]
-pub async fn hold_fixed_patch_after_lookup(origin: &Origin) {
+pub async fn hold_fixed_patch_after_lookup(origin: &Origin) -> Option<String> {
     let gate = {
         let mut slot = fixed_patch_lookup_gate()
             .lock()
@@ -139,6 +154,9 @@ pub async fn hold_fixed_patch_after_lookup(origin: &Origin) {
     if let Some(gate) = gate {
         gate.reached.notify_one();
         gate.release.notified().await;
+        gate.lost_channel
+    } else {
+        None
     }
 }
 

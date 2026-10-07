@@ -282,7 +282,7 @@ pub async fn update(
     let origin = origin(&session, &headers)?;
     let first = recorded(state, &origin).await?.is_some();
     #[cfg(any(test, feature = "test-support"))]
-    crate::api::write::hold_fixed_patch_after_lookup(&origin).await;
+    let lost_channel = crate::api::write::hold_fixed_patch_after_lookup(&origin).await;
     // Keep the established fresh-request refusal order, while letting a used
     // key compare its complete identity before version-dependent handling.
     let version = if first {
@@ -308,7 +308,19 @@ pub async fn update(
         request: &request,
         profiles: &profiles,
     };
-    let timing = match checked(state, &request, &ctx.directory) {
+    let strict = {
+        #[cfg(any(test, feature = "test-support"))]
+        if lost_channel.as_deref() == Some(request.channel_id.as_str()) {
+            Err(scheduler(
+                ScheduleError::ChannelNotWatched(request.channel_id.clone()).into(),
+            ))
+        } else {
+            checked(state, &request, &ctx.directory)
+        }
+        #[cfg(not(any(test, feature = "test-support")))]
+        checked(state, &request, &ctx.directory)
+    };
+    let timing = match strict {
         Ok(timing) => timing,
         Err(refusal) => return refusal_replay.recover(&mut ctx, refusal).await,
     };

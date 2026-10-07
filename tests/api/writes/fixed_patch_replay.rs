@@ -123,6 +123,51 @@ async fn concurrently_recorded_fixed_patch_replays_after_roster_loss() {
     assert_unchanged(&reads, revision, notices).await;
 }
 
+/// The same initially-fresh race remains a replay when the watched-channel
+/// cache disappears before strict validation runs.
+#[tokio::test]
+async fn concurrently_recorded_fixed_patch_replays_after_watched_channel_loss() {
+    let _serial = LOOKUP_GATE_TESTS.lock().await;
+    let reads = Arc::new(Reads::with_logins().await);
+    let version = reads.version().await;
+    let original = timing(version, "21:30", "seed");
+    let key = "fixed-race-channel";
+    let gate = FixedPatchLookupGate::install_lost_channel(key, "kalos-four");
+    let held = {
+        let reads = Arc::clone(&reads);
+        let original = original.clone();
+        tokio::spawn(async move {
+            reads
+                .call(
+                    "PATCH",
+                    "/api/admin/fixed/f-kalos",
+                    original,
+                    &[("Idempotency-Key", key)],
+                )
+                .await
+        })
+    };
+    gate.reached().await;
+
+    let first = reads
+        .call(
+            "PATCH",
+            "/api/admin/fixed/f-kalos",
+            original,
+            &[("Idempotency-Key", key)],
+        )
+        .await;
+    assert_eq!(first.status, 200, "{}", first.text());
+    let revision = reads.version().await;
+    let notices = reads.store.outbox_notices().await.unwrap().len();
+    gate.release();
+
+    let replay = held.await.unwrap();
+    assert_eq!(replay.status, 200, "{}", replay.text());
+    assert_eq!(replay.json()["note"], "seed");
+    assert_unchanged(&reads, revision, notices).await;
+}
+
 /// A key that is still unseen after the same boundary never receives the
 /// replay-only roster relaxation and remains an ordinary strict refusal.
 #[tokio::test]
