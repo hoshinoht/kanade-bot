@@ -380,7 +380,9 @@ pub fn staff(roster: Arc<LiveRoster>, access: Arc<GuildAccess>) -> StaffFn {
     })
 }
 
-type Stop = Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send>;
+type Stop = Box<
+    dyn FnOnce(Option<tokio::time::Instant>) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send,
+>;
 
 /// The running chat side, stopped by the Discord side after the gateway.
 pub struct ChatRuntime {
@@ -390,12 +392,13 @@ pub struct ChatRuntime {
 }
 
 impl ChatRuntime {
-    /// Refund waiting questions, let running ones finish within the grace,
-    /// cut the rest; each concludes and logs.
-    pub async fn stop(&mut self) {
+    /// Refund waiting questions, let running ones finish within the grace
+    /// (ending by `end` at the latest), cut the rest; each concludes and
+    /// logs. Never dropped mid-way: the cut and abort always run.
+    pub async fn stop(&mut self, end: Option<tokio::time::Instant>) {
         self.overrides.abort();
         if let Some(stop) = self.stop.take() {
-            stop().await;
+            stop(end).await;
         }
     }
 
@@ -456,7 +459,7 @@ pub async fn start<T: GatewayTransport>(
     });
     let feed = ChatFeed::new(Arc::new(driver.clone()), cache, staff(roster, access));
     let follow_up: Arc<dyn RejectionFollowUp> = Arc::new(driver.clone());
-    let stop: Stop = Box::new(move || Box::pin(async move { driver.stop().await }));
+    let stop: Stop = Box::new(move |end| Box::pin(async move { driver.stop_by(end).await }));
     Ok((
         feed,
         ChatRuntime {

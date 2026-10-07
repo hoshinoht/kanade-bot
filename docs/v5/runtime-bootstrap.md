@@ -450,6 +450,48 @@ drains, then the store closes (logged `store_closed`) so ownership is
 released only after SQLite closes. A startup failure after the store opened
 closes it too.
 
+All of this shares one 25 s budget from the signal (Compose's 30 s
+`stop_grace_period` less a 5 s margin): each step gets its own grace or what
+remains, whichever is less, and every wait before the store close ends by
+22 s, keeping 3 s for the close. One exception: after chat aborts its
+questions at 22 s, the wait for their log writes may run up to 1 s more, so
+the close always starts with at least 2 s left. Steps after chat (the HTTP
+drain included) then get no time and are cut at once; an HTTP request still
+in flight is not dropped but keeps its connection, and the store close waits
+for it within the time left. At 22 s the store also stops handing out read
+connections (logged `store_reads_refused`): a read waiting for one, and every
+read after it, fails at once (an admin read answers 503 `unavailable`), while
+reads already running and all writes finish. A step the budget cuts logs
+`shutdown_deadline_cut` (`phase`, `elapsed_ms`); serve still exits cleanly.
+Workers still running are aborted; a worker caught inside a store write (say a
+header pre-generation save at the cutoff) has that transaction rolled back
+whole, and the header is generated again after the restart. The tick is not cut. Every Discord call
+serve makes (the tick, a manual digest post, card refresh and card posts,
+decline retraction, commands, chat, extraction, roster and identity) that is
+still in flight at 21 s ends as the transport's own deadline would: a post or
+edit counts as possibly delivered (journalled indeterminate, never re-sent),
+and a read or any call started later as not sent. That second before 22 s
+lets the caller record the outcome through its usual journal path before
+workers are aborted and reads are refused; a manual digest's HTTP request
+then answers, and the store close waits for it. The tick never calls the
+model: card headings are rewritten ahead of time by the header
+pre-generation worker. A rewrite of its in flight at 22 s (or started later)
+fails as unavailable and stores nothing, so the send uses the seed text; the
+worker's own stop abandons a rewrite earlier but always lets a store write
+it began finish. The tick's waits are store work. Reads fail at once
+after 22 s (above); before that, waiting for one of the 4 read connections
+is capped at 5 s (then the read fails and the tick step is retried next
+tick; an admin read answers 503 `unavailable`). Writes are atomic
+transactions and are never cut: they take turns on the one write connection,
+and each holds it only for its own SQL, so a tick's writes after 22 s finish
+in milliseconds. SQLite's 5 s `busy_timeout` caps a lock wait, which only a
+process outside kanade holding the database lock could cause.
+
+So serve normally returns within 25 s of the signal. Known limit (accepted
+2026-10-07): if a process outside kanade holds the SQLite write lock, a tick
+write that starts just before 22 s can wait the full 5 s `busy_timeout`, and
+serve can take about 27 s, still inside Compose's 30 s.
+
 Runbook (production token, real guild): `docker stop kanade-bot` (v4) first,
 then set `KANADE_EXPECT_V4_STOPPED=1` and start v5; to roll back, stop v5,
 set it back to `0` and `docker start kanade-bot`.
@@ -567,7 +609,9 @@ For the shared edge (`sites/kanade`); owned and applied by the edge owner.
   `KANADE_CLOUDFLARED_PEER`; no identity headers are ever read there.
 
 `SIGINT` and `SIGTERM` stop accepting work and drain HTTP requests up to
-`KANADE_SHUTDOWN_TIMEOUT_SECONDS` (default 10, range 1–120). Logs are JSON and
+`KANADE_SHUTDOWN_TIMEOUT_SECONDS` (default 10, range 1–120), or less when
+live serve's shutdown budget (above) has less left; a drain the configured
+timeout cuts is an error exit, one the budget cuts is not. Logs are JSON and
 emit only safe configuration-error descriptions, not environment values.
 
 ## Deliberate boundaries

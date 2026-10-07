@@ -26,7 +26,6 @@ use std::time::Duration;
 use serde_json::json;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
-use tokio::time::timeout;
 
 use crate::{
     api::{
@@ -59,6 +58,7 @@ use crate::{
     runtime::logging,
 };
 
+use super::budget::ShutdownClock;
 use super::discord::GatewayTransport;
 use super::tick::watch_list;
 use ports::{ExtractorCache, LiveGuild, StoreProposer};
@@ -329,7 +329,7 @@ async fn follow(
 impl Extraction {
     /// Ordered stop (see the module docs); call after the gateway handler
     /// was dropped. Idempotent.
-    pub async fn stop(&mut self) {
+    pub async fn stop(&mut self, clock: &ShutdownClock) {
         self.stop.send_replace(true);
         // Nothing else may keep the feed or the store open.
         self.feed = None;
@@ -350,7 +350,11 @@ impl Extraction {
         .collect();
         // Holds the extractor, and so the store.
         let cancel = self.cancel.take();
-        if timeout(STOP_GRACE, settle(&mut running)).await.is_ok() {
+        if clock
+            .bounded("extraction", STOP_GRACE, settle(&mut running))
+            .await
+            .is_some()
+        {
             return;
         }
         // Compose kills the container 30 s after SIGTERM: cut the calls and
@@ -359,7 +363,11 @@ impl Extraction {
             cancel();
         }
         logging::event("WARN", "extraction_calls_cancelled", json!({}));
-        if timeout(CANCEL_GRACE, settle(&mut running)).await.is_err() {
+        if clock
+            .bounded("extraction_cancel", CANCEL_GRACE, settle(&mut running))
+            .await
+            .is_none()
+        {
             for task in &running {
                 task.abort();
             }

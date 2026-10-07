@@ -8,7 +8,10 @@ use super::{
     listeners::{self, Site},
     state::ApiState,
 };
-use crate::runtime::{application::HealthProbe, config::RuntimeConfig, error::Error, logging};
+use crate::runtime::{
+    application::HealthProbe, config::RuntimeConfig, error::Error, logging,
+    serve::budget::ShutdownClock,
+};
 
 /// What a live admin listener serves beyond the offline shell.
 pub struct LiveAdmin {
@@ -28,6 +31,22 @@ pub async fn serve(
     config: &RuntimeConfig,
     live: Option<LiveAdmin>,
     shutdown: impl Future<Output = ()>,
+) -> Result<(), Error> {
+    let unbounded = async {
+        shutdown.await;
+        ShutdownClock::default()
+    };
+    serve_bounded(config, live, unbounded).await
+}
+
+/// [`serve`] whose drain also ends where the started shutdown budget
+/// `shutdown` yields leaves off (before the store reserve). A drain cut by
+/// the budget is logged and returns `Ok`; one cut by the configured
+/// deadline stays an error.
+pub async fn serve_bounded(
+    config: &RuntimeConfig,
+    live: Option<LiveAdmin>,
+    shutdown: impl Future<Output = ShutdownClock>,
 ) -> Result<(), Error> {
     let mode = if live.is_some() { "live" } else { "offline" };
     let mut admin_site = Site::admin(&config.http);
@@ -70,7 +89,7 @@ pub async fn serve(
 
     tokio::select! {
         result = &mut servers => result.map_err(|_| Error::Startup("HTTP server stopped unexpectedly".into())),
-        () = shutdown => {
+        clock = shutdown => {
             logging::shutdown_started();
             // Open event streams never finish on their own: end them first so
             // the drain is not held to the deadline.
@@ -78,10 +97,15 @@ pub async fn serve(
                 events.close();
             }
             let _ = stop.send(());
-            timeout(config.shutdown_timeout, &mut servers)
-                .await
-                .map_err(|_| Error::Startup("graceful shutdown exceeded configured deadline".into()))?
-                .map_err(|_| Error::Startup("HTTP server stopped unexpectedly".into()))
+            let drain = clock.phase(config.shutdown_timeout);
+            match timeout(drain, &mut servers).await {
+                Ok(result) => result.map_err(|_| Error::Startup("HTTP server stopped unexpectedly".into())),
+                Err(_) if drain < config.shutdown_timeout => {
+                    clock.cut("http_drain");
+                    Ok(())
+                }
+                Err(_) => Err(Error::Startup("graceful shutdown exceeded configured deadline".into())),
+            }
         }
     }
 }

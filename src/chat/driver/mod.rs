@@ -46,8 +46,10 @@ pub const DEFAULT_HISTORY_TTL_S: f64 = 2700.0;
 /// v4 `MODEL_CONTEXT_TOKENS`.
 pub const DEFAULT_CONTEXT_TOKENS: usize = 8192;
 
-/// After the final abort: the log writes aborted questions spawn.
-const LOG_BUDGET: Duration = Duration::from_secs(1);
+/// After the final abort: the log writes aborted questions spawn. Under
+/// [`ChatDriver::stop_by`] this wait may run up to this long past `end`
+/// (into serve's store reserve), never more.
+pub(crate) const LOG_BUDGET: Duration = Duration::from_secs(1);
 
 /// Monotonic seconds.
 pub type Monotonic = Arc<dyn Fn() -> f64 + Send + Sync>;
@@ -474,6 +476,16 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
     /// Stop admitting, refund every waiting question, give running answers
     /// the grace to finish, then cut the rest (each still concludes).
     pub async fn stop(&self) {
+        self.stop_by(None).await;
+    }
+
+    /// [`Self::stop`] with its grace and cut waits ending by `end` at the
+    /// latest. The cut, the abort and join of what is left (aborted
+    /// questions conclude on drop) and the wait for their log writes always
+    /// run, so reservations and rows settle however little time is left;
+    /// that last wait alone may end up to [`LOG_BUDGET`] after `end`.
+    pub async fn stop_by(&self, end: Option<Instant>) {
+        let by = |at: Instant| end.map_or(at, |end| at.min(end));
         let dropped: Vec<Queued> = {
             let mut guard = self.state();
             let state = &mut *guard;
@@ -496,7 +508,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
             });
         }
         let config = &self.shared.config;
-        let deadline = Instant::now() + config.stop_grace;
+        let deadline = by(Instant::now() + config.stop_grace);
         for queued in &dropped {
             let _ = tokio::time::timeout_at(deadline, self.keycap_off(queued)).await;
         }
@@ -504,7 +516,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
         self.shared.cut.send_replace(true);
         // Cut questions conclude and log at once; their Discord tidy-up and
         // anything else still pending is bounded, then aborted.
-        let hard = Instant::now() + config.cut_budget;
+        let hard = by(Instant::now() + config.cut_budget);
         self.drain(hard).await;
         let left: Vec<JoinHandle<()>> = std::mem::take(&mut *self.tasks());
         for task in &left {
@@ -514,7 +526,11 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
             let _ = task.await;
         }
         // Aborted questions conclude on drop and may spawn their log write.
-        self.drain(Instant::now() + LOG_BUDGET).await;
+        // Deliberately allowed past `end` (user decision 2026-10-07), but
+        // never more than LOG_BUDGET past it.
+        let logs = Instant::now() + LOG_BUDGET;
+        self.drain(end.map_or(logs, |end| logs.min(end + LOG_BUDGET)))
+            .await;
         for task in std::mem::take(&mut *self.tasks()) {
             task.abort();
         }

@@ -115,8 +115,9 @@ where
         }
     }
 
-    /// A pass every [`PREGEN_INTERVAL`] until `stop`; a pass in flight
-    /// (including its model call) is abandoned at stop.
+    /// A pass every [`PREGEN_INTERVAL`] until `stop`; at stop a pass in
+    /// flight abandons its model call and its remaining keys, never a store
+    /// write.
     pub async fn run(&self, mut stop: watch::Receiver<bool>) {
         if !self.cards.heading.enabled() {
             return;
@@ -129,10 +130,9 @@ where
                 _ = stop.wait_for(|stop| *stop) => return,
                 _ = interval.tick() => {}
             }
-            tokio::select! {
-                biased;
-                _ = stop.wait_for(|stop| *stop) => return,
-                _ = self.pass() => {}
+            self.pass_until(Some(&stop)).await;
+            if *stop.borrow() {
+                return;
             }
         }
     }
@@ -140,6 +140,10 @@ where
     /// One pass at the clock's reading: rewrite at most
     /// [`MAX_REWRITES_PER_PASS`] missing headers, earliest first.
     pub async fn pass(&self) -> PregenReport {
+        self.pass_until(None).await
+    }
+
+    async fn pass_until(&self, stop: Option<&watch::Receiver<bool>>) -> PregenReport {
         let mut report = PregenReport::default();
         if !self.cards.heading.enabled() {
             return report;
@@ -153,6 +157,9 @@ where
         self.attempts().retain(|key, _| keys.contains(key.as_str()));
         let mut calls = 0;
         for candidate in &candidates {
+            if stop.is_some_and(|stop| *stop.borrow()) {
+                break;
+            }
             if self.attempts().get(&candidate.key).copied().unwrap_or(0) >= MAX_ATTEMPTS_PER_KEY {
                 continue;
             }
@@ -165,7 +172,7 @@ where
                 continue;
             }
             calls += 1;
-            match self.generate(candidate).await {
+            match self.generate(candidate, stop).await {
                 Some(true) => report.stored += 1,
                 Some(false) => report.lost += 1,
                 None => {
@@ -321,21 +328,40 @@ where
 
     /// Rewrite and store insert-if-absent: `Some(true)` stored, `Some(false)`
     /// a send stored first, `None` no rewrite (or the write failed).
-    async fn generate(&self, candidate: &Candidate) -> Option<bool> {
+    async fn generate(
+        &self,
+        candidate: &Candidate,
+        stop: Option<&watch::Receiver<bool>>,
+    ) -> Option<bool> {
         let heading = &self.cards.heading;
         let catalog = self.cards.catalog.as_deref();
-        let (line, source) = match &candidate.header {
-            Header::DayOf { day } => heading.choose(day, PREGEN_DEADLINE).await,
-            Header::Countdown { .. } => {
-                heading
-                    .choose_phrase(PhraseKind::Countdown, catalog, PREGEN_DEADLINE)
-                    .await
+        let chosen = async {
+            match &candidate.header {
+                Header::DayOf { day } => heading.choose(day, PREGEN_DEADLINE).await,
+                Header::Countdown { .. } => {
+                    heading
+                        .choose_phrase(PhraseKind::Countdown, catalog, PREGEN_DEADLINE)
+                        .await
+                }
+                Header::Digest { .. } => {
+                    heading
+                        .choose_phrase(PhraseKind::Digest, catalog, PREGEN_DEADLINE)
+                        .await
+                }
             }
-            Header::Digest { .. } => {
-                heading
-                    .choose_phrase(PhraseKind::Digest, catalog, PREGEN_DEADLINE)
-                    .await
+        };
+        // Stop cuts only the model call; the store work below finishes unless serve
+        // aborts the worker at its shutdown cutoff, which rolls the save back whole.
+        let (line, source) = match stop {
+            Some(stop) => {
+                let mut stop = stop.clone();
+                tokio::select! {
+                    biased;
+                    _ = stop.wait_for(|stop| *stop) => return None,
+                    chosen = chosen => chosen,
+                }
             }
+            None => chosen.await,
         };
         if source != HeadingSource::Rewrite {
             return None;

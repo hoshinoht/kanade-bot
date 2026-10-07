@@ -241,6 +241,22 @@ impl SqliteStore {
         self.readers.acquire().await
     }
 
+    /// From now on every read fails at once (`PoolClosed`, a backend error),
+    /// waiting ones included; reads in progress and every write are
+    /// unaffected. For serve's shutdown cutoff, so later reads cannot each
+    /// wait out the acquire timeout. [`Self::close`] still closes the pool.
+    pub fn refuse_reads(&self) {
+        // Marks the pool closed on the call; the returned future would only
+        // wait for connections in use to come back.
+        drop(self.readers.close());
+    }
+
+    /// The reader pool itself, for tests that hold every reader.
+    #[cfg(test)]
+    pub(crate) fn reader_pool(&self) -> sqlx::SqlitePool {
+        self.readers.clone()
+    }
+
     /// Take ownership (opening or creating the database file), then create
     /// or migrate the schema.
     ///

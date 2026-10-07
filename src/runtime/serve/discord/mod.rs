@@ -14,6 +14,7 @@
 
 mod late;
 mod ports;
+mod stop_aware;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -26,8 +27,11 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use twilight_model::id::Id;
 
+use stop_aware::StopAware;
+
 use super::{
     api::Composition,
+    budget::ShutdownClock,
     chat::{self, ChatInputs, ChatRuntime, ServeAnswerer},
     chat_cards::ChatDesk,
     commands,
@@ -84,6 +88,8 @@ pub struct Prepared {
     pub probe: GatewayProbe,
     pub tick_status: Arc<TickStatus>,
     pub extraction: Arc<ExtractionStatus>,
+    /// Bounds the stop phases and the tick's Discord calls once started.
+    pub shutdown: ShutdownClock,
     live: Live,
 }
 
@@ -101,6 +107,7 @@ pub fn prepare(config: &ServeConfig, tick: Duration) -> Prepared {
         probe,
         tick_status: Arc::new(TickStatus::new(tick)),
         extraction: Arc::new(ExtractionStatus::default()),
+        shutdown: ShutdownClock::default(),
         live: Live {
             router,
             status: connection,
@@ -133,6 +140,8 @@ pub struct Discord {
     chat: Option<ChatRuntime>,
     /// Completed shutdown steps, in order.
     steps: Vec<&'static str>,
+    /// Started when the shutdown signal fires; bounds every stop phase.
+    pub shutdown: ShutdownClock,
 }
 
 /// One card desk (journalled posts, ✅/❌ answers) over the shared store.
@@ -190,9 +199,19 @@ where
         cache,
         tick_status,
         extraction: extraction_status,
+        shutdown,
         live,
         probe,
     } = prepared;
+    // Every Discord call made from here on (tick, card desk, manual digest,
+    // card refresh, decline retraction, commands, chat, extraction, roster,
+    // identity) ends by the shutdown deadline with the outcome the
+    // transport's own deadline would give, so a journalled send in flight at
+    // the cutoff is finalised, not dropped. A pass-through until shutdown.
+    let transport = Arc::new(StopAware::new(
+        Arc::clone(&wiring.transport),
+        shutdown.clone(),
+    ));
     let connection = live.status.clone();
     let scope = scope(config);
     let access = Arc::clone(&composition.access);
@@ -210,7 +229,7 @@ where
             access: Arc::clone(&access),
             avatars: composition.admin.state.avatars.clone(),
         },
-        Arc::clone(&wiring.transport),
+        Arc::clone(&transport),
         Arc::clone(&cache),
         scope,
         Arc::clone(&roster),
@@ -220,7 +239,7 @@ where
 
     let decline_retraction: DeclineRetraction = {
         let store = Arc::clone(&store);
-        let transport = Arc::clone(&wiring.transport);
+        let transport = Arc::clone(&transport);
         let roster = Arc::clone(&roster);
         let cache = Arc::clone(&cache);
         let config = delivery_config(&config.instance_id, policy.clone(), &composition.settings);
@@ -252,7 +271,7 @@ where
     let desk = Arc::new(card_desk(
         config,
         &store,
-        &wiring.transport,
+        &transport,
         &wiring.clock,
         &roster,
         &access,
@@ -288,7 +307,7 @@ where
     );
     let rsvp_replay = crate::bot::rsvp_replay::RsvpReplay::new(
         Arc::clone(&store),
-        Arc::clone(&wiring.transport),
+        Arc::clone(&transport),
         Arc::clone(&wiring.clock),
         Arc::new(LogAlerts),
     );
@@ -302,7 +321,7 @@ where
         settings: composition.settings.clone(),
         changes: state.config.as_ref().map(|desk| desk.subscribe()),
         desk: Arc::clone(&desk),
-        transport: Arc::clone(&wiring.transport),
+        transport: Arc::clone(&transport),
         cache: Arc::clone(&cache),
         roster: Arc::clone(&roster),
         bosses: Arc::clone(&state.catalog),
@@ -322,18 +341,24 @@ where
                 .map(|runner| Arc::new(RescanDesk::new(runner)));
         }
         None => {
-            extraction.stop().await;
+            extraction.stop(&ShutdownClock::default()).await;
             return Err(Error::Startup(
                 "the rescan runner could not be attached".into(),
             ));
         }
     }
-    let cards = card_kit(
-        config.runtime.http.boss_dir.as_deref(),
-        Arc::clone(&composition.admin.state.catalog),
-        composition.models.as_ref(),
-        Arc::clone(&composition.personas),
-        settings_changes(composition),
+    // Every card user (tick, refresh, digest post, debug, header
+    // pre-generation, the only one that calls the model) shares the kit, so
+    // no heading rewrite outlasts the shutdown deadline.
+    let cards = stop_aware::cards(
+        card_kit(
+            config.runtime.http.boss_dir.as_deref(),
+            Arc::clone(&composition.admin.state.catalog),
+            composition.models.as_ref(),
+            Arc::clone(&composition.personas),
+            settings_changes(composition),
+        ),
+        shutdown.clone(),
     );
     let quiet = Arc::new(AtomicBool::new(
         composition.settings.notifications.quiet_mode,
@@ -341,7 +366,7 @@ where
     let post_channel = Arc::new(RwLock::new(composition.settings.posting.channel_id.clone()));
     let digest_post: DigestPost = {
         let store = Arc::clone(&store);
-        let transport = Arc::clone(&wiring.transport);
+        let transport = Arc::clone(&transport);
         let roster = Arc::clone(&roster);
         let cache = Arc::clone(&cache);
         let cards = cards.clone();
@@ -396,7 +421,7 @@ where
     match Arc::get_mut(&mut composition.admin.state) {
         Some(state) => state.digest_post = Some(digest_post),
         None => {
-            extraction.stop().await;
+            extraction.stop(&ShutdownClock::default()).await;
             return Err(Error::Startup(
                 "the manual digest post could not be attached".into(),
             ));
@@ -411,7 +436,7 @@ where
     };
     let refresh = Arc::new(CardRefresh {
         store: Arc::clone(&store),
-        transport: Arc::clone(&wiring.transport),
+        transport: Arc::clone(&transport),
         members: roster.clone(),
         cards: cards.clone(),
         policy: policy.clone(),
@@ -433,7 +458,7 @@ where
     );
     let tick = TickLoop {
         store: Arc::clone(&store),
-        transport: Arc::clone(&wiring.transport),
+        transport: Arc::clone(&transport),
         cache: Arc::clone(&cache),
         roster: Arc::clone(&roster),
         clock: Arc::clone(&wiring.clock),
@@ -454,21 +479,21 @@ where
         Arc::clone(&composition.admin.state),
         Arc::clone(&store),
         Arc::clone(&cache),
-        Arc::clone(&wiring.transport),
+        Arc::clone(&transport),
         debug,
     ) {
         Ok(dispatcher) => dispatcher,
         Err(error) => {
-            extraction.stop().await;
+            extraction.stop(&ShutdownClock::default()).await;
             return Err(error);
         }
     };
-    let ready_transport = Arc::clone(&wiring.transport);
+    let ready_transport = Arc::clone(&transport);
     let owner_access = Arc::clone(&access);
     let chat_roster = Arc::clone(&roster);
     let mut handler = Fanout::new(
         scope.guild_id,
-        Arc::clone(&wiring.transport),
+        Arc::clone(&transport),
         dispatcher,
         Arc::new(move || owner_access.owner()),
         roster,
@@ -505,7 +530,7 @@ where
             clock: Arc::clone(&wiring.clock),
             desk: Arc::clone(&desk),
         },
-        transport: Arc::clone(&wiring.transport),
+        transport: Arc::clone(&transport),
         handle: composition.admin.state.chat.clone(),
         roster: chat_roster,
         access: Arc::clone(&access),
@@ -514,7 +539,7 @@ where
     let (feed, chat) = match started {
         Ok(started) => started,
         Err(error) => {
-            extraction.stop().await;
+            extraction.stop(&ShutdownClock::default()).await;
             return Err(error);
         }
     };
@@ -542,10 +567,9 @@ where
     let pregen_stop = stopped.clone();
     workers.push(tokio::spawn(async move { pregen.run(pregen_stop).await }));
     let identity_dir = config.runtime.http.identity_dir.as_deref();
-    let transport = Arc::clone(&wiring.transport);
     workers.extend(identity::spawn(
         identity_dir,
-        transport,
+        Arc::clone(&transport),
         Arc::clone(&cache),
         stopped.clone(),
     ));
@@ -579,6 +603,7 @@ where
         connection: probe.connection,
         chat: Some(chat),
         steps: Vec::new(),
+        shutdown,
     })
 }
 
@@ -629,7 +654,10 @@ impl Discord {
                 () = tick => Ended::Tick,
             };
             match ended {
-                Ended::Shutdown => break,
+                Ended::Shutdown => {
+                    self.shutdown.start();
+                    break;
+                }
                 Ended::Gateway(exit) => {
                     self.gateway = None;
                     let fatal = matches!(exit, Ok(RunExit::Closed { .. }));
@@ -637,6 +665,7 @@ impl Discord {
                     if fatal {
                         self.closed_for_good().await;
                         shutdown.await;
+                        self.shutdown.start();
                         return;
                     }
                 }
@@ -663,12 +692,30 @@ impl Discord {
         let extraction = &mut self.extraction;
         let stop_workers = &self.stop_workers;
         let workers = &mut self.workers;
+        let clock = &self.shutdown;
         let rest = async move {
             if let Some(stop) = stop_gateway {
                 let _ = stop.send(());
             }
-            if let Some(gateway) = gateway {
-                *exit = Some(gateway.await.map_err(drop));
+            if let Some(mut gateway) = gateway {
+                // The run's own close and task-drain graces bound it before
+                // the deadline does.
+                match clock.bounded("gateway", Duration::MAX, &mut gateway).await {
+                    Some(joined) => *exit = Some(joined.map_err(drop)),
+                    // Cut by the budget: no `RunExit` (its dropped-event
+                    // count is unknown) and not a failure; only a panic
+                    // fails serve.
+                    None => {
+                        gateway.abort();
+                        if let Err(error) = gateway.await
+                            && error.is_panic()
+                        {
+                            *exit = Some(Err(()));
+                        } else {
+                            logging::event("WARN", "gateway_aborted", json!({}));
+                        }
+                    }
+                }
             }
             if !steps.contains(&"gateway_closed") {
                 steps.push("gateway_closed");
@@ -681,23 +728,44 @@ impl Discord {
             // No message can reach chat or extraction any more; their cards
             // and replies go out before the workers stop.
             if let Some(mut chat) = chat {
-                chat.stop().await;
+                // Its waits end by the budget, but the cut, abort and join
+                // always run, so nothing is dropped half-stopped; the log
+                // writes of aborted questions may take up to 1 s past it
+                // (`chat::driver::LOG_BUDGET`, out of the store reserve).
+                let end = clock.phase_end();
+                chat.stop(end).await;
+                if end.is_some_and(|end| tokio::time::Instant::now() >= end) {
+                    clock.cut("chat");
+                }
                 logging::event("INFO", "chat_stopped", json!({}));
                 steps.push("chat_stopped");
             }
-            extraction.stop().await;
+            extraction.stop(clock).await;
             if !steps.contains(&"extraction_stopped") {
                 steps.push("extraction_stopped");
             }
             // Every queue sender is gone: workers drain, the tick stops.
             stop_workers.send_replace(true);
-            for worker in workers.drain(..) {
-                let _ = worker.await;
+            for mut worker in workers.drain(..) {
+                if clock
+                    .bounded("workers", Duration::MAX, &mut worker)
+                    .await
+                    .is_none()
+                {
+                    worker.abort();
+                    let _ = worker.await;
+                }
             }
             if !steps.contains(&"workers_stopped") {
                 steps.push("workers_stopped");
             }
         };
+        // The tick is awaited, never cut. It ends near the deadline anyway:
+        // its Discord calls end by it (`stop_aware`; it never calls the model),
+        // no send is admitted once the gateway has closed, its reads fail
+        // at once past the cutoff (`ShutdownClock::refusing_reads`), and
+        // what is left are atomic writes, each holding the one writer
+        // connection only for its own SQL (SQLite `busy_timeout` 5 s).
         match tick {
             Some(tick) => {
                 tokio::join!(rest, tick);
