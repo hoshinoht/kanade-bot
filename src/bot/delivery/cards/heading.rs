@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::json;
+use tokio::sync::watch;
 
 use crate::chat::nudge::{
     NudgeRewriter, Rejection, RewriteAttempt, RewriteDetail, RewriteFailure, RewritePrompt,
@@ -484,17 +485,21 @@ impl HeadingRewrite {
 
     /// The heading for `day` (e.g. `Fri 25 Sep`), rewritten ahead of the
     /// send for the card under `key` by `stage` (a batch or a catch-up);
-    /// never slower than `deadline`. Logs the source and the failure code,
-    /// never the text.
+    /// never slower than `deadline` and ended by the worker's `stop` (a cut
+    /// call fails with code `shutdown`). Logs the source and the failure
+    /// code, never the text.
     pub async fn choose(
         &self,
         day: &str,
         key: &str,
         stage: RewriteStage,
         deadline: Duration,
+        stop: Option<&watch::Receiver<bool>>,
     ) -> Chosen {
         let origin = TrialOrigin::new(stage, key);
-        let trial = self.trial(HeaderKind::DayOf, None, deadline, &origin).await;
+        let trial = self
+            .trial_until(HeaderKind::DayOf, None, deadline, &origin, stop)
+            .await;
         logging::event(
             "INFO",
             "day_of_heading",
@@ -522,10 +527,11 @@ impl HeadingRewrite {
         key: &str,
         stage: RewriteStage,
         deadline: Duration,
+        stop: Option<&watch::Receiver<bool>>,
     ) -> Chosen {
         let origin = TrialOrigin::new(stage, key);
         let trial = self
-            .trial(HeaderKind::Phrase(kind), catalog, deadline, &origin)
+            .trial_until(HeaderKind::Phrase(kind), catalog, deadline, &origin, stop)
             .await;
         logging::event(
             "INFO",
@@ -575,8 +581,27 @@ impl HeadingRewrite {
         deadline: Duration,
         origin: &TrialOrigin,
     ) -> Trial {
+        self.trial_until(kind, catalog, deadline, origin, None)
+            .await
+    }
+
+    /// As [`Self::trial`], ended by `stop` (the pre-generation worker's): a
+    /// call in flight when it fires fails `Unavailable` with code `shutdown`
+    /// and still writes its row; set before the call, the model is not
+    /// called and nothing is logged.
+    async fn trial_until(
+        &self,
+        kind: HeaderKind,
+        catalog: Option<&BossTable>,
+        deadline: Duration,
+        origin: &TrialOrigin,
+        stop: Option<&watch::Receiver<bool>>,
+    ) -> Trial {
+        if stop.is_some_and(|stop| *stop.borrow()) {
+            return shutdown_trial(kind);
+        }
         let started = tokio::time::Instant::now();
-        let (trial, called) = self.attempt(kind, catalog, deadline).await;
+        let (trial, called) = self.attempt(kind, catalog, deadline, stop).await;
         if let Some(log) = &self.log {
             log.record(RewriteAttempt {
                 kind: kind.log_kind(),
@@ -603,6 +628,7 @@ impl HeadingRewrite {
         kind: HeaderKind,
         catalog: Option<&BossTable>,
         deadline: Duration,
+        stop: Option<&watch::Receiver<bool>>,
     ) -> (Trial, bool) {
         let seed = seed_of(kind);
         let fallback = |output, verdict, detail| Trial {
@@ -624,8 +650,19 @@ impl HeadingRewrite {
             );
         };
         let prompt = RewritePrompt::build(&persona, NudgeMood::Playful, seed);
-        let call = rewriter.rewrite_detailed(&prompt, deadline);
-        let outcome = match tokio::time::timeout(deadline, call).await {
+        let call = tokio::time::timeout(deadline, rewriter.rewrite_detailed(&prompt, deadline));
+        let outcome = match stop {
+            None => call.await,
+            Some(stop) => {
+                let mut stop = stop.clone();
+                tokio::select! {
+                    biased;
+                    outcome = call => outcome,
+                    Ok(_) = stop.wait_for(|stop| *stop) => return (shutdown_trial(kind), true),
+                }
+            }
+        };
+        let outcome = match outcome {
             Err(_) => {
                 return (
                     fallback(None, Verdict::Timeout, RewriteDetail::default()),
@@ -669,6 +706,20 @@ fn seed_of(kind: HeaderKind) -> &'static str {
     match kind {
         HeaderKind::DayOf => DAY_OF_HEADING_SEED,
         HeaderKind::Phrase(phrase) => phrase.seed(),
+    }
+}
+
+/// A trial ended by the worker's stop: the seed, as when serve's shutdown
+/// cutoff cuts the call.
+fn shutdown_trial(kind: HeaderKind) -> Trial {
+    Trial {
+        output: None,
+        line: seed_of(kind).to_owned(),
+        verdict: Verdict::Failed(RewriteFailure::Unavailable),
+        detail: RewriteDetail {
+            code: Some("shutdown"),
+            ..RewriteDetail::default()
+        },
     }
 }
 

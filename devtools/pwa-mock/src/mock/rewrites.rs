@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use super::clock::iso_date;
+use super::clock::{iso_date, valid_date};
 use super::extractions::usage_summary;
 use super::{MoveError, Store};
 use serde_json::{Value, json};
@@ -205,13 +205,57 @@ fn some(map: &BTreeMap<String, String>, key: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-fn valid_date(d: &str) -> bool {
-    d.len() == 10
-        && d.as_bytes()[4] == b'-'
-        && d.as_bytes()[7] == b'-'
-        && d.chars()
-            .enumerate()
-            .all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit())
+fn invalid(message: impl Into<String>) -> MoveError {
+    MoveError::Coded(422, "invalid_filter", message.into())
+}
+
+/// A query component with `+` as a space (the server's `wire::decode`).
+fn decode(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'%' => {
+                out.push(u8::from_str_radix(text.get(index + 1..index + 3)?, 16).ok()?);
+                index += 3;
+            }
+            b'+' => {
+                out.push(b' ');
+                index += 1;
+            }
+            byte => {
+                out.push(byte);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+/// The query as the server reads it: a pair that does not decode refuses the
+/// whole query, then every key must be known and sent once.
+fn filters(raw: Option<&str>) -> Result<BTreeMap<String, String>, MoveError> {
+    let pairs: Option<Vec<(String, String)>> = raw
+        .unwrap_or_default()
+        .split('&')
+        .filter(|pair| !pair.is_empty())
+        .map(|pair| {
+            let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+            Some((decode(key)?, decode(value)?))
+        })
+        .collect();
+    let mut map = BTreeMap::new();
+    for (key, value) in pairs.ok_or_else(|| invalid("A filter could not be read."))? {
+        if !KEYS.contains(&key.as_str()) {
+            return Err(invalid(format!("Unknown filter “{key}”.")));
+        }
+        if map.contains_key(&key) {
+            return Err(invalid(format!("Send “{key}” once.")));
+        }
+        map.insert(key, value);
+    }
+    Ok(map)
 }
 
 impl Attempt {
@@ -248,13 +292,10 @@ impl Attempt {
 }
 
 impl Store {
-    /// As the server: unknown keys or values, malformed or inverted dates
-    /// are `422 invalid_filter`.
-    pub fn rewrites(&self, query: &BTreeMap<String, String>) -> Result<Value, MoveError> {
-        let bad = |m: String| MoveError::Coded(422, "invalid_filter", m);
-        if let Some(key) = query.keys().find(|key| !KEYS.contains(&key.as_str())) {
-            return Err(bad(format!("Unknown filter “{key}”.")));
-        }
+    /// As the server: an undecodable pair, unknown or repeated keys, unknown
+    /// values, malformed, impossible or inverted dates are `422 invalid_filter`.
+    pub fn rewrites(&self, raw: Option<&str>) -> Result<Value, MoveError> {
+        let query = &filters(raw)?;
         let kind = some(query, "kind");
         let stage = some(query, "stage");
         let verdicts: Vec<String> = some(query, "verdict")
@@ -272,22 +313,22 @@ impl Store {
             if let Some(value) = value
                 && !allowed.contains(&value)
             {
-                return Err(bad(format!("Unknown {key} “{value}”.")));
+                return Err(invalid(format!("Unknown {key} “{value}”.")));
             }
         }
         if let Some(v) = verdicts.iter().find(|v| !VERDICTS.contains(&v.as_str())) {
-            return Err(bad(format!("Unknown verdict “{v}”.")));
+            return Err(invalid(format!("Unknown verdict “{v}”.")));
         }
         let (from, to) = (some(query, "from"), some(query, "to"));
         for d in [&from, &to].into_iter().flatten() {
             if !valid_date(d) {
-                return Err(bad(format!("Dates are YYYY-MM-DD, not “{d}”.")));
+                return Err(invalid(format!("Dates are YYYY-MM-DD, not “{d}”.")));
             }
         }
         if let (Some(f), Some(t)) = (&from, &to)
             && f > t
         {
-            return Err(bad("The range starts after it ends.".into()));
+            return Err(invalid("The range starts after it ends."));
         }
         let model = some(query, "model");
         let q = some(query, "q").map(|q| q.to_lowercase());
@@ -370,5 +411,65 @@ impl Store {
             ),
         );
         Ok(Value::Object(row))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::tests::store;
+    use super::MoveError;
+
+    fn refusal(raw: &str) -> String {
+        match store().rewrites(Some(raw)) {
+            Err(MoveError::Coded(422, "invalid_filter", message)) => message,
+            Ok(_) => panic!("{raw} was accepted"),
+            Err(other) => panic!("{raw}: {other}"),
+        }
+    }
+
+    fn rows(raw: &str) -> usize {
+        store().rewrites(Some(raw)).ok().expect(raw)["rows"]
+            .as_array()
+            .unwrap()
+            .len()
+    }
+
+    #[test]
+    fn dates_must_name_a_real_day() {
+        for day in [
+            "2026-02-30",
+            "2026-13-01",
+            "2026-00-10",
+            "2026-04-31",
+            "2026-02-29",
+            "2026-9-29",
+        ] {
+            assert_eq!(
+                refusal(&format!("from={day}")),
+                format!("Dates are YYYY-MM-DD, not “{day}”.")
+            );
+        }
+        for day in ["2028-02-29", "2026-12-31", "2026-04-30"] {
+            rows(&format!("to={day}"));
+        }
+    }
+
+    #[test]
+    fn the_query_is_read_pair_by_pair_as_the_server_does() {
+        assert_eq!(refusal("stage=batch&stage=debug"), "Send “stage” once.");
+        assert_eq!(refusal("q=&q="), "Send “q” once.");
+        for raw in ["q=%ZZ", "q=%F", "q=%FF", "kind=day_of&bogus%ZZ=1"] {
+            assert_eq!(refusal(raw), "A filter could not be read.", "{raw}");
+        }
+        assert_eq!(refusal("ki%6Ed=x"), "Unknown kind “x”.");
+        assert_eq!(refusal("bo+gus=1"), "Unknown filter “bo gus”.");
+        let all = rows("");
+        assert_eq!(
+            rows("&stage&&verdict="),
+            all,
+            "empty pairs and values are unset"
+        );
+        assert_eq!(rows("q=waku+waku"), 2, "`+` is a space");
+        assert_eq!(rows("stage=%62atch"), 4);
     }
 }

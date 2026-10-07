@@ -8,9 +8,12 @@
 //! reset falls in that window. Between batches a [`PREGEN_INTERVAL`] tick
 //! catches up on cards the last batch had not seen (runs added or moved
 //! since, re-grouped cards) once they fire within the horizon, and retries
-//! the batch's own failures. A process whose batch time has passed today
-//! without a batch runs one at once; a changed time applies from its next
-//! occurrence and never re-generates stored lines.
+//! the batch's own failures. Until a process has run its first batch it
+//! has no batch state, so catch-up takes only cards firing by the next
+//! occurrence (the previous batch's window, which may have been missed) and
+//! leaves later ones to that batch. A process whose batch time has passed
+//! today without a batch runs one at once; a changed time applies from its
+//! next occurrence and never re-generates stored lines.
 //!
 //! The intents come from the admin preview's planner (`plan_dispatch` at each
 //! reminder's fire time), so grouping and keys match the tick's. Writes are
@@ -25,7 +28,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, NaiveTime, TimeDelta, TimeZone, Utc};
 use chrono_tz::Tz;
 use serde_json::json;
 use tokio::sync::watch;
@@ -115,11 +118,22 @@ fn busy(code: Option<&str>) -> bool {
 
 /// Today's batch instant in `zone` (01:00 when the time falls in a DST gap).
 fn occurrence(now: DateTime<Utc>, time: NaiveTime, zone: Tz) -> Option<DateTime<Utc>> {
-    let day = now.with_timezone(&zone).date_naive();
+    occurrence_on(now.with_timezone(&zone).date_naive(), time, zone)
+}
+
+fn occurrence_on(day: NaiveDate, time: NaiveTime, zone: Tz) -> Option<DateTime<Utc>> {
     [time, time + TimeDelta::hours(1)]
         .into_iter()
         .find_map(|at| zone.from_local_datetime(&day.and_time(at)).earliest())
         .map(|at| at.with_timezone(&Utc))
+}
+
+/// The first batch occurrence after `now`: today's, else tomorrow's.
+fn next_occurrence(now: DateTime<Utc>, time: NaiveTime, zone: Tz) -> Option<DateTime<Utc>> {
+    let today = now.with_timezone(&zone).date_naive();
+    occurrence_on(today, time, zone)
+        .filter(|at| *at > now)
+        .or_else(|| occurrence_on(today.succ_opt()?, time, zone))
 }
 
 #[derive(Default)]
@@ -186,8 +200,8 @@ where
     }
 
     /// A tick every [`PREGEN_INTERVAL`] until `stop`; at stop a tick in
-    /// flight abandons its model call and its remaining keys, never a store
-    /// write.
+    /// flight ends its model call (logged as `shutdown`) and abandons its
+    /// remaining keys, never a store write.
     pub async fn run(&self, mut stop: watch::Receiver<bool>) {
         if !self.cards.heading.enabled() {
             return;
@@ -247,7 +261,9 @@ where
             .iter()
             .filter(|candidate| candidate.at <= now + HEADER_HORIZON)
             .collect();
-        {
+        // Until this process has run a batch, catch-up takes only cards the
+        // previous batch would have covered (due by the next occurrence).
+        let catchup_until = {
             let mut plan = self.plan();
             if let Some(at) = batch {
                 plan.last_batch = Some(at);
@@ -259,7 +275,11 @@ where
             plan.attempts.retain(|key, _| keys.contains(key.as_str()));
             plan.busy.retain(|key, _| keys.contains(key.as_str()));
             plan.pending.retain(|key| keys.contains(key.as_str()));
-        }
+            match (plan.last_batch, plan.time) {
+                (None, Some(time)) => next_occurrence(now, time, self.policy.zone()),
+                _ => None,
+            }
+        };
         report.batch = batch.is_some();
         let mut calls = 0;
         for candidate in due {
@@ -276,8 +296,11 @@ where
                 }
                 if batch.is_some() || plan.pending.contains(&candidate.key) {
                     RewriteStage::Batch
-                } else if plan.seen.contains(&candidate.key) {
-                    // Seen by the last batch beyond its window: the next batch's.
+                } else if plan.seen.contains(&candidate.key)
+                    || catchup_until.is_some_and(|until| candidate.at > until)
+                {
+                    // Seen by the last batch beyond its window, or past the
+                    // next occurrence before any batch: that batch's.
                     continue;
                 } else {
                     RewriteStage::Catchup
@@ -473,35 +496,43 @@ where
         let heading = &self.cards.heading;
         let catalog = self.cards.catalog.as_deref();
         let key = candidate.key.as_str();
-        let chosen = async {
-            match &candidate.header {
-                Header::DayOf { day } => heading.choose(day, key, stage, PREGEN_DEADLINE).await,
-                Header::Countdown { .. } => {
-                    heading
-                        .choose_phrase(PhraseKind::Countdown, catalog, key, stage, PREGEN_DEADLINE)
-                        .await
-                }
-                Header::Digest { .. } => {
-                    heading
-                        .choose_phrase(PhraseKind::Digest, catalog, key, stage, PREGEN_DEADLINE)
-                        .await
-                }
+        // Stop ends only the model call, inside the trial so its row is logged
+        // (`shutdown`); the store work below finishes unless serve aborts the
+        // worker at its shutdown cutoff, which rolls the save back whole.
+        let chosen = match &candidate.header {
+            Header::DayOf { day } => heading.choose(day, key, stage, PREGEN_DEADLINE, stop).await,
+            Header::Countdown { .. } => {
+                heading
+                    .choose_phrase(
+                        PhraseKind::Countdown,
+                        catalog,
+                        key,
+                        stage,
+                        PREGEN_DEADLINE,
+                        stop,
+                    )
+                    .await
             }
-        };
-        // Stop cuts only the model call; the store work below finishes unless serve
-        // aborts the worker at its shutdown cutoff, which rolls the save back whole.
-        let chosen = match stop {
-            Some(stop) => {
-                let mut stop = stop.clone();
-                tokio::select! {
-                    biased;
-                    _ = stop.wait_for(|stop| *stop) => return Done::Stopped,
-                    chosen = chosen => chosen,
-                }
+            Header::Digest { .. } => {
+                heading
+                    .choose_phrase(
+                        PhraseKind::Digest,
+                        catalog,
+                        key,
+                        stage,
+                        PREGEN_DEADLINE,
+                        stop,
+                    )
+                    .await
             }
-            None => chosen.await,
         };
         if chosen.source != HeadingSource::Rewrite {
+            // A call the stop cut (code `shutdown`): no attempt spent, the key
+            // stays pending. Any other failure counts, even if the stop has
+            // fired since the call returned.
+            if chosen.code == Some("shutdown") {
+                return Done::Stopped;
+            }
             return Done::Failed {
                 busy: busy(chosen.code),
             };

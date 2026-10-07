@@ -727,7 +727,14 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
             .await;
         }
     }
-    for bad in ["?verdict=bogus", "?kind=send", "?outcome=accepted"] {
+    for bad in [
+        "?verdict=bogus",
+        "?kind=send",
+        "?outcome=accepted",
+        "?from=2026-02-30",
+        "?stage=batch&stage=debug",
+        "?q=%ZZ",
+    ] {
         h.expect(
             false,
             "GET",

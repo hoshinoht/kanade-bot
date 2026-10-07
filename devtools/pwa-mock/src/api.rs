@@ -14,7 +14,7 @@ use crate::{
 };
 use axum::{
     Json,
-    extract::{Path, Query, State, rejection::JsonRejection},
+    extract::{Path, Query, RawQuery, State, rejection::JsonRejection},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -449,11 +449,10 @@ pub async fn chat_turn(State(app): State<App>, Path(id): Path<String>) -> Respon
     outcome(app.store.lock().await.chat_turn(&id))
 }
 
-pub async fn rewrites(
-    State(app): State<App>,
-    Query(q): Query<std::collections::BTreeMap<String, String>>,
-) -> Response {
-    outcome(app.store.lock().await.rewrites(&q))
+/// The raw query: the mock reads pairs itself so repeated or undecodable
+/// keys are refused as the server refuses them.
+pub async fn rewrites(State(app): State<App>, RawQuery(q): RawQuery) -> Response {
+    outcome(app.store.lock().await.rewrites(q.as_deref()))
 }
 
 pub async fn rewrite(State(app): State<App>, Path(id): Path<String>) -> Response {

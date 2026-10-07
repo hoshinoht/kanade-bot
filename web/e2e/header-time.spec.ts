@@ -17,7 +17,15 @@ test('header generation time: saves, refuses a bad clock, undoes', async ({ page
 
   await field.fill('03:30');
   await card.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByText('Reminder headers are written daily at 03:30.')).toBeVisible();
+  const saved = page.getByRole('group', { name: 'Notification' }).filter({ hasText: 'Reminder headers are written daily at 03:30.' });
+  await expect(saved).toBeVisible();
+  const config = await page.request.get(`${ADMIN}/api/admin/config`);
+  expect(await config.json()).toMatchObject({ notifications: { header_generation_time: '03:30' } });
+
+  // Undo restores the previous time, on screen and on the server.
+  await saved.getByRole('button', { name: 'Undo' }).click();
+  await expect(page.getByText('Back to 00:00.')).toBeVisible();
+  await expect(field).toHaveValue('00:00');
   await page.reload();
-  await expect(page.getByRole('form', { name: 'Reminder header rewrites' }).getByRole('textbox')).toHaveValue('03:30');
+  await expect(page.getByRole('form', { name: 'Reminder header rewrites' }).getByRole('textbox')).toHaveValue('00:00');
 });

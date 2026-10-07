@@ -147,6 +147,32 @@ pub fn valid_time(time: &str) -> bool {
         && time[3..].parse::<u8>().is_ok_and(|m| m < 60)
 }
 
+/// `YYYY-MM-DD` in ASCII digits naming a real (proleptic Gregorian) day, as
+/// the server's chrono check.
+pub fn valid_date(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let shaped = bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| matches!(index, 4 | 7) || byte.is_ascii_digit());
+    if !shaped {
+        return false;
+    }
+    let n = |range: std::ops::Range<usize>| text[range].parse::<u32>().unwrap_or(0);
+    let (y, m, d) = (n(0..4), n(5..7), n(8..10));
+    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+    let last = match m {
+        2 => 28 + u32::from(leap),
+        4 | 6 | 9 | 11 => 30,
+        1..=12 => 31,
+        _ => 0,
+    };
+    (1..=last).contains(&d)
+}
+
 pub fn minutes(time: &str) -> i64 {
     let h: i64 = time[..2].parse().unwrap_or(0);
     let m: i64 = time[3..].parse().unwrap_or(0);

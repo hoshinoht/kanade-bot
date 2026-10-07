@@ -3,6 +3,7 @@
 //! startup batch, time changes, busy and failure retries, the digest's week
 //! rules and the disabled default.
 
+use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -16,8 +17,8 @@ use kanade::bot::delivery::{
     PREGEN_DEADLINE, PregenReport, SEEN_HORIZON,
 };
 use kanade::chat::nudge::{
-    NudgeRewriter, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriter,
-    StoreRewriteSink,
+    NudgeRewriter, RewriteAttempt, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt,
+    RewriteSink, SharedRewriter, StoreRewriteSink,
 };
 use kanade::domain::history::Origin;
 use kanade::domain::ids::RandomIds;
@@ -430,6 +431,138 @@ async fn a_running_worker_stops_mid_rewrite() {
     stop.send_replace(true);
     running.await;
     assert_eq!(heading(&store, &key).await, None);
+}
+
+/// A rewrite cut by the worker's stop still writes its one row (`shutdown`,
+/// with its latency) and stores nothing; the key stays the batch's to retry.
+#[tokio::test(start_paused = true)]
+async fn a_rewrite_cut_by_the_worker_stop_is_logged_as_shutdown() {
+    let store = Arc::new(MemoryScheduleStore::new());
+    let logs = Arc::new(MemoryScheduleStore::new());
+    let world = world();
+    let key = countdown_at(&store, now() + TimeDelta::hours(1)).await;
+    let rewriter = Scripted::new(Script::Hang);
+    let worker = pregen(&store, &world, &logged(&rewriter, &logs), now());
+    let (stop, stopped) = watch::channel(false);
+    let running = worker.run(stopped);
+    tokio::pin!(running);
+    tokio::select! {
+        () = &mut running => panic!("the worker ended on its own"),
+        () = tokio::time::sleep(Duration::from_secs(1)) => {}
+    }
+    stop.send_replace(true);
+    running.await;
+    assert_eq!(heading(&store, &key).await, None, "nothing stored");
+    let rows = logs
+        .list_rewrites(&RewriteFilter {
+            limit: 10,
+            ..RewriteFilter::default()
+        })
+        .await
+        .expect("list")
+        .items;
+    let cut: Vec<_> = rows
+        .iter()
+        .map(|row| {
+            (
+                row.context.as_deref(),
+                row.stage,
+                row.verdict.as_str(),
+                row.code.as_deref(),
+                row.latency_ms,
+            )
+        })
+        .collect();
+    assert_eq!(
+        cut,
+        [(
+            Some(key.as_str()),
+            RewriteStage::Batch,
+            "unavailable",
+            Some("shutdown"),
+            Some(1000)
+        )]
+    );
+    // No attempt was spent: the next pass retries it as the batch's.
+    assert_eq!(worker.pass().await.failed, 1, "the hang now times out");
+    assert_eq!(rewriter.calls(), 2);
+}
+
+/// Stops the worker while logging, i.e. after the model call returned.
+struct StopOnLog {
+    inner: StoreRewriteSink<MemoryScheduleStore>,
+    stop: watch::Sender<bool>,
+}
+
+impl RewriteSink for StopOnLog {
+    fn record(&self, attempt: RewriteAttempt) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+        self.stop.send_replace(true);
+        self.inner.record(attempt)
+    }
+}
+
+/// A rewrite that failed on its own is a failure even when the stop fires
+/// before the worker reads the result: the attempt is spent, not retried free.
+#[tokio::test]
+async fn a_failure_finished_before_the_stop_still_counts() {
+    let store = Arc::new(MemoryScheduleStore::new());
+    let logs = Arc::new(MemoryScheduleStore::new());
+    let world = world();
+    let key = countdown_at(&store, now() + TimeDelta::hours(1)).await;
+    let rewriter = Scripted::new(Script::Fail);
+    let (stop, stopped) = watch::channel(false);
+    let mut cards = rewriting(&rewriter);
+    cards.heading.log = Some(Arc::new(StopOnLog {
+        inner: StoreRewriteSink::new(Arc::clone(&logs), Arc::new(now)),
+        stop,
+    }));
+    let worker = pregen(&store, &world, &cards, now());
+    worker.run(stopped).await;
+    let rows = logs
+        .list_rewrites(&RewriteFilter {
+            limit: 10,
+            ..RewriteFilter::default()
+        })
+        .await
+        .expect("list")
+        .items;
+    assert_eq!(rows.len(), 1);
+    assert_ne!(rows[0].code.as_deref(), Some("shutdown"), "{:?}", rows[0]);
+    assert_eq!(heading(&store, &key).await, None);
+    // One attempt spent: the budget runs out one call early.
+    for _ in 1..MAX_ATTEMPTS_PER_KEY {
+        worker.pass().await;
+    }
+    assert_eq!(worker.pass().await, PregenReport::default(), "budget spent");
+    assert_eq!(rewriter.calls(), MAX_ATTEMPTS_PER_KEY as usize);
+}
+
+#[tokio::test]
+async fn before_its_first_batch_a_process_catches_up_only_until_the_batch_time() {
+    let store = Arc::new(MemoryScheduleStore::new());
+    let logs = Arc::new(MemoryScheduleStore::new());
+    let early = countdown_at(&store, kl(10, 20, 45)).await;
+    let late = countdown_at(&store, kl(10, 23, 0)).await;
+    let rewriter = Scripted::new(Script::Reply("Waku waku!"));
+    // Started at 20:00 with the batch at 21:00: yesterday's batch covered
+    // the cards due by 21:00, so only those are caught up now.
+    let rig = Rig::new(
+        &store,
+        &logged(&rewriter, &logs),
+        kl(10, 20, 0),
+        clock(21, 0),
+    );
+    let first = rig.worker.pass().await;
+    assert_eq!((first.batch, first.stored), (false, 1), "{first:?}");
+    assert_eq!(heading(&store, &early).await, Some("Waku waku!".into()));
+    assert_eq!(heading(&store, &late).await, None, "left for the batch");
+    assert_eq!(rig.at(kl(10, 20, 30)).pass().await.stored, 0);
+    let batch = rig.at(kl(10, 21, 0)).pass().await;
+    assert_eq!((batch.batch, batch.stored), (true, 1), "{batch:?}");
+    assert_eq!(heading(&store, &late).await, Some("Waku waku!".into()));
+    let mut expected = vec![(early, RewriteStage::Catchup), (late, RewriteStage::Batch)];
+    expected.sort();
+    assert_eq!(stages(&logs).await, expected);
 }
 
 #[tokio::test]

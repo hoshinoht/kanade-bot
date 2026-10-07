@@ -58,6 +58,11 @@ test('rewrites: list, filter by stage and verdict, open an attempt', async ({ pa
 test('rewrites: a refused filter shows its error, a missing attempt says so', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   expect((await page.request.get(`${ADMIN}/api/admin/rewrites?verdict=bogus`)).status()).toBe(422);
+  await page.goto(`${ADMIN}/rewrites?verdict=bogus&sw=off`);
+  const refused = page.getByRole('alert').filter({ hasText: 'Couldn’t load the rewrites' });
+  await expect(refused).toContainText('Unknown verdict “bogus”.');
+  await expect(page.getByRole('listbox', { name: /Rewrite attempts/ })).toHaveCount(0);
+
   await page.goto(`${ADMIN}/rewrites?attempt=rw-missing&sw=off`);
   await expect(page.getByRole('alert')).toContainText('No rewrite “rw-missing”');
 });
