@@ -187,7 +187,12 @@ impl ChatPilot {
             .ok()
             .filter(|id| !id.is_empty());
 
-        let mut asked = question_turn(done.message, done.directory);
+        let mut asked = question_turn(
+            done.message,
+            done.ctx.bot_user_id.as_deref().unwrap_or_default(),
+            done.ctx.self_role_id.as_deref(),
+            done.directory,
+        );
         let mut answered = ChatTurn::new(TurnRole::Assistant, reply.clone(), posted_id.clone());
         if withheld {
             for id in [Some(&done.message.id), posted_id.as_ref()]

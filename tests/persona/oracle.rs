@@ -9,7 +9,18 @@ use kanade::chat::persona::{
 };
 use serde_json::Value;
 
-use crate::support::{Fixture, pid, prof};
+use crate::{
+    common::{Deviation, apply_deviations},
+    support::{Fixture, pid, prof},
+};
+
+const BUNDLE_VOICE: &str =
+    "Cheeky, smug kusogaki Kanade: react first, one tease, then the exact answer.";
+
+struct NamedDeviations {
+    name: &'static str,
+    entries: Vec<Deviation>,
+}
 
 /// The explicit YAML voice each synthetic profile carries in v5. v4 scraped
 /// `**Voice:**` from the Markdown; the v5 converter moves it into `voice`.
@@ -35,6 +46,102 @@ pub fn cases() -> Vec<Value> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/v5/vectors/persona/persona.json");
     let document: Value = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
     document["cases"].as_array().unwrap().clone()
+}
+
+fn case_id(case: &Value) -> &'static str {
+    match case["case_id"].as_str().expect("case id") {
+        "bundle-default-unnamed-model" => "bundle-default-unnamed-model",
+        "bundle-default-with-focus" => "bundle-default-with-focus",
+        "profile-voice-examples-partial-staging" => "profile-voice-examples-partial-staging",
+        "profile-without-voice-or-examples" => "profile-without-voice-or-examples",
+        "profile-placeholder-voice-and-example" => "profile-placeholder-voice-and-example",
+        "profile-example-budget-and-section-rules" => "profile-example-budget-and-section-rules",
+        "profile-example-count-limit" => "profile-example-count-limit",
+        other => panic!("unknown persona case {other}"),
+    }
+}
+
+fn uses_default_voice(case: &Value) -> bool {
+    VOICES
+        .iter()
+        .find(|(id, _)| *id == case_id(case))
+        .is_none_or(|(_, voice)| voice.is_none_or(|voice| voice.contains('<')))
+}
+
+fn reminder_with_voice(voice: &str) -> String {
+    let mut voice = voice.to_owned();
+    if !voice.ends_with(['.', '!', '?']) {
+        voice.push('.');
+    }
+    format!(
+        "{}{} Your voice: {voice}",
+        kanade::chat::prompts::REMINDER_PREFIX,
+        kanade::chat::prompts::REMINDER_SUFFIX.trim_start(),
+    )
+}
+
+/// Apply the approved prompt-byte differences while asserting frozen v4 bytes.
+pub fn expected(case: &Value) -> Value {
+    let id = case_id(case);
+    let frozen = &case["expected"];
+    let system = frozen["system_prompt"].as_str().expect("system prompt");
+    let reminder = frozen["voice_reminder"].as_str().expect("voice reminder");
+    let default = kanade::chat::prompts::DEFAULT_VOICE;
+    let intermediate_voice = if uses_default_voice(case) {
+        BUNDLE_VOICE
+    } else {
+        reminder
+            .strip_prefix(kanade::chat::prompts::REMINDER_PREFIX)
+            .and_then(|line| {
+                line.strip_suffix(&format!(
+                    "{} {}",
+                    kanade::chat::prompts::REMINDER_SUFFIX,
+                    kanade::chat::prompts::STYLE_POLICY_QUALIFIER
+                ))
+            })
+            .expect("frozen reminder layout")
+    };
+    let mut groups = Vec::new();
+    if uses_default_voice(case) {
+        groups.push(NamedDeviations {
+            name: "D-VOICE-CUE",
+            entries: vec![
+                Deviation {
+                    case_id: id,
+                    pointer: "/system_prompt".into(),
+                    v4: system.into(),
+                    v5: system.replace(default, BUNDLE_VOICE).into(),
+                },
+                Deviation {
+                    case_id: id,
+                    pointer: "/voice_reminder".into(),
+                    v4: reminder.into(),
+                    v5: reminder.replace(default, BUNDLE_VOICE).into(),
+                },
+            ],
+        });
+    }
+    groups.push(NamedDeviations {
+        name: "D-REMINDER-ORDER",
+        entries: vec![Deviation {
+            case_id: id,
+            pointer: "/voice_reminder".into(),
+            v4: reminder.replace(default, BUNDLE_VOICE).into(),
+            v5: reminder_with_voice(intermediate_voice).into(),
+        }],
+    });
+    let mut expected = frozen.clone();
+    for group in groups {
+        let (next, applied) = apply_deviations(id, &expected, &group.entries);
+        assert_eq!(
+            applied,
+            group.entries.len(),
+            "{}: deviation unused",
+            group.name
+        );
+        expected = next;
+    }
+    expected
 }
 
 fn quoted(text: &str) -> String {
@@ -126,7 +233,7 @@ fn compiled_prompts_match_the_v4_oracle_bytes() {
     let mut replayed = 0;
     for case in &cases {
         let id = case["case_id"].as_str().unwrap();
-        let expected = &case["expected"];
+        let expected = expected(case);
         let (compiled, _) = compile_case(case);
         let turn = turn(&case["input"]);
         assert_eq!(turn.header(), expected["header"].as_str().unwrap(), "{id}");
@@ -177,7 +284,7 @@ fn oracle_cases_exercise_each_voice_and_example_source() {
         find("bundle-default-unnamed-model"),
         (
             "bundle-default-unnamed-model".into(),
-            VoiceSource::Default,
+            VoiceSource::Bundle,
             ExampleSource::None
         )
     );
@@ -189,7 +296,7 @@ fn oracle_cases_exercise_each_voice_and_example_source() {
     let placeholder = find("profile-placeholder-voice-and-example");
     assert_eq!(
         (placeholder.1, placeholder.2),
-        (VoiceSource::Default, ExampleSource::None)
+        (VoiceSource::Bundle, ExampleSource::None)
     );
 }
 

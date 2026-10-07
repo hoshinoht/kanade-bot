@@ -23,7 +23,10 @@ fn tracked_kanade_bundle_keeps_block_scalars() {
             .prompt
             .contains("coordination matter.\n\nUse her speech")
     );
-    assert_eq!(parsed.voice, None);
+    assert_eq!(
+        parsed.voice.as_deref(),
+        Some("Cheeky, smug kusogaki Kanade: react first, one tease, then the exact answer.")
+    );
     assert!(parsed.staging.guide_named.starts_with("{boss}? Eh…?"));
 }
 

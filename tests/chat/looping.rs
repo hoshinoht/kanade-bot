@@ -124,6 +124,69 @@ fn generation_json(generation: &Generation) -> Value {
 
 /// What the reserved clean retry answers in the steps that reach it.
 const CLEAN_REPLY: &str = "Which one did you mean?";
+const BUNDLE_VOICE: &str =
+    "Cheeky, smug kusogaki Kanade: react first, one tease, then the exact answer.";
+
+fn voice_cue(request: &Value) -> Value {
+    let mut request = request.clone();
+    let content = request["messages"]
+        .as_array()
+        .and_then(|messages| messages.last())
+        .and_then(|message| message["content"].as_str())
+        .map(str::to_owned)
+        .expect("final reminder content");
+    assert!(content.contains(kanade::chat::prompts::DEFAULT_VOICE));
+    request["messages"]
+        .as_array_mut()
+        .expect("messages")
+        .last_mut()
+        .expect("reminder")["content"] = content
+        .replace(kanade::chat::prompts::DEFAULT_VOICE, BUNDLE_VOICE)
+        .into();
+    request
+}
+
+fn reminder_order(request: &Value) -> Value {
+    let mut request = request.clone();
+    let content = request["messages"]
+        .as_array()
+        .and_then(|messages| messages.last())
+        .and_then(|message| message["content"].as_str())
+        .map(str::to_owned)
+        .expect("final reminder content");
+    let expected = format!(
+        "{}{}{} {}",
+        kanade::chat::prompts::REMINDER_PREFIX,
+        BUNDLE_VOICE,
+        kanade::chat::prompts::REMINDER_SUFFIX,
+        kanade::chat::prompts::STYLE_POLICY_QUALIFIER,
+    );
+    assert_eq!(content, expected, "voice-cue reminder layout");
+    request["messages"]
+        .as_array_mut()
+        .expect("messages")
+        .last_mut()
+        .expect("reminder")["content"] = format!(
+        "{}{} Your voice: {BUNDLE_VOICE}",
+        kanade::chat::prompts::REMINDER_PREFIX,
+        kanade::chat::prompts::REMINDER_SUFFIX.trim_start(),
+    )
+    .into();
+    request
+}
+
+fn final_reminder(request: &Value) -> Value {
+    reminder_order(&voice_cue(request))
+}
+
+fn final_reminders(value: &Value) -> Value {
+    let mut value = value.clone();
+    let requests = value["requests"].as_array_mut().expect("requests");
+    for request in requests {
+        *request = final_reminder(request);
+    }
+    value
+}
 
 /// Steps whose answer v5 retries with a clean context (`D-CLEAN-RETRY`);
 /// `true` when the v5 runner rejected the whole reply as unreadable, so no
@@ -302,6 +365,8 @@ fn named() -> Vec<Named> {
     let mut seasonal_list = Vec::new();
     let mut auto_forward = Vec::new();
     let mut voiced_card = Vec::new();
+    let mut voice = Vec::new();
+    let mut reminder = Vec::new();
     for case in file["cases"].as_array().expect("cases") {
         let case_id = *CASES
             .iter()
@@ -315,6 +380,26 @@ fn named() -> Vec<Named> {
         {
             let v4 = &step["value"];
             let pointer = format!("/steps/{index}/value");
+            for (k, request) in v4["requests"]
+                .as_array()
+                .expect("requests")
+                .iter()
+                .enumerate()
+            {
+                let with_voice = voice_cue(request);
+                voice.push(dev(
+                    case_id,
+                    format!("{pointer}/requests/{k}"),
+                    request.clone(),
+                    with_voice.clone(),
+                ));
+                reminder.push(dev(
+                    case_id,
+                    format!("{pointer}/requests/{k}"),
+                    with_voice,
+                    reminder_order(&voice_cue(request)),
+                ));
+            }
             if let Some(strict) = clean_step(case_id, index) {
                 let scripted = case["input"]["steps"][index]["replies"]
                     .as_array()
@@ -323,8 +408,8 @@ fn named() -> Vec<Named> {
                 clean.push(dev(
                     case_id,
                     pointer,
-                    v4.clone(),
-                    cleaned(v4, strict, scripted),
+                    final_reminders(v4),
+                    cleaned(&final_reminders(v4), strict, scripted),
                 ));
                 continue;
             }
@@ -334,12 +419,13 @@ fn named() -> Vec<Named> {
                 .iter()
                 .enumerate()
             {
+                let request = final_reminder(request);
                 if request.get("temperature").is_some() {
                     shaping.push(dev(
                         case_id,
                         format!("{pointer}/requests/{k}"),
                         request.clone(),
-                        shaped(request),
+                        shaped(&request),
                     ));
                 }
             }
@@ -387,19 +473,27 @@ fn named() -> Vec<Named> {
                         .iter()
                         .enumerate()
                     {
+                        let request = final_reminder(request);
                         let mut v5 = request.clone();
                         v5["reasoning_effort"] = json!("low");
-                        floor.push(dev(
-                            case_id,
-                            format!("{pointer}/requests/{k}"),
-                            request.clone(),
-                            v5,
-                        ));
+                        floor.push(dev(case_id, format!("{pointer}/requests/{k}"), request, v5));
                     }
                 }
                 // R01 (user 2026-10-01): an over-budget question that posted
                 // no card is told why instead of v4's silent empty reply.
                 ("context-budget", 1) => {
+                    voice.push(dev(
+                        case_id,
+                        format!("{pointer}/error"),
+                        v4["error"].clone(),
+                        json!("ContextBudgetError: chat request estimate 18600 exceeds context budget 8192 with completion reserve"),
+                    ));
+                    reminder.push(dev(
+                        case_id,
+                        format!("{pointer}/error"),
+                        json!("ContextBudgetError: chat request estimate 18600 exceeds context budget 8192 with completion reserve"),
+                        json!("ContextBudgetError: chat request estimate 18560 exceeds context budget 8192 with completion reserve"),
+                    ));
                     budget.push(dev(
                         case_id,
                         format!("{pointer}/reply"),
@@ -407,26 +501,29 @@ fn named() -> Vec<Named> {
                         json!(CONTEXT_BUDGET_REPLY),
                     ));
                     // The reserve is per route now, so the error names it.
-                    reserve.push(error(
-                        "ContextBudgetError: chat request estimate 18613 exceeds context budget 8192 with completion reserve 1024",
+                    reserve.push(dev(
+                        case_id,
+                        format!("{pointer}/error"),
+                        json!("ContextBudgetError: chat request estimate 18560 exceeds context budget 8192 with completion reserve"),
+                        json!("ContextBudgetError: chat request estimate 18560 exceeds context budget 8192 with completion reserve 1024"),
                     ));
                     seasonal_list.push(dev(
                         case_id,
                         format!("{pointer}/error"),
-                        json!("ContextBudgetError: chat request estimate 18613 exceeds context budget 8192 with completion reserve 1024"),
-                        json!("ContextBudgetError: chat request estimate 18662 exceeds context budget 8192 with completion reserve 1024"),
+                        json!("ContextBudgetError: chat request estimate 18560 exceeds context budget 8192 with completion reserve 1024"),
+                        json!("ContextBudgetError: chat request estimate 18609 exceeds context budget 8192 with completion reserve 1024"),
                     ));
                     auto_forward.push(dev(
                         case_id,
                         format!("{pointer}/error"),
-                        json!("ContextBudgetError: chat request estimate 18662 exceeds context budget 8192 with completion reserve 1024"),
-                        json!("ContextBudgetError: chat request estimate 18709 exceeds context budget 8192 with completion reserve 1024"),
+                        json!("ContextBudgetError: chat request estimate 18609 exceeds context budget 8192 with completion reserve 1024"),
+                        json!("ContextBudgetError: chat request estimate 18656 exceeds context budget 8192 with completion reserve 1024"),
                     ));
                     voiced_card.push(dev(
                         case_id,
                         format!("{pointer}/error"),
-                        json!("ContextBudgetError: chat request estimate 18709 exceeds context budget 8192 with completion reserve 1024"),
-                        json!("ContextBudgetError: chat request estimate 18783 exceeds context budget 8192 with completion reserve 1024"),
+                        json!("ContextBudgetError: chat request estimate 18656 exceeds context budget 8192 with completion reserve 1024"),
+                        json!("ContextBudgetError: chat request estimate 18729 exceeds context budget 8192 with completion reserve 1024"),
                     ));
                 }
                 ("missing-model-alias", 0) => {
@@ -444,6 +541,14 @@ fn named() -> Vec<Named> {
         }
     }
     vec![
+        Named {
+            name: "D-VOICE-CUE",
+            entries: voice,
+        },
+        Named {
+            name: "D-REMINDER-ORDER",
+            entries: reminder,
+        },
         Named {
             name: "D-CLEAN-RETRY",
             entries: clean,

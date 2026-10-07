@@ -579,6 +579,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                 &asked.origin_id,
                 now,
                 asked.bot_user_id.as_deref().unwrap_or_default(),
+                asked.self_role_id.as_deref(),
                 &*prepared.directory,
             );
             held.reserved = pilot.reserve_clean_retry(&asked.message.author_id, now);

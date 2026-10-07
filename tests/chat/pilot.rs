@@ -37,6 +37,7 @@ use crate::wire::kanade;
 use crate::world::{Channels, World, pilot};
 
 const BOT: &str = "5000";
+const ROLE: &str = "5001";
 const MODEL: &str = "synthetic-chat";
 
 /// Records replies; each gets id `reply-<n>`.
@@ -90,12 +91,15 @@ fn ctx(member: &str) -> ToolContext {
 }
 
 fn ctx_for(member: &str, message_id: &str) -> ToolContext {
-    ToolContext::new(
+    let mut ctx = ToolContext::new(
         member,
         "700",
         message_id,
         Utc.with_ymd_and_hms(2026, 9, 9, 4, 0, 0).unwrap(),
-    )
+    );
+    ctx.bot_user_id = Some(BOT.into());
+    ctx.self_role_id = Some(ROLE.into());
+    ctx
 }
 
 fn facts(id: &str) -> LogFacts<'static> {
@@ -492,11 +496,45 @@ async fn an_answer_is_remembered_anchored_and_focused() {
         "700",
         5.0 + 2700.0,
         BOT,
+        None,
         &world.guild,
     );
     assert_eq!(
         turns.iter().map(|t| t.content.as_str()).collect::<Vec<_>>(),
         ["Alvin tan: what's on?", "Nothing much!", "kanon: and then?"]
+    );
+}
+
+#[tokio::test]
+async fn remembered_questions_strip_leading_own_mentions_only() {
+    let world = world().await;
+    let persona = kanade();
+    let mut pilot = new_pilot();
+    let question = message("8110", "11", "<@&5001>, what are my runs <@22>?", None);
+    let concluded = pilot
+        .conclude(
+            Finished {
+                message: &question,
+                channel_id: "700",
+                ctx: &ctx_for("11", "8110"),
+                generation: &answered("Checking."),
+                persona: &persona,
+                directory: &world.guild,
+                log: facts("chat-mention-history"),
+                spent_at: None,
+                reserved: false,
+                now: 5.0,
+            },
+            &Replies::default(),
+        )
+        .await;
+    assert_eq!(
+        pilot.conversations.history("700", 6.0)[0].content,
+        "Alvin tan: what are my runs <@22>?"
+    );
+    assert_eq!(
+        concluded.interaction.question, "<@&5001>, what are my runs <@22>?",
+        "the chat log retains the raw source"
     );
 }
 
@@ -555,7 +593,15 @@ async fn blocked_content_is_withheld_from_every_later_context() {
         "what's on?",
         Some(("8200", "22", "something explicit")),
     );
-    let turns = build_turns(&mut pilot.conversations, &b, "700", 6.0, BOT, &world.guild);
+    let turns = build_turns(
+        &mut pilot.conversations,
+        &b,
+        "700",
+        6.0,
+        BOT,
+        None,
+        &world.guild,
+    );
     let texts: Vec<&str> = turns.iter().map(|t| t.prompt_text()).collect();
     assert_eq!(texts, [WITHHELD, WITHHELD, "Priya: what's on?"]);
     assert!(
@@ -576,6 +622,7 @@ async fn blocked_content_is_withheld_from_every_later_context() {
         "700",
         6.0 + 2700.0,
         BOT,
+        None,
         &world.guild,
     );
     assert_eq!(
@@ -821,6 +868,7 @@ async fn withheld_questions_survive_a_restart() {
         "700",
         3.0,
         BOT,
+        None,
         &world.guild,
     );
     assert_eq!(
@@ -837,6 +885,7 @@ async fn withheld_questions_survive_a_restart() {
         "700",
         3.0,
         BOT,
+        None,
         &world.guild,
     );
     assert_eq!(
@@ -926,6 +975,7 @@ async fn a_deflected_question_and_its_line_stay_out_of_context() {
         "700",
         2.0,
         BOT,
+        None,
         &world.guild,
     );
     assert_eq!(texts(&turns), ["Priya: what's on?"]);
@@ -940,6 +990,7 @@ async fn a_deflected_question_and_its_line_stay_out_of_context() {
             "700",
             2.0,
             BOT,
+            None,
             &world.guild,
         );
         assert_eq!(texts(&turns), ["Priya: huh?"], "reply to {parent}");
@@ -984,6 +1035,7 @@ async fn a_replaced_reply_drops_its_exchange_and_a_recovered_one_keeps_it() {
         "700",
         3.0,
         BOT,
+        None,
         &world.guild,
     );
     let texts = texts(&turns);
@@ -1057,6 +1109,7 @@ async fn excluded_questions_survive_a_restart() {
         "700",
         3.0,
         BOT,
+        None,
         &world.guild,
     );
     assert_eq!(texts(&turns), ["Priya: what?"]);

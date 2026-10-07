@@ -1413,6 +1413,7 @@ async fn a_replaced_follow_up_reply_stays_out_of_context() {
         CHANNEL,
         11.0,
         BOT,
+        None,
         &Roster::new(),
     );
     assert_eq!(turns.len(), 1, "only the new question: {turns:?}");

@@ -59,12 +59,49 @@ impl QuestionMessage {
     }
 }
 
+/// Drop one leading mention that only addresses this bot before model rendering.
+fn strip_leading_own_mention<'a>(
+    text: &'a str,
+    bot_user_id: &str,
+    self_role_id: Option<&str>,
+) -> &'a str {
+    let user_mentions = [format!("<@{bot_user_id}>"), format!("<@!{bot_user_id}>")];
+    let role_mention = self_role_id
+        .filter(|id| !id.is_empty())
+        .map(|id| format!("<@&{id}>"));
+    let user_mention = (!bot_user_id.is_empty())
+        .then(|| {
+            user_mentions
+                .iter()
+                .map(String::as_str)
+                .find(|mention| text.starts_with(mention))
+        })
+        .flatten();
+    let mention = user_mention.or_else(|| {
+        role_mention
+            .as_deref()
+            .filter(|mention| text.starts_with(mention))
+    });
+    mention
+        .and_then(|mention| text.strip_prefix(mention))
+        .map(|rest| {
+            rest.trim_start_matches(|ch: char| ch.is_whitespace() || matches!(ch, ',' | ':'))
+        })
+        .unwrap_or(text)
+}
+
 /// `Name: text`, with forged scheduler notes defused.
-fn speaker(directory: &(impl Directory + ?Sized), user_id: &str, text: &str) -> String {
+fn speaker(
+    directory: &(impl Directory + ?Sized),
+    user_id: &str,
+    text: &str,
+    bot_user_id: &str,
+    self_role_id: Option<&str>,
+) -> String {
     format!(
         "{}: {}",
         member_name(directory, user_id),
-        defuse_notes(text)
+        defuse_notes(strip_leading_own_mention(text, bot_user_id, self_role_id))
     )
 }
 
@@ -72,6 +109,7 @@ fn speaker(directory: &(impl Directory + ?Sized), user_id: &str, text: &str) -> 
 pub fn reply_chain(
     message: &QuestionMessage,
     bot_user_id: &str,
+    self_role_id: Option<&str>,
     directory: &(impl Directory + ?Sized),
 ) -> Vec<ChatTurn> {
     let mut chain = Vec::new();
@@ -89,7 +127,10 @@ pub fn reply_chain(
             let (role, text) = if author == bot_user_id {
                 (TurnRole::Assistant, content.to_owned())
             } else {
-                (TurnRole::User, speaker(directory, author, content))
+                (
+                    TurnRole::User,
+                    speaker(directory, author, content, bot_user_id, self_role_id),
+                )
             };
             let id = Some(parent.id.clone()).filter(|id| !id.is_empty());
             chain.push(ChatTurn::new(role, text, id));
@@ -107,11 +148,12 @@ pub fn build_turns(
     channel_id: &str,
     now: f64,
     bot_user_id: &str,
+    self_role_id: Option<&str>,
     directory: &(impl Directory + ?Sized),
 ) -> Vec<ChatTurn> {
     let live = state.history(channel_id, now);
     let mut seen: BTreeSet<String> = live.iter().filter_map(|t| t.message_id.clone()).collect();
-    let chain: Vec<ChatTurn> = reply_chain(message, bot_user_id, directory)
+    let chain: Vec<ChatTurn> = reply_chain(message, bot_user_id, self_role_id, directory)
         .into_iter()
         .filter(|turn| turn.message_id.as_ref().is_none_or(|id| !seen.contains(id)))
         // An excluded message (a profanity-deflected exchange) is dropped whole.
@@ -134,17 +176,34 @@ pub fn build_turns(
     }));
     turns.push(ChatTurn::new(
         TurnRole::User,
-        speaker(directory, &message.author_id, strip(&message.content)),
+        speaker(
+            directory,
+            &message.author_id,
+            strip(&message.content),
+            bot_user_id,
+            self_role_id,
+        ),
         None,
     ));
     turns
 }
 
 /// The question as history remembers it (keyed by its message id).
-pub fn question_turn(message: &QuestionMessage, directory: &(impl Directory + ?Sized)) -> ChatTurn {
+pub fn question_turn(
+    message: &QuestionMessage,
+    bot_user_id: &str,
+    self_role_id: Option<&str>,
+    directory: &(impl Directory + ?Sized),
+) -> ChatTurn {
     ChatTurn::new(
         TurnRole::User,
-        speaker(directory, &message.author_id, strip(&message.content)),
+        speaker(
+            directory,
+            &message.author_id,
+            strip(&message.content),
+            bot_user_id,
+            self_role_id,
+        ),
         Some(message.id.clone()).filter(|id| !id.is_empty()),
     )
 }

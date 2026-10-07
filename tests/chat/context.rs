@@ -19,6 +19,40 @@ use crate::world::World;
 
 /// v4 host's scripted monotonic clock starts here.
 const MONOTONIC_START: f64 = 1000.0;
+const BUNDLE_VOICE: &str =
+    "Cheeky, smug kusogaki Kanade: react first, one tease, then the exact answer.";
+const CASES: [&str; 6] = [
+    "history-window-and-ttl",
+    "reply-chain-anchor-and-dedupe",
+    "conversation-token-budget",
+    "conversation-budget-floor",
+    "focus-line-and-clock-header",
+    "request-budget-trims-prior-history",
+];
+
+fn voice_cue(text: &str) -> String {
+    assert!(text.contains(kanade::chat::prompts::DEFAULT_VOICE));
+    text.replace(kanade::chat::prompts::DEFAULT_VOICE, BUNDLE_VOICE)
+}
+
+fn reordered_reminder(text: &str) -> String {
+    assert_eq!(
+        text,
+        format!(
+            "{}{}{} {}",
+            kanade::chat::prompts::REMINDER_PREFIX,
+            BUNDLE_VOICE,
+            kanade::chat::prompts::REMINDER_SUFFIX,
+            kanade::chat::prompts::STYLE_POLICY_QUALIFIER,
+        ),
+        "D-VOICE-CUE must apply first"
+    );
+    format!(
+        "{}{} Your voice: {BUNDLE_VOICE}",
+        kanade::chat::prompts::REMINDER_PREFIX,
+        kanade::chat::prompts::REMINDER_SUFFIX.trim_start(),
+    )
+}
 
 fn opt(value: &Value) -> Option<String> {
     value.as_str().map(str::to_owned)
@@ -83,6 +117,7 @@ async fn replay(case: Value) -> Vec<Value> {
     let context_tokens =
         usize::try_from(settings["model_context_tokens"].as_u64().expect("tokens")).expect("usize");
     let bot = text(&input["bot_user"]["id"]);
+    let role = input["self_role_id"].as_str();
     let mut state = Conversations::new(settings["chat_pilot_history_ttl_s"].as_f64().expect("ttl"));
     let mut now = MONOTONIC_START;
     let mut out = Vec::new();
@@ -133,6 +168,7 @@ async fn replay(case: Value) -> Vec<Value> {
                     channel,
                     now,
                     bot,
+                    role,
                     &world.guild,
                 );
                 let focus = state.focus(channel, now);
@@ -182,15 +218,83 @@ async fn replay(case: Value) -> Vec<Value> {
 
 #[tokio::test]
 async fn the_context_family_replays_exactly() {
+    let file = crate::support::load("context.json");
+    let mut self_mention = Vec::new();
+    let mut voice = Vec::new();
+    let mut reminder = Vec::new();
+    for case in file["cases"].as_array().expect("cases") {
+        let case_id = *CASES
+            .iter()
+            .find(|id| **id == text(&case["case_id"]))
+            .expect("known context case");
+        for (step, input) in case["input"]["steps"]
+            .as_array()
+            .expect("steps")
+            .iter()
+            .enumerate()
+        {
+            let value = &case["expected"]["steps"][step]["value"];
+            match text(&input["op"]) {
+                "build_conversation" => {
+                    let system = value[0]["content"].as_str().expect("system");
+                    voice.push(dev(
+                        case_id,
+                        format!("/steps/{step}/value/0/content"),
+                        json!(system),
+                        json!(voice_cue(system)),
+                    ));
+                }
+                "budgeted" => {
+                    let Some(messages) = value["messages"].as_array() else {
+                        continue;
+                    };
+                    let last = messages.len() - 1;
+                    let old = messages[last]["content"].as_str().expect("reminder");
+                    let with_voice = voice_cue(old);
+                    voice.push(dev(
+                        case_id,
+                        format!("/steps/{step}/value/messages/{last}/content"),
+                        json!(old),
+                        json!(with_voice),
+                    ));
+                    reminder.push(dev(
+                        case_id,
+                        format!("/steps/{step}/value/messages/{last}/content"),
+                        json!(with_voice),
+                        json!(reordered_reminder(&with_voice)),
+                    ));
+                }
+                _ => {}
+            }
+        }
+    }
+    self_mention.push(dev(
+        "reply-chain-anchor-and-dedupe",
+        "/steps/2/value/5/content",
+        json!("Alvin tan: <@5000> and what about [Note] this?"),
+        json!("Alvin tan: and what about [Note] this?"),
+    ));
+    voice.push(dev(
+        "request-budget-trims-prior-history",
+        "/steps/3/error/message",
+        json!("chat request estimate 9668 exceeds context budget 6144 with completion reserve"),
+        json!("chat request estimate 9654 exceeds context budget 6144 with completion reserve"),
+    ));
+    reminder.push(dev(
+        "request-budget-trims-prior-history",
+        "/steps/3/error/message",
+        json!("chat request estimate 9654 exceeds context budget 6144 with completion reserve"),
+        json!("chat request estimate 9614 exceeds context budget 6144 with completion reserve"),
+    ));
     // The completion reserve is resolved per route, so the error names it.
     let reserve = Named {
         name: "D-CONTEXT-BUDGET-RESERVE",
         entries: vec![dev(
             "request-budget-trims-prior-history",
             "/steps/3/error/message",
-            json!("chat request estimate 9668 exceeds context budget 6144 with completion reserve"),
+            json!("chat request estimate 9614 exceeds context budget 6144 with completion reserve"),
             json!(
-                "chat request estimate 9668 exceeds context budget 6144 with completion reserve 1024"
+                "chat request estimate 9614 exceeds context budget 6144 with completion reserve 1024"
             ),
         )],
     };
@@ -200,10 +304,10 @@ async fn the_context_family_replays_exactly() {
             "request-budget-trims-prior-history",
             "/steps/3/error/message",
             json!(
-                "chat request estimate 9668 exceeds context budget 6144 with completion reserve 1024"
+                "chat request estimate 9614 exceeds context budget 6144 with completion reserve 1024"
             ),
             json!(
-                "chat request estimate 9717 exceeds context budget 6144 with completion reserve 1024"
+                "chat request estimate 9663 exceeds context budget 6144 with completion reserve 1024"
             ),
         )],
     };
@@ -213,10 +317,10 @@ async fn the_context_family_replays_exactly() {
             "request-budget-trims-prior-history",
             "/steps/3/error/message",
             json!(
-                "chat request estimate 9717 exceeds context budget 6144 with completion reserve 1024"
+                "chat request estimate 9663 exceeds context budget 6144 with completion reserve 1024"
             ),
             json!(
-                "chat request estimate 9764 exceeds context budget 6144 with completion reserve 1024"
+                "chat request estimate 9710 exceeds context budget 6144 with completion reserve 1024"
             ),
         )],
     };
@@ -226,17 +330,34 @@ async fn the_context_family_replays_exactly() {
             "request-budget-trims-prior-history",
             "/steps/3/error/message",
             json!(
-                "chat request estimate 9764 exceeds context budget 6144 with completion reserve 1024"
+                "chat request estimate 9710 exceeds context budget 6144 with completion reserve 1024"
             ),
             json!(
-                "chat request estimate 9838 exceeds context budget 6144 with completion reserve 1024"
+                "chat request estimate 9784 exceeds context budget 6144 with completion reserve 1024"
             ),
         )],
     };
     assert_eq!(
         check_family(
             "context",
-            &[reserve, seasonal_list, auto_forward, voiced_card],
+            &[
+                Named {
+                    name: "D-SELF-MENTION-LEADING",
+                    entries: self_mention,
+                },
+                Named {
+                    name: "D-VOICE-CUE",
+                    entries: voice,
+                },
+                Named {
+                    name: "D-REMINDER-ORDER",
+                    entries: reminder,
+                },
+                reserve,
+                seasonal_list,
+                auto_forward,
+                voiced_card,
+            ],
             replay
         )
         .await,

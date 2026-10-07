@@ -10,3 +10,6 @@ mod schema;
 mod staging;
 mod support;
 mod vectors;
+
+#[path = "../common/mod.rs"]
+mod common;

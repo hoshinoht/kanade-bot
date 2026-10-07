@@ -16,7 +16,7 @@ use kanade::{
 use serde_json::Value;
 
 use crate::{
-    oracle::{cases, turn},
+    oracle::{cases, expected, turn},
     support::{Fixture, bundle, catalog, pid, prof, profile, tracked},
 };
 
@@ -87,7 +87,10 @@ fn tracked_kanade_compiles_to_its_components() {
     assert_eq!(compiled.behaviour(), bundle.prompt.trim_end());
     assert_eq!(compiled.profile_prompt(), None);
     assert_eq!(compiled.profile_voice(), None);
-    assert_eq!(compiled.effective_voice(), prompts::DEFAULT_VOICE);
+    assert_eq!(
+        compiled.effective_voice(),
+        "Cheeky, smug kusogaki Kanade: react first, one tease, then the exact answer."
+    );
     assert!(compiled.examples().is_empty());
     assert_eq!(
         compiled.prompt_compact(),
@@ -144,11 +147,9 @@ fn normative_tsundere_profile_round_trips() {
     let own = prompt.find("Add a classic tsundere").unwrap();
     let scope = prompt.find("# Assistant scope").unwrap();
     assert!(behaviour < own && own < scope);
-    assert!(
-        compiled
-            .voice_reminder()
-            .contains("visibly helpful underneath. Every reply")
-    );
+    assert!(compiled.voice_reminder().ends_with(
+        "Your voice: Flustered classic tsundere denial: sharp outside, visibly helpful underneath."
+    ));
 }
 
 #[test]
@@ -272,6 +273,7 @@ fn tool_round() -> Vec<Message> {
 #[test]
 fn the_voice_reminder_is_the_final_user_message_after_tool_results() {
     let case = oracle_case("profile-voice-examples-partial-staging");
+    let expected = expected(&case);
     let (compiled, _) = crate::oracle::compile_case(&case);
     let turn = turn(&case["input"]);
     let messages = compiled.messages(&turn, tool_round());
@@ -279,14 +281,14 @@ fn the_voice_reminder_is_the_final_user_message_after_tool_results() {
     assert_eq!(
         messages[0],
         Message::System {
-            content: case["expected"]["system_prompt"].as_str().unwrap().into()
+            content: expected["system_prompt"].as_str().unwrap().into()
         }
     );
     assert_eq!(messages[1..4], tool_round()[..]);
     assert_eq!(
         messages[4],
         Message::User {
-            content: case["expected"]["voice_reminder"].as_str().unwrap().into()
+            content: expected["voice_reminder"].as_str().unwrap().into()
         }
     );
 }
@@ -297,6 +299,7 @@ async fn fake_provider_captures_the_compiled_request() {
     use kanade::infrastructure::llm::{ChatRequest, FakeProvider, LlmProvider};
 
     let case = oracle_case("bundle-default-with-focus");
+    let expected = expected(&case);
     let (compiled, _) = crate::oracle::compile_case(&case);
     let request = ChatRequest {
         model: "synthetic-model".into(),
@@ -315,14 +318,11 @@ async fn fake_provider_captures_the_compiled_request() {
     let Message::System { content } = &messages[0] else {
         panic!("system prompt first")
     };
-    assert_eq!(content, case["expected"]["system_prompt"].as_str().unwrap());
+    assert_eq!(content, expected["system_prompt"].as_str().unwrap());
     let Some(Message::User { content }) = messages.last() else {
         panic!("reminder last")
     };
-    assert_eq!(
-        content,
-        case["expected"]["voice_reminder"].as_str().unwrap()
-    );
+    assert_eq!(content, expected["voice_reminder"].as_str().unwrap());
 }
 
 const STRICT_BROKEN: &str = "  guide_named: '{boss} alpha guide'";
@@ -349,6 +349,7 @@ fn trusted_fallback_compiles_to_the_oracle_kanade_prompt() {
         Some(SelectionSource::TrackedFallback)
     );
     let case = oracle_case("bundle-default-with-focus");
+    let expected = expected(&case);
     let selectable = BTreeSet::new();
     let query = ProfileQuery {
         member_roles: &[],
@@ -359,11 +360,11 @@ fn trusted_fallback_compiles_to_the_oracle_kanade_prompt() {
     let compiled = snapshot.resolve(&query).unwrap().compile();
     assert_eq!(
         compiled.system_prompt(&turn(&case["input"])),
-        case["expected"]["system_prompt"].as_str().unwrap()
+        expected["system_prompt"].as_str().unwrap()
     );
     assert_eq!(
         compiled.voice_reminder(),
-        case["expected"]["voice_reminder"].as_str().unwrap()
+        expected["voice_reminder"].as_str().unwrap()
     );
 }
 

@@ -9,7 +9,7 @@ use kanade::{
 };
 
 use crate::{
-    oracle::{cases, turn},
+    oracle::{cases, expected, turn},
     support::{pid, prof, profile, tracked},
 };
 
@@ -51,6 +51,7 @@ fn policies_and_context_are_byte_identical_under_a_hostile_profile() {
     let benign = compile(&with_prompt("calm", "Answer calmly."), "calm");
     let hostile = compile(&with_prompt("hostile", HOSTILE), "hostile");
     let case = &cases()[1];
+    let expected = expected(case);
     let turn = turn(&case["input"]);
     let tail = |compiled: &CompiledPersona, profile: &str| {
         let system = compiled.system_prompt(&turn);
@@ -80,7 +81,7 @@ fn policies_and_context_are_byte_identical_under_a_hostile_profile() {
     assert_eq!(hostile.voice_reminder(), benign.voice_reminder());
     assert_eq!(
         hostile.voice_reminder(),
-        case["expected"]["voice_reminder"].as_str().unwrap()
+        expected["voice_reminder"].as_str().unwrap()
     );
 }
 

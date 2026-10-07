@@ -72,10 +72,9 @@ impl CompiledPersona {
             line.push('.');
         }
         format!(
-            "{}{line}{} {}",
+            "{}{} Your voice: {line}",
             prompts::REMINDER_PREFIX,
-            prompts::REMINDER_SUFFIX,
-            prompts::STYLE_POLICY_QUALIFIER
+            prompts::REMINDER_SUFFIX.trim_start(),
         )
     }
 

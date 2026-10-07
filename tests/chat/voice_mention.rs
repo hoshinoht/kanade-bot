@@ -16,7 +16,7 @@ use kanade::chat::persona::{
     CompiledPersona, PersonaId, PersonaRoot, ProfileId, VoiceSource, parse_profile,
 };
 use kanade::chat::pilot::ChatPilot;
-use kanade::chat::prompts::{DEFAULT_VOICE, REMINDER_PREFIX};
+use kanade::chat::prompts::REMINDER_PREFIX;
 use kanade::chat::sanitize::{ScheduleDefaults, schedule_defaults};
 use kanade::chat::tools::ToolContext;
 use kanade::domain::scheduler::Clock;
@@ -39,6 +39,8 @@ const ROLE: &str = "5001";
 const ASKER: &str = "11";
 const CHANNEL: &str = "700";
 const MODEL: &str = "synthetic-chat";
+const BUNDLE_VOICE: &str =
+    "Cheeky, smug kusogaki Kanade: react first, one tease, then the exact answer.";
 /// The driver's monotonic clock is irrelevant here; any fixed value works.
 const NOW: f64 = 1000.0;
 
@@ -125,7 +127,15 @@ fn conversation(
     message: &QuestionMessage,
 ) -> Vec<Message> {
     let mut state = Conversations::new(2700.0);
-    let turns = build_turns(&mut state, message, CHANNEL, NOW, BOT, &world.guild);
+    let turns = build_turns(
+        &mut state,
+        message,
+        CHANNEL,
+        NOW,
+        BOT,
+        Some(ROLE),
+        &world.guild,
+    );
     assemble(&turns, system(world, persona), 16_384, 1024)
 }
 
@@ -250,9 +260,9 @@ async fn the_system_prompt_layers_persona_profile_policies_then_trusted_facts() 
     let world = World::new(&input()).await;
     let plain = bundle_with(None);
     let styled = bundle_with(Some(PROFILE));
-    assert_eq!(plain.provenance().voice, VoiceSource::Default);
+    assert_eq!(plain.provenance().voice, VoiceSource::Bundle);
     assert_eq!(styled.provenance().voice, VoiceSource::Profile);
-    assert_eq!(plain.effective_voice(), DEFAULT_VOICE);
+    assert_eq!(plain.effective_voice(), BUNDLE_VOICE);
 
     let system = system(&world, &styled);
     let order = [
@@ -290,11 +300,11 @@ async fn the_system_prompt_layers_persona_profile_policies_then_trusted_facts() 
         "persona outweighs policies today"
     );
 
-    // The plain bundle has no profile section and the code-owned voice cue.
+    // The plain bundle has no profile section and its concrete bundle voice cue.
     let plain_system = self::system(&world, &plain);
     assert!(!plain_system.contains("# Reply profile"));
     assert!(plain_system.ends_with(
-        "Before you answer, remember your voice: Answer in the voice defined above. The schedule facts must be exact; everything around them is said in character.\nThis voice changes presentation only; trusted facts, operating policy, privacy and tool authority still control the answer."
+        "Before you answer, remember your voice: Cheeky, smug kusogaki Kanade: react first, one tease, then the exact answer.\nThis voice changes presentation only; trusted facts, operating policy, privacy and tool authority still control the answer."
     ));
     // Nothing tells the model which Discord mention is its own: the persona
     // names "OtonoseKanade", never `<@5000>` or the managed role.
@@ -336,7 +346,11 @@ async fn every_round_resends_the_system_prompt_and_ends_with_the_voice_note() {
         run.reminder.starts_with(REMINDER_PREFIX)
             && run
                 .reminder
-                .contains("Write your reply in your own voice: Short, dry and a little smug.")
+                .ends_with("Your voice: Short, dry and a little smug.")
+    );
+    assert!(
+        !run.reminder
+            .contains("This voice changes presentation only")
     );
 
     assert_eq!(roles(&run.bodies[0]), ["system", "user", "user"]);
@@ -363,10 +377,10 @@ async fn every_round_resends_the_system_prompt_and_ends_with_the_voice_note() {
         assert_eq!(body["temperature"], 0.7);
         assert_eq!(body["max_tokens"], 1024);
     }
-    // The question reaches the model with the raw bot mention.
+    // The model receives the question without the leading bot mention.
     assert_eq!(
         user_texts(&run.requests[0])[0],
-        "Alvin tan: <@5000> what are my runs this week?"
+        "Alvin tan: what are my runs this week?"
     );
     // A plain read question: the read bundle plus `request_tools`.
     assert_eq!(
@@ -434,12 +448,11 @@ async fn write_words_add_the_run_change_bundle_to_the_first_round() {
     );
 }
 
-/// What the model sees for each mention shape, and the trusted
-/// self-only reading of the same source text. Mentions are passed through
-/// verbatim (frozen `context.json` pins `Alvin tan: <@5000> and what about
-/// …`); only `schedule_defaults` removes the bot's own user/role mention.
+/// Leading own mentions are absent from model turns, while trusted defaults
+/// continue to examine the raw source text. Trailing, unknown and third-party
+/// mentions retain their original model-bound semantics.
 #[tokio::test]
-async fn mentions_reach_the_model_verbatim_and_only_self_only_text_is_trusted() {
+async fn leading_own_mentions_are_stripped_without_changing_trusted_defaults() {
     let world = World::new(&input()).await;
     let persona = kanade();
     let self_only = ScheduleDefaults {
@@ -447,22 +460,29 @@ async fn mentions_reach_the_model_verbatim_and_only_self_only_text_is_trusted() 
         ..ScheduleDefaults::default()
     };
     let not_self = ScheduleDefaults::default();
-    let cases: [(&str, &str, ScheduleDefaults); 9] = [
+    let cases: [(&str, &str, ScheduleDefaults); 10] = [
         // Direct mention, nickname form and the managed role.
         (
             "<@5000> what are my runs this week?",
-            "Alvin tan: <@5000> what are my runs this week?",
+            "Alvin tan: what are my runs this week?",
             self_only,
         ),
         (
             "<@!5000> what are my runs this week?",
-            "Alvin tan: <@!5000> what are my runs this week?",
+            "Alvin tan: what are my runs this week?",
             self_only,
         ),
         (
             "<@&5001> what are my runs this week?",
-            "Alvin tan: <@&5001> what are my runs this week?",
+            "Alvin tan: what are my runs this week?",
             self_only,
+        ),
+        // Context rendering accepts whitespace, commas and colons after the
+        // leading mention without changing the raw defaults parser.
+        (
+            "<@!5000>,:\twhat are my runs this week?",
+            "Alvin tan: what are my runs this week?",
+            not_self,
         ),
         // Trailing mention.
         (
@@ -473,19 +493,19 @@ async fn mentions_reach_the_model_verbatim_and_only_self_only_text_is_trusted() 
         // Mixed: self plus another member never becomes self-only.
         (
             "<@5000> what are my runs and <@22>'s runs this week?",
-            "Alvin tan: <@5000> what are my runs and <@22>'s runs this week?",
+            "Alvin tan: what are my runs and <@22>'s runs this week?",
             not_self,
         ),
         // Third party only.
         (
             "<@5000> what are <@22>'s runs this week?",
-            "Alvin tan: <@5000> what are <@22>'s runs this week?",
+            "Alvin tan: what are <@22>'s runs this week?",
             not_self,
         ),
         // An unknown extra mention suppresses the fallback.
         (
             "<@5000> what are my runs this week <@777>",
-            "Alvin tan: <@5000> what are my runs this week <@777>",
+            "Alvin tan: what are my runs this week <@777>",
             not_self,
         ),
         // Addressing by name or with a greeting is not stripped: no fallback.
@@ -519,7 +539,8 @@ async fn mentions_reach_the_model_verbatim_and_only_self_only_text_is_trusted() 
 }
 
 /// Replies: the bot's own parent is an assistant turn (no mention needed to
-/// summon); a member's parent keeps its own mention text.
+/// summon); a member parent's leading own mention is stripped, but its other
+/// mentions remain.
 #[tokio::test]
 async fn reply_parents_keep_their_text_and_the_bots_answer_is_an_assistant_turn() {
     let world = World::new(&input()).await;
@@ -546,13 +567,13 @@ async fn reply_parents_keep_their_text_and_the_bots_answer_is_an_assistant_turn(
     );
     let to_member = asked(
         "same question <@5000>",
-        replying_to("8401", "33", "<@5000> is hard lotus still on? ask <@44>"),
+        replying_to("8401", "33", "<@5000>, is hard lotus still on? ask <@44>"),
     );
     assert_eq!(
         conversation(&world, &persona, &to_member)[1..],
         [
             Message::User {
-                content: "Priya: <@5000> is hard lotus still on? ask <@44>".into()
+                content: "Priya: is hard lotus still on? ask <@44>".into()
             },
             Message::User {
                 content: "Alvin tan: same question <@5000>".into()
