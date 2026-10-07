@@ -6,6 +6,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Added**
 
+- Discord: bounded RSVP reaction recovery after fresh READY, with guarded removals, local-answer precedence and stale-edit checks; RESUMED and the delivery startup gate stay unchanged.
 - Verification: isolated browser smoke tests against the real Rust server and a binary backup/validated restore/restart drill, using invented temporary state only.
 - Container builds support OCI revision, version and source labels through documented build arguments.
 - Dev: a V02 live quality harness (`cargo run --features test-support --example v02_quality`) runs the real chat and extraction paths against invented fixtures under a request cap, using the active persona's bundle (`--persona-bundle`), scores visible facts, safety and prompt leaks, and writes private results; the suite and CI never run it. A test-support-only request hook on the model transport enforces the cap.
@@ -54,7 +55,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
   log every id sent (failed requests included), and `models check --probe`
   prints them.
 - Boss guides: shorter strategy names (e.g. "P4 burst only", "Keep P2 mark-free")
-  from the 2026-10-05 strategy review; steps and facts unchanged.
+  and plain full-map laser labels, with the Tiger/Bird break clarification
+  and explicit First Adversary party scaling by difficulty.
 - Boss guides: the HP breakdown starts folded, showing only "Total HP" in its
   head until opened.
 - Admin Account page: `GET /api/admin/me` (admin listener only) shows how you
@@ -405,6 +407,8 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- Admin weekly timings: fixed-PATCH retries recognize the normalized full request across interleaved edits and no-op races without duplicate effects. Changed or pre-fix keys return `idempotency_mismatch`; reload and use a fresh key.
+- Tests: live-extraction move fixtures now explicitly target their seeded tomorrow run, with a reset-eve regression; production extraction rules are unchanged.
 - Admin Bosses: picking another boss restores its full hero and resets the knowledge panel to the top, even after scrolling the previous guide into its compact header.
 - Admin: the Config → Notifications "Generate daily at" field is wide enough for its whole HH:MM (it clipped to "00:6"), the same width as the morning ping field.
 - Config and startup refuse a context reserve of 15360 tokens or more for any role (422 naming the role, reserve and the 16384-token call budget; the `[models.context.*]` seed refuses startup): each call reserves its prompt estimate plus the reserve out of that budget, so such a reserve failed every call before sending. The Config reserve fields show the limit, and the Rewrites log tells "reserved N > budget B" apart from "used N > reserved M".
