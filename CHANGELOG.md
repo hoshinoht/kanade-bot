@@ -398,6 +398,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- Reminder cards: persona-voiced day-of headings and countdown/digest phrases are rewritten ahead of time by a background pass (cards firing within 12 h, the coming week's digest; 30 s per rewrite, at most 4 per minute) instead of at send time, where the 2 s budget almost always fell back to the plain line. A send never calls the model: it uses the stored line, else the plain one, which then stays. Logs gain `stage` (`pregen`/`send`).
 - After a server restart (for example a backup restore that lowers the history head), open admin pages take the restored data instead of keeping the pre-restore week until reload.
 - Store: migration 0006 is restored byte for byte (a comment path edit in the
   docs move changed its checksum, so an existing store refused to open); a

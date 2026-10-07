@@ -8,7 +8,8 @@
 //! registration tasks) → chat stops (waiting questions refunded, running
 //! ones finish within the grace or are cut, each concluded) → extraction
 //! (feed, pipeline, `Rescans::close`; calls in flight cancelled) → roster and
-//! reaction and card-refresh workers drain → the running tick finishes (polled throughout) →
+//! reaction, card-refresh and header pre-generation workers drain (a header
+//! rewrite in flight is abandoned) → the running tick finishes (polled throughout) →
 //! (caller) HTTP drain → store close.
 
 mod late;
@@ -47,7 +48,7 @@ use crate::{
     },
     bot::{
         cards::{CardDesk, CardSettings, DeskDeps},
-        delivery::{CardRefresh, Delivery, DigestOutcome, LogAlerts, RefreshQueue},
+        delivery::{CardRefresh, Delivery, DigestOutcome, HeaderPregen, LogAlerts, RefreshQueue},
         events::{GuildScope, ReactionRouter, Router},
         gateway::{ConnectionStatus, EventSource, GatewayError, Live, RunExit, run_live},
         guild_cache::GuildCache,
@@ -422,6 +423,14 @@ where
     let refresh_queue = Arc::new(RefreshQueue::default());
     let queued = Arc::clone(&refresh_queue);
     store.observe_run_writes(Arc::new(move |runs: &[String]| queued.request(runs)));
+    // Persona headers are rewritten ahead of their sends, never on them.
+    let pregen = HeaderPregen::new(
+        Arc::clone(&store),
+        roster.clone(),
+        cards.clone(),
+        policy.clone(),
+        Arc::clone(&wiring.clock),
+    );
     let tick = TickLoop {
         store: Arc::clone(&store),
         transport: Arc::clone(&wiring.transport),
@@ -530,6 +539,8 @@ where
     workers.push(tokio::spawn(async move {
         refresh.run(&refresh_queue, refresh_stop).await;
     }));
+    let pregen_stop = stopped.clone();
+    workers.push(tokio::spawn(async move { pregen.run(pregen_stop).await }));
     let identity_dir = config.runtime.http.identity_dir.as_deref();
     let transport = Arc::clone(&wiring.transport);
     workers.extend(identity::spawn(

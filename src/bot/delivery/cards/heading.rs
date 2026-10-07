@@ -1,13 +1,16 @@
 //! Persona-voiced reminder headers. Day-of keeps its original rewrite contract;
 //! countdown and digest accept only a small, non-factual interjection.
+//! Rewrites run ahead of the send (`delivery::pregen`); a send never calls
+//! the model and uses the stored line or the seed.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde_json::json;
 
 use crate::chat::nudge::{
-    NudgeRewriter, REWRITE_DEADLINE, RewriteFailure, RewritePrompt, SharedRewriter, WordFilter,
-    WordSource, accept_rewrite_with,
+    NudgeRewriter, RewriteFailure, RewritePrompt, SharedRewriter, WordFilter, WordSource,
+    accept_rewrite_with,
 };
 use crate::chat::persona::{CompiledPersona, NudgeMood};
 use crate::domain::catalog::BossTable;
@@ -360,39 +363,71 @@ impl HeadingRewrite {
         ))
     }
 
-    /// The heading for `day` (e.g. `Fri 25 Sep`); never slower than the
-    /// rewrite deadline. Logs the source, never the text.
-    pub async fn choose(&self, day: &str) -> (String, HeadingSource) {
-        let (line, source, reason) = self.attempt().await;
+    /// Whether a pre-generation pass has anything to call.
+    pub fn enabled(&self) -> bool {
+        self.rewriter.is_some() && self.persona.is_some()
+    }
+
+    /// The heading for `day` (e.g. `Fri 25 Sep`), rewritten ahead of the
+    /// send; never slower than `deadline`. Logs the source, never the text.
+    pub async fn choose(&self, day: &str, deadline: Duration) -> (String, HeadingSource) {
+        let (line, source, reason) = self.attempt(deadline).await;
         logging::event(
             "INFO",
             "day_of_heading",
-            json!({"source": source.as_str(), "reason": reason}),
+            json!({"stage": "pregen", "source": source.as_str(), "reason": reason}),
         );
         (line.replace(DAY, day), source)
     }
 
-    /// A phrase stored before a countdown or digest claim. Its prompt contains
-    /// only the persona and the code-owned seed.
+    /// A countdown or digest phrase rewritten ahead of the send. Its prompt
+    /// contains only the persona and the code-owned seed.
     pub async fn choose_phrase(
         &self,
         kind: PhraseKind,
         catalog: Option<&BossTable>,
+        deadline: Duration,
     ) -> (String, HeadingSource) {
         let seed = kind.seed();
-        let (phrase, source, reason) = self.attempt_phrase(seed, catalog).await;
+        let (phrase, source, reason) = self.attempt_phrase(seed, catalog, deadline).await;
         logging::event(
             "INFO",
             "reminder_header_phrase",
-            json!({"kind": kind.as_str(), "source": source.as_str(), "reason": reason}),
+            json!({
+                "stage": "pregen",
+                "kind": kind.as_str(),
+                "source": source.as_str(),
+                "reason": reason,
+            }),
         );
         (phrase, source)
+    }
+
+    /// Logs a send that found no stored line and stores the seed.
+    pub fn seed_at_send(&self, kind: Option<PhraseKind>) {
+        let reason = if self.rewriter.is_none() {
+            "no_rewriter"
+        } else if self.persona.is_none() {
+            "no_persona"
+        } else {
+            "not_ready"
+        };
+        let mut fields = json!({"stage": "send", "source": "seed", "reason": reason});
+        let event = match kind {
+            None => "day_of_heading",
+            Some(kind) => {
+                fields["kind"] = kind.as_str().into();
+                "reminder_header_phrase"
+            }
+        };
+        logging::event("INFO", event, fields);
     }
 
     async fn attempt_phrase(
         &self,
         seed: &str,
         catalog: Option<&BossTable>,
+        deadline: Duration,
     ) -> (String, HeadingSource, &'static str) {
         let fallback = || seed.to_owned();
         let Some(rewriter) = &self.rewriter else {
@@ -402,8 +437,8 @@ impl HeadingRewrite {
             return (fallback(), HeadingSource::Seed, "no_persona");
         };
         let prompt = RewritePrompt::build(&persona, NudgeMood::Playful, seed);
-        let call = rewriter.rewrite(&prompt, REWRITE_DEADLINE);
-        match tokio::time::timeout(REWRITE_DEADLINE, call).await {
+        let call = rewriter.rewrite(&prompt, deadline);
+        match tokio::time::timeout(deadline, call).await {
             Err(_) => (fallback(), HeadingSource::Seed, "timeout"),
             Ok(Err(failure)) => (fallback(), HeadingSource::Seed, failure_reason(failure)),
             Ok(Ok(text)) => match accept_phrase_with(&text, seed, catalog, &self.words()) {
@@ -413,7 +448,7 @@ impl HeadingRewrite {
         }
     }
 
-    async fn attempt(&self) -> (String, HeadingSource, &'static str) {
+    async fn attempt(&self, deadline: Duration) -> (String, HeadingSource, &'static str) {
         let seed = || DAY_OF_HEADING_SEED.to_owned();
         let Some(rewriter) = &self.rewriter else {
             return (seed(), HeadingSource::Seed, "no_rewriter");
@@ -421,8 +456,8 @@ impl HeadingRewrite {
         let Some(prompt) = self.prompt() else {
             return (seed(), HeadingSource::Seed, "no_persona");
         };
-        let call = rewriter.rewrite(&prompt, REWRITE_DEADLINE);
-        match tokio::time::timeout(REWRITE_DEADLINE, call).await {
+        let call = rewriter.rewrite(&prompt, deadline);
+        match tokio::time::timeout(deadline, call).await {
             Err(_) => (seed(), HeadingSource::Seed, "timeout"),
             Ok(Err(failure)) => (seed(), HeadingSource::Seed, failure_reason(failure)),
             Ok(Ok(text)) => match accept_rewrite_with(&text, DAY_OF_HEADING_SEED, &self.words()) {

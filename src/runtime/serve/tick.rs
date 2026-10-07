@@ -2,8 +2,9 @@
 //! `KANADE_TICK_SECONDS` under its own lease. The outbox drain, reminders,
 //! digests and expiry all run inside `Delivery::tick_at` in v4's order.
 //! A tick is never cancelled midway: stopping waits for the running one.
-//! Cards read the boss catalog and art and rewrite the day-of heading
-//! through the `rewrite` model role ([`card_kit`]).
+//! Cards read the boss catalog and art; their persona headers are rewritten
+//! ahead of the send by the `HeaderPregen` worker through the `rewrite`
+//! model role ([`card_kit`]).
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};

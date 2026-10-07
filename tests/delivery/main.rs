@@ -17,6 +17,7 @@ mod intercept;
 mod notices;
 mod outage;
 mod outbox_policy;
+mod pregen;
 mod proposals;
 mod redesign;
 mod scenarios;

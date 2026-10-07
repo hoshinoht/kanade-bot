@@ -1,7 +1,7 @@
 //! v4 reminder and digest cards through the tick (fake Discord): content,
 //! fields, footer, colour, thumbnail and image per kind; art uploads and
-//! their absence; quiet mode; and persona-header persistence across retries,
-//! cancellation, restart and reaction edits.
+//! their absence; quiet mode; and persona headers pre-generated ahead of the
+//! send and kept across retries, cancellation, restart and reaction edits.
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -13,7 +13,10 @@ use kanade::bot::delivery::cards::{
     DIGEST_FOOTER, DigestPhraseStore, HeadingRewrite, PersonaSource, REACT_HINT, ReminderCardStore,
     UNNAMED,
 };
-use kanade::bot::delivery::{CardRefresh, MAX_PENDING_RUNS, RefreshQueue, SendOutcome};
+use kanade::bot::delivery::{
+    CardRefresh, HeaderPregen, MAX_PENDING_RUNS, PREGEN_DEADLINE, PregenReport, RefreshQueue,
+    SendOutcome,
+};
 use kanade::bot::transport::{
     Call, FakeDiscord, MessageEdit, Op, OutgoingMessage, RejectionKind, Step,
 };
@@ -684,23 +687,24 @@ async fn quiet_mode_cards_carry_no_mention_tags() {
     on_both_stores!(quiet_cards_tag_nobody);
 }
 
-// Day-of heading rewrite (memory store: paused time needs no real I/O).
+// Persona header rewrites, pre-generated before the send (memory store:
+// paused time needs no real I/O).
 
 #[derive(Clone)]
-enum Script {
+pub(crate) enum Script {
     Reply(&'static str),
     Fail,
     Hang,
 }
 
-struct Scripted {
+pub(crate) struct Scripted {
     script: Script,
     calls: AtomicUsize,
     prompts: Mutex<Vec<(String, String)>>,
 }
 
 impl Scripted {
-    fn new(script: Script) -> Arc<Self> {
+    pub(crate) fn new(script: Script) -> Arc<Self> {
         Arc::new(Self {
             script,
             calls: AtomicUsize::new(0),
@@ -708,7 +712,7 @@ impl Scripted {
         })
     }
 
-    fn calls(&self) -> usize {
+    pub(crate) fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
     }
 }
@@ -733,7 +737,7 @@ impl NudgeRewriter for Scripted {
 }
 
 /// The tracked Kanade bundle, copied into a temp persona root.
-fn persona() -> PersonaSource {
+pub(crate) fn persona() -> PersonaSource {
     let dir = TempDir::new();
     let bundle = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("config/personas/bundles/kanade.yaml");
@@ -746,7 +750,7 @@ fn persona() -> PersonaSource {
     Arc::new(move || Some((*compiled).clone()))
 }
 
-fn rewriting(rewriter: &Arc<Scripted>) -> CardKit {
+pub(crate) fn rewriting(rewriter: &Arc<Scripted>) -> CardKit {
     CardKit {
         heading: HeadingRewrite {
             rewriter: Some(SharedRewriter(rewriter.clone())),
@@ -757,18 +761,57 @@ fn rewriting(rewriter: &Arc<Scripted>) -> CardKit {
     }
 }
 
-async fn morning_content(kit: CardKit) -> Option<String> {
-    let store = MemoryScheduleStore::new();
-    let world = world();
-    seed_day_of(&store).await;
-    let mut delivery = scenarios::delivery(&store, &world, &world.fake).with_cards(kit);
-    delivery.dispatch_reminders(now()).await.expect("dispatch");
-    created(&world.fake)
-        .pop()
-        .and_then(|message| message.content)
+/// Before the fixtures' reminders fire (`due` sets one minute before `now`).
+pub(crate) fn before_due() -> DateTime<Utc> {
+    now() - TimeDelta::minutes(2)
 }
 
-#[tokio::test]
+/// A pre-generation worker over `store` reading the clock at `at`.
+pub(crate) fn pregen<S>(
+    store: &Arc<S>,
+    world: &World,
+    cards: &CardKit,
+    at: DateTime<Utc>,
+) -> HeaderPregen<S>
+where
+    S: Store + Send + 'static,
+{
+    HeaderPregen::new(
+        Arc::clone(store),
+        Arc::new(world.roster.clone()),
+        cards.clone(),
+        scenarios::config().policy,
+        Arc::new(move || at),
+    )
+}
+
+/// The morning card after one pre-generation pass, the pass's report and
+/// how long it took.
+async fn morning(kit: CardKit) -> (Option<String>, PregenReport, Duration) {
+    let store = Arc::new(MemoryScheduleStore::new());
+    let world = world();
+    seed_day_of(&*store).await;
+    let started = tokio::time::Instant::now();
+    let report = pregen(&store, &world, &kit, before_due()).pass().await;
+    let elapsed = started.elapsed();
+    let mut delivery = scenarios::delivery(&*store, &world, &world.fake).with_cards(kit);
+    let sending = tokio::time::Instant::now();
+    delivery.dispatch_reminders(now()).await.expect("dispatch");
+    assert!(
+        sending.elapsed().is_zero(),
+        "a send never waits on the model"
+    );
+    let content = created(&world.fake)
+        .pop()
+        .and_then(|message| message.content);
+    (content, report, elapsed)
+}
+
+async fn morning_content(kit: CardKit) -> Option<String> {
+    morning(kit).await.0
+}
+
+#[tokio::test(start_paused = true)]
 async fn an_accepted_rewrite_replaces_the_heading_with_the_day_filled_in() {
     let rewriter = Scripted::new(Script::Reply("Rise and shine, it's {day}!"));
     let content = morning_content(rewriting(&rewriter)).await;
@@ -800,13 +843,14 @@ async fn failure_timeout_rejection_or_no_rewriter_keep_the_v4_heading() {
         (Script::Reply("See you at {time} on {day}"), 1),
     ] {
         let rewriter = Scripted::new(script);
-        let started = tokio::time::Instant::now();
-        assert_eq!(
-            morning_content(rewriting(&rewriter)).await.as_deref(),
-            Some(DAY_OF_CONTENT)
-        );
+        let (content, report, elapsed) = morning(rewriting(&rewriter)).await;
+        assert_eq!(content.as_deref(), Some(DAY_OF_CONTENT));
         assert_eq!(rewriter.calls(), calls);
-        assert!(started.elapsed() <= Duration::from_millis(2_100), "bounded");
+        assert_eq!((report.stored, report.failed), (0, 1), "nothing stored");
+        assert!(
+            elapsed <= PREGEN_DEADLINE,
+            "bounded by the pre-generation deadline"
+        );
     }
     assert_eq!(
         morning_content(kit(None)).await.as_deref(),
@@ -874,6 +918,25 @@ async fn heading_rewrites_follow_the_live_profanity_list() {
     );
 }
 
+/// The Kalos countdown 14 minutes out, posted after one pre-generation pass.
+async fn pregenerated_countdown(kit: CardKit) -> OutgoingMessage {
+    let store = Arc::new(MemoryScheduleStore::new());
+    let world = world();
+    let id = run(
+        &*store,
+        &["XKalos"],
+        &["1001", "1002"],
+        now() + TimeDelta::minutes(14),
+        RunStatus::Planned,
+    )
+    .await;
+    due(&*store, &id, "countdown_15").await;
+    pregen(&store, &world, &kit, before_due()).pass().await;
+    let mut delivery = scenarios::delivery(&*store, &world, &world.fake).with_cards(kit);
+    delivery.dispatch_reminders(now()).await.expect("dispatch");
+    created(&world.fake).pop().expect("countdown posted")
+}
+
 #[tokio::test(start_paused = true)]
 async fn countdown_header_rewrites_only_safe_phrases_and_keeps_facts_out_of_the_prompt() {
     for (script, phrase, calls) in [
@@ -885,10 +948,8 @@ async fn countdown_header_rewrites_only_safe_phrases_and_keeps_facts_out_of_the_
         (Script::Fail, "Onward!", 1),
         (Script::Hang, "Onward!", 1),
     ] {
-        let store = MemoryScheduleStore::new();
-        let world = world();
         let rewriter = Scripted::new(script);
-        let message = countdown(&store, &world, rewriting(&rewriter), &[]).await;
+        let message = pregenerated_countdown(rewriting(&rewriter)).await;
         assert!(
             message
                 .content
@@ -921,9 +982,7 @@ async fn countdown_header_rewrites_only_safe_phrases_and_keeps_facts_out_of_the_
             }
         }
     }
-    let store = MemoryScheduleStore::new();
-    let world = world();
-    let message = countdown(&store, &world, kit(None), &[]).await;
+    let message = pregenerated_countdown(kit(None)).await;
     assert!(
         message
             .content
@@ -954,6 +1013,11 @@ async fn digest_header_rewrite_has_only_persona_and_seed_and_refresh_keeps_facts
     .await;
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
     let cards = rewriting(&rewriter);
+    // The pass before the reset writes the coming week's phrase.
+    let report = pregen(&store, &world, &cards, week() - TimeDelta::minutes(1))
+        .pass()
+        .await;
+    assert_eq!(report.stored, 1);
     let mut delivery = scenarios::delivery(&*store, &world, &*fake).with_cards(cards.clone());
     delivery.post_week_digest(now()).await.expect("digest");
     let posts = created(&fake);
@@ -1124,7 +1188,7 @@ async fn countdown_phrase_record_failures_stop_before_claim_then_retry() {
 }
 
 #[tokio::test]
-async fn day_of_record_store_errors_still_send_with_a_fresh_heading() {
+async fn day_of_record_store_errors_still_send_with_the_seed_heading() {
     let store = MemoryScheduleStore::new();
     let read_world = world();
     seed_day_of(&store).await;
@@ -1139,11 +1203,8 @@ async fn day_of_record_store_errors_still_send_with_a_fresh_heading() {
     assert_eq!(report.sends.len(), 1, "day-of still claims and sends");
     let posts = created(&read_world.fake);
     assert_eq!(posts.len(), 1);
-    assert_eq!(
-        posts[0].content.as_deref(),
-        Some("📅 **Fresh dawn — Thu 10 Sep!**\n<@1001> Bex")
-    );
-    assert_eq!(fresh_rewriter.calls(), 1);
+    assert_eq!(posts[0].content.as_deref(), Some(DAY_OF_CONTENT));
+    assert_eq!(fresh_rewriter.calls(), 0, "a send never calls the model");
 
     let existing = MemoryScheduleStore::new();
     let existing_world = world();
@@ -1184,11 +1245,13 @@ async fn day_of_record_store_errors_still_send_with_a_fresh_heading() {
     assert_eq!(report.sends.len(), 1, "day-of write failure still sends");
     assert_eq!(
         created(&failed_write_world.fake)[0].content.as_deref(),
-        Some("📅 **Fresh dawn — Thu 10 Sep!**\n<@1001> Bex")
+        Some(DAY_OF_CONTENT)
     );
+    assert_eq!(rewriter.calls(), 0);
 }
 
 struct GateRewriter {
+    reply: &'static str,
     calls: AtomicUsize,
     started: Notify,
     release: Notify,
@@ -1196,7 +1259,12 @@ struct GateRewriter {
 
 impl GateRewriter {
     fn new() -> Arc<Self> {
+        Self::replying("Waku waku!")
+    }
+
+    fn replying(reply: &'static str) -> Arc<Self> {
         Arc::new(Self {
+            reply,
             calls: AtomicUsize::new(0),
             started: Notify::new(),
             release: Notify::new(),
@@ -1214,7 +1282,7 @@ impl NudgeRewriter for GateRewriter {
             self.started.notify_one();
             self.release.notified().await;
         }
-        Ok("Waku waku!".into())
+        Ok(self.reply.into())
     }
 }
 
@@ -1229,61 +1297,179 @@ fn gated_cards(rewriter: &Arc<GateRewriter>) -> CardKit {
     }
 }
 
-#[tokio::test]
-async fn same_target_preparations_share_one_rewrite_before_claim() {
-    let store = MemoryScheduleStore::new();
-    let world = world();
+/// A Kalos countdown 14 minutes out and its record key.
+async fn countdown_key(store: &MemoryScheduleStore) -> (String, String) {
     let run_id = run(
-        &store,
+        store,
         &["XKalos"],
         &["1001"],
         now() + TimeDelta::minutes(14),
         RunStatus::Planned,
     )
     .await;
-    due(&store, &run_id, "countdown_15").await;
+    due(store, &run_id, "countdown_15").await;
+    let reminder = support::snapshot(store)
+        .await
+        .reminders
+        .into_iter()
+        .find(|reminder| reminder.run_id == run_id)
+        .expect("countdown reminder");
+    let key = DedupeKey::native(&[DeliveryTarget::Reminder(reminder.id)]).expect("target key");
+    (run_id, key.as_str().to_owned())
+}
+
+#[tokio::test]
+async fn a_send_during_a_pregeneration_uses_the_seed_which_then_wins() {
+    let store = Arc::new(MemoryScheduleStore::new());
+    let world = world();
+    let fake = Arc::new(support::fake());
+    let (run_id, key) = countdown_key(&store).await;
     let rewriter = GateRewriter::new();
     let cards = gated_cards(&rewriter);
-    let mut first = scenarios::delivery(&store, &world, &world.fake).with_cards(cards.clone());
-    let mut second = scenarios::delivery(&store, &world, &world.fake).with_cards(cards);
-    let mut both = Box::pin(async {
-        tokio::join!(
-            first.dispatch_reminders(now()),
-            second.dispatch_reminders(now())
-        )
-    });
+    let worker = pregen(&store, &world, &cards, before_due());
+    let mut pass = Box::pin(worker.pass());
     let started = rewriter.started.notified();
     tokio::pin!(started);
     tokio::select! {
         biased;
         _ = &mut started => {}
-        result = &mut both => panic!("both sends finished before the rewrite gate: {result:?}"),
+        report = &mut pass => panic!("pass finished before the rewrite gate: {report:?}"),
     }
-    rewriter.release.notify_one();
-    let (first, second) = both.await;
-    first.expect("first dispatch");
-    second.expect("second dispatch");
+    // The rewrite is in flight: the send neither waits nor calls the model.
+    let mut delivery = scenarios::delivery(&*store, &world, &*fake).with_cards(cards.clone());
+    delivery.dispatch_reminders(now()).await.expect("dispatch");
+    let posted = created(&fake).pop().expect("countdown posted");
+    assert!(
+        posted
+            .content
+            .as_deref()
+            .is_some_and(|content| content.starts_with("⏰ Onward! · **XKalos**")),
+        "{:?}",
+        posted.content
+    );
     assert_eq!(rewriter.calls.load(Ordering::SeqCst), 1);
+    rewriter.release.notify_one();
+    let report = pass.await;
+    assert_eq!((report.stored, report.lost), (0, 1), "the stored seed wins");
     assert_eq!(
-        created(&world.fake).len(),
-        1,
-        "native claim still suppresses duplicate send"
+        store
+            .card_record(&key)
+            .await
+            .expect("record")
+            .and_then(|r| r.heading),
+        Some("Onward!".into())
+    );
+
+    answer(
+        &*store,
+        &run_id,
+        "1001",
+        true,
+        now() + TimeDelta::minutes(1),
+    )
+    .await;
+    let refresh = CardRefresh {
+        store: Arc::clone(&store),
+        transport: Arc::clone(&fake),
+        members: Arc::new(world.roster.clone()),
+        cards: cards.clone(),
+        policy: scenarios::config().policy,
+        quiet: Arc::new(AtomicBool::new(false)),
+        now: Arc::new(|| now() + TimeDelta::minutes(1)),
+    };
+    assert_eq!(refresh.refresh(std::slice::from_ref(&run_id)).await, 1);
+    let edit = edits(&fake).pop().expect("countdown refresh");
+    assert!(
+        edit.content
+            .as_deref()
+            .is_some_and(|content| content.starts_with("⏰ Onward! · **XKalos**")),
+        "a posted card keeps its heading: {:?}",
+        edit.content
+    );
+    let later = pregen(&store, &world, &cards, before_due()).pass().await;
+    assert_eq!(
+        later,
+        PregenReport::default(),
+        "a sent card is never pre-generated"
     );
 }
 
 #[tokio::test]
-async fn same_digest_preparations_share_one_rewrite_before_claim() {
-    let store = MemoryScheduleStore::new();
+async fn a_card_posted_without_its_record_during_a_pregeneration_keeps_the_seed() {
+    let store = Arc::new(MemoryScheduleStore::new());
+    let world = world();
+    let fake = Arc::new(support::fake());
+    let (star, _) = seed_day_of(&*store).await;
+    let rewriter = GateRewriter::replying("Fresh dawn — {day}!");
+    let cards = gated_cards(&rewriter);
+    let worker = pregen(&store, &world, &cards, before_due());
+    let mut pass = Box::pin(worker.pass());
+    let started = rewriter.started.notified();
+    tokio::pin!(started);
+    tokio::select! {
+        biased;
+        _ = &mut started => {}
+        report = &mut pass => panic!("pass finished before the rewrite gate: {report:?}"),
+    }
+    // The send's record write fails: day-of still posts its unsaved seed.
+    store.fail_next_card_record_write();
+    let mut delivery = scenarios::delivery(&*store, &world, &*fake).with_cards(cards.clone());
+    delivery.dispatch_reminders(now()).await.expect("dispatch");
+    assert_eq!(
+        created(&fake)
+            .pop()
+            .and_then(|message| message.content)
+            .as_deref(),
+        Some(DAY_OF_CONTENT)
+    );
+    rewriter.release.notify_one();
+    let report = pass.await;
+    assert_eq!(
+        (report.stored, report.lost),
+        (0, 1),
+        "the posted card is not rewritten"
+    );
+    let records = support::snapshot(&*store)
+        .await
+        .reminders
+        .into_iter()
+        .map(|row| DeliveryTarget::Reminder(row.id));
+    let key = DedupeKey::native(&records.collect::<Vec<_>>()).expect("key");
+    assert_eq!(store.card_record(key.as_str()).await.expect("record"), None);
+
+    answer(&*store, &star, "1002", true, now() + TimeDelta::minutes(1)).await;
+    let refresh = CardRefresh {
+        store: Arc::clone(&store),
+        transport: Arc::clone(&fake),
+        members: Arc::new(world.roster.clone()),
+        cards,
+        policy: scenarios::config().policy,
+        quiet: Arc::new(AtomicBool::new(false)),
+        now: Arc::new(|| now() + TimeDelta::minutes(1)),
+    };
+    refresh.refresh(std::slice::from_ref(&star)).await;
+    assert!(
+        edits(&fake).iter().all(|edit| edit
+            .content
+            .as_deref()
+            .is_none_or(|text| !text.contains("Fresh dawn"))),
+        "a refresh never shows the late rewrite"
+    );
+}
+
+#[tokio::test]
+async fn a_digest_posted_during_a_pregeneration_keeps_the_seed() {
+    let store = Arc::new(MemoryScheduleStore::new());
     let world = world();
     run(
-        &store,
+        &*store,
         &["XKalos"],
         &["1001"],
         tonight(),
         RunStatus::Planned,
     )
     .await;
-    with_lease(&store, now(), async |lease| {
+    with_lease(&*store, now(), async |lease| {
         store
             .record_digest_week(lease, previous_week(), now())
             .await
@@ -1292,86 +1478,67 @@ async fn same_digest_preparations_share_one_rewrite_before_claim() {
     .await;
     let rewriter = GateRewriter::new();
     let cards = gated_cards(&rewriter);
-    let mut first = scenarios::delivery(&store, &world, &world.fake).with_cards(cards.clone());
-    let mut second = scenarios::delivery(&store, &world, &world.fake).with_cards(cards);
-    let mut both = Box::pin(async {
-        tokio::join!(
-            first.post_week_digest(now()),
-            second.post_week_digest(now())
-        )
-    });
+    let worker = pregen(&store, &world, &cards, week() - TimeDelta::minutes(1));
+    let mut pass = Box::pin(worker.pass());
     let started = rewriter.started.notified();
     tokio::pin!(started);
     tokio::select! {
         biased;
         _ = &mut started => {}
-        result = &mut both => panic!("both digest posts finished before rewrite gate: {result:?}"),
+        report = &mut pass => panic!("pass finished before the rewrite gate: {report:?}"),
     }
-    rewriter.release.notify_one();
-    let (first, second) = both.await;
-    first.expect("first digest post");
-    second.expect("second digest post");
-    assert_eq!(rewriter.calls.load(Ordering::SeqCst), 1);
+    let mut delivery = scenarios::delivery(&*store, &world, &world.fake).with_cards(cards);
+    delivery.post_week_digest(now()).await.expect("digest");
     assert_eq!(
-        created(&world.fake).len(),
-        1,
-        "native target suppresses duplicate post"
+        created(&world.fake)
+            .pop()
+            .and_then(|message| message.content)
+            .as_deref(),
+        Some("🗓️ Let's go! — Boss week of Wed 09 Sep")
+    );
+    rewriter.release.notify_one();
+    assert_eq!(pass.await.lost, 1);
+    let key = DedupeKey::native(&[DeliveryTarget::Digest(week())]).expect("digest target");
+    assert_eq!(
+        store.digest_phrase(key.as_str()).await.expect("phrase"),
+        Some("Let's go!".into())
     );
 }
 
 #[tokio::test]
-async fn cancellation_before_phrase_persistence_leaves_no_claim_and_can_retry() {
-    let store = MemoryScheduleStore::new();
+async fn a_cancelled_pregeneration_stores_nothing_and_a_later_pass_retries() {
+    let store = Arc::new(MemoryScheduleStore::new());
     let world = world();
-    let run_id = run(
-        &store,
-        &["XKalos"],
-        &["1001"],
-        now() + TimeDelta::minutes(14),
-        RunStatus::Planned,
-    )
-    .await;
-    due(&store, &run_id, "countdown_15").await;
-    let reminder = support::snapshot(&store)
-        .await
-        .reminders
-        .into_iter()
-        .find(|reminder| reminder.run_id == run_id)
-        .expect("countdown reminder");
-    let key = DedupeKey::native(&[DeliveryTarget::Reminder(reminder.id)]).expect("target key");
+    let (_, key) = countdown_key(&store).await;
     let rewriter = GateRewriter::new();
-    let mut delivery =
-        scenarios::delivery(&store, &world, &world.fake).with_cards(gated_cards(&rewriter));
+    let cards = gated_cards(&rewriter);
+    let worker = pregen(&store, &world, &cards, before_due());
     {
-        let mut preparing = Box::pin(delivery.dispatch_reminders(now()));
+        let mut pass = Box::pin(worker.pass());
         let started = rewriter.started.notified();
         tokio::pin!(started);
         tokio::select! {
             biased;
             _ = &mut started => {}
-            result = &mut preparing => panic!("preparation completed unexpectedly: {result:?}"),
+            report = &mut pass => panic!("pass finished unexpectedly: {report:?}"),
         }
     }
-    assert_eq!(
-        store
-            .card_record(key.as_str())
-            .await
-            .expect("record lookup"),
-        None
-    );
-    assert!(store.load_view().await.expect("view").targets().is_empty());
-    assert!(created(&world.fake).is_empty());
-    store
-        .recover_on_start(now() + TimeDelta::seconds(1))
-        .await
-        .expect("recover abandoned lease");
-
-    delivery
-        .dispatch_reminders(now() + TimeDelta::seconds(2))
-        .await
-        .expect("pre-persist cancellation is retryable");
+    assert_eq!(store.card_record(&key).await.expect("record lookup"), None);
+    assert_eq!(worker.pass().await.stored, 1, "the next pass retries");
     assert_eq!(rewriter.calls.load(Ordering::SeqCst), 2);
-    assert_eq!(created(&world.fake).len(), 1);
+    let mut delivery = scenarios::delivery(&*store, &world, &world.fake).with_cards(cards);
+    delivery.dispatch_reminders(now()).await.expect("dispatch");
+    assert!(
+        created(&world.fake)
+            .pop()
+            .and_then(|message| message.content)
+            .is_some_and(|content| content.starts_with("⏰ Waku waku! · **XKalos**"))
+    );
+    assert_eq!(
+        rewriter.calls.load(Ordering::SeqCst),
+        2,
+        "the send reads the stored phrase"
+    );
 }
 
 #[tokio::test]
@@ -1391,6 +1558,13 @@ async fn countdown_phrase_survives_not_sent_restart_and_refresh_without_rewrite(
     due(&*store, &run_id, "countdown_15").await;
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
     let cards = rewriting(&rewriter);
+    assert_eq!(
+        pregen(&store, &world, &cards, before_due())
+            .pass()
+            .await
+            .stored,
+        1
+    );
     fake.script(Op::Create, Step::Reject(RejectionKind::NotSent));
     {
         let mut delivery = scenarios::delivery(&*store, &world, &*fake).with_cards(cards.clone());
@@ -1480,6 +1654,7 @@ async fn retries_and_reaction_edits_reuse_the_stored_heading() {
         ..rewriting(&rewriter)
     };
     let expected = "📅 **Rise and shine, it's Thu 10 Sep!**\n<@1001> Bex";
+    pregen(&store, &world, &cards, before_due()).pass().await;
     // The first send never reaches Discord; the retry posts.
     fake.script(Op::Create, Step::Reject(RejectionKind::NotSent));
     let mut delivery = scenarios::delivery(&*store, &world, &*fake).with_cards(cards.clone());

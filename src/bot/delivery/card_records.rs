@@ -1,6 +1,9 @@
 //! Before a reminder card is claimed: its record (kind and, for day-of, the
 //! heading line; countdowns store their phrase). Digest phrases use a separate
 //! pre-claim row. First writes survive retries, restarts and edits.
+//!
+//! The send path never calls the model: it uses a line `pregen` stored ahead
+//! of time, else stores the seed (which then wins over a later pre-generation).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, Weak};
@@ -12,7 +15,7 @@ use tokio::sync::Mutex as AsyncMutex;
 use super::cards::local_day;
 use super::cards::{
     CardContext, CardKit, CardRecord, DAY_OF_KIND, DigestPhraseStore, PhraseKind,
-    ReminderCardStore, card_runs,
+    ReminderCardStore, card_runs, seed_heading,
 };
 use crate::domain::notify::{DedupeKey, DeliveryTarget, IntentContent, NotificationIntent};
 use crate::runtime::logging;
@@ -32,7 +35,7 @@ fn preparation_lock(key: &str) -> Arc<AsyncMutex<()>> {
 }
 
 /// The record kind for `content`; `None` for sends that are not reminders.
-fn record_kind(content: &IntentContent) -> Option<String> {
+pub(super) fn record_kind(content: &IntentContent) -> Option<String> {
     match content {
         IntentContent::DayOf { .. } => Some(DAY_OF_KIND.to_owned()),
         IntentContent::Countdown { minutes, .. } => Some(format!("countdown_{minutes}")),
@@ -41,8 +44,8 @@ fn record_kind(content: &IntentContent) -> Option<String> {
 }
 
 /// The stored record for `intent`, else a new one prepared before claim.
-/// Countdown failures fail closed; day-of preserves its legacy fresh-heading
-/// send on a record-store error.
+/// Countdown failures fail closed; day-of preserves its legacy send with an
+/// unsaved seed heading on a record-store error.
 pub async fn prepare<S: ReminderCardStore>(
     store: &S,
     kit: &CardKit,
@@ -64,7 +67,7 @@ pub async fn prepare<S: ReminderCardStore>(
             }
         }
     }
-    let record = fresh_record(&kind, kit, ctx, intent).await?;
+    let record = seed_record(&kind, kit, ctx, intent)?;
     match store.save_card_record(key.as_str(), &record, now).await {
         Ok(stored) => Some(stored),
         Err(_) => {
@@ -74,7 +77,8 @@ pub async fn prepare<S: ReminderCardStore>(
     }
 }
 
-async fn fresh_record(
+/// The send-time record: the seed line, logged as not pre-generated.
+fn seed_record(
     kind: &str,
     kit: &CardKit,
     ctx: &CardContext<'_>,
@@ -83,19 +87,18 @@ async fn fresh_record(
     let heading = match &intent.content {
         IntentContent::DayOf { run_ids } => {
             let first = card_runs(ctx, run_ids).first()?.datetime;
-            Some(kit.heading.choose(&local_day(first, ctx.zone)).await.0)
+            kit.heading.seed_at_send(None);
+            seed_heading(&local_day(first, ctx.zone))
         }
-        IntentContent::Countdown { .. } => Some(
-            kit.heading
-                .choose_phrase(PhraseKind::Countdown, kit.catalog.as_deref())
-                .await
-                .0,
-        ),
+        IntentContent::Countdown { .. } => {
+            kit.heading.seed_at_send(Some(PhraseKind::Countdown));
+            PhraseKind::Countdown.seed().to_owned()
+        }
         _ => return None,
     };
     Some(CardRecord {
         kind: kind.to_owned(),
-        heading,
+        heading: Some(heading),
     })
 }
 
@@ -112,7 +115,6 @@ pub async fn prepare_digest<S: DigestPhraseStore>(
     store: &S,
     kit: &CardKit,
     intent: &NotificationIntent,
-    replacing_legacy_digest: bool,
     now: DateTime<Utc>,
 ) -> Option<String> {
     let IntentContent::Digest { week_start, .. } = intent.content else {
@@ -135,16 +137,11 @@ pub async fn prepare_digest<S: DigestPhraseStore>(
             return None;
         }
     }
-    // A legacy bound digest may still need refresh if deletion is refused.
-    let phrase = if replacing_legacy_digest {
-        PhraseKind::Digest.seed().to_owned()
-    } else {
-        kit.heading
-            .choose_phrase(PhraseKind::Digest, kit.catalog.as_deref())
-            .await
-            .0
-    };
-    match store.save_digest_phrase(&key, &phrase, now).await {
+    // A legacy bound digest being replaced keeps the seed too: pre-generation
+    // never writes a week that already has a digest.
+    kit.heading.seed_at_send(Some(PhraseKind::Digest));
+    let phrase = PhraseKind::Digest.seed();
+    match store.save_digest_phrase(&key, phrase, now).await {
         Ok(stored) => Some(stored),
         Err(_) => {
             logging::event(

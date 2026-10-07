@@ -670,14 +670,8 @@ where
         };
         let executor = self.executor(lease);
         let phrase = if post.send.disposition == SendDisposition::Send {
-            let Some(phrase) = card_records::prepare_digest(
-                self.store,
-                &self.cards,
-                &post.send.intent,
-                post.replaces.is_some(),
-                now,
-            )
-            .await
+            let Some(phrase) =
+                card_records::prepare_digest(self.store, &self.cards, &post.send.intent, now).await
             else {
                 report.outcome = DigestOutcome::PhraseUnavailable;
                 return Ok(report);
@@ -855,14 +849,8 @@ where
         };
         let executor = self.executor(lease);
         let phrase = if post.send.disposition == SendDisposition::Send {
-            let Some(phrase) = card_records::prepare_digest(
-                self.store,
-                &self.cards,
-                &post.send.intent,
-                post.replaces.is_some(),
-                now,
-            )
-            .await
+            let Some(phrase) =
+                card_records::prepare_digest(self.store, &self.cards, &post.send.intent, now).await
             else {
                 report.outcome = DigestOutcome::PhraseUnavailable;
                 return Ok(report);

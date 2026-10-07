@@ -13,6 +13,7 @@ mod executor;
 mod notice_text;
 mod notices;
 mod ports;
+mod pregen;
 pub mod preview;
 mod refresh;
 mod render;
@@ -25,6 +26,10 @@ pub use executor::{Executor, Replacement, SendFailure, SendOutcome, SendReport};
 pub use notice_text::render_notice;
 pub use notices::{NoticeReport, NoticeSend};
 pub use ports::{FixedClock, IdsRef, StoreRef};
+pub use pregen::{
+    HeaderPregen, MAX_ATTEMPTS_PER_KEY, MAX_REWRITES_PER_PASS, PREGEN_DEADLINE, PREGEN_HORIZON,
+    PREGEN_INTERVAL, PregenReport,
+};
 pub use refresh::{CardRefresh, MAX_PENDING_RUNS, Now, RefreshQueue};
 pub use render::render;
 pub use tick::{
