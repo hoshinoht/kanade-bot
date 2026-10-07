@@ -26,7 +26,7 @@ use crate::{
         error::ApiError,
         listeners::Site,
         state::ApiState,
-        write::WriteContext,
+        write::{FixedPatchReplay, WriteContext},
     },
     domain::{
         history::{Actor, BlameTarget, ChangeRecord, Origin, RowKey},
@@ -76,6 +76,78 @@ struct Checked {
     channel_id: String,
     note: Option<String>,
     owner_id: Option<String>,
+}
+
+/// The full normalized fixed-PATCH form. It stays separate from the derived
+/// edit because that edit intentionally depends on the row at retry time.
+struct FixedPatchIdentity {
+    fixed_id: String,
+    weekday: Weekday,
+    time: NaiveTime,
+    bosses: Vec<String>,
+    participants: Vec<String>,
+    channel_id: String,
+    note: Option<String>,
+    owner_id: Option<String>,
+    version: Option<u64>,
+    decisions: BTreeMap<String, String>,
+    expect: Option<Vec<(String, Option<u64>)>>,
+    overrides: Option<Vec<(u64, String)>>,
+}
+
+impl std::fmt::Debug for FixedPatchIdentity {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("FixedPatchIdentity")
+            .field("fixed_id", &self.fixed_id)
+            .field("weekday", &self.weekday)
+            .field("time", &self.time)
+            .field("bosses", &self.bosses)
+            .field("participants", &self.participants)
+            .field("channel_id", &self.channel_id)
+            .field("note", &self.note)
+            .field("owner_id", &self.owner_id)
+            .field("version", &self.version)
+            .field("decisions", &self.decisions)
+            .field("expect", &self.expect)
+            .field("overrides", &self.overrides)
+            .finish()
+    }
+}
+
+impl FixedPatchIdentity {
+    fn new(fixed_id: String, timing: &Checked, request: &FixedRequest) -> Self {
+        let expect = request.expect.as_ref().map(|fields| {
+            let mut fields: Vec<_> = fields
+                .iter()
+                .map(|field| (field.field.clone(), field.seen))
+                .collect();
+            fields.sort();
+            fields
+        });
+        let overrides = request.overrides.as_ref().map(|overrides| {
+            let mut overrides: Vec<_> = overrides
+                .iter()
+                .map(|override_| (override_.seq, override_.hash.clone()))
+                .collect();
+            overrides.sort();
+            overrides
+        });
+        Self {
+            fixed_id,
+            weekday: timing.weekday,
+            time: timing.time,
+            bosses: timing.bosses.clone(),
+            participants: timing.participants.clone(),
+            channel_id: timing.channel_id.clone(),
+            note: timing.note.clone(),
+            owner_id: timing.owner_id.clone(),
+            version: request.version,
+            decisions: request.decisions.clone(),
+            expect,
+            overrides,
+        }
+    }
 }
 
 fn checked(
@@ -274,22 +346,44 @@ pub async fn update(
     body: Result<Json<FixedRequest>, JsonRejection>,
 ) -> Reply {
     let Json(request) = body.map_err(bad_body)?;
-    // The week version the screen loaded: without it a stale full-body edit
-    // would silently revert fields someone else changed (user decision).
-    let version = request.version.ok_or_else(|| {
-        Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "version_required",
-            "Send the week version the timing was loaded at.",
-        )
-    })?;
     let state = state(&site)?;
     let origin = origin(&session, &headers)?;
+    let first = recorded(state, &origin).await?.is_some();
+    // Keep the established fresh-request refusal order, while letting a used
+    // key compare its complete identity before version-dependent handling.
+    let version = if first {
+        None
+    } else {
+        Some(request.version.ok_or_else(|| {
+            Refusal::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "version_required",
+                "Send the week version the timing was loaded at.",
+            )
+        })?)
+    };
     let (mut ctx, profiles) = write_context(state).await?;
-    if recorded(state, &origin).await?.is_some() {
+    if first {
         as_first_seen(&mut ctx, &request);
     }
     let timing = checked(state, &request, &ctx.directory)?;
+    let replay = FixedPatchReplay::from_normalized(FixedPatchIdentity::new(
+        fixed_id.clone(),
+        &timing,
+        &request,
+    ));
+    if first {
+        return match state.writer.verify_fixed_patch_replay(origin, replay).await {
+            Err(SchedulerError::AlreadyApplied { .. }) => {
+                row(&site, state, &fixed_id, &profiles).await
+            }
+            Err(error) => Err(scheduler(error)),
+            Ok(()) => Err(Refusal::from(ApiError::UNAVAILABLE)),
+        };
+    }
+    // The week version the screen loaded: without it a stale full-body edit
+    // would silently revert fields someone else changed (user decision).
+    let version = version.expect("fresh request checked above");
     let snapshot = state
         .store
         .snapshot(Scope::Weeks(Vec::new()))
@@ -338,6 +432,19 @@ pub async fn update(
         fields.push("owner");
     }
     if fields.is_empty() {
+        if origin.request_id.is_some() {
+            match state
+                .writer
+                .verify_fixed_patch_replay(origin.clone(), replay.clone())
+                .await
+            {
+                Ok(()) => {}
+                Err(SchedulerError::AlreadyApplied { .. }) => {
+                    return row(&site, state, &fixed_id, &profiles).await;
+                }
+                Err(error) => return Err(scheduler(error)),
+            }
+        }
         return row(&site, state, &fixed_id, &profiles).await;
     }
     let mut choices = BTreeMap::new();
@@ -369,7 +476,11 @@ pub async fn update(
         // with `choices_required` rather than silently moving them (v4).
         choices: FixedEditChoices::PerRun(choices),
     };
-    match state.writer.edit_fixed(origin, expect, edit, &ctx).await {
+    match state
+        .writer
+        .edit_fixed_patch(origin, expect, edit, replay, &ctx)
+        .await
+    {
         Ok(()) | Err(SchedulerError::AlreadyApplied { .. }) => {}
         Err(error) => return Err(scheduler(error)),
     }
@@ -462,4 +573,156 @@ pub async fn validate_bosses(
         bosses: dto::bosses(&state.catalog, &art, &tokens),
     })
     .into_response())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn identity(
+        expect: Option<Vec<SeenField>>,
+        overrides: Option<Vec<OverrideRef>>,
+    ) -> FixedPatchIdentity {
+        FixedPatchIdentity::new(
+            "f-kalos".into(),
+            &Checked {
+                weekday: Weekday::Tue,
+                time: NaiveTime::from_hms_opt(21, 30, 0).unwrap(),
+                bosses: vec!["XKalos".into()],
+                participants: vec!["1001".into(), "1002".into()],
+                channel_id: "kalos-four".into(),
+                note: Some("seed".into()),
+                owner_id: None,
+            },
+            &FixedRequest {
+                weekday: 1,
+                time: "21:30".into(),
+                bosses: "xkalos".into(),
+                participants: vec!["1001".into(), "1002".into()],
+                channel_id: "kalos-four".into(),
+                note: Some("seed".into()),
+                owner_id: None,
+                decisions: BTreeMap::new(),
+                version: Some(7),
+                expect,
+                overrides,
+            },
+        )
+    }
+
+    #[test]
+    fn fixed_patch_identity_canonicalizes_order_without_dropping_entries() {
+        let first = identity(
+            Some(vec![
+                SeenField {
+                    field: "time".into(),
+                    seen: Some(4),
+                },
+                SeenField {
+                    field: "note".into(),
+                    seen: None,
+                },
+            ]),
+            Some(vec![
+                OverrideRef {
+                    seq: 4,
+                    hash: "four".into(),
+                },
+                OverrideRef {
+                    seq: 2,
+                    hash: "two".into(),
+                },
+            ]),
+        );
+        let reordered = identity(
+            Some(vec![
+                SeenField {
+                    field: "note".into(),
+                    seen: None,
+                },
+                SeenField {
+                    field: "time".into(),
+                    seen: Some(4),
+                },
+            ]),
+            Some(vec![
+                OverrideRef {
+                    seq: 2,
+                    hash: "two".into(),
+                },
+                OverrideRef {
+                    seq: 4,
+                    hash: "four".into(),
+                },
+            ]),
+        );
+        let duplicate = identity(
+            Some(vec![
+                SeenField {
+                    field: "note".into(),
+                    seen: None,
+                },
+                SeenField {
+                    field: "note".into(),
+                    seen: None,
+                },
+                SeenField {
+                    field: "time".into(),
+                    seen: Some(4),
+                },
+            ]),
+            Some(vec![
+                OverrideRef {
+                    seq: 2,
+                    hash: "two".into(),
+                },
+                OverrideRef {
+                    seq: 4,
+                    hash: "four".into(),
+                },
+            ]),
+        );
+        assert_eq!(format!("{first:?}"), format!("{reordered:?}"));
+        assert_ne!(format!("{first:?}"), format!("{duplicate:?}"));
+        assert_ne!(
+            format!("{:?}", identity(None, None)),
+            format!("{:?}", identity(Some(vec![]), None))
+        );
+        assert_ne!(
+            format!("{:?}", identity(None, None)),
+            format!("{:?}", identity(None, Some(vec![])))
+        );
+    }
+
+    #[test]
+    fn replay_normalization_recreates_lost_roster_and_channel_only_in_its_context() {
+        let request = FixedRequest {
+            weekday: 1,
+            time: "21:30".into(),
+            bosses: "xkalos".into(),
+            participants: vec!["1001".into()],
+            channel_id: "lost-channel".into(),
+            note: None,
+            owner_id: Some("1002".into()),
+            decisions: BTreeMap::new(),
+            version: Some(7),
+            expect: None,
+            overrides: None,
+        };
+        let mut context = WriteContext {
+            policy: crate::domain::schedule::SchedulePolicy::new(
+                crate::domain::schedule::ReminderPolicy {
+                    zone: chrono_tz::Asia::Kuala_Lumpur,
+                    ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+                    countdowns: vec![60, 15],
+                },
+                Weekday::Thu,
+                NaiveTime::MIN,
+            ),
+            directory: Roster::new(),
+        };
+        as_first_seen(&mut context, &request);
+        assert!(validate_participants(&context.directory, &request.participants).is_ok());
+        assert!(validate_channel(&context.directory, &request.channel_id).is_ok());
+    }
 }

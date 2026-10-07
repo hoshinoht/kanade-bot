@@ -20,6 +20,8 @@ const ORIGIN: (&str, &str) = ("Origin", "https://kanade.test");
 const RUN_RESULT: &str = "week.json#/$defs/RunResult";
 const ERROR: &str = "error.json#/$defs/ApiError";
 
+mod fixed_patch_replay;
+
 impl Reads {
     pub(crate) async fn call(
         &self,

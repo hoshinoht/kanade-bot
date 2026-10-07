@@ -2,7 +2,7 @@
 //! mutex, so admin mutations are serialised; reads never take it. The port is
 //! object-safe so `ApiState` stays non-generic.
 
-use std::{collections::BTreeSet, future::Future, pin::Pin, sync::Arc};
+use std::{collections::BTreeSet, fmt, future::Future, pin::Pin, sync::Arc};
 
 use chrono::{DateTime, Utc};
 use tokio::sync::Mutex;
@@ -40,6 +40,21 @@ pub struct WriteContext {
     pub policy: SchedulePolicy,
     /// Members and watched channels, for participant and channel checks.
     pub directory: Roster,
+}
+
+/// The admin fixed-PATCH's complete, normalised identity. It is deliberately
+/// opaque: only that handler may replace the scheduler's derived edit digest.
+#[derive(Clone)]
+pub struct FixedPatchReplay(String);
+
+impl FixedPatchReplay {
+    pub(crate) fn from_normalized(identity: impl fmt::Debug) -> Self {
+        Self(format!("{identity:?}"))
+    }
+
+    fn identity(&self) -> &str {
+        &self.0
+    }
 }
 
 /// One run edit.
@@ -101,6 +116,25 @@ pub trait Writer: Send + Sync {
         expect: Expect,
         request: FixedEditRequest,
         ctx: &'a WriteContext,
+    ) -> WriteFuture<'a, ()>;
+
+    /// Fixed-PATCH only: preserve the full request identity before the handler
+    /// reduces it to a diff against the current row.
+    fn edit_fixed_patch<'a>(
+        &'a self,
+        origin: Origin,
+        expect: Expect,
+        request: FixedEditRequest,
+        replay: FixedPatchReplay,
+        ctx: &'a WriteContext,
+    ) -> WriteFuture<'a, ()>;
+
+    /// Re-check a keyed fixed PATCH that became a no-op or whose recorded
+    /// request must answer before the current-row diff is examined.
+    fn verify_fixed_patch_replay<'a>(
+        &'a self,
+        origin: Origin,
+        replay: FixedPatchReplay,
     ) -> WriteFuture<'a, ()>;
 
     /// Cancels the timing's live runs in the materialised weeks.
@@ -341,6 +375,39 @@ where
                 .apply_fixed_edit(&request, &ctx.directory, &ctx.policy)
                 .await
                 .map(|_| ())
+        })
+    }
+
+    fn edit_fixed_patch<'a>(
+        &'a self,
+        origin: Origin,
+        expect: Expect,
+        request: FixedEditRequest,
+        replay: FixedPatchReplay,
+        ctx: &'a WriteContext,
+    ) -> WriteFuture<'a, ()> {
+        Box::pin(async move {
+            let mut service = self.service.lock().await;
+            service
+                .as_origin(origin)
+                .expecting(expect)
+                .apply_fixed_patch_edit(&request, replay.identity(), &ctx.directory, &ctx.policy)
+                .await
+                .map(|_| ())
+        })
+    }
+
+    fn verify_fixed_patch_replay<'a>(
+        &'a self,
+        origin: Origin,
+        replay: FixedPatchReplay,
+    ) -> WriteFuture<'a, ()> {
+        Box::pin(async move {
+            let mut service = self.service.lock().await;
+            service
+                .as_origin(origin)
+                .verify_fixed_patch_replay(replay.identity())
+                .await
         })
     }
 
