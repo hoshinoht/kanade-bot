@@ -13,7 +13,7 @@ use crate::{
     domain::{
         history::{
             Actor, BlameTarget, ChangeFilter, ChangeHistory, ChangeMeta, ChangeQuery, ChangeRecord,
-            Expect, Origin, Precondition, Surface,
+            Expect, Origin, Precondition, Surface, changed_fields,
         },
         ids::IdGenerator,
         members::Roster,
@@ -32,6 +32,7 @@ use crate::{
 
 const REQUEST_ID: &str = "fixed-patch-no-op-race";
 const FIXED_TIME: NaiveTime = NaiveTime::from_hms_opt(21, 0, 0).unwrap();
+const REQUESTED_TIME: NaiveTime = NaiveTime::from_hms_opt(20, 0, 0).unwrap();
 const REQUESTED_NOTE: &str = "requested note";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -73,7 +74,7 @@ impl IdGenerator for CountingIds {
 
 fn identity(fixed_id: &str, note: &str, version: u64, expect: &Expect) -> String {
     format!(
-        "FixedPatchForm {{ fixed_id: {fixed_id:?}, time: {FIXED_TIME:?}, note: {note:?}, version: {version}, expect: {expect:?} }}"
+        "FixedPatchForm {{ fixed_id: {fixed_id:?}, time: {REQUESTED_TIME:?}, note: {note:?}, version: {version}, expect: {expect:?} }}"
     )
 }
 
@@ -81,6 +82,18 @@ fn request(fixed_id: &str) -> FixedEditRequest {
     FixedEditRequest {
         fixed_id: fixed_id.to_owned(),
         edit: FixedEdit {
+            note: Some(REQUESTED_NOTE.to_owned()),
+            ..FixedEdit::default()
+        },
+        choices: FixedEditChoices::PerRun(Default::default()),
+    }
+}
+
+fn competing_request(fixed_id: &str) -> FixedEditRequest {
+    FixedEditRequest {
+        fixed_id: fixed_id.to_owned(),
+        edit: FixedEdit {
+            time: Some(REQUESTED_TIME),
             note: Some(REQUESTED_NOTE.to_owned()),
             ..FixedEdit::default()
         },
@@ -242,7 +255,7 @@ async fn fixture() -> Fixture {
             channel_id: Some("test-channel".into()),
             bosses: vec!["XKalos".into()],
             weekday: Weekday::Tue,
-            time: NaiveTime::from_hms_opt(21, 0, 0).unwrap(),
+            time: FIXED_TIME,
             participants: vec!["1001".into()],
             note: Some("seed".into()),
         })
@@ -269,7 +282,7 @@ fn competing_write(fixture: &Fixture, identity: String) -> CompetingWrite {
     CompetingWrite {
         origin: origin(),
         expect: fixture.expect.clone(),
-        patch: request(&fixture.fixed_id),
+        patch: competing_request(&fixture.fixed_id),
         identity,
         clock: fixture.clock.clone(),
         policy: fixture.policy.clone(),
@@ -339,10 +352,19 @@ async fn different_competing_identity_on_fixed_patch_no_op_returns_api_422_witho
 
     let baseline = store.baseline();
     assert_one_competing_change(&fixture.before, &baseline);
+    let competing_record = baseline.history.last().expect("competing history record");
+    assert_ne!(fixture.expect.fields[0].seen, Some(competing_record.seq));
+    assert!(changed_fields(competing_record).contains(&(
+        BlameTarget::FixedRun(fixture.fixed_id.clone()),
+        "time".into()
+    )));
+    assert_eq!(
+        baseline.schedule.fixed_runs[0].time, REQUESTED_TIME,
+        "the competing writer moved time to the requested field value"
+    );
     assert_eq!(
         baseline.schedule.fixed_runs[0].note.as_deref(),
-        Some(REQUESTED_NOTE),
-        "the competing writer moved the note to the requested field value"
+        Some(REQUESTED_NOTE)
     );
     assert_eq!(effects(fixture.store.as_ref()).await, baseline);
 }
