@@ -139,15 +139,19 @@ fn nothing() -> String {
 fn moved(evidence: u64) -> String {
     json!({
         "amendments": [{
-            "kind": "move", "bosses": ["NKalos"], "day_ref": null, "time_ref": "10pm",
+            "kind": "move", "bosses": ["NKalos"], "day_ref": "tomorrow", "time_ref": "10pm",
             "participants": [ALICE.to_string()], "rsvp": null, "is_question": false,
             "confidence": 0.9, "evidence_message_ids": [evidence.to_string()],
             "target_run_hint": null,
         }],
-        "summary": "nkalos to 10pm",
+        "summary": "nkalos tomorrow to 10pm",
     })
     .to_string()
 }
+
+const MOVE_TOMORROW: &str = "nkalos amend tomorrow to 10pm";
+
+mod reset_boundary;
 
 // ---- Harness ----
 
@@ -530,13 +534,13 @@ async fn a_message_becomes_a_card_and_a_participants_check_moves_the_run() {
         model.answer(moved(evidence));
         // The loop guard: the bot's own and other bots' posts are never cached.
         ctx.events
-            .send(posted(snowflake(now, 8), HOME_A, SELF, "nkalos amend to 10pm", now))
+            .send(posted(snowflake(now, 8), HOME_A, SELF, MOVE_TOMORROW, now))
             .unwrap();
         ctx.events
-            .send(posted(snowflake(now, 9), HOME_A, BOT, "nkalos amend to 10pm", now))
+            .send(posted(snowflake(now, 9), HOME_A, BOT, MOVE_TOMORROW, now))
             .unwrap();
         ctx.events
-            .send(posted(evidence, HOME_A, ALICE, "nkalos amend to 10pm", now))
+            .send(posted(evidence, HOME_A, ALICE, MOVE_TOMORROW, now))
             .unwrap();
         eventually!("the extraction", !logs(&ctx).await.is_empty());
         let log = logs(&ctx).await.remove(0);
@@ -1322,13 +1326,8 @@ async fn a_restart_neither_reposts_cards_nor_extracts_chat_questions() {
         .unwrap()
         .with_timezone(&Utc);
     let (evidence, asked) = (snowflake(now, 10), snowflake(now, 11));
-    let evidence_json = message_json(evidence, PARTY, (ALICE, false), "nkalos amend to 10pm", now);
-    let question_json = question(
-        asked,
-        PARTY,
-        &format!("<@{SELF}> nkalos amend to 10pm"),
-        now,
-    );
+    let evidence_json = message_json(evidence, PARTY, (ALICE, false), MOVE_TOMORROW, now);
+    let question_json = question(asked, PARTY, &format!("<@{SELF}> {MOVE_TOMORROW}"), now);
 
     // First run: a card for the move, and a chat question.
     let (mut discord, ctx) = started(&harness).await;
