@@ -3,7 +3,7 @@
 Tests whether local models can reliably apply a persona to code-generated
 schedule headers (daily pings, countdowns) without hallucinating extra content.
 
-    uv run python scripts/bench_headers.py --reps 3
+    python3 scripts/bench_headers.py --reps 3
 
 Models run one at a time: pull → test → stop → next.  AFM (``fm respond``)
 runs first since it needs no Ollama model slot.

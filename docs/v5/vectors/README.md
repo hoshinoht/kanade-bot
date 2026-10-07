@@ -1,13 +1,12 @@
 # V5 contract vectors
 
-`domain/` is the first producer-side subset of the v5 freeze.  It captures pure
-v4 `weeks`, `timeutil`, `ids`, and `bosses` behavior as language-neutral JSON.
-Run it from `legacy/python/`:
+Frozen v4 behaviour as language-neutral JSON. The v4 generators
+(`scripts/v5_vectors` in the Python tree) are gone with v4 itself; they remain
+in git history up to `487c4ed`. The vectors are never regenerated: the Rust
+suite replays them as they are.
 
-```sh
-uv run python -m scripts.v5_vectors
-uv run python -m scripts.v5_vectors --check
-```
+`domain/` is the first producer-side subset of the v5 freeze. It captures pure
+v4 `weeks`, `timeutil`, `ids`, and `bosses` behavior.
 
 The generator first JSON-round-trips the serialized inputs and fixtures, then
 replays each case through one dispatch function that calls the v4 oracle.
@@ -42,23 +41,19 @@ vectors are pending.
 
 `scheduler/` is the next stateful producer subset: real in-memory v4 `Repo`
 replay for materialisation, fixed-run edits/retirement, reminder rows, and RSVP
-reactions. See its [README](scheduler/README.md); run it with
-`uv run python -m scripts.v5_vectors.scheduler --check` from `legacy/python/`.
+reactions. See its [README](scheduler/README.md).
 
 `persona/` captures the v4 prompt assembly from public Kanade templates and synthetic
-profiles; see its [README](persona/README.md) and run
-`uv run python -m scripts.v5_vectors.persona --check`.
+profiles; see its [README](persona/README.md).
 
 `extract/` freezes the v4 extraction oracle: keyword gate, burst windows,
 day/time resolution, run matching, merge, prompt and structured-output schema
 bytes, response parsing with retry/quarantine over a scripted model, burst
 planning, commit outcomes and proposal cards, one schema per family listed in
-its `index.json`. See its [README](extract/README.md) and run
-`uv run python -m scripts.v5_vectors.extract --check`.
+its `index.json`. See its [README](extract/README.md).
 
 `chat/` freezes the v4 chatbot oracle: gate, authority, participant
 resolution, tool-schema bytes, read-tool rendering, proposal tools, text
 sanitisation, the agent loop over a scripted provider, and context assembly,
 one schema per family listed in its `index.json`. Per-member memory is not
-vectored (removed in v4). See its [README](chat/README.md) and run
-`uv run python -m scripts.v5_vectors.chat --check`.
+vectored (removed in v4). See its [README](chat/README.md).

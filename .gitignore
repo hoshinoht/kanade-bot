@@ -68,9 +68,6 @@ devtools/pwa-mock/target/
 # Private dev notes, logs, plans and reviews (kept on disk, never tracked; see its AGENTS.md)
 /docs/notes/
 
-# Frozen v4 rollback tree: local only, never tracked again (in git history up to 487c4ed).
-/legacy/python/
-
 # docs/v5: only the setup guides and the test data (frozen vectors, API
 # schemas) are public; contracts, design specs and evaluations stay local.
 /docs/v5/*

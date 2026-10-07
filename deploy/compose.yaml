@@ -188,7 +188,7 @@ services:
         max-file: "3"
 
 networks:
-  # Created by the v4 stack (legacy/python/deploy/compose.yaml); the edge joins it.
+  # Created outside this stack (originally by v4); the edge joins it.
   edge:
     name: kanade_edge
     external: true

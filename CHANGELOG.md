@@ -405,6 +405,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Removed**
 
+- The v4 (Python) rollback is retired: the local tree, its rollback runbook and toolchain notes, the v4-only inventory checker (`scripts/check_v5_inventory.py`) and the `uv` Dependabot entry are gone. v4 stays in git history up to `487c4ed`; the frozen v4 vectors and `kanade import v4` remain.
 - The reserved `kanade export` command.
 - Removed `GET /api/admin/runs/{id}/blame` (and its mock route, schema and
   `BlameEntry` type): the admin PWA reads a run's change log from

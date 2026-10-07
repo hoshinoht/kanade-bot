@@ -11,8 +11,7 @@ profiles/example.yaml   profile template, never selectable
 
 Only this README, the catalog example, the Kanade bundle, and the profile
 example are tracked. Live catalogs, bundles, and profiles stay private. The v5
-runtime reads only this layout; it never probes the v4 files under
-`legacy/python/config/personas/`.
+runtime reads only this layout.
 
 ## Files
 

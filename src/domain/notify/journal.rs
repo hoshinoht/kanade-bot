@@ -560,7 +560,7 @@ mod tests {
     }
 
     /// Hashes printed by running v4 `DeliveryJournal._dedupe_key` itself
-    /// (the rollback tree, via `uv run`), not re-derived.
+    /// (the v4 tree, git history up to `487c4ed`), not re-derived.
     #[test]
     fn dedupe_keys_match_v4() {
         let reminders = [

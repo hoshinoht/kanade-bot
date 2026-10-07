@@ -1,20 +1,11 @@
 # Extraction vectors
 
 Frozen outputs of the v4 `bot.extract` oracle (plus the card formatting it
-uses), for the Rust extraction port. Run from `legacy/python/`:
-
-```sh
-uv run python -m scripts.v5_vectors.extract
-uv run python -m scripts.v5_vectors.extract --check
-```
-
-The generator writes every `<family>.json`, its `<family>.schema.json` and
-`index.json`. Schemas are authored as data in
-`scripts/v5_vectors/extract/families/*.py` (shared pieces in `contract.py` and
-`fixtures.py`) and `--check` holds schemas, vectors and the index to their
-checked-in bytes. Never hand-edit any of them; change the generator and
-regenerate. This README is the only hand-written file here, apart from the
-v5 set below.
+uses), for the Rust extraction port. The generator
+(`scripts/v5_vectors/extract` in the v4 tree, git history up to `487c4ed`)
+wrote every `<family>.json`, its `<family>.schema.json` and `index.json`; it
+is gone with v4, so these files are frozen. Never hand-edit any of them. This
+README is the only hand-written file here, apart from the v5 set below.
 
 ## Discipline
 

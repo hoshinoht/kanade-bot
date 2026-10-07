@@ -4,9 +4,6 @@ Structured, source-backed boss knowledge for Kanade v5: concise Discord
 explanations and the portal Bosses page. One lowercase YAML file per boss
 (`<boss key>.yaml`) plus `_meta.yaml`, validated against `schema.json`.
 
-The v4 rollback keeps its own frozen copy in `legacy/python/boss/knowledge/`
-(schema v1), which the v4 container validates at startup. Do not edit that copy.
-
 ## Fields
 
 Required, as in v1: `boss` (catalog key), `summary`, `core` (unless `phases`

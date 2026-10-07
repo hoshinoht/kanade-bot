@@ -3,8 +3,7 @@
 Container and Compose stack for the Rust runtime. The admin portal is served
 on the tailnet through the shared edge (`~/projects/personal/homelab/edge`,
 site `sites/kanade`); the public portal's tunnel is prepared but not started
-("Public portal" below). The v4 rollback
-stack stays in `legacy/python/deploy/`.
+("Public portal" below).
 
 ## Image
 
@@ -176,11 +175,11 @@ backups show `mismatch` in Checkpoints until they are removed.
 
 ```sh
 docker compose -f deploy/compose.yaml stop       # or down (keeps kanade_v5_data)
-# set discord.expect_v4_stopped = false in kanade.toml so v5 cannot reconnect by accident
-docker start kanade-bot                          # v4 back; the edge needs no change
 ```
 
-v4 re-registers its own guild slash commands when it starts, replacing v5's.
+Roll back to an earlier v5 image with the `kanade-v5:rollback-<sha>` tag and
+the matching pre-deploy backup ("Deploy an update"). v4 is retired from this
+repository: its code is only in git history (up to `487c4ed`).
 
 Never run `down -v` unless the v5 store may be discarded. v4 data lives in
 `kanade_botdata`, which v5 never mounts.
@@ -193,10 +192,8 @@ backup of the v4 database, never the live file, and takes the v5 store lock,
 so the v5 container must be stopped.
 
 ```sh
-# 1. Snapshot v4 with SQLite's online backup API (v4 may keep running).
-#    A recent v4 backup under data/backups/ works too.
-docker exec kanade-bot python -c "import sqlite3; s = sqlite3.connect('/app/data/bot.sqlite'); d = sqlite3.connect('/app/data/backups/v4-import.sqlite'); s.backup(d); d.close()"
-cp data/backups/v4-import.sqlite /tmp/v4-snapshot.sqlite
+# 1. A v4 database snapshot, e.g. from the kanade_botdata volume or a kept copy.
+cp <v4-backup>.sqlite /tmp/v4-snapshot.sqlite
 # 2. Stop v5, dry-run, then apply with the snapshot mounted read-only.
 docker compose -f deploy/compose.yaml stop bot
 docker compose -f deploy/compose.yaml run --rm --no-deps \
@@ -208,8 +205,6 @@ docker compose -f deploy/compose.yaml run --rm --no-deps \
 docker compose -f deploy/compose.yaml start bot
 ```
 
-v4's `DB_PATH` is `/app/data/bot.sqlite` and `/app/data/backups` is bind
-mounted to the checkout's `data/backups` (`legacy/python/deploy/compose.yaml`).
 The dry run prints counts and skip reasons
 only; `--apply` is safe to repeat (it adds nothing the second time).
 `--since YYYY-MM-DD` narrows the logs below the 90-day retention. The owner

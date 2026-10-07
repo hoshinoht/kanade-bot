@@ -1,19 +1,11 @@
 # Chat vectors
 
 Frozen outputs of the v4 `bot.chat` oracle (gate, tools, pilot loop and
-context assembly), for the Rust chat port. Run from `legacy/python/`:
-
-```sh
-uv run python -m scripts.v5_vectors.chat
-uv run python -m scripts.v5_vectors.chat --check
-```
-
-The generator writes every `<family>.json`, its `<family>.schema.json` and
-`index.json`. Schemas are authored as data in
-`scripts/v5_vectors/chat/families/*.py` (shared pieces in `contract.py`,
-`fixtures.py` and `host.py`), and `--check` holds schemas, vectors and the
-index to their checked-in bytes. Never hand-edit any of them; change the
-generator and regenerate. This README is the only hand-written file here.
+context assembly), for the Rust chat port. The generator
+(`scripts/v5_vectors/chat` in the v4 tree, git history up to `487c4ed`) wrote
+every `<family>.json`, its `<family>.schema.json` and `index.json`; it is gone
+with v4, so these files are frozen. Never hand-edit them. This README is the
+only hand-written file here.
 
 ## Discipline
 

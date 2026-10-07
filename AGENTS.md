@@ -2,49 +2,30 @@
 
 ## Repository layout
 
-- Root = Rust v5 crate `kanade` (`Cargo.toml`, edition 2024, toolchain pinned in `rust-toolchain.toml`). `legacy/python/` = frozen v4 rollback (Python), independently runnable, **git-ignored and local only** since 2026-10-05 (in history up to `487c4ed`; restore with `git archive 487c4ed legacy/python | tar -x`). Never re-add it.
+- Root = Rust v5 crate `kanade` (`Cargo.toml`, edition 2024, toolchain pinned in `rust-toolchain.toml`). The v4 (Python) implementation is retired: it is only in git history up to `487c4ed` (e.g. `git show 487c4ed:legacy/python/<path>`); never re-add it.
 - `src/main.rs` installs the rustls `ring` provider and delegates to `src/runtime/` (command dispatch, env-only config, JSON logs, TLS); `src/cli/` parses `serve`, `healthcheck` and reserved `ctl`/`import`/`export`; `src/api/` is the bootstrap health server; `src/chat/persona/` loads the v5 persona layout.
 - Feature code: `src/domain/` (pure rules), `src/extract/` (pure extraction rules), `src/infrastructure/` (`llm/` provider, `store/` SQLite + journal), `src/bot/` (Discord). Each has its own `AGENTS.md`.
 - `tests/<target>/main.rs` integration suites (see `tests/AGENTS.md`); `docs/v5/` holds only the public setup guides and test data (frozen v4 vectors, API schemas; see the local `docs/v5/AGENTS.md`); contracts, design spec and decisions are in the git-ignored `docs/notes/`.
-- `config/personas/` tracks only `README.md`, `catalog.example.yaml`, `bundles/kanade.yaml`, `profiles/example.yaml`; everything else there (and `config/personas-v4/`, mounted by the v4 container) is private.
-- `web/` is the production Svelte 5 PWA workspace (see `web/AGENTS.md`); `devtools/pwa-mock/` is its dev-only Axum mock server (own Cargo project); the stack-evaluation spike was removed (restore from commit `6aecff4` if needed); `scripts/` holds the v5 inventory checker (`check_v5_inventory.py`, `v5_inventory/`), `boss_knowledge/` import tooling and `bench_headers.py`.
-- `boss/knowledge/` is the tracked v5 boss knowledge (schema v2); v4's copy under `legacy/python/boss/knowledge/` must not change because the frozen v4 container validates it at startup. Root `boss/portraits` and `boss/artwork` are private, git-ignored art.
+- `config/personas/` tracks only `README.md`, `catalog.example.yaml`, `bundles/kanade.yaml`, `profiles/example.yaml`; everything else there is private.
+- `web/` is the production Svelte 5 PWA workspace (see `web/AGENTS.md`); `devtools/pwa-mock/` is its dev-only Axum mock server (own Cargo project); the stack-evaluation spike was removed (restore from commit `6aecff4` if needed); `scripts/` holds `boss_knowledge/` import tooling, the API route diff, the emoji pill generator and `bench_headers.py`.
+- `boss/knowledge/` is the tracked v5 boss knowledge (schema v2). Root `boss/portraits` and `boss/artwork` are private, git-ignored art.
 - Current planning state lives in git-ignored `.opencode/workplan/kanade-v5-roadmap.{json,md}`; its `## Decision register` records user decisions that override older plan text. Predecessor plans are marked archived; their historical decisions and receipts remain preserved.
 - `docs/notes/` is git-ignored and holds private dev logs, session notes, unpublished plans/specs and reviews (see its `AGENTS.md`); put anything others should not see there, never in tracked docs. `docs/research/` (also git-ignored) holds private captures and mockups.
 
 ## v5 toolchain and checks
 
-- CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --locked --all-targets --all-features`, `cargo build --locked --release`. A `changes` job (dorny/paths-filter) gates each suite on its paths (python, rust, web); when a new input file is read by a suite, add its path to that filter.
+- CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --locked --all-targets --all-features`, `cargo build --locked --release`. A `changes` job (dorny/paths-filter) gates each suite on its paths (rust, web); when a new input file is read by a suite, add its path to that filter.
 - Targets `provider_contract`, `scheduler`, `notify`, `store`, `discord`, `delivery`, `governor`, `extract`, `api`, `chat` are declared in `Cargo.toml` with `required-features = ["test-support"]`; run one with `cargo test --all-features --test <name>`. `domain`, `persona`, `runtime_bootstrap` are auto-discovered from `tests/<name>/main.rs`.
 - The suite is offline: fake Discord/model providers, loopback stubs, temp stores. Never read `.env`, `data/` or private `config/` from tests.
 - Only `serve --offline` and `healthcheck` run today; config comes from the process environment (`KANADE_TIMEZONE` required, `KANADE_ADMIN_BIND` and optional `KANADE_PUBLIC_BIND` loopback-only). The admin and public routers are separate: admin routes are never mounted on the public listener. See `docs/v5/runtime-bootstrap.md`.
 - Pin new dependencies exactly (`=x.y.z`) with minimal features; keep rustls on `ring` only (no aws-lc/native-tls/openssl).
 - `web/packages/api-types/src/generated.ts` is generated from the API DTOs (`#[cfg_attr(test, derive(ts_rs::TS))]`, list in `src/api/ts_bindings.rs`); after changing a DTO run `KANADE_WRITE_TS=1 cargo test --all-features --lib ts_bindings` (the plain test fails while it is stale). Hand-written leftovers live in `manual.ts`.
 
-## v4 rollback toolchain
 
-- Everything in this section applies only to a checkout that has the local, untracked `legacy/python/`; CI no longer runs it.
-- The v4 rollback tree is `legacy/python/`; run its Python commands from that directory.
-- Use Python 3.12 and `uv`; run `uv sync --locked` there before v4 checks.
-- A focused v4 test is `cd legacy/python && uv run pytest -q tests/test_<area>.py::test_<case>`.
-- `uv run pytest` excludes the `live_model` marker through pytest config and needs neither Discord nor a model. `uv run pytest -m live_model -v` calls the real Kanata gateway and skips unless `KANATA_BASE_URL`, `KANATA_API_KEY_FILE` and `EXTRACT_MODEL`/`CHAT_PILOT_MODEL` are set; narrow the chatbot smoke test with `-k chat_live`.
-- Match v4 CI from `legacy/python/` with Ruff, stylesheet generation, and the non-live-model suite; the rollback image is `docker build -f legacy/python/deploy/Dockerfile legacy/python`.
-- If the repository moves and `.venv` commands report a bad interpreter, repair their absolute shebangs with `uv sync --reinstall`.
+## Private files
 
-## Where v4 behavior lives
-
-- Within v4, scheduling rules are under `legacy/python/bot/domain/`, persistence under `legacy/python/bot/infrastructure/`, and adapters under `legacy/python/bot/agent`, `extract`, `chat`, and `api`.
-- v4 `bossctl` remains an HTTP client; do not add a second scheduling path or make it manipulate the live SQLite file directly.
-- v4 catalogs, examples, docs, and container files are under `legacy/python/`; private deployment state remains at its existing root paths until manually mounted by an operator.
-- `legacy/python/tests/` mirrors v4 behavior by feature and supplies Discord/model fakes; v4 guides are under `legacy/python/docs/`.
-- `legacy/python/scripts/bench_extract.py` and `legacy/python/deploy/` (Dockerfile, its `Dockerfile.dockerignore`, Compose) are v4 rollback tooling; v5 container files belong in the root `deploy/` directory. TLS ingress is the shared edge (`~/projects/personal/homelab/edge`, site `sites/kanade`; Kanata lives in `~/projects/personal/homelab/kanata`) over the internal `kanade_edge` network; kanade no longer ships Caddy.
-
-## Generated, coupled, and private files
-
-- Never edit generated, git-ignored `legacy/python/bot/api/static/portal.css`; validate it from `legacy/python/` with `python -m bot.portal_styles`.
 - Boss portraits and entry artwork are intentionally git-ignored deployment assets. Their tests isolate themselves from whatever images happen to exist locally.
-- Treat root and `legacy/python/` `.env`, data, guide, and live persona paths as deployment-private.
-- Full Compose startup also expects the externally managed volume `kanade_botdata` and the private `legacy/python/.env`. v4 model calls go only to the Kanata gateway (`KANATA_BASE_URL`, https) through `legacy/python/bot/infrastructure/llm/`; Compose mounts the bearer key as the `kanata_api_key` secret from `KANATA_API_KEY_HOST_FILE`, never as an env var. Do not reintroduce the `ollama` package or native Ollama endpoints in `bot/`.
+- Treat the root `.env`, `data/`, guides and live persona paths as deployment-private. Model calls go only to the Kanata gateway through `src/infrastructure/llm/`; never add native Ollama endpoints.
 
 ## Coding policy
 

@@ -404,8 +404,8 @@ mod tests {
 
     const PARTY: [&str; 3] = ["1001", "1002", "1003"];
 
-    /// Expected strings printed by v4 `bot.agent.formatting` itself (the
-    /// rollback tree, `uv run`), for the same run, audience and zone.
+    /// Expected strings printed by v4 `bot.agent.formatting` itself (the v4
+    /// tree, git history up to `487c4ed`), for the same run, audience and zone.
     #[test]
     fn v4_announced_kinds_match_v4_bytes() {
         let old = Utc.with_ymd_and_hms(2026, 9, 9, 13, 0, 0).unwrap();

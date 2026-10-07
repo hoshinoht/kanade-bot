@@ -1,16 +1,12 @@
 # Persona vectors
 
 Oracle captures of the v4 prompt assembly, for the later v5 prompt-format step.
-Run from `legacy/python/`:
+The generator (`scripts/v5_vectors/persona` in the v4 tree, git history up to
+`487c4ed`) is gone with v4, so these files are frozen.
 
-```sh
-uv run python -m scripts.v5_vectors.persona
-uv run python -m scripts.v5_vectors.persona --check
-```
-
-Inputs are public only: the tracked v4 Kanade templates
-(`legacy/python/config/personas/personas/kanade/{identity.md,default.md,staging.yaml}`),
-the code-owned policy prompts under `legacy/python/bot/chat/prompts/`, and
+Inputs were public only: the tracked v4 Kanade templates
+(`config/personas/personas/kanade/{identity.md,default.md,staging.yaml}` in the
+v4 tree), the code-owned policy prompts under `bot/chat/prompts/`, and
 synthetic reply profiles written in `cases.py`. No private persona, profile, or
 deployment file is read. There are no model, Discord, or network calls.
 

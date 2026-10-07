@@ -1,6 +1,6 @@
 //! The silent staging-line selector, ported from v4 `progress.placeholder_for`
-//! and `strategy.route_strategy_intent` (`legacy/python/tests/
-//! test_chat_progress.py`, `test_chat_strategy.py`) over v4's shipped
+//! and `strategy.route_strategy_intent` (v4 `tests/test_chat_progress.py`,
+//! `test_chat_strategy.py`, git history up to `487c4ed`) over v4's shipped
 //! catalog, which `boss/bosses.yaml` keeps byte-identical.
 //!
 //! Named deviation `D-STAGING-WORD-CLASS`: v4's `\w` (in the how-to cue and

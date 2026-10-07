@@ -318,7 +318,7 @@ fn day_of_never_fires_at_or_after_the_start_across_dst_transitions() {
 
 /// A boss-week reset inside the spring-forward gap (Sun 02:30 New York on
 /// 2026-03-08) keeps its wall clock, so a 03:00 slot belongs to that week.
-/// Expected values are v4's, from `legacy/python`:
+/// Expected values are v4's (the v4 tree, git history up to `487c4ed`):
 /// `materialise.materialise_week` over `weeks.materialised_week_starts(tz, 6,
 /// time(2, 30), 2026-03-08T07:40Z)` with these five timings added in order,
 /// ids `00000000-0000-4000-8003-{n:012}`, ping 09:00, countdowns [60].
