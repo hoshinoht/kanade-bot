@@ -20,7 +20,7 @@ use crate::chat::tools::read::format::{
 use crate::chat::tools::read::participants::{
     is_true, new_party, py_text, validate_bosses, validate_participants,
 };
-use crate::chat::tools::read::resolve::{resolve_fixed, resolve_run};
+use crate::chat::tools::read::resolve::{require_heard, resolve_fixed, resolve_run};
 use crate::chat::tools::{CallError, ToolContext, ToolError};
 use crate::domain::drafts::{ProposalSource, ProposalStore};
 use crate::domain::ids::short_id;
@@ -236,6 +236,10 @@ where
         args: &Map<String, Value>,
     ) -> Proposed {
         let run = resolve_run(world, &py_text(args.get("run_query")), ctx.now)?;
+        // Where it moves to is not how they described it; an unreadable
+        // target is refused below, after the run is settled.
+        let to = when::parse_when(&arg(args, "to_when"), world.zone, ctx.now).ok();
+        require_heard(world, run, to, ctx.now, |_| true)?;
         require_authority(asker(world, ctx), Subject::Run(run), world.snapshot)?;
         let raw = arg(args, "to_when");
         if raw.is_empty() {
@@ -314,6 +318,7 @@ where
         args: &Map<String, Value>,
     ) -> Proposed {
         let run = resolve_run(world, &py_text(args.get("run_query")), ctx.now)?;
+        require_heard(world, run, None, ctx.now, |_| true)?;
         require_authority(asker(world, ctx), Subject::Run(run), world.snapshot)?;
         if run.status == RunStatus::Cancelled {
             return Err(ToolError::new("That run is already cancelled.").into());
@@ -335,6 +340,10 @@ where
         args: &Map<String, Value>,
     ) -> Proposed {
         let run = resolve_run(world, &py_text(args.get("run_query")), ctx.now)?;
+        // Only runs they are on are theirs to answer for.
+        require_heard(world, run, None, ctx.now, |candidate| {
+            candidate.participants.contains(&ctx.author_id)
+        })?;
         require_authority(asker(world, ctx), Subject::Run(run), world.snapshot)?;
         let answer = arg(args, "answer").to_lowercase();
         let state = match answer.as_str() {

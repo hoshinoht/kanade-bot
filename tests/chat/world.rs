@@ -11,6 +11,7 @@ use kanade::chat::gate::{ChannelDirectory, ChannelInfo, PilotSettings};
 use kanade::chat::tools::bundles::ToolOffer;
 use kanade::chat::tools::dispatch::{self, Dispatched};
 use kanade::chat::tools::propose::Proposer;
+use kanade::chat::tools::read::resolve::Heard;
 use kanade::chat::tools::read::{GuideError, StrategyGuides, ToolWorld};
 use kanade::chat::tools::{ToolContext, ToolOutcome};
 use kanade::domain::catalog::{BossReference, BossSpec, BossTable, CatalogSpec, DifficultySpec};
@@ -328,6 +329,7 @@ impl World {
             reset_time: policy.reset_time,
             pending: &[],
             guides: Some(&*guides),
+            heard: Heard::default(),
         };
         let mut proposer = Proposer { service, policy };
         dispatch::run(ctx, &world, offer, &mut proposer, session, name, arguments).await
@@ -394,6 +396,7 @@ impl World {
             reset_time: self.policy.reset_time,
             pending: &[],
             guides: Some(&self.guides),
+            heard: Heard::default(),
         }
     }
 

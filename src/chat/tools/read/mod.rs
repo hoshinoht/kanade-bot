@@ -16,7 +16,7 @@ use serde_json::{Map, Value};
 
 pub use event::{EventBoss, match_event};
 pub use guide::render_guide;
-pub use schedule::get_schedule;
+pub use schedule::{get_schedule, schedule_subject};
 
 use crate::chat::gate::{ChannelDirectory, PilotSettings};
 use crate::chat::tools::{MAX_RUNS, ToolContext, ToolError, ToolResult};
@@ -75,6 +75,9 @@ pub struct ToolWorld<'a> {
     pub pending: &'a [PendingCard],
     /// `None` when strategy knowledge is unavailable.
     pub guides: Option<&'a (dyn StrategyGuides + Sync)>,
+    /// The asker's own words, which the question loop reads from the
+    /// conversation; the run-taking writes check their choice against them.
+    pub heard: resolve::Heard<'a>,
 }
 
 fn query(args: &Map<String, Value>, name: &str) -> String {

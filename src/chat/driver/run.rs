@@ -23,7 +23,7 @@ use crate::chat::gate::{CHANNEL_BUSY_REACTION, SEEN_REACTION, is_chat_channel};
 use crate::chat::pilot::{
     ChatPilot, Concluded, Finished, LogFacts, ReplyPort, failure_reply, staging_line,
 };
-use crate::chat::sanitize::{reply_parts, schedule_defaults};
+use crate::chat::sanitize::{reply_parts, schedule_defaults, schedule_people};
 use crate::chat::tools::ToolContext;
 use crate::infrastructure::llm::governor::{Charge, SessionError, SessionFailure};
 
@@ -114,6 +114,13 @@ fn tool_context(asked: &Asked, prepared: &Prepared, source_id: &str) -> ToolCont
     ctx.self_schedule_requested = defaults.self_schedule_requested;
     ctx.upcoming_only = defaults.upcoming_only;
     ctx.next_only = defaults.next_only;
+    ctx.schedule_people = schedule_people(
+        &asked.message.content,
+        asked.bot_user_id.as_deref(),
+        asked.self_role_id.as_deref(),
+        &asked.message.author_id,
+        &prepared.members,
+    );
     ctx
 }
 

@@ -97,6 +97,10 @@ pub struct ToolContext {
     pub upcoming_only: bool,
     /// A singular "next run" question: `get_schedule` keeps only the soonest.
     pub next_only: bool,
+    /// Other roster members a question that also refers to the asker
+    /// (I/me/my/we) names: a mixed self + third-person question, so each
+    /// of them and the asker must be read before the reply (`D-MIXED-PEOPLE`).
+    pub schedule_people: Vec<String>,
     /// The answer's single clock reading.
     pub now: DateTime<Utc>,
 }
@@ -125,6 +129,7 @@ impl ToolContext {
             self_schedule_requested: false,
             upcoming_only: false,
             next_only: false,
+            schedule_people: Vec::new(),
             now,
         }
     }

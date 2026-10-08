@@ -121,6 +121,19 @@ fn schedule_participant(
     }
 }
 
+/// Whose runs a `get_schedule` call with these arguments lists: one roster
+/// id, `None` for the whole group, or the refusal the model reads.
+pub fn schedule_subject(
+    world: &ToolWorld<'_>,
+    ctx: &ToolContext,
+    args: &Map<String, Value>,
+) -> ToolResult<Option<String>> {
+    if ctx.force_group_schedule {
+        return Ok(None);
+    }
+    schedule_participant(world, ctx, args)
+}
+
 fn dates_in_interval(
     start: &ZonedDateTime,
     end: &ZonedDateTime,
@@ -308,11 +321,7 @@ pub fn get_schedule(
             }
         )));
     }
-    let participant = if ctx.force_group_schedule {
-        None
-    } else {
-        schedule_participant(world, ctx, args)?
-    };
+    let participant = schedule_subject(world, ctx, args)?;
     let for_me = participant.as_deref() == Some(ctx.author_id.as_str());
     let participant_name = participant
         .as_deref()

@@ -4,6 +4,7 @@
 //! caller supplies the conversation, the channel's pending cards and card
 //! posting through [`ChatPorts`].
 
+mod cover;
 mod finish;
 mod pilot;
 mod profanity;

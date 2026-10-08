@@ -10,6 +10,7 @@
 use serde_json::Value;
 use tokio::time::{Instant, timeout_at};
 
+use super::cover::{grounding_listing, missing_reads};
 use super::finish::{POSTED_UNFINISHED, finish};
 use super::{
     AnswerFailure, CARD_NOT_POSTED, CONTEXT_BUDGET_REPLY, ChatPorts, Generation, GuildView,
@@ -19,11 +20,13 @@ use crate::chat::context::{budgeted, card_focus};
 use crate::chat::tools::bundles::{Mode, ToolOffer};
 use crate::chat::tools::dispatch;
 use crate::chat::tools::propose::{ProposalCard, Proposer};
-use crate::chat::tools::read::ToolWorld;
+use crate::chat::tools::read::resolve::Heard;
+use crate::chat::tools::read::{PendingCard, ToolWorld};
 use crate::chat::tools::{FAILED, LOOKUP_FAILED, REFUSED, ToolName, ToolOutcome};
 use crate::domain::drafts::ProposalStore;
 use crate::domain::members::member_name;
 use crate::domain::pytext::strip;
+use crate::domain::schedule::ScheduleSnapshot;
 use crate::domain::scheduler::{Clock, IdSource, ScheduleStore, Scope};
 use crate::infrastructure::llm::governor::{SentRequest, Session, SessionError, SessionFailure};
 use crate::infrastructure::llm::identity::PassthroughSession;
@@ -88,6 +91,28 @@ fn passthrough(identity: &mut PassthroughSession, message: &Message) -> Message 
     }
 }
 
+/// The asker's words in the conversation (a member turn reads `Name: text`):
+/// the closing question, and their own message before a bot reply the
+/// question follows directly. A closing turn that is not theirs (a rejection
+/// follow-up's prompt) hears nothing.
+fn heard<'c>(conversation: &'c [Message], speaker: &str) -> Heard<'c> {
+    let said = |message: &'c Message| match message {
+        Message::User { content } => content.strip_prefix(speaker)?.strip_prefix(": "),
+        _ => None,
+    };
+    let mut before = conversation.iter().rev();
+    let Some(question) = before.next().and_then(said) else {
+        return Heard::default();
+    };
+    let earlier = match before.next() {
+        Some(Message::Assistant { .. }) => before
+            .find(|message| matches!(message, Message::User { .. }))
+            .and_then(said),
+        _ => None,
+    };
+    Heard { question, earlier }
+}
+
 fn finish_name(reason: &FinishReason) -> String {
     match reason {
         FinishReason::Stop => "stop".into(),
@@ -107,6 +132,28 @@ fn bundle_names(offer: &ToolOffer, offered: bool) -> Vec<String> {
             .iter()
             .map(|bundle| bundle.request_name().unwrap_or("read").to_owned())
             .collect(),
+    }
+}
+
+fn tool_world<'a>(
+    guild: &'a GuildView<'_>,
+    snapshot: &'a ScheduleSnapshot,
+    pending: &'a [PendingCard],
+    heard: Heard<'a>,
+) -> ToolWorld<'a> {
+    ToolWorld {
+        snapshot,
+        members: guild.members,
+        directory: guild.directory,
+        catalog: guild.catalog,
+        channels: guild.channels,
+        pilot: guild.pilot,
+        zone: guild.zone,
+        reset_weekday: guild.reset_weekday,
+        reset_time: guild.reset_time,
+        pending,
+        guides: guild.guides,
+        heard,
     }
 }
 
@@ -131,6 +178,8 @@ struct Loop<'q, 'g> {
     guild: &'q GuildView<'g>,
     generation: Generation,
     reminder: String,
+    /// `D-MIXED-PEOPLE`: the listing every finish grounds the reply against.
+    grounding: Option<ToolOutcome>,
 }
 
 impl Loop<'_, '_> {
@@ -241,6 +290,8 @@ where
         .iter()
         .map(|message| passthrough(identity, message))
         .collect();
+    let speaker = member_name(guild.directory, &question.ctx.author_id);
+    let heard = heard(&question.conversation, &speaker);
     let clean_base: Vec<Message> = messages
         .first()
         .into_iter()
@@ -257,6 +308,7 @@ where
         question: &question,
         guild,
         generation: Generation::default(),
+        grounding: None,
     };
     let settings = question.settings;
     let seconds = settings.timeout.as_secs();
@@ -267,6 +319,10 @@ where
     let deadline = session.deadline();
     let mut charged = 0u32;
     let mut round = 0u32;
+    // D-MIXED-PEOPLE coverage is checked once, at the first answer in words;
+    // after code reads the next round is an answer in words, no tools.
+    let mut coverage_checked = false;
+    let mut answer_again = false;
 
     // The loop label is passed in: macro hygiene hides one written here.
     macro_rules! within_deadline {
@@ -279,6 +335,54 @@ where
                 }
             }
         };
+    }
+
+    // D-MIXED-PEOPLE: read whoever the question names that no read covers
+    // yet; `true` when reads were added for the model.
+    macro_rules! cover {
+        ($rounds:lifetime) => {{
+            coverage_checked = true;
+            let started = Instant::now();
+            let loaded = within_deadline!($rounds, proposer.service.store().load(&Scope::All));
+            // Nothing to read with: the reply stands as written.
+            let mut added = false;
+            if let Ok(snapshot) = loaded {
+                // `get_schedule` reads no pending cards.
+                let world = tool_world(guild, &snapshot, &[], heard);
+                let outcomes = &mut state.generation.outcomes;
+                let reads = missing_reads(question.ctx, &world, outcomes, round);
+                added = !reads.is_empty();
+                if added {
+                    messages.push(Message::Assistant {
+                        content: None,
+                        tool_calls: reads
+                            .iter()
+                            .map(|(id, outcome)| ToolCallRequest {
+                                id: id.clone(),
+                                name: outcome.name.clone(),
+                                arguments: Value::Object(outcome.arguments.clone()).to_string(),
+                            })
+                            .collect(),
+                    });
+                }
+                let took_ms = millis(started);
+                state.generation.tools_ms += took_ms;
+                for (id, outcome) in reads {
+                    messages.push(Message::Tool {
+                        tool_call_id: id,
+                        content: identity.tool_result(&outcome.output),
+                    });
+                    outcomes.push(RoundOutcome {
+                        round,
+                        outcome,
+                        posted: Vec::new(),
+                        took_ms,
+                    });
+                }
+                state.grounding = grounding_listing(question.ctx, &world, outcomes);
+            }
+            added
+        }};
     }
 
     let retry = 'rounds: loop {
@@ -299,12 +403,17 @@ where
         let posted_write = state.generation.outcomes.iter().any(|o| {
             !o.posted.is_empty() && ToolName::parse(&o.outcome.name).is_some_and(ToolName::is_write)
         });
-        let with_tools = !last && !posted_write;
+        let with_tools = !last && !posted_write && !answer_again;
         let offered = if with_tools {
             offer.tools()
         } else {
             Vec::new()
         };
+        // The last round answers without tools: whoever is still unread is
+        // read first, so its answer covers everyone.
+        if last && !coverage_checked && !question.ctx.schedule_people.is_empty() {
+            cover!('rounds);
+        }
         let outgoing = match budgeted(
             &mut messages,
             &offer.surface_text(),
@@ -353,6 +462,17 @@ where
         if response.tool_calls.is_empty() {
             let content = strip(response.content.as_deref().unwrap_or_default());
             if !content.is_empty() {
+                // The draft left someone out: the model answers again over
+                // every read, in words (a words answer in the last round was
+                // covered before it was asked for).
+                if !coverage_checked
+                    && !question.ctx.schedule_people.is_empty()
+                    && cover!('rounds)
+                    && round < limit
+                {
+                    answer_again = true;
+                    continue;
+                }
                 state.generation.reply = content.to_owned();
                 break None;
             }
@@ -378,19 +498,7 @@ where
             let (mut outcome, mut content, requested) = match loaded {
                 Ok(snapshot) => {
                     let pending = within_deadline!('rounds, ports.pending());
-                    let world = ToolWorld {
-                        snapshot: &snapshot,
-                        members: guild.members,
-                        directory: guild.directory,
-                        catalog: guild.catalog,
-                        channels: guild.channels,
-                        pilot: guild.pilot,
-                        zone: guild.zone,
-                        reset_weekday: guild.reset_weekday,
-                        reset_time: guild.reset_time,
-                        pending: &pending,
-                        guides: guild.guides,
-                    };
+                    let world = tool_world(guild, &snapshot, &pending, heard);
                     let arguments = Value::String(call.arguments.clone());
                     // Never cancelled mid-flight: staging and supersede must
                     // finish together; the deadline is checked right after.
@@ -526,7 +634,7 @@ where
     // The model's own words, before finishing adds grounded records and
     // card lines built from store data (member names are not its words).
     let said = state.generation.reply.clone();
-    let replaced = finish(&mut state.generation);
+    let replaced = finish(&mut state.generation, state.grounding.as_ref());
     // An unposted write's fixed status text replaced the model's words
     // whole: members never see them, so there is nothing to check.
     if let Some(guard) = question.profanity.filter(|_| !replaced) {
@@ -567,7 +675,7 @@ async fn profanity_check<P: LlmProvider>(
     {
         let clean = guard.reply_hit(&content).is_none();
         state.generation.reply = content;
-        let _ = finish(&mut state.generation);
+        let _ = finish(&mut state.generation, state.grounding.as_ref());
         if clean && !state.generation.reply.is_empty() {
             sent = None;
         }

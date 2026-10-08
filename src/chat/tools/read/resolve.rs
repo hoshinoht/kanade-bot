@@ -79,6 +79,28 @@ fn no_run(text: &str) -> ToolError {
     ))
 }
 
+fn ambiguous(world: &ToolWorld<'_>, text: &str, runs: &[&Run], now: DateTime<Utc>) -> ToolError {
+    ToolError(format!(
+        "`{text}` matches more than one run. {}",
+        listing(world, runs, "Ask which one:", now)
+    ))
+}
+
+/// The runs a description can still change: neither cancelled nor done, in
+/// the materialised boss weeks.
+fn open_runs<'w>(world: &'w ToolWorld<'_>, now: DateTime<Utc>) -> ToolResult<Vec<&'w Run>> {
+    let weeks = materialised_week_starts(world.zone, world.reset_weekday, world.reset_time, &now)
+        .map_err(|error| ToolError(error.to_string()))?;
+    let mut open: Vec<&Run> = Vec::new();
+    for start in &weeks {
+        let start = utc_instant(start).map_err(|error| ToolError(error.to_string()))?;
+        open.extend(world.snapshot.runs.iter().filter(|run| {
+            run.week_start == start && !matches!(run.status, RunStatus::Cancelled | RunStatus::Done)
+        }));
+    }
+    Ok(open)
+}
+
 /// A run from a short id or an unambiguous boss/day description.
 pub fn resolve_run<'w>(
     world: &'w ToolWorld<'_>,
@@ -102,15 +124,7 @@ pub fn resolve_run<'w>(
             "`{text}` names more than one day. Ask them which one they mean; do not guess."
         )));
     }
-    let weeks = materialised_week_starts(world.zone, world.reset_weekday, world.reset_time, &now)
-        .map_err(|error| ToolError(error.to_string()))?;
-    let mut candidates: Vec<&Run> = Vec::new();
-    for start in &weeks {
-        let start = utc_instant(start).map_err(|error| ToolError(error.to_string()))?;
-        candidates.extend(runs.iter().filter(|run| {
-            run.week_start == start && !matches!(run.status, RunStatus::Cancelled | RunStatus::Done)
-        }));
-    }
+    let candidates = open_runs(world, now)?;
     let named: BTreeSet<String> = world.catalog.names_in(&low).into_iter().collect();
     let by_boss: Vec<&Run> = candidates
         .iter()
@@ -157,11 +171,149 @@ pub fn resolve_run<'w>(
     match matches.as_slice() {
         [] => Err(no_run(text)),
         [only] => Ok(only),
-        many => Err(ToolError(format!(
-            "`{text}` matches more than one run. {}",
-            listing(world, many, "Ask which one:", now)
-        ))),
+        many => Err(ambiguous(world, text, many, now)),
     }
+}
+
+/// The asker's own words in the conversation the model was given, never the
+/// model's: the question, and when it follows a bot reply directly, the
+/// asker's message before that reply. Empty when no member asked (a
+/// rejection follow-up's prompt, a lone tool call): nothing to check.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Heard<'a> {
+    pub question: &'a str,
+    pub earlier: Option<&'a str>,
+}
+
+/// `words` carry `run`'s id or a unique prefix of it (`#a1b2c3d4`, pasted ids).
+fn names_id(runs: &[Run], words: &str, run: &Run) -> bool {
+    words
+        .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '#' || ch == '-'))
+        .any(|token| {
+            resolve_id(token, runs.iter().map(|run| run.id.as_str())).is_ok_and(|id| id == run.id)
+        })
+}
+
+/// What a message's words describe, judged against the run a tool resolved.
+struct Described<'w> {
+    /// The open runs the words fit: those with a boss the words name that
+    /// `run` has (every named boss when it has none of them, so "hstar and
+    /// kalos" singles out each), on a day the words name.
+    fits: Vec<&'w Run>,
+    /// The resolved run fits the words too.
+    fits_run: bool,
+}
+
+/// `None` when the words name neither a boss nor a day. A day named only as
+/// where a move goes (`to`'s date, "move the hstar to friday") does not
+/// describe the run, unless the run is on it.
+fn described<'w>(
+    world: &ToolWorld<'_>,
+    open: &[&'w Run],
+    words: &str,
+    run: &Run,
+    to: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+) -> Option<Described<'w>> {
+    let low = words.to_lowercase();
+    let named: BTreeSet<String> = world.catalog.names_in(&low).into_iter().collect();
+    let mut dates = referenced_dates(world, &low, now);
+    if named.is_empty() && dates.is_empty() {
+        return None;
+    }
+    let day = |candidate: &Run| local(&candidate.datetime, world.zone).date();
+    if !dates.contains(&day(run))
+        && let Some(to) = to
+    {
+        dates.remove(&local(&to, world.zone).date());
+    }
+    let own: BTreeSet<String> = boss_shorts(world, &run.bosses)
+        .intersection(&named)
+        .cloned()
+        .collect();
+    let bosses = if own.is_empty() { &named } else { &own };
+    let fit = |candidate: &Run| {
+        (bosses.is_empty() || !boss_shorts(world, &candidate.bosses).is_disjoint(bosses))
+            && (dates.is_empty() || dates.contains(&day(candidate)))
+    };
+    Some(Described {
+        fits: open
+            .iter()
+            .copied()
+            .filter(|candidate| fit(candidate))
+            .collect(),
+        fits_run: (named.is_empty() || !own.is_empty()) && fit(run),
+    })
+}
+
+/// `D-GUESSED-RUN`: a run a write tool resolved for the asker, checked
+/// against the asker's own words ([`ToolWorld::heard`]) unless they carry
+/// its id. Words that name a boss or day the run does not have refuse it
+/// with the runs they do fit; words that fit it and other open runs `among`
+/// allows refuse it with the ambiguity listing, unless a follow-up's earlier
+/// message narrows them to it alone. Words naming no boss or day, or only
+/// where a move goes (`to`), leave the model's choice alone.
+pub fn require_heard(
+    world: &ToolWorld<'_>,
+    run: &Run,
+    to: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+    among: impl Fn(&Run) -> bool,
+) -> ToolResult<()> {
+    let heard = world.heard;
+    let runs = &world.snapshot.runs;
+    if heard.question.is_empty()
+        || std::iter::once(heard.question)
+            .chain(heard.earlier)
+            .any(|words| names_id(runs, words, run))
+    {
+        return Ok(());
+    }
+    let open: Vec<&Run> = open_runs(world, now)?
+        .into_iter()
+        .filter(|candidate| among(candidate))
+        .collect();
+    let Some(question) = described(world, &open, heard.question, run, to, now) else {
+        return Ok(());
+    };
+    let text = strip(heard.question);
+    let mut fits = question.fits;
+    if !question.fits_run {
+        // The model picked a run the asker's words do not describe.
+        return Err(match fits.as_slice() {
+            [] => no_run(text),
+            // One run fits their words and it is another: show both.
+            [other] => ambiguous(world, text, &[other, run], now),
+            many => ambiguous(world, text, many, now),
+        });
+    }
+    if !fits.iter().any(|candidate| candidate.id == run.id) {
+        fits.push(run);
+    }
+    if fits.len() <= 1 {
+        return Ok(());
+    }
+    let narrowed = heard
+        .earlier
+        .and_then(|words| described(world, &open, words, run, to, now))
+        .map(|before| {
+            fits.iter()
+                .copied()
+                .filter(|candidate| {
+                    if candidate.id == run.id {
+                        before.fits_run
+                    } else {
+                        before.fits.iter().any(|other| other.id == candidate.id)
+                    }
+                })
+                .collect::<Vec<_>>()
+        });
+    if let Some([only]) = narrowed.as_deref()
+        && only.id == run.id
+    {
+        return Ok(());
+    }
+    Err(ambiguous(world, text, &fits, now))
 }
 
 fn no_weekly_for(world: &ToolWorld<'_>, text: &str) -> ToolResult<()> {
