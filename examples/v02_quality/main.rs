@@ -6,7 +6,7 @@
 //! Explicit only: never part of the test suite or CI.
 //!
 //! Live:   KANADE_MODEL_BASE_URL=… KANADE_MODEL_KEY_FILE=… [KANADE_MODEL_CA_FILE=…]
-//!         [KANADE_MODEL_GROUPS=…] [KANADE_MODEL_PERMITS=…]
+//!         [KANADE_MODEL_GROUPS=…] [KANADE_MODEL_PERMITS=…] [KANADE_MODEL_CONTEXT=…]
 //!         cargo run --features test-support --example v02_quality --
 //!         --chat-alias A --chat-reasoning R --extract-alias A --extract-reasoning R
 //! Offline: … --example v02_quality -- --dry-run [--cases C01,E07] [--cap N]
@@ -50,13 +50,15 @@ use persona::PersonaBundle;
 use requests::{HARD_CAP, Requests};
 use score::Detector;
 
-/// The serve environment keys passed through from the process environment.
-const MODEL_ENV: [&str; 5] = [
+/// The serve environment keys passed through from the process environment;
+/// `KANADE_MODEL_CONTEXT` mirrors the deployed context windows and reserves.
+const MODEL_ENV: [&str; 6] = [
     "KANADE_MODEL_BASE_URL",
     "KANADE_MODEL_KEY_FILE",
     "KANADE_MODEL_CA_FILE",
     "KANADE_MODEL_GROUPS",
     "KANADE_MODEL_PERMITS",
+    "KANADE_MODEL_CONTEXT",
 ];
 
 const USAGE: &str = "usage: v02_quality (--dry-run | --chat-alias A --chat-reasoning R --extract-alias A --extract-reasoning R) [--out DIR] [--cases C01,E07,…] [--cap N≤500] [--persona-bundle FILE]\n       v02_quality --rescore RUN_DIR [--persona-bundle FILE]";
