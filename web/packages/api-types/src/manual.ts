@@ -1,22 +1,20 @@
 // Hand-written API types with no typed Rust counterpart yet: string vocabularies
-// the generated types name, request bodies, the mock-only public week, the
-// YAML knowledge document, and the canonical history record (its JSON is the
-// hashed encoding). Everything else is in `generated.ts`.
+// the generated types name, request bodies, the shared run presentation shape,
+// the YAML knowledge document, and the canonical history record (its JSON is
+// the hashed encoding). Everything else is in `generated.ts`.
 
-import type { Boss, Member, RoleProfileView, RowChange, Tally, WeekDay } from './generated';
+import type { Boss, Member, RoleProfileView, RowChange, Tally, Week } from './generated';
 
 export type RunStatus = 'planned' | 'confirmed' | 'at_risk' | 'otot' | 'done' | 'cancelled';
 export type Answer = 'yes' | 'no' | 'maybe' | 'waiting';
 export type Difficulty = 'e' | 'n' | 'h' | 'c' | 'x';
 
 /**
- * Public projection of a run (`GET /api/public/week`): schedule facts only.
- * - `id`: opaque render key, stable across polls; grants nothing (the public
- *   origin has no mutation routes).
+ * The schedule facts the shared run components render (`RunCardBody`,
+ * `RunTable`, `sortRuns`); the admin `Run` carries them and more.
+ * - `id`: render key, stable across reads.
  * - `day`, `time`, `status`, `bosses`: the schedule itself.
- * - `tally`: aggregate count, as v4's public board shows ("3/4").
- * Omitted: participant names/ids and answers (personal data), `party`
- * (internal channel handle), `version` (a concurrency token for writers).
+ * - `tally`: aggregate count ("3/4").
  */
 export interface PublicRun {
   id: string;
@@ -29,18 +27,8 @@ export interface PublicRun {
   tally: Tally;
 }
 
-export interface PublicWeek {
-  starts: string;
-  timezone: string;
-  reset: string;
-  days: WeekDay[];
-  runs: PublicRun[];
-  /** Server clock (ISO) so clients can show freshness. */
-  generated_at: string;
-}
-
-/** Either projection; enough for shared presentation components. */
-export type WeekShape = Pick<PublicWeek, 'days' | 'timezone'>;
+/** Enough of a week for the shared day and "when" labels. */
+export type WeekShape = Pick<Week, 'days' | 'timezone'>;
 
 export interface MoveRequest {
   day: number;

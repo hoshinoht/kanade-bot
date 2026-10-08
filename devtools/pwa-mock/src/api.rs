@@ -1,5 +1,6 @@
-//! JSON handlers for both origins. The public origin only mounts `public_week`
-//! and `identity`; authorization is by which router a route is mounted on.
+//! JSON handlers, mostly the admin origin's. The public origin's member
+//! routes are in `public.rs`; authorization is by which router a route is
+//! mounted on.
 
 use crate::{
     App,
@@ -32,12 +33,12 @@ impl WeekQuery {
     }
 }
 
-fn error(status: StatusCode, code: &str, message: &str) -> Response {
+pub fn error(status: StatusCode, code: &str, message: &str) -> Response {
     (status, Json(json!({ "error": code, "message": message }))).into_response()
 }
 
 /// While the public portal is closed the public origin serves only the shell,
-/// this status, and the bot identity; data and art answer with this.
+/// its status, sign-out and the bot identity; everything else answers this.
 pub fn closed() -> Response {
     error(
         StatusCode::SERVICE_UNAVAILABLE,
@@ -46,15 +47,7 @@ pub fn closed() -> Response {
     )
 }
 
-/// Minimal public status: the closed page needs nothing else to render.
-pub async fn public_status(State(app): State<App>) -> Response {
-    Json(
-        json!({ "portal": if app.store.lock().await.public_portal() { "open" } else { "closed" } }),
-    )
-    .into_response()
-}
-
-fn outcome<T: serde::Serialize>(result: Result<T, MoveError>) -> Response {
+pub fn outcome<T: serde::Serialize>(result: Result<T, MoveError>) -> Response {
     match result {
         Ok(value) => Json(value).into_response(),
         Err(MoveError::NotFound) => error(
@@ -80,15 +73,6 @@ fn outcome<T: serde::Serialize>(result: Result<T, MoveError>) -> Response {
 
 pub async fn week(State(app): State<App>, Query(q): Query<WeekQuery>) -> Response {
     Json(app.store.lock().await.week(q.next())).into_response()
-}
-
-pub async fn public_week(State(app): State<App>, Query(q): Query<WeekQuery>) -> Response {
-    let store = app.store.lock().await;
-    // The admin's public-portal switch closes the public schedule outright.
-    if !store.public_portal() {
-        return closed();
-    }
-    Json(store.public_week(q.next())).into_response()
 }
 
 pub async fn stats(State(app): State<App>, Query(q): Query<WeekQuery>) -> Response {

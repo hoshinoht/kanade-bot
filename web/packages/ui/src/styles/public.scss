@@ -6,11 +6,14 @@
 @use "page-furniture";
 @use "forms";
 @use "buttons";
+@use "m3e-buttons"; // the mockups' pill buttons and accent key (P_ boards)
 @use "chips-status";
 @use "bosses";
 @use "runs"; // run cards + the entry-art veil (without it the art renders raw)
 @use "card-window";
 @use "tabs";
+@use "state-note"; // Closed, Denied, Session ended
+@use "avatar"; // the member's portrait (masthead, Account)
 @use "board";
 @use "week-rail"; // the phone's shape of the week (v4 partials/rail.html)
 @use "stats-tables";

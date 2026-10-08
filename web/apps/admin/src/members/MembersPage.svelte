@@ -2,14 +2,13 @@
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/members.scss';
   import type { MemberRow, Persona, PingLevel, Week } from '@kanade/api-types';
-  import { LoadError, LoadingState, Presence, RowContent, Select, TWO_PANE_QUERY } from '@kanade/ui';
+  import { Avatar, LoadError, LoadingState, Presence, RowContent, Select, TWO_PANE_QUERY } from '@kanade/ui';
   import '@kanade/ui/styles/select.scss';
   import Pager from '../pages/Pager.svelte';
   import { paged } from '../pages/paging';
   import { memberLabel } from '../names/directory.svelte';
   import { Resource } from '../resource.svelte';
   import MemberSheet from './MemberSheet.svelte';
-  import Avatar from '../shared/Avatar.svelte';
   import { memberAvatar } from '../shared/avatar';
   import { memberRuns, orderMembers, runCounts, type MemberOrder } from './runs';
 

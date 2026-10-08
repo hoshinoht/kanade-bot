@@ -1,34 +1,64 @@
+<!--
+  The member portal (member-auth-contract §6): status first; closed → Closed
+  (sign-in hidden); open → the session: 401 → Sign in, 200 → masthead and
+  Account. `?login_error=` lands on Denied, Closed or Sign in with a notice.
+  No schedule is read before or after sign-in in this step. The masthead
+  (P_ boards "Shell") names the time zone when signed out and carries the
+  account menu (Account, Appearance, Sign out) when signed in.
+-->
 <script lang="ts">
-  import {
-    Freshness,
-    Icon,
-    Masthead,
-    NapWindow,
-    registerServiceWorker,
-    RunTable,
-    Tabs,
-    ThemePicker,
-    ToastRegion,
-    Toaster,
-    longDate,
-    type TabItem,
-  } from '@kanade/ui';
-  import Board from './Board.svelte';
-  import { WeekFeed } from './feed.svelte';
+  import { AccountMenu, Icon, LoadingState, Masthead, registerServiceWorker, StateNote, ToastRegion, Toaster } from '@kanade/ui';
+  import { tick, untrack } from 'svelte';
+  import Account from './Account.svelte';
+  import Denied from './Denied.svelte';
+  import Ended from './Ended.svelte';
+  import SignIn from './SignIn.svelte';
+  import { landingOf, safeNext, withoutLoginError } from './landing';
+  import { Portal } from './portal.svelte';
 
-  type TabId = 'board' | 'list' | 'appearance';
-
-  const feed = new WeekFeed('/api/public/week');
+  const portal = new Portal(landingOf(location.search));
   const toaster = new Toaster();
-  let tab = $state<TabId>('board');
+  // Back to this address after signing in, minus the outcome of the last attempt.
+  const here = withoutLoginError(location.pathname, location.search, location.hash);
+  const next = safeNext(here);
+  if (here !== `${location.pathname}${location.search}${location.hash}`) history.replaceState(history.state, '', here);
 
-  const tabs = $derived<TabItem<TabId>[]>([
-    { id: 'board', label: 'Week' },
-    { id: 'list', label: 'List', count: feed.week?.runs.length ?? null },
-    { id: 'appearance', label: 'Appearance' },
-  ]);
+  const screen = $derived(portal.screen);
+  const member = $derived(screen.kind === 'account' ? screen.session.member : null);
+  const identity = $derived(portal.identity);
+  // Signed out, the masthead names the zone the portal shows times in: this device's.
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  $effect(() => feed.start());
+  const TITLES: Record<string, string> = {
+    loading: 'Kanade',
+    closed: 'Closed · Kanade',
+    unreachable: 'Kanade',
+    signin: 'Sign in · Kanade',
+    denied: 'Sign in · Kanade',
+    ended: 'Session ended · Kanade',
+    account: 'Account · Kanade',
+  };
+
+  $effect(() => portal.watch());
+  // Once, on mount: `load()` reads the screen, which must not make this effect rerun.
+  $effect(() =>
+    untrack(() => {
+      void portal.load();
+      void portal.loadIdentity();
+    }),
+  );
+
+  // The first screen keeps the page's natural focus; every later one moves
+  // focus to the new page (the masthead and skip link stay where they are).
+  let main = $state<HTMLElement>();
+  let settled = false;
+  $effect(() => {
+    const kind = screen.kind;
+    document.title = TITLES[kind] ?? 'Kanade';
+    if (kind === 'loading') return;
+    if (settled) void tick().then(() => main?.focus({ preventScroll: true }));
+    settled = true;
+  });
 
   $effect(() => {
     void registerServiceWorker({
@@ -43,75 +73,106 @@
         }),
     });
   });
+
+  /** The account menu's Account and Appearance: the one signed-in screen holds both, so focus that heading. */
+  async function jump(id: string) {
+    await tick();
+    const target = document.getElementById(id);
+    target?.focus({ preventScroll: true });
+    target?.scrollIntoView({ block: 'nearest' });
+  }
+
+  async function signOut() {
+    const message = await portal.signOut();
+    if (message) toaster.show({ message, tone: 'error' });
+  }
 </script>
 
 <div class="frame">
-  <a class="skip" href="#main">Skip to the schedule</a>
-  <Masthead name="Kanade" by="boss schedule">
+  <a class="skip" href="#main">Skip to the content</a>
+  <Masthead name={identity?.name ?? 'Kanade'} avatar={identity?.avatar ?? null} by="boss schedule · {location.hostname}">
     {#snippet meta()}
-      {#if feed.week}<span class="masthead__tz">{feed.week.timezone}</span>{/if}
-      <Freshness state={feed.fresh} updated={feed.updated} />
+      {#if member}
+        <AccountMenu who={member.display} avatar={member.avatar} detail="signed in with Discord">
+          {#snippet items(hide)}
+            <button
+              type="button"
+              role="menuitem"
+              tabindex="-1"
+              class="account__item"
+              onclick={() => {
+                hide(false);
+                void jump('acct-page');
+              }}><Icon name="users" /> Account</button
+            >
+            <button
+              type="button"
+              role="menuitem"
+              tabindex="-1"
+              class="account__item"
+              onclick={() => {
+                hide(false);
+                void jump('acct-look');
+              }}><Icon name="sliders" /> Appearance</button
+            >
+            <button
+              type="button"
+              role="menuitem"
+              tabindex="-1"
+              class="account__item"
+              onclick={() => {
+                hide(false);
+                void signOut();
+              }}><Icon name="log-out" /> Sign out</button
+            >
+          {/snippet}
+        </AccountMenu>
+      {:else}
+        <span class="masthead__zone"><span class="vh">Time zone: </span>{zone}</span>
+      {/if}
     {/snippet}
   </Masthead>
-  <main class="shell" id="main" tabindex="-1">
-    <div class="page-head">
-      <div>
-        <p class="eyebrow">{feed.week ? `Boss week of Thu ${longDate(feed.week.starts)}` : 'Boss week'}</p>
-        <h1>{feed.week ? `${feed.week.runs.length} runs` : 'Schedule'}</h1>
+  <main class="shell" id="main" tabindex="-1" bind:this={main}>
+    {#if screen.kind === 'loading'}
+      <div class="gate">
+        <section class="card notice notice--loading" aria-busy="true" aria-labelledby="loading-title">
+          <div class="card__head"><h1 class="card__title" id="loading-title">Loading</h1></div>
+          <LoadingState text="Loading…" />
+        </section>
       </div>
-      <div class="page-head__side">
-        <button type="button" class="btn" onclick={() => feed.refresh()}><Icon name="refresh-cw" /> Refresh</button>
+    {:else if screen.kind === 'closed'}
+      <div class="gate">
+        <section class="card notice" aria-labelledby="closed-bar">
+          <div class="card__head"><span class="card__title" id="closed-bar">Closed</span></div>
+          <StateNote icon="moon" level={1} title="The schedule isn't open right now">
+            The guild's admins have closed the portal. Reminders and answers still work in Discord.
+            {#snippet actions()}
+              <button type="button" class="btn btn--key" onclick={() => void portal.load()}>Check again</button>
+            {/snippet}
+          </StateNote>
+        </section>
       </div>
-    </div>
-
-    {#if feed.week}
-      <Tabs items={tabs} bind:selected={tab} label="Schedule views">
-        {#snippet panel(id)}
-          {#if id === 'board'}
-            <Board week={feed.week!} />
-          {:else if id === 'list'}
-            <RunTable week={feed.week!} />
-          {:else}
-            <h2 class="card__title panel-title">Appearance</h2>
-            <ThemePicker />
-          {/if}
-        {/snippet}
-      </Tabs>
-    {:else if feed.fresh === 'loading'}
-      <section class="card window-fill" aria-busy="true" aria-labelledby="loading-title">
-        <div class="card__head"><h2 class="card__title" id="loading-title">Loading the week…</h2></div>
-      </section>
-    {:else if feed.closed}
-      <NapWindow title="The schedule isn't public right now">
-        <p>The guild's admins have closed the public schedule. Reminders and answers still work in Discord.</p>
-        {#snippet actions()}
-          <button type="button" class="btn btn--primary" onclick={() => feed.refresh()}>Check again</button>
-        {/snippet}
-      </NapWindow>
+    {:else if screen.kind === 'unreachable'}
+      <div class="gate">
+        <section class="card notice" aria-labelledby="unreachable-bar">
+          <div class="card__head"><span class="card__title" id="unreachable-bar">{screen.offline ? 'Offline' : 'No answer'}</span></div>
+          <StateNote icon={screen.offline ? 'wifi-off' : 'alert-circle'} level={1} title={screen.offline ? "You're offline" : "Kanade can't be reached"}>
+            {screen.offline ? 'Reconnect to sign in. Nothing is kept on this device.' : "Kanade didn't answer. Try again in a moment."}
+            {#snippet actions()}
+              <button type="button" class="btn btn--primary btn--key" onclick={() => void portal.load()}>Try again</button>
+            {/snippet}
+          </StateNote>
+        </section>
+      </div>
+    {:else if screen.kind === 'signin'}
+      <SignIn {identity} notice={screen.notice} {next} />
+    {:else if screen.kind === 'denied'}
+      <Denied {next} onswitch={() => portal.switchAccount()} />
+    {:else if screen.kind === 'ended'}
+      <Ended {next} />
     {:else}
-      <NapWindow title={feed.fresh === 'offline' ? "You're offline" : "Kanade can't be reached"}>
-        <p>
-          {feed.fresh === 'offline'
-            ? 'Reconnect to see this week. Nothing is kept on this device.'
-            : 'The schedule did not load. It will try again on its own.'}
-        </p>
-        {#snippet actions()}
-          <button type="button" class="btn btn--primary" onclick={() => feed.refresh()}>Try again</button>
-        {/snippet}
-      </NapWindow>
+      <Account {portal} session={screen.session} {toaster} />
     {/if}
-
-    <p class="footnote">
-      <span>All times {feed.week?.timezone ?? 'Asia/Kuala_Lumpur'}.</span>
-      <span>Boss week starts {feed.week?.reset ?? 'Thu 00:00'}.</span>
-      <span>Read-only schedule.</span>
-    </p>
   </main>
   <ToastRegion {toaster} />
 </div>
-
-<style>
-  .panel-title {
-    margin: 0.2rem 0 0.8rem;
-  }
-</style>

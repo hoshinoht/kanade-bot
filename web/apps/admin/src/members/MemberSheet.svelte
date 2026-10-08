@@ -1,12 +1,11 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { MemberPatch, MemberRow, Persona, PingLevel } from '@kanade/api-types';
-  import { enter, Icon, Modal, Select } from '@kanade/ui';
+  import { Avatar, enter, Icon, Modal, Select } from '@kanade/ui';
   import '@kanade/ui/styles/select.scss';
   import { send } from '../resource.svelte';
   import { directory } from '../names/directory.svelte';
   import Name from '../names/Name.svelte';
-  import Avatar from '../shared/Avatar.svelte';
   import { memberAvatar } from '../shared/avatar';
   import { ANSWER_WORDS, type MemberWeek } from './runs';
 

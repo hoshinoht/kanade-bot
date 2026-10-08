@@ -1,6 +1,10 @@
 import type { ApiError } from '@kanade/api-types';
 
-export type FailureKind = 'network' | 'timeout' | 'http' | 'parse' | 'aborted';
+/**
+ * `reauth`: a 401 `reauth_required` (public origin). The session lives on;
+ * only this change needs the member to sign in with Discord again.
+ */
+export type FailureKind = 'network' | 'timeout' | 'http' | 'reauth' | 'parse' | 'aborted';
 
 export class ApiRequestError extends Error {
   readonly kind: FailureKind;
@@ -57,10 +61,18 @@ export function wroteWithin(ms: number): boolean {
   return Date.now() - wroteAt < ms;
 }
 
-/** Page-wide: told of every 401 (signed out or the session ended), so the app can send the user to sign in. */
+/**
+ * Page-wide: told of every 401 that means the session is gone (signed out,
+ * ended or expired), so the app can send the user to sign in. A 401
+ * `reauth_required` is not one of them: the session lives on and only this
+ * change needs a fresh sign-in, so the caller handles the `reauth` error.
+ */
 export function onUnauthenticated(handler: ((path: string) => void) | null): void {
   unauthenticated = handler;
 }
+
+/** The 401 code for "sign in with Discord again to make this change" (session kept). */
+const REAUTH_REQUIRED = 'reauth_required';
 
 /** A fresh `Idempotency-Key` (1–128 of `[A-Za-z0-9-_.:]`): one per user action. */
 export function newIdempotencyKey(): string {
@@ -126,7 +138,8 @@ export function createClient(options: ClientOptions = {}): Client {
       throw new ApiRequestError('network', error instanceof Error ? error.message : 'Network unavailable');
     }
 
-    // The session and sign-in answers carry it; a new sign-in replaces it.
+    // Any answer may carry it: sign-in and the session read, and on the public
+    // origin any request that rotated the session. The newest one wins.
     const token = response.headers.get(CSRF_HEADER);
     const csrf = guard();
     if (token && csrf) csrf.token = token;
@@ -144,8 +157,9 @@ export function createClient(options: ClientOptions = {}): Client {
     }
     if (!response.ok) {
       const apiError = isApiError(parsed) ? parsed : null;
-      if (response.status === 401) unauthenticated?.(path);
-      throw new ApiRequestError('http', apiError?.message ?? `HTTP ${response.status}`, response.status, apiError);
+      const reauth = response.status === 401 && apiError?.error === REAUTH_REQUIRED;
+      if (response.status === 401 && !reauth) unauthenticated?.(path);
+      throw new ApiRequestError(reauth ? 'reauth' : 'http', apiError?.message ?? `HTTP ${response.status}`, response.status, apiError);
     }
     if (method === 'GET') remember(path, response.headers.get('ETag'), parsed);
     return parsed as T;

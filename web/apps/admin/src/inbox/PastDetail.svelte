@@ -6,11 +6,11 @@
 -->
 <script lang="ts">
   import type { PastItem } from '@kanade/api-types';
+  import { Avatar } from '@kanade/ui';
   import { localAt } from '../history/describe';
   import { directory } from '../names/directory.svelte';
   import Mentions from '../names/Mentions.svelte';
   import Name from '../names/Name.svelte';
-  import Avatar from '../shared/Avatar.svelte';
   import { memberAvatar } from '../shared/avatar';
   import { discordLink } from '../shared/discordLink.svelte';
   import { SOURCE_LABEL } from './flags';

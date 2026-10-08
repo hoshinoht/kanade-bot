@@ -56,48 +56,44 @@ test('admin run pane: portraits, levels, split artwork, monogram fallback', asyn
   await expect(jupiter.locator('img')).toHaveCount(0);
 });
 
-test('public board shows the same art; art routes refuse unknown keys', async ({ page }) => {
-  await page.goto(`${PUBLIC}/?sw=off`);
-  await expect(page.locator('.runcard img.runcard__art').first()).toBeVisible();
-  await noBrokenImages(page);
+test('art routes refuse unknown keys; the public origin serves no art until member reads', async ({ page }) => {
   for (const path of ['/art/entry/..%2F..%2Fetc%2Fpasswd', '/art/entry/Nope', '/art/secrets/Carling', '/art/entry/Jupiter']) {
-    expect((await page.request.get(`${PUBLIC}${path}`)).status(), path).toBe(404);
+    expect((await page.request.get(`${ADMIN}${path}`)).status(), path).toBe(404);
   }
-  const ok = await page.request.get(`${PUBLIC}/art/entry/Carling`);
+  const ok = await page.request.get(`${ADMIN}/art/entry/Carling`);
   expect(ok.headers()['content-type']).toBe('image/png');
   expect(ok.headers()['cache-control']).toBe('public, max-age=3600');
+  // member-auth-contract §1: open, the public catch-all answers 404 for art too.
+  const pub = await page.request.get(`${PUBLIC}/art/entry/Carling`);
+  expect(pub.status()).toBe(404);
+  expect(await pub.json()).toMatchObject({ error: 'not_found' });
 });
 
 // Regression: the batch-3 stylesheet split dropped `runs` from public.scss and
 // the entry art rendered raw at full size. Every veil must be an absolute
-// layer inside its own card, on both boards, wide and narrow.
-for (const [name, origin] of [
-  ['public', PUBLIC],
-  ['admin', ADMIN],
-] as const) {
-  for (const width of [1280, 390]) {
-    test(`${name} board at ${width}px: every entry-art veil sits inside its card`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 844 });
-      await page.goto(`${origin}/?sw=off`);
-      await expect(page.locator('.runcard__art').first()).toBeAttached();
-      const boxes = await page.locator('.runcard__art').evaluateAll((imgs) =>
-        imgs.map((img) => {
-          const card = img.closest('.runcard')!;
-          const a = img.getBoundingClientRect();
-          const c = card.getBoundingClientRect();
-          return {
-            src: (img as HTMLImageElement).getAttribute('src'),
-            position: getComputedStyle(img).position,
-            inside: a.left >= c.left - 0.5 && a.top >= c.top - 0.5 && a.right <= c.right + 0.5 && a.bottom <= c.bottom + 0.5,
-            size: [Math.round(a.width), Math.round(a.height), Math.round(c.width), Math.round(c.height)],
-          };
-        }),
-      );
-      expect(boxes.length).toBeGreaterThan(0);
-      for (const box of boxes) {
-        expect(box.position, `${box.src}`).toBe('absolute');
-        expect(box.inside, `${box.src} ${box.size.join('×')}`).toBe(true);
-      }
-    });
-  }
+// layer inside its own card, wide and narrow.
+for (const width of [1280, 390]) {
+  test(`admin board at ${width}px: every entry-art veil sits inside its card`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto(`${ADMIN}/?sw=off`);
+    await expect(page.locator('.runcard__art').first()).toBeAttached();
+    const boxes = await page.locator('.runcard__art').evaluateAll((imgs) =>
+      imgs.map((img) => {
+        const card = img.closest('.runcard')!;
+        const a = img.getBoundingClientRect();
+        const c = card.getBoundingClientRect();
+        return {
+          src: (img as HTMLImageElement).getAttribute('src'),
+          position: getComputedStyle(img).position,
+          inside: a.left >= c.left - 0.5 && a.top >= c.top - 0.5 && a.right <= c.right + 0.5 && a.bottom <= c.bottom + 0.5,
+          size: [Math.round(a.width), Math.round(a.height), Math.round(c.width), Math.round(c.height)],
+        };
+      }),
+    );
+    expect(boxes.length).toBeGreaterThan(0);
+    for (const box of boxes) {
+      expect(box.position, `${box.src}`).toBe('absolute');
+      expect(box.inside, `${box.src} ${box.size.join('×')}`).toBe(true);
+    }
+  });
 }

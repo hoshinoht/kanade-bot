@@ -44,7 +44,7 @@ pub fn unauthenticated() -> Response {
 }
 
 /// As the server's `safe_next`.
-fn safe_next(next: Option<&String>) -> String {
+pub fn safe_next(next: Option<&String>) -> String {
     next.filter(|n| {
         n.starts_with('/')
             && !n.starts_with("//")
@@ -56,7 +56,7 @@ fn safe_next(next: Option<&String>) -> String {
     .unwrap_or_else(|| "/".into())
 }
 
-fn see_other(location: &str) -> Response {
+pub fn see_other(location: &str) -> Response {
     (
         StatusCode::SEE_OTHER,
         [(header::LOCATION, location.to_owned())],
@@ -99,11 +99,17 @@ pub async fn discord_start(
         return see_other(&format!("/?login_error={code}"));
     }
     // Stands in for Discord's consent page and its redirect back.
-    let next = next
-        .replace('%', "%25")
+    see_other(&format!(
+        "/api/admin/auth/discord/callback?next={}",
+        query_value(&next)
+    ))
+}
+
+/// `next` as one query value (it is already a safe path).
+pub fn query_value(next: &str) -> String {
+    next.replace('%', "%25")
         .replace('&', "%26")
-        .replace('#', "%23");
-    see_other(&format!("/api/admin/auth/discord/callback?next={next}"))
+        .replace('#', "%23")
 }
 
 /// The landing page refreshes to `next` from this origin, so the first load
@@ -114,6 +120,11 @@ pub async fn discord_callback(
 ) -> Response {
     let next = safe_next(q.get("next"));
     sign_in(&app, "discord").await;
+    landing(&next)
+}
+
+/// The callback's `200` landing: a meta refresh to `next`, no script.
+pub fn landing(next: &str) -> Response {
     let next = next
         .replace('&', "&amp;")
         .replace('"', "&quot;")

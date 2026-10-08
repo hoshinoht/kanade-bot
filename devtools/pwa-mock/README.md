@@ -48,6 +48,28 @@ the mock token `kanade-mock-token` (401 otherwise, 400 for a bad body);
 sign-in answers `401 unauthenticated`. There is one global mock admin and no
 cookie. `GET /api/admin/session` sends `{display, method}`.
 
+The public origin follows `docs/notes/member-auth-contract.md` §1–§3
+(`src/public.rs`, `src/mock/portal.rs`): `GET /api/public/status` reads the
+admin Config switch `self_service.public_portal` (the mock always has its
+stand-in for the public Discord keys); Discord start redirects straight to the
+callback, which signs in the one mock member (Asahi, id `100000000000001001`)
+with an `HttpOnly; SameSite=Strict` cookie named `kanade_pub` (the server's
+`__Host-` name needs HTTPS) and a landing page that refreshes to `next`.
+`GET /api/public/session` (+ `X-Kanade-CSRF`), `/session/avatar`,
+`/sessions`, `DELETE /sessions/{handle}` (`404`, `409 current_session`),
+`POST /sessions/end-all` and `POST /auth/logout` answer as the contract says
+(`503 closed` while closed, logout excepted; writes need the session's
+token). The first sign-in finds two other devices already signed in; at most
+ten sessions live, oldest ended first. Every other `/api/public/` path and
+`/art/` answer `closed` while closed and `404` while open. Mock control,
+public origin only: `POST /__mock/public/sign-in` signs in without the
+redirects (cookie + token), `POST /__mock/public/discord {"error": code}`
+makes the next start end with `/?login_error=<code>` (`not_eligible` sets no
+cookie), `POST /__mock/public/end` ends every session (expired or no longer
+eligible), and `POST /__mock/public/rotate` makes each session rotate its id
+and token on its next request, as after a client IP change. Lifetimes are not
+simulated.
+
 The mock's admin signs in with Discord as Asahi (staff, `admin:discord:1001`)
 after every `POST /api/admin/reset`; `POST /__mock/session {"method":
 "discord" | "token" | "tailscale" | "none"}` signs in again another way (new

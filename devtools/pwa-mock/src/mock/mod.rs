@@ -16,6 +16,7 @@ pub mod logfilter;
 mod model_context;
 pub mod past;
 mod people;
+pub mod portal;
 mod profanity;
 mod reminders;
 mod rewrites;
@@ -95,6 +96,8 @@ pub struct Store {
     arrived_extraction: bool,
     /// Account → Sessions: handles of seeded sessions signed out from the page.
     ended_sessions: Vec<&'static str>,
+    /// Public-origin member sessions (`portal.rs`).
+    portal: portal::Portal,
     version: u64,
     next_id: u32,
     catalog: Catalog,
@@ -122,6 +125,7 @@ impl Store {
             arrived_chat: false,
             arrived_extraction: false,
             ended_sessions: Vec::new(),
+            portal: portal::Portal::default(),
             version: 1,
             next_id: 1,
             catalog,
@@ -159,6 +163,7 @@ impl Store {
         self.arrived_chat = false;
         self.arrived_extraction = false;
         self.ended_sessions.clear();
+        self.portal = portal::Portal::default();
         self.seed_history();
     }
 
@@ -375,27 +380,9 @@ impl Store {
         }
     }
 
-    pub fn public_week(&self, next: bool) -> PublicWeek {
-        let week = self.week(next);
-        PublicWeek {
-            starts: week.starts,
-            timezone: week.timezone,
-            reset: week.reset,
-            days: week.days,
-            runs: week
-                .runs
-                .into_iter()
-                .map(|r| PublicRun {
-                    id: r.id,
-                    day: r.day,
-                    time: r.time,
-                    status: r.status,
-                    bosses: r.bosses,
-                    tally: r.tally,
-                })
-                .collect(),
-            generated_at: week.generated_at,
-        }
+    /// The public origin's member sessions.
+    pub fn public_sessions(&mut self) -> &mut portal::Portal {
+        &mut self.portal
     }
 
     pub fn stats(&self, next: bool) -> Stats {
@@ -723,27 +710,6 @@ mod tests {
 
     pub fn store() -> Store {
         Store::new(Catalog::new(PathBuf::from("/nonexistent")))
-    }
-
-    #[test]
-    fn public_projection_carries_no_people_party_or_version() {
-        let json = serde_json::to_string(&store().public_week(false)).unwrap();
-        for field in [
-            "participants",
-            "party",
-            "version",
-            "answer",
-            "Asahi",
-            "1001",
-            "cards",
-            "short_id",
-            "fixed_id",
-            "roster",
-            "minutes",
-        ] {
-            assert!(!json.contains(field), "{field} leaked into the public week");
-        }
-        assert!(json.contains("\"tally\""));
     }
 
     #[test]

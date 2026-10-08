@@ -23,6 +23,8 @@
 @use "topbar"; // M3E phone frame: top bar + drawer (G7)
 @use "page-line"; // M3E page line (G2)
 @use "m3e-primitives"; // Shared list, detail and decision-pane bases for every admin route.
+@use "state-note"; // StateNote (shared with the member portal)
+@use "avatar"; // Avatar portraits (shared with the member portal)
 @use "row-expansion";
 @use "stats-tables";
 @use "theme-picker";

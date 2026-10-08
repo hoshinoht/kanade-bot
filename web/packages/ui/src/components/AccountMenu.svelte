@@ -1,41 +1,40 @@
 <!--
-  The masthead's account chip: who is signed in (and how), opening a small
-  menu with "Your account", "Copy user ID" (when the id is known) and "Sign out". A menu
-  button (APG pattern): Enter/Space/↓ open on the first item, ↑ on the last;
-  arrows move, Home/End jump, Escape or Tab close, and focus returns to the chip.
+  The account chip: who is signed in (and how), opening a small menu whose
+  items each app passes in (`items`, given `hide`). A menu button (APG
+  pattern): Enter/Space/↓ open on the first item, ↑ on the last; arrows move,
+  Home/End jump, Escape or Tab close, and focus returns to the chip. Items are
+  `role="menuitem" tabindex="-1"` elements with the `account__item` class.
 -->
 <script lang="ts">
-  import type { Session } from '@kanade/api-types';
-  import { Icon } from '@kanade/ui';
-  import { tick } from 'svelte';
-  import Avatar from '../shared/Avatar.svelte';
-  import { ME_AVATAR } from '../shared/avatar';
+  import { tick, type Snippet } from 'svelte';
+  import Avatar from './Avatar.svelte';
+  import Icon from './Icon.svelte';
 
   let {
-    session,
-    userId = null,
-    oncopy,
-    onsignout,
+    who,
+    avatar = null,
+    detail = '',
+    items,
   }: {
-    session: Session | null;
-    /** The signed-in Discord user's id, when it can be told. */
-    userId?: string | null;
-    oncopy: (id: string) => void;
-    onsignout: (event: MouseEvent) => void;
+    who: string;
+    /** The signed-in person's portrait URL; the initial when null. */
+    avatar?: string | null;
+    /** How they signed in ("signed in with Discord"), under the name in the menu. */
+    detail?: string;
+    /** The menu items; `hide(false)` closes without returning focus to the chip. */
+    items: Snippet<[hide: (refocus?: boolean) => void]>;
   } = $props();
 
   const uid = $props.id();
-  const METHOD: Record<string, string> = { discord: 'Discord', tailscale: 'Tailscale', token: 'the admin token' };
-  const who = $derived(session?.display ?? 'Signed in');
   let open = $state(false);
   let chip = $state<HTMLButtonElement>();
   let menu = $state<HTMLDivElement>();
-  const items = () => [...(menu?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
+  const menuItems = () => [...(menu?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
 
   async function show(at: 'first' | 'last') {
     open = true;
     await tick();
-    const all = items();
+    const all = menuItems();
     (at === 'first' ? all[0] : all[all.length - 1])?.focus();
   }
 
@@ -55,7 +54,7 @@
   }
 
   function onMenuKey(event: KeyboardEvent) {
-    const all = items();
+    const all = menuItems();
     const at = all.indexOf(document.activeElement as HTMLElement);
     const moves: Record<string, number> = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: all.length - 1 };
     if (event.key in moves) {
@@ -92,39 +91,16 @@
     onclick={() => (open ? hide() : void show('first'))}
     onkeydown={onChipKey}
   >
-    <Avatar class="account__initial" src={session ? ME_AVATAR : null} name={who} />
+    <Avatar class="account__initial" src={avatar} name={who} />
     <span class="account__name">{who}</span>
     <Icon name="chevron-down" />
   </button>
   {#if open}
     <div class="account__menu" id="{uid}-menu" role="menu" aria-label="Account" tabindex="-1" bind:this={menu} onkeydown={onMenuKey}>
       <p class="account__who">
-        <strong>{who}</strong>{#if session?.method}<span>signed in with {METHOD[session.method] ?? session.method}</span>{/if}
+        <strong>{who}</strong>{#if detail}<span>{detail}</span>{/if}
       </p>
-      <!-- The router takes the click; focus then moves to the page, as on any route change. -->
-      <a role="menuitem" tabindex="-1" class="account__item" href="/account" onclick={() => hide(false)}><Icon name="users" /> Your account</a>
-      {#if userId}
-        <button
-          type="button"
-          role="menuitem"
-          tabindex="-1"
-          class="account__item"
-          onclick={() => {
-            oncopy(userId);
-            hide();
-          }}><Icon name="copy" /> Copy user ID</button
-        >
-      {/if}
-      <a
-        role="menuitem"
-        tabindex="-1"
-        class="account__item"
-        href="/login"
-        onclick={(event) => {
-          hide(false);
-          onsignout(event);
-        }}><Icon name="log-out" /> Sign out</a
-      >
+      {@render items(hide)}
     </div>
   {/if}
 </div>

@@ -9,7 +9,7 @@
   import '@kanade/ui/styles/settings.scss';
   import '@kanade/ui/styles/account.scss';
   import type { AccountSessions, Me, MemberRow, Persona } from '@kanade/api-types';
-  import { LoadError, LoadingState, type Toaster } from '@kanade/ui';
+  import { Icon, LoadError, LoadingState, SessionList, type Toaster } from '@kanade/ui';
   import { tick } from 'svelte';
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
@@ -19,8 +19,7 @@
   import Identity from './Identity.svelte';
   import ProfileTab from './ProfileTab.svelte';
   import ReplyPicker from './ReplyPicker.svelte';
-  import SessionsTab from './SessionsTab.svelte';
-  import { TABS, diagnostics, methodLong, tabOf, type AccountTab } from './account';
+  import { METHOD, TABS, diagnostics, methodLong, tabOf, type AccountTab } from './account';
   import { serverNow } from '../reminders/when';
 
   let {
@@ -200,7 +199,37 @@
       {:else if !me.data}
         <LoadingState text="Loading your account…" />
       {:else if tab === 'sessions'}
-        <SessionsTab {sessions} {timeZone} {compact} {busy} onend={(handle, device) => void endSession(handle, device)} onendothers={() => void endOthers()} />
+        <SessionList
+          rows={sessions.data?.sessions ?? null}
+          now={sessions.data?.generated_at ?? ''}
+          error={sessions.error}
+          onretry={() => void sessions.load()}
+          {timeZone}
+          {compact}
+          {busy}
+          onend={(handle, device) => void endSession(handle, device)}
+          endAll={sessions.data?.sessions.some((row) => !row.current) ? { label: 'Sign out everywhere else', run: () => void endOthers() } : null}
+          title="Active sessions"
+          titleId="account-sessions-title"
+          thing="your sessions"
+          loading="Loading your sessions…"
+          current="This one"
+          currentHint="Use Sign out on the left"
+          method={(row) => METHOD[row.method] ?? row.method}
+        >
+          {#snippet note(others)}
+            <p class="settings__box">
+              <Icon name="info" />
+              <span>
+                {#if others > 0}
+                  Signing a session out ends it at once; that device has to sign in again. Everywhere else keeps this one.
+                {:else}
+                  No other sessions. Every session ends after an hour without use, and twelve hours after sign-in at most.
+                {/if}
+              </span>
+            </p>
+          {/snippet}
+        </SessionList>
       {:else}
         <ProfileTab me={me.data} {now} {compact} {checking} onrecheck={() => void recheck()} onstyle={openPicker} oncopy={() => void copyDiagnostics()} {onsignout} />
       {/if}

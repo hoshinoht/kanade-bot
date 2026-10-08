@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { SCREENS, SIZES, screenUrl } from './frames';
-import { ADMIN, expect, settle, test } from './support';
+import { ADMIN, expect, settle, signInPublic, test } from './support';
 
 // docs/notes/pwa-design-guidelines.md "Area follows importance" (user rule): the
 // one scrolling area keeps ≥ 55% of the viewport height and never less than
@@ -38,6 +38,8 @@ for (const size of SIZES) {
   test(`layout ${size.width}×${size.height}: every screen keeps its area and never scrolls the document`, async ({ page }) => {
     test.setTimeout(120_000);
     await page.setViewportSize(size);
+    // The public screen is the signed-in Account (Sign in is a centred window, checked in public-portal.spec).
+    await signInPublic(page);
     const failures: string[] = [];
     for (const [app, origin, path] of SCREENS) {
       await page.goto(screenUrl(origin, path));

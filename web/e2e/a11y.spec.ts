@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { COLORWAYS } from '../packages/tokens/src/colorways';
-import { ADMIN, PUBLIC, csrf, expect, settle, test, choose } from './support';
+import { ADMIN, HEADING, PUBLIC, expect, settle, setPortal, signInPublic, test, choose } from './support';
 
 // Every test is independent (the fixture resets the mock), so the looks spread across workers.
 test.describe.configure({ mode: 'parallel' });
@@ -38,10 +38,15 @@ for (const [colorway, theme] of CONTRAST_LOOKS) {
     const contrast = (label: string) => serious(page, label, ['color-contrast']);
     await look(page, colorway, theme);
     await page.goto(`${PUBLIC}/?sw=off`);
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 runs');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(HEADING.public);
     // Dynamic: wait for the avatar's palette; later pages paint it from the cache.
     if (colorway === 'dynamic') await expect(page.locator('html')).toHaveAttribute('data-dynamic', 'avatar');
-    await contrast('public week');
+    await contrast('public sign in');
+    await signInPublic(page);
+    await page.goto(`${PUBLIC}/?sw=off`);
+    await expect(page.getByRole('heading', { name: 'Signed-in devices' })).toBeVisible();
+    await expect(page.getByText('This device')).toBeVisible();
+    await contrast('public account');
 
     await page.goto(`${ADMIN}/?sw=off`);
     await expect(page.locator('[data-run="r-carling"]')).toBeVisible();
@@ -78,13 +83,15 @@ for (const [colorway, theme] of CONTRAST_LOOKS) {
 // Each part starts from a fresh page and mock.
 const WALK: { name: string; walk: (page: Page) => Promise<void> }[] = [
   {
-    name: 'public and admin week',
+    name: 'public portal and admin week',
     walk: async (page) => {
       await page.goto(`${PUBLIC}/?sw=off`);
-      await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 runs');
-      await serious(page, 'public week');
-      await page.getByRole('tab', { name: /List/ }).click();
-      await serious(page, 'public list');
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(HEADING.public);
+      await serious(page, 'public sign in');
+      await signInPublic(page);
+      await page.goto(`${PUBLIC}/?sw=off`);
+      await expect(page.getByText('This device')).toBeVisible();
+      await serious(page, 'public account');
 
       await page.goto(`${ADMIN}/?sw=off`);
       await expect(page.locator('[data-run="r-carling"]')).toBeVisible();
@@ -262,9 +269,8 @@ test('axe: offline windows', async ({ page }) => {
 });
 
 test('axe: public closed window', async ({ page, request }) => {
-  await request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(request), data: { self_service: { public_portal: false } } });
+  await setPortal(request, false);
   await page.goto(`${PUBLIC}/?sw=off`);
-  await expect(page.getByRole('heading', { name: "The schedule isn't public right now" })).toBeVisible();
+  await expect(page.getByRole('heading', { name: "The schedule isn't open right now" })).toBeVisible();
   await serious(page, 'public closed');
-  await request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(request), data: { self_service: { public_portal: true } } });
 });

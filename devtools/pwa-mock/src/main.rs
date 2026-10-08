@@ -12,6 +12,7 @@ mod etag;
 mod events;
 mod headers;
 mod mock;
+mod public;
 mod reports;
 mod writes;
 
@@ -21,7 +22,7 @@ use axum::{
     http::StatusCode,
     middleware,
     response::{IntoResponse, Response},
-    routing::{delete, get, patch, post},
+    routing::{any, delete, get, patch, post},
 };
 use mock::{Store, catalog::Catalog};
 use std::{convert::Infallible, env, path::PathBuf, sync::Arc};
@@ -35,7 +36,8 @@ struct App {
     reports: reports::Log,
     identity: assets::IdentityConfig,
     knowledge: Arc<mock::knowledge::KnowledgeDir>,
-    /// Art answers `closed` on the public origin while the portal is closed.
+    /// The public origin: art and unmounted `/api/public/` paths answer
+    /// `closed` while the portal is closed and `404` while it is open.
     public: bool,
     boss_dir: Arc<PathBuf>,
     /// CSRF token and Idempotency-Key replays, shared by both origins' state.
@@ -263,9 +265,23 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         ))
         .route_layer(middleware::from_fn(etag::revalidate))
         .route_layer(middleware::from_fn_with_state(app.clone(), writes::guard));
+    // The member routes (docs/notes/member-auth-contract.md §1) and the mock's
+    // stand-ins for Discord, the roster and a network change.
     let public_api = Router::new()
-        .route("/api/public/week", get(api::public_week))
-        .route("/api/public/status", get(api::public_status));
+        .route("/api/public/status", get(public::status))
+        .route("/api/public/auth/discord/start", get(public::start))
+        .route("/api/public/auth/discord/callback", get(public::callback))
+        .route("/api/public/auth/logout", post(public::logout))
+        .route("/api/public/session", get(public::session))
+        .route("/api/public/session/avatar", get(public::avatar))
+        .route("/api/public/sessions", get(public::sessions))
+        .route("/api/public/sessions/end-all", post(public::end_all))
+        .route("/api/public/sessions/{handle}", delete(public::end_one))
+        .route("/api/public/{*rest}", any(public::unmounted))
+        .route("/__mock/public/sign-in", post(public::mock_sign_in))
+        .route("/__mock/public/discord", post(public::mock_discord))
+        .route("/__mock/public/end", post(public::mock_end))
+        .route("/__mock/public/rotate", post(public::mock_rotate));
 
     (
         common(&app, admin_api, web.join("apps/admin/dist")),

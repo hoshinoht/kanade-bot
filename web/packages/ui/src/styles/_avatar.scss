@@ -1,0 +1,4 @@
+// Portraits (components/Avatar.svelte): the host class gives size, shape and the
+// monogram's fill; a loaded image covers it edge to edge.
+.avatar { overflow: hidden; }
+.avatar__img { display: block; width: 100%; height: 100%; object-fit: cover; }

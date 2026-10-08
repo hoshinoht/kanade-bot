@@ -73,7 +73,9 @@ test.describe('service workers blocked', () => {
       await expect(page.getByRole('heading', { level: 1 })).toHaveText(HEADING[name]);
       expect(await page.evaluate(() => navigator.serviceWorker?.controller ?? null)).toBeNull();
       await page.reload();
-      await expect(page.locator('[data-fresh="live"]')).toBeVisible();
+      // The admin week shows it is live; the public portal has no live data until member reads.
+      if (name === 'admin') await expect(page.locator('[data-fresh="live"]')).toBeVisible();
+      else await expect(page.getByRole('heading', { level: 1 })).toHaveText(HEADING.public);
     });
   }
 });

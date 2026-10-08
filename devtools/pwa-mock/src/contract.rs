@@ -1673,7 +1673,7 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     h.expect(
         true,
         "GET",
-        "/api/public/week",
+        "/api/public/session",
         None,
         StatusCode::SERVICE_UNAVAILABLE,
         "",
@@ -1827,6 +1827,367 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         (status, headers[header::LOCATION].to_str().unwrap()),
         (StatusCode::SEE_OTHER, "/?login_error=forbidden")
     );
+
+    assert!(
+        h.failures.is_empty(),
+        "{} of {} responses broke the contract:\n{}",
+        h.failures.len(),
+        h.checked,
+        h.failures.join("\n")
+    );
+}
+
+/// Public-origin calls for `public_member_routes_match_the_contract`, which
+/// walks the member auth routes (docs/notes/member-auth-contract.md §1–§3).
+impl Harness {
+    /// A public-origin call with these headers; `target` is checked on 2xx with a body.
+    async fn public(
+        &mut self,
+        method: &str,
+        path: &str,
+        headers: &[(&str, &str)],
+        want: StatusCode,
+        target: &str,
+    ) -> (HeaderMap, Value) {
+        let (status, sent, value) = self.send_with(true, method, path, None, headers).await;
+        let label = format!("public {method} {path}");
+        if status != want {
+            self.failures
+                .push(format!("{label}: status {status}, wanted {want}: {value}"));
+        }
+        if !value.is_null() && !value.is_string() {
+            self.check(&label, status, &value, target);
+        }
+        (sent, value)
+    }
+
+    async fn public_image(&mut self, path: &str, cookie: &str) -> (StatusCode, String, String) {
+        let res = self
+            .public
+            .clone()
+            .oneshot(
+                Request::get(path)
+                    .header(header::COOKIE, cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let header = |name| {
+            res.headers()
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default()
+                .to_owned()
+        };
+        (
+            res.status(),
+            header(header::CONTENT_TYPE),
+            header(header::CACHE_CONTROL),
+        )
+    }
+}
+
+fn header_value<'a>(headers: &'a HeaderMap, name: &str) -> &'a str {
+    headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+}
+
+/// The `kanade_pub=<id>` pair a `Set-Cookie` sets (empty when it clears it).
+fn session_cookie(headers: &HeaderMap) -> String {
+    let line = header_value(headers, "set-cookie");
+    line.split(';').next().unwrap_or_default().to_owned()
+}
+
+#[tokio::test]
+async fn public_member_routes_match_the_contract() {
+    let mut h = Harness::new();
+    let none: &[(&str, &str)] = &[];
+
+    // Open and signed out: status, then 401 for every session route.
+    let (_, status) = h
+        .public(
+            "GET",
+            "/api/public/status",
+            none,
+            StatusCode::OK,
+            "public.json#/$defs/PublicStatus",
+        )
+        .await;
+    assert_eq!(status["portal"], "open");
+    for path in ["/api/public/session", "/api/public/sessions"] {
+        h.public("GET", path, none, StatusCode::UNAUTHORIZED, "")
+            .await;
+    }
+    // Unmounted while open: the catch-all and art answer 404.
+    h.public("GET", "/api/public/week", none, StatusCode::NOT_FOUND, "")
+        .await;
+    h.public("GET", "/art/entry/Carling", none, StatusCode::NOT_FOUND, "")
+        .await;
+
+    // Discord sign-in: start → (no Discord) callback → landing with the cookie.
+    let (headers, _) = h
+        .public(
+            "GET",
+            "/api/public/auth/discord/start?next=/account",
+            none,
+            StatusCode::SEE_OTHER,
+            "",
+        )
+        .await;
+    let callback = header_value(&headers, "location").to_owned();
+    assert!(
+        callback.starts_with("/api/public/auth/discord/callback?"),
+        "{callback}"
+    );
+    let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36";
+    let (headers, page) = h
+        .public("GET", &callback, &[("user-agent", ua)], StatusCode::OK, "")
+        .await;
+    assert!(
+        page.as_str().is_some_and(|p| p.contains("url=/account")),
+        "{page}"
+    );
+    assert!(
+        header_value(&headers, "set-cookie").contains("HttpOnly; SameSite=Strict"),
+        "{headers:?}"
+    );
+    let cookie = session_cookie(&headers);
+    assert!(
+        cookie.starts_with("kanade_pub=") && cookie.len() > 20,
+        "{cookie}"
+    );
+
+    // Signed in: the session (token in the header only), the device list, the portrait.
+    let (headers, session) = h
+        .public(
+            "GET",
+            "/api/public/session",
+            &[("cookie", &cookie)],
+            StatusCode::OK,
+            "public.json#/$defs/PublicSession",
+        )
+        .await;
+    let token = header_value(&headers, "x-kanade-csrf").to_owned();
+    assert!(!token.is_empty());
+    assert!(
+        !session.to_string().contains(&token),
+        "the token is never in the body"
+    );
+    let (_, list) = h
+        .public(
+            "GET",
+            "/api/public/sessions",
+            &[("cookie", &cookie)],
+            StatusCode::OK,
+            "public.json#/$defs/PublicSessions",
+        )
+        .await;
+    let rows = list["sessions"].as_array().unwrap().clone();
+    assert_eq!(rows.len(), 3);
+    let mine = rows.iter().find(|r| r["current"] == true).unwrap();
+    assert_eq!(mine["device"], "Chrome · macOS");
+    let other = s(&rows.iter().find(|r| r["current"] == false).unwrap()["handle"]).to_owned();
+    let (status, kind, cache) = h
+        .public_image("/api/public/session/avatar?v=1", &cookie)
+        .await;
+    h.checked += 1;
+    if status != StatusCode::OK || !kind.starts_with("image/") || cache != "private, no-cache" {
+        h.failures
+            .push(format!("public avatar: {status} {kind} {cache}"));
+    }
+
+    // Writes need the session's token: sign out one device, then the refusals.
+    let end_other = format!("/api/public/sessions/{other}");
+    h.public(
+        "DELETE",
+        &end_other,
+        &[("cookie", &cookie)],
+        StatusCode::FORBIDDEN,
+        "",
+    )
+    .await;
+    let signed = [
+        ("cookie", cookie.as_str()),
+        ("x-kanade-csrf", token.as_str()),
+    ];
+    h.public("DELETE", &end_other, &signed, StatusCode::NO_CONTENT, "")
+        .await;
+    h.public("DELETE", &end_other, &signed, StatusCode::NOT_FOUND, "")
+        .await;
+    let end_mine = format!("/api/public/sessions/{}", s(&mine["handle"]));
+    let (_, refused) = h
+        .public("DELETE", &end_mine, &signed, StatusCode::CONFLICT, "")
+        .await;
+    assert_eq!(refused["error"], "current_session");
+
+    // A rotation (client IP change): the request is served on the old id and
+    // answers the new cookie and token; the old id is gone.
+    h.public(
+        "POST",
+        "/__mock/public/rotate",
+        none,
+        StatusCode::NO_CONTENT,
+        "",
+    )
+    .await;
+    let (headers, _) = h
+        .public(
+            "GET",
+            "/api/public/sessions",
+            &[("cookie", &cookie)],
+            StatusCode::OK,
+            "public.json#/$defs/PublicSessions",
+        )
+        .await;
+    let rotated = session_cookie(&headers);
+    let fresh = header_value(&headers, "x-kanade-csrf").to_owned();
+    assert!(rotated != cookie && !fresh.is_empty() && fresh != token);
+    h.public(
+        "GET",
+        "/api/public/session",
+        &[("cookie", &cookie)],
+        StatusCode::UNAUTHORIZED,
+        "",
+    )
+    .await;
+
+    // Sign out everywhere ends every session, this one too, and clears the cookie.
+    let (headers, ended) = h
+        .public(
+            "POST",
+            "/api/public/sessions/end-all",
+            &[("cookie", &rotated), ("x-kanade-csrf", &fresh)],
+            StatusCode::OK,
+            "identity.json#/$defs/SessionsEnded",
+        )
+        .await;
+    assert_eq!(ended["ended"], 2);
+    assert_eq!(session_cookie(&headers), "kanade_pub=");
+    h.public(
+        "GET",
+        "/api/public/sessions",
+        &[("cookie", &rotated)],
+        StatusCode::UNAUTHORIZED,
+        "",
+    )
+    .await;
+
+    // Sign out (the shortcut signs in without Discord): a live session needs its token.
+    let (headers, _) = h
+        .public(
+            "POST",
+            "/__mock/public/sign-in",
+            none,
+            StatusCode::NO_CONTENT,
+            "",
+        )
+        .await;
+    let cookie = session_cookie(&headers);
+    let token = header_value(&headers, "x-kanade-csrf").to_owned();
+    h.public(
+        "POST",
+        "/api/public/auth/logout",
+        &[("cookie", &cookie)],
+        StatusCode::FORBIDDEN,
+        "",
+    )
+    .await;
+    let (headers, _) = h
+        .public(
+            "POST",
+            "/api/public/auth/logout",
+            &[("cookie", &cookie), ("x-kanade-csrf", &token)],
+            StatusCode::NO_CONTENT,
+            "",
+        )
+        .await;
+    assert_eq!(session_cookie(&headers), "kanade_pub=");
+    h.public(
+        "GET",
+        "/api/public/session",
+        &[("cookie", &cookie)],
+        StatusCode::UNAUTHORIZED,
+        "",
+    )
+    .await;
+
+    // A member who is not eligible: back to the app with the code, no session cookie.
+    let (status, _, _) = h
+        .send_with(
+            true,
+            "POST",
+            "/__mock/public/discord",
+            Some(json!({ "error": "not_eligible" })),
+            &[],
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (headers, _) = h
+        .public(
+            "GET",
+            "/api/public/auth/discord/start?next=/",
+            none,
+            StatusCode::SEE_OTHER,
+            "",
+        )
+        .await;
+    assert_eq!(
+        header_value(&headers, "location"),
+        "/?login_error=not_eligible"
+    );
+    assert!(headers.get("set-cookie").is_none());
+
+    // Closed: status says so; session routes and unmounted paths answer
+    // `closed`; sign-in goes back with `login_error=closed`; sign-out still works.
+    h.ok(
+        "PATCH",
+        "/api/admin/config",
+        Some(json!({ "self_service": { "public_portal": false } })),
+        "config.json#/$defs/ConfigView",
+    )
+    .await;
+    let (_, status) = h
+        .public(
+            "GET",
+            "/api/public/status",
+            none,
+            StatusCode::OK,
+            "public.json#/$defs/PublicStatus",
+        )
+        .await;
+    assert_eq!(status["portal"], "closed");
+    for path in [
+        "/api/public/session",
+        "/api/public/sessions",
+        "/api/public/week",
+        "/art/entry/Carling",
+    ] {
+        let (_, refused) = h
+            .public("GET", path, none, StatusCode::SERVICE_UNAVAILABLE, "")
+            .await;
+        assert_eq!(refused["error"], "closed", "{path}");
+    }
+    for path in [
+        "/api/public/auth/discord/start?next=/",
+        "/api/public/auth/discord/callback?next=/",
+    ] {
+        let (headers, _) = h.public("GET", path, none, StatusCode::SEE_OTHER, "").await;
+        assert_eq!(header_value(&headers, "location"), "/?login_error=closed");
+    }
+    h.public(
+        "POST",
+        "/api/public/auth/logout",
+        none,
+        StatusCode::NO_CONTENT,
+        "",
+    )
+    .await;
+    // The admin routes stay absent from this origin.
+    h.public("GET", "/api/admin/week", none, StatusCode::NOT_FOUND, "")
+        .await;
 
     assert!(
         h.failures.is_empty(),

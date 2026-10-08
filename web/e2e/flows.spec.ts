@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, HEADING, PUBLIC, csrf, expect, test } from './support';
+import { ADMIN, HEADING, csrf, expect, test } from './support';
 
 // Every test here also asserts, via the auto `csp` fixture, zero enforced or
 // report-only (Trusted Types) violations: console, DOM events and server reports.
@@ -11,60 +11,6 @@ async function openAdmin(page: Page) {
   await expect(page.getByRole('tab', { name: 'Planner' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('[data-run="r-carling"]')).toBeVisible();
 }
-
-test('public: board, list and theme switching', async ({ page }) => {
-  await page.goto(`${PUBLIC}/?sw=off`);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 runs');
-  await expect(column(page, 'Tue').locator('.runcard')).toHaveCount(2);
-
-  await page.getByRole('tab', { name: /List/ }).click();
-  await expect(page.getByRole('table')).toBeVisible();
-  await expect(page.getByRole('rowheader').first()).toContainText('Baldrix');
-
-  await page.getByRole('tab', { name: 'Appearance' }).click();
-  // Colourways come in labelled sets, by character name.
-  const ways = page.getByRole('group', { name: 'Colourway' });
-  for (const set of ['Base', 'Blue Archive', 'Terminal', 'Dynamic']) await expect(ways.getByRole('group', { name: set })).toBeVisible();
-  // Sets collapse; a collapsed one opens from its label and its choice applies at once.
-  const terminal = ways.getByRole('button', { name: 'Terminal', exact: true });
-  await expect(terminal).toHaveAttribute('aria-expanded', 'false');
-  await terminal.click();
-  await ways.getByText('Tokyo Night', { exact: true }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-colorway', 'tokyonight');
-  // Leaving the tab and coming back keeps the sets as they were (memory, this page only).
-  await page.getByRole('tab', { name: /List/ }).click();
-  await page.getByRole('tab', { name: 'Appearance' }).click();
-  await expect(terminal).toHaveAttribute('aria-expanded', 'true');
-  await page.getByText('Nazuna', { exact: true }).click();
-  await page.getByText('Dark', { exact: true }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-colorway', 'blossom');
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  // Stored and applied before first paint on reload by the external theme-boot script.
-  await page.reload();
-  await expect(page.locator('html')).toHaveAttribute('data-colorway', 'blossom');
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-});
-
-test('public: arrow keys move between tabs and only the panel scrolls', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 700 });
-  await page.goto(`${PUBLIC}/?sw=off`);
-  await page.getByRole('tab', { name: 'Week' }).focus();
-  await page.keyboard.press('ArrowRight');
-  await expect(page.getByRole('tab', { name: /List/ })).toBeFocused();
-  await expect(page.getByRole('tab', { name: /List/ })).toHaveAttribute('aria-selected', 'true');
-  await page.keyboard.press('ArrowLeft');
-  const metrics = await page.evaluate(() => {
-    const panel = document.querySelector<HTMLElement>('.tabs__panel:not([hidden])')!;
-    return {
-      doc: document.scrollingElement!.scrollHeight - innerHeight,
-      panel: panel.scrollHeight - panel.clientHeight,
-      overflow: getComputedStyle(panel).overflowY,
-    };
-  });
-  expect(metrics.doc).toBeLessThanOrEqual(0);
-  expect(metrics.panel).toBeGreaterThan(0);
-  expect(metrics.overflow).toBe('auto');
-});
 
 test('admin: the run pane opens from a card and restores focus on Escape', async ({ page }) => {
   await openAdmin(page);
@@ -332,84 +278,27 @@ test('admin: duplicate display names each render, keyed by member id', async ({ 
   await expect(row.locator('.chip', { hasText: 'Ren' })).toHaveCount(2);
 });
 
-test('public: a closed portal keeps polling on the normal cadence and shows the reopening', async ({ page, request }) => {
-  await page.clock.install();
-  await request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(request), data: { self_service: { public_portal: false } } });
-  await page.goto(`${PUBLIC}/?sw=off`);
-  await expect(page.getByRole('heading', { name: "The schedule isn't public right now" })).toBeVisible();
-  // More than the poller's six-failure limit, each one on the plain 30 s
-  // interval (a failure would back off to 60 s and this wait would hang).
-  for (let i = 0; i < 8; i++) {
-    const polled = page.waitForResponse((r) => r.url().includes('/api/public/week'), { timeout: 5000 });
-    await page.clock.runFor(30_000);
-    expect((await polled).status()).toBe(503);
-  }
-  await request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(request), data: { self_service: { public_portal: true } } });
-  await page.clock.runFor(30_000);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 runs');
+test("admin: the phone rail shows the week's shape and jumps inside the panel", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${ADMIN}/?sw=off`);
+  const rail = page.getByRole('navigation', { name: 'Days of this boss week' });
+  await expect(rail.getByRole('button')).toHaveCount(7);
+  await expect(rail.getByRole('button', { name: /^Thu 24, .*the boss week starts$/ })).toBeVisible();
+  await expect(rail.getByRole('button', { name: /^Tue 29, / })).toHaveAttribute('aria-current', 'date');
+  const wed = page.locator('section.board__col[data-day="6"]');
+  await rail.getByRole('button', { name: /^Wed 30, / }).click();
+  await expect(wed.locator('.board__head')).toBeFocused();
+  await expect(wed).toBeInViewport();
+  await expect(rail).toBeInViewport();
+  // The document itself can never scroll, even when asked to.
+  expect(await page.evaluate(() => (window.scrollTo(0, 500), document.scrollingElement!.scrollTop))).toBe(0);
 });
 
-test('public: the public week carries no people, party or version', async ({ page }) => {
-  const response = await page.request.get(`${PUBLIC}/api/public/week`);
-  const body = (await response.json()) as { runs: Record<string, unknown>[] } & Record<string, unknown>;
-  expect(Object.keys(body).sort()).toEqual(['days', 'generated_at', 'reset', 'runs', 'starts', 'timezone']);
-  for (const run of body.runs) expect(Object.keys(run).sort()).toEqual(['bosses', 'day', 'id', 'status', 'tally', 'time']);
-  await page.goto(`${PUBLIC}/?sw=off`);
-  await page.getByRole('tab', { name: /List/ }).click();
-  await expect(page.getByRole('columnheader', { name: 'Party' })).toHaveCount(0);
+test('admin: wide screens hide the rail; the board is the rail grown up', async ({ page }) => {
+  await page.goto(`${ADMIN}/?sw=off`);
+  await expect(page.locator('section.board__col').first()).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Days of this boss week' })).toBeHidden();
 });
-
-test('public: a closed portal says so instead of showing a stale week', async ({ page, request }) => {
-  await request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(request), data: { self_service: { public_portal: false } } });
-  await page.goto(`${PUBLIC}/?sw=off`);
-  await expect(page.getByRole('heading', { name: "The schedule isn't public right now" })).toBeVisible();
-  // The masthead says closed, neutrally: not green Live, not an error.
-  const fresh = page.locator('.fresh');
-  await expect(fresh).toHaveAttribute('data-fresh', 'closed');
-  await expect(fresh).toHaveText(/Closed\s·\schecked\s\d\d:\d\d/);
-  // Closed means shell, status and identity only: data and art answer closed.
-  expect(await (await request.get(`${PUBLIC}/api/public/status`)).json()).toEqual({ portal: 'closed' });
-  expect((await request.get(`${PUBLIC}/api/identity`)).status()).toBe(200);
-  expect((await request.get(`${PUBLIC}/identity/avatar`)).status()).toBe(200);
-  for (const path of ['/api/public/week', '/art/entry/Carling', '/art/portraits/Carling']) {
-    const closed = await request.get(`${PUBLIC}${path}`);
-    expect(closed.status(), path).toBe(503);
-    expect(((await closed.json()) as { error: string }).error).toBe('closed');
-  }
-  // The admin origin is unaffected.
-  expect((await request.get(`${ADMIN}/art/portraits/Carling`)).status()).toBe(200);
-
-  await request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(request), data: { self_service: { public_portal: true } } });
-  await page.getByRole('button', { name: 'Check again' }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 runs');
-});
-
-for (const [name, origin] of [
-  ['admin', ADMIN],
-  ['public', PUBLIC],
-] as const) {
-  test(`${name}: the phone rail shows the week's shape and jumps inside the panel`, async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(`${origin}/?sw=off`);
-    const rail = page.getByRole('navigation', { name: 'Days of this boss week' });
-    await expect(rail.getByRole('button')).toHaveCount(7);
-    await expect(rail.getByRole('button', { name: /^Thu 24, .*the boss week starts$/ })).toBeVisible();
-    await expect(rail.getByRole('button', { name: /^Tue 29, / })).toHaveAttribute('aria-current', 'date');
-    const wed = page.locator('section.board__col[data-day="6"]');
-    await rail.getByRole('button', { name: /^Wed 30, / }).click();
-    await expect(wed.locator('.board__head')).toBeFocused();
-    await expect(wed).toBeInViewport();
-    await expect(rail).toBeInViewport();
-    // The document itself can never scroll, even when asked to.
-    expect(await page.evaluate(() => (window.scrollTo(0, 500), document.scrollingElement!.scrollTop))).toBe(0);
-  });
-
-  test(`${name}: wide screens hide the rail; the board is the rail grown up`, async ({ page }) => {
-    await page.goto(`${origin}/?sw=off`);
-    await expect(page.locator('section.board__col').first()).toBeVisible();
-    await expect(page.getByRole('navigation', { name: 'Days of this boss week' })).toBeHidden();
-  });
-}
 
 test('admin week header: view switch, move help, and compact filters as chips', async ({ page }) => {
   await openAdmin(page);

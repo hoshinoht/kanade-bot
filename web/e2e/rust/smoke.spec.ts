@@ -100,7 +100,7 @@ test('empty pages: Inbox, Chat and Extractions are mounted by the Rust listener'
 
 test('public: closed shell and status stay public while admin routes are absent', async ({ page }) => {
   await page.goto(PUBLIC);
-  await expect(page.getByRole('heading', { name: "The schedule isn't public right now" })).toBeVisible();
+  await expect(page.getByRole('heading', { name: "The schedule isn't open right now" })).toBeVisible();
   const status = await api<{ portal: string }>(page, '/api/public/status');
   expect(status.status).toBe(200);
   expect(status.body).toEqual({ portal: 'closed' });

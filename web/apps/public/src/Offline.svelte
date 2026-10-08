@@ -9,7 +9,7 @@
       <div class="card__head"><h1 class="card__title" id="offline-title">You're offline</h1></div>
       <div class="offline__body">
         <NapArt />
-        <p>Kanade needs a connection to show this week's schedule; nothing is kept on this device.</p>
+        <p>Kanade needs a connection to sign you in and show your account; nothing is kept on this device.</p>
         <a class="btn btn--primary" href="/">Try again</a>
       </div>
     </section>

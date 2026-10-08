@@ -74,18 +74,6 @@ pub struct Run {
     pub roster_change: Option<RosterChange>,
 }
 
-/// Public projection: schedule facts and an aggregate tally, no people,
-/// party handle or concurrency version (see web/packages/api-types).
-#[derive(Serialize)]
-pub struct PublicRun {
-    pub id: String,
-    pub day: u8,
-    pub time: Option<String>,
-    pub status: &'static str,
-    pub bosses: Vec<Boss>,
-    pub tally: Tally,
-}
-
 #[derive(Clone, Serialize)]
 pub struct WeekDay {
     pub index: u8,
@@ -104,16 +92,6 @@ pub struct Week {
     pub runs: Vec<Run>,
     pub generated_at: String,
     pub version: u64,
-}
-
-#[derive(Serialize)]
-pub struct PublicWeek {
-    pub starts: String,
-    pub timezone: &'static str,
-    pub reset: &'static str,
-    pub days: Vec<WeekDay>,
-    pub runs: Vec<PublicRun>,
-    pub generated_at: String,
 }
 
 #[derive(Serialize)]

@@ -131,6 +131,51 @@ describe('admin writes', () => {
   });
 });
 
+describe('member session (public origin)', () => {
+  function member(...answers: Answer[]) {
+    const sent: { method: string; url: string; headers: Record<string, string> }[] = [];
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      sent.push({ method: init.method ?? 'GET', url, headers: init.headers as Record<string, string> });
+      const answer = answers.shift();
+      if (!answer || answer === 'offline') throw new Error(`unexpected ${init.method} ${url}`);
+      const headers = answer.csrf ? { 'X-Kanade-CSRF': answer.csrf } : undefined;
+      return new Response(answer.body ?? (answer.status === 204 ? null : '{}'), { status: answer.status, headers });
+    }) as unknown as typeof fetch;
+    const csrf = createCsrfGuard('/api/public/session', (path) => path.startsWith('/api/public/'));
+    return { client: createClient({ fetch: fetchMock, csrf }), sent };
+  }
+
+  it('sends the newest token any answer carried, a write included', async () => {
+    // The session read issues t1; a list read rotated it to t2; a sign-out rotated it again to t3.
+    const { client, sent } = member({ status: 200, csrf: 't1' }, { status: 200, csrf: 't2' }, { status: 204, csrf: 't3' }, { status: 204 });
+    await client.get('/api/public/session');
+    await client.get('/api/public/sessions');
+    await client.delete('/api/public/sessions/aaaaaaaaaaaaaaaaaaaaaaaa');
+    await client.delete('/api/public/sessions/bbbbbbbbbbbbbbbbbbbbbbbb');
+    expect(sent.map((r) => r.headers['X-Kanade-CSRF'])).toEqual([undefined, undefined, 't2', 't3']);
+  });
+
+  it('treats reauth_required as "confirm it is you", not as a session that ended', async () => {
+    const seen: string[] = [];
+    onUnauthenticated((path) => seen.push(path));
+    try {
+      const { client } = member(
+        { status: 200, csrf: 't1' },
+        { status: 401, body: '{"error":"reauth_required","message":"Sign in with Discord again to make this change."}' },
+        { status: 401, body: '{"error":"unauthenticated","message":"Sign in to continue."}' },
+      );
+      await client.get('/api/public/session');
+      const fresh = await client.post('/api/public/requests', {}).catch((e: unknown) => e);
+      expect(fresh).toMatchObject({ kind: 'reauth', status: 401, body: { error: 'reauth_required' } });
+      expect(seen).toEqual([]);
+      await expect(client.get('/api/public/sessions')).rejects.toMatchObject({ kind: 'http', status: 401, body: { error: 'unauthenticated' } });
+      expect(seen).toEqual(['/api/public/sessions']);
+    } finally {
+      onUnauthenticated(null);
+    }
+  });
+});
+
 describe('conditional reads', () => {
   it('revalidates a tagged read and hands back the same object on 304', async () => {
     const answers = [

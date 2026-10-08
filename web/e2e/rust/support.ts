@@ -3,6 +3,8 @@ import { expect, test as base, type Page } from '@playwright/test';
 const portBase = Number(process.env.KANADE_E2E_PORT_BASE ?? '4373');
 export const ADMIN = `http://127.0.0.1:${portBase + 50}`;
 export const PUBLIC = `http://127.0.0.1:${portBase + 51}`;
+/** The `member-portal` fixture: the real public router with a fake Discord. */
+export const MEMBER = `http://127.0.0.1:${portBase + 52}`;
 export const ADMIN_TOKEN = 'e2e-break-glass-token-0123456789abcdef';
 
 export interface ApiReply<T> {

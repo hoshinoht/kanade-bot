@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { busyWeek } from './busy-week';
-import { ADMIN, PUBLIC, REAL_ART, expect, settle as settleMotion, test, choose, expectValue } from './support';
+import { ADMIN, PUBLIC, REAL_ART, expect, settle as settleMotion, setPortal, signInPublic, test, choose, expectValue } from './support';
 
 // Reference captures for the v4 comparison, both git-ignored. Default: the
 // synthetic placeholder art (fixtures, not the game's art) into
@@ -136,10 +136,43 @@ for (const vp of VIEWPORTS) {
       await page.goto(`${ADMIN}/login?sw=off`);
       await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toBeVisible();
       await shot(page, `admin-login-${tag}`);
+    });
+
+    // The member portal (D4-A, D5-A): Sign in, Denied, Account, Session ended, Closed.
+    test(`capture public portal ${vp.name} ${look.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.addInitScript(
+        ([c, t]) => {
+          localStorage.setItem('colorway', c!);
+          localStorage.setItem('theme', t!);
+        },
+        [look.colorway, look.theme],
+      );
+      const tag = `${vp.name}-${look.name}`;
 
       await page.goto(`${PUBLIC}/?sw=off`);
-      await expect(page.getByRole('tab', { selected: true })).toBeVisible();
-      await shot(page, `public-week-${tag}`);
+      await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toBeVisible();
+      await shot(page, `public-signin-${tag}`);
+
+      await page.goto(`${PUBLIC}/?login_error=not_eligible&sw=off`);
+      await expect(page.getByRole('heading', { name: "This account can't see the schedule" })).toBeVisible();
+      await shot(page, `public-denied-${tag}`);
+
+      await signInPublic(page);
+      await page.goto(`${PUBLIC}/?sw=off`);
+      await expect(page.getByText('This device')).toBeVisible();
+      await shot(page, `public-account-${tag}`);
+
+      // The session ends on the server; the next request finds out.
+      await page.request.post(`${PUBLIC}/__mock/public/end`);
+      await page.getByRole('button', { name: /^Sign out Safari · iPhone/ }).click();
+      await expect(page.getByRole('heading', { name: "You've been signed out" })).toBeVisible();
+      await shot(page, `public-ended-${tag}`);
+
+      await setPortal(page.request, false);
+      await page.goto(`${PUBLIC}/?sw=off`);
+      await expect(page.getByRole('heading', { name: "The schedule isn't open right now" })).toBeVisible();
+      await shot(page, `public-closed-${tag}`);
     });
   }
 }

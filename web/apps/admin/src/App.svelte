@@ -2,10 +2,12 @@
   import { tick } from 'svelte';
   import { MediaQuery, SvelteSet } from 'svelte/reactivity';
   import {
+    AccountMenu,
     applyColorway,
     applyMode,
     COLORWAYS,
     experiments,
+    Icon,
     registerServiceWorker,
     runFullTitle,
     setExperiments,
@@ -27,13 +29,13 @@
   import { DETAILS, ROUTES, SECTIONS } from './routes';
   import type RunSheetType from './RunSheet.svelte';
   import type { default as PaletteType } from '@kanade/ui/palette';
-  import AccountMenu from './shell/AccountMenu.svelte';
   import EdgeSwipe from './shell/EdgeSwipe.svelte';
   import { PHONE_QUERY, setChrome, type BackStep } from './shell/chrome';
   import NavDrawer from './shell/NavDrawer.svelte';
   import Rail from './shell/Rail.svelte';
   import TopBar from './shell/TopBar.svelte';
   import { directory } from './names/directory.svelte';
+  import { ME_AVATAR } from './shared/avatar';
   import { artUrl } from './shared/identity';
   import { AdminWeek, type MoveOutcome } from './store.svelte';
   import { reread } from './week/reread';
@@ -155,6 +157,9 @@
     const matches = [...directory.members].filter(([, name]) => name === store.session?.display);
     return matches.length === 1 ? matches[0]![0] : null;
   });
+
+  const SIGN_IN_METHOD: Record<string, string> = { discord: 'Discord', tailscale: 'Tailscale', token: 'the admin token' };
+  const signedInHow = $derived(store.session?.method ? `signed in with ${SIGN_IN_METHOD[store.session.method] ?? store.session.method}` : '');
 
   async function copyAccountId(id: string) {
     try {
@@ -530,7 +535,35 @@
   <div class="frame frame--rail" class:frame--phone={phone}>
     <a class="skip" href="#main">Skip to the page</a>
     {#snippet account()}
-      <AccountMenu session={store.session} userId={accountId} oncopy={copyAccountId} onsignout={signOut} />
+      <AccountMenu who={store.session?.display ?? 'Signed in'} avatar={store.session ? ME_AVATAR : null} detail={signedInHow}>
+        {#snippet items(hide)}
+          <!-- The router takes the click; focus then moves to the page, as on any route change. -->
+          <a role="menuitem" tabindex="-1" class="account__item" href="/account" onclick={() => hide(false)}><Icon name="users" /> Your account</a>
+          {#if accountId}
+            {@const id = accountId}
+            <button
+              type="button"
+              role="menuitem"
+              tabindex="-1"
+              class="account__item"
+              onclick={() => {
+                void copyAccountId(id);
+                hide();
+              }}><Icon name="copy" /> Copy user ID</button
+            >
+          {/if}
+          <a
+            role="menuitem"
+            tabindex="-1"
+            class="account__item"
+            href="/login"
+            onclick={(event) => {
+              hide(false);
+              void signOut(event);
+            }}><Icon name="log-out" /> Sign out</a
+          >
+        {/snippet}
+      </AccountMenu>
     {/snippet}
     {#if phone}
       <TopBar

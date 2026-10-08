@@ -23,9 +23,10 @@ img-src 'self' data:; media-src 'self'; font-src 'self'; connect-src 'self'; man
 worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; \
 trusted-types kanade-sw; report-uri /csp-report";
 
-/// The admin portraits, as the server: per-user, revalidated by ETag.
+/// The portraits, as the server: per-user, revalidated by ETag.
 fn portrait(path: &str) -> bool {
     path == "/api/admin/me/avatar"
+        || path == "/api/public/session/avatar"
         || path
             .strip_prefix("/api/admin/members/")
             .and_then(|rest| rest.strip_suffix("/avatar"))

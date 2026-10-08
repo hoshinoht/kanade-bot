@@ -56,9 +56,15 @@ pub async fn art(
     Path((kind, key)): Path<(String, String)>,
     request: HeaderMap,
 ) -> Response {
-    // Art is schedule dressing: on the public origin it answers closed too.
-    if app.public && !app.store.lock().await.public_portal() {
-        return crate::api::closed();
+    // As the server's public catch-all (member-auth-contract §1): `closed`
+    // while the portal is closed, `404` while it is open, until member reads
+    // serve art behind the session.
+    if app.public {
+        return if app.store.lock().await.public_portal() {
+            crate::api::not_found().await
+        } else {
+            crate::api::closed()
+        };
     }
     let Some(kind) = Kind::parse(&kind) else {
         return StatusCode::NOT_FOUND.into_response();

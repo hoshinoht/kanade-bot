@@ -7,8 +7,7 @@
 -->
 <script lang="ts">
   import type { Me } from '@kanade/api-types';
-  import { Icon } from '@kanade/ui';
-  import Avatar from '../shared/Avatar.svelte';
+  import { Avatar, Icon } from '@kanade/ui';
   import { ME_AVATAR } from '../shared/avatar';
   import { methodLong, serverClock } from './account';
 

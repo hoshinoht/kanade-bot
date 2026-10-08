@@ -1,10 +1,11 @@
 /**
  * Account page words and pure helpers (boards AdminAccount / AdminPhone,
- * direction B): sign-in method names, the access lines, session times read
- * against the server's clock, the diagnostics text and the reply-style filter.
+ * direction B): sign-in method names, the access lines, the diagnostics text
+ * and the reply-style filter. Session times and device names are shared
+ * (`@kanade/ui` `account.ts`).
  */
 
-import type { AccountSession, Me, Persona, ReplyStyle } from '@kanade/api-types';
+import type { Me, Persona, ReplyStyle } from '@kanade/api-types';
 
 export type AccountTab = 'profile' | 'sessions' | 'browser';
 
@@ -35,27 +36,6 @@ export const ACCESS: Record<string, { label: string; sub: string }> = {
 /** "5 min" windows, worded as on the Limits page (one shared formatter). */
 export { windowWords } from '../limits/view';
 
-/** "now" within a minute, else "12 min ago" / "3 h ago" against the server's clock. */
-export function seenWords(iso: string, now: string): string {
-  const ms = Date.parse(now) - Date.parse(iso);
-  if (Number.isNaN(ms)) return '';
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 1) return 'now';
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
-  return `${Math.floor(hours / 24)} d ago`;
-}
-
-/** Guild-local "2 Oct 21:14" for an instant. */
-export function dayTime(iso: string, timeZone: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  const parts = new Intl.DateTimeFormat('en-US', { timeZone, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date);
-  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
-  return `${part('day')} ${part('month')} ${part('hour')}:${part('minute')}`;
-}
-
 /** Guild-local "Tue 29 Sep 12:00" for the diagnostics. */
 export function serverClock(iso: string, timeZone: string): string {
   const date = new Date(iso);
@@ -73,16 +53,6 @@ export function diagnostics(me: Me, timeZone: string): string {
     `Version: ${me.version}`,
     `Server: ${serverClock(me.server_time, timeZone)} (${timeZone})`,
   ].join('\n');
-}
-
-/** "Firefox · macOS", or a plain fallback when the server did not recognise the browser. */
-export function deviceName(session: Pick<AccountSession, 'device'>): string {
-  return session.device ?? 'Unknown browser';
-}
-
-/** Phones and tablets get the phone glyph. */
-export function isHandheld(session: Pick<AccountSession, 'device'>): boolean {
-  return /iPhone|iPad|Android/.test(session.device ?? '');
 }
 
 /** The default voice: what a cleared saved style means. */

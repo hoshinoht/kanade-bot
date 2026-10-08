@@ -8,11 +8,10 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { ApproveRequest, Evidence, Proposal, RunStatus, Week } from '@kanade/api-types';
-  import { BossTag, DecisionCard, Icon, PendingLabel, Portrait, RUN_TONE, STATUS_WORDS, StatusChip, ThreadPanel, WavyProgress } from '@kanade/ui';
+  import { Avatar, BossTag, DecisionCard, Icon, PendingLabel, Portrait, RUN_TONE, STATUS_WORDS, StatusChip, ThreadPanel, WavyProgress } from '@kanade/ui';
   import { directory } from '../names/directory.svelte';
   import Mentions from '../names/Mentions.svelte';
   import Name from '../names/Name.svelte';
-  import Avatar from '../shared/Avatar.svelte';
   import { memberAvatar } from '../shared/avatar';
   import { discordLink } from '../shared/discordLink.svelte';
   import type { Slot } from '../planner/keyboardMove';

@@ -1,6 +1,7 @@
 // Public service worker: precaches the static build only. Navigations go to
-// the network first; offline they get the precached offline page. The API is
-// never intercepted, so no schedule data is ever stored by the worker.
+// the network first; offline they get the precached offline page. `/api/`
+// (status, session, devices, sign-in) is never intercepted, so no member data
+// or session answer is ever stored by the worker.
 import { cleanupOutdatedCaches, matchPrecache, precache, type PrecacheEntry } from 'workbox-precaching';
 
 declare global {

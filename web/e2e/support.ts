@@ -14,8 +14,25 @@ export const PUBLIC = origins().public;
 /** Must match `playwright.config.ts`; the fixture refuses a mock pinned elsewhere. */
 export const PINNED_NOW = '2026-09-29T04:00:00Z';
 export const REAL_ART = process.env.KANADE_REAL_ART === '1';
-/** Week headings under the pinned mock clock: admin hides its done and cancelled runs (v4). */
-export const HEADING = { admin: '7 runs', public: '9 runs' } as const;
+/** First-load page headings under the pinned mock clock: admin's week hides its
+ * done and cancelled runs (v4); the public portal opens signed out on Sign in. */
+export const HEADING = { admin: '7 runs', public: 'Sign in' } as const;
+
+/**
+ * Signs this page's browser context in on the public origin, as a Discord
+ * sign-in would end (the mock's `/__mock/public/sign-in`: cookie, no Discord).
+ * `page.request` shares the context's cookie jar.
+ */
+export async function signInPublic(page: Page): Promise<void> {
+  const response = await page.request.post(`${PUBLIC}/__mock/public/sign-in`);
+  expect(response.status()).toBe(204);
+}
+
+/** The admin Config switch that opens and closes the public portal (D7-B). */
+export async function setPortal(request: APIRequestContext, open: boolean): Promise<void> {
+  const response = await request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(request), data: { self_service: { public_portal: open } } });
+  expect(response.status()).toBe(200);
+}
 
 export interface Violation {
   directive: string;

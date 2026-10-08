@@ -1,5 +1,5 @@
-//! Member and admin portraits as the server's `/api/admin/members/{id}/avatar`
-//! and `/api/admin/me/avatar` serve them: generated stand-in art (never a
+//! Member and admin portraits as the server's `/api/admin/members/{id}/avatar`,
+//! `/api/admin/me/avatar` and `/api/public/session/avatar` serve them: generated stand-in art (never a
 //! real picture) for most seeded members, the server's initial-letter
 //! monogram for the rest and for non-Discord sessions.
 
@@ -95,4 +95,11 @@ pub async fn me(State(app): State<App>, request: HeaderMap) -> Response {
         Some(id) => portrait(id, store.session_display(), &request),
         None => svg(monogram(store.session_display()), &request),
     }
+}
+
+/// `GET /api/public/session/avatar` for the mock's one member (the caller
+/// checks the session first).
+pub fn public_member(request: &HeaderMap) -> Response {
+    use crate::mock::portal::{MEMBER_ID, MEMBER_NAME};
+    portrait(MEMBER_ID, MEMBER_NAME, request)
 }

@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { SCREENS, SIZES, screenUrl } from './frames';
-import { ADMIN, PUBLIC, expect, settle, test } from './support';
+import { ADMIN, PUBLIC, expect, settle, signInPublic, test } from './support';
 import { auditText, type Finding } from './text-audit';
 
 // General text-clipping check (docs/notes/design/verification.md "Measuring text
@@ -138,6 +138,16 @@ const STATES: Screen[] = [
   { name: 'admin/inbox?tab=self_service', url: screenUrl(ADMIN, '/inbox?tab=self_service') },
   { name: 'admin/account?tab=sessions', url: screenUrl(ADMIN, '/account?tab=sessions') },
   { name: 'admin/account?tab=browser', url: screenUrl(ADMIN, '/account?tab=browser') },
+  { name: 'public/?login_error=not_eligible (Denied)', url: screenUrl(PUBLIC, '/?login_error=not_eligible') },
+  {
+    name: 'public/ signed in (Account)',
+    url: screenUrl(PUBLIC, '/'),
+    open: async (page) => {
+      await signInPublic(page);
+      await page.reload();
+      await expect(page.getByText('This device')).toBeVisible();
+    },
+  },
   {
     name: 'admin/account (reply style picker)',
     url: screenUrl(ADMIN, '/account'),

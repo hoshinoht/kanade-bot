@@ -1,0 +1,197 @@
+// The member portal's own placement of the shared pieces (public.scss,
+// _gate.scss, _state-note.scss) inside the fixed frame, after the P_ boards:
+// the centred window or note, the sign-in banner and the info box.
+
+// The admin login centres its window on an empty page (`.gate`, 100dvh);
+// here the masthead stays, so the window centres in the shell and only the
+// stage scrolls when a short frame cannot hold it.
+.shell > .gate {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0.5rem 0 1rem;
+  overflow: clip auto;
+  overscroll-behavior: contain;
+}
+
+/* ── Sign in (board `Main`): 560 px, the 20 px window frame ─────────────── */
+
+.gate__window {
+  width: min(560px, 100%);
+  margin: auto;
+  border-radius: var(--r-win);
+}
+
+.gate__bar {
+  height: 44px;
+  padding: 0 14px;
+}
+
+.gate__bar-title {
+  margin: 0;
+}
+
+// No boss art for visitors (the portal serves `/art/` to members only): the
+// banner is the colourway itself, the win colour deepened into the accent,
+// with the windows' dot motif fading in from the left and the scrim
+// (`.gate__hero::after`) keeping the name legible.
+.gate__hero--motif {
+  height: 180px;
+  background: linear-gradient(115deg, color-mix(in srgb, var(--win) 60%, black) 15%, color-mix(in srgb, var(--accent) 45%, var(--win)) 100%);
+}
+
+.gate__hero--motif::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background: radial-gradient(circle, color-mix(in srgb, var(--win-ink) 40%, transparent) 1.5px, transparent 2px) 0 0 / 14px 14px;
+  mask-image: linear-gradient(90deg, transparent 20%, black 85%);
+}
+
+.gate__hero--motif .gate__id {
+  inset: auto 24px 16px;
+  gap: 14px;
+}
+
+.gate__hero--motif .gate__avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  font-size: var(--fs-clock);
+}
+
+// The hero name is the bot's, not the page heading (the title bar is the h1).
+.gate__hero .gate__name {
+  font-family: var(--display);
+  font-size: var(--fs-clock);
+}
+
+.gate__body .gate__lede {
+  color: var(--ink);
+}
+
+// Trust and consent text (oauth-security item 20): a contained box, never bare text.
+.infobox {
+  display: flex;
+  gap: 0.625rem;
+  align-items: flex-start;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--pane);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  line-height: 1.45;
+}
+
+.gate__body .infobox {
+  color: var(--ink);
+  font-size: var(--fs-small);
+}
+
+.infobox .icon {
+  flex: none;
+  margin-top: 0.15rem;
+}
+
+.infobox code {
+  font-family: var(--mono);
+}
+
+/* ── notes: Closed, Session ended, Loading (P_Closed, P_States) and Denied
+ * (P_Denied, no title bar): one centred window around the shared StateNote ── */
+
+.notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(520px, 100%);
+  margin: auto;
+  padding: 0 24px 24px;
+  border-radius: var(--r-win);
+}
+
+.notice > .card__head {
+  align-self: stretch;
+  min-height: 44px;
+  margin: 0 -24px 24px;
+  border-radius: var(--r-win-in) var(--r-win-in) 0 0;
+}
+
+.notice > .card__head .card__title {
+  font-size: var(--fs-body);
+}
+
+.notice--bare {
+  width: min(520px, 100%);
+  padding: 28px;
+  border: 2px solid var(--win);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.notice .state-note {
+  max-width: 420px;
+}
+
+.notice .state-note__glyph {
+  width: 96px;
+  height: 96px;
+  background: var(--chip-fill);
+  color: var(--dim-text);
+}
+
+.notice .state-note__glyph .icon {
+  width: 38px;
+  height: 38px;
+}
+
+.notice .state-note__title {
+  color: var(--ink);
+}
+
+.notice .state-note__actions {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.notice .state-note__actions .btn {
+  min-height: 44px;
+}
+
+.notice .state-note__actions .btn:not(.btn--primary) {
+  padding: 0 18px;
+}
+
+.notice--loading {
+  min-height: 220px;
+}
+
+.notice--loading .loading-state {
+  flex: 1 1 auto;
+}
+
+// The masthead's time zone (signed out): the board's 12 px mono.
+.masthead__zone {
+  white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+  .notice {
+    padding: 0 16px 20px;
+  }
+
+  .notice > .card__head {
+    margin: 0 -16px 18px;
+  }
+
+  .notice--bare {
+    padding: 22px 16px;
+  }
+}
+
+@media (max-height: 500px) {
+  .gate__hero--motif {
+    height: 120px;
+  }
+}

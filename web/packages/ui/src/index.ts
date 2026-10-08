@@ -1,3 +1,9 @@
+// Promoted from the admin app so the member portal shares them: portraits,
+// the account menu, the signed-in sessions list and its words.
+export { default as AccountMenu } from './components/AccountMenu.svelte';
+export { default as Avatar } from './components/Avatar.svelte';
+export { default as SessionList } from './components/SessionList.svelte';
+export { dayTime, deviceName, isHandheld, seenWords } from './account';
 export { default as AnswerChip } from './components/AnswerChip.svelte';
 export { default as BossTag } from './components/BossTag.svelte';
 export { default as BossStack } from './components/BossStack.svelte';

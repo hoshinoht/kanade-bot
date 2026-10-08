@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Me } from '@kanade/api-types';
-import { dayTime, diagnostics, methodLong, seenWords, serverClock, styleChoices, tabOf, windowWords } from '../src/account/account';
+import { diagnostics, methodLong, serverClock, styleChoices, tabOf, windowWords } from '../src/account/account';
 
 const TZ = 'Asia/Kuala_Lumpur';
 
@@ -18,17 +18,7 @@ describe('account words', () => {
     expect(methodLong('token')).toBe('signed in with a token');
   });
 
-  it('says last seen against the server clock, never the device', () => {
-    const now = '2026-09-29T04:00:00Z';
-    expect(seenWords('2026-09-29T03:59:30Z', now)).toBe('now');
-    expect(seenWords('2026-09-29T03:20:00Z', now)).toBe('40 min ago');
-    expect(seenWords('2026-09-29T01:00:00Z', now)).toBe('3 h ago');
-    expect(seenWords('2026-09-27T01:00:00Z', now)).toBe('2 d ago');
-    expect(seenWords('bad', now)).toBe('');
-  });
-
-  it('prints guild-local times', () => {
-    expect(dayTime('2026-10-02T13:14:00Z', TZ)).toBe('2 Oct 21:14');
+  it('prints the guild-local server clock', () => {
     expect(serverClock('2026-09-29T04:00:00Z', TZ)).toBe('Tue 29 Sep 12:00');
   });
 
