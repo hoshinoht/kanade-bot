@@ -38,6 +38,12 @@ const V4_SCHEDULE_DESCRIPTION: &str = "Runs for a calendar or boss week: day, ti
 const V5_SCHEDULE_DESCRIPTION: &str = "Runs for a calendar or boss week: day, time, bosses, status and RSVP count. Use for schedule questions; never offer past runs as next or upcoming. Each run's record is shown under your reply: cite a run by its [id] and never retell its day, time, status, RSVP count or channel. A personal result's 'Context (hidden from members)' line is for you: say its phrases in your own words, never copy the line.";
 const V4_SCOPE_DESCRIPTION: &str = "Use 'channel' only for explicit 'this channel'/'here'/'our runs'. Bare dates ask the whole group: use 'all' (default). The bot @mention is not a qualifier. When answering from 'all', say each run's channel.";
 const V5_SCOPE_DESCRIPTION: &str = "Use 'channel' only for explicit 'this channel'/'here'/'our runs'. Bare dates ask the whole group: use 'all' (default). The bot @mention is not a qualifier.";
+/// D-ADD-DUPLICATE (user decision 2026-10-08): propose_add's `extra` flag
+/// passes its duplicate check; only the full set offers propose_add.
+const EXTRA_DESCRIPTION: &str = "Optional, default false. True ONLY after this tool refused the run as a repeat of one already scheduled and they clearly want a second, separate run.";
+const ADD_DUPLICATE_TOKENS: [u64; 2] = [69, 0];
+/// propose_add's position on the full-set surface.
+const PROPOSE_ADD_INDEX: usize = 7;
 
 fn surface(read_only: bool) -> Value {
     let offer = ToolOffer::full_set(read_only);
@@ -117,6 +123,18 @@ fn voiced_text(forward_text: &str) -> String {
     text
 }
 
+fn add_duplicate_text(voiced_text: &str) -> String {
+    let weekly = "Unclear wording: leave it out.\"}";
+    assert_eq!(voiced_text.matches(weekly).count(), 1, "frozen schema text");
+    voiced_text.replacen(
+        weekly,
+        &format!(
+            "{weekly},\"extra\":{{\"type\":\"boolean\",\"description\":\"{EXTRA_DESCRIPTION}\"}}"
+        ),
+        1,
+    )
+}
+
 fn named() -> Vec<Named> {
     let vector = load("tool_schemas.json");
     let steps = vector["cases"][0]["expected"]["steps"].as_array().unwrap();
@@ -125,6 +143,7 @@ fn named() -> Vec<Named> {
     let mut seasonal_entries = Vec::new();
     let mut forward_entries = Vec::new();
     let mut voiced_entries = Vec::new();
+    let mut add_duplicate_entries = Vec::new();
     for (step, actual) in [(0, &full), (1, &read_only)] {
         let v4_tokens = steps[step]["value"]["tokens"].as_u64().expect("tokens");
         let seasonal_tokens = v4_tokens + SEASONAL_TOKENS;
@@ -181,6 +200,8 @@ fn named() -> Vec<Named> {
             ),
         ]);
         let forward_text = auto_forward_text(&seasonal_text);
+        let voiced = voiced_text(&forward_text);
+        let voiced_tokens = actual["tokens"].as_u64().expect("tokens") - ADD_DUPLICATE_TOKENS[step];
         voiced_entries.extend([
             dev(
                 "surface",
@@ -200,15 +221,44 @@ fn named() -> Vec<Named> {
                 "surface",
                 format!("/steps/{step}/value/tokens"),
                 json!(seasonal_tokens + FORWARD_TOKENS[step]),
-                actual["tokens"].clone(),
+                json!(voiced_tokens),
             ),
             dev(
                 "surface",
                 format!("/steps/{step}/value/text"),
                 json!(forward_text),
-                json!(voiced_text(&forward_text)),
+                json!(voiced),
             ),
         ]);
+        if step == 0 {
+            let properties = format!("/tools/{PROPOSE_ADD_INDEX}/function/parameters/properties");
+            let v4_properties = steps[0]["value"]
+                .pointer(&properties)
+                .expect("propose_add properties")
+                .clone();
+            let mut v5_properties = v4_properties.clone();
+            v5_properties["extra"] = json!({"type": "boolean", "description": EXTRA_DESCRIPTION});
+            add_duplicate_entries.extend([
+                dev(
+                    "surface",
+                    format!("/steps/0/value{properties}"),
+                    v4_properties,
+                    v5_properties,
+                ),
+                dev(
+                    "surface",
+                    "/steps/0/value/tokens",
+                    json!(voiced_tokens),
+                    actual["tokens"].clone(),
+                ),
+                dev(
+                    "surface",
+                    "/steps/0/value/text",
+                    json!(voiced),
+                    json!(add_duplicate_text(&voiced)),
+                ),
+            ]);
+        }
     }
     vec![
         Named {
@@ -232,6 +282,10 @@ fn named() -> Vec<Named> {
         Named {
             name: "D-VOICED-CARD",
             entries: voiced_entries,
+        },
+        Named {
+            name: "D-ADD-DUPLICATE",
+            entries: add_duplicate_entries,
         },
     ]
 }

@@ -337,6 +337,20 @@ async fn the_context_family_replays_exactly() {
             ),
         )],
     };
+    // The propose_add schema's `extra` flag.
+    let add_duplicate = Named {
+        name: "D-ADD-DUPLICATE",
+        entries: vec![dev(
+            "request-budget-trims-prior-history",
+            "/steps/3/error/message",
+            json!(
+                "chat request estimate 9784 exceeds context budget 6144 with completion reserve 1024"
+            ),
+            json!(
+                "chat request estimate 9853 exceeds context budget 6144 with completion reserve 1024"
+            ),
+        )],
+    };
     assert_eq!(
         check_family(
             "context",
@@ -357,6 +371,7 @@ async fn the_context_family_replays_exactly() {
                 seasonal_list,
                 auto_forward,
                 voiced_card,
+                add_duplicate,
             ],
             replay
         )

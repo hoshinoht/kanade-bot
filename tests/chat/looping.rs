@@ -365,6 +365,7 @@ fn named() -> Vec<Named> {
     let mut seasonal_list = Vec::new();
     let mut auto_forward = Vec::new();
     let mut voiced_card = Vec::new();
+    let mut add_duplicate = Vec::new();
     let mut voice = Vec::new();
     let mut reminder = Vec::new();
     for case in file["cases"].as_array().expect("cases") {
@@ -525,6 +526,13 @@ fn named() -> Vec<Named> {
                         json!("ContextBudgetError: chat request estimate 18656 exceeds context budget 8192 with completion reserve 1024"),
                         json!("ContextBudgetError: chat request estimate 18729 exceeds context budget 8192 with completion reserve 1024"),
                     ));
+                    // The propose_add schema's `extra` flag.
+                    add_duplicate.push(dev(
+                        case_id,
+                        format!("{pointer}/error"),
+                        json!("ContextBudgetError: chat request estimate 18729 exceeds context budget 8192 with completion reserve 1024"),
+                        json!("ContextBudgetError: chat request estimate 18798 exceeds context budget 8192 with completion reserve 1024"),
+                    ));
                 }
                 ("missing-model-alias", 0) => {
                     failures.push(error("role is not configured"));
@@ -592,6 +600,10 @@ fn named() -> Vec<Named> {
         Named {
             name: "D-VOICED-CARD",
             entries: voiced_card,
+        },
+        Named {
+            name: "D-ADD-DUPLICATE",
+            entries: add_duplicate,
         },
     ]
 }

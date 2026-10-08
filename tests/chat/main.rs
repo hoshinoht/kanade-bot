@@ -8,6 +8,7 @@ mod authority;
 mod budget;
 mod bundles;
 mod context;
+mod duplicate_add;
 mod gate;
 mod guessed_run;
 mod live_switch;

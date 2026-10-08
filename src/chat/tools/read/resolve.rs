@@ -64,7 +64,8 @@ fn boss_shorts(world: &ToolWorld<'_>, tokens: &[String]) -> BTreeSet<String> {
         .collect()
 }
 
-fn listing(world: &ToolWorld<'_>, runs: &[&Run], lead: &str, now: DateTime<Utc>) -> String {
+/// Run records under `lead`, the way an ambiguous description lists them.
+pub fn listing(world: &ToolWorld<'_>, runs: &[&Run], lead: &str, now: DateTime<Utc>) -> String {
     let lines: Vec<String> = runs
         .iter()
         .take(MAX_RUNS)

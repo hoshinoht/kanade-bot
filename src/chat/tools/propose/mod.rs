@@ -20,7 +20,7 @@ use crate::chat::tools::read::format::{
 use crate::chat::tools::read::participants::{
     is_true, new_party, py_text, validate_bosses, validate_participants,
 };
-use crate::chat::tools::read::resolve::{require_heard, resolve_fixed, resolve_run};
+use crate::chat::tools::read::resolve::{listing, require_heard, resolve_fixed, resolve_run};
 use crate::chat::tools::{CallError, ToolContext, ToolError};
 use crate::domain::drafts::{ProposalSource, ProposalStore};
 use crate::domain::ids::short_id;
@@ -40,6 +40,10 @@ const REFUSED_UP_FRONT: &str = "That cannot be proposed: {reason}. No card went 
 const NO_EFFECT: &str =
     "Nothing would change -- that is already the case. No card went up; tell them so.";
 const EXPIRED: &str = "That falls in a boss week that is already over, so it cannot be proposed. No card went up; tell them so.";
+
+/// `D-ADD-DUPLICATE`: the one-off add repeats a run this boss week already has.
+const DUPLICATE_LEAD: &str = "That would be a second run of a boss this boss week already has, with some of the same party -- a weekly boss is one clear per character per week. Already scheduled:";
+const DUPLICATE_NEXT: &str = "If they mean that run, use propose_move with its id (or propose_rsvp for their own answer to it). Only if they clearly want a second, separate run, call propose_add again with `extra` true. No card went up.";
 
 /// The scheduler a proposal is staged through.
 pub struct Proposer<'a, S, I, C> {
@@ -128,6 +132,41 @@ fn future_when(
         .into());
     }
     Ok(at)
+}
+
+/// `D-ADD-DUPLICATE`: a one-off run is refused while an open run in its boss
+/// week, in any channel, has one of its bosses and one of its party, unless
+/// the model says it is `extra`. Such an add is almost always the existing
+/// run described again (a new time, part of its party), not a second clear.
+fn require_not_duplicate(
+    world: &ToolWorld<'_>,
+    ctx: &ToolContext,
+    at: DateTime<Utc>,
+    bosses: &[String],
+    people: &[String],
+) -> Result<(), CallError> {
+    let start =
+        week_start(&at, world.zone, world.reset_weekday, world.reset_time).map_err(failed)?;
+    let week = utc_instant(&start).map_err(failed)?;
+    let same: Vec<&Run> = world
+        .snapshot
+        .runs
+        .iter()
+        .filter(|run| {
+            run.week_start == week
+                && !matches!(run.status, RunStatus::Cancelled | RunStatus::Done)
+                && run.bosses.iter().any(|boss| bosses.contains(boss))
+                && run.participants.iter().any(|id| people.contains(id))
+        })
+        .collect();
+    if same.is_empty() {
+        return Ok(());
+    }
+    Err(ToolError(format!(
+        "{}\n\n{DUPLICATE_NEXT}",
+        listing(world, &same, DUPLICATE_LEAD, ctx.now)
+    ))
+    .into())
 }
 
 impl<S, I, C> Proposer<'_, S, I, C>
@@ -298,6 +337,9 @@ where
             plan.card_payload.insert("time".into(), json!(hhmm));
             plan
         } else {
+            if !is_true(args.get("extra")) {
+                require_not_duplicate(world, ctx, at, &bosses, &people)?;
+            }
             Plan::new(
                 ChangeKind::Add,
                 None,
