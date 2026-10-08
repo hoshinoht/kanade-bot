@@ -1,18 +1,22 @@
 //! The redesigned weekly digest as Components V2: converted in place on the
 //! first refresh after the style flips to redesigned, left as posted once
-//! the style flips back (Discord cannot take the flag off), and sent as the
-//! embed when the week is over the V2 budget.
+//! the style flips back (Discord cannot take the flag off), sent as the
+//! embed when the week is over the V2 budget, and linking the portal only
+//! while it has a public origin and is open.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::TimeDelta;
 use kanade::bot::delivery::cards::CardKit;
+use kanade::bot::delivery::cards::redesign::{MY_RUNS, OPEN_PORTAL};
 use kanade::bot::transport::{Call, FakeDiscord, MessageId, Op, Outcome, RejectionKind};
 use kanade::domain::notify::DeliveryJournal;
 use kanade::domain::schedule::RunStatus;
 use kanade::domain::settings::MessageStyle;
 use kanade::infrastructure::store::MemoryScheduleStore;
+use twilight_model::channel::message::Component;
+use twilight_model::channel::message::component::ButtonStyle;
 
 use crate::cards::{answer, created, edits, kit, refresher, run, tonight, world};
 use crate::scenarios::{self, now, previous_week};
@@ -188,4 +192,70 @@ async fn a_week_over_the_v2_budget_posts_the_redesigned_embed() {
     let [edit] = edits(&week.fake).try_into().expect("one edit");
     assert_eq!(edit.components, None);
     assert!(edit.embeds.is_some());
+}
+
+/// Every button of a V2 layout as (label, link URL), in order.
+fn buttons(components: &[Component]) -> Vec<(String, Option<String>)> {
+    let mut out = Vec::new();
+    for component in components {
+        match component {
+            Component::Container(container) => out.extend(buttons(&container.components)),
+            Component::ActionRow(row) => out.extend(buttons(&row.components)),
+            Component::Button(button) => out.push((
+                button.label.clone().unwrap_or_default(),
+                button
+                    .url
+                    .clone()
+                    .filter(|_| button.style == ButtonStyle::Link),
+            )),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// `switchable` in the redesigned style with a public portal origin, the
+/// portal open while `open` is set, read live.
+fn with_portal(open: &Arc<AtomicBool>) -> CardKit {
+    let open = Arc::clone(open);
+    let mut cards = switchable(&Arc::new(AtomicBool::new(true)));
+    cards.v2.portal = Some(PORTAL.into());
+    cards.v2.portal_open = Some(Arc::new(move || open.load(Ordering::SeqCst)));
+    cards
+}
+
+const PORTAL: &str = "https://kanade.example";
+
+#[tokio::test]
+async fn the_portal_button_follows_the_live_portal_switch() {
+    let week = Week::new(1).await;
+    let open = Arc::new(AtomicBool::new(false));
+    let cards = with_portal(&open);
+
+    // Closed: the tunnel is stopped, so no dead link; "My runs" stays.
+    week.post(&cards).await;
+    let [post] = created(&week.fake).try_into().expect("one post");
+    assert_eq!(buttons(&post.components), [(MY_RUNS.to_owned(), None)]);
+
+    // Opened: the posted digest's next refresh links the portal.
+    open.store(true, Ordering::SeqCst);
+    assert_eq!(week.refresh(&cards).await, 1);
+    let [edit] = edits(&week.fake).try_into().expect("one edit");
+    assert_eq!(
+        buttons(edit.components.as_deref().expect("a V2 edit")),
+        [
+            (MY_RUNS.to_owned(), None),
+            (OPEN_PORTAL.to_owned(), Some(PORTAL.to_owned()))
+        ]
+    );
+}
+
+#[tokio::test]
+async fn without_a_public_origin_there_is_no_portal_button() {
+    let week = Week::new(1).await;
+    let mut cards = with_portal(&Arc::new(AtomicBool::new(true)));
+    cards.v2.portal = None;
+    week.post(&cards).await;
+    let [post] = created(&week.fake).try_into().expect("one post");
+    assert_eq!(buttons(&post.components), [(MY_RUNS.to_owned(), None)]);
 }

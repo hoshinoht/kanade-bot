@@ -33,6 +33,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- Discord (redesigned style): the weekly digest no longer shows an "Open portal" button while the public portal is closed (`self_service.public_portal` off), where it led to a dead link. The switch is read live: a posted digest gains or loses the button on its next refresh. "My runs" is unchanged.
 - Schedule extraction: a channel message like "the HFA no run made btw" no longer marks its author as not coming. The bot used to treat a stray "no", "ok" or "can" in a short line as an RSVP even when the extractor hadn't reported one, and could apply it to a run the author never meant. Now only the answers the extractor reports are applied.
 - Reminder header rewrites: the tracked Kanade persona no longer asks the model to "format the date as *Mon 21 Sep*", which contradicted the code's "keep {day}, no markdown" rule; one rewrite had swapped {day} for that example date and was refused. It now says to keep {day} exactly and add no dates.
 - Chat no longer posts a card for a second one-off run of a boss that this boss week already has with some of the same people: the bot is pointed at moving the existing run, and adds a separate run only when you clearly want one.

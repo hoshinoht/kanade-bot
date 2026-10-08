@@ -297,7 +297,8 @@ where
         Arc::new(move || cache.self_avatar_url())
     });
     // Members open the public portal; the admin host is tailnet-only, so
-    // without a public listener the digest has no portal button.
+    // without a public listener the digest has no portal button (nor while
+    // the live `self_service.public_portal` switch is off, see `card_kit`).
     kit.v2.portal = config
         .runtime
         .public_bind

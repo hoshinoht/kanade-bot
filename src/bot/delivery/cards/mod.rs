@@ -45,7 +45,7 @@ pub use record::HeaderHistory;
 pub use record::{
     CardRecord, DAY_OF_KIND, DigestPhraseStore, HeaderOverrideStore, PostedCard, ReminderCardStore,
 };
-pub use redesign::{DifficultyMarks, StyleSource, V2Kit};
+pub use redesign::{DifficultyMarks, PortalSwitch, StyleSource, V2Kit};
 
 use crate::bot::mentions;
 use crate::bot::transport::{MessageEdit, OutgoingMessage, Upload};
@@ -116,8 +116,8 @@ pub struct CardKit {
     /// Read per card; `None` is classic.
     pub style: Option<StyleSource>,
     pub marks: DifficultyMarks,
-    /// The avatar, portal origin and which posted messages are V2; shared
-    /// by every clone of the kit.
+    /// The avatar, portal origin and switch and which posted messages are
+    /// V2; shared by every clone of the kit.
     pub v2: V2Kit,
 }
 

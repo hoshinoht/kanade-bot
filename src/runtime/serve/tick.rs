@@ -25,7 +25,8 @@ use crate::{
             DEFAULT_MAX_SENDS_PER_TICK, Delivery, DeliveryConfig, DeliveryError, LogAlerts,
             TickReport,
             cards::{
-                ArtSource, CardKit, DifficultyMarks, HeadingRewrite, PersonaSource, StyleSource,
+                ArtSource, CardKit, DifficultyMarks, HeadingRewrite, PersonaSource, PortalSwitch,
+                StyleSource, V2Kit,
             },
         },
         gateway::DeliveryEligibility,
@@ -191,6 +192,11 @@ pub fn card_kit(
     // The live message style, read per card like quiet mode per tick.
     let styles = settings.clone();
     let style: StyleSource = Arc::new(move || styles.borrow().settings.notifications.message_style);
+    // The live portal switch, read per digest render: a closed portal's
+    // tunnel is stopped, so its button would be a dead link.
+    let portal = settings.clone();
+    let portal_open: PortalSwitch =
+        Arc::new(move || portal.borrow().settings.self_service.public_portal);
     // The live profanity list, read per rewrite like chat reads it per question.
     let live = settings.clone();
     let words: WordSource = Arc::new(move || {
@@ -231,8 +237,11 @@ pub fn card_kit(
         },
         style: Some(style),
         marks,
-        // The avatar and portal are filled in by the Discord side.
-        v2: Default::default(),
+        // The avatar and portal origin are filled in by the Discord side.
+        v2: V2Kit {
+            portal_open: Some(portal_open),
+            ..V2Kit::default()
+        },
     }
 }
 

@@ -22,7 +22,9 @@ pub use countdown::countdown_card;
 pub use day_of::day_of_card;
 pub use digest::{DIGEST_FOOTER, MY_RUNS, OPEN_PORTAL, digest_card};
 pub use limits::{MAX_EMBEDS, MAX_FIELD_VALUE, MAX_TITLE, MAX_TOTAL_CHARS};
-pub use live::{AvatarSource, LiveFormats, V2Kit, known_or_fetched, learn_after_refusal};
+pub use live::{
+    AvatarSource, LiveFormats, PortalSwitch, V2Kit, known_or_fetched, learn_after_refusal,
+};
 pub use notice::{NoticeLook, decline_text, notice_text};
 pub use schedule::{
     SCHEDULE_FOOTER, SCHEDULE_FOOTER_HIDDEN, ScheduleScope, ScheduleWeek, schedule_components,

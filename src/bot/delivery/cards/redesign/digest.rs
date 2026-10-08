@@ -7,8 +7,9 @@
 //! week as a Components V2 layout (the digest pings nobody): one ink-blue
 //! container with the header (title, phrase, progress; the bot's avatar
 //! beside it when it has an http(s) URL), a text display per day and a
-//! "My runs" / "Open portal" row. A layout over Discord's budget is left
-//! off (logged once per week) and the embed is sent instead.
+//! "My runs" / "Open portal" row ("Open portal" only while the public
+//! portal is open). A layout over Discord's budget is left off (logged once
+//! per week) and the embed is sent instead.
 
 use std::collections::BTreeSet;
 

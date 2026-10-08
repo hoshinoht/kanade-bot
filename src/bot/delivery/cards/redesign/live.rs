@@ -1,5 +1,6 @@
 //! What Components V2 layouts read besides the schedule (the bot's avatar,
-//! the portal origin) and which posted messages are V2.
+//! the portal origin and whether the portal is open) and which posted
+//! messages are V2.
 //!
 //! Discord can add the V2 flag on an edit but never remove it, and a legacy
 //! edit (content or embeds) of a V2 message is refused with a 400. The store
@@ -20,6 +21,10 @@ use super::v2::is_http_url;
 /// The bot's avatar as an http(s) URL, read per render.
 pub type AvatarSource = Arc<dyn Fn() -> Option<String> + Send + Sync>;
 
+/// Whether the public portal is open (`self_service.public_portal`), read
+/// per render.
+pub type PortalSwitch = Arc<dyn Fn() -> bool + Send + Sync>;
+
 /// Messages remembered; the oldest are forgotten first (and are then
 /// treated as unknown again, which only costs a refused edit).
 const REMEMBERED: usize = 4096;
@@ -32,6 +37,9 @@ pub struct V2Kit {
     /// The public portal origin (`https://host`) for "Open portal"; `None`
     /// without a public listener (the admin host is tailnet-only).
     pub portal: Option<String>,
+    /// The live portal switch; `None` is closed. A closed portal's tunnel
+    /// is stopped, so its origin would be a dead link.
+    pub portal_open: Option<PortalSwitch>,
     pub formats: Arc<LiveFormats>,
 }
 
@@ -44,8 +52,13 @@ impl V2Kit {
             .filter(|url| is_http_url(url))
     }
 
+    /// The portal origin, only when it is an http(s) URL and the portal is
+    /// open now.
     pub fn portal_url(&self) -> Option<&str> {
-        self.portal.as_deref().filter(|url| is_http_url(url))
+        self.portal
+            .as_deref()
+            .filter(|url| is_http_url(url))
+            .filter(|_| self.portal_open.as_ref().is_some_and(|open| open()))
     }
 }
 
@@ -54,6 +67,7 @@ impl std::fmt::Debug for V2Kit {
         f.debug_struct("V2Kit")
             .field("avatar", &self.avatar.is_some())
             .field("portal", &self.portal)
+            .field("portal_open", &self.portal_open.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -198,6 +212,7 @@ mod tests {
         let kit = V2Kit {
             avatar: Some(Arc::new(|| Some("attachment://a.png".to_owned()))),
             portal: Some("kanade.example".into()),
+            portal_open: Some(Arc::new(|| true)),
             formats: Arc::default(),
         };
         assert_eq!(kit.avatar_url(), None);
@@ -205,6 +220,7 @@ mod tests {
         let kit = V2Kit {
             avatar: Some(Arc::new(|| Some("https://cdn/a.png".to_owned()))),
             portal: Some("https://kanade.example".into()),
+            portal_open: Some(Arc::new(|| true)),
             formats: Arc::default(),
         };
         assert_eq!(kit.avatar_url().as_deref(), Some("https://cdn/a.png"));
