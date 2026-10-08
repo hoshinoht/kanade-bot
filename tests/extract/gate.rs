@@ -1,7 +1,9 @@
 use kanade::extract::gate::{self, BossHit, BossLexicon, GateResult};
 use serde_json::{Value, json};
 
-use crate::support::{Outcome, catalog, flag, replay_family, strings, text, unknown_op};
+use crate::support::{
+    Deviation, Outcome, catalog, flag, replay_family_with, strings, text, unknown_op,
+};
 
 fn hit_json(hit: &BossHit) -> Value {
     json!({
@@ -46,9 +48,8 @@ fn replay(input: &Value, step: &Value) -> Outcome {
             text(&step["text"]),
             &strings(&step["roster_ids"])
         )),
-        "explicit_rsvp" => {
-            json!(gate::explicit_rsvp(text(&step["text"])).map(|state| state.as_str()))
-        }
+        // D-NO-RSVP-SCAN: v5 has no text scan for answers; none is ever found.
+        "explicit_rsvp" => Value::Null,
         "evaluate" => result_json(&evaluate(text(&step["text"]))),
         "should_extract" => {
             let burst: Vec<GateResult> = strings(&step["texts"])
@@ -66,9 +67,31 @@ fn replay(input: &Value, step: &Value) -> Outcome {
     Ok(value)
 }
 
+/// D-NO-RSVP-SCAN (user decision 2026-10-08): planning no longer adds an
+/// `rsvp` for a short chat line the model did not report ("the HFA no run
+/// made btw" read as "no"), so the scan is gone and finds nothing.
+fn no_rsvp_scan(value: &mut Value) -> usize {
+    assert!(
+        matches!(value.as_str(), Some("yes" | "no")),
+        "frozen v4 answer, got {value}"
+    );
+    *value = Value::Null;
+    1
+}
+
 #[test]
 fn gate_vectors_replay_exactly() {
-    assert_eq!(replay_family("gate", replay), (6, 72));
+    // Steps whose frozen v4 scan found an answer; the rest were already null.
+    let deviations = [0, 1, 2, 6, 7, 9].map(|step| Deviation {
+        name: "D-NO-RSVP-SCAN",
+        case_id: "explicit-rsvp-answers",
+        step,
+        rewrite: no_rsvp_scan,
+    });
+    assert_eq!(
+        replay_family_with("gate", &deviations, |_, _| {}, replay),
+        (6, 72)
+    );
 }
 
 /// Named known difference K-WORD-MARKS: Rust `regex`'s `\w` admits combining

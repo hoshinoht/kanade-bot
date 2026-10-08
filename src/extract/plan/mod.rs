@@ -18,7 +18,6 @@ use crate::domain::catalog::BossTable;
 use crate::domain::schedule::Run;
 use crate::domain::time::DateOutOfRange;
 use crate::domain::weeks;
-use crate::extract::gate::{explicit_rsvp, find_days};
 use crate::extract::matching::{
     NO_BOSS_OVERLAP, TERMINAL_HINT, match_run, needs_run, reachable, refuse_terminal_hint,
     runs_spanned,
@@ -85,14 +84,6 @@ pub struct Plan<'a> {
     pub summary: String,
 }
 
-/// One burst message as planning reads it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct BurstMessage {
-    pub id: String,
-    pub author_id: String,
-    pub content: String,
-}
-
 /// Every input `plan_burst` needs; nothing defaults from the wall clock.
 /// Planned entries borrow only the runs (`'a`).
 #[derive(Clone, Copy, Debug)]
@@ -116,8 +107,6 @@ pub struct BurstInputs<'i, 'a> {
     pub min_confidence: f64,
     /// Canonicalises model boss names when given.
     pub boss_table: Option<&'i BossTable>,
-    /// Scanned for explicit RSVPs the model did not report.
-    pub burst_messages: &'i [BurstMessage],
 }
 
 /// Kinds that can be about several runs at once, one candidate per run.
@@ -134,13 +123,8 @@ fn acts_on_ambiguous(kind: AmendmentKind) -> bool {
     matches!(kind, AmendmentKind::Sub | AmendmentKind::Rsvp)
 }
 
-/// Canonical boss names, and an `rsvp` for each explicit answer the model did
-/// not cite.
-fn normalise(
-    extraction: &Extraction,
-    table: Option<&BossTable>,
-    messages: &[BurstMessage],
-) -> Extraction {
+/// Canonical boss names.
+fn normalise(extraction: &Extraction, table: Option<&BossTable>) -> Extraction {
     let mut result = extraction.clone();
     if let Some(table) = table {
         for amendment in &mut result.amendments {
@@ -153,28 +137,6 @@ fn normalise(
             }
             amendment.bosses = bosses;
         }
-    }
-    let cited: HashSet<String> = result
-        .amendments
-        .iter()
-        .filter(|amendment| amendment.kind == AmendmentKind::Rsvp)
-        .flat_map(|amendment| amendment.evidence_message_ids.iter().cloned())
-        .collect();
-    for message in messages {
-        let Some(answer) = explicit_rsvp(&message.content) else {
-            continue;
-        };
-        if cited.contains(&message.id) {
-            continue;
-        }
-        result.amendments.push(Amendment {
-            day_ref: find_days(&message.content).into_iter().next(),
-            participants: vec![message.author_id.clone()],
-            rsvp: Some(answer),
-            confidence: 0.9,
-            evidence_message_ids: vec![message.id.clone()],
-            ..Amendment::new(AmendmentKind::Rsvp)
-        });
     }
     result
 }
@@ -195,7 +157,7 @@ pub fn plan_burst<'a>(
     inputs: &BurstInputs<'_, 'a>,
 ) -> Result<Plan<'a>, DateOutOfRange> {
     let zone = inputs.zone;
-    let extraction = normalise(extraction, inputs.boss_table, inputs.burst_messages);
+    let extraction = normalise(extraction, inputs.boss_table);
     let existing: Vec<Vec<String>> = inputs
         .channel_runs
         .iter()

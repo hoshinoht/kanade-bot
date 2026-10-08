@@ -19,7 +19,7 @@ use crate::domain::scheduler::ScheduleStore;
 use crate::domain::weeks;
 use crate::extract::Amendment;
 use crate::extract::AmendmentKind;
-use crate::extract::plan::{BurstInputs, BurstMessage, Payload, Planned, plan_burst};
+use crate::extract::plan::{BurstInputs, Payload, Planned, plan_burst};
 use crate::extract::prompt::{
     PromptContext, PromptMessage, build_messages, estimate_messages,
     extraction_request_with_reserve, member_name, prompt_text,
@@ -100,7 +100,6 @@ pub(super) struct Prepared<'a> {
     pub burst_order: Vec<String>,
     pub author_ids: HashMap<String, String>,
     pub message_times: HashMap<String, DateTime<Utc>>,
-    pub burst_messages: Vec<BurstMessage>,
 }
 
 /// A planned change that outlives the snapshot it was matched against.
@@ -452,14 +451,6 @@ where
                 .map(|m| (m.id.clone(), m.author_id.clone()))
                 .collect(),
             message_times: ordered.map(|m| (m.id.clone(), m.created_at)).collect(),
-            burst_messages: chunk
-                .iter()
-                .map(|row| BurstMessage {
-                    id: row.id.clone(),
-                    author_id: row.author_id.clone(),
-                    content: row.content.clone(),
-                })
-                .collect(),
             channel_runs,
             guild_runs,
         }
@@ -648,7 +639,6 @@ where
             message_times: &prepared.message_times,
             min_confidence: self.config.min_confidence,
             boss_table: Some(&loaded.bosses),
-            burst_messages: &prepared.burst_messages,
         };
         match plan_burst(&extraction, &inputs) {
             Ok(plan) => {

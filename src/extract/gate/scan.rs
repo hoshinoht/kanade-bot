@@ -2,7 +2,6 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::domain::schedule::RsvpState;
 use crate::extract::text::{NON_SPACE, SPACE, int, pattern, split_tail};
 
 pub(super) const DAY_WORDS: [&str; 28] = [
@@ -104,8 +103,6 @@ const RSVP_YES: [&str; 22] = [
     "cfm",
 ];
 
-const RSVP_OTHER_ACTIONS: [&str; 2] = ["cover", "take"];
-
 /// `can`/`ok`/`kenot`: an answer, not a proposal.
 pub(super) fn is_agree(token: &str) -> bool {
     RSVP_YES.contains(&token) || RSVP_NO.contains(&token)
@@ -172,7 +169,7 @@ fn tokens(text: &str) -> Vec<String> {
     words(&joined).map(str::to_owned).collect()
 }
 
-/// The tokens [`super::evaluate`] and [`explicit_rsvp`] read: masked first.
+/// The tokens [`super::evaluate`] and [`find_days`] read: masked first.
 pub(super) fn masked_tokens(text: &str) -> Vec<String> {
     tokens(&mask(text))
 }
@@ -238,23 +235,4 @@ pub fn find_mentions<S: AsRef<str>>(text: &str, roster_ids: &[S]) -> Vec<String>
         }
     }
     out
-}
-
-/// A short, unambiguous attendance answer (`yes`/`no` only).
-pub fn explicit_rsvp(text: &str) -> Option<RsvpState> {
-    let tokens = masked_tokens(text);
-    let has = |words: &[&str]| tokens.iter().any(|token| words.contains(&token.as_str()));
-    if tokens.is_empty()
-        || tokens.len() > 8
-        || text.contains('?')
-        || has(&["anot"])
-        || has(&SCHEDULE_VERBS)
-        || has(&RSVP_OTHER_ACTIONS)
-    {
-        return None;
-    }
-    if has(&RSVP_NO) {
-        return Some(RsvpState::No);
-    }
-    has(&RSVP_YES).then_some(RsvpState::Yes)
 }

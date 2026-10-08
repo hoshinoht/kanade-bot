@@ -9,14 +9,15 @@ use kanade::domain::drafts::{DraftStatus, ProposalStore};
 use kanade::domain::model_log::{ExtractionOutcome, ExtractionRefusal, ModelLogStore};
 use kanade::domain::schedule::RsvpState;
 use kanade::extract::AmendmentKind;
+use kanade::extract::backlog::BacklogEntry;
 use kanade::extract::pipeline::{
     AuthorKind, CallContext, LiveContext, MessageEvent, check_reasoning_effort, extraction_outcome,
 };
 use kanade::infrastructure::llm::{Effort, FakeAction, ModelCapabilities};
 
 use crate::fakes::{
-    ALIAS, CHANNEL, MY, OTHER, PRIYA, STRANGER, World, after, filtered, local, message, nothing,
-    replayed, reply,
+    ALIAS, ALVIN, CHANNEL, KANON, MY, OTHER, PRIYA, STRANGER, World, after, filtered, local,
+    message, nothing, replayed, reply,
 };
 
 fn moved(time: &str, evidence: &str) -> FakeAction {
@@ -245,6 +246,59 @@ async fn a_chat_answer_goes_to_the_reaction_path_not_a_proposal() {
     assert_eq!(answers[0].state, RsvpState::Yes);
     assert!(world.live_proposals().await.is_empty());
     assert_eq!(world.logs().await[0].outcome, ExtractionOutcome::NoChange);
+}
+
+/// The live burst behind D-NO-RSVP-SCAN: "no" in a chat line is not an
+/// answer. Only RSVPs the model reports reach the reaction path.
+#[tokio::test(start_paused = true)]
+async fn a_stray_no_in_chat_is_not_an_rsvp_the_model_did_not_report() {
+    let move_only = reply(&format!(
+        r#"{{"amendments": [{{"kind": "move", "bosses": ["HCarling"],
+            "day_ref": "fri", "time_ref": "11", "participants": ["{ALVIN}"],
+            "confidence": 0.9, "evidence_message_ids": ["101", "102", "104"]}}],
+          "summary": "hcarl moves to fri 11"}}"#
+    ));
+    let world = World::new(vec![move_only]).await;
+    let mention = format!("ur hlimbo run then? <@{KANON}> with jaxie");
+    let texts = [
+        ("101", ALVIN, "Hcarl chg to friday"),
+        ("102", ALVIN, "Hcarl>hfa"),
+        ("103", PRIYA, "then our Hstar?"),
+        ("104", ALVIN, "Still fri 11"),
+        ("105", MY, "the HFA no run made btw"),
+        ("106", PRIYA, mention.as_str()),
+        ("107", MY, "Monday"),
+    ];
+    let mut burst = Vec::new();
+    for (minute, (id, author, text)) in (0..).zip(texts) {
+        let posted = message(id, author, local(8, 30, 13, minute), text);
+        world.extractor.store_message(&posted).await.expect("cache");
+        burst.push(BacklogEntry {
+            channel_id: CHANNEL.into(),
+            message_id: posted.id.clone(),
+            created_at: posted.created_at,
+        });
+    }
+    let report = world.extractor.flush(CHANNEL, &burst).await;
+    assert!(report.errors.is_empty(), "{report:?}");
+    assert_eq!(world.requests(), 1, "one burst, one call");
+    assert_eq!(report.answers, 0, "the model reported no rsvp");
+    let answers = world.outbox.answers.lock().unwrap().clone();
+    assert!(
+        answers
+            .iter()
+            .all(|answer| !answer.user_ids.iter().any(|id| id == MY)),
+        "no answer applied for the author: {answers:?}"
+    );
+    assert!(answers.is_empty(), "{answers:?}");
+    let cards = world.outbox.cards.lock().unwrap().clone();
+    assert!(
+        cards
+            .iter()
+            .flat_map(|card| &card.entries)
+            .all(|entry| entry.kind != AmendmentKind::Rsvp),
+        "no rsvp planned"
+    );
 }
 
 #[tokio::test(start_paused = true)]

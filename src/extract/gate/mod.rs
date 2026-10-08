@@ -14,7 +14,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 pub use bosses::{BossHit, BossLexicon, canonical_bosses, find_bosses};
-pub use scan::{explicit_rsvp, find_days, find_mentions, find_times};
+pub use scan::{find_days, find_mentions, find_times};
 
 use super::text::pattern;
 

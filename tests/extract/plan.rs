@@ -2,15 +2,13 @@ use std::collections::HashMap;
 
 use chrono::{NaiveTime, Utc, Weekday};
 use kanade::domain::schedule::Run;
-use kanade::extract::plan::{
-    BurstInputs, BurstMessage, Payload, Plan, Planned, consolidate, plan_burst,
-};
+use kanade::extract::plan::{BurstInputs, Payload, Plan, Planned, consolidate, plan_burst};
 use kanade::extract::schema::parse_response;
 use serde_json::{Value, json};
 
 use crate::support::{
-    Outcome, amendment_json, catalog, flag, instant, replay_family, resolved_json, runs, select,
-    strings, text, unknown_op, zone,
+    Deviation, Outcome, amendment_json, catalog, flag, instant, replay_family_with, resolved_json,
+    runs, select, strings, text, unknown_op, zone,
 };
 
 fn payload_json(payload: &Payload) -> Value {
@@ -76,16 +74,6 @@ fn planned<'a>(input: &Value, step: &Value, pool: &'a [Run]) -> Plan<'a> {
         .iter()
         .map(|(id, author)| (id.clone(), text(author).to_owned()))
         .collect();
-    let messages: Vec<BurstMessage> = step["burst_messages"]
-        .as_array()
-        .expect("burst_messages")
-        .iter()
-        .map(|message| BurstMessage {
-            id: text(&message["id"]).to_owned(),
-            author_id: text(&message["author_id"]).to_owned(),
-            content: text(&message["content"]).to_owned(),
-        })
-        .collect();
     let inputs = BurstInputs {
         anchor: instant(&step["anchor"]).with_timezone(&Utc),
         now: instant(&step["now"]).with_timezone(&Utc),
@@ -100,7 +88,6 @@ fn planned<'a>(input: &Value, step: &Value, pool: &'a [Run]) -> Plan<'a> {
         message_times: &HashMap::new(),
         min_confidence: step["min_confidence"].as_f64().expect("min_confidence"),
         boss_table: flag(&step["use_boss_table"]).then_some(&table),
-        burst_messages: &messages,
     };
     plan_burst(&extraction, &inputs).expect("in range")
 }
@@ -128,7 +115,49 @@ fn replay(input: &Value, step: &Value) -> Outcome {
     Ok(value)
 }
 
+/// D-NO-RSVP-SCAN (user decision 2026-10-08): v4 added an `rsvp` for each
+/// short burst line its text scan read as yes/no and the model had not
+/// cited; v5 plans only the answers the model reports. Removes the injected
+/// entries from `list`, asserting each frozen one by its evidence message.
+fn without_scanned(value: &mut Value, list: &str, evidence: &[&str]) -> usize {
+    let entries = value[list].as_array_mut().expect("plan entries");
+    let before = entries.len();
+    entries.retain(|entry| {
+        let amendment = &entry["amendment"];
+        let scanned = amendment["kind"] == "rsvp"
+            && amendment["confidence"] == 0.9
+            && amendment["participants"]
+                .as_array()
+                .is_some_and(|p| p.len() == 1)
+            && amendment["evidence_message_ids"]
+                .as_array()
+                .is_some_and(|ids| ids.len() == 1 && evidence.contains(&text(&ids[0])));
+        !scanned
+    });
+    let removed = before - entries.len();
+    assert_eq!(removed, evidence.len(), "frozen injected answers");
+    removed
+}
+
 #[test]
 fn plan_vectors_replay_exactly() {
-    assert_eq!(replay_family("plan", replay), (8, 14));
+    let deviations = [
+        Deviation {
+            name: "D-NO-RSVP-SCAN",
+            case_id: "normalised-bosses-and-injected-rsvps",
+            step: 0,
+            // "2" and "4" were scanned; the model's own answer ("3") stays.
+            rewrite: |value| without_scanned(value, "planned", &["2", "4"]),
+        },
+        Deviation {
+            name: "D-NO-RSVP-SCAN",
+            case_id: "no-run-here-becomes-an-add",
+            step: 1,
+            rewrite: |value| without_scanned(value, "dropped", &["2"]),
+        },
+    ];
+    assert_eq!(
+        replay_family_with("plan", &deviations, |_, _| {}, replay),
+        (8, 14)
+    );
 }
