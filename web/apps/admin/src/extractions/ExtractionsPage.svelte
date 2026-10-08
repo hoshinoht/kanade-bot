@@ -9,7 +9,7 @@
 <script lang="ts">
   import '@kanade/ui/styles/panes.scss';
   import '@kanade/ui/styles/extract.scss';
-  import { Icon, LoadError, LoadingState, SINGLE_PANE_QUERY } from '@kanade/ui';
+  import { Icon, LoadError, LoadingState, SINGLE_PANE_QUERY, type Toaster } from '@kanade/ui';
   import type { Channel, Extractions } from '@kanade/api-types';
   import { tick, untrack } from 'svelte';
   import { activeCount, parseFilter, toSearch, type LogFilter } from '../logs/filters';
@@ -27,11 +27,13 @@
 
   let {
     store,
+    toaster,
     search = '',
     onsearch,
     onselect,
   }: {
     store: AdminWeek;
+    toaster?: Toaster;
     search?: string;
     onsearch?: (search: string) => void;
     /** Opens a call (`search` carries `call`); `open` pushes a history entry (phones: Back returns to the list). */
@@ -242,7 +244,7 @@
       <button type="button" class="btn extract-window__back" onclick={leaveDetail}>‹ All calls</button>
     {/if}
     {#if chosen && (!phone || call)}
-      <ExtractionDetail bind:this={detail} id={chosen} timeZone={tz} {canReread} {rescanOff} onreread={(channel) => void openReread(channel)} />
+      <ExtractionDetail bind:this={detail} id={chosen} timeZone={tz} {toaster} {canReread} {rescanOff} onreread={(channel) => void openReread(channel)} />
     {/if}
   </div>
 </section>

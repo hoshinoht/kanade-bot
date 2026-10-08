@@ -313,22 +313,6 @@
   white-space: nowrap;
 }
 
-.chat-turn__format {
-  flex: none;
-  width: 120px;
-}
-
-.chat-turn__format .dd.dd {
-  min-width: 0;
-  height: 36px;
-  border-radius: 18px;
-}
-
-.chat-turn__copy {
-  flex: none;
-  min-height: 36px;
-}
-
 .chat-turn__tabs {
   display: flex;
   flex: none;

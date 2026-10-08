@@ -9,7 +9,7 @@
 <script lang="ts">
   import '@kanade/ui/styles/panes.scss';
   import '@kanade/ui/styles/extract.scss';
-  import { LoadError, LoadingState, SINGLE_PANE_QUERY } from '@kanade/ui';
+  import { LoadError, LoadingState, SINGLE_PANE_QUERY, type Toaster } from '@kanade/ui';
   import type { LogFacets, Rewrites } from '@kanade/api-types';
   import { tick, untrack } from 'svelte';
   import { activeCount, parseFilter, toSearch, type LogFilter } from '../logs/filters';
@@ -26,11 +26,13 @@
 
   let {
     store,
+    toaster,
     search = '',
     onsearch,
     onselect,
   }: {
     store: AdminWeek;
+    toaster?: Toaster;
     search?: string;
     onsearch?: (search: string) => void;
     /** Opens an attempt (`search` carries `attempt`); `open` pushes a history entry (phones: Back returns to the list). */
@@ -182,7 +184,7 @@
       <button type="button" class="btn extract-window__back" onclick={leaveDetail}>‹ All attempts</button>
     {/if}
     {#if chosen && (!phone || attempt)}
-      <RewriteDetail bind:this={detail} id={chosen} timeZone={tz} />
+      <RewriteDetail bind:this={detail} id={chosen} timeZone={tz} {toaster} />
     {/if}
   </div>
 </section>

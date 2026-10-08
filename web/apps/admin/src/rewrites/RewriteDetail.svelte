@@ -1,25 +1,32 @@
 <!--
   One rewrite attempt in the Rewrites detail pane, in the Extractions call's
   layout: an eyebrow with the id, the time as the heading, model · kind ·
-  stage · latency; the seed, the model's reply, the line used and its
-  reasoning on the pane, beside the verdict card (rule or error code, usage
-  against the reservation, context, request id).
+  stage · latency, and Copy transcript; the seed, the model's reply, the line
+  used and its reasoning on the pane, beside the verdict card (rule or error
+  code, usage against the reservation, context, request id).
 -->
 <script lang="ts">
   import type { Rewrite } from '@kanade/api-types';
-  import { LoadingState } from '@kanade/ui';
+  import { LoadingState, type Toaster } from '@kanade/ui';
+  import CopyTranscript from '../logs/CopyTranscript.svelte';
   import { KIND_LABEL, STAGE_LABEL } from '../logs/filters';
   import { duration } from '../logs/format';
   import LogTime from '../logs/LogTime.svelte';
   import Reasoning from '../logs/Reasoning.svelte';
   import TokenUsage from '../logs/TokenUsage.svelte';
+  import type { TranscriptFormat } from '../logs/transcript';
   import { Resource } from '../resource.svelte';
   import { budget, overran, verdictText } from './format';
+  import { rewriteJson, rewriteMarkdown } from './transcript';
 
-  let { id, timeZone }: { id: string; timeZone: string } = $props();
+  let { id, timeZone, toaster }: { id: string; timeZone: string; toaster?: Toaster } = $props();
   const uid = $props.id();
   const attempt = $derived(new Resource<Rewrite>(`/api/admin/rewrites/${encodeURIComponent(id)}`));
   $effect(() => void attempt.load());
+
+  // The format stays put while another attempt opens.
+  let format = $state<TranscriptFormat>('markdown');
+  let copier = $state<CopyTranscript>();
 
   let root = $state<HTMLElement>();
   /** Phones: an opened attempt takes focus, as a page would. */
@@ -44,6 +51,11 @@
           {KIND_LABEL[data.kind] ?? data.kind} · {STAGE_LABEL[data.stage] ?? data.stage} ·
           <span class="mono">{data.latency_ms !== null ? `${data.latency_ms.toLocaleString('en')} ms` : 'not called'}</span>
         </p>
+      </div>
+      <!-- For agent debugging: the whole attempt as one paste. -->
+      <div class="transcript-actions">
+        <CopyTranscript bind:this={copier} bind:format build={(as) => (as === 'json' ? rewriteJson(data, { timeZone }) : rewriteMarkdown(data, { timeZone }))} {toaster} />
+        <button class="btn btn--primary transcript-copy" type="button" onclick={() => void copier?.copy()}>Copy transcript</button>
       </div>
     </header>
     <div class="extract-detail__body">

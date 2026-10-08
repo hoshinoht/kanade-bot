@@ -6,7 +6,8 @@
 <script lang="ts">
   import type { ChatTurn } from '@kanade/api-types';
   import { StatusChip } from '@kanade/ui';
-  import { callTone, routeLabel, took } from './facts';
+  import { took } from '../logs/format';
+  import { callTone, routeLabel } from './facts';
   import { rounds } from './transcript';
   import { short, WITHHELD } from './trace';
 

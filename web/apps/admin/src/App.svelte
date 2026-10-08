@@ -234,6 +234,7 @@
       case 'extractions':
         return {
           store,
+          toaster,
           search: router.search,
           onsearch: (search: string) => router.go(`/${key}${search}`, { replace: true }),
           // As Chat: a pick on a phone pushes an entry, so Back closes the call.
@@ -243,6 +244,7 @@
       case 'rewrites':
         return {
           store,
+          toaster,
           search: router.search,
           onsearch: (search: string) => router.go(`/rewrites${search}`, { replace: true }),
           // As Extractions: a pick on a phone pushes an entry, so Back closes the attempt.

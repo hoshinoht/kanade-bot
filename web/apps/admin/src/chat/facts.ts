@@ -1,10 +1,9 @@
 /**
- * Chat turn facts in words: routes, reply profiles, timings that may be
- * unknown, and the Model view's request messages. Pure, so unit-tested.
+ * Chat turn facts in words: routes, reply profiles and the Model view's
+ * request messages. Pure, so unit-tested.
  */
 import type { ChatRoute, ChatTurn, ModelView } from '@kanade/api-types';
 import { outcomeTone } from '../logs/filters';
-import { duration } from '../logs/format';
 
 export const ROUTE_LABEL: Record<ChatRoute, string> = {
   homelab: 'Homelab',
@@ -27,12 +26,6 @@ export const callTone = (outcome: string): ChipTone => (outcome === 'ok' ? 'ok' 
 
 /** Route chips: leaving the homelab is a warning tint, the homelab an ok tint (B_ChatTrace). */
 export const routeTone = (route: ChatRoute | null): ChipTone => (route === 'homelab' ? 'ok' : route ? 'warn' : 'neutral');
-
-/** null is "unknown" (not recorded); 0 is a real "0 ms". */
-export function took(ms: number | null): string {
-  if (ms === null) return 'unknown';
-  return ms === 0 ? '0 ms' : duration(ms);
-}
 
 const SOURCE: Record<NonNullable<ChatTurn['profile_source']>, string> = { saved: 'saved', role: 'from role', default: 'default' };
 

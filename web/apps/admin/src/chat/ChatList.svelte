@@ -15,7 +15,7 @@
   import Mentions from '../names/Mentions.svelte';
   import Name from '../names/Name.svelte';
   import { chipTone } from './facts';
-  import { mentionsText } from './transcript';
+  import { mentionsText } from '../logs/transcript';
 
   let {
     rows,

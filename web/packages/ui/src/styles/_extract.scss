@@ -298,6 +298,11 @@
   font-size: var(--fs-mini);
 }
 
+// Copy transcript sits under the meta line: the head's right side is the tabs'.
+.extract-detail__copy {
+  margin-block-start: 6px;
+}
+
 // Pill tabs inside the pane (spec "Detail pane", mockup `.ptab`).
 .extract-detail__tabs {
   display: flex;

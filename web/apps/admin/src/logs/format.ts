@@ -45,6 +45,12 @@ export function duration(ms: number | null | undefined): string {
   return `${(ms / 60_000).toFixed(1)} min`;
 }
 
+/** null is "unknown" (not recorded); 0 is a real "0 ms". */
+export function took(ms: number | null): string {
+  if (ms === null) return 'unknown';
+  return ms === 0 ? '0 ms' : duration(ms);
+}
+
 // Opening/closing code fences, with an optional info string (```py).
 const FENCE = /```[\w+#.-]*/g;
 

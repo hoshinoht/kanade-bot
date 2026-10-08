@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { callTone, chipTone, guardrailFlags, messageParts, modelViewState, profileText, routeLabel, routeTone, took } from '../src/chat/facts';
+import { callTone, chipTone, guardrailFlags, messageParts, modelViewState, profileText, routeLabel, routeTone } from '../src/chat/facts';
+import { took } from '../src/logs/format';
 import { short, WITHHELD } from '../src/chat/trace';
 
 describe('chat turn facts', () => {

@@ -5,15 +5,15 @@
 -->
 <script lang="ts">
   import type { ChatTurn } from '@kanade/api-types';
-  import { LoadingState, Select, type Toaster } from '@kanade/ui';
-  import '@kanade/ui/styles/select.scss';
+  import { LoadingState, type Toaster } from '@kanade/ui';
+  import CopyTranscript from '../logs/CopyTranscript.svelte';
   import LogTime from '../logs/LogTime.svelte';
   import TokenUsage from '../logs/TokenUsage.svelte';
   import { duration } from '../logs/format';
   import { OUTCOME_LABEL } from '../logs/filters';
+  import type { TranscriptFormat } from '../logs/transcript';
   import Name from '../names/Name.svelte';
   import { Resource } from '../resource.svelte';
-  import { copyText } from '../shared/copy';
   import { discordLink } from '../shared/discordLink.svelte';
   import TextModal from '../shared/TextModal.svelte';
   import Conversation from './Conversation.svelte';
@@ -48,17 +48,14 @@
     tabEls[tab]?.focus();
   }
 
-  // One viewer for any long text on the page: a tool's arguments or result, or a transcript that could not be copied.
+  // One viewer for any long text on the page: a tool's arguments or result.
   let viewer = $state({ open: false, title: '', eyebrow: '', text: '' });
   const show = (title: string, eyebrow: string, text: string) => (viewer = { open: true, title, eyebrow, text });
 
-  let format = $state<'markdown' | 'json'>('markdown');
-  async function copyTranscript() {
-    if (!data) return;
-    const text = format === 'json' ? transcriptJson(data, { timeZone }) : transcriptMarkdown(data, { timeZone });
-    if (await copyText(text)) toaster?.show({ message: `Transcript copied as ${format === 'json' ? 'JSON' : 'Markdown'}.`, tone: 'ok' });
-    else show('Transcript', format === 'json' ? 'JSON' : 'Markdown', text);
-  }
+  // The format stays put while another turn opens, as the tab does.
+  let format = $state<TranscriptFormat>('markdown');
+  let copier = $state<CopyTranscript>();
+  const build = (as: TranscriptFormat) => (as === 'json' ? transcriptJson(data!, { timeZone }) : transcriptMarkdown(data!, { timeZone }));
 </script>
 
 {#if turn.error}
@@ -77,17 +74,10 @@
       </p>
     </div>
     <!-- For agent debugging: the whole turn as one paste. -->
-    <div class="chat-turn__format">
-      <Select
-        label="Transcript format"
-        bind:value={() => format, (v) => (format = v as typeof format)}
-        options={[
-          { value: 'markdown', label: 'Markdown' },
-          { value: 'json', label: 'JSON' },
-        ]}
-      />
+    <div class="transcript-actions">
+      <CopyTranscript bind:this={copier} bind:format {build} {toaster} />
+      <button class="btn btn--primary transcript-copy" data-fid="chat-copy" type="button" onclick={() => void copier?.copy()}>Copy transcript</button>
     </div>
-    <button class="btn btn--primary chat-turn__copy" data-fid="chat-copy" type="button" onclick={() => void copyTranscript()}>Copy transcript</button>
   </div>
   <div class="chat-turn__tabs" role="tablist" aria-label="Sections of this interaction" data-fid="chat-tabs">
     {#each tabs as t, index (t.id)}

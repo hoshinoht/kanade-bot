@@ -1,4 +1,4 @@
-import { ADMIN, expect, test } from './support';
+import { ADMIN, choose, expect, test } from './support';
 
 // Extractions on a phone: the list, then the call; the browser's Back and the
 // top bar's "‹ Extractions" both return to the list with focus on the row.
@@ -52,4 +52,30 @@ test('extractions Raw tab: the response pretty-printed in the code viewer', asyn
   // Pretty-printed: a space after each key's colon, which the stored compact JSON lacks.
   await expect(panel).toContainText('"amendments": [');
   await expect(panel.getByRole('button', { name: 'Copy' })).toBeVisible();
+});
+
+test('extractions: copy the call’s transcript as Markdown or JSON, names not ids', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: ADMIN });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/extractions?call=x-bm&sw=off`);
+  const detail = page.getByRole('article');
+  await detail.getByRole('button', { name: 'Copy transcript' }).click();
+  await expect(page.getByText('Transcript copied as Markdown.')).toBeVisible();
+  const md = await page.evaluate(() => navigator.clipboard.readText());
+  expect(md).toMatch(/^# Extraction x-bm \(#e1f2a3b4\)/);
+  expect(md).toContain('- Channel: #bm-trio');
+  expect(md).toMatch(/\] Minato: tue cannot, wed same time ok\?\n\[[^\]]+\] Kaito: wed ok for me\n/);
+  expect(md).toContain('- move · XBM · Wed 23:30 · confidence 0.86 · proposed');
+  expect(md).toContain('- Request ids: kanade-extraction-1a2b3c4d-3-1');
+  expect(md).toContain('The messages agree on Wednesday at the existing time.');
+  expect(md).toContain('## Prompt as sent');
+  expect(md).not.toMatch(/\b10(09|12)\b/);
+
+  await choose(detail.getByRole('combobox', { name: 'Transcript format' }), 'json');
+  await detail.getByRole('button', { name: 'Copy transcript' }).click();
+  await expect(page.getByText('Transcript copied as JSON.')).toBeVisible();
+  const json = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
+  expect(json).toMatchObject({ id: 'x-bm', channel: '#bm-trio', session_id: 'kanade-extraction-1a2b3c4d-3' });
+  expect(json.messages.map((m: { who: string }) => m.who)).toEqual(['Minato', 'Kaito']);
+  expect(json.amendments[0].bosses).toBe('XBM');
 });

@@ -4,14 +4,10 @@
  * (never ids); mention tokens in the question and reply read as names.
  */
 import type { ChatTurn } from '@kanade/api-types';
-import { duration, logTime } from '../logs/format';
-import { profileText, routeLabel, took } from './facts';
+import { duration, logTime, took } from '../logs/format';
+import { fence, jsonDocument, mentionsText, type TranscriptContext } from '../logs/transcript';
+import { profileText, routeLabel } from './facts';
 import { directory } from '../names/directory.svelte';
-import { parseMentions } from '../names/mentions';
-
-export interface TranscriptContext {
-  timeZone: string;
-}
 
 type Call = ChatTurn['tools'][number];
 
@@ -29,13 +25,6 @@ export interface Round {
   /** The `x-request-id`s the round sent, as Kanata logged them; empty when not recorded. */
   request_ids: string[];
   calls: Call[];
-}
-
-/** Message text with mention tokens as @Name / #channel / @role. */
-export function mentionsText(text: string): string {
-  return parseMentions(text)
-    .map((s) => (s.kind === 'text' ? s.text : directory.label(s.kind, s.id, '', true)))
-    .join('');
 }
 
 /**
@@ -88,12 +77,6 @@ function header(turn: ChatTurn, ctx: TranscriptContext) {
     session_id: turn.session_id ?? null,
   };
 }
-
-const fence = (text: string, lang = '') => {
-  // A fence longer than any run of backticks inside, so the text cannot close it.
-  const ticks = '`'.repeat(Math.max(3, ...[...text.matchAll(/`+/g)].map((m) => m[0].length + 1)));
-  return `${ticks}${lang}\n${text}\n${ticks}`;
-};
 
 export function transcriptMarkdown(turn: ChatTurn, ctx: TranscriptContext): string {
   const h = header(turn, ctx);
@@ -149,17 +132,13 @@ export function transcriptMarkdown(turn: ChatTurn, ctx: TranscriptContext): stri
 }
 
 export function transcriptJson(turn: ChatTurn, ctx: TranscriptContext): string {
-  return `${JSON.stringify(
-    {
-      ...header(turn, ctx),
-      question: mentionsText(turn.asked),
-      reply: turn.said ? mentionsText(turn.said) : '',
-      rounds: rounds(turn),
-      ...(unrounded(turn).length ? { tool_calls: unrounded(turn) } : {}),
-      cards: turn.cards,
-      raw: turn.raw,
-    },
-    null,
-    2,
-  )}\n`;
+  return jsonDocument({
+    ...header(turn, ctx),
+    question: mentionsText(turn.asked),
+    reply: turn.said ? mentionsText(turn.said) : '',
+    rounds: rounds(turn),
+    ...(unrounded(turn).length ? { tool_calls: unrounded(turn) } : {}),
+    cards: turn.cards,
+    raw: turn.raw,
+  });
 }

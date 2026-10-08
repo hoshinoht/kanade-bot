@@ -1,17 +1,19 @@
 <!--
   One extraction call in the Extractions detail pane (B_Extract,
   B_ExtractPrompt): an eyebrow with the id, the time as the heading, model ·
-  channel · latency, and pill tabs (Changes / Chat read / Prompt / Raw) on
-  the right. Changes and Chat read sit beside the outcome card; Prompt and Raw
-  fill the pane with the code viewer. The chosen tab stays while the
-  selection moves.
+  channel · latency, Copy transcript, and pill tabs (Changes / Chat read /
+  Prompt / Raw) on the right. Changes and Chat read sit beside the outcome
+  card; Prompt and Raw fill the pane with the code viewer. The chosen tab
+  and transcript format stay while the selection moves.
 -->
 <script lang="ts">
   import type { Extraction } from '@kanade/api-types';
-  import { initial, LoadingState } from '@kanade/ui';
+  import { initial, LoadingState, type Toaster } from '@kanade/ui';
+  import CopyTranscript from '../logs/CopyTranscript.svelte';
   import { logTime } from '../logs/format';
   import LogTime from '../logs/LogTime.svelte';
   import Reasoning from '../logs/Reasoning.svelte';
+  import type { TranscriptFormat } from '../logs/transcript';
   import { directory } from '../names/directory.svelte';
   import Mentions from '../names/Mentions.svelte';
   import Name from '../names/Name.svelte';
@@ -19,16 +21,19 @@
   import CallOutcome from './CallOutcome.svelte';
   import { clock, pretty, timeRange } from './code';
   import CodeViewer from './CodeViewer.svelte';
+  import { extractionJson, extractionMarkdown } from './transcript';
 
   let {
     id,
     timeZone,
+    toaster,
     canReread,
     rescanOff = null,
     onreread,
   }: {
     id: string;
     timeZone: string;
+    toaster?: Toaster;
     canReread: (channel: string) => boolean;
     /** Why re-reading is off right now (the server's sentence). */
     rescanOff?: string | null;
@@ -58,6 +63,9 @@
     tabEls[next]?.focus();
   }
 
+  let format = $state<TranscriptFormat>('markdown');
+  let copier = $state<CopyTranscript>();
+
   let root = $state<HTMLElement>();
   /** Phones: an opened call takes focus, as a page would. */
   export function focus() {
@@ -80,6 +88,11 @@
           {#if data.channel_id}<Name kind="channel" id={data.channel_id} name={data.channel} />{:else}no channel{/if} ·
           <span class="mono">{data.latency_ms !== null ? `${data.latency_ms.toLocaleString('en')} ms` : 'latency not recorded'}</span>
         </p>
+        <!-- For agent debugging: the whole call as one paste. -->
+        <div class="transcript-actions extract-detail__copy">
+          <CopyTranscript bind:this={copier} bind:format build={(as) => (as === 'json' ? extractionJson(data, { timeZone }) : extractionMarkdown(data, { timeZone }))} {toaster} />
+          <button class="btn btn--primary transcript-copy" type="button" onclick={() => void copier?.copy()}>Copy transcript</button>
+        </div>
       </div>
       <div class="extract-detail__tabs" role="tablist" aria-label="Sections of this call" data-fid="extract-tabs">
         {#each tabs as t, index (t.id)}
