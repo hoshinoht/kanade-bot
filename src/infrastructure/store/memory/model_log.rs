@@ -590,6 +590,7 @@ impl RewriteLogStore for MemoryScheduleStore {
         found.truncate(page_size(filter.limit) as usize + 1);
         for log in &mut found {
             log.reasoning_content = None;
+            log.prompt = None;
         }
         Ok(page(found, filter.limit, RewriteLog::cursor))
     }

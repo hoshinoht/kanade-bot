@@ -26,6 +26,7 @@ pub use records::{
 };
 pub use retention::{DEFAULT_LOG_RETENTION, PRUNE_BATCH, PruneCounts, retention_cutoff};
 pub use rewrite::{
-    CODE_CAP, CONTEXT_CAP, LINE_CAP, REPLY_CAP, REPLY_TRUNCATED, REWRITE_VERDICTS, RewriteFacets,
-    RewriteFilter, RewriteKind, RewriteLog, RewriteLogStore, RewriteStage, capped_reply,
+    CODE_CAP, CONTEXT_CAP, LINE_CAP, PROMPT_CAP, PROMPT_TRUNCATED, REPLY_CAP, REPLY_TRUNCATED,
+    REWRITE_VERDICTS, RewriteFacets, RewriteFilter, RewriteKind, RewriteLog, RewriteLogStore,
+    RewriteStage, capped_prompt, capped_reply,
 };

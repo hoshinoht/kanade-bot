@@ -113,6 +113,20 @@ impl RewritePrompt {
             },
         ]
     }
+
+    /// [`Self::messages`] as one text for the Rewrites log: each message
+    /// under its role label (`[system]`, `[user]`), separated by a blank line.
+    pub fn transcript(&self) -> String {
+        self.messages()
+            .into_iter()
+            .filter_map(|message| match message {
+                Message::System { content } => Some(format!("[system]\n{content}")),
+                Message::User { content } => Some(format!("[user]\n{content}")),
+                Message::Assistant { .. } | Message::Tool { .. } => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    }
 }
 
 #[cfg(test)]
@@ -141,5 +155,24 @@ mod tests {
             assert_eq!(content, &format!("Line to rewrite: {}", prompt.seed()));
             assert!(!prompt.seed().starts_with(SEED_LABEL));
         }
+    }
+
+    /// The logged prompt is exactly the messages sent, under role labels.
+    #[test]
+    fn the_transcript_is_the_sent_messages_under_role_labels() {
+        let bundle = parse_bundle(
+            include_str!("../../../config/personas/bundles/kanade.yaml"),
+            &PersonaId::parse("kanade").unwrap(),
+        )
+        .unwrap();
+        let persona = CompiledPersona::compile(&bundle, None);
+        let prompt = RewritePrompt::header(&persona, NudgeMood::Playful, "Let's go!");
+        assert_eq!(
+            prompt.transcript(),
+            format!(
+                "[system]\n{}\n\n[user]\nLine to rewrite: Let's go!",
+                prompt.system()
+            )
+        );
     }
 }

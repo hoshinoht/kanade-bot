@@ -1,8 +1,8 @@
 //! The Rewrites log: one row per persona rewrite attempt (reminder headers
 //! ahead of their send, `/debug` trials, self-service nudges) with the
 //! verdict, the gate rule or error code behind it, the route and the reply.
-//! Rows hold the persona prompt's seed and the model's own text only, never
-//! member names or ids.
+//! Rows hold the persona prompt as sent (code-owned instruction, persona
+//! text, seed) and the model's own text only, never member names or ids.
 
 use std::future::Future;
 
@@ -93,22 +93,35 @@ pub const REWRITE_VERDICTS: [&str; 8] = [
 /// Stored bytes of the model's reply, including [`REPLY_TRUNCATED`].
 pub const REPLY_CAP: usize = 8 * 1024;
 pub const REPLY_TRUNCATED: &str = "\n… [reply truncated]";
+/// Stored bytes of the prompt as sent, including [`PROMPT_TRUNCATED`].
+pub const PROMPT_CAP: usize = 16 * 1024;
+pub const PROMPT_TRUNCATED: &str = "\n… [prompt truncated]";
 /// Longest context reference, seed and final line.
 pub const CONTEXT_CAP: usize = 200;
 pub const LINE_CAP: usize = 1024;
 /// Longest rule or error code.
 pub const CODE_CAP: usize = 64;
 
-/// `text` within [`REPLY_CAP`] bytes with a visible marker; never splits UTF-8.
-pub fn capped_reply(text: &str) -> String {
-    if text.len() <= REPLY_CAP {
+/// `text` within `cap` bytes, ending in `marker` when cut; never splits UTF-8.
+fn capped(text: &str, cap: usize, marker: &str) -> String {
+    if text.len() <= cap {
         return text.to_owned();
     }
-    let mut end = REPLY_CAP - REPLY_TRUNCATED.len();
+    let mut end = cap - marker.len();
     while !text.is_char_boundary(end) {
         end -= 1;
     }
-    format!("{}{REPLY_TRUNCATED}", &text[..end])
+    format!("{}{marker}", &text[..end])
+}
+
+/// `text` within [`REPLY_CAP`] bytes with a visible marker; never splits UTF-8.
+pub fn capped_reply(text: &str) -> String {
+    capped(text, REPLY_CAP, REPLY_TRUNCATED)
+}
+
+/// `text` within [`PROMPT_CAP`] bytes with a visible marker; empty is `None`.
+pub fn capped_prompt(text: &str) -> Option<String> {
+    (!text.is_empty()).then(|| capped(text, PROMPT_CAP, PROMPT_TRUNCATED))
 }
 
 /// One rewrite attempt.
@@ -154,6 +167,10 @@ pub struct RewriteLog {
     pub line: Option<String>,
     /// The `x-request-id` the call sent.
     pub request_id: Option<String>,
+    /// The messages the call was given, each under its role label, capped at
+    /// [`PROMPT_CAP`]; `None` when no call was attempted (and on rows from
+    /// before the column existed).
+    pub prompt: Option<String>,
 }
 
 fn too_long(field: &str, value: Option<&str>, cap: usize) -> Result<(), StoreError> {
@@ -188,6 +205,7 @@ impl RewriteLog {
             self.reasoning_content.as_deref(),
             REASONING_CAP,
         )?;
+        too_long("prompt", self.prompt.as_deref(), PROMPT_CAP)?;
         if self.seed.len() > LINE_CAP {
             return Err(StoreError::Constraint("rewrite seed is too long".into()));
         }
@@ -221,7 +239,7 @@ impl RewriteLog {
 /// Rewrites log filters, combined with AND; `verdicts` empty means any. `q`
 /// is an ASCII case-insensitive substring of the seed, reply, line,
 /// context, rule or code. Pages come back newest first without
-/// `reasoning_content` (the detail read has it).
+/// `reasoning_content` or `prompt` (the detail read has them).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RewriteFilter {
     pub model: Option<String>,
@@ -276,6 +294,15 @@ mod tests {
         let capped = capped_reply(&"奏".repeat(REPLY_CAP));
         assert!(capped.len() <= REPLY_CAP);
         assert!(capped.ends_with(REPLY_TRUNCATED));
+    }
+
+    #[test]
+    fn prompt_cap_includes_marker_and_drops_empty() {
+        assert_eq!(capped_prompt(""), None);
+        assert_eq!(capped_prompt("[user]\nHi").as_deref(), Some("[user]\nHi"));
+        let capped = capped_prompt(&"奏".repeat(PROMPT_CAP)).expect("text");
+        assert!(capped.len() <= PROMPT_CAP);
+        assert!(capped.ends_with(PROMPT_TRUNCATED));
     }
 
     #[test]

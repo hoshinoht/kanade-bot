@@ -8,10 +8,11 @@ use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 use chrono::{DateTime, Utc};
 use serde_json::json;
 
+use super::prompt::RewritePrompt;
 use super::rewrite::{RewriteDetail, RewriteFailure};
 use crate::domain::ids::{IdGenerator, RandomIds};
 use crate::domain::model_log::{
-    CONTEXT_CAP, LINE_CAP, RewriteKind, RewriteLog, RewriteLogStore, RewriteStage,
+    CONTEXT_CAP, LINE_CAP, RewriteKind, RewriteLog, RewriteLogStore, RewriteStage, capped_prompt,
     capped_reasoning, capped_reply, is_correlation_id,
 };
 use crate::domain::scheduler::StoreError;
@@ -36,6 +37,9 @@ pub struct RewriteAttempt {
     pub latency: Option<Duration>,
     /// The line used (accepted rewrite or seed), unfilled.
     pub line: Option<String>,
+    /// The prompt handed to the rewriter (what the model is sent); `None`
+    /// when no call was attempted (no rewriter or persona, or stopped first).
+    pub prompt: Option<RewritePrompt>,
     pub detail: RewriteDetail,
 }
 
@@ -100,6 +104,10 @@ impl RewriteAttempt {
                 .as_deref()
                 .and_then(|line| clipped(line, LINE_CAP)),
             request_id: detail.request_id.filter(|id| is_correlation_id(id)),
+            prompt: self
+                .prompt
+                .as_ref()
+                .and_then(|prompt| capped_prompt(&prompt.transcript())),
         }
     }
 }

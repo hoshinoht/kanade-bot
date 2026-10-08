@@ -37,11 +37,12 @@ const rewrite = (over: Partial<Rewrite> = {}): Rewrite => ({
   reply: 'Waku waku!',
   reasoning_content: 'Which interjection fits?',
   line: 'Onward!',
+  prompt: '[system]\nRewrite the one reminder header line.\n\n[user]\nLine to rewrite: Onward!',
   ...over,
 });
 
 describe('rewrite transcript', () => {
-  it('writes the verdict, the call and its token check, then the seed, reply, line and reasoning', () => {
+  it('writes the verdict, the call and its token check, then the seed, reply, line, reasoning and prompt', () => {
     const md = rewriteMarkdown(rewrite(), UTC);
     expect(md).toMatch(/^# Rewrite rw-over \(#rwover\)\n\n- When: Tue 29 Sep 2026, 04:00:00 \(UTC\) \(2026-09-29T04:00:00Z\)\n/);
     expect(md).toContain('- Kind: countdown\n- Stage: daily batch\n- Context: countdown:r-kalos:60\n- Verdict: unavailable (budget_exceeded)');
@@ -49,6 +50,7 @@ describe('rewrite transcript', () => {
     expect(md).toContain('- Tokens: prompt 300, completion 112\n- Reasoning tokens: 98\n- Token check: used 412 > reserved 287');
     expect(md).toContain('- Max tokens: 96\n- Prompt estimate: 191\n- Request id: kanade-rewrite-0000beef-104-1');
     expect(md).toContain('## Seed\n\n```\nOnward!\n```\n\n## Reply\n\n```\nWaku waku!\n```\n\n## Line used\n\n```\nOnward!\n```\n\n## Reasoning\n\n```\nWhich interjection fits?\n```\n');
+    expect(md.endsWith('## Prompt as sent\n\n```\n[system]\nRewrite the one reminder header line.\n\n[user]\nLine to rewrite: Onward!\n```\n')).toBe(true);
   });
 
   it('reads unknowns as unknown and leaves out what was never sent', () => {
@@ -69,11 +71,13 @@ describe('rewrite transcript', () => {
       reply: null,
       reasoning_content: null,
       line: null,
+      prompt: null,
     });
     const md = rewriteMarkdown(r, UTC);
     expect(md).toContain('- Context: —\n- Verdict: no persona\n- Model: no model call\n- Effort: —\n- Latency: unknown\n- Tokens: prompt unknown, completion unknown\n- Max tokens: unknown');
     for (const absent of ['Reasoning tokens', 'Token check', 'Request id', '## Reasoning']) expect(md).not.toContain(absent);
     expect(md).toContain('## Reply\n\n— nothing came back —\n\n## Line used\n\n—\n');
+    expect(md.endsWith('## Prompt as sent\n\n— not recorded —\n')).toBe(true);
     // A real 0 ms (refused before sending) is not unknown.
     expect(rewriteMarkdown(rewrite({ latency_ms: 0 }), UTC)).toContain('- Latency: 0 ms');
     const json = JSON.parse(rewriteJson(r, UTC));
@@ -82,6 +86,7 @@ describe('rewrite transcript', () => {
     expect(json.token_check).toBeNull();
     expect(json.reply).toBeNull();
     expect(json.request_id).toBeNull();
+    expect(json.prompt).toBeNull();
   });
 
   it('writes JSON with raw values and the token check in words', () => {
@@ -101,6 +106,7 @@ describe('rewrite transcript', () => {
       reply: 'Waku waku!',
       line: 'Onward!',
       reasoning_content: 'Which interjection fits?',
+      prompt: '[system]\nRewrite the one reminder header line.\n\n[user]\nLine to rewrite: Onward!',
     });
     expect(rewriteJson(rewrite(), UTC).endsWith('}\n')).toBe(true);
   });

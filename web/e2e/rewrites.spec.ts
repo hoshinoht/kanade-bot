@@ -70,17 +70,38 @@ test('rewrites: copy the attempt’s transcript as Markdown or JSON', async ({ p
   expect(md).toContain('## Seed\n\n```\nOnward!\n```');
   expect(md).toContain('## Reply\n\n```\nWaku waku!\n```');
   expect(md).toContain('Let me think about which one fits');
+  expect(md).toContain('## Prompt as sent\n\n```\n[system]\n');
+  expect(md).toContain('[user]\nLine to rewrite: Onward!\n```\n');
 
   await choose(detail.getByRole('combobox', { name: 'Transcript format' }), 'json');
   await detail.getByRole('button', { name: 'Copy transcript' }).click();
   await expect(page.getByText('Transcript copied as JSON.')).toBeVisible();
   const json = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
   expect(json).toMatchObject({ id: 'rw-over', verdict: 'unavailable', code: 'budget_exceeded', context: 'countdown:r-kalos:60', reply: 'Waku waku!' });
+  expect(json.prompt).toMatch(/\[user\]\nLine to rewrite: Onward!$/);
   // The choice holds while another attempt opens.
   await page.getByRole('listbox', { name: /Rewrite attempts/ }).locator('[data-attempt="rw-dayof"]').click();
   await expect(detail.getByText('Rewrite · #')).not.toHaveText('Rewrite · #rwover');
   await detail.getByRole('button', { name: 'Copy transcript' }).click();
   await expect.poll(async () => JSON.parse(await page.evaluate(() => navigator.clipboard.readText())).id).toBe('rw-dayof');
+});
+
+test('rewrites: the Prompt tab shows the prompt as sent, or that none was recorded', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/rewrites?attempt=rw-over&sw=off`);
+  const detail = page.getByRole('article');
+  await expect(detail.getByText('Rewrite · #rwover')).toBeVisible();
+  await detail.getByRole('tab', { name: 'Prompt' }).click();
+  const prompt = detail.getByRole('tabpanel');
+  await expect(prompt.getByRole('heading', { name: 'Prompt as sent' })).toBeVisible();
+  await expect(prompt).toContainText('[system]');
+  await expect(prompt).toContainText('Line to rewrite: Onward!');
+  // The tab holds while another attempt opens; one never called says so.
+  await page.getByRole('listbox', { name: /Rewrite attempts/ }).locator('[data-attempt="rw-persona"]').click();
+  await expect(detail.getByRole('tab', { name: 'Prompt' })).toHaveAttribute('aria-selected', 'true');
+  await expect(detail.getByRole('tabpanel')).toContainText('Prompt not recorded');
+  await detail.getByRole('tab', { name: 'Attempt' }).click();
+  await expect(detail.getByRole('complementary', { name: 'Verdict' })).toContainText('no persona');
 });
 
 test('rewrites: a refused filter shows its error, a missing attempt says so', async ({ page }) => {

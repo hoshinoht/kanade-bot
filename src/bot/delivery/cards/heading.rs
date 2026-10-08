@@ -585,7 +585,7 @@ impl HeadingRewrite {
             return shutdown_trial(kind);
         }
         let started = tokio::time::Instant::now();
-        let (trial, called) = self.attempt(kind, catalog, deadline, stop).await;
+        let (trial, prompt) = self.attempt(kind, catalog, deadline, stop).await;
         if let Some(log) = &self.log {
             log.record(RewriteAttempt {
                 kind: kind.log_kind(),
@@ -594,8 +594,9 @@ impl HeadingRewrite {
                 seed: seed_of(kind).to_owned(),
                 verdict: trial.verdict.reason(),
                 rule: trial.verdict.rule(),
-                latency: called.then(|| started.elapsed()),
+                latency: prompt.is_some().then(|| started.elapsed()),
                 line: Some(trial.line.clone()),
+                prompt,
                 detail: RewriteDetail {
                     reply: trial.output.clone().or_else(|| trial.detail.reply.clone()),
                     ..trial.detail.clone()
@@ -606,14 +607,14 @@ impl HeadingRewrite {
         trial
     }
 
-    /// The trial and whether the model was called.
+    /// The trial and, when the model was called, the prompt it was given.
     async fn attempt(
         &self,
         kind: HeaderKind,
         catalog: Option<&BossTable>,
         deadline: Duration,
         stop: Option<&watch::Receiver<bool>>,
-    ) -> (Trial, bool) {
+    ) -> (Trial, Option<RewritePrompt>) {
         let seed = seed_of(kind);
         let fallback = |output, verdict, detail| Trial {
             output,
@@ -624,42 +625,45 @@ impl HeadingRewrite {
         let Some(rewriter) = &self.rewriter else {
             return (
                 fallback(None, Verdict::NoRewriter, RewriteDetail::default()),
-                false,
+                None,
             );
         };
         let Some(persona) = self.persona.as_ref().and_then(|source| source()) else {
             return (
                 fallback(None, Verdict::NoPersona, RewriteDetail::default()),
-                false,
+                None,
             );
         };
         let prompt = RewritePrompt::header(&persona, NudgeMood::Playful, seed);
         let call = tokio::time::timeout(deadline, rewriter.rewrite_detailed(&prompt, deadline));
+        // `None`: the worker's stop fired while the call was in flight.
         let outcome = match stop {
-            None => call.await,
+            None => Some(call.await),
             Some(stop) => {
                 let mut stop = stop.clone();
                 tokio::select! {
                     biased;
-                    outcome = call => outcome,
-                    Ok(_) = stop.wait_for(|stop| *stop) => return (shutdown_trial(kind), true),
+                    outcome = call => Some(outcome),
+                    Ok(_) = stop.wait_for(|stop| *stop) => None,
                 }
             }
         };
+        let sent = Some(prompt);
         let outcome = match outcome {
-            Err(_) => {
+            None => return (shutdown_trial(kind), sent),
+            Some(Err(_)) => {
                 return (
                     fallback(None, Verdict::Timeout, RewriteDetail::default()),
-                    true,
+                    sent,
                 );
             }
-            Ok(outcome) => outcome,
+            Some(Ok(outcome)) => outcome,
         };
         let text = match outcome.result {
             Err(failure) => {
                 return (
                     fallback(None, Verdict::Failed(failure), outcome.detail),
-                    true,
+                    sent,
                 );
             }
             Ok(text) => text,
@@ -682,7 +686,7 @@ impl HeadingRewrite {
             },
             Err(verdict) => fallback(Some(text), verdict, outcome.detail),
         };
-        (trial, true)
+        (trial, sent)
     }
 }
 

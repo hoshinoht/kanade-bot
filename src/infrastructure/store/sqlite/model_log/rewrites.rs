@@ -1,4 +1,4 @@
-//! The Rewrites log (0027) and its filter query.
+//! The Rewrites log (0027, prompt 0029) and its filter query.
 
 use sqlx::SqliteConnection;
 use sqlx::sqlite::SqliteRow;
@@ -16,13 +16,13 @@ use crate::infrastructure::store::sqlite::schedule::store_error;
 const COLUMNS: &str = "r.id, r.at, r.kind, r.stage, r.context, r.verdict, r.rule, r.code, \
     r.latency_ms, r.model, r.reasoning, r.prompt_tokens, r.completion_tokens, \
     r.reasoning_tokens, r.reservation, r.budget, r.max_output_tokens, r.seed, r.reply, \
-    r.reasoning_content, r.line, r.request_id";
+    r.reasoning_content, r.line, r.request_id, r.prompt";
 
-/// [`COLUMNS`] without the reasoning text (list pages).
+/// [`COLUMNS`] without the reasoning and prompt texts (list pages).
 const LIST_COLUMNS: &str = "r.id, r.at, r.kind, r.stage, r.context, r.verdict, r.rule, r.code, \
     r.latency_ms, r.model, r.reasoning, r.prompt_tokens, r.completion_tokens, \
     r.reasoning_tokens, r.reservation, r.budget, r.max_output_tokens, r.seed, r.reply, \
-    NULL AS reasoning_content, r.line, r.request_id";
+    NULL AS reasoning_content, r.line, r.request_id, NULL AS prompt";
 
 fn log_of(row: &SqliteRow) -> Result<RewriteLog, StoreError> {
     let kind = text(row, "kind")?;
@@ -52,6 +52,7 @@ fn log_of(row: &SqliteRow) -> Result<RewriteLog, StoreError> {
         reasoning_content: optional_text(row, "reasoning_content")?,
         line: optional_text(row, "line")?,
         request_id: optional_text(row, "request_id")?,
+        prompt: optional_text(row, "prompt")?,
     })
 }
 
@@ -62,9 +63,9 @@ pub(super) async fn insert(
     sqlx::query(
         "INSERT INTO rewrites (id, at, kind, stage, context, verdict, rule, code, latency_ms, \
          model, reasoning, prompt_tokens, completion_tokens, reasoning_tokens, reservation, \
-         budget, max_output_tokens, seed, reply, reasoning_content, line, request_id) \
+         budget, max_output_tokens, seed, reply, reasoning_content, line, request_id, prompt) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
-         ?18, ?19, ?20, ?21, ?22)",
+         ?18, ?19, ?20, ?21, ?22, ?23)",
     )
     .bind(&log.id)
     .bind(instant(&log.at)?)
@@ -88,6 +89,7 @@ pub(super) async fn insert(
     .bind(&log.reasoning_content)
     .bind(&log.line)
     .bind(&log.request_id)
+    .bind(&log.prompt)
     .execute(&mut *conn)
     .await
     .map_err(store_error)?;

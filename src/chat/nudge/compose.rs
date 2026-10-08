@@ -287,6 +287,7 @@ impl<R: NudgeRewriter> Nudger<R> {
                 rule,
                 latency: Some(latency),
                 line: Some(used),
+                prompt: Some(prompt),
                 detail: RewriteDetail {
                     reply: output.as_ref().ok().cloned().or(detail.reply.clone()),
                     ..detail

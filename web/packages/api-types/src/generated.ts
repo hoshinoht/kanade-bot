@@ -656,7 +656,12 @@ max_output_tokens: number | null,
 /**
  * The local prompt estimate: the reservation less `max_tokens`.
  */
-prompt_estimate: number | null, request_id: string | null, id: string, short_id: string, at: string, kind: RewriteKind, stage: RewriteStage, 
+prompt_estimate: number | null, request_id: string | null, 
+/**
+ * The messages the call was given under `[system]`/`[user]` labels,
+ * capped at 16 KiB; null when no call was attempted or on older rows.
+ */
+prompt: string | null, id: string, short_id: string, at: string, kind: RewriteKind, stage: RewriteStage, 
 /**
  * A card key, digest week, `/debug` command or nudge purpose.
  */

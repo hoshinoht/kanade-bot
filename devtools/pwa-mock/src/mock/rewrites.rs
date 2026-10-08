@@ -29,6 +29,12 @@ const VERDICTS: [&str; 8] = [
     "no_persona",
 ];
 const KEYS: [&str; 7] = ["model", "from", "to", "kind", "stage", "verdict", "q"];
+/// The code-owned instructions and an invented persona, as the bot's
+/// `RewritePrompt` composes them (instruction, character, mood).
+const HEADER_INSTRUCTION: &str = "Rewrite the one reminder header line you are given so it sounds like the character described below. Keep it short (at most eight words besides any {day}), friendly and safe for work, whatever the character's style. Reply with that one plain-text line only.";
+const NUDGE_INSTRUCTION: &str = "Rewrite the one line you are given so it sounds like the character described below. Keep it short, friendly and safe for work, whatever the character's style. Keep every {boss}, {day} and {time} exactly as written. Reply with that one line only, at most 140 characters.";
+const CHARACTER: &str = "Kanade is a cheerful raid caller who loves a little drama.";
+const PLAYFUL: &str = "Mood: playful. Light teasing is fine.";
 
 struct Attempt {
     id: &'static str,
@@ -292,6 +298,21 @@ impl Attempt {
         row
     }
 
+    /// The messages the call was given, under role labels; none when no
+    /// call was attempted.
+    fn prompt(&self) -> Option<String> {
+        self.latency_ms?;
+        let instruction = if self.kind == "nudge" {
+            NUDGE_INSTRUCTION
+        } else {
+            HEADER_INSTRUCTION
+        };
+        Some(format!(
+            "[system]\n{instruction}\n\n{CHARACTER}\n\n{PLAYFUL}\n\n[user]\nLine to rewrite: {}",
+            self.seed
+        ))
+    }
+
     fn estimate(&self) -> Option<u32> {
         self.reserved.map(|(reservation, max)| reservation - max)
     }
@@ -416,6 +437,7 @@ impl Store {
                     .map(|_| format!("kanade-rewrite-0000beef-{}-1", a.hour))
             ),
         );
+        row.insert("prompt".into(), json!(a.prompt()));
         Ok(Value::Object(row))
     }
 
@@ -458,6 +480,23 @@ mod tests {
             .as_array()
             .unwrap()
             .len()
+    }
+
+    #[test]
+    fn the_detail_carries_the_prompt_sent_or_null() {
+        let sent = store().rewrite("rw-dayof").ok().expect("detail");
+        let prompt = sent["prompt"].as_str().expect("prompt");
+        assert!(prompt.starts_with("[system]\nRewrite the one reminder header"));
+        assert!(prompt.ends_with("\n\n[user]\nLine to rewrite: Today — {day}"));
+        let nudge = store().rewrite("rw-nudge").ok().expect("detail");
+        assert!(
+            nudge["prompt"]
+                .as_str()
+                .expect("prompt")
+                .contains("Keep every {boss}")
+        );
+        let unsent = store().rewrite("rw-persona").ok().expect("detail");
+        assert!(unsent["prompt"].is_null(), "no call, no prompt");
     }
 
     #[test]

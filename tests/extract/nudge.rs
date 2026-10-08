@@ -1068,5 +1068,21 @@ async fn each_lead_in_logs_one_member_free_rewrite_row() {
             );
         }
         assert_eq!(row.at, at);
+        // The prompt as sent: persona and seed text, no member or run values.
+        let prompt = logs
+            .load_rewrite(&row.id)
+            .await
+            .expect("load")
+            .expect("row")
+            .prompt
+            .expect("the sent prompt");
+        assert_eq!(
+            prompt,
+            kanade::chat::nudge::RewritePrompt::build(&persona, NudgeMood::Playful, &row.seed)
+                .transcript()
+        );
+        for value in ["Hard Lucid", "Sat", "21:00", MEMBER, CHANNEL] {
+            assert!(!prompt.contains(value), "{value} in the prompt: {prompt}");
+        }
     }
 }

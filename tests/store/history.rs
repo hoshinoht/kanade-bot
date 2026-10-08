@@ -369,7 +369,7 @@ async fn backups_anchor_the_history_and_truncation_is_detected() {
     store.backup(&backup).await.expect("backup");
     let manifest = BackupManifest::read(&BackupManifest::path_for(&backup)).expect("manifest");
     assert_eq!(manifest.history_head, head, "the manifest anchors the head");
-    assert_eq!(manifest.schema_version, 28);
+    assert_eq!(manifest.schema_version, 29);
     assert!(
         manifest.created_at.is_some(),
         "new manifests carry created_at"
@@ -635,7 +635,7 @@ async fn upgrading_to_the_blame_index_backfills_earlier_records() {
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 28);
+    assert_eq!(store.schema_version().await.expect("version"), 29);
     assert!(
         verify(&store).await.is_intact(),
         "the backfilled index verifies"

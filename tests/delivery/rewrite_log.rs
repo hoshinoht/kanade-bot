@@ -192,6 +192,23 @@ async fn a_pregen_pass_logs_one_row_per_rewrite_under_its_card_key() {
     );
     assert_eq!(row.code, None);
     assert_eq!(row.at, now());
+    // Pages leave the prompt out; the detail read has it, as sent.
+    assert_eq!(row.prompt, None);
+    let prompt = logs
+        .load_rewrite(&row.id)
+        .await
+        .expect("load")
+        .expect("row")
+        .prompt
+        .expect("the sent prompt");
+    assert!(
+        prompt.starts_with("[system]\nRewrite the one reminder header line"),
+        "{prompt}"
+    );
+    assert!(
+        prompt.ends_with("\n\n[user]\nLine to rewrite: Today — {day}"),
+        "{prompt}"
+    );
 }
 
 #[tokio::test(start_paused = true)]
@@ -343,6 +360,18 @@ async fn debug_ping_with_a_rewrite_logs_one_row_and_says_why_it_failed() {
         rows[0].context.as_deref(),
         Some(format!("/debug ping day_of · run {run_id}").as_str())
     );
+    let prompt = logs
+        .load_rewrite(&rows[0].id)
+        .await
+        .expect("load")
+        .expect("row")
+        .prompt
+        .expect("the sent prompt");
+    assert!(
+        prompt.ends_with("[user]\nLine to rewrite: Today — {day}"),
+        "{prompt}"
+    );
+    assert!(!prompt.contains("1002"), "no member id: {prompt}");
     // Without `header:rewrite` nothing is tried or logged.
     desk.ping(PingRequest::run(run_id, TestKind::DayOf, "1002".into()))
         .await

@@ -127,6 +127,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 28,
         sql: include_str!("migrations/0028_header_overrides.sql"),
     },
+    Migration {
+        version: 29,
+        sql: include_str!("migrations/0029_rewrite_prompt.sql"),
+    },
 ];
 
 /// The migration that adds `change_fields`, which is backfilled from the
@@ -217,6 +221,63 @@ mod tests {
 
     struct RemoveFile(PathBuf);
 
+    /// 0029 adds the bounded `rewrites.prompt`; rows logged before it keep NULL.
+    #[tokio::test]
+    async fn migration_29_adds_a_bounded_rewrite_prompt() {
+        let mut conn = SqliteConnectOptions::new()
+            .filename(":memory:")
+            .connect()
+            .await
+            .expect("db");
+        conn.execute(LEDGER).await.expect("ledger");
+        for migration in &MIGRATIONS[..28] {
+            conn.execute(migration.sql).await.expect("v28 migration");
+            sqlx::query("INSERT INTO schema_migrations VALUES (?1, ?2, 'then')")
+                .bind(migration.version)
+                .bind(checksum(migration.sql))
+                .execute(&mut conn)
+                .await
+                .expect("ledger");
+        }
+        conn.execute(
+            "INSERT INTO rewrites (id, at, kind, stage, verdict, seed) VALUES \
+             ('w-1', '2026-09-01T00:00:00.000000+00:00', 'day_of', 'batch', 'accepted', 'seed')",
+        )
+        .await
+        .expect("v28 row");
+        assert_eq!(apply(&mut conn).await.expect("0029"), 29);
+        let old: Option<String> =
+            sqlx::query_scalar("SELECT prompt FROM rewrites WHERE id = 'w-1'")
+                .fetch_one(&mut conn)
+                .await
+                .expect("old row");
+        assert_eq!(old, None);
+        let insert = |id: &str, prompt: &str| {
+            format!(
+                "INSERT INTO rewrites (id, at, kind, stage, verdict, seed, prompt) VALUES \
+                 ('{id}', '2026-09-02T00:00:00.000000+00:00', 'nudge', 'nudge', 'accepted', \
+                  'seed', '{prompt}')"
+            )
+        };
+        conn.execute(insert("w-2", &"p".repeat(16_384)).as_str())
+            .await
+            .expect("prompt at the bound");
+        for (id, prompt) in [("w-3", "p".repeat(16_385)), ("w-4", String::new())] {
+            assert!(
+                conn.execute(insert(id, &prompt).as_str()).await.is_err(),
+                "{} bytes",
+                prompt.len()
+            );
+        }
+        assert!(
+            conn.execute("UPDATE rewrites SET prompt = 'changed'")
+                .await
+                .is_err(),
+            "insert-only trigger remains"
+        );
+        conn.close().await.expect("close");
+    }
+
     /// 0028 rebuilds `rewrites` for stage `manual` with its rows, index and
     /// insert-only trigger, and adds the insert-only `header_overrides`
     /// beside the original reminder heading, which it never touches.
@@ -254,7 +315,7 @@ mod tests {
         )
         .await
         .expect("v27 rows");
-        assert_eq!(apply(&mut conn).await.expect("0028"), 28);
+        assert_eq!(apply(&mut conn).await.expect("0028"), 29);
         // Each row's columns, joined, as 0027 stored them.
         let kept: Vec<String> = sqlx::query_scalar(
             "SELECT id || '|' || stage || '|' || verdict || '|' || coalesce(rule, '-') || '|' \
@@ -351,7 +412,7 @@ mod tests {
         )
         .await
         .expect("v23 rows");
-        assert_eq!(apply(&mut conn).await.expect("additive"), 28);
+        assert_eq!(apply(&mut conn).await.expect("additive"), 29);
         let old: (
             Option<String>,
             Option<String>,
@@ -421,7 +482,7 @@ mod tests {
         }
         let insert = "INSERT INTO extractions (id, at, member_ids, model, reasoning, prompt, raw_response, request_count, outcome, guardrail, message_ids, proposal_ids";
         conn.execute(format!("{insert}) VALUES ('old', '2026-09-01T00:00:00+00:00', '[]', 'm', 'low', 'p', 'r', 1, 'unknown', '{{}}', '[]', '[]')").as_str()).await.expect("old row");
-        assert_eq!(apply(&mut conn).await.expect("additive"), 28);
+        assert_eq!(apply(&mut conn).await.expect("additive"), 29);
         let old: (String, Option<String>, Option<i64>) = sqlx::query_as("SELECT reasoning, reasoning_content, reasoning_tokens FROM extractions WHERE id = 'old'").fetch_one(&mut conn).await.expect("old row preserved");
         assert_eq!(old, ("low".into(), None, None));
         for (id, text, count, valid) in [
@@ -479,7 +540,7 @@ mod tests {
         )
         .await
         .expect("v14 rows");
-        assert_eq!(apply(&mut conn).await.expect("remaining migrations"), 28);
+        assert_eq!(apply(&mut conn).await.expect("remaining migrations"), 29);
         let kept: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM extractions e JOIN extraction_members m \
              ON m.extraction_id = e.id WHERE e.id = 'x-1' AND e.refusals = '[]'",
@@ -558,7 +619,7 @@ mod tests {
         .await
         .expect("v17 cards");
 
-        assert_eq!(apply(&mut conn).await.expect("v18"), 28);
+        assert_eq!(apply(&mut conn).await.expect("v18"), 29);
         let rows: Vec<(String, Option<String>)> =
             sqlx::query_as("SELECT kind, heading FROM reminder_cards ORDER BY dedupe_key")
                 .fetch_all(&mut conn)
@@ -593,7 +654,7 @@ mod tests {
             .connect()
             .await
             .expect("reopen v18 file");
-        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 28);
+        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 29);
         let rows: Vec<(String, Option<String>)> =
             sqlx::query_as("SELECT kind, heading FROM reminder_cards ORDER BY dedupe_key")
                 .fetch_all(&mut conn)
@@ -674,7 +735,7 @@ mod tests {
         .await
         .expect("v18 rows");
 
-        assert_eq!(apply(&mut conn).await.expect("v19"), 28);
+        assert_eq!(apply(&mut conn).await.expect("v19"), 29);
         let usage = "prompt_tokens IS NULL AND completion_tokens IS NULL \
             AND prompt_estimate IS NULL";
         let unreported: i64 = sqlx::query_scalar(&format!(
@@ -757,7 +818,7 @@ mod tests {
             .connect()
             .await
             .expect("reopen v19 file");
-        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 28);
+        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 29);
         let rows: Vec<UsageRow<String>> = sqlx::query_as(
             "SELECT id, prompt_tokens, completion_tokens, prompt_estimate, \
              typeof(prompt_tokens) || ',' || typeof(completion_tokens) || ',' \
@@ -839,7 +900,7 @@ mod tests {
         )
         .await
         .expect("v15 rows");
-        assert_eq!(apply(&mut conn).await.expect("0016+"), 28);
+        assert_eq!(apply(&mut conn).await.expect("0016+"), 29);
         let row = sqlx::query(
             "SELECT c.persona, c.profile, c.profile_source, c.error_code, r.route, r.clean, \
              r.model FROM chat_interactions c JOIN chat_rounds r ON r.interaction_id = c.id",
@@ -930,7 +991,7 @@ mod tests {
         )
         .await
         .expect("v21 rows");
-        assert_eq!(apply(&mut conn).await.expect("0022"), 28);
+        assert_eq!(apply(&mut conn).await.expect("0022"), 29);
         let rows: Vec<(String, String, i64, i64, String, Option<String>)> = sqlx::query_as(
             "SELECT id, outcome, clean_retry, withheld, guardrail, persona \
              FROM chat_interactions ORDER BY id",
@@ -1153,6 +1214,10 @@ mod tests {
             (
                 28,
                 "527c207da9ef1d338d7ce737cab111a7932a706a17d7d86a3ff218d4e50c8cf2",
+            ),
+            (
+                29,
+                "0c522d42fd19d00322943f7490f801b7c2d6189e52b05e0a083bffbcce0d1e78",
             ),
         ];
         for (version, sum) in SHIPPED {

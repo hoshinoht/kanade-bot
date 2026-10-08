@@ -114,6 +114,9 @@ pub struct Rewrite {
     /// The local prompt estimate: the reservation less `max_tokens`.
     pub prompt_estimate: Option<u64>,
     pub request_id: Option<String>,
+    /// The messages the call was given under `[system]`/`[user]` labels,
+    /// capped at 16 KiB; null when no call was attempted or on older rows.
+    pub prompt: Option<String>,
 }
 
 fn prompt_estimate(log: &RewriteLog) -> Option<u64> {
@@ -152,6 +155,7 @@ pub fn rewrite(log: &RewriteLog) -> Rewrite {
         max_output_tokens: log.max_output_tokens,
         prompt_estimate: prompt_estimate(log),
         request_id: log.request_id.clone(),
+        prompt: log.prompt.clone(),
     }
 }
 

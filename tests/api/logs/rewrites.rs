@@ -31,6 +31,9 @@ fn row(id: &str, at: chrono::DateTime<chrono::Utc>) -> RewriteLog {
         reasoning_content: Some("Keep {day}.".into()),
         line: Some("Waku waku — {day}".into()),
         request_id: Some("kanade-rewrite-0000abcd-1-1".into()),
+        prompt: Some(
+            "[system]\nRewrite the line.\n\n[user]\nLine to rewrite: Today — {day}".into(),
+        ),
     }
 }
 
@@ -77,6 +80,7 @@ async fn seeded() -> Logs {
     nudge.reply = None;
     nudge.reasoning_content = None;
     nudge.request_id = None;
+    nudge.prompt = None;
     nudge.context = Some("self_service · playful".into());
     store.record_rewrite(nudge).await.unwrap();
     logs
@@ -123,6 +127,7 @@ async fn rewrites_list_newest_first_with_total_facets_and_summary() {
         "list rows omit bodies"
     );
     assert!(over.get("reply").is_none());
+    assert!(over.get("prompt").is_none(), "list rows omit the prompt");
     let nudge = &all["rows"][3];
     assert_eq!(nudge["model"], json!(null));
     assert_eq!(nudge["prompt_tokens"], json!(null), "unreported is null");
@@ -189,6 +194,13 @@ async fn rewrite_detail_carries_the_reply_reasoning_and_reservation() {
     assert_eq!(detail["request_id"], "kanade-rewrite-0000abcd-1-1");
     assert_eq!(detail["short_id"], "raccepte");
     assert_eq!(detail["seed"], "Today — {day}");
+    assert_eq!(
+        detail["prompt"],
+        "[system]\nRewrite the line.\n\n[user]\nLine to rewrite: Today — {day}"
+    );
+    let unsent = logs.get("/api/admin/rewrites/r-nudge").await.json();
+    assert_valid(REWRITE, "unsent", &unsent);
+    assert_eq!(unsent["prompt"], json!(null), "no call, no prompt");
 
     let missing = logs.get("/api/admin/rewrites/r-missing").await;
     assert_eq!(missing.status, 404);

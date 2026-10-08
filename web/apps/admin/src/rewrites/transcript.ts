@@ -1,7 +1,8 @@
 /**
  * "Copy transcript" for one rewrite attempt, as Markdown or JSON, built only
  * from GET /api/admin/rewrites/{id}. Unknown counts and timings read
- * "unknown" (null in JSON), never 0; absent ids are left out of the Markdown.
+ * "unknown" (null in JSON), never 0; absent ids are left out of the Markdown;
+ * a prompt the log never kept reads "not recorded".
  */
 import type { Rewrite } from '@kanade/api-types';
 import { KIND_LABEL, STAGE_LABEL } from '../logs/filters';
@@ -70,6 +71,7 @@ export function rewriteMarkdown(r: Rewrite, ctx: TranscriptContext): string {
     r.line ? fence(r.line) : '—',
   ];
   if (r.reasoning_content) lines.push('', '## Reasoning', '', fence(r.reasoning_content));
+  lines.push('', '## Prompt as sent', '', r.prompt ? fence(r.prompt) : '— not recorded —');
   return `${lines.join('\n')}\n`;
 }
 
@@ -80,5 +82,6 @@ export function rewriteJson(r: Rewrite, ctx: TranscriptContext): string {
     reply: r.reply,
     line: r.line,
     reasoning_content: r.reasoning_content,
+    prompt: r.prompt,
   });
 }

@@ -283,7 +283,8 @@
         "reasoning_content",
         "max_output_tokens",
         "prompt_estimate",
-        "request_id"
+        "request_id",
+        "prompt"
       ],
       "properties": {
         "id": {
@@ -389,6 +390,10 @@
         },
         "request_id": {
           "$ref": "common.json#/$defs/NullableString"
+        },
+        "prompt": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "The messages the call was given, each under a [system]/[user] label, capped at 16 KiB; null when no call was attempted or on rows logged before it was recorded."
         }
       }
     }

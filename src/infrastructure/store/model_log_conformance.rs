@@ -9,8 +9,9 @@ use serde_json::json;
 use crate::domain::model_log::{
     AllowanceOverride, ChatFilter, ChatInteraction, ChatOutcome, ChatRound, ExtractionFilter,
     ExtractionLog, ExtractionOutcome, ExtractionRefusal, LogFacets, MaskedName, MaskedRound,
-    MaskedTurn, MessageUpsert, ModelLogStore, REPLY_CAP, ReadMessage, RescanJob, RescanStatus,
-    RewriteFilter, RewriteKind, RewriteLog, RewriteLogStore, RewriteStage, WatchedMessage,
+    MaskedTurn, MessageUpsert, ModelLogStore, PROMPT_CAP, REPLY_CAP, ReadMessage, RescanJob,
+    RescanStatus, RewriteFilter, RewriteKind, RewriteLog, RewriteLogStore, RewriteStage,
+    WatchedMessage,
 };
 use crate::domain::scheduler::StoreError;
 
@@ -1458,6 +1459,9 @@ pub(crate) fn rewrite(id: &str, at: DateTime<Utc>) -> RewriteLog {
         reasoning_content: Some("Keep {day}.".into()),
         line: Some("Waku waku — {day}".into()),
         request_id: Some("kanade-rewrite-0000abcd-1-1".into()),
+        prompt: Some(
+            "[system]\nRewrite the line.\n\n[user]\nLine to rewrite: Today — {day}".into(),
+        ),
     }
 }
 
@@ -1472,6 +1476,7 @@ async fn rewrite_logs_round_trip_and_refuse_bad_rows<S: RewriteLogStore>(store: 
     failed.verdict = "unavailable".into();
     failed.code = Some("budget_exceeded".into());
     failed.reply = Some("x".repeat(REPLY_CAP));
+    failed.prompt = Some("p".repeat(PROMPT_CAP));
     failed.line = None;
     failed.reasoning_tokens = None;
     // Refused before sending: the reservation against the call budget.
@@ -1490,7 +1495,7 @@ async fn rewrite_logs_round_trip_and_refuse_bad_rows<S: RewriteLogStore>(store: 
     assert_eq!(store.load_rewrite("r-2").await.expect("load"), Some(failed));
     assert_eq!(store.load_rewrite("r-9").await.expect("load"), None);
     type Spoil = fn(&mut RewriteLog);
-    let bad: [(&str, Spoil); 7] = [
+    let bad: [(&str, Spoil); 9] = [
         ("duplicate id", |_| {}),
         ("verdict", |log| log.verdict = "sent".into()),
         ("half pair", |log| log.completion_tokens = None),
@@ -1500,6 +1505,10 @@ async fn rewrite_logs_round_trip_and_refuse_bad_rows<S: RewriteLogStore>(store: 
             log.reply = Some("r".repeat(REPLY_CAP + 1))
         }),
         ("request id", |log| log.request_id = Some("a b".into())),
+        ("empty prompt", |log| log.prompt = Some(String::new())),
+        ("long prompt", |log| {
+            log.prompt = Some("p".repeat(PROMPT_CAP + 1))
+        }),
     ];
     for (what, spoil) in bad {
         let mut log = rewrite(
@@ -1551,8 +1560,10 @@ async fn rewrite_filters_combine_and_page<S: RewriteLogStore>(store: S) {
     let list = async |filter: RewriteFilter| {
         let page = store.list_rewrites(&filter).await.expect("list");
         assert!(
-            page.items.iter().all(|log| log.reasoning_content.is_none()),
-            "rewrites: pages leave out reasoning"
+            page.items
+                .iter()
+                .all(|log| log.reasoning_content.is_none() && log.prompt.is_none()),
+            "rewrites: pages leave out reasoning and the prompt"
         );
         ids(&page.items, |log| &log.id)
     };
