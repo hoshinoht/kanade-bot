@@ -52,7 +52,8 @@ test('Week: a run another admin moved glides to its new day', async ({ page }) =
   await arrive(page, 'move');
   await expect.poll(async () => (await animated(page)).filter((a) => a.target === 'r-limbo' && a.from.startsWith('translate')).length, { timeout: 6_000 }).toBe(1);
   await expect(limbo).toContainText('21:00');
-  expect((await limbo.boundingBox())!.x).not.toBe(from!.x);
+  // The glide starts at the old place (FLIP), so wait for it to land.
+  await expect.poll(async () => (await limbo.boundingBox())!.x).not.toBe(from!.x);
 });
 
 test('Week: a run another admin added keeps its mark for the whole tint, not just the settle', async ({ page }) => {
