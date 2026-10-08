@@ -25,8 +25,13 @@ Pointers are `<file>#/$defs/<Name>`.
 | Endpoint | Schema |
 |---|---|
 | `GET /api/identity` (both origins) | `identity.json#/$defs/Identity` |
-| `GET /api/public/status` | `identity.json#/$defs/PublicStatus` |
-| `GET /api/public/week?week=` | `week.json#/$defs/PublicWeek` (503 `ApiError` `closed` while the portal is closed) |
+| `GET /api/public/status` | `public.json#/$defs/PublicStatus` (the admin Config switch `self_service.public_portal`) |
+| `GET /api/public/session` | `public.json#/$defs/PublicSession` + `X-Kanade-CSRF` (401 `unauthenticated` when signed out) |
+| `GET /api/public/session/avatar` | the member's portrait image (monogram when none), not JSON |
+| `GET /api/public/sessions` | `public.json#/$defs/PublicSessions` |
+| `DELETE /api/public/sessions/{handle}` | `204`, no body (409 `current_session` for the caller's own session) |
+| `POST /api/public/sessions/end-all` | `identity.json#/$defs/SessionsEnded` (ends the caller's session too and clears its cookie) |
+| `GET /api/public/auth/discord/start`, `/callback`; `POST /api/public/auth/logout` | redirects / landing page / `204`, not JSON |
 | `GET /api/admin/session` | `identity.json#/$defs/Session` |
 | `GET /api/admin/me` | `identity.json#/$defs/Me` |
 | `GET /api/admin/me/sessions` | `identity.json#/$defs/AccountSessions` |
@@ -87,9 +92,9 @@ Pointers are `<file>#/$defs/<Name>`.
 
 `common.json` (enums, `Boss`, `Tally`, `Member`, `Channel`, `WeekDay`, `Head`,
 `Message`, `ReloadResult`, `LogFacets`), `error.json`, `identity.json`,
-`week.json`, `members.json`, `fixed.json`, `bosses.json`, `reminders.json`,
-`inbox.json`, `extractions.json`, `chat.json`, `rewrites.json`, `limits.json`,
-`history.json`, `config.json`.
+`public.json`, `week.json`, `members.json`, `fixed.json`, `bosses.json`,
+`reminders.json`, `inbox.json`, `extractions.json`, `chat.json`,
+`rewrites.json`, `limits.json`, `history.json`, `config.json`.
 
 ## Changes since A0
 
@@ -134,3 +139,10 @@ Pointers are `<file>#/$defs/<Name>`.
 - Rewrites log: `rewrites.json` (`Rewrites`, `Rewrite`) for
   `GET /api/admin/rewrites` and `/api/admin/rewrites/{id}`; the events stream
   adds topic `rewrite`.
+- Member portal identity (2026-10-08): `public.json` (`PublicStatus`, moved
+  from `identity.json`; `PublicSession`, `PublicMember`, `PublicSessions`,
+  `PublicSessionRow`) for the public sign-in and devices routes, frozen
+  ahead of the server and mock (the member realm lands with
+  `member-portal/identity-contract`). The anonymous `PublicWeek` and its
+  `PublicRun` are deleted from `week.json`: signed-in members will read
+  `MemberWeek` (added with the member reads).

@@ -62,6 +62,68 @@ fn the_surface_enum_is_the_domains() {
     assert_eq!(listed, domain);
 }
 
+/// The member portal contract (`public.json`) loads with the rest, takes the
+/// shapes the public origin will send and refuses anything beyond them.
+#[test]
+fn the_public_contract_is_closed() {
+    assert_valid(
+        "public.json#/$defs/PublicStatus",
+        "status",
+        &json!({ "portal": "open" }),
+    );
+    let session = json!({
+        "member": {
+            "id": "100000000000000001",
+            "display": "Mikan",
+            "avatar": "/api/public/session/avatar?v=a1b2c3",
+        },
+        "fresh_until": "2026-10-08T12:15:00Z",
+    });
+    assert_valid("public.json#/$defs/PublicSession", "session", &session);
+    let row = json!({
+        "handle": "0123456789abcdef01234567",
+        "device": "Firefox · Android",
+        "signed_in_at": "2026-10-08T12:00:00Z",
+        "last_seen_at": "2026-10-08T12:01:00Z",
+        "current": true,
+    });
+    assert_valid(
+        "public.json#/$defs/PublicSessions",
+        "sessions",
+        &json!({ "sessions": [row.clone()], "generated_at": "2026-10-08T12:02:00Z" }),
+    );
+
+    let mut leaky = session.clone();
+    leaky["member"]["email"] = json!("mikan@example.invalid");
+    let mut with_token = session;
+    with_token["csrf"] = json!("token-in-the-body");
+    let mut located = row.clone();
+    located["ip"] = json!("192.0.2.1");
+    let too_many = json!({ "sessions": vec![row; 11], "generated_at": "2026-10-08T12:02:00Z" });
+    for (target, value) in [
+        (
+            "public.json#/$defs/PublicStatus",
+            json!({ "portal": "maybe" }),
+        ),
+        ("public.json#/$defs/PublicSession", leaky),
+        ("public.json#/$defs/PublicSession", with_token),
+        ("public.json#/$defs/PublicSessionRow", located),
+        ("public.json#/$defs/PublicSessions", too_many),
+    ] {
+        assert!(!validator(target).is_valid(&value), "{target} took {value}");
+    }
+
+    let week = schemas()
+        .into_iter()
+        .find(|(name, _)| name == "week.json")
+        .unwrap()
+        .1;
+    assert!(
+        week["$defs"].get("PublicWeek").is_none(),
+        "the anonymous week is gone"
+    );
+}
+
 /// Panics with every violation, naming the endpoint.
 pub fn assert_valid(target: &str, what: &str, value: &Value) {
     let validator = validator(target);

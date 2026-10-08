@@ -5,7 +5,8 @@ routes the Rust `serve` mounts (`src/api`).
 Dependency-free and source-only: it parses `.route("…", get(…).post(…))`
 calls and the string/template literals under `web/apps` and `web/packages`
 that start with `/api/`. Exits 1 when a gap is not one of the documented
-exceptions below (see docs/notes/admin-api.md "Wiring inventory").
+exceptions below (see docs/notes/admin-api.md "Wiring inventory"), or when
+Rust mounts a route still listed as planned.
 
 Usage (from the repository root): python3 scripts/api_routes/route_diff.py
 """
@@ -20,13 +21,26 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # (method, path) the mock serves that Rust deliberately does not.
 MOCK_ONLY = {
-    ("GET", "/api/public/week"): "public exposure gate: closed (503) until the member portal opens",
+    ("GET", "/api/public/week"): "anonymous PublicWeek, deleted from the contract (Q4); web and mock drop it with the member portal",
     ("POST", "/api/admin/reset"): "pwa-mock e2e control, not an admin route",
     ("POST", "/csp-report"): "pwa-mock dev-only CSP report sink",
 }
 # Paths the web apps call that Rust deliberately does not serve.
 WEB_ONLY = {
-    "/api/public/week": "public exposure gate: closed (503) until the member portal opens",
+    "/api/public/week": "anonymous PublicWeek, deleted from the contract (Q4); web and mock drop it with the member portal",
+}
+# (method, path) contracted but not mounted yet (member realm,
+# docs/notes/member-auth-contract.md). The web and mock may use them first;
+# once Rust mounts one, its entry must go.
+PLANNED = {
+    ("GET", "/api/public/session"): "member session",
+    ("GET", "/api/public/session/avatar"): "member portrait",
+    ("GET", "/api/public/auth/discord/start"): "member Discord sign-in",
+    ("GET", "/api/public/auth/discord/callback"): "member Discord sign-in",
+    ("POST", "/api/public/auth/logout"): "member sign-out",
+    ("GET", "/api/public/sessions"): "member devices",
+    ("DELETE", "/api/public/sessions/{handle}"): "member devices: sign out one",
+    ("POST", "/api/public/sessions/end-all"): "member devices: sign out everywhere",
 }
 # (method, path) Rust serves that the mock does not need.
 RUST_ONLY = {
@@ -141,18 +155,25 @@ def main() -> int:
     }
     web = web_paths()
     rust_paths = {path for _, path in rust}
+    planned = {(method, PARAM.sub("{}", path)): why for (method, path), why in PLANNED.items()}
+    planned_paths = {path for _, path in planned}
 
     problems: list[str] = []
     notes: list[str] = []
+    for method, path in sorted(planned):
+        if (method, path) in rust:
+            problems.append(f"Rust mounts {method} {path}: drop it from PLANNED")
+        else:
+            notes.append(f"planned {method} {path}  (not yet mounted: {planned[(method, path)]})")
     for path in sorted(web):
-        if any(matches(path, served) for served in rust_paths):
+        if any(matches(path, served) for served in rust_paths | planned_paths):
             continue
         if path in WEB_ONLY:
             notes.append(f"web  {path}  ({WEB_ONLY[path]})")
         else:
             callers = ", ".join(sorted(web[path]))
             problems.append(f"web calls {path} but Rust serves no such route ({callers})")
-    for method, path in sorted(mock - rust):
+    for method, path in sorted(mock - rust - planned.keys()):
         if (method, path) in MOCK_ONLY:
             notes.append(f"mock {method} {path}  ({MOCK_ONLY[(method, path)]})")
         else:

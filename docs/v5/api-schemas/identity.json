@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kanade.invalid/api-schemas/identity.json",
-  "title": "Identity, admin session and public status",
+  "title": "Identity and the admin session",
   "$defs": {
     "Identity": {
       "type": "object",
@@ -122,12 +122,6 @@
       "additionalProperties": false,
       "required": ["ended"],
       "properties": { "ended": { "type": "integer", "minimum": 0 } }
-    },
-    "PublicStatus": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["portal"],
-      "properties": { "portal": { "enum": ["open", "closed"] } }
     }
   }
 }

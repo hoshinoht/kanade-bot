@@ -296,20 +296,9 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "/api/public/status",
         None,
         StatusCode::OK,
-        "identity.json#/$defs/PublicStatus",
+        "public.json#/$defs/PublicStatus",
     )
     .await;
-    for q in ["", "?week=next"] {
-        h.expect(
-            true,
-            "GET",
-            &format!("/api/public/week{q}"),
-            None,
-            StatusCode::OK,
-            "week.json#/$defs/PublicWeek",
-        )
-        .await;
-    }
     h.expect(
         true,
         "GET",
@@ -1677,7 +1666,7 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
             "/api/public/status",
             None,
             StatusCode::OK,
-            "identity.json#/$defs/PublicStatus",
+            "public.json#/$defs/PublicStatus",
         )
         .await;
     assert_eq!(status["portal"], "closed");
