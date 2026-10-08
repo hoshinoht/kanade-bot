@@ -18,6 +18,7 @@ bot/api/static/portal.css
 .ruff_cache/
 .DS_Store
 .opencode/*
+.omp/
 
 # Untracked game assets.
 boss/portraits/*
