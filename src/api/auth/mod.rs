@@ -288,10 +288,12 @@ impl AdminAuth {
             expires_at: now + self.policy.absolute,
             avatar_hash: avatar_hash.map(str::to_owned),
             device,
+            client_tag: None,
+            superseded_until: None,
         };
         let _ = self
             .sessions
-            .prune_sessions(now, now - self.policy.idle)
+            .prune_sessions(SessionOrigin::Admin, now, now - self.policy.idle)
             .await;
         let replaces = replaces.map(|old| crypto::sha256_hex(old.as_bytes()));
         self.sessions

@@ -29,7 +29,7 @@ async fn backup_restores_to_an_equal_store_and_never_overwrites() {
         .await
         .expect("restores");
     assert_eq!(restored.load(&Scope::All).await.expect("load"), live);
-    assert_eq!(restored.schema_version().await.expect("version"), 29);
+    assert_eq!(restored.schema_version().await.expect("version"), 30);
     restored.close().await.expect("close");
 
     let occupied = SqliteStore::restore(&copy, &dir.config("live"))
@@ -151,7 +151,7 @@ async fn restore_validates_the_copy_before_publishing() {
         .expect("close");
     tamper(
         &future,
-        "INSERT INTO schema_migrations VALUES (30, 'next', '2027-01-01T00:00:00+00:00')",
+        "INSERT INTO schema_migrations VALUES (31, 'next', '2027-01-01T00:00:00+00:00')",
     )
     .await;
     let error = refused_restore(&dir, &future.db_path, "from-future").await;
@@ -159,8 +159,8 @@ async fn restore_validates_the_copy_before_publishing() {
         matches!(
             error,
             SqliteStoreError::FutureVersion {
-                found: 30,
-                known: 29
+                found: 31,
+                known: 30
             }
         ),
         "{error}"
@@ -207,6 +207,8 @@ async fn a_pre_v20_backup_restores_and_migrates() {
          ALTER TABLE extractions DROP COLUMN request_ids;
          ALTER TABLE chat_interactions DROP COLUMN session_id;
          ALTER TABLE chat_rounds DROP COLUMN request_ids;
+         ALTER TABLE web_sessions DROP COLUMN superseded_until;
+         ALTER TABLE web_sessions DROP COLUMN client_tag;
          ALTER TABLE web_sessions DROP COLUMN device;
          ALTER TABLE web_sessions DROP COLUMN avatar_hash;
          DROP TABLE settings_changes;
@@ -223,7 +225,7 @@ async fn a_pre_v20_backup_restores_and_migrates() {
     let restored = SqliteStore::restore(&old.db_path, &dir.config("from-pre-v19"))
         .await
         .expect("restores");
-    assert_eq!(restored.schema_version().await.expect("version"), 29);
+    assert_eq!(restored.schema_version().await.expect("version"), 30);
     assert_eq!(restored.foreign_key_violations().await.expect("check"), 0);
     let decline = restored
         .decline_notice("old-run", "old-member")

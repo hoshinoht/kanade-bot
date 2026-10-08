@@ -79,23 +79,35 @@ pub struct WebSession {
     /// "Browser · system" read from the sign-in's User-Agent (0026); `None`
     /// when unrecognised.
     pub device: Option<String>,
+    /// Keyed hash (64 lowercase hex) of the client address the session was
+    /// issued to, never the address itself (0030); `None` for admin sessions
+    /// and rows from before 0030.
+    pub client_tag: Option<String>,
+    /// Set only on an id rotated out by [`WebSessionStore::rotate_session`]
+    /// (0030): [`WebSessionStore::load_superseded`] returns it until this
+    /// instant. A live session has `None`.
+    pub superseded_until: Option<DateTime<Utc>>,
 }
 
 pub type SessionFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, StoreError>> + Send + 'a>>;
 
-/// Constant SQL only; every write is one transaction.
+/// Constant SQL only; every write is one transaction. Admin and public
+/// sessions share the table but never act on each other's rows.
 pub trait WebSessionStore: Send + Sync {
-    /// Insert `session`, deleting `replaces` in the same transaction (rotation).
-    /// A duplicate id hash is [`StoreError::Constraint`].
+    /// Insert `session`, deleting `replaces` in the same transaction (rotation)
+    /// when it is a session of the same origin; another origin's row is left
+    /// alone and the insert still happens. A duplicate id hash, or a
+    /// `session` that is already superseded, is [`StoreError::Constraint`].
     fn put_session<'a>(
         &'a self,
         session: &'a WebSession,
         replaces: Option<&'a str>,
     ) -> SessionFuture<'a, ()>;
 
+    /// A live session; a superseded id is only [`Self::load_superseded`]'s.
     fn load_session<'a>(&'a self, id_hash: &'a str) -> SessionFuture<'a, Option<WebSession>>;
 
-    /// `false` when the session no longer exists. `last_seen_at` never moves
+    /// `false` when no live session has this id. `last_seen_at` never moves
     /// backwards, so a delayed quiet re-check cannot undo a newer touch.
     fn touch_session<'a>(
         &'a self,
@@ -104,11 +116,13 @@ pub trait WebSessionStore: Send + Sync {
         checked_at: DateTime<Utc>,
     ) -> SessionFuture<'a, bool>;
 
-    /// `false` when the session did not exist.
+    /// `false` when the session (live or superseded) did not exist.
     fn delete_session<'a>(&'a self, id_hash: &'a str) -> SessionFuture<'a, bool>;
 
-    /// Every stored session of one identity, oldest first (expired ones
-    /// included until pruned; callers apply the policy).
+    /// Every live session of one identity, oldest first (expired ones
+    /// included until pruned; callers apply the policy). Superseded ids are
+    /// left out, so after a prune its length and first entry are the
+    /// per-member session count and the oldest session.
     fn subject_sessions<'a>(
         &'a self,
         origin: SessionOrigin,
@@ -116,7 +130,8 @@ pub trait WebSessionStore: Send + Sync {
         subject: &'a str,
     ) -> SessionFuture<'a, Vec<WebSession>>;
 
-    /// Every session of one identity, e.g. after it lost staff access.
+    /// Every session of one identity, superseded ids included, e.g. after it
+    /// lost staff access.
     fn delete_subject_sessions<'a>(
         &'a self,
         origin: SessionOrigin,
@@ -124,11 +139,36 @@ pub trait WebSessionStore: Send + Sync {
         subject: &'a str,
     ) -> SessionFuture<'a, u64>;
 
-    /// Delete sessions past their absolute expiry (`expires_at <= now`) or
-    /// idle since `idle_before` (`last_seen_at <= idle_before`).
+    /// Delete `origin`'s sessions past their absolute expiry
+    /// (`expires_at <= now`), idle since `idle_before`
+    /// (`last_seen_at <= idle_before`) or superseded with their grace over
+    /// (`superseded_until <= now`). Each origin has its own idle policy, so
+    /// the other origin's rows are never touched.
     fn prune_sessions(
         &self,
+        origin: SessionOrigin,
         now: DateTime<Utc>,
         idle_before: DateTime<Utc>,
     ) -> SessionFuture<'_, u64>;
+
+    /// Rotate `old` to `session` in one write, keeping `old` readable through
+    /// [`Self::load_superseded`] until `superseded_until` (D9 grace) instead
+    /// of deleting it. `false`, writing nothing, unless `old` is a live
+    /// session of the same origin, method and subject as `session`. A
+    /// duplicate id hash, or a `session` that is already superseded, is
+    /// [`StoreError::Constraint`].
+    fn rotate_session<'a>(
+        &'a self,
+        session: &'a WebSession,
+        old: &'a str,
+        superseded_until: DateTime<Utc>,
+    ) -> SessionFuture<'a, bool>;
+
+    /// A superseded id while its grace lasts (`now < superseded_until`).
+    /// Which requests it may serve (safe methods only) is the caller's rule.
+    fn load_superseded<'a>(
+        &'a self,
+        id_hash: &'a str,
+        now: DateTime<Utc>,
+    ) -> SessionFuture<'a, Option<WebSession>>;
 }
