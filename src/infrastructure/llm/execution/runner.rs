@@ -8,7 +8,7 @@ use super::super::{
     governor::{CallKind, Outcome, Random, SentRequest, full_jitter},
     http::KEY_EXPIRED,
     shaping,
-    wire::sent_effort,
+    wire::{sent_effort, sent_max_tokens},
 };
 use super::{
     accounting::estimate,
@@ -168,15 +168,20 @@ impl<P: LlmProvider> CompletionRunner<P> {
             retry = false;
             remaining -= reservation;
             gate.note_reservation(reservation);
-            // The alias and the effort as the wire body carries them (the
-            // same rule `chat_body` applies); unknown capabilities send the
-            // request's effort as is.
+            // The alias, effort and `max_tokens` as the wire body carries them
+            // (the rules `chat_body` applies); unknown capabilities send the
+            // request as is.
+            let (effort, max_tokens) = match &capabilities {
+                Some(capabilities) => (
+                    sent_effort(current, capabilities),
+                    sent_max_tokens(current, capabilities),
+                ),
+                None => (current.reasoning, Some(current.max_output_tokens)),
+            };
             gate.note_sent(SentRequest {
                 alias: current.model.clone(),
-                effort: match &capabilities {
-                    Some(capabilities) => sent_effort(current, capabilities),
-                    None => current.reasoning,
-                },
+                effort,
+                max_tokens,
             });
             let Ok(wait) = remaining_time(deadline) else {
                 gate.finish(None);
@@ -230,12 +235,6 @@ impl<P: LlmProvider> CompletionRunner<P> {
                         )));
                     }
                     let validation = gate.kind().tool_call_validation();
-                    // The body carries `max_tokens` only with sampling controls
-                    // (`wire::chat_body`); unknown capabilities send it as is.
-                    let max_tokens = capabilities
-                        .as_ref()
-                        .is_none_or(|capabilities| capabilities.sampling_controls)
-                        .then_some(current.max_output_tokens);
                     return match validate_response(
                         current,
                         &response,

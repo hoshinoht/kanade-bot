@@ -60,7 +60,7 @@ export function extractionMarkdown(call: Extraction, ctx: TranscriptContext): st
     `- Tokens: prompt ${count(h.prompt_tokens)}, completion ${count(h.completion_tokens)}`,
     ...(h.reasoning_tokens !== null ? [`- Reasoning tokens: ${count(h.reasoning_tokens)}`] : []),
     `- Prompt estimate: ${count(h.prompt_estimate)}`,
-    `- Context: ${h.context ? `window ${count(h.context.window)}, reserve ${count(h.context.reserve)} (${h.context.source})` : '—'}`,
+    `- Context: ${h.context ? `window ${count(h.context.window)}, reserve ${count(h.context.reserve)} (${h.context.source})${typeof h.context.sent_max_tokens === 'number' ? `, max tokens sent ${count(h.context.sent_max_tokens)}` : ''}` : '—'}`,
     ...(h.session_id ? [`- Gateway session: ${h.session_id}`] : []),
     ...(h.request_ids.length ? [`- Request ids: ${h.request_ids.join(', ')}`] : []),
     '',

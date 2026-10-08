@@ -54,7 +54,8 @@ export function rewriteMarkdown(r: Rewrite, ctx: TranscriptContext): string {
     `- Tokens: prompt ${count(h.prompt_tokens)}, completion ${count(h.completion_tokens)}`,
     ...(h.reasoning_tokens !== null ? [`- Reasoning tokens: ${count(h.reasoning_tokens)}`] : []),
     ...(h.token_check ? [`- Token check: ${h.token_check}`] : []),
-    `- Max tokens: ${count(h.max_output_tokens)}`,
+    // Null: no `max_tokens` went out (nothing sent, or a route without sampling controls).
+    `- Max tokens sent: ${h.max_output_tokens === null ? 'none' : count(h.max_output_tokens)}`,
     `- Prompt estimate: ${count(h.prompt_estimate)}`,
     ...(h.request_id ? [`- Request id: ${h.request_id}`] : []),
     '',

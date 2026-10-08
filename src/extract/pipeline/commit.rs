@@ -402,14 +402,18 @@ where
                     if record.stale_version {
                         guardrail.insert("stale_version".into(), json!(true));
                     }
-                    guardrail.insert(
-                        "context".into(),
-                        json!({
-                            "window": record.context_window,
-                            "reserve": record.context_reserve,
-                            "source": record.context_source,
-                        }),
-                    );
+                    // `reserve` is the configured reserve the request asked
+                    // for; `sent_max_tokens` is what the last request sent
+                    // carried (null: none went out), absent when nothing was sent.
+                    let mut context = json!({
+                        "window": record.context_window,
+                        "reserve": record.context_reserve,
+                        "source": record.context_source,
+                    });
+                    if let Some(sent) = record.sent_max_tokens {
+                        context["sent_max_tokens"] = json!(sent);
+                    }
+                    guardrail.insert("context".into(), context);
                     serde_json::Value::Object(guardrail)
                 },
                 message_ids: record.message_ids,

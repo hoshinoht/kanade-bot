@@ -31,7 +31,8 @@ impl ContextSource {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ContextResolution {
     pub window: u32,
-    /// The completion reserve actually sent as `max_tokens`.
+    /// The completion reserve requests ask for (`max_output_tokens`); the
+    /// body carries it as `max_tokens` only with sampling controls.
     pub reserve: u32,
     pub prompt_budget: u32,
     pub source: ContextSource,

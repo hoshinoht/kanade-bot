@@ -118,7 +118,7 @@ impl<'a> Gate<'a> {
         }
     }
 
-    /// What the last admitted request sent (alias and reasoning effort).
+    /// What the last admitted request sent (alias, reasoning effort, `max_tokens`).
     pub(in crate::infrastructure::llm) fn take_sent(&mut self) -> Option<SentRequest> {
         self.sent.take()
     }

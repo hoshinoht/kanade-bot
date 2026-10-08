@@ -45,11 +45,14 @@ pub struct RewriteDetail {
     /// The model's raw reply text and its reasoning text.
     pub reply: Option<String>,
     pub reasoning: Option<String>,
-    /// The runner's token reservation (prompt estimate + `max_tokens`).
+    /// The runner's token reservation (prompt estimate + the requested
+    /// reserve, whether or not `max_tokens` went out).
     pub reservation: Option<u32>,
     /// The call token budget the reservation exceeded, when the runner
     /// refused it before sending.
     pub budget: Option<u32>,
+    /// The `max_tokens` the request carried; `None` when nothing was sent
+    /// or the route has no sampling controls (the body omits it).
     pub max_output_tokens: Option<u32>,
     /// The `x-request-id` the request carried.
     pub request_id: Option<String>,

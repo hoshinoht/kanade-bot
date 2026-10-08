@@ -156,7 +156,7 @@ async fn extraction_detail_carries_the_call_its_proposals_and_refusals() {
     );
     assert_eq!(
         detail["context"],
-        json!({"window": 8192, "reserve": 2500, "source": "local_default"})
+        json!({"window": 8192, "reserve": 2500, "source": "local_default", "sent_max_tokens": 2500})
     );
     assert_eq!(
         detail["refusals"],

@@ -42,8 +42,8 @@ pub(crate) fn chat_body(request: &ChatRequest, capabilities: &ModelCapabilities)
             }),
         );
     }
-    if capabilities.sampling_controls {
-        body.insert("max_tokens".into(), json!(request.max_output_tokens));
+    if let Some(max_tokens) = sent_max_tokens(request, capabilities) {
+        body.insert("max_tokens".into(), json!(max_tokens));
         if let Some(sampling) = &request.sampling {
             if let Some(temperature) = sampling.temperature {
                 body.insert("temperature".into(), json!(temperature));
@@ -60,6 +60,17 @@ pub(crate) fn chat_body(request: &ChatRequest, capabilities: &ModelCapabilities)
         body.insert("reasoning_effort".into(), json!(effort.wire_str()));
     }
     Value::Object(body)
+}
+
+/// The `max_tokens` the body carries, if any: only with sampling controls.
+/// The runner records exactly this for the logs.
+pub(crate) fn sent_max_tokens(
+    request: &ChatRequest,
+    capabilities: &ModelCapabilities,
+) -> Option<u32> {
+    capabilities
+        .sampling_controls
+        .then_some(request.max_output_tokens)
 }
 
 /// The `reasoning_effort` the body carries, if any: only with reasoning

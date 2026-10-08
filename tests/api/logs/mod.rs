@@ -360,8 +360,9 @@ async fn seed_extractions(reads: &Reads, proposal: &str) {
     newest.reasoning_tokens = Some(24);
     newest.session_id = Some("kanade-extraction-0000abcd-8".into());
     newest.request_ids = vec!["kanade-extraction-0000abcd-8-1".into()];
-    newest.guardrail =
-        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default"}});
+    newest.guardrail = json!({"context": {
+        "window": 8192, "reserve": 2500, "source": "local_default", "sent_max_tokens": 2500,
+    }});
     newest.message_ids = vec!["m-said".into(), "m-pruned".into()];
     newest.proposal_ids = vec![proposal.to_owned(), "p-missing".into()];
     newest.refusals = vec![ExtractionRefusal {

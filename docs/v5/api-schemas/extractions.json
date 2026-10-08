@@ -77,8 +77,9 @@
               "required": ["window", "reserve", "source"],
               "properties": {
                 "window": { "type": "integer", "minimum": 0 },
-                "reserve": { "type": "integer", "minimum": 0 },
-                "source": { "type": "string" }
+                "reserve": { "type": "integer", "minimum": 0, "description": "The configured completion reserve the request asked for; sent as `max_tokens` only with sampling controls." },
+                "source": { "type": "string" },
+                "sent_max_tokens": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 0 }], "description": "The `max_tokens` the call's last request carried; null when none went out (a route without sampling controls), nothing was sent, or on older rows. Optional so earlier fixtures stay valid." }
               }
             }
           ]

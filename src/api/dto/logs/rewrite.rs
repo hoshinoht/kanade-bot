@@ -109,9 +109,11 @@ pub struct Rewrite {
     pub reply: Option<String>,
     /// Response-only reasoning text, capped at 64 KiB.
     pub reasoning_content: Option<String>,
-    /// `max_tokens` as requested.
+    /// `max_tokens` as sent; null when nothing was sent or the route has no
+    /// sampling controls (the body omits it). Older rows hold the reserve.
     pub max_output_tokens: Option<u64>,
-    /// The local prompt estimate: the reservation less `max_tokens`.
+    /// The local prompt estimate: the reservation less the `max_tokens` sent;
+    /// null when no `max_tokens` went out.
     pub prompt_estimate: Option<u64>,
     pub request_id: Option<String>,
     /// The messages the call was given under `[system]`/`[user]` labels,

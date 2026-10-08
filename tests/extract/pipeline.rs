@@ -787,7 +787,7 @@ async fn a_saved_context_applies_to_the_next_pass_while_a_pass_in_flight_keeps_i
     let logs = world.logs().await;
     assert_eq!(
         logs[0].guardrail["context"],
-        serde_json::json!({"window": 32_768, "reserve": 1_500, "source": "override"})
+        serde_json::json!({"window": 32_768, "reserve": 1_500, "source": "override", "sent_max_tokens": 1_500})
     );
 
     let next = message("102", MY, local(8, 30, 13, 20), "hstar wed 9pm?");
@@ -811,7 +811,7 @@ async fn without_a_live_resolver_the_configured_context_is_sent_and_logged() {
     assert_eq!(world.provider.requests()[0].max_output_tokens, 2_500);
     assert_eq!(
         world.logs().await[0].guardrail["context"],
-        serde_json::json!({"window": 8_192, "reserve": 2_500, "source": "local_default"})
+        serde_json::json!({"window": 8_192, "reserve": 2_500, "source": "local_default", "sent_max_tokens": 2_500})
     );
 }
 
@@ -881,7 +881,7 @@ async fn a_model_switch_mid_pass_keeps_the_pass_on_its_model_and_context() {
         assert_eq!(log.model, ALIAS);
         assert_eq!(
             log.guardrail["context"],
-            serde_json::json!({"window": 4_096, "reserve": 1_000, "source": "catalog"})
+            serde_json::json!({"window": 4_096, "reserve": 1_000, "source": "catalog", "sent_max_tokens": 1_000})
         );
     }
 

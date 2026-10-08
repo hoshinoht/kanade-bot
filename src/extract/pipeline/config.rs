@@ -43,7 +43,8 @@ pub struct PipelineConfig {
     pub context_messages: usize,
     pub min_confidence: f64,
     pub context_tokens: usize,
-    /// The route-resolved extraction completion reserve (`max_tokens`).
+    /// The route-resolved extraction completion reserve (requested
+    /// `max_tokens`; sent only with sampling controls).
     pub completion_reserve: usize,
     /// Context source retained with each model-log row.
     pub context_source: &'static str,

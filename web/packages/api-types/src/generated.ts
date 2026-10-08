@@ -532,7 +532,16 @@ export type ReadMessage = { id: string, author: string, author_id?: string, at: 
 /**
  * The context the call was budgeted for.
  */
-export type CallContext = { window: number, reserve: number, source: string, };
+export type CallContext = { window: number, 
+/**
+ * The configured completion reserve the request asked for.
+ */
+reserve: number, source: string, 
+/**
+ * The `max_tokens` the last request carried; null when none went out
+ * (a route without sampling controls), nothing was sent, or on older rows.
+ */
+sent_max_tokens?: number | null, };
 
 /**
  * A change the scheduler refused to stage for the call.
@@ -650,11 +659,13 @@ reply: string | null,
  */
 reasoning_content: string | null, 
 /**
- * `max_tokens` as requested.
+ * `max_tokens` as sent; null when nothing was sent or the route has no
+ * sampling controls (the body omits it). Older rows hold the reserve.
  */
 max_output_tokens: number | null, 
 /**
- * The local prompt estimate: the reservation less `max_tokens`.
+ * The local prompt estimate: the reservation less the `max_tokens` sent;
+ * null when no `max_tokens` went out.
  */
 prompt_estimate: number | null, request_id: string | null, 
 /**

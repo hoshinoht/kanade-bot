@@ -124,6 +124,34 @@ async fn untagged_calls_log_no_correlation() {
     assert_eq!((&rows[0].session_id, rows[0].request_ids.len()), (&None, 0));
 }
 
+/// The row keeps the configured reserve under `context.reserve` and records
+/// the `max_tokens` the last request carried apart: `null` when the route
+/// has no sampling controls (the body omits it), the reserve with them.
+#[tokio::test(start_paused = true)]
+async fn the_row_records_the_max_tokens_actually_sent_apart_from_the_reserve() {
+    use kanade::infrastructure::llm::ModelCapabilities;
+    for (sampling_controls, sent) in [(false, false), (true, true)] {
+        let world = World::new(vec![answer(NOTHING, None)]).await;
+        *world.model.caps.lock().unwrap() = Some(ModelCapabilities {
+            sampling_controls,
+            ..ModelCapabilities::minimal()
+        });
+        one_call(&world).await;
+        let context = world.logs().await[0].guardrail["context"].clone();
+        let reserve = context["reserve"].as_u64().expect("configured reserve");
+        assert_eq!(
+            u64::from(world.provider.requests()[0].max_output_tokens),
+            reserve
+        );
+        let expected = if sent {
+            serde_json::json!(reserve)
+        } else {
+            serde_json::Value::Null
+        };
+        assert_eq!(context.get("sent_max_tokens"), Some(&expected));
+    }
+}
+
 #[tokio::test(start_paused = true)]
 async fn reasoning_attempts_are_retained_summed_and_not_sent_back() {
     use kanade::infrastructure::llm::{ModelCapabilities, wire_body};

@@ -149,13 +149,14 @@ pub struct RewriteLog {
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
     pub reasoning_tokens: Option<u64>,
-    /// The runner's token reservation (prompt estimate + `max_tokens`) the
-    /// reported usage was checked against.
+    /// The runner's token reservation (prompt estimate + the requested
+    /// reserve) the reported usage was checked against.
     pub reservation: Option<u64>,
     /// The call token budget a reservation exceeded when the runner refused
     /// it before sending ("reserved N > budget B").
     pub budget: Option<u64>,
-    /// `max_tokens` as requested.
+    /// `max_tokens` as sent; `None` when nothing was sent or the route has
+    /// no sampling controls (the body omits it).
     pub max_output_tokens: Option<u64>,
     /// The seed line the model was asked to rewrite.
     pub seed: String,

@@ -186,8 +186,13 @@ pub(crate) struct CallRecord {
     /// Its messages were edited or deleted before the commit: nothing kept.
     pub stale_version: bool,
     pub context_window: usize,
+    /// The configured completion reserve the request asked for; the body
+    /// carries it as `max_tokens` only with sampling controls.
     pub context_reserve: usize,
     pub context_source: &'static str,
+    /// The `max_tokens` the last request sent carried (`Some(None)`: sent
+    /// without one); `None` when nothing was sent.
+    pub sent_max_tokens: Option<Option<u32>>,
     pub usage: CallUsage,
 }
 
@@ -359,6 +364,7 @@ where
             context_window: context.window,
             context_reserve: context.reserve,
             context_source: context.source,
+            sent_max_tokens: None,
             usage: CallUsage::default(),
         }
     }
@@ -546,6 +552,7 @@ where
                     record
                         .usage
                         .attempt(session.requests_used() > before, estimate, None);
+                    record.sent_max_tokens = session.last_sent().map(|sent| sent.max_tokens);
                     record.model = alias;
                     record.requests = session.requests_used();
                     record.correlate(session.id(), session.request_ids());
@@ -560,6 +567,9 @@ where
             // A reply the runner refused (cut off, or over its reservation)
             // still logs what the provider reported for this attempt.
             let sent_now = session.requests_used() > before;
+            if let Some(sent) = session.last_sent() {
+                record.sent_max_tokens = Some(sent.max_tokens);
+            }
             let reported = match &sent {
                 Ok(response) => Some(response),
                 Err(_) if sent_now => session.refused_reply(),

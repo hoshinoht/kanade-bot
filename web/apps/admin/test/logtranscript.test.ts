@@ -48,7 +48,7 @@ describe('rewrite transcript', () => {
     expect(md).toContain('- Kind: countdown\n- Stage: daily batch\n- Context: countdown:r-kalos:60\n- Verdict: unavailable (budget_exceeded)');
     expect(md).toContain('- Model: kanata/rewrite\n- Effort: medium\n- Latency: 15 s');
     expect(md).toContain('- Tokens: prompt 300, completion 112\n- Reasoning tokens: 98\n- Token check: used 412 > reserved 287');
-    expect(md).toContain('- Max tokens: 96\n- Prompt estimate: 191\n- Request id: kanade-rewrite-0000beef-104-1');
+    expect(md).toContain('- Max tokens sent: 96\n- Prompt estimate: 191\n- Request id: kanade-rewrite-0000beef-104-1');
     expect(md).toContain('## Seed\n\n```\nOnward!\n```\n\n## Reply\n\n```\nWaku waku!\n```\n\n## Line used\n\n```\nOnward!\n```\n\n## Reasoning\n\n```\nWhich interjection fits?\n```\n');
     expect(md.endsWith('## Prompt as sent\n\n```\n[system]\nRewrite the one reminder header line.\n\n[user]\nLine to rewrite: Onward!\n```\n')).toBe(true);
   });
@@ -74,7 +74,7 @@ describe('rewrite transcript', () => {
       prompt: null,
     });
     const md = rewriteMarkdown(r, UTC);
-    expect(md).toContain('- Context: —\n- Verdict: no persona\n- Model: no model call\n- Effort: —\n- Latency: unknown\n- Tokens: prompt unknown, completion unknown\n- Max tokens: unknown');
+    expect(md).toContain('- Context: —\n- Verdict: no persona\n- Model: no model call\n- Effort: —\n- Latency: unknown\n- Tokens: prompt unknown, completion unknown\n- Max tokens sent: none');
     for (const absent of ['Reasoning tokens', 'Token check', 'Request id', '## Reasoning']) expect(md).not.toContain(absent);
     expect(md).toContain('## Reply\n\n— nothing came back —\n\n## Line used\n\n—\n');
     expect(md.endsWith('## Prompt as sent\n\n— not recorded —\n')).toBe(true);
@@ -137,7 +137,7 @@ const call = (over: Partial<Extraction> = {}): Extraction => ({
   completion_tokens: 72,
   reasoning_tokens: 24,
   prompt_estimate: 1_880,
-  context: { window: 8_192, reserve: 2_500, source: 'local_default' },
+  context: { window: 8_192, reserve: 2_500, source: 'local_default', sent_max_tokens: 2_500 },
   reasoning_content: 'They agree on 22:00.',
   refusals: [],
   session_id: 'kanade-extraction-1a2b3c4d-3',
@@ -150,7 +150,7 @@ describe('extraction transcript', () => {
     const md = extractionMarkdown(call(), UTC);
     expect(md).toMatch(/^# Extraction x-kalos \(#c5d6e7f8\)\n/);
     expect(md).toContain('- Channel: #kalos-four\n- Model: kanata/extract\n- Outcome: proposed\n- Latency: 12 s');
-    expect(md).toContain('- Tokens: prompt 2,010, completion 72\n- Reasoning tokens: 24\n- Prompt estimate: 1,880\n- Context: window 8,192, reserve 2,500 (local_default)');
+    expect(md).toContain('- Tokens: prompt 2,010, completion 72\n- Reasoning tokens: 24\n- Prompt estimate: 1,880\n- Context: window 8,192, reserve 2,500 (local_default), max tokens sent 2,500');
     expect(md).toContain('- Gateway session: kanade-extraction-1a2b3c4d-3\n- Request ids: kanade-extraction-1a2b3c4d-3-1, kanade-extraction-1a2b3c4d-3-2');
     expect(md).toContain(
       '## Messages read (2)\n\n```\n[Tue 29 Sep 2026, 03:55:00 (UTC)] Ren: kalos 10pm instead? @Yuzu\n[Tue 29 Sep 2026, 03:56:00 (UTC)] Yuzu: ok 10\nsee you in #kalos-four\n```',

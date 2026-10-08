@@ -16,7 +16,7 @@ use crate::infrastructure::llm::{ChatRequest, ErrorCode, LlmProvider};
 /// default rewrite reserve when no live context resolver is attached.
 pub const REWRITE_MAX_OUTPUT_TOKENS: u32 = 96;
 
-/// The rewrite reserve (`max_tokens`) for an alias, read per request.
+/// The rewrite reserve (requested `max_tokens`) for an alias, read per request.
 pub type RewriteReserve = Arc<dyn Fn(&str) -> u32 + Send + Sync>;
 
 pub struct GovernedRewriter<P> {
@@ -93,7 +93,6 @@ impl<P: LlmProvider> NudgeRewriter for GovernedRewriter<P> {
             alias: Some(route.alias.clone()),
             // The rewrite role's live level (read once, with the alias).
             effort: route.effort,
-            max_output_tokens: Some(max_output_tokens),
             ..RewriteDetail::default()
         };
         let mut session = match self.client.open_rewrite_on(&route, "nudge", deadline) {
@@ -119,6 +118,7 @@ impl<P: LlmProvider> NudgeRewriter for GovernedRewriter<P> {
         if let Some(sent) = session.last_sent() {
             detail.alias = Some(sent.alias.clone());
             detail.effort = sent.effort;
+            detail.max_output_tokens = sent.max_tokens;
         }
         detail.reservation = session.last_reservation();
         detail.budget = session.over_budget();

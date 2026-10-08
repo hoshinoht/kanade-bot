@@ -60,6 +60,8 @@ pub struct SentRequest {
     pub alias: String,
     /// `None`: no `reasoning_effort` went out.
     pub effort: Option<Effort>,
+    /// `None`: no `max_tokens` went out (a route without sampling controls).
+    pub max_tokens: Option<u32>,
 }
 
 /// Whether a failure counts against the member's chat allowance.
@@ -517,7 +519,8 @@ impl<P: LlmProvider> Session<'_, P> {
         self.used
     }
 
-    /// What the last request this session sent carried (alias, effort).
+    /// What the last request this session sent carried (alias, effort,
+    /// `max_tokens`).
     pub fn last_sent(&self) -> Option<&SentRequest> {
         self.last_sent.as_ref()
     }

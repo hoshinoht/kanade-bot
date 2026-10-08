@@ -244,7 +244,7 @@ async fn a_closed_portal_keeps_today_behaviour_and_spends_no_tip() {
     assert_eq!(log.outcome, ExtractionOutcome::Proposed);
     assert_eq!(
         log.guardrail,
-        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default"}})
+        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default", "sent_max_tokens": 2500}})
     );
     // The week's tip is still unclaimed.
     let week = reset().current_week(now()).unwrap();
@@ -278,7 +278,7 @@ async fn link_first_with_the_portal_open_sends_only_the_link_and_one_lead_in() {
     assert_eq!(log.outcome, ExtractionOutcome::SelfServiceLink);
     assert_eq!(
         log.guardrail,
-        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default"}, "nudges": ["rewritten"]})
+        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default", "sent_max_tokens": 2500}, "nudges": ["rewritten"]})
     );
     assert!(!log.guardrail.to_string().contains(REWRITTEN));
     // The rewrite request carried no member ids.
@@ -434,11 +434,11 @@ async fn cards_and_link_keeps_the_card_and_gives_the_lead_in_once_a_week() {
     assert_eq!(logs[0].outcome, ExtractionOutcome::Proposed);
     assert_eq!(
         logs[0].guardrail,
-        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default"}, "nudges": ["rewritten"]})
+        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default", "sent_max_tokens": 2500}, "nudges": ["rewritten"]})
     );
     assert_eq!(
         logs[1].guardrail,
-        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default"}})
+        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default", "sent_max_tokens": 2500}})
     );
 }
 
@@ -460,7 +460,7 @@ async fn a_refused_rewrite_is_logged_by_label_and_the_seed_is_used() {
     assert!(seed.lines.contains(&tip.lead_in.as_deref().unwrap()));
     assert_eq!(
         world.logs().await[0].guardrail,
-        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default"}, "nudges": ["seed_refused"]})
+        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default", "sent_max_tokens": 2500}, "nudges": ["seed_refused"]})
     );
 }
 
@@ -494,7 +494,7 @@ async fn a_refused_proposal_posts_no_card_or_link_and_spends_no_tip() {
     assert_eq!(world.requests(), 1, "no rewrite for a link never posted");
     assert_eq!(
         log.guardrail,
-        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default"}})
+        json!({"context": {"window": 8192, "reserve": 2500, "source": "local_default", "sent_max_tokens": 2500}})
     );
     let week = reset().current_week(now()).unwrap();
     assert!(world.store.claim_tip(MY, week, now()).await.unwrap());
@@ -785,4 +785,48 @@ async fn a_reservation_over_the_call_budget_is_refused_before_sending() {
     let reservation = detail.reservation.expect("reservation");
     assert!(reservation > CALL_TOKEN_BUDGET, "{reservation}");
     assert_eq!(detail.usage, None);
+    assert_eq!(detail.max_output_tokens, None, "no max_tokens went out");
+}
+
+/// The Rewrites-log row records the `max_tokens` the request carried: none
+/// for a route without sampling controls (the body omits it), the reserve
+/// with them.
+#[tokio::test(start_paused = true)]
+async fn a_rewrite_row_records_max_tokens_only_when_the_route_sends_it() {
+    use kanade::chat::nudge::StoreRewriteSink;
+    use kanade::domain::model_log::{RewriteFilter, RewriteLogStore};
+    use kanade::infrastructure::llm::ModelCapabilities;
+    use kanade::infrastructure::store::MemoryScheduleStore;
+
+    let mut rows = Vec::new();
+    for sampling_controls in [false, true] {
+        let (provider, client) = crate::fakes::client(vec![reply("Fine. Fix it yourself.")], true);
+        *provider.caps.lock().unwrap() = Some(ModelCapabilities {
+            sampling_controls,
+            ..ModelCapabilities::minimal()
+        });
+        let logs = Arc::new(MemoryScheduleStore::new());
+        let rewriter = GovernedRewriter::new(client).with_reserve(Arc::new(|_: &str| 80));
+        Nudger::new(Arc::new(Fixed), rewriter)
+            .with_log(Arc::new(StoreRewriteSink::new(
+                Arc::clone(&logs),
+                Arc::new(now),
+            )))
+            .lead_in(&kanade(), &facts())
+            .await;
+        assert_eq!(provider.requests()[0].max_output_tokens, 80);
+        let row = logs
+            .list_rewrites(&RewriteFilter {
+                limit: 10,
+                ..RewriteFilter::default()
+            })
+            .await
+            .expect("list")
+            .items
+            .pop()
+            .expect("one row");
+        assert!(row.request_id.is_some(), "the request went out");
+        rows.push(row.max_output_tokens);
+    }
+    assert_eq!(rows, [None, Some(80)]);
 }

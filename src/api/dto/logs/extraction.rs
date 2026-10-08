@@ -104,8 +104,13 @@ pub struct ReadMessage {
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct CallContext {
     pub window: u64,
+    /// The configured completion reserve the request asked for.
     pub reserve: u64,
     pub source: String,
+    /// The `max_tokens` the last request carried; null when none went out
+    /// (a route without sampling controls), nothing was sent, or on older rows.
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub sent_max_tokens: Option<u64>,
 }
 
 /// A change the scheduler refused to stage for the call.
@@ -276,6 +281,7 @@ fn call_context(log: &ExtractionLog) -> Option<CallContext> {
         window: field("window").and_then(Value::as_u64)?,
         reserve: field("reserve").and_then(Value::as_u64)?,
         source: field("source").and_then(Value::as_str)?.to_owned(),
+        sent_max_tokens: field("sent_max_tokens").and_then(Value::as_u64),
     })
 }
 

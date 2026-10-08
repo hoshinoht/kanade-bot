@@ -378,7 +378,8 @@
             "integer",
             "null"
           ],
-          "minimum": 0
+          "minimum": 0,
+          "description": "The max_tokens the request carried; null when nothing was sent or the route has no sampling controls. Older rows hold the configured reserve."
         },
         "prompt_estimate": {
           "type": [
@@ -386,7 +387,7 @@
             "null"
           ],
           "minimum": 0,
-          "description": "The reservation less max_tokens."
+          "description": "The reservation less the max_tokens sent; null when no max_tokens went out."
         },
         "request_id": {
           "$ref": "common.json#/$defs/NullableString"
