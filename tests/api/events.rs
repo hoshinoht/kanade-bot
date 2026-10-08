@@ -433,6 +433,7 @@ async fn shutdown_ends_open_streams_promptly() {
             ..HttpConfig::default()
         },
         admin_auth: Default::default(),
+        public_auth: Default::default(),
         timezone: chrono_tz::Asia::Kuala_Lumpur,
         shutdown_timeout: Duration::from_secs(10),
     };
@@ -440,6 +441,7 @@ async fn shutdown_ends_open_streams_promptly() {
         auth: reads.site.auth.clone().unwrap(),
         state: reads.site.state.clone().unwrap(),
         health: Arc::new(Up),
+        member: None,
     };
     let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
     let server = tokio::spawn(async move {

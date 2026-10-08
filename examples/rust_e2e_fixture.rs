@@ -1,4 +1,19 @@
-//! Seeds the isolated Rust-browser E2E store through the production scheduler.
+//! Rust-browser E2E fixtures.
+//!
+//! Default: seeds the isolated E2E store through the production scheduler
+//! (`--db … --lock-dir … --timezone … --reset-weekday … --reset-time …`).
+//!
+//! `member-portal --public-port N --discord-port M --web-dir PATH [--closed]`:
+//! serves the real public router with the member realm on an in-memory
+//! store at `127.0.0.1:N` (Host `127.0.0.1:N`), plus a fake Discord
+//! authorization page at `127.0.0.1:M`, until SIGINT/SIGTERM. Sign-in needs
+//! no Discord: `/api/public/auth/discord/start` redirects to the fake page,
+//! which approves at once and returns to the real callback. A spec picks who
+//! signs in with the cookie `kanade_fake_discord` on `127.0.0.1` (cookies
+//! ignore ports): `eligible` (default; user `100000000000000001`, "Mikan"),
+//! `ineligible` (`100000000000000002`, no bossing role), `bot`
+//! (`100000000000000003`, a bot account) or `deny` (cancelled at Discord).
+//! `--closed` keeps the portal switch off.
 
 use std::{
     env,
@@ -177,7 +192,217 @@ async fn seed(args: Args) -> Result<(), Box<dyn Error>> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    seed(parse(env::args().skip(1))?).await
+    let mut args = env::args().skip(1).peekable();
+    if args.peek().map(String::as_str) == Some("member-portal") {
+        args.next();
+        return member_portal::run(member_portal::parse(args)?).await;
+    }
+    seed(parse(args)?).await
+}
+
+mod member_portal {
+    use std::{
+        error::Error,
+        net::SocketAddr,
+        path::PathBuf,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+    };
+
+    use axum::{
+        Router,
+        extract::State,
+        http::{HeaderMap, StatusCode, Uri, header::COOKIE},
+        response::{IntoResponse, Response},
+        routing::get,
+    };
+    use kanade::{
+        api::{
+            auth::{
+                crypto,
+                discord::{DiscordClient, DiscordLogin, DiscordUser, Secret},
+                fake::FakeDiscord,
+                member::{MemberAuth, StoreEligibility},
+                wire,
+            },
+            listeners::{Site, router},
+        },
+        domain::members::{GatewayMember, MemberStore},
+        infrastructure::store::MemoryScheduleStore,
+        runtime::config::HttpConfig,
+    };
+    use tokio::net::TcpListener;
+
+    use super::{invalid, required};
+
+    /// The cookie a spec sets on `127.0.0.1` to choose the fake Discord user.
+    pub const USER_COOKIE: &str = "kanade_fake_discord";
+    const ELIGIBLE: &str = "100000000000000001";
+    const INELIGIBLE: &str = "100000000000000002";
+    const BOT: &str = "100000000000000003";
+
+    pub struct Args {
+        public_port: u16,
+        discord_port: u16,
+        web_dir: PathBuf,
+        open: bool,
+    }
+
+    pub fn parse(mut values: impl Iterator<Item = String>) -> Result<Args, Box<dyn Error>> {
+        let (mut public_port, mut discord_port, mut web_dir, mut open) = (None, None, None, true);
+        while let Some(flag) = values.next() {
+            if flag == "--closed" {
+                open = false;
+                continue;
+            }
+            let value = required(values.next(), &flag)?;
+            match flag.as_str() {
+                "--public-port" => public_port = Some(value.parse::<u16>()?),
+                "--discord-port" => discord_port = Some(value.parse::<u16>()?),
+                "--web-dir" => web_dir = Some(PathBuf::from(value)),
+                _ => return Err(invalid(format!("unknown argument {flag}")).into()),
+            }
+        }
+        Ok(Args {
+            public_port: public_port.ok_or_else(|| invalid("missing --public-port"))?,
+            discord_port: discord_port.ok_or_else(|| invalid("missing --discord-port"))?,
+            web_dir: web_dir.ok_or_else(|| invalid("missing --web-dir"))?,
+            open,
+        })
+    }
+
+    fn user(choice: &str) -> DiscordUser {
+        let (id, name, bot) = match choice {
+            "ineligible" => (INELIGIBLE, "Plain", false),
+            "bot" => (BOT, "Botty", true),
+            _ => (ELIGIBLE, "Mikan", false),
+        };
+        DiscordUser {
+            id: id.into(),
+            username: name.to_lowercase(),
+            global_name: Some(name.into()),
+            bot,
+            avatar: None,
+        }
+    }
+
+    struct FakePage {
+        discord: Arc<FakeDiscord>,
+        redirect: String,
+    }
+
+    /// Discord's authorization page, approving at once for the chosen user.
+    async fn authorize(
+        State(page): State<Arc<FakePage>>,
+        headers: HeaderMap,
+        uri: Uri,
+    ) -> Response {
+        let pairs = wire::query_pairs(uri.query());
+        let value = |key| wire::query_value(&pairs, key);
+        let (Some(state), Some(challenge), Some(redirect)) = (
+            value("state"),
+            value("code_challenge"),
+            value("redirect_uri"),
+        ) else {
+            return StatusCode::BAD_REQUEST.into_response();
+        };
+        if redirect != page.redirect || value("scope").as_deref() != Some("identify") {
+            return StatusCode::BAD_REQUEST.into_response();
+        }
+        let choice = headers
+            .get_all(COOKIE)
+            .iter()
+            .filter_map(|header| header.to_str().ok())
+            .flat_map(|header| header.split(';'))
+            .filter_map(|pair| pair.trim().split_once('='))
+            .find(|(name, _)| *name == USER_COOKIE)
+            .map_or("eligible", |(_, value)| value);
+        let back = if choice == "deny" {
+            wire::form(&[("error", "access_denied"), ("state", &state)])
+        } else {
+            let Some(code) = crypto::random_token() else {
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            };
+            page.discord.approve(&code, &challenge, user(choice));
+            wire::form(&[("code", &code), ("state", &state)])
+        };
+        wire::see_other(&format!("{redirect}?{back}"), [])
+    }
+
+    async fn seed_members(store: &MemoryScheduleStore) -> Result<(), Box<dyn Error>> {
+        for (choice, has_role) in [("eligible", true), ("ineligible", false)] {
+            let user = user(choice);
+            store
+                .apply_gateway(GatewayMember {
+                    user_id: user.id.clone(),
+                    display_name: Some(user.display()),
+                    nickname: None,
+                    has_role,
+                    is_bot: false,
+                    roles: Vec::new(),
+                    is_guild_admin: false,
+                })
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn serve(address: SocketAddr, app: Router) -> Result<(), Box<dyn Error>> {
+        let listener = TcpListener::bind(address).await?;
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(kanade::api::server::wait_for_shutdown())
+        .await?;
+        Ok(())
+    }
+
+    pub async fn run(args: Args) -> Result<(), Box<dyn Error>> {
+        let host = format!("127.0.0.1:{}", args.public_port);
+        let redirect = format!("http://{host}/api/public/auth/discord/callback");
+        let store = Arc::new(MemoryScheduleStore::new());
+        seed_members(&store).await?;
+        let discord = Arc::new(FakeDiscord::default());
+        let open = Arc::new(AtomicBool::new(args.open));
+        let member = MemberAuth::new(
+            store.clone(),
+            Arc::new(StoreEligibility::new(store.clone())),
+            Arc::new(move || open.load(Ordering::SeqCst)),
+        )
+        .with_discord(
+            DiscordLogin::new(
+                DiscordClient {
+                    client_id: "424242".into(),
+                    client_secret: Secret::new("e2e-fake-secret"),
+                    redirect_uri: redirect.clone(),
+                },
+                discord.clone(),
+            )
+            .with_authorize_url(format!(
+                "http://127.0.0.1:{}/oauth2/authorize",
+                args.discord_port
+            )),
+        );
+        let http = HttpConfig {
+            public_host: Some(host),
+            web_dir: Some(args.web_dir),
+            ..HttpConfig::default()
+        };
+        let mut site = Site::public(&http).ok_or_else(|| invalid("no public host"))?;
+        site.member = Some(Arc::new(member));
+        let page = Arc::new(FakePage { discord, redirect });
+        let fake = Router::new()
+            .route("/oauth2/authorize", get(authorize))
+            .with_state(page);
+        tokio::try_join!(
+            serve(([127, 0, 0, 1], args.public_port).into(), router(site)),
+            serve(([127, 0, 0, 1], args.discord_port).into(), fake),
+        )?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

@@ -172,10 +172,10 @@ fn profile(id: &str, name: &str, has_role: bool) -> MemberProfile {
     }
 }
 
-struct TempDir(PathBuf);
+pub(crate) struct TempDir(pub(crate) PathBuf);
 
 impl TempDir {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         use std::os::unix::fs::DirBuilderExt;
         let root = std::fs::canonicalize(std::env::temp_dir()).unwrap();
         let path = root.join(format!("kanade-api-store-{}", uuid::Uuid::new_v4()));

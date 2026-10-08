@@ -1,7 +1,8 @@
-//! CSRF for the admin origin: every unsafe cookie-authenticated request must
+//! CSRF for both origins: every unsafe cookie-authenticated request must
 //! come from this origin (`Sec-Fetch-Site`/`Origin`) and echo the session's
-//! token in [`CSRF_HEADER`]. The token is an HMAC of the session id, so it
-//! needs no storage and dies with the session.
+//! token in [`CSRF_HEADER`]. The token is an HMAC of the session id under a
+//! per-realm context, so it needs no storage, dies with the session and a
+//! member token never validates as an admin one (or the reverse).
 
 use axum::http::{
     HeaderMap, Method,
@@ -10,22 +11,27 @@ use axum::http::{
 
 use super::crypto;
 
-/// Response header on `GET /api/admin/session` and required request header on mutations.
+/// Response header on the session reads and required request header on mutations.
 pub const CSRF_HEADER: &str = "x-kanade-csrf";
-const CSRF_CONTEXT: &[u8] = b"kanade-admin-csrf-v1";
+/// The admin realm's token context.
+pub const ADMIN: &[u8] = b"kanade-admin-csrf-v1";
+/// The member (public origin) realm's token context.
+pub const MEMBER: &[u8] = b"kanade-public-csrf-v1";
 
 pub fn is_unsafe(method: &Method) -> bool {
     !matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS)
 }
 
-pub fn token(session_id: &str) -> String {
-    crypto::keyed_tag(session_id.as_bytes(), CSRF_CONTEXT)
+pub fn token(context: &[u8], session_id: &str) -> String {
+    crypto::keyed_tag(session_id.as_bytes(), context)
 }
 
-pub fn token_matches(headers: &HeaderMap, session_id: &str) -> bool {
+pub fn token_matches(context: &[u8], headers: &HeaderMap, session_id: &str) -> bool {
     let mut values = headers.get_all(CSRF_HEADER).iter();
     match (values.next(), values.next()) {
-        (Some(value), None) => crypto::constant_eq(value.as_bytes(), token(session_id).as_bytes()),
+        (Some(value), None) => {
+            crypto::constant_eq(value.as_bytes(), token(context, session_id).as_bytes())
+        }
         _ => false,
     }
 }
@@ -108,14 +114,29 @@ mod tests {
     }
 
     #[test]
-    fn tokens_bind_to_the_session() {
+    fn tokens_bind_to_the_session_and_the_realm() {
         let id = "a".repeat(43);
         let mut map = HeaderMap::new();
-        map.insert(CSRF_HEADER, HeaderValue::from_str(&token(&id)).unwrap());
-        assert!(token_matches(&map, &id));
-        assert!(!token_matches(&map, &"b".repeat(43)));
-        map.append(CSRF_HEADER, HeaderValue::from_str(&token(&id)).unwrap());
-        assert!(!token_matches(&map, &id), "repeated header");
-        assert!(!token_matches(&HeaderMap::new(), &id));
+        map.insert(
+            CSRF_HEADER,
+            HeaderValue::from_str(&token(ADMIN, &id)).unwrap(),
+        );
+        assert!(token_matches(ADMIN, &map, &id));
+        assert!(!token_matches(ADMIN, &map, &"b".repeat(43)));
+        assert!(
+            !token_matches(MEMBER, &map, &id),
+            "an admin token is not a member token"
+        );
+        assert_eq!(
+            token(ADMIN, &id),
+            crypto::keyed_tag(id.as_bytes(), b"kanade-admin-csrf-v1"),
+            "admin tokens are unchanged"
+        );
+        map.append(
+            CSRF_HEADER,
+            HeaderValue::from_str(&token(ADMIN, &id)).unwrap(),
+        );
+        assert!(!token_matches(ADMIN, &map, &id), "repeated header");
+        assert!(!token_matches(ADMIN, &HeaderMap::new(), &id));
     }
 }

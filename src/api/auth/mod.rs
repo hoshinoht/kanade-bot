@@ -1,8 +1,10 @@
-//! Admin authentication: Discord OAuth (primary), the edge's Tailscale
+//! Sign-in realms. Admin: Discord OAuth (primary), the edge's Tailscale
 //! identity (fallback) and the break-glass token, all ending in a server-side
 //! session behind the `__Host-kanade_admin` cookie. Later slices take
 //! [`AdminSession`] as a handler argument; it authenticates, re-checks the
 //! identity, enforces CSRF on unsafe methods and yields the history actor.
+//! Members of the public origin sign in through [`member`], which shares
+//! only the primitives below and never an admin credential.
 
 pub mod audit;
 pub mod crypto;
@@ -12,6 +14,7 @@ pub mod discord;
 pub mod discord_http;
 #[cfg(any(test, feature = "test-support"))]
 pub mod fake;
+pub mod member;
 pub mod own;
 pub mod rate;
 pub mod roster;
@@ -24,11 +27,11 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use chrono::{DateTime, TimeDelta, Utc};
 
-pub use secrets::{edge_secret, from_settings};
+pub use secrets::{edge_secret, from_settings, member_from_settings};
 pub use session::AdminSession;
 
 use self::{
-    audit::{AuditContext, AuditEvent, AuditRecord, AuditSink, StderrAudit},
+    audit::{AuditContext, AuditEvent, AuditRecord, AuditSink, Realm, StderrAudit},
     crypto::SealedSecret,
     discord::DiscordLogin,
     rate::RateLimits,
@@ -176,7 +179,8 @@ impl AdminAuth {
     }
 
     pub(crate) fn audit(&self, context: &AuditContext, event: AuditEvent) {
-        self.audit.record(AuditRecord::new(context, event));
+        self.audit
+            .record(AuditRecord::new(Realm::Admin, context, event));
     }
 
     pub(crate) fn rate(&self) -> &RateLimits {

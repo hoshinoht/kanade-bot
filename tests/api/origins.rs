@@ -292,3 +292,99 @@ fn public_site_requires_a_public_host() {
     http.public_host = None;
     assert!(Site::public(&http).is_none());
 }
+
+/// Member routes answer only the exact public host: the admin host, another
+/// name, a port or a duplicate Host header is misdirected before sign-in runs.
+#[tokio::test]
+async fn member_routes_answer_only_the_exact_public_host() {
+    use crate::auth::member_support::MemberHarness;
+    let harness = MemberHarness::new().await;
+    for host in [
+        ADMIN_HOST,
+        "evil.example",
+        "kanade-pub.test:8443",
+        "localhost",
+    ] {
+        for path in [
+            "/api/public/auth/discord/start",
+            "/api/public/session",
+            "/api/public/status",
+        ] {
+            let reply = get(harness.public, host, path).await;
+            assert_eq!(reply.status, 421, "{host} {path}");
+            assert_eq!(reply.api_error(), "misdirected");
+        }
+    }
+    assert_eq!(
+        get(harness.public, "KANADE-PUB.test", "/api/public/status")
+            .await
+            .status,
+        200
+    );
+    let duplicated = raw(
+        harness.public,
+        b"GET /api/public/auth/discord/start HTTP/1.1\r\nHost: kanade-pub.test\r\nHost: evil.example\r\nConnection: close\r\n\r\n",
+    )
+    .await;
+    assert_eq!(duplicated.status, 421);
+}
+
+/// `CF-Connecting-IP` names the member's address only from the cloudflared
+/// peer: from anyone else it neither rotates a session nor escapes the
+/// per-client rate limit.
+#[tokio::test]
+async fn cf_connecting_ip_counts_only_from_the_cloudflared_peer() {
+    use crate::auth::member_support::{MIKAN, MemberHarness, Options, cookie, discord_user};
+    use kanade::api::auth::rate::{Limits, Route, Rule};
+
+    fn two_starts(_: Route) -> Limits {
+        let rule = |burst| Rule {
+            burst,
+            per_minute: 1.0,
+        };
+        Limits {
+            per_ip: rule(2.0),
+            global: rule(50.0),
+        }
+    }
+    for (peer, rotates) in [(Some([127, 0, 0, 1].into()), true), (None, false)] {
+        let harness = MemberHarness::with(Options {
+            cloudflared: peer,
+            limits: Some(two_starts),
+            ..Options::default()
+        })
+        .await;
+        let browser = harness.sign_in(discord_user(MIKAN, "Mikan")).await;
+        let reply = harness
+            .get(
+                "/api/public/session",
+                &[
+                    (cookie(&browser.id).0, &cookie(&browser.id).1),
+                    ("CF-Connecting-IP", "203.0.113.200"),
+                ],
+            )
+            .await;
+        assert_eq!(reply.status, 200);
+        assert_eq!(
+            reply
+                .cookie(kanade::api::auth::wire::MEMBER_SESSION_COOKIE)
+                .is_some(),
+            rotates,
+            "peer {peer:?}"
+        );
+        // One start used by the sign-in; spoofed addresses share its bucket
+        // unless the peer is trusted.
+        let mut limited = false;
+        for n in 0..3 {
+            let ip = format!("203.0.113.{}", 10 + n);
+            let reply = harness
+                .get(
+                    "/api/public/auth/discord/start",
+                    &[("CF-Connecting-IP", &ip)],
+                )
+                .await;
+            limited |= reply.header("location") == Some("/?login_error=rate_limited");
+        }
+        assert_eq!(limited, !rotates, "peer {peer:?}");
+    }
+}

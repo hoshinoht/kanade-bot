@@ -1,10 +1,10 @@
-//! Adapter from the bot's roster events to the member rows and the admin
+//! Adapter from the bot's roster events to the member rows and both realms'
 //! session hooks. The serve composition calls it for every
 //! `BotEvent::Roster` and `BotEvent::GuildAvailable`.
 
 use twilight_model::id::{Id, marker::UserMarker};
 
-use super::AdminAuth;
+use super::{AdminAuth, member::MemberAuth};
 use crate::{
     api::{avatars::AvatarCache, state::GuildAccess},
     bot::{
@@ -20,10 +20,12 @@ use crate::{
 /// Persist the update as v4's `upsert_member` did (names and role flag; the
 /// ping level, aliases and reply style are kept) plus the gateway's role ids
 /// and Administrator, then end sessions of anyone who left or no longer
-/// passes the staff rule; a member who left also loses their cached
-/// portrait. Returns the sessions ended.
+/// passes the staff rule (admin) or holds the bossing role (public portal,
+/// `member`); a member who left also loses their cached portrait. Returns
+/// the sessions ended.
 pub async fn on_roster_update<S: MemberStore>(
     auth: &AdminAuth,
+    member: Option<&MemberAuth>,
     members: &S,
     avatars: Option<&AvatarCache>,
     update: &RosterUpdate,
@@ -50,7 +52,11 @@ pub async fn on_roster_update<S: MemberStore>(
                     is_guild_admin: *is_guild_admin,
                 })
                 .await?;
-            Ok(auth.member_changed(user_id).await)
+            let public = match member {
+                Some(member) => member.member_changed(user_id, *has_role).await,
+                None => 0,
+            };
+            Ok(auth.member_changed(user_id).await + public)
         }
         RosterUpdate::Left { user_id } => {
             // A member who left holds no role, whatever the last update said.
@@ -58,7 +64,11 @@ pub async fn on_roster_update<S: MemberStore>(
             if let Some(avatars) = avatars {
                 avatars.purge(user_id);
             }
-            Ok(auth.member_left(user_id).await)
+            let public = match member {
+                Some(member) => member.member_left(user_id).await,
+                None => 0,
+            };
+            Ok(auth.member_left(user_id).await + public)
         }
     }
 }

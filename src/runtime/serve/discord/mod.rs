@@ -235,6 +235,7 @@ where
         StoreRoster {
             store: Arc::clone(&store),
             auth,
+            member: composition.admin.member.clone(),
             access: Arc::clone(&access),
             avatars: composition.admin.state.avatars.clone(),
         },

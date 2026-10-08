@@ -94,6 +94,22 @@ async fn insert(conn: &mut SqliteConnection, session: &WebSession) -> Result<(),
     Ok(())
 }
 
+/// Delete `old` only when it is a row of `origin`: a cookie value replayed
+/// into the other realm must not end that realm's session.
+async fn delete_replaced(
+    conn: &mut SqliteConnection,
+    origin: SessionOrigin,
+    old: &str,
+) -> Result<(), StoreError> {
+    sqlx::query("DELETE FROM web_sessions WHERE id_hash = ?1 AND origin = ?2")
+        .bind(old)
+        .bind(origin.as_str())
+        .execute(&mut *conn)
+        .await
+        .map_err(store_error)?;
+    Ok(())
+}
+
 async fn put(
     conn: &mut SqliteConnection,
     session: &WebSession,
@@ -101,16 +117,32 @@ async fn put(
 ) -> Result<(), StoreError> {
     starts_live(session)?;
     if let Some(old) = replaces {
-        // Only the same origin's row: a cookie value replayed into the other
-        // realm must not end that realm's session.
-        sqlx::query("DELETE FROM web_sessions WHERE id_hash = ?1 AND origin = ?2")
-            .bind(old)
-            .bind(session.origin.as_str())
-            .execute(&mut *conn)
-            .await
-            .map_err(store_error)?;
+        delete_replaced(&mut *conn, session.origin, old).await?;
     }
     insert(conn, session).await
+}
+
+async fn put_capped(
+    conn: &mut SqliteConnection,
+    session: &WebSession,
+    replaces: Option<&str>,
+    max: usize,
+    now: &DateTime<Utc>,
+    idle_before: &DateTime<Utc>,
+) -> Result<u64, StoreError> {
+    starts_live(session)?;
+    prune(&mut *conn, session.origin, now, idle_before).await?;
+    if let Some(old) = replaces {
+        delete_replaced(&mut *conn, session.origin, old).await?;
+    }
+    // Oldest first, so the cap ends the oldest (D5-A).
+    let live = list_subject(&mut *conn, session.origin, session.method, &session.subject).await?;
+    let excess = live.len().saturating_sub(max.saturating_sub(1));
+    for row in &live[..excess] {
+        delete(&mut *conn, &row.id_hash).await?;
+    }
+    insert(conn, session).await?;
+    Ok(excess as u64)
 }
 
 async fn load(
@@ -270,6 +302,23 @@ impl WebSessionStore for SqliteStore {
         replaces: Option<&'a str>,
     ) -> SessionFuture<'a, ()> {
         Box::pin(async move { write_txn!(self, tx, put(&mut tx, session, replaces)) })
+    }
+
+    fn put_capped_session<'a>(
+        &'a self,
+        session: &'a WebSession,
+        replaces: Option<&'a str>,
+        max: usize,
+        now: DateTime<Utc>,
+        idle_before: DateTime<Utc>,
+    ) -> SessionFuture<'a, u64> {
+        Box::pin(async move {
+            write_txn!(
+                self,
+                tx,
+                put_capped(&mut tx, session, replaces, max, &now, &idle_before)
+            )
+        })
     }
 
     fn load_session<'a>(&'a self, id_hash: &'a str) -> SessionFuture<'a, Option<WebSession>> {

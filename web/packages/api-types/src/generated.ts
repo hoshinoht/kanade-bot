@@ -20,6 +20,14 @@ export type Role = { id: string, name: string, color?: string, };
 
 export type PublicStatus = { portal: 'open' | 'closed', };
 
+export type PublicMember = { id: string, display: string, avatar: string, };
+
+export type PublicSession = { member: PublicMember, fresh_until: string, };
+
+export type PublicSessionRow = { handle: string, device: string | null, signed_in_at: string, last_seen_at: string, current: boolean, };
+
+export type PublicSessions = { sessions: Array<PublicSessionRow>, generated_at: string, };
+
 export type ApiError = { error: string, message: string, };
 
 export type Identity = { name: string, 

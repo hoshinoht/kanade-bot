@@ -1,6 +1,7 @@
-//! Security events for the admin origin. Records carry the request id, the
-//! client IP, identities and reason codes only; tokens, codes, state, cookies
-//! and secrets never reach a sink.
+//! Security events for both realms. Records carry the realm, the request id,
+//! identities and reason codes; admin records also carry the client IP.
+//! Tokens, codes, state, verifiers, cookies and secrets never reach a sink,
+//! and member (public origin) records never carry an IP either.
 
 use std::{net::IpAddr, sync::Mutex};
 
@@ -32,6 +33,10 @@ pub enum AuditEvent {
         actor: String,
         reason: &'static str,
     },
+    /// A member session's id rotated after its client address changed.
+    SessionRotated {
+        actor: String,
+    },
     RateLimited {
         route: &'static str,
     },
@@ -46,7 +51,9 @@ pub enum AuditEvent {
 impl AuditEvent {
     fn level(&self) -> &'static str {
         match self {
-            Self::LoginSucceeded { .. } | Self::SessionEnded { .. } => "INFO",
+            Self::LoginSucceeded { .. }
+            | Self::SessionEnded { .. }
+            | Self::SessionRotated { .. } => "INFO",
             Self::LoginRefused { .. }
             | Self::BreakGlassUsed { .. }
             | Self::RateLimited { .. }
@@ -94,8 +101,18 @@ impl<S: Send + Sync> FromRequestParts<S> for AuditContext {
     }
 }
 
+/// Which sign-in realm a record belongs to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Realm {
+    Admin,
+    /// The public origin's members.
+    Member,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct AuditRecord {
+    pub realm: Realm,
     pub request_id: String,
     pub client: Option<String>,
     #[serde(flatten)]
@@ -103,10 +120,15 @@ pub struct AuditRecord {
 }
 
 impl AuditRecord {
-    pub fn new(context: &AuditContext, event: AuditEvent) -> Self {
+    pub fn new(realm: Realm, context: &AuditContext, event: AuditEvent) -> Self {
         Self {
+            realm,
             request_id: context.request_id.clone(),
-            client: context.client.map(|ip| ip.to_string()),
+            // Members' addresses are never logged (D5-A, item 20).
+            client: match realm {
+                Realm::Admin => context.client.map(|ip| ip.to_string()),
+                Realm::Member => None,
+            },
             event,
         }
     }

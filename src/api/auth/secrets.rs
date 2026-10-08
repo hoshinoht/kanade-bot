@@ -10,11 +10,16 @@ use super::{
     crypto::SealedSecret,
     discord::{DiscordClient, DiscordLogin, Secret},
     discord_http::HttpsDiscord,
+    member::{EligibilityGate, MemberAuth, MemberPolicy, PortalOpen},
     staff::StaffGate,
 };
 use crate::{
     infrastructure::store::web_sessions::WebSessionStore,
-    runtime::{config::AdminAuthSettings, error::Error, secrets::read_secret},
+    runtime::{
+        config::{AdminAuthSettings, DiscordOAuthSettings, PublicAuthSettings},
+        error::Error,
+        secrets::read_secret,
+    },
 };
 
 /// Break-glass tokens must be long enough that guessing is not a strategy.
@@ -32,15 +37,32 @@ pub fn edge_secret(path: &Path) -> Result<SealedSecret, Error> {
         .ok_or_else(|| Error::Startup("system randomness is unavailable".into()))
 }
 
+fn to_delta(duration: std::time::Duration) -> Result<TimeDelta, Error> {
+    TimeDelta::from_std(duration)
+        .map_err(|_| Error::Configuration("session timeouts are out of range".into()))
+}
+
+/// A Discord login over HTTPS with the client secret read from its file.
+fn discord_login(settings: &DiscordOAuthSettings, secret_key: &str) -> Result<DiscordLogin, Error> {
+    let secret = read_secret(&settings.client_secret_file, secret_key)?;
+    let api = HttpsDiscord::new().ok_or_else(|| {
+        Error::Startup("the Rustls ring provider must be installed before sign-in".into())
+    })?;
+    Ok(DiscordLogin::new(
+        DiscordClient {
+            client_id: settings.client_id.clone(),
+            client_secret: Secret::new(secret),
+            redirect_uri: settings.redirect_uri.clone(),
+        },
+        Arc::new(api),
+    ))
+}
+
 pub fn from_settings(
     settings: &AdminAuthSettings,
     sessions: Arc<dyn WebSessionStore>,
     staff: Arc<dyn StaffGate>,
 ) -> Result<AdminAuth, Error> {
-    let to_delta = |duration: std::time::Duration| {
-        TimeDelta::from_std(duration)
-            .map_err(|_| Error::Configuration("session timeouts are out of range".into()))
-    };
     let mut auth = AdminAuth::new(sessions, staff)
         .with_policy(SessionPolicy {
             idle: to_delta(settings.session_idle)?,
@@ -49,21 +71,10 @@ pub fn from_settings(
         })
         .with_tailscale_logins(settings.tailscale_logins.iter().cloned());
     if let Some(discord) = &settings.discord {
-        let secret = read_secret(
-            &discord.client_secret_file,
+        auth = auth.with_discord(discord_login(
+            discord,
             "KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE",
-        )?;
-        let api = HttpsDiscord::new().ok_or_else(|| {
-            Error::Startup("the Rustls ring provider must be installed before sign-in".into())
-        })?;
-        auth = auth.with_discord(DiscordLogin::new(
-            DiscordClient {
-                client_id: discord.client_id.clone(),
-                client_secret: Secret::new(secret),
-                redirect_uri: discord.redirect_uri.clone(),
-            },
-            Arc::new(api),
-        ));
+        )?);
     }
     if let Some(path) = &settings.token_file {
         let token = read_secret(path, "KANADE_ADMIN_TOKEN_FILE")?;
@@ -75,6 +86,30 @@ pub fn from_settings(
         auth = auth
             .with_breakglass(token.as_bytes())
             .ok_or_else(|| Error::Startup("system randomness is unavailable".into()))?;
+    }
+    Ok(auth)
+}
+
+/// The member realm of the public origin: its own Discord application (when
+/// configured) and the `[public]` lifetimes; the re-check, grace and cap
+/// stay fixed.
+pub fn member_from_settings(
+    settings: &PublicAuthSettings,
+    sessions: Arc<dyn WebSessionStore>,
+    gate: Arc<dyn EligibilityGate>,
+    open: PortalOpen,
+) -> Result<MemberAuth, Error> {
+    let mut auth = MemberAuth::new(sessions, gate, open).with_policy(MemberPolicy {
+        idle: to_delta(settings.session_idle)?,
+        absolute: to_delta(settings.session_absolute)?,
+        fresh: to_delta(settings.fresh_write)?,
+        ..MemberPolicy::default()
+    });
+    if let Some(discord) = &settings.discord {
+        auth = auth.with_discord(discord_login(
+            discord,
+            "KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE",
+        )?);
     }
     Ok(auth)
 }

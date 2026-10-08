@@ -102,6 +102,64 @@ impl WebSessionStore for MemoryScheduleStore {
         })
     }
 
+    fn put_capped_session<'a>(
+        &'a self,
+        session: &'a WebSession,
+        replaces: Option<&'a str>,
+        max: usize,
+        now: DateTime<Utc>,
+        idle_before: DateTime<Utc>,
+    ) -> SessionFuture<'a, u64> {
+        Box::pin(async move {
+            check(session)?;
+            let (now, idle_before) = (micros(now), micros(idle_before));
+            let mut sessions = self.sessions();
+            // Plan every deletion first, so a refused insert writes nothing.
+            let mut ended: Vec<String> = sessions
+                .values()
+                .filter(|row| {
+                    row.origin == session.origin
+                        && (row.expires_at <= now
+                            || row.last_seen_at <= idle_before
+                            || row.superseded_until.is_some_and(|until| until <= now))
+                })
+                .map(|row| row.id_hash.clone())
+                .collect();
+            if let Some(old) = replaces
+                && sessions
+                    .get(old)
+                    .is_some_and(|row| row.origin == session.origin)
+            {
+                ended.push(old.to_owned());
+            }
+            let mut live: Vec<&WebSession> = sessions
+                .values()
+                .filter(|row| {
+                    row.origin == session.origin
+                        && row.method == session.method
+                        && row.subject == session.subject
+                        && row.superseded_until.is_none()
+                        && !ended.contains(&row.id_hash)
+                })
+                .collect();
+            live.sort_by(|a, b| (a.created_at, &a.id_hash).cmp(&(b.created_at, &b.id_hash)));
+            let excess = live.len().saturating_sub(max.saturating_sub(1));
+            let capped: Vec<String> = live[..excess]
+                .iter()
+                .map(|row| row.id_hash.clone())
+                .collect();
+            ended.extend(capped);
+            if sessions.contains_key(&session.id_hash) && !ended.contains(&session.id_hash) {
+                return Err(StoreError::Constraint("web_sessions.id_hash UNIQUE".into()));
+            }
+            for id_hash in &ended {
+                sessions.remove(id_hash);
+            }
+            sessions.insert(session.id_hash.clone(), normalised(session));
+            Ok(excess as u64)
+        })
+    }
+
     fn load_session<'a>(&'a self, id_hash: &'a str) -> SessionFuture<'a, Option<WebSession>> {
         Box::pin(async move {
             Ok(self

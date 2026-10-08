@@ -18,6 +18,7 @@ use crate::{
         },
         auth::{
             self, AdminAuth, Clock,
+            member::{MemberAuth, PortalOpen, StoreEligibility},
             staff::{GuildStaffGate, StoreGuildMembers},
         },
         avatars::AvatarCache,
@@ -196,6 +197,10 @@ pub(super) async fn compose_with(
     );
     let auth: AdminAuth =
         auth::from_settings(&config.runtime.admin_auth, store.clone(), Arc::new(staff))?;
+    // One portrait cache for both origins.
+    let avatars = Arc::new(AvatarCache::discord(
+        config.runtime.http.identity_dir.as_deref(),
+    ));
 
     let persona_store = Arc::new(PersonaStore::new(personas.snapshot));
     let desk = ConfigDesk::new(ConfigInputs {
@@ -214,6 +219,10 @@ pub(super) async fn compose_with(
             store: persona_store.clone(),
         }),
     });
+    let member = match config.runtime.public_bind {
+        Some(_) => Some(Arc::new(member_realm(config, &store, &desk, &avatars)?)),
+        None => None,
+    };
 
     // Fixed for the process: the store was migrated when it opened.
     let schema_version = store
@@ -255,9 +264,7 @@ pub(super) async fn compose_with(
             dir: config.backup_dir.clone(),
             schema_version,
         },
-        avatars: Some(Arc::new(AvatarCache::discord(
-            config.runtime.http.identity_dir.as_deref(),
-        ))),
+        avatars: Some(avatars),
         events,
         marks: Default::default(),
     };
@@ -266,6 +273,7 @@ pub(super) async fn compose_with(
             auth: Arc::new(auth),
             state: Arc::new(state),
             health: Arc::new(health),
+            member,
         },
         access,
         settings,
@@ -274,4 +282,23 @@ pub(super) async fn compose_with(
         knowledge,
         model_tasks,
     })
+}
+
+/// The public portal's member realm: eligibility from the stored roster and
+/// the open switch read live from the admin Config (`self_service.public_portal`).
+fn member_realm(
+    config: &ServeConfig,
+    store: &Arc<SqliteStore>,
+    desk: &ConfigDesk,
+    avatars: &Arc<AvatarCache>,
+) -> Result<MemberAuth, Error> {
+    let changes = desk.subscribe();
+    let open: PortalOpen = Arc::new(move || changes.borrow().settings.self_service.public_portal);
+    Ok(auth::member_from_settings(
+        &config.runtime.public_auth,
+        store.clone(),
+        Arc::new(StoreEligibility::new(store.clone())),
+        open,
+    )?
+    .with_portraits(Arc::clone(avatars)))
 }

@@ -1,9 +1,14 @@
 //! Admin sign-in and sessions against fake Discord, a fake guild, the memory
-//! session store and a pinned clock.
+//! session store and a pinned clock; `member_*` covers the public origin's
+//! member realm the same way.
 
 mod discord;
 mod fallbacks;
 mod hardening;
+mod member_devices;
+mod member_sessions;
+mod member_signin;
+pub(crate) mod member_support;
 mod own_sessions;
 mod roster;
 mod sessions;

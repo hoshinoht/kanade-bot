@@ -85,6 +85,36 @@ pub(super) const KEYS: &[(&str, &str, Kind)] = &[
     ("public.bind", "KANADE_PUBLIC_BIND", Text),
     ("public.host", "KANADE_PUBLIC_HOST", Text),
     ("public.cloudflared_peer", "KANADE_CLOUDFLARED_PEER", Text),
+    (
+        "public.discord_client_id",
+        "KANADE_PUBLIC_DISCORD_CLIENT_ID",
+        Id,
+    ),
+    (
+        "public.discord_client_secret_file",
+        "KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE",
+        Text,
+    ),
+    (
+        "public.discord_redirect_uri",
+        "KANADE_PUBLIC_DISCORD_REDIRECT_URI",
+        Text,
+    ),
+    (
+        "public.session_idle_minutes",
+        "KANADE_PUBLIC_SESSION_IDLE_MINUTES",
+        Int,
+    ),
+    (
+        "public.session_absolute_hours",
+        "KANADE_PUBLIC_SESSION_ABSOLUTE_HOURS",
+        Int,
+    ),
+    (
+        "public.fresh_write_minutes",
+        "KANADE_PUBLIC_FRESH_WRITE_MINUTES",
+        Int,
+    ),
     ("discord.token_file", "KANADE_DISCORD_TOKEN_FILE", Text),
     (
         "discord.expect_v4_stopped",

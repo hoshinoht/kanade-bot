@@ -1,6 +1,7 @@
 //! Web session storage every store must keep: round trips, rotation in one
 //! write, touch/delete, per-identity revocation, origin-scoped pruning and
-//! replacement, D9 rotation grace and CHECKs.
+//! replacement, D9 rotation grace, the per-identity cap in one write and
+//! CHECKs.
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
@@ -17,6 +18,7 @@ pub async fn run_suite<S: WebSessionStore>(make: impl AsyncFn() -> S) {
     replace_never_crosses_origins(make().await).await;
     rotation_keeps_the_old_id_for_its_grace(make().await).await;
     malformed_rows_are_refused(make().await).await;
+    capped_put_holds_the_cap_per_identity(make().await).await;
 }
 
 fn at(minute: i64) -> DateTime<Utc> {
@@ -518,6 +520,130 @@ async fn malformed_rows_are_refused<S: WebSessionStore>(store: S) {
                 store.put_session(&session, None).await,
                 Err(StoreError::Constraint(_))
             ),
+            "{case}"
+        );
+    }
+}
+
+async fn capped_put_holds_the_cap_per_identity<S: WebSessionStore>(store: S) {
+    let public = |fill: char, subject: &str, minute: i64| {
+        let mut row = session(fill, LoginMethod::Discord, subject);
+        row.origin = SessionOrigin::Public;
+        row.created_at = at(minute);
+        row
+    };
+    let live = async |store: &S| -> Vec<String> {
+        store
+            .subject_sessions(SessionOrigin::Public, LoginMethod::Discord, "100")
+            .await
+            .expect("list")
+            .into_iter()
+            .map(|row| row.id_hash)
+            .collect()
+    };
+    let admin = session('4', LoginMethod::Discord, "100");
+    let other_subject = public('5', "200", 0);
+    let mut other_method = public('6', "100", 0);
+    other_method.method = LoginMethod::Tailscale;
+    let mut expired = public('7', "300", 0);
+    expired.expires_at = at(4);
+    for row in [
+        &public('1', "100", 1),
+        &public('2', "100", 2),
+        &public('3', "100", 3),
+        &admin,
+        &other_subject,
+        &other_method,
+        &expired,
+    ] {
+        store.put_session(row, None).await.expect("put");
+    }
+    // A rotated-out id is not a live session and does not count.
+    assert!(
+        store
+            .rotate_session(&public('8', "100", 3), &hash('3'), at(10))
+            .await
+            .expect("rotate")
+    );
+
+    let capped = |fill: char, minute: i64| public(fill, "100", minute);
+    assert_eq!(
+        store
+            .put_capped_session(&capped('9', 5), None, 3, at(5), at(-1))
+            .await
+            .expect("capped put"),
+        1,
+        "the oldest live session beyond max - 1 ends"
+    );
+    assert_eq!(live(&store).await, [hash('2'), hash('8'), hash('9')]);
+    assert!(
+        store
+            .load_superseded(&hash('3'), at(5))
+            .await
+            .expect("load")
+            .is_some(),
+        "a superseded id in its grace is kept"
+    );
+    assert_eq!(
+        store.load_session(&hash('7')).await.expect("load"),
+        None,
+        "the origin is pruned in the same write"
+    );
+
+    assert_eq!(
+        store
+            .put_capped_session(&capped('a', 6), Some(&hash('8')), 3, at(6), at(-1))
+            .await
+            .expect("capped put"),
+        0,
+        "the replaced session makes room"
+    );
+    assert_eq!(live(&store).await, [hash('2'), hash('9'), hash('a')]);
+
+    assert_eq!(
+        store
+            .put_capped_session(&capped('b', 7), Some(&admin.id_hash), 3, at(7), at(-1))
+            .await
+            .expect("capped put"),
+        1,
+        "another origin's id is never replaced, so the cap ends one"
+    );
+    assert_eq!(live(&store).await, [hash('9'), hash('a'), hash('b')]);
+
+    assert!(
+        matches!(
+            store
+                .put_capped_session(&capped('b', 8), None, 3, at(8), at(-1))
+                .await,
+            Err(StoreError::Constraint(_))
+        ),
+        "duplicate id hash"
+    );
+    let mut superseded = capped('c', 8);
+    superseded.superseded_until = Some(at(10));
+    assert!(
+        matches!(
+            store
+                .put_capped_session(&superseded, None, 3, at(8), at(-1))
+                .await,
+            Err(StoreError::Constraint(_))
+        ),
+        "starts superseded"
+    );
+    assert_eq!(
+        live(&store).await,
+        [hash('9'), hash('a'), hash('b')],
+        "a refused capped put writes nothing"
+    );
+
+    for (case, kept) in [
+        ("the admin session", &admin),
+        ("another subject", &other_subject),
+        ("another method", &other_method),
+    ] {
+        assert_eq!(
+            store.load_session(&kept.id_hash).await.expect("load"),
+            Some(kept.clone()),
             "{case}"
         );
     }

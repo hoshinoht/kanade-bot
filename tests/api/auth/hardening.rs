@@ -116,7 +116,7 @@ async fn roster_events_persist_members_and_end_sessions() {
         is_guild_admin: false,
     };
     assert_eq!(
-        on_roster_update(&auth, &*harness.store, None, &seen)
+        on_roster_update(&auth, None, &*harness.store, None, &seen)
             .await
             .unwrap(),
         0
@@ -140,7 +140,7 @@ async fn roster_events_persist_members_and_end_sessions() {
         user_id: "111".into(),
     };
     assert_eq!(
-        on_roster_update(&auth, &*harness.store, None, &left)
+        on_roster_update(&auth, None, &*harness.store, None, &left)
             .await
             .unwrap(),
         1

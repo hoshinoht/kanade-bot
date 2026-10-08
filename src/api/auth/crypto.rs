@@ -126,6 +126,39 @@ pub fn keyed_tag(key: &[u8], message: &[u8]) -> String {
     base64url(hmac::sign(&hmac::Key::new(hmac::HMAC_SHA256, key), message).as_ref())
 }
 
+/// A random per-process HMAC key for tags that must not be reversible from
+/// a copied store: without the key, a tag of a small input space (an IP
+/// address) cannot be brute-forced back to its input.
+pub struct TagKey(hmac::Key);
+
+impl TagKey {
+    /// `None` without system randomness.
+    pub fn generate() -> Option<Self> {
+        hmac::Key::generate(hmac::HMAC_SHA256, &SystemRandom::new())
+            .ok()
+            .map(Self)
+    }
+
+    /// HMAC-SHA256 of `context` then `message`, as 64 lowercase hex digits.
+    pub fn hex(&self, context: &[u8], message: &[u8]) -> String {
+        let mut signer = hmac::Context::with_key(&self.0);
+        signer.update(context);
+        signer.update(message);
+        signer
+            .sign()
+            .as_ref()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+}
+
+impl std::fmt::Debug for TagKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("TagKey(..)")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

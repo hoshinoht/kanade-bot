@@ -56,6 +56,19 @@ session_absolute_hours = 12
 # bind = "127.0.0.1:8081"
 # host = "kanade-public.example"
 # cloudflared_peer = "127.0.0.1"
+# Member sign-in, the public origin's own Discord application: all three or
+# none, and they need host; the redirect must be exactly
+# https://<public.host>/api/public/auth/discord/callback. Without them the
+# portal stays closed whatever the admin Config switch
+# self_service.public_portal says (that switch opens and closes it live).
+# discord_client_id = "623456789012345678"
+# discord_client_secret_file = "/run/secrets/public_discord_client_secret"
+# discord_redirect_uri = "https://kanade-public.example/api/public/auth/discord/callback"
+# Member sessions: idle timeout (5-60 minutes), absolute lifetime (1-24
+# hours) and the fresh-write window (5-30 minutes); fresh <= idle <= absolute.
+# session_idle_minutes = 30
+# session_absolute_hours = 8
+# fresh_write_minutes = 15
 
 [discord]
 # Bot token file (required).

@@ -87,12 +87,22 @@ the container's own listener address) and has a bounded timeout.
 | `KANADE_ADMIN_TAILSCALE_LOGINS` | unset | Comma-separated Tailscale logins allowed to sign in via the edge; requires a non-loopback `KANADE_TRUSTED_PROXY` and `KANADE_EDGE_SECRET_FILE`. |
 | `KANADE_ADMIN_SESSION_IDLE_MINUTES` | `60` | Idle timeout, 5–720, not above the absolute lifetime. |
 | `KANADE_ADMIN_SESSION_ABSOLUTE_HOURS` | `12` | Absolute session lifetime, 1–168. |
+| `KANADE_PUBLIC_DISCORD_CLIENT_ID` | unset | The public origin's own Discord application id (member sign-in); the three public Discord variables are all-or-none and need `KANADE_PUBLIC_HOST`. Without them the portal stays `closed`. |
+| `KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE` | unset | File holding that application's secret (Compose secret `public_discord_client_secret`, `0600`). |
+| `KANADE_PUBLIC_DISCORD_REDIRECT_URI` | unset | Exactly `https://KANADE_PUBLIC_HOST/api/public/auth/discord/callback` (no `http:` exception). |
+| `KANADE_PUBLIC_SESSION_IDLE_MINUTES` | `30` | Member session idle timeout, 5–60. |
+| `KANADE_PUBLIC_SESSION_ABSOLUTE_HOURS` | `8` | Member session absolute lifetime, 1–24. |
+| `KANADE_PUBLIC_FRESH_WRITE_MINUTES` | `15` | How long after a Discord sign-in writes count as fresh, 5–30; fresh ≤ idle ≤ absolute. |
 
 Empty values count as unset. Values are never echoed in errors or logs.
-Plain `KANADE_ADMIN_TOKEN` / `KANADE_ADMIN_DISCORD_CLIENT_SECRET` are refused:
-secrets come only from files. `serve --offline` has no store, so it parses
-these but serves sign-in routes as `503 auth_unavailable`; live `serve`
-keeps sessions in its store. See `admin-api.md` "Sign-in and sessions".
+Plain `KANADE_ADMIN_TOKEN` / `KANADE_ADMIN_DISCORD_CLIENT_SECRET` /
+`KANADE_PUBLIC_DISCORD_CLIENT_SECRET` are refused: secrets come only from
+files. `serve --offline` has no store, so it parses these but serves admin
+sign-in routes as `503 auth_unavailable` and keeps the public portal
+`closed`; live `serve` keeps sessions in its store. See `admin-api.md`
+"Sign-in and sessions". The public portal has no open key: live `serve`
+opens it while the admin Config switch `self_service.public_portal` is on
+(read per request) and the public Discord keys are set.
 
 ### Serve environment
 
@@ -200,6 +210,12 @@ Each key sets one variable below, whose rules apply unchanged
 | `public.bind` | `KANADE_PUBLIC_BIND` | string |
 | `public.host` | `KANADE_PUBLIC_HOST` | string |
 | `public.cloudflared_peer` | `KANADE_CLOUDFLARED_PEER` | string |
+| `public.discord_client_id` | `KANADE_PUBLIC_DISCORD_CLIENT_ID` | snowflake |
+| `public.discord_client_secret_file` | `KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE` | string |
+| `public.discord_redirect_uri` | `KANADE_PUBLIC_DISCORD_REDIRECT_URI` | string |
+| `public.session_idle_minutes` | `KANADE_PUBLIC_SESSION_IDLE_MINUTES` | integer |
+| `public.session_absolute_hours` | `KANADE_PUBLIC_SESSION_ABSOLUTE_HOURS` | integer |
+| `public.fresh_write_minutes` | `KANADE_PUBLIC_FRESH_WRITE_MINUTES` | integer |
 | `discord.token_file` | `KANADE_DISCORD_TOKEN_FILE` | string |
 | `discord.gateway` | `KANADE_DISCORD_GATEWAY` | bool |
 | `discord.guild_id` | `KANADE_GUILD_ID` | snowflake (string or integer) |
@@ -534,12 +550,17 @@ CORS headers are ever sent.
 |---|---|---|
 | `GET /healthz` | Clients on this host only: a loopback peer or the listener's own address, whatever the trusted-proxy setting (any loopback Host name); requests the authenticated edge relays get 404 | 404 |
 | `GET /api/identity`, `/identity/{avatar,banner}` | yes | yes |
-| `GET /api/public/status` | 404 | `{portal: "closed"}` |
-| `/api/public/*`, `/art/*` | 404 / art | `503 closed` |
-| `GET /art/{portraits,icons,entry,animated}/{key}` (`animated` honours a single byte `Range`) | file or 404 | `503 closed` |
+| `GET /api/public/status` | 404 | `{portal}`: `open` only while the switch is on and member sign-in is configured |
+| `/api/public/auth/discord/{start,callback}`, `POST /api/public/auth/logout` | 404 | member sign-in (`303 /?login_error=closed` while closed; sign-out always) |
+| `/api/public/session{,/avatar}`, `/api/public/sessions{,/{handle},/end-all}` | 404 | member session required; `503 closed` while closed |
+| other `/api/public/*`, `/art/*` | 404 / art | `503 closed`, `404` while open |
+| `GET /art/{portraits,icons,entry,animated}/{key}` (`animated` honours a single byte `Range`) | file or 404 | `503 closed` (`404` while open) |
 | other `GET`/`HEAD` | the app's static files; extensionless paths get `index.html`, missing files 404 | same, public app |
 
-Admin API handlers take the `AdminSession` extractor (`src/api/auth/`);
+Admin API handlers take the `AdminSession` extractor (`src/api/auth/`); the
+public session routes sit behind `auth::member::require_session` (member
+realm, `__Host-kanade_pub`),
+which never reads an admin cookie, bearer or edge identity;
 unmounted `/api/admin/*` paths are `404`. Static paths reach the filesystem only as plain segments (no `..`,
 dotfiles, percent-encoding or backslashes) and only inside the canonical app
 root, so symlinks cannot escape it.

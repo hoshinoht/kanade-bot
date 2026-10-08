@@ -8,6 +8,7 @@ use crate::{
     api::{
         auth::{
             AdminAuth,
+            member::MemberAuth,
             roster::{on_guild_available, on_roster_update},
         },
         avatars::AvatarCache,
@@ -27,10 +28,12 @@ use crate::{
     infrastructure::store::SqliteStore,
 };
 
-/// Roster writes on the store, each followed by the admin-session re-check.
+/// Roster writes on the store, each followed by both realms' session re-checks.
 pub struct StoreRoster {
     pub store: Arc<SqliteStore>,
     pub auth: Arc<AdminAuth>,
+    /// The public portal's realm; `None` without a public listener.
+    pub member: Option<Arc<MemberAuth>>,
     pub access: Arc<GuildAccess>,
     pub avatars: Option<Arc<AvatarCache>>,
 }
@@ -41,13 +44,25 @@ impl RosterSink for StoreRoster {
     }
 
     async fn update(&self, update: &RosterUpdate) -> Result<u64, StoreError> {
-        on_roster_update(&self.auth, &*self.store, self.avatars.as_deref(), update).await
+        on_roster_update(
+            &self.auth,
+            self.member.as_deref(),
+            &*self.store,
+            self.avatars.as_deref(),
+            update,
+        )
+        .await
     }
 
     async fn prune(&self, member: GatewayMember) -> Result<u64, StoreError> {
         let user_id = member.user_id.clone();
+        let eligible = member.has_role && !member.is_bot;
         self.store.apply_gateway(member).await?;
-        Ok(self.auth.member_changed(&user_id).await)
+        let public = match &self.member {
+            Some(realm) => realm.member_changed(&user_id, eligible).await,
+            None => 0,
+        };
+        Ok(self.auth.member_changed(&user_id).await + public)
     }
 
     async fn guild_available(

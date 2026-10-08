@@ -35,7 +35,9 @@ pub struct AdminSession {
 
 impl AdminSession {
     pub fn csrf_token(&self) -> Option<String> {
-        self.session_id.as_deref().map(csrf::token)
+        self.session_id
+            .as_deref()
+            .map(|id| csrf::token(csrf::ADMIN, id))
     }
 
     pub(crate) fn session_id(&self) -> Option<&str> {
@@ -186,7 +188,8 @@ impl AdminAuth {
             }
         }
         if csrf::is_unsafe(&parts.method)
-            && !(csrf::same_origin(&parts.headers) && csrf::token_matches(&parts.headers, &id))
+            && !(csrf::same_origin(&parts.headers)
+                && csrf::token_matches(csrf::ADMIN, &parts.headers, &id))
         {
             return Err(ApiError::CSRF);
         }

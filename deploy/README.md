@@ -41,7 +41,7 @@ resolve from it.
 |---|---|---|
 | Settings | `kanade.toml` (or `KANADE_CONFIG_FILE=/path`) | Private, git-ignored copy of the tracked `kanade.example.toml`, mounted read-only at `/config/kanade.toml` (`KANADE_CONFIG`); a missing file fails the start. Non-secret settings only (key → variable table: `docs/v5/runtime-bootstrap.md` "Config file"). Required: `runtime.timezone`, `discord.guild_id`, `discord.bossing_role_id`, and `models.base_url` (Compose always sets `KANADE_MODEL_KEY_FILE`, which is refused without it). Usually also `discord.admin_role_id`, `[models.*]` roles and `[[models.groups]]`, and `[settings]` (starting settings, applied only until the store holds a value). Compose's `environment:` fixes the admin bind and host, trusted proxy, cloudflared peer, healthcheck URL and container paths (store, files, secret files), so those keys in the file are overridden; `[public] bind`/`host` stay in the file (the public listener's opt-in). Keep the three `admin.discord_*` keys all set or all unset. |
 | Legacy env | `.env.v5` (or `KANADE_ENV_FILE=/path`) | Optional (back-compat). Every non-empty `KANADE_*` variable in it overrides the matching `kanade.toml` key; move its settings into `kanade.toml` and delete it so there is one source. |
-| Secrets | `${KANADE_SECRETS_DIR:-$HOME/.config/kanade/v5/secrets}/` | One line per file: `discord_token`, `admin_token` (≥ 32 bytes, e.g. `openssl rand -base64 48`), `discord_client_secret`, and `model_api_key` (a symlink to the Kanata key file v4 uses); `kanade-cloudflared` (the tunnel token) only for profile `public`. Docker Desktop lets uid 65532 read `0600` files; on a Linux host make them readable by uid 65532. |
+| Secrets | `${KANADE_SECRETS_DIR:-$HOME/.config/kanade/v5/secrets}/` | One line per file: `discord_token`, `admin_token` (≥ 32 bytes, e.g. `openssl rand -base64 48`), `discord_client_secret`, `public_discord_client_secret` (member sign-in; may stay empty until it is configured), and `model_api_key` (a symlink to the Kanata key file v4 uses); `kanade-cloudflared` (the tunnel token) only for profile `public`. Docker Desktop lets uid 65532 read `0600` files; on a Linux host make them readable by uid 65532. |
 | Personas | `config/personas/` | Mounted read-only at `/config/personas`. |
 | Catalog | `boss/bosses.yaml` | Tracked; mounted read-only at `/app/boss/bosses.yaml` (the image carries only `boss/knowledge`). |
 | Boss art | `boss/portraits/`, `boss/artwork/` | Private, mounted read-only over `/app/boss/*`. |
@@ -275,6 +275,72 @@ cloudflared`, remove `[public] bind`/`host` from `kanade.toml` and recreate
 the bot, then delete the public hostname (and its DNS record) or the whole
 tunnel in Cloudflare and the token file. The empty `kanade_public` network
 can stay.
+
+### Member sign-in (public Discord application)
+
+Members sign in on the public origin with their own Discord application
+(separate from admin sign-in), scope `identify` only. The portal is open only
+while the admin Config switch `self_service.public_portal` is on **and** these
+keys are set; otherwise `/api/public/status` answers `closed`.
+
+```sh
+# 1. Discord Developer Portal: a new application (no bot, no install link),
+#    Public Client off. OAuth2 -> Redirects: exactly
+#    https://<public-host>/api/public/auth/discord/callback
+# 2. Secret file, one line, 0600 (Compose secret public_discord_client_secret;
+#    never an env var, KANADE_PUBLIC_DISCORD_CLIENT_SECRET is refused):
+#    ${KANADE_SECRETS_DIR:-$HOME/.config/kanade/v5/secrets}/public_discord_client_secret
+#    Compose mounts it on every `up`, so the file must exist (empty is fine
+#    while member sign-in is not configured).
+# 3. kanade.toml:
+#      [public]
+#      discord_client_id = "<application id>"
+#      discord_client_secret_file = "/run/secrets/public_discord_client_secret"
+#      discord_redirect_uri = "https://<public-host>/api/public/auth/discord/callback"
+#    Lifetimes default to 30 min idle / 8 h absolute / 15 min fresh writes
+#    (session_idle_minutes, session_absolute_hours, fresh_write_minutes).
+docker compose -f deploy/compose.yaml up -d --force-recreate bot
+# 4. Admin Config -> Self-service -> public portal on, then:
+curl -sS https://<public-host>/api/public/status                     # {"portal":"open"}
+```
+
+Rotation: Reset Secret in the Developer Portal, replace the file, recreate the
+bot. Turning the switch off closes sign-in at once; existing member sessions
+are kept but answer `503 closed` until they expire.
+
+### Tailnet test stage (D6-A, before the tunnel)
+
+The portal is first tested on the tailnet through the edge, with cloudflared
+stopped, at `pts.kanade.hoshinoht.dev` (DNS-only A record to the host's
+tailnet IP `100.106.57.110`, like the admin host). Each step needs the owner's
+go-ahead.
+
+```sh
+# 1. Edge (homelab edge repo, not this one): a site for pts.kanade.hoshinoht.dev
+#    proxying to kanade-bot:8081 over kanade_edge, keeping the Host header;
+#    then `docker compose restart caddy` there.
+# 2. Public Discord application redirect (test only):
+#    https://pts.kanade.hoshinoht.dev/api/public/auth/discord/callback
+# 3. kanade.toml: the public listener on the edge network, not kanade_public:
+#      [public]
+#      bind = "192.168.97.10:8081"
+#      host = "pts.kanade.hoshinoht.dev"
+#      discord_redirect_uri = "https://pts.kanade.hoshinoht.dev/api/public/auth/discord/callback"
+#      (plus discord_client_id and discord_client_secret_file as above)
+docker compose -f deploy/compose.yaml up -d --force-recreate bot
+docker compose -f deploy/compose.yaml logs bot | grep server_started   # 192.168.97.10:8080 and 192.168.97.10:8081
+curl -sS https://pts.kanade.hoshinoht.dev/api/public/status            # closed until the switch is on
+curl -s -o /dev/null -w '%{http_code}\n' https://pts.kanade.hoshinoht.dev/api/admin/session   # 404
+```
+
+Behind the edge every member shares the edge's address (the public listener
+trusts forwarding headers only from the cloudflared peer), so per-IP sign-in
+limits pool and IP-change rotation never fires; both are covered by the
+loopback tests. If cloudflared were started by mistake it would reach nothing
+(no listener on `172.25.0.10:8081`). At release: switch `bind`/`host` back to
+`172.25.0.10:8081` / `kanade-pub.hoshinoht.dev`, replace the Discord redirect
+(and `discord_redirect_uri`), remove the edge site, then follow "Public
+portal" above.
 
 ## Edge and sign-in
 

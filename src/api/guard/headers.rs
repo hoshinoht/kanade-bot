@@ -23,9 +23,10 @@ trusted-types kanade-sw";
 
 pub const HSTS: &str = "max-age=31536000; includeSubDomains";
 
-/// The admin portraits: unversioned URLs that change with the avatar.
+/// The portraits: unversioned (or name-versioned) URLs that change with the avatar.
 fn portrait(path: &str) -> bool {
     path == "/api/admin/me/avatar"
+        || path == "/api/public/session/avatar"
         || path
             .strip_prefix("/api/admin/members/")
             .and_then(|rest| rest.strip_suffix("/avatar"))
@@ -121,6 +122,11 @@ mod tests {
             cache_policy("/api/admin/me/avatar", true),
             "private, no-cache"
         );
+        assert_eq!(
+            cache_policy("/api/public/session/avatar", true),
+            "private, no-cache"
+        );
+        assert_eq!(cache_policy("/api/public/session", true), "no-store");
         assert_eq!(
             cache_policy("/api/admin/members/1003/avatar", false),
             "no-store"

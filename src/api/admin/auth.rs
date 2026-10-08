@@ -12,10 +12,7 @@ use std::sync::Arc;
 use axum::{
     Json, Router,
     extract::{Request, State, rejection::JsonRejection},
-    http::{
-        HeaderMap, HeaderValue, StatusCode, Uri,
-        header::{CONTENT_TYPE, LOCATION, SET_COOKIE},
-    },
+    http::{HeaderMap, HeaderValue, StatusCode, Uri, header::SET_COOKIE},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
@@ -32,7 +29,7 @@ use crate::{
             discord::{BeginError, CodeExchange, DiscordError, DiscordLogin},
             rate::Route,
             staff::StaffCheck,
-            wire::{self, LOGIN_COOKIE, SESSION_COOKIE},
+            wire::{self, LOGIN_COOKIE, SESSION_COOKIE, landing, see_other},
         },
         error::ApiError,
         listeners::Site,
@@ -95,56 +92,12 @@ fn signed_in(
     response
 }
 
-fn see_other(location: &str, cookies: impl IntoIterator<Item = HeaderValue>) -> Response {
-    let mut response = StatusCode::SEE_OTHER.into_response();
-    let headers = response.headers_mut();
-    if let Ok(location) = HeaderValue::from_str(location) {
-        headers.insert(LOCATION, location);
-    }
-    for cookie in cookies {
-        headers.append(SET_COOKIE, cookie);
-    }
-    response
-}
-
 /// Browser-flow failures land on the SPA with a fixed code, never details.
 fn login_error(code: &'static str) -> Response {
     see_other(
         &format!("/?login_error={code}"),
         [wire::clear_cookie(LOGIN_COOKIE, LOGIN_SAME_SITE)],
     )
-}
-
-fn escape_html(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
-}
-
-/// A same-origin page that navigates to `next`. A `SameSite=Strict` cookie
-/// set during Discord's cross-site redirect is not sent on a redirect chain
-/// that started cross-site; a navigation started by our own page is
-/// same-site, so the landing request carries the session. No script: the
-/// CSP (`default-src 'none'`) does not govern meta refresh.
-fn landing(next: &str, cookies: impl IntoIterator<Item = HeaderValue>) -> Response {
-    let next = escape_html(next);
-    let body = format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
-         <meta http-equiv=\"refresh\" content=\"0; url={next}\"><title>Signed in</title></head>\
-         <body><p><a href=\"{next}\">Continue to Kanade</a></p></body></html>"
-    );
-    let mut response = (
-        StatusCode::OK,
-        [(CONTENT_TYPE, "text/html; charset=utf-8")],
-        body,
-    )
-        .into_response();
-    for cookie in cookies {
-        response.headers_mut().append(SET_COOKIE, cookie);
-    }
-    response
 }
 
 async fn session(session: AdminSession) -> Response {
@@ -422,7 +375,7 @@ async fn tailscale_login(State(site): State<Arc<Site>>, request: Request) -> Res
         Some(id) => signed_in(
             name,
             LoginMethod::Tailscale,
-            Some(csrf::token(&id)),
+            Some(csrf::token(csrf::ADMIN, &id)),
             Some(session_cookie(&auth, &id)),
         ),
         None => ApiError::UNAVAILABLE.into_response(),
@@ -497,7 +450,7 @@ async fn token_login(
         Some(id) => signed_in(
             display.into(),
             LoginMethod::Token,
-            Some(csrf::token(&id)),
+            Some(csrf::token(csrf::ADMIN, &id)),
             Some(session_cookie(&auth, &id)),
         ),
         None => ApiError::UNAVAILABLE.into_response(),

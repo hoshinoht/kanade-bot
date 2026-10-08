@@ -57,6 +57,9 @@ services:
       - kanade_discord_token
       - kanade_admin_token
       - kanade_discord_client_secret
+      # Member sign-in (public Discord application); kanade.toml names it as
+      # [public] discord_client_secret_file = "/run/secrets/public_discord_client_secret".
+      - public_discord_client_secret
       - kanade_model_api_key
     networks:
       # Egress for Discord and Kanata.
@@ -217,6 +220,10 @@ secrets:
     file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/admin_token
   kanade_discord_client_secret:
     file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/discord_client_secret
+  # The public origin's own Discord application (member sign-in). Must exist;
+  # empty is fine until [public] discord_client_id is set.
+  public_discord_client_secret:
+    file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/public_discord_client_secret
   # A symlink to the Kanata key file v4 uses, so there is one key to rotate.
   kanade_model_api_key:
     file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/model_api_key

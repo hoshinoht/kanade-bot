@@ -104,6 +104,22 @@ pub trait WebSessionStore: Send + Sync {
         replaces: Option<&'a str>,
     ) -> SessionFuture<'a, ()>;
 
+    /// Sign-in under a per-identity cap, in one write: prune `session`'s
+    /// origin as [`Self::prune_sessions`] does (`now`, `idle_before`), delete
+    /// `replaces` when it is a row of the same origin, end the oldest live
+    /// sessions of the same origin, method and subject beyond `max - 1`
+    /// (superseded ids are not counted) and insert `session`. Returns how
+    /// many sessions the cap ended. A duplicate id hash, or a `session` that
+    /// is already superseded, is [`StoreError::Constraint`] and writes nothing.
+    fn put_capped_session<'a>(
+        &'a self,
+        session: &'a WebSession,
+        replaces: Option<&'a str>,
+        max: usize,
+        now: DateTime<Utc>,
+        idle_before: DateTime<Utc>,
+    ) -> SessionFuture<'a, u64>;
+
     /// A live session; a superseded id is only [`Self::load_superseded`]'s.
     fn load_session<'a>(&'a self, id_hash: &'a str) -> SessionFuture<'a, Option<WebSession>>;
 

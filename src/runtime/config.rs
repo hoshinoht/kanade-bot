@@ -20,6 +20,7 @@ mod groups;
 mod guild;
 mod import;
 mod models;
+mod public_auth;
 mod serve;
 mod store;
 
@@ -31,6 +32,7 @@ pub use files::FileSettings;
 pub use guild::GuildSettings;
 pub use import::ImportConfig;
 pub use models::ModelSettings;
+pub use public_auth::PublicAuthSettings;
 pub use serve::{ServeConfig, SettingSeeds};
 pub use store::StoreSettings;
 
@@ -45,6 +47,8 @@ pub struct RuntimeConfig {
     pub public_bind: Option<SocketAddr>,
     pub http: HttpConfig,
     pub admin_auth: AdminAuthSettings,
+    /// Member sign-in on the public origin.
+    pub public_auth: PublicAuthSettings,
     pub timezone: Tz,
     pub shutdown_timeout: Duration,
 }
@@ -118,6 +122,7 @@ impl RuntimeConfig {
             ));
         }
         let admin_auth = AdminAuthSettings::from_mapping(values, &http)?;
+        let public_auth = PublicAuthSettings::from_mapping(values, &http)?;
         let timezone = values
             .get("KANADE_TIMEZONE")
             .ok_or_else(|| Error::Configuration("KANADE_TIMEZONE is required".into()))?
@@ -131,6 +136,7 @@ impl RuntimeConfig {
             public_bind,
             http,
             admin_auth,
+            public_auth,
             timezone,
             shutdown_timeout: Duration::from_secs(parse_bounded_u64(
                 values,

@@ -226,6 +226,115 @@ fn config_file_errors_name_the_key_without_the_value() {
     assert!(!stderr.contains("sentinel"));
 }
 
+type Env = Vec<(&'static str, &'static str)>;
+
+/// Member sign-in settings are refused at startup, naming the key and never
+/// echoing a value: bounds, the order fresh <= idle <= absolute, a plain
+/// secret, partial Discord keys, a missing public host and a redirect other
+/// than `https://{public.host}/api/public/auth/discord/callback`.
+#[test]
+fn member_sign_in_settings_are_refused_at_startup() {
+    let _serial = serial();
+    let discord = [
+        ("KANADE_PUBLIC_HOST", "kanade-pub.test"),
+        ("KANADE_PUBLIC_DISCORD_CLIENT_ID", "1234567890"),
+        (
+            "KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE",
+            "/nonexistent/public_discord_client_secret",
+        ),
+        (
+            "KANADE_PUBLIC_DISCORD_REDIRECT_URI",
+            "https://kanade-pub.test/api/public/auth/discord/callback",
+        ),
+    ];
+    let with_redirect = |uri: &'static str| {
+        let mut pairs = discord.to_vec();
+        pairs[3].1 = uri;
+        pairs
+    };
+    // (variables, expected message, text that must not be echoed)
+    let cases: Vec<(Env, &str, &str)> = vec![
+        (
+            vec![("KANADE_PUBLIC_SESSION_IDLE_MINUTES", "61")],
+            "KANADE_PUBLIC_SESSION_IDLE_MINUTES must be between 5 and 60",
+            "61",
+        ),
+        (
+            vec![("KANADE_PUBLIC_SESSION_ABSOLUTE_HOURS", "25")],
+            "KANADE_PUBLIC_SESSION_ABSOLUTE_HOURS must be between 1 and 24",
+            "25",
+        ),
+        (
+            vec![("KANADE_PUBLIC_FRESH_WRITE_MINUTES", "4")],
+            "KANADE_PUBLIC_FRESH_WRITE_MINUTES must be between 5 and 30",
+            "sentinel",
+        ),
+        (
+            vec![
+                ("KANADE_PUBLIC_SESSION_IDLE_MINUTES", "10"),
+                ("KANADE_PUBLIC_FRESH_WRITE_MINUTES", "15"),
+            ],
+            "KANADE_PUBLIC_FRESH_WRITE_MINUTES must not exceed",
+            "sentinel",
+        ),
+        (
+            vec![("KANADE_PUBLIC_DISCORD_CLIENT_SECRET", "plain-public-secret")],
+            "KANADE_PUBLIC_DISCORD_CLIENT_SECRET is not read; use KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE",
+            "plain-public-secret",
+        ),
+        (discord[..3].to_vec(), "member sign-in needs", "sentinel"),
+        (
+            discord[1..].to_vec(),
+            "KANADE_PUBLIC_HOST is required for member sign-in",
+            "sentinel",
+        ),
+        (
+            with_redirect("https://evil.example/api/public/auth/discord/callback"),
+            "KANADE_PUBLIC_DISCORD_REDIRECT_URI must be https://KANADE_PUBLIC_HOST/api/public/auth/discord/callback",
+            "evil",
+        ),
+        (
+            with_redirect("http://kanade-pub.test/api/public/auth/discord/callback"),
+            "KANADE_PUBLIC_DISCORD_REDIRECT_URI must be",
+            "http://",
+        ),
+    ];
+    for (pairs, expected, secret) in cases {
+        let mut command = Command::new(binary());
+        command
+            .args(["serve", "--offline"])
+            .env("KANADE_TIMEZONE", "Asia/Kuala_Lumpur")
+            .env("KANADE_ADMIN_BIND", "127.0.0.1:0");
+        for (key, value) in &pairs {
+            command.env(key, value);
+        }
+        let output = command.output().unwrap();
+        assert!(!output.status.success(), "{pairs:?}");
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains(expected), "{pairs:?}: {stderr}");
+        assert!(!stderr.contains(secret), "{pairs:?} echoed {secret}");
+    }
+
+    // A plain secret in kanade.toml is refused too.
+    let path = std::env::temp_dir().join(format!("kanade-public-toml-{}", std::process::id()));
+    std::fs::write(
+        &path,
+        "[runtime]\ntimezone = \"UTC\"\n[public]\ndiscord_client_secret = \"sentinel\"\n",
+    )
+    .unwrap();
+    let output = Command::new(binary())
+        .args(["serve", "--offline"])
+        .env("KANADE_CONFIG", &path)
+        .env("KANADE_ADMIN_BIND", "127.0.0.1:0")
+        .output()
+        .unwrap();
+    std::fs::remove_file(&path).unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("public.discord_client_secret"), "{stderr}");
+    assert!(!stderr.contains("sentinel"));
+}
+
 trait ChildTimeout {
     fn wait_timeout(&mut self, timeout: Duration) -> Option<std::process::ExitStatus>;
 }

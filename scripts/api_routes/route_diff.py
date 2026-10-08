@@ -29,19 +29,10 @@ MOCK_ONLY = {
 WEB_ONLY = {
     "/api/public/week": "anonymous PublicWeek, deleted from the contract (Q4); web and mock drop it with the member portal",
 }
-# (method, path) contracted but not mounted yet (member realm,
-# docs/notes/member-auth-contract.md). The web and mock may use them first;
-# once Rust mounts one, its entry must go.
-PLANNED = {
-    ("GET", "/api/public/session"): "member session",
-    ("GET", "/api/public/session/avatar"): "member portrait",
-    ("GET", "/api/public/auth/discord/start"): "member Discord sign-in",
-    ("GET", "/api/public/auth/discord/callback"): "member Discord sign-in",
-    ("POST", "/api/public/auth/logout"): "member sign-out",
-    ("GET", "/api/public/sessions"): "member devices",
-    ("DELETE", "/api/public/sessions/{handle}"): "member devices: sign out one",
-    ("POST", "/api/public/sessions/end-all"): "member devices: sign out everywhere",
-}
+# (method, path) contracted but not mounted yet. The web and mock may use
+# them first; once Rust mounts one, its entry must go. (The member realm's
+# routes, docs/notes/member-auth-contract.md, are all mounted.)
+PLANNED: dict[tuple[str, str], str] = {}
 # (method, path) Rust serves that the mock does not need.
 RUST_ONLY = {
     ("GET", "/healthz"): "container health probe",

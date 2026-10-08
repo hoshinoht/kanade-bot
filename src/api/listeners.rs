@@ -7,7 +7,7 @@ use axum::{Router, extract::DefaultBodyLimit, middleware::from_fn_with_state, ro
 
 use super::{
     admin, assets,
-    auth::{AdminAuth, crypto::SealedSecret},
+    auth::{AdminAuth, crypto::SealedSecret, member::MemberAuth},
     error, guard, public,
     state::{ApiState, ChannelList},
 };
@@ -56,6 +56,8 @@ pub struct Site {
     pub limits: guard::limits::Limits,
     /// Admin sign-in; `None` answers `auth_unavailable`. Never set on the public site.
     pub auth: Option<Arc<AdminAuth>>,
+    /// Member sign-in; `None` keeps the portal closed. Never set on the admin site.
+    pub member: Option<Arc<MemberAuth>>,
     /// Admin only: the edge must present this in `X-Kanade-Edge-Auth` to be trusted.
     pub edge_secret: Option<Arc<SealedSecret>>,
     /// The listener's bound address: a client there is on this host (healthcheck).
@@ -109,6 +111,7 @@ impl Site {
             bot: None,
             limits: guard::limits::Limits::default(),
             auth: None,
+            member: None,
             edge_secret: None,
             listener_ip: None,
             state: None,
@@ -118,17 +121,21 @@ impl Site {
 }
 
 pub fn router(mut site: Site) -> Router {
-    if site.origin == Origin::Public {
+    match site.origin {
         // Admin credentials must mean nothing on the public origin.
-        site.auth = None;
-        site.edge_secret = None;
-        site.state = None;
-        site.health = None;
+        Origin::Public => {
+            site.auth = None;
+            site.edge_secret = None;
+            site.state = None;
+            site.health = None;
+        }
+        // Nor a member session on the admin origin.
+        Origin::Admin => site.member = None,
     }
     let site = Arc::new(site);
     let routes = match site.origin {
         Origin::Admin => admin::routes(),
-        Origin::Public => public::routes(),
+        Origin::Public => public::routes(site.clone()),
     };
     // Last layer runs first: headers wrap every answer, including guard refusals.
     routes

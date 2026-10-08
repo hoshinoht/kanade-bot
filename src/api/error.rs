@@ -51,6 +51,13 @@ impl ApiError {
         error: "unauthenticated",
         message: "Sign in to continue.",
     };
+    /// A write that needs a recent Discord round trip, after the member
+    /// session's fresh window (`MemberSession::require_fresh`).
+    pub const REAUTH_REQUIRED: Self = Self {
+        status: StatusCode::UNAUTHORIZED,
+        error: "reauth_required",
+        message: "Sign in with Discord again to make this change.",
+    };
     /// A mutation without this origin's markers or the session's CSRF token.
     pub const CSRF: Self = Self {
         status: StatusCode::FORBIDDEN,
@@ -101,6 +108,18 @@ impl ApiError {
         error: "closed",
         message: "The schedule is not public right now.",
     };
+    /// A device-list handle naming the caller's own session.
+    pub const CURRENT_SESSION: Self = Self {
+        status: StatusCode::CONFLICT,
+        error: "current_session",
+        message: "This is the session you are using; sign out instead.",
+    };
+    /// A device-list handle no live session has.
+    pub const SESSION_ENDED: Self = Self {
+        status: StatusCode::NOT_FOUND,
+        error: "not_found",
+        message: "That session has already ended.",
+    };
 }
 
 impl IntoResponse for ApiError {
@@ -122,8 +141,4 @@ pub async fn not_found() -> ApiError {
 
 pub async fn method_not_allowed() -> ApiError {
     ApiError::METHOD_NOT_ALLOWED
-}
-
-pub async fn closed() -> ApiError {
-    ApiError::CLOSED
 }

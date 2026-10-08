@@ -1,10 +1,21 @@
 //! Cookie, query-string and form encoding helpers for the auth routes (axum's
-//! `query`/`form` features are not enabled).
+//! `query`/`form` features are not enabled), plus the browser-flow responses
+//! both realms' sign-in routes answer with.
 
-use axum::http::{HeaderMap, HeaderValue, header::COOKIE};
+use axum::{
+    http::{
+        HeaderMap, HeaderValue, StatusCode,
+        header::{CONTENT_TYPE, COOKIE, LOCATION, SET_COOKIE},
+    },
+    response::{IntoResponse, Response},
+};
 
+/// The admin realm's session and pre-auth cookies.
 pub const SESSION_COOKIE: &str = "__Host-kanade_admin";
 pub const LOGIN_COOKIE: &str = "__Host-kanade_admin_login";
+/// The member realm's (public origin) session and pre-auth cookies.
+pub const MEMBER_SESSION_COOKIE: &str = "__Host-kanade_pub";
+pub const MEMBER_LOGIN_COOKIE: &str = "__Host-kanade_pub_login";
 
 /// The one value of `name`; absent or ambiguous (repeated with different values) is `None`.
 pub fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
@@ -129,6 +140,50 @@ pub fn safe_next(next: Option<&str>) -> String {
             .bytes()
             .all(|byte| byte.is_ascii_graphic() && byte != b'\\');
     if ok { next.to_owned() } else { "/".into() }
+}
+
+pub fn see_other(location: &str, cookies: impl IntoIterator<Item = HeaderValue>) -> Response {
+    let mut response = StatusCode::SEE_OTHER.into_response();
+    let headers = response.headers_mut();
+    if let Ok(location) = HeaderValue::from_str(location) {
+        headers.insert(LOCATION, location);
+    }
+    for cookie in cookies {
+        headers.append(SET_COOKIE, cookie);
+    }
+    response
+}
+
+pub fn escape_html(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+/// A same-origin page that navigates to `next`. A `SameSite=Strict` cookie
+/// set during Discord's cross-site redirect is not sent on a redirect chain
+/// that started cross-site; a navigation started by our own page is
+/// same-site, so the landing request carries the session. No script: the
+/// CSP (`default-src 'none'`) does not govern meta refresh.
+pub fn landing(next: &str, cookies: impl IntoIterator<Item = HeaderValue>) -> Response {
+    let next = escape_html(next);
+    let body = format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+         <meta http-equiv=\"refresh\" content=\"0; url={next}\"><title>Signed in</title></head>\
+         <body><p><a href=\"{next}\">Continue to Kanade</a></p></body></html>"
+    );
+    let mut response = (
+        StatusCode::OK,
+        [(CONTENT_TYPE, "text/html; charset=utf-8")],
+        body,
+    )
+        .into_response();
+    for cookie in cookies {
+        response.headers_mut().append(SET_COOKIE, cookie);
+    }
+    response
 }
 
 #[cfg(test)]

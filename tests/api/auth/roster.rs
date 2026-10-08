@@ -39,7 +39,7 @@ fn admin_roles(roles: &[u64]) -> AdminRoles {
 
 async fn apply(harness: &Harness, update: RosterUpdate) -> u64 {
     let auth = harness.site.auth.clone().unwrap();
-    on_roster_update(&auth, &*harness.store, None, &update)
+    on_roster_update(&auth, None, &*harness.store, None, &update)
         .await
         .unwrap()
 }
@@ -153,6 +153,7 @@ async fn leaving_purges_the_members_cached_portraits() {
     let auth = harness.site.auth.clone().unwrap();
     on_roster_update(
         &auth,
+        None,
         &*harness.store,
         Some(&avatars),
         &seen(222, &[BOSSING], false),
@@ -161,6 +162,7 @@ async fn leaving_purges_the_members_cached_portraits() {
     .unwrap();
     on_roster_update(
         &auth,
+        None,
         &*harness.store,
         Some(&avatars),
         &RosterUpdate::Left {

@@ -4,7 +4,7 @@ use axum::Router;
 use tokio::{net::TcpListener, sync::watch, time::timeout};
 
 use super::{
-    auth::{self, AdminAuth},
+    auth::{self, AdminAuth, member::MemberAuth},
     listeners::{self, Site},
     state::ApiState,
 };
@@ -13,11 +13,13 @@ use crate::runtime::{
     serve::budget::ShutdownClock,
 };
 
-/// What a live admin listener serves beyond the offline shell.
+/// What a live server serves beyond the offline shell.
 pub struct LiveAdmin {
     pub auth: Arc<AdminAuth>,
     pub state: Arc<ApiState>,
     pub health: Arc<dyn HealthProbe>,
+    /// Member sign-in for the public listener; `None` keeps the portal closed.
+    pub member: Option<Arc<MemberAuth>>,
 }
 
 pub async fn serve_offline(config: RuntimeConfig) -> Result<(), Error> {
@@ -56,16 +58,19 @@ pub async fn serve_bounded(
     admin_site.listener_ip = Some(config.admin_bind.ip());
     let bot = live.as_ref().map(|live| Arc::clone(&live.state.channels));
     let events = live.as_ref().map(|live| Arc::clone(&live.state.events));
+    let mut member = None;
     if let Some(live) = live {
         admin_site.auth = Some(live.auth);
         admin_site.state = Some(live.state);
         admin_site.health = Some(live.health);
+        member = live.member;
     }
     let admin = bind(config.admin_bind, mode).await?;
     let public = match (config.public_bind, Site::public(&config.http)) {
         (Some(address), Some(mut site)) => {
             site.listener_ip = Some(address.ip());
             site.bot = bot;
+            site.member = member;
             Some((bind(address, mode).await?, site))
         }
         (Some(_), None) => {

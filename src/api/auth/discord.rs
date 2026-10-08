@@ -19,7 +19,10 @@ use chrono::{DateTime, TimeDelta, Utc};
 use super::{crypto, wire};
 
 pub const AUTHORIZE_URL: &str = "https://discord.com/oauth2/authorize";
+/// The admin origin's callback.
 pub const CALLBACK_PATH: &str = "/api/admin/auth/discord/callback";
+/// The public origin's callback (the member realm's own application, D2-A).
+pub const PUBLIC_CALLBACK_PATH: &str = "/api/public/auth/discord/callback";
 /// How long a started login may take to come back.
 pub const LOGIN_TTL: TimeDelta = TimeDelta::minutes(10);
 /// Bounds memory held for unfinished logins; when full, new logins are refused
@@ -175,9 +178,14 @@ pub enum BeginError {
 }
 
 /// Unfinished logins, in process memory: a restart only cancels logins in flight.
+/// Each realm has its own instance, so its own pending caps and cooldown.
 pub struct DiscordLogin {
     pub client: DiscordClient,
     pub api: Arc<dyn DiscordApi>,
+    /// [`AUTHORIZE_URL`] except in the browser test fixture's fake Discord.
+    authorize_url: String,
+    /// Ask Discord with `prompt=none` (skip consent for an app already authorized).
+    prompt_none: bool,
     pending: Mutex<HashMap<String, Pending>>,
     cooldown_until: Mutex<Option<DateTime<Utc>>>,
 }
@@ -193,9 +201,24 @@ impl DiscordLogin {
         Self {
             client,
             api,
+            authorize_url: AUTHORIZE_URL.into(),
+            prompt_none: false,
             pending: Mutex::new(HashMap::new()),
             cooldown_until: Mutex::new(None),
         }
+    }
+
+    /// Send `prompt=none` with every authorization request.
+    pub fn with_prompt_none(mut self) -> Self {
+        self.prompt_none = true;
+        self
+    }
+
+    /// A stand-in authorization page (the browser test fixture's fake Discord).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_authorize_url(mut self, url: impl Into<String>) -> Self {
+        self.authorize_url = url.into();
+        self
     }
 
     fn pending(&self) -> std::sync::MutexGuard<'_, HashMap<String, Pending>> {
@@ -260,18 +283,19 @@ impl DiscordLogin {
                 },
             );
         }
-        let authorize_url = format!(
-            "{AUTHORIZE_URL}?{}",
-            wire::form(&[
-                ("response_type", "code"),
-                ("client_id", &self.client.client_id),
-                ("scope", "identify"),
-                ("state", &state),
-                ("redirect_uri", &self.client.redirect_uri),
-                ("code_challenge", &challenge),
-                ("code_challenge_method", "S256"),
-            ])
-        );
+        let mut params = vec![
+            ("response_type", "code"),
+            ("client_id", self.client.client_id.as_str()),
+            ("scope", "identify"),
+            ("state", state.as_str()),
+            ("redirect_uri", self.client.redirect_uri.as_str()),
+            ("code_challenge", challenge.as_str()),
+            ("code_challenge_method", "S256"),
+        ];
+        if self.prompt_none {
+            params.push(("prompt", "none"));
+        }
+        let authorize_url = format!("{}?{}", self.authorize_url, wire::form(&params));
         Ok(Started {
             login_id,
             authorize_url,
@@ -371,6 +395,16 @@ mod tests {
             login.resume(&started.login_id, &state, now()).is_none(),
             "one-time"
         );
+    }
+
+    #[test]
+    fn only_a_login_built_with_prompt_none_sends_it() {
+        let admin = login().begin("/".into(), now(), None).unwrap();
+        let pairs = wire::query_pairs(admin.authorize_url.split_once('?').map(|(_, q)| q));
+        assert_eq!(wire::query_value(&pairs, "prompt"), None);
+        let member = login().with_prompt_none();
+        let started = member.begin("/".into(), now(), None).unwrap();
+        assert_eq!(param(&started.authorize_url, "prompt"), "none");
     }
 
     #[test]
