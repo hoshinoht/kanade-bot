@@ -253,6 +253,38 @@ async fn a_failed_sent_attempt_keeps_only_the_estimate() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_reply_cut_off_at_the_token_limit_logs_its_counts_without_an_answer_retry() {
+    use kanade::domain::model_log::ExtractionOutcome;
+    use kanade::extract::prompt::CONTEXT_RESERVE;
+
+    let limit = u32::try_from(CONTEXT_RESERVE).expect("small constant");
+    let FakeAction::Response(mut cut) = answer(r#"{"amendments": ["#, Some((40, limit))) else {
+        panic!("response")
+    };
+    cut.finish_reason = FinishReason::Length;
+    cut.reasoning_content = Some("Still weighing the run times.".into());
+    cut.reasoning_tokens = Some(2400);
+    let world = World::new(vec![FakeAction::Response(cut), answer(NOTHING, None)]).await;
+    let usage = one_call(&world).await;
+    let sent = estimates(&world);
+    assert_eq!(sent.len(), 1, "K-TRUNCATED: no answer retry");
+    assert_eq!(world.provider.requests()[0].max_output_tokens, limit);
+    assert_eq!(usage, (Some(40), Some(u64::from(limit)), Some(sent[0])));
+    let rows = world.logs().await;
+    assert_eq!(rows[0].outcome, ExtractionOutcome::Failed);
+    assert_eq!(rows[0].reasoning_tokens, Some(2400));
+    assert_eq!(
+        rows[0].reasoning_content.as_deref(),
+        Some("Still weighing the run times.")
+    );
+    let expected = format!(
+        "Incomplete: reply cut off at the token limit \
+         (finish=length, {limit} of {limit} tokens, 2400 reasoning)"
+    );
+    assert_eq!(rows[0].error.as_deref(), Some(expected.as_str()));
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_call_turned_away_before_sending_logs_no_usage() {
     use kanade::infrastructure::llm::governor::Role;
 

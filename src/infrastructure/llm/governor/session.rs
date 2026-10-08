@@ -296,7 +296,7 @@ impl<P: LlmProvider> ModelClient<P> {
             ended: false,
             last_sent: None,
             last_reservation: None,
-            overrun: None,
+            refused: None,
             over_budget: None,
             request_ids: Vec::new(),
             id: self.next_id(CallKind::Chat),
@@ -372,7 +372,7 @@ impl<P: LlmProvider> ModelClient<P> {
             ended: false,
             last_sent: None,
             last_reservation: None,
-            overrun: None,
+            refused: None,
             over_budget: None,
             request_ids: Vec::new(),
             id: self.next_id(CallKind::Extraction),
@@ -448,7 +448,7 @@ impl<P: LlmProvider> ModelClient<P> {
             ended: false,
             last_sent: None,
             last_reservation: None,
-            overrun: None,
+            refused: None,
             over_budget: None,
             request_ids: Vec::new(),
             id: self.next_id(CallKind::Rewrite),
@@ -491,8 +491,8 @@ pub struct Session<'c, P> {
     last_sent: Option<SentRequest>,
     /// The token reservation of the last request admitted.
     last_reservation: Option<u32>,
-    /// The last reply refused for exceeding its reservation (diagnostics only).
-    overrun: Option<CompletionResponse>,
+    /// The last reply the runner refused (diagnostics only).
+    refused: Option<CompletionResponse>,
     /// The call budget the last reservation exceeded (nothing was sent).
     over_budget: Option<u32>,
     /// Every `x-request-id` sent, in order (retries and requeues included).
@@ -528,10 +528,11 @@ impl<P: LlmProvider> Session<'_, P> {
         self.last_reservation
     }
 
-    /// The last reply the runner refused because its reported usage exceeded
-    /// the reservation (`budget_exceeded`); for logs, never for answers.
-    pub fn overrun(&self) -> Option<&CompletionResponse> {
-        self.overrun.as_ref()
+    /// The last reply the runner refused, for logs, never for answers: its
+    /// reported usage exceeded the reservation (`budget_exceeded`), or it
+    /// was cut off (`incomplete`: `finish=length` or an unknown reason).
+    pub fn refused_reply(&self) -> Option<&CompletionResponse> {
+        self.refused.as_ref()
     }
 
     /// The call token budget the last reservation exceeded, when the runner
@@ -671,7 +672,7 @@ impl<P: LlmProvider> Session<'_, P> {
             let measured = gate.take_measured();
             if measured.reservation.is_some() {
                 self.last_reservation = measured.reservation;
-                self.overrun = measured.overrun;
+                self.refused = measured.refused;
                 self.over_budget = measured.budget;
             }
             drop(gate);

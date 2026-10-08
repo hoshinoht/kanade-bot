@@ -238,6 +238,47 @@ async fn a_content_filter_is_told_apart_from_a_length_cut_off_and_never_retried(
     }
 }
 
+#[tokio::test(start_paused = true)]
+async fn a_cut_off_reply_names_its_counts_but_never_the_finish_text() {
+    let request = kanade::infrastructure::llm::ChatRequest {
+        max_output_tokens: 64,
+        ..tiny_request()
+    };
+    let cut = |finish_reason, usage, reasoning_tokens| CompletionResponse {
+        content: None,
+        finish_reason,
+        usage,
+        reasoning_tokens,
+        ..tiny_response("m")
+    };
+    let length = cut(
+        FinishReason::Length,
+        Some(Usage {
+            prompt_tokens: 1,
+            completion_tokens: 64,
+        }),
+        Some(60),
+    );
+    let other = cut(FinishReason::Other("finish-secret".into()), None, None);
+    for (response, text) in [
+        (
+            length,
+            "Incomplete: reply cut off at the token limit (finish=length, 64 of 64 tokens, 60 reasoning)",
+        ),
+        (
+            other,
+            "Incomplete: reply ended without finishing (finish=other, usage not reported, limit 64 tokens)",
+        ),
+    ] {
+        let (provider, runner) = build_runner([FakeAction::Response(response)]);
+        let error = runner.complete(&request).await.unwrap_err();
+        assert_eq!(error.code, ErrorCode::Incomplete);
+        assert_eq!(error.to_string(), text);
+        assert!(!format!("{error:?}").contains("finish-secret"));
+        assert_eq!(provider.requests().len(), 1, "never retried");
+    }
+}
+
 #[test]
 fn completion_runner_result_constructor_is_the_public_failure_boundary() {
     let provider = Arc::new(FakeProvider::new([]));

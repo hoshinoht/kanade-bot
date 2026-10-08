@@ -728,6 +728,33 @@ async fn a_reply_over_its_reservation_is_unavailable_with_budget_exceeded_and_it
     assert_eq!(detail.budget, None, "sent within budget");
 }
 
+/// A reply cut off at `max_tokens` is still refused as `incomplete` without
+/// a retry; the detail keeps what the model reported.
+#[tokio::test(start_paused = true)]
+async fn a_cut_off_rewrite_is_incomplete_and_keeps_its_usage() {
+    use kanade::chat::nudge::REWRITE_MAX_OUTPUT_TOKENS;
+
+    let FakeAction::Response(mut cut) = answered("Waku", 40, REWRITE_MAX_OUTPUT_TOKENS) else {
+        unreachable!("answered is a response")
+    };
+    cut.finish_reason = kanade::infrastructure::llm::FinishReason::Length;
+    let (provider, client) = client(vec![FakeAction::Response(cut)], true);
+    let outcome = adapter(client)
+        .rewrite_detailed(&rewrite_prompt(), DEADLINE)
+        .await;
+    assert_eq!(outcome.result, Err(RewriteFailure::Refused));
+    assert_eq!(provider.requests().len(), 1, "no retry");
+    let detail = outcome.detail;
+    assert_eq!(detail.code, Some("incomplete"));
+    assert_eq!(
+        detail
+            .usage
+            .map(|usage| (usage.prompt_tokens, usage.completion_tokens)),
+        Some((40, REWRITE_MAX_OUTPUT_TOKENS))
+    );
+    assert_eq!(detail.reasoning_tokens, Some(3));
+}
+
 /// Refusals before anything is sent carry the governor's code.
 #[tokio::test(start_paused = true)]
 async fn a_refused_rewrite_carries_the_governor_code() {

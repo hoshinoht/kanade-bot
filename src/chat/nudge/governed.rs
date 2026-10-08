@@ -139,13 +139,13 @@ impl<P: LlmProvider> NudgeRewriter for GovernedRewriter<P> {
             }
             Err(error) => {
                 detail.code = Some(error.code());
-                // A reply refused for exceeding its reservation still shows
-                // what the model reported.
-                if let Some(overrun) = session.overrun() {
-                    detail.usage = overrun.usage.clone();
-                    detail.reasoning_tokens = overrun.reasoning_tokens;
-                    detail.reasoning = overrun.reasoning_content.clone();
-                    detail.reply = overrun.content.clone();
+                // A reply refused for exceeding its reservation or for being
+                // cut off still shows what the model reported.
+                if let Some(refused) = session.refused_reply() {
+                    detail.usage = refused.usage.clone();
+                    detail.reasoning_tokens = refused.reasoning_tokens;
+                    detail.reasoning = refused.reasoning_content.clone();
+                    detail.reply = refused.content.clone();
                 }
                 Err(classify(&error))
             }

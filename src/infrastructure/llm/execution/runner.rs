@@ -223,16 +223,35 @@ impl<P: LlmProvider> CompletionRunner<P> {
                         && used > reservation
                     {
                         // Kept for logs; the rejection itself is unchanged.
-                        gate.note_overrun(response);
+                        gate.note_refused(response);
                         return Err(charge(LlmError::new(
                             ErrorCode::BudgetExceeded,
                             "usage-reservation",
                         )));
                     }
                     let validation = gate.kind().tool_call_validation();
-                    let valid = validate_response(current, response, &self.limits, validation)
-                        .map_err(charge)?;
-                    return Ok(valid);
+                    // The body carries `max_tokens` only with sampling controls
+                    // (`wire::chat_body`); unknown capabilities send it as is.
+                    let max_tokens = capabilities
+                        .as_ref()
+                        .is_none_or(|capabilities| capabilities.sampling_controls)
+                        .then_some(current.max_output_tokens);
+                    return match validate_response(
+                        current,
+                        &response,
+                        max_tokens,
+                        &self.limits,
+                        validation,
+                    ) {
+                        Ok(()) => Ok(response),
+                        Err(error) => {
+                            // A cut-off reply is kept for logs, like an overrun.
+                            if error.code == ErrorCode::Incomplete {
+                                gate.note_refused(response);
+                            }
+                            Err(charge(error))
+                        }
+                    };
                 }
                 Err(failure) => failure,
             };

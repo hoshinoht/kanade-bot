@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::super::{
     ChatRequest, CompletionResponse, ErrorCode, FinishReason, LlmError, Message, OutputValidation,
     ToolCallValidation,
+    error::Cutoff,
     schema::{self},
     wire::valid_name,
 };
@@ -11,12 +12,15 @@ use super::{
     policy::ExecutionLimits,
 };
 
+/// `max_tokens` is what the body carried (`None` when it carried none); an
+/// `Incomplete` error reports it next to the reply's own counts.
 pub(super) fn validate_response(
     request: &ChatRequest,
-    response: CompletionResponse,
+    response: &CompletionResponse,
+    max_tokens: Option<u32>,
     limits: &ExecutionLimits,
     validation: ToolCallValidation,
-) -> Result<CompletionResponse, LlmError> {
+) -> Result<(), LlmError> {
     if response.tool_calls.len() > limits.max_tools {
         return Err(LlmError::new(ErrorCode::InvalidOutput, "tool-count"));
     }
@@ -77,7 +81,7 @@ pub(super) fn validate_response(
         FinishReason::Length | FinishReason::ContentFilter => {}
     }
     encoded_size(
-        &response,
+        response,
         limits.max_response_bytes,
         ErrorCode::InvalidOutput,
         "aggregate",
@@ -87,7 +91,12 @@ pub(super) fn validate_response(
             return Err(LlmError::new(ErrorCode::ContentFiltered, "content-filter"));
         }
         FinishReason::Other(_) | FinishReason::Length => {
-            return Err(LlmError::new(ErrorCode::Incomplete, "finish"));
+            return Err(LlmError::incomplete(Cutoff {
+                length: response.finish_reason == FinishReason::Length,
+                max_tokens,
+                completion_tokens: response.usage.as_ref().map(|usage| usage.completion_tokens),
+                reasoning_tokens: response.reasoning_tokens,
+            }));
         }
         FinishReason::Stop | FinishReason::ToolCalls => {}
     }
@@ -135,7 +144,7 @@ pub(super) fn validate_response(
             &value_bounds(limits, limits.max_schema_bytes),
         )?;
     }
-    Ok(response)
+    Ok(())
 }
 
 fn historical_tool_ids(request: &ChatRequest) -> BTreeSet<&str> {

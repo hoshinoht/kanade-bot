@@ -51,6 +51,20 @@ impl ErrorCode {
 pub struct LlmError {
     pub code: ErrorCode,
     pub digest: u64,
+    /// What an `Incomplete` reply reported, so the log can say why it stopped.
+    cutoff: Option<Cutoff>,
+}
+
+/// The counts a reply rejected as `Incomplete` carried; never its text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Cutoff {
+    /// `finish=length`; otherwise an unknown finish reason, whose provider
+    /// text is not kept.
+    pub length: bool,
+    /// The `max_tokens` sent; `None` when the body carried none.
+    pub max_tokens: Option<u32>,
+    pub completion_tokens: Option<u32>,
+    pub reasoning_tokens: Option<u64>,
 }
 
 impl LlmError {
@@ -58,17 +72,43 @@ impl LlmError {
         Self {
             code,
             digest: digest(safe_reason),
+            cutoff: None,
+        }
+    }
+
+    /// A reply that ended before finishing (`ErrorCode::Incomplete`).
+    pub(crate) fn incomplete(cutoff: Cutoff) -> Self {
+        Self {
+            cutoff: Some(cutoff),
+            ..Self::new(ErrorCode::Incomplete, "finish")
         }
     }
 }
 
 impl fmt::Display for LlmError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "LLM completion failed ({:?}, digest={:016x})",
-            self.code, self.digest
-        )
+        let Some(cutoff) = &self.cutoff else {
+            return write!(
+                formatter,
+                "LLM completion failed ({:?}, digest={:016x})",
+                self.code, self.digest
+            );
+        };
+        if cutoff.length {
+            formatter.write_str("Incomplete: reply cut off at the token limit (finish=length, ")?;
+        } else {
+            formatter.write_str("Incomplete: reply ended without finishing (finish=other, ")?;
+        }
+        match (cutoff.completion_tokens, cutoff.max_tokens) {
+            (Some(used), Some(limit)) => write!(formatter, "{used} of {limit} tokens")?,
+            (Some(used), None) => write!(formatter, "{used} tokens")?,
+            (None, Some(limit)) => write!(formatter, "usage not reported, limit {limit} tokens")?,
+            (None, None) => formatter.write_str("usage not reported")?,
+        }
+        if let Some(reasoning) = cutoff.reasoning_tokens {
+            write!(formatter, ", {reasoning} reasoning")?;
+        }
+        formatter.write_str(")")
     }
 }
 
@@ -78,6 +118,7 @@ impl fmt::Debug for LlmError {
             .debug_struct("LlmError")
             .field("code", &self.code)
             .field("digest", &format_args!("{:016x}", self.digest))
+            .field("cutoff", &self.cutoff)
             .finish()
     }
 }

@@ -557,7 +557,15 @@ where
                 }
             };
             first = false;
-            if let Ok(response) = &sent {
+            // A reply the runner refused (cut off, or over its reservation)
+            // still logs what the provider reported for this attempt.
+            let sent_now = session.requests_used() > before;
+            let reported = match &sent {
+                Ok(response) => Some(response),
+                Err(_) if sent_now => session.refused_reply(),
+                Err(_) => None,
+            };
+            if let Some(response) = reported {
                 if let Some(text) = response
                     .reasoning_content
                     .as_deref()
@@ -585,11 +593,9 @@ where
                 }
             }
             record.usage.attempt(
-                session.requests_used() > before,
+                sent_now,
                 estimate,
-                sent.as_ref()
-                    .ok()
-                    .and_then(|response| response.usage.as_ref()),
+                reported.and_then(|response| response.usage.as_ref()),
             );
             let outcome = match sent {
                 Ok(response) => AttemptOutcome::Reply {

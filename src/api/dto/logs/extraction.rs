@@ -210,11 +210,13 @@ fn fixed_failures() -> Vec<String> {
 }
 
 /// Typed texts with a variable part that is never store or backend text:
-/// redacted provider errors, timeouts, schema validation and identity
-/// decoding (model output), and the external-route refusal (config).
+/// redacted provider errors, cut-off replies (counts only), timeouts, schema
+/// validation and identity decoding (model output), and the external-route
+/// refusal (config).
 fn typed_failure(text: &str) -> bool {
-    const PREFIXES: [&str; 5] = [
+    const PREFIXES: [&str; 6] = [
         "LLM completion failed (",
+        "Incomplete: reply ",
         "the model did not answer within ",
         "not JSON: ",
         "expected a JSON object, got ",
@@ -408,6 +410,7 @@ mod tests {
             SCHEDULE_UNREADABLE,
             "date value out of range",
             "LLM completion failed (InvalidOutput, digest=00000000000000ff)",
+            "Incomplete: reply cut off at the token limit (finish=length, 6000 of 6000 tokens, 5800 reasoning)",
             "the model did not answer within 60s",
             "2 validation errors for Extraction\namendments.0.kind\n  Input should be ...",
             "role extraction routes to external model \"x\" but pseudonymization is off",

@@ -25,8 +25,8 @@ pub(in crate::infrastructure::llm) struct Gate<'a> {
     sent_ids: Option<&'a mut Vec<String>>,
     /// The last admitted request's token reservation.
     reservation: Option<u32>,
-    /// A reply refused for reporting more tokens than its reservation.
-    overrun: Option<CompletionResponse>,
+    /// A reply the runner refused: more tokens than its reservation, or cut off.
+    refused: Option<CompletionResponse>,
     /// The call budget left when a reservation was refused before sending.
     budget: Option<u32>,
 }
@@ -34,7 +34,7 @@ pub(in crate::infrastructure::llm) struct Gate<'a> {
 /// What [`Gate::take_measured`] hands the session.
 pub(in crate::infrastructure::llm) struct Measured {
     pub(in crate::infrastructure::llm) reservation: Option<u32>,
-    pub(in crate::infrastructure::llm) overrun: Option<CompletionResponse>,
+    pub(in crate::infrastructure::llm) refused: Option<CompletionResponse>,
     pub(in crate::infrastructure::llm) budget: Option<u32>,
 }
 
@@ -68,7 +68,7 @@ impl<'a> Gate<'a> {
             sent: None,
             sent_ids: None,
             reservation: None,
-            overrun: None,
+            refused: None,
             budget: None,
         }
     }
@@ -98,8 +98,8 @@ impl<'a> Gate<'a> {
         self.reservation = Some(reservation);
     }
 
-    pub(super) fn note_overrun(&mut self, response: CompletionResponse) {
-        self.overrun = Some(response);
+    pub(super) fn note_refused(&mut self, response: CompletionResponse) {
+        self.refused = Some(response);
     }
 
     /// A reservation larger than the call budget left: nothing is sent.
@@ -108,12 +108,12 @@ impl<'a> Gate<'a> {
         self.budget = Some(budget);
     }
 
-    /// The last request's reservation; if its reply exceeded it, that reply;
+    /// The last request's reservation; if its reply was refused, that reply;
     /// if it was refused before sending, the budget it exceeded.
     pub(in crate::infrastructure::llm) fn take_measured(&mut self) -> Measured {
         Measured {
             reservation: self.reservation.take(),
-            overrun: self.overrun.take(),
+            refused: self.refused.take(),
             budget: self.budget.take(),
         }
     }
@@ -143,7 +143,7 @@ impl<'a> Gate<'a> {
             sent: None,
             sent_ids: None,
             reservation: None,
-            overrun: None,
+            refused: None,
             budget: None,
         }
     }
