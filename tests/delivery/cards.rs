@@ -1019,16 +1019,12 @@ async fn countdown_header_rewrites_persona_phrases_and_keeps_facts_out_of_the_pr
 
 /// Every header rewrite sends the bundle's `compact.header_rewrite` (its
 /// `nudge_rewrite` is for nudges) under the code-owned header instruction,
-/// which forbids the markdown the bundle's text asks for.
+/// which comes first and forbids markdown whatever the bundle says.
 #[tokio::test(start_paused = true)]
 async fn header_rewrites_send_the_bundle_header_prompt_not_its_nudge_prompt() {
     let compiled = persona()().expect("persona");
     let header = compiled.prompt_compact().expect("header_rewrite").trim();
     let nudge = compiled.nudge_rewrite().expect("nudge_rewrite").trim();
-    assert!(
-        header.contains("*Mon 21 Sep*"),
-        "the bundle asks for markdown"
-    );
 
     let day_of = Scripted::new(Script::Reply("Rise and shine, it's {day}!"));
     morning_content(rewriting(&day_of)).await;

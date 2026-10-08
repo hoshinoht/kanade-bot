@@ -32,7 +32,7 @@ fn tracked_kanade_bundle_keeps_block_scalars() {
 
 #[test]
 fn tracked_kanade_header_rewrite_is_the_approved_bytes() {
-    const SHA256: &str = "dba87c180e9b52dfbe2a1b168c455c0d81b08864c6727f5c8c292853dc374dfc";
+    const SHA256: &str = "1244d33dd24f5d9d5939487f6c4051b9496097a8cd86a8a4aa326372c87f6bc8";
     let root = kanade::chat::persona::PersonaRoot::open(&crate::support::tracked_dir()).unwrap();
     let compact = root.load_bundle(&pid("kanade")).unwrap().value.compact;
     let text = compact
@@ -44,7 +44,7 @@ fn tracked_kanade_header_rewrite_is_the_approved_bytes() {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
-    assert_eq!(text.len(), 408);
+    assert_eq!(text.len(), 380);
     assert!(text.ends_with(".\n") && !text.ends_with("\n\n"));
     assert_eq!(digest, SHA256);
 }
