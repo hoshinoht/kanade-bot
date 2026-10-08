@@ -126,7 +126,13 @@ impl<P: LlmProvider> CompletionRunner<P> {
                     "deadline-overflow",
                 ))
             })?;
-        let deadline = gate.deadline().map_or(own, |outer| outer.min(own));
+        // A chat round may use whatever is left of its question's budget; every
+        // other call also stays within the runner's own per-call cap.
+        let deadline = match gate.deadline() {
+            Some(question) if gate.kind() == CallKind::Chat => question,
+            Some(outer) => outer.min(own),
+            None => own,
+        };
         let wait = remaining_time(deadline).map_err(local)?;
         let mut capabilities =
             tokio::time::timeout(wait, self.provider.capabilities(&request.model, deadline))

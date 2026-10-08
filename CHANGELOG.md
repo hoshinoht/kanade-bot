@@ -414,6 +414,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 **Fixed**
 
+- Chat: one slow model round no longer fails the question at 30 s. Every model call was also capped at the runner's 30 s per call, which cut a chat round off with half of the question's 60 s left ("no answer within 60s" after 30.5 s while the gateway was still answering); a chat round may now use whatever is left of its question's budget. Extraction, rewrites and other calls keep the 30 s per-call cap.
 - Header and nudge rewrites: the model now gets the seed as "Line to rewrite: …" rather than the bare line, so a short seed such as "Let's go!" is no longer answered as a chat turn ("Could you provide the line you'd like rewritten?"; 3 of 5 live tries before, 0 of 5 after). The gate and stored seed are unchanged.
 - `kanade ctl emojis` works inside the container: the image ships the pill PNGs at `/app/assets/emojis` (`KANADE_EMOJI_DIR`), where the command now looks without `--dir`; before, it looked under `/data` and could not upload them. A dry run now also reads each missing pill's PNG, so a wrong directory fails before the real run.
 - Admin weekly timings: fixed-PATCH retries recognize the normalized full request across interleaved edits and no-op races without duplicate effects. Changed or pre-fix keys return `idempotency_mismatch`; reload and use a fresh key.

@@ -196,6 +196,47 @@ async fn an_upstream_timeout_is_charged_and_ends_the_question() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_slow_chat_round_may_use_the_question_budget_but_extraction_keeps_the_call_cap() {
+    let slow = |secs| FakeAction::Delayed {
+        delay: Duration::from_secs(secs),
+        action: Box::new(ok()),
+    };
+    // 40 s is past the runner's 30 s per-call cap but inside the 60 s question.
+    let governor = build(&config(10));
+    let (_, client) = setup(governor, [slow(40)]);
+    let mut question = client
+        .open_question("member", false, rounds(8))
+        .await
+        .unwrap();
+    let started = Instant::now();
+    question.complete(&request()).await.unwrap();
+    assert_eq!(started.elapsed(), Duration::from_secs(40));
+
+    // The question's own deadline still ends a round that outlasts it.
+    let governor = build(&config(10));
+    let (_, client) = setup(governor, [slow(90)]);
+    let mut question = client
+        .open_question("member", false, rounds(8))
+        .await
+        .unwrap();
+    let started = Instant::now();
+    let error = question.complete(&request()).await.unwrap_err();
+    assert_eq!(model(&error), ErrorCode::DeadlineExceeded);
+    assert_eq!(started.elapsed(), TIMEOUT);
+
+    let governor = build(&config(10));
+    let (_, client) = setup(governor, [slow(40)]);
+    let mut session = client
+        .open_extraction("run 2026-W39", TIMEOUT, TIMEOUT)
+        .await
+        .unwrap();
+    let started = Instant::now();
+    let error = session.complete(&request()).await.unwrap_err();
+    assert_eq!(model(&error), ErrorCode::DeadlineExceeded);
+    assert_eq!(started.elapsed(), Duration::from_secs(30));
+}
+
+#[tokio::test(start_paused = true)]
 async fn an_admission_refusal_requeues_once_after_retry_after_and_jitter() {
     let governor = build(&config(10));
     let (provider, client) = setup(
