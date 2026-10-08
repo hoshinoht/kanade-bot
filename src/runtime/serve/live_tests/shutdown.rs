@@ -314,6 +314,15 @@ async fn http(address: SocketAddr, text: String) -> (u16, String, String) {
     (status, head.to_owned(), body.to_owned())
 }
 
+/// The delivery tick's state as `/healthz` reports it to the local
+/// healthcheck (which always names `localhost`).
+async fn scheduler(address: SocketAddr) -> String {
+    let text = "GET /healthz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
+    let (_, _, body) = http(address, text.to_owned()).await;
+    let health: Value = serde_json::from_str(&body).unwrap();
+    health["scheduler"].as_str().unwrap_or_default().to_owned()
+}
+
 /// The break-glass sign-in's session cookie.
 async fn sign_in(address: SocketAddr) -> String {
     let body = format!(r#"{{"token":"{TOKEN}"}}"#);
@@ -1133,8 +1142,18 @@ async fn a_header_rewrite_hanging_at_the_cutoff_still_ends_by_it() {
     let left = Duration::from_millis(200);
     let scenario = async {
         eventually!("the admin listener", !logged("server_started").is_empty());
+        let address: SocketAddr = logged("server_started")[0]["bind"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
         events.send(ready()).unwrap();
         events.send(guild()).unwrap();
+        // A stop that lands before the tick's loop (the roster not yet
+        // reconciled, under load) ends it silently: no `tick_stopped` to
+        // order against the close. Health says `running` only once a tick
+        // has completed inside the loop.
+        eventually!("the tick running", scheduler(address).await == "running");
         eventually!("the header rewrite", model.calls().1 == 1);
         events
             .send(message(
