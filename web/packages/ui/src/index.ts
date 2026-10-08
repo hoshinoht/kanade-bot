@@ -6,6 +6,9 @@ export { default as SessionList } from './components/SessionList.svelte';
 export { dayTime, deviceName, isHandheld, seenWords } from './account';
 export { default as AnswerChip } from './components/AnswerChip.svelte';
 export { default as BossTag } from './components/BossTag.svelte';
+// Boss entry art, animated where available (PWAs only; Discord stays still).
+export { default as BossArt } from './components/BossArt.svelte';
+export { bossArt, entryArt, type BossArtChoice, type BossArtInput } from './bossArt';
 export { default as BossStack } from './components/BossStack.svelte';
 export { default as RowContent } from './components/RowContent.svelte';
 export { default as CommandPalette, filterCommands, type Command } from './components/CommandPalette.svelte';

@@ -12,6 +12,7 @@ pub struct Boss {
     pub portrait: Option<String>,
     pub portrait_sm: Option<String>,
     pub art: Option<String>,
+    pub animated: Option<String>,
     pub hue: u16,
 }
 

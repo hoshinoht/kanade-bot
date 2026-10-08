@@ -28,6 +28,7 @@
     portrait: row.portrait,
     portrait_sm: row.portrait,
     art: null,
+    animated: null,
     hue: row.hue,
   });
 

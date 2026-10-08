@@ -1,9 +1,11 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, PUBLIC, REAL_ART, expect, test } from './support';
+import type { Week } from '@kanade/api-types';
+import { ADMIN, PUBLIC, REAL_ART, expect, test, unconditional } from './support';
 
 // Synthetic fixtures (e2e/fixtures/boss): Carling, MaleficStar, Kalos, BM, FA
-// have entry art; Limbo has a portrait but no art; Baldrix, Bellona, Jupiter,
-// Seren have nothing. Skipped under the real-art capture mode.
+// have entry art, MaleficStar also a clip (artwork/animated); Limbo has a
+// portrait but no art; Baldrix, Bellona, Jupiter, Seren have nothing. Skipped
+// under the real-art capture mode.
 test.skip(REAL_ART, 'fixture-specific assertions');
 
 async function noBrokenImages(page: Page) {
@@ -26,13 +28,44 @@ test('admin board: entry art under the veil only where the deployment has it', a
   await noBrokenImages(page);
 });
 
+test('admin board: a lead boss with a clip plays it over the still poster; reduced motion keeps the still', async ({ page }) => {
+  // Lead r-carling with HStar, the fixture boss that has a clip.
+  await page.route(`${ADMIN}/api/admin/week*`, async (route) => {
+    const response = await route.fetch(unconditional(route));
+    const week = (await response.json()) as Week;
+    const runs = week.runs.map((r) => (r.id === 'r-carling' ? { ...r, bosses: [...r.bosses].reverse() } : r));
+    await route.fulfill({ response, json: { ...week, runs } });
+  });
+  await page.goto(`${ADMIN}/?sw=off`);
+  const card = page.locator('[data-run="r-carling"]');
+  const video = card.locator('video.runcard__art');
+  await expect(video).toHaveAttribute('src', '/art/animated/MaleficStar');
+  await expect(video).toHaveAttribute('poster', '/art/entry/MaleficStar');
+  await expect(video).toHaveAttribute('aria-hidden', 'true');
+  await expect(video).toHaveAttribute('preload', 'metadata');
+  await expect(card.locator('img.runcard__art')).toHaveCount(0);
+  expect(await video.evaluate((v: HTMLVideoElement) => ({ muted: v.muted, loop: v.loop, playsInline: v.playsInline, controls: v.controls }))).toEqual({ muted: true, loop: true, playsInline: true, controls: false });
+  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => !v.paused && v.currentTime > 0)).toBe(true);
+  // The same veil as the still, and no style attribute (strict CSP).
+  await expect(video).toHaveCSS('opacity', '0.38');
+  expect(await video.getAttribute('style')).toBeNull();
+  // A lead boss without a clip keeps its still.
+  await expect(page.locator('[data-run="r-kalos"] img.runcard__art')).toHaveAttribute('src', '/art/entry/Kalos');
+
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(card.locator('img.runcard__art')).toHaveAttribute('src', '/art/entry/MaleficStar');
+  await expect(card.locator('video')).toHaveCount(0);
+});
+
 test('admin run pane: portraits, levels, split artwork, monogram fallback', async ({ page }) => {
   await page.goto(`${ADMIN}/?sw=off`);
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
   const sheet = page.getByRole('complementary', { name: 'HCarling + HStar' });
-  // Two bosses: two angled slices in the identity card, the lead first.
+  // Two bosses: two angled slices in the identity card, the lead first; HStar has a clip.
   await expect(sheet.locator('.week-pane__art .run__slice:nth-child(1) img.run__art')).toHaveAttribute('src', '/art/entry/Carling');
-  await expect(sheet.locator('.week-pane__art .run__slice:nth-child(2) img.run__art')).toHaveAttribute('src', '/art/entry/MaleficStar');
+  const clip = sheet.locator('.week-pane__art .run__slice:nth-child(2) video.run__art');
+  await expect(clip).toHaveAttribute('src', '/art/animated/MaleficStar');
+  await expect(clip).toHaveAttribute('poster', '/art/entry/MaleficStar');
   await expect(sheet.locator('img.portrait')).toHaveCount(2);
   await expect(sheet.locator('img.portrait').first()).toHaveAttribute('src', '/art/icons/Carling');
   await expect(sheet.getByText('Lv. 275')).toBeVisible();

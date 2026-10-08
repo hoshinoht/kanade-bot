@@ -1145,6 +1145,7 @@ async fn week_projects_runs_answers_cards_and_the_history_version() {
     assert_eq!(boss["portrait"], Value::Null, "no portrait file");
     assert_eq!(boss["portrait_sm"], "/art/icons/Kalos");
     assert_eq!(boss["art"], "/art/entry/Kalos");
+    assert_eq!(boss["animated"], Value::Null, "no clip file");
     assert_eq!(boss["hue"], 25);
 
     let star = run(&week, "r-star");
@@ -1154,7 +1155,9 @@ async fn week_projects_runs_answers_cards_and_the_history_version() {
         "an unknown token keeps its text if it has a difficulty letter, else it is dropped"
     );
     assert_eq!(star["bosses"][0]["portrait"], "/art/portraits/MaleficStar");
+    assert_eq!(star["bosses"][0]["animated"], "/art/animated/MaleficStar");
     assert_eq!(star["bosses"][1]["token"], "HLucid");
+    assert_eq!(star["bosses"][1]["animated"], Value::Null);
     assert_eq!(
         star["cards"][0]["state"], "skipped",
         "never posted and too late"

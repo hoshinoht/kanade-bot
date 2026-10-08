@@ -115,6 +115,9 @@ pub struct Boss {
     pub portrait: Option<String>,
     pub portrait_sm: Option<String>,
     pub art: Option<String>,
+    /// The looping MP4 (`/art/animated/{key}`) the PWAs play instead of
+    /// `art`; null where the deployment has none. Discord never reads it.
+    pub animated: Option<String>,
     pub hue: u16,
 }
 
@@ -172,6 +175,7 @@ pub fn boss(catalog: &BossTable, art: &Art<'_>, token: &str) -> Option<Boss> {
                 portrait_sm: art.url("icons", key, basename).or_else(|| portrait.clone()),
                 portrait,
                 art: art.url("entry", key, basename),
+                animated: art.url("animated", key, basename),
                 hue: hue(entry.guide_colour()),
             })
         }
@@ -186,6 +190,7 @@ pub fn boss(catalog: &BossTable, art: &Art<'_>, token: &str) -> Option<Boss> {
                 portrait: None,
                 portrait_sm: None,
                 art: None,
+                animated: None,
                 hue: 0,
             })
         }

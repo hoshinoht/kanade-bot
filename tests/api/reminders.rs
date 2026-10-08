@@ -476,6 +476,8 @@ async fn run_started_follows_every_run_on_a_posted_card() {
     let preview = alone.read(&preview_path("m-early-day"), SCHEMA).await;
     assert_eq!(field_names(&preview["card"]).len(), 1);
     assert_eq!(preview["run_started"], true);
+    // MaleficStar has a clip; the card mirrors Discord, so it never animates.
+    assert!(!preview["card"].to_string().contains("/art/animated/"));
 
     let shared = Reads::new().await;
     commit(

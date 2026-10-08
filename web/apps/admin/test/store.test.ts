@@ -11,7 +11,7 @@ const run = (id: string, day: number): Run => ({
   status: 'planned',
   short_id: 'abc',
   bosses: [
-    { token: 'HFA', key: 'FA', name: 'The First Adversary', difficulty: 'h', level: 270, portrait: null, portrait_sm: null, art: null, hue: 0 },
+    { token: 'HFA', key: 'FA', name: 'The First Adversary', difficulty: 'h', level: 270, portrait: null, portrait_sm: null, art: null, animated: null, hue: 0 },
   ],
   tally: { on: 0, total: 0 },
   participants: [],

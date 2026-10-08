@@ -29,14 +29,15 @@ async function confined(card: Locator) {
     return {
       inside: g ? g.left >= c.left - 0.5 && g.top >= c.top - 0.5 && g.right <= c.right + 0.5 && g.bottom <= c.bottom + 0.5 : false,
       clip: getComputedStyle(el).overflow,
-      strays: [...document.querySelectorAll('img.run__art')].filter((img) => !el.contains(img)).length,
+      strays: [...document.querySelectorAll('.run__art')].filter((art) => !el.contains(art)).length,
     };
   });
   expect(result).toEqual({ inside: true, clip: 'clip', strays: 0 });
 }
 
+/** Each slice's source: the still, or the clip where the boss has one (HStar in the fixtures). */
 async function srcs(card: Locator) {
-  return card.locator('.run__arts img.run__art').evaluateAll((imgs) => imgs.map((i) => i.getAttribute('src')));
+  return card.locator('.run__arts .run__art').evaluateAll((arts) => arts.map((a) => a.getAttribute('src')));
 }
 
 async function openPane(page: Page, id: string, name: string) {
@@ -65,7 +66,7 @@ test('run pane: one picture, two slices, and three slices for four bosses, all i
   pane = await openPane(page, 'r-carling', 'HCarling + HStar');
   card = pane.locator('.week-pane__art');
   await expect(card.locator('.run__arts--2 .run__slice')).toHaveCount(2);
-  expect(await srcs(card)).toEqual(['/art/entry/Carling', '/art/entry/MaleficStar']);
+  expect(await srcs(card)).toEqual(['/art/entry/Carling', '/art/animated/MaleficStar']);
   await confined(card);
   await page.keyboard.press('Escape');
 
@@ -76,7 +77,7 @@ test('run pane: one picture, two slices, and three slices for four bosses, all i
   card = pane.locator('.week-pane__art');
   // At most three slices, lead first in run order; the fourth boss is a portrait only.
   await expect(card.locator('.run__arts--3 .run__slice')).toHaveCount(3);
-  expect(await srcs(card)).toEqual(['/art/entry/Carling', '/art/entry/MaleficStar', '/art/entry/Kalos']);
+  expect(await srcs(card)).toEqual(['/art/entry/Carling', '/art/animated/MaleficStar', '/art/entry/Kalos']);
   await expect(card.locator('.week-pane__bosses li')).toHaveCount(4);
   await confined(card);
 

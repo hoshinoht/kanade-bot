@@ -11,7 +11,7 @@
   import type { Member, Participant, Run, RunStatus, Week } from '@kanade/api-types';
   import '@kanade/ui/styles/run-sheet.scss';
   import '@kanade/ui/styles/select.scss';
-  import { ANSWER_MARKS, AnswerBar, AnswerChip, BossTag, enter, Icon, Modal, Select, StatusMark, WavyProgress, dayLabel, runTitle, sortRuns, whenLabel } from '@kanade/ui';
+  import { ANSWER_MARKS, AnswerBar, AnswerChip, BossArt, BossTag, enter, Icon, Modal, Select, StatusMark, WavyProgress, dayLabel, runTitle, sortRuns, whenLabel } from '@kanade/ui';
   import { swapSlots } from './planner/dropTime';
   import { directory, memberLabel } from './names/directory.svelte';
   import Name from './names/Name.svelte';
@@ -547,7 +547,7 @@
   {#if artBosses.length > 0}
     <div class="run__arts run__arts--{artBosses.length}" data-fid="run-art">
       {#each artBosses as boss (boss.token)}
-        <span class="run__slice"><img class="run__art" src={boss.art} alt="" decoding="async" /></span>
+        <span class="run__slice"><BossArt class="run__art" still={boss.art} animated={boss.animated} /></span>
       {/each}
     </div>
   {/if}

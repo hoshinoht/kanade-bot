@@ -365,6 +365,7 @@ impl Catalog {
             portrait_sm: self.url(Kind::Icon, key).or_else(|| portrait.clone()),
             portrait,
             art: self.url(Kind::Entry, key),
+            animated: self.url(Kind::Animated, key),
             hue: def.map_or(0, |d| d.hue),
         }
     }

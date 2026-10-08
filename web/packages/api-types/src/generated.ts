@@ -6,7 +6,12 @@ import type { ActorKind, Answer, ChangeRecord, ChatOutcome, ChatRoute, ContextSo
 /**
  * `common.json#/$defs/Boss`.
  */
-export type Boss = { token: string, key: string, name: string, difficulty: Difficulty, level: number | null, portrait: string | null, portrait_sm: string | null, art: string | null, hue: number, };
+export type Boss = { token: string, key: string, name: string, difficulty: Difficulty, level: number | null, portrait: string | null, portrait_sm: string | null, art: string | null, 
+/**
+ * The looping MP4 (`/art/animated/{key}`) the PWAs play instead of
+ * `art`; null where the deployment has none. Discord never reads it.
+ */
+animated: string | null, hue: number, };
 
 /**
  * `{id, name}` for members and channels.

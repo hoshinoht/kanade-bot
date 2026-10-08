@@ -7,7 +7,7 @@
 -->
 <script lang="ts">
   import type { Answer, Run, Summary, Week } from '@kanade/api-types';
-  import { ANSWER_MARKS, BossTag, pulse, runTitle, WavyProgress, weekStartLabel } from '@kanade/ui';
+  import { ANSWER_MARKS, BossArt, BossTag, pulse, runTitle, WavyProgress, weekStartLabel } from '@kanade/ui';
   import { arrival } from '../resource.svelte';
   import { memberLabel } from '../names/directory.svelte';
   import { runCountdown } from './progress';
@@ -29,7 +29,7 @@
   const next = $derived(summary?.next ?? null);
   // The next run's own facts when it is on the week shown.
   const run = $derived<Run | null>(next ? (week.runs.find((r) => r.id === next.run_id) ?? null) : null);
-  const art = $derived(run?.bosses.find((b) => b.art)?.art ?? null);
+  const lead = $derived(run?.bosses.find((b) => b.art) ?? null);
   const maybe = $derived(run ? run.participants.filter((p) => p.answer === 'maybe').length : 0);
   const party = $derived(run ? ORDER.flatMap((answer) => run.participants.filter((p) => p.answer === answer)) : []);
   const unanswered = $derived(party.filter((p) => p.answer === 'waiting').length);
@@ -41,7 +41,7 @@
   <div class="week-glance__body">
     {#if next}
       <section class="week-glance__next" aria-labelledby="week-glance-next">
-        {#if art}<img class="week-glance__art" src={art} alt="" decoding="async" />{/if}
+        {#if lead}<BossArt class="week-glance__art" still={lead.art} animated={lead.animated} />{/if}
         <p class="cap week-glance__cap" id="week-glance-next">Next up · <span class="mono">{next.countdown}</span></p>
         <p class="week-glance__time mono">{run ? (run.time ?? 'own time') : next.when}</p>
         {#if run && countdown}

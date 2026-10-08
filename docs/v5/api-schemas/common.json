@@ -39,7 +39,7 @@
     "Boss": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["token", "key", "name", "difficulty", "level", "portrait", "portrait_sm", "art", "hue"],
+      "required": ["token", "key", "name", "difficulty", "level", "portrait", "portrait_sm", "art", "animated", "hue"],
       "properties": {
         "token": { "type": "string" },
         "key": { "type": "string" },
@@ -49,6 +49,7 @@
         "portrait": { "$ref": "#/$defs/NullableString" },
         "portrait_sm": { "$ref": "#/$defs/NullableString" },
         "art": { "$ref": "#/$defs/NullableString" },
+        "animated": { "$ref": "#/$defs/NullableString" },
         "hue": { "type": "integer", "minimum": 0, "maximum": 359 }
       }
     },

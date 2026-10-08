@@ -2,13 +2,12 @@
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
   import type { Boss, BossRow, EventBoss, FixedRow, Knowledge, Run, Week } from '@kanade/api-types';
-  import { DIFFICULTY_WORDS, LoadError, LoadingState, Portrait, RowContent, SINGLE_PANE_QUERY, StatusChip, dayLabel, enter, motionPreference } from '@kanade/ui';
+  import { BossArt, DIFFICULTY_WORDS, LoadError, LoadingState, Portrait, RowContent, SINGLE_PANE_QUERY, StatusChip, dayLabel, enter, entryArt } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
   import BossGrid from './BossGrid.svelte';
   import KnowledgeGuide from './KnowledgeGuide.svelte';
   import { LETTER } from './guide';
   import { eventAsBoss, seasonTag } from './event';
-  import { heroArt } from './heroArt';
   import { tick, untrack } from 'svelte';
   import '@kanade/ui/styles/boss-knowledge.scss';
 
@@ -111,16 +110,8 @@
       void tick().then(() => navEl?.querySelector<HTMLElement>(`a[href="/bosses/${CSS.escape(before)}/knowledge"]`)?.focus({ preventScroll: true }));
   });
 
-  let artFailed = $state(false);
-  let videoFailed = $state(false);
-  $effect(() => {
-    void activeKey;
-    artFailed = false;
-    videoFailed = false;
-  });
-  const art = $derived(heroArt({ key: activeKey, animated: knowledge.data?.animated ?? null, reducedMotion: motionPreference.reduced, videoFailed, stillFailed: artFailed }));
-  const asBoss = (row: BossRow): Boss => ({ token: row.key, key: row.key, name: row.name, difficulty: 'n', level: row.level, portrait: row.portrait, portrait_sm: row.portrait, art: null, hue: row.hue });
-  const activePortrait = $derived(knowledge.data ? { token: knowledge.data.key, key: knowledge.data.key, name: knowledge.data.name, difficulty: 'n' as const, level: knowledge.data.level, portrait: knowledge.data.portrait, portrait_sm: knowledge.data.portrait, art: null, hue: knowledge.data.hue } : activeBoss ? asBoss(activeBoss) : activeEvent ? eventAsBoss(activeEvent) : null);
+  const asBoss = (row: BossRow): Boss => ({ token: row.key, key: row.key, name: row.name, difficulty: 'n', level: row.level, portrait: row.portrait, portrait_sm: row.portrait, art: null, animated: null, hue: row.hue });
+  const activePortrait = $derived(knowledge.data ? { token: knowledge.data.key, key: knowledge.data.key, name: knowledge.data.name, difficulty: 'n' as const, level: knowledge.data.level, portrait: knowledge.data.portrait, portrait_sm: knowledge.data.portrait, art: null, animated: null, hue: knowledge.data.hue } : activeBoss ? asBoss(activeBoss) : activeEvent ? eventAsBoss(activeEvent) : null);
   const nextRun = $derived.by(() => {
     const current = week.data;
     if (!current) return null;
@@ -197,11 +188,7 @@
       {#if knowledge.error}<div class="empty" role="alert"><strong>No knowledge for “{activeKey}”.</strong>{knowledge.error}</div>
       {:else if doc && knowledge.data}
         <header data-fid="knowledge-head" class="knowledge-hero" class:knowledge-hero--compact={heroCompact}>
-          <!-- Keyed by source: a boss switch builds a fresh element, never showing the previous boss's frame. -->
-          {#key art?.src}
-            {#if art?.kind === 'video'}<video class="knowledge-hero__art" src={art.src} poster={art.poster} muted autoplay loop playsinline preload="metadata" disablepictureinpicture disableremoteplayback aria-hidden="true" onerror={() => (videoFailed = true)}></video>
-            {:else if art}<img class="knowledge-hero__art" src={art.src} alt="" onerror={() => (artFailed = true)} />{/if}
-          {/key}
+          <BossArt class="knowledge-hero__art" still={entryArt(activeKey)} animated={knowledge.data.animated} />
           <div class="knowledge-hero__identity">
             {#if activePortrait}<Portrait boss={activePortrait} size="md" />{/if}
             <div><p class="cap">Checked-in boss knowledge</p><h2>{knowledge.data.name}{#if shownDifficulty}<span class="knowledge-hero__pill boss-tick boss-tick--{tickClass(shownDifficulty)}"><span class="vh">, </span>{shownDifficulty.toUpperCase()}</span>{/if}</h2><p class="knowledge-hero__meta" title={heroMeta}>{knowledge.data.level ? `Lv. ${knowledge.data.level} · ` : ''}researched {knowledge.data.researched_as_of ?? 'undated'} · <code>{knowledge.data.path}</code></p></div>

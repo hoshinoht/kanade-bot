@@ -12,7 +12,7 @@ export async function busyWeek(page: Page) {
     const week = (await response.json()) as Week;
     const base = week.runs.find((r) => r.status !== 'done' && r.status !== 'cancelled')!;
     const like = base.bosses[0]!;
-    const boss = (key: string, name: string): Boss => ({ ...like, key, name, token: `N${key}`, difficulty: 'n', art: null });
+    const boss = (key: string, name: string): Boss => ({ ...like, key, name, token: `N${key}`, difficulty: 'n', art: null, animated: null });
     // The live report: "NCarling NORMAL" over "NMaleficStar NORMAL", the long token last, beside the grip.
     const sets = {
       1: [boss('MaleficStar', 'Malefic Star')],

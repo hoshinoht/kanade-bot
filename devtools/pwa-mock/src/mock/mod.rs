@@ -723,6 +723,7 @@ mod tests {
     fn absent_art_is_null_not_a_url() {
         let json = serde_json::to_string(&store().week(false)).unwrap();
         assert!(json.contains(r#""portrait":null"#));
+        assert!(json.contains(r#""animated":null"#));
         assert!(!json.contains("/art/"));
     }
 
@@ -732,6 +733,13 @@ mod tests {
         let json = serde_json::to_string(&Store::new(Catalog::new(root)).week(false)).unwrap();
         assert!(json.contains(r#""art":"/art/entry/Carling""#));
         assert!(json.contains(r#""portrait":"/art/portraits/Limbo""#));
+        // MaleficStar has a clip in the fixtures; Carling has a still only.
+        assert!(
+            json.contains(
+                r#""art":"/art/entry/MaleficStar","animated":"/art/animated/MaleficStar""#
+            )
+        );
+        assert!(json.contains(r#""art":"/art/entry/Carling","animated":null"#));
     }
 
     #[test]

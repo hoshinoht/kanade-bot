@@ -21,6 +21,7 @@ export function eventAsBoss(boss: EventBoss): Boss {
     portrait: boss.portrait ?? boss.portrait_sm,
     portrait_sm: boss.portrait_sm,
     art: boss.art,
+    animated: boss.animated,
     hue: 0,
   };
 }
