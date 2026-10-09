@@ -52,13 +52,6 @@
     void event;
     void load();
   });
-
-  const words = (code: string | null) => (code ? code.replaceAll('_', ' ') : '');
-  const detail = (row: SignInRow) => [row.method, words(row.reason), row.request].filter(Boolean).join(' · ');
-  const from = (row: SignInRow) => {
-    const client = row.client ? (row.realm === 'member' ? `tag ${row.client.slice(0, 8)}` : row.client) : '';
-    return [client, row.device].filter(Boolean).join(' · ');
-  };
 </script>
 
 <div class="history-signins" data-fid="history-signins">
@@ -73,12 +66,15 @@
         <tbody>
           {#each rows as row (row.seq)}
             {@const kind = EVENT[row.event]}
+            {@const detail = [row.method, row.reason?.replaceAll('_', ' '), row.request].filter(Boolean).join(' · ')}
+            {@const client = row.client && row.realm === 'member' ? `tag ${row.client.slice(0, 8)}` : row.client}
+            {@const from = [client, row.device].filter(Boolean).join(' · ')}
             <tr data-fid="history-signin" data-signin={row.seq}>
               <td class="mono">{localAt(row.at, timezone)}</td>
               <td><span class="status-chip {kind.tone}">{kind.label}</span></td>
               <th scope="row">{row.name ?? '—'}</th>
-              <td>{detail(row) || '—'}</td>
-              <td class="mono" title={row.realm === 'member' ? 'A keyed tag of the address; the address itself is never kept.' : undefined}>{from(row) || '—'}</td>
+              <td>{detail || '—'}</td>
+              <td class="mono" title={row.realm === 'member' ? 'A keyed tag of the address; the address itself is never kept.' : undefined}>{from || '—'}</td>
               <td>{row.realm === 'admin' ? 'Admin' : 'Members'}</td>
             </tr>
           {/each}

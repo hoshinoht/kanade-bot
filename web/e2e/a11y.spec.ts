@@ -35,6 +35,9 @@ const CONTRAST_LOOKS = COLORWAYS.map((way) => way.key)
 
 for (const [colorway, theme] of CONTRAST_LOOKS) {
   test(`axe: colour contrast on representative views, ${colorway} ${theme}`, async ({ page }) => {
+    // Eight screens with an axe pass each: 7–13 s locally, 20–30 s on a busy
+    // CI runner, which tipped over the default 30 s.
+    test.setTimeout(60_000);
     const contrast = (label: string) => serious(page, label, ['color-contrast']);
     await look(page, colorway, theme);
     await page.goto(`${PUBLIC}/?sw=off`);
