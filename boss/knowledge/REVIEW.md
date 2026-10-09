@@ -71,8 +71,9 @@ were left unchanged.
   avoided (replaces "take purple attacks"); Phase 3 Ragnarok is on a 125 s
   cooldown (MapleSEA v246), separate from the 120 s rotations.
 - **Radiant Malefic Star**: altar arithmetic is unresolved (105/115/130% vs
-  105/110/120% after three rights from 0); Keep +30% and Match altars to
-  bursts are flagged unresolved advanced recipes.
+  105/110/120% after three rights from 0). Keep +30% (DPM classes) and Match
+  altars to bursts (burst classes) follow iSIingGunz's video guide
+  (2026-10-09) and stay high-risk advanced routes.
 - **Black Mage**: the ~10 s / ~2 s i-frame figures are unverified; the
   Destruction +10% is the English wiki value; burst-only is for ordinary
   Hard with time slack.

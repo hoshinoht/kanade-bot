@@ -129,25 +129,29 @@ strategies:
   - When Predation climbs faster than the party likes, switch to left altars until the timer ends or the party is ready to go right again.
   - Back in Illusion, stay until the gauge is empty or 1:00 remains.
 - name: Keep +30% damage
-  when: 'Unresolved: the full recipe was not recovered from its original guide. Advanced only; not a default or near-minimum route without a whole-run Predation budget.'
+  when: 'DPM classes, advanced only: the whole route depends on the Awakener taking no hits while at +30%.'
   risk: high
   damage: low
-  payoff: Nearly the whole Reality stay at +30%.
+  payoff: Up to 3 minutes at +30% per Reality stay.
   steps:
-  - Burst twice in Illusion while emptying the gauge, leaving with about a minute on the timer.
-  - Take rights up to the top damage tier (check the displayed value), then stop catching Essences, because every catch forces an altar choice.
-  - Dodge everything; each deliberate miss and every hit adds Predation.
-  - Swap back near the timer's end; about five catches in Illusion remove roughly 200 Predation, but that does not prove the whole run stays under 1000. Repeat only if your budget allows.
+  - In Illusion, catch Essences until the gauge is fully empty (about five spawns), with about a minute left on the room timer.
+  - Swap into Reality with the gauge at 0, which skips the -10% entry penalty.
+  - Take the right altar three times to reach +30%. From an empty gauge three rights stay below 1000, so the 40 s forced-swap countdown never starts and +30% can hold for up to 3 minutes.
+  - Avoid every hit. Hits quickly raise the gauge and Predation.
+  - If Predation climbs too high, take one left altar to lower the gauge and Predation, then a right altar to restore the damage.
+  - Swap back near the timer's end and empty the gauge again; about five catches in Illusion also remove roughly 200 Predation.
 - name: Match altars to bursts
-  when: 'Unresolved: no readable source confirms the whole cycle; it depends on starting gauge, timing and cooldowns. Advanced Hard parties with a caller, never a first clear.'
+  when: 'Burst classes; advanced Hard parties with a caller, never a first clear. Times room swaps and altars to the burst windows without being forced out of Reality.'
   risk: high
   damage: low
   payoff: +30% on every burst.
   steps:
-  - After the opening burst catch one Essence in Illusion and swap just before the second, so the -10% lasts only seconds.
-  - Cycle right, right, left so the top damage tier lands on each burst and the gauge never reaches 1000 (the exact percentages per right are unresolved).
-  - Do not bind her during a burst while an Essence or altar is still due; stall the 7s altar pick instead.
-  - In Illusion catch two Essences without being hit, swap back just before the third, and arrive 30-40s before the next burst.
+  - Open with your usual origin burst in Illusion, catch one Essence, then swap to Reality straight away. The early swap costs the -10% entry penalty.
+  - Catch an Essence and take the right altar for +15%. The gauge reaches 1000, which starts the 40 s forced-swap countdown.
+  - Take the right altar on the next Essence as well, so you are at +30% for your next burst.
+  - Right after the burst, take the left altar (-15% damage, -250 gauge) to stop the forced-swap countdown.
+  - Repeat right, right, burst, left for the rest of the stay. Stall the 7 s altar pick rather than bind her while an Essence or altar is still due.
+  - When the Reality timer sends you back to Illusion, catch two Essences and swap back to Reality, then resume the cycle.
 notes:
 - title: Limits
   text: '30 min now (20 after OVERDRIVE), 10s potions; no slows, and she resists Zero''s critical bind.'
@@ -197,6 +201,11 @@ difficulties:
   notes:
   - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 10.0q, 20-minute limit.'
 sources:
+- url: https://www.youtube.com/watch?v=3Lk5_0yNXJA
+  title: MapleStory Complete Radiant Malefic Star Guide (video)
+  author: iSIingGunz
+  kind: guide
+  fetched: '2026-10-09'
 - url: https://docs.google.com/document/d/1qGre_k2_m68imDiKPzoyEQaVv7XO0RTea0mGct-TXH4/edit
   title: MapleStory Complete Malefic Star Guide
   author: iSIingGunz
