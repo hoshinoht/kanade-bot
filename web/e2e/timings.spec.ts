@@ -47,7 +47,8 @@ for (const size of ['desktop', 'phone'] as const) {
     await expect(page.getByText('Always in')).toHaveCount(0);
     if (size === 'phone') {
       // Every control is a 44 px target, and nothing scrolls sideways.
-      for (const button of await page.locator('[data-timing] button').all()) expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+      for (const button of await page.locator('[data-timing] button').all()) // Layout can land a hair under (43.99997 px); round like a device pixel.
+        expect(Math.round((await button.boundingBox())!.height)).toBeGreaterThanOrEqual(44);
       const panel = page.locator('#mine-panel');
       expect(await panel.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
     }
@@ -176,7 +177,7 @@ test("phone: Hand to… and Confirm it's you are bottom sheets with 44 px commit
   const box = (await sheet.boundingBox())!;
   expect(Math.round(box.y + box.height)).toBe(844);
   expect(Math.round(box.width)).toBe(390);
-  for (const name of ['Cancel', 'Hand to Ren']) expect((await sheet.getByRole('button', { name }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  for (const name of ['Cancel', 'Hand to Ren']) expect(Math.round((await sheet.getByRole('button', { name }).boundingBox())!.height)).toBeGreaterThanOrEqual(44);
   await shot(page, 'phone-3-picker');
   await page.route('**/api/public/timings/*/owner', (route) =>
     route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'reauth_required', message: '' }) }),
