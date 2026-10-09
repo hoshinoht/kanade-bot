@@ -106,10 +106,13 @@ fn identity_file(site: &Site, stem: &str) -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
+/// Safe in text and in quoted attribute values.
 fn escape(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 /// Identity images with a content ETag; a matching `If-None-Match` is a 304.
@@ -370,17 +373,111 @@ pub async fn fallback(
         return ApiError::NOT_FOUND.into_response();
     };
     let last = path.rsplit('/').next().unwrap_or_default();
-    // Extensionless paths are client routes; a missing asset stays a 404, never HTML.
-    if !last.contains('.') {
-        return match contained(root, Path::new("index.html")) {
-            Some(file) => send(&file, &request).await,
-            None => ApiError::NOT_FOUND.into_response(),
-        };
+    let file = if last.contains('.') {
+        relative(path).and_then(|relative| contained(root, &relative))
+    } else {
+        // Extensionless paths are client routes; a missing asset stays a 404, never HTML.
+        contained(root, Path::new("index.html"))
+    };
+    let Some(file) = file else {
+        return ApiError::NOT_FOUND.into_response();
+    };
+    // `/index.html` too: no URL serves the public shell unfilled.
+    if site.origin == Origin::Public
+        && contained(root, Path::new("index.html")).as_deref() == Some(file.as_path())
+    {
+        return public_shell(&site, &file).await;
     }
-    match relative(path).and_then(|relative| contained(root, &relative)) {
-        Some(file) => send(&file, &request).await,
-        None => ApiError::NOT_FOUND.into_response(),
+    send(&file, &request).await
+}
+
+/// Where the public shell takes its link-preview tags (`web/apps/public/index.html`).
+const PREVIEW_MARKER: &str = "<!-- kanade:preview -->";
+const TITLE_SUFFIX: &str = " · boss schedule";
+
+/// The public shell titled with the bot's name, its marker replaced by
+/// link-preview tags. Sent uncompressed: the name and the cached art change at
+/// runtime (`READY`, an identity refresh), the build's `.br`/`.gz` siblings hold
+/// the unfilled marker, and the shell is about a kilobyte.
+async fn public_shell(site: &Site, path: &Path) -> Response {
+    let Ok(html) = tokio::fs::read_to_string(path).await else {
+        return ApiError::NOT_FOUND.into_response();
+    };
+    let name = live_name(site);
+    let image = preview_image(site, &name);
+    (
+        [(header::CONTENT_TYPE, content_type(path))],
+        with_preview(&html, &name, image.as_ref()),
+    )
+        .into_response()
+}
+
+/// `https://host[:port]` of an `https` URL (the validated member redirect URI).
+pub fn origin_of(url: &str) -> Option<String> {
+    let host = url
+        .strip_prefix("https://")?
+        .split(['/', '?', '#'])
+        .next()
+        .filter(|host| !host.is_empty())?;
+    Some(format!("https://{host}"))
+}
+
+/// Link-preview art: an absolute URL, and whether it is the wide banner.
+struct PreviewImage {
+    url: String,
+    wide: bool,
+}
+
+/// The banner when one is cached, else the avatar (which always answers);
+/// `None` without a configured public origin, since crawlers need absolute URLs.
+fn preview_image(site: &Site, name: &str) -> Option<PreviewImage> {
+    let origin = site.public_origin.as_deref()?;
+    let avatar = identity_file(site, "avatar");
+    let banner = identity_file(site, "banner");
+    // Versioned like `/api/identity`, so a crawler's cache misses after a refresh.
+    let version = version(name, [avatar.as_deref(), banner.as_deref()]);
+    let (stem, wide) = if banner.is_some() {
+        ("banner", true)
+    } else {
+        ("avatar", false)
+    };
+    Some(PreviewImage {
+        url: format!("{origin}/identity/{stem}?v={version}"),
+        wide,
+    })
+}
+
+/// `html` with its `<title>` set to the bot's name and the preview marker
+/// replaced; a shell without the marker is returned as built.
+fn with_preview(html: &str, name: &str, image: Option<&PreviewImage>) -> String {
+    let Some((head, tail)) = html.split_once(PREVIEW_MARKER) else {
+        return html.to_owned();
+    };
+    let name = escape(name);
+    let title = format!("{name}{TITLE_SUFFIX}");
+    let card = if image.is_some_and(|image| image.wide) {
+        "summary_large_image"
+    } else {
+        "summary"
+    };
+    let mut tags = vec![
+        format!(r#"<meta property="og:title" content="{title}" />"#),
+        format!(r#"<meta property="og:site_name" content="{name}" />"#),
+        format!(r#"<meta name="twitter:card" content="{card}" />"#),
+    ];
+    if let Some(image) = image {
+        tags.push(format!(
+            r#"<meta property="og:image" content="{}" />"#,
+            escape(&image.url)
+        ));
     }
+    let head = match (head.find("<title>"), head.find("</title>")) {
+        (Some(start), Some(end)) if start < end => {
+            format!("{}<title>{title}{}", &head[..start], &head[end..])
+        }
+        _ => head.to_owned(),
+    };
+    format!("{head}{}{tail}", tags.join("\n    "))
 }
 
 /// The build's `.br`/`.gz` siblings are encodings of another URL, never resources of their own.
@@ -506,7 +603,68 @@ fn content_type(path: &Path) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{ByteRange, byte_range, relative, reserved};
+    use super::{ByteRange, PreviewImage, byte_range, origin_of, relative, reserved, with_preview};
+
+    const SHELL: &str =
+        "<head>\n    <title>Kanade · boss schedule</title>\n    <!-- kanade:preview -->\n</head>";
+
+    #[test]
+    fn the_origin_is_the_https_scheme_and_authority_only() {
+        assert_eq!(
+            origin_of("https://kanade-pub.example:8443/api/public/auth/discord/callback")
+                .as_deref(),
+            Some("https://kanade-pub.example:8443")
+        );
+        assert_eq!(
+            origin_of("https://k.example").as_deref(),
+            Some("https://k.example")
+        );
+        for url in ["http://k.example/cb", "https:///cb", "k.example/cb", ""] {
+            assert_eq!(origin_of(url), None, "{url}");
+        }
+    }
+
+    #[test]
+    fn the_preview_names_the_bot_escaped_and_points_at_absolute_art() {
+        let banner = PreviewImage {
+            url: "https://k.example/identity/banner?v=abc".into(),
+            wide: true,
+        };
+        let html = with_preview(SHELL, r#"Ka<na>"de & 'co'"#, Some(&banner));
+        let name = "Ka&lt;na&gt;&quot;de &amp; &#39;co&#39;";
+        assert_eq!(
+            html,
+            format!(
+                "<head>\n    <title>{name} · boss schedule</title>\n    \
+                 <meta property=\"og:title\" content=\"{name} · boss schedule\" />\n    \
+                 <meta property=\"og:site_name\" content=\"{name}\" />\n    \
+                 <meta name=\"twitter:card\" content=\"summary_large_image\" />\n    \
+                 <meta property=\"og:image\" content=\"https://k.example/identity/banner?v=abc\" />\n</head>"
+            )
+        );
+
+        let avatar = PreviewImage {
+            url: "https://k.example/identity/avatar?v=abc".into(),
+            wide: false,
+        };
+        let html = with_preview(SHELL, "Kanade", Some(&avatar));
+        assert!(html.contains(r#"<meta name="twitter:card" content="summary" />"#));
+        assert!(html.contains(r#"content="https://k.example/identity/avatar?v=abc""#));
+    }
+
+    #[test]
+    fn without_an_origin_absolute_tags_are_left_out_and_unmarked_shells_pass_through() {
+        let html = with_preview(SHELL, "Kanade", None);
+        assert!(html.contains("<title>Kanade · boss schedule</title>"));
+        assert!(html.contains(r#"<meta property="og:site_name" content="Kanade" />"#));
+        assert!(html.contains(r#"<meta name="twitter:card" content="summary" />"#));
+        assert!(!html.contains("og:image"));
+        assert!(!html.contains("kanade:preview"));
+        assert_eq!(
+            with_preview("<title>x</title>", "Kanade", None),
+            "<title>x</title>"
+        );
+    }
 
     #[test]
     fn single_byte_ranges_parse_and_everything_else_is_ignored_or_unsatisfiable() {

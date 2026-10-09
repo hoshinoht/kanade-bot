@@ -238,6 +238,117 @@ async fn public_identity_shows_the_live_name_but_never_the_bot_id() {
     assert!(avatar.text().contains(">Y</text>"));
 }
 
+struct QuotedBot;
+
+impl ChannelList for QuotedBot {
+    fn channels(&self) -> Vec<ChannelEntry> {
+        Vec::new()
+    }
+
+    fn bot_name(&self) -> Option<String> {
+        Some(r#"<Yoi"saki>"#.into())
+    }
+}
+
+/// A built public shell with the preview marker, plus siblings that still hold it.
+fn with_marked_shells(fixture: &Fixture) -> &'static str {
+    const SHELL: &str = "<!doctype html><head>\n    <title>Kanade · boss schedule</title>\n    \
+                         <!-- kanade:preview -->\n</head>public shell";
+    for app in ["public", "admin"] {
+        let dist = fixture.path(&format!("web/apps/{app}/dist"));
+        std::fs::write(dist.join("index.html"), SHELL).unwrap();
+        std::fs::write(dist.join("index.html.br"), b"BR-SHELL").unwrap();
+        std::fs::write(dist.join("index.html.gz"), b"GZIP-SHELL").unwrap();
+    }
+    SHELL
+}
+
+#[tokio::test]
+async fn the_public_shell_carries_link_previews_of_the_bot() {
+    let fixture = Fixture::new();
+    with_marked_shells(&fixture);
+    let mut http = fixture.http();
+    let dir = fixture.path("identity");
+    std::fs::create_dir_all(&dir).unwrap();
+    http.identity_dir = Some(dir.clone());
+    let mut site = Site::public(&http).unwrap();
+    site.bot = Some(Arc::new(QuotedBot));
+    site.public_origin = Some(format!("https://{PUBLIC_HOST}"));
+    let public = support::spawn(site.clone()).await;
+    let title = "&lt;Yoi&quot;saki&gt; · boss schedule";
+
+    for path in ["/", "/week", "/index.html"] {
+        let reply = request(
+            public,
+            "GET",
+            PUBLIC_HOST,
+            path,
+            &[("Accept-Encoding", "br, gzip")],
+        )
+        .await;
+        assert_eq!(reply.status, 200, "{path}");
+        // Filled per request, so never one of the build's precompressed siblings.
+        assert_eq!(reply.header("content-encoding"), None, "{path}");
+        assert_eq!(reply.header("vary"), None, "{path}");
+        assert_eq!(reply.header("cache-control"), Some("no-cache"), "{path}");
+        assert_eq!(
+            reply.header("content-type"),
+            Some("text/html; charset=utf-8")
+        );
+        let html = reply.text();
+        assert!(html.contains(&format!("<title>{title}</title>")), "{html}");
+        assert!(html.contains(&format!(
+            r#"<meta property="og:title" content="{title}" />"#
+        )));
+        assert!(
+            html.contains(r#"<meta property="og:site_name" content="&lt;Yoi&quot;saki&gt;" />"#)
+        );
+        // No banner cached: the avatar, as a small card.
+        assert!(html.contains(r#"<meta name="twitter:card" content="summary" />"#));
+        assert!(html.contains(&format!(
+            r#"<meta property="og:image" content="https://{PUBLIC_HOST}/identity/avatar?v="#
+        )));
+        assert!(!html.contains("kanade:preview") && !html.contains("Yoi\"saki"));
+    }
+
+    std::fs::write(dir.join("banner.png"), b"\x89PNG banner").unwrap();
+    let html = get(public, PUBLIC_HOST, "/").await.text();
+    assert!(html.contains(r#"<meta name="twitter:card" content="summary_large_image" />"#));
+    let image = format!("https://{PUBLIC_HOST}/identity/banner?v=");
+    assert!(html.contains(&image), "{html}");
+    // The URL it names answers signed out on the public listener.
+    let banner = get(public, PUBLIC_HOST, "/identity/banner").await;
+    assert_eq!(banner.status, 200);
+    assert_eq!(banner.body, b"\x89PNG banner");
+
+    // No public origin (no member sign-in configured): no absolute tags at all.
+    site.public_origin = None;
+    let bare = support::spawn(site).await;
+    let html = get(bare, PUBLIC_HOST, "/week").await.text();
+    assert!(html.contains(&format!("<title>{title}</title>")));
+    assert!(
+        !html.contains("og:image") && !html.contains("https://"),
+        "{html}"
+    );
+}
+
+#[tokio::test]
+async fn the_admin_shell_is_served_as_built() {
+    let fixture = Fixture::new();
+    let shell = with_marked_shells(&fixture);
+    let admin = support::admin(&fixture.http()).await;
+    for path in ["/", "/week", "/index.html"] {
+        let br = request(admin, "GET", ADMIN_HOST, path, &[("Accept-Encoding", "br")]).await;
+        assert_eq!(br.header("content-encoding"), Some("br"), "{path}");
+        assert_eq!(br.body, b"BR-SHELL", "{path}");
+        assert_eq!(br.header("vary"), Some("Accept-Encoding"), "{path}");
+        assert_eq!(br.header("cache-control"), Some("no-cache"), "{path}");
+        let plain = get(admin, ADMIN_HOST, path).await;
+        assert_eq!(plain.header("content-encoding"), None, "{path}");
+        assert_eq!(plain.text(), shell, "{path}");
+    }
+}
+
 /// Ten invented bytes; never the private art.
 const CLIP: &[u8] = b"0123456789";
 
