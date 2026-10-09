@@ -3,8 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { groupCap, wavingRows, type GroupRow } from '../src/config/capacity';
 import { EXPIRY_WARN, proposalExpiry } from '../src/inbox/expiry';
 import { MAX_WAVES, wavingGroups } from '../src/limits/permits';
-import { dateMinutes, spanWords, wallMinutes, whenMinutes } from '../src/shared/wall';
-import { COUNTDOWN_SPAN, runCountdown, weekProgress } from '../src/week/progress';
+import { COUNTDOWN_SPAN, dateMinutes, runCountdown, spanWords, wallMinutes, weekProgress, whenMinutes } from '@kanade/ui';
 
 const TZ = 'Asia/Kuala_Lumpur';
 const DAYS = ['Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue', 'Wed'];

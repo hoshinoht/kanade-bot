@@ -78,6 +78,12 @@ export function tally(run: Pick<PublicRun, 'tally'>): Tally {
   return run.tally;
 }
 
+/** "1 open" or "full": the places still open beside the "3/4" tally. */
+export function openPlaces(run: Pick<PublicRun, 'tally'>): string {
+  const open = Math.max(0, run.tally.total - run.tally.on);
+  return open ? `${open} open` : 'full';
+}
+
 /** Screen-reader name for a compact card: everything the card shows as marks. */
 export function runAccessibleName(week: WeekShape, run: PublicRun): string {
   const t = tally(run);

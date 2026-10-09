@@ -120,6 +120,13 @@ const ALLOW: Allow[] = [
     kinds: ['ellipsis', 'ellipsis-bare'],
     reason: "the thread head's channel and time span give way to the Used / All switch; each message shows its own time",
   },
+  {
+    selector: '.member-card__party',
+    screens: ['public/ signed in (Week)'],
+    sizes: '*',
+    kinds: ['ellipsis'],
+    reason: "a member card's one-line party gives way to the card's width (boards Main, PhoneWeek); titled with the whole party",
+  },
 ];
 
 interface Screen {
@@ -140,8 +147,17 @@ const STATES: Screen[] = [
   { name: 'admin/account?tab=browser', url: screenUrl(ADMIN, '/account?tab=browser') },
   { name: 'public/?login_error=not_eligible (Denied)', url: screenUrl(PUBLIC, '/?login_error=not_eligible') },
   {
-    name: 'public/ signed in (Account)',
-    url: screenUrl(PUBLIC, '/?tab=devices'),
+    name: 'public/ signed in (Week)',
+    url: screenUrl(PUBLIC, '/'),
+    open: async (page) => {
+      await signInPublic(page);
+      await page.reload();
+      await expect(page.locator('main [data-run]').first()).toBeVisible();
+    },
+  },
+  {
+    name: 'public/account signed in (Account)',
+    url: screenUrl(PUBLIC, '/account?tab=devices'),
     open: async (page) => {
       await signInPublic(page);
       await page.reload();

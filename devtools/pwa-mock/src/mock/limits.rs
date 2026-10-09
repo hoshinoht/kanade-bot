@@ -206,6 +206,30 @@ impl Store {
         }
         Ok(json!({ "message": format!("{name}'s window is reset.") }))
     }
+
+    /// `GET /api/public/me/allowance`: the portal member's own window, queue
+    /// place and the coarse bot state, never anyone else's. The admin Limits
+    /// row for Asahi is staff (exempt); the portal member gets an invented
+    /// member-side window instead (20 per 6 h, seven used, resetting in
+    /// 5 h 12 m), cleared by the same admin reset, and while the model is busy
+    /// its chat call waits second in the queue.
+    pub fn member_allowance(&self) -> Value {
+        let (count, per_s) = OWN_ALLOWANCE;
+        let used = if self.limit_resets.contains(&"1001") {
+            0
+        } else {
+            7
+        };
+        let busy = self.summary().model.busy;
+        json!({
+            "allowance": { "count": count, "per_s": per_s },
+            "used": used,
+            "resets_at": resets_at(used, per_s),
+            "queue_position": if busy { json!(2) } else { Value::Null },
+            "bot_busy": busy,
+            "generated_at": iso_now(),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -321,5 +345,42 @@ mod tests {
             assert!(s.set_session(method));
             assert_eq!(s.me()["member"], serde_json::Value::Null, "{method}");
         }
+    }
+
+    #[test]
+    fn the_member_allowance_is_own_data_and_clears_with_the_admin_reset() {
+        let mut s = store();
+        let own = s.member_allowance();
+        let mut keys: Vec<&String> = own.as_object().unwrap().keys().collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            [
+                "allowance",
+                "bot_busy",
+                "generated_at",
+                "queue_position",
+                "resets_at",
+                "used"
+            ]
+        );
+        assert_eq!(
+            own["allowance"],
+            serde_json::json!({ "count": 20, "per_s": 21600 })
+        );
+        assert_eq!(
+            (own["used"].clone(), own["resets_at"].clone()),
+            (7.into(), "2026-09-29T09:12:00Z".into())
+        );
+        assert_eq!(
+            (own["bot_busy"].clone(), own["queue_position"].clone()),
+            (true.into(), 2.into())
+        );
+        assert!(s.reset_window("1001").is_ok());
+        let cleared = s.member_allowance();
+        assert_eq!(
+            (cleared["used"].clone(), cleared["resets_at"].clone()),
+            (0.into(), serde_json::Value::Null)
+        );
     }
 }

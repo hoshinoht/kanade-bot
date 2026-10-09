@@ -1,9 +1,8 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import type { Run, Week } from '@kanade/api-types';
-  import { AnswerBar, answerCounts, answerWords, BossTag, Icon, RowContent, RunCardBody, runAccessibleName, runTitle, TWO_PANE_QUERY } from '@kanade/ui';
+  import { AnswerBar, answerCounts, answerWords, BossTag, Icon, openPlaces, RowContent, RunCardBody, runAccessibleName, runTitle, TWO_PANE_QUERY } from '@kanade/ui';
   import { PICK_KEY } from './keyboardMove';
-  import { openPlaces } from '../week/waiting';
 
   let {
     run,

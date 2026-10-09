@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Run } from '@kanade/api-types';
-import { openPlaces, owedByMember } from '../src/week/waiting';
+import { openPlaces } from '@kanade/ui';
+import { owedByMember } from '../src/week/waiting';
 
 const run = (id: string, who: Run['participants'], status: Run['status'] = 'planned') =>
   ({ id, status, participants: who, tally: { on: who.filter((p) => p.answer === 'yes').length, total: who.length } }) as unknown as Run;

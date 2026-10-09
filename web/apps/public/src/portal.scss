@@ -194,14 +194,34 @@
   white-space: nowrap;
 }
 
-// "Live · 12:00": the chip keeps the state and the time; "updated" stays for screen readers.
-.masthead__meta .fresh__words {
+// "Live · 12:00", "Offline · 11:42": the chip keeps the state and the time;
+// "updated" / "last updated" stay for screen readers.
+.masthead__meta .fresh__words,
+.masthead__meta .fresh__since,
+.topbar__fresh .fresh__since {
   position: absolute;
   width: 1px;
   height: 1px;
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+// The phone's chip is a block (board PhoneWeek `.topbar__fresh`), its line centring the mark and time.
+.frame--phone .topbar__fresh {
+  display: block;
+  line-height: 23px;
+}
+
+// Toasts stack in a centred column over the frame's foot (boards States-Toasts,
+// PhoneStates-Toasts); the frame is the containing block and never scrolls.
+.frame > .toasts {
+  position: absolute;
+  inset: auto auto max(20px, env(safe-area-inset-bottom)) 50%;
+  align-items: normal;
+  width: min(544px, calc(100% - 20px));
+  padding: 0;
+  transform: translateX(-50%);
 }
 
 // Offline signed in (board States-Offline): the account stays, with this above it.

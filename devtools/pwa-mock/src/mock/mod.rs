@@ -13,6 +13,7 @@ pub mod inbox;
 pub mod knowledge;
 mod limits;
 pub mod logfilter;
+pub mod member;
 mod model_context;
 pub mod past;
 mod people;

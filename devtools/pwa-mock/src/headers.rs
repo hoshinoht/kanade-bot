@@ -33,10 +33,18 @@ fn portrait(path: &str) -> bool {
             .is_some_and(|id| !id.is_empty() && !id.contains('/'))
 }
 
-fn cache_policy(path: &str) -> &'static str {
-    if portrait(path) {
+/// `public`: the member portal's origin, where art sits behind the member
+/// session, so (as the server) it is per-user and revalidated on every use,
+/// and a refusal is never stored.
+fn cache_policy(path: &str, public: bool, success: bool) -> &'static str {
+    let member_art = public && path.starts_with("/art/");
+    if portrait(path) || (member_art && success) {
         "private, no-cache"
-    } else if path.starts_with("/api/") || path.starts_with("/__mock/") || path == "/csp-report" {
+    } else if member_art
+        || path.starts_with("/api/")
+        || path.starts_with("/__mock/")
+        || path == "/csp-report"
+    {
         "no-store"
     } else if path.starts_with("/art/") || path.starts_with("/identity/") {
         // Unhashed, deployment-replaceable art: short-lived, never immutable.
@@ -55,8 +63,18 @@ fn set(headers: &mut HeaderMap, name: &'static str, value: &'static str) {
 }
 
 pub async fn apply(request: Request, next: Next) -> Response {
+    respond(request, next, false).await
+}
+
+/// [`apply`] on the public origin.
+pub async fn apply_public(request: Request, next: Next) -> Response {
+    respond(request, next, true).await
+}
+
+async fn respond(request: Request, next: Next, public: bool) -> Response {
     let path = request.uri().path().to_owned();
     let mut response = next.run(request).await;
+    let success = response.status().is_success();
     let headers = response.headers_mut();
     set(headers, "content-security-policy", CSP);
     set(
@@ -75,7 +93,7 @@ pub async fn apply(request: Request, next: Next) -> Response {
     );
     headers.insert(
         header::CACHE_CONTROL,
-        HeaderValue::from_static(cache_policy(&path)),
+        HeaderValue::from_static(cache_policy(&path, public, success)),
     );
     if path.ends_with(".webmanifest") {
         headers.insert(
@@ -93,7 +111,7 @@ mod tests {
     #[test]
     fn hashed_assets_are_immutable_and_entrypoints_revalidate() {
         assert_eq!(
-            cache_policy("/assets/index-abc123.js"),
+            cache_policy("/assets/index-abc123.js", false, true),
             "public, max-age=31536000, immutable"
         );
         for path in [
@@ -103,10 +121,26 @@ mod tests {
             "/offline.html",
             "/manifest.webmanifest",
         ] {
-            assert_eq!(cache_policy(path), "no-cache", "{path}");
+            assert_eq!(cache_policy(path, false, true), "no-cache", "{path}");
         }
-        assert_eq!(cache_policy("/api/admin/week"), "no-store");
-        assert_eq!(cache_policy("/art/entry/Carling"), "public, max-age=3600");
+        assert_eq!(cache_policy("/api/admin/week", false, true), "no-store");
+        assert_eq!(
+            cache_policy("/art/entry/Carling", false, true),
+            "public, max-age=3600"
+        );
+    }
+
+    #[test]
+    fn member_art_is_private_and_refusals_are_never_stored() {
+        assert_eq!(
+            cache_policy("/art/entry/Carling", true, true),
+            "private, no-cache"
+        );
+        assert_eq!(cache_policy("/art/entry/Carling", true, false), "no-store");
+        assert_eq!(
+            cache_policy("/assets/index-abc123.js", true, true),
+            "public, max-age=31536000, immutable"
+        );
     }
 
     #[test]

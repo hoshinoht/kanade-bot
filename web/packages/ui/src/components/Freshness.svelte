@@ -18,7 +18,7 @@
   {:else if state === 'stale'}
     <Icon name="clock" /> Retrying{#if updated}&nbsp;· last updated {updated}{/if}
   {:else if state === 'offline'}
-    <Icon name="wifi-off" /> Offline{#if updated}&nbsp;· last updated {updated}{/if}
+    <Icon name="wifi-off" /> Offline{#if updated}&nbsp;·<span class="fresh__since"> last updated</span> {updated}{/if}
   {:else}
     <Icon name="alert-circle" /> Can't reach Kanade
   {/if}

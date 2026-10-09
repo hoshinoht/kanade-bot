@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { atCapacity, GUILD_ZONE, phoneOrder, refusalGroups, resetSpan, serverTime, windowWords } from '../src/limits/view';
+import { resetSpan, windowWords } from '@kanade/ui';
+import { atCapacity, GUILD_ZONE, phoneOrder, refusalGroups, serverTime } from '../src/limits/view';
 
 describe('limits view', () => {
   it('prints a server instant on the guild clock with fixed English names', () => {

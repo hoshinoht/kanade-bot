@@ -38,6 +38,11 @@ export { default as WeekRail } from './components/WeekRail.svelte';
 export { default as ToastRegion } from './components/ToastRegion.svelte';
 export { Toaster, type Toast, type ToastAction, type ToastTone } from './components/toaster.svelte';
 export * from './format';
+// The guild wall clock and the Week's progress bars (admin Week and the member portal).
+export { dateMinutes, spanWords, wallMinutes, whenMinutes } from './wall';
+export { COUNTDOWN_MARKS, COUNTDOWN_SPAN, COUNTDOWN_STAGES, runCountdown, weekProgress, type Countdown, type Progress } from './countdown';
+// A chat allowance in words (admin Limits and Account, the member Account).
+export { resetSpan, windowWords } from './allowance';
 export { initial } from './initial';
 export { PHONE_QUERY, SINGLE_PANE_QUERY, TWO_PANE_QUERY } from './media';
 export { CHECK_TONE, RUN_TONE, type Tone } from './tone';

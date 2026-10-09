@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Me } from '@kanade/api-types';
-import { diagnostics, methodLong, serverClock, styleChoices, tabOf, windowWords } from '../src/account/account';
+import { windowWords } from '@kanade/ui';
+import { diagnostics, methodLong, serverClock, styleChoices, tabOf } from '../src/account/account';
 
 const TZ = 'Asia/Kuala_Lumpur';
 

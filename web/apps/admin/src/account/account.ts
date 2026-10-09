@@ -33,9 +33,6 @@ export const ACCESS: Record<string, { label: string; sub: string }> = {
   none: { label: 'None', sub: "Kanade doesn't answer you in chat" },
 };
 
-/** "5 min" windows, worded as on the Limits page (one shared formatter). */
-export { windowWords } from '../limits/view';
-
 /** Guild-local "Tue 29 Sep 12:00" for the diagnostics. */
 export function serverClock(iso: string, timeZone: string): string {
   const date = new Date(iso);

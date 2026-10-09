@@ -56,29 +56,27 @@ pub async fn art(
     Path((kind, key)): Path<(String, String)>,
     request: HeaderMap,
 ) -> Response {
-    // As the server's public catch-all (member-auth-contract §1): `closed`
-    // while the portal is closed, `404` while it is open, until member reads
-    // serve art behind the session.
+    // The public origin serves the same art behind the member session.
     if app.public {
-        return if app.store.lock().await.public_portal() {
-            crate::api::not_found().await
-        } else {
-            crate::api::closed()
-        };
+        return crate::public::art(&app, &kind, &key, &request).await;
     }
-    let Some(kind) = Kind::parse(&kind) else {
+    serve_art(&app, &kind, &key, &request).await
+}
+
+pub async fn serve_art(app: &App, kind: &str, key: &str, request: &HeaderMap) -> Response {
+    let Some(kind) = Kind::parse(kind) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let catalog = app.store.lock().await.catalog().clone();
     // Catalog keys, else a key an event knowledge document declares (exact case).
-    let found = catalog.file(kind, &key).or_else(|| {
+    let found = catalog.file(kind, key).or_else(|| {
         app.knowledge
-            .is_event(&key)
-            .then(|| catalog.event_file(kind, &key))
+            .is_event(key)
+            .then(|| catalog.event_file(kind, key))
             .flatten()
     });
     match found {
-        Some(path) if matches!(kind, Kind::Animated) => send_ranged(path, &request).await,
+        Some(path) if matches!(kind, Kind::Animated) => send_ranged(path, request).await,
         Some(path) => send(path).await,
         None => StatusCode::NOT_FOUND.into_response(),
     }

@@ -7,11 +7,9 @@
 -->
 <script lang="ts">
   import type { Answer, Run, Summary, Week } from '@kanade/api-types';
-  import { ANSWER_MARKS, BossArt, BossTag, pulse, runTitle, WavyProgress, weekStartLabel } from '@kanade/ui';
+  import { ANSWER_MARKS, BossArt, BossTag, openPlaces, pulse, runCountdown, runTitle, WavyProgress, weekStartLabel } from '@kanade/ui';
   import { arrival } from '../resource.svelte';
   import { memberLabel } from '../names/directory.svelte';
-  import { runCountdown } from './progress';
-  import { openPlaces } from './waiting';
 
   let {
     summary,

@@ -43,7 +43,10 @@ for (const [colorway, theme] of CONTRAST_LOOKS) {
     if (colorway === 'dynamic') await expect(page.locator('html')).toHaveAttribute('data-dynamic', 'avatar');
     await contrast('public sign in');
     await signInPublic(page);
-    await page.goto(`${PUBLIC}/?tab=devices&sw=off`);
+    await page.goto(`${PUBLIC}/?sw=off`);
+    await expect(page.locator('main [data-run]').first()).toBeVisible();
+    await contrast('public week');
+    await page.goto(`${PUBLIC}/account?tab=devices&sw=off`);
     await expect(page.getByRole('heading', { name: 'Signed-in devices' })).toBeVisible();
     await expect(page.getByText('This device')).toBeVisible();
     await contrast('public account');
@@ -89,7 +92,10 @@ const WALK: { name: string; walk: (page: Page) => Promise<void> }[] = [
       await expect(page.getByRole('heading', { level: 1 })).toHaveText(HEADING.public);
       await serious(page, 'public sign in');
       await signInPublic(page);
-      await page.goto(`${PUBLIC}/?tab=devices&sw=off`);
+      await page.goto(`${PUBLIC}/?sw=off`);
+      await expect(page.locator('main [data-run]').first()).toBeVisible();
+      await serious(page, 'public week');
+      await page.goto(`${PUBLIC}/account?tab=devices&sw=off`);
       await expect(page.getByText('This device')).toBeVisible();
       await serious(page, 'public account');
 

@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import type { Week } from '@kanade/api-types';
-import { ADMIN, PUBLIC, REAL_ART, expect, test, unconditional } from './support';
+import { ADMIN, PUBLIC, REAL_ART, expect, signInPublic, test, unconditional } from './support';
 
 // Synthetic fixtures (e2e/fixtures/boss): Carling, MaleficStar, Kalos, BM, FA
 // have entry art, MaleficStar also a clip (artwork/animated); Limbo has a
@@ -89,17 +89,25 @@ test('admin run pane: portraits, levels, split artwork, monogram fallback', asyn
   await expect(jupiter.locator('img')).toHaveCount(0);
 });
 
-test('art routes refuse unknown keys; the public origin serves no art until member reads', async ({ page }) => {
+test('art routes refuse unknown keys; the public origin serves art only behind the member session, never stored', async ({ page }) => {
   for (const path of ['/art/entry/..%2F..%2Fetc%2Fpasswd', '/art/entry/Nope', '/art/secrets/Carling', '/art/entry/Jupiter']) {
     expect((await page.request.get(`${ADMIN}${path}`)).status(), path).toBe(404);
   }
   const ok = await page.request.get(`${ADMIN}/art/entry/Carling`);
   expect(ok.headers()['content-type']).toBe('image/png');
   expect(ok.headers()['cache-control']).toBe('public, max-age=3600');
-  // member-auth-contract §1: open, the public catch-all answers 404 for art too.
-  const pub = await page.request.get(`${PUBLIC}/art/entry/Carling`);
-  expect(pub.status()).toBe(404);
-  expect(await pub.json()).toMatchObject({ error: 'not_found' });
+  // Signed out, the public origin refuses art (and the refusal is never stored).
+  const anonymous = await page.request.get(`${PUBLIC}/art/entry/Carling`);
+  expect(anonymous.status()).toBe(401);
+  expect(anonymous.headers()['cache-control']).toBe('no-store');
+  expect(await anonymous.json()).toMatchObject({ error: 'unauthenticated' });
+  // Signed in: the image, per-user and revalidated on every use; unknown keys still 404.
+  await signInPublic(page);
+  const member = await page.request.get(`${PUBLIC}/art/entry/Carling`);
+  expect(member.status()).toBe(200);
+  expect(member.headers()['content-type']).toBe('image/png');
+  expect(member.headers()['cache-control']).toBe('private, no-cache');
+  expect((await page.request.get(`${PUBLIC}/art/entry/Nope`)).status()).toBe(404);
 });
 
 // Regression: the batch-3 stylesheet split dropped `runs` from public.scss and

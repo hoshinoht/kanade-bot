@@ -1,13 +1,15 @@
 <!--
-  The phone frame's 48 px top bar (boards PhoneGate … PhoneBrowser), the
+  The phone frame's 48 px top bar (boards PhoneGate … PhoneMyRuns), the
   admin top bar's look (`_topbar.scss`). Signed out: the bot's tile and name
   and the time zone. Signed in (`member`): the menu that opens the drawer,
-  the page's name and the member's portrait, which opens their Profile. The
-  Week boards' freshness chip comes with the Week screen.
+  the page's name, the freshness chip and the member's portrait, which opens
+  their Account. An open run (PhoneRun) swaps the menu and title for a
+  "‹ Week" back step and a chip saying whose run it is.
 -->
 <script lang="ts">
   import type { PublicMember } from '@kanade/api-types';
   import { Avatar, Icon, initial } from '@kanade/ui';
+  import type { Snippet } from 'svelte';
 
   let {
     name,
@@ -18,6 +20,8 @@
     open = false,
     drawerId = '',
     menu = $bindable(),
+    back = null,
+    fresh,
     onmenu,
     onprofile,
   }: {
@@ -32,13 +36,23 @@
     drawerId?: string;
     /** Where the drawer returns focus. */
     menu?: HTMLButtonElement;
+    /** In place of the menu and title: where back goes and what the chip says. */
+    back?: { label: string; chip: string; mine: boolean; onback: () => void } | null;
+    fresh?: Snippet;
     onmenu?: () => void;
     onprofile?: () => void;
   } = $props();
 </script>
 
 <header class="topbar" class:topbar--visitor={!member} data-fid="topbar">
-  {#if member}
+  {#if member && back}
+    <button type="button" class="btn topbar__back" onclick={back.onback}><Icon name="chevron-left" />{back.label}</button>
+    <span class="topbar__spacer"></span>
+    <span class={back.mine ? 'you-chip' : 'member-card__view'}>{back.chip}</span>
+    <button type="button" class="topbar__me" aria-label="Account: {member.display}" onclick={onprofile}
+      ><Avatar class="topbar__avatar" src={member.avatar} name={member.display} /></button
+    >
+  {:else if member}
     <button
       bind:this={menu}
       type="button"
@@ -51,6 +65,7 @@
       data-fid="topbar-menu"><Icon name="menu" /></button
     >
     <p class="topbar__title" data-fid="topbar-title">{title}</p>
+    {#if fresh}<span class="topbar__fresh" data-fid="topbar-fresh">{@render fresh()}</span>{/if}
     <button type="button" class="topbar__me" aria-label="Account: {member.display}" onclick={onprofile}
       ><Avatar class="topbar__avatar" src={member.avatar} name={member.display} /></button
     >

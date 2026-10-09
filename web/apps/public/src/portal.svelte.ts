@@ -1,13 +1,15 @@
-import type { Identity, PublicSession, PublicSessions, PublicStatus, SessionsEnded } from '@kanade/api-types';
+import type { Identity, MemberAllowance, PublicSession, PublicSessions, PublicStatus, SessionsEnded } from '@kanade/api-types';
 import { ApiRequestError, createClient, onUnauthenticated } from '@kanade/client';
 import type { Landing } from './landing';
+import { MemberWeeks } from './weeks.svelte';
 
 /** Why Sign in is showing, when there is something to say. */
 export type SignInNotice = 'failed' | 'expired' | 'limited' | 'unavailable' | 'switch' | 'signed-out' | { everywhere: number };
 
 /**
  * The one screen the app shows (member-auth-contract §6). Signed out, closed
- * or denied, nothing here reads schedule data.
+ * or denied, nothing here reads schedule data; signed in (`member`), the
+ * Week, My runs and Account read the member's own views.
  */
 export type Screen =
   | { kind: 'loading' }
@@ -17,7 +19,7 @@ export type Screen =
   | { kind: 'denied' }
   /** `at`: when this device learned the session had ended (epoch ms). */
   | { kind: 'ended'; at: number }
-  | { kind: 'account'; session: PublicSession };
+  | { kind: 'member'; session: PublicSession };
 
 const client = createClient();
 
@@ -31,10 +33,15 @@ export class Portal {
   identity = $state<Identity | null>(null);
   devices = $state<PublicSessions | null>(null);
   devicesError = $state('');
+  /** The member's own chat allowance (Account), read when Account opens. */
+  allowance = $state<MemberAllowance | null>(null);
+  allowanceError = $state('');
   /** The device being signed out (`handle`), `everywhere`, or `self`. */
   busy = $state('');
-  /** When the last read answered (epoch ms; the masthead's freshness chip). */
+  /** When the last session or device read answered (epoch ms). */
   updated = $state<number | null>(null);
+  /** This week and the next, kept in memory while signed in. */
+  readonly weeks = new MemberWeeks(client, (error) => this.#gone(error));
   #landing: Landing;
   #refreshing: Promise<void> | null = null;
 
@@ -65,8 +72,9 @@ export class Portal {
     }
     try {
       const session = await client.get<PublicSession>('/api/public/session');
-      this.screen = { kind: 'account', session };
+      this.screen = { kind: 'member', session };
       this.updated = Date.now();
+      this.weeks.start();
       void this.loadDevices();
     } catch (error) {
       // Denied and closed returned above; what remains is a sign-in notice or none.
@@ -77,21 +85,21 @@ export class Portal {
   }
 
   /**
-   * Signed in, the offline notice's Try again: re-read the session and the
-   * devices in place. A read that fails at the network keeps the Account as
-   * it was; closed and ended still replace it. Any other screen loads afresh.
-   * Single-flight: a press while one is running joins it, so an older answer
-   * can never land after a newer one.
+   * Signed in, the offline notice's Try again: re-read the session, the
+   * devices and the weeks in place. A read that fails at the network keeps
+   * the screen as it was; closed and ended still replace it. Any other
+   * screen loads afresh. Single-flight: a press while one is running joins
+   * it, so an older answer can never land after a newer one.
    */
   refresh(): Promise<void> {
-    if (this.screen.kind !== 'account') return this.load();
-    this.#refreshing ??= this.#refreshAccount(this.screen).finally(() => {
+    if (this.screen.kind !== 'member') return this.load();
+    this.#refreshing ??= this.#refreshMember(this.screen).finally(() => {
       this.#refreshing = null;
     });
     return this.#refreshing;
   }
 
-  async #refreshAccount(screen: Extract<Screen, { kind: 'account' }>): Promise<void> {
+  async #refreshMember(screen: Extract<Screen, { kind: 'member' }>): Promise<void> {
     try {
       const session = await client.get<PublicSession>('/api/public/session');
       if (this.screen !== screen) return;
@@ -101,7 +109,7 @@ export class Portal {
       this.#gone(error);
       return;
     }
-    await this.loadDevices();
+    await Promise.all([this.loadDevices(), this.weeks.refresh()]);
   }
 
   /** The bot identity is public on both origins; a failure renders the monogram. */
@@ -112,7 +120,9 @@ export class Portal {
   /** A session that ends mid-use (expired, signed out elsewhere, access changed) is the Session ended screen. */
   watch(): () => void {
     onUnauthenticated(() => {
-      if (this.screen.kind === 'account') this.screen = { kind: 'ended', at: Date.now() };
+      if (this.screen.kind !== 'member') return;
+      this.#forget();
+      this.screen = { kind: 'ended', at: Date.now() };
     });
     return () => onUnauthenticated(null);
   }
@@ -129,6 +139,15 @@ export class Portal {
       this.updated = Date.now();
     } catch (error) {
       if (!this.#gone(error)) this.devicesError = error instanceof Error ? error.message : 'The list did not load.';
+    }
+  }
+
+  async loadAllowance(): Promise<void> {
+    try {
+      this.allowance = await client.get<MemberAllowance>('/api/public/me/allowance');
+      this.allowanceError = '';
+    } catch (error) {
+      if (!this.#gone(error)) this.allowanceError = error instanceof Error ? error.message : 'The allowance did not load.';
     }
   }
 
@@ -182,14 +201,21 @@ export class Portal {
   }
 
   #signedOut(notice: SignInNotice): void {
-    this.devices = null;
+    this.#forget();
     this.screen = { kind: 'signin', notice };
+  }
+
+  /** Every member read this tab holds (devices, allowance, the weeks) goes with the session. */
+  #forget(): void {
+    this.devices = null;
+    this.allowance = null;
+    this.weeks.clear();
   }
 
   /** A closed portal or an ended session replaces the screen (401 arrives through `watch`). */
   #gone(error: unknown): boolean {
     if (isError(error, 503, 'closed')) {
-      this.devices = null;
+      this.#forget();
       this.screen = { kind: 'closed' };
       return true;
     }

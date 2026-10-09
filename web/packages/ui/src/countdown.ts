@@ -1,8 +1,9 @@
 // The Week's progress bars (user decision 2026-10-04): how far the boss week
 // has run, and how close a run is. "Now" is the server's clock
-// (`Week.generated_at`, refreshed by every poll), read on the guild's wall clock.
-import type { Run, Week } from '@kanade/api-types';
-import { dateMinutes, spanWords, wallMinutes } from '../shared/wall';
+// (`generated_at`, refreshed by every poll), read on the guild's wall clock.
+// Shared by the admin Week and the member portal (any week shape with these fields).
+import type { RunStatus, WeekDay } from '@kanade/api-types';
+import { dateMinutes, spanWords, wallMinutes } from './wall';
 
 const DAY = 24 * 60;
 
@@ -13,13 +14,17 @@ export interface Progress {
   text: string;
 }
 
-type Clocked = Pick<Week, 'days' | 'reset' | 'generated_at' | 'timezone'>;
+interface Clocked {
+  days: WeekDay[];
+  generated_at: string;
+  timezone: string;
+}
 
 /**
  * "Day 5 of 7 · resets Thu 00:00", filled to the minute since the week's
  * reset; null for a week that is not running (next week).
  */
-export function weekProgress(week: Clocked): Progress | null {
+export function weekProgress(week: Clocked & { reset: string }): Progress | null {
   const today = week.days.find((d) => d.is_today);
   const first = week.days[0];
   if (!today || !first) return null;
@@ -52,7 +57,7 @@ export interface Countdown extends Progress {
  * (flat and empty before that), then restarts over the last hour with a
  * T-15m mark. Null for own-time, finished, cancelled and started runs.
  */
-export function runCountdown(run: Pick<Run, 'day' | 'time' | 'status'>, week: Pick<Week, 'days' | 'generated_at' | 'timezone'>): Countdown | null {
+export function runCountdown(run: { day: number; time: string | null; status: RunStatus }, week: Clocked): Countdown | null {
   if (run.time === null || run.status === 'otot' || run.status === 'done' || run.status === 'cancelled') return null;
   const day = week.days[run.day];
   const start = day ? dateMinutes(day.date, run.time) : null;

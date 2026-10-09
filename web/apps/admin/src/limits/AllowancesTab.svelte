@@ -7,8 +7,7 @@
 -->
 <script lang="ts">
   import type { Allowance } from '@kanade/api-types';
-  import { Icon, WavyProgress } from '@kanade/ui';
-  import { resetSpan, windowWords } from './view';
+  import { Icon, resetSpan, WavyProgress, windowWords } from '@kanade/ui';
   import { directory } from '../names/directory.svelte';
   import Name from '../names/Name.svelte';
 

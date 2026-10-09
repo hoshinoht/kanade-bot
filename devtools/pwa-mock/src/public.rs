@@ -271,6 +271,56 @@ pub async fn end_all(State(app): State<App>, method: Method, headers: HeaderMap)
     clear_cookie(Json(json!({ "ended": ended })).into_response())
 }
 
+/// `GET /api/public/week?week=`: absent or `this` is this boss week, `next`
+/// the next; anything else `422 invalid_query`, as the admin week.
+pub async fn week(
+    State(app): State<App>,
+    method: Method,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
+    let current = match member(&app, &method, &headers).await {
+        Ok(current) => current,
+        Err(refused) => return *refused,
+    };
+    let next = match q.get("week").map(String::as_str) {
+        None | Some("this") => false,
+        Some("next") => true,
+        Some(_) => {
+            let refused = error(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "invalid_query",
+                "A query parameter is not valid.",
+            );
+            return carry(refused, &current);
+        }
+    };
+    let body = app.store.lock().await.member_week(next);
+    carry(Json(body).into_response(), &current)
+}
+
+/// `GET /api/public/me/allowance`: the caller's own chat allowance only.
+pub async fn allowance(State(app): State<App>, method: Method, headers: HeaderMap) -> Response {
+    let current = match member(&app, &method, &headers).await {
+        Ok(current) => current,
+        Err(refused) => return *refused,
+    };
+    let body = app.store.lock().await.member_allowance();
+    carry(Json(body).into_response(), &current)
+}
+
+/// `GET /art/{kind}/{key}` on the public origin: the admin listener's art,
+/// for a signed-in member while the portal is open (`closed` while closed).
+pub async fn art(app: &App, kind: &str, key: &str, headers: &HeaderMap) -> Response {
+    match member(app, &Method::GET, headers).await {
+        Ok(current) => carry(
+            crate::assets::serve_art(app, kind, key, headers).await,
+            &current,
+        ),
+        Err(refused) => *refused,
+    }
+}
+
 /// Every other `/api/public/` path: `closed` while closed, else not mounted.
 pub async fn unmounted(State(app): State<App>) -> Response {
     if app.store.lock().await.public_portal() {

@@ -1917,14 +1917,18 @@ async fn public_member_routes_match_the_contract() {
         )
         .await;
     assert_eq!(status["portal"], "open");
-    for path in ["/api/public/session", "/api/public/sessions"] {
+    for path in [
+        "/api/public/session",
+        "/api/public/sessions",
+        "/api/public/week",
+        "/api/public/me/allowance",
+        "/art/entry/Carling",
+    ] {
         h.public("GET", path, none, StatusCode::UNAUTHORIZED, "")
             .await;
     }
-    // Unmounted while open: the catch-all and art answer 404.
-    h.public("GET", "/api/public/week", none, StatusCode::NOT_FOUND, "")
-        .await;
-    h.public("GET", "/art/entry/Carling", none, StatusCode::NOT_FOUND, "")
+    // Unmounted while open: the catch-all answers 404.
+    h.public("GET", "/api/public/nope", none, StatusCode::NOT_FOUND, "")
         .await;
 
     // Discord sign-in: start → (no Discord) callback → landing with the cookie.
@@ -1997,6 +2001,57 @@ async fn public_member_routes_match_the_contract() {
     if status != StatusCode::OK || !kind.starts_with("image/") || cache != "private, no-cache" {
         h.failures
             .push(format!("public avatar: {status} {kind} {cache}"));
+    }
+
+    // Member reads (MemberWeek, MemberAllowance) against their schemas: own and
+    // other runs, both weeks, then the art behind the session.
+    let auth: &[(&str, &str)] = &[("cookie", &cookie)];
+    for (path, next) in [
+        ("/api/public/week", false),
+        ("/api/public/week?week=this", false),
+        ("/api/public/week?week=next", true),
+    ] {
+        let (_, week) = h
+            .public(
+                "GET",
+                path,
+                auth,
+                StatusCode::OK,
+                "public.json#/$defs/MemberWeek",
+            )
+            .await;
+        let runs = week["runs"].as_array().cloned().unwrap_or_default();
+        let mine = runs.iter().filter(|r| r["mine"] == true).count();
+        h.checked += 1;
+        if mine == 0 || (!next && mine == runs.len()) {
+            h.failures.push(format!(
+                "public week {path}: {mine} of {} runs mine",
+                runs.len()
+            ));
+        }
+    }
+    h.public(
+        "GET",
+        "/api/public/week?week=last",
+        auth,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "",
+    )
+    .await;
+    h.public(
+        "GET",
+        "/api/public/me/allowance",
+        auth,
+        StatusCode::OK,
+        "public.json#/$defs/MemberAllowance",
+    )
+    .await;
+    // Behind the session, so per-user and revalidated on every use (as the server).
+    let (status, kind, cache) = h.public_image("/art/entry/Carling", &cookie).await;
+    h.checked += 1;
+    if status != StatusCode::OK || !kind.starts_with("image/") || cache != "private, no-cache" {
+        h.failures
+            .push(format!("public art: {status} {kind} {cache}"));
     }
 
     // Writes need the session's token: sign out one device, then the refusals.
@@ -2163,6 +2218,7 @@ async fn public_member_routes_match_the_contract() {
         "/api/public/session",
         "/api/public/sessions",
         "/api/public/week",
+        "/api/public/me/allowance",
         "/art/entry/Carling",
     ] {
         let (_, refused) = h

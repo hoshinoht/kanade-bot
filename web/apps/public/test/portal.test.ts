@@ -28,13 +28,13 @@ describe('Portal offline retry', () => {
     vi.stubGlobal('navigator', { onLine: true });
     const portal = new Portal('none');
     await portal.load();
-    expect(portal.screen.kind).toBe('account');
+    expect(portal.screen.kind).toBe('member');
     net.up = false;
     vi.stubGlobal('navigator', { onLine: false });
     const retry = portal.refresh(); // the offline notice's Try again
-    expect(portal.screen.kind).toBe('account');
+    expect(portal.screen.kind).toBe('member');
     await retry;
-    expect(portal.screen).toEqual({ kind: 'account', session });
+    expect(portal.screen).toEqual({ kind: 'member', session });
     expect(net.paths.slice(-1)).toEqual(['/api/public/session']);
   });
 

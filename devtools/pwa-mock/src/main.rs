@@ -36,8 +36,8 @@ struct App {
     reports: reports::Log,
     identity: assets::IdentityConfig,
     knowledge: Arc<mock::knowledge::KnowledgeDir>,
-    /// The public origin: art and unmounted `/api/public/` paths answer
-    /// `closed` while the portal is closed and `404` while it is open.
+    /// The public origin: art needs a member session, and art and unmounted
+    /// `/api/public/` paths answer `closed` while the portal is closed.
     public: bool,
     boss_dir: Arc<PathBuf>,
     /// CSRF token and Idempotency-Key replays, shared by both origins' state.
@@ -71,8 +71,8 @@ fn static_site(
     ServeDir::new(dist).fallback(spa)
 }
 
-fn common(app: &App, api: Router<App>, dist: PathBuf) -> Router {
-    Router::new()
+fn common(app: &App, api: Router<App>, dist: PathBuf, public: bool) -> Router {
+    let router = Router::new()
         .merge(api)
         .route("/api/identity", get(assets::identity))
         .route("/api/{*rest}", get(api::not_found).post(api::not_found))
@@ -88,8 +88,12 @@ fn common(app: &App, api: Router<App>, dist: PathBuf) -> Router {
         .route("/__mock/discord", post(auth::fail_next_discord))
         .route("/__mock/arrive", post(events::arrive))
         .with_state(app.clone())
-        .fallback_service(static_site(dist))
-        .layer(middleware::from_fn(headers::apply))
+        .fallback_service(static_site(dist));
+    if public {
+        router.layer(middleware::from_fn(headers::apply_public))
+    } else {
+        router.layer(middleware::from_fn(headers::apply))
+    }
 }
 
 /// Lets the e2e fixture prove it reached a mock it may drive: the right
@@ -277,6 +281,8 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         .route("/api/public/sessions", get(public::sessions))
         .route("/api/public/sessions/end-all", post(public::end_all))
         .route("/api/public/sessions/{handle}", delete(public::end_one))
+        .route("/api/public/week", get(public::week))
+        .route("/api/public/me/allowance", get(public::allowance))
         .route("/api/public/{*rest}", any(public::unmounted))
         .route("/__mock/public/sign-in", post(public::mock_sign_in))
         .route("/__mock/public/discord", post(public::mock_discord))
@@ -284,8 +290,8 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         .route("/__mock/public/rotate", post(public::mock_rotate));
 
     (
-        common(&app, admin_api, web.join("apps/admin/dist")),
-        common(&public_app, public_api, web.join("apps/public/dist")),
+        common(&app, admin_api, web.join("apps/admin/dist"), false),
+        common(&public_app, public_api, web.join("apps/public/dist"), true),
     )
 }
 

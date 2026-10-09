@@ -4,10 +4,12 @@
   (`_account.scss`) without its admin parts. Profile / Devices / This browser
   title-bar tabs (`?tab=`); on wide screens the identity stands fixed beside
   the one scrolling panel, on phones it leads the Profile tab. No IP or
-  location anywhere: the server never sends them. The rows for features the
-  portal does not have yet (time zone, mentions, reply style, chat
-  allowance, calendar) are drawn as the boards draw them, marked "coming
-  soon", with their controls disabled and no figures.
+  location anywhere: the server never sends them. The chat allowance is the
+  member's own (`/api/public/me/allowance`: used of the limit, the reset,
+  a meter, their queue place, the bot free or busy). The rows for features
+  the portal does not have yet (time zone, mentions, reply style, calendar)
+  are drawn as the boards draw them, marked "coming soon", with their
+  controls disabled and no figures.
 -->
 <script lang="ts" module>
   export type AccountTab = 'profile' | 'devices' | 'browser';
@@ -15,8 +17,8 @@
 
 <script lang="ts">
   import type { PublicSession } from '@kanade/api-types';
-  import { Avatar, dayTime, Icon, motionPreference, SessionList, SwitchRow, ThemeTiles, type IconName, type Toaster } from '@kanade/ui';
-  import { tick, type Snippet } from 'svelte';
+  import { Avatar, dayTime, Icon, motionPreference, resetSpan, SessionList, SwitchRow, ThemeTiles, windowWords, type IconName, type Toaster } from '@kanade/ui';
+  import { tick, untrack, type Snippet } from 'svelte';
   import type { Portal } from './portal.svelte';
 
   let {
@@ -51,6 +53,10 @@
   ];
   // The server keeps at most ten sessions per member (D5-A): an 11th sign-in ends the oldest.
   const SESSION_LIMIT = 10;
+  // The allowance is read each time Account opens: it changes with every chat answer.
+  $effect(() => {
+    void untrack(() => portal.loadAllowance());
+  });
 
   const member = $derived(session.member);
   // This device first, then the newest sign-in (the server answers oldest first).
@@ -119,20 +125,62 @@
 {/snippet}
 
 {#snippet allowanceBody()}
-  <span class="account-lead account-lead--accent"><Icon name="gauge" /></span>
-  <span class="account-row__text">
-    <span class="account-row__title">Chat allowance</span>
-    <span class="account-row__sub">Answers Kanade gives you in chat</span>
+  {@const own = portal.allowance}
+  <span class="account-allow__head">
+    <span class="account-lead account-lead--accent"><Icon name="gauge" /></span>
+    <span class="account-row__text">
+      <span class="account-row__title">Chat allowance</span>
+      <span class="account-row__sub">Answers Kanade gives you in chat</span>
+    </span>
+    {#if own}
+      <span class="status-chip" class:status-chip--warn={own.bot_busy} class:status-chip--ok={!own.bot_busy}>Kanade {own.bot_busy ? 'busy' : 'free'}</span>
+    {/if}
   </span>
-  {@render soonChip()}
+  {#if own}
+    {#if own.allowance}
+      {@const quota = own.allowance}
+      {@const resets = resetSpan(own.resets_at, Date.parse(own.generated_at))}
+      <span class="account-allow__line"
+        ><span><b>{own.used}</b> of <b>{quota.count}</b> answers used</span>{#if resets !== null}<span class="field__hint"
+            >{#if resets}resets in <b>{resets}</b>{:else}resets now{/if}</span
+          >{/if}</span
+      >
+      <span
+        class="account-meter"
+        class:account-meter--empty={own.used === 0}
+        role="progressbar"
+        aria-label="{own.used} of {quota.count} answers used"
+        aria-valuemin={0}
+        aria-valuemax={quota.count}
+        aria-valuenow={own.used}
+        {@attach (node) => node.style.setProperty('--used', `${Math.round(Math.min(1, quota.count ? own.used / quota.count : 0) * 1000) / 10}%`)}
+      >
+        {#if own.used > 0}<i class="account-meter__used"></i>{/if}{#if own.used < quota.count}<i class="account-meter__rest"></i>{/if}
+      </span>
+      <span class="account-allow__facts"
+        ><span>{windowWords(quota.per_s)} rolling window</span><span aria-hidden="true">·</span><span>set by the admins</span>{#if own.queue_position !== null}<span
+            aria-hidden="true">·</span
+          ><span>your chat is <b class="mono">#{own.queue_position}</b> in the queue</span>{/if}</span
+      >
+    {:else}
+      <span class="account-allow__line"><span>No limit: your answers aren't counted.</span></span>
+    {/if}
+  {:else if portal.allowanceError}
+    <span class="account-allow__line"
+      ><span class="field__hint">Couldn't load your allowance: {portal.allowanceError}</span>
+      <button type="button" class="btn" onclick={() => void portal.loadAllowance()}>Try again</button></span
+    >
+  {:else}
+    <span class="account-allow__line field__hint">Loading your allowance…</span>
+  {/if}
 {/snippet}
 
 <!-- The phone boards tag neither the allowance row nor the note. -->
 {#snippet allowance()}
   {#if phone}
-    <li class="account-row account-row--soon account-row--tight">{@render allowanceBody()}</li>
+    <li class="account-row account-row--stack account-row--tight">{@render allowanceBody()}</li>
   {:else}
-    <li class="account-row account-row--soon" data-fid="account-allowance">{@render allowanceBody()}</li>
+    <li class="account-row account-row--stack" data-fid="account-allowance">{@render allowanceBody()}</li>
   {/if}
 {/snippet}
 

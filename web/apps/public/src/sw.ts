@@ -1,7 +1,8 @@
 // Public service worker: precaches the static build only. Navigations go to
 // the network first; offline they get the precached offline page. `/api/`
-// (status, session, devices, sign-in) is never intercepted, so no member data
-// or session answer is ever stored by the worker.
+// (status, session, devices, sign-in, the member's week and allowance) and
+// `/art/` (served only behind the member session) are never intercepted, so
+// no member data, art or session answer is ever stored by the worker.
 import { cleanupOutdatedCaches, matchPrecache, precache, type PrecacheEntry } from 'workbox-precaching';
 
 declare global {
@@ -21,14 +22,15 @@ sw.addEventListener('message', (event) => {
   if ((event.data as { type?: string } | null)?.type === 'SKIP_WAITING') void sw.skipWaiting();
 });
 
-// Animated art goes straight to the network: its Range requests need the
-// server's 206 replies, and a worker answering or caching them breaks Safari playback.
+// Member reads and boss art go straight to the network: both sit behind the
+// member session, so a stored copy would outlive sign-out. Animated art also
+// needs the server's 206 replies to Range requests (Safari playback).
 function bypass(url: URL): boolean {
   return (
     url.origin !== sw.location.origin ||
     url.pathname.startsWith('/api/') ||
     url.pathname.startsWith('/__mock/') ||
-    url.pathname.startsWith('/art/animated/') ||
+    url.pathname.startsWith('/art/') ||
     url.pathname === '/csp-report'
   );
 }

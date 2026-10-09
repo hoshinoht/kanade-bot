@@ -41,6 +41,49 @@ const devicesShown = async (page: Page) => {
   await signedIn(page);
   await expect(page.getByText('This device')).toBeVisible();
 };
+/** The member Week with its first read in: the board's cards, or the phone list. */
+const weekShown = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('main [data-run]').first()).toBeVisible();
+};
+/** The first of the member's own runs (`mine`) or someone else's, opened from the Week. */
+const openRun = (mine: boolean) => async (page: Page) => {
+  await weekShown(page);
+  await page.locator(`main .member-card--${mine ? 'mine' : 'other'}`).first().click();
+  await expect(page.locator(mine ? 'main [data-fid="week-answer"]' : 'main [data-fid="week-lock"]')).toBeVisible();
+};
+const listShown = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('main [data-row]').first()).toBeVisible();
+};
+const myRunsShown = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('main [data-fid="myruns-row"]').first()).toBeVisible();
+};
+/** States: the week's first read held back, so the skeleton shows inside the Week. */
+const holdWeek = async (page: Page) => {
+  await signInPublic(page);
+  await page.route('**/api/public/week*', () => {});
+};
+const weekLoading = async (page: Page) => {
+  await expect(page.locator('main [data-fid="week-board"][aria-busy="true"]')).toBeVisible();
+};
+/** States-Offline: the week arrived, then the network went: the notice over the last-seen week. */
+const weekOffline = async (page: Page) => {
+  await weekShown(page);
+  await page.context().setOffline(true);
+  await expect(page.locator('main [data-fid="week-offline"]')).toBeVisible();
+};
+/** States-Toasts: two refusals of a refresh, each said once as a toast. */
+const weekToasts = async (page: Page) => {
+  await weekShown(page);
+  await page.route('**/api/public/week*', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"internal","message":"The server failed."}' }));
+  const refresh = page.getByRole('button', { name: 'Refresh the week' });
+  await refresh.click();
+  await expect(page.getByRole('group', { name: 'Notification' })).toHaveCount(1);
+  await refresh.click();
+  await expect(page.getByRole('group', { name: 'Notification' })).toHaveCount(2);
+};
 /** Every colourway set open, as the boards draw them (only the current one opens by itself). */
 const allSets = async (page: Page) => {
   await signedIn(page);
@@ -78,16 +121,16 @@ const PUBLIC_PAIRS: Pair[] = [
   })),
   { name: 'pub-denied', board: 'Denied', path: '/?login_error=not_eligible', ready: signedOut },
   { name: 'pub-phone-denied', board: 'PhoneDenied', path: '/?login_error=not_eligible', ready: signedOut },
-  { name: 'pub-ended', board: 'Ended', path: '/?tab=devices', setup: signInPublic, ready: ended },
-  { name: 'pub-phone-ended', board: 'PhoneEnded', path: '/?tab=devices', setup: signInPublic, ready: ended },
-  { name: 'pub-mast', board: 'Mast', path: '/', setup: signInPublic, viewport: { width: 1280, height: 800 }, ready: signedIn },
+  { name: 'pub-ended', board: 'Ended', path: '/account?tab=devices', setup: signInPublic, ready: ended },
+  { name: 'pub-phone-ended', board: 'PhoneEnded', path: '/account?tab=devices', setup: signInPublic, ready: ended },
+  { name: 'pub-mast', board: 'Mast', path: '/', setup: signInPublic, viewport: { width: 1280, height: 800 }, ready: weekShown },
   {
     name: 'pub-phone-drawer',
     board: 'PhoneDrawer',
     path: '/',
     setup: signInPublic,
     ready: async (page) => {
-      await signedIn(page);
+      await weekShown(page);
       await page.getByRole('button', { name: 'Open the navigation' }).click();
       const drawer = page.getByRole('dialog', { name: 'Navigation' });
       await expect(drawer).toBeVisible();
@@ -95,14 +138,41 @@ const PUBLIC_PAIRS: Pair[] = [
       await expect.poll(() => drawer.getByRole('navigation', { name: 'Main' }).evaluate((nav) => nav.getBoundingClientRect().x)).toBeGreaterThanOrEqual(0);
     },
   },
-  { name: 'pub-account', board: 'Account', path: '/', setup: signInPublic, ready: signedIn },
-  { name: 'pub-phone-account', board: 'PhoneAccount', path: '/', setup: signInPublic, ready: signedIn },
-  { name: 'pub-account-devices', board: 'Account-Devices', path: '/?tab=devices', setup: signInPublic, ready: devicesShown },
-  { name: 'pub-phone-devices', board: 'PhoneDevices', path: '/?tab=devices', setup: signInPublic, ready: devicesShown },
-  { name: 'pub-account-browser', board: 'Account-Browser', path: '/?tab=browser', setup: signInPublic, ready: allSets },
+  { name: 'pub-account', board: 'Account', path: '/account', setup: signInPublic, ready: signedIn },
+  { name: 'pub-phone-account', board: 'PhoneAccount', path: '/account', setup: signInPublic, ready: signedIn },
+  { name: 'pub-account-devices', board: 'Account-Devices', path: '/account?tab=devices', setup: signInPublic, ready: devicesShown },
+  { name: 'pub-phone-devices', board: 'PhoneDevices', path: '/account?tab=devices', setup: signInPublic, ready: devicesShown },
+  { name: 'pub-account-browser', board: 'Account-Browser', path: '/account?tab=browser', setup: signInPublic, ready: allSets },
   // The phone board opens only the current set (Base), as the app does by itself.
-  { name: 'pub-phone-browser', board: 'PhoneBrowser', path: '/?tab=browser', setup: signInPublic, ready: signedIn },
-  // The States boards (loading, offline, toasts) draw them over the member Week: their pairs come with that screen.
+  { name: 'pub-phone-browser', board: 'PhoneBrowser', path: '/account?tab=browser', setup: signInPublic, ready: signedIn },
+  // The member Week, its run pane and list, My runs, and the States drawn over the Week.
+  { name: 'pub-main', board: 'Main', path: '/', setup: signInPublic, ready: weekShown },
+  { name: 'pub-week-run-mine', board: 'Week-RunMine', path: '/', setup: signInPublic, ready: openRun(true) },
+  { name: 'pub-week-run-other', board: 'Week-RunOther', path: '/', setup: signInPublic, ready: openRun(false) },
+  { name: 'pub-week-list', board: 'WeekList', path: '/?view=list', setup: signInPublic, ready: listShown },
+  {
+    name: 'pub-week-list-selected',
+    board: 'WeekList-Selected',
+    path: '/?view=list',
+    setup: signInPublic,
+    ready: async (page) => {
+      await listShown(page);
+      await page.locator('main [data-row].week-runs__row--mine').first().click();
+      await expect(page.locator('main [data-fid="week-answer"]')).toBeVisible();
+    },
+  },
+  { name: 'pub-myruns', board: 'MyRuns', path: '/mine', setup: signInPublic, ready: myRunsShown },
+  { name: 'pub-myruns-next', board: 'MyRuns-Next', path: '/mine?week=next', setup: signInPublic, ready: myRunsShown },
+  { name: 'pub-states', board: 'States', path: '/', setup: holdWeek, ready: weekLoading },
+  { name: 'pub-states-offline', board: 'States-Offline', path: '/', setup: signInPublic, ready: weekOffline },
+  { name: 'pub-states-toasts', board: 'States-Toasts', path: '/', setup: signInPublic, ready: weekToasts },
+  { name: 'pub-phone-week', board: 'PhoneWeek', path: '/', setup: signInPublic, ready: weekShown },
+  { name: 'pub-phone-run', board: 'PhoneRun', path: '/', setup: signInPublic, ready: openRun(true) },
+  { name: 'pub-phone-run-other', board: 'PhoneRunOther', path: '/', setup: signInPublic, ready: openRun(false) },
+  { name: 'pub-phone-states', board: 'PhoneStates', path: '/', setup: holdWeek, ready: weekLoading },
+  { name: 'pub-phone-states-offline', board: 'PhoneStates-Offline', path: '/', setup: signInPublic, ready: weekOffline },
+  { name: 'pub-phone-states-toasts', board: 'PhoneStates-Toasts', path: '/', setup: signInPublic, ready: weekToasts },
+  { name: 'pub-phone-myruns', board: 'PhoneMyRuns', path: '/mine', setup: signInPublic, ready: myRunsShown },
 ].map((pair) => ({ ...pair, app: 'public' as const }));
 
 const PAIRS: Pair[] = [

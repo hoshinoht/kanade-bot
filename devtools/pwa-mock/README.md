@@ -60,8 +60,17 @@ with an `HttpOnly; SameSite=Strict` cookie named `kanade_pub` (the server's
 `POST /sessions/end-all` and `POST /auth/logout` answer as the contract says
 (`503 closed` while closed, logout excepted; writes need the session's
 token). The first sign-in finds two other devices already signed in; at most
-ten sessions live, oldest ended first. Every other `/api/public/` path and
-`/art/` answer `closed` while closed and `404` while open. Mock control,
+ten sessions live, oldest ended first. Member reads (`src/mock/member.rs`,
+`Store::member_allowance`): `GET /api/public/week?week=` (absent or `this`,
+`next`; else `422 invalid_query`) is the admin week as `MemberWeek` — every
+run, `mine`/`can_edit` for Asahi, participant ids snowflake-shaped like the
+session's member id, no `short_id`, `channel_id`, `cards`, `amended` or
+`roster_change`; `GET /api/public/me/allowance` is an invented member-side
+window (20 per 6 h, seven used, cleared by the admin reset of `1001`; second
+in the queue while the model is busy); `GET /art/{kind}/{key}` serves the
+admin listener's art to a signed-in member. All three answer `401
+unauthenticated` signed out and `closed` while closed. Every other
+`/api/public/` path answers `closed` while closed and `404` while open. Mock control,
 public origin only: `POST /__mock/public/sign-in` signs in without the
 redirects (cookie + token), `POST /__mock/public/discord {"error": code}`
 makes the next start end with `/?login_error=<code>` (`not_eligible` sets no

@@ -3,7 +3,7 @@
 // the list's `generated_at` plus the monotonic time since it arrived, against
 // each row's exact `fire_at`. A skewed browser clock changes nothing.
 
-import { wallMinutes } from '../shared/wall';
+import { wallMinutes } from '@kanade/ui';
 
 const MINUTE = 60_000;
 

@@ -12,6 +12,13 @@ use serde_json::{Value, json};
 /// The member every mock sign-in becomes (the seed's Asahi, `1001`).
 pub const MEMBER_ID: &str = "100000000000001001";
 pub const MEMBER_NAME: &str = "Asahi";
+
+/// A seed member id (`1001`) as the public origin names it: snowflake-shaped,
+/// so `snowflake("1001") == MEMBER_ID`.
+pub fn snowflake(seed_id: &str) -> String {
+    format!("1{seed_id:0>17}")
+}
+
 /// D5-A: a new sign-in ends the oldest beyond this many.
 const MAX_SESSIONS: usize = 10;
 /// The fresh-write window after a Discord round trip (D1 default).

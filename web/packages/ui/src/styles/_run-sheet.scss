@@ -5,7 +5,10 @@
 // Party / Answers / Cards / Changes tabs; only the selected panel scrolls.
 // The boards draw the card and a tabbed `.win` on the page's ground; inside a
 // modal that became a window in a window, so here they are sections of one.
-// Imported by RunSheet.svelte.
+// Imported by RunSheet.svelte; the member portal reuses it with its own run
+// pane prefix (`$pane`, as `_week.scss`).
+
+$pane: "week-pane" !default;
 
 dialog.modal.runsheet {
   max-width: none;
@@ -126,7 +129,7 @@ dialog.runsheet--narrow .modal__head {
 }
 
 /* Pane and phone sheet: the top-right corner, beside the clock. */
-.week-pane__art > .run__arts,
+.#{$pane}__art > .run__arts,
 .runsheet--narrow .runsheet__hero > .run__arts {
   --slice-seam: 20px;
   --arts-fade: 56px;

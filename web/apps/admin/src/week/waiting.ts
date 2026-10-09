@@ -27,9 +27,3 @@ export function owedByMember(runs: Run[], title: (run: Run) => string): Owed[] {
   }
   return [...byId.values()].sort((a, b) => b.runs.length - a.runs.length || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 }
-
-/** "3/4 · 1 open": who is on, the party size, and the places still open (full when none). */
-export function openPlaces(run: Pick<Run, 'tally'>): string {
-  const open = Math.max(0, run.tally.total - run.tally.on);
-  return open ? `${open} open` : 'full';
-}

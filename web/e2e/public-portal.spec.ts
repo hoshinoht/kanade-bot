@@ -9,7 +9,7 @@ import { HEADING, PUBLIC, expect, setPortal, settle, signInPublic, test } from '
 test.describe.configure({ mode: 'parallel' });
 
 const COOKIE = 'kanade_pub';
-/** Everything the portal may read in this step: no schedule, no art. */
+/** Everything the portal may read before sign-in or on Account alone: no schedule, no art. */
 const ALLOWED: Record<string, true> = {
   '/api/public/status': true,
   '/api/public/session': true,
@@ -17,6 +17,13 @@ const ALLOWED: Record<string, true> = {
   '/api/public/sessions': true,
   '/api/identity': true,
 };
+/** Signed in, the member's own reads join them: the week, the allowance and boss art. */
+const memberRead = (request: string) => {
+  const path = request.split(' ')[1]!;
+  return ALLOWED[path] || path === '/api/public/week' || path === '/api/public/me/allowance' || path.startsWith('/art/');
+};
+/** `name` as a whole word ("Ren", not "Render"). */
+const word = (name: string) => new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
 
 /** The API and art paths this page requested, in order. */
 function requests(page: Page): string[] {
@@ -52,7 +59,7 @@ async function tabTo(page: Page, target: Locator, limit = 25) {
 /** Signed in, on Account › Devices (the device list). */
 async function openAccount(page: Page) {
   await signInPublic(page);
-  await page.goto(`${PUBLIC}/?tab=devices&sw=off`);
+  await page.goto(`${PUBLIC}/account?tab=devices&sw=off`);
   await expect(page.getByText('This device')).toBeVisible();
 }
 
@@ -106,13 +113,13 @@ test('signed out: Sign in with the privacy notice, and no schedule request', asy
   await expect(page.locator('.masthead__zone')).toHaveAttribute('title', `Times are in ${await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)}`);
 });
 
-test('signing in through the Discord stand-in lands on Account with the avatar and name', async ({ page }) => {
+test('signing in through the Discord stand-in lands on the Week, with the avatar and name on the account chip', async ({ page }) => {
   const seen = requests(page);
   await page.goto(`${PUBLIC}/?sw=off`);
   await page.getByRole('link', { name: 'Sign in with Discord' }).click();
-  // start → (no Discord in the mock) callback → landing → back to `next`.
+  // start → (no Discord) callback → landing → back to `next`.
   await expect(page).toHaveURL(`${PUBLIC}/?sw=off`);
-  await expect(page.getByRole('heading', { level: 1, name: 'Account' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Week' })).toBeVisible();
   const chip = accountButton(page);
   await expect(chip).toHaveAccessibleName('Account: Asahi');
   await expect(chip).toContainText('Asahi');
@@ -120,16 +127,19 @@ test('signing in through the Discord stand-in lands on Account with the avatar a
   await expect.poll(() => chip.locator('img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
   const cookie = await sessionCookie(page);
   expect(cookie).toMatchObject({ httpOnly: true, sameSite: 'Strict' });
-  // Three devices: this one first and marked, then the others; no IP or location anywhere.
+  // Account › Devices: this one first and marked, then the others; no IP or location anywhere.
+  await chip.click();
+  await page.getByRole('menu', { name: 'Account' }).getByRole('menuitem', { name: 'Account' }).click();
+  await expect(page).toHaveURL(`${PUBLIC}/account`);
   await page.getByRole('tab', { name: /^Devices/ }).click();
   await expect(devices(page)).toHaveCount(3);
   await expect(devices(page).first()).toContainText('This device');
   await expect(devices(page).first()).toContainText('Chrome');
   await expect(page.locator('main')).not.toContainText(/\b\d{1,3}(\.\d{1,3}){3}\b|IP address|location/i);
   await page.waitForLoadState('networkidle');
-  // Signed in, this step still reads no schedule (the week comes with member reads).
-  expect(seen.filter((r) => r.startsWith('GET /api/') && !ALLOWED[r.split(' ')[1]!] && !r.includes('/auth/discord/'))).toEqual([]);
-  expect(seen.some((r) => r.startsWith('GET /art/'))).toBe(false);
+  // Signed in, the portal reads the member's own views and nothing else.
+  expect(seen).toEqual(expect.arrayContaining(['GET /api/public/week', 'GET /api/public/me/allowance']));
+  expect(seen.filter((r) => r.startsWith('GET ') && !memberRead(r) && !r.includes('/auth/discord/'))).toEqual([]);
 });
 
 test('closed: the closed notice, sign-in hidden, and no session or schedule request', async ({ page }) => {
@@ -316,29 +326,109 @@ test('appearance: colourways apply at once and survive a reload', async ({ page 
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 });
 
-test('the service worker never caches /api/ and never answers it', async ({ page }) => {
+test('the service worker stores no member data: no /api/, no /art/, no names, in any cache or storage', async ({ page }) => {
   await signInPublic(page);
+  // Every name and run the member could see, from the week answers themselves.
+  const names = new Set<string>();
+  const runIds = new Set<string>();
+  const passed: { path: string; fromSW: boolean }[] = [];
+  page.on('response', async (response) => {
+    const { pathname } = new URL(response.url());
+    if (!pathname.startsWith('/api/') && !pathname.startsWith('/art/')) return;
+    passed.push({ path: pathname, fromSW: response.fromServiceWorker() });
+    if (pathname === '/api/public/week' && response.ok()) {
+      const week = (await response.json()) as { runs: { id: string; participants: { name: string }[] }[] };
+      for (const run of week.runs) {
+        runIds.add(run.id);
+        for (const p of run.participants) names.add(p.name);
+      }
+    }
+  });
   // Controlled: the first load installs the worker, the reload is controlled.
   await page.goto(`${PUBLIC}/`);
   await page.evaluate(() => navigator.serviceWorker.ready);
-  const api: { path: string; fromSW: boolean }[] = [];
-  page.on('response', (response) => {
-    const { pathname } = new URL(response.url());
-    if (pathname.startsWith('/api/')) api.push({ path: pathname, fromSW: response.fromServiceWorker() });
-  });
   await page.reload();
   await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
-  await expect(page.getByRole('tab', { name: /^Devices/ })).toBeVisible();
+
+  // Browse: the Week, an own run and another's, My runs, Account.
+  const cards = page.locator('main [data-run]');
+  await expect(cards.first()).toBeVisible();
+  await page.getByRole('button', { name: /, you are in$/ }).first().click();
+  await expect(page.getByRole('complementary', { name: /^Your run · / })).toBeVisible();
+  await page.getByRole('button', { name: /, not in this run, view only$/ }).first().click();
+  await expect(page.getByRole('complementary', { name: /^View only · / })).toBeVisible();
+  await page.getByRole('tab', { name: /^List/ }).click();
+  await page.getByRole('banner').getByRole('link', { name: /^My runs/ }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'My runs' })).toBeVisible();
+  await accountButton(page).click();
+  await page.getByRole('menu', { name: 'Account' }).getByRole('menuitem', { name: 'Account' }).click();
+  await page.getByRole('tab', { name: /^Devices/ }).click();
+  await expect(page.getByText('This device')).toBeVisible();
   await page.waitForLoadState('networkidle');
-  expect(api.map((r) => r.path)).toEqual(expect.arrayContaining(['/api/public/status', '/api/public/session', '/api/public/sessions']));
-  expect(api.filter((r) => r.fromSW)).toEqual([]);
-  const cached = await page.evaluate(async () => {
-    const urls: string[] = [];
-    for (const name of await caches.keys()) for (const request of await (await caches.open(name)).keys()) urls.push(new URL(request.url).pathname);
-    return urls;
+
+  expect(names.size).toBeGreaterThan(3);
+  expect(passed.map((r) => r.path)).toEqual(expect.arrayContaining(['/api/public/week', '/api/public/me/allowance', '/api/public/sessions']));
+  expect(passed.some((r) => r.path.startsWith('/art/'))).toBe(true);
+  // The worker answered none of them: each went to the network.
+  expect(passed.filter((r) => r.fromSW)).toEqual([]);
+
+  const stored = await page.evaluate(async () => {
+    const cached: { url: string; type: string; body: string }[] = [];
+    for (const name of await caches.keys()) {
+      const cache = await caches.open(name);
+      for (const request of await cache.keys()) {
+        const response = await cache.match(request);
+        const type = response?.headers.get('content-type') ?? '';
+        cached.push({ url: request.url, type, body: /html|json|text\/plain/.test(type) ? ((await response?.text()) ?? '') : '' });
+      }
+    }
+    const local = Object.entries({ ...localStorage });
+    const session = Object.entries({ ...sessionStorage });
+    const databases: { name: string; rows: string[] }[] = [];
+    for (const info of await indexedDB.databases()) {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const open = indexedDB.open(info.name!);
+        open.onsuccess = () => resolve(open.result);
+        open.onerror = () => reject(open.error);
+      });
+      const rows: string[] = [];
+      for (const store of Array.from(db.objectStoreNames)) {
+        const all = await new Promise<unknown[]>((resolve, reject) => {
+          const read = db.transaction(store).objectStore(store).getAll();
+          read.onsuccess = () => resolve(read.result);
+          read.onerror = () => reject(read.error);
+        });
+        rows.push(...all.map((row) => JSON.stringify(row)));
+      }
+      db.close();
+      databases.push({ name: info.name!, rows });
+    }
+    return { cached, local, session, databases };
   });
-  expect(cached.length).toBeGreaterThan(5);
-  expect(cached.filter((u) => u.startsWith('/api/'))).toEqual([]);
+  // Caches hold the precached static build only.
+  expect(stored.cached.length).toBeGreaterThan(5);
+  for (const { url } of stored.cached) {
+    const { pathname } = new URL(url);
+    expect(pathname, url).not.toMatch(/^\/(api|art)\//);
+    expect(pathname, url).toMatch(/\.(js|css|html|woff2|png|webmanifest)$/);
+  }
+  // Nothing stored anywhere names a member or a run, or holds a member read.
+  const pages = stored.cached.map((c) => `${c.url} ${c.body}`).join('\n');
+  const kept = [...stored.local.flat(), ...stored.session.flat(), ...stored.databases.flatMap((d) => [d.name, ...d.rows])].join('\n');
+  for (const name of names) expect(`${pages}\n${kept}`, name).not.toMatch(word(name));
+  for (const id of runIds) expect(kept, id).not.toContain(id);
+  for (const path of ['/api/public/', '/art/']) expect(`${pages}\n${kept}`, path).not.toContain(path);
+
+  // Sign-out drops the last-seen week from memory: nothing of it is left on screen, nor after Back.
+  await accountButton(page).click();
+  await page.getByRole('menu', { name: 'Account' }).getByRole('menuitem', { name: 'Sign out' }).click();
+  await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toBeVisible();
+  await page.goBack();
+  await page.goBack();
+  await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toBeVisible();
+  const text = await page.locator('body').innerText();
+  for (const name of names) expect(text, name).not.toMatch(word(name));
+  await expect(page.locator('[data-run], [data-row]')).toHaveCount(0);
 });
 
 // Each screen: axe, a keyboard path to its main action with a visible focus

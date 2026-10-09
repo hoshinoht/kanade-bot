@@ -1,0 +1,793 @@
+// The member's Week, My runs and the phone run screen (boards Main,
+// Week-RunMine, Week-RunOther, WeekList*, MyRuns*, States*, PhoneWeek,
+// PhoneRun*, PhoneMyRuns), over the admin Week's partials (_week.scss,
+// _run-sheet.scss, _move-picker.scss). Own runs get the full card; other
+// runs fade by shape and tint, never opacity, so every word keeps ≥ 4.5:1.
+
+/* ── masthead tabs (board Mast) ─────────────────────────────────────── */
+
+.masthead__nav {
+  display: flex;
+  gap: 4px;
+  margin-left: 10px;
+}
+
+.masthead__tab {
+  min-height: 34px;
+  text-decoration: none;
+}
+
+.masthead__tab[aria-current="page"] {
+  background: var(--select);
+  color: var(--select-ink);
+  font-weight: 700;
+}
+
+.navlist__badge {
+  margin-left: auto;
+  padding-right: 12px;
+  font-size: var(--fs-mini);
+}
+
+/* ── chips the boards add ───────────────────────────────────────────── */
+
+.you-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--accent-fill);
+  color: var(--accent-ink);
+  font: 700 var(--fs-micro) / 1 var(--mono);
+  letter-spacing: 0.06em;
+}
+
+.member-card__view {
+  color: var(--dim-text);
+  font: 600 var(--fs-micro) / 1.3 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ── the window bar's toggle ────────────────────────────────────────── */
+
+.card__head .member-toggle[aria-pressed="true"] {
+  background: var(--win-ink);
+  color: var(--win);
+}
+
+/* ── run cards: own and other ───────────────────────────────────────── */
+
+// Nothing drops here, so a day's list is as tall as its cards (the admin
+// planner stretches it to the column's foot as a drop target).
+.member-board .board__runs {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+}
+
+// One line, as the boards draw it: the week line gives way first.
+.member-week:not(.week-window--phone) .week-window__foot {
+  flex-wrap: nowrap;
+  min-height: 38px;
+  padding: 0 16px;
+}
+
+.member-week:not(.week-window--phone) .week-foot__week {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.member-board .board__runs > li {
+  display: flex;
+  flex-direction: column;
+}
+
+.member-card {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px 9px 14px;
+  background: var(--row);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  container-type: inline-size;
+}
+
+.member-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+// Own runs (`.card.mine`): a 2 px accent border and a select halo; the
+// border keeps its 1.5 px box and a 0.5 px ring makes up the 2 px.
+.week-window .member-card--mine {
+  border-color: var(--accent-fill);
+  box-shadow:
+    0 0 0 0.5px var(--accent-fill),
+    0 0 0 3.5px var(--select);
+}
+
+// Everyone else's runs: a darker tint, a dashed border all round, no
+// stripe, no art, outlined pills; text stays at --ink / --dim-text.
+.week-window .member-card--other {
+  border: 1.5px dashed var(--faint);
+  background: var(--pane);
+}
+
+.week-window .member-card--other::before {
+  display: none;
+}
+
+.member-card--other .pill,
+.week-runs__row--other .pill {
+  background: transparent;
+  color: var(--ink);
+}
+
+.member-card--other .pill--e,
+.week-runs__row--other .pill--e { box-shadow: inset 0 0 0 1.5px var(--pill-e-bg); }
+.member-card--other .pill--n,
+.week-runs__row--other .pill--n { box-shadow: inset 0 0 0 1.5px var(--pill-n-bg); }
+.member-card--other .pill--h,
+.week-runs__row--other .pill--h { box-shadow: inset 0 0 0 1.5px var(--pill-h-bg); }
+.member-card--other .pill--c,
+.week-runs__row--other .pill--c { box-shadow: inset 0 0 0 1.5px var(--pill-c-bg); }
+.member-card--other .pill--x,
+.week-runs__row--other .pill--x { box-shadow: inset 0 0 0 1.5px var(--pill-x-bg); }
+
+.week-window .member-card--selected,
+.week-window .member-card--selected.member-card--mine {
+  box-shadow:
+    0 0 0 0.5px var(--accent-fill),
+    0 0 0 3px var(--accent-fill);
+}
+
+.member-card__party {
+  overflow: hidden;
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-card__answers {
+  margin-top: 2px;
+}
+
+// Phone list (board PhoneWeek `.pcard`): the clock, then the bosses, party and
+// YOU / view only, then the tally, with the answers across the foot.
+.member-card--phone {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px 10px;
+  padding: 8px 10px 8px 13px;
+}
+
+.member-card--phone .runcard__top {
+  display: contents;
+}
+
+.member-card--phone .runcard__time {
+  grid-area: 1 / 1 / span 3;
+  min-width: 3.4em;
+}
+
+.member-card--phone .runcard__meta {
+  grid-area: 1 / 3 / span 3;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-left: 0;
+}
+
+.member-card--phone .runcard__bosses {
+  grid-area: 1 / 2;
+}
+
+.member-card--phone .member-card__party {
+  grid-area: 2 / 2;
+}
+
+.member-card--phone .you-chip,
+.member-card--phone .member-card__view {
+  grid-area: 3 / 2;
+  justify-self: start;
+}
+
+.member-card--phone .member-card__answers {
+  grid-area: 4 / 1 / auto / -1;
+}
+
+/* ── the board while its first read is on the way (board States) ──── */
+
+.member-board--loading {
+  position: relative;
+}
+
+.member-skel .board__runs {
+  padding: 8px;
+}
+
+.member-skel__bar,
+.member-skel__card {
+  display: block;
+  border-radius: 6px;
+  background: var(--seg-fill);
+}
+
+.member-skel__bar {
+  width: 60%;
+  height: 12px;
+}
+
+.member-skel__card {
+  height: 64px;
+  border-radius: 10px;
+}
+
+.member-board__loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+/* ── the List tab ───────────────────────────────────────────────────── */
+
+.week-runs__row--other > * {
+  background: var(--pane);
+}
+
+.week-runs__row--other > :first-child {
+  border-left: 1.5px dashed var(--faint);
+}
+
+.week-runs__row--mine > :first-child {
+  box-shadow: inset 3px 0 0 var(--accent-fill);
+}
+
+.week-runs__you {
+  white-space: nowrap;
+}
+
+// Every cell sits on the row's middle line (the shared table rules top-align
+// td), and Status fits "UNCONFIRMED" with its icon and a gap before On.
+.week-runs .week-runs__row > * {
+  vertical-align: middle;
+}
+
+.week-runs .week-runs__state {
+  width: 168px;
+}
+
+.member-list__answer {
+  margin-left: 6px;
+  font-size: var(--fs-small);
+}
+
+// Board WeekList: a day's runs under its "FRI 9 Oct" row, each on one line.
+.week-runs .week-runs__day {
+  height: auto;
+  padding: 12px 10px 4px;
+  background: transparent;
+  color: var(--dim-text);
+  font: 600 var(--fs-micro) / 1.3 var(--mono);
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.week-runs__day b {
+  color: var(--ink);
+}
+
+.member-list__party {
+  flex-wrap: nowrap;
+  max-width: 16rem;
+  overflow: hidden;
+}
+
+/* ── panes: Your week, the open run ─────────────────────────────────── */
+
+.side-pane.member-glance {
+  flex-basis: 300px;
+}
+
+.week-glance__fact {
+  font: inherit;
+  text-align: left;
+  border: 0;
+  cursor: pointer;
+}
+
+.member-glance__soon[aria-disabled="true"],
+.member-glance__clear {
+  cursor: default;
+}
+
+.member-glance__soon[aria-disabled="true"] > span:first-child {
+  color: var(--dim-text);
+}
+
+.member-glance__needs {
+  list-style: none;
+}
+
+.member-glance__needs .week-glance__fact {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.member-pane .member-pane__art {
+  display: flex;
+  flex-direction: column;
+}
+
+.member-pane__who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-weight: 700;
+}
+
+.member-pane__sec {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.member-pane__sec .cap,
+.member-answer__hint {
+  margin: 0;
+}
+
+.member-answer {
+  display: flex;
+}
+
+.member-answer .seg__btn {
+  flex: 1 1 0;
+  min-height: 44px;
+}
+
+.member-answer .seg__btn[aria-disabled="true"] {
+  cursor: default;
+}
+
+.member-pane__ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.member-pane__ask .btn[aria-disabled="true"],
+.member-hero__full[aria-disabled="true"] {
+  cursor: default;
+}
+
+.member-lock {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--pane);
+  font-size: var(--fs-small);
+  line-height: 1.45;
+}
+
+.member-move .movepick__typed {
+  position: relative;
+}
+
+.member-move .movepick__acts {
+  align-items: normal;
+  justify-content: space-between;
+}
+
+.member-move .movepick__result {
+  flex-wrap: nowrap;
+}
+
+.member-move .movepick__legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.member-move .movepick__set:disabled .movepick__title {
+  color: var(--dim-text);
+}
+
+/* ── phones: the week as one list, an open run as its own screen ───── */
+
+.member-week__phonebar {
+  gap: 8px;
+}
+
+.member-week__range {
+  white-space: nowrap;
+}
+
+// Board PhoneWeek `.phone-head__n` and `.pweek-status`.
+.member-week .week-window__count {
+  margin-top: 0;
+  margin-bottom: 0;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+.week-window--phone.member-week .week-window__foot {
+  min-height: 36px;
+  padding: 6px 12px;
+}
+
+.member-phone__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 10px 12px;
+}
+
+// The phone week while its first read is on the way (board PhoneStates): the list's whole height.
+.member-phone__list--loading {
+  box-sizing: border-box;
+  min-height: 100%;
+}
+
+.member-phone__day {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 4px 4px;
+  font: 600 var(--fs-small) / 1.3 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.member-phone__day--today {
+  color: var(--accent-text);
+}
+
+.member-phone__count {
+  margin-left: auto;
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.shell--run {
+  overflow: auto;
+}
+
+.member-hero {
+  position: relative;
+  isolation: isolate;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+  padding: 14px 14px 12px;
+  border: 2px solid var(--win);
+  border-radius: 18px;
+  background: var(--surface);
+}
+
+.member-hero--other {
+  border-style: dashed;
+  border-color: var(--faint);
+}
+
+.member-hero__art {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: -1;
+  width: 62%;
+  height: 96px;
+  object-fit: cover;
+  opacity: var(--art-veil);
+  mask-image: linear-gradient(to left, #000 30%, transparent);
+}
+
+.member-hero__when {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+// 32 px as board PhoneRun draws it, under the admin phone sheet's hero clock.
+.member-hero__time {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+// Above the art (board PhoneRun `.sheet-hero > *`).
+.member-hero > :not(.member-hero__art) {
+  position: relative;
+}
+
+.member-hero__bosses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.member-hero__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.member-hero__full {
+  justify-content: center;
+  width: 100%;
+  min-height: 44px;
+}
+
+.member-hero__window {
+  flex: none;
+  min-height: auto;
+}
+
+.member-hero__panel {
+  padding: 10px 10px 12px;
+}
+
+.member-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.member-slot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 4px 12px;
+  border-radius: 4px;
+  background: var(--row);
+}
+
+.member-slot:first-child {
+  border-radius: 14px 14px 4px 4px;
+}
+
+.member-slot:last-child {
+  border-radius: 4px 4px 14px 14px;
+}
+
+.member-slot:only-child {
+  border-radius: 14px;
+}
+
+.member-slot--me {
+  box-shadow: inset 3px 0 0 var(--accent-fill);
+}
+
+.member-slot .chip {
+  margin-left: auto;
+}
+
+.member-hero__foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 10px 14px;
+  border-top: 2px solid var(--line);
+  background: var(--surface);
+}
+
+.member-hero__foot .field__hint {
+  margin: 0;
+}
+
+.topbar__back {
+  min-height: 40px;
+}
+
+.topbar__spacer {
+  flex: 1 1 auto;
+}
+
+/* ── My runs ────────────────────────────────────────────────────────── */
+
+.member-runs {
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+}
+
+.member-runs__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.member-runs__panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 14px 20px 20px;
+}
+
+.member-runs__panel--phone {
+  padding: 10px;
+}
+
+.member-runs__cap,
+.member-runs__range,
+.member-runs__hint,
+.member-runs__none {
+  margin: 0;
+  padding: 4px 4px 0;
+}
+
+.member-runs__group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.member-run {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) 300px;
+  gap: 6px 18px;
+  align-items: center;
+  overflow: hidden;
+  padding: 14px 18px;
+  border-radius: 6px;
+  background: var(--row);
+}
+
+.member-run:first-child { border-radius: 16px 16px 6px 6px; }
+.member-run:last-child { border-radius: 6px 6px 16px 16px; }
+.member-run:only-child { border-radius: 16px; }
+
+.member-run--done {
+  background: var(--pane);
+}
+
+.member-run--owed {
+  box-shadow: inset 0 0 0 2px var(--warn);
+}
+
+.member-run__art {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: -1;
+  width: 46%;
+  height: 100%;
+  object-fit: cover;
+  opacity: var(--art-veil);
+  mask-image: linear-gradient(to left, #000 25%, transparent);
+}
+
+.member-run--done .member-run__art {
+  filter: grayscale(1);
+}
+
+.member-run__clock,
+.member-run__mid,
+.member-run__acts {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.member-run__time {
+  font-size: var(--fs-clock-narrow);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.member-run__facts,
+.member-run__party {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 0;
+}
+
+.member-run__was {
+  margin: 0;
+  color: var(--dim-text);
+  text-align: right;
+}
+
+.chip--me {
+  box-shadow: inset 0 0 0 1.5px var(--accent-fill);
+}
+
+.frame--phone .member-run {
+  display: flex;
+  flex-direction: column;
+  align-items: normal;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 2px solid var(--line);
+  border-radius: 16px;
+}
+
+.side-pane.member-runs__aside {
+  flex-basis: 320px;
+  gap: 12px;
+  padding: 16px;
+  background: var(--pane);
+}
+
+.member-runs__aside > .cap {
+  margin: 0;
+}
+
+.member-runs__tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.member-runs__tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: var(--r);
+  background: var(--surface);
+}
+
+.member-runs__tile dd {
+  margin: 0;
+}
+
+.member-runs__value {
+  font: 700 var(--fs-lg) / 1.2 var(--display);
+}
+
+.member-runs__sub {
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+/* ── Account › chat allowance ───────────────────────────────────────── */
+
+.account-allow__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}

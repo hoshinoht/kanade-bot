@@ -4,7 +4,7 @@
   import { tick, type Snippet } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import type { Run, WeekKey } from '@kanade/api-types';
-  import { dayNumber, experiments, flip, replay, Icon, LoadingState, longDate, NapWindow, SPRING_BOUNCY, SPRING_BOUNCY_MS, runTitle, sortRuns, WavyProgress } from '@kanade/ui';
+  import { dayNumber, experiments, flip, replay, Icon, LoadingState, longDate, NapWindow, SPRING_BOUNCY, SPRING_BOUNCY_MS, runTitle, sortRuns, WavyProgress, weekProgress } from '@kanade/ui';
   import Planner from '../planner/Planner.svelte';
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
@@ -16,7 +16,6 @@
   import RunsTable from '../week/RunsTable.svelte';
   import { activeFilters, applyFilter, filtering, NO_FILTER, type FilterKey, type WeekFilter } from '../week/filters';
   import { owedByMember } from '../week/waiting';
-  import { weekProgress } from '../week/progress';
 
   export type WeekTab = 'planner' | 'runs' | 'answers';
 

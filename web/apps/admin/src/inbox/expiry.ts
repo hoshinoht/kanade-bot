@@ -1,5 +1,5 @@
 import type { Proposal } from '@kanade/api-types';
-import { spanWords, wallMinutes, whenMinutes } from '../shared/wall';
+import { spanWords, wallMinutes, whenMinutes } from '@kanade/ui';
 
 /** The last fifth of a proposal's life takes the warning colour (and says so). */
 export const EXPIRY_WARN = 0.2;

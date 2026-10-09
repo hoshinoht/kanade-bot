@@ -159,7 +159,7 @@ for (const vp of VIEWPORTS) {
       await shot(page, `public-denied-${tag}`);
 
       await signInPublic(page);
-      await page.goto(`${PUBLIC}/?tab=devices&sw=off`);
+      await page.goto(`${PUBLIC}/account?tab=devices&sw=off`);
       await expect(page.getByText('This device')).toBeVisible();
       await shot(page, `public-account-${tag}`);
 

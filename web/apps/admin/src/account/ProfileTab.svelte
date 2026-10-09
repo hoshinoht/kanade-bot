@@ -6,9 +6,8 @@
 -->
 <script lang="ts">
   import type { Me } from '@kanade/api-types';
-  import { Icon } from '@kanade/ui';
-  import { ACCESS, inEffectName, windowWords } from './account';
-  import { resetSpan } from '../limits/view';
+  import { Icon, resetSpan, windowWords } from '@kanade/ui';
+  import { ACCESS, inEffectName } from './account';
 
   let {
     me,
