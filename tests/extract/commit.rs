@@ -196,6 +196,7 @@ impl Replay {
                     .service
                     .as_origin(Origin::for_tests())
                     .add_fixed_run(NewFixedRun {
+                        owner_pinned: false,
                         owner_id: text(&step["owner_id"]).into(),
                         channel_id: opt(&step["channel_id"]),
                         bosses: strings(&step["bosses"]),

@@ -14,8 +14,8 @@ use crate::domain::schedule::{
 use crate::domain::scheduler::StoreError;
 use crate::domain::time::{from_iso, to_iso};
 
-pub(super) const FIXED_COLUMNS: &str =
-    "id, owner_id, channel_id, bosses, weekday, time, participants, note, attendance_default";
+pub(super) const FIXED_COLUMNS: &str = "id, owner_id, channel_id, bosses, weekday, time, \
+     participants, note, attendance_default, owner_pinned";
 pub(super) const RUN_COLUMNS: &str =
     "id, fixed_run_id, channel_id, week_start, datetime, bosses, participants, status, source";
 pub(super) const REMINDER_COLUMNS: &str = "id, run_id, kind, fire_at, sent_at, message_id";
@@ -125,6 +125,10 @@ pub(super) fn fixed_run(row: &SqliteRow) -> Result<FixedRun, StoreError> {
         },
         // Attached from `standing_answers` by the caller.
         standing: Vec::new(),
+        owner_pinned: row
+            .try_get::<i64, _>("owner_pinned")
+            .map_err(|error| corrupt(format!("owner_pinned: {error}")))?
+            != 0,
     })
 }
 

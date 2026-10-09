@@ -56,6 +56,7 @@ fn schedule(default: AttendanceDefault) -> ScheduleSnapshot {
     ScheduleSnapshot {
         revision: 1,
         fixed_runs: vec![FixedRun {
+            owner_pinned: false,
             id: "f".into(),
             owner_id: "1001".into(),
             channel_id: Some("222".into()),

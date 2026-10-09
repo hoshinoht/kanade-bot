@@ -87,6 +87,7 @@ async fn fixture(service: &mut Service) -> (String, Vec<String>) {
     let fixed = service
         .as_origin(Origin::for_tests())
         .add_fixed_run(NewFixedRun {
+            owner_pinned: false,
             owner_id: "1001".into(),
             channel_id: Some("222".into()),
             bosses: vec!["HFA".into()],

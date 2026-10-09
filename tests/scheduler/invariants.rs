@@ -56,6 +56,7 @@ fn service(clock: &TestClock) -> Service {
 
 fn weekly(weekday: Weekday, time: NaiveTime, bosses: &[&str]) -> NewFixedRun {
     NewFixedRun {
+        owner_pinned: false,
         owner_id: "42".into(),
         channel_id: Some("900".into()),
         bosses: bosses.iter().map(|b| (*b).into()).collect(),
@@ -355,6 +356,7 @@ async fn a_reset_inside_a_dst_gap_materialises_like_v4() {
         service
             .as_origin(kanade::domain::history::Origin::for_tests())
             .add_fixed_run(NewFixedRun {
+                owner_pinned: false,
                 owner_id: "42".into(),
                 channel_id: Some("900".into()),
                 bosses: vec!["HFA".into()],

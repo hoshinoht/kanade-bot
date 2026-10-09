@@ -81,6 +81,7 @@ async fn replay(case: &Value) -> Value {
                 let id = service
                     .as_origin(kanade::domain::history::Origin::for_tests())
                     .add_fixed_run(NewFixedRun {
+                        owner_pinned: false,
                         owner_id: text(&step["owner_id"]).into(),
                         channel_id: Some(text(&step["channel_id"]).into()),
                         bosses: strings(&step["bosses"]),

@@ -133,6 +133,8 @@ impl FixedCommand {
             time,
             participants: participants.clone(),
             note: args.text("note").map(str::to_owned),
+            // The first participant owns it unless staff pin someone.
+            owner_pinned: false,
         };
         let ctx = self.write_context(&[&channel]).await?;
         let origin = self
@@ -147,10 +149,13 @@ impl FixedCommand {
         let fixed = self.timing(&fixed_id).await?;
         // Only listed participants are pinged.
         let not_on_it = if participants.contains(&invoker) {
-            ""
+            String::new()
         } else {
-            "\n(you're the owner but not on this run — it won't ping you; \
-             `/fixed edit` to add yourself)"
+            format!(
+                "\n(you're not on this run, so it won't ping you; <@{}> owns it and can \
+                 `/fixed edit` you in)",
+                fixed.owner()
+            )
         };
         Ok(InteractionReply::ephemeral(format!(
             "✅ Fixed run `#{}` added — this channel is its home channel, so its pings land \

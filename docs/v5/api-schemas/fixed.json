@@ -8,7 +8,7 @@
       "additionalProperties": false,
       "required": [
         "id", "short_id", "weekday", "weekday_name", "time", "bosses", "participants",
-        "channel_id", "channel_name", "channel_watched", "owner", "owner_id", "note", "runs"
+        "channel_id", "channel_name", "channel_watched", "owner", "owner_id", "owner_pinned", "note", "runs"
       ],
       "properties": {
         "id": { "type": "string" },
@@ -21,8 +21,9 @@
         "channel_id": { "type": "string" },
         "channel_name": { "type": "string" },
         "channel_watched": { "type": "boolean" },
-        "owner": { "type": "string", "description": "The owner's display name." },
-        "owner_id": { "type": "string", "description": "The owner's Discord user id; proposal approval and chat authority accept the owner." },
+        "owner": { "type": "string", "description": "The effective owner's display name." },
+        "owner_id": { "type": "string", "description": "The effective owner's Discord user id: the pinned owner, else the first participant. Proposal approval and chat authority accept them." },
+        "owner_pinned": { "type": "boolean", "description": "Staff pinned the owner; otherwise ownership follows the first participant." },
         "note": { "$ref": "common.json#/$defs/NullableString" },
         "runs": {
           "type": "array",
@@ -58,7 +59,7 @@
         "note": { "type": ["string", "null"] },
         "owner_id": {
           "type": "string",
-          "description": "Optional. A rostered (bossing-role, non-bot) member, not necessarily in the party; otherwise 422 `invalid` \"Pick an owner from the roster.\" Omitted: POST keeps its default (the Discord session's user, else the first participant), PATCH leaves the owner unchanged."
+          "description": "Optional. A rostered (bossing-role, non-bot) member, not necessarily in the party, pins the owner; otherwise 422 `invalid` \"Pick an owner from the roster.\" `\"\"` or omitted: POST leaves the timing unpinned (the first participant owns it); on PATCH `\"\"` unpins a pinned owner and omitted leaves the owner unchanged."
         },
         "decisions": {
           "type": "object",

@@ -326,6 +326,7 @@ fn schedule_policy() -> kanade::domain::schedule::SchedulePolicy {
 
 fn fixed_run() -> kanade::domain::schedule::NewFixedRun {
     kanade::domain::schedule::NewFixedRun {
+        owner_pinned: false,
         owner_id: "2".into(),
         channel_id: Some("900".into()),
         bosses: vec!["HFA".into()],
@@ -369,7 +370,7 @@ async fn backups_anchor_the_history_and_truncation_is_detected() {
     store.backup(&backup).await.expect("backup");
     let manifest = BackupManifest::read(&BackupManifest::path_for(&backup)).expect("manifest");
     assert_eq!(manifest.history_head, head, "the manifest anchors the head");
-    assert_eq!(manifest.schema_version, 32);
+    assert_eq!(manifest.schema_version, 33);
     assert!(
         manifest.created_at.is_some(),
         "new manifests carry created_at"
@@ -632,12 +633,13 @@ async fn upgrading_to_the_blame_index_backfills_earlier_records() {
          DROP TABLE header_overrides;
          DROP TABLE idempotency_replays;
          DROP TABLE auth_audit;
+         ALTER TABLE fixed_runs DROP COLUMN owner_pinned;
          DELETE FROM schema_migrations WHERE version >= 4;
          UPDATE store_meta SET schema_version = 3;",
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 32);
+    assert_eq!(store.schema_version().await.expect("version"), 33);
     assert!(
         verify(&store).await.is_intact(),
         "the backfilled index verifies"

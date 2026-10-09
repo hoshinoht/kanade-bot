@@ -1524,19 +1524,43 @@ impl Reads {
     }
 }
 
-/// A timing's owner is read as `owner_id`, set on create, changed by PATCH
-/// (blamed as `owner`), validated against the roster only when it changes,
-/// and conflicts like any other timing field.
+/// A timing's owner is read as `owner_id` with `owner_pinned`: the first
+/// participant unless staff pinned someone on create or PATCH (blamed as
+/// `owner`); `""` returns a pinned timing to the default. The owner is
+/// validated against the roster only when it changes and conflicts like any
+/// other timing field (user decision 2026-10-09).
 #[tokio::test]
 async fn timing_owner_is_set_changed_validated_and_blamed() {
     let reads = Reads::new().await;
     let (_, row) = reads.rows().await;
     assert_eq!(
-        (row["owner_id"].clone(), row["owner"].clone()),
-        ("1001".into(), "Alice".into())
+        (
+            row["owner_id"].clone(),
+            row["owner"].clone(),
+            row["owner_pinned"].clone()
+        ),
+        ("1001".into(), "Alice".into(), false.into())
     );
 
-    // Create: an owner outside the party.
+    // Create without an owner: unpinned, the first participant owns it.
+    let plain = json!({
+        "weekday": 2, "time": "21:00", "bosses": "hstar", "participants": ["1002", "1001"],
+        "channel_id": "kalos-four", "note": null
+    });
+    let created = reads
+        .ok(
+            "POST",
+            "/api/admin/fixed",
+            plain,
+            "fixed.json#/$defs/FixedRow",
+        )
+        .await;
+    assert_eq!(
+        (created["owner_id"].clone(), created["owner_pinned"].clone()),
+        ("1002".into(), false.into())
+    );
+
+    // Create: an owner outside the party is pinned.
     let create = json!({
         "weekday": 3, "time": "21:00", "bosses": "hstar", "participants": ["1001", "1002"],
         "channel_id": "kalos-four", "note": null, "owner_id": "1004"
@@ -1551,14 +1575,18 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
         )
         .await;
     assert_eq!(
-        (created["owner_id"].clone(), created["owner"].clone()),
-        ("1004".into(), "Dan".into())
+        (
+            created["owner_id"].clone(),
+            created["owner"].clone(),
+            created["owner_pinned"].clone()
+        ),
+        ("1004".into(), "Dan".into(), true.into())
     );
 
     // Unknown, role-less, bot and malformed owners are refused, nothing written.
     reads.drop_cara().await;
     let v = reads.version().await;
-    for owner in ["9999", "1003", "1005", "abc", ""] {
+    for owner in ["9999", "1003", "1005", "abc"] {
         let mut bad = create.clone();
         bad["owner_id"] = owner.into();
         let reply = reads.call("POST", "/api/admin/fixed", bad, &[]).await;
@@ -1649,6 +1677,28 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
     assert_eq!(
         (row["owner_id"].clone(), row["note"].clone()),
         ("1004".into(), "bring pots".into())
+    );
+
+    // `""` unpins: the owner is the first participant again, blamed as `owner`.
+    let v = reads.version().await;
+    let mut form = timing(v, "22:00", "bring pots");
+    form["owner_id"] = "".into();
+    let row = reads
+        .ok(
+            "PATCH",
+            "/api/admin/fixed/f-kalos",
+            form,
+            "fixed.json#/$defs/FixedRow",
+        )
+        .await;
+    assert_eq!(
+        (row["owner_id"].clone(), row["owner_pinned"].clone()),
+        ("1001".into(), false.into())
+    );
+    let record = reads.store.load_change(v + 1).await.unwrap().unwrap();
+    assert_eq!(
+        changed_fields(&record).into_iter().collect::<Vec<_>>(),
+        [(BlameTarget::FixedRun("f-kalos".into()), "owner".to_owned())]
     );
 }
 

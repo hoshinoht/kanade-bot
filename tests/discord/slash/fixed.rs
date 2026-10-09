@@ -116,9 +116,9 @@ async fn add_creates_the_timing_here_and_materialises_it() {
         reply,
         format!(
             "✅ Fixed run `#{short}` added — this channel is its home channel, so its pings land \
-             here.\n`#{short}` **HMaleficStar** · Wed 21:30 · <@1002> <@1001> · owner <@1004> · \
-             <#301>\n   ↳ Radiant Malefic Star (Hard, Lv280)\n(you're the owner but not on this \
-             run — it won't ping you; `/fixed edit` to add yourself)"
+             here.\n`#{short}` **HMaleficStar** · Wed 21:30 · <@1002> <@1001> · owner <@1002> · \
+             <#301>\n   ↳ Radiant Malefic Star (Hard, Lv280)\n(you're not on this run, so it \
+             won't ping you; <@1002> owns it and can `/fixed edit` you in)"
         )
     );
     // Materialised: this week's Wednesday is still ahead.
@@ -328,6 +328,7 @@ async fn a_long_list_is_split_into_follow_ups_at_line_boundaries() {
     let changes = (2..=12)
         .map(|index| {
             Change::PutFixedRun(FixedRun {
+                owner_pinned: false,
                 id: format!("ffff{index:04}-0000-4000-8000-000000000000"),
                 owner_id: ALICE.to_string(),
                 channel_id: Some(KALOS.to_string()),

@@ -99,6 +99,8 @@ pub fn validate(row: &V4Fixed, catalog: &BossTable) -> Result<Candidate, &'stati
                 .map(str::trim)
                 .filter(|note| !note.is_empty())
                 .map(str::to_owned),
+            // v4 had no pin: its owner was always whoever created the run.
+            owner_pinned: false,
         },
     })
 }

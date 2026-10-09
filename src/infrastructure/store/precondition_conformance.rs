@@ -151,6 +151,7 @@ async fn seed<S: ScheduleStore + Sync>(store: &S) -> (String, String) {
     let fixed = service
         .as_origin(admin("seed"))
         .add_fixed_run(NewFixedRun {
+            owner_pinned: false,
             owner_id: "1".into(),
             channel_id: Some("900".into()),
             bosses: vec!["HFA".into()],

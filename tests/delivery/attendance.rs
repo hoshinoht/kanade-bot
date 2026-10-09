@@ -71,6 +71,7 @@ async fn seed<S: Store>(store: &S, attendance: AttendancePolicy) -> String {
     let fixed = service
         .as_origin(admin)
         .add_fixed_run(NewFixedRun {
+            owner_pinned: false,
             owner_id: "1001".into(),
             channel_id: Some(HOME.into()),
             bosses: vec!["Kalos".into()],

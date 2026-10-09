@@ -54,14 +54,14 @@ pub fn require_authority(
                     .fixed_runs
                     .iter()
                     .find(|row| row.id == fixed)
-                    .map(|row| row.owner_id.as_str())
+                    .map(|row| row.owner())
             });
             (&run.id, &run.participants, owner, &run.channel_id, "run")
         }
         Subject::Fixed(fixed) => (
             &fixed.id,
             &fixed.participants,
-            Some(fixed.owner_id.as_str()),
+            Some(fixed.owner()),
             &fixed.channel_id,
             "weekly timing",
         ),

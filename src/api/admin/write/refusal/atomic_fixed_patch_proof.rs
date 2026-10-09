@@ -251,6 +251,7 @@ async fn fixture() -> Fixture {
     let fixed_id = service
         .as_origin(Origin::new(Actor::admin("seed"), Surface::AdminPortal))
         .add_fixed_run(NewFixedRun {
+            owner_pinned: false,
             owner_id: "1001".into(),
             channel_id: Some("test-channel".into()),
             bosses: vec!["XKalos".into()],

@@ -234,6 +234,7 @@ pub struct FixedRow {
     pub channel_watched: bool,
     pub owner: &'static str,
     pub owner_id: &'static str,
+    pub owner_pinned: bool,
     pub note: Option<String>,
     /// Materialised, still-live runs this week and next.
     pub runs: Vec<FixedRunLink>,

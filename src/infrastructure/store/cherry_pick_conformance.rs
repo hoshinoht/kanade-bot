@@ -120,6 +120,7 @@ async fn fixture<S: ScheduleStore>(store: S) -> (Service<S>, String, [String; 3]
     let fixed = service
         .as_origin(admin())
         .add_fixed_run(NewFixedRun {
+            owner_pinned: false,
             owner_id: "1".into(),
             channel_id: Some("900".into()),
             bosses: vec!["HFA".into()],
@@ -1097,6 +1098,7 @@ async fn a_shifted_source_slot_is_not_a_conflict<
     let night = service
         .as_origin(admin())
         .add_fixed_run(NewFixedRun {
+            owner_pinned: false,
             owner_id: "1".into(),
             channel_id: Some("900".into()),
             bosses: vec!["HFA".into()],

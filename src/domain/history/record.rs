@@ -202,14 +202,17 @@ impl RowValue {
                     "participants": row.participants,
                     "note": row.note,
                 });
-                // v5 attendance keys appear only when set, so every v4-shaped
-                // row (and the golden vector) encodes byte for byte as before.
+                // v5 keys appear only when set, so every v4-shaped row (and
+                // the golden vector) encodes byte for byte as before.
                 if let Value::Object(map) = &mut value {
                     if row.attendance_default != AttendanceDefault::OptIn {
                         map.insert(
                             "attendance_default".into(),
                             row.attendance_default.as_str().into(),
                         );
+                    }
+                    if row.owner_pinned {
+                        map.insert("owner_pinned".into(), true.into());
                     }
                     if !row.standing.is_empty() {
                         let standing = row
@@ -325,6 +328,11 @@ impl RowValue {
                             })
                             .collect::<Result<_, RecordError>>()?,
                         Some(_) => return Err(bad("standing")),
+                    },
+                    owner_pinned: match value.get("owner_pinned") {
+                        None => false,
+                        Some(Value::Bool(pinned)) => *pinned,
+                        Some(_) => return Err(bad("owner_pinned")),
                     },
                 })
             }
@@ -701,6 +709,7 @@ mod tests {
             note: Some("tab\there \"quoted\"\u{1}\nline\u{7f}".into()),
             attendance_default: Default::default(),
             standing: Vec::new(),
+            owner_pinned: false,
         };
         let meta = ChangeMeta {
             origin: Origin::new(Actor::member("42"), Surface::PublicPortal)

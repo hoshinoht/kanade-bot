@@ -80,6 +80,7 @@ impl Clock for Fixed {
 
 fn new_fixed() -> NewFixedRun {
     NewFixedRun {
+        owner_pinned: false,
         owner_id: "42".into(),
         channel_id: None,
         bosses: vec!["HFA".into()],

@@ -149,15 +149,16 @@ test('fixed: a 409 busy keeps the form valid to retry, without the out-of-date a
   await expect(toast(page, 'Saved Tuesday 23:30 — XBM.')).toBeVisible();
 });
 
-test('fixed: the owner is preselected, changes by PATCH owner_id, and reads back on reopen', async ({ page }) => {
+// User decision 2026-10-09: the first in the party owns a timing unless an
+// owner is picked (pinned); "Default" sends "" and unpins.
+test('fixed: the owner defaults to the first in the party, a pick pins it, Default unpins', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await go(page, '/fixed');
   const editButton = page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' });
   const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
   await editButton.click();
   const owner = editor.getByLabel('Owner');
-  await expectValue(owner, '1012');
-  await expect(owner.locator('.dd__value')).toHaveText('Minato');
+  await expect(owner.locator('.dd__value')).toHaveText('Default: first in party (Minato)');
   // Only the roster is offered (Kohane has chatbot access but no bossing role).
   expect((await optionLabels(owner)).filter((l) => l.includes('Kohane'))).toEqual([]);
   // The weekday strip takes its own line (P_MoveStates "Reuse"); Owner sits on the Time line.
@@ -168,37 +169,38 @@ test('fixed: the owner is preselected, changes by PATCH owner_id, and reads back
   await expect(editor.getByRole('radio', { name: 'Tuesday' })).toHaveAttribute('aria-checked', 'true');
 
   await choose(owner, { label: 'Kaito' });
-  const sent = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().includes('/api/admin/fixed/'));
+  let sent = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().includes('/api/admin/fixed/'));
   await editor.getByRole('button', { name: 'Save changes' }).click();
   expect((await sent).postDataJSON()).toMatchObject({ owner_id: '1009' });
   await expect(toast(page, 'Saved Tuesday 23:30 — XBM.')).toBeVisible();
-  const rows = (await (await page.request.get(`${ADMIN}/api/admin/fixed`)).json()) as { id: string; owner_id: string; owner: string; bosses: { token: string }[] }[];
-  expect(rows.find((r) => r.bosses.some((b) => b.token === 'XBM'))).toMatchObject({ owner_id: '1009', owner: 'Kaito' });
+  const xbm = async () => ((await (await page.request.get(`${ADMIN}/api/admin/fixed`)).json()) as { owner_id: string; owner: string; owner_pinned: boolean; bosses: { token: string }[] }[]).find((r) => r.bosses.some((b) => b.token === 'XBM'));
+  expect(await xbm()).toMatchObject({ owner_id: '1009', owner: 'Kaito', owner_pinned: true });
   // The list's search reads the owner: Kaito now finds XBM.
   await page.getByRole('searchbox', { name: 'Search weekly timings' }).fill('kaito');
   await expect(page.getByRole('row', { name: /Black Mage/ })).toBeVisible();
   await page.getByRole('searchbox', { name: 'Search weekly timings' }).fill('');
   await editButton.click();
   await expectValue(owner, '1009');
+
+  await choose(owner, { label: /^Default: first in party/ });
+  sent = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().includes('/api/admin/fixed/'));
+  await editor.getByRole('button', { name: 'Save changes' }).click();
+  expect((await sent).postDataJSON()).toMatchObject({ owner_id: '' });
+  await expect(toast(page, 'Saved Tuesday 23:30 — XBM.')).toBeVisible();
+  expect(await xbm()).toMatchObject({ owner_id: '1012', owner: 'Minato', owner_pinned: false });
 });
 
-test('fixed: a new timing is owned by the Discord admin, else by the first party member picked', async ({ page }) => {
+test('fixed: a new timing defaults to the first party member; a picked owner stays put', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await go(page, '/fixed');
   await page.getByRole('button', { name: 'Add a weekly timing' }).click();
   const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
-  // The mock signs in with Discord as Asahi.
-  await expectValue(editor.getByLabel('Owner'), '1001');
-  await editor.getByRole('button', { name: 'Close weekly timing details' }).click();
-
-  await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'token' } });
-  await go(page, '/fixed');
-  await page.getByRole('button', { name: 'Add a weekly timing' }).click();
   const owner = editor.getByLabel('Owner');
-  await expect(owner.locator('.dd__value')).toHaveText('First party member');
+  // Even signed in with Discord, the admin does not own what they create.
+  await expect(owner.locator('.dd__value')).toHaveText('Default: first in party');
   await editor.getByRole('checkbox', { name: 'Mika' }).check();
   await editor.getByRole('checkbox', { name: 'Nagi' }).check();
-  await expectValue(owner, '1003');
+  await expect(owner.locator('.dd__value')).toHaveText('Default: first in party (Mika)');
   // Picked by hand, it stays put while the party changes.
   await choose(owner, { label: 'Yuzu' });
   await editor.getByRole('checkbox', { name: 'Mika' }).uncheck();

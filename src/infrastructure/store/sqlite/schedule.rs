@@ -209,7 +209,8 @@ async fn execute<'q>(
 
 pub(super) async fn write(tx: &mut SqliteConnection, rows: Collapsed) -> Result<(), StoreError> {
     let insert_fixed = format!(
-        "INSERT INTO fixed_runs ({FIXED_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"
+        "INSERT INTO fixed_runs ({FIXED_COLUMNS}) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
     );
     let insert_run =
         format!("INSERT INTO runs ({RUN_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)");
@@ -264,7 +265,8 @@ pub(super) async fn write(tx: &mut SqliteConnection, rows: Collapsed) -> Result<
             .bind(rows::wall_time(row.time)?)
             .bind(rows::list(&row.participants))
             .bind(&row.note)
-            .bind(row.attendance_default.as_str());
+            .bind(row.attendance_default.as_str())
+            .bind(i64::from(row.owner_pinned));
         execute(tx, insert).await?;
         for answer in &row.standing {
             let insert = sqlx::query(

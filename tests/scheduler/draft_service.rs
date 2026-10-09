@@ -102,6 +102,7 @@ async fn fixture() -> Fixture {
             service
                 .as_origin(Origin::for_tests())
                 .add_fixed_run(NewFixedRun {
+                    owner_pinned: false,
                     owner_id: "1001".into(),
                     channel_id: Some(channel.into()),
                     bosses: vec!["HFA".into()],
@@ -713,6 +714,7 @@ async fn removing_an_operation_renumbers_or_refuses() {
     // leaves the amendment dangling.
     let draft = f.service.create_draft("root", "chain", None).await.unwrap();
     let added = NewFixedRun {
+        owner_pinned: false,
         owner_id: "1001".into(),
         channel_id: Some("222".into()),
         bosses: vec!["Kalos".into()],
@@ -764,6 +766,7 @@ async fn removing_an_operation_renumbers_or_refuses() {
     for op in [
         amend(&f.runs[0][0], kl(1, 20, 0)),
         DraftOp::AddFixedRun(NewFixedRun {
+            owner_pinned: false,
             owner_id: "1001".into(),
             channel_id: Some("222".into()),
             bosses: vec!["Kalos".into()],

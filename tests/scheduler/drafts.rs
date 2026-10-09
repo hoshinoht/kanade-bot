@@ -105,6 +105,7 @@ async fn fixture() -> Fixture {
     let fixed = service
         .as_origin(Origin::for_tests())
         .add_fixed_run(NewFixedRun {
+            owner_pinned: false,
             owner_id: "1001".into(),
             channel_id: Some("222".into()),
             bosses: vec!["HFA".into()],
@@ -349,6 +350,7 @@ fn codec_samples() -> Vec<DraftOp> {
     let at = utc(kl(31, 21, 30));
     vec![
         DraftOp::AddFixedRun(NewFixedRun {
+            owner_pinned: false,
             owner_id: "1001".into(),
             channel_id: Some("222".into()),
             bosses: vec!["HFA".into(), "Kalos".into()],
@@ -621,6 +623,7 @@ async fn rewinding_the_records_after_a_base_restores_the_base_snapshot() {
         swap(&f.runs[2], &["1002"], &["1003"]),
         fixed_edit(&f.fixed, note("moved")),
         DraftOp::AddFixedRun(NewFixedRun {
+            owner_pinned: false,
             owner_id: "1002".into(),
             channel_id: None,
             bosses: vec!["Kalos".into()],

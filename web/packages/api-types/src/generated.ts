@@ -168,7 +168,15 @@ voice: string, };
 
 export type FixedRunLink = { run_id: string, short_id: string, week: WeekKey, day: number, time: string | null, status: RunStatus, amended: boolean, };
 
-export type FixedRow = { id: string, short_id: string, weekday: number, weekday_name: string, time: string, bosses: Array<Boss>, participants: Array<Member>, channel_id: string, channel_name: string, channel_watched: boolean, owner: string, owner_id: string, note: string | null, runs: Array<FixedRunLink>, };
+export type FixedRow = { id: string, short_id: string, weekday: number, weekday_name: string, time: string, bosses: Array<Boss>, participants: Array<Member>, channel_id: string, channel_name: string, channel_watched: boolean, 
+/**
+ * The effective owner ([`FixedRun::owner`]).
+ */
+owner: string, owner_id: string, 
+/**
+ * Staff pinned the owner; otherwise it follows the first participant.
+ */
+owner_pinned: boolean, note: string | null, runs: Array<FixedRunLink>, };
 
 export type ValidateResult = { bosses: Array<Boss>, };
 

@@ -165,7 +165,10 @@ fn fixed_fields(before: Option<&FixedRun>, after: Option<&FixedRun>) -> Vec<&'st
         ("participants", before.participants != after.participants),
         ("channel", before.channel_id != after.channel_id),
         ("note", before.note != after.note),
-        ("owner", before.owner_id != after.owner_id),
+        (
+            "owner",
+            before.owner_id != after.owner_id || before.owner_pinned != after.owner_pinned,
+        ),
     ]
     .into_iter()
     .filter_map(|(field, changed)| changed.then_some(field))

@@ -364,6 +364,7 @@ async fn rebase_moves_the_base_and_close_is_final<S: ScheduleStore + ChangeHisto
     service
         .as_origin(admin())
         .add_fixed_run(NewFixedRun {
+            owner_pinned: false,
             owner_id: "1".into(),
             channel_id: None,
             bosses: vec!["HFA".into()],
@@ -719,6 +720,7 @@ async fn commit_merge_refuses_empty_stale_and_conflicted<
     service
         .as_origin(admin())
         .add_fixed_run(NewFixedRun {
+            owner_pinned: false,
             owner_id: "1".into(),
             channel_id: None,
             bosses: vec!["HFA".into()],
@@ -855,6 +857,7 @@ async fn records_after_pages_the_chain<S: ScheduleStore + ChangeHistory + DraftS
         service
             .as_origin(admin())
             .add_fixed_run(NewFixedRun {
+                owner_pinned: false,
                 owner_id: format!("{n}"),
                 channel_id: None,
                 bosses: vec!["HFA".into()],
@@ -890,6 +893,7 @@ async fn snapshot_with_head_covers_the_snapshot<S: ScheduleStore + ChangeHistory
     service
         .as_origin(admin())
         .add_fixed_run(NewFixedRun {
+            owner_pinned: false,
             owner_id: "1".into(),
             channel_id: None,
             bosses: vec!["HFA".into()],

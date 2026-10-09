@@ -93,6 +93,7 @@ async fn fixture() -> Fixture {
     let fixed = service
         .as_origin(kanade::domain::history::Origin::for_tests())
         .add_fixed_run(NewFixedRun {
+            owner_pinned: false,
             owner_id: "1001".into(),
             channel_id: Some("222".into()),
             bosses: vec!["HFA".into()],
@@ -157,6 +158,7 @@ async fn weekly_timing_add_and_remove_enqueue_notices_once_in_memory() {
     let added = service
         .as_origin(kanade::domain::history::Origin::for_tests().with_request_id("fixed-add"))
         .add_fixed_run(NewFixedRun {
+            owner_pinned: false,
             owner_id: "1001".into(),
             channel_id: Some("222".into()),
             bosses: vec!["HFA".into()],
@@ -176,6 +178,7 @@ async fn weekly_timing_add_and_remove_enqueue_notices_once_in_memory() {
         service
             .as_origin(kanade::domain::history::Origin::for_tests().with_request_id("fixed-add"),)
             .add_fixed_run(NewFixedRun {
+                owner_pinned: false,
                 owner_id: "1001".into(),
                 channel_id: Some("222".into()),
                 bosses: vec!["HFA".into()],

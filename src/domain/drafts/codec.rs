@@ -86,6 +86,10 @@ fn fixed_edit(edit: &FixedEdit) -> Result<Value, CodecError> {
 /// timing edit that changes the owner.
 pub fn encode(op: &DraftOp) -> Result<String, CodecError> {
     let mut body = match op {
+        // Only staff pin an owner, and only through admin edits.
+        DraftOp::AddFixedRun(new) if new.owner_pinned => {
+            return Err(bad("a draft cannot pin a timing's owner"));
+        }
         DraftOp::AddFixedRun(new) => json!({
             "fixed_run": {
                 "owner_id": new.owner_id,
@@ -375,6 +379,7 @@ pub fn decode(stored: &str) -> Result<DraftOp, CodecError> {
                 time: time(&text(fixed, "time")?)?,
                 participants: texts(field(fixed, "participants")?)?,
                 note: optional_text(fixed, "note")?,
+                owner_pinned: false,
             })
         }
         "apply_fixed_edit" => {

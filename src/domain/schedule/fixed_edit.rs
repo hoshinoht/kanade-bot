@@ -32,8 +32,9 @@ pub struct FixedEdit {
     pub participants: Option<Vec<String>>,
     pub channel_id: Option<String>,
     pub note: Option<String>,
-    /// v5: who owns the timing (proposal approval and chat authority read
-    /// it); runs carry no owner, so nothing is pushed onto them.
+    /// v5: pin the timing to this owner (proposal approval and chat
+    /// authority read [`FixedRun::owner`]); `""` returns it to the default,
+    /// the first participant. Runs carry no owner, so nothing is pushed.
     pub owner_id: Option<String>,
 }
 
@@ -216,11 +217,19 @@ pub fn apply_fixed_edit(
         patch.note = Some(note.clone());
         fields.push(FixedField::Note);
     }
-    if let Some(owner) = &edit.owner_id {
-        // Same roster rule as participants; the owner need not be in the party.
-        let mut owner = validate_participants(directory, std::slice::from_ref(owner))?;
-        patch.owner_id = owner.pop();
-        fields.push(FixedField::OwnerId);
+    match edit.owner_id.as_deref() {
+        None => {}
+        Some("") => {
+            patch.owner_pinned = Some(false);
+            fields.push(FixedField::OwnerId);
+        }
+        Some(owner) => {
+            // Same roster rule as participants; the owner need not be in the party.
+            let mut owner = validate_participants(directory, &[owner.to_owned()])?;
+            patch.owner_id = owner.pop();
+            patch.owner_pinned = Some(true);
+            fields.push(FixedField::OwnerId);
+        }
     }
     if fields.is_empty() {
         return Err(ScheduleError::NothingToChange);

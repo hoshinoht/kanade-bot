@@ -23,7 +23,6 @@
     bosses,
     channels,
     members,
-    self = null,
     week,
     version,
     onsaved,
@@ -42,8 +41,6 @@
     bosses: BossRow[];
     channels: Channel[];
     members: MemberRow[];
-    /** The signed-in Discord member's id, when it names one rostered member; new timings default to them. */
-    self?: string | null;
     week: Week | null;
     /** Week version `row` was read at. */
     version: number | null;
@@ -82,7 +79,7 @@
   let channel = $state('');
   let note = $state('');
   let party = $state<string[]>([]);
-  /** The owner picked by hand (or the saved one); '' = a new timing's default. */
+  /** A pinned owner, or '' = the default: whoever is first in the party (user decision 2026-10-09). */
   let pickedOwner = $state('');
   let selected = $state<string[]>([]);
   // A timing that already has bosses shows only theirs until asked for the rest.
@@ -119,7 +116,7 @@
       note = row?.note ?? '';
       party = row?.participants.map((p) => p.id) ?? [];
       openParty = [...party];
-      pickedOwner = row?.owner_id ?? '';
+      pickedOwner = row?.owner_pinned ? row.owner_id : '';
       ownerError = '';
       allParty = false;
       selected = row?.bosses.map((b) => b.token) ?? [];
@@ -150,16 +147,11 @@
 
   const amended = $derived(row?.runs.filter((r) => r.amended) ?? []);
   const roster = $derived(members.filter((m) => m.bossing));
-  /**
-   * As the server's default, made visible: a new timing is owned by the
-   * signed-in Discord member, else by the first party member picked, until
-   * the admin picks an owner by hand.
-   */
-  const owner = $derived(pickedOwner || (self && roster.some((m) => m.id === self) ? self : (party[0] ?? '')));
-  /** The roster, plus a saved owner who has since left it (kept as is unless changed). */
+  /** Default first (it follows the party), then the roster, plus a pinned owner who has since left it. */
   const ownerOptions = $derived.by(() => {
-    const options = roster.map((m) => ({ id: m.id, label: memberLabel(roster, m.id) }));
-    if (row && !roster.some((m) => m.id === row.owner_id)) options.unshift({ id: row.owner_id, label: `${row.owner} (off the roster)` });
+    const first = party[0] ? memberLabel(roster, party[0]) : '';
+    const options = [{ id: '', label: first ? `Default: first in party (${first})` : 'Default: first in party' }, ...roster.map((m) => ({ id: m.id, label: memberLabel(roster, m.id) }))];
+    if (row?.owner_pinned && !roster.some((m) => m.id === row.owner_id)) options.splice(1, 0, { id: row.owner_id, label: `${row.owner} (off the roster)` });
     return options;
   });
   const shownRoster = $derived.by(() => {
@@ -194,8 +186,8 @@
       participants: party,
       channel_id: channel,
       note: note.trim() || null,
-      // Always sent once known: unchanged is no edit, and a stale one is refused like the other fields.
-      ...(owner ? { owner_id: owner } : {}),
+      // Always sent: '' keeps or restores the default; a member pins them; unchanged is no edit.
+      owner_id: pickedOwner,
       decisions,
     };
   }
@@ -302,9 +294,8 @@
           <Select
             bind:this={ownerSelect}
             label="Owner"
-            value={owner}
+            value={pickedOwner}
             options={ownerOptions.map((o) => ({ value: o.id, label: o.label }))}
-            placeholder="First party member"
             noun="members"
             invalid={Boolean(ownerError)}
             describedby={ownerError ? `${uid}-owner-err` : undefined}

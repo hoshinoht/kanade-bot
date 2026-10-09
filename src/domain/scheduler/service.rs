@@ -1884,6 +1884,7 @@ mod digest_pins {
 
     fn new_fixed() -> NewFixedRun {
         NewFixedRun {
+            owner_pinned: false,
             owner_id: "1".into(),
             channel_id: Some("900".into()),
             bosses: vec!["HFA".into()],

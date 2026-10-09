@@ -70,6 +70,7 @@ impl Draft {
             note: new.note,
             attendance_default: AttendanceDefault::OptIn,
             standing: Vec::new(),
+            owner_pinned: new.owner_pinned,
         };
         self.fixed.insert(id.clone(), row);
         id
@@ -99,6 +100,9 @@ impl Draft {
         };
         if let Some(value) = patch.owner_id {
             row.owner_id = value;
+        }
+        if let Some(value) = patch.owner_pinned {
+            row.owner_pinned = value;
         }
         if let Some(value) = patch.channel_id {
             row.channel_id = Some(value);

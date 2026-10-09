@@ -261,7 +261,7 @@ fn allowed(subject: &ProposalSubject, approver: &Approver, snapshot: &ScheduleSn
         &approver.user_id,
         approver.has_role,
         approver.is_admin,
-        owner.is_some_and(|row| row.owner_id == approver.user_id),
+        owner.is_some_and(|row| row.owner() == approver.user_id),
     )
 }
 

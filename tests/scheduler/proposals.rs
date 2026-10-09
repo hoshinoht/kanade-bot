@@ -110,6 +110,8 @@ async fn fixture(attendance: AttendancePolicy) -> Fixture {
     let fixed = service
         .as_origin(Origin::for_tests())
         .add_fixed_run(NewFixedRun {
+            // Staff pinned 1004, who is not on the party (user decision 2026-10-09).
+            owner_pinned: true,
             owner_id: "1004".into(),
             channel_id: Some("333".into()),
             bosses: vec!["HLimbo".into()],

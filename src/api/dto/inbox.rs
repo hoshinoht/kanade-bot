@@ -309,8 +309,8 @@ pub fn changes(ctx: &Context<'_>, current: &ScheduleSnapshot, set: &ChangeSet) -
                         push(
                             &row.id,
                             "owner",
-                            ctx.name(&old.owner_id),
-                            ctx.name(&row.owner_id),
+                            ctx.name(old.owner()),
+                            ctx.name(row.owner()),
                         );
                     }
                 }

@@ -30,7 +30,7 @@ async fn unreadable_rows_are_a_typed_backend_error() {
             &format!(
                 "PRAGMA ignore_check_constraints = ON;
                  DELETE FROM fixed_runs;
-                 INSERT INTO fixed_runs VALUES ('bad', '42', NULL, {values}, NULL, 'opt_in');"
+                 INSERT INTO fixed_runs VALUES ('bad', '42', NULL, {values}, NULL, 'opt_in', 0);"
             ),
         )
         .await;

@@ -57,7 +57,8 @@ pub struct FixedRequest {
     channel_id: String,
     #[serde(default)]
     note: Option<String>,
-    /// Omitted: today's default on create, unchanged on edit.
+    /// Pins the owner. Omitted or `""`: the default (first participant) on
+    /// create, unchanged on edit unless `""` unpins a pinned owner.
     #[serde(default)]
     owner_id: Option<String>,
     #[serde(default)]
@@ -227,9 +228,11 @@ pub async fn create(
         as_first_seen(&mut ctx, &request);
     }
     let timing = checked(state, &request, &ctx.directory)?;
-    // An explicit owner wins; otherwise Discord sessions own what they create,
-    // and other sign-ins (naming no Discord user) hand it to the first member.
-    let owner_id = match &timing.owner_id {
+    // An explicit owner is pinned. Otherwise the first participant owns it;
+    // the stored owner (the Discord admin who made it, else that participant)
+    // only stands in for an empty party.
+    let pinned = timing.owner_id.as_deref().filter(|owner| !owner.is_empty());
+    let owner_id = match pinned {
         Some(owner_id) => rostered_owner(&ctx.directory, owner_id)?,
         None => match &session.actor {
             Actor::Admin { id } => id.strip_prefix("discord:").map(str::to_owned),
@@ -245,6 +248,7 @@ pub async fn create(
         time: timing.time,
         participants: timing.participants,
         note: timing.note,
+        owner_pinned: pinned.is_some(),
     };
     // One commit: the timing and its runs in the materialised weeks.
     let fixed_id = match state.writer.add_fixed(origin.clone(), new, &ctx).await {
@@ -380,12 +384,24 @@ pub async fn update(
         edit.note = Some(timing.note.unwrap_or_default());
         fields.push("note");
     }
-    if let Some(owner_id) = timing.owner_id.filter(|owner| *owner != current.owner_id) {
-        edit.owner_id = Some(match rostered_owner(&ctx.directory, &owner_id) {
-            Ok(owner_id) => owner_id,
-            Err(refusal) => return refusal_replay.recover(&mut ctx, refusal).await,
-        });
-        fields.push("owner");
+    // `""` unpins a pinned owner (no change when already the default); a
+    // member is pinned unless they already are (the form sends the choice on
+    // every save).
+    match timing.owner_id.as_deref() {
+        Some("") if current.owner_pinned => {
+            edit.owner_id = Some(String::new());
+            fields.push("owner");
+        }
+        Some(owner_id)
+            if !owner_id.is_empty() && !(current.owner_pinned && owner_id == current.owner_id) =>
+        {
+            edit.owner_id = Some(match rostered_owner(&ctx.directory, owner_id) {
+                Ok(owner_id) => owner_id,
+                Err(refusal) => return refusal_replay.recover(&mut ctx, refusal).await,
+            });
+            fields.push("owner");
+        }
+        _ => {}
     }
     if fields.is_empty() {
         if origin.request_id.is_some() {

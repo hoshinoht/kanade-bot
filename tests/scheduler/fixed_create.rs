@@ -34,6 +34,7 @@ fn policy() -> SchedulePolicy {
 
 fn timing() -> NewFixedRun {
     NewFixedRun {
+        owner_pinned: false,
         owner_id: "1001".into(),
         channel_id: Some("222".into()),
         bosses: vec!["HFA".into()],

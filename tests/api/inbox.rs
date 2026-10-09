@@ -312,6 +312,7 @@ async fn seeded() -> Inbox {
         "1004",
         "weekly star",
         RequestSpec::NewFixed(NewFixedRun {
+            owner_pinned: false,
             owner_id: "1004".into(),
             channel_id: Some("kalos-four".into()),
             bosses: vec!["NMaleficStar".into()],

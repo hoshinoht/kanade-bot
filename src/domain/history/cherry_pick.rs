@@ -702,6 +702,7 @@ mod tests {
             NaiveTime::MIN,
         );
         let timing = FixedRun {
+            owner_pinned: false,
             id: "f".into(),
             owner_id: "1".into(),
             channel_id: None,

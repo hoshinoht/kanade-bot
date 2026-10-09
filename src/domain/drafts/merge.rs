@@ -249,7 +249,16 @@ fn fields(snapshot: &ScheduleSnapshot, names: &BTreeMap<String, String>) -> Fiel
             (Field::Participants, set(&row.participants)),
             (Field::Channel, FieldValue::Text(row.channel_id.clone())),
             (Field::Note, FieldValue::Text(row.note.clone())),
-            (Field::Owner, text(row.owner_id.clone())),
+            // The stored owner and its pin; the effective owner would also
+            // move with the party, which is the participants field's change.
+            (
+                Field::Owner,
+                text(format!(
+                    "{}{}",
+                    row.owner_id,
+                    if row.owner_pinned { "\u{1f}pinned" } else { "" }
+                )),
+            ),
         ];
         for (field, value) in values {
             out.insert((entity.clone(), field), value);

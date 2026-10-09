@@ -381,6 +381,7 @@ async fn seed(store: &SqliteStore, reset: NaiveTime) {
     }
 
     let fixed = FixedRun {
+        owner_pinned: false,
         id: "f-kalos".into(),
         owner_id: "1001".into(),
         channel_id: Some("kalos-four".into()),

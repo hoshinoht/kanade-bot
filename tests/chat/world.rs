@@ -214,6 +214,9 @@ impl World {
         let mut changes = Vec::new();
         for raw in world["fixed"].as_array().expect("fixed") {
             changes.push(Change::PutFixedRun(FixedRun {
+                // The frozen v4 vectors give the stored owner owner rights,
+                // which v5 keeps only for a staff-pinned owner.
+                owner_pinned: true,
                 id: text(&raw["id"]).to_owned(),
                 owner_id: text(&raw["owner_id"]).to_owned(),
                 channel_id: opt(&raw["channel_id"]),

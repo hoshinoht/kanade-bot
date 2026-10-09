@@ -121,9 +121,21 @@ pub struct Fixed {
     pub participants: Vec<&'static str>,
     pub channel: &'static str,
     pub note: Option<String>,
-    /// The owner's member id (proposal approval and chat authority accept them).
+    /// The stored owner's member id; with `owner_pinned` false the owner is
+    /// the first participant (as the server's `FixedRun::owner`).
     pub owner_id: &'static str,
+    pub owner_pinned: bool,
     pub retired: bool,
+}
+
+impl Fixed {
+    /// Who owns the timing: the pinned owner, else the first participant.
+    pub fn owner(&self) -> &'static str {
+        match self.participants.first() {
+            Some(first) if !self.owner_pinned => first,
+            _ => self.owner_id,
+        }
+    }
 }
 
 pub struct Rec {
@@ -177,6 +189,8 @@ fn fixed(
         channel,
         note: None,
         owner_id,
+        // A seed naming someone other than its first member is a pinned owner.
+        owner_pinned: members.first() != Some(&owner_id),
         retired: false,
     }
 }

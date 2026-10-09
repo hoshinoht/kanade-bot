@@ -39,8 +39,11 @@ pub struct FixedRow {
     pub channel_id: String,
     pub channel_name: String,
     pub channel_watched: bool,
+    /// The effective owner ([`FixedRun::owner`]).
     pub owner: String,
     pub owner_id: String,
+    /// Staff pinned the owner; otherwise it follows the first participant.
+    pub owner_pinned: bool,
     pub note: Option<String>,
     pub runs: Vec<FixedRunLink>,
 }
@@ -102,8 +105,9 @@ fn row(
             .get(&channel_id)
             .is_some_and(|channel| channel.watched),
         channel_id,
-        owner: ctx.name(&fixed.owner_id),
-        owner_id: fixed.owner_id.clone(),
+        owner: ctx.name(fixed.owner()),
+        owner_id: fixed.owner().to_owned(),
+        owner_pinned: fixed.owner_pinned,
         note: fixed.note.clone(),
         runs,
     }

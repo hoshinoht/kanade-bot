@@ -31,6 +31,7 @@ fn prompt_message(raw: &Value) -> PromptMessage {
 fn fixed_run(raw: &Value) -> FixedRun {
     let weekday = raw["weekday"].as_i64().expect("weekday");
     FixedRun {
+        owner_pinned: false,
         id: text(&raw["id"]).to_owned(),
         owner_id: String::new(),
         channel_id: raw["channel_id"].as_str().map(str::to_owned),

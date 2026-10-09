@@ -189,5 +189,6 @@ async fn nick_is_staff_only_and_adds_an_alias() {
             ),
         )
         .await;
-    assert!(reply.contains("· <@1002> · owner <@1001>"), "{reply}");
+    // "my" resolved to Bob, who as the only member also owns the timing.
+    assert!(reply.contains("· <@1002> · owner <@1002>"), "{reply}");
 }

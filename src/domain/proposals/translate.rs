@@ -344,6 +344,7 @@ fn fix(
                     time: *time,
                     participants: change.participants.clone(),
                     note: Some(CREATED_FROM_CHAT.to_owned()),
+                    owner_pinned: false,
                 })],
                 None,
             ))

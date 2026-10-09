@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, test, expectValue, unconditional } from './support';
+import { ADMIN, expect, test, unconditional } from './support';
 
 // Phone clipping regressions: the Inbox heading's boss tags wrap as whole
 // units, and the Members name cell keeps its name, aliases and chip inside it.
@@ -140,7 +140,8 @@ for (const size of SIZES) {
     await page.setViewportSize(size);
     await page.goto(`${ADMIN}/fixed?open=f-bm&sw=off`);
     const sheet = page.getByRole('dialog', { name: 'Tuesday 23:30 — XBM' });
-    await expectValue(sheet.getByLabel('Owner'), '1012');
+    // XBM's owner is its first member, so the longer Default label shows.
+    await expect(sheet.locator('.fixedsheet__fields .field:nth-child(3) .dd__value')).toHaveText('Default: first in party (Minato)');
     const faults = await sheet.locator('.fixedsheet__fields').evaluate((grid) => {
       const meets = (a: DOMRect, b: DOMRect) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
       const bound = grid.closest('dialog')!.getBoundingClientRect();

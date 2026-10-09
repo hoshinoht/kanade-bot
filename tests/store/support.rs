@@ -79,6 +79,7 @@ pub fn at(day: u32, hour: u32) -> DateTime<Utc> {
 
 pub fn fixed(id: &str) -> FixedRun {
     FixedRun {
+        owner_pinned: false,
         id: id.into(),
         owner_id: "42".into(),
         channel_id: None,

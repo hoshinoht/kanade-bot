@@ -266,6 +266,7 @@ async fn seed(store: &SqliteStore) {
     };
     let changes = vec![
         Change::PutFixedRun(FixedRun {
+            owner_pinned: false,
             id: F_KALOS.into(),
             owner_id: ALICE.to_string(),
             channel_id: Some(KALOS.to_string()),

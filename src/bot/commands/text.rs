@@ -161,7 +161,7 @@ pub fn fixed_run_line(fixed: &FixedRun, catalog: &BossTable) -> String {
         weekday_name(fixed.weekday),
         hhmm(fixed.time),
         format_participants(&fixed.participants),
-        mention(&fixed.owner_id),
+        mention(fixed.owner()),
         catalog.describe_all(&fixed.bosses),
     )
 }

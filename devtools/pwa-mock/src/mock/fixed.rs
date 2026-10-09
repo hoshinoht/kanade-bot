@@ -74,8 +74,9 @@ impl Store {
             channel_id,
             channel_name,
             channel_watched: watched,
-            owner: seed::member_name(f.owner_id).map_or(f.owner_id, |m| m.1),
-            owner_id: f.owner_id,
+            owner: seed::member_name(f.owner()).map_or(f.owner(), |m| m.1),
+            owner_id: f.owner(),
+            owner_pinned: f.owner_pinned,
             note: f.note.clone(),
             runs: self
                 .runs
@@ -122,7 +123,7 @@ impl Store {
         if participants.is_empty() {
             return Err(MoveError::invalid("A timing needs at least one member."));
         }
-        // The server's default for a sign-in that names no Discord user.
+        // The first participant owns it unless an owner is pinned.
         let owner_id = participants[0];
         Ok(Fixed {
             id: String::new(),
@@ -134,6 +135,7 @@ impl Store {
             channel,
             note: req.note.clone().filter(|n| !n.trim().is_empty()),
             owner_id,
+            owner_pinned: false,
             retired: false,
         })
     }
@@ -141,8 +143,13 @@ impl Store {
     /// A new timing materialises a run this week (if its day is still ahead) and next week.
     pub fn create_fixed(&mut self, req: FixedRequest) -> Result<FixedRow, MoveError> {
         let mut timing = Self::validated(&req)?;
-        if let Some(owner) = &req.owner_id {
+        if let Some(owner) = req
+            .owner_id
+            .as_deref()
+            .filter(|owner| !owner.trim().is_empty())
+        {
             timing.owner_id = roster_owner(owner)?;
+            timing.owner_pinned = true;
         }
         let (id, short_id) = self.fresh_id("f");
         timing.id = id;
@@ -193,10 +200,14 @@ impl Store {
             .position(|f| f.id == id && !f.retired)
             .ok_or(MoveError::NotFound)?;
         let old = &self.fixed[index];
-        // Omitted keeps the owner; checked against the roster only when it changes.
-        timing.owner_id = match req.owner_id.as_deref().map(str::trim) {
-            Some(owner) if owner != old.owner_id => roster_owner(owner)?,
-            _ => old.owner_id,
+        // As the server: '' unpins, a member pins (checked against the roster
+        // only when it changes), omitted keeps the owner.
+        (timing.owner_id, timing.owner_pinned) = match req.owner_id.as_deref().map(str::trim) {
+            Some("") => (old.owner_id, false),
+            Some(owner) if !(old.owner_pinned && owner == old.owner_id) => {
+                (roster_owner(owner)?, true)
+            }
+            _ => (old.owner_id, old.owner_pinned),
         };
         // As the server: each field the form changes must not have moved since `version`.
         let changed = [
@@ -206,7 +217,10 @@ impl Store {
             ("participants", old.participants != timing.participants),
             ("channel_id", old.channel != timing.channel),
             ("note", old.note != timing.note),
-            ("owner_id", old.owner_id != timing.owner_id),
+            (
+                "owner_id",
+                (old.owner_id, old.owner_pinned) != (timing.owner_id, timing.owner_pinned),
+            ),
         ];
         // Nothing differs: the server answers 200 without writing, before any other check.
         if changed.iter().all(|(_, differs)| !differs) {

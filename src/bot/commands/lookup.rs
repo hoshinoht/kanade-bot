@@ -71,7 +71,7 @@ pub fn owner_of<'a>(snapshot: &'a ScheduleSnapshot, run: &Run) -> Option<&'a str
         .fixed_runs
         .iter()
         .find(|row| row.id == fixed)
-        .map(|row| row.owner_id.as_str())
+        .map(FixedRun::owner)
 }
 
 /// v4 `can_modify_run`: participants, the timing's owner, or an admin.
@@ -81,7 +81,7 @@ pub fn can_modify_run(snapshot: &ScheduleSnapshot, run: &Run, user: &str, admin:
 
 /// v4 `can_modify_fixed`: its owner, its participants, or an admin.
 pub fn can_modify_fixed(fixed: &FixedRun, user: &str, admin: bool) -> bool {
-    admin || fixed.owner_id == user || fixed.participants.iter().any(|id| id == user)
+    admin || fixed.owner() == user || fixed.participants.iter().any(|id| id == user)
 }
 
 /// "Mine" in listings: on the timing's party. Owning it is not enough

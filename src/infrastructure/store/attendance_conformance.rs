@@ -103,6 +103,7 @@ async fn fixture<S: ScheduleStore>(store: S) -> (Service<S>, String) {
     let fixed = service
         .as_origin(admin())
         .add_fixed_run(NewFixedRun {
+            owner_pinned: false,
             owner_id: "1".into(),
             channel_id: Some("900".into()),
             bosses: vec!["HFA".into()],
