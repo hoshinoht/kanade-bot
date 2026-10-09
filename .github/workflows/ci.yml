@@ -42,6 +42,7 @@ jobs:
               - Cargo.toml
               - Cargo.lock
               - rust-toolchain.toml
+              - deny.toml
               - kanade.example.toml
               - boss/**
               - config/personas/**
@@ -74,6 +75,19 @@ jobs:
         run: cargo test --locked --all-targets --all-features
       - name: Release build
         run: cargo build --locked --release
+
+  # Advisories, licences (GPL-3.0-only compatible), bans (no OpenSSL family or
+  # aws-lc) and sources for the shipped crate graph (deny.toml).
+  supply-chain:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: EmbarkStudios/cargo-deny-action@v2.1.1
+        with:
+          arguments: --all-features
+          command: check
 
   # Browser smoke tests against the real Rust listener and an invented scratch
   # store. The fixture and server both run offline; no private configuration is used.
@@ -132,6 +146,9 @@ jobs:
       - name: Install
         working-directory: web
         run: bun install --frozen-lockfile
+      - name: Audit
+        working-directory: web
+        run: bun audit --audit-level=high
       - name: Lint
         working-directory: web
         run: bun run lint

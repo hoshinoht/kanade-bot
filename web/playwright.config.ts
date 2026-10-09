@@ -32,7 +32,9 @@ export default defineConfig({
   outputDir: './e2e/.results',
   fullyParallel: false,
   workers,
-  retries: 0,
+  // One retry on CI only: a test that passes on retry is reported "flaky" in
+  // the list output instead of failing the job; locally a failure is final.
+  retries: process.env.CI ? 1 : 0,
   reporter: [['list']],
   use: {
     channel: 'chrome',

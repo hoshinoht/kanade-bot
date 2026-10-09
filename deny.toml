@@ -1,0 +1,46 @@
+# cargo-deny policy (V11). CI runs `cargo deny --all-features check`.
+
+[graph]
+all-features = true
+
+[advisories]
+# Every RustSec advisory (vulnerability, unmaintained, unsound, yanked) fails;
+# an accepted exception goes in `ignore` with its reason.
+ignore = []
+yanked = "deny"
+
+[licenses]
+# GPL-3.0-only compatible licences only.
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CDLA-Permissive-2.0",
+    "GPL-3.0-only",
+]
+confidence-threshold = 0.93
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+# rustls stays on ring: no OpenSSL family or aws-lc.
+deny = [
+    { crate = "openssl-sys", reason = "rustls on ring only" },
+    { crate = "openssl", reason = "rustls on ring only" },
+    { crate = "native-tls", reason = "rustls on ring only" },
+    { crate = "aws-lc-rs", reason = "rustls on ring only" },
+    { crate = "aws-lc-sys", reason = "rustls on ring only" },
+    { crate = "aws-lc-fips-sys", reason = "rustls on ring only" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
