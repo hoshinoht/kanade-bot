@@ -112,7 +112,8 @@ fn refusal(status: StatusCode, code: &str, message: &str) -> Response {
 }
 
 /// The request's key, or why it is refused (`400 invalid_idempotency_key`).
-fn key(headers: &HeaderMap) -> Result<Option<String>, &'static str> {
+/// Shared with the member writes, which require one.
+pub fn key(headers: &HeaderMap) -> Result<Option<String>, &'static str> {
     let mut values = headers.get_all(IDEMPOTENCY_KEY).iter();
     match (values.next(), values.next()) {
         (None, _) => Ok(None),

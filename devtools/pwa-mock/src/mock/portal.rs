@@ -11,6 +11,8 @@ use serde_json::{Value, json};
 
 /// The member every mock sign-in becomes (the seed's Asahi, `1001`).
 pub const MEMBER_ID: &str = "100000000000001001";
+/// The same member as the store's seed rows name them.
+pub const MEMBER_SEED_ID: &str = "1001";
 pub const MEMBER_NAME: &str = "Asahi";
 
 /// A seed member id (`1001`) as the public origin names it: snowflake-shaped,
@@ -126,6 +128,14 @@ impl Portal {
             .iter()
             .find(|s| s.id == id)
             .map(|s| s.csrf.as_str())
+    }
+
+    /// Inside the fresh-write window after its Discord round trip
+    /// (`fresh_until`): owner changes need it (`401 reauth_required`).
+    pub fn fresh(&self, id: &str) -> bool {
+        self.sessions
+            .iter()
+            .any(|s| s.id == id && now_secs() < s.signed_in + FRESH_SECS)
     }
 
     /// The session behind a cookie, rotated first when it was asked to; the

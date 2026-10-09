@@ -1858,7 +1858,21 @@ impl Harness {
         want: StatusCode,
         target: &str,
     ) -> (HeaderMap, Value) {
-        let (status, sent, value) = self.send_with(true, method, path, None, headers).await;
+        self.public_with(method, path, None, headers, want, target)
+            .await
+    }
+
+    /// [`Self::public`] with a JSON body.
+    async fn public_with(
+        &mut self,
+        method: &str,
+        path: &str,
+        body: Option<Value>,
+        headers: &[(&str, &str)],
+        want: StatusCode,
+        target: &str,
+    ) -> (HeaderMap, Value) {
+        let (status, sent, value) = self.send_with(true, method, path, body, headers).await;
         let label = format!("public {method} {path}");
         if status != want {
             self.failures
@@ -1908,6 +1922,15 @@ fn header_value<'a>(headers: &'a HeaderMap, name: &str) -> &'a str {
 fn session_cookie(headers: &HeaderMap) -> String {
     let line = header_value(headers, "set-cookie");
     line.split(';').next().unwrap_or_default().to_owned()
+}
+
+/// A member write's headers: the session cookie, its token and `key`.
+fn signed<'a>(cookie: &'a str, token: &'a str, key: &'a str) -> [(&'a str, &'a str); 3] {
+    [
+        ("cookie", cookie),
+        ("x-kanade-csrf", token),
+        ("idempotency-key", key),
+    ]
 }
 
 #[tokio::test]
@@ -2253,6 +2276,286 @@ async fn public_member_routes_match_the_contract() {
     // The admin routes stay absent from this origin.
     h.public("GET", "/api/admin/week", none, StatusCode::NOT_FOUND, "")
         .await;
+
+    assert!(
+        h.failures.is_empty(),
+        "{} of {} responses broke the contract:\n{}",
+        h.failures.len(),
+        h.checked,
+        h.failures.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn public_member_ownership_matches_the_contract() {
+    let mut h = Harness::new();
+    let none: &[(&str, &str)] = &[];
+    let timings = "/api/public/timings";
+    let ask = "/api/public/timings/f-jupiter/owner-requests";
+    let hand_off = "/api/public/timings/f-carling/owner";
+    let writes = [
+        hand_off,
+        ask,
+        "/api/public/owner-requests/own-kalos/accept",
+        "/api/public/owner-requests/own-kalos/decline",
+        "/api/public/owner-requests/own-kalos/withdraw",
+    ];
+    h.public("GET", timings, none, StatusCode::UNAUTHORIZED, "")
+        .await;
+    for path in writes {
+        h.public(
+            "POST",
+            path,
+            &[("idempotency-key", "k-0")],
+            StatusCode::UNAUTHORIZED,
+            "",
+        )
+        .await;
+    }
+
+    let (headers, _) = h
+        .public(
+            "POST",
+            "/__mock/public/sign-in",
+            none,
+            StatusCode::NO_CONTENT,
+            "",
+        )
+        .await;
+    let cookie = session_cookie(&headers);
+    let token = header_value(&headers, "x-kanade-csrf").to_owned();
+    let auth = [("cookie", cookie.as_str())];
+
+    // The timings Asahi is on: her own Carling shows Mika's request; Ren's
+    // Kalos does not show Tsubame's.
+    let (_, listed) = h
+        .public(
+            "GET",
+            timings,
+            &auth,
+            StatusCode::OK,
+            "public.json#/$defs/MemberTimings",
+        )
+        .await;
+    let find = |listed: &Value, id: &str| {
+        listed["timings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["id"] == id)
+            .cloned()
+            .unwrap_or_else(|| panic!("{id} missing: {listed}"))
+    };
+    let carling = find(&listed, "f-carling");
+    assert_eq!(carling["you_own"], true);
+    assert_eq!(carling["requests"][0]["id"], "own-carling");
+    assert_eq!(find(&listed, "f-kalos")["requests"], json!([]));
+    // Unmounted methods on the new paths.
+    h.public("POST", timings, &auth, StatusCode::NOT_FOUND, "")
+        .await;
+    h.public("GET", hand_off, &auth, StatusCode::NOT_FOUND, "")
+        .await;
+
+    // Writes need the token and a well-formed key.
+    let k = |key: &'static str| signed(&cookie, &token, key);
+    let ask_1 = k("ask-1");
+    let no_token = [("cookie", cookie.as_str()), ("idempotency-key", "ask-1")];
+    h.public("POST", ask, &no_token, StatusCode::FORBIDDEN, "")
+        .await;
+    let no_key = [
+        ("cookie", cookie.as_str()),
+        ("x-kanade-csrf", token.as_str()),
+    ];
+    let (_, refused) = h
+        .public("POST", ask, &no_key, StatusCode::BAD_REQUEST, "")
+        .await;
+    assert_eq!(refused["error"], "invalid_idempotency_key");
+    let bad_key = k("a b");
+    let (_, refused) = h
+        .public("POST", ask, &bad_key, StatusCode::BAD_REQUEST, "")
+        .await;
+    assert_eq!(refused["error"], "invalid_idempotency_key");
+
+    // Ask: 201, the same key 200 with the same request, another key 409.
+    let (_, asked) = h
+        .public(
+            "POST",
+            ask,
+            &ask_1,
+            StatusCode::CREATED,
+            "public.json#/$defs/MemberOwnerRequest",
+        )
+        .await;
+    assert_eq!(
+        (&asked["status"], &asked["mine"]),
+        (&json!("open"), &json!(true))
+    );
+    let (_, again) = h
+        .public(
+            "POST",
+            ask,
+            &ask_1,
+            StatusCode::OK,
+            "public.json#/$defs/MemberOwnerRequest",
+        )
+        .await;
+    assert_eq!(again, asked);
+    for (path, key, want, code) in [
+        (ask, "ask-2", StatusCode::CONFLICT, "already_asked"),
+        (
+            "/api/public/timings/f-kalos/owner-requests",
+            "ask-1",
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "idempotency_mismatch",
+        ),
+        (
+            "/api/public/timings/f-baldrix/owner-requests",
+            "ask-3",
+            StatusCode::CONFLICT,
+            "already_owner",
+        ),
+        (
+            "/api/public/timings/f-limbo/owner-requests",
+            "ask-4",
+            StatusCode::CONFLICT,
+            "not_on_party",
+        ),
+        (
+            "/api/public/timings/f-none/owner-requests",
+            "ask-5",
+            StatusCode::NOT_FOUND,
+            "not_found",
+        ),
+        (
+            "/api/public/owner-requests/own-kalos/accept",
+            "acc-1",
+            StatusCode::FORBIDDEN,
+            "not_owner",
+        ),
+        (
+            "/api/public/owner-requests/own-carling/withdraw",
+            "wd-1",
+            StatusCode::FORBIDDEN,
+            "not_requester",
+        ),
+        (
+            "/api/public/owner-requests/nope/decline",
+            "dec-1",
+            StatusCode::NOT_FOUND,
+            "not_found",
+        ),
+    ] {
+        let (_, refused) = h.public("POST", path, &k(key), want, "").await;
+        assert_eq!(refused["error"], code, "{path}");
+    }
+
+    // Hand-off: a snowflake `to` and nothing else.
+    for body in [
+        json!({ "to": "1002" }),
+        json!({ "to": 100_000_000_000_001_002_u64 }),
+        json!({ "to": "100000000000001002", "staff": true }),
+        json!({}),
+    ] {
+        let (_, refused) = h
+            .public_with(
+                "POST",
+                hand_off,
+                Some(body.clone()),
+                &k("h-0"),
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "",
+            )
+            .await;
+        assert_eq!(refused["error"], "invalid_body", "{body}");
+    }
+    let (_, handed) = h
+        .public_with(
+            "POST",
+            hand_off,
+            Some(json!({ "to": "100000000000001002" })),
+            &k("h-1"),
+            StatusCode::OK,
+            "public.json#/$defs/MemberTiming",
+        )
+        .await;
+    assert_eq!(handed["owner"]["id"], "100000000000001002");
+    assert_eq!(
+        (
+            &handed["owner_pinned"],
+            &handed["you_own"],
+            &handed["requests"]
+        ),
+        (&json!(true), &json!(false), &json!([])),
+        "Mika's request went with it"
+    );
+    h.public_with(
+        "POST",
+        hand_off,
+        Some(json!({ "to": "100000000000001002" })),
+        &k("h-1"),
+        StatusCode::OK,
+        "public.json#/$defs/MemberTiming",
+    )
+    .await;
+    let (_, refused) = h
+        .public_with(
+            "POST",
+            hand_off,
+            Some(json!({ "to": "100000000000001003" })),
+            &k("h-2"),
+            StatusCode::FORBIDDEN,
+            "",
+        )
+        .await;
+    assert_eq!(refused["error"], "not_owner");
+
+    // Withdraw her own ask; a second time it is closed.
+    let withdraw = format!("/api/public/owner-requests/{}/withdraw", s(&asked["id"]));
+    let (_, withdrawn) = h
+        .public(
+            "POST",
+            &withdraw,
+            &k("wd-2"),
+            StatusCode::OK,
+            "public.json#/$defs/MemberOwnerRequest",
+        )
+        .await;
+    assert_eq!(withdrawn["status"], "withdrawn");
+    let (_, refused) = h
+        .public("POST", &withdraw, &k("wd-3"), StatusCode::CONFLICT, "")
+        .await;
+    assert_eq!(refused["error"], "request_closed");
+
+    // The Inbox shares the requests: Mika's is gone, Tsubame's stays.
+    let open = h
+        .ok(
+            "GET",
+            "/api/admin/inbox/ownership",
+            None,
+            "inbox.json#/$defs/OwnershipRequests",
+        )
+        .await;
+    assert_eq!(open[0]["id"], "own-kalos");
+    assert_eq!(open.as_array().unwrap().len(), 1);
+
+    // Closed: every route answers `closed`.
+    h.ok(
+        "PATCH",
+        "/api/admin/config",
+        Some(json!({ "self_service": { "public_portal": false } })),
+        "config.json#/$defs/ConfigView",
+    )
+    .await;
+    let (_, refused) = h
+        .public("GET", timings, &auth, StatusCode::SERVICE_UNAVAILABLE, "")
+        .await;
+    assert_eq!(refused["error"], "closed");
+    for path in writes {
+        let (_, refused) = h
+            .public("POST", path, &k("k-9"), StatusCode::SERVICE_UNAVAILABLE, "")
+            .await;
+        assert_eq!(refused["error"], "closed", "{path}");
+    }
 
     assert!(
         h.failures.is_empty(),
