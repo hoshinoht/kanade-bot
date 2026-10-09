@@ -33,13 +33,13 @@ fn portrait(path: &str) -> bool {
             .is_some_and(|id| !id.is_empty() && !id.contains('/'))
 }
 
-pub fn cache_policy(path: &str, success: bool) -> &'static str {
+pub fn cache_policy(path: &str, success: bool, origin: Origin) -> &'static str {
     // An explicit max-age would let caches keep a 404/503 (missing chunk, closed art).
     if !success {
         "no-store"
-    } else if portrait(path) {
+    } else if portrait(path) || (origin == Origin::Public && path.starts_with("/art/")) {
         // Per-user and behind the session: the browser alone keeps it, and
-        // revalidates each use against the content ETag (304 when unchanged).
+        // revalidates each use, so a signed-out tab cannot replay it.
         "private, no-cache"
     } else if path.starts_with("/api/") || path == "/api" || path == "/healthz" {
         "no-store"
@@ -84,7 +84,7 @@ pub async fn apply(State(site): State<Arc<Site>>, request: Request, next: Next) 
     );
     headers.insert(
         header::CACHE_CONTROL,
-        HeaderValue::from_static(cache_policy(&path, success)),
+        HeaderValue::from_static(cache_policy(&path, success, site.origin)),
     );
     if site.origin == Origin::Public {
         set(headers, "strict-transport-security", HSTS);
@@ -95,48 +95,53 @@ pub async fn apply(State(site): State<Arc<Site>>, request: Request, next: Next) 
 #[cfg(test)]
 mod tests {
     use super::cache_policy;
+    use crate::api::listeners::Origin;
+
+    fn admin(path: &str, success: bool) -> &'static str {
+        cache_policy(path, success, Origin::Admin)
+    }
 
     #[test]
     fn hashed_assets_are_immutable_entrypoints_revalidate_and_errors_are_never_stored() {
         assert_eq!(
-            cache_policy("/assets/index-abc123.js", true),
+            admin("/assets/index-abc123.js", true),
             "public, max-age=31536000, immutable"
         );
         for path in ["/", "/index.html", "/sw.js", "/manifest.webmanifest"] {
-            assert_eq!(cache_policy(path, true), "no-cache", "{path}");
+            assert_eq!(admin(path, true), "no-cache", "{path}");
         }
-        assert_eq!(cache_policy("/api/identity", true), "no-store");
+        assert_eq!(admin("/api/identity", true), "no-store");
+        assert_eq!(admin("/art/entry/carling", true), "public, max-age=3600");
         assert_eq!(
-            cache_policy("/art/entry/carling", true),
-            "public, max-age=3600"
-        );
-        assert_eq!(
-            cache_policy("/identity/avatar", true),
+            admin("/identity/avatar", true),
             "public, max-age=86400, must-revalidate"
         );
         assert_eq!(
-            cache_policy("/api/admin/members/1003/avatar", true),
+            admin("/api/admin/members/1003/avatar", true),
+            "private, no-cache"
+        );
+        assert_eq!(admin("/api/admin/me/avatar", true), "private, no-cache");
+        assert_eq!(
+            admin("/api/public/session/avatar", true),
+            "private, no-cache"
+        );
+        assert_eq!(admin("/api/public/session", true), "no-store");
+        assert_eq!(admin("/api/admin/members/1003/avatar", false), "no-store");
+        assert_eq!(admin("/api/admin/members/1003", true), "no-store");
+        assert_eq!(admin("/api/admin/members/a/b/avatar", true), "no-store");
+        assert_eq!(admin("/assets/missing.js", false), "no-store");
+        assert_eq!(admin("/art/entry/carling", false), "no-store");
+    }
+
+    #[test]
+    fn member_art_is_never_shared_or_kept_past_the_session() {
+        assert_eq!(
+            cache_policy("/art/entry/carling", true, Origin::Public),
             "private, no-cache"
         );
         assert_eq!(
-            cache_policy("/api/admin/me/avatar", true),
-            "private, no-cache"
-        );
-        assert_eq!(
-            cache_policy("/api/public/session/avatar", true),
-            "private, no-cache"
-        );
-        assert_eq!(cache_policy("/api/public/session", true), "no-store");
-        assert_eq!(
-            cache_policy("/api/admin/members/1003/avatar", false),
+            cache_policy("/art/entry/carling", false, Origin::Public),
             "no-store"
         );
-        assert_eq!(cache_policy("/api/admin/members/1003", true), "no-store");
-        assert_eq!(
-            cache_policy("/api/admin/members/a/b/avatar", true),
-            "no-store"
-        );
-        assert_eq!(cache_policy("/assets/missing.js", false), "no-store");
-        assert_eq!(cache_policy("/art/entry/carling", false), "no-store");
     }
 }

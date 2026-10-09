@@ -106,7 +106,7 @@ fn allowance(snapshot: &AllowanceSnapshot, member_id: &str) -> MemberUsage {
 /// and the wall clock read right after it. The snapshot runs on monotonic
 /// seconds; its offsets become instants only against this one pair, so a
 /// system clock change cannot skew `resets_at`.
-pub(super) fn allowance_snapshot(state: &ApiState) -> (AllowanceSnapshot, DateTime<Utc>) {
+pub(crate) fn allowance_snapshot(state: &ApiState) -> (AllowanceSnapshot, DateTime<Utc>) {
     let snapshot = state.chat.as_ref().map_or_else(
         || Allowance::default().snapshot(0.0),
         |chat| chat.allowance(),
@@ -132,7 +132,7 @@ fn instant_after(at: DateTime<Utc>, seconds: f64) -> DateTime<Utc> {
 
 /// One member's Limits allowance row; `None` without chatbot access (and for
 /// bots). `at` is the wall clock paired with `snapshot`.
-pub(super) fn allowance_row(
+pub(crate) fn allowance_row(
     state: &ApiState,
     snapshot: &AllowanceSnapshot,
     at: DateTime<Utc>,

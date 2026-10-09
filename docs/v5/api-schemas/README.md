@@ -32,6 +32,9 @@ Pointers are `<file>#/$defs/<Name>`.
 | `DELETE /api/public/sessions/{handle}` | `204`, no body (409 `current_session` for the caller's own session) |
 | `POST /api/public/sessions/end-all` | `identity.json#/$defs/SessionsEnded` (ends the caller's session too and clears its cookie) |
 | `GET /api/public/auth/discord/start`, `/callback`; `POST /api/public/auth/logout` | redirects / landing page / `204`, not JSON |
+| `GET /api/public/week?week=` | `public.json#/$defs/MemberWeek` (absent/`this` or `next`, else 422 `invalid_query` as admin) |
+| `GET /api/public/me/allowance` | `public.json#/$defs/MemberAllowance` (the caller's own figures only) |
+| `GET /art/{kind}/{key}` (public origin) | boss art as on the admin origin, signed-in members only (401 signed out, 503 `closed` while closed) |
 | `GET /api/admin/session` | `identity.json#/$defs/Session` |
 | `GET /api/admin/me` | `identity.json#/$defs/Me` |
 | `GET /api/admin/me/sessions` | `identity.json#/$defs/AccountSessions` |
@@ -144,5 +147,9 @@ Pointers are `<file>#/$defs/<Name>`.
   `PublicSessionRow`) for the public sign-in and devices routes, frozen
   ahead of the server and mock (the member realm lands with
   `member-portal/identity-contract`). The anonymous `PublicWeek` and its
-  `PublicRun` are deleted from `week.json`: signed-in members will read
-  `MemberWeek` (added with the member reads).
+  `PublicRun` are deleted from `week.json`: signed-in members read
+  `MemberWeek`.
+- Member reads (2026-10-09): `public.json` `MemberWeek`, `MemberRun` and
+  `MemberAllowance` for `GET /api/public/week` and
+  `GET /api/public/me/allowance`; boss art is served on the public origin
+  behind the member session.

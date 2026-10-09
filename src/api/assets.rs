@@ -21,7 +21,7 @@ use super::{
     dto::bosses::is_event,
     encoding::{self, Coding},
     error::ApiError,
-    listeners::Site,
+    listeners::{Origin, Site},
 };
 
 const ART_SUFFIXES: [&str; 4] = ["png", "webp", "jpg", "jpeg"];
@@ -55,10 +55,10 @@ pub async fn identity(State(site): State<Arc<Site>>) -> Json<Identity> {
         cached: avatar.is_some(),
         version,
         name,
-        bot_user_id: site
-            .state
-            .as_ref()
-            .and_then(|state| state.channels.bot_user_id()),
+        // The public origin never learns the bot's account id.
+        bot_user_id: (site.origin == Origin::Admin)
+            .then(|| site.state.as_ref()?.channels.bot_user_id())
+            .flatten(),
     })
 }
 
@@ -175,6 +175,11 @@ pub async fn art(
     let Ok(UrlPath((kind, key))) = path else {
         return ApiError::NOT_FOUND.into_response();
     };
+    art_of(&site, &kind, key, &request).await
+}
+
+/// [`art`] for an already split `kind` and `key`.
+pub async fn art_of(site: &Site, kind: &str, key: String, request: &HeaderMap) -> Response {
     // With a catalog, only catalog keys (exact case) resolve, through their portrait basename,
     // and keys an event knowledge document declares (exact case), through the key itself.
     let basename = match site.state.as_ref() {
@@ -191,9 +196,9 @@ pub async fn art(
         },
         None => key,
     };
-    match art_file(site.boss_dir.as_deref(), &kind, &basename) {
-        Some(path) if kind == "animated" => send_ranged(&path, &request).await,
-        Some(path) => send(&path, &request).await,
+    match art_file(site.boss_dir.as_deref(), kind, &basename) {
+        Some(path) if kind == "animated" => send_ranged(&path, request).await,
+        Some(path) => send(&path, request).await,
         None => ApiError::NOT_FOUND.into_response(),
     }
 }

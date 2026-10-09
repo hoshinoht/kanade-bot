@@ -33,6 +33,12 @@ export type PublicSessionRow = { handle: string, device: string | null, signed_i
 
 export type PublicSessions = { sessions: Array<PublicSessionRow>, generated_at: string, };
 
+export type MemberRun = { id: string, day: number, time: string | null, minutes: number, status: RunStatus, bosses: Array<Boss>, tally: Tally, participants: Array<Participant>, party: string, channel: string, fixed_id: string | null, mine: boolean, can_edit: boolean, };
+
+export type MemberWeek = { starts: string, timezone: string, reset: string, days: Array<WeekDay>, runs: Array<MemberRun>, generated_at: string, version: number, };
+
+export type MemberAllowance = { allowance: Quota | null, used: number, resets_at: string | null, queue_position: number | null, bot_busy: boolean, generated_at: string, };
+
 export type ApiError = { error: string, message: string, };
 
 export type Identity = { name: string, 

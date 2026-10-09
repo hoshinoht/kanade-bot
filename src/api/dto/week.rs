@@ -251,6 +251,26 @@ fn roster_change(ctx: &Context<'_>, run: &Run, fixed: Option<&FixedRun>) -> Opti
     (!change.out.is_empty() || !change.added.is_empty()).then_some(change)
 }
 
+/// Everyone on the run with their name and answer (`waiting` when none).
+pub fn participants(ctx: &Context<'_>, snapshot: &ScheduleSnapshot, run: &Run) -> Vec<Participant> {
+    let answers = answers(snapshot, run);
+    run.participants
+        .iter()
+        .map(|id| Participant {
+            id: id.clone(),
+            name: ctx.name(id),
+            answer: answer(answers.get(id)),
+        })
+        .collect()
+}
+
+pub fn tally(participants: &[Participant]) -> Tally {
+    Tally {
+        on: participants.iter().filter(|p| p.answer == "yes").count(),
+        total: participants.len(),
+    }
+}
+
 pub fn run_dto(
     ctx: &Context<'_>,
     snapshot: &ScheduleSnapshot,
@@ -258,16 +278,7 @@ pub fn run_dto(
     run: &Run,
     run_lengths: &RunLengths,
 ) -> RunDto {
-    let answers = answers(snapshot, run);
-    let participants: Vec<Participant> = run
-        .participants
-        .iter()
-        .map(|id| Participant {
-            id: id.clone(),
-            name: ctx.name(id),
-            answer: answer(answers.get(id)),
-        })
-        .collect();
+    let participants = participants(ctx, snapshot, run);
     let fixed = run
         .fixed_run_id
         .as_deref()
@@ -301,10 +312,7 @@ pub fn run_dto(
         minutes: run_lengths.minutes_for(ctx.catalog, &run.bosses),
         status: run.status.as_str(),
         bosses: ctx.bosses(&run.bosses),
-        tally: Tally {
-            on: participants.iter().filter(|p| p.answer == "yes").count(),
-            total: participants.len(),
-        },
+        tally: tally(&participants),
         short_id: short_id(&run.id),
         participants,
         party: ctx.channel_name(&channel_id),

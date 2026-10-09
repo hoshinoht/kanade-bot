@@ -93,6 +93,65 @@ fn the_public_contract_is_closed() {
         &json!({ "sessions": [row.clone()], "generated_at": "2026-10-08T12:02:00Z" }),
     );
 
+    let member_run = json!({
+        "id": "r-1", "day": 5, "time": "22:00", "minutes": 30, "status": "planned",
+        "bosses": [], "tally": { "on": 1, "total": 2 },
+        "participants": [
+            { "id": "1001", "name": "Alice", "answer": "yes" },
+            { "id": "1002", "name": "Bob", "answer": "waiting" },
+        ],
+        "party": "#kalos", "channel": "#kalos", "fixed_id": null,
+        "mine": true, "can_edit": true,
+    });
+    let member_week = json!({
+        "starts": "2026-09-24", "timezone": "Asia/Kuala_Lumpur", "reset": "Thu 00:00",
+        "days": [], "runs": [member_run.clone()],
+        "generated_at": "2026-09-29T04:00:00Z", "version": 3,
+    });
+    assert_valid("public.json#/$defs/MemberWeek", "member week", &member_week);
+    let allowance = json!({
+        "allowance": { "count": 5, "per_s": 300.0 }, "used": 1,
+        "resets_at": "2026-09-29T04:03:20Z", "queue_position": 2,
+        "bot_busy": false, "generated_at": "2026-09-29T04:00:00Z",
+    });
+    assert_valid(
+        "public.json#/$defs/MemberAllowance",
+        "allowance",
+        &allowance,
+    );
+    assert_valid(
+        "public.json#/$defs/MemberAllowance",
+        "staff allowance",
+        &json!({
+            "allowance": null, "used": 0, "resets_at": null, "queue_position": null,
+            "bot_busy": true, "generated_at": "2026-09-29T04:00:00Z",
+        }),
+    );
+    let mut admin_only = Vec::new();
+    for key in [
+        "short_id",
+        "channel_id",
+        "cards",
+        "amended",
+        "roster_change",
+    ] {
+        let mut run = member_run.clone();
+        run[key] = json!(null);
+        admin_only.push(("public.json#/$defs/MemberRun", run));
+    }
+    let mut without_mine = member_run;
+    without_mine.as_object_mut().unwrap().remove("mine");
+    admin_only.push(("public.json#/$defs/MemberRun", without_mine));
+    let mut with_roles = member_week;
+    with_roles["roles"] = json!(["20"]);
+    admin_only.push(("public.json#/$defs/MemberWeek", with_roles));
+    let mut with_others = allowance;
+    with_others["queue"] = json!([{ "position": 1, "who": "1002" }]);
+    admin_only.push(("public.json#/$defs/MemberAllowance", with_others));
+    for (target, value) in admin_only {
+        assert!(!validator(target).is_valid(&value), "{target} took {value}");
+    }
+
     let mut leaky = session.clone();
     leaky["member"]["email"] = json!("mikan@example.invalid");
     let mut with_token = session;

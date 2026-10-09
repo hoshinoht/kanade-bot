@@ -723,6 +723,8 @@ async fn a_closed_portal_answers_closed_and_drops_the_pending_login() {
         "/api/public/session",
         "/api/public/sessions",
         "/api/public/session/avatar",
+        "/api/public/week",
+        "/api/public/me/allowance",
         "/api/public/anything",
         "/art/entry/Carling",
     ] {
@@ -749,11 +751,18 @@ async fn a_closed_portal_answers_closed_and_drops_the_pending_login() {
         Some("state"),
         "the pending login was dropped while closed"
     );
-    for path in ["/api/public/anything", "/art/entry/Carling"] {
+    let reply = harness.get("/api/public/anything", &[]).await;
+    assert_eq!((reply.status, reply.api_error()), (404, "not_found".into()));
+    // Data and every art path now ask for the session instead.
+    for path in [
+        "/art/entry/Carling",
+        "/art/anything/at/all",
+        "/api/public/week",
+    ] {
         let reply = harness.get(path, &[]).await;
         assert_eq!(
             (reply.status, reply.api_error()),
-            (404, "not_found".into()),
+            (401, "unauthenticated".into()),
             "{path}"
         );
     }

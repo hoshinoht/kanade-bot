@@ -62,7 +62,8 @@ pub struct Site {
     pub edge_secret: Option<Arc<SealedSecret>>,
     /// The listener's bound address: a client there is on this host (healthcheck).
     pub listener_ip: Option<IpAddr>,
-    /// Admin reads; `None` answers `unavailable`. Never set on the public site.
+    /// The read state; `None` answers `unavailable`. On the public site only
+    /// the member reads behind the session use it.
     pub state: Option<Arc<ApiState>>,
     /// Live `/healthz`; `None` reports offline mode.
     pub health: Option<Arc<dyn HealthProbe>>,
@@ -126,7 +127,6 @@ pub fn router(mut site: Site) -> Router {
         Origin::Public => {
             site.auth = None;
             site.edge_secret = None;
-            site.state = None;
             site.health = None;
         }
         // Nor a member session on the admin origin.

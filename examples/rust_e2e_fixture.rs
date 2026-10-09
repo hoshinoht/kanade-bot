@@ -220,6 +220,7 @@ mod member_portal {
     };
     use kanade::{
         api::{
+            admin::limits::LimitsDesk,
             auth::{
                 crypto,
                 discord::{DiscordClient, DiscordLogin, DiscordUser, Secret},
@@ -227,15 +228,26 @@ mod member_portal {
                 member::{MemberAuth, StoreEligibility},
                 wire,
             },
+            events::Hub,
             listeners::{Site, router},
+            state::{ApiState, BackupDir, GuildAccess, StaticChannels},
+            write::{ApiClock, SchedulerWriter},
         },
-        domain::members::{GatewayMember, MemberStore},
-        infrastructure::store::MemoryScheduleStore,
+        bot::commands::AccessPolicy,
+        domain::{
+            history::{Actor, Origin, Surface},
+            ids::RandomIds,
+            members::{GatewayMember, MemberStore},
+            scheduler::SchedulerService,
+            settings::RuntimeSettings,
+        },
+        infrastructure::{files::load_catalog, store::MemoryScheduleStore},
         runtime::config::HttpConfig,
     };
     use tokio::net::TcpListener;
+    use twilight_model::id::Id;
 
-    use super::{invalid, required};
+    use super::{invalid, next_run, now, required};
 
     /// The cookie a spec sets on `127.0.0.1` to choose the fake Discord user.
     pub const USER_COOKIE: &str = "kanade_fake_discord";
@@ -349,6 +361,58 @@ mod member_portal {
         Ok(())
     }
 
+    /// Serve-shaped read state over the in-memory store, with one run next
+    /// boss week that Mikan is on, so the member Week has an own run.
+    async fn read_state(store: Arc<MemoryScheduleStore>) -> Result<ApiState, Box<dyn Error>> {
+        let policy = RuntimeSettings::default().schedule_policy(chrono_tz::Asia::Kuala_Lumpur);
+        let clock: kanade::api::auth::Clock = Arc::new(|| super::now().expect("system clock"));
+        let mut scheduler =
+            SchedulerService::new(store.clone(), RandomIds, ApiClock(clock.clone()))
+                .with_attendance(policy.attendance);
+        let mut run = next_run(now()?, &policy)?;
+        run.participants = vec![ELIGIBLE.into()];
+        scheduler
+            .as_origin(Origin::new(Actor::system("rust_e2e_fixture"), Surface::Cli))
+            .create_run(run)
+            .await?;
+        let catalog = load_catalog(std::path::Path::new("boss/bosses.yaml"))?;
+        let access = GuildAccess::new(
+            AccessPolicy {
+                bossing_role_id: Id::new(10),
+                admin_role_id: None,
+                debug_user_ids: Vec::new(),
+            },
+            None,
+        );
+        Ok(ApiState {
+            store: store.clone(),
+            writer: Arc::new(SchedulerWriter::new(scheduler)),
+            policy,
+            catalog: Arc::new(catalog),
+            channels: Arc::new(StaticChannels(Vec::new())),
+            access: Arc::new(access),
+            knowledge_dir: None,
+            guild_id: None,
+            clock,
+            rescans: None,
+            config: None,
+            chat: None,
+            model_limits: None,
+            limits: Arc::new(LimitsDesk::default()),
+            proposal_refresh: None,
+            decline_retraction: None,
+            digest_post: None,
+            header_rewrite: None,
+            backups: BackupDir {
+                dir: None,
+                schema_version: 0,
+            },
+            avatars: None,
+            events: Arc::new(Hub::default()),
+            marks: Default::default(),
+        })
+    }
+
     async fn serve(address: SocketAddr, app: Router) -> Result<(), Box<dyn Error>> {
         let listener = TcpListener::bind(address).await?;
         axum::serve(
@@ -393,6 +457,7 @@ mod member_portal {
         };
         let mut site = Site::public(&http).ok_or_else(|| invalid("no public host"))?;
         site.member = Some(Arc::new(member));
+        site.state = Some(Arc::new(read_state(store).await?));
         let page = Arc::new(FakePage { discord, redirect });
         let fake = Router::new()
             .route("/oauth2/authorize", get(authorize))

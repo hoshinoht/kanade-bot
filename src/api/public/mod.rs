@@ -1,20 +1,23 @@
 //! Public-origin routes (`member-auth-contract.md` §1). The portal is open
 //! only while the admin switch `self_service.public_portal` is on and the
 //! public Discord application is configured; then members sign in and see
-//! their own session and devices. Closed, the origin serves the shell,
-//! status and identity, sign-in answers `closed` and data and art answer
-//! `503 closed`. Every session route sits behind
-//! [`member::require_session`]; nothing here reads an admin credential.
+//! their own session and devices, the boss week, their chat allowance and
+//! boss art. Closed, the origin serves the shell, status and identity,
+//! sign-in answers `closed` and data and art answer `503 closed`. Every
+//! session route sits behind [`member::require_session`]; nothing here reads
+//! an admin credential.
 
 mod auth;
+mod read;
 mod sessions;
 
 use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::State,
-    middleware::from_fn_with_state,
+    extract::{Request, State},
+    middleware::{Next, from_fn_with_state},
+    response::{IntoResponse, Response},
     routing::{any, delete, get, post},
 };
 use serde::Serialize;
@@ -32,15 +35,26 @@ pub fn routes(site: Arc<Site>) -> Router<Arc<Site>> {
         .route("/api/public/sessions", get(sessions::list))
         .route("/api/public/sessions/{handle}", delete(sessions::end_one))
         .route("/api/public/sessions/end-all", post(sessions::end_all))
-        .route_layer(from_fn_with_state(site, member::require_session));
+        .route_layer(from_fn_with_state(site.clone(), member::require_session));
+    // Data and art: `closed` before the session check, so a site without the
+    // member realm answers as the catch-alls do; other methods are unmounted.
+    let reads = Router::new()
+        .route("/api/public/week", get(read::week).fallback(unmounted))
+        .route(
+            "/api/public/me/allowance",
+            get(read::allowance).fallback(unmounted),
+        )
+        .route("/art/{*rest}", get(read::art).fallback(unmounted))
+        .route_layer(from_fn_with_state(site.clone(), member::require_session))
+        .route_layer(from_fn_with_state(site, closed));
     Router::new()
         .route("/api/public/status", get(status))
         .route("/api/public/auth/discord/start", get(auth::start))
         .route("/api/public/auth/discord/callback", get(auth::callback))
         .route("/api/public/auth/logout", post(auth::logout))
         .merge(signed_in)
+        .merge(reads)
         .route("/api/public/{*rest}", any(unmounted))
-        .route("/art/{*rest}", any(unmounted))
 }
 
 fn open(site: &Site) -> Option<&MemberAuth> {
@@ -64,8 +78,16 @@ async fn status(State(site): State<Arc<Site>>) -> Json<PublicStatus> {
     })
 }
 
-/// Data and art routes not mounted yet (`member-reads`): `closed` while the
-/// portal is, else a plain 404.
+/// `503 closed` unless the portal is open.
+async fn closed(State(site): State<Arc<Site>>, request: Request, next: Next) -> Response {
+    if open(&site).is_some() {
+        next.run(request).await
+    } else {
+        ApiError::CLOSED.into_response()
+    }
+}
+
+/// Paths not mounted (yet): `closed` while the portal is, else a plain 404.
 async fn unmounted(State(site): State<Arc<Site>>) -> ApiError {
     if open(&site).is_some() {
         ApiError::NOT_FOUND

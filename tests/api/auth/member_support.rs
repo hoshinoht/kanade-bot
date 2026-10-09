@@ -1,13 +1,14 @@
 //! Member (public origin) sign-in harness: the real public router with the
 //! member realm over the memory store (sessions optionally on SQLite), fake
 //! Discord, the store-backed eligibility gate (overridable, with a one-shot
-//! hook after a check), a live portal switch and a pinned clock.
-//! The admin listener runs beside it with its own realm, so isolation can be
-//! checked in both directions.
+//! hook after a check), a live portal switch and a pinned clock; optionally
+//! the read state the member reads use. The admin listener runs beside it
+//! with its own realm, so isolation can be checked in both directions.
 
 use std::{
     future::Future,
     net::{IpAddr, SocketAddr},
+    path::PathBuf,
     pin::Pin,
     sync::{
         Arc, Mutex,
@@ -29,6 +30,7 @@ use kanade::{
             wire,
         },
         listeners::Site,
+        state::ApiState,
     },
     bot::commands::AccessPolicy,
     domain::members::{GatewayMember, MemberStore},
@@ -104,6 +106,10 @@ pub struct Options {
     pub discord: bool,
     /// Sessions on a fresh SQLite store instead of the memory store.
     pub sqlite: bool,
+    /// The read state of the member reads (`None`: they answer `unavailable`).
+    pub state: Option<Arc<ApiState>>,
+    /// Boss art from here instead of the fixture's (both listeners, as serve).
+    pub boss_dir: Option<PathBuf>,
 }
 
 impl Default for Options {
@@ -113,6 +119,8 @@ impl Default for Options {
             limits: None,
             discord: true,
             sqlite: false,
+            state: None,
+            boss_dir: None,
         }
     }
 }
@@ -170,6 +178,9 @@ impl MemberHarness {
         let fixture = Fixture::new();
         let mut http = fixture.http();
         http.cloudflared_peer = options.cloudflared;
+        if let Some(dir) = options.boss_dir {
+            http.boss_dir = Some(dir);
+        }
         let store = Arc::new(MemoryScheduleStore::new());
         let discord = Arc::new(FakeDiscord::default());
         let audit = Arc::new(RecordingAudit::default());
@@ -239,6 +250,7 @@ impl MemberHarness {
 
         let mut public_site = Site::public(&http).unwrap();
         public_site.member = Some(member.clone());
+        public_site.state = options.state;
         // Misassigned admin credentials must mean nothing on the public origin.
         public_site.auth = Some(admin_auth.clone());
         let public = support::spawn(public_site).await;

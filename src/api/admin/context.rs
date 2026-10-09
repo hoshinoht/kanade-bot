@@ -1,5 +1,6 @@
-//! Shared plumbing of the admin reads: the state, week frames, the projection
-//! context and the `?week=` parameter.
+//! Shared plumbing of the admin reads (and the member reads on the public
+//! origin): the state, week frames, the projection context and the
+//! `?week=` parameter.
 
 use std::{collections::BTreeMap, sync::Arc};
 

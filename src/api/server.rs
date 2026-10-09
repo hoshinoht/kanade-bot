@@ -58,6 +58,8 @@ pub async fn serve_bounded(
     admin_site.listener_ip = Some(config.admin_bind.ip());
     let bot = live.as_ref().map(|live| Arc::clone(&live.state.channels));
     let events = live.as_ref().map(|live| Arc::clone(&live.state.events));
+    // The member reads behind the public session read the same state.
+    let reads = live.as_ref().map(|live| Arc::clone(&live.state));
     let mut member = None;
     if let Some(live) = live {
         admin_site.auth = Some(live.auth);
@@ -71,6 +73,7 @@ pub async fn serve_bounded(
             site.listener_ip = Some(address.ip());
             site.bot = bot;
             site.member = member;
+            site.state = reads;
             Some((bind(address, mode).await?, site))
         }
         (Some(_), None) => {

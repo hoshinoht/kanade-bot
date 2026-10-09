@@ -6,7 +6,7 @@ mod account;
 mod auth;
 mod avatars;
 pub mod config;
-mod context;
+pub(crate) mod context;
 mod etag;
 mod events;
 mod headers;

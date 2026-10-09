@@ -21,14 +21,11 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # (method, path) the mock serves that Rust deliberately does not.
 MOCK_ONLY = {
-    ("GET", "/api/public/week"): "anonymous PublicWeek, deleted from the contract (Q4); web and mock drop it with the member portal",
     ("POST", "/api/admin/reset"): "pwa-mock e2e control, not an admin route",
     ("POST", "/csp-report"): "pwa-mock dev-only CSP report sink",
 }
 # Paths the web apps call that Rust deliberately does not serve.
-WEB_ONLY = {
-    "/api/public/week": "anonymous PublicWeek, deleted from the contract (Q4); web and mock drop it with the member portal",
-}
+WEB_ONLY: dict[str, str] = {}
 # (method, path) contracted but not mounted yet. The web and mock may use
 # them first; once Rust mounts one, its entry must go. (The member realm's
 # routes, docs/notes/member-auth-contract.md, are all mounted.)
