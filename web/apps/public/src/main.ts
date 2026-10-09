@@ -11,6 +11,9 @@ import '@kanade/ui/styles/move-picker.scss';
 import '@kanade/ui/styles/row-expansion.scss';
 import './portal.scss';
 import './week/week.scss';
+// Weekly timings' Hand to… and Confirm it's you (the shared Modal's look).
+import '@kanade/ui/styles/modal.scss';
+import './timings/timings.scss';
 import { guardWrites } from '@kanade/client';
 import { mount } from 'svelte';
 import App from './App.svelte';

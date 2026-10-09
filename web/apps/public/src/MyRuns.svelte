@@ -1,34 +1,58 @@
 <!--
-  My runs (boards MyRuns, MyRuns-Next, PhoneMyRuns): the member's own runs
-  from this week's and next week's `MemberWeek`, as title-bar tabs This week
-  n / Next week n (`?week=next`). Each run is a card with its art veil: the
-  time and day, bosses (`BossStack`), channel · fill · teammates, and the
-  member's answer, read-only for now. Weekly timings and What changed come
-  later. Beside the list (wide screens): this week's counts and the calendar
-  feed, marked "coming soon".
+  My runs (boards MyRuns, MyRuns-Next, PhoneMyRuns, MyRuns-Timings-Owner,
+  PhoneMyRuns-Timings-Owner): the member's own runs from this week's and
+  next week's `MemberWeek`, and the weekly timings they are on, as title-bar
+  tabs This week n / Next week n / Weekly timings n (`?week=next`,
+  `?week=timings`). Each run is a card with its art veil: the time and day,
+  bosses (`BossStack`), channel · fill · teammates, and the member's answer,
+  read-only for now. Weekly timings carry their ownership (`timings/`).
+  What changed comes later. Beside the runs (wide screens): this week's
+  counts and the calendar feed, marked "coming soon".
 -->
 <script lang="ts">
-  import type { MemberRun, MemberWeek } from '@kanade/api-types';
-  import { ANSWER_MARKS, BossArt, BossStack, dayLabel, dayNumber, Icon, LoadingState, longDate, sortRuns, STATUS_WORDS } from '@kanade/ui';
-  import { tick, type Snippet } from 'svelte';
+  import type { MemberRun, MemberWeek, PublicSession, PublicSessionRow } from '@kanade/api-types';
+  import { ANSWER_MARKS, BossArt, BossStack, dayLabel, dayNumber, Icon, LoadingState, longDate, sortRuns, STATUS_WORDS, type Toaster } from '@kanade/ui';
+  import { tick, untrack, type Snippet } from 'svelte';
   import { answersOwed, countdownWords, isPast, youFirst, yours } from './member';
   import type { Route } from './route.svelte';
+  import { OwnerFlow } from './timings/flow.svelte';
+  import OwnerDialogs from './timings/OwnerDialogs.svelte';
+  import type { MemberTimingsList } from './timings/timings.svelte';
+  import TimingsPanel from './timings/TimingsPanel.svelte';
   import type { MemberWeeks, WeekKey } from './weeks.svelte';
   import AnswerSoon from './week/AnswerSoon.svelte';
 
   let {
     weeks,
+    timings,
     route,
-    memberId,
+    session,
+    current,
+    toaster,
     phone,
     notice,
-  }: { weeks: MemberWeeks; route: Route; memberId: string; phone: boolean; notice?: Snippet } = $props();
+  }: {
+    weeks: MemberWeeks;
+    timings: MemberTimingsList;
+    route: Route;
+    session: PublicSession;
+    /** This device's row in the session list, for when it signed in (Confirm it's you). */
+    current: PublicSessionRow | null;
+    toaster: Toaster;
+    phone: boolean;
+    notice?: Snippet;
+  } = $props();
 
-  const TABS: { id: WeekKey; label: string; short: string }[] = [
+  type Tab = WeekKey | 'timings';
+  const TABS: { id: Tab; label: string; short: string }[] = [
     { id: 'this', label: 'This week', short: 'This week' },
     { id: 'next', label: 'Next week', short: 'Next' },
+    { id: 'timings', label: 'Weekly timings', short: 'Timings' },
   ];
-  const which: WeekKey = $derived(route.params.get('week') === 'next' ? 'next' : 'this');
+  const memberId = $derived(session.member.id);
+  const tab: Tab = $derived(TABS.find((t) => t.id === route.params.get('week'))?.id ?? 'this');
+  // Weekly timings has no week of its own: the page line and its range stay this week's.
+  const which: WeekKey = $derived(tab === 'timings' ? 'this' : tab);
   const week = $derived(weeks.week(which));
   const own = (w: MemberWeek | null) => (w ? sortRuns(w.runs.filter((r) => r.mine)) : []);
   const runs = $derived(own(week));
@@ -40,10 +64,19 @@
     const last = week?.days[week.days.length - 1];
     return first && last ? `${first.dow} ${dayNumber(first.date)} – ${last.dow} ${longDate(last.date)}` : '';
   });
-  const tabs: Partial<Record<WeekKey, HTMLButtonElement>> = {};
+  const counts = $derived<Record<Tab, number | null>>({
+    this: weeks.this ? own(weeks.this).length : null,
+    next: weeks.next ? own(weeks.next).length : null,
+    timings: timings.data?.timings.length ?? null,
+  });
+  const tabs: Partial<Record<Tab, HTMLButtonElement>> = {};
+  const flow = untrack(() => new OwnerFlow(timings, toaster));
 
-  function choose(next: WeekKey, focus = false) {
-    route.set({ week: next === 'next' ? 'next' : '' });
+  // Every visit reads the timings afresh: other members ask and decide meanwhile.
+  $effect(() => untrack(() => void timings.load()));
+
+  function choose(next: Tab, focus = false) {
+    route.set({ week: next === 'this' ? '' : next });
     if (focus) void tick().then(() => tabs[next]?.focus());
   }
   function tabKey(event: KeyboardEvent, index: number) {
@@ -128,19 +161,18 @@
     <h2 class="vh" id="mine-title">My runs</h2>
     <div class="tabs__tabs" role="tablist" aria-label="My runs" data-fid="window-tabs">
       {#each TABS as t, index (t.id)}
-        {@const count = own(weeks.week(t.id)).length}
         <button
           class="tabs__tab"
           role="tab"
           type="button"
           id="mine-tab-{t.id}"
-          aria-selected={which === t.id}
+          aria-selected={tab === t.id}
           aria-controls="mine-panel"
-          tabindex={which === t.id ? 0 : -1}
+          tabindex={tab === t.id ? 0 : -1}
           bind:this={tabs[t.id]}
           onclick={() => choose(t.id)}
           onkeydown={(event) => tabKey(event, index)}
-          >{phone ? t.short : t.label}{#if weeks.week(t.id)}<span class="tabs__count">{count}</span>{/if}</button
+          >{phone ? t.short : t.label}{#if counts[t.id] !== null}<span class="tabs__count">{counts[t.id]}</span>{/if}</button
         >
       {/each}
     </div>
@@ -152,9 +184,13 @@
   <section class="card tabs window-fill member-runs" aria-labelledby="mine-title" data-fid="window">
     {@render strip()}
     {@render notice?.()}
-    <div class="member-runs__panel member-runs__panel--phone" id="mine-panel" role="tabpanel" aria-labelledby="mine-tab-{which}" tabindex="0">
-      {#if range}<p class="cap member-runs__range">{range}</p>{/if}
-      {@render list()}
+    <div class="member-runs__panel member-runs__panel--phone" id="mine-panel" role="tabpanel" aria-labelledby="mine-tab-{tab}" tabindex="0">
+      {#if tab === 'timings'}
+        <TimingsPanel list={timings} {flow} {memberId} {phone} startDay={weeks.this?.days[0]?.dow} />
+      {:else}
+        {#if range}<p class="cap member-runs__range">{range}</p>{/if}
+        {@render list()}
+      {/if}
     </div>
   </section>
 {:else}
@@ -170,32 +206,39 @@
   <section class="card tabs window-fill member-runs" aria-labelledby="mine-title" data-fid="window">
     {@render strip()}
     <div class="member-runs__body">
-      <div class="member-runs__panel" id="mine-panel" role="tabpanel" aria-labelledby="mine-tab-{which}" tabindex="0">
-        {@render list()}
+      <div class="member-runs__panel" id="mine-panel" role="tabpanel" aria-labelledby="mine-tab-{tab}" tabindex="0">
+        {#if tab === 'timings'}
+          <TimingsPanel list={timings} {flow} {memberId} {phone} startDay={weeks.this?.days[0]?.dow} />
+        {:else}
+          {@render list()}
+        {/if}
       </div>
-      <aside class="side-pane member-runs__aside" aria-label="Your runs" data-fid="myruns-aside">
-        <p class="cap">{which === 'next' ? 'Next week' : 'This week'} · you</p>
-        <dl class="member-runs__tiles">
-          <div class="member-runs__tile">
-            <dt class="cap">Runs</dt>
-            <dd class="member-runs__value">{ahead.length} {which === 'next' ? 'planned' : 'left'}</dd>
-            <dd class="member-runs__sub">of {runs.length} {which === 'next' ? 'next week' : 'this week'}</dd>
-          </div>
-          <div class="member-runs__tile">
-            <dt class="cap">Answers owed</dt>
-            <dd class="member-runs__value">{owed.length}</dd>
-            <dd class="member-runs__sub">{owed[0] && week ? `${owed[0].bosses.map((b) => b.token).join(' + ')} · ${week.days[owed[0].day]?.dow ?? ''}` : 'none'}</dd>
-          </div>
-        </dl>
-        <section class="account-sec" aria-labelledby="mine-calendar">
-          <div class="account-sec__head">
-            <h3 class="cap" id="mine-calendar">Calendar feed</h3>
-            <span class="status-chip status-chip--warn account-sec__end">coming soon</span>
-          </div>
-          <p class="field__hint">Your runs in Google or Apple Calendar. A private link; revoke it any time in Account.</p>
-          <button type="button" class="btn account-full" aria-disabled="true"><Icon name="copy" />Copy link</button>
-        </section>
-      </aside>
+      {#if tab !== 'timings'}
+        <aside class="side-pane member-runs__aside" aria-label="Your runs" data-fid="myruns-aside">
+          <p class="cap">{which === 'next' ? 'Next week' : 'This week'} · you</p>
+          <dl class="member-runs__tiles">
+            <div class="member-runs__tile">
+              <dt class="cap">Runs</dt>
+              <dd class="member-runs__value">{ahead.length} {which === 'next' ? 'planned' : 'left'}</dd>
+              <dd class="member-runs__sub">of {runs.length} {which === 'next' ? 'next week' : 'this week'}</dd>
+            </div>
+            <div class="member-runs__tile">
+              <dt class="cap">Answers owed</dt>
+              <dd class="member-runs__value">{owed.length}</dd>
+              <dd class="member-runs__sub">{owed[0] && week ? `${owed[0].bosses.map((b) => b.token).join(' + ')} · ${week.days[owed[0].day]?.dow ?? ''}` : 'none'}</dd>
+            </div>
+          </dl>
+          <section class="account-sec" aria-labelledby="mine-calendar">
+            <div class="account-sec__head">
+              <h3 class="cap" id="mine-calendar">Calendar feed</h3>
+              <span class="status-chip status-chip--warn account-sec__end">coming soon</span>
+            </div>
+            <p class="field__hint">Your runs in Google or Apple Calendar. A private link; revoke it any time in Account.</p>
+            <button type="button" class="btn account-full" aria-disabled="true"><Icon name="copy" />Copy link</button>
+          </section>
+        </aside>
+      {/if}
     </div>
   </section>
 {/if}
+<OwnerDialogs list={timings} {flow} {route} {session} {current} {phone} />

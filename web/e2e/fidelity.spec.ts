@@ -60,6 +60,10 @@ const myRunsShown = async (page: Page) => {
   await page.waitForLoadState('networkidle');
   await expect(page.locator('main [data-fid="myruns-row"]').first()).toBeVisible();
 };
+const timingsShown = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('main [data-fid="timings-row"]').first()).toBeVisible();
+};
 /** States: the week's first read held back, so the skeleton shows inside the Week. */
 const holdWeek = async (page: Page) => {
   await signInPublic(page);
@@ -173,6 +177,9 @@ const PUBLIC_PAIRS: Pair[] = [
   { name: 'pub-phone-states-offline', board: 'PhoneStates-Offline', path: '/', setup: signInPublic, ready: weekOffline },
   { name: 'pub-phone-states-toasts', board: 'PhoneStates-Toasts', path: '/', setup: signInPublic, ready: weekToasts },
   { name: 'pub-phone-myruns', board: 'PhoneMyRuns', path: '/mine', setup: signInPublic, ready: myRunsShown },
+  // Frame 1 of each board (the list); Always in, attendance and suggestions have no API yet (expected gaps).
+  { name: 'pub-myruns-timings-owner', board: 'MyRuns-Timings-Owner', path: '/mine?week=timings', setup: signInPublic, ready: timingsShown },
+  { name: 'pub-phone-myruns-timings-owner', board: 'PhoneMyRuns-Timings-Owner', path: '/mine?week=timings', setup: signInPublic, ready: timingsShown },
 ].map((pair) => ({ ...pair, app: 'public' as const }));
 
 const PAIRS: Pair[] = [

@@ -1,7 +1,8 @@
 // The portal's address (public-portal-plan § Screens and routes): `/` the
 // Week (`?week=next`, `?view=list`, `?run=<id>` the open run), `/mine` My runs
-// (`?week=next`), `/account` Account (`?tab=`). Pages change with
-// `history.pushState`; filters and selections replace the entry.
+// (`?week=next`, `?week=timings`; `&hand=<timing>&to=<member>` back from a
+// fresh sign-in reopens Hand to…), `/account` Account (`?tab=`). Pages change
+// with `history.pushState`; filters and selections replace the entry.
 
 export type Page = 'week' | 'mine' | 'account';
 
