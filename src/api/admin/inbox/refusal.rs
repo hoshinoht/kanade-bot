@@ -5,7 +5,7 @@ use axum::http::StatusCode as S;
 
 use super::super::write::{Refusal, scheduler};
 use crate::{
-    api::error::ApiError,
+    api::{error::ApiError, ownership::OwnershipError},
     domain::{
         drafts::{MergeConflict, ReplayError},
         requests::RequestRefusal,
@@ -165,6 +165,19 @@ pub fn proposal(error: ProposalError) -> Refusal {
         ProposalError::EditNotApplicable => edit_not_applicable(),
         ProposalError::EditInPast => Refusal::invalid(error.to_string()),
         ProposalError::Draft(error) => draft(error),
+    }
+}
+
+/// An ownership decision's refusal: the member-facing rule text as a 409.
+pub fn ownership(error: OwnershipError) -> Refusal {
+    match error {
+        OwnershipError::UnknownRequest => not_found(),
+        OwnershipError::UnknownTiming => conflicts("That weekly timing no longer exists."),
+        refused @ (OwnershipError::Refused(_) | OwnershipError::AlreadyAsked) => {
+            conflicts(refused.to_string())
+        }
+        OwnershipError::Scheduler(error) => scheduler(error),
+        OwnershipError::Store(error) => scheduler(SchedulerError::Store(error)),
     }
 }
 

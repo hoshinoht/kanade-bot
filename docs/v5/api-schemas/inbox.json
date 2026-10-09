@@ -214,6 +214,28 @@
         "items": { "type": "array", "items": { "$ref": "#/$defs/PastItem" } },
         "next_before": { "$ref": "common.json#/$defs/NullableString", "description": "Pass as `before` for the next (older) page; null on the last page." }
       }
-    }
+    },
+    "OwnershipRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "An open weekly-timing ownership request (Inbox Ownership tab): a party member asks to own the timing; staff accept or decline before it expires.",
+      "required": ["id", "short_id", "fixed_id", "fixed_short_id", "bosses", "weekday", "weekday_name", "time", "requester", "owner", "channel", "created_at", "expires_at"],
+      "properties": {
+        "id": { "type": "string" },
+        "short_id": { "type": "string" },
+        "fixed_id": { "type": "string" },
+        "fixed_short_id": { "type": "string" },
+        "bosses": { "$ref": "common.json#/$defs/Bosses" },
+        "weekday": { "type": "integer", "minimum": 0, "maximum": 6, "description": "0 = Monday." },
+        "weekday_name": { "type": "string" },
+        "time": { "$ref": "week.json#/$defs/LocalTime" },
+        "requester": { "$ref": "common.json#/$defs/Member" },
+        "owner": { "$ref": "common.json#/$defs/Member", "description": "The timing's effective owner now: the pinned owner, else the first participant." },
+        "channel": { "$ref": "common.json#/$defs/NullableString", "description": "The timing's channel name." },
+        "created_at": { "type": "string", "description": "RFC 3339 UTC instant it was asked." },
+        "expires_at": { "type": "string", "description": "RFC 3339 UTC instant it expires unanswered (24 h after it was asked)." }
+      }
+    },
+    "OwnershipRequests": { "type": "array", "items": { "$ref": "#/$defs/OwnershipRequest" } }
   }
 }

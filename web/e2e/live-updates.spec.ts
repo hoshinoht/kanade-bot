@@ -46,10 +46,10 @@ test('Inbox: a new proposal joins the list and the badge, and the open item stay
   await expect(first).toHaveAttribute('aria-selected', 'true');
   const selected = (await first.textContent()) ?? '';
   const nav = page.locator('.navrail').getByRole('navigation', { name: 'Sections' });
-  await expect(nav.getByRole('link', { name: 'Inbox 9 waiting', exact: true })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Inbox 11 waiting', exact: true })).toBeVisible();
   const stillSame = await mark(page);
   await arrive(page, 'proposal');
-  await expect(nav.getByRole('link', { name: 'Inbox 10 waiting', exact: true })).toBeVisible(BY_HINT);
+  await expect(nav.getByRole('link', { name: 'Inbox 12 waiting', exact: true })).toBeVisible(BY_HINT);
   await expect(list.getByRole('option')).toHaveCount(count + 1, BY_HINT);
   await expect(list.getByRole('option').last()).toContainText('Mon 28 Sep 21:00');
   // The selection did not move to the newcomer.

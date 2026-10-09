@@ -1,17 +1,19 @@
 <!--
   The Inbox (v4 inbox.html, redesigned by user request 2026-09-25): one window
-  with "Extractor" and "Self-service" title-bar tabs, a compact listbox of the
-  tab's items beside the selected item's detail (the Config side-list
-  pattern). A read-only "Past" tab lists closed items the same way, loaded
-  on first open. Deep links: ?tab=&item=. Phones show the list, then the
-  detail with a back action — one scrolling panel either way.
+  with "Extractor", "Self-service" and "Ownership" title-bar tabs, a compact
+  listbox of the tab's items beside the selected item's detail (the Config
+  side-list pattern). Ownership lists open weekly-timing ownership requests
+  (its own read; staff accept or decline). A read-only "Past" tab lists
+  closed proposals and requests the same way, loaded on first open. Deep
+  links: ?tab=&item=. Phones show the list, then the detail with a back
+  action — one scrolling panel either way.
 -->
 <script lang="ts">
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/panes.scss';
   import '@kanade/ui/styles/evidence.scss';
   import '@kanade/ui/styles/inbox.scss';
-  import type { ApproveRequest, InboxTab, Proposal } from '@kanade/api-types';
+  import type { ApproveRequest, InboxTab, OwnershipRequest, Proposal } from '@kanade/api-types';
   import { Icon, LoadError, LoadingState, Modal, PendingLabel, SINGLE_PANE_QUERY, Toaster, enter } from '@kanade/ui';
   import { tick, untrack } from 'svelte';
   import { Resource, send } from '../resource.svelte';
@@ -21,12 +23,14 @@
   import InboxDetail from './InboxDetail.svelte';
   import InboxEmpty from './InboxEmpty.svelte';
   import InboxList from './InboxList.svelte';
+  import OwnershipDetail from './OwnershipDetail.svelte';
+  import OwnershipList from './OwnershipList.svelte';
   import PastDetail from './PastDetail.svelte';
   import PastList from './PastList.svelte';
   import { PastLog } from './pastLog.svelte';
   import { getChrome } from '../shell/chrome';
 
-  type PageTab = InboxTab | 'past';
+  type PageTab = InboxTab | 'ownership' | 'past';
 
   let {
     store,
@@ -45,18 +49,31 @@
 
   const inbox = new Resource<Proposal[]>('/api/admin/inbox', { topics: ['inbox'], keys: (items) => items.map((p) => p.id) });
   $effect(() => inbox.watch());
+  // Ownership requests are their own read (never `Proposal`s); an accept also moves the schedule.
+  const ownership = new Resource<OwnershipRequest[]>('/api/admin/inbox/ownership', {
+    topics: ['inbox', 'schedule'],
+    keys: (rows) => rows.map((r) => r.id),
+  });
+  $effect(() => ownership.watch());
 
   // Past (read-only, closed items) has no live count and loads when first opened.
   const TABS: { id: PageTab; label: string }[] = [
     { id: 'extractor', label: 'Extractor' },
     { id: 'self_service', label: 'Self-service' },
+    { id: 'ownership', label: 'Ownership' },
     { id: 'past', label: 'Past' },
   ];
   const uid = $props.id();
-  const current = $derived<PageTab>(tab === 'self_service' || tab === 'past' ? tab : 'extractor');
+  // An unknown tab lands on Extractor.
+  const current = $derived<PageTab>(tab === 'self_service' || tab === 'ownership' || tab === 'past' ? tab : 'extractor');
   const isPast = $derived(current === 'past');
-  const items = $derived(isPast ? [] : (inbox.data ?? []).filter((p) => p.tab === current));
-  const counts = $derived(Object.fromEntries(TABS.map((t) => [t.id, (inbox.data ?? []).filter((p) => p.tab === t.id).length])));
+  const isOwnership = $derived(current === 'ownership');
+  const items = $derived(current === 'extractor' || current === 'self_service' ? (inbox.data ?? []).filter((p) => p.tab === current) : []);
+  const counts = $derived<Record<string, number>>({
+    ...Object.fromEntries(TABS.map((t) => [t.id, (inbox.data ?? []).filter((p) => p.tab === t.id).length])),
+    ownership: ownership.data?.length ?? 0,
+  });
+  const waiting = $derived((inbox.data?.length ?? 0) + (ownership.data?.length ?? 0));
 
   let phone = $state(false);
   $effect(() => {
@@ -90,9 +107,11 @@
   }
   const pastItems = $derived(past.items ?? []);
   const chosenPast = $derived(isPast ? (pastItems.find((p) => p.id === item) ?? (phone ? undefined : pastItems[0])) : undefined);
+  const ownItems = $derived(isOwnership ? (ownership.data ?? []) : []);
+  const chosenOwn = $derived(isOwnership ? (ownItems.find((r) => r.id === item) ?? (phone ? undefined : ownItems[0])) : undefined);
   const timeZone = $derived(store.week?.timezone ?? 'Asia/Kuala_Lumpur');
   // A primitive key for the open item: a refreshed copy of the same item must not replay the enter.
-  const chosenId = $derived((isPast ? chosenPast?.id : chosen?.id) ?? null);
+  const chosenId = $derived((isPast ? chosenPast?.id : isOwnership ? chosenOwn?.id : chosen?.id) ?? null);
 
   // The phone frame's open item (B_PhoneInbox): no page line, tabs or window
   // chrome; "‹ Inbox" in the top bar; the decision as a bottom action bar.
@@ -201,6 +220,33 @@
     else error = refused(result.code, result.message);
   }
 
+  let deciding = $state<'' | 'accept' | 'decline'>('');
+
+  /** Accept or decline an ownership request; staff decide for anyone, Discord sign-in or not. */
+  async function decideOwnership(r: OwnershipRequest, accept: boolean) {
+    error = '';
+    deciding = accept ? 'accept' : 'decline';
+    const result = await send((c) =>
+      c.post<{ message: string }>(`/api/admin/inbox/ownership/${encodeURIComponent(r.id)}/${accept ? 'accept' : 'decline'}`, {}),
+    );
+    deciding = '';
+    if (!result.ok) {
+      // Closed, expired or the requester left the party: the list shows what is still open.
+      error = result.message;
+      void ownership.load();
+      return;
+    }
+    toaster.show({ message: result.value.message, tone: 'ok' });
+    // Before the reload: its effects run inside `load()` and consume `restore`.
+    const index = ownItems.findIndex((o) => o.id === r.id);
+    restore = phone && index >= 0 ? ((ownItems[index + 1] ?? ownItems[index - 1])?.id ?? '') : '';
+    await ownership.load();
+    void store.refresh();
+    await tick();
+    restore = '';
+    leaveDetail();
+  }
+
   function move(p: Proposal, text: string) {
     // The proposal's own boss week (the reset weekday is the same every week).
     const edit = parseEdit(text, p, store.week?.days[0]?.dow ?? store.week?.reset ?? 'Thu');
@@ -234,7 +280,7 @@
 </script>
 
 <PageLine title={inbox.data ? 'Inbox' : ''} class={compact ? 'pageline--echo' : ''}>
-  <h1>{#if inbox.data}<span class="pageline__num">{inbox.data.length}</span> change{inbox.data.length === 1 ? '' : 's'} waiting{:else}Inbox{/if}</h1>
+  <h1>{#if inbox.data}<span class="pageline__num">{waiting}</span> change{waiting === 1 ? '' : 's'} waiting{:else}Inbox{/if}</h1>
 </PageLine>
 
 <section data-fid="window" class="card tabs inbox window-fill" class:inbox--compact={compact} aria-label="Inbox">
@@ -259,7 +305,7 @@
   </div>
   <div
     class="inbox__body"
-    class:inbox__body--empty={isPast ? past.items && !past.items.length : inbox.data && !items.length}
+    class:inbox__body--empty={isPast ? past.items && !past.items.length : isOwnership ? ownership.data && !ownership.data.length : inbox.data && !items.length}
     role="tabpanel"
     id="{uid}-panel"
     aria-labelledby="{uid}-tab-{current}"
@@ -291,6 +337,45 @@
             {/if}
             {#key chosenPast.id}
               <PastDetail item={chosenPast} {timeZone} />
+            {/key}
+          {/if}
+        </div>
+      {/if}
+    {:else if isOwnership}
+      {#if ownership.error}
+        <LoadError thing="ownership requests" reason={ownership.error} onretry={() => void ownership.load()} />
+      {:else if !ownership.data}
+        <LoadingState text="Loading ownership requests…" />
+      {:else if !ownItems.length}
+        <InboxEmpty tab="ownership" {timeZone} />
+      {:else}
+        <div class="inbox__list" data-fid="inbox-list" hidden={phone && Boolean(chosenOwn)} {@attach enter(returns || null, 'backward')}>
+          <OwnershipList
+            bind:this={list}
+            items={ownItems}
+            selected={chosenOwn?.id ?? ''}
+            follow={!phone}
+            now={store.week?.generated_at ?? ''}
+            onpick={pick}
+            fresh={ownership.fresh}
+          />
+        </div>
+        <div class="inbox__detail" hidden={!chosenOwn} tabindex="-1" bind:this={detailEl} {@attach enter(chosenId)}>
+          {#if chosenOwn}
+            {#if phone && !compact}
+              <button type="button" class="btn btn--ghost inbox__back" onclick={leaveDetail}>
+                <span aria-hidden="true">←</span> Back to the list
+              </button>
+            {/if}
+            {#key chosenOwn.id}
+              <OwnershipDetail
+                r={chosenOwn}
+                now={store.week?.generated_at ?? ''}
+                {timeZone}
+                busy={deciding}
+                {error}
+                ondecide={(accept) => void decideOwnership(chosenOwn!, accept)}
+              />
             {/key}
           {/if}
         </div>

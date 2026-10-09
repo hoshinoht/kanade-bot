@@ -118,7 +118,7 @@ async fn supersede(
 }
 
 /// Acting user as the store records deciders: `member:<id>` or the admin id.
-fn actor(origin: &Origin) -> String {
+pub fn actor(origin: &Origin) -> String {
     format!("{}:{}", origin.actor.kind(), origin.actor.id())
 }
 

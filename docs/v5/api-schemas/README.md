@@ -69,6 +69,8 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/admin/inbox` | `inbox.json#/$defs/Proposals` |
 | `GET /api/admin/inbox/past?before=&limit=` | `inbox.json#/$defs/PastPage` (422 `invalid_query`) |
 | `POST /api/admin/inbox/{id}/approve`, `/reject` | `common.json#/$defs/Message` |
+| `GET /api/admin/inbox/ownership` | `inbox.json#/$defs/OwnershipRequests` (open, unexpired, oldest first) |
+| `POST /api/admin/inbox/ownership/{id}/accept`, `/decline` | `common.json#/$defs/Message` (404 `not_found`; 409 `conflicts` with the rule's words when the request is closed, expired or the requester left the party) |
 | `GET /api/admin/extractions?…` | `extractions.json#/$defs/Extractions` (422 `invalid_filter`) |
 | `GET /api/admin/extractions/{id}` | `extractions.json#/$defs/Extraction` |
 | `GET /api/admin/rescan/targets` | `common.json#/$defs/Channels` |
@@ -153,3 +155,7 @@ Pointers are `<file>#/$defs/<Name>`.
   `MemberAllowance` for `GET /api/public/week` and
   `GET /api/public/me/allowance`; boss art is served on the public origin
   behind the member session.
+- Ownership requests (2026-10-10): `inbox.json` `OwnershipRequest` and
+  `OwnershipRequests` for the Inbox Ownership tab
+  (`GET /api/admin/inbox/ownership`, accept/decline); `week.json`
+  `Summary.inbox` now counts open ownership requests too.

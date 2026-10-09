@@ -1,6 +1,7 @@
 //! The Inbox (A6): extractor/chat proposals and member requests, listed with
 //! the domain's merge previews, approved or rejected per source, plus the
-//! read-only list of closed items (Past). Merge and
+//! read-only list of closed items (Past) and open weekly-timing ownership
+//! requests (Ownership). Merge and
 //! requester notices are written to the notice outbox by the store with the
 //! decision; live serve attaches the shared proposal-card refresh after the
 //! Discord desk is composed.
@@ -8,6 +9,7 @@
 mod decide;
 mod list;
 mod messages;
+mod ownership;
 mod past;
 mod refusal;
 
@@ -24,6 +26,15 @@ pub fn routes() -> Router<Arc<Site>> {
     Router::new()
         .route("/api/admin/inbox", get(list::list))
         .route("/api/admin/inbox/past", get(past::past))
+        .route("/api/admin/inbox/ownership", get(ownership::list))
+        .route(
+            "/api/admin/inbox/ownership/{id}/accept",
+            post(ownership::accept),
+        )
+        .route(
+            "/api/admin/inbox/ownership/{id}/decline",
+            post(ownership::decline),
+        )
         .route("/api/admin/inbox/{id}/approve", post(decide::approve))
         .route("/api/admin/inbox/{id}/reject", post(decide::reject))
 }

@@ -15,6 +15,7 @@ mod limits;
 pub mod logfilter;
 pub mod member;
 mod model_context;
+mod ownership;
 pub mod past;
 mod people;
 pub mod portal;
@@ -77,6 +78,8 @@ pub struct Store {
     proposals: Vec<inbox::Proposal>,
     /// Closed inbox items, so a repeated decision answers as the first did.
     decided: Vec<inbox::Decided>,
+    /// Weekly-timing ownership requests (Inbox Ownership tab).
+    owner_requests: Vec<ownership::OwnerRequest>,
     /// How the mock's admin signed in: `discord`, `token` or `tailscale`.
     session: &'static str,
     /// The seeded member a Discord session signs in as (Asahi by default).
@@ -115,6 +118,7 @@ impl Store {
             settings_changes: Vec::new(),
             proposals: Vec::new(),
             decided: Vec::new(),
+            owner_requests: Vec::new(),
             session: "discord",
             discord_as: "1001",
             signed_in: true,
@@ -152,6 +156,7 @@ impl Store {
         self.next_id = 1;
         self.proposals = inbox::seed();
         self.decided.clear();
+        self.owner_requests = ownership::seed();
         self.session = "discord";
         self.discord_as = "1001";
         self.signed_in = true;
@@ -445,7 +450,7 @@ impl Store {
                 .flat_map(|r| &r.participants)
                 .filter(|p| p.answer == "waiting")
                 .count(),
-            inbox: self.proposals.len(),
+            inbox: self.proposals.len() + self.open_owner_requests(),
             // Same derivations as the Members and Reminders pages' headings.
             members: self.member_rows().iter().filter(|m| m.bossing).count(),
             reminders: self.reminders().upcoming.len(),

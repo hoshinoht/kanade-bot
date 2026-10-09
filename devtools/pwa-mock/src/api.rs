@@ -395,6 +395,30 @@ pub async fn reject(
     )
 }
 
+pub async fn owner_requests(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.owner_requests()).into_response()
+}
+
+/// Any admin session decides (no Discord sign-in needed); the write guard
+/// already checked CSRF and replays a repeated `Idempotency-Key`.
+pub async fn accept_owner_request(State(app): State<App>, Path(id): Path<String>) -> Response {
+    decide_owner_request(&app, &id, true).await
+}
+
+pub async fn decline_owner_request(State(app): State<App>, Path(id): Path<String>) -> Response {
+    decide_owner_request(&app, &id, false).await
+}
+
+async fn decide_owner_request(app: &App, id: &str, accept: bool) -> Response {
+    outcome(
+        app.store
+            .lock()
+            .await
+            .decide_owner_request(id, accept)
+            .map(|message| json!({ "message": message })),
+    )
+}
+
 pub async fn extractions(
     State(app): State<App>,
     Query(q): Query<crate::mock::logfilter::LogQuery>,

@@ -2449,3 +2449,151 @@ async fn admin_reads_revalidate_with_etags() {
         assert_eq!((status, fresh), (StatusCode::OK, body), "{path}");
     }
 }
+
+#[tokio::test]
+async fn inbox_ownership_requests_match_the_contract() {
+    let mut h = Harness::new();
+    let list = "/api/admin/inbox/ownership";
+    let open = h
+        .ok("GET", list, None, "inbox.json#/$defs/OwnershipRequests")
+        .await;
+    let ids: Vec<&str> = open
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| s(&r["id"]))
+        .collect();
+    assert_eq!(ids, ["own-carling", "own-kalos"], "oldest first");
+    let summary = h
+        .ok(
+            "GET",
+            "/api/admin/summary",
+            None,
+            "week.json#/$defs/Summary",
+        )
+        .await;
+    let inbox = h
+        .ok(
+            "GET",
+            "/api/admin/inbox",
+            None,
+            "inbox.json#/$defs/Proposals",
+        )
+        .await;
+    assert_eq!(
+        summary["inbox"].as_u64(),
+        Some(inbox.as_array().unwrap().len() as u64 + 2),
+        "the summary counts open ownership requests"
+    );
+
+    // CSRF is required; an unknown id is 404.
+    let accept = "/api/admin/inbox/ownership/own-kalos/accept";
+    h.refused(
+        "POST",
+        accept,
+        json!({}),
+        &[],
+        (StatusCode::FORBIDDEN, "csrf"),
+    )
+    .await;
+    let csrf = h.csrf.clone();
+    let token = [("x-kanade-csrf", csrf.as_str())];
+    for action in ["accept", "decline"] {
+        h.refused(
+            "POST",
+            &format!("/api/admin/inbox/ownership/nope/{action}"),
+            json!({}),
+            &token,
+            (StatusCode::NOT_FOUND, "not_found"),
+        )
+        .await;
+    }
+
+    // Any session decides, Discord or not: accept pins the requester.
+    h.send(
+        false,
+        "POST",
+        "/__mock/session",
+        Some(json!({ "method": "token" })),
+    )
+    .await;
+    h.csrf = session_token(&h).await;
+    let first = h
+        .ok(
+            "POST",
+            accept,
+            Some(json!({})),
+            "common.json#/$defs/Message",
+        )
+        .await;
+    let again = h
+        .ok(
+            "POST",
+            accept,
+            Some(json!({})),
+            "common.json#/$defs/Message",
+        )
+        .await;
+    assert_eq!(first, again, "a repeated accept answers the first result");
+    let fixed = h
+        .ok(
+            "GET",
+            "/api/admin/fixed",
+            None,
+            "fixed.json#/$defs/FixedRows",
+        )
+        .await;
+    let kalos = fixed
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["id"] == "f-kalos")
+        .unwrap();
+    assert_eq!(
+        (&kalos["owner_id"], &kalos["owner_pinned"]),
+        (&json!("1005"), &json!(true))
+    );
+    h.ok(
+        "POST",
+        "/api/admin/inbox/ownership/own-carling/decline",
+        Some(json!({})),
+        "common.json#/$defs/Message",
+    )
+    .await;
+    let csrf = h.csrf.clone();
+    h.refused(
+        "POST",
+        "/api/admin/inbox/ownership/own-carling/accept",
+        json!({}),
+        &[("x-kanade-csrf", csrf.as_str())],
+        (StatusCode::CONFLICT, "conflicts"),
+    )
+    .await;
+    let left = h
+        .ok("GET", list, None, "inbox.json#/$defs/OwnershipRequests")
+        .await;
+    assert_eq!(left, json!([]));
+
+    // Signed out, the routes answer 401.
+    let (status, _, _) = h
+        .send_with(
+            false,
+            "POST",
+            "/api/admin/auth/logout",
+            None,
+            &[("x-kanade-csrf", &csrf)],
+        )
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    h.expect(false, "GET", list, None, StatusCode::UNAUTHORIZED, "")
+        .await;
+    h.refused(
+        "POST",
+        accept,
+        json!({}),
+        &[("x-kanade-csrf", csrf.as_str())],
+        (StatusCode::UNAUTHORIZED, "unauthenticated"),
+    )
+    .await;
+    assert!(h.failures.is_empty(), "{}", h.failures.join("\n"));
+}

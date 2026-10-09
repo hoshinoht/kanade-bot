@@ -9,9 +9,9 @@ use serde::Serialize;
 use super::{
     Boss, Named,
     consequence::consequence,
-    dow, hhmm,
+    dow, hhmm, iso_instant,
     week::{Context, WeekFrame},
-    when,
+    weekday_name, when,
 };
 use crate::domain::{
     drafts::{
@@ -20,9 +20,10 @@ use crate::domain::{
     },
     history::Actor,
     ids::short_id,
+    ownership::OwnerRequest,
     proposals::{ProposalSubject, StoredCard},
     requests::{RequestType, Subject, public_summary},
-    schedule::{Change, ChangeSet, SchedulePolicy, ScheduleSnapshot, utc_instant},
+    schedule::{Change, ChangeSet, FixedRun, SchedulePolicy, ScheduleSnapshot, utc_instant},
     scheduler::{ProposalPreview, RequestPreview},
 };
 
@@ -790,5 +791,50 @@ pub fn request(
             note: Some(draft.title.clone()),
         }),
         created_at: draft.created_at,
+    }
+}
+
+/// An open weekly-timing ownership request (Inbox Ownership tab): a party
+/// member asks to own the timing; staff accept or decline before it expires.
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "OwnershipRequest"))]
+pub struct OwnerRequestDto {
+    pub id: String,
+    pub short_id: String,
+    pub fixed_id: String,
+    pub fixed_short_id: String,
+    pub bosses: Vec<Boss>,
+    /// 0 = Monday, as `FixedRow`.
+    pub weekday: u32,
+    pub weekday_name: &'static str,
+    pub time: String,
+    pub requester: Named,
+    /// The timing's effective owner now ([`FixedRun::owner`]).
+    pub owner: Named,
+    pub channel: Option<String>,
+    /// RFC 3339 UTC instants.
+    pub created_at: String,
+    pub expires_at: String,
+}
+
+pub fn owner_request(
+    ctx: &Context<'_>,
+    request: &OwnerRequest,
+    fixed: &FixedRun,
+) -> OwnerRequestDto {
+    OwnerRequestDto {
+        id: request.id.clone(),
+        short_id: short_id(&request.id),
+        fixed_id: fixed.id.clone(),
+        fixed_short_id: short_id(&fixed.id),
+        bosses: ctx.bosses(&fixed.bosses),
+        weekday: fixed.weekday.num_days_from_monday(),
+        weekday_name: weekday_name(fixed.weekday),
+        time: hhmm(fixed.time),
+        requester: ctx.named(&request.requester),
+        owner: ctx.named(fixed.owner()),
+        channel: fixed.channel_id.as_deref().map(|id| ctx.channel_name(id)),
+        created_at: iso_instant(request.created_at),
+        expires_at: iso_instant(request.expires_at),
     }
 }

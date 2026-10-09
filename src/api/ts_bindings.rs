@@ -142,6 +142,7 @@ fn bindings() -> String {
         .add::<inbox::Choice>()
         .add::<inbox::SelfService>()
         .add::<inbox::ProposalDto>()
+        .add::<inbox::OwnerRequestDto>()
         .add::<inbox_past::PastOutcome>()
         .add::<inbox_past::Decider>()
         .add::<inbox_past::PastItem>()

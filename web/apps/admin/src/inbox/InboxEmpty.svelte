@@ -1,7 +1,8 @@
 <!--
   An empty Inbox tab (M3E B_Empty): why nothing waits, with the extractor's
   last read and the ways on, beside the tab's last three decisions. Both
-  reads are supporting facts: a failed one leaves its part out.
+  reads are supporting facts: a failed one leaves its part out. Ownership
+  decisions are not in Past, so that tab shows the note alone.
 -->
 <script lang="ts">
   import type { ExtractionRow, Extractions, InboxTab, PastPage } from '@kanade/api-types';
@@ -11,16 +12,16 @@
   import { Resource } from '../resource.svelte';
   import { OUTCOME } from './past';
 
-  let { tab, timeZone }: { tab: InboxTab; timeZone: string } = $props();
+  let { tab, timeZone }: { tab: InboxTab | 'ownership'; timeZone: string } = $props();
 
   const past = new Resource<PastPage>('/api/admin/inbox/past');
   const calls = new Resource<Extractions>('/api/admin/extractions');
   $effect(() => {
-    void past.load();
+    if (tab !== 'ownership') void past.load();
     if (tab === 'extractor') void calls.load();
   });
 
-  const recent = $derived((past.data?.items ?? []).filter((p) => p.tab === tab).slice(0, 3));
+  const recent = $derived(tab === 'ownership' ? [] : (past.data?.items ?? []).filter((p) => p.tab === tab).slice(0, 3));
   const last = $derived(
     tab === 'extractor' ? (calls.data?.rows ?? []).reduce<ExtractionRow | null>((a, r) => (!a || Date.parse(r.at) > Date.parse(a.at) ? r : a), null) : null,
   );
@@ -38,6 +39,8 @@
           >The last read was <time class="mono inbox-empty__at" datetime={last.at}>{shortAt(last.at, timeZone)}</time>{#if last.channel}<span>&nbsp;in <a href="/extractions?channel={encodeURIComponent(last.channel_id)}"><Name kind="channel" id={last.channel_id} name={last.channel} plain /></a></span
             >{/if}.</span
         >{/if}
+    {:else if tab === 'ownership'}
+      No ownership requests. When a party member asks to own a weekly timing, the request waits here for 24 hours.
     {:else}
       Nothing waiting here. Members’ requests arrive here.
     {/if}

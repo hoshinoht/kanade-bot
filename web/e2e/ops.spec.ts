@@ -37,7 +37,7 @@ test('knowledge: opens on the difficulty the guild runs, switches, credits sourc
 
 test('inbox: extractor tab — list and detail, edit then approve, reject, a chat proposal', async ({ page }) => {
   await go(page, '/inbox');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 changes waiting');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('11 changes waiting');
   const tabs = page.getByRole('tablist', { name: 'Inbox' });
   await expect(tabs.getByRole('tab', { name: /Extractor/ })).toHaveAttribute('aria-selected', 'true');
   await expect(tabs.getByRole('tab', { name: /Extractor/ })).toContainText('3');
