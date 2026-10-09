@@ -80,6 +80,8 @@ pub struct Store {
     decided: Vec<inbox::Decided>,
     /// Weekly-timing ownership requests (Inbox Ownership tab).
     owner_requests: Vec<ownership::OwnerRequest>,
+    /// Member hand-offs already applied, by `Idempotency-Key`.
+    owner_hand_offs: Vec<ownership::HandOffKey>,
     /// How the mock's admin signed in: `discord`, `token` or `tailscale`.
     session: &'static str,
     /// The seeded member a Discord session signs in as (Asahi by default).
@@ -119,6 +121,7 @@ impl Store {
             proposals: Vec::new(),
             decided: Vec::new(),
             owner_requests: Vec::new(),
+            owner_hand_offs: Vec::new(),
             session: "discord",
             discord_as: "1001",
             signed_in: true,
@@ -157,6 +160,7 @@ impl Store {
         self.proposals = inbox::seed();
         self.decided.clear();
         self.owner_requests = ownership::seed();
+        self.owner_hand_offs.clear();
         self.session = "discord";
         self.discord_as = "1001";
         self.signed_in = true;

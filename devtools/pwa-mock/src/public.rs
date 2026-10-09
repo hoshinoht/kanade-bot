@@ -10,16 +10,19 @@ use crate::{
     App,
     api::{closed, error, outcome},
     auth::{landing, query_value, safe_next, see_other},
-    mock::portal::{Current, LOGIN_ERRORS},
+    mock::{
+        MoveError,
+        portal::{Current, LOGIN_ERRORS, MEMBER_SEED_ID},
+    },
     writes::CSRF_HEADER,
 };
 use axum::{
     Json,
-    extract::{Path, Query, State},
+    extract::{Path, Query, State, rejection::JsonRejection},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -307,6 +310,182 @@ pub async fn allowance(State(app): State<App>, method: Method, headers: HeaderMa
     };
     let body = app.store.lock().await.member_allowance();
     carry(Json(body).into_response(), &current)
+}
+
+/// A member write as the server's `admit`: the session and its token, the
+/// required `Idempotency-Key`, then for an owner change a fresh sign-in. The
+/// mock does not rate-limit member writes.
+async fn admit(
+    app: &App,
+    method: &Method,
+    headers: &HeaderMap,
+    fresh: bool,
+) -> Result<(Current, String), Box<Response>> {
+    let current = member(app, method, headers).await?;
+    let key = match crate::writes::key(headers) {
+        Ok(Some(key)) => key,
+        refused => {
+            let message = refused.err().unwrap_or("Send an Idempotency-Key.");
+            let refused = error(StatusCode::BAD_REQUEST, "invalid_idempotency_key", message);
+            return Err(Box::new(carry(refused, &current)));
+        }
+    };
+    if fresh && !app.store.lock().await.public_sessions().fresh(&current.id) {
+        let refused = error(
+            StatusCode::UNAUTHORIZED,
+            "reauth_required",
+            "Sign in with Discord again to make this change.",
+        );
+        return Err(Box::new(carry(refused, &current)));
+    }
+    Ok((current, key))
+}
+
+/// An ownership write's answer (`status` on success). Its change reaches open
+/// admin pages as the server's would: the Inbox and the schedule.
+fn written<T: Serialize>(
+    app: &App,
+    current: &Current,
+    status: StatusCode,
+    result: Result<T, MoveError>,
+) -> Response {
+    if result.is_ok() {
+        app.hints.emit("inbox");
+        app.hints.emit("schedule");
+    }
+    let mut response = outcome(result);
+    if response.status().is_success() {
+        *response.status_mut() = status;
+    }
+    carry(response, current)
+}
+
+/// `GET /api/public/timings`: the weekly timings the member is on.
+pub async fn timings(State(app): State<App>, method: Method, headers: HeaderMap) -> Response {
+    let current = match member(&app, &method, &headers).await {
+        Ok(current) => current,
+        Err(refused) => return *refused,
+    };
+    let body = app.store.lock().await.member_timings(MEMBER_SEED_ID);
+    carry(Json(body).into_response(), &current)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HandOff {
+    to: String,
+}
+
+/// A Discord user id: 17-20 digits.
+fn snowflake_shaped(text: &str) -> bool {
+    (17..=20).contains(&text.len()) && text.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// `POST /api/public/timings/{id}/owner {to}`: the owner hands the timing to
+/// another party member at once.
+pub async fn hand_off(
+    State(app): State<App>,
+    method: Method,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    body: Result<Json<HandOff>, JsonRejection>,
+) -> Response {
+    let (current, key) = match admit(&app, &method, &headers, true).await {
+        Ok(admitted) => admitted,
+        Err(refused) => return *refused,
+    };
+    let to = match body {
+        Ok(Json(HandOff { to })) if snowflake_shaped(&to) => to,
+        _ => {
+            let refused = error(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "invalid_body",
+                "The request body is not valid.",
+            );
+            return carry(refused, &current);
+        }
+    };
+    let result = app
+        .store
+        .lock()
+        .await
+        .member_hand_off(MEMBER_SEED_ID, &key, &id, &to);
+    written(&app, &current, StatusCode::OK, result)
+}
+
+/// `POST /api/public/timings/{id}/owner-requests`: `201` with the new
+/// request; a retry with the same key `200` with it as it now is.
+pub async fn ask(
+    State(app): State<App>,
+    method: Method,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    let (current, key) = match admit(&app, &method, &headers, false).await {
+        Ok(admitted) => admitted,
+        Err(refused) => return *refused,
+    };
+    let result = app.store.lock().await.member_ask(MEMBER_SEED_ID, &key, &id);
+    let status = match result {
+        Ok((true, _)) => StatusCode::CREATED,
+        _ => StatusCode::OK,
+    };
+    written(&app, &current, status, result.map(|(_, request)| request))
+}
+
+async fn decide(
+    app: App,
+    method: Method,
+    headers: HeaderMap,
+    id: String,
+    accept: bool,
+) -> Response {
+    let (current, _) = match admit(&app, &method, &headers, accept).await {
+        Ok(admitted) => admitted,
+        Err(refused) => return *refused,
+    };
+    let result = app
+        .store
+        .lock()
+        .await
+        .member_decide(MEMBER_SEED_ID, &id, accept);
+    written(&app, &current, StatusCode::OK, result)
+}
+
+/// `POST /api/public/owner-requests/{id}/accept`: the owner hands the timing
+/// to the requester (a fresh sign-in, as every owner change).
+pub async fn accept(
+    State(app): State<App>,
+    method: Method,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    decide(app, method, headers, id, true).await
+}
+
+/// `POST /api/public/owner-requests/{id}/decline`.
+pub async fn decline(
+    State(app): State<App>,
+    method: Method,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    decide(app, method, headers, id, false).await
+}
+
+/// `POST /api/public/owner-requests/{id}/withdraw`: the requester only.
+pub async fn withdraw(
+    State(app): State<App>,
+    method: Method,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    let (current, _) = match admit(&app, &method, &headers, false).await {
+        Ok(admitted) => admitted,
+        Err(refused) => return *refused,
+    };
+    let result = app.store.lock().await.member_withdraw(MEMBER_SEED_ID, &id);
+    written(&app, &current, StatusCode::OK, result)
 }
 
 /// `GET /art/{kind}/{key}` on the public origin: the admin listener's art,

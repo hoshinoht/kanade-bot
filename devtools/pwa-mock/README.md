@@ -70,14 +70,34 @@ window (20 per 6 h, seven used, cleared by the admin reset of `1001`; second
 in the queue while the model is busy); `GET /art/{kind}/{key}` serves the
 admin listener's art to a signed-in member. All three answer `401
 unauthenticated` signed out and `closed` while closed. Every other
-`/api/public/` path answers `closed` while closed and `404` while open. Mock control,
-public origin only: `POST /__mock/public/sign-in` signs in without the
+`/api/public/` path answers `closed` while closed and `404` while open.
+Weekly-timing ownership (`src/mock/ownership.rs`, the admin Inbox's requests,
+as `src/api/public/ownership.rs`): `GET /api/public/timings` lists the live
+timings Asahi is on (`MemberTimings`, snowflake-shaped ids) with the live
+requests on each, all of them on her own timings and otherwise only hers
+(Mika's on Carling shows, Tsubame's on Kalos does not).
+`POST /timings/{id}/owner {to}` hands off at once (`422 invalid_body` for a
+`to` that is not 17-20 digits or another field; it supersedes the timing's
+open requests); `POST /timings/{id}/owner-requests` asks (`201`, the same key
+`200` with the request as it now is, another timing under that key `422
+idempotency_mismatch`, a second open ask `409 already_asked`);
+`POST /owner-requests/{id}/accept|decline` (owner) and `/withdraw`
+(requester) answer `MemberOwnerRequest`. Refusals are the server's: `403
+not_owner`/`not_requester`, `409 not_on_party`/`already_owner`/
+`request_closed`/`request_expired`, `404 not_found`. Every write needs the
+session's token and an `Idempotency-Key` (`400 invalid_idempotency_key`);
+hand-off and accept also need the 15-minute fresh window after sign-in
+(`401 reauth_required`, never hit while `KANADE_MOCK_NOW` pins the clock).
+Only the ask and the hand-off replay by key, as on the server; a repeated
+accept, decline or withdraw is refused. Member writes are not rate-limited.
+Changes show in the admin Inbox and emit `inbox` + `schedule` hints.
+Mock control, public origin only: `POST /__mock/public/sign-in` signs in without the
 redirects (cookie + token), `POST /__mock/public/discord {"error": code}`
 makes the next start end with `/?login_error=<code>` (`not_eligible` sets no
 cookie), `POST /__mock/public/end` ends every session (expired or no longer
 eligible), and `POST /__mock/public/rotate` makes each session rotate its id
-and token on its next request, as after a client IP change. Lifetimes are not
-simulated.
+and token on its next request, as after a client IP change. Session lifetimes
+are not simulated.
 
 The mock's admin signs in with Discord as Asahi (staff, `admin:discord:1001`)
 after every `POST /api/admin/reset`; `POST /__mock/session {"method":
