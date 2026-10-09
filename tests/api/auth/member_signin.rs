@@ -740,6 +740,9 @@ async fn a_closed_portal_answers_closed_and_drops_the_pending_login() {
         "/api/public/week",
         "/api/public/me/allowance",
         "/api/public/timings",
+        "/api/public/bosses",
+        "/api/public/bosses/events",
+        "/api/public/bosses/Carling/knowledge",
         "/api/public/timings/f-1/owner",
         "/api/public/owner-requests/r-1/accept",
         "/api/public/anything",
@@ -775,6 +778,8 @@ async fn a_closed_portal_answers_closed_and_drops_the_pending_login() {
         "/art/entry/Carling",
         "/art/anything/at/all",
         "/api/public/week",
+        "/api/public/bosses",
+        "/api/public/bosses/Carling/knowledge",
     ] {
         let reply = harness.get(path, &[]).await;
         assert_eq!(

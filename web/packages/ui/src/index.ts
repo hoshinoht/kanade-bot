@@ -10,6 +10,10 @@ export { default as BossTag } from './components/BossTag.svelte';
 export { default as BossArt } from './components/BossArt.svelte';
 export { bossArt, entryArt, type BossArtChoice, type BossArtInput } from './bossArt';
 export { default as BossStack } from './components/BossStack.svelte';
+// The Bosses window, catalog rows and guides (admin Bosses and Weekly timings, the member portal's Bosses).
+export { default as BossesWindow } from './bosses/BossesWindow.svelte';
+export { default as BossGrid } from './bosses/BossGrid.svelte';
+export { type BossFids } from './bosses/guide';
 export { default as RowContent } from './components/RowContent.svelte';
 export { default as CommandPalette, filterCommands, type Command } from './components/CommandPalette.svelte';
 export { default as DayColumn } from './components/DayColumn.svelte';

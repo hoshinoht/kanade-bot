@@ -5,7 +5,15 @@
     selected,
     id,
     onselect,
-  }: { tabs: { id: T; label: string; count: number | null }[]; selected: T; id: string; onselect: (tab: T) => void } = $props();
+    fid,
+  }: {
+    tabs: { id: T; label: string; count: number | null }[];
+    selected: T;
+    id: string;
+    onselect: (tab: T) => void;
+    /** Fidelity tag (member portal). */
+    fid?: string;
+  } = $props();
 
   const buttons: Record<string, HTMLButtonElement> = {};
 
@@ -20,7 +28,7 @@
   }
 </script>
 
-<div class="guide-tabs" role="tablist" aria-label="Guide sections">
+<div class="guide-tabs" role="tablist" aria-label="Guide sections" data-fid={fid}>
   {#each tabs as tab, index (tab.id)}
     <button
       type="button"

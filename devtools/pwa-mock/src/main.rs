@@ -295,6 +295,18 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         .route("/api/public/me/allowance", get(public::allowance))
         // Other methods on these paths answer as unmounted ones, as on the server.
         .route(
+            "/api/public/bosses",
+            get(public::bosses).fallback(public::unmounted),
+        )
+        .route(
+            "/api/public/bosses/events",
+            get(public::boss_events).fallback(public::unmounted),
+        )
+        .route(
+            "/api/public/bosses/{key}/knowledge",
+            get(public::boss_knowledge).fallback(public::unmounted),
+        )
+        .route(
             "/api/public/timings",
             get(public::timings).fallback(public::unmounted),
         )

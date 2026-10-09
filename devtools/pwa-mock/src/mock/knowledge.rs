@@ -27,6 +27,52 @@ pub struct Knowledge {
     pub missions: Vec<Value>,
 }
 
+/// `public.json` `PublicKnowledge`: [`Knowledge`] without `path`, and with
+/// every bullet's chatbot-only `detail` removed, as the server answers members.
+#[derive(Serialize)]
+pub struct PublicKnowledge {
+    pub key: String,
+    pub name: String,
+    pub level: Option<u16>,
+    pub portrait: Option<String>,
+    pub animated: Option<String>,
+    pub hue: u16,
+    pub researched_as_of: Option<String>,
+    pub in_use: Vec<String>,
+    pub doc: Value,
+    pub missions: Vec<Value>,
+}
+
+impl From<Knowledge> for PublicKnowledge {
+    fn from(knowledge: Knowledge) -> Self {
+        let mut doc = knowledge.doc;
+        strip_detail(&mut doc);
+        Self {
+            key: knowledge.key,
+            name: knowledge.name,
+            level: knowledge.level,
+            portrait: knowledge.portrait,
+            animated: knowledge.animated,
+            hue: knowledge.hue,
+            researched_as_of: knowledge.researched_as_of,
+            in_use: knowledge.in_use,
+            doc,
+            missions: knowledge.missions,
+        }
+    }
+}
+
+fn strip_detail(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            map.remove("detail");
+            map.values_mut().for_each(strip_detail);
+        }
+        Value::Array(items) => items.iter_mut().for_each(strip_detail),
+        _ => {}
+    }
+}
+
 #[derive(Serialize)]
 pub struct EventBoss {
     pub key: String,

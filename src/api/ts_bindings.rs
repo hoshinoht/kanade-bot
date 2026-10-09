@@ -132,6 +132,7 @@ fn bindings() -> String {
         .add::<bosses::BossRow>()
         .add::<bosses::MissionStop>()
         .add::<bosses::Knowledge>()
+        .add::<bosses::PublicKnowledge>()
         .add::<bosses::EventBoss>()
         // Inbox
         .add::<inbox::InboxTab>()

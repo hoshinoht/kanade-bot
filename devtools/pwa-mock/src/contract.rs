@@ -1954,6 +1954,9 @@ async fn public_member_routes_match_the_contract() {
         "/api/public/sessions",
         "/api/public/week",
         "/api/public/me/allowance",
+        "/api/public/bosses",
+        "/api/public/bosses/events",
+        "/api/public/bosses/Carling/knowledge",
         "/art/entry/Carling",
     ] {
         h.public("GET", path, none, StatusCode::UNAUTHORIZED, "")
@@ -2078,10 +2081,62 @@ async fn public_member_routes_match_the_contract() {
         "public.json#/$defs/MemberAllowance",
     )
     .await;
+    // Boss guides: the admin list and event bosses as they are; knowledge
+    // without `path` or any bullet's `detail` (the schema refuses either).
+    h.public(
+        "GET",
+        "/api/public/bosses",
+        auth,
+        StatusCode::OK,
+        "bosses.json#/$defs/BossRows",
+    )
+    .await;
+    let (_, events) = h
+        .public(
+            "GET",
+            "/api/public/bosses/events",
+            auth,
+            StatusCode::OK,
+            "bosses.json#/$defs/EventBosses",
+        )
+        .await;
+    h.checked += 1;
+    if !events
+        .as_array()
+        .is_some_and(|rows| rows.iter().any(|row| row["key"] == "Kai"))
+    {
+        h.failures.push(format!("public event bosses: {events}"));
+    }
+    for key in ["Carling", "MaleficStar", "Kai"] {
+        let (_, knowledge) = h
+            .public(
+                "GET",
+                &format!("/api/public/bosses/{key}/knowledge"),
+                auth,
+                StatusCode::OK,
+                "public.json#/$defs/PublicKnowledge",
+            )
+            .await;
+        h.checked += 1;
+        let text = knowledge.to_string();
+        if text.contains("\"detail\"") || knowledge.get("path").is_some() {
+            h.failures
+                .push(format!("public knowledge {key} leaks path or detail"));
+        }
+    }
+    h.public(
+        "GET",
+        "/api/public/bosses/Nobody/knowledge",
+        auth,
+        StatusCode::NOT_FOUND,
+        "",
+    )
+    .await;
     // Behind the session, so per-user and revalidated on every use (as the server).
     let (status, kind, cache) = h.public_image("/art/entry/Carling", &cookie).await;
     h.checked += 1;
-    if status != StatusCode::OK || !kind.starts_with("image/") || cache != "private, max-age=86400" {
+    if status != StatusCode::OK || !kind.starts_with("image/") || cache != "private, max-age=86400"
+    {
         h.failures
             .push(format!("public art: {status} {kind} {cache}"));
     }
@@ -2251,6 +2306,9 @@ async fn public_member_routes_match_the_contract() {
         "/api/public/sessions",
         "/api/public/week",
         "/api/public/me/allowance",
+        "/api/public/bosses",
+        "/api/public/bosses/events",
+        "/api/public/bosses/Carling/knowledge",
         "/art/entry/Carling",
     ] {
         let (_, refused) = h

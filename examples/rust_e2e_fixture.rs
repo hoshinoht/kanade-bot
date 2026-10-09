@@ -408,7 +408,8 @@ mod member_portal {
             catalog: Arc::new(catalog),
             channels: Arc::new(StaticChannels(Vec::new())),
             access: Arc::new(access),
-            knowledge_dir: None,
+            // The tracked guides (public, schema v2), so the member Bosses page has guides.
+            knowledge_dir: Some("boss/knowledge".into()),
             guild_id: None,
             clock,
             rescans: None,

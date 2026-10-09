@@ -9,7 +9,7 @@
   time zone when signed out; signed in, the Week · My runs tabs, the
   freshness chip, the zone and the account menu); below 900 px (and phone
   landscape) a 48 px top bar and, signed in, the navigation drawer. Requests
-  and Bosses join the masthead with their screens.
+  joins the masthead with its screen; Bosses (`/bosses`) is there.
 -->
 <script lang="ts">
   import { AccountMenu, Freshness, Icon, LoadingState, Masthead, NavDrawer, PHONE_QUERY, pulse, registerServiceWorker, SINGLE_PANE_QUERY, StateNote, ToastRegion, Toaster, type FreshState } from '@kanade/ui';
@@ -22,6 +22,7 @@
   import MyRuns from './MyRuns.svelte';
   import SignIn from './SignIn.svelte';
   import TopBar from './TopBar.svelte';
+  import BossesPage from './bosses/BossesPage.svelte';
   import WeekPage from './week/WeekPage.svelte';
   import { landingOf, safeNext, withoutLoginError } from './landing';
   import { Portal } from './portal.svelte';
@@ -92,7 +93,9 @@
   const freshness: FreshState = $derived(offline ? 'offline' : !weeks.this ? 'loading' : 'live');
   const myRuns = $derived(weeks.this ? weeks.this.runs.filter((r) => r.mine).length : null);
 
-  const TITLES: Record<Page, string> = { week: 'Week', mine: 'My runs', account: 'Account' };
+  const TITLES: Record<Page, string> = { week: 'Week', mine: 'My runs', account: 'Account', bosses: 'Bosses' };
+  // An open guide on a phone: the top bar's "← {boss}" back to the catalog (board PhoneGuide).
+  let bossBack = $state<{ label: string; name: string; go: () => void } | null>(null);
   const SCREEN_TITLES: Record<string, string> = {
     loading: 'Kanade',
     closed: 'Closed · Kanade',
@@ -142,7 +145,7 @@
   function go(to: Page, event?: MouseEvent) {
     if (event && (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0)) return;
     event?.preventDefault();
-    route.go(to === 'week' ? '/' : `/${to === 'mine' ? 'mine' : 'account'}`);
+    route.go(NAV.find((item) => item.page === to)?.href ?? '/');
   }
 
   /** The account menu's Account and Appearance: open that tab and focus its heading. */
@@ -159,9 +162,10 @@
     if (message) toaster.show({ message, tone: 'error' });
   }
 
-  const NAV: { page: Page; label: string; href: string; icon: 'calendar' | 'clock' | 'users' }[] = [
+  const NAV: { page: Page; label: string; href: string; icon: 'calendar' | 'clock' | 'shield' | 'users' }[] = [
     { page: 'week', label: 'Week', href: '/', icon: 'calendar' },
     { page: 'mine', label: 'My runs', href: '/mine', icon: 'clock' },
+    { page: 'bosses', label: 'Bosses', href: '/bosses', icon: 'shield' },
     { page: 'account', label: 'Account', href: '/account', icon: 'users' },
   ];
 </script>
@@ -195,7 +199,11 @@
       open={drawerOpen}
       drawerId="portal-drawer"
       bind:menu={menuButton}
-      back={phoneRun ? { label: 'Week', chip: phoneRun.mine ? "YOU'RE IN" : 'not in this run · view only', mine: phoneRun.mine, onback: () => route.set({ run: '' }) } : null}
+      back={phoneRun
+        ? { label: 'Week', chip: phoneRun.mine ? "YOU'RE IN" : 'not in this run · view only', mine: phoneRun.mine, onback: () => route.set({ run: '' }) }
+        : page === 'bosses' && bossBack
+          ? { label: bossBack.label, name: bossBack.name, onback: bossBack.go }
+          : null}
       onmenu={() => (drawerOpen = true)}
       onprofile={() => void jump('profile', 'acct-page')}
       fresh={page === 'account' ? undefined : freshChip}
@@ -334,6 +342,8 @@
         {phone}
         notice={offlineNotice}
       />
+    {:else if page === 'bosses'}
+      <BossesPage bosses={portal.bosses} {route} {phone} onback={(step) => (bossBack = step)} />
     {:else}
       <Account {portal} session={screen.session} {toaster} {phone} {zone} {timeZone} {tab} ontab={showTab} notice={offlineNotice} />
     {/if}

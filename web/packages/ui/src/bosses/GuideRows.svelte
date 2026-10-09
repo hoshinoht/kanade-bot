@@ -1,7 +1,7 @@
 <!-- Titled guide rows: a bold title over one line of text; a plain string is text only. -->
 <script lang="ts">
   import type { GuideItem } from '@kanade/api-types';
-  import { Icon } from '@kanade/ui';
+  import Icon from '../components/Icon.svelte';
   import { itemParts } from './guide';
 
   let { items, mark, label }: { items: GuideItem[]; mark?: 'risk' | 'ok'; label?: string } = $props();

@@ -8,7 +8,7 @@
 <script lang="ts">
   import { LETTER, spellHp, type HpBreakdown } from './guide';
 
-  let { hp, difficulty }: { hp: HpBreakdown; difficulty: string } = $props();
+  let { hp, difficulty, fid }: { hp: HpBreakdown; difficulty: string; /** Fidelity tag (member portal). */ fid?: string } = $props();
   const tone = $derived(LETTER[difficulty] ?? difficulty.toLowerCase());
   const uid = $props.id();
   // A disclosure, closed by default (user, 2026-10-05); closed, the total stays in the head.
@@ -19,7 +19,7 @@
   <span class="mono" title={spellHp(value)}><span aria-hidden="true">{value}</span><span class="vh">{spellHp(value)}</span></span>
 {/snippet}
 
-<section class="guide-hp" class:guide-hp--closed={!open} aria-labelledby="guide-hp-heading">
+<section class="guide-hp" class:guide-hp--closed={!open} aria-labelledby="guide-hp-heading" data-fid={fid}>
   <div class="guide-hp__head">
     <h3 class="cap" id="guide-hp-heading">
       <button type="button" class="guide-hp__toggle" aria-expanded={open} aria-controls="{uid}-hp-body" onclick={() => (open = !open)}

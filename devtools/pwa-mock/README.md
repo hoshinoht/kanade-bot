@@ -68,7 +68,12 @@ session's member id, no `short_id`, `channel_id`, `cards`, `amended` or
 `roster_change`; `GET /api/public/me/allowance` is an invented member-side
 window (20 per 6 h, seven used, cleared by the admin reset of `1001`; second
 in the queue while the model is busy); `GET /art/{kind}/{key}` serves the
-admin listener's art to a signed-in member. All three answer `401
+admin listener's art to a signed-in member. Boss guides (`src/public.rs`,
+`mock/knowledge.rs` `PublicKnowledge`): `GET /api/public/bosses` and
+`/bosses/events` are the admin list and event bosses as they are;
+`GET /api/public/bosses/{key}/knowledge` is the admin page without `path`
+and with every bullet's chatbot-only `detail` removed (`404` for an unknown
+key). All of these answer `401
 unauthenticated` signed out and `closed` while closed. Every other
 `/api/public/` path answers `closed` while closed and `404` while open.
 Weekly-timing ownership (`src/mock/ownership.rs`, the admin Inbox's requests,

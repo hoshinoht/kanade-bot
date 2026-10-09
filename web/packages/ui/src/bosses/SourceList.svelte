@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { KnowledgeSource } from '@kanade/api-types';
-  import { StatusChip } from '@kanade/ui';
+  import StatusChip from '../components/StatusChip.svelte';
   import { sourceCounts } from './guide';
 
   let { sources }: { sources: KnowledgeSource[] } = $props();

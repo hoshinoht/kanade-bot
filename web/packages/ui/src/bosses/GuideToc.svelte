@@ -9,7 +9,7 @@
 <script lang="ts">
   import type { GuideTab, TocSection } from './guide';
   import { tick } from 'svelte';
-  import { reducedMotion } from '@kanade/ui';
+  import { reducedMotion } from '../motion/easing';
 
   let {
     main,
@@ -18,6 +18,7 @@
     tab,
     tabId,
     onTab,
+    fid,
   }: {
     main: HTMLElement | undefined;
     sections: TocSection[];
@@ -26,6 +27,8 @@
     /** The id of a tab's button, so a tab entry can move focus to it. */
     tabId: (tab: GuideTab) => string;
     onTab: (tab: GuideTab) => void;
+    /** Fidelity tag (member portal). */
+    fid?: string;
   } = $props();
 
   let current = $state('');
@@ -89,7 +92,7 @@
   }
 </script>
 
-<nav class="guide-toc" aria-label="On this page">
+<nav class="guide-toc" aria-label="On this page" data-fid={fid}>
   <h2 class="cap">On this page</h2>
   <ul>
     {#each sections as section (section.key)}

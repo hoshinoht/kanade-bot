@@ -14,7 +14,7 @@ mod history;
 mod inbox;
 pub mod limits;
 mod logs;
-mod read;
+pub(crate) mod read;
 mod reminders;
 mod replay;
 mod tonight;

@@ -1,5 +1,6 @@
 import type { Identity, MemberAllowance, PublicSession, PublicSessions, PublicStatus, SessionsEnded } from '@kanade/api-types';
 import { ApiRequestError, createClient, onUnauthenticated } from '@kanade/client';
+import { MemberBosses } from './bosses/bosses.svelte';
 import type { Landing } from './landing';
 import { MemberTimingsList } from './timings/timings.svelte';
 import { MemberWeeks } from './weeks.svelte';
@@ -45,6 +46,8 @@ export class Portal {
   readonly weeks = new MemberWeeks(client, (error) => this.#gone(error));
   /** The weekly timings the member is on (My runs › Weekly timings), read when My runs opens. */
   readonly timings = new MemberTimingsList(client, (error) => this.#gone(error));
+  /** The boss list and the open guide (Bosses), read when Bosses opens. */
+  readonly bosses = new MemberBosses(client, (error) => this.#gone(error));
   #landing: Landing;
   #refreshing: Promise<void> | null = null;
 
@@ -214,6 +217,7 @@ export class Portal {
     this.allowance = null;
     this.weeks.clear();
     this.timings.clear();
+    this.bosses.clear();
   }
 
   /** A closed portal or an ended session replaces the screen (401 arrives through `watch`). */
