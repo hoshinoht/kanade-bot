@@ -27,13 +27,59 @@ async fn list_shows_v4_lines_for_mine_or_all() {
     );
     assert_eq!(
         slash.run(DAN, "fixed", sub("list", json!([]))).await,
-        "None of the fixed runs are yours. `/fixed list scope:all` shows every party's."
+        "You're not on any fixed run. `/fixed list scope:all` shows every party's."
     );
     assert_eq!(
         slash
             .run(DAN, "fixed", sub("list", json!([opt("scope", "all")])))
             .await,
         KALOS_LINE
+    );
+}
+
+/// "Mine" means on the party: owning a timing (here, creating it for others)
+/// is not enough (user decision 2026-10-09).
+#[tokio::test]
+async fn owning_a_timing_without_being_on_it_is_not_mine() {
+    let slash = Slash::new().await;
+    slash
+        .run(
+            DAN,
+            "fixed",
+            sub(
+                "add",
+                json!([
+                    opt("bosses", "hstar"),
+                    opt("day", "wed"),
+                    opt("time", "2130"),
+                    user_opt("member1", BOB),
+                ]),
+            ),
+        )
+        .await;
+    assert_eq!(
+        slash.run(DAN, "fixed", sub("list", json!([]))).await,
+        "You're not on any fixed run. `/fixed list scope:all` shows every party's."
+    );
+    let reply = slash
+        .run_in(DAN, &[BOSSING_ROLE], LOUNGE, "schedule", json!([]))
+        .await;
+    assert_eq!(
+        reply.embeds[0].description.as_deref(),
+        Some("You have nothing left this week. `/schedule scope:all` shows everyone's.")
+    );
+    // Bob, on the new run, does see it as his.
+    let reply = slash
+        .run_in(BOB, &[BOSSING_ROLE], LOUNGE, "schedule", json!([]))
+        .await;
+    let lines: Vec<&str> = reply.embeds[0]
+        .fields
+        .iter()
+        .map(|f| f.value.as_str())
+        .collect();
+    assert!(
+        lines.iter().any(|line| line.contains("HMaleficStar")),
+        "{lines:?}"
     );
 }
 

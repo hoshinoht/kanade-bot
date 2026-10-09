@@ -10,7 +10,7 @@ use super::build::{choices, command, picked, subcommand, text, text_channel, use
 use super::context::CommandContext;
 use super::dispatch::{ChoicesFuture, CommandError, CommandFuture, SlashCommand};
 use super::invocation::Invocation;
-use super::lookup::{can_modify_fixed, fixed_choices, involves_fixed, refused, resolve};
+use super::lookup::{can_modify_fixed, fixed_choices, on_fixed, refused, resolve};
 use super::options::Args;
 use super::participants::resolve_participants;
 use super::text::fixed_run_line;
@@ -189,11 +189,11 @@ impl FixedCommand {
             .timings()
             .await?
             .into_iter()
-            .filter(|fixed| !only_mine || involves_fixed(fixed, &user))
+            .filter(|fixed| !only_mine || on_fixed(fixed, &user))
             .collect();
         if rows.is_empty() {
             return Ok(InteractionReply::ephemeral(if only_mine {
-                "None of the fixed runs are yours. `/fixed list scope:all` shows every party's."
+                "You're not on any fixed run. `/fixed list scope:all` shows every party's."
             } else {
                 "No fixed runs yet - add one with `/fixed add`."
             }));

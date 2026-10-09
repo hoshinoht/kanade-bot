@@ -16,7 +16,7 @@ use super::build::{choices, command, flag};
 use super::context::{CommandContext, store_failed};
 use super::dispatch::{CommandError, CommandFuture, SlashCommand};
 use super::invocation::Invocation;
-use super::lookup::{involves_run, materialised_weeks};
+use super::lookup::{materialised_weeks, on_run};
 use super::options::Args;
 use super::text::{group_by_day, local_day, roster_delta, schedule_line};
 use crate::bot::delivery::cards::redesign::{
@@ -135,7 +135,7 @@ impl ScheduleCommand {
             .runs
             .iter()
             .filter(|run| run.week_start == week)
-            .filter(|run| scope != "mine" || involves_run(&snapshot, run, &user))
+            .filter(|run| scope != "mine" || on_run(run, &user))
             .filter(|run| scope != "channel" || run.channel_id.as_deref() == Some(&channel))
             .collect();
         let show_past = args.flag("show_past").unwrap_or(false);

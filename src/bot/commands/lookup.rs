@@ -84,20 +84,16 @@ pub fn can_modify_fixed(fixed: &FixedRun, user: &str, admin: bool) -> bool {
     admin || fixed.owner_id == user || fixed.participants.iter().any(|id| id == user)
 }
 
-/// v4 `list_fixed_runs(involving=)`: owner or participant.
-pub fn involves_fixed(fixed: &FixedRun, user: &str) -> bool {
-    can_modify_fixed(fixed, user, false)
+/// "Mine" in listings: on the timing's party. Owning it is not enough
+/// (user decision 2026-10-09).
+pub fn on_fixed(fixed: &FixedRun, user: &str) -> bool {
+    fixed.participants.iter().any(|id| id == user)
 }
 
-/// v4 `list_runs(involving=)`: on the run, or on/owner of its timing.
-pub fn involves_run(snapshot: &ScheduleSnapshot, run: &Run, user: &str) -> bool {
+/// "Mine" in listings (`/schedule mine`, the digest's My runs): on the run's
+/// party. Owning its timing is not enough (user decision 2026-10-09).
+pub fn on_run(run: &Run, user: &str) -> bool {
     run.participants.iter().any(|id| id == user)
-        || run.fixed_run_id.as_deref().is_some_and(|fixed| {
-            snapshot
-                .fixed_runs
-                .iter()
-                .any(|row| row.id == fixed && involves_fixed(row, user))
-        })
 }
 
 /// v4 `_load_run`: any run by id or prefix that the invoker may change.
@@ -217,7 +213,7 @@ pub async fn run_choices(
         .iter()
         .filter(|run| picker == RunPicker::Everything || weeks.contains(&run.week_start))
         .filter(|run| picker != RunPicker::Live || run.status.is_live())
-        .filter(|run| everyone || involves_run(&snapshot, run, &user))
+        .filter(|run| everyone || can_modify_run(&snapshot, run, &user, false))
         .collect();
     runs.sort_by_key(|run| run.datetime);
     runs.into_iter()
@@ -247,7 +243,7 @@ pub async fn fixed_choices(
     snapshot
         .fixed_runs
         .iter()
-        .filter(|fixed| admin || involves_fixed(fixed, &user))
+        .filter(|fixed| can_modify_fixed(fixed, &user, admin))
         .filter_map(|fixed| {
             let label = fixed_label(ctx, fixed);
             matches(typed, &label, &fixed.id).then(|| choice(&label, fixed.id.clone()))
