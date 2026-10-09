@@ -1,3 +1,10 @@
+<!--
+  The colourway tiles and the mode (B_CfgTheme; the portal's Account ›
+  This browser): tiles with a small window preview, grouped into labelled
+  sets inside one radio group, then the mode as a connected group. Native
+  radios, so arrows move the choice and it applies at once. Used by admin
+  Config › Theme and both apps' Account › This browser.
+-->
 <script lang="ts">
   import {
     applyColorway,
@@ -12,8 +19,6 @@
     type Colorway,
     type ThemeMode,
   } from '../theme/theme';
-
-  let { onchange }: { onchange?: (label: string) => void } = $props();
 
   let colorway = $state<Colorway>(currentColorway());
   let mode = $state<ThemeMode>(currentMode());
@@ -39,7 +44,7 @@
     return () => observer.disconnect();
   });
 
-  // The Dynamic swatch previews the avatar's palette.
+  // The Dynamic tile previews the avatar's palette.
   $effect(() => void refreshDynamic());
 
   const MODES: { key: ThemeMode; name: string }[] = [
@@ -49,10 +54,10 @@
   ];
 </script>
 
-<fieldset class="field">
-  <legend class="label">Colourway</legend>
+<fieldset class="tiles__set" data-fid="theme-tiles">
+  <legend class="cap">Colourway</legend>
   {#each COLORWAY_GROUPS as group (group.key)}
-    <fieldset class="swatches__set">
+    <fieldset class="tiles__group">
       <legend class="setbar">
         <button
           type="button"
@@ -62,20 +67,20 @@
           onclick={() => toggle(group.key)}
         >
           <span class="setbar__chev" aria-hidden="true"></span>
-          <span class="swatches__label">{group.name}</span>
+          <span class="tiles__label">{group.name}</span>
           {#if !open[group.key]}
             <span class="setbar__minis" aria-hidden="true">
-              {#each group.ways as way (way.key)}<i class="setbar__mini swatch__dots--{way.key}"></i>{/each}
+              {#each group.ways as way (way.key)}<i class="setbar__mini colorway--{way.key}"></i>{/each}
             </span>
           {/if}
         </button>
       </legend>
       <div class="setbody" class:setbody--open={open[group.key]} id="{uid}-{group.key}">
         <div class="setbody__inner">
-          {#if 'note' in group}<p class="swatches__note">{group.note}</p>{/if}
-          <div class="swatches">
+          {#if 'note' in group}<p class="tiles__note">{group.note}</p>{/if}
+          <div class="tiles">
             {#each group.ways as way (way.key)}
-              <label class="swatch">
+              <label class="tile">
                 <input
                   type="radio"
                   name="{uid}-colorway"
@@ -84,11 +89,10 @@
                   onchange={() => {
                     colorway = way.key;
                     applyColorway(way.key);
-                    onchange?.(`Colourway ${way.name}`);
                   }}
                 />
-                <span class="swatch__dots swatch__dots--{way.key}" aria-hidden="true"></span>
-                <span class="swatch__name">{way.name}</span>
+                <span class="tile__mini colorway--{way.key}" aria-hidden="true"><i></i><b></b></span>
+                <span class="tile__name">{way.name}</span>
               </label>
             {/each}
           </div>
@@ -97,11 +101,11 @@
     </fieldset>
   {/each}
 </fieldset>
-<fieldset class="field">
-  <legend class="label">Mode</legend>
-  <div class="swatches">
+<fieldset class="tiles__set" data-fid="theme-mode">
+  <legend class="cap">Mode</legend>
+  <div class="tiles__seg">
     {#each MODES as item (item.key)}
-      <label class="swatch swatch--plain">
+      <label class="tiles__mode">
         <input
           type="radio"
           name="{uid}-mode"
@@ -110,12 +114,10 @@
           onchange={() => {
             mode = item.key;
             applyMode(item.key);
-            onchange?.(`${item.name} mode`);
           }}
         />
-        <span class="swatch__name">{item.name}</span>
+        <span>{item.name}</span>
       </label>
     {/each}
   </div>
 </fieldset>
-<p class="note">Kept in this browser only; nothing is sent to the server.</p>

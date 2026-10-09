@@ -16,7 +16,7 @@ export const PINNED_NOW = '2026-09-29T04:00:00Z';
 export const REAL_ART = process.env.KANADE_REAL_ART === '1';
 /** First-load page headings under the pinned mock clock: admin's week hides its
  * done and cancelled runs (v4); the public portal opens signed out on Sign in. */
-export const HEADING = { admin: '7 runs', public: 'Sign in' } as const;
+export const HEADING = { admin: '7 runs', public: 'Sign in to see the boss week' } as const;
 
 /**
  * Signs this page's browser context in on the public origin, as a Discord

@@ -1,8 +1,8 @@
 <!--
-  The member portal's masthead (P_ boards "Shell"): the bot's identity tile
-  (its avatar, or the initial) with its name over a mono by-line, then `nav`,
-  then `meta` at the end (signed out: the time zone; signed in: the account
-  button). 60 px; the phone frame's 52 px bar drops the by-line.
+  The member portal's masthead (board Mast): the bot's identity tile (its
+  avatar, or the initial) with its name over a mono by-line, then `nav`,
+  then `meta` at the end (signed out: the time zone; signed in: freshness,
+  zone and the account button). 60 px; phones use the top bar instead.
 -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
@@ -18,9 +18,9 @@
   }: { name: string; by?: string; avatar?: string | null; href?: string | null; meta?: Snippet; nav?: Snippet } = $props();
 </script>
 
-<header class="masthead">
+<header class="masthead" data-fid="mast">
   <div class="masthead__inner">
-    <svelte:element this={href ? 'a' : 'p'} class="masthead__id" {href}>
+    <svelte:element this={href ? 'a' : 'p'} class="masthead__id" {href} data-fid="mast-id">
       {#if avatar}
         <img class="masthead__tile" src={avatar} alt="" width="32" height="32" />
       {:else}
@@ -32,6 +32,6 @@
       </span>
     </svelte:element>
     {@render nav?.()}
-    {#if meta}<div class="masthead__meta">{@render meta()}</div>{/if}
+    {#if meta}<div class="masthead__meta" data-fid="mast-meta">{@render meta()}</div>{/if}
   </div>
 </header>

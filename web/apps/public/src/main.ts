@@ -2,6 +2,7 @@ import '@kanade/tokens/index.scss';
 import '@kanade/tokens/fonts.css';
 import '@kanade/ui/public.scss';
 import '@kanade/ui/styles/gate.scss';
+import '@kanade/ui/styles/account.scss';
 import './portal.scss';
 import { guardWrites } from '@kanade/client';
 import { mount } from 'svelte';

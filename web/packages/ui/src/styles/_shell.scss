@@ -3,6 +3,7 @@
 // name over a mono by-line, the time zone or account button at the end).
 
 .masthead {
+  position: relative; // above the shell's windows (z-index), as the board's
   flex: none;
   z-index: 20;
   background: var(--surface);
@@ -84,6 +85,18 @@
   color: var(--dim-text);
   font-family: var(--mono);
   font-size: var(--fs-mini);
+}
+
+// The zone the portal shows times in, as a quiet outlined pill (board Mast).
+.masthead__zone {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 // The account button on the masthead (P_Account): a 36 px pill with the

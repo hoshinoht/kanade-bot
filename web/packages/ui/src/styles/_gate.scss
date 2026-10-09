@@ -133,9 +133,14 @@
 }
 
 .gate__body p {
-  color: var(--dim);
   font-size: var(--fs-body-sm);
   margin: 0;
+}
+
+// Notices, boxes and strips keep their own colour (`.flash--*`, the portal's
+// `.infobox`, the admin login's Tonight strip).
+.gate__body p:not(.flash, .infobox, .gate__tonight) {
+  color: var(--dim);
 }
 
 .gate__body label {
@@ -194,6 +199,63 @@
   flex-direction: column;
   gap: 0.6rem;
   margin-top: 0.6rem;
+}
+
+/* ── the member portal's windows (Sign in, Closed, Not eligible, Signed out) ── */
+
+// A shorter banner where the window has more to say (Closed, Not eligible),
+// greyed while the portal is closed.
+.gate__hero--short {
+  height: 150px;
+}
+
+.gate__hero--muted {
+  filter: grayscale(1);
+}
+
+// The page heading, under the banner (the title bar names the window).
+.gate__lead {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: var(--fs-lg);
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+// Who Discord signed in (Not eligible).
+.gate__who-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: var(--pane);
+  color: var(--ink);
+  font-size: var(--fs-body-sm);
+}
+
+.gate__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.gate__body .gate__actions > .btn {
+  flex: 1 1 0;
+  width: auto;
+}
+
+// The time zone and the privacy notice, on the window's foot.
+.gate__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 24px;
+  border-top: 1.5px solid var(--line);
+  background: var(--pane);
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
 }
 
 @media (max-width: 480px) {

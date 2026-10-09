@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { boardExists, composite, diff, markdown, MOCKUPS, renderBoard, settle, skeleton } from './fidelity-kit';
-import { ADMIN, expect, PINNED_NOW, test, choose, openList } from './support';
+import { ADMIN, expect, PINNED_NOW, PUBLIC, test, choose, openList, setPortal, signInPublic } from './support';
 
 // Layout fidelity against the M3E boards: `bun run fidelity [pair ...] [--keep]`
 // (scripts/fidelity.ts builds with KANADE_FIDELITY=1 so the data-fid tags
@@ -18,9 +18,92 @@ interface Pair {
   name: string;
   board: string;
   path: string;
+  /** The member portal (the public origin, drawn in Otonose) instead of the admin app. */
+  app?: 'public';
+  /** Before the first load: sign in, close the portal, hold back a read. */
+  setup?: (page: Page) => Promise<void>;
+  /** Where the board is a strip of the frame (Mast): open the app at this size, measured against the board's frame. */
+  viewport?: { width: number; height: number };
   /** Opens the state the board shows and waits for it. */
   ready: (page: Page) => Promise<void>;
 }
+
+// Member portal pairs (boards: KANADE_MOCKUPS=…/docs/research/2026-10-09-public-portal-mockups).
+const signedOut = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+};
+const signedIn = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.getByRole('tab', { name: /^Devices/ })).toBeVisible();
+};
+const devicesShown = async (page: Page) => {
+  await signedIn(page);
+  await expect(page.getByText('This device')).toBeVisible();
+};
+/** Every colourway set open, as the boards draw them (only the current one opens by itself). */
+const allSets = async (page: Page) => {
+  await signedIn(page);
+  const sets = page.getByRole('group', { name: 'Colourway' }).locator('button[aria-expanded="false"]');
+  while ((await sets.count()) > 0) await sets.first().click();
+  // Opening a set scrolls it into view; the boards show the panel from its top.
+  await page.getByRole('tabpanel').evaluate((panel) => panel.scrollTo(0, 0));
+};
+const ended = async (page: Page) => {
+  await devicesShown(page);
+  await page.request.post(`${PUBLIC}/__mock/public/end`);
+  // Reopening the tab re-reads the devices: the 401 ends the screen.
+  await page.getByRole('tab', { name: 'Profile' }).click();
+  await page.getByRole('tab', { name: /^Devices/ }).click();
+  await expect(page.getByRole('heading', { level: 1, name: "You've been signed out" })).toBeVisible();
+};
+const SIGN_IN = [
+  ['', ''],
+  ['-Expired', 'state'],
+  ['-Failed', 'discord'],
+  ['-Limited', 'rate_limited'],
+  ['-Unavailable', 'unavailable'],
+] as const;
+const PUBLIC_PAIRS: Pair[] = [
+  ...SIGN_IN.flatMap(([variant, code]) => [
+    { name: `pub-signin${variant.toLowerCase()}`, board: `SignIn${variant}`, path: code ? `/?login_error=${code}` : '/', ready: signedOut },
+    { name: `pub-phone-gate${variant.toLowerCase()}`, board: `PhoneGate${variant}`, path: code ? `/?login_error=${code}` : '/', ready: signedOut },
+  ]),
+  ...(['', 'Phone'] as const).map((phone) => ({
+    name: phone ? 'pub-phone-closed' : 'pub-closed',
+    board: `${phone}Closed`,
+    path: '/',
+    setup: (page: Page) => setPortal(page.request, false),
+    ready: signedOut,
+  })),
+  { name: 'pub-denied', board: 'Denied', path: '/?login_error=not_eligible', ready: signedOut },
+  { name: 'pub-phone-denied', board: 'PhoneDenied', path: '/?login_error=not_eligible', ready: signedOut },
+  { name: 'pub-ended', board: 'Ended', path: '/?tab=devices', setup: signInPublic, ready: ended },
+  { name: 'pub-phone-ended', board: 'PhoneEnded', path: '/?tab=devices', setup: signInPublic, ready: ended },
+  { name: 'pub-mast', board: 'Mast', path: '/', setup: signInPublic, viewport: { width: 1280, height: 800 }, ready: signedIn },
+  {
+    name: 'pub-phone-drawer',
+    board: 'PhoneDrawer',
+    path: '/',
+    setup: signInPublic,
+    ready: async (page) => {
+      await signedIn(page);
+      await page.getByRole('button', { name: 'Open the navigation' }).click();
+      const drawer = page.getByRole('dialog', { name: 'Navigation' });
+      await expect(drawer).toBeVisible();
+      // The panel slides in; measure it where it lands.
+      await expect.poll(() => drawer.getByRole('navigation', { name: 'Main' }).evaluate((nav) => nav.getBoundingClientRect().x)).toBeGreaterThanOrEqual(0);
+    },
+  },
+  { name: 'pub-account', board: 'Account', path: '/', setup: signInPublic, ready: signedIn },
+  { name: 'pub-phone-account', board: 'PhoneAccount', path: '/', setup: signInPublic, ready: signedIn },
+  { name: 'pub-account-devices', board: 'Account-Devices', path: '/?tab=devices', setup: signInPublic, ready: devicesShown },
+  { name: 'pub-phone-devices', board: 'PhoneDevices', path: '/?tab=devices', setup: signInPublic, ready: devicesShown },
+  { name: 'pub-account-browser', board: 'Account-Browser', path: '/?tab=browser', setup: signInPublic, ready: allSets },
+  // The phone board opens only the current set (Base), as the app does by itself.
+  { name: 'pub-phone-browser', board: 'PhoneBrowser', path: '/?tab=browser', setup: signInPublic, ready: signedIn },
+  // The States boards (loading, offline, toasts) draw them over the member Week: their pairs come with that screen.
+].map((pair) => ({ ...pair, app: 'public' as const }));
 
 const PAIRS: Pair[] = [
   {
@@ -463,7 +546,7 @@ const PAIRS: Pair[] = [
 test.describe('layout fidelity', () => {
   test.skip(!ENABLED, 'run with `bun run fidelity` (needs a KANADE_FIDELITY=1 build)');
 
-  for (const pair of PAIRS.filter((p) => !ONLY.length || ONLY.includes(p.name))) {
+  for (const pair of [...PAIRS, ...PUBLIC_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
     test(pair.name, async ({ page, browser }) => {
       test.skip(!boardExists(pair.board), `no board ${pair.board}.dc.html under ${MOCKUPS}`);
       const dir = join(OUT, pair.name);
@@ -474,17 +557,23 @@ test.describe('layout fidelity', () => {
       const boardPng = await board.page.screenshot({ animations: 'disabled' });
       await board.page.close();
 
-      await page.setViewportSize({ width: board.width, height: board.height });
-      // The face the boards are drawn in.
-      await page.addInitScript(() => {
-        localStorage.setItem('colorway', 'blossom');
+      await page.setViewportSize(pair.viewport ?? { width: board.width, height: board.height });
+      // The face the boards are drawn in: the admin boards in Nazuna, the portal's in Otonose.
+      await page.addInitScript((colorway) => {
+        localStorage.setItem('colorway', colorway);
         localStorage.setItem('theme', 'light');
-      });
-      await page.goto(`${ADMIN}${pair.path}${pair.path.includes('?') ? '&' : '?'}sw=off`);
+      }, pair.app === 'public' ? 'marigold' : 'blossom');
+      await pair.setup?.(page);
+      await page.goto(`${pair.app === 'public' ? PUBLIC : ADMIN}${pair.path}${pair.path.includes('?') ? '&' : '?'}sw=off`);
       await pair.ready(page);
       await settle(page);
-      const appRegions = await skeleton(page);
-      const appPng = await page.screenshot({ animations: 'disabled' });
+      let appRegions = await skeleton(page);
+      // A strip of the frame (Mast): top-level regions keep their place against the board's frame, not the larger page.
+      if (pair.viewport)
+        appRegions = appRegions.map((r) =>
+          r.parent ? r : { ...r, box: { ...r.box, right: board.width - r.abs.x - r.abs.w, bottom: board.height - r.abs.y - r.abs.h, pw: board.width, ph: board.height } },
+        );
+      const appPng = await page.screenshot({ animations: 'disabled', clip: { x: 0, y: 0, width: board.width, height: board.height } });
 
       const notes: string[] = [];
       if (board.errors.length) notes.push(`Board script errors: ${board.errors.join(' | ')}`);

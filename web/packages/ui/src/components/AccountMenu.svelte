@@ -15,6 +15,7 @@
     avatar = null,
     detail = '',
     items,
+    ...data
   }: {
     who: string;
     /** The signed-in person's portrait URL; the initial when null. */
@@ -23,6 +24,8 @@
     detail?: string;
     /** The menu items; `hide(false)` closes without returning focus to the chip. */
     items: Snippet<[hide: (refocus?: boolean) => void]>;
+    /** `data-*` attributes for the chip (a call site's layout-fidelity tag). */
+    [attribute: `data-${string}`]: string | undefined;
   } = $props();
 
   const uid = $props.id();
@@ -90,6 +93,7 @@
     aria-label="Account: {who}"
     onclick={() => (open ? hide() : void show('first'))}
     onkeydown={onChipKey}
+    {...data}
   >
     <Avatar class="account__initial" src={avatar} name={who} />
     <span class="account__name">{who}</span>

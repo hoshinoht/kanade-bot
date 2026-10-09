@@ -8,6 +8,7 @@
     COLORWAYS,
     experiments,
     Icon,
+    NavDrawer,
     registerServiceWorker,
     runFullTitle,
     setExperiments,
@@ -31,7 +32,7 @@
   import type { default as PaletteType } from '@kanade/ui/palette';
   import EdgeSwipe from './shell/EdgeSwipe.svelte';
   import { PHONE_QUERY, setChrome, type BackStep } from './shell/chrome';
-  import NavDrawer from './shell/NavDrawer.svelte';
+  import NavList from './shell/NavList.svelte';
   import Rail from './shell/Rail.svelte';
   import TopBar from './shell/TopBar.svelte';
   import { directory } from './names/directory.svelte';
@@ -585,13 +586,17 @@
         id="nav-drawer"
         name={store.identity?.name ?? 'Kanade'}
         avatar={store.identity ? artUrl(store.identity.avatar, store.identity) : null}
-        active={section?.key ?? ''}
-        inbox={store.summary?.inbox ?? 0}
-        counts={store.drawerCounts}
-        timezone={store.week?.timezone ?? ''}
         returnTo={menuButton}
-        {account}
-      />
+      >
+        {#snippet nav(follow)}
+          <NavList active={section?.key ?? ''} inbox={store.summary?.inbox ?? 0} counts={store.drawerCounts} onnavigate={follow} />
+        {/snippet}
+        {#snippet foot()}
+          {@render account()}
+          <span class="drawer__keys" title="Commands: Ctrl K (Cmd K on a Mac)">Ctrl K</span>
+          {#if store.week?.timezone}<span class="drawer__tz" title="Guild timezone — every time here is in it">{store.week.timezone}</span>{/if}
+        {/snippet}
+      </NavDrawer>
       {#if !drawerOpen}<EdgeSwipe onopen={() => (drawerOpen = true)} />{/if}
     {:else}
       <Rail

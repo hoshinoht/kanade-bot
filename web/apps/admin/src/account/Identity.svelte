@@ -46,7 +46,7 @@
     <div class="account-id__who">
       {@render portrait()}
       <span class="cap">{cap}</span>
-      <h2 class="account-id__name">{name}</h2>
+      <h2 class="account-id__name" title={name}>{name}</h2>
       <span class="account-id__method"><Icon name={me.method === 'discord' ? 'users' : 'key'} />{methodLong(me.method)}</span>
     </div>
     <section class="account-id__diag" aria-labelledby="account-diag">

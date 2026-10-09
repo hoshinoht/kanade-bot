@@ -24,17 +24,21 @@ export function discordStart(next: string): string {
 
 /**
  * What the app shows for the callback's code: `not_eligible` is the neutral
- * Denied page, `closed` the Closed one; every other code is a generic notice
- * on Sign in (the reasons stay on the server).
+ * Denied page, `closed` the Closed one; the rest are notices on Sign in that
+ * say what to do (contract §1's closed set): `state` took too long,
+ * `rate_limited` too many tries, `unavailable` member data or Discord is
+ * down (nobody was refused); `denied`, `discord` and anything else simply
+ * didn't finish.
  */
-export type Landing = 'none' | 'denied' | 'closed' | 'failed';
+export type Landing = 'none' | 'denied' | 'closed' | 'failed' | 'expired' | 'limited' | 'unavailable';
+
+const NOTICES: Record<string, Landing> = { not_eligible: 'denied', closed: 'closed', state: 'expired', rate_limited: 'limited', unavailable: 'unavailable' };
 
 export function landingOf(search: string): Landing {
   const code = new URLSearchParams(search).get('login_error');
   if (code === null) return 'none';
-  if (code === 'not_eligible') return 'denied';
-  if (code === 'closed') return 'closed';
-  return 'failed';
+  // Own keys only: a code such as `constructor` is no landing.
+  return Object.hasOwn(NOTICES, code) ? NOTICES[code]! : 'failed';
 }
 
 /** The same address without `login_error`, so a reload does not repeat the outcome. */

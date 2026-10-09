@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { discordStart, landingOf, safeNext, withoutLoginError } from '../src/landing';
 
 describe('sign-in landing', () => {
-  it('maps the callback codes: not_eligible is Denied, closed is Closed, the rest a generic notice', () => {
+  it('maps the callback codes: Denied, Closed, the three notices that say what to do, and a generic one', () => {
     expect(landingOf('')).toBe('none');
     expect(landingOf('?login_error=not_eligible')).toBe('denied');
     expect(landingOf('?login_error=closed')).toBe('closed');
-    for (const code of ['state', 'denied', 'discord', 'unavailable', 'rate_limited', 'made-up']) {
+    expect(landingOf('?login_error=state')).toBe('expired');
+    expect(landingOf('?login_error=rate_limited')).toBe('limited');
+    expect(landingOf('?login_error=unavailable')).toBe('unavailable');
+    for (const code of ['denied', 'discord', 'made-up', 'constructor', 'toString']) {
       expect(landingOf(`?sw=off&login_error=${code}`)).toBe('failed');
     }
   });

@@ -63,7 +63,7 @@ line. Styles live in `@kanade/ui/src/styles/` unless noted.
 | `DayColumn.svelte`, `RunCardBody.svelte`, `_board.scss` | `_board.scss`, `partials/board.html` | Flex classes replace the inline `grid-template-columns`; below 900px days stack inside the panel; finished runs use a dashed recessed face instead of 62% opacity |
 | `StatusMark`, `AnswerChip`, `BossTag`, `Icon` | `_chips-status.scss`, `_bosses.scss`, `partials/icons.html` (Feather) | Same shapes/words; text uses `--*-text` tokens |
 | `Modal.svelte`, `_modal.scss` | `_modal.scss` | Native `showModal()`; focus returns to the opener |
-| `ThemePicker.svelte`, `_theme-picker.scss` | `_theme-picker.scss`, `config.html` | Swatch colours from per-colourway classes, not an inline `style` |
+| `ThemeTiles.svelte`, `_theme-tiles.scss` | `_theme-picker.scss`, `config.html` | Tiles with a window preview in labelled sets (both apps); colours from per-colourway classes, not an inline `style` |
 | `RunTable.svelte`, `_stats-tables.scss` | `_stats-tables.scss` | Bosses are the row header (HPK) |
 | `CommandPalette.svelte` (component CSS) | none | New; selection in chrome colours |
 | `ToastRegion.svelte`, `_toast.scss` | `.flash` | New; timed toasts pause on hover/focus |

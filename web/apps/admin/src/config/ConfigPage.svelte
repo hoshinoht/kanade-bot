@@ -9,7 +9,7 @@
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/settings.scss';
   import type { ConfigView, Role, RoleProfileWrite } from '@kanade/api-types';
-  import { COLORWAYS, currentColorway, Icon, LiveRegion, LoadError, LoadingState, RowContent, SINGLE_PANE_QUERY, Toaster } from '@kanade/ui';
+  import { COLORWAYS, currentColorway, Icon, LiveRegion, LoadError, LoadingState, RowContent, SINGLE_PANE_QUERY, ThemeTiles, Toaster } from '@kanade/ui';
   import { tick } from 'svelte';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { directory } from '../names/directory.svelte';
@@ -33,7 +33,6 @@
   import SettingsPanel from './SettingsPanel.svelte';
   import SwitchCard from './SwitchCard.svelte';
   import { findSetting, settleFrames } from './find';
-  import ThemeTiles from './ThemeTiles.svelte';
   import RescanPanel from '../extractions/RescanPanel.svelte';
   import type { Channel } from '@kanade/api-types';
 

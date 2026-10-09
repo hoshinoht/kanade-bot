@@ -141,7 +141,7 @@ const STATES: Screen[] = [
   { name: 'public/?login_error=not_eligible (Denied)', url: screenUrl(PUBLIC, '/?login_error=not_eligible') },
   {
     name: 'public/ signed in (Account)',
-    url: screenUrl(PUBLIC, '/'),
+    url: screenUrl(PUBLIC, '/?tab=devices'),
     open: async (page) => {
       await signInPublic(page);
       await page.reload();

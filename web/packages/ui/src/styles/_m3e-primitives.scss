@@ -1,7 +1,7 @@
-// Shared M3E primitives for every admin route (admin.scss only: the public
-// app keeps the v4 furniture). Values follow the mockup boards in
-// docs/research/2026-09-28-m3e-mockups/ (`.win`, `.tb`, `.tab`, `.tbtn`,
-// `.lrow`, `.seg`, `.key`, `.cap`, `.tonal2`) -- fidelity audit 2026-10-02.
+// Shared M3E primitives for both apps' windows (admin.scss and public.scss).
+// Values follow the mockup boards in docs/research/2026-09-28-m3e-mockups/
+// (`.win`, `.tb`, `.tab`, `.tbtn`, `.lrow`, `.seg`, `.key`, `.cap`,
+// `.tonal2`) -- fidelity audit 2026-10-02 -- and the portal's 2026-10-09 boards.
 
 /* ── overlines: mono uppercase labels (mockup `.cap`) ─────────────────────── */
 
@@ -35,11 +35,11 @@
 }
 
 // A page's window holds its panes edge to edge: no inset box inside it.
-.frame--rail .shell > .card {
+.shell > .card {
   padding: 0;
 }
 
-.frame--rail .shell > .card > .card__head {
+.shell > .card > .card__head {
   flex: none;
   min-height: 48px;
   margin: 0;
@@ -59,19 +59,19 @@
 }
 
 // Tabs in the title bar sit on its floor (mockup `.tab`: 38 px, 16 px top corners).
-.frame--rail .shell > .card > .tabs__strip {
+.shell > .card > .tabs__strip {
   align-items: flex-end;
   padding-left: 16px;
 }
 
 // The three dots sit on the tabs' centre line, not the bar's: the tabs sit
 // on the bar's floor, 38 px tall, so the 8 px dots ride 15 px above it.
-.frame--rail .shell > .card > .tabs__strip::before {
+.shell > .card > .tabs__strip::before {
   align-self: flex-end;
   margin-bottom: 15px;
 }
 
-.frame--rail .shell > .card > .tabs__strip > :not(.tabs__tabs) {
+.shell > .card > .tabs__strip > :not(.tabs__tabs) {
   align-self: center;
 }
 

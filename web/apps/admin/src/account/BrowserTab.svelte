@@ -4,8 +4,7 @@
   open, Experiments — and the keyboard shortcuts.
 -->
 <script lang="ts">
-  import { experiments, Icon, motionPreference, setExperiments } from '@kanade/ui';
-  import ThemeTiles from '../config/ThemeTiles.svelte';
+  import { experiments, Icon, motionPreference, setExperiments, SwitchRow, ThemeTiles } from '@kanade/ui';
   import { discordLinks } from '../shared/discordLink.svelte';
 
   const KEYS: { keys: string[]; what: string }[] = [
@@ -20,18 +19,6 @@
   const KEY_NAMES: Record<string, string> = { '↑': 'Up arrow', '↓': 'Down arrow', Esc: 'Escape', PgUp: 'Page up', PgDn: 'Page down' };
 </script>
 
-{#snippet toggle(id: string, title: string, note: string, on: boolean, flip: () => void)}
-  <div class="account-row account-row--plain">
-    <span class="account-row__text">
-      <span class="account-row__title" id="{id}-t">{title}</span>
-      <span class="account-row__sub" id="{id}-d">{note}</span>
-    </span>
-    <button type="button" role="switch" class="switch" aria-checked={on} aria-labelledby="{id}-t" aria-describedby="{id}-d" onclick={flip}
-      ><span class="switch__knob" aria-hidden="true"></span></button
-    >
-  </div>
-{/snippet}
-
 <div class="account-browser" data-fid="account-browser">
   <p class="settings__box"><Icon name="monitor" /><span>Saved in <b>this browser only</b>. Your other devices keep their own look and settings.</span></p>
   <div class="account-browser__cols">
@@ -44,21 +31,21 @@
       <section class="account-sec" aria-labelledby="account-device">
         <div class="account-sec__head"><h3 class="cap" id="account-device">Motion, links and trials</h3></div>
         <div class="account-grp">
-          {@render toggle(
-            'account-motion',
-            'Reduce motion',
-            'Still shapes and flat bars, even if your system allows motion',
-            motionPreference.reduce,
-            () => motionPreference.set(!motionPreference.reduce),
-          )}
-          {@render toggle(
-            'account-links',
-            'Open Discord links in the app',
-            'Applies only to this browser. Without the Discord app installed here the links will not open, so turn this off to open them in the browser.',
-            discordLinks.app,
-            () => discordLinks.set(!discordLinks.app),
-          )}
-          {@render toggle('account-exp', 'Experiments', 'Features still being tuned', experiments.on, () => setExperiments(!experiments.on))}
+          <SwitchRow
+            id="account-motion"
+            title="Reduce motion"
+            note="Still shapes and flat bars, even if your system allows motion"
+            on={motionPreference.reduce}
+            onflip={() => motionPreference.set(!motionPreference.reduce)}
+          />
+          <SwitchRow
+            id="account-links"
+            title="Open Discord links in the app"
+            note="Applies only to this browser. Without the Discord app installed here the links will not open, so turn this off to open them in the browser."
+            on={discordLinks.app}
+            onflip={() => discordLinks.set(!discordLinks.app)}
+          />
+          <SwitchRow id="account-exp" title="Experiments" note="Features still being tuned" on={experiments.on} onflip={() => setExperiments(!experiments.on)} />
         </div>
       </section>
       <section class="account-sec" aria-labelledby="account-keys">

@@ -1,39 +1,36 @@
 <!--
-  The phone's navigation drawer (M3E spec "Phone", gate G7): the expanded
-  rail's content in a modal dialog. Opens from the top bar's menu button or a
-  swipe in from the left edge; closes on Escape, ×, a tap on the scrim, or
-  following a link. Focus stays inside while it is open and returns to the
-  menu button when it closes without navigating (a followed link lands on the
-  new page, as any route change does).
+  The phone's navigation drawer (M3E spec "Phone", gate G7; the member
+  portal's PhoneDrawer): the app's destinations in a modal dialog. Opens from
+  the top bar's menu button (admin: also a swipe in from the left edge);
+  closes on Escape, ×, a tap on the scrim, or following a link. Focus stays
+  inside while it is open and returns to the menu button when it closes
+  without navigating (a followed link lands on the new page, as any route
+  change does). Each app passes its list (`nav`, given the link handler) and
+  its foot.
 -->
 <script lang="ts">
-  import { Icon, initial } from '@kanade/ui';
   import type { Snippet } from 'svelte';
-  import NavList from './NavList.svelte';
+  import { initial } from '../initial';
+  import Icon from './Icon.svelte';
 
   let {
     open = $bindable(false),
     id,
     name,
     avatar = null,
-    active,
-    inbox = 0,
-    counts = {},
-    timezone = '',
     returnTo,
-    account,
+    nav,
+    foot,
   }: {
     open: boolean;
     id: string;
     name: string;
     avatar?: string | null;
-    active: string;
-    inbox?: number;
-    counts?: Partial<Record<string, number>>;
-    timezone?: string;
     /** Where focus goes when the drawer closes without navigating. */
     returnTo?: HTMLElement;
-    account: Snippet;
+    /** The destinations; each link calls `follow` on click so the drawer closes. */
+    nav: Snippet<[follow: (event: MouseEvent) => void]>;
+    foot: Snippet;
   } = $props();
 
   let dialog: HTMLDialogElement;
@@ -110,11 +107,9 @@
         </a>
         <button type="button" class="drawer__close" data-fid="drawer-close" onclick={() => (open = false)}><Icon name="x" label="Close the navigation" /></button>
       </div>
-      <NavList {active} {inbox} {counts} onnavigate={follow} />
+      {@render nav(follow)}
       <div class="drawer__foot" data-fid="drawer-foot">
-        {@render account()}
-        <span class="drawer__keys" title="Commands: Ctrl K (Cmd K on a Mac)">Ctrl K</span>
-        {#if timezone}<span class="drawer__tz" title="Guild timezone — every time here is in it">{timezone}</span>{/if}
+        {@render foot()}
       </div>
     </div>
   {/if}

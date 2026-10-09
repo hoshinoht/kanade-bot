@@ -158,6 +158,13 @@
   background: color-mix(in srgb, var(--risk) 10%, var(--surface));
 }
 
+// Something to wait out or act on, not a failure (sign-in took too long, offline).
+.flash--warn {
+  color: color-mix(in srgb, var(--warn-text) 70%, var(--ink));
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  background: color-mix(in srgb, var(--warn) 10%, var(--surface));
+}
+
 // Freshness of polled data, said in words as well as colour.
 .fresh {
   display: inline-flex;

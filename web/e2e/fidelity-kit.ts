@@ -202,7 +202,8 @@ export function diff(board: Region[], app: Region[]): Finding[] {
       if (bs.textTransform !== as.textTransform) add(b, 3, 'text transform', bs.textTransform, as.textTransform);
     }
   }
-  for (const a of app) if (a.n === 0 && !inBoard.has(key(a)) && !board.some((r) => r.fid === a.fid)) add(a, 4, 'app only (untagged on the board?)', 'absent', 'present');
+  // An empty region the app keeps mounted (the toast stack) is not drawn, so it is no finding.
+  for (const a of app) if (a.n === 0 && a.visible && !inBoard.has(key(a)) && !board.some((r) => r.fid === a.fid)) add(a, 4, 'app only (untagged on the board?)', 'absent', 'present');
 
   const order = new Map(board.map((r, i) => [r.fid, i]));
   return out.sort((x, y) => x.severity - y.severity || (order.get(x.fid) ?? 1e9) - (order.get(y.fid) ?? 1e9) || x.n - y.n);

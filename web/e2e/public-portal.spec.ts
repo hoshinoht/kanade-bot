@@ -49,9 +49,10 @@ async function tabTo(page: Page, target: Locator, limit = 25) {
   throw new Error(`Tab never reached ${target}`);
 }
 
+/** Signed in, on Account › Devices (the device list). */
 async function openAccount(page: Page) {
   await signInPublic(page);
-  await page.goto(`${PUBLIC}/?sw=off`);
+  await page.goto(`${PUBLIC}/?tab=devices&sw=off`);
   await expect(page.getByText('This device')).toBeVisible();
 }
 
@@ -101,7 +102,8 @@ test('signed out: Sign in with the privacy notice, and no schedule request', asy
   expect(await sessionCookie(page)).toBeUndefined();
   // Signed out, the masthead names nobody: the bot's identity and this device's time zone only.
   await expect(accountButton(page)).toHaveCount(0);
-  await expect(page.locator('.masthead__zone')).toContainText(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone));
+  await expect(page.locator('.masthead__zone')).toContainText('Times in GMT');
+  await expect(page.locator('.masthead__zone')).toHaveAttribute('title', `Times are in ${await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)}`);
 });
 
 test('signing in through the Discord stand-in lands on Account with the avatar and name', async ({ page }) => {
@@ -119,6 +121,7 @@ test('signing in through the Discord stand-in lands on Account with the avatar a
   const cookie = await sessionCookie(page);
   expect(cookie).toMatchObject({ httpOnly: true, sameSite: 'Strict' });
   // Three devices: this one first and marked, then the others; no IP or location anywhere.
+  await page.getByRole('tab', { name: /^Devices/ }).click();
   await expect(devices(page)).toHaveCount(3);
   await expect(devices(page).first()).toContainText('This device');
   await expect(devices(page).first()).toContainText('Chrome');
@@ -180,15 +183,57 @@ test('denied: a neutral page and no session cookie; another account or try again
   await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toBeVisible();
 });
 
-test('other sign-in outcomes: a generic notice on Sign in; closed lands on Closed', async ({ page }) => {
-  for (const code of ['state', 'denied', 'discord', 'unavailable', 'rate_limited']) {
+test('other sign-in outcomes: each code lands on its screen and notice kind, with the next step and no extra reads', async ({ page }) => {
+  const seen = requests(page);
+  const main = page.getByRole('main');
+  const start = /^\/api\/public\/auth\/discord\/start\?next=/;
+  /** Lands on `code`; then what it read was status, identity and (Sign in only) the session, nothing else. */
+  async function land(code: string, readsSession: boolean) {
+    seen.length = 0;
     await page.goto(`${PUBLIC}/?login_error=${code}&sw=off`);
-    await expect(page.getByRole('alert')).toHaveText("Sign-in didn't finish. Try again in a moment.");
-    await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toBeVisible();
+    await expect(main.getByRole('heading', { level: 1 })).toHaveCount(1);
+    await page.waitForLoadState('networkidle');
+    expect(seen.filter((r) => !ALLOWED[r.split(' ')[1]!]), code).toEqual([]);
+    expect(seen.includes('GET /api/public/session'), code).toBe(readsSession);
+    expect(seen.includes('GET /api/public/sessions'), code).toBe(false);
+    expect(await sessionCookie(page), code).toBeUndefined();
   }
-  await page.goto(`${PUBLIC}/?login_error=closed&sw=off`);
-  await expect(page.getByRole('heading', { name: "The schedule isn't open right now" })).toBeVisible();
-  await expect(page.getByRole('link', { name: /Sign in/ })).toHaveCount(0);
+
+  // Sign in with a notice: a failure is an alert, a wait or a fresh start a status; the key starts Discord again.
+  for (const [code, kind] of [
+    ['state', 'status'],
+    ['rate_limited', 'status'],
+    ['denied', 'alert'],
+    ['discord', 'alert'],
+    ['something_new', 'alert'],
+  ] as const) {
+    await land(code, true);
+    await expect(main.getByRole(kind), code).toHaveCount(1);
+    await expect(main.getByRole(kind === 'alert' ? 'status' : 'alert'), code).toHaveCount(0);
+    const key = main.getByRole('link', { name: /with Discord$/ });
+    await expect(key, code).toHaveAttribute('href', start);
+    // Too many tries: the key says how long to wait, as its description.
+    if (code === 'rate_limited') await expect(key).toHaveAccessibleDescription(/\S/);
+    else await expect(key, code).not.toHaveAttribute('aria-describedby');
+  }
+
+  // Member data unavailable: an alert and Try again, no Discord key (nobody was refused).
+  await land('unavailable', true);
+  await expect(main.getByRole('alert')).toHaveCount(1);
+  await expect(main.getByRole('link', { name: 'Try again', exact: true })).toHaveAttribute('href', start);
+  await expect(main.getByRole('link', { name: /with Discord$/ })).toHaveCount(0);
+
+  // Not eligible: neutral (no alert or status notice), another account or Try again; nobody is signed in.
+  await land('not_eligible', false);
+  await expect(main.getByRole('alert')).toHaveCount(0);
+  await expect(main.getByRole('status')).toHaveCount(0);
+  await expect(main.getByRole('button', { name: 'Use another account' })).toBeVisible();
+  await expect(main.getByRole('link', { name: 'Try again', exact: true })).toHaveAttribute('href', start);
+
+  // Closed: sign-in hidden; Check again re-reads the status.
+  await land('closed', false);
+  await expect(main.getByRole('link')).toHaveCount(0);
+  await expect(main.getByRole('button', { name: 'Check again' })).toBeVisible();
 });
 
 test('devices: sign out one, then sign out everywhere ends this one too', async ({ page }) => {
@@ -258,12 +303,13 @@ test('a rotated session: writes carry the newest token any answer sent', async (
 
 test('appearance: colourways apply at once and survive a reload', async ({ page }) => {
   await openAccount(page);
+  await page.getByRole('tab', { name: 'This browser' }).click();
   const ways = page.getByRole('group', { name: 'Colourway' });
   const terminal = ways.getByRole('button', { name: 'Terminal', exact: true });
   await terminal.click();
-  await ways.getByText('Tokyo Night', { exact: true }).click();
+  await ways.getByRole('radio', { name: 'Tokyo Night' }).check();
   await expect(page.locator('html')).toHaveAttribute('data-colorway', 'tokyonight');
-  await page.getByText('Dark', { exact: true }).click();
+  await page.getByRole('group', { name: 'Mode' }).getByRole('radio', { name: 'Dark' }).check();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-colorway', 'tokyonight');
@@ -282,7 +328,7 @@ test('the service worker never caches /api/ and never answers it', async ({ page
   });
   await page.reload();
   await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
-  await expect(page.getByText('This device')).toBeVisible();
+  await expect(page.getByRole('tab', { name: /^Devices/ })).toBeVisible();
   await page.waitForLoadState('networkidle');
   expect(api.map((r) => r.path)).toEqual(expect.arrayContaining(['/api/public/status', '/api/public/session', '/api/public/sessions']));
   expect(api.filter((r) => r.fromSW)).toEqual([]);
