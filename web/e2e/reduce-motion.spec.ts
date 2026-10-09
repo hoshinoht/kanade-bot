@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, PUBLIC, expect, signInPublic, test } from './support';
 
 // Account › This browser › "Reduce motion": on, the admin app moves exactly as
 // under the device's `prefers-reduced-motion: reduce`; off, it follows the
@@ -143,5 +143,31 @@ test.describe('Reduce motion switch', () => {
     await expect(sw(page)).toHaveAttribute('aria-checked', 'true');
     expect(await page.evaluate(() => (window as unknown as { __early: string | null }).__early)).toBe('reduce');
     expect(await signature(page)).toMatchObject(REDUCED);
+  });
+
+  test('member portal: the switch stills the run pane live; off, it enters again', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await signInPublic(page);
+    await page.setViewportSize(WIDE);
+    await page.goto(`${PUBLIC}/account?tab=browser&sw=off`);
+    const toggle = page.getByRole('switch', { name: 'Reduce motion' });
+    const openPane = async () => {
+      await page.getByRole('banner').getByRole('link', { name: 'Week' }).click();
+      await resetAnimated(page);
+      await page.getByRole('button', { name: /, you are in$/ }).first().click();
+      await expect(page.getByRole('complementary', { name: /^Your run · / })).toBeVisible();
+      await page.waitForTimeout(150); // "nothing starts" needs real time to pass
+      return animated(page);
+    };
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    expect(await openPane()).toBe(0);
+    // Closing goes at once: no exit keeps the pane.
+    await page.getByRole('complementary', { name: /^Your run · / }).getByRole('button', { name: /^Close / }).click();
+    expect(await page.locator('aside.member-pane').count()).toBe(0);
+    await page.goto(`${PUBLIC}/account?tab=browser&sw=off`);
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(await openPane()).toBeGreaterThan(0);
   });
 });

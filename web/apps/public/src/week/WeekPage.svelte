@@ -9,9 +9,9 @@
   is its own screen (PhoneRun). Times are the guild's, named in the footer.
 -->
 <script lang="ts">
-  import type { MemberRun } from '@kanade/api-types';
-  import { dayNumber, Icon, LoadingState, longDate, StateNote, WavyProgress, weekProgress, type Toaster } from '@kanade/ui';
-  import { tick, type Snippet } from 'svelte';
+  import type { MemberRun, MemberWeek } from '@kanade/api-types';
+  import { dayNumber, enter, flip, Icon, LoadingState, longDate, Presence, replay, StateNote, WavyProgress, weekProgress, type Toaster } from '@kanade/ui';
+  import { tick, untrack, type Snippet } from 'svelte';
   import { countdownWords, isPast, nextOwn, shownRuns } from '../member';
   import type { Route } from '../route.svelte';
   import type { MemberWeeks, WeekKey } from '../weeks.svelte';
@@ -63,6 +63,35 @@
     { id: 'list', label: 'List' },
   ] as const;
   const viewTabs: Record<string, HTMLButtonElement> = {};
+
+  // The pane outlives the selection by its exit (`is-leaving`), as the admin's side panes do.
+  const pane = new Presence<{ run: MemberRun; week: MemberWeek }>();
+  $effect(() => pane.set(!phone && week && selected ? { run: selected, week } : null));
+  // While open the pane reads the live run (the presence copy lags an effect behind).
+  const paneRun = $derived(!phone && week && selected ? { run: selected, week } : pane.shown);
+
+  // A week from elsewhere (a timed read) glides the cards it moved and marks
+  // the runs it brings in, as the admin board does; the member's own Refresh never does.
+  $effect(() => {
+    weeks.beforeArrival = (added) => {
+      void flip(document.querySelector('.member-board, .member-phone__list'), { selector: '[data-run]', key: (el) => el.dataset.run });
+      if (!added.length) return;
+      void tick().then(() => {
+        for (const id of added) for (const el of document.querySelectorAll(`[data-run="${CSS.escape(id)}"]`)) replay(el, 'data-new');
+      });
+    };
+    return () => (weeks.beforeArrival = null);
+  });
+
+  // Phones swap the week and the open run: the run comes in forward
+  // (PhoneRun), and the week comes back backward when it closes.
+  let returns = $state(0);
+  let runWasOpen = false;
+  $effect(() => {
+    const open = phone && selected !== null;
+    if (runWasOpen && !open && phone) untrack(() => returns++);
+    runWasOpen = open;
+  });
 
   function open(run: MemberRun, to: WeekKey = which) {
     if (run.id === selected?.id && to === which) {
@@ -173,7 +202,7 @@
   </section>
 {:else if phone}
   <h1 class="vh">Week</h1>
-  <section class="card window-fill week-window week-window--phone member-week" aria-label="Week" data-fid="window">
+  <section class="card window-fill week-window week-window--phone member-week" aria-label="Week" data-fid="window" {@attach enter(returns || null, 'backward')}>
     <div class="card__head week-window__bar member-week__phonebar" data-fid="window-bar">
       <span class="card__title mono member-week__range">{shortRange}</span>
       <div class="week-window__actions">{@render onlyMineButton('Mine')}{@render refreshButton()}</div>
@@ -254,10 +283,17 @@
         {/if}
       </div>
       <!-- The list runs the window's full width with no Your week or footer (boards WeekList*): a row opens the pane. -->
-      {#if week && selected}
-        {#key selected.id}<RunPane run={selected} {week} {memberId} onclose={() => void close()} />{/key}
+      {#if paneRun}
+        {#key paneRun.run.id}<RunPane
+            run={paneRun.run}
+            week={paneRun.week}
+            {memberId}
+            leaving={pane.leaving && !selected}
+            onleft={(event) => pane.done(event)}
+            onclose={() => void close()}
+          />{/key}
       {:else if week && weeks.this && view !== 'list'}
-        <YourWeek current={weeks.this} next={weeks.next} {memberId} onopen={open} />
+        <YourWeek current={weeks.this} next={weeks.next} {memberId} arrival={weeks.arrival} onopen={open} />
       {:else if !week}
         <aside class="side-pane week-glance member-glance" aria-label="Your week" data-fid="glance"></aside>
       {/if}

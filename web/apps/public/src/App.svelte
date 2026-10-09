@@ -12,7 +12,7 @@
   and Bosses join the masthead with their screens.
 -->
 <script lang="ts">
-  import { AccountMenu, Freshness, Icon, LoadingState, Masthead, NavDrawer, PHONE_QUERY, registerServiceWorker, SINGLE_PANE_QUERY, StateNote, ToastRegion, Toaster, type FreshState } from '@kanade/ui';
+  import { AccountMenu, Freshness, Icon, LoadingState, Masthead, NavDrawer, PHONE_QUERY, pulse, registerServiceWorker, SINGLE_PANE_QUERY, StateNote, ToastRegion, Toaster, type FreshState } from '@kanade/ui';
   import { tick, untrack } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import Account, { type AccountTab } from './Account.svelte';
@@ -214,7 +214,8 @@
                   go(item.page, event);
                 }}
                 ><span class="navlist__ind"><Icon name={item.icon} /></span><span class="navlist__label">{item.label}</span>{#if item.page === 'mine' && myRuns !== null}<span
-                    class="navlist__badge mono">{myRuns}</span
+                    class="navlist__badge mono"
+                    {@attach pulse(myRuns, weeks.arrival)}>{myRuns}</span
                   >{/if}</a
               >
             {/each}
@@ -242,7 +243,7 @@
           <nav class="masthead__nav" aria-label="Main" data-fid="mast-nav">
             {#each NAV.filter((item) => item.page !== 'account') as item (item.page)}
               <a class="ptab masthead__tab" href={item.href} aria-current={page === item.page ? 'page' : undefined} onclick={(event) => go(item.page, event)}
-                >{item.label}{#if item.page === 'mine' && myRuns !== null}<span class="ptab__count mono">{myRuns}</span>{/if}</a
+                >{item.label}{#if item.page === 'mine' && myRuns !== null}<span class="ptab__count mono" {@attach pulse(myRuns, weeks.arrival)}>{myRuns}</span>{/if}</a
               >
             {/each}
           </nav>

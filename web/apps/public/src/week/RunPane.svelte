@@ -4,16 +4,25 @@
   `.week-pane`) as the member sees it. Their own run: "YOU'RE IN", the art
   header, their answer (read-only for now), Move and "Ask for another
   change" drawn disabled ("coming soon"). Anyone else's run: view only, a
-  lock box saying why, the party, and "Ask to join" disabled.
+  lock box saying why, the party, and "Ask to join" disabled. It enters
+  forward (`enter`) and leaves through `is-leaving` while the page's
+  `Presence` keeps it, as the admin's side panes do.
 -->
 <script lang="ts">
   import type { MemberRun, MemberWeek } from '@kanade/api-types';
-  import { ANSWER_MARKS, answerCounts, AnswerBar, BossArt, BossTag, dayLabel, Icon, runCountdown, runFullTitle, StatusMark, WavyProgress } from '@kanade/ui';
+  import { ANSWER_MARKS, answerCounts, AnswerBar, BossArt, BossTag, dayLabel, enter, Icon, runCountdown, runFullTitle, StatusMark, WavyProgress } from '@kanade/ui';
   import { countdownWords, yours } from '../member';
   import AnswerSoon from './AnswerSoon.svelte';
   import MoveSoon from './MoveSoon.svelte';
 
-  let { run, week, memberId, onclose }: { run: MemberRun; week: MemberWeek; memberId: string; onclose: () => void } = $props();
+  let {
+    run,
+    week,
+    memberId,
+    leaving = false,
+    onleft,
+    onclose,
+  }: { run: MemberRun; week: MemberWeek; memberId: string; leaving?: boolean; onleft?: (event: AnimationEvent) => void; onclose: () => void } = $props();
 
   const counts = $derived(answerCounts(run.participants));
   const art = $derived(run.bosses.find((b) => b.art) ?? null);
@@ -21,9 +30,19 @@
   const soon = $derived(countdownWords(run, week));
   const mine = $derived(yours(run, memberId));
   const title = $derived(`${runFullTitle(run)}, ${dayLabel(week, run.day)} ${run.time ?? 'own time'}`);
+  // The enter replays only when the run itself changes: a fresh read hands in a new object for the same run.
+  const runId = $derived(run.id);
 </script>
 
-<aside class="side-pane week-pane run--{run.status} member-pane" aria-label="{run.mine ? 'Your run' : 'View only'} · {title}" data-fid="week-pane">
+<aside
+  class="side-pane week-pane run--{run.status} member-pane"
+  class:is-leaving={leaving}
+  inert={leaving}
+  aria-label="{run.mine ? 'Your run' : 'View only'} · {title}"
+  data-fid="week-pane"
+  onanimationend={onleft}
+  {@attach enter(runId)}
+>
   <div class="member-pane__head" data-fid="week-pane-head">
     {#if run.mine}
       <p class="member-pane__who"><span class="you-chip">YOU'RE IN</span> Your run</p>

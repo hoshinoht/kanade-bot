@@ -14,6 +14,11 @@ import './week/week.scss';
 // Weekly timings' Hand to… and Confirm it's you (the shared Modal's look).
 import '@kanade/ui/styles/modal.scss';
 import './timings/timings.scss';
+// The admin's motion that the member screens share: arrival marks and number
+// ticks (week reads from elsewhere) and the loading standard's morphing shape
+// (LoadingState renders it; Experiment A, on by default).
+import '@kanade/ui/styles/arrival.scss';
+import '@kanade/ui/styles/loading.scss';
 import { guardWrites } from '@kanade/client';
 import { mount } from 'svelte';
 import App from './App.svelte';

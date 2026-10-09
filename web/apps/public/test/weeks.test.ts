@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { MemberWeek, PublicSession } from '@kanade/api-types';
+import type { MemberRun, MemberWeek, PublicSession } from '@kanade/api-types';
 import { ApiRequestError, type Client } from '@kanade/client';
 import { Portal } from '../src/portal.svelte';
 import { MemberWeeks, WEEK_POLL_MS } from '../src/weeks.svelte';
@@ -107,6 +107,42 @@ describe('MemberWeeks', () => {
       expect(paths.length).toBe(reads);
     });
   }
+
+  it('a timed read that changes a week is an arrival: the hook sees the new runs first', async () => {
+    vi.useFakeTimers();
+    let runs = ['r-1'];
+    const { client } = fakeClient((path) => ({ ...week(runs.length, path.endsWith('next') ? '2026-10-01' : '2026-09-24'), runs: path.endsWith('next') ? [] : runs.map((id) => ({ id }) as MemberRun) }));
+    const weeks = weeksFor(client);
+    const seen: string[][] = [];
+    weeks.beforeArrival = (added) => seen.push([...added, `shown ${weeks.this?.runs.length}`]);
+    weeks.start();
+    await vi.advanceTimersByTimeAsync(0);
+    // The first week is not an arrival.
+    expect([weeks.arrival, seen]).toEqual([0, []]);
+    runs = ['r-1', 'r-2'];
+    await vi.advanceTimersByTimeAsync(WEEK_POLL_MS);
+    expect(weeks.arrival).toBe(1);
+    expect(seen).toEqual([['r-2', 'shown 1']]);
+    expect(weeks.this?.runs.map((r) => r.id)).toEqual(['r-1', 'r-2']);
+  });
+
+  it("the member's own Refresh is not an arrival, and an unchanged read keeps the week objects", async () => {
+    let runs = ['r-1'];
+    let at = '2026-09-28T04:00:00Z';
+    const { client } = fakeClient(() => ({ ...week(runs.length), generated_at: at, runs: runs.map((id) => ({ id }) as MemberRun) }));
+    const weeks = weeksFor(client);
+    const hook = vi.fn();
+    weeks.beforeArrival = hook;
+    await weeks.refresh();
+    runs = ['r-1', 'r-2'];
+    await weeks.refresh();
+    expect([weeks.arrival, hook.mock.calls.length, weeks.this?.runs.length]).toEqual([0, 0, 2]);
+    const kept = weeks.this;
+    at = '2026-09-28T04:00:30Z';
+    await weeks.refresh();
+    expect(weeks.this).toBe(kept);
+    expect(weeks.this?.generated_at).toBe(at);
+  });
 });
 
 describe('Portal sign-out', () => {

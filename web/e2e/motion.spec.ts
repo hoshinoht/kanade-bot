@@ -1,5 +1,12 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, PUBLIC, expect, signInPublic, test } from './support';
+
+declare global {
+  interface Window {
+    /** CSS animations as they start (name, element tag and classes): the member portal cases. */
+    __css: { name: string; what: string }[];
+  }
+}
 
 // M3E static motion (m3e-rail-design-spec "Motion and loading"): press
 // shape-morph, pane enter/exit, toast exit, own-move Week FLIP, the 200 ms
@@ -204,6 +211,161 @@ test('toasts: a dismissed toast leaves through its exit, hidden from assistive t
   await expect(leaving).toHaveAttribute('aria-hidden', 'true');
   await expect(leaving).toHaveAttribute('inert', '');
   await expect(page.locator('.toast')).toHaveCount(0);
+});
+
+// The member portal mirrors the admin's motion on its equivalent screens: the
+// run pane enters forward and leaves through `is-leaving` (the admin side
+// panes), a phone run comes in forward and the Week returns backward (the
+// admin's phone list-detail), cards settle as they mount on a week switch,
+// the drawer slides, toasts leave through their exit and the loading
+// indicator morphs. Reduced motion keeps none of it.
+test.describe('member portal', () => {
+  test.beforeEach(async ({ page }) => {
+    await recordAnimations(page);
+    await page.addInitScript(() => {
+      window.__css = [];
+      document.addEventListener(
+        'animationstart',
+        (e) => {
+          if (e.target instanceof Element) window.__css.push({ name: e.animationName, what: `${e.target.tagName.toLowerCase()}.${[...e.target.classList].join('.')}` });
+        },
+        true,
+      );
+    });
+    await signInPublic(page);
+  });
+
+  const css = (page: Page) => page.evaluate(() => window.__css);
+  const clearCss = (page: Page) => page.evaluate(() => (window.__css = []));
+
+  test('the run pane enters forward, leaves through is-leaving (inert), then Your week returns', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${PUBLIC}/?sw=off`);
+    await expect(page.locator('main [data-run]').first()).toBeVisible();
+    await clearAnimated(page);
+    await page.getByRole('button', { name: /, you are in$/ }).first().click();
+    const pane = page.getByRole('complementary', { name: /^Your run · / });
+    await expect(pane).toBeVisible();
+    expect((await animated(page)).some((a) => a.target.startsWith('Your run · ') && a.from === 'translateX(24px)')).toBe(true);
+    // Another run: its content enters again.
+    await clearAnimated(page);
+    await page.getByRole('button', { name: /, not in this run, view only$/ }).first().click();
+    const other = page.getByRole('complementary', { name: /^View only · / });
+    await expect(other).toBeVisible();
+    expect((await animated(page)).some((a) => a.target.startsWith('View only · ') && a.from === 'translateX(24px)')).toBe(true);
+    // The List tab keeps the pane open without playing its enter again.
+    await clearAnimated(page);
+    await page.getByRole('tab', { name: /^List/ }).click();
+    await expect(other).toBeVisible();
+    await page.waitForTimeout(150); // "nothing starts" needs real time to pass
+    expect((await animated(page)).filter((a) => a.from.startsWith('translateX'))).toEqual([]);
+    await page.getByRole('tab', { name: /^Week/ }).click();
+    await clearCss(page);
+    await other.getByRole('button', { name: /^Close / }).click();
+    const leaving = page.locator('aside.member-pane.is-leaving');
+    await expect(leaving).toHaveAttribute('inert', '');
+    await expect.poll(async () => (await css(page)).some((a) => a.name === 'pane-exit' && a.what.includes('member-pane'))).toBe(true);
+    await expect(page.locator('aside.member-pane')).toHaveCount(0);
+    await expect(page.getByRole('complementary', { name: 'Your week' })).toBeVisible();
+  });
+
+  test("This/Next week: the open pane leaves and the new week's cards settle in", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${PUBLIC}/?sw=off`);
+    await page.getByRole('button', { name: /, you are in$/ }).first().click();
+    await expect(page.getByRole('complementary', { name: /^Your run · / })).toBeVisible();
+    await clearCss(page);
+    const nextWeek = page.getByRole('navigation', { name: 'Which week' }).getByRole('link', { name: 'Next week' });
+    await nextWeek.click();
+    await expect(nextWeek).toHaveAttribute('aria-current', 'page');
+    await expect.poll(async () => (await css(page)).some((a) => a.name === 'pane-exit')).toBe(true);
+    await expect(page.locator('aside.member-pane')).toHaveCount(0);
+    expect((await css(page)).filter((a) => a.name === 'settle' && a.what.includes('runcard')).length).toBeGreaterThan(0);
+  });
+
+  test('a phone run comes in forward and the Week returns backward (390×844, with frame timing)', async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await page.goto(`${PUBLIC}/?sw=off`);
+    const card = page.getByRole('button', { name: /, you are in$/ }).first();
+    await expect(card).toBeVisible();
+    await clearAnimated(page);
+    const forward = await frameTimes(page, () => card.click());
+    note('Portal phone run enter 390×844', forward);
+    await expect(page.getByRole('region', { name: 'Run', exact: true })).toBeVisible();
+    const ran = await animated(page);
+    expect(ran.some((a) => a.target === 'Run' && a.from === 'translateX(24px)')).toBe(true);
+    expect(ran.some((a) => a.target === 'Run detail' && a.from === 'translateX(24px)')).toBe(true);
+    await clearAnimated(page);
+    const backward = await frameTimes(page, () => page.locator('.topbar').getByRole('button', { name: /Week/ }).first().click());
+    note('Portal Week return 390×844', backward);
+    await expect(page.getByRole('region', { name: 'Week' })).toBeVisible();
+    expect((await animated(page)).some((a) => a.target === 'Week' && a.from === 'translateX(-24px)')).toBe(true);
+    fpsFloor('Portal phone run/Week 390×844 (slower of the two)', Math.min(forward.fps, backward.fps));
+  });
+
+  test('the phone drawer slides in and fades out before it closes', async ({ page }) => {
+    await page.setViewportSize(PHONE);
+    await page.goto(`${PUBLIC}/?sw=off`);
+    await expect(page.locator('main [data-run]').first()).toBeVisible();
+    await clearCss(page);
+    await page.locator('.topbar').getByRole('button', { name: 'Open the navigation' }).click();
+    const drawer = page.locator('dialog.drawer');
+    await expect(drawer).toHaveAttribute('open', '');
+    await expect.poll(async () => (await css(page)).map((a) => a.name)).toContain('drawer-in');
+    await page.keyboard.press('Escape');
+    await expect(drawer).not.toHaveAttribute('open', '');
+    expect(await drawer.evaluate((el) => getComputedStyle(el).transitionProperty)).toContain('transform');
+  });
+
+  test('toasts: a dismissed toast leaves through its exit, hidden from assistive tech', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${PUBLIC}/?sw=off`);
+    await expect(page.locator('main [data-run]').first()).toBeVisible();
+    await page.route(/\/api\/public\/week(\?|$)/, (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"internal","message":"Boom"}' }));
+    await page.getByRole('button', { name: 'Refresh the week' }).click();
+    const toast = page.getByRole('group', { name: 'Notification' }).filter({ hasText: "Couldn't refresh the week" });
+    await expect(toast).toBeVisible();
+    await toast.getByRole('button', { name: 'Dismiss' }).click();
+    const leaving = page.locator('.toast.is-leaving');
+    await expect(leaving).toHaveAttribute('aria-hidden', 'true');
+    await expect(leaving).toHaveAttribute('inert', '');
+    await expect(page.locator('.toast')).toHaveCount(0);
+  });
+
+  test('a slow week shows the morphing loading indicator; reduced motion stills it', async ({ page }) => {
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    await page.route(/\/api\/public\/week(\?|$)/, async (route) => {
+      await held;
+      await route.continue();
+    });
+    await page.goto(`${PUBLIC}/?sw=off`);
+    const shape = page.locator('.loading-state .xp-loading__shape');
+    await expect(shape).toBeVisible();
+    expect(await shape.evaluate((el) => getComputedStyle(el).animationName)).toBe('xp-morph');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    expect(await shape.evaluate((el) => getComputedStyle(el).animationName)).toBe('none');
+    release();
+    await expect(page.locator('main [data-run]').first()).toBeVisible();
+  });
+
+  test('reduced motion: no enter, the pane goes at once, a phone run comes in still', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${PUBLIC}/?sw=off`);
+    await page.getByRole('button', { name: /, you are in$/ }).first().click();
+    const pane = page.getByRole('complementary', { name: /^Your run · / });
+    await expect(pane).toBeVisible();
+    await pane.getByRole('button', { name: /^Close / }).click();
+    expect(await page.locator('aside.member-pane').count()).toBe(0);
+    await page.setViewportSize(PHONE);
+    await page.getByRole('button', { name: /, you are in$/ }).first().click();
+    await expect(page.getByRole('region', { name: 'Run', exact: true })).toBeVisible();
+    await page.locator('.topbar').getByRole('button', { name: /Week/ }).first().click();
+    await expect(page.getByRole('region', { name: 'Week' })).toBeVisible();
+    await page.waitForTimeout(150); // "nothing starts" needs real time to pass
+    expect(await animated(page)).toEqual([]);
+  });
 });
 
 test.describe('press shape-morph (Experiment D, on by default)', () => {

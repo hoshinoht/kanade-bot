@@ -7,7 +7,7 @@
 -->
 <script lang="ts">
   import type { Answer, MemberRun, MemberWeek } from '@kanade/api-types';
-  import { ANSWER_MARKS, BossArt, BossTag, Icon, openPlaces, runCountdown, runTitle, STATUS_WORDS, WavyProgress, weekStartLabel } from '@kanade/ui';
+  import { ANSWER_MARKS, BossArt, BossTag, Icon, openPlaces, pulse, runCountdown, runTitle, STATUS_WORDS, WavyProgress, weekStartLabel } from '@kanade/ui';
   import { answersOwed, countdownWords, nextOwn, youFirst } from '../member';
   import type { WeekKey } from '../weeks.svelte';
 
@@ -15,11 +15,14 @@
     current,
     next,
     memberId,
+    arrival,
     onopen,
   }: {
     current: MemberWeek;
     next: MemberWeek | null;
     memberId: string;
+    /** `MemberWeeks.arrival`: numbers that change with a week from elsewhere pulse once (the admin Glance's ticks). */
+    arrival: number;
     onopen: (run: MemberRun, which: WeekKey) => void;
   } = $props();
 
@@ -62,7 +65,7 @@
         {/if}
         <p class="week-glance__date">{weekStartLabel(lead.week.days[run.day]?.date ?? '')}</p>
         <p class="week-glance__bosses">{#each run.bosses as boss (boss.token)}<BossTag {boss} short />{/each}</p>
-        <p class="week-glance__fill mono">{run.tally.on}/{run.tally.total} · {run.status === 'at_risk' ? STATUS_WORDS.at_risk : openPlaces(run)}</p>
+        <p class="week-glance__fill mono" {@attach pulse(`${run.tally.on}/${run.tally.total}`, arrival)}>{run.tally.on}/{run.tally.total} · {run.status === 'at_risk' ? STATUS_WORDS.at_risk : openPlaces(run)}</p>
         <button type="button" class="btn week-glance__open" onclick={() => onopen(run, lead.which)}>Open run</button>
       </section>
     {:else}
@@ -97,8 +100,9 @@
           {@const first = owed[0]!}
           <li>
             <button type="button" class="week-glance__fact week-glance__fact--warn" onclick={() => onopen(first.run, first.which)}
-              ><span>Answer owed · <span class="mono">{first.week.days[first.run.day]?.dow ?? ''} {first.run.time ?? 'own time'}</span></span><b class="mono"
-                >{owed.length}</b
+              ><span>Answer owed · <span class="mono">{first.week.days[first.run.day]?.dow ?? ''} {first.run.time ?? 'own time'}</span></span><b
+                class="mono"
+                {@attach pulse(owed.length, arrival)}>{owed.length}</b
               ></button
             >
           </li>

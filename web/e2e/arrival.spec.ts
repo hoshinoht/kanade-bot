@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, test } from './support';
+import type { Week } from '@kanade/api-types';
+import { ADMIN, PUBLIC, csrf, expect, signInPublic, test } from './support';
 
 // Arrival motion (live updates stage 2): a change from elsewhere, hinted by the
 // mock's event stream (`POST /__mock/arrive`), glides the Week cards it moved
@@ -113,6 +114,71 @@ test("the admin's own decision neither marks rows nor pulses the badge", async (
   expect(await marks(page)).toEqual([]);
 });
 
+// The member portal has no event stream: its week arrives with the 30 s read.
+// A timed read that changed the week is an arrival (the admin store's
+// semantics); the member's own Refresh is not.
+
+/** Runs the portal's timed week read now: hiding and showing the page resumes the paused poller. */
+async function timedRead(page: Page) {
+  const read = page.waitForResponse((r) => r.url().endsWith('/api/public/week?week=next'));
+  await page.evaluate(() => {
+    let state: DocumentVisibilityState = 'hidden';
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+    document.dispatchEvent(new Event('visibilitychange'));
+    state = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await read;
+}
+
+async function openPortal(page: Page) {
+  await record(page);
+  await signInPublic(page);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${PUBLIC}/?sw=off`);
+  await expect(page.locator('[data-run="r-limbo"]')).toHaveCount(1);
+}
+
+test.describe('member portal', () => {
+  test('a run an admin moved glides to its new day on the next timed read', async ({ page }) => {
+    await openPortal(page);
+    await arrive(page, 'move');
+    await timedRead(page);
+    await expect.poll(async () => (await animated(page)).filter((a) => a.target === 'r-limbo' && a.from.startsWith('translate')).length).toBe(1);
+    await expect(page.locator('[data-run="r-limbo"]')).toContainText('21:00');
+  });
+
+  test('a run an admin added is marked once; a changed number on Your week pulses', async ({ page }) => {
+    await openPortal(page);
+    await arrive(page, 'run');
+    // Someone answers on Carling, the member's next run (Your week's "4/7 on").
+    const week: Week = await (await page.request.get(`${ADMIN}/api/admin/week`)).json();
+    const someone = week.runs.find((r) => r.id === 'r-carling')!.participants.find((p) => p.answer !== 'yes')!;
+    const answered = await page.request.post(`${ADMIN}/api/admin/runs/r-carling/rsvp`, {
+      headers: await csrf(page.request),
+      data: { member_id: someone.id, answer: 'yes', version: week.version },
+    });
+    expect(answered.ok()).toBe(true);
+    await timedRead(page);
+    const card = page.locator('.member-board [data-run="r-arrived"]');
+    await expect(card).toHaveAttribute('data-new', '');
+    await expect(card).not.toHaveAttribute('data-new', '', { timeout: 3_000 });
+    expect((await marks(page)).filter((m) => m.mark === 'data-tick' && m.what.includes('week-glance__fill'))).toHaveLength(1);
+  });
+
+  test("the member's own Refresh neither glides, marks nor pulses", async ({ page }) => {
+    await openPortal(page);
+    await arrive(page, 'move');
+    await arrive(page, 'run');
+    await page.getByRole('button', { name: 'Refresh the week' }).click();
+    await expect(page.locator('[data-run="r-limbo"]')).toContainText('21:00');
+    await expect(page.locator('[data-run="r-arrived"]')).toHaveCount(1);
+    await page.waitForTimeout(400); // "nothing starts" needs real time to pass
+    expect((await animated(page)).filter((a) => a.from.startsWith('translate'))).toEqual([]);
+    expect(await marks(page)).toEqual([]);
+  });
+});
+
 test.describe('reduced motion', () => {
   test.use({ reducedMotion: 'reduce' });
 
@@ -138,6 +204,17 @@ test.describe('reduced motion', () => {
     const badge = page.locator('.navrail .navlist__badge');
     await expect(badge).toHaveAttribute('data-tick', '');
     expect(await badge.evaluate((el) => getComputedStyle(el).animationName)).toBe('none');
+  });
+
+  test('member portal: no FLIP on a timed read, and a new run only fades its colour', async ({ page }) => {
+    await openPortal(page);
+    await arrive(page, 'move');
+    await arrive(page, 'run');
+    await timedRead(page);
+    const card = page.locator('.member-board [data-run="r-arrived"]');
+    await expect(card).toHaveAttribute('data-new', '');
+    expect(await card.evaluate((el) => getComputedStyle(el).animationName)).toBe('arrive-tint');
+    expect((await animated(page)).filter((a) => a.from.startsWith('translate'))).toEqual([]);
   });
 });
 
