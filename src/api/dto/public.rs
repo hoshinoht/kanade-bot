@@ -6,7 +6,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::Serialize;
 
 use super::{
-    Boss, iso_date, iso_instant,
+    Boss, Named, hhmm, iso_date, iso_instant,
     limits::{Allowance, Quota},
     week::{
         Context, Model, Participant, Tally, WeekDay, WeekFrame, day_index, days, participants,
@@ -15,7 +15,8 @@ use super::{
 };
 use crate::{
     domain::{
-        schedule::{Run, ScheduleSnapshot},
+        ownership::OwnerRequest,
+        schedule::{FixedRun, Run, ScheduleSnapshot},
         settings::RunLengths,
     },
     infrastructure::llm::governor::{CallKind, GroupSnapshot},
@@ -190,5 +191,106 @@ pub fn member_allowance(
             .map(|call| call.position as usize),
         bot_busy: Model::from_groups(groups).busy,
         generated_at: iso_instant(now),
+    }
+}
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct MemberOwnerRequest {
+    pub id: String,
+    pub requester: Named,
+    pub created_at: String,
+    pub expires_at: String,
+    #[cfg_attr(
+        test,
+        ts(type = "'open' | 'accepted' | 'declined' | 'expired' | 'withdrawn' | 'superseded'")
+    )]
+    pub status: &'static str,
+    pub mine: bool,
+}
+
+// A weekly timing the member is on, with its ownership; never the channel,
+// note or another member's request detail unless the member owns it.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct MemberTiming {
+    pub id: String,
+    pub bosses: Vec<Boss>,
+    pub weekday: u32,
+    pub time: String,
+    pub party: Vec<Named>,
+    pub owner: Named,
+    pub owner_pinned: bool,
+    pub you_own: bool,
+    pub requests: Vec<MemberOwnerRequest>,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct MemberTimings {
+    pub timings: Vec<MemberTiming>,
+    pub generated_at: String,
+}
+
+pub fn member_owner_request(
+    ctx: &Context<'_>,
+    request: &OwnerRequest,
+    user_id: &str,
+) -> MemberOwnerRequest {
+    MemberOwnerRequest {
+        id: request.id.clone(),
+        requester: ctx.named(&request.requester),
+        created_at: iso_instant(request.created_at),
+        expires_at: iso_instant(request.expires_at),
+        status: request.status.as_str(),
+        mine: request.requester == user_id,
+    }
+}
+
+/// `fixed` as `user_id` sees it. `open` may hold any open requests: only
+/// this timing's unexpired ones are kept, all of them for its owner and
+/// otherwise only the member's own.
+pub fn member_timing(
+    ctx: &Context<'_>,
+    fixed: &FixedRun,
+    open: &[OwnerRequest],
+    user_id: &str,
+) -> MemberTiming {
+    let you_own = fixed.owner() == user_id;
+    MemberTiming {
+        id: fixed.id.clone(),
+        bosses: ctx.bosses(&fixed.bosses),
+        weekday: fixed.weekday.num_days_from_monday(),
+        time: hhmm(fixed.time),
+        party: fixed.participants.iter().map(|id| ctx.named(id)).collect(),
+        owner: ctx.named(fixed.owner()),
+        owner_pinned: fixed.owner_pinned,
+        you_own,
+        requests: open
+            .iter()
+            .filter(|request| {
+                request.fixed_run_id == fixed.id
+                    && request.live(ctx.now)
+                    && (you_own || request.requester == user_id)
+            })
+            .map(|request| member_owner_request(ctx, request, user_id))
+            .collect(),
+    }
+}
+
+/// The weekly timings `user_id` is on (party only).
+pub fn member_timings(
+    ctx: &Context<'_>,
+    fixed_runs: &[FixedRun],
+    open: &[OwnerRequest],
+    user_id: &str,
+) -> MemberTimings {
+    MemberTimings {
+        timings: fixed_runs
+            .iter()
+            .filter(|fixed| fixed.participants.iter().any(|id| id == user_id))
+            .map(|fixed| member_timing(ctx, fixed, open, user_id))
+            .collect(),
+        generated_at: iso_instant(ctx.now),
     }
 }

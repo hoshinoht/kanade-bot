@@ -1,5 +1,6 @@
 //! Token buckets per client IP and per route, plus one global bucket per
-//! route. Time comes from the auth clock so tests pin it; state is bounded.
+//! route, and one write bucket per member for the public origin's member
+//! writes. Time comes from the auth clock so tests pin it; state is bounded.
 
 use std::{collections::HashMap, net::IpAddr, sync::Mutex};
 
@@ -30,6 +31,15 @@ pub struct Rule {
     pub burst: f64,
     pub per_minute: f64,
 }
+
+/// The public origin's member writes, per member: 20 per 10 minutes.
+pub const MEMBER_WRITES: Rule = Rule {
+    burst: 20.0,
+    per_minute: 2.0,
+};
+
+/// The audited route name of a refused member write.
+pub const MEMBER_WRITE_ROUTE: &str = "member_write";
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Limits {
@@ -93,6 +103,8 @@ impl Bucket {
 struct State {
     clients: HashMap<(Route, Option<IpAddr>), Bucket>,
     global: HashMap<Route, Bucket>,
+    /// [`MEMBER_WRITES`] buckets by member id.
+    members: HashMap<String, Bucket>,
 }
 
 pub struct RateLimits {
@@ -143,6 +155,35 @@ impl RateLimits {
     /// The route's global bucket only.
     pub fn take_global(&self, route: Route, now: DateTime<Utc>) -> bool {
         self.admit(route, None, now, true, Buckets::Global)
+    }
+
+    /// Take one of `member`'s [`MEMBER_WRITES`] tokens; `false` (and nothing
+    /// taken) when they are spent.
+    pub fn take_member_write(&self, member: &str, now: DateTime<Utc>) -> bool {
+        let rule = MEMBER_WRITES;
+        let mut state = self.state();
+        let known = state.members.contains_key(member);
+        if !known && state.members.len() >= MAX_CLIENTS {
+            state.members.retain(|_, bucket| {
+                bucket.refill(rule, now);
+                bucket.tokens < rule.burst
+            });
+        }
+        let mut bucket = state
+            .members
+            .get(member)
+            .copied()
+            .unwrap_or_else(|| Bucket::full(rule, now));
+        bucket.refill(rule, now);
+        let allowed = bucket.tokens >= 1.0;
+        if allowed {
+            bucket.tokens -= 1.0;
+        }
+        // As for clients: a still-full table serves a newcomer unremembered.
+        if known || state.members.len() < MAX_CLIENTS {
+            state.members.insert(member.to_owned(), bucket);
+        }
+        allowed
     }
 
     fn admit(
@@ -253,5 +294,26 @@ mod tests {
         assert!(limits.take_client(Route::TokenLogin, newcomer, now));
         assert!(limits.take_client(Route::TokenLogin, newcomer, now));
         assert_eq!(limits.state().clients.len(), MAX_CLIENTS);
+    }
+
+    #[test]
+    fn member_writes_are_limited_per_member_and_refill() {
+        let limits = RateLimits::default();
+        let now = DateTime::UNIX_EPOCH;
+        for _ in 0..20 {
+            assert!(limits.take_member_write("1001", now));
+        }
+        assert!(!limits.take_member_write("1001", now), "20 per 10 minutes");
+        assert!(
+            limits.take_member_write("1002", now),
+            "members are separate"
+        );
+        assert!(
+            limits.take(Route::TokenLogin, None, now),
+            "sign-in buckets are separate"
+        );
+        let later = now + TimeDelta::seconds(30);
+        assert!(limits.take_member_write("1001", later), "two a minute");
+        assert!(!limits.take_member_write("1001", later));
     }
 }

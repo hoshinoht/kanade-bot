@@ -34,6 +34,10 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/public/auth/discord/start`, `/callback`; `POST /api/public/auth/logout` | redirects / landing page / `204`, not JSON |
 | `GET /api/public/week?week=` | `public.json#/$defs/MemberWeek` (absent/`this` or `next`, else 422 `invalid_query` as admin) |
 | `GET /api/public/me/allowance` | `public.json#/$defs/MemberAllowance` (the caller's own figures only) |
+| `GET /api/public/timings` | `public.json#/$defs/MemberTimings` (weekly timings the caller is on, with ownership) |
+| `POST /api/public/timings/{id}/owner` | body `public.json#/$defs/OwnerHandOff`; `public.json#/$defs/MemberTiming` (owner only; fresh sign-in, else 401 `reauth_required`) |
+| `POST /api/public/timings/{id}/owner-requests` | `public.json#/$defs/MemberOwnerRequest` (201; 200 for a retry with the same Idempotency-Key) |
+| `POST /api/public/owner-requests/{id}/accept`, `/decline`, `/withdraw` | `public.json#/$defs/MemberOwnerRequest` (accept/decline: owner only, accept needs a fresh sign-in; withdraw: requester only) |
 | `GET /art/{kind}/{key}` (public origin) | boss art as on the admin origin, signed-in members only (401 signed out, 503 `closed` while closed) |
 | `GET /api/admin/session` | `identity.json#/$defs/Session` |
 | `GET /api/admin/me` | `identity.json#/$defs/Me` |
@@ -153,3 +157,7 @@ Pointers are `<file>#/$defs/<Name>`.
   `MemberAllowance` for `GET /api/public/week` and
   `GET /api/public/me/allowance`; boss art is served on the public origin
   behind the member session.
+- Weekly-timing ownership (2026-10-10): `public.json` `MemberTimings`,
+  `MemberTiming`, `MemberOwnerRequest` and the `OwnerHandOff` body for
+  `GET /api/public/timings` and the member's hand-off, ask, accept,
+  decline and withdraw writes.

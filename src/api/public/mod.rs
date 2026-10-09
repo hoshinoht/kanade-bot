@@ -1,13 +1,14 @@
 //! Public-origin routes (`member-auth-contract.md` §1). The portal is open
 //! only while the admin switch `self_service.public_portal` is on and the
 //! public Discord application is configured; then members sign in and see
-//! their own session and devices, the boss week, their chat allowance and
-//! boss art. Closed, the origin serves the shell, status and identity,
-//! sign-in answers `closed` and data and art answer `503 closed`. Every
-//! session route sits behind [`member::require_session`]; nothing here reads
-//! an admin credential.
+//! their own session and devices, the boss week, their weekly timings (and
+//! move their ownership), their chat allowance and boss art. Closed, the
+//! origin serves the shell, status and identity, sign-in answers `closed`
+//! and data and art answer `503 closed`. Every session route sits behind
+//! [`member::require_session`]; nothing here reads an admin credential.
 
 mod auth;
+mod ownership;
 mod read;
 mod sessions;
 
@@ -36,13 +37,38 @@ pub fn routes(site: Arc<Site>) -> Router<Arc<Site>> {
         .route("/api/public/sessions/{handle}", delete(sessions::end_one))
         .route("/api/public/sessions/end-all", post(sessions::end_all))
         .route_layer(from_fn_with_state(site.clone(), member::require_session));
-    // Data and art: `closed` before the session check, so a site without the
-    // member realm answers as the catch-alls do; other methods are unmounted.
+    // Data, art and the member's writes: `closed` before the session check,
+    // so a site without the member realm answers as the catch-alls do; other
+    // methods are unmounted.
     let reads = Router::new()
         .route("/api/public/week", get(read::week).fallback(unmounted))
         .route(
             "/api/public/me/allowance",
             get(read::allowance).fallback(unmounted),
+        )
+        .route(
+            "/api/public/timings",
+            get(ownership::timings).fallback(unmounted),
+        )
+        .route(
+            "/api/public/timings/{id}/owner",
+            post(ownership::hand_off).fallback(unmounted),
+        )
+        .route(
+            "/api/public/timings/{id}/owner-requests",
+            post(ownership::ask).fallback(unmounted),
+        )
+        .route(
+            "/api/public/owner-requests/{id}/accept",
+            post(ownership::accept).fallback(unmounted),
+        )
+        .route(
+            "/api/public/owner-requests/{id}/decline",
+            post(ownership::decline).fallback(unmounted),
+        )
+        .route(
+            "/api/public/owner-requests/{id}/withdraw",
+            post(ownership::withdraw).fallback(unmounted),
         )
         .route("/art/{*rest}", get(read::art).fallback(unmounted))
         .route_layer(from_fn_with_state(site.clone(), member::require_session))

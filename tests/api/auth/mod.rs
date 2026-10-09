@@ -6,6 +6,7 @@ mod discord;
 mod fallbacks;
 mod hardening;
 mod member_devices;
+mod member_ownership;
 mod member_reads;
 mod member_sessions;
 mod member_signin;

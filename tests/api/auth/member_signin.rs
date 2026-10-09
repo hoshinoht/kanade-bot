@@ -739,6 +739,9 @@ async fn a_closed_portal_answers_closed_and_drops_the_pending_login() {
         "/api/public/session/avatar",
         "/api/public/week",
         "/api/public/me/allowance",
+        "/api/public/timings",
+        "/api/public/timings/f-1/owner",
+        "/api/public/owner-requests/r-1/accept",
         "/api/public/anything",
         "/art/entry/Carling",
     ] {

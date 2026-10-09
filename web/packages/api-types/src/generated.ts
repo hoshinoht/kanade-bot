@@ -39,6 +39,12 @@ export type MemberWeek = { starts: string, timezone: string, reset: string, days
 
 export type MemberAllowance = { allowance: Quota | null, used: number, resets_at: string | null, queue_position: number | null, bot_busy: boolean, generated_at: string, };
 
+export type MemberOwnerRequest = { id: string, requester: Member, created_at: string, expires_at: string, status: 'open' | 'accepted' | 'declined' | 'expired' | 'withdrawn' | 'superseded', mine: boolean, };
+
+export type MemberTiming = { id: string, bosses: Array<Boss>, weekday: number, time: string, party: Array<Member>, owner: Member, owner_pinned: boolean, you_own: boolean, requests: Array<MemberOwnerRequest>, };
+
+export type MemberTimings = { timings: Array<MemberTiming>, generated_at: string, };
+
 export type ApiError = { error: string, message: string, };
 
 export type Identity = { name: string, 
