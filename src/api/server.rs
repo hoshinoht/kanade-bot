@@ -4,6 +4,7 @@ use axum::Router;
 use tokio::{net::TcpListener, sync::watch, time::timeout};
 
 use super::{
+    assets,
     auth::{self, AdminAuth, member::MemberAuth},
     listeners::{self, Site},
     state::ApiState,
@@ -74,6 +75,11 @@ pub async fn serve_bounded(
             site.bot = bot;
             site.member = member;
             site.state = reads;
+            site.public_origin = config
+                .public_auth
+                .discord
+                .as_ref()
+                .and_then(|discord| assets::origin_of(&discord.redirect_uri));
             Some((bind(address, mode).await?, site))
         }
         (Some(_), None) => {

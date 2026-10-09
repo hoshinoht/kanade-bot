@@ -101,7 +101,8 @@ async fn each_origin_sends_exactly_the_mock_security_headers() {
         true,
         "no-store",
     );
-    assert_static(&get(public, PUBLIC_HOST, "/week").await, true, "no-cache");
+    // The public shell is filled per request and never negotiated.
+    assert_exact(&get(public, PUBLIC_HOST, "/week").await, true, "no-cache");
     assert_exact(
         &get(public, PUBLIC_HOST, "/art/entry/Carling").await,
         true,

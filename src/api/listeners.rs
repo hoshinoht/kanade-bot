@@ -53,6 +53,9 @@ pub struct Site {
     pub identity_name: String,
     /// The live bot name for the public origin, which has no `state`.
     pub bot: Option<Arc<dyn ChannelList>>,
+    /// Public only: `https://host` of the validated member redirect URI, for
+    /// the shell's absolute link-preview URLs; `None` leaves them out.
+    pub public_origin: Option<String>,
     pub limits: guard::limits::Limits,
     /// Admin sign-in; `None` answers `auth_unavailable`. Never set on the public site.
     pub auth: Option<Arc<AdminAuth>>,
@@ -110,6 +113,7 @@ impl Site {
             identity_dir: http.identity_dir.clone(),
             identity_name: OFFLINE_IDENTITY_NAME.into(),
             bot: None,
+            public_origin: None,
             limits: guard::limits::Limits::default(),
             auth: None,
             member: None,
