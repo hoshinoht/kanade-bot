@@ -42,9 +42,9 @@ test('admin: grouped nav has every v4 section as a real route', async ({ page })
 
   await page.goBack();
   await expect(page).toHaveURL(`${ADMIN}/rewrites`);
-  // v4's /audit now lands on History.
+  // v4's /audit now lands on History's Sign-ins audit log.
   await page.goto(`${ADMIN}/audit?sw=off`);
-  await expect(page).toHaveURL(`${ADMIN}/history`);
+  await expect(page).toHaveURL(`${ADMIN}/history?tab=sign-ins`);
   await nav.getByRole('link', { name: 'Week' }).click();
   await expect(page.locator('[data-run="r-carling"]')).toBeVisible();
 });

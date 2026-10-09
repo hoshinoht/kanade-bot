@@ -177,9 +177,9 @@
     router.go('/login');
   }
 
-  // v4's Audit page became History.
+  // v4's Audit page became History; `/audit` now opens its sign-in audit log.
   $effect(() => {
-    if (router.path === '/audit') router.go('/history', { replace: true });
+    if (router.path === '/audit') router.go('/history?tab=sign-ins', { replace: true });
   });
 
   function pageProps(key: string, params: Record<string, string>): Record<string, unknown> {

@@ -8,6 +8,7 @@
 #[macro_use]
 mod txn;
 
+mod auth_audit;
 mod backup;
 mod connect;
 mod debug_cards;

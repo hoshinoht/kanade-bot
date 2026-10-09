@@ -13,7 +13,7 @@ use super::{
     assets::Identity,
     dto::{
         self, account, bosses, config, events, fixed, history, inbox, inbox_past, limits, logs,
-        members, reminders, rescan, week,
+        members, reminders, rescan, sign_ins, week,
     },
     error, public,
 };
@@ -21,7 +21,7 @@ use super::{
 const TARGET: &str = "web/packages/api-types/src/generated.ts";
 
 /// Hand-written vocabulary (`manual.ts`) the `#[ts(type)]` overrides name.
-const MANUAL: [&str; 24] = [
+const MANUAL: [&str; 26] = [
     "ActorKind",
     "Answer",
     "ChangeRecord",
@@ -44,7 +44,9 @@ const MANUAL: [&str; 24] = [
     "RowKey",
     "RunStatus",
     "SelfServiceMode",
+    "SignInEvent",
     "SignInMethod",
+    "SignInRealm",
     "Surface",
 ];
 
@@ -243,6 +245,8 @@ fn bindings() -> String {
         .add::<history::BackupRow>()
         .add::<history::Verified>()
         .add::<history::Checkpoints>()
+        .add::<sign_ins::SignInRow>()
+        .add::<sign_ins::SignInPage>()
         // Live updates
         .add::<events::Topic>()
         .add::<events::EventHint>()

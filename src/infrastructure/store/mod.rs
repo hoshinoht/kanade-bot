@@ -2,6 +2,7 @@
 //! store; the in-memory store and the conformance suites every store must
 //! pass are test support.
 
+pub mod auth_audit;
 mod history;
 mod observer;
 mod order;
@@ -11,6 +12,8 @@ pub mod web_sessions;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod attendance_conformance;
+#[cfg(any(test, feature = "test-support"))]
+pub mod auth_audit_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod card_conformance;
 #[cfg(any(test, feature = "test-support"))]

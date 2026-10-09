@@ -41,7 +41,10 @@ use crate::{
         scheduler::{ScheduleStore, Scope, StoreError},
         settings::{SettingsChange, SettingsChangeQuery, SettingsStore},
     },
-    infrastructure::store::replays::{ReplayScope, ReplayStore, StoredReplay},
+    infrastructure::store::{
+        auth_audit::{AuditFilter, AuditRow, AuthAuditStore},
+        replays::{ReplayScope, ReplayStore, StoredReplay},
+    },
 };
 
 pub type ReadFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, StoreError>> + Send + 'a>>;
@@ -197,6 +200,8 @@ pub trait ReadStore: Send + Sync {
     fn card_record(&self, dedupe_key: String) -> ReadFuture<'_, Option<CardRecord>>;
     /// The bound reminder cards naming `run_id` (and their records); read only.
     fn posted_cards(&self, run_id: String) -> ReadFuture<'_, Vec<PostedCard>>;
+    /// A page of the sign-in audit log, newest first.
+    fn audit_page(&self, filter: AuditFilter) -> ReadFuture<'_, Vec<AuditRow>>;
 }
 
 /// A closed Inbox item: a proposal (with its stored facts) or a member
@@ -230,6 +235,7 @@ where
         + SettingsStore
         + ReminderCardStore
         + ReplayStore
+        + AuthAuditStore
         + Send
         + Sync,
 {
@@ -529,6 +535,10 @@ where
 
     fn posted_cards(&self, run_id: String) -> ReadFuture<'_, Vec<PostedCard>> {
         Box::pin(async move { ReminderCardStore::posted_cards(self, &run_id).await })
+    }
+
+    fn audit_page(&self, filter: AuditFilter) -> ReadFuture<'_, Vec<AuditRow>> {
+        Box::pin(async move { AuthAuditStore::audit_page(self, &filter).await })
     }
 }
 

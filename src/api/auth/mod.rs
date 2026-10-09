@@ -180,7 +180,7 @@ impl AdminAuth {
 
     pub(crate) fn audit(&self, context: &AuditContext, event: AuditEvent) {
         self.audit
-            .record(AuditRecord::new(Realm::Admin, context, event));
+            .record(AuditRecord::new(Realm::Admin, context, event, self.now()));
     }
 
     pub(crate) fn rate(&self) -> &RateLimits {
@@ -309,6 +309,7 @@ impl AdminAuth {
             AuditEvent::LoginSucceeded {
                 method: method.as_str(),
                 actor: actor_id(method, subject),
+                device: session.device.clone(),
             },
         );
         Some(id)

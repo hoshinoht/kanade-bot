@@ -1,14 +1,18 @@
 //! Security events for both realms. Records carry the realm, the request id,
-//! identities and reason codes; admin records also carry the client IP.
-//! Tokens, codes, state, verifiers, cookies and secrets never reach a sink,
-//! and member (public origin) records never carry an IP either.
+//! identities and reason codes; admin records also carry the client IP,
+//! member (public origin) records only its keyed tag, never the address.
+//! Tokens, codes, state, verifiers, cookies and secrets never reach a sink.
+//! Production keeps them twice: JSON lines on stderr and the stored sign-in
+//! audit log ([`StoreAudit`], History › Sign-ins).
 
-use std::{net::IpAddr, sync::Mutex};
+use std::{net::IpAddr, sync::Arc, sync::Mutex, time::Duration};
 
 use axum::{extract::FromRequestParts, http::request::Parts};
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use crate::api::guard::proxy::{ClientIp, RequestId};
+use crate::infrastructure::store::auth_audit::{AuditKind, AuditRealm, AuditRow, AuthAuditStore};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
@@ -16,6 +20,9 @@ pub enum AuditEvent {
     LoginSucceeded {
         method: &'static str,
         actor: String,
+        /// Browser and system label of the new session.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        device: Option<String>,
     },
     LoginRefused {
         method: &'static str,
@@ -112,19 +119,24 @@ pub enum Realm {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct AuditRecord {
+    /// The realm's clock; log lines carry their own time.
+    #[serde(skip)]
+    pub at: DateTime<Utc>,
     pub realm: Realm,
     pub request_id: String,
+    /// Admin: the client address. Member: the keyed tag of it, set by the
+    /// member realm (D5-A, item 20: the address itself is never kept).
     pub client: Option<String>,
     #[serde(flatten)]
     pub event: AuditEvent,
 }
 
 impl AuditRecord {
-    pub fn new(realm: Realm, context: &AuditContext, event: AuditEvent) -> Self {
+    pub fn new(realm: Realm, context: &AuditContext, event: AuditEvent, at: DateTime<Utc>) -> Self {
         Self {
+            at,
             realm,
             request_id: context.request_id.clone(),
-            // Members' addresses are never logged (D5-A, item 20).
             client: match realm {
                 Realm::Admin => context.client.map(|ip| ip.to_string()),
                 Realm::Member => None,
@@ -132,10 +144,138 @@ impl AuditRecord {
             event,
         }
     }
+
+    /// The stored row (`seq` is assigned by the store).
+    pub fn row(&self) -> AuditRow {
+        let owned = |text: &str| Some(text.to_owned());
+        let (event, actor, method, reason, request, device) = match &self.event {
+            AuditEvent::LoginSucceeded {
+                method,
+                actor,
+                device,
+            } => (
+                AuditKind::LoginSucceeded,
+                owned(actor),
+                owned(method),
+                None,
+                None,
+                device.clone(),
+            ),
+            AuditEvent::LoginRefused {
+                method,
+                reason,
+                user,
+            } => (
+                AuditKind::LoginRefused,
+                user.clone(),
+                owned(method),
+                owned(reason),
+                None,
+                None,
+            ),
+            AuditEvent::BreakGlassUsed { via, request } => (
+                AuditKind::BreakGlassUsed,
+                owned("token"),
+                owned(via),
+                None,
+                owned(request),
+                None,
+            ),
+            AuditEvent::SessionEnded { actor, reason } => (
+                AuditKind::SessionEnded,
+                owned(actor),
+                None,
+                owned(reason),
+                None,
+                None,
+            ),
+            AuditEvent::SessionRotated { actor } => (
+                AuditKind::SessionRotated,
+                owned(actor),
+                None,
+                None,
+                None,
+                None,
+            ),
+            AuditEvent::RateLimited { route } => {
+                (AuditKind::RateLimited, None, None, owned(route), None, None)
+            }
+            AuditEvent::RevokeFailed { reason, user } => (
+                AuditKind::RevokeFailed,
+                user.clone(),
+                None,
+                owned(reason),
+                None,
+                None,
+            ),
+        };
+        // Bounded as the store checks; a longer value is cut, never refused.
+        let cut = |text: Option<String>, max: usize| {
+            text.filter(|text| !text.is_empty()).map(|mut text| {
+                if text.len() > max {
+                    let mut end = max;
+                    while !text.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    text.truncate(end);
+                }
+                text
+            })
+        };
+        AuditRow {
+            seq: 0,
+            at: self.at,
+            realm: match self.realm {
+                Realm::Admin => AuditRealm::Admin,
+                Realm::Member => AuditRealm::Member,
+            },
+            event,
+            actor: cut(actor, 256),
+            method: cut(method, 32),
+            reason: cut(reason, 64),
+            request: cut(request, 256),
+            client: cut(self.client.clone(), 64),
+            device: cut(device, 64),
+            request_id: cut(Some(self.request_id.clone()), 128).unwrap_or_default(),
+        }
+    }
 }
 
 pub trait AuditSink: Send + Sync {
     fn record(&self, record: AuditRecord);
+}
+
+/// A stored row gives up after this, so a busy store never holds sign-in.
+pub const AUDIT_WRITE_DEADLINE: Duration = Duration::from_secs(2);
+
+/// Production: the stderr line, then the stored row, written off the request
+/// path. A failed write is a WARN line and never fails the sign-in.
+pub struct StoreAudit<S> {
+    store: Arc<S>,
+}
+
+impl<S> StoreAudit<S> {
+    pub fn new(store: Arc<S>) -> Self {
+        Self { store }
+    }
+}
+
+impl<S: AuthAuditStore + Send + Sync + 'static> AuditSink for StoreAudit<S> {
+    fn record(&self, record: AuditRecord) {
+        let row = record.row();
+        StderrAudit.record(record);
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let store = Arc::clone(&self.store);
+        runtime.spawn(async move {
+            let written = tokio::time::timeout(AUDIT_WRITE_DEADLINE, store.append_audit(row)).await;
+            if !matches!(written, Ok(Ok(_))) {
+                // Store error text may carry paths, so only the event is logged.
+                crate::runtime::logging::event("WARN", "audit_unrecorded", serde_json::json!({}));
+            }
+        });
+    }
 }
 
 /// JSON lines on stderr, like the runtime's other logs.

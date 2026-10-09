@@ -968,6 +968,32 @@ test('history checkpoints: empty states without backups, and no timeline filters
   await expect(filters).toBeVisible();
 });
 
+// User decision 2026-10-09: History › Sign-ins is the audit log. `/audit`
+// opens it; member rows show only a tag of the address; the filters narrow
+// the list through the server.
+test('history sign-ins: /audit opens the log, members show a tag, filters narrow it', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/audit?sw=off`);
+  await expect(page).toHaveURL(/\/history\?tab=sign-ins/);
+  await expect(page.getByRole('tab', { name: 'Sign-ins' })).toHaveAttribute('aria-selected', 'true');
+  const table = page.getByRole('table', { name: /Sign-in events/ });
+  const rows = table.locator('tbody tr');
+  await expect(rows).toHaveCount(8);
+  await expect(rows.first()).toContainText('Session ended');
+  const member = rows.filter({ hasText: 'Mikan' }).filter({ hasText: 'Signed in' });
+  await expect(member).toContainText('tag 5f2c9a1d');
+  await expect(member).toContainText('Members');
+  await expect(rows.filter({ hasText: 'Hoshino' }).filter({ hasText: 'Signed in' })).toContainText('100.64.0.7');
+  await expect(page.getByRole('search', { name: 'Filter the history' })).toBeHidden();
+
+  await choose(page.getByRole('combobox', { name: 'Portal' }), { label: 'Members' });
+  await expect(rows).toHaveCount(4);
+  await expect(rows.filter({ hasText: 'Admin' })).toHaveCount(0);
+  await choose(page.getByRole('combobox', { name: 'Event' }), { label: 'Refused' });
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText('not eligible');
+});
+
 // B_HistoryCk: a failed check turns the card to the risk wash and says so in
 // words, naming the first bad record the server reports.
 test('history checkpoints: a failed chain check', async ({ page }) => {

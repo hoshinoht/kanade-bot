@@ -199,6 +199,46 @@
           }
         }
       }
+    },
+    "SignInPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "`GET /api/admin/history/sign-ins`: stored sign-in audit rows of both realms, newest first, 90 days.",
+      "required": ["rows", "next_before"],
+      "properties": {
+        "rows": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["seq", "at", "realm", "event", "actor", "name", "method", "reason", "request", "client", "device", "request_id"],
+            "properties": {
+              "seq": { "type": "integer", "minimum": 1 },
+              "at": { "type": "string" },
+              "realm": { "enum": ["admin", "member"] },
+              "event": {
+                "enum": ["login_succeeded", "login_refused", "break_glass_used", "session_ended", "session_rotated", "rate_limited", "revoke_failed"]
+              },
+              "actor": { "type": ["string", "null"] },
+              "name": { "type": ["string", "null"] },
+              "method": { "type": ["string", "null"] },
+              "reason": { "type": ["string", "null"] },
+              "request": { "type": ["string", "null"] },
+              "client": {
+                "type": ["string", "null"],
+                "description": "Admin rows: the client address. Member rows: only a keyed 64-hex tag of it."
+              },
+              "device": { "type": ["string", "null"] },
+              "request_id": { "type": "string" }
+            }
+          }
+        },
+        "next_before": {
+          "oneOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }],
+          "description": "Pass as `before` for older rows; null on the last page."
+        }
+      }
     }
   }
 }

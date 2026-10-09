@@ -22,6 +22,7 @@ mod profanity;
 mod reminders;
 mod rewrites;
 mod seed;
+mod sign_ins;
 
 use catalog::{BossRef, Catalog};
 use clock::{DOW, clock, countdown, iso_date, iso_now, local_now, minutes, valid_time, week_start};

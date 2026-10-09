@@ -108,11 +108,19 @@ async fn an_eligible_member_signs_in_with_a_strict_host_cookie() {
 
     let records = harness.audit.records();
     assert!(records.iter().all(|record| record.realm == Realm::Member));
-    assert!(records.iter().any(|record| record.event
-        == AuditEvent::LoginSucceeded {
-            method: "discord",
-            actor: format!("discord:{MIKAN}"),
-        }));
+    let login = records
+        .iter()
+        .find(|record| {
+            matches!(&record.event, AuditEvent::LoginSucceeded { method: "discord", actor, .. }
+                if *actor == format!("discord:{MIKAN}"))
+        })
+        .expect("a login record");
+    // Members' records keep only the keyed tag of the address (item 20).
+    let client = login.client.as_deref().expect("the client's tag");
+    assert!(
+        client.len() == 64 && client.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        "{client}"
+    );
 }
 
 #[tokio::test]
@@ -570,7 +578,13 @@ async fn tokens_are_revoked_and_no_secret_or_address_reaches_the_audit() {
             assert!(!line.contains(secret), "{line} leaks {secret}");
         }
         assert!(line.contains("\"realm\":\"member\""), "{line}");
-        assert!(line.contains("\"client\":null"), "{line}");
+        // Only the keyed tag of the address (user decision 2026-10-09).
+        let record: serde_json::Value = serde_json::from_str(line).unwrap();
+        let client = record["client"].as_str().unwrap_or_default();
+        assert!(
+            client.len() == 64 && client.bytes().all(|byte| byte.is_ascii_hexdigit()),
+            "{line}"
+        );
     }
 }
 

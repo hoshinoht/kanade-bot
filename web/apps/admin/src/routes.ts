@@ -92,7 +92,8 @@ export const SECTIONS: Section[] = [
     icon: 'bell',
   },
   { key: 'config', href: '/config', label: 'Config', group: 'Operate', title: 'Config', icon: 'sliders' },
-  // v4 "Audit", rebuilt on the git-style change history; /audit redirects here.
+  // v4 "Audit", rebuilt on the git-style change history plus the Sign-ins
+  // audit log; /audit redirects to /history?tab=sign-ins.
   { key: 'history', href: '/history', label: 'History', group: 'Operate', title: 'History', icon: 'history' },
 ];
 

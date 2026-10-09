@@ -13,6 +13,7 @@ use kanade::{
         admin::{config::ConfigDesk, limits::LimitsDesk},
         auth::{
             AdminAuth,
+            audit::StoreAudit,
             crypto::SealedSecret,
             discord::{DiscordClient, DiscordLogin, DiscordUser, Secret},
             fake::FakeDiscord,
@@ -768,7 +769,9 @@ impl Reads {
         let mut auth = AdminAuth::new(store.clone(), staff)
             .with_breakglass(TOKEN.as_bytes())
             .unwrap()
-            .with_clock(Arc::new(move || pinned + *skew.lock().unwrap()));
+            .with_clock(Arc::new(move || pinned + *skew.lock().unwrap()))
+            // As serve: History › Sign-ins reads what sign-in records.
+            .with_audit(Arc::new(StoreAudit::new(store.clone())));
         if logins {
             auth = auth
                 .with_discord(DiscordLogin::new(

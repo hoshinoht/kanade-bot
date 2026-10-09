@@ -1,7 +1,7 @@
 // Generated from the Rust API DTOs by src/api/ts_bindings.rs; do not edit.
 // Regenerate: KANADE_WRITE_TS=1 cargo test --all-features --lib ts_bindings
 
-import type { ActorKind, Answer, ChangeRecord, ChatOutcome, ChatRoute, ContextSource, Difficulty, DifficultyName, ExtractionOutcome, IdListSource, KnowledgeDoc, MessageStyle, MissionSeries, PingLevel, ProposalKind, Refusal, RewriteKind, RewriteStage, RewriteVerdict, RowKey, RunStatus, SelfServiceMode, SignInMethod, Surface } from './manual';
+import type { ActorKind, Answer, ChangeRecord, ChatOutcome, ChatRoute, ContextSource, Difficulty, DifficultyName, ExtractionOutcome, IdListSource, KnowledgeDoc, MessageStyle, MissionSeries, PingLevel, ProposalKind, Refusal, RewriteKind, RewriteStage, RewriteVerdict, RowKey, RunStatus, SelfServiceMode, SignInEvent, SignInMethod, SignInRealm, Surface } from './manual';
 
 /**
  * `common.json#/$defs/Boss`.
@@ -1193,6 +1193,26 @@ backup_dir_configured: boolean,
  * Newest first (at most 100); re-read and re-checked on every request.
  */
 backups: Array<BackupRow>, };
+
+/**
+ * One audited event, newest first.
+ */
+export type SignInRow = { seq: number, at: string, realm: SignInRealm, event: SignInEvent, 
+/**
+ * `discord:<id>`, `tailscale:<login>`, `token`, or a refused user's id.
+ */
+actor: string | null, 
+/**
+ * The roster name for a Discord actor, else a readable label; `null`
+ * when the row names nobody (a rate limit).
+ */
+name: string | null, method: string | null, reason: string | null, request: string | null, client: string | null, device: string | null, request_id: string, };
+
+export type SignInPage = { rows: Array<SignInRow>, 
+/**
+ * The `before` for the next (older) page; `null` on the last.
+ */
+next_before: number | null, };
 
 /**
  * What kind of data changed.

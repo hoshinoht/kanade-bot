@@ -18,6 +18,7 @@ use crate::{
         },
         auth::{
             self, AdminAuth, Clock,
+            audit::StoreAudit,
             member::{MemberAuth, PortalOpen, StoreEligibility},
             staff::{GuildStaffGate, StoreGuildMembers},
         },
@@ -196,7 +197,8 @@ pub(super) async fn compose_with(
         Arc::new(StoreGuildMembers::new(store.clone(), access.clone())),
     );
     let auth: AdminAuth =
-        auth::from_settings(&config.runtime.admin_auth, store.clone(), Arc::new(staff))?;
+        auth::from_settings(&config.runtime.admin_auth, store.clone(), Arc::new(staff))?
+            .with_audit(Arc::new(StoreAudit::new(store.clone())));
     // One portrait cache for both origins.
     let avatars = Arc::new(AvatarCache::discord(
         config.runtime.http.identity_dir.as_deref(),
@@ -300,5 +302,6 @@ fn member_realm(
         Arc::new(StoreEligibility::new(store.clone())),
         open,
     )?
-    .with_portraits(Arc::clone(avatars)))
+    .with_portraits(Arc::clone(avatars))
+    .with_audit(Arc::new(StoreAudit::new(store.clone()))))
 }

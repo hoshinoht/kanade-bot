@@ -4,7 +4,7 @@
 
 mod chat;
 mod extractions;
-mod filter;
+pub(super) mod filter;
 pub(super) mod rescan;
 mod rewrites;
 

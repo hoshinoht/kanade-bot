@@ -28,6 +28,7 @@ use crate::domain::scheduler::{
 use super::history::{changed_rows, touched_keys, touched_weeks};
 use super::order::sort_snapshot;
 
+mod auth_audit;
 mod decline_notices;
 mod journal;
 mod members;
@@ -138,6 +139,7 @@ pub struct MemoryScheduleStore {
     config: Mutex<BTreeMap<String, String>>,
     settings_changes: Mutex<Vec<crate::domain::settings::SettingsChange>>,
     replays: Mutex<replays::ReplayTable>,
+    audit: Mutex<auth_audit::AuditTable>,
     runs_written: super::observer::Observer,
     written: super::observer::WriteHook,
 }

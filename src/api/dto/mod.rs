@@ -17,6 +17,7 @@ pub mod members;
 pub mod public;
 pub mod reminders;
 pub mod rescan;
+pub mod sign_ins;
 pub mod week;
 
 use std::path::Path;

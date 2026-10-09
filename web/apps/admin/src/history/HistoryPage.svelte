@@ -19,6 +19,7 @@
   import ConfigDetail from './ConfigDetail.svelte';
   import { isWindowClear, mergeTimeline, sectionLabel, settingCount, settingSummary, type TimelineItem } from './settings';
   import CheckpointsPanel from './CheckpointsPanel.svelte';
+  import SignInsPanel from './SignInsPanel.svelte';
   import TextModal from '../shared/TextModal.svelte';
   import { memberLabel } from '../names/directory.svelte';
 
@@ -154,12 +155,33 @@
     for (const record of records) for (const ref of record.refs) by.set(ref.seq, [...(by.get(ref.seq) ?? []), record.seq]);
     return by;
   });
-  type Tab = 'timeline' | 'checkpoints';
+  type Tab = 'timeline' | 'checkpoints' | 'sign-ins';
   const TABS: { id: Tab; label: string }[] = [
     { id: 'timeline', label: 'Timeline' },
     { id: 'checkpoints', label: 'Checkpoints' },
+    { id: 'sign-ins', label: 'Sign-ins' },
   ];
-  let tab = $state<Tab>('timeline');
+  // `?tab=sign-ins` opens the audit log directly (the old `/audit` link).
+  const linkedTab = new URLSearchParams(location.search).get('tab');
+  let tab = $state<Tab>(TABS.find((t) => t.id === linkedTab)?.id ?? 'timeline');
+  // Sign-ins filters (the Timeline's stay as they were).
+  let signInRealm = $state('');
+  let signInEvent = $state('');
+  const REALM_OPTIONS: SelectOption[] = [
+    { value: '', label: 'Both portals' },
+    { value: 'admin', label: 'Admin' },
+    { value: 'member', label: 'Members' },
+  ];
+  const EVENT_OPTIONS: SelectOption[] = [
+    { value: '', label: 'Every event' },
+    { value: 'login_succeeded', label: 'Signed in' },
+    { value: 'login_refused', label: 'Refused' },
+    { value: 'break_glass_used', label: 'Break-glass token' },
+    { value: 'session_ended', label: 'Session ended' },
+    { value: 'session_rotated', label: 'New address' },
+    { value: 'rate_limited', label: 'Rate limited' },
+    { value: 'revoke_failed', label: 'Revoke failed' },
+  ];
   function tabKey(event: KeyboardEvent, index: number) {
     const moves: Record<string, number> = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: TABS.length - 1 };
     const target = moves[event.key];
@@ -334,13 +356,17 @@
     <h2 class="vh" id="history-title">History</h2>
     <div class="tabs__tabs" role="tablist" aria-label="History" data-fid="window-tabs">
       {#each TABS as t, index (t.id)}
-        <button class="tabs__tab" role="tab" type="button" id="history-tab-{t.id}" aria-selected={tab === t.id} aria-controls="history-{t.id}" tabindex={tab === t.id ? 0 : -1} onclick={() => (tab = t.id)} onkeydown={(event) => tabKey(event, index)}>{t.label}{#if t.id === 'timeline'}<span class="tabs__count">{total + settingsTotal}</span>{:else if checkpoints.data}<span class="tabs__count">{checkpoints.data.backups.length}</span>{/if}</button>
+        <button class="tabs__tab" role="tab" type="button" id="history-tab-{t.id}" aria-selected={tab === t.id} aria-controls="history-{t.id}" tabindex={tab === t.id ? 0 : -1} onclick={() => (tab = t.id)} onkeydown={(event) => tabKey(event, index)}>{t.label}{#if t.id === 'timeline'}<span class="tabs__count">{total + settingsTotal}</span>{:else if t.id === 'checkpoints' && checkpoints.data}<span class="tabs__count">{checkpoints.data.backups.length}</span>{/if}</button>
       {/each}
     </div>
     <!-- The filters only apply to the Timeline. -->
     <div class="history-window__filters" data-fid="window-filters" hidden={tab !== 'timeline'} role="search" aria-label="Filter the history">
       <Select size="tbar" label="Week" options={weekOptions} bind:value={week} />
       <Select size="tbar" label="Who" options={actorOptions} bind:value={actor} noun="people" />
+    </div>
+    <div class="history-window__filters" hidden={tab !== 'sign-ins'} role="search" aria-label="Filter the sign-ins">
+      <Select size="tbar" label="Portal" options={REALM_OPTIONS} bind:value={signInRealm} />
+      <Select size="tbar" label="Event" options={EVENT_OPTIONS} bind:value={signInEvent} noun="events" />
     </div>
   </header>
 
@@ -394,9 +420,13 @@
       {#if pane.shown?.kind === 'change'}<HistoryDetail wide={wide} member={memberRevert} record={selected ?? pane.shown.record} week={selected ? selectedWeek : pane.shown.week} timezone={tz} {names} onclose={closeDetail} onrevert={revert} onrestore={restoreWeek} onraw={showRaw} leaving={pane.leaving} onleft={(event) => pane.done(event)} />
       {:else if pane.shown?.kind === 'config'}{@const change = selectedSave ?? pane.shown.change}<ConfigDetail wide={wide} {change} timezone={tz} actor={actorName(change.actor, names, known)} onclose={closeDetail} onraw={showSaveRaw} leaving={pane.leaving} onleft={(event) => pane.done(event)} />{/if}
     </div>
-  {:else}
+  {:else if tab === 'checkpoints'}
     <div class="history-window__body" id="history-checkpoints" role="tabpanel" aria-labelledby="history-tab-checkpoints">
       <div class="history-list-region"><CheckpointsPanel {checkpoints} timezone={tz} /></div>
+    </div>
+  {:else}
+    <div class="history-window__body" id="history-sign-ins" role="tabpanel" aria-labelledby="history-tab-sign-ins">
+      <div class="history-list-region"><div class="history-list-region__scroll"><SignInsPanel realm={signInRealm} event={signInEvent} timezone={tz} /></div></div>
     </div>
   {/if}
 </section>

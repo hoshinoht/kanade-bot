@@ -575,6 +575,10 @@ pub async fn checkpoints(State(app): State<App>) -> Response {
     Json(app.store.lock().await.checkpoints()).into_response()
 }
 
+pub async fn sign_ins(State(app): State<App>, RawQuery(q): RawQuery) -> Response {
+    outcome(app.store.lock().await.sign_ins(q.as_deref()))
+}
+
 pub async fn config(State(app): State<App>) -> Response {
     Json(app.store.lock().await.config_view()).into_response()
 }

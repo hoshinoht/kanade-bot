@@ -652,6 +652,15 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "history.json#/$defs/Checkpoints",
     )
     .await;
+    for q in ["", "?realm=member&event=login_succeeded"] {
+        h.ok(
+            "GET",
+            &format!("/api/admin/history/sign-ins{q}"),
+            None,
+            "history.json#/$defs/SignInPage",
+        )
+        .await;
+    }
 
     // Logs, including their detail pages and the filter refusal.
     for q in ["", "?outcome=failed,proposed"] {

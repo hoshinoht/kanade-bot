@@ -182,8 +182,10 @@ impl MemberAuth {
     }
 
     pub(crate) fn audit(&self, context: &AuditContext, event: AuditEvent) {
-        self.audit
-            .record(AuditRecord::new(Realm::Member, context, event));
+        let mut record = AuditRecord::new(Realm::Member, context, event, self.now());
+        // Only the keyed tag, and only for an HTTP request's address.
+        record.client = context.client.and_then(|ip| self.client_tag(Some(ip)));
+        self.audit.record(record);
     }
 
     /// The keyed tag of the client address; `None` without system randomness.
@@ -306,6 +308,7 @@ impl MemberAuth {
             AuditEvent::LoginSucceeded {
                 method: LoginMethod::Discord.as_str(),
                 actor: actor_id(LoginMethod::Discord, &user.id),
+                device: session.device.clone(),
             },
         );
         Ok(id)

@@ -15,11 +15,13 @@ use crate::{
         ChatFilter, ChatOutcome, ExtractionFilter, ExtractionOutcome, MAX_PAGE, REWRITE_VERDICTS,
         RewriteFilter, RewriteKind, RewriteStage,
     },
+    infrastructure::store::auth_audit::{AUDIT_PAGE_MAX, AuditFilter, AuditKind, AuditRealm},
 };
 
 const COMMON: [&str; 7] = ["model", "from", "to", "outcome", "channel", "member", "q"];
 const CHAT_ONLY: [&str; 2] = ["tool", "min_ms"];
 const REWRITE_KEYS: [&str; 7] = ["model", "from", "to", "kind", "stage", "verdict", "q"];
+const SIGN_IN_KEYS: [&str; 6] = ["realm", "event", "actor", "from", "to", "before"];
 
 pub fn invalid(message: impl Into<String>) -> Refusal {
     Refusal::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid_filter", message)
@@ -52,11 +54,11 @@ impl Query {
         Ok(())
     }
 
-    /// The Rewrites log's keys only.
-    fn rewrites(uri: &Uri) -> Result<Self, Refusal> {
+    /// Only `keys`, each at most once.
+    fn only(uri: &Uri, keys: &[&str]) -> Result<Self, Refusal> {
         let pairs = Self::pairs(uri)?;
         for (index, (key, _)) in pairs.iter().enumerate() {
-            if !REWRITE_KEYS.contains(&key.as_str()) {
+            if !keys.contains(&key.as_str()) {
                 return Err(invalid(format!("Unknown filter “{key}”.")));
             }
             Self::once(&pairs, index, key)?;
@@ -204,7 +206,7 @@ pub fn chats(uri: &Uri, zone: Tz) -> Result<ChatFilter, Refusal> {
 }
 
 pub fn rewrites(uri: &Uri, zone: Tz) -> Result<RewriteFilter, Refusal> {
-    let query = Query::rewrites(uri)?;
+    let query = Query::only(uri, &REWRITE_KEYS)?;
     let (from, to) = query.range(zone)?;
     Ok(RewriteFilter {
         model: query.get("model"),
@@ -220,5 +222,31 @@ pub fn rewrites(uri: &Uri, zone: Tz) -> Result<RewriteFilter, Refusal> {
         q: query.get("q"),
         cursor: None,
         limit: MAX_PAGE,
+    })
+}
+
+/// History › Sign-ins: `realm`, `event`, `actor` (exact), `from`/`to` dates
+/// in the guild zone and the `before` keyset cursor; pages are the store's
+/// largest.
+pub fn sign_ins(uri: &Uri, zone: Tz) -> Result<AuditFilter, Refusal> {
+    let query = Query::only(uri, &SIGN_IN_KEYS)?;
+    let (from, to) = query.range(zone)?;
+    let before_seq = query
+        .get("before")
+        .map(|text| {
+            text.parse::<i64>()
+                .ok()
+                .filter(|seq| *seq > 0 && text.bytes().all(|byte| byte.is_ascii_digit()))
+                .ok_or_else(|| invalid(format!("“before” is a row number, not “{text}”.")))
+        })
+        .transpose()?;
+    Ok(AuditFilter {
+        realm: query.one("realm", AuditRealm::parse)?,
+        event: query.one("event", AuditKind::parse)?,
+        actor: query.get("actor"),
+        from,
+        to,
+        before_seq,
+        limit: AUDIT_PAGE_MAX,
     })
 }

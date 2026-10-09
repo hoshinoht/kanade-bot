@@ -8,6 +8,7 @@ mod backups;
 pub(super) mod parse;
 mod rollback;
 mod settings;
+mod sign_ins;
 
 use std::sync::Arc;
 
@@ -38,6 +39,7 @@ pub fn routes() -> Router<Arc<Site>> {
     Router::new()
         .route("/api/admin/history", get(page))
         .route("/api/admin/history/checkpoints", get(checkpoints))
+        .route("/api/admin/history/sign-ins", get(sign_ins::page))
         .route("/api/admin/history/revert", post(rollback::revert))
         .route(
             "/api/admin/history/restore-week",

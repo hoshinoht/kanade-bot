@@ -218,6 +218,7 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         .route("/api/admin/access/recheck", post(api::access))
         .route("/api/admin/history", get(api::history))
         .route("/api/admin/history/checkpoints", get(api::checkpoints))
+        .route("/api/admin/history/sign-ins", get(api::sign_ins))
         .route("/api/admin/history/revert", post(api::revert))
         .route("/api/admin/history/restore-week", post(api::restore_week))
         .route("/api/admin/history/revert-actor", post(api::revert_actor))

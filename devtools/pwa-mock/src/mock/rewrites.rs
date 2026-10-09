@@ -247,7 +247,10 @@ fn decode(text: &str) -> Option<String> {
 
 /// The query as the server reads it: a pair that does not decode refuses the
 /// whole query, then every key must be known and sent once.
-fn filters(raw: Option<&str>) -> Result<BTreeMap<String, String>, MoveError> {
+pub(super) fn filters(
+    raw: Option<&str>,
+    keys: &[&str],
+) -> Result<BTreeMap<String, String>, MoveError> {
     let pairs: Option<Vec<(String, String)>> = raw
         .unwrap_or_default()
         .split('&')
@@ -259,7 +262,7 @@ fn filters(raw: Option<&str>) -> Result<BTreeMap<String, String>, MoveError> {
         .collect();
     let mut map = BTreeMap::new();
     for (key, value) in pairs.ok_or_else(|| invalid("A filter could not be read."))? {
-        if !KEYS.contains(&key.as_str()) {
+        if !keys.contains(&key.as_str()) {
             return Err(invalid(format!("Unknown filter “{key}”.")));
         }
         if map.contains_key(&key) {
@@ -322,7 +325,7 @@ impl Store {
     /// As the server: an undecodable pair, unknown or repeated keys, unknown
     /// values, malformed, impossible or inverted dates are `422 invalid_filter`.
     pub fn rewrites(&self, raw: Option<&str>) -> Result<Value, MoveError> {
-        let query = &filters(raw)?;
+        let query = &filters(raw, &KEYS)?;
         let kind = some(query, "kind");
         let stage = some(query, "stage");
         let verdicts: Vec<String> = some(query, "verdict")

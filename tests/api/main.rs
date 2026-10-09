@@ -22,6 +22,7 @@ mod reads;
 mod reminders;
 mod replays;
 mod schemas;
+mod sign_ins;
 mod support;
 mod tonight;
 mod writes;
