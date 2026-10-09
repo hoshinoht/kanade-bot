@@ -202,7 +202,25 @@ async fn personas(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
 }
 
 async fn bosses(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
-    let state = state(&site)?;
+    Ok(Json(boss_rows(&site).await?).into_response())
+}
+
+async fn events(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
+    Ok(Json(event_bosses(&site)?).into_response())
+}
+
+async fn knowledge(
+    State(site): State<Arc<Site>>,
+    _: AdminSession,
+    key: Result<UrlPath<String>, PathRejection>,
+) -> Reply {
+    let UrlPath(key) = key.map_err(|_| ApiError::NOT_FOUND)?;
+    Ok(Json(boss_knowledge(&site, &key).await?).into_response())
+}
+
+/// The catalog list (`/api/admin/bosses`, `/api/public/bosses`).
+pub(crate) async fn boss_rows(site: &Site) -> Result<Vec<dto::bosses::BossRow>, ApiError> {
+    let state = state(site)?;
     // Weekly timings are always loaded; no runs are needed.
     let snapshot = state
         .store
@@ -212,34 +230,32 @@ async fn bosses(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
     let art = Art {
         root: site.boss_dir.as_deref(),
     };
-    Ok(Json(dto::bosses::rows(
+    Ok(dto::bosses::rows(
         &state.catalog,
         &art,
         &snapshot.fixed_runs,
     ))
-    .into_response())
 }
 
-async fn events(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
-    let state = state(&site)?;
+/// Event bosses (`/api/admin/bosses/events`, `/api/public/bosses/events`).
+pub(crate) fn event_bosses(site: &Site) -> Result<Vec<dto::bosses::EventBoss>, ApiError> {
+    let state = state(site)?;
     let art = Art {
         root: site.boss_dir.as_deref(),
     };
-    let events = state
+    Ok(state
         .knowledge_dir
         .as_deref()
         .map(|dir| dto::bosses::events(dir, &art))
-        .unwrap_or_default();
-    Ok(Json(events).into_response())
+        .unwrap_or_default())
 }
 
-async fn knowledge(
-    State(site): State<Arc<Site>>,
-    _: AdminSession,
-    key: Result<UrlPath<String>, PathRejection>,
-) -> Reply {
-    let state = state(&site)?;
-    let UrlPath(key) = key.map_err(|_| ApiError::NOT_FOUND)?;
+/// One boss's knowledge page; 404 for an unknown key or a site without knowledge.
+pub(crate) async fn boss_knowledge(
+    site: &Site,
+    key: &str,
+) -> Result<dto::bosses::Knowledge, ApiError> {
+    let state = state(site)?;
     let dir = state.knowledge_dir.as_deref().ok_or(ApiError::NOT_FOUND)?;
     let snapshot = state
         .store
@@ -249,7 +265,6 @@ async fn knowledge(
     let art = Art {
         root: site.boss_dir.as_deref(),
     };
-    dto::bosses::knowledge(dir, &state.catalog, &art, &snapshot.fixed_runs, &key)
-        .map(|knowledge| Json(knowledge).into_response())
+    dto::bosses::knowledge(dir, &state.catalog, &art, &snapshot.fixed_runs, key)
         .ok_or(ApiError::NOT_FOUND)
 }

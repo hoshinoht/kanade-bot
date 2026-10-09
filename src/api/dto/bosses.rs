@@ -231,6 +231,70 @@ pub fn knowledge(
     })
 }
 
+/// [`Knowledge`] as members read it (`GET /api/public/bosses/{key}/knowledge`):
+/// without the repository `path` (an operator's pointer for editing) and with
+/// every bullet's bot-only `detail` removed (public-portal-plan Q8).
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct PublicKnowledge {
+    pub key: String,
+    pub name: String,
+    pub level: Option<u64>,
+    pub portrait: Option<String>,
+    pub animated: Option<String>,
+    pub hue: u16,
+    pub researched_as_of: Option<String>,
+    #[cfg_attr(test, ts(type = "Difficulty[]"))]
+    pub in_use: Vec<String>,
+    #[cfg_attr(test, ts(type = "KnowledgeDoc"))]
+    pub doc: Value,
+    pub missions: Vec<MissionStop>,
+}
+
+impl From<Knowledge> for PublicKnowledge {
+    fn from(knowledge: Knowledge) -> Self {
+        let Knowledge {
+            key,
+            name,
+            level,
+            portrait,
+            animated,
+            hue,
+            researched_as_of,
+            path: _,
+            in_use,
+            mut doc,
+            missions,
+        } = knowledge;
+        strip_detail(&mut doc);
+        Self {
+            key,
+            name,
+            level,
+            portrait,
+            animated,
+            hue,
+            researched_as_of,
+            in_use,
+            doc,
+            missions,
+        }
+    }
+}
+
+/// Removes `detail` at every depth. The schema allows the key only on
+/// bullets, so walking the whole document also covers bullets added later.
+fn strip_detail(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            map.remove("detail");
+            map.values_mut().for_each(strip_detail);
+        }
+        Value::Array(items) => items.iter_mut().for_each(strip_detail),
+        _ => {}
+    }
+}
+
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct EventBoss {

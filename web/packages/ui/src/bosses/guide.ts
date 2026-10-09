@@ -161,6 +161,14 @@ export function difficultyNotes(doc: KnowledgeDoc, fact: DifficultyFacts): Guide
   ];
 }
 
+/**
+ * Layout-fidelity tags for regions only the member portal's boards draw
+ * (`guide-*`, `event-bosses`, `window-filters`). The portal passes them; the
+ * admin app passes none, so its boards gain no app-only region. Builds without
+ * `KANADE_FIDELITY=1` strip the attributes (`stripFidelityTags`).
+ */
+export type BossFids = Partial<Record<'order' | 'events' | 'difficulty' | 'mission' | 'event' | 'tiles' | 'hp' | 'notes' | 'tabs' | 'toc', string>>;
+
 export type GuideTab = 'overview' | 'phases' | 'strategies' | 'notes' | 'sources';
 
 /** Pill tabs with counts; a tab with nothing in it is left out (Overview always stays). */

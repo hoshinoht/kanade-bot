@@ -98,7 +98,13 @@ async fn admin_api_is_not_served_before_auth_exists() {
     let fixture = Fixture::new();
     let admin = support::admin(&fixture.http()).await;
     // Drafts routes are deferred (API-6), so this path stays unmounted.
-    for path in ["/api/admin/drafts", "/api/public/status"] {
+    for path in [
+        "/api/admin/drafts",
+        "/api/public/status",
+        "/api/public/bosses",
+        "/api/public/bosses/events",
+        "/api/public/bosses/Carling/knowledge",
+    ] {
         let reply = get(admin, ADMIN_HOST, path).await;
         assert_eq!(reply.status, 404, "{path}");
         assert_eq!(reply.api_error(), "not_found");
@@ -254,6 +260,9 @@ async fn closed_public_portal_serves_status_identity_and_shell_only() {
         "/api/public/week",
         "/api/public/requests/mine",
         "/api/public/timings",
+        "/api/public/bosses",
+        "/api/public/bosses/events",
+        "/api/public/bosses/Carling/knowledge",
         "/api/public/timings/f-1/owner",
         "/api/public/timings/f-1/owner-requests",
         "/api/public/owner-requests/r-1/accept",

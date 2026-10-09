@@ -1,7 +1,8 @@
 <script lang="ts">
   import '@kanade/ui/styles/boss-grid.scss';
   import type { BossRow } from '@kanade/api-types';
-  import { Portrait, RowContent } from '@kanade/ui';
+  import Portrait from '../components/Portrait.svelte';
+  import RowContent from '../components/RowContent.svelte';
 
   let {
     rows,
@@ -9,6 +10,7 @@
     readonly = false,
     active = '',
     infoOnly = [],
+    href = (key: string) => `/bosses/${key}/knowledge`,
   }: {
     rows: BossRow[];
     selected?: string[];
@@ -16,6 +18,8 @@
     active?: string;
     /** The active boss's knowledge-only difficulties (Champion, Destiny), shown after its catalog ones. */
     infoOnly?: string[];
+    /** A boss's guide (read-only rows link to it). */
+    href?: (key: string) => string;
   } = $props();
 
   // The grid wants a Boss; rows carry the same art fields.
@@ -61,7 +65,7 @@
     {@const remaining = row.difficulties.filter((option) => !option.in_use).length}
     {#if readonly}
       <div class="bossrow expandable-row" data-fid="boss-row" class:bossrow--on={on} class:bossrow--active={row.key === active} role="listitem">
-        <div class="bossrow__id"><Portrait boss={asBoss(row)} size="md" /><span><a class="bossrow__name" href="/bosses/{row.key}/knowledge" aria-current={row.key === active ? 'true' : undefined}>{row.name}</a><span class="bossrow__lv">Lv. {row.level}</span></span></div>
+        <div class="bossrow__id"><Portrait boss={asBoss(row)} size="md" /><span><a class="bossrow__name" href={href(row.key)} aria-current={row.key === active ? 'true' : undefined}>{row.name}</a><span class="bossrow__lv">Lv. {row.level}</span></span></div>
         <RowContent expanded={row.key === active}>
           {#snippet compact()}<span class="bossrow__pills" role="group" aria-label="{row.name} difficulties">
           {#each row.difficulties.filter((option) => option.in_use) as option (option.token)}

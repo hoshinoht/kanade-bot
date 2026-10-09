@@ -2,12 +2,13 @@
 //! only while the admin switch `self_service.public_portal` is on and the
 //! public Discord application is configured; then members sign in and see
 //! their own session and devices, the boss week, their weekly timings (and
-//! move their ownership), their chat allowance and boss art. Closed, the
+//! move their ownership), their chat allowance, boss guides and boss art. Closed, the
 //! origin serves the shell, status and identity, sign-in answers `closed`
 //! and data and art answer `503 closed`. Every session route sits behind
 //! [`member::require_session`]; nothing here reads an admin credential.
 
 mod auth;
+mod bosses;
 mod ownership;
 mod read;
 mod sessions;
@@ -45,6 +46,15 @@ pub fn routes(site: Arc<Site>) -> Router<Arc<Site>> {
         .route(
             "/api/public/me/allowance",
             get(read::allowance).fallback(unmounted),
+        )
+        .route("/api/public/bosses", get(bosses::list).fallback(unmounted))
+        .route(
+            "/api/public/bosses/events",
+            get(bosses::events).fallback(unmounted),
+        )
+        .route(
+            "/api/public/bosses/{key}/knowledge",
+            get(bosses::knowledge).fallback(unmounted),
         )
         .route(
             "/api/public/timings",

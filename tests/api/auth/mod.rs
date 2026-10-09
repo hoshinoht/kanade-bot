@@ -5,6 +5,7 @@
 mod discord;
 mod fallbacks;
 mod hardening;
+mod member_bosses;
 mod member_devices;
 mod member_ownership;
 mod member_reads;

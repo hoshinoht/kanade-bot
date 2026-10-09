@@ -282,6 +282,13 @@ animated: string | null, hue: number, researched_as_of: string | null, path: str
  */
 missions: Array<MissionStop>, };
 
+/**
+ * [`Knowledge`] as members read it (`GET /api/public/bosses/{key}/knowledge`):
+ * without the repository `path` (an operator's pointer for editing) and with
+ * every bullet's bot-only `detail` removed (public-portal-plan Q8).
+ */
+export type PublicKnowledge = { key: string, name: string, level: number | null, portrait: string | null, animated: string | null, hue: number, researched_as_of: string | null, in_use: Difficulty[], doc: KnowledgeDoc, missions: Array<MissionStop>, };
+
 export type EventBoss = { key: string, event: { name: string; availability: string }, summary: string, portrait: string | null, portrait_sm: string | null, art: string | null, animated: string | null, };
 
 export type InboxTab = "extractor" | "self_service";

@@ -38,6 +38,9 @@ Pointers are `<file>#/$defs/<Name>`.
 | `POST /api/public/timings/{id}/owner` | body `public.json#/$defs/OwnerHandOff`; `public.json#/$defs/MemberTiming` (owner only; fresh sign-in, else 401 `reauth_required`) |
 | `POST /api/public/timings/{id}/owner-requests` | `public.json#/$defs/MemberOwnerRequest` (201; 200 for a retry with the same Idempotency-Key) |
 | `POST /api/public/owner-requests/{id}/accept`, `/decline`, `/withdraw` | `public.json#/$defs/MemberOwnerRequest` (accept/decline: owner only, accept needs a fresh sign-in; withdraw: requester only) |
+| `GET /api/public/bosses` | `bosses.json#/$defs/BossRows` (as admin) |
+| `GET /api/public/bosses/events` | `bosses.json#/$defs/EventBosses` (as admin) |
+| `GET /api/public/bosses/{key}/knowledge` | `public.json#/$defs/PublicKnowledge` (no `path`, no bullet `detail`; 404 `not_found` for an unknown key) |
 | `GET /art/{kind}/{key}` (public origin) | boss art as on the admin origin, signed-in members only (401 signed out, 503 `closed` while closed) |
 | `GET /api/admin/session` | `identity.json#/$defs/Session` |
 | `GET /api/admin/me` | `identity.json#/$defs/Me` |
@@ -167,3 +170,7 @@ Pointers are `<file>#/$defs/<Name>`.
   `MemberTiming`, `MemberOwnerRequest` and the `OwnerHandOff` body for
   `GET /api/public/timings` and the member's hand-off, ask, accept,
   decline and withdraw writes.
+- Member boss guides (2026-10-10): `public.json` `PublicKnowledge` (and
+  `WithoutDetail`) for `GET /api/public/bosses/{key}/knowledge`; the
+  public list and event bosses reuse `bosses.json` `BossRows` and
+  `EventBosses`.

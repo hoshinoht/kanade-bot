@@ -61,6 +61,29 @@ test('member: My runs › Weekly timings lists the timing she owns from the real
   await expect(rows.first().getByRole('button', { name: 'Hand Wed 21:00 to another party member' })).toBeVisible();
 });
 
+test('member: Bosses lists the catalog and opens a guide from the real server', async ({ page, context }) => {
+  await asDiscordUser(context, 'eligible');
+  await page.goto(`${MEMBER}/`);
+  await page.getByRole('link', { name: 'Sign in with Discord' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Week' })).toBeVisible();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Bosses' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Bosses' })).toBeVisible();
+  const list = await page.evaluate(async () => {
+    const reply = await fetch('/api/public/bosses', { credentials: 'same-origin' });
+    return { status: reply.status, cache: reply.headers.get('cache-control'), body: (await reply.json()) as { key: string; name: string }[] };
+  });
+  expect(list.status).toBe(200);
+  expect(list.cache).toBe('no-store');
+  expect(list.body.length).toBeGreaterThan(0);
+  const first = list.body[0]!;
+  await expect(page.locator('.bossrow').first()).toContainText(first.name);
+  await page.getByRole('link', { name: first.name, exact: true }).click();
+  await expect(page.getByRole('tablist', { name: 'Guide sections' })).toBeVisible();
+  const guide = await page.evaluate(async (key) => (await (await fetch(`/api/public/bosses/${key}/knowledge`, { credentials: 'same-origin' })).text()), first.key);
+  expect(guide).not.toContain('"detail"');
+  expect(guide).not.toContain('"path"');
+});
+
 test('member: a member without the bossing role is denied and gets no session', async ({ page, context }) => {
   await asDiscordUser(context, 'ineligible');
   await page.goto(`${MEMBER}/`);

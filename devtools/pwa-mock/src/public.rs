@@ -12,6 +12,7 @@ use crate::{
     auth::{landing, query_value, safe_next, see_other},
     mock::{
         MoveError,
+        knowledge::PublicKnowledge,
         portal::{Current, LOGIN_ERRORS, MEMBER_SEED_ID},
     },
     writes::CSRF_HEADER,
@@ -310,6 +311,48 @@ pub async fn allowance(State(app): State<App>, method: Method, headers: HeaderMa
     };
     let body = app.store.lock().await.member_allowance();
     carry(Json(body).into_response(), &current)
+}
+
+/// `GET /api/public/bosses`: the admin list as it is (no operator-only field).
+pub async fn bosses(State(app): State<App>, method: Method, headers: HeaderMap) -> Response {
+    let current = match member(&app, &method, &headers).await {
+        Ok(current) => current,
+        Err(refused) => return *refused,
+    };
+    let body = app.store.lock().await.boss_rows();
+    carry(Json(body).into_response(), &current)
+}
+
+/// `GET /api/public/bosses/events`: event bosses as the admin read lists them.
+pub async fn boss_events(State(app): State<App>, method: Method, headers: HeaderMap) -> Response {
+    let current = match member(&app, &method, &headers).await {
+        Ok(current) => current,
+        Err(refused) => return *refused,
+    };
+    let catalog = app.store.lock().await.catalog().clone();
+    carry(
+        Json(app.knowledge.events(&catalog)).into_response(),
+        &current,
+    )
+}
+
+/// `GET /api/public/bosses/{key}/knowledge`: `PublicKnowledge` (no `path`, no `detail`).
+pub async fn boss_knowledge(
+    State(app): State<App>,
+    method: Method,
+    headers: HeaderMap,
+    Path(key): Path<String>,
+) -> Response {
+    let current = match member(&app, &method, &headers).await {
+        Ok(current) => current,
+        Err(refused) => return *refused,
+    };
+    let found = app.store.lock().await.knowledge_v2(&app.knowledge, &key);
+    let response = match found {
+        Ok(knowledge) => Json(PublicKnowledge::from(knowledge)).into_response(),
+        Err(_) => crate::api::not_found().await,
+    };
+    carry(response, &current)
 }
 
 /// A member write as the server's `admit`: the session and its token, the

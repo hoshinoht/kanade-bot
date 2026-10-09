@@ -6,16 +6,16 @@
 -->
 <script lang="ts">
   import type { Mission, MissionStop } from '@kanade/api-types';
-  import { StatusChip } from '@kanade/ui';
+  import StatusChip from '../components/StatusChip.svelte';
   import { LETTER, SERIES_NAME, missionPlace, stopLabel } from './guide';
 
-  let { mission, stops, difficulty }: { mission: Mission; stops: MissionStop[]; difficulty: string } = $props();
+  let { mission, stops, difficulty, fid }: { mission: Mission; stops: MissionStop[]; difficulty: string; /** Fidelity tag (member portal). */ fid?: string } = $props();
 
   const track = $derived(stops.filter((stop) => stop.series === mission.series).sort((left, right) => left.order - right.order));
   const place = $derived(missionPlace(mission.series, mission.order, track.length));
 </script>
 
-<section class="guide-mission" aria-labelledby="guide-mission-heading">
+<section class="guide-mission" aria-labelledby="guide-mission-heading" data-fid={fid}>
   <div class="guide-mission__head">
     <div>
       <p class="cap">{SERIES_NAME[mission.series]} mission · {place}</p>

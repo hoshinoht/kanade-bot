@@ -63,8 +63,11 @@ export function forbidModules({ patterns }: ForbidOptions): Plugin {
   };
 }
 
-/** Literal `data-fid="…"` attributes only; dynamic values are not supported (and not stripped). */
-const FID_ATTR = /\s+data-fid="[^"{}]*"/g;
+/**
+ * Literal `data-fid="…"` attributes, and `data-fid={expr}` where a shared
+ * component takes its tag from the app (a plain expression, no braces inside).
+ */
+const FID_ATTR = /\s+data-fid=(?:"[^"{}]*"|\{[^{}]*\})/g;
 
 /**
  * Removes the layout-fidelity tags (`data-fid`, matched against the M3E boards

@@ -36,8 +36,8 @@
     drawerId?: string;
     /** Where the drawer returns focus. */
     menu?: HTMLButtonElement;
-    /** In place of the menu and title: where back goes and what the chip says. */
-    back?: { label: string; chip: string; mine: boolean; onback: () => void } | null;
+    /** In place of the menu and title: where back goes, its accessible name and what the chip says (no chip: an open guide). */
+    back?: { label: string; name?: string; chip?: string; mine?: boolean; onback: () => void } | null;
     fresh?: Snippet;
     onmenu?: () => void;
     onprofile?: () => void;
@@ -46,9 +46,9 @@
 
 <header class="topbar" class:topbar--visitor={!member} data-fid="topbar">
   {#if member && back}
-    <button type="button" class="btn topbar__back" onclick={back.onback}><Icon name="chevron-left" />{back.label}</button>
+    <button type="button" class="btn topbar__back" aria-label={back.name} onclick={back.onback}><Icon name="chevron-left" />{back.label}</button>
     <span class="topbar__spacer"></span>
-    <span class={back.mine ? 'you-chip' : 'member-card__view'}>{back.chip}</span>
+    {#if back.chip}<span class={back.mine ? 'you-chip' : 'member-card__view'}>{back.chip}</span>{/if}
     <button type="button" class="topbar__me" aria-label="Account: {member.display}" onclick={onprofile}
       ><Avatar class="topbar__avatar" src={member.avatar} name={member.display} /></button
     >

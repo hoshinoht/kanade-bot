@@ -16,6 +16,11 @@ describe('stripFidelityTags', () => {
     expect(run(true, source)).toBe(source);
   });
 
+  it('removes tags a shared component takes from the app', () => {
+    expect(run(false, '<dl class="guide-tiles" data-fid={fid}>\n<p data-fid={fids.event} class="x">')).toBe('<dl class="guide-tiles">\n<p class="x">');
+    expect(run(true, '<dl data-fid={fid}>')).toBe('<dl data-fid={fid}>');
+  });
+
   it('leaves other files and other data attributes alone', () => {
     expect(run(false, 'const s = \'data-fid="x"\';', '/w/src/a.ts')).toBe('const s = \'data-fid="x"\';');
     expect(run(false, '<div data-history={seq}></div>')).toBe('<div data-history={seq}></div>');

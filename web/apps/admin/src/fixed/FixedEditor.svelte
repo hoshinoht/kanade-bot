@@ -10,7 +10,7 @@
   import '@kanade/ui/styles/fixed.scss';
   import '@kanade/ui/styles/move-picker.scss';
   import { tick } from 'svelte';
-  import BossGrid from '../bosses/BossGrid.svelte';
+  import { BossGrid } from '@kanade/ui';
   import { send } from '../resource.svelte';
   import { memberLabel } from '../names/directory.svelte';
   import type { Week } from '@kanade/api-types';

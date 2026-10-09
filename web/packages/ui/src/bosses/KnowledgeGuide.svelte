@@ -3,10 +3,11 @@
   fact tiles, HP by phase and the difficulty's notes, then the Overview /
   Phases / Strategies / Notes / Sources pill tabs. The open tab is in the URL
   (`?tab=`, Overview by default); a tab with nothing in it is not shown.
-  It also renders the aside: "On this page" over the page's timings snippet.
+  It also renders the aside: "On this page" over the page's timings snippet
+  (the admin app's; the member portal has none).
 -->
 <script lang="ts">
-  import type { GuideItem, Knowledge } from '@kanade/api-types';
+  import type { GuideItem, PublicKnowledge } from '@kanade/api-types';
   import type { Snippet } from 'svelte';
   import GuideToc from './GuideToc.svelte';
   import FactTiles from './FactTiles.svelte';
@@ -18,20 +19,25 @@
   import PhaseTimeline from './PhaseTimeline.svelte';
   import SourceList from './SourceList.svelte';
   import StrategyCards from './StrategyCards.svelte';
-  import { LETTER, difficultyNotes, factTiles, guideTabs, hpBreakdown, phaseIndex, tocSections, type GuideTab } from './guide';
+  import { LETTER, difficultyNotes, factTiles, guideTabs, hpBreakdown, phaseIndex, tocSections, type BossFids, type GuideTab } from './guide';
 
   let {
     knowledge,
     difficulty = '',
     shown = $bindable(null),
     timings,
+    asideLabel = 'Weekly timings',
+    fids = {},
   }: {
-    knowledge: Knowledge;
+    /** Admin `Knowledge` or the member portal's `PublicKnowledge` (no `path`, no `detail`). */
+    knowledge: PublicKnowledge;
     difficulty?: string;
     /** The selected difficulty's name, for the compact header's pill. */
     shown?: string | null;
     /** The aside's weekly timings and this week's runs. */
-    timings: Snippet;
+    timings?: Snippet;
+    asideLabel?: string;
+    fids?: BossFids;
   } = $props();
   const uid = $props.id();
 
@@ -96,7 +102,7 @@
 
 <div class="knowledge-detail__main" bind:this={main}>
 {#if facts.length}
-  <div class="knowledge__switch">
+  <div class="knowledge__switch" data-fid={fids.difficulty}>
     <span class="cap" id="difficulty-label">Difficulty</span>
     <div class="seg" role="group" aria-labelledby="difficulty-label">
       {#each facts as fact (fact.name)}
@@ -107,16 +113,16 @@
     </div>
   </div>
 {/if}
-{#if selected?.mission}<MissionCard mission={selected.mission} stops={knowledge.missions} difficulty={selected.name} />{/if}
+{#if selected?.mission}<MissionCard mission={selected.mission} stops={knowledge.missions} difficulty={selected.name} fid={fids.mission} />{/if}
 <p class="guide-lead">{doc.lead ?? doc.summary}</p>
-{#if doc.event}<p class="flash flash--ok"><strong>Event boss.</strong> {doc.event.availability}</p>{/if}
+{#if doc.event}<p class="flash flash--ok" data-fid={fids.event}><strong>Event boss.</strong> {doc.event.availability}</p>{/if}
 {#if selected}
   <section class="guide-facts" aria-labelledby="facts-heading">
     <h2 class="vh" id="facts-heading">{selected.name} facts</h2>
-    {#if tiles.length}<FactTiles {tiles} label="{selected.name} figures" />{/if}
-    {#if hp}<HpBreakdown {hp} difficulty={selected.name} />{/if}
+    {#if tiles.length}<FactTiles {tiles} label="{selected.name} figures" fid={fids.tiles} />{/if}
+    {#if hp}<HpBreakdown {hp} difficulty={selected.name} fid={fids.hp} />{/if}
     {#if notes.length}
-      <section class="guide-notes" aria-labelledby="difficulty-notes-heading">
+      <section class="guide-notes" aria-labelledby="difficulty-notes-heading" data-fid={fids.notes}>
         <h3 class="cap" id="difficulty-notes-heading">{selected.name} notes</h3>
         <GuideRows items={notes} />
       </section>
@@ -124,7 +130,7 @@
   </section>
 {/if}
 
-<GuideTabs {tabs} selected={tab} id={uid} onselect={pick} />
+<GuideTabs {tabs} selected={tab} id={uid} onselect={pick} fid={fids.tabs} />
 <div class="guide-panel" role="tabpanel" id="{uid}-panel" aria-labelledby="{uid}-tab-{tab}" tabindex="0" data-tab={tab}>
   {#if tab === 'overview'}
     {#if doc.mechanics?.length}<div class="guide-mechanics">{#each doc.mechanics as mechanic, index (index)}<MechanicBlock {mechanic} />{/each}</div>{/if}
@@ -147,7 +153,7 @@
   {/if}
 </div>
 </div>
-<aside data-fid="knowledge-aside" aria-label="Weekly timings">
-  <GuideToc {main} {sections} {tabs} {tab} tabId={(entry) => `${uid}-tab-${entry}`} onTab={pick} />
-  {@render timings()}
+<aside data-fid="knowledge-aside" aria-label={asideLabel}>
+  <GuideToc {main} {sections} {tabs} {tab} tabId={(entry) => `${uid}-tab-${entry}`} onTab={pick} fid={fids.toc} />
+  {@render timings?.()}
 </aside>
