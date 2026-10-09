@@ -111,13 +111,23 @@ pub trait Personas: Send + Sync {
 #[derive(Clone)]
 pub struct SelfServiceDeps {
     pub links: Arc<dyn PortalLinks + Send + Sync>,
+    /// The author's once-per-boss-week lead-in; `None` posts links bare and
+    /// spends no tip (serve, while links are view-only).
+    pub lead_ins: Option<LeadIns>,
+}
+
+/// The persona lead-in in front of an editing link.
+#[derive(Clone)]
+pub struct LeadIns {
     pub nudger: Arc<Nudger<SharedRewriter>>,
     pub personas: Arc<dyn Personas>,
 }
 
 impl std::fmt::Debug for SelfServiceDeps {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SelfServiceDeps").finish_non_exhaustive()
+        f.debug_struct("SelfServiceDeps")
+            .field("lead_ins", &self.lead_ins.is_some())
+            .finish_non_exhaustive()
     }
 }
 

@@ -38,7 +38,6 @@ use crate::bot::mentions;
 use crate::bot::transport::{
     ChannelId, DiscordTransport, MessageEdit, MessageId, Outcome, OutgoingMessage, RejectionKind,
 };
-use crate::chat::nudge::render as render_tip;
 use crate::domain::drafts::{DraftStatus, ProposalStore, SUPERSEDED};
 use crate::domain::history::Actor;
 use crate::domain::members::Directory;
@@ -440,7 +439,7 @@ where
             self_service: entry
                 .self_service
                 .as_ref()
-                .map(|tip| render_tip(tip.lead_in.as_deref(), tip.link.purpose, &tip.link.url)),
+                .map(|tip| tip.link.line(tip.lead_in.as_deref())),
         }
     }
 
@@ -861,7 +860,7 @@ where
     /// A link-first self-service link, addressed to its author by name.
     pub async fn redirect(&self, redirected: &Redirected) -> PostResult {
         let tip = &redirected.tip;
-        let line = render_tip(tip.lead_in.as_deref(), tip.link.purpose, &tip.link.url);
+        let line = tip.link.line(tip.lead_in.as_deref());
         self.post_plain(
             &redirected.channel_id,
             "notice.self_service.link",

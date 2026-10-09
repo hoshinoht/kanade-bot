@@ -5,7 +5,9 @@
 //!
 //! Needs a model gateway with an extraction route; without one messages are
 //! only counted and health reports `degraded` while the switch is on.
-//! Cards only: no self-service links while the public portal is closed.
+//! Self-service links: interim view links into the public portal (user
+//! decision 2026-10-09), only with a public listener and while `self_service`
+//! is open, read live.
 //!
 //! Stop (after the gateway handler, the feed's only sender, is gone):
 //! `Rescans::close` (queued jobs cancelled, the running one stops before its
@@ -42,13 +44,17 @@ use crate::{
         roster::LiveRoster,
     },
     domain::{
-        catalog::BossTable, ids::RandomIds, schedule::SchedulePolicy, settings::RuntimeSettings,
+        catalog::BossTable,
+        ids::RandomIds,
+        schedule::SchedulePolicy,
+        settings::{RuntimeSettings, SelfService},
     },
     extract::{
         pipeline::{
             CallContext, DEFAULT_DEBOUNCE, DEFAULT_DRAIN_INTERVAL, Deps, Extractor, Pipeline,
-            PipelineConfig,
+            PipelineConfig, SelfServiceConfig, SelfServiceDeps,
         },
+        redirect::{PortalViewLinks, SelfServiceMode},
         rescan::Rescans,
     },
     infrastructure::{
@@ -119,6 +125,27 @@ pub struct Inputs<T> {
     pub timing: Timing,
     /// Flips once the guild is available (startup rescan).
     pub guild_ready: watch::Receiver<bool>,
+    /// The public portal origin (`https://host`) when a public listener is
+    /// configured; cards link into it.
+    pub portal: Option<String>,
+}
+
+/// The planner's view of the saved `self_service` section.
+fn self_service_config(saved: &SelfService) -> SelfServiceConfig {
+    SelfServiceConfig {
+        mode: SelfServiceMode::parse(saved.mode.as_str()).unwrap_or_default(),
+        public_portal_open: saved.public_portal,
+    }
+}
+
+/// View links into the portal, without lead-ins: there is no Move page yet,
+/// so no weekly tip is spent on them.
+fn self_service(portal: Option<&str>) -> Option<SelfServiceDeps> {
+    let links = PortalViewLinks::new(portal?).ok()?;
+    Some(SelfServiceDeps {
+        links: Arc::new(links),
+        lead_ins: None,
+    })
 }
 
 type Close = Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send>;
@@ -213,7 +240,7 @@ pub fn start<T: GatewayTransport>(mut inputs: Inputs<T>) -> Extraction {
                 outbox: Arc::new(CardOutbox(inputs.desk)),
                 clock,
                 ids: Box::new(RandomIds),
-                self_service: None,
+                self_service: self_service(inputs.portal.as_deref()),
             },
             tuning,
         )
@@ -231,6 +258,10 @@ pub fn start<T: GatewayTransport>(mut inputs: Inputs<T>) -> Extraction {
                     source: context.source.as_str(),
                 }
             })
+        })
+        .with_live_self_service({
+            let saved = super::context::changes_or(changes.clone(), &inputs.settings);
+            Arc::new(move || self_service_config(&saved.borrow().settings.self_service))
         }),
     );
 

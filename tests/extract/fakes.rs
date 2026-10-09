@@ -27,7 +27,7 @@ use kanade::domain::scheduler::{
     SupersedeScope,
 };
 use kanade::extract::pipeline::{
-    AuthorKind, BacklogDrop, Card, ChatAnswer, Deps, Extractor, Guild, IncomingMessage,
+    AuthorKind, BacklogDrop, Card, ChatAnswer, Deps, Extractor, Guild, IncomingMessage, LeadIns,
     LiveContext, MessageEvent, MessageOrigin, Outbox, Personas, Pipeline, PipelineConfig,
     PostResult, Proposer, Redirected, SelfServiceDeps,
 };
@@ -619,11 +619,13 @@ impl World {
         tune(&mut config);
         let self_service = self_service.then(|| SelfServiceDeps {
             links: Arc::new(PublicPortalLinks::new(PORTAL).expect("origin")),
-            nudger: Arc::new(Nudger::new(
-                Arc::new(Fixed),
-                SharedRewriter(Arc::new(GovernedRewriter::new(client.clone()))),
-            )),
-            personas: Arc::new(KanadeForAll(kanade())),
+            lead_ins: Some(LeadIns {
+                nudger: Arc::new(Nudger::new(
+                    Arc::new(Fixed),
+                    SharedRewriter(Arc::new(GovernedRewriter::new(client.clone()))),
+                )),
+                personas: Arc::new(KanadeForAll(kanade())),
+            }),
         });
         let mut extractor = Extractor::new(
             Deps {

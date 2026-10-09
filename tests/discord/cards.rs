@@ -809,6 +809,7 @@ async fn the_outbox_posts_links_unpinged_and_alerts_backlog_drops() {
             link: RedirectLink {
                 purpose: NudgePurpose::SelfService,
                 url: "https://portal.example/runs/r?move_to=x".into(),
+                view_only: false,
             },
             lead_in: Some("Do it yourself!".into()),
             line: None,

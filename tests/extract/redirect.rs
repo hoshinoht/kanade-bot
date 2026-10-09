@@ -7,8 +7,8 @@ use kanade::domain::notify::WeekReset;
 use kanade::domain::proposals::{ChangeKind, Payload, ProposedChange};
 use kanade::domain::schedule::{Run, RunSource, RunStatus};
 use kanade::extract::redirect::{
-    FixedChange, PortalLinks, PublicPortalLinks, RedirectCase, RedirectFacts, RedirectLink,
-    SelfServiceMode, classify, effective_mode, is_link_id, plan,
+    FixedChange, PortalLinks, PortalViewLinks, PublicPortalLinks, RedirectCase, RedirectFacts,
+    RedirectLink, SelfServiceMode, classify, effective_mode, is_link_id, plan,
 };
 
 const AUTHOR: &str = "111111111111111111";
@@ -245,6 +245,7 @@ fn a_self_service_move_gets_its_link_by_mode() {
     let link = RedirectLink {
         purpose: NudgePurpose::SelfService,
         url: format!("{ORIGIN}/runs/r-1?move_to=2026-09-27T20:00:00Z"),
+        view_only: false,
     };
 
     let both = plan(&facts, SelfServiceMode::CardsAndLink, &links());
@@ -263,6 +264,32 @@ fn a_self_service_move_gets_its_link_by_mode() {
     }
 }
 
+/// Interim view links (user decision 2026-10-09): the run opens in the
+/// member Week, the card stays in every mode, weekly timings get no link.
+#[test]
+fn view_links_open_the_run_and_never_replace_the_card() {
+    let views = PortalViewLinks::new(&format!("{ORIGIN}/")).expect("origin");
+    let mine = run(&[AUTHOR]);
+    let change = move_to(utc(9, 27, 20));
+    for mode in [SelfServiceMode::CardsAndLink, SelfServiceMode::LinkFirst] {
+        let redirect = plan(&facts(&change, Some(&mine)), mode, &views);
+        assert!(redirect.keep_card, "{mode:?}");
+        let link = redirect.link.expect("a view link");
+        assert_eq!(link.url, format!("{ORIGIN}/?run=r-1"));
+        assert!(link.view_only);
+        assert_eq!(
+            link.line(Some("Do it yourself!")),
+            format!("→ see the run: {ORIGIN}/?run=r-1"),
+            "a view link never carries a lead-in"
+        );
+    }
+    let edit = fix_edit(Some("f-1"));
+    let redirect = plan(&facts(&edit, None), SelfServiceMode::LinkFirst, &views);
+    assert!(redirect.keep_card);
+    assert_eq!(redirect.link, None);
+    assert!(PortalViewLinks::new("http://kanade.example").is_err());
+}
+
 #[test]
 fn weekly_timing_changes_keep_their_card_and_link_the_request_form() {
     let edit = fix_edit(Some("f-1"));
@@ -274,6 +301,7 @@ fn weekly_timing_changes_keep_their_card_and_link_the_request_form() {
             Some(RedirectLink {
                 purpose: NudgePurpose::RequestForm,
                 url: format!("{ORIGIN}/requests/new?fixed=f-1&change=edit&day=thu&time=21:30"),
+                view_only: false,
             })
         );
     }

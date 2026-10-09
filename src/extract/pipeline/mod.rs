@@ -24,8 +24,8 @@ pub use claims::{CLAIM_CAPACITY, ClaimGuard, Claims};
 pub use config::{
     CONTEXT_WINDOW, CallContext, DEFAULT_BACKLOG_CAPACITY, DEFAULT_CALL_TIMEOUT,
     DEFAULT_CONTEXT_MESSAGES, DEFAULT_CONTEXT_TOKENS, DEFAULT_DEBOUNCE, DEFAULT_DRAIN_INTERVAL,
-    DEFAULT_MIN_CONFIDENCE, DEFAULT_PERMIT_WAIT, LiveContext, PipelineConfig, RECENT_SCHEDULING,
-    SelfServiceConfig, UnpublishedEffort, check_reasoning_effort,
+    DEFAULT_MIN_CONFIDENCE, DEFAULT_PERMIT_WAIT, LiveContext, LiveSelfService, PipelineConfig,
+    RECENT_SCHEDULING, SelfServiceConfig, UnpublishedEffort, check_reasoning_effort,
 };
 pub use debounce::Bursts;
 pub use driver::Pipeline;
@@ -35,8 +35,8 @@ pub use extractor::{
 };
 pub use outcome::extraction_outcome;
 pub use ports::{
-    AuthorKind, BacklogDrop, Card, CardEntry, ChatAnswer, Guild, IncomingMessage, MessageEvent,
-    MessageOrigin, Outbox, Personas, PostResult, Proposer, Redirected, SelfServiceDeps,
-    SelfServiceTip,
+    AuthorKind, BacklogDrop, Card, CardEntry, ChatAnswer, Guild, IncomingMessage, LeadIns,
+    MessageEvent, MessageOrigin, Outbox, Personas, PostResult, Proposer, Redirected,
+    SelfServiceDeps, SelfServiceTip,
 };
 pub use refusal::{refusal, refusal_code};

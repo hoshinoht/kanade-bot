@@ -52,7 +52,7 @@ where
         now: DateTime<Utc>,
     ) -> Option<LinkPlan> {
         let deps = self.self_service.as_ref()?;
-        let mode = self.config.self_service.effective_mode();
+        let mode = self.self_service_config().effective_mode();
         if mode == SelfServiceMode::CardsOnly {
             return None;
         }
@@ -96,10 +96,15 @@ where
             line: None,
             claimed: None,
         };
-        let Some(deps) = self.self_service.as_ref() else {
+        let Some(lead_ins) = self
+            .self_service
+            .as_ref()
+            .and_then(|deps| deps.lead_ins.as_ref())
+            .filter(|_| !tip.link.view_only)
+        else {
             return tip;
         };
-        let Some(persona) = deps.personas.persona_for(&link_plan.author_id) else {
+        let Some(persona) = lead_ins.personas.persona_for(&link_plan.author_id) else {
             return tip;
         };
         let (boss, day, time) = self.slot_text(change);
@@ -113,7 +118,7 @@ where
             time: &time,
         };
         let reset = self.config.week_reset();
-        match deps
+        match lead_ins
             .nudger
             .tip(
                 self.store.as_ref(),

@@ -10,7 +10,10 @@ use chrono::{DateTime, Utc};
 
 use super::call::{CallRecord, Failure, Loaded};
 use super::claims::{ClaimGuard, Claims};
-use super::config::{CONTEXT_WINDOW, CallContext, LiveContext, PipelineConfig, RECENT_SCHEDULING};
+use super::config::{
+    CONTEXT_WINDOW, CallContext, LiveContext, LiveSelfService, PipelineConfig, RECENT_SCHEDULING,
+    SelfServiceConfig,
+};
 use super::ports::{Guild, IncomingMessage, Outbox, Proposer, SelfServiceDeps};
 use crate::domain::model_log::{MessageUpsert, ModelLogStore, ReadMessage, WatchedMessage};
 use crate::domain::scheduler::{Clock, IdSource, ScheduleStore, Scope, StoreError};
@@ -109,6 +112,7 @@ pub struct Extractor<S, P, X, O> {
     pub(super) self_service: Option<SelfServiceDeps>,
     pub(super) config: PipelineConfig,
     live_context: Option<LiveContext>,
+    live_self_service: Option<LiveSelfService>,
     cancel: tokio::sync::watch::Sender<Cut>,
     claims: Claims,
 }
@@ -171,6 +175,7 @@ where
             self_service: deps.self_service,
             config,
             live_context: None,
+            live_self_service: None,
             cancel: tokio::sync::watch::Sender::new(Cut::default()),
             claims: Claims::default(),
         }
@@ -182,6 +187,20 @@ where
     pub fn with_live_context(mut self, live: LiveContext) -> Self {
         self.live_context = Some(live);
         self
+    }
+
+    /// Read `self_service.mode` and the public portal switch per change from
+    /// live settings instead of the fixed `PipelineConfig` values.
+    #[must_use]
+    pub fn with_live_self_service(mut self, live: LiveSelfService) -> Self {
+        self.live_self_service = Some(live);
+        self
+    }
+
+    pub(super) fn self_service_config(&self) -> SelfServiceConfig {
+        self.live_self_service
+            .as_ref()
+            .map_or(self.config.self_service, |live| live())
     }
 
     /// The context for a pass on `route`: the live resolver over its alias,

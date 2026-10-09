@@ -26,6 +26,8 @@ use crate::infrastructure::llm::governor::Random;
 
 pub const EDIT_RUN_ACTION: &str = "→ edit the run: ";
 pub const REQUEST_CHANGE_ACTION: &str = "→ request a change: ";
+/// Interim view-only links: they open the run, they cannot move it yet.
+pub const VIEW_RUN_ACTION: &str = "→ see the run: ";
 
 /// Failures and frustration are always gentle, whatever the profile.
 pub fn mood_for(failed: bool, frustrated: bool) -> NudgeMood {

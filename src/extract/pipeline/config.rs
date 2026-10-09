@@ -71,6 +71,9 @@ pub struct CallContext {
 /// pass in flight keeps what it started with.
 pub type LiveContext = std::sync::Arc<dyn Fn(&str) -> CallContext + Send + Sync>;
 
+/// The live `self_service` settings, read per kept change.
+pub type LiveSelfService = std::sync::Arc<dyn Fn() -> SelfServiceConfig + Send + Sync>;
+
 /// Admin `self_service.mode` and the public portal switch; links are only
 /// ever posted while the portal is open.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

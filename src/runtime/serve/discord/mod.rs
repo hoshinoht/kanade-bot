@@ -298,13 +298,15 @@ where
         Arc::new(move || cache.self_avatar_url())
     });
     // Members open the public portal; the admin host is tailnet-only, so
-    // without a public listener the digest has no portal button (nor while
-    // the live `self_service.public_portal` switch is off, see `card_kit`).
-    kit.v2.portal = config
+    // without a public listener the digest has no portal button and cards
+    // no links (nor while the live `self_service.public_portal` switch is
+    // off, see `card_kit` and extraction's live self-service settings).
+    let portal = config
         .runtime
         .public_bind
         .and(config.runtime.http.public_host.as_deref())
         .map(|host| format!("https://{host}"));
+    kit.v2.portal = portal.clone();
     let cards = stop_aware::cards(kit, shutdown.clone());
     // One desk for extraction cards, chat cards and the reaction worker's
     // ✅/❌, which all read the same stored cards.
@@ -375,6 +377,7 @@ where
         status: extraction_status,
         timing: wiring.extraction,
         guild_ready: ready.clone(),
+        portal,
     });
     // Nothing has cloned the state yet: compose returned the only handle.
     match Arc::get_mut(&mut composition.admin.state) {
