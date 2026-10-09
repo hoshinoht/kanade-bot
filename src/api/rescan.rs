@@ -1,10 +1,11 @@
 //! The rescan port the admin API submits through. Submitting only queues a
 //! job; the runner reads channels in its own task, so no request waits on a
 //! scan. [`RescanService`] adapts the extractor's [`Rescans`] queue; the
-//! API's `Idempotency-Key` memory lives in [`RescanDesk`].
+//! API's `Idempotency-Key` replays are stored rows (scope `rescan`), and
+//! [`RescanDesk`] serialises keyed submits and cancels.
 
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet},
     future::Future,
     pin::Pin,
     sync::{Arc, Mutex},
@@ -128,53 +129,23 @@ where
     }
 }
 
-/// Idempotency keys answered from memory: `(actor, key)` → what the request
-/// was and the job it named. Jobs do not outlive the process either (a
-/// restart cancels queued jobs and stops the running one), so neither do keys.
-pub const REMEMBERED_KEYS: usize = 1024;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Remembered {
-    pub actor: String,
-    pub key: String,
-    pub digest: String,
-    pub job_id: String,
-}
-
-/// The runner plus the API's request-id memory for its writes.
+/// The runner plus the lock keyed writes hold.
 pub struct RescanDesk {
     pub runner: Arc<dyn RescanRunner>,
-    /// Held across a keyed submit or cancel, so a concurrent retry with the
-    /// same key waits for the first and replays it.
-    keys: tokio::sync::Mutex<VecDeque<Remembered>>,
+    /// Held across a keyed submit or cancel and its replay record, so a
+    /// concurrent retry with the same key waits for the first and replays it.
+    lock: tokio::sync::Mutex<()>,
 }
 
 impl RescanDesk {
     pub fn new(runner: Arc<dyn RescanRunner>) -> Self {
         Self {
             runner,
-            keys: tokio::sync::Mutex::new(VecDeque::new()),
+            lock: tokio::sync::Mutex::new(()),
         }
     }
 
-    pub async fn keys(&self) -> tokio::sync::MutexGuard<'_, VecDeque<Remembered>> {
-        self.keys.lock().await
-    }
-}
-
-/// The request recorded for this key, if any.
-pub fn recall<'a>(
-    keys: &'a VecDeque<Remembered>,
-    actor: &str,
-    key: &str,
-) -> Option<&'a Remembered> {
-    keys.iter()
-        .find(|entry| entry.actor == actor && entry.key == key)
-}
-
-pub fn remember(keys: &mut VecDeque<Remembered>, entry: Remembered) {
-    keys.push_back(entry);
-    while keys.len() > REMEMBERED_KEYS {
-        keys.pop_front();
+    pub async fn lock(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.lock.lock().await
     }
 }

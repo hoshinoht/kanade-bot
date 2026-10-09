@@ -5,6 +5,7 @@
 mod history;
 mod observer;
 mod order;
+pub mod replays;
 pub mod sqlite;
 pub mod web_sessions;
 
@@ -38,6 +39,8 @@ pub mod outbox_conformance;
 pub mod precondition_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod proposal_conformance;
+#[cfg(any(test, feature = "test-support"))]
+pub mod replay_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod settings_conformance;
 #[cfg(any(test, feature = "test-support"))]

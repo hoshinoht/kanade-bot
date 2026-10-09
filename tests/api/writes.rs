@@ -1045,10 +1045,22 @@ async fn weekly_timings_create_edit_with_decisions_and_retire() {
     });
     assert_valid("fixed.json#/$defs/FixedRequest", "create", &create);
     let key = [("Idempotency-Key", "new-timing")];
+    let head = || async {
+        kanade::domain::history::ChangeHistory::history_head(&*reads.store)
+            .await
+            .unwrap()
+            .seq
+    };
+    let before = head().await;
     let created = reads
         .call("POST", "/api/admin/fixed", create.clone(), &key)
         .await;
     assert_eq!(created.status, 201, "{}", created.text());
+    assert_eq!(
+        head().await,
+        before + 1,
+        "the timing and its runs are one change record"
+    );
     let row = created.json();
     assert_valid("fixed.json#/$defs/FixedRow", "create", &row);
     assert_eq!(row["weekday_name"], "Thursday");
@@ -1063,6 +1075,7 @@ async fn weekly_timings_create_edit_with_decisions_and_retire() {
         .await;
     assert_eq!(replay.status, 201);
     assert_eq!(replay.json()["id"], row["id"]);
+    assert_eq!(head().await, before + 1, "a replay records nothing");
     let rows = reads
         .read("/api/admin/fixed", "fixed.json#/$defs/FixedRows")
         .await;

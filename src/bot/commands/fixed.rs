@@ -138,16 +138,12 @@ impl FixedCommand {
         let origin = self
             .ctx
             .origin(&invocation.invoker, invocation.interaction.id);
+        // One commit: the timing and its runs in the materialised weeks.
         let fixed_id = match self.ctx.writer.add_fixed(origin.clone(), new, &ctx).await {
             Ok(id) => id,
             Err(SchedulerError::AlreadyApplied { .. }) => self.created(&origin).await?,
             Err(error) => return Err(refused(error)),
         };
-        self.ctx
-            .writer
-            .materialise(self.ctx.plain_origin(&invocation.invoker), &ctx)
-            .await
-            .map_err(refused)?;
         let fixed = self.timing(&fixed_id).await?;
         // Only listed participants are pinged.
         let not_on_it = if participants.contains(&invoker) {

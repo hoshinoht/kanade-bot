@@ -246,6 +246,7 @@ pub async fn create(
         participants: timing.participants,
         note: timing.note,
     };
+    // One commit: the timing and its runs in the materialised weeks.
     let fixed_id = match state.writer.add_fixed(origin.clone(), new, &ctx).await {
         Ok(id) => id,
         Err(SchedulerError::AlreadyApplied { .. }) => recorded(state, &origin)
@@ -255,16 +256,6 @@ pub async fn create(
             .ok_or_else(|| Refusal::from(ApiError::UNAVAILABLE))?,
         Err(error) => return Err(scheduler(error)),
     };
-    // Its runs are a separate, idempotent change (materialising twice adds nothing).
-    let materialise = Origin {
-        request_id: None,
-        ..origin
-    };
-    state
-        .writer
-        .materialise(materialise, &ctx)
-        .await
-        .map_err(scheduler)?;
     let mut response = row(&site, state, &fixed_id, &profiles).await?;
     *response.status_mut() = StatusCode::CREATED;
     Ok(response)

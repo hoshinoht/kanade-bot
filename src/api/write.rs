@@ -206,6 +206,8 @@ pub trait Writer: Send + Sync {
         decline: DeclineNoticeContext,
     ) -> WriteFuture<'a, DeclineRsvpResult<bool>>;
 
+    /// A new weekly timing and its runs in the materialised weeks, in one
+    /// commit (one change record and outbox).
     fn add_fixed<'a>(
         &'a self,
         origin: Origin,
@@ -455,11 +457,14 @@ where
         &'a self,
         origin: Origin,
         new: NewFixedRun,
-        _: &'a WriteContext,
+        ctx: &'a WriteContext,
     ) -> WriteFuture<'a, String> {
         Box::pin(async move {
             let mut service = self.service.lock().await;
-            service.as_origin(origin).add_fixed_run(new).await
+            service
+                .as_origin(origin)
+                .add_fixed_run_materialised(new, &ctx.policy)
+                .await
         })
     }
 

@@ -17,15 +17,18 @@ use serde_json::json;
 
 use super::{
     context::state,
-    limits::{LimitsDesk, Remembered, actor, mismatch},
+    limits::{actor, record_after_effect},
+    replay::{Keyed, replayed},
     write::{Refusal, origin},
 };
 use crate::{
     api::{auth::AdminSession, error::ApiError, listeners::Site},
     bot::delivery::{ManualRequest, ManualStart},
+    infrastructure::store::replays::ReplayScope,
 };
 
-const DIGEST: &str = "headers.rewrite";
+/// The whole request: the route takes no body.
+const REQUEST: &str = "headers.rewrite";
 
 /// A second trigger while a run is queued or running.
 const RUNNING: &str =
@@ -39,8 +42,8 @@ pub fn routes() -> Router<Arc<Site>> {
     Router::new().route("/api/admin/headers/rewrite", post(rewrite))
 }
 
-fn accepted(message: String) -> axum::response::Response {
-    (StatusCode::ACCEPTED, Json(json!({ "message": message }))).into_response()
+fn accepted(message: String) -> serde_json::Value {
+    json!({ "message": message })
 }
 
 async fn rewrite(
@@ -51,20 +54,17 @@ async fn rewrite(
     let state = state(&site)?;
     let key = origin(&session, &headers)?.request_id;
     let port = state.header_rewrite.as_ref().ok_or(ApiError::UNAVAILABLE)?;
-    let actor = actor(&session);
+    let now = state.now();
     // Held across the trigger, so a concurrent retry with this key replays.
-    let mut keys = state.limits.keys.lock().await;
-    if let Some(key) = &key
-        && let Some(entry) = LimitsDesk::recall(&keys, &actor, key)
+    let _held = state.limits.lock.lock().await;
+    let keyed = key.map(|key| Keyed::new(ReplayScope::Limits, &session, key, REQUEST));
+    if let Some(keyed) = &keyed
+        && let Some(found) = keyed.recall(state.store.as_ref(), now).await?
     {
-        return if entry.digest == DIGEST {
-            Ok(accepted(entry.message))
-        } else {
-            Err(mismatch())
-        };
+        return replayed(&found);
     }
     let message = match port(ManualRequest {
-        actor: actor.clone(),
+        actor: actor(&session),
         report_to: None,
     })
     .await
@@ -90,16 +90,10 @@ async fn rewrite(
         }
         ManualStart::Unavailable => return Err(ApiError::UNAVAILABLE.into()),
     };
-    if let Some(key) = key {
-        LimitsDesk::remember(
-            &mut keys,
-            Remembered {
-                actor,
-                key,
-                digest: DIGEST.into(),
-                message: message.clone(),
-            },
-        );
+    let body = accepted(message);
+    if let Some(keyed) = keyed {
+        // The run is queued on the delivery side, outside the store.
+        record_after_effect(state, keyed.answered(StatusCode::ACCEPTED, &body, now)).await;
     }
-    Ok(accepted(message))
+    Ok((StatusCode::ACCEPTED, Json(body)).into_response())
 }

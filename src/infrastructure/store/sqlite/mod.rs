@@ -22,6 +22,7 @@ mod owner;
 mod proposal_cards;
 mod proposals;
 mod reminder_cards;
+mod replays;
 mod rows;
 mod schedule;
 mod settings;

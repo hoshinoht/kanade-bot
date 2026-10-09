@@ -398,6 +398,7 @@ fn on_surface(op: &Op<'_>, surface: Surface, mut outcome: Outcome<OpResult>) -> 
         | Op::ApplyFixedEdit { .. }
         | Op::FixedParticipants { .. }
         | Op::AddFixedRun(_)
+        | Op::AddFixedRunMaterialised { .. }
         | Op::RetireFixedRun { .. } => {
             for notice in &mut outcome.notices {
                 notice.via_portal = !discord;
@@ -462,6 +463,21 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
     pub async fn add_fixed_run(self, new: NewFixedRun) -> SchedulerResult<String> {
         let outcome = self
             .apply(Scope::Weeks(Vec::new()), Op::AddFixedRun(new))
+            .await?;
+        Ok(created(outcome.value))
+    }
+
+    /// A new weekly timing with its runs in the materialised weeks, in one
+    /// change: a refused or failed commit leaves neither. The request digest
+    /// is [`Self::add_fixed_run`]'s, so a key a plain create recorded still
+    /// replays (its runs then come from the next materialisation).
+    pub async fn add_fixed_run_materialised(
+        self,
+        new: NewFixedRun,
+        policy: &SchedulePolicy,
+    ) -> SchedulerResult<String> {
+        let outcome = self
+            .apply(Scope::All, Op::AddFixedRunMaterialised { new, policy })
             .await?;
         Ok(created(outcome.value))
     }
@@ -1228,7 +1244,9 @@ fn instants_scope(week_starts: &[WeekStart]) -> Scope {
 /// hashed them (pinned by `digest_pins`).
 fn op_digest(op: &Op<'_>) -> SchedulerResult<String> {
     Ok(match op {
-        Op::AddFixedRun(new) => digest("add_fixed_run", new),
+        Op::AddFixedRun(new) | Op::AddFixedRunMaterialised { new, .. } => {
+            digest("add_fixed_run", new)
+        }
         Op::CreateRun(new) => digest("create_run", new),
         Op::MaterialiseWeek { week_start, .. } => digest(
             "materialise_week",
@@ -2276,5 +2294,28 @@ mod digest_pins {
             );
             assert_ne!(edit_digest(op, &expect).unwrap(), *pinned, "{kind}");
         }
+    }
+
+    /// The one-commit create keeps the plain create's digest, so keys
+    /// recorded before it existed still replay.
+    #[test]
+    fn the_materialising_create_digests_as_the_plain_create() {
+        let reminders = ReminderPolicy {
+            zone: chrono_tz::UTC,
+            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            countdowns: vec![60],
+        };
+        let schedule = SchedulePolicy::new(reminders, Weekday::Wed, NaiveTime::MIN);
+        let combined = Op::AddFixedRunMaterialised {
+            new: new_fixed(),
+            policy: &schedule,
+        };
+        let (kind, pinned) = PINS[0];
+        assert_eq!(kind, "add_fixed_run");
+        assert_eq!(op_digest(&combined).unwrap(), pinned);
+        assert_eq!(
+            op_digest(&combined).unwrap(),
+            op_digest(&Op::AddFixedRun(new_fixed())).unwrap()
+        );
     }
 }

@@ -4,12 +4,14 @@
 //! (gateway watch lists, tick, extractor, chat) subscribes to.
 
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::BTreeMap,
     future::Future,
     path::PathBuf,
     pin::Pin,
     sync::{Arc, Mutex, PoisonError},
 };
+
+use chrono::{DateTime, Utc};
 
 use tokio::sync::{MutexGuard, watch};
 
@@ -20,39 +22,66 @@ use crate::{
         state::{ChannelEntry, PersonaOption, RoleEntry},
     },
     chat::persona::{PersonaSnapshot, PersonaStore, ProfileId},
-    domain::settings::{
-        IdList, Models, RuntimeSettings, Section, SettingsChange, SettingsError, SettingsStore,
-        save_section_recorded,
+    domain::{
+        scheduler::StoreError,
+        settings::{
+            IdList, Models, RuntimeSettings, Section, SettingsChange, SettingsError, SettingsStore,
+            save_section_recorded, stored_rows,
+        },
     },
-    infrastructure::llm::{
-        governor::Role,
-        setup::{CapacityGroup, CatalogSnapshot, RoleSwap, RunningRole},
+    infrastructure::{
+        llm::{
+            governor::Role,
+            setup::{CapacityGroup, CatalogSnapshot, RoleSwap, RunningRole},
+        },
+        store::replays::{ReplayScope, ReplayStore, StoredReplay},
     },
 };
 
 pub type ConfigFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Object-safe section writes over any [`SettingsStore`]; `change` (the
-/// History record of an effective save) is appended in the same transaction.
+/// History record of an effective save) and `replay` (a keyed PATCH's
+/// answer) are written in the same transaction as the rows.
 pub trait SettingsPort: Send + Sync {
     fn save(
         &self,
         section: Section,
         change: Option<SettingsChange>,
+        replay: Option<StoredReplay>,
     ) -> ConfigFuture<'_, Result<(), SettingsError>>;
 
     /// The id lists that have a stored row (an explicit list save); the
     /// others follow their env seed.
     fn saved_lists(&self) -> ConfigFuture<'_, Result<Vec<IdList>, SettingsError>>;
+
+    /// The live Config PATCH replay of `actor`'s `key` at `now`.
+    fn replay(
+        &self,
+        actor: String,
+        key: String,
+        now: DateTime<Utc>,
+    ) -> ConfigFuture<'_, Result<Option<StoredReplay>, StoreError>>;
+
+    /// Record (or update) a keyed PATCH's answer without saving rows.
+    fn put_replay(&self, replay: StoredReplay) -> ConfigFuture<'_, Result<(), StoreError>>;
 }
 
-impl<T: SettingsStore + Send + Sync> SettingsPort for T {
+impl<T: SettingsStore + ReplayStore + Send + Sync> SettingsPort for T {
     fn save(
         &self,
         section: Section,
         change: Option<SettingsChange>,
+        replay: Option<StoredReplay>,
     ) -> ConfigFuture<'_, Result<(), SettingsError>> {
-        Box::pin(async move { save_section_recorded(self, &section, change).await })
+        Box::pin(async move {
+            match replay {
+                None => save_section_recorded(self, &section, change).await,
+                Some(replay) => Ok(self
+                    .put_settings_rows_replayed(stored_rows(&section)?, change, replay)
+                    .await?),
+            }
+        })
     }
 
     fn saved_lists(&self) -> ConfigFuture<'_, Result<Vec<IdList>, SettingsError>> {
@@ -63,6 +92,21 @@ impl<T: SettingsStore + Send + Sync> SettingsPort for T {
                 .filter(|list| rows.contains_key(list.key()))
                 .collect())
         })
+    }
+
+    fn replay(
+        &self,
+        actor: String,
+        key: String,
+        now: DateTime<Utc>,
+    ) -> ConfigFuture<'_, Result<Option<StoredReplay>, StoreError>> {
+        Box::pin(
+            async move { ReplayStore::replay(self, ReplayScope::Config, &actor, &key, now).await },
+        )
+    }
+
+    fn put_replay(&self, replay: StoredReplay) -> ConfigFuture<'_, Result<(), StoreError>> {
+        Box::pin(ReplayStore::put_replay(self, replay))
     }
 }
 
@@ -180,18 +224,6 @@ pub struct ConfigInputs {
     pub personas: Option<PersonaFiles>,
 }
 
-/// Idempotency keys answered from memory, like rescan jobs: a retry after a
-/// restart re-applies the patch, which is naturally repeatable.
-const REMEMBERED_KEYS: usize = 256;
-
-#[derive(Clone, Debug)]
-pub(super) struct Remembered {
-    pub actor: String,
-    pub key: String,
-    pub digest: String,
-    pub notices: Vec<String>,
-}
-
 pub struct ConfigDesk {
     pub(super) store: Arc<dyn SettingsPort>,
     current: tokio::sync::Mutex<RuntimeSettings>,
@@ -199,7 +231,6 @@ pub struct ConfigDesk {
     pub(super) facts: ConfigFacts,
     pub(super) personas: Option<PersonaFiles>,
     changes: watch::Sender<SettingsChanged>,
-    keys: Mutex<VecDeque<Remembered>>,
     /// Which id lists have a stored row: read from the store once, then
     /// kept by the saves (all settings writes go through this desk).
     saved: Mutex<SavedLists>,
@@ -228,7 +259,6 @@ impl ConfigDesk {
             facts: inputs.facts,
             personas: inputs.personas,
             changes,
-            keys: Mutex::new(VecDeque::new()),
             saved: Mutex::new(SavedLists::default()),
         }
     }
@@ -282,23 +312,6 @@ impl ConfigDesk {
             settings: Arc::new(settings.clone()),
         });
         revision
-    }
-
-    pub(super) fn recall(&self, actor: &str, key: &str) -> Option<Remembered> {
-        self.keys
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .find(|entry| entry.actor == actor && entry.key == key)
-            .cloned()
-    }
-
-    pub(super) fn remember(&self, entry: Remembered) {
-        let mut keys = self.keys.lock().unwrap_or_else(PoisonError::into_inner);
-        keys.push_back(entry);
-        while keys.len() > REMEMBERED_KEYS {
-            keys.pop_front();
-        }
     }
 
     /// The saved id lists. A failed first read never fails the page: it is
@@ -604,6 +617,7 @@ mod tests {
             &self,
             _: Section,
             _: Option<SettingsChange>,
+            _: Option<StoredReplay>,
         ) -> ConfigFuture<'_, Result<(), SettingsError>> {
             Box::pin(async { Ok(()) })
         }
@@ -615,6 +629,19 @@ mod tests {
                 self.gate.notified().await;
                 Ok(lists)
             })
+        }
+
+        fn replay(
+            &self,
+            _: String,
+            _: String,
+            _: DateTime<Utc>,
+        ) -> ConfigFuture<'_, Result<Option<StoredReplay>, StoreError>> {
+            Box::pin(async { Ok(None) })
+        }
+
+        fn put_replay(&self, _: StoredReplay) -> ConfigFuture<'_, Result<(), StoreError>> {
+            Box::pin(async { Ok(()) })
         }
     }
 

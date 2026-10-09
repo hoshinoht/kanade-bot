@@ -1,7 +1,7 @@
 //! Limits and the delivery-owned manual digest trigger. The API projects live
 //! state and delegates effects; it never talks to Discord itself.
 
-use std::{collections::VecDeque, sync::Arc};
+use std::sync::Arc;
 
 use axum::{
     Json, Router,
@@ -17,6 +17,7 @@ use tokio::sync::Mutex;
 
 use super::{
     context::{frames, state},
+    replay::{Keyed, replayed},
     write::{Refusal, bad_body, origin},
 };
 use crate::{
@@ -35,44 +36,17 @@ use crate::{
         members::MemberProfile,
         settings::{RowDiff, SettingsChange},
     },
+    infrastructure::store::replays::{ReplayScope, StoredReplay},
 };
 
-const REMEMBERED_KEYS: usize = 256;
-
-#[derive(Clone)]
-pub(super) struct Remembered {
-    pub(super) actor: String,
-    pub(super) key: String,
-    pub(super) digest: String,
-    pub(super) message: String,
-}
-
-/// Small process-local replay memory for effects that are not schedule writes
-/// (window resets, the manual digest and header rewrite). The underlying
-/// allowance is deliberately in-memory, and delivery owns the durable
-/// no-duplicate guarantee for digest sends.
+/// One lock for the keyed effects that are not schedule writes (window
+/// clears, the manual digest and header rewrite), held across the replay
+/// lookup, the effect and its record. Their replays live in the store
+/// (scope `limits`); the allowance itself is deliberately in-memory, and
+/// delivery owns the durable no-duplicate guarantee for digest sends.
 #[derive(Default)]
 pub struct LimitsDesk {
-    pub(super) keys: Mutex<VecDeque<Remembered>>,
-}
-
-impl LimitsDesk {
-    pub(super) fn recall(
-        keys: &VecDeque<Remembered>,
-        actor: &str,
-        key: &str,
-    ) -> Option<Remembered> {
-        keys.iter()
-            .find(|entry| entry.actor == actor && entry.key == key)
-            .cloned()
-    }
-
-    pub(super) fn remember(keys: &mut VecDeque<Remembered>, entry: Remembered) {
-        keys.push_back(entry);
-        while keys.len() > REMEMBERED_KEYS {
-            keys.pop_front();
-        }
-    }
+    pub(super) lock: Mutex<()>,
 }
 
 type Reply = Result<axum::response::Response, Refusal>;
@@ -91,16 +65,14 @@ pub(super) fn actor(session: &AdminSession) -> String {
     format!("{}:{}", session.actor.kind(), session.actor.id())
 }
 
-pub(super) fn mismatch() -> Refusal {
-    Refusal::new(
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "idempotency_mismatch",
-        "That Idempotency-Key was already used for a different request.",
-    )
-}
-
-fn message(message: String) -> axum::response::Response {
-    Json(json!({"message": message})).into_response()
+/// Record a keyed answer whose effect already happened outside the store.
+/// A failed write cannot undo the effect, so the answer still goes out and
+/// only a retry of this key would apply again.
+pub(super) async fn record_after_effect(state: &ApiState, replay: StoredReplay) {
+    // Store error text may carry paths, so only the event is logged.
+    if state.store.put_replay(replay).await.is_err() {
+        crate::runtime::logging::event("WARN", "idempotency_replay_unrecorded", json!({}));
+    }
 }
 
 fn digest_result(result: DigestPostResult) -> Result<(), Refusal> {
@@ -225,8 +197,19 @@ async fn reset_window(
 ) -> Reply {
     let state = state(&site)?;
     let key = origin(&session, &headers)?.request_id;
-    let actor = actor(&session);
-    let digest = format!("limits.reset\u{1f}{member_id}");
+    // Held across lookup, clear and record, keyed or not: two concurrent
+    // clears of one window can never both see answers and both record.
+    let _held = state.limits.lock.lock().await;
+    let now = state.now();
+    let keyed = key.map(|key| {
+        let request = format!("limits.reset\u{1f}{member_id}");
+        Keyed::new(ReplayScope::Limits, &session, key, &request)
+    });
+    if let Some(keyed) = &keyed
+        && let Some(found) = keyed.recall(state.store.as_ref(), now).await?
+    {
+        return replayed(&found);
+    }
     let profile = state
         .store
         .member(member_id.clone())
@@ -234,32 +217,10 @@ async fn reset_window(
         .map_err(super::context::unavailable)?
         .ok_or(ApiError::NOT_FOUND)?;
     let name = profile.member.name().unwrap_or(&member_id).to_owned();
-    let applied = format!("{name}'s window is reset.");
-    // Held across snapshot, record and reset, keyed or not: two concurrent
-    // clears of one window can never both see answers and both record.
-    let mut keys = state.limits.keys.lock().await;
-    let Some(key) = key else {
-        clear_window(state, &session, &member_id, &name).await?;
-        return Ok(message(applied));
-    };
-    if let Some(entry) = LimitsDesk::recall(&keys, &actor, &key) {
-        return if entry.digest == digest {
-            Ok(message(entry.message))
-        } else {
-            Err(mismatch())
-        };
-    }
-    clear_window(state, &session, &member_id, &name).await?;
-    LimitsDesk::remember(
-        &mut keys,
-        Remembered {
-            actor,
-            key,
-            digest,
-            message: applied.clone(),
-        },
-    );
-    Ok(message(applied))
+    let body = json!({"message": format!("{name}'s window is reset.")});
+    let replay = keyed.map(|keyed| keyed.answered(StatusCode::OK, &body, now));
+    clear_window(state, &session, &member_id, &name, replay).await?;
+    Ok(Json(body).into_response())
 }
 
 /// The History settings section of a cleared Limits window.
@@ -277,14 +238,18 @@ fn window_text(name: &str, used: usize, limit: usize, per_s: f64, overridden: bo
         .to_string()
 }
 
-/// Clear the member's live window. An effective clear (answers in the
-/// window) is recorded in History first, so a failed record clears nothing;
-/// an empty window is a no-op with no record.
+/// Clear the member's live window, then record it: History gets a row only
+/// for an effective clear (answers in the window), so a refused reset or an
+/// empty window records nothing. The row and the key's replay commit in one
+/// transaction; the allowance itself is process memory outside the store,
+/// so a write that fails after the reset leaves the window cleared and
+/// unrecorded (a retry then finds it empty and records no History row).
 async fn clear_window(
     state: &ApiState,
     session: &AdminSession,
     member_id: &str,
     name: &str,
+    replay: Option<StoredReplay>,
 ) -> Result<(), Refusal> {
     let chat = state.chat.as_ref().ok_or(ApiError::UNAVAILABLE)?;
     let view = chat.limits().ok_or(ApiError::UNAVAILABLE)?;
@@ -295,6 +260,9 @@ async fn clear_window(
         overridden,
         ..
     } = allowance(&view.allowance, member_id);
+    if !chat.reset_allowance(member_id) {
+        return Err(ApiError::UNAVAILABLE.into());
+    }
     if used > 0 {
         let origin = session.origin();
         let change = SettingsChange {
@@ -315,12 +283,15 @@ async fn clear_window(
         };
         state
             .store
-            .record_settings_change(change)
+            .record_settings_change(change, replay)
             .await
             .map_err(super::context::unavailable)?;
-    }
-    if !chat.reset_allowance(member_id) {
-        return Err(ApiError::UNAVAILABLE.into());
+    } else if let Some(replay) = replay {
+        state
+            .store
+            .put_replay(replay)
+            .await
+            .map_err(super::context::unavailable)?;
     }
     Ok(())
 }
@@ -341,13 +312,25 @@ async fn digest(
     let state = state(&site)?;
     let key = origin(&session, &headers)?.request_id;
     let Json(body) = body.map_err(bad_body)?;
-    let actor = actor(&session);
-    let digest = format!(
-        "digest.post\u{1f}{}\u{1f}{}",
-        body.week,
-        body.channel_id.as_deref().unwrap_or_default()
-    );
     let now = state.now();
+    // Held across the post, so a concurrent retry with this key replays.
+    let mut keyed = None;
+    let _held = match key {
+        Some(key) => {
+            let held = state.limits.lock.lock().await;
+            let request = format!(
+                "digest.post\u{1f}{}",
+                json!({"week": body.week, "channel_id": body.channel_id})
+            );
+            let this = Keyed::new(ReplayScope::Limits, &session, key, &request);
+            if let Some(found) = this.recall(state.store.as_ref(), now).await? {
+                return replayed(&found);
+            }
+            keyed = Some(this);
+            Some(held)
+        }
+        None => None,
+    };
     let [this, next] = frames(state, now)?;
     let (week_start, label) = match body.week.as_str() {
         "this" => (this.start, "this week's"),
@@ -378,33 +361,15 @@ async fn digest(
         channel_id: Some(channel_id),
         at: now,
     };
-    let applied = format!(
+    let answer = json!({"message": format!(
         "Posted {label} digest in {}; people are named, not pinged.",
         channel.name
-    );
-    if let Some(key) = key {
-        let mut keys = state.limits.keys.lock().await;
-        if let Some(entry) = LimitsDesk::recall(&keys, &actor, &key) {
-            return if entry.digest == digest {
-                Ok(message(entry.message))
-            } else {
-                Err(mismatch())
-            };
-        }
-        digest_result(post(request).await)?;
-        LimitsDesk::remember(
-            &mut keys,
-            Remembered {
-                actor,
-                key,
-                digest,
-                message: applied.clone(),
-            },
-        );
-        return Ok(message(applied));
-    }
+    )});
     digest_result(post(request).await)?;
-    Ok(message(applied))
+    if let Some(keyed) = keyed {
+        record_after_effect(state, keyed.answered(StatusCode::OK, &answer, now)).await;
+    }
+    Ok(Json(answer).into_response())
 }
 
 #[cfg(test)]

@@ -62,6 +62,13 @@ impl AwareDateTime for WeekStart {
 #[derive(Clone)]
 pub enum Op<'a> {
     AddFixedRun(NewFixedRun),
+    /// A new weekly timing and its runs in the materialised weeks as one
+    /// change (the admin and Discord create). Its request digest is
+    /// `add_fixed_run`'s, so a key a plain create recorded still replays.
+    AddFixedRunMaterialised {
+        new: NewFixedRun,
+        policy: &'a SchedulePolicy,
+    },
     CreateRun(NewRun),
     MaterialiseWeek {
         week_start: WeekStart,
@@ -210,6 +217,7 @@ impl Op<'_> {
     pub fn schedule_policy(&self) -> Option<&SchedulePolicy> {
         match self {
             Self::MaterialiseWeeks { policy }
+            | Self::AddFixedRunMaterialised { policy, .. }
             | Self::AmendRun { policy, .. }
             | Self::SwapRunSlots { policy, .. }
             | Self::ApplyFixedEdit { policy, .. }
@@ -284,6 +292,11 @@ pub fn apply_op(
                     via_portal: true,
                 }],
             }
+        }
+        Op::AddFixedRunMaterialised { new, policy } => {
+            let outcome = apply_op(draft, ids, &Op::AddFixedRun(new.clone()), now)?;
+            materialise_weeks(draft, ids, policy, now)?;
+            outcome
         }
         Op::CreateRun(new) => quiet(OpResult::Created(draft.create_run(ids, new.clone())?)),
         Op::MaterialiseWeek { week_start, policy } => quiet(OpResult::Ids(materialise_week(

@@ -1,9 +1,10 @@
 //! Runtime settings (A9): `GET`/`PATCH /api/admin/config` and the profile
 //! reload. One lock serialises saves; each saved change is published on
-//! [`ConfigDesk::subscribe`]. `PATCH` honours `Idempotency-Key` (a replay
-//! answers the current view with the first request's notices; the same key
-//! for another body is `422 idempotency_mismatch`); the reload is naturally
-//! repeatable.
+//! [`ConfigDesk::subscribe`]. `PATCH` honours `Idempotency-Key` with a
+//! stored replay (scope `config`, written in the save's transaction): a
+//! replay answers the current view with the first request's notices; the
+//! same key for another body is `422 idempotency_mismatch`; the reload is
+//! naturally repeatable.
 
 mod access;
 mod changes;
@@ -24,6 +25,7 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 pub use desk::{
@@ -31,7 +33,10 @@ pub use desk::{
     ModelCatalog, PersonaFiles, SettingsChanged, SettingsPort,
 };
 
-use super::write::{Refusal, bad_body, origin, state};
+use super::{
+    replay::Keyed,
+    write::{Refusal, bad_body, origin, state},
+};
 use crate::{
     api::{auth::AdminSession, error::ApiError, listeners::Site, state::ApiState},
     chat::persona::{FALLBACK_PERSONA, PersonaId, PersonaRoot, ProfileId, ReloadError},
@@ -42,7 +47,14 @@ use crate::{
             diff_rows,
         },
     },
+    infrastructure::store::replays::{ReplayScope, StoredReplay},
 };
+
+/// The stored body of a keyed PATCH: the notices it answered with.
+#[derive(Deserialize)]
+struct Notices {
+    notices: Vec<String>,
+}
 
 type Reply = Result<axum::response::Response, Refusal>;
 
@@ -59,14 +71,6 @@ fn desk(state: &ApiState) -> Result<&ConfigDesk, Refusal> {
         .config
         .as_deref()
         .ok_or_else(|| ApiError::UNAVAILABLE.into())
-}
-
-fn mismatch() -> Refusal {
-    Refusal::new(
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "idempotency_mismatch",
-        "That Idempotency-Key was already used for a different request.",
-    )
 }
 
 fn role_profiles_conflict() -> Refusal {
@@ -200,20 +204,28 @@ async fn update(
     let Json(body) = body.map_err(bad_body)?;
     let desk = desk(state)?;
     let actor = format!("{}:{}", session.actor.kind(), session.actor.id());
-    // serde_json maps are sorted, so key order never changes the digest.
-    let digest = body.to_string();
+    let now = state.now();
+    // The whole body is the identity; serde_json maps are sorted, so key
+    // order never changes it.
+    let keyed = key.map(|key| Keyed::new(ReplayScope::Config, &session, key, &body.to_string()));
 
+    // The settings lock also serialises same-key PATCHes.
     let mut current = desk.lock().await;
-    if let Some(key) = &key
-        && let Some(entry) = desk.recall(&actor, key)
-    {
-        if entry.digest != digest {
-            return Err(mismatch());
+    if let Some(keyed) = &keyed {
+        let found = desk
+            .store
+            .replay(keyed.actor().to_owned(), keyed.key().to_owned(), now)
+            .await
+            .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
+        if let Some(found) = keyed.check(found)? {
+            let notices = serde_json::from_str::<Notices>(&found.body)
+                .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?
+                .notices;
+            let settings = current.clone();
+            drop(current);
+            let catalog = desk.catalog().await;
+            return answer(state, desk, &settings, &catalog, notices).await;
         }
-        let settings = current.clone();
-        drop(current);
-        let catalog = desk.catalog().await;
-        return answer(state, desk, &settings, &catalog, entry.notices).await;
     }
 
     let (name, fields) = patch::section(&body)?;
@@ -379,17 +391,38 @@ async fn update(
         revision: desk.next_revision(),
         values,
     });
+    // A keyed PATCH's answer commits with the save; post-apply notices
+    // (the models switch below) then update it.
+    let answered = |notices: &[String]| {
+        keyed
+            .as_ref()
+            .map(|keyed| keyed.answered(StatusCode::OK, &json!({ "notices": notices }), now))
+    };
+    let saved_replay = answered(&notices);
+    let mut replay_saved = false;
     if switch_active_persona {
         let Section::Persona(persona) = &section else {
             unreachable!("active persona patch makes a persona section")
         };
-        switch_persona(desk, &persona.active, section.clone(), record).await?;
+        switch_persona(
+            desk,
+            &persona.active,
+            section.clone(),
+            record,
+            saved_replay.clone(),
+        )
+        .await?;
+        replay_saved = true;
     } else if next != *current {
         let list = match &section {
             Section::IdList(list, _) => Some(*list),
             _ => None,
         };
-        desk.store.save(section, record).await.map_err(stored)?;
+        desk.store
+            .save(section, record, saved_replay.clone())
+            .await
+            .map_err(stored)?;
+        replay_saved = true;
         if let Some(list) = list {
             desk.note_saved(list);
         }
@@ -424,13 +457,16 @@ async fn update(
             }
         }
     }
-    if let Some(key) = key {
-        desk.remember(desk::Remembered {
-            actor,
-            key,
-            digest,
-            notices: notices.clone(),
-        });
+    // A no-op PATCH saves nothing, so its answer is written alone; a saved
+    // one is updated only when the models switch added notices. The save
+    // (and the live switch) already happened, so a failed write is logged
+    // and the answer still goes out.
+    if let Some(replay) = answered(&notices)
+        && (!replay_saved || saved_replay.as_ref() != Some(&replay))
+        && desk.store.put_replay(replay).await.is_err()
+    {
+        // Store error text may carry paths, so only the event is logged.
+        crate::runtime::logging::event("WARN", "idempotency_replay_unrecorded", json!({}));
     }
     drop(current);
     let catalog = match catalog {
@@ -461,6 +497,7 @@ async fn switch_persona(
     active: &str,
     section: Section,
     record: Option<SettingsChange>,
+    replay: Option<StoredReplay>,
 ) -> Result<(), Refusal> {
     let files = desk
         .personas
@@ -473,7 +510,9 @@ async fn switch_persona(
     let handle = tokio::runtime::Handle::current();
     let outcome = tokio::task::spawn_blocking(move || {
         let root = PersonaRoot::open(&dir).map_err(ReloadError::Invalid)?;
-        personas.reload(&root, &id, |_| handle.block_on(port.save(section, record)))
+        personas.reload(&root, &id, |_| {
+            handle.block_on(port.save(section, record, replay))
+        })
     })
     .await
     .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;

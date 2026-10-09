@@ -418,6 +418,31 @@ impl Config {
         let reply = self.send("PATCH", PATH, None, &body).await;
         refused(&reply, status, code, &body.to_string())
     }
+
+    /// As a restarted process: a fresh desk over the saved settings (no
+    /// in-memory state) and the API clock moved by `skew`.
+    async fn restart(&mut self, skew: chrono::TimeDelta) {
+        let store = self.reads.store.clone();
+        let saved = load_settings(&*store, &settings()).await.unwrap();
+        let desk = Arc::new(ConfigDesk::new(ConfigInputs {
+            settings: saved,
+            store,
+            models: Some(self.catalog.clone() as Arc<dyn ModelCatalog>),
+            facts: ConfigFacts {
+                timezone: "Asia/Kuala_Lumpur".into(),
+                model_gateway: Some("https://kanata.test/v1".into()),
+                model_permits: 2,
+                model_groups: Vec::new(),
+                chat_pilot_role_id: Some("30".into()),
+            },
+            personas: Some(PersonaFiles {
+                dir: self.dir.0.clone(),
+                store: self.personas.clone(),
+            }),
+        }));
+        self.reads.restart(skew, Some(desk.clone())).await;
+        self.desk = desk;
+    }
 }
 
 fn view(reply: &Reply, what: &str) -> Value {
@@ -1587,6 +1612,63 @@ async fn a_keyed_patch_replays_and_a_reused_key_is_refused() {
     assert_eq!(unkeyed["notices"], json!([]));
     assert_eq!(roles(&unkeyed), roles(&first));
     assert!(!changes.has_changed().unwrap());
+}
+
+/// The replay is a stored row written with the save: after a restart the
+/// key still answers the first notices without saving again, another body
+/// under it is refused, and once it expires it applies anew.
+#[tokio::test]
+async fn a_keyed_patch_replays_across_a_restart_and_expires() {
+    let mut config = Config::new().await;
+    let saves = async |config: &Config| {
+        config
+            .reads
+            .store
+            .settings_changes(Default::default())
+            .await
+            .unwrap()
+            .len()
+    };
+    let body = json!({"models": {"roles": {"extraction": {"reasoning": "high"}}}});
+    let first = view(
+        &config.send("PATCH", PATH, Some("cfg-r"), &body).await,
+        "first",
+    );
+    assert_eq!(first["notices"].as_array().unwrap().len(), 1);
+    assert_eq!(saves(&config).await, 1);
+
+    config.restart(chrono::TimeDelta::zero()).await;
+    let replay = view(
+        &config.send("PATCH", PATH, Some("cfg-r"), &body).await,
+        "replay",
+    );
+    assert_eq!(replay["notices"], first["notices"], "the first answer");
+    assert_eq!(saves(&config).await, 1, "saved once");
+    assert_eq!(
+        config.desk.subscribe().borrow().revision,
+        0,
+        "nothing applied"
+    );
+    let other = config
+        .send(
+            "PATCH",
+            PATH,
+            Some("cfg-r"),
+            &json!({"watching": {"paused": true}}),
+        )
+        .await;
+    refused(&other, 422, "idempotency_mismatch", "reused key");
+
+    config
+        .restart(kanade::infrastructure::store::replays::REPLAY_TTL + chrono::TimeDelta::hours(1))
+        .await;
+    let paused = json!({"watching": {"paused": true}});
+    let anew = view(
+        &config.send("PATCH", PATH, Some("cfg-r"), &paused).await,
+        "expired",
+    );
+    assert_eq!(anew["watching"]["paused"], true, "applied anew");
+    assert_eq!(saves(&config).await, 2);
 }
 
 #[tokio::test]

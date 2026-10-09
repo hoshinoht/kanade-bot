@@ -34,7 +34,10 @@ async fn read(
     Ok(rows.into_iter().collect())
 }
 
-async fn write(conn: &mut SqliteConnection, rows: &[(String, String)]) -> Result<(), StoreError> {
+pub(super) async fn write(
+    conn: &mut SqliteConnection,
+    rows: &[(String, String)],
+) -> Result<(), StoreError> {
     for (key, value) in rows {
         sqlx::query(
             "INSERT INTO config (key, value) VALUES (?1, ?2) \
@@ -49,7 +52,7 @@ async fn write(conn: &mut SqliteConnection, rows: &[(String, String)]) -> Result
     Ok(())
 }
 
-fn refuse_unknown(rows: &[(String, String)]) -> Result<(), StoreError> {
+pub(super) fn refuse_unknown(rows: &[(String, String)]) -> Result<(), StoreError> {
     match rows.iter().find(|(key, _)| !keys::is_setting(key)) {
         Some((key, _)) => Err(StoreError::Constraint(format!("{key:?} is not a setting"))),
         None => Ok(()),
@@ -91,7 +94,10 @@ fn decode_values(text: &str) -> Result<BTreeMap<String, RowDiff>, StoreError> {
         .collect()
 }
 
-async fn append(conn: &mut SqliteConnection, change: &SettingsChange) -> Result<u64, StoreError> {
+pub(super) async fn append(
+    conn: &mut SqliteConnection,
+    change: &SettingsChange,
+) -> Result<u64, StoreError> {
     if change.values.is_empty() {
         return Err(StoreError::Constraint(
             "a settings change names at least one row".into(),

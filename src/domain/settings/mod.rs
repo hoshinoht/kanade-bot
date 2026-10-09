@@ -114,6 +114,17 @@ pub async fn load_settings<S: SettingsStore>(
     codec::resolve(&store.settings_rows().await?, seed)
 }
 
+/// The `config` rows `section` writes, checked to read back as written.
+///
+/// # Errors
+/// [`SettingsError::Malformed`] / [`SettingsError::Unrepresentable`].
+pub fn stored_rows(section: &Section) -> Result<Vec<(String, String)>, SettingsError> {
+    Ok(codec::encode_checked(section)?
+        .into_iter()
+        .map(|(key, value)| (key.to_owned(), value))
+        .collect())
+}
+
 /// Write every key of `section` in one transaction.
 ///
 /// # Errors
@@ -123,11 +134,7 @@ pub async fn save_section<S: SettingsStore>(
     store: &S,
     section: &Section,
 ) -> Result<(), SettingsError> {
-    let rows = codec::encode_checked(section)?
-        .into_iter()
-        .map(|(key, value)| (key.to_owned(), value))
-        .collect();
-    store.put_settings_rows(rows).await?;
+    store.put_settings_rows(stored_rows(section)?).await?;
     Ok(())
 }
 
@@ -144,11 +151,9 @@ pub async fn save_section_recorded<S: SettingsStore>(
     let Some(change) = change else {
         return save_section(store, section).await;
     };
-    let rows = codec::encode_checked(section)?
-        .into_iter()
-        .map(|(key, value)| (key.to_owned(), value))
-        .collect();
-    store.put_settings_rows_recorded(rows, change).await?;
+    store
+        .put_settings_rows_recorded(stored_rows(section)?, change)
+        .await?;
     Ok(())
 }
 

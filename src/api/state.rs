@@ -41,6 +41,7 @@ use crate::{
         scheduler::{ScheduleStore, Scope, StoreError},
         settings::{SettingsChange, SettingsChangeQuery, SettingsStore},
     },
+    infrastructure::store::replays::{ReplayScope, ReplayStore, StoredReplay},
 };
 
 pub type ReadFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, StoreError>> + Send + 'a>>;
@@ -174,8 +175,23 @@ pub trait ReadStore: Send + Sync {
     /// Recorded Config section saves, newest first.
     fn settings_changes(&self, query: SettingsChangeQuery) -> ReadFuture<'_, Vec<SettingsChange>>;
     /// Record a History entry that writes no settings row (a Limits window
-    /// clear, section `limits`); returns its id.
-    fn record_settings_change(&self, change: SettingsChange) -> ReadFuture<'_, u64>;
+    /// clear, section `limits`), with the keyed request's replay if any, in
+    /// one transaction.
+    fn record_settings_change(
+        &self,
+        change: SettingsChange,
+        replay: Option<StoredReplay>,
+    ) -> ReadFuture<'_, ()>;
+    /// The live `Idempotency-Key` replay of `(scope, actor, key)` at `now`.
+    fn replay(
+        &self,
+        scope: ReplayScope,
+        actor: String,
+        key: String,
+        now: DateTime<Utc>,
+    ) -> ReadFuture<'_, Option<StoredReplay>>;
+    /// Record a keyed request's answer (see [`ReplayStore::put_replay`]).
+    fn put_replay(&self, replay: StoredReplay) -> ReadFuture<'_, ()>;
     /// The stored reminder card record (heading) under a send's native
     /// dedupe key; read only.
     fn card_record(&self, dedupe_key: String) -> ReadFuture<'_, Option<CardRecord>>;
@@ -213,6 +229,7 @@ where
         + DeliveryJournal
         + SettingsStore
         + ReminderCardStore
+        + ReplayStore
         + Send
         + Sync,
 {
@@ -473,8 +490,37 @@ where
         Box::pin(SettingsStore::settings_changes(self, query))
     }
 
-    fn record_settings_change(&self, change: SettingsChange) -> ReadFuture<'_, u64> {
-        Box::pin(self.put_settings_rows_recorded(Vec::new(), change))
+    fn record_settings_change(
+        &self,
+        change: SettingsChange,
+        replay: Option<StoredReplay>,
+    ) -> ReadFuture<'_, ()> {
+        Box::pin(async move {
+            match replay {
+                Some(replay) => {
+                    self.put_settings_rows_replayed(Vec::new(), Some(change), replay)
+                        .await
+                }
+                None => self
+                    .put_settings_rows_recorded(Vec::new(), change)
+                    .await
+                    .map(drop),
+            }
+        })
+    }
+
+    fn replay(
+        &self,
+        scope: ReplayScope,
+        actor: String,
+        key: String,
+        now: DateTime<Utc>,
+    ) -> ReadFuture<'_, Option<StoredReplay>> {
+        Box::pin(async move { ReplayStore::replay(self, scope, &actor, &key, now).await })
+    }
+
+    fn put_replay(&self, replay: StoredReplay) -> ReadFuture<'_, ()> {
+        Box::pin(ReplayStore::put_replay(self, replay))
     }
 
     fn card_record(&self, dedupe_key: String) -> ReadFuture<'_, Option<CardRecord>> {

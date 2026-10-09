@@ -953,6 +953,45 @@ impl Reads {
         }
     }
 
+    /// Serve the admin API as a restarted process would over the same store
+    /// file: fresh Limits and rescan desks (and `config`, when given), so no
+    /// in-memory replay state survives, and the API clock moved by `skew`.
+    /// The session lives in the store, so the cookie still signs in; later
+    /// calls go to the new listener.
+    pub async fn restart(&mut self, skew: TimeDelta, config: Option<Arc<ConfigDesk>>) {
+        let old = self.site.state.clone().expect("state");
+        let at = now() + skew;
+        let state = ApiState {
+            store: old.store.clone(),
+            writer: old.writer.clone(),
+            policy: old.policy.clone(),
+            catalog: old.catalog.clone(),
+            channels: old.channels.clone(),
+            access: old.access.clone(),
+            knowledge_dir: old.knowledge_dir.clone(),
+            guild_id: old.guild_id.clone(),
+            clock: Arc::new(move || at),
+            rescans: old
+                .rescans
+                .as_ref()
+                .map(|_| Arc::new(RescanDesk::new(self.rescans.clone()))),
+            config: config.or_else(|| old.config.clone()),
+            chat: old.chat.clone(),
+            model_limits: old.model_limits.clone(),
+            limits: Arc::new(LimitsDesk::default()),
+            proposal_refresh: old.proposal_refresh.clone(),
+            decline_retraction: old.decline_retraction.clone(),
+            digest_post: old.digest_post.clone(),
+            header_rewrite: old.header_rewrite.clone(),
+            backups: old.backups.clone(),
+            avatars: old.avatars.clone(),
+            events: old.events.clone(),
+            marks: old.marks.clone(),
+        };
+        self.site.state = Some(Arc::new(state));
+        self.admin = spawn(self.site.clone()).await;
+    }
+
     /// A Discord session for `user` (staff by the stored member rows), whose
     /// sign-in reports the avatar hash [`avatar_hash`]:
     /// `(Cookie header, CSRF token)`.

@@ -35,6 +35,7 @@ mod model_log;
 mod outbox;
 mod proposal_cards;
 mod proposals;
+mod replays;
 mod settings;
 mod web_sessions;
 
@@ -136,6 +137,7 @@ pub struct MemoryScheduleStore {
     members: Mutex<BTreeMap<String, crate::domain::members::MemberProfile>>,
     config: Mutex<BTreeMap<String, String>>,
     settings_changes: Mutex<Vec<crate::domain::settings::SettingsChange>>,
+    replays: Mutex<replays::ReplayTable>,
     runs_written: super::observer::Observer,
     written: super::observer::WriteHook,
 }
