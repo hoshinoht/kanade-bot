@@ -81,6 +81,9 @@ pub enum AdminAlert {
     /// RSVP replay could not read one or more cards because Discord denied
     /// channel access or reaction history.
     RsvpReplayPermissionDenied { messages: usize },
+    /// Expiring, posting or settling weekly-timing ownership requests hit a
+    /// store failure; the next tick retries.
+    OwnerRequestFailed { detail: String },
 }
 
 impl AdminAlert {
@@ -119,6 +122,7 @@ impl AdminAlert {
             } => format!("notice-undecodable:{source}#{ordinal}"),
             Self::StaleNoticesRetired { .. } => "notice-stale".to_owned(),
             Self::RsvpReplayPermissionDenied { .. } => "rsvp-replay-permission".to_owned(),
+            Self::OwnerRequestFailed { .. } => "owner-request".to_owned(),
         }
     }
 }

@@ -61,7 +61,7 @@ fn user_error(message: impl Into<String>) -> CommandError {
 }
 
 pub struct FixedCommand {
-    ctx: Arc<CommandContext>,
+    pub(super) ctx: Arc<CommandContext>,
 }
 
 impl FixedCommand {
@@ -69,7 +69,7 @@ impl FixedCommand {
         Self { ctx }
     }
 
-    async fn timings(&self) -> Result<Vec<FixedRun>, CommandError> {
+    pub(super) async fn timings(&self) -> Result<Vec<FixedRun>, CommandError> {
         Ok(self
             .ctx
             .store
@@ -385,6 +385,18 @@ impl SlashCommand for FixedCommand {
                     "Remove a fixed weekly run",
                     vec![picked("id", PICK_ID, true)],
                 ),
+                subcommand(
+                    "owner",
+                    "Hand a weekly timing to someone on it, or ask to own it",
+                    vec![
+                        picked("id", PICK_ID, true),
+                        user(
+                            "to",
+                            "Hand it to this party member (owner or staff); leave empty to ask for it",
+                            false,
+                        ),
+                    ],
+                ),
             ],
         )
     }
@@ -404,6 +416,8 @@ impl SlashCommand for FixedCommand {
                 Some("list") => self.list(invocation).await,
                 Some("edit") => self.edit(invocation).await,
                 Some("remove") => self.remove(invocation).await,
+                Some("owner") => self.owner(invocation).await,
+                Some(super::fixed_owner::OWNER_PRESS) => self.owner_press(invocation).await,
                 other => Err(CommandError::Internal(format!(
                     "unknown /fixed subcommand {other:?}"
                 ))),

@@ -257,6 +257,12 @@ pub fn apply_fixed_edit(
         .fixed_run(fixed_id)
         .cloned()
         .ok_or_else(|| ScheduleError::UnknownFixedRun(fixed_id.to_owned()))?;
+    // An owner-only change names (and may ping) the new owner, not the party.
+    let listed = if fields == [FixedField::OwnerId] {
+        vec![updated.owner().to_owned()]
+    } else {
+        updated.participants.clone()
+    };
     let intent = Notice {
         change: NoticeChange::FixedChanged {
             fixed_id: fixed_id.to_owned(),
@@ -266,7 +272,7 @@ pub fn apply_fixed_edit(
             participants: updated.participants.clone(),
         },
         channel_id: updated.channel_id.clone(),
-        listed: updated.participants.clone(),
+        listed,
         via_portal: true,
     };
     Ok(Outcome {

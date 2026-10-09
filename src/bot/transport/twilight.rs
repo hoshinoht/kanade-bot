@@ -47,7 +47,7 @@ use twilight_model::user::CurrentUser;
 use super::{
     AmbiguousKind, ApplicationEmoji, COMPONENTS_V2, CREATE_FLAGS, ChannelId, DiscordTransport,
     HistoryPage, InteractionRef, InteractionReply, MessageEdit, MessageId, Outcome,
-    OutgoingMessage, Presence, RejectionKind, classify_status, v2_body_valid,
+    OutgoingMessage, Presence, RejectionKind, classify_status, legacy_rows, v2_body_valid,
 };
 use crate::api::auth::crypto::base64_standard;
 use crate::bot::mentions;
@@ -334,7 +334,8 @@ impl TwilightTransport {
         message: &OutgoingMessage,
         flags: MessageFlags,
     ) -> Outcome<MessageId> {
-        let flags = if message.components.is_empty() {
+        let legacy = legacy_rows(message.content.as_deref(), &message.components);
+        let flags = if message.components.is_empty() || legacy {
             flags
         } else {
             flags | COMPONENTS_V2
@@ -364,7 +365,7 @@ impl TwilightTransport {
         if let Some(content) = message
             .content
             .as_deref()
-            .filter(|_| message.components.is_empty())
+            .filter(|_| message.components.is_empty() || legacy)
         {
             request = request.content(content);
         }
@@ -449,6 +450,9 @@ impl DiscordTransport for TwilightTransport {
         }
         if let Some(content) = &edit.content {
             request = request.content(Some(content));
+        }
+        if edit.is_legacy() {
+            request = request.components(edit.components.as_deref());
         }
         if let Some(embeds) = &edit.embeds {
             request = request.embeds(Some(embeds));

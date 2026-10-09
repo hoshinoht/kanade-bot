@@ -365,7 +365,25 @@ impl Dispatcher {
                 ));
             }
             Some(ButtonId::DigestMine) => {
-                return Some(self.my_runs(transport, &press, owner_id).await);
+                let invocation = press.schedule_mine();
+                return Some(
+                    self.run_pressed(transport, &press, invocation, owner_id)
+                        .await,
+                );
+            }
+            Some(ButtonId::OwnerAccept(id)) => {
+                let invocation = press.owner_answer(&id, true);
+                return Some(
+                    self.run_pressed(transport, &press, invocation, owner_id)
+                        .await,
+                );
+            }
+            Some(ButtonId::OwnerDecline(id)) => {
+                let invocation = press.owner_answer(&id, false);
+                return Some(
+                    self.run_pressed(transport, &press, invocation, owner_id)
+                        .await,
+                );
             }
             Some(ButtonId::CardApply(id)) => (id, RsvpAnswer::Yes),
             Some(ButtonId::CardReject(id)) => (id, RsvpAnswer::No),
@@ -409,15 +427,16 @@ impl Dispatcher {
         Some((disposition, outcome))
     }
 
-    /// "My runs": `/schedule scope:mine` for the presser through the
-    /// command's own gate, answered ephemerally.
-    async fn my_runs<T: DiscordTransport>(
+    /// A press that runs a command as the presser (the digest's "My runs",
+    /// an ownership request's Accept/Decline) through the command's own
+    /// gate, answered ephemerally.
+    async fn run_pressed<T: DiscordTransport>(
         &self,
         transport: &T,
         press: &Press,
+        mut invocation: Invocation,
         owner_id: Option<Id<UserMarker>>,
     ) -> (Disposition, Outcome<()>) {
-        let mut invocation = press.schedule_mine();
         invocation.owner_id = owner_id;
         let target = &press.interaction;
         let command = match self.authorise(&invocation, owner_id) {

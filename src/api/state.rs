@@ -36,6 +36,7 @@ use crate::{
             WatchedMessage,
         },
         notify::{DeliveryJournal, WeeklyDigest},
+        ownership::{OwnerRequest, OwnerRequestStatus, OwnerRequestStore},
         proposals::{ProposalCardStore, StoredCard},
         schedule::{SchedulePolicy, ScheduleSnapshot},
         scheduler::{ScheduleStore, Scope, StoreError},
@@ -202,6 +203,25 @@ pub trait ReadStore: Send + Sync {
     fn posted_cards(&self, run_id: String) -> ReadFuture<'_, Vec<PostedCard>>;
     /// A page of the sign-in audit log, newest first.
     fn audit_page(&self, filter: AuditFilter) -> ReadFuture<'_, Vec<AuditRow>>;
+    /// Ownership requests (see [`OwnerRequestStore`]).
+    fn create_owner_request(&self, request: OwnerRequest) -> ReadFuture<'_, ()>;
+    fn owner_request(&self, id: String) -> ReadFuture<'_, Option<OwnerRequest>>;
+    fn open_owner_requests(&self) -> ReadFuture<'_, Vec<OwnerRequest>>;
+    fn close_owner_request(
+        &self,
+        id: String,
+        status: OwnerRequestStatus,
+        decided_by: String,
+        at: DateTime<Utc>,
+    ) -> ReadFuture<'_, bool>;
+    fn set_owner_request_message(
+        &self,
+        id: String,
+        channel_id: String,
+        message_id: String,
+    ) -> ReadFuture<'_, ()>;
+    fn unsettled_owner_requests(&self) -> ReadFuture<'_, Vec<OwnerRequest>>;
+    fn settle_owner_request_message(&self, id: String) -> ReadFuture<'_, ()>;
 }
 
 /// A closed Inbox item: a proposal (with its stored facts) or a member
@@ -236,6 +256,7 @@ where
         + ReminderCardStore
         + ReplayStore
         + AuthAuditStore
+        + OwnerRequestStore
         + Send
         + Sync,
 {
@@ -539,6 +560,49 @@ where
 
     fn audit_page(&self, filter: AuditFilter) -> ReadFuture<'_, Vec<AuditRow>> {
         Box::pin(async move { AuthAuditStore::audit_page(self, &filter).await })
+    }
+
+    fn create_owner_request(&self, request: OwnerRequest) -> ReadFuture<'_, ()> {
+        Box::pin(OwnerRequestStore::create_owner_request(self, request))
+    }
+
+    fn owner_request(&self, id: String) -> ReadFuture<'_, Option<OwnerRequest>> {
+        Box::pin(async move { OwnerRequestStore::owner_request(self, &id).await })
+    }
+
+    fn open_owner_requests(&self) -> ReadFuture<'_, Vec<OwnerRequest>> {
+        Box::pin(OwnerRequestStore::open_owner_requests(self))
+    }
+
+    fn close_owner_request(
+        &self,
+        id: String,
+        status: OwnerRequestStatus,
+        decided_by: String,
+        at: DateTime<Utc>,
+    ) -> ReadFuture<'_, bool> {
+        Box::pin(async move {
+            OwnerRequestStore::close_owner_request(self, &id, status, &decided_by, at).await
+        })
+    }
+
+    fn set_owner_request_message(
+        &self,
+        id: String,
+        channel_id: String,
+        message_id: String,
+    ) -> ReadFuture<'_, ()> {
+        Box::pin(async move {
+            OwnerRequestStore::set_owner_request_message(self, &id, &channel_id, &message_id).await
+        })
+    }
+
+    fn unsettled_owner_requests(&self) -> ReadFuture<'_, Vec<OwnerRequest>> {
+        Box::pin(OwnerRequestStore::unsettled_owner_requests(self))
+    }
+
+    fn settle_owner_request_message(&self, id: String) -> ReadFuture<'_, ()> {
+        Box::pin(async move { OwnerRequestStore::settle_owner_request_message(self, &id).await })
     }
 }
 

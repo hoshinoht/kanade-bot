@@ -48,14 +48,25 @@ pub const CREATE_FLAGS: MessageFlags = MessageFlags::SUPPRESS_EMBEDS
 pub const SILENT: MessageFlags = MessageFlags::SUPPRESS_NOTIFICATIONS;
 
 /// A Components V2 message (`1 << 15`). Transports set it for every message
-/// that carries components (only V2 layouts are sent; legacy component rows
-/// never are) and refuse it unsent without them. Discord can add it on an
-/// edit but never remove it.
+/// that carries components, except a [`legacy_rows`] body, and refuse it
+/// unsent without them. Discord can add it on an edit but never remove it.
 pub const COMPONENTS_V2: MessageFlags = MessageFlags::IS_COMPONENTS_V2;
+
+/// A legacy body: text with only button rows beneath it. The one non-V2
+/// component shape, for posts that ping (a V2 ping arrives as an empty push
+/// notification), such as a weekly-timing ownership request.
+pub fn legacy_rows(content: Option<&str>, components: &[Component]) -> bool {
+    content.is_some_and(|text| !text.is_empty())
+        && !components.is_empty()
+        && components
+            .iter()
+            .all(|component| matches!(component, Component::ActionRow(_)))
+}
 
 /// Whether a body is sendable as far as Components V2 goes: one with
 /// components has no content and no embeds (Discord answers 400 otherwise),
-/// and an explicit V2 flag needs components.
+/// unless it is a [`legacy_rows`] body without the V2 flag; an explicit V2
+/// flag needs components.
 pub fn v2_body_valid(
     content: Option<&str>,
     embeds: &[Embed],
@@ -63,6 +74,9 @@ pub fn v2_body_valid(
     flags: MessageFlags,
 ) -> bool {
     if components.is_empty() {
+        return !flags.contains(COMPONENTS_V2);
+    }
+    if legacy_rows(content, components) {
         return !flags.contains(COMPONENTS_V2);
     }
     content.is_none_or(str::is_empty) && embeds.is_empty()
@@ -154,17 +168,46 @@ impl MessageEdit {
         }
     }
 
+    /// A legacy edit: new text and its button rows (`[]` removes them).
+    pub fn legacy(
+        content: String,
+        rows: Vec<Component>,
+        allowed_mentions: AllowedMentions,
+    ) -> Self {
+        Self {
+            content: Some(content),
+            embeds: None,
+            allowed_mentions,
+            components: Some(rows),
+        }
+    }
+
+    /// Text with button rows (or none left): see [`legacy_rows`].
+    pub fn is_legacy(&self) -> bool {
+        self.content.as_deref().is_some_and(|text| !text.is_empty())
+            && self.components.as_deref().is_some_and(|components| {
+                components
+                    .iter()
+                    .all(|component| matches!(component, Component::ActionRow(_)))
+            })
+    }
+
     /// The V2 layout this edit sends, if it is a V2 edit.
     pub fn v2_components(&self) -> Option<&[Component]> {
+        if self.is_legacy() {
+            return None;
+        }
         self.components
             .as_deref()
             .filter(|components| !components.is_empty())
     }
 
-    /// See [`v2_body_valid`]; `components: Some([])` is refused too.
+    /// See [`v2_body_valid`]; `components: Some([])` is refused too, except
+    /// on a legacy edit that clears its rows.
     pub fn valid(&self) -> bool {
         match &self.components {
             None => true,
+            Some(_) if self.is_legacy() => self.embeds.is_none(),
             Some(components) => v2_body_valid(
                 self.content.as_deref(),
                 self.embeds.as_deref().unwrap_or_default(),

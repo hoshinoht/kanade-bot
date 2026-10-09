@@ -26,6 +26,7 @@ use super::card_records;
 use super::cards::{CardContext, CardKit, DigestPhraseStore, ReminderCardStore};
 use super::executor::{Executor, Replacement, SendFailure, SendOutcome, SendReport};
 use super::notices::NoticeReport;
+use super::owner_requests::OwnerRequestReport;
 use super::ports::{FixedClock, IdsRef, StoreRef};
 use super::render::{render, unrendered};
 use crate::bot::{
@@ -42,6 +43,7 @@ use crate::domain::notify::{
     DispatchInput, JournalError, Lease, NoticeOutbox, Queued, RecordReason, Recovery,
     SendDisposition, WeekReset, plan_digest_post, plan_digest_tick, plan_dispatch,
 };
+use crate::domain::ownership::OwnerRequestStore;
 use crate::domain::schedule::SchedulePolicy;
 use crate::domain::schedule::ScheduleSnapshot;
 use crate::domain::scheduler::{
@@ -209,6 +211,8 @@ pub struct TickReport {
     pub recounted: Vec<String>,
     /// Outbox notices sent (or held) this tick.
     pub notices: NoticeReport,
+    /// Weekly-timing ownership requests expired, posted and settled.
+    pub owner_requests: OwnerRequestReport,
     pub digest: DigestReport,
     pub dispatch: DispatchReport,
 }
@@ -389,6 +393,10 @@ where
             .with_attendance(self.config.policy.attendance)
     }
 
+    pub(super) fn throttle(&self) -> &AlertThrottle {
+        &self.throttle
+    }
+
     pub(super) fn executor<'b>(&'b self, lease: &'b Lease) -> Executor<'b, S, T, A> {
         Executor {
             journal: self.store,
@@ -421,7 +429,7 @@ where
     /// The first failing step; the lease is ended regardless.
     pub async fn tick(&mut self, clock: &impl Clock) -> Result<TickReport, DeliveryError>
     where
-        S: DigestPhraseStore,
+        S: DigestPhraseStore + OwnerRequestStore,
     {
         self.tick_at(clock.now()).await
     }
@@ -432,7 +440,7 @@ where
     /// The first failing step; the lease is ended regardless.
     pub async fn tick_at(&mut self, now: DateTime<Utc>) -> Result<TickReport, DeliveryError>
     where
-        S: DigestPhraseStore,
+        S: DigestPhraseStore + OwnerRequestStore,
     {
         self.leased(now, async move |this: &mut Self, lease: &Lease| {
             let current = this.config.reset().current_week(now)?;
@@ -450,6 +458,7 @@ where
             this.expire_drafts(now).await;
             this.expire_proposals(now).await;
             let notices = this.notices_in(lease, now).await?;
+            let owner_requests = this.owner_requests_in(lease, now).await?;
             let digest = this.digest_in(lease, now).await?;
             let dispatch = this.dispatch_in(lease, now).await?;
             Ok(TickReport {
@@ -458,6 +467,7 @@ where
                 done,
                 recounted,
                 notices,
+                owner_requests,
                 digest,
                 dispatch,
             })

@@ -13,7 +13,8 @@ use crate::bot::cards::format::{Audience, format_participants};
 use crate::domain::catalog::BossTable;
 use crate::domain::ids::short_id;
 use crate::domain::schedule::{
-    EMOJI_NO, EMOJI_YES, Notice, NoticeChange, RequestDecision, Run, RunStatus, ScheduleSnapshot,
+    EMOJI_NO, EMOJI_YES, FixedField, Notice, NoticeChange, RequestDecision, Run, RunStatus,
+    ScheduleSnapshot,
 };
 
 use super::super::common::{local_day, local_time};
@@ -190,6 +191,27 @@ pub fn notice_text(notice: &Notice, look: &NoticeLook<'_>, who: &Audience) -> Op
             )
             .fact(format!("was {}", slot(*from)))
             .react()
+        }
+        NoticeChange::FixedChanged {
+            fixed_id,
+            fields,
+            weekday,
+            time,
+            ..
+        } if fields.as_slice() == [FixedField::OwnerId] => {
+            let fixed = look
+                .schedule
+                .fixed_runs
+                .iter()
+                .find(|row| &row.id == fixed_id)?;
+            Parts::new(
+                format!(
+                    "👑 {} every {} has a new owner",
+                    label(&fixed.bosses),
+                    weekly(*weekday, *time)
+                ),
+                &notice.listed,
+            )
         }
         NoticeChange::FixedChanged {
             fixed_id,

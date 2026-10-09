@@ -27,7 +27,8 @@ use crate::bot::transport::OutgoingMessage;
 use crate::domain::members::Directory;
 use crate::domain::notify::{NotificationIntent, PingKind, display_names, resolve_mentions};
 use crate::domain::schedule::{
-    EMOJI_NO, EMOJI_YES, Notice, NoticeChange, RequestDecision, RunStatus, ScheduleSnapshot,
+    EMOJI_NO, EMOJI_YES, FixedField, Notice, NoticeChange, RequestDecision, RunStatus,
+    ScheduleSnapshot,
 };
 use crate::domain::settings::MessageStyle;
 
@@ -162,6 +163,23 @@ fn body(notice: &Notice, schedule: &ScheduleSnapshot, who: &Audience, zone: Tz) 
                 format_bosses(&run.bosses),
                 slot(run.datetime, zone),
                 parts.join(" · ")
+            )
+        }
+        NoticeChange::FixedChanged {
+            fixed_id,
+            fields,
+            weekday,
+            time,
+            ..
+        } if fields.as_slice() == [FixedField::OwnerId] => {
+            let fixed = schedule.fixed_runs.iter().find(|row| &row.id == fixed_id)?;
+            format!(
+                "👑 {} now owns weekly timing **{}** · {} {:02}:{:02}",
+                people(&notice.listed),
+                format_bosses(&fixed.bosses),
+                weekday_name(*weekday),
+                time.hour(),
+                time.minute(),
             )
         }
         NoticeChange::FixedChanged {
@@ -469,6 +487,18 @@ mod tests {
         assert_eq!(
             text(fixed, &["1001", "1002"], false, false),
             "📌 Weekly timing changed: **HFA** · Wed 21:30 · Alvin <@1002>"
+        );
+        // An owner-only change names the new owner, not the party.
+        let owner = NoticeChange::FixedChanged {
+            fixed_id: "f".into(),
+            fields: vec![FixedField::OwnerId],
+            weekday: Weekday::Wed,
+            time: NaiveTime::from_hms_opt(21, 30, 0).unwrap(),
+            participants: vec!["1001".into(), "1002".into()],
+        };
+        assert_eq!(
+            text(owner, &["1002"], false, false),
+            "👑 <@1002> now owns weekly timing **HFA** · Wed 21:30"
         );
         let added = NoticeChange::FixedAdded {
             fixed_id: "f".into(),

@@ -39,6 +39,8 @@ pub mod model_log_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod outbox_conformance;
 #[cfg(any(test, feature = "test-support"))]
+pub mod owner_request_conformance;
+#[cfg(any(test, feature = "test-support"))]
 pub mod precondition_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod proposal_conformance;

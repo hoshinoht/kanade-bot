@@ -331,6 +331,27 @@ async fn sqlite_auth_audit_conforms() {
 }
 
 #[tokio::test]
+async fn memory_owner_requests_conform() {
+    kanade::infrastructure::store::owner_request_conformance::run_suite(async || {
+        MemoryScheduleStore::new()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn sqlite_owner_requests_conform() {
+    let dir = support::TempDir::new();
+    let counter = std::sync::atomic::AtomicUsize::new(0);
+    kanade::infrastructure::store::owner_request_conformance::run_suite(async || {
+        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        SqliteStore::open(&dir.config(&format!("owner-requests-{n}")))
+            .await
+            .expect("fresh store opens")
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn sqlite_profile_visibility_defaults_private_and_survives_reopen() {
     let dir = support::TempDir::new();
     let config = dir.config("profile-visibility");

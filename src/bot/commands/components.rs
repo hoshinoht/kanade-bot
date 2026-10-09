@@ -105,6 +105,32 @@ impl Press {
         }
     }
 
+    /// An ownership request's Accept/Decline press, as the presser's
+    /// internal `/fixed` call (through that command's gate).
+    pub fn owner_answer(&self, request_id: &str, accept: bool) -> Invocation {
+        let text = |name: &str, value: &str| CommandDataOption {
+            name: name.to_owned(),
+            value: CommandOptionValue::String(value.to_owned()),
+        };
+        Invocation {
+            interaction: self.interaction.clone(),
+            guild_id: self.guild_id,
+            channel_id: self.channel_id,
+            invoker: self.invoker.clone(),
+            invoker_name: self.invoker_name.clone(),
+            path: vec![
+                "fixed".to_owned(),
+                super::fixed_owner::OWNER_PRESS.to_owned(),
+            ],
+            options: vec![
+                text("request", request_id),
+                text("answer", if accept { "accept" } else { "decline" }),
+            ],
+            autocomplete: false,
+            owner_id: None,
+        }
+    }
+
     /// The card press for the proposal a button names.
     pub fn card(&self, proposal_id: &str, answer: RsvpAnswer) -> Option<CardPress> {
         Some(CardPress {

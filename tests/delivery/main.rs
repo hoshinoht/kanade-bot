@@ -20,6 +20,7 @@ mod manual;
 mod notices;
 mod outage;
 mod outbox_policy;
+mod owner_requests;
 mod pregen;
 mod proposals;
 mod redesign;

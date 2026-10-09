@@ -12,6 +12,7 @@ mod context;
 mod debug;
 mod dispatch;
 mod fixed;
+mod fixed_owner;
 mod invocation;
 mod limits;
 mod lookup;
@@ -23,7 +24,7 @@ mod runs;
 mod say;
 mod schedule;
 mod split;
-mod text;
+pub(crate) mod text;
 
 use std::sync::Arc;
 

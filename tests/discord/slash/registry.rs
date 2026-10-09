@@ -94,7 +94,10 @@ async fn only_the_retained_commands_are_registered_for_the_guild() {
     }
     assert!(text_size(debug) <= 4000, "{}", text_size(debug));
     let fixed = &payload[0];
-    assert_eq!(names(&fixed["options"]), ["add", "list", "edit", "remove"]);
+    assert_eq!(
+        names(&fixed["options"]),
+        ["add", "list", "edit", "remove", "owner"]
+    );
 
     // Registration is a guild bulk overwrite; there is no global path.
     assert_eq!(

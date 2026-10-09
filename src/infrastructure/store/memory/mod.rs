@@ -34,6 +34,7 @@ mod journal;
 mod members;
 mod model_log;
 mod outbox;
+mod owner_requests;
 mod proposal_cards;
 mod proposals;
 mod replays;
@@ -140,6 +141,7 @@ pub struct MemoryScheduleStore {
     settings_changes: Mutex<Vec<crate::domain::settings::SettingsChange>>,
     replays: Mutex<replays::ReplayTable>,
     audit: Mutex<auth_audit::AuditTable>,
+    owner_requests: Mutex<owner_requests::OwnerRequestTable>,
     runs_written: super::observer::Observer,
     written: super::observer::WriteHook,
 }

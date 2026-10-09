@@ -39,6 +39,7 @@ pub trait Store:
     + kanade::domain::drafts::ProposalStore
     + kanade::bot::delivery::cards::ReminderCardStore
     + kanade::bot::delivery::cards::DigestPhraseStore
+    + kanade::domain::ownership::OwnerRequestStore
     + Sync
 {
 }
@@ -53,6 +54,7 @@ impl<S> Store for S where
         + kanade::domain::drafts::ProposalStore
         + kanade::bot::delivery::cards::ReminderCardStore
         + kanade::bot::delivery::cards::DigestPhraseStore
+        + kanade::domain::ownership::OwnerRequestStore
         + Sync
 {
 }

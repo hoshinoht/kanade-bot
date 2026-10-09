@@ -5,6 +5,7 @@
 //! rollback tree's `bot.agent.commands`/`formatting` where deterministic.
 
 mod fixed;
+mod fixed_owner;
 mod members;
 mod ports;
 mod registry;
@@ -20,7 +21,8 @@ use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use serde_json::{Value, json};
 use twilight_model::application::command::CommandOptionChoice;
 use twilight_model::application::command::CommandOptionChoiceValue;
-use twilight_model::application::interaction::Interaction;
+use twilight_model::application::interaction::message_component::MessageComponentInteractionData;
+use twilight_model::application::interaction::{Interaction, InteractionData, InteractionType};
 
 use kanade::api::admin::config::{ConfigDesk, ConfigFacts, ConfigInputs, PersonaFiles};
 use kanade::api::rescan::RescanRunner;
@@ -497,6 +499,23 @@ impl Slash {
     ) -> InteractionReply {
         let interaction = self.interaction(2, invoker, roles, channel, name, options);
         self.send(&interaction).await.1
+    }
+
+    /// A press of the bot's button `custom_id` by a bossing-role member in
+    /// the party channel; the reply.
+    pub async fn press(&self, invoker: u64, custom_id: &str) -> String {
+        let mut interaction =
+            self.interaction(2, invoker, &[BOSSING_ROLE], KALOS, "press", json!([]));
+        interaction.kind = InteractionType::MessageComponent;
+        interaction.data = Some(InteractionData::MessageComponent(Box::new(parse::<
+            MessageComponentInteractionData,
+        >(
+            json!({
+            "custom_id": custom_id,
+            "component_type": 2,
+        })
+        ))));
+        self.send(&interaction).await.1.content
     }
 
     /// `/name` by a bossing-role member in the party channel.

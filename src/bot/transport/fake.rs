@@ -19,7 +19,8 @@ use twilight_model::id::{
 use super::{
     AmbiguousKind, ApplicationEmoji, COMPONENTS_V2, CREATE_FLAGS, ChannelId, DiscordTransport,
     HistoryPage, InteractionRef, InteractionReply, MAX_MEMBERS_PAGE, MAX_MESSAGES_PAGE,
-    MessageEdit, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind, v2_body_valid,
+    MessageEdit, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind, legacy_rows,
+    v2_body_valid,
 };
 
 #[cfg(any(test, feature = "test-support"))]
@@ -358,7 +359,8 @@ impl FakeDiscord {
     ) -> Outcome<MessageId> {
         self.gate(Op::Create).await;
         let mut state = self.state();
-        let v2 = !message.components.is_empty();
+        let v2 = !message.components.is_empty()
+            && !legacy_rows(message.content.as_deref(), &message.components);
         let flags = if v2 { flags | COMPONENTS_V2 } else { flags };
         let valid = CREATE_FLAGS.contains(flags)
             && v2_body_valid(

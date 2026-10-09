@@ -26,6 +26,8 @@ pub const DIGEST_MINE: &str = "digest:mine";
 pub const CARD_CLOSED: &str = "card:closed";
 const CARD_APPLY: &str = "card:apply:";
 const CARD_REJECT: &str = "card:reject:";
+const OWNER_ACCEPT: &str = "owner:accept:";
+const OWNER_DECLINE: &str = "owner:decline:";
 
 /// What one of the bot's buttons asks for, read back from its custom id.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -33,6 +35,9 @@ pub enum ButtonId {
     DigestMine,
     CardApply(String),
     CardReject(String),
+    /// A weekly-timing ownership request's buttons, by request id.
+    OwnerAccept(String),
+    OwnerDecline(String),
 }
 
 /// Proposal ids are short ASCII tokens; anything else is not ours.
@@ -55,6 +60,12 @@ impl ButtonId {
         if let Some(id) = custom_id.strip_prefix(CARD_REJECT) {
             return proposal_id(id).then(|| Self::CardReject(id.to_owned()));
         }
+        if let Some(id) = custom_id.strip_prefix(OWNER_ACCEPT) {
+            return proposal_id(id).then(|| Self::OwnerAccept(id.to_owned()));
+        }
+        if let Some(id) = custom_id.strip_prefix(OWNER_DECLINE) {
+            return proposal_id(id).then(|| Self::OwnerDecline(id.to_owned()));
+        }
         None
     }
 
@@ -63,6 +74,8 @@ impl ButtonId {
             Self::DigestMine => DIGEST_MINE.to_owned(),
             Self::CardApply(id) => format!("{CARD_APPLY}{id}"),
             Self::CardReject(id) => format!("{CARD_REJECT}{id}"),
+            Self::OwnerAccept(id) => format!("{OWNER_ACCEPT}{id}"),
+            Self::OwnerDecline(id) => format!("{OWNER_DECLINE}{id}"),
         }
     }
 }

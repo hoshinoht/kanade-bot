@@ -20,6 +20,7 @@ mod members;
 mod migrate;
 mod model_log;
 mod owner;
+mod owner_requests;
 mod proposal_cards;
 mod proposals;
 mod reminder_cards;
