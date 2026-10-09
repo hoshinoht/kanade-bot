@@ -323,7 +323,16 @@
     {:else if page === 'week'}
       <WeekPage {weeks} {route} memberId={screen.session.member.id} {phone} {toaster} notice={offlineNotice} />
     {:else if page === 'mine'}
-      <MyRuns {weeks} {route} memberId={screen.session.member.id} {phone} notice={offlineNotice} />
+      <MyRuns
+        {weeks}
+        timings={portal.timings}
+        {route}
+        session={screen.session}
+        current={portal.devices?.sessions.find((s) => s.current) ?? null}
+        {toaster}
+        {phone}
+        notice={offlineNotice}
+      />
     {:else}
       <Account {portal} session={screen.session} {toaster} {phone} {zone} {timeZone} {tab} ontab={showTab} notice={offlineNotice} />
     {/if}

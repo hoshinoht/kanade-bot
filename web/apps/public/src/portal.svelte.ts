@@ -1,6 +1,7 @@
 import type { Identity, MemberAllowance, PublicSession, PublicSessions, PublicStatus, SessionsEnded } from '@kanade/api-types';
 import { ApiRequestError, createClient, onUnauthenticated } from '@kanade/client';
 import type { Landing } from './landing';
+import { MemberTimingsList } from './timings/timings.svelte';
 import { MemberWeeks } from './weeks.svelte';
 
 /** Why Sign in is showing, when there is something to say. */
@@ -42,6 +43,8 @@ export class Portal {
   updated = $state<number | null>(null);
   /** This week and the next, kept in memory while signed in. */
   readonly weeks = new MemberWeeks(client, (error) => this.#gone(error));
+  /** The weekly timings the member is on (My runs › Weekly timings), read when My runs opens. */
+  readonly timings = new MemberTimingsList(client, (error) => this.#gone(error));
   #landing: Landing;
   #refreshing: Promise<void> | null = null;
 
@@ -109,7 +112,7 @@ export class Portal {
       this.#gone(error);
       return;
     }
-    await Promise.all([this.loadDevices(), this.weeks.refresh()]);
+    await Promise.all([this.loadDevices(), this.weeks.refresh(), this.timings.data ? this.timings.load() : null]);
   }
 
   /** The bot identity is public on both origins; a failure renders the monogram. */
@@ -210,6 +213,7 @@ export class Portal {
     this.devices = null;
     this.allowance = null;
     this.weeks.clear();
+    this.timings.clear();
   }
 
   /** A closed portal or an ended session replaces the screen (401 arrives through `watch`). */

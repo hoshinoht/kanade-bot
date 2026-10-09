@@ -16,6 +16,7 @@
     footer,
     onclose,
     returnFocus,
+    ...data
   }: {
     open: boolean;
     title: string;
@@ -36,6 +37,8 @@
     lightDismiss?: boolean;
     /** Optional page-specific dialog class; keeps shared dialog semantics intact. */
     className?: string;
+    /** `data-*` attributes for the dialog (a call site's layout-fidelity tag). */
+    [attribute: `data-${string}`]: string | undefined;
   } = $props();
 
   const uid = $props.id();
@@ -82,6 +85,7 @@
 </script>
 
 <dialog
+  {...data}
   bind:this={dialog}
    class={`modal ${className}`}
   class:modal--narrow={narrow}

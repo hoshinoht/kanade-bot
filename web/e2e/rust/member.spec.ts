@@ -47,6 +47,20 @@ test('member: an eligible member signs in through Discord, reads the week, sees 
   expect(await session(page)).toBe(401);
 });
 
+test('member: My runs › Weekly timings lists the timing she owns from the real server', async ({ page, context }) => {
+  await asDiscordUser(context, 'eligible');
+  await page.goto(`${MEMBER}/`);
+  await page.getByRole('link', { name: 'Sign in with Discord' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Week' })).toBeVisible();
+  await page.goto(`${MEMBER}/mine?week=timings`);
+  const rows = page.locator('[data-timing]');
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText('Wed');
+  await expect(rows.first()).toContainText('21:00');
+  await expect(rows.first().locator('.owner')).toHaveText('You, owner');
+  await expect(rows.first().getByRole('button', { name: 'Hand Wed 21:00 to another party member' })).toBeVisible();
+});
+
 test('member: a member without the bossing role is denied and gets no session', async ({ page, context }) => {
   await asDiscordUser(context, 'ineligible');
   await page.goto(`${MEMBER}/`);
