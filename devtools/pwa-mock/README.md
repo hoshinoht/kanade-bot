@@ -95,6 +95,15 @@ message (`422 idempotency_mismatch` if it differs).
 (every outcome, both kinds, newest closed first; the approved proposal links
 History record 3), paged by the last id shown as the server does; decisions
 made in the mock session do not join it.
+`GET /api/admin/inbox/ownership` lists two open weekly-timing ownership
+requests on seeded timings (Mika for `f-carling`, asked 20 h ago; Tsubame for
+`f-kalos`, 5 h ago), oldest first, and the summary's `inbox` count includes
+them. `POST /api/admin/inbox/ownership/{id}/accept` pins the requester as the
+timing's owner (recorded as an `admin_portal` change, closing the timing's
+other open requests) and `/decline` leaves the owner; any session decides,
+Discord or not. A repeat of the same decision answers 200 with the first
+message; any other decision on a closed request is `409 conflicts`, an
+unknown id `404 not_found`.
 
 Live updates: `GET /api/admin/events` answers as the server's stream does
 (`ready {seq, boot}` with one `boot` id per mock process, then `{topic, seq}` hints with no data), emitted after every

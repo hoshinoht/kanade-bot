@@ -474,6 +474,7 @@ impl Model {
 pub struct Summary {
     pub next: Option<NextRun>,
     pub unanswered: usize,
+    /// Live proposals, submitted member requests and open ownership requests.
     pub inbox: u64,
     /// Listed members with the bossing role, as `/api/admin/members` counts them.
     pub members: usize,

@@ -95,7 +95,16 @@ async fn summary(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
         .snapshot(Scope::Weeks(vec![this.start, next.start]))
         .await
         .map_err(unavailable)?;
-    let inbox = state.store.inbox_count().await.map_err(unavailable)?;
+    // Open ownership requests wait in the Inbox too (expired ones are unlisted).
+    let owner_requests = state
+        .store
+        .open_owner_requests()
+        .await
+        .map_err(unavailable)?
+        .iter()
+        .filter(|request| request.live(now))
+        .count() as u64;
+    let inbox = state.store.inbox_count().await.map_err(unavailable)? + owner_requests;
     let profiles = state.store.members().await.map_err(unavailable)?;
     let members = dto::members::bossers(&profiles, &state.access);
     // The config desk's running settings, so a save shows on the next read.

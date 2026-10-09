@@ -107,7 +107,7 @@ test("the admin's own decision neither marks rows nor pulses the badge", async (
   await page.getByRole('button', { name: 'Reject…' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Reject change' }).click();
   const nav = page.locator('.navrail').getByRole('navigation', { name: 'Sections' });
-  await expect(nav.getByRole('link', { name: 'Inbox 8 waiting', exact: true })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Inbox 10 waiting', exact: true })).toBeVisible();
   // Past the hint's re-read: still nothing marked.
   await page.waitForTimeout(1_500);
   expect(await marks(page)).toEqual([]);
@@ -157,5 +157,5 @@ test("a hint's re-reads revalidate: unchanged reads answer 304", async ({ page }
   await expect.poll(() => statuses.length, { timeout: 6_000 }).toBeGreaterThanOrEqual(3);
   expect(statuses).toEqual(expect.arrayContaining(['/api/admin/week 304', '/api/admin/stats 304', '/api/admin/summary 200']));
   const nav = page.locator('.navrail').getByRole('navigation', { name: 'Sections' });
-  await expect(nav.getByRole('link', { name: 'Inbox 10 waiting', exact: true })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Inbox 12 waiting', exact: true })).toBeVisible();
 });

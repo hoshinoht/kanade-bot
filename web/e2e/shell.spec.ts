@@ -16,9 +16,9 @@ test('rail: grouped destinations beside the page, no masthead, no 1180 px cap', 
   const rail = page.locator('.navrail');
   const nav = rail.getByRole('navigation', { name: 'Sections' });
   await expect(nav.getByRole('link', { name: 'Week' })).toHaveAttribute('aria-current', 'page');
-  await expect(nav.getByRole('link', { name: /^Inbox/ })).toContainText('9');
+  await expect(nav.getByRole('link', { name: /^Inbox/ })).toContainText('11');
   // The badge is part of the link's name, said as words.
-  await expect(nav.getByRole('link', { name: 'Inbox 9 waiting', exact: true })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Inbox 11 waiting', exact: true })).toBeVisible();
   // The page uses the width (G6): main runs from the rail to the edge.
   const main = (await page.locator('#main').boundingBox())!;
   const railBox = (await rail.boundingBox())!;
@@ -90,11 +90,11 @@ test('phone: 48 px top bar, Inbox one tap away, and no rail or nav row', async (
   await expect(bar.locator('[data-fresh="live"]')).toBeVisible();
   await expect(page.locator('.navrail')).toHaveCount(0);
   await expect(page.getByRole('navigation', { name: 'Sections' })).toHaveCount(0);
-  const inbox = bar.getByRole('link', { name: 'Inbox 9 waiting', exact: true });
-  await expect(inbox).toContainText('9');
+  const inbox = bar.getByRole('link', { name: 'Inbox 11 waiting', exact: true });
+  await expect(inbox).toContainText('11');
   await inbox.click();
   await expect(page).toHaveURL(`${ADMIN}/inbox`);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 changes waiting');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('11 changes waiting');
   await expect(inbox).toHaveAttribute('aria-current', 'page');
   // The phone's chrome above the window: top bar, page line and margins
   // (≈ 100 px; the masthead, pinned nav and page-head card took ≈ 185).
@@ -189,7 +189,7 @@ test('phone: the drawer counts Members and Reminders as their page headings do',
 test('phone landscape uses the phone frame (the rail would not fit 390 px of height)', async ({ page }) => {
   await page.setViewportSize({ width: 844, height: 390 });
   await page.goto(`${ADMIN}/inbox?sw=off`);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 changes waiting');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('11 changes waiting');
   await expect(page.locator('.topbar')).toBeVisible();
   await expect(page.locator('.navrail')).toHaveCount(0);
   await page.getByRole('button', { name: 'Open the navigation' }).click();

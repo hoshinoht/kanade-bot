@@ -105,7 +105,11 @@ export type NextRun = { run_id: string, bosses: string, when: string, countdown:
 
 export type ModelBusy = { busy: boolean, holder: string | null, };
 
-export type Summary = { next: NextRun | null, unanswered: number, inbox: number, 
+export type Summary = { next: NextRun | null, unanswered: number, 
+/**
+ * Live proposals, submitted member requests and open ownership requests.
+ */
+inbox: number, 
 /**
  * Listed members with the bossing role, as `/api/admin/members` counts them.
  */
@@ -323,6 +327,24 @@ consequence: string | null, expires_at: string | null, choices: Array<ProposalCh
  * The channel thread around `evidence`; `None` when there is none.
  */
 thread: Array<ThreadMessage> | null, card_url: string | null, self_service: ProposalSelfService | null, };
+
+/**
+ * An open weekly-timing ownership request (Inbox Ownership tab): a party
+ * member asks to own the timing; staff accept or decline before it expires.
+ */
+export type OwnershipRequest = { id: string, short_id: string, fixed_id: string, fixed_short_id: string, bosses: Array<Boss>, 
+/**
+ * 0 = Monday, as `FixedRow`.
+ */
+weekday: number, weekday_name: string, time: string, requester: Member, 
+/**
+ * The timing's effective owner now ([`FixedRun::owner`]).
+ */
+owner: Member, channel: string | null, 
+/**
+ * RFC 3339 UTC instants.
+ */
+created_at: string, expires_at: string, };
 
 /**
  * How a closed Inbox item ended: `approved` = merged, `superseded` =
