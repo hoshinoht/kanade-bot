@@ -11,6 +11,7 @@
 //! which approves at once and returns to the real callback. A spec picks who
 //! signs in with the cookie `kanade_fake_discord` on `127.0.0.1` (cookies
 //! ignore ports): `eligible` (default; user `100000000000000001`, "Mikan"),
+//! `partner` (`100000000000000004`, "Yuzu", on Mikan's weekly timing),
 //! `ineligible` (`100000000000000002`, no bossing role), `bot`
 //! (`100000000000000003`, a bot account) or `deny` (cancelled at Discord).
 //! `--closed` keeps the portal switch off.
@@ -218,6 +219,7 @@ mod member_portal {
         response::{IntoResponse, Response},
         routing::get,
     };
+    use chrono::{NaiveTime, Weekday};
     use kanade::{
         api::{
             admin::limits::LimitsDesk,
@@ -238,6 +240,7 @@ mod member_portal {
             history::{Actor, Origin, Surface},
             ids::RandomIds,
             members::{GatewayMember, MemberStore},
+            schedule::NewFixedRun,
             scheduler::SchedulerService,
             settings::RuntimeSettings,
         },
@@ -254,6 +257,7 @@ mod member_portal {
     const ELIGIBLE: &str = "100000000000000001";
     const INELIGIBLE: &str = "100000000000000002";
     const BOT: &str = "100000000000000003";
+    const PARTNER: &str = "100000000000000004";
 
     pub struct Args {
         public_port: u16,
@@ -288,6 +292,7 @@ mod member_portal {
     fn user(choice: &str) -> DiscordUser {
         let (id, name, bot) = match choice {
             "ineligible" => (INELIGIBLE, "Plain", false),
+            "partner" => (PARTNER, "Yuzu", false),
             "bot" => (BOT, "Botty", true),
             _ => (ELIGIBLE, "Mikan", false),
         };
@@ -344,7 +349,7 @@ mod member_portal {
     }
 
     async fn seed_members(store: &MemoryScheduleStore) -> Result<(), Box<dyn Error>> {
-        for (choice, has_role) in [("eligible", true), ("ineligible", false)] {
+        for (choice, has_role) in [("eligible", true), ("partner", true), ("ineligible", false)] {
             let user = user(choice);
             store
                 .apply_gateway(GatewayMember {
@@ -362,7 +367,8 @@ mod member_portal {
     }
 
     /// Serve-shaped read state over the in-memory store, with one run next
-    /// boss week that Mikan is on, so the member Week has an own run.
+    /// boss week that Mikan is on, so the member Week has an own run, and one
+    /// weekly timing Mikan owns (as its first member) with Yuzu on it.
     async fn read_state(store: Arc<MemoryScheduleStore>) -> Result<ApiState, Box<dyn Error>> {
         let policy = RuntimeSettings::default().schedule_policy(chrono_tz::Asia::Kuala_Lumpur);
         let clock: kanade::api::auth::Clock = Arc::new(|| super::now().expect("system clock"));
@@ -371,9 +377,20 @@ mod member_portal {
                 .with_attendance(policy.attendance);
         let mut run = next_run(now()?, &policy)?;
         run.participants = vec![ELIGIBLE.into()];
+        let origin = Origin::new(Actor::system("rust_e2e_fixture"), Surface::Cli);
+        scheduler.as_origin(origin.clone()).create_run(run).await?;
         scheduler
-            .as_origin(Origin::new(Actor::system("rust_e2e_fixture"), Surface::Cli))
-            .create_run(run)
+            .as_origin(origin)
+            .add_fixed_run(NewFixedRun {
+                owner_id: ELIGIBLE.into(),
+                channel_id: None,
+                bosses: vec!["HSeren".into()],
+                weekday: Weekday::Wed,
+                time: NaiveTime::from_hms_opt(21, 0, 0).ok_or_else(|| invalid("time"))?,
+                participants: vec![ELIGIBLE.into(), PARTNER.into()],
+                note: None,
+                owner_pinned: false,
+            })
             .await?;
         let catalog = load_catalog(std::path::Path::new("boss/bosses.yaml"))?;
         let access = GuildAccess::new(

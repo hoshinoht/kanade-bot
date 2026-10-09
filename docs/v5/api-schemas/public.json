@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kanade.invalid/api-schemas/public.json",
-  "title": "Public portal: status, the member session, the member's signed-in devices, the member week and the member's own chat allowance",
+  "title": "Public portal: status, the member session, the member's signed-in devices, the member week, the member's weekly timings and their ownership, and the member's own chat allowance",
   "$defs": {
     "PublicStatus": {
       "type": "object",
@@ -115,6 +115,56 @@
         "queue_position": { "type": ["integer", "null"], "minimum": 1, "description": "The member's own queued chat call's 1-based position in its model group; null when none is waiting." },
         "bot_busy": { "type": "boolean", "description": "Coarse: some model group has every permit in use, so a new question would wait." },
         "generated_at": { "type": "string", "description": "The server's clock when this was read (ISO-8601 UTC)." }
+      }
+    },
+    "MemberOwnerRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A request to own a weekly timing, as the signed-in member sees it. Answered by `POST /api/public/timings/{id}/owner-requests` (201, or 200 for a retry with the same Idempotency-Key) and `POST /api/public/owner-requests/{id}/accept|decline|withdraw`.",
+      "required": ["id", "requester", "created_at", "expires_at", "status", "mine"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
+        "requester": { "$ref": "common.json#/$defs/Member" },
+        "created_at": { "type": "string", "description": "ISO-8601 UTC." },
+        "expires_at": { "type": "string", "description": "24 hours after `created_at` (ISO-8601 UTC); undecided, it then expires." },
+        "status": { "enum": ["open", "accepted", "declined", "expired", "withdrawn", "superseded"], "description": "Always `open` in `MemberTiming.requests`; a write answers the request as it now is." },
+        "mine": { "type": "boolean", "description": "The signed-in member asked." }
+      }
+    },
+    "MemberTiming": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A weekly timing the signed-in member is on, with its ownership. Also answers `POST /api/public/timings/{id}/owner`. Never the channel, note, short id or upcoming runs.",
+      "required": ["id", "bosses", "weekday", "time", "party", "owner", "owner_pinned", "you_own", "requests"],
+      "properties": {
+        "id": { "type": "string" },
+        "bosses": { "$ref": "common.json#/$defs/Bosses" },
+        "weekday": { "type": "integer", "minimum": 0, "maximum": 6, "description": "Guild-local weekday, 0 = Monday (as `fixed.json` `FixedRow.weekday`)." },
+        "time": { "type": "string", "description": "Guild-local start (`HH:MM`)." },
+        "party": { "type": "array", "items": { "$ref": "common.json#/$defs/Member" }, "description": "Everyone on the timing, in party order." },
+        "owner": { "$ref": "common.json#/$defs/Member", "description": "The effective owner: the pinned owner, else the first party member." },
+        "owner_pinned": { "type": "boolean", "description": "Ownership was handed on (or staff chose the owner); otherwise it follows the first party member." },
+        "you_own": { "type": "boolean", "description": "The signed-in member is the owner." },
+        "requests": { "type": "array", "items": { "$ref": "#/$defs/MemberOwnerRequest" }, "description": "Open, unexpired requests to own it: all of them for its owner, otherwise only the member's own." }
+      }
+    },
+    "MemberTimings": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "GET /api/public/timings: the weekly timings the signed-in member is on (party only). `Cache-Control: no-store`.",
+      "required": ["timings", "generated_at"],
+      "properties": {
+        "timings": { "type": "array", "items": { "$ref": "#/$defs/MemberTiming" } },
+        "generated_at": { "type": "string", "description": "The server's clock when this was read (ISO-8601 UTC)." }
+      }
+    },
+    "OwnerHandOff": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Request body of `POST /api/public/timings/{id}/owner`: the party member who takes the timing; anything else is 422 `invalid_body`.",
+      "required": ["to"],
+      "properties": {
+        "to": { "type": "string", "pattern": "^[0-9]{17,20}$", "description": "Discord user id (snowflake) of another party member." }
       }
     }
   }

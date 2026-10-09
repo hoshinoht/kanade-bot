@@ -18,7 +18,7 @@ mod read;
 mod reminders;
 mod replay;
 mod tonight;
-mod write;
+pub(crate) mod write;
 
 // Private response types the TypeScript bindings test names.
 #[cfg(test)]

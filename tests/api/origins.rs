@@ -253,6 +253,12 @@ async fn closed_public_portal_serves_status_identity_and_shell_only() {
     for path in [
         "/api/public/week",
         "/api/public/requests/mine",
+        "/api/public/timings",
+        "/api/public/timings/f-1/owner",
+        "/api/public/timings/f-1/owner-requests",
+        "/api/public/owner-requests/r-1/accept",
+        "/api/public/owner-requests/r-1/decline",
+        "/api/public/owner-requests/r-1/withdraw",
         "/art/portraits/Carling",
         "/art/entry/Carling",
         "/art/anything/at/all",

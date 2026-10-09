@@ -60,42 +60,49 @@ pub fn routes() -> Router<Arc<Site>> {
         )
 }
 
-pub const IDEMPOTENCY_KEY: &str = "idempotency-key";
+const IDEMPOTENCY_KEY: &str = "idempotency-key";
+
+fn invalid_key(message: &'static str) -> Refusal {
+    Refusal::new(
+        axum::http::StatusCode::BAD_REQUEST,
+        "invalid_idempotency_key",
+        message,
+    )
+}
+
+/// The request's `Idempotency-Key`, if it sent one: exactly one value of
+/// 1-128 letters, digits, `-`, `_`, `.` or `:`. Shared by admin and member
+/// writes.
+pub fn idempotency_key(headers: &HeaderMap) -> Result<Option<&str>, Refusal> {
+    let mut values = headers.get_all(IDEMPOTENCY_KEY).iter();
+    match (values.next(), values.next()) {
+        (None, _) => Ok(None),
+        (Some(value), None) => value
+            .to_str()
+            .ok()
+            .filter(|key| {
+                (1..=128).contains(&key.len())
+                    && key.bytes().all(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':')
+                    })
+            })
+            .map(Some)
+            .ok_or_else(|| {
+                invalid_key("Idempotency-Key is 1-128 letters, digits, '-', '_', '.' or ':'.")
+            }),
+        (Some(_), Some(_)) => Err(invalid_key("Send one Idempotency-Key.")),
+    }
+}
+
+/// [`idempotency_key`] where the write requires one.
+pub fn required_idempotency_key(headers: &HeaderMap) -> Result<&str, Refusal> {
+    idempotency_key(headers)?.ok_or_else(|| invalid_key("Send an Idempotency-Key."))
+}
 
 /// The session's attribution plus the request id from `Idempotency-Key`.
 pub fn origin(session: &AdminSession, headers: &HeaderMap) -> Result<Origin, Refusal> {
     let mut origin = session.origin();
-    let mut values = headers.get_all(IDEMPOTENCY_KEY).iter();
-    match (values.next(), values.next()) {
-        (None, _) => {}
-        (Some(value), None) => {
-            let key = value
-                .to_str()
-                .ok()
-                .filter(|key| {
-                    (1..=128).contains(&key.len())
-                        && key.bytes().all(|byte| {
-                            byte.is_ascii_alphanumeric()
-                                || matches!(byte, b'-' | b'_' | b'.' | b':')
-                        })
-                })
-                .ok_or_else(|| {
-                    Refusal::new(
-                        axum::http::StatusCode::BAD_REQUEST,
-                        "invalid_idempotency_key",
-                        "Idempotency-Key is 1-128 letters, digits, '-', '_', '.' or ':'.",
-                    )
-                })?;
-            origin.request_id = Some(key.to_owned());
-        }
-        (Some(_), Some(_)) => {
-            return Err(Refusal::new(
-                axum::http::StatusCode::BAD_REQUEST,
-                "invalid_idempotency_key",
-                "Send one Idempotency-Key.",
-            ));
-        }
-    }
+    origin.request_id = idempotency_key(headers)?.map(str::to_owned);
     Ok(origin)
 }
 
