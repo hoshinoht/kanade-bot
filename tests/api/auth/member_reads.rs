@@ -481,8 +481,8 @@ async fn art_is_served_to_signed_in_members_and_unchanged_on_admin() {
     assert_eq!(art.status, 200, "{}", art.text());
     assert_eq!(art.header("content-type"), Some("image/png"));
     assert_eq!(art.body, b"art");
-    // Behind the session: no shared cache, and every use revalidates.
-    assert_eq!(art.header("cache-control"), Some("private, no-cache"));
+    // Behind the session: never in a shared cache; the browser keeps it a day.
+    assert_eq!(art.header("cache-control"), Some("private, max-age=86400"));
     // The public site now holds the live state; the bot's id still stays admin-only.
     let identity = portal.get(None, "/api/identity").await.json();
     assert_eq!(identity["bot_user_id"], Value::Null);

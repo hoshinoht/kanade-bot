@@ -34,12 +34,14 @@ fn portrait(path: &str) -> bool {
 }
 
 /// `public`: the member portal's origin, where art sits behind the member
-/// session, so (as the server) it is per-user and revalidated on every use,
-/// and a refusal is never stored.
+/// session, so (as the server) only the browser keeps it, for a day, and a
+/// refusal is never stored.
 fn cache_policy(path: &str, public: bool, success: bool) -> &'static str {
     let member_art = public && path.starts_with("/art/");
-    if portrait(path) || (member_art && success) {
+    if portrait(path) {
         "private, no-cache"
+    } else if member_art && success {
+        "private, max-age=86400"
     } else if member_art
         || path.starts_with("/api/")
         || path.starts_with("/__mock/")
@@ -134,7 +136,7 @@ mod tests {
     fn member_art_is_private_and_refusals_are_never_stored() {
         assert_eq!(
             cache_policy("/art/entry/Carling", true, true),
-            "private, no-cache"
+            "private, max-age=86400"
         );
         assert_eq!(cache_policy("/art/entry/Carling", true, false), "no-store");
         assert_eq!(

@@ -37,10 +37,15 @@ pub fn cache_policy(path: &str, success: bool, origin: Origin) -> &'static str {
     // An explicit max-age would let caches keep a 404/503 (missing chunk, closed art).
     if !success {
         "no-store"
-    } else if portrait(path) || (origin == Origin::Public && path.starts_with("/art/")) {
+    } else if portrait(path) {
         // Per-user and behind the session: the browser alone keeps it, and
         // revalidates each use, so a signed-out tab cannot replay it.
         "private, no-cache"
+    } else if origin == Origin::Public && path.starts_with("/art/") {
+        // Behind the member session but the same for every member and not
+        // sensitive (user 2026-10-10): the browser keeps it a day so sign-ins
+        // and reloads stop refetching; shared caches (Cloudflare) never do.
+        "private, max-age=86400"
     } else if path.starts_with("/api/") || path == "/api" || path == "/healthz" {
         "no-store"
     } else if path.starts_with("/identity/") {
@@ -134,10 +139,10 @@ mod tests {
     }
 
     #[test]
-    fn member_art_is_never_shared_or_kept_past_the_session() {
+    fn member_art_stays_in_the_browser_only() {
         assert_eq!(
             cache_policy("/art/entry/carling", true, Origin::Public),
-            "private, no-cache"
+            "private, max-age=86400"
         );
         assert_eq!(
             cache_policy("/art/entry/carling", false, Origin::Public),

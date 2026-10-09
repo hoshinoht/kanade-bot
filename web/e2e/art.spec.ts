@@ -106,7 +106,7 @@ test('art routes refuse unknown keys; the public origin serves art only behind t
   const member = await page.request.get(`${PUBLIC}/art/entry/Carling`);
   expect(member.status()).toBe(200);
   expect(member.headers()['content-type']).toBe('image/png');
-  expect(member.headers()['cache-control']).toBe('private, no-cache');
+  expect(member.headers()['cache-control']).toBe('private, max-age=86400');
   expect((await page.request.get(`${PUBLIC}/art/entry/Nope`)).status()).toBe(404);
 });
 

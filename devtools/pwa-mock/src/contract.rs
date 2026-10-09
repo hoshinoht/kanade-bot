@@ -2081,7 +2081,7 @@ async fn public_member_routes_match_the_contract() {
     // Behind the session, so per-user and revalidated on every use (as the server).
     let (status, kind, cache) = h.public_image("/art/entry/Carling", &cookie).await;
     h.checked += 1;
-    if status != StatusCode::OK || !kind.starts_with("image/") || cache != "private, no-cache" {
+    if status != StatusCode::OK || !kind.starts_with("image/") || cache != "private, max-age=86400" {
         h.failures
             .push(format!("public art: {status} {kind} {cache}"));
     }
