@@ -2,6 +2,8 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## 1.0.0-beta.5 (in development)
+
 ## 1.0.0-beta.4 (2026-10-10)
 
 Headline: **security hardening, run ownership and the public portal beta.** Members can now sign in to the public portal on the internet, through a Cloudflare tunnel with its own Discord application, to see the boss week, answer and move their own runs, send requests and hand over weekly timings; weekly timings belong to their first participant unless an admin pins an owner, and ended runs ask whether they happened; admins get a stored sign-in audit log; CI gains supply-chain checks; "mine" means the runs you are on.

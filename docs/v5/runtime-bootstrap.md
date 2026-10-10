@@ -1,7 +1,8 @@
 # v5 runtime bootstrap
 
-`kanade` is the single Rust executable, version `1.0.0-beta.4` (the release
-label everywhere: Cargo, CHANGELOG and the `v1.0.0-beta.4` git tag).
+`kanade` is the single Rust executable, version `1.0.0-beta.5` (the release
+label everywhere: Cargo, CHANGELOG and its `v1.0.0-beta.5` git tag once it
+is released; the last release is tagged `v1.0.0-beta.4`).
 
 ## Available now
 
