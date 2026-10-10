@@ -55,6 +55,17 @@
 }
 
 @include motion-reduce {
+  // motion.scss cuts every animation to 0.001ms here; the arrival marks are
+  // colour only, so they keep their length (otherwise the tint never shows
+  // and the mark clears within a frame).
+  [data-new] {
+    animation-duration: 1.2s !important;
+  }
+
+  [data-tick] {
+    animation-duration: 0.6s !important;
+  }
+
   .navlist__badge[data-tick],
   .topbar__badge[data-tick] {
     animation: none;

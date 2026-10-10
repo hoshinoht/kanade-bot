@@ -7,6 +7,7 @@ mod fallbacks;
 mod hardening;
 mod member_bosses;
 mod member_devices;
+mod member_events;
 mod member_ownership;
 mod member_reads;
 mod member_sessions;

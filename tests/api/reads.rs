@@ -95,10 +95,11 @@ pub const EDGE_HEADERS: [(&str, &str); 3] = [
     ("Tailscale-User-Login", TAILSCALE_ADMIN),
 ];
 const ORIGIN: (&str, &str) = ("Origin", "https://kanade.test");
-/// Short beats and a small cap, so stream tests run in real time.
+/// Short beats and small caps, so stream tests run in real time.
 pub const EVENTS: EventsConfig = EventsConfig {
     heartbeat: std::time::Duration::from_millis(150),
     max_clients: 2,
+    max_member_clients: 4,
     max_lifetime: std::time::Duration::from_secs(60),
 };
 

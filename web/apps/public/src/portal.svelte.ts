@@ -1,5 +1,5 @@
-import type { Identity, MemberAllowance, PublicSession, PublicSessions, PublicStatus, SessionsEnded } from '@kanade/api-types';
-import { ApiRequestError, createClient, onUnauthenticated } from '@kanade/client';
+import type { Identity, MemberAllowance, MemberEventTopic, PublicSession, PublicSessions, PublicStatus, SessionsEnded } from '@kanade/api-types';
+import { ApiRequestError, createClient, createLiveEvents, onUnauthenticated, type LiveEvents } from '@kanade/client';
 import { MemberBosses } from './bosses/bosses.svelte';
 import type { Landing } from './landing';
 import { MemberRequestsList } from './requests/requests.svelte';
@@ -54,8 +54,11 @@ export class Portal {
   readonly runs = new RunWrites(client, this.weeks, (error) => this.#gone(error));
   /** The member's requests to the admins (Requests, the masthead's waiting count). */
   readonly requests = new MemberRequestsList(client, (error) => this.#gone(error));
+  /** The member's change hints (`GET /api/public/events`), open while signed in and the tab is shown. */
+  readonly live: LiveEvents<MemberEventTopic> = createLiveEvents<MemberEventTopic>({ url: '/api/public/events' });
   #landing: Landing;
   #refreshing: Promise<void> | null = null;
+  #unfollow: (() => void) | null = null;
 
   constructor(landing: Landing) {
     this.#landing = landing;
@@ -87,6 +90,7 @@ export class Portal {
       this.screen = { kind: 'member', session };
       this.updated = Date.now();
       this.weeks.start();
+      this.#follow();
       void this.loadDevices();
       // The masthead's and the drawer's Requests count (waiting) shows on every page.
       void this.requests.load();
@@ -219,8 +223,34 @@ export class Portal {
     this.screen = { kind: 'signin', notice };
   }
 
-  /** Every member read this tab holds (devices, allowance, the weeks) goes with the session. */
+  /**
+   * Hints re-read what they name, in place: the weeks on `schedule` and
+   * `mine`, the timings and requests (once read) on `mine`, the allowance
+   * (once read) on `allowance`. The weeks poll slower while the stream is open.
+   */
+  #follow(): void {
+    if (this.#unfollow) return;
+    const stops = [
+      this.live.onHealth((live) => this.weeks.pace(live)),
+      this.live.subscribe(['schedule', 'mine'], () => void this.weeks.hinted()),
+      this.live.subscribe(['mine'], () => {
+        if (this.timings.data) void this.timings.hinted();
+        if (this.requests.data) void this.requests.hinted();
+      }),
+      this.live.subscribe(['allowance'], () => {
+        if (this.allowance) void this.loadAllowance();
+      }),
+    ];
+    this.#unfollow = () => {
+      for (const stop of stops) stop();
+      this.weeks.pace(false);
+    };
+  }
+
+  /** Every member read this tab holds (devices, allowance, the weeks) goes with the session, and the stream closes. */
   #forget(): void {
+    this.#unfollow?.();
+    this.#unfollow = null;
     this.devices = null;
     this.allowance = null;
     this.weeks.clear();

@@ -1,16 +1,30 @@
 /**
- * Change hints from `GET /api/admin/events` (server-sent events). A hint says
- * only that something of a kind changed; subscribers re-read their own
- * endpoint. Polling stays the fallback: `healthy` tells pollers to slow down
- * while the stream is open and to return to their normal cadence when it drops.
+ * Change hints over server-sent events: `GET /api/admin/events` (numbered
+ * `{topic, seq}` hints) and the member portal's `GET /api/public/events`
+ * (`{topic}` only). A hint says only that something of a kind changed;
+ * subscribers re-read their own endpoint. Polling stays the fallback:
+ * `healthy` tells pollers to slow down while the stream is open and to return
+ * to their normal cadence when it drops.
  *
  * A hidden tab holds no stream and runs no hint-driven reads (as polls pause
  * while hidden), so a forgotten tab still reaches the session's idle limit.
  * Shown again it reconnects; the `ready` seq tells whether anything changed
- * meanwhile, and wakes owed from before hiding are delivered then.
+ * meanwhile (a stream without seqs re-reads after every `ready` but the
+ * first), and wakes owed from before hiding are delivered then.
  */
-import type { EventHint, EventReady, EventTopic } from '@kanade/api-types';
+import type { EventTopic } from '@kanade/api-types';
 import { documentVisibility, type VisibilitySource } from './poll';
+
+/** A `ready` event: the admin stream numbers its hints, the member stream does not. */
+interface Ready {
+  seq?: number;
+  boot: string;
+}
+
+interface Hint<T extends string> {
+  topic: T;
+  seq?: number;
+}
 
 /** The part of `EventSource` this module uses (tests pass a fake). */
 export interface EventSourceLike {
@@ -38,13 +52,13 @@ export interface LiveEventsOptions {
   visibility?: VisibilitySource;
 }
 
-export interface LiveEvents {
+export interface LiveEvents<T extends string = EventTopic> {
   /**
    * Calls `wake` after hints for any of `topics` (coalesced), and after a
    * reconnect that may have missed some. Opens the stream with the first
    * subscriber and closes it after the last. Returns the unsubscribe.
    */
-  subscribe(topics: readonly EventTopic[], wake: () => void): () => void;
+  subscribe(topics: readonly T[], wake: () => void): () => void;
   /** The stream is open: polls may run at their slower fallback cadence. */
   readonly healthy: boolean;
   /** Called on every change of `healthy`; returns the unsubscribe. */
@@ -59,8 +73,8 @@ export interface LiveEvents {
 
 const CLOSED = 2;
 
-interface Subscriber {
-  topics: ReadonlySet<EventTopic>;
+interface Subscriber<T extends string> {
+  topics: ReadonlySet<T>;
   wake: () => void;
   timer: ReturnType<typeof setTimeout> | null;
 }
@@ -70,7 +84,7 @@ function browserSource(): EventSourceFactory | null {
   return Source ? (url) => new Source(url) : null;
 }
 
-export function createLiveEvents(options: LiveEventsOptions): LiveEvents {
+export function createLiveEvents<T extends string = EventTopic>(options: LiveEventsOptions): LiveEvents<T> {
   const factory = options.source === undefined ? browserSource() : options.source;
   const retryMs = options.retryMs ?? 1_000;
   const maxRetryMs = options.maxRetryMs ?? 60_000;
@@ -78,7 +92,7 @@ export function createLiveEvents(options: LiveEventsOptions): LiveEvents {
   const coalesceMs = options.coalesceMs ?? 250;
   const visibility = options.visibility ?? documentVisibility();
 
-  const subscribers = new Set<Subscriber>();
+  const subscribers = new Set<Subscriber<T>>();
   const healthListeners = new Set<(healthy: boolean) => void>();
   let source: EventSourceLike | null = null;
   let healthy = false;
@@ -90,7 +104,7 @@ export function createLiveEvents(options: LiveEventsOptions): LiveEvents {
   let lastBoot: string | null = null;
   let epoch = 0;
   /** Subscribers woken while hidden: they read when the tab is shown. */
-  const owed = new Set<Subscriber>();
+  const owed = new Set<Subscriber<T>>();
   let unwatch: (() => void) | null = null;
 
   const setHealthy = (next: boolean) => {
@@ -99,7 +113,7 @@ export function createLiveEvents(options: LiveEventsOptions): LiveEvents {
     for (const listener of [...healthListeners]) listener(next);
   };
 
-  const wake = (subscriber: Subscriber) => {
+  const wake = (subscriber: Subscriber<T>) => {
     if (subscriber.timer !== null) return;
     subscriber.timer = setTimeout(() => {
       subscriber.timer = null;
@@ -109,7 +123,7 @@ export function createLiveEvents(options: LiveEventsOptions): LiveEvents {
     }, coalesceMs);
   };
 
-  const wakeTopic = (topic: EventTopic) => {
+  const wakeTopic = (topic: T) => {
     for (const subscriber of subscribers) if (subscriber.topics.has(topic)) wake(subscriber);
   };
 
@@ -171,20 +185,27 @@ export function createLiveEvents(options: LiveEventsOptions): LiveEvents {
       }, graceMs);
     };
     opened.addEventListener('ready', (event) => {
-      const { seq, boot } = JSON.parse(event.data) as EventReady;
-      const restarted = lastBoot !== null && boot !== lastBoot;
+      const { seq, boot } = JSON.parse(event.data) as Ready;
+      const first = lastBoot === null;
+      const restarted = !first && boot !== lastBoot;
       // The first `ready` cannot tell whether the reads before it came from
       // this process (a restart in between is possible, if unlikely): it opens
       // a new epoch too, so the next read takes whatever version it gets. Read
       // order still keeps late answers out; it costs no extra read.
-      if (restarted || lastBoot === null) epoch += 1;
+      if (restarted || first) epoch += 1;
       // A new process or missed hints: whatever is on screen may be stale.
-      if (restarted || (lastSeq !== null && seq !== lastSeq)) wakeAll();
-      lastSeq = seq;
+      // Without seqs, any reconnect may have missed some.
+      const missed = seq === undefined ? !first : lastSeq !== null && seq !== lastSeq;
+      if (restarted || missed) wakeAll();
+      lastSeq = seq ?? null;
       lastBoot = boot;
     });
     opened.addEventListener('message', (event) => {
-      const hint = JSON.parse(event.data) as EventHint;
+      const hint = JSON.parse(event.data) as Hint<T>;
+      if (hint.seq === undefined) {
+        wakeTopic(hint.topic);
+        return;
+      }
       if (lastSeq !== null && hint.seq > lastSeq + 1) wakeAll();
       else wakeTopic(hint.topic);
       lastSeq = Math.max(lastSeq ?? 0, hint.seq);
@@ -211,7 +232,7 @@ export function createLiveEvents(options: LiveEventsOptions): LiveEvents {
 
   return {
     subscribe(topics, callback) {
-      const subscriber: Subscriber = { topics: new Set(topics), wake: callback, timer: null };
+      const subscriber: Subscriber<T> = { topics: new Set(topics), wake: callback, timer: null };
       subscribers.add(subscriber);
       unwatch ??= visibility.subscribe(onVisibility);
       connect();

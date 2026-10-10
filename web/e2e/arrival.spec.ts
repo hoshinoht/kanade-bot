@@ -114,9 +114,21 @@ test("the admin's own decision neither marks rows nor pulses the badge", async (
   expect(await marks(page)).toEqual([]);
 });
 
-// The member portal has no event stream: its week arrives with the 30 s read.
-// A timed read that changed the week is an arrival (the admin store's
-// semantics); the member's own Refresh is not.
+// The member portal: a member hint (`GET /api/public/events`; the mock sends
+// one on `POST /__mock/public/hint`) re-reads the week at once, and without
+// one the week arrives with the timed read. Either read that changed the week
+// is an arrival (the admin store's semantics); the member's own Refresh is not.
+
+/** The member stream hints `topic` (the mock's stand-in for a change elsewhere). */
+async function hint(page: Page, topic: 'schedule' | 'mine' | 'allowance') {
+  const reply = await page.request.post(`${PUBLIC}/__mock/public/hint`, { data: { topic } });
+  expect(reply.status()).toBe(204);
+}
+
+/** The member stream is open, so the next hint reaches the page. */
+async function memberStreaming(page: Page) {
+  await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((e) => e.name.includes('/api/public/events')))).toBe(true);
+}
 
 /** Runs the portal's timed week read now: hiding and showing the page resumes the paused poller. */
 async function timedRead(page: Page) {
@@ -140,7 +152,8 @@ async function openPortal(page: Page) {
 }
 
 test.describe('member portal', () => {
-  test('a run an admin moved glides to its new day on the next timed read', async ({ page }) => {
+  test('without a hint, a run an admin moved glides to its new day on the next timed read', async ({ page }) => {
+    await page.route(`${PUBLIC}/api/public/events`, (route) => route.abort());
     await openPortal(page);
     await arrive(page, 'move');
     await timedRead(page);
@@ -148,7 +161,43 @@ test.describe('member portal', () => {
     await expect(page.locator('[data-run="r-limbo"]')).toContainText('21:00');
   });
 
-  test('a run an admin added is marked once; a changed number on Your week pulses', async ({ page }) => {
+  test('a schedule hint re-reads the week at once: a moved run glides, an added one is marked', async ({ page }) => {
+    await openPortal(page);
+    await memberStreaming(page);
+    await arrive(page, 'move');
+    await arrive(page, 'run');
+    const read = page.waitForResponse((r) => r.url().endsWith('/api/public/week?week=next'));
+    await hint(page, 'schedule');
+    await read;
+    await expect.poll(async () => (await animated(page)).filter((a) => a.target === 'r-limbo' && a.from.startsWith('translate')).length, { timeout: 6_000 }).toBe(1);
+    await expect(page.locator('[data-run="r-limbo"]')).toContainText('21:00');
+    const card = page.locator('.member-board [data-run="r-arrived"]');
+    await expect(card).toHaveAttribute('data-new', '');
+    await expect(card).not.toHaveAttribute('data-new', '', { timeout: 3_000 });
+  });
+
+  test("a hint after the member's own answer is its echo: nothing glides, marks or pulses", async ({ page }) => {
+    await record(page);
+    await signInPublic(page);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${PUBLIC}/?run=r-carling&sw=off`);
+    const answers = page.getByRole('complementary', { name: /^Your run · .*Carling/ }).getByRole('group', { name: /^Your answer/ });
+    await expect(answers.getByRole('button', { name: /^In/ })).toHaveAttribute('aria-pressed', 'true');
+    await memberStreaming(page);
+    await answers.getByRole('button', { name: /^Maybe/ }).click();
+    await expect(answers).toHaveAccessibleName('Your answer: Maybe');
+    // The server hints the change back to its own author.
+    const read = page.waitForResponse((r) => r.url().endsWith('/api/public/week?week=next'));
+    await hint(page, 'mine');
+    await read;
+    await page.waitForTimeout(400); // "nothing starts" needs real time to pass
+    // The pane slid in when the run opened; no card glides.
+    expect((await animated(page)).filter((a) => a.target.startsWith('r-') && a.from.startsWith('translate'))).toEqual([]);
+    expect(await marks(page)).toEqual([]);
+  });
+
+  test('without a hint, a run an admin added is marked once; a changed number on Your week pulses', async ({ page }) => {
+    await page.route(`${PUBLIC}/api/public/events`, (route) => route.abort());
     await openPortal(page);
     await arrive(page, 'run');
     // Someone answers on Carling, the member's next run (Your week's "4/7 on").
@@ -207,6 +256,7 @@ test.describe('reduced motion', () => {
   });
 
   test('member portal: no FLIP on a timed read, and a new run only fades its colour', async ({ page }) => {
+    await page.route(`${PUBLIC}/api/public/events`, (route) => route.abort());
     await openPortal(page);
     await arrive(page, 'move');
     await arrive(page, 'run');
@@ -214,6 +264,22 @@ test.describe('reduced motion', () => {
     const card = page.locator('.member-board [data-run="r-arrived"]');
     await expect(card).toHaveAttribute('data-new', '');
     expect(await card.evaluate((el) => getComputedStyle(el).animationName)).toBe('arrive-tint');
+    expect((await animated(page)).filter((a) => a.from.startsWith('translate'))).toEqual([]);
+  });
+
+  test('member portal: a hinted read moves nothing, and a new run only fades its colour', async ({ page }) => {
+    await openPortal(page);
+    await memberStreaming(page);
+    await arrive(page, 'move');
+    await arrive(page, 'run');
+    const read = page.waitForResponse((r) => r.url().endsWith('/api/public/week?week=next'));
+    await hint(page, 'schedule');
+    await read;
+    const card = page.locator('.member-board [data-run="r-arrived"]');
+    await expect(card).toHaveAttribute('data-new', '');
+    // The colour fade follows the short settle.
+    await expect.poll(() => card.evaluate((el) => getComputedStyle(el).animationName)).toBe('arrive-tint');
+    await expect(page.locator('[data-run="r-limbo"]')).toContainText('21:00');
     expect((await animated(page)).filter((a) => a.from.startsWith('translate'))).toEqual([]);
   });
 });

@@ -21,6 +21,8 @@ export class MemberTimingsList {
   #client: Client;
   #gone: (error: unknown) => boolean;
   #loading: Promise<void> | null = null;
+  /** A hint landed while a read was out: read once more when it settles. */
+  #stale = false;
 
   constructor(client: Client, gone: (error: unknown) => boolean) {
     this.#client = client;
@@ -29,10 +31,24 @@ export class MemberTimingsList {
 
   /** Read now; a call while a read runs joins it. */
   load(): Promise<void> {
-    this.#loading ??= this.#read().finally(() => {
+    this.#loading ??= this.#reads().finally(() => {
       this.#loading = null;
     });
     return this.#loading;
+  }
+
+  /** A hint said the list changed: a read already out may predate it, so one more follows that read. */
+  hinted(): Promise<void> {
+    if (this.#loading) this.#stale = true;
+    return this.load();
+  }
+
+  async #reads(): Promise<void> {
+    do {
+      this.#stale = false;
+      await this.#read();
+      // Gone (cleared) meanwhile: nothing more to read.
+    } while (this.#stale && this.data);
   }
 
   async #read(): Promise<void> {
@@ -67,5 +83,6 @@ export class MemberTimingsList {
   clear(): void {
     this.data = null;
     this.error = '';
+    this.#stale = false;
   }
 }

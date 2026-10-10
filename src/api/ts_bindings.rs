@@ -265,7 +265,10 @@ fn bindings() -> String {
         // Live updates
         .add::<events::Topic>()
         .add::<events::EventHint>()
-        .add::<events::EventReady>();
+        .add::<events::EventReady>()
+        .add::<events::MemberTopic>()
+        .add::<events::MemberHint>()
+        .add::<events::MemberReady>();
     let used: Vec<&str> = MANUAL
         .into_iter()
         .filter(|name| mentions(&out.body, name))

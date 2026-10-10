@@ -117,6 +117,24 @@
         "generated_at": { "type": "string", "description": "The server's clock when this was read (ISO-8601 UTC)." }
       }
     },
+    "MemberEventReady": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "GET /api/public/events (`text/event-stream`, not JSON; signed in, `503 closed` while the portal is, one member read token when it opens, `429 too_many_streams` past 3 streams per member or the overall cap): the `ready` event that opens every stream, after a `retry: 3000` line. A new `boot` means the server restarted. Hints sent while a stream was down are not replayed, so the client re-reads after every `ready` but the first. Heartbeats are `: keep-alive` comments; the stream ends on sign-out, sign-out everywhere, idle or absolute expiry, lost eligibility, the portal closing and after 5 minutes (the browser reconnects). Holding it open never extends the session.",
+      "required": ["boot"],
+      "properties": {
+        "boot": { "type": "string", "description": "The server process's id." }
+      }
+    },
+    "MemberEventHint": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One `message` event of GET /api/public/events: a topic only, never data, a sequence number or any member's id. `schedule`: the history head moved (re-read the week). `mine`: a change touched the member's own runs, answers or weekly timings, their requests or ownership asks (decided on the server; sent to that member only). `allowance`: their chat allowance changed.",
+      "required": ["topic"],
+      "properties": {
+        "topic": { "enum": ["schedule", "mine", "allowance"] }
+      }
+    },
     "MemberOwnerRequest": {
       "type": "object",
       "additionalProperties": false,

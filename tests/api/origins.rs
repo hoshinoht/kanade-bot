@@ -258,6 +258,7 @@ async fn closed_public_portal_serves_status_identity_and_shell_only() {
 
     for path in [
         "/api/public/week",
+        "/api/public/events",
         "/api/public/requests/mine",
         "/api/public/timings",
         "/api/public/bosses",
