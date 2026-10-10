@@ -116,6 +116,23 @@ pub(crate) async fn member(
     Ok(current)
 }
 
+/// The event stream's session check, as the server's quiet one: closed and
+/// cookie as [`member`], but no rotation and no touch. The mock's stream
+/// holds each answer until a hint (or a quiet interval), so a rotated
+/// cookie would reach the browser only then, after the page had already
+/// sent the old one again.
+pub(crate) async fn member_quietly(app: &App, headers: &HeaderMap) -> Result<(), Box<Response>> {
+    let mut store = app.store.lock().await;
+    if !store.public_portal() {
+        return Err(Box::new(closed()));
+    }
+    let id = cookie(headers).ok_or_else(|| Box::new(unauthenticated()))?;
+    match store.public_sessions().token(&id) {
+        Some(_) => Ok(()),
+        None => Err(Box::new(unauthenticated())),
+    }
+}
+
 /// "Firefox · Android" from a User-Agent, as the server labels devices; None when unrecognised.
 fn device(headers: &HeaderMap) -> Option<String> {
     let ua = headers.get(header::USER_AGENT)?.to_str().ok()?;

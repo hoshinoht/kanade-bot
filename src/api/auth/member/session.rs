@@ -1,7 +1,9 @@
 //! [`require_session`]: the session-required public routes' middleware, in
 //! the contract's order (closed, load, expiry, D9 grace, client-tag
 //! rotation, eligibility re-check, CSRF, touch). It inserts the
-//! [`MemberSession`] handlers take as an argument.
+//! [`MemberSession`] handlers take as an argument. The member event stream
+//! sits behind [`MemberSession::require_quietly`] instead: holding it open
+//! (and its reconnects) is not activity.
 
 use std::sync::Arc;
 
@@ -111,11 +113,30 @@ pub async fn require_session(
     request: Request,
     next: Next,
 ) -> Response {
+    admit(&site, request, next, true).await
+}
+
+impl MemberSession {
+    /// As [`require_session`], but the request never counts as activity: no
+    /// touch (a due eligibility re-check is still recorded) and no client-tag
+    /// rotation, whose new cookie an `EventSource` could take but whose CSRF
+    /// token the page could never read; the next ordinary request rotates.
+    /// Closed, expiry and eligibility refuse it as usual.
+    pub async fn require_quietly(
+        State(site): State<Arc<Site>>,
+        request: Request,
+        next: Next,
+    ) -> Response {
+        admit(&site, request, next, false).await
+    }
+}
+
+async fn admit(site: &Site, request: Request, next: Next, activity: bool) -> Response {
     let Some(auth) = site.member.clone() else {
         return ApiError::AUTH_UNAVAILABLE.into_response();
     };
     let (mut parts, body) = request.into_parts();
-    let (admitted, cookie) = auth.authenticate(&parts).await;
+    let (admitted, cookie) = auth.authenticate(&parts, activity).await;
     let mut response = match admitted {
         Ok(session) => {
             parts.extensions.insert(session);
@@ -153,7 +174,11 @@ impl MemberAuth {
         )
     }
 
-    async fn authenticate(&self, parts: &Parts) -> (Result<MemberSession, ApiError>, Cookie) {
+    async fn authenticate(
+        &self,
+        parts: &Parts,
+        activity: bool,
+    ) -> (Result<MemberSession, ApiError>, Cookie) {
         // 2. Closed: the row is left to expire as usual.
         if !self.is_open() {
             return (Err(ApiError::CLOSED), Cookie::Keep);
@@ -209,13 +234,14 @@ impl MemberAuth {
                 (Err(ApiError::UNAUTHENTICATED), Cookie::Keep)
             };
         }
-        // 6. A new client address rotates the id, never the lifetimes.
+        // 6. A new client address rotates the id, never the lifetimes (not
+        // on a quiet request: see `MemberSession::require_quietly`).
         let Some(tag) = self.client_tag(context.client) else {
             return (Err(ApiError::AUTH_UNAVAILABLE), Cookie::Keep);
         };
         let mut current = (id.clone(), row.clone());
         let mut cookie = Cookie::Keep;
-        if row.client_tag.as_deref() != Some(tag.as_str()) {
+        if activity && row.client_tag.as_deref() != Some(tag.as_str()) {
             let Some(new_id) = crypto::random_token() else {
                 return (Err(ApiError::AUTH_UNAVAILABLE), Cookie::Keep);
             };
@@ -277,13 +303,19 @@ impl MemberAuth {
             );
             return (Err(ApiError::CSRF), cookie);
         }
-        // 9. Touch at most once a minute (or to record the re-check).
+        // 9. Touch at most once a minute (or to record the re-check); a quiet
+        // request records only the re-check and keeps `last_seen_at`.
         let (current_id, current_row) = current;
-        let stale = now - current_row.last_seen_at >= TOUCH_EVERY;
+        let seen = if activity {
+            now
+        } else {
+            current_row.last_seen_at
+        };
+        let stale = activity && now - current_row.last_seen_at >= TOUCH_EVERY;
         if stale || checked_at != current_row.checked_at {
             match self
                 .sessions()
-                .touch_session(&current_row.id_hash, now, checked_at)
+                .touch_session(&current_row.id_hash, seen, checked_at)
                 .await
             {
                 Ok(true) => {}

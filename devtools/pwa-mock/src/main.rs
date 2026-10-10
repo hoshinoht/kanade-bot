@@ -45,6 +45,8 @@ struct App {
     writes: Arc<writes::Writes>,
     /// Change hints for `GET /api/admin/events`.
     hints: Arc<events::Hints>,
+    /// Member hints for `GET /api/public/events` (`POST /__mock/public/hint`).
+    member_hints: Arc<events::Hints>,
 }
 
 /// SPA fallback for extensionless paths only, so a missing asset is a 404 rather than HTML.
@@ -140,6 +142,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         boss_dir: Arc::new(boss_dir.clone()),
         writes: Arc::default(),
         hints: Arc::default(),
+        member_hints: Arc::default(),
     };
     let (admin, public) = routers(app, &web);
 
@@ -293,6 +296,10 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         .route("/api/public/sessions/end-all", post(public::end_all))
         .route("/api/public/sessions/{handle}", delete(public::end_one))
         .route("/api/public/week", get(public::week))
+        .route(
+            "/api/public/events",
+            get(events::member_events).fallback(public::unmounted),
+        )
         .route("/api/public/me/allowance", get(public::allowance))
         // Other methods on these paths answer as unmounted ones, as on the server.
         .route(
@@ -363,6 +370,7 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         .route("/__mock/public/rotate", post(public::mock_rotate))
         .route("/__mock/public/unfresh", post(member_writes::mock_unfresh))
         .route("/__mock/public/remove", post(member_writes::mock_remove))
+        .route("/__mock/public/hint", post(events::member_hint))
         .route(
             "/__mock/public/end-week",
             post(member_writes::mock_end_week),

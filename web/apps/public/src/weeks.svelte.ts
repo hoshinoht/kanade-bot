@@ -1,11 +1,12 @@
 // This boss week and the next as the signed-in member sees them
-// (`GET /api/public/week`, `?week=next`), read together every 30 s.
+// (`GET /api/public/week`, `?week=next`), read together every 30 s, every
+// 60 s while the member's change-hint stream is open, and at once on a hint.
 // Offline, the last week that arrived stays on screen with its time
 // ("showing the week as of 11:42"); it lives in this object only, in memory
 // for this tab: nothing is written to storage, and sign-out drops it.
-// A timed read that changes a shown week is an arrival (as in the admin
-// store): the board glides and marks it, numbers pulse. The member's own
-// Refresh, a reconnect and a write's echo are not.
+// A timed or hinted read that changes a shown week is an arrival (as in the
+// admin store): the board glides and marks it, numbers pulse. The member's
+// own Refresh, a reconnect and a write's echo are not.
 import type { MemberRun, MemberWeek } from '@kanade/api-types';
 import { ApiRequestError, createPoller, wroteWithin, type Client, type Poller } from '@kanade/client';
 
@@ -13,6 +14,8 @@ export type WeekKey = 'this' | 'next';
 
 /** The member's Week reads every 30 s, as the portal always has (public-portal-plan § Live updates). */
 export const WEEK_POLL_MS = 30_000;
+/** While the change-hint stream is open, polling is only the safety net (the admin's `FALLBACK_POLL_MS`). */
+export const LIVE_WEEK_POLL_MS = 60_000;
 
 /** Changes read this soon after this page's own write are its echo, not an arrival (the admin's `OWN_ECHO_MS`). */
 const OWN_ECHO_MS = 3_000;
@@ -45,6 +48,8 @@ export class MemberWeeks {
   beforeArrival: ((added: string[]) => void) | null = null;
   /** The next read was asked for (`refresh()`): nothing it brings is an arrival. */
   #asked = false;
+  /** A hint landed while a read was out: the read that follows it. */
+  #rehint: Promise<void> | null = null;
   #poller: Poller;
 
   /**
@@ -120,6 +125,28 @@ export class MemberWeeks {
 
   start(): void {
     this.#poller.start();
+  }
+
+  /**
+   * A hint said the week may have changed: read now, and what it brings is
+   * an arrival. A read already out may have left before the change, so a
+   * hint during one reads once more when it settles (hints meanwhile share
+   * that read).
+   */
+  hinted(): Promise<void> {
+    if (this.#poller.state !== 'running') return this.#poller.refresh();
+    this.#rehint ??= this.#poller.refresh().then(() => {
+      this.#rehint = null;
+      // Signed out or closed meanwhile: nothing more to read.
+      if (this.#poller.state === 'idle') return;
+      return this.#poller.refresh();
+    });
+    return this.#rehint;
+  }
+
+  /** The stream opened (slow polls) or dropped (the normal cadence again). */
+  pace(live: boolean): void {
+    this.#poller.setInterval(live ? LIVE_WEEK_POLL_MS : WEEK_POLL_MS);
   }
 
   /** Read now, as the member asked (Refresh, Try again); a press while a read runs joins it. Restarts polling after repeated failures. */

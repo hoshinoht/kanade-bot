@@ -1,12 +1,16 @@
 //! `GET /api/admin/events` as the server sends it (`ready {seq}`, then
 //! `{topic, seq}` hints, no data), emitted when the mock's own state changes:
 //! after a successful admin write, or from `POST /__mock/arrive`, which stands
-//! in for a change made in Discord.
+//! in for a change made in Discord. The member portal's `GET /api/public/events`
+//! sends `ready {boot}` and `{topic}` hints (`schedule`, `mine`, `allowance`),
+//! emitted by `POST /__mock/public/hint`.
 //!
 //! The mock has no streaming body, so each response is short: the browser's
 //! `EventSource` reconnects (`retry`) with `Last-Event-ID`, and the next
 //! response holds until a later hint (or a quiet interval) arrives. Pages see
-//! the same events in the same order; only the connection churns.
+//! the same events in the same order; only the connection churns. The member
+//! stream's `id:` lines are that bookkeeping only (the server sends none);
+//! its `data` never holds a seq.
 
 use std::{collections::VecDeque, sync::Mutex, time::Duration};
 
@@ -92,41 +96,59 @@ fn boot() -> &'static str {
     })
 }
 
-fn ready(seq: u64) -> String {
-    format!(
-        "retry: {RETRY_MS}\nid: {seq}\nevent: ready\ndata: {}\n\n",
+/// The admin stream's `ready {seq, boot}`, or the member stream's `ready {boot}`.
+fn ready(seq: u64, member: bool) -> String {
+    let data = if member {
+        json!({ "boot": boot() })
+    } else {
         json!({ "seq": seq, "boot": boot() })
-    )
+    };
+    format!("retry: {RETRY_MS}\nid: {seq}\nevent: ready\ndata: {data}\n\n")
 }
 
 pub async fn events(State(app): State<App>, headers: HeaderMap) -> Response {
+    stream(answer(&app.hints, &headers, false).await)
+}
+
+/// `GET /api/public/events`: the member session's stream, behind the quiet
+/// session check (no rotation, no touch), as on the server.
+pub async fn member_events(State(app): State<App>, headers: HeaderMap) -> Response {
+    match crate::public::member_quietly(&app, &headers).await {
+        Ok(()) => stream(answer(&app.member_hints, &headers, true).await),
+        Err(refused) => *refused,
+    }
+}
+
+/// One short response: `ready` on a fresh connection, else the hints after
+/// `Last-Event-ID` (held until one arrives or [`HOLD`] passes).
+async fn answer(hints: &Hints, headers: &HeaderMap, member: bool) -> String {
     let last = headers
         .get("last-event-id")
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<u64>().ok());
-    let hints = &app.hints;
     let Some(last) = last else {
-        return stream(ready(*hints.seq.borrow()));
+        return ready(*hints.seq.borrow(), member);
     };
     let mut seq = hints.seq.subscribe();
     if *seq.borrow_and_update() <= last {
         let _ = tokio::time::timeout(HOLD, seq.changed()).await;
     }
-    let body = match hints.after(last) {
-        None => ready(*hints.seq.borrow()),
+    match hints.after(last) {
+        None => ready(*hints.seq.borrow(), member),
         Some(list) if list.is_empty() => format!("retry: {RETRY_MS}\n: keep-alive\n\n"),
         Some(list) => {
             let mut body = format!("retry: {RETRY_MS}\n");
             for (seq, topic) in list {
-                body.push_str(&format!(
-                    "id: {seq}\ndata: {}\n\n",
+                let data = if member {
+                    json!({ "topic": topic })
+                } else {
                     json!({ "topic": topic, "seq": seq })
-                ));
+                };
+                body.push_str(&format!("id: {seq}\ndata: {data}\n\n"));
             }
             body
         }
-    };
-    stream(body)
+    }
 }
 
 /// What a successful admin write changed, as the server's store hook names it.
@@ -168,6 +190,23 @@ pub async fn after_write(State(app): State<App>, request: Request, next: Next) -
 #[derive(Deserialize)]
 pub struct Arrival {
     kind: String,
+}
+
+#[derive(Deserialize)]
+pub struct MemberHint {
+    topic: String,
+}
+
+/// e2e: the member stream hints `topic` (`schedule`, `mine` or `allowance`).
+pub async fn member_hint(State(app): State<App>, Json(hint): Json<MemberHint>) -> StatusCode {
+    let Some(topic) = ["schedule", "mine", "allowance"]
+        .into_iter()
+        .find(|topic| *topic == hint.topic)
+    else {
+        return StatusCode::UNPROCESSABLE_ENTITY;
+    };
+    app.member_hints.emit(topic);
+    StatusCode::NO_CONTENT
 }
 
 /// e2e: a change made outside this portal (Discord, the extractor, chat).

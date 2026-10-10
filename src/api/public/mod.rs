@@ -3,15 +3,19 @@
 //! public Discord application is configured; then members sign in and see
 //! their own session and devices, the boss week, their weekly timings (and
 //! move their ownership), their chat allowance, boss guides and boss art;
-//! they answer and move their own runs and send and withdraw requests.
+//! they answer and move their own runs and send and withdraw requests; an
+//! open page hears member-scoped change hints (`events`).
 //! Closed, the origin serves the shell, status and identity, sign-in answers
 //! `closed` and data and art answer `503 closed`. Every session route sits
-//! behind [`member::require_session`]; nothing here reads an admin credential.
-//! Data reads take a per-member read bucket, art responses share a small
-//! concurrency cap, and refused run and request writes are audited.
+//! behind [`member::require_session`], the event stream behind its quiet form
+//! ([`MemberSession::require_quietly`]: holding it open is not activity);
+//! nothing here reads an admin credential. Data reads take a per-member read
+//! bucket (the event stream one token when it opens), art responses share a
+//! small concurrency cap, and refused run and request writes are audited.
 
 mod auth;
 mod bosses;
+mod events;
 mod ownership;
 mod read;
 mod requests;
@@ -129,6 +133,19 @@ pub fn routes(site: Arc<Site>) -> Router<Arc<Site>> {
                 .route_layer(from_fn_with_state(art_slots, assets::capped)),
         )
         .route_layer(from_fn_with_state(site.clone(), member::require_session))
+        .route_layer(from_fn_with_state(site.clone(), closed));
+    // The stream: the same bucket and `closed`, a session check that never
+    // touches the session (nor rotates its id).
+    let stream = Router::new()
+        .route(
+            "/api/public/events",
+            get(events::events).fallback(unmounted),
+        )
+        .route_layer(from_fn_with_state(site.clone(), read_bucket))
+        .route_layer(from_fn_with_state(
+            site.clone(),
+            MemberSession::require_quietly,
+        ))
         .route_layer(from_fn_with_state(site, closed));
     Router::new()
         .route("/api/public/status", get(status))
@@ -137,6 +154,7 @@ pub fn routes(site: Arc<Site>) -> Router<Arc<Site>> {
         .route("/api/public/auth/logout", post(auth::logout))
         .merge(signed_in)
         .merge(reads)
+        .merge(stream)
         .route("/api/public/{*rest}", any(unmounted))
 }
 

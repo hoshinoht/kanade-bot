@@ -53,10 +53,23 @@ pub(crate) struct Stream {
 
 impl Stream {
     pub(crate) async fn open(address: SocketAddr, cookie: &str) -> Self {
+        Self::connect(address, ADMIN_HOST, EVENTS_PATH, &[("Cookie", cookie)]).await
+    }
+
+    /// `GET path` on `host` with `headers`, read as an event stream.
+    pub(crate) async fn connect(
+        address: SocketAddr,
+        host: &str,
+        path: &str,
+        headers: &[(&str, &str)],
+    ) -> Self {
         let mut socket = TcpStream::connect(address).await.unwrap();
-        let request = format!(
-            "GET {EVENTS_PATH} HTTP/1.1\r\nHost: {ADMIN_HOST}\r\nAccept: text/event-stream\r\nCookie: {cookie}\r\nConnection: close\r\n\r\n"
-        );
+        let mut request =
+            format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nAccept: text/event-stream\r\n");
+        for (name, value) in headers {
+            request.push_str(&format!("{name}: {value}\r\n"));
+        }
+        request.push_str("Connection: close\r\n\r\n");
         socket.write_all(request.as_bytes()).await.unwrap();
         let mut stream = Self {
             socket,
@@ -233,7 +246,10 @@ async fn a_stream_opens_ready_uncached_and_heartbeats() {
     let mut stream = Stream::open(reads.admin, &reads.cookie).await;
     assert_eq!(stream.status, 200);
     assert_eq!(stream.header("content-type"), Some("text/event-stream"));
-    assert_eq!(stream.header("cache-control"), Some("no-store"));
+    assert_eq!(
+        stream.header("cache-control"),
+        Some("no-store, no-transform")
+    );
     assert_eq!(stream.header("x-accel-buffering"), Some("no"));
     assert_eq!(stream.ready().await, 0, "no hint yet");
     for _ in 0..2 {

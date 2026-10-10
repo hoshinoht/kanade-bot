@@ -1295,3 +1295,21 @@ export type EventHint = { topic: EventTopic, seq: number, };
  * restore), when versions may go down and the client takes what it reads.
  */
 export type EventReady = { seq: number, boot: string, };
+
+/**
+ * What changed for the signed-in member (`GET /api/public/events`).
+ */
+export type MemberEventTopic = "schedule" | "mine" | "allowance";
+
+/**
+ * The member stream's default (`message`) event: one hint, topic only. No
+ * `seq`: it would count every write, other members' and admins' included.
+ */
+export type MemberEventHint = { topic: MemberEventTopic, };
+
+/**
+ * The `ready` event that opens every member stream: the server process's
+ * `boot` id only. Hints sent while a stream was down are not replayed, so
+ * the client re-reads after every `ready` but the first.
+ */
+export type MemberEventReady = { boot: string, };

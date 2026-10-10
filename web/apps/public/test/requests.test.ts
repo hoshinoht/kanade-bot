@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import type { Boss, MemberRequest, MemberRun, MemberTiming, MemberWeek } from '@kanade/api-types';
+import { describe, expect, it, vi } from 'vitest';
+import type { Boss, MemberRequest, MemberRequests, MemberRun, MemberTiming, MemberWeek } from '@kanade/api-types';
+import type { Client } from '@kanade/client';
+import { MemberRequestsList } from '../src/requests/requests.svelte';
 import {
   bodyOf,
   cleanNote,
@@ -255,5 +257,32 @@ describe('request words', () => {
       'Waiting on the admins. The weekly timing stays Fri 22:00 until one decides, and Discord mentions you when they do. It expires Wed 14 Oct 23:59 if nobody decides.',
     );
     expect(waitingWords('leave', '', '')).toBe('Waiting on the admins. You stay in the party until one decides, and Discord mentions you when they do.');
+  });
+});
+
+describe('MemberRequestsList', () => {
+  it('a hint while a read is out reads once more after it; a plain load joins', async () => {
+    let release: () => void = () => {};
+    let held = true;
+    const gets: string[] = [];
+    const client = {
+      get: vi.fn(async (path: string) => {
+        gets.push(path);
+        if (held) await new Promise<void>((resolve) => (release = resolve));
+        return { requests: [] } as unknown as MemberRequests;
+      }),
+    } as unknown as Client;
+    const requests = new MemberRequestsList(client, () => false);
+    const first = requests.load();
+    void requests.load();
+    expect(gets).toHaveLength(1);
+    held = false;
+    const hinted = [requests.hinted(), requests.hinted()];
+    release();
+    await Promise.all([first, ...hinted]);
+    expect(gets).toEqual(['/api/public/requests/mine', '/api/public/requests/mine']);
+    // Nothing out: a hint is one read.
+    await requests.hinted();
+    expect(gets).toHaveLength(3);
   });
 });

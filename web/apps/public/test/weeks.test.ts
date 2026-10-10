@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MemberRun, MemberWeek, PublicSession } from '@kanade/api-types';
 import { ApiRequestError, type Client } from '@kanade/client';
 import { Portal } from '../src/portal.svelte';
-import { MemberWeeks, WEEK_POLL_MS } from '../src/weeks.svelte';
+import { LIVE_WEEK_POLL_MS, MemberWeeks, WEEK_POLL_MS } from '../src/weeks.svelte';
 
 const week = (version: number, starts = '2026-09-24'): MemberWeek => ({
   starts,
@@ -142,6 +142,59 @@ describe('MemberWeeks', () => {
     await weeks.refresh();
     expect(weeks.this).toBe(kept);
     expect(weeks.this?.generated_at).toBe(at);
+  });
+
+  it('a hinted read is an arrival, read at once', async () => {
+    vi.useFakeTimers();
+    let runs = ['r-1'];
+    const { client, paths } = fakeClient(() => ({ ...week(runs.length), runs: runs.map((id) => ({ id }) as MemberRun) }));
+    const weeks = weeksFor(client);
+    weeks.start();
+    await vi.advanceTimersByTimeAsync(0);
+    runs = ['r-1', 'r-2'];
+    await weeks.hinted();
+    expect(paths).toHaveLength(4);
+    expect(weeks.arrival).toBe(1);
+  });
+
+  it('a hint while a read is out reads once more after it, once for any number of hints', async () => {
+    let release: () => void = () => {};
+    let held = true;
+    const paths: string[] = [];
+    const client = {
+      get: vi.fn(async (path: string) => {
+        paths.push(path);
+        if (held && path.endsWith('next')) await new Promise<void>((resolve) => (release = resolve));
+        return week(1);
+      }),
+    } as unknown as Client;
+    const weeks = weeksFor(client);
+    const first = weeks.refresh();
+    await Promise.resolve();
+    held = false;
+    const hinted = [weeks.hinted(), weeks.hinted()];
+    expect(paths).toHaveLength(2);
+    release();
+    await first;
+    await Promise.all(hinted);
+    expect(paths).toHaveLength(4);
+  });
+
+  it('polls every 60 s while the stream is open and every 30 s again once it drops', async () => {
+    vi.useFakeTimers();
+    const { client, paths } = fakeClient(() => week(1));
+    const weeks = weeksFor(client);
+    weeks.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(paths).toHaveLength(2);
+    weeks.pace(true);
+    await vi.advanceTimersByTimeAsync(WEEK_POLL_MS + 1_000);
+    expect(paths).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(LIVE_WEEK_POLL_MS - WEEK_POLL_MS);
+    expect(paths).toHaveLength(4);
+    weeks.pace(false);
+    await vi.advanceTimersByTimeAsync(WEEK_POLL_MS);
+    expect(paths).toHaveLength(6);
   });
 });
 

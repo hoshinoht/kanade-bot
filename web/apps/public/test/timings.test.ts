@@ -137,4 +137,45 @@ describe('MemberTimingsList', () => {
     expect(timings.data?.timings).toHaveLength(1);
     expect(await timings.write({ kind: 'ask', timing: timing('f-kalos', 4, '22:00') })).toBeNull();
   });
+
+  it('a hint while a read is out reads once more after it; a plain load joins', async () => {
+    let release: () => void = () => {};
+    let held = true;
+    const gets: string[] = [];
+    const client = {
+      get: vi.fn(async (path: string) => {
+        gets.push(path);
+        if (held) await new Promise<void>((resolve) => (release = resolve));
+        return list([timing('f-kalos', 4, '22:00')]);
+      }),
+    } as unknown as Client;
+    const timings = new MemberTimingsList(client, gone);
+    const first = timings.load();
+    void timings.load();
+    expect(gets).toHaveLength(1);
+    held = false;
+    const hinted = [timings.hinted(), timings.hinted()];
+    release();
+    await Promise.all([first, ...hinted]);
+    expect(gets).toEqual(['/api/public/timings', '/api/public/timings']);
+  });
+
+  it('a list cleared while its read was out reads nothing more for a hint', async () => {
+    let release: () => void = () => {};
+    const gets: string[] = [];
+    const client = {
+      get: vi.fn(async (path: string) => {
+        gets.push(path);
+        await new Promise<void>((resolve) => (release = resolve));
+        throw new ApiRequestError('http', 'Signed out', 401, { error: 'unauthenticated', message: '' });
+      }),
+    } as unknown as Client;
+    const timings = new MemberTimingsList(client, gone);
+    const first = timings.load();
+    const hinted = timings.hinted();
+    release();
+    await Promise.all([first, hinted]);
+    expect(gets).toHaveLength(1);
+    expect(timings.data).toBeNull();
+  });
 });

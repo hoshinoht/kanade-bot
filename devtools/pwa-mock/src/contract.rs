@@ -78,6 +78,7 @@ impl Harness {
             boss_dir: Arc::new(boss_dir),
             writes: Arc::default(),
             hints: Arc::default(),
+            member_hints: Arc::default(),
         };
         let csrf = app.writes.token();
         let (admin, public) = routers(app, &root().join("web"));
@@ -1953,6 +1954,7 @@ async fn public_member_routes_match_the_contract() {
         "/api/public/session",
         "/api/public/sessions",
         "/api/public/week",
+        "/api/public/events",
         "/api/public/me/allowance",
         "/api/public/bosses",
         "/api/public/bosses/events",
@@ -2305,6 +2307,7 @@ async fn public_member_routes_match_the_contract() {
         "/api/public/session",
         "/api/public/sessions",
         "/api/public/week",
+        "/api/public/events",
         "/api/public/me/allowance",
         "/api/public/bosses",
         "/api/public/bosses/events",
@@ -2877,6 +2880,10 @@ impl Harness {
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
         assert_eq!(res.headers()[header::CONTENT_TYPE], "text/event-stream");
+        assert_eq!(
+            res.headers()[header::CACHE_CONTROL],
+            "no-store, no-transform"
+        );
         let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
         String::from_utf8(bytes.to_vec()).unwrap()
     }
@@ -3021,6 +3028,110 @@ async fn events_hint_own_writes_and_arrivals_and_the_reads_change() {
     )
     .await;
     assert!(h.failures.is_empty(), "{}", h.failures.join("\n"));
+}
+
+#[tokio::test]
+async fn the_member_stream_sends_topics_only_from_its_control() {
+    let mut h = Harness::new();
+    let (headers, _) = h
+        .public(
+            "POST",
+            "/__mock/public/sign-in",
+            &[],
+            StatusCode::NO_CONTENT,
+            "",
+        )
+        .await;
+    let cookie = session_cookie(&headers);
+    let router = h.public.clone();
+    let stream = |last: Option<&str>| {
+        let mut req = Request::get("/api/public/events").header(header::COOKIE, cookie.as_str());
+        if let Some(last) = last {
+            req = req.header("last-event-id", last);
+        }
+        let public = router.clone();
+        let req = req.body(Body::empty()).unwrap();
+        async move {
+            let res = public.oneshot(req).await.unwrap();
+            assert_eq!(res.status(), StatusCode::OK);
+            assert_eq!(res.headers()[header::CONTENT_TYPE], "text/event-stream");
+            assert_eq!(
+                res.headers()[header::CACHE_CONTROL],
+                "no-store, no-transform"
+            );
+            // The stream never rotates the session (nor touches it).
+            assert!(res.headers().get(header::SET_COOKIE).is_none());
+            let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+            String::from_utf8(bytes.to_vec()).unwrap()
+        }
+    };
+    let opening = stream(None).await;
+    assert!(
+        opening.contains("event: ready\ndata: {\"boot\":\"mock-") && !opening.contains("seq"),
+        "{opening}"
+    );
+    for topic in ["schedule", "mine", "allowance"] {
+        let (status, _) = h
+            .send(
+                true,
+                "POST",
+                "/__mock/public/hint",
+                Some(json!({ "topic": topic })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::NO_CONTENT, "{topic}");
+    }
+    let hints = stream(Some("0")).await;
+    let topics: Vec<Value> = hints
+        .lines()
+        .filter_map(|line| line.strip_prefix("data: "))
+        .map(|data| serde_json::from_str(data).unwrap())
+        .collect();
+    assert_eq!(
+        topics,
+        [
+            json!({ "topic": "schedule" }),
+            json!({ "topic": "mine" }),
+            json!({ "topic": "allowance" })
+        ]
+    );
+    let (status, _) = h
+        .send(
+            true,
+            "POST",
+            "/__mock/public/hint",
+            Some(json!({ "topic": "chat" })),
+        )
+        .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "member topics only"
+    );
+    // The admin stream heard none of it.
+    let admin = h.events(None).await;
+    assert!(admin.contains("\"seq\":0}"), "{admin}");
+
+    // A pending rotation waits for the next ordinary request, not the stream.
+    h.public(
+        "POST",
+        "/__mock/public/rotate",
+        &[],
+        StatusCode::NO_CONTENT,
+        "",
+    )
+    .await;
+    stream(None).await;
+    let (headers, _) = h
+        .public(
+            "GET",
+            "/api/public/sessions",
+            &[("cookie", &cookie)],
+            StatusCode::OK,
+            "public.json#/$defs/PublicSessions",
+        )
+        .await;
+    assert_ne!(session_cookie(&headers), cookie, "rotated here");
 }
 
 #[tokio::test]

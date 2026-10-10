@@ -1,5 +1,6 @@
-//! `GET /api/admin/events` frames: change hints without data. A page that
-//! cares re-reads its own endpoint; nothing here names a row or a value.
+//! `GET /api/admin/events` and `GET /api/public/events` frames: change hints
+//! without data. A page that cares re-reads its own endpoint; nothing here
+//! names a row, a value or (on the member stream) another member.
 
 use serde::Serialize;
 
@@ -63,5 +64,35 @@ pub struct EventHint {
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct EventReady {
     pub seq: u64,
+    pub boot: String,
+}
+
+/// What changed for the signed-in member (`GET /api/public/events`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "MemberEventTopic"))]
+#[serde(rename_all = "snake_case")]
+pub enum MemberTopic {
+    /// The history head moved: re-read the week.
+    Schedule,
+    /// The member's own runs, answers, requests or ownership asks changed.
+    Mine,
+    /// The member's chat allowance may have changed.
+    Allowance,
+}
+
+/// The member stream's default (`message`) event: one hint, topic only. No
+/// `seq`: it would count every write, other members' and admins' included.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "MemberEventHint"))]
+pub struct MemberHint {
+    pub topic: MemberTopic,
+}
+
+/// The `ready` event that opens every member stream: the server process's
+/// `boot` id only. Hints sent while a stream was down are not replayed, so
+/// the client re-reads after every `ready` but the first.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "MemberEventReady"))]
+pub struct MemberReady {
     pub boot: String,
 }

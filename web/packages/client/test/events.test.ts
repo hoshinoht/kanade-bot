@@ -133,6 +133,40 @@ describe('createLiveEvents', () => {
     expect([week.mock.calls.length, chat.mock.calls.length]).toEqual([2, 2]);
   });
 
+  it('a stream without seqs (the member portal) wakes by topic and re-reads after every reconnect', () => {
+    const sources: FakeSource[] = [];
+    const events = createLiveEvents<'schedule' | 'mine' | 'allowance'>({
+      visibility: page().source,
+      url: '/api/public/events',
+      source: () => {
+        const source = new FakeSource();
+        sources.push(source);
+        return source;
+      },
+      coalesceMs: 100,
+    });
+    const last = () => sources[sources.length - 1]!;
+    const week = vi.fn();
+    const allowance = vi.fn();
+    events.subscribe(['schedule', 'mine'], week);
+    events.subscribe(['allowance'], allowance);
+    last().open();
+    last().emit('ready', { boot: 'b1' });
+    vi.advanceTimersByTime(100);
+    expect([week.mock.calls.length, allowance.mock.calls.length]).toEqual([0, 0]);
+    last().emit('message', { topic: 'mine' });
+    vi.advanceTimersByTime(100);
+    expect([week.mock.calls.length, allowance.mock.calls.length]).toEqual([1, 0]);
+
+    // Hints sent while the stream was down are gone: everyone re-reads.
+    last().drop();
+    last().open();
+    last().emit('ready', { boot: 'b1' });
+    vi.advanceTimersByTime(100);
+    expect([week.mock.calls.length, allowance.mock.calls.length]).toEqual([2, 1]);
+    expect(events.epoch).toBe(1);
+  });
+
   it('is healthy while open, rides out a quick reconnect and reports a slow one', () => {
     const { events, last } = setup();
     const health: boolean[] = [];
