@@ -55,18 +55,22 @@
   });
   $effect(() => () => onback(null));
 
-  /** Wide frames: a catalog link opens the guide in place (a new entry), as admin's router does. */
-  function followLinks(node: HTMLElement) {
+  /**
+   * Wide frames: a catalog link opens the guide in place (a new entry), as
+   * admin's router does. Listened for on the document, not a wrapper: the
+   * window must stay the shell's direct child for `.shell > .card`.
+   */
+  $effect(() => {
     const onclick = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href^="/bosses"]') : null;
+      const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('.bosses-window a[href^="/bosses"]') : null;
       if (!link) return;
       event.preventDefault();
       route.go(link.pathname);
     };
-    node.addEventListener('click', onclick);
-    return () => node.removeEventListener('click', onclick);
-  }
+    document.addEventListener('click', onclick);
+    return () => document.removeEventListener('click', onclick);
+  });
 
   const partyWords = (knowledge: PublicKnowledge) => {
     const most = Math.max(0, ...(knowledge.doc.difficulties ?? []).map((fact) => fact.party_max ?? 0));
@@ -95,43 +99,41 @@
   };
 </script>
 
-<div class="member-bosses" {@attach followLinks}>
-  <BossesWindow
-    rows={bosses.rows}
-    rowsError={bosses.error}
-    onretry={() => void bosses.load()}
-    events={bosses.events}
-    knowledge={guide?.data ?? null}
-    knowledgeError={guide?.error ?? ''}
-    activeKey={selectedKey}
-    {selectedKey}
-    difficulty={route.params.get('difficulty') ?? ''}
-    onselect={select}
-    {href}
-    {chrome}
-    heroCap="Boss guide"
-    heroTitle={guide?.data ? metaParts(guide.data).join(' · ') : ''}
-    asideLabel="On this page"
-    fids={FIDS}
-  >
-    {#snippet pageLine()}
-      <div class="pageline" data-fid="page-line">
-        <div class="pageline__head">
-          <h1 class="pageline__title">Bosses</h1>
-          <p class="pageline__context">· guides for every boss, read-only</p>
-        </div>
+<BossesWindow
+  rows={bosses.rows}
+  rowsError={bosses.error}
+  onretry={() => void bosses.load()}
+  events={bosses.events}
+  knowledge={guide?.data ?? null}
+  knowledgeError={guide?.error ?? ''}
+  activeKey={selectedKey}
+  {selectedKey}
+  difficulty={route.params.get('difficulty') ?? ''}
+  onselect={select}
+  {href}
+  {chrome}
+  heroCap="Boss guide"
+  heroTitle={guide?.data ? metaParts(guide.data).join(' · ') : ''}
+  asideLabel="On this page"
+  fids={FIDS}
+>
+  {#snippet pageLine()}
+    <div class="pageline" data-fid="page-line">
+      <div class="pageline__head">
+        <h1 class="pageline__title">Bosses</h1>
+        <p class="pageline__context">· guides for every boss, read-only</p>
       </div>
-    {/snippet}
-    {#snippet heroMeta()}{#if guide?.data}{metaParts(guide.data).join(' · ')}{/if}{/snippet}
-    {#snippet heroBadge()}<StatusChip>read-only</StatusChip>{/snippet}
-    {#snippet compactBar()}<div class="card__head" data-fid="window-bar"><h2 class="card__title" id="bosses-title">Boss guide</h2><span class="member-bosses__ro"><StatusChip>read-only</StatusChip></span></div>{/snippet}
-    {#snippet pick()}
-      <div class="state-pane member-bosses__pick" data-fid="state-pane">
-        <StateNote icon="shield" title="Pick a boss to read its guide">
-          Phases, strategies and HP for each difficulty. Champion and Destiny are shown for reference; the guild doesn't schedule them.
-        </StateNote>
-        <p class="note">Party size is the most the game allows in one run.</p>
-      </div>
-    {/snippet}
-  </BossesWindow>
-</div>
+    </div>
+  {/snippet}
+  {#snippet heroMeta()}{#if guide?.data}{metaParts(guide.data).join(' · ')}{/if}{/snippet}
+  {#snippet heroBadge()}<StatusChip>read-only</StatusChip>{/snippet}
+  {#snippet compactBar()}<div class="card__head" data-fid="window-bar"><h2 class="card__title" id="bosses-title">Boss guide</h2><span class="member-bosses__ro"><StatusChip>read-only</StatusChip></span></div>{/snippet}
+  {#snippet pick()}
+    <div class="state-pane member-bosses__pick" data-fid="state-pane">
+      <StateNote icon="shield" title="Pick a boss to read its guide">
+        Phases, strategies and HP for each difficulty. Champion and Destiny are shown for reference; the guild doesn't schedule them.
+      </StateNote>
+      <p class="note">Party size is the most the game allows in one run.</p>
+    </div>
+  {/snippet}
+</BossesWindow>

@@ -123,6 +123,30 @@ test('a deep link opens the guide, its tab and difficulty; an unknown boss says 
   await expect(page.getByRole('alert')).toContainText('No knowledge for “Nobody”.');
 });
 
+test('the window sits in the shell as the admin one does: panes flush to the frame, the same difficulty buttons', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const look = async () => {
+    const pressed = page.getByRole('group', { name: 'Difficulty' }).getByRole('button', { pressed: true });
+    await expect(pressed).toBeVisible();
+    return {
+      window: await page.locator('.bosses-window').evaluate((el) => {
+        const style = getComputedStyle(el);
+        return { padding: style.padding, parent: el.parentElement?.classList.contains('shell') ?? false };
+      }),
+      button: await pressed.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return { family: style.fontFamily, size: style.fontSize, weight: style.fontWeight, padding: style.padding };
+      }),
+    };
+  };
+  await page.goto(`${ADMIN}/bosses/Carling/knowledge?sw=off`);
+  const admin = await look();
+  await open(page, '/bosses/Carling');
+  const member = await look();
+  expect(member).toEqual(admin);
+  expect(member.window).toEqual({ padding: '0px', parent: true });
+});
+
 test('the guide never carries the bot-only detail, and the admin page still does', async ({ page }) => {
   await signInPublic(page);
   const member = await (await page.request.get(`${PUBLIC}/api/public/bosses/Carling/knowledge`)).text();

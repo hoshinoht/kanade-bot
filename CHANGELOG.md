@@ -56,6 +56,7 @@ Headline: **security hardening, run ownership and the public portal beta.** The 
 
 **Fixed**
 
+- Public portal: the Bosses window sits flush in the page like the admin one (no inset around the list and guide, the admin title bar), and the guide's difficulty buttons use the admin's font and size instead of the browser's default. The connected-button base styles now ship to both apps.
 - Model logs: the Rewrites "max tokens" now shows the `max_tokens` the request actually carried, and "none" when the model route has no sampling controls (the request leaves `max_tokens` out) or nothing was sent; it used to show the configured reserve either way. Extractions keep the configured reserve as "reserve" and add the value actually sent (`context.sent_max_tokens`, shown in the copied transcript).
 - Discord (redesigned style): the weekly digest no longer shows an "Open portal" button while the public portal is closed (`self_service.public_portal` off), where it led to a dead link. The switch is read live: a posted digest gains or loses the button on its next refresh. "My runs" is unchanged.
 - Admin API: creating a weekly timing (Fixed page, `/fixed add`) writes the timing and its runs in one commit, so a failure leaves neither and History shows one change; a key recorded by the old two-step create still replays.

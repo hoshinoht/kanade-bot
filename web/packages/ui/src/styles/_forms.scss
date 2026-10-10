@@ -95,6 +95,34 @@ input[aria-invalid="true"] {
   color: var(--accent-ink);
 }
 
+// Segment buttons (Week view switch, answer group, guide difficulty): shared
+// by both apps, so the base lives here, not in the admin-only Week head.
+.seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  border: 0;
+  border-right: 2px solid var(--line);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.seg button:last-child {
+  border-right: 0;
+}
+
+// Selected: filled and bold, not colour alone.
+.seg button[aria-selected="true"] {
+  background: var(--accent-fill);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
 // v4 filter bar (live-filtering in v5, so no submit button).
 .filters {
   display: flex;

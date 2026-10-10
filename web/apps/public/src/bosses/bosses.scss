@@ -1,11 +1,6 @@
 // The member portal's placement of the shared Bosses window (`_boss-knowledge.scss`)
 // in the portal shell (boards Bosses, Guide*, PhoneBosses, PhoneGuide*).
 
-// The wrapper only catches link clicks: the page line and window stay the shell's children.
-.member-bosses {
-  display: contents;
-}
-
 // The window takes the shell's remaining height, so only its panes scroll (as `.gate-card.window-fill`).
 .bosses-window.window-fill {
   flex: 1 1 auto;
