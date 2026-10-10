@@ -76,8 +76,7 @@ pub fn routes(site: Arc<Site>) -> Router<Arc<Site>> {
             get(ownership::timings).fallback(unmounted),
         )
         .route_layer(from_fn_with_state(site.clone(), read_bucket));
-    // Refused run and request writes are audited here; the ownership writes
-    // can call `write::refused_write` or take this layer too.
+    // Refused member writes (runs, requests, ownership) are audited here.
     let writes = Router::new()
         .route(
             "/api/public/runs/{id}/answer",
@@ -95,14 +94,6 @@ pub fn routes(site: Arc<Site>) -> Router<Arc<Site>> {
             "/api/public/requests/{id}/withdraw",
             post(requests::withdraw).fallback(unmounted),
         )
-        .route_layer(from_fn_with_state(site.clone(), write::audit_refusals));
-    let art_slots = Arc::new(Semaphore::new(assets::ART_STREAMS));
-    // Data, art and the member's writes: `closed` before the session check,
-    // so a site without the member realm answers as the catch-alls do; other
-    // methods are unmounted.
-    let reads = Router::new()
-        .merge(data)
-        .merge(writes)
         .route(
             "/api/public/timings/{id}/owner",
             post(ownership::hand_off).fallback(unmounted),
@@ -123,6 +114,14 @@ pub fn routes(site: Arc<Site>) -> Router<Arc<Site>> {
             "/api/public/owner-requests/{id}/withdraw",
             post(ownership::withdraw).fallback(unmounted),
         )
+        .route_layer(from_fn_with_state(site.clone(), write::audit_refusals));
+    let art_slots = Arc::new(Semaphore::new(assets::ART_STREAMS));
+    // Data, art and the member's writes: `closed` before the session check,
+    // so a site without the member realm answers as the catch-alls do; other
+    // methods are unmounted.
+    let reads = Router::new()
+        .merge(data)
+        .merge(writes)
         .route(
             "/art/{*rest}",
             get(read::art)

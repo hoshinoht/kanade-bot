@@ -21,6 +21,7 @@ use crate::domain::{
     ids::RandomIds,
     members::Roster,
     notify::DeclineNoticeStore,
+    ownership::OwnerPin,
     proposals::Approver,
     requests::{NoFreezes, RequestSpec},
     schedule::{
@@ -239,6 +240,16 @@ pub trait Writer: Send + Sync {
         origin: Origin,
         expect: Expect,
         request: FixedEditRequest,
+        ctx: &'a WriteContext,
+    ) -> WriteFuture<'a, ()>;
+
+    /// Pin a weekly timing's new owner (`api::ownership`), refused inside
+    /// the commit unless `pin` holds on the committed timing.
+    fn pin_owner<'a>(
+        &'a self,
+        origin: Origin,
+        fixed_id: &'a str,
+        pin: OwnerPin<'a>,
         ctx: &'a WriteContext,
     ) -> WriteFuture<'a, ()>;
 
@@ -563,6 +574,23 @@ where
                 .apply_fixed_edit(&request, &ctx.directory, &ctx.policy)
                 .await
                 .map(|_| ())
+        })
+    }
+
+    fn pin_owner<'a>(
+        &'a self,
+        origin: Origin,
+        fixed_id: &'a str,
+        pin: OwnerPin<'a>,
+        ctx: &'a WriteContext,
+    ) -> WriteFuture<'a, ()> {
+        Box::pin(async move {
+            let mut service = self.service.lock().await;
+            service
+                .as_origin(origin)
+                .pin_fixed_owner(fixed_id, pin, &ctx.directory, &ctx.policy)
+                .await
+                .map(drop)
         })
     }
 

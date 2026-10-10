@@ -73,16 +73,16 @@ fn refusal(error: OwnershipError) -> Refusal {
     }
 }
 
-async fn timing(state: &ApiState, fixed_id: &str) -> Result<FixedRun, Refusal> {
-    state
+/// Whether `me` owns the timing `fixed_id` (a removed one is nobody's).
+async fn owns(state: &ApiState, fixed_id: &str, me: &str) -> Result<bool, Refusal> {
+    Ok(state
         .store
         .snapshot(Scope::Weeks(Vec::new()))
         .await
         .map_err(unavailable)?
         .fixed_runs
-        .into_iter()
-        .find(|fixed| fixed.id == fixed_id)
-        .ok_or_else(|| refusal(OwnershipError::UnknownTiming))
+        .iter()
+        .any(|fixed| fixed.id == fixed_id && fixed.owner() == me))
 }
 
 async fn timing_view(
@@ -234,9 +234,20 @@ pub(super) async fn ask(
     Ok((status, request_view(&site, state, &request, me).await?))
 }
 
+/// The refusal for a member who does not own `request`'s timing. Only the
+/// owner sees others' asks (the timings read), so to anyone but its
+/// requester the request is as unknown as a missing one.
+fn not_theirs(request: &OwnerRequest, me: &str) -> Refusal {
+    refusal(if request.requester == me {
+        OwnershipRefusal::NotOwner.into()
+    } else {
+        OwnershipError::UnknownRequest
+    })
+}
+
 /// Accept or decline: the timing's owner only. A closed or expired request
-/// answers its state to the owner alone; anyone else learns only that they
-/// may not decide it.
+/// answers its state to the owner alone; its requester learns only that they
+/// may not decide it, anyone else that there is no such request.
 async fn decide(
     site: &Site,
     audit: &AuditContext,
@@ -259,8 +270,8 @@ async fn decide(
         .await
         .map_err(unavailable)?
         .ok_or_else(|| refusal(OwnershipError::UnknownRequest))?;
-    if !request.live(now) && timing(state, &request.fixed_run_id).await?.owner() != me {
-        return Err(refusal(OwnershipRefusal::NotOwner.into()));
+    if !request.live(now) && !owns(state, &request.fixed_run_id, me).await? {
+        return Err(not_theirs(&request, me));
     }
     let (ctx, _) = write_context(state).await?;
     let desk = OwnerDesk {
@@ -271,7 +282,10 @@ async fn decide(
     let (decided, _) = desk
         .decide(origin(session, key), &id, me, false, accept, now)
         .await
-        .map_err(refusal)?;
+        .map_err(|error| match error {
+            OwnershipError::Refused(OwnershipRefusal::NotOwner) => not_theirs(&request, me),
+            error => refusal(error),
+        })?;
     request_view(site, state, &decided, me).await
 }
 
@@ -310,6 +324,16 @@ pub(super) async fn withdraw(
     let id = path_id(path)?;
     let state = state(&site)?;
     let me = session.user_id.as_str();
+    // Only its requester and the timing's owner see an ask.
+    let asked = state
+        .store
+        .owner_request(id.clone())
+        .await
+        .map_err(unavailable)?
+        .ok_or_else(|| refusal(OwnershipError::UnknownRequest))?;
+    if asked.requester != me && !owns(state, &asked.fixed_run_id, me).await? {
+        return Err(refusal(OwnershipError::UnknownRequest));
+    }
     let request = ownership::withdraw(&*state.store, &id, me, state.now())
         .await
         .map_err(refusal)?;

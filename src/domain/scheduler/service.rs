@@ -22,6 +22,7 @@ use crate::domain::history::{
 };
 use crate::domain::members::Directory;
 use crate::domain::notify::{DeclineNotice, DeclineNoticeStore};
+use crate::domain::ownership::OwnerPin;
 use crate::domain::schedule::{
     self, AmendedRun, Draft, FixedEdit, FixedEditRequest, FixedField, FixedRun, FixedRunPatch,
     MemberRunRefusal, NewFixedRun, NewRun, Notice, NoticeChange, Op, OpResult, Outcome,
@@ -956,6 +957,41 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
                 notices: outcome.notices,
             }),
             other => unreachable!("apply_fixed_edit returned {other:?}"),
+        }
+    }
+
+    /// Pin `pin`'s new owner on the weekly timing (every amended run
+    /// following), refused inside the commit unless `pin` holds on the
+    /// committed timing: a stale owner or party read never writes. The
+    /// request digest is [`Self::apply_fixed_edit`]'s.
+    pub async fn pin_fixed_owner(
+        self,
+        fixed_id: &str,
+        pin: OwnerPin<'_>,
+        directory: &(impl Directory + Sync),
+        policy: &SchedulePolicy,
+    ) -> SchedulerResult<FixedRun> {
+        let op = Op::ApplyFixedEdit {
+            request: FixedEditRequest {
+                fixed_id: fixed_id.to_owned(),
+                edit: FixedEdit {
+                    owner_id: Some(pin.owner().to_owned()),
+                    ..FixedEdit::default()
+                },
+                choices: schedule::FixedEditChoices::UpdateAll,
+            },
+            directory,
+            policy,
+        };
+        let guard = |draft: &Draft, _| {
+            let fixed = draft
+                .fixed_run(fixed_id)
+                .ok_or_else(|| ScheduleError::UnknownFixedRun(fixed_id.to_owned()))?;
+            pin.check(fixed).map_err(ScheduleError::Ownership)
+        };
+        match self.apply_guarded(Scope::All, op, guard).await?.value {
+            OpResult::Fixed(fixed) => Ok(fixed),
+            other => unreachable!("pin_fixed_owner returned {other:?}"),
         }
     }
 

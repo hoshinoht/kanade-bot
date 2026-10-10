@@ -46,6 +46,62 @@ fn on_party(fixed: &FixedRun, user: &str) -> bool {
     fixed.participants.iter().any(|id| id == user)
 }
 
+/// Only the owner, or staff on Discord, gives the timing away or decides.
+fn may_act(fixed: &FixedRun, actor: &str, staff: bool) -> Result<(), OwnershipRefusal> {
+    if staff || fixed.owner() == actor {
+        Ok(())
+    } else {
+        Err(OwnershipRefusal::NotOwner)
+    }
+}
+
+/// An owner change, re-checked by the writer on the timing it commits over
+/// so a stale owner or party read cannot write.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OwnerPin<'a> {
+    /// [`hand_off`]: `giver` gives the timing to `to`.
+    HandOff {
+        giver: &'a str,
+        staff: bool,
+        to: &'a str,
+    },
+    /// An accepted request: `decider` gives the timing to `requester`.
+    Accept {
+        decider: &'a str,
+        staff: bool,
+        requester: &'a str,
+    },
+}
+
+impl OwnerPin<'_> {
+    /// The member pinned as the new owner.
+    #[must_use]
+    pub fn owner(&self) -> &str {
+        match *self {
+            Self::HandOff { to, .. } => to,
+            Self::Accept { requester, .. } => requester,
+        }
+    }
+
+    /// Whether the change may land on `fixed` as it is now.
+    ///
+    /// # Errors
+    /// The [`OwnershipRefusal`] that applies.
+    pub fn check(&self, fixed: &FixedRun) -> Result<(), OwnershipRefusal> {
+        match *self {
+            Self::HandOff { giver, staff, to } => hand_off(fixed, giver, staff, to),
+            Self::Accept {
+                decider,
+                staff,
+                requester,
+            } => {
+                may_act(fixed, decider, staff)?;
+                may_request(fixed, requester)
+            }
+        }
+    }
+}
+
 /// The owner (or staff) hands the timing to `to`, another party member.
 ///
 /// # Errors
@@ -56,9 +112,7 @@ pub fn hand_off(
     staff: bool,
     to: &str,
 ) -> Result<(), OwnershipRefusal> {
-    if !staff && fixed.owner() != giver {
-        return Err(OwnershipRefusal::NotOwner);
-    }
+    may_act(fixed, giver, staff)?;
     if !on_party(fixed, to) {
         return Err(OwnershipRefusal::NotOnParty);
     }
@@ -102,9 +156,7 @@ pub fn may_decide(
             OwnershipRefusal::Closed
         });
     }
-    if !staff && fixed.owner() != decider {
-        return Err(OwnershipRefusal::NotOwner);
-    }
+    may_act(fixed, decider, staff)?;
     if accept {
         may_request(fixed, &request.requester)?;
     }
@@ -214,6 +266,43 @@ mod tests {
         assert_eq!(
             may_withdraw(&request, "a", soon),
             Err(OwnershipRefusal::NotRequester)
+        );
+    }
+
+    #[test]
+    fn a_pin_rechecks_the_owner_and_party_it_lands_on() {
+        let fixed = timing(&["a", "b", "c"]);
+        let hand = |giver, to| OwnerPin::HandOff {
+            giver,
+            staff: false,
+            to,
+        };
+        assert_eq!(hand("a", "b").check(&fixed), Ok(()));
+        assert_eq!(hand("a", "b").owner(), "b");
+        assert_eq!(
+            hand("b", "a").check(&fixed),
+            Err(OwnershipRefusal::NotOwner),
+            "naming the current owner is no way around it"
+        );
+        let accept = |decider, staff, requester| OwnerPin::Accept {
+            decider,
+            staff,
+            requester,
+        };
+        assert_eq!(accept("a", false, "c").check(&fixed), Ok(()));
+        assert_eq!(accept("a", false, "c").owner(), "c");
+        assert_eq!(
+            accept("b", false, "c").check(&fixed),
+            Err(OwnershipRefusal::NotOwner)
+        );
+        assert_eq!(accept("x", true, "c").check(&fixed), Ok(()));
+        assert_eq!(
+            accept("a", false, "a").check(&fixed),
+            Err(OwnershipRefusal::AlreadyOwner)
+        );
+        assert_eq!(
+            accept("a", false, "c").check(&timing(&["a", "b"])),
+            Err(OwnershipRefusal::NotOnParty)
         );
     }
 }

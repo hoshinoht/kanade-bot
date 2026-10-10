@@ -2484,11 +2484,13 @@ async fn public_member_ownership_matches_the_contract() {
             StatusCode::NOT_FOUND,
             "not_found",
         ),
+        // Someone else's ask on a timing the caller doesn't own: the same 404
+        // as an unknown id (no existence oracle).
         (
             "/api/public/owner-requests/own-kalos/accept",
             "acc-1",
-            StatusCode::FORBIDDEN,
-            "not_owner",
+            StatusCode::NOT_FOUND,
+            "not_found",
         ),
         (
             "/api/public/owner-requests/own-carling/withdraw",
