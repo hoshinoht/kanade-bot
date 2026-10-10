@@ -1,18 +1,315 @@
 boss: FA
-summary: 'The First Adversary is a parry fight: use Indomitable Will correctly to maintain Power of Order and protect your personal Adversary''s Will.'
+summary: 'The First Adversary is a parry fight: time Immortal Will on the right attacks to keep the party''s shared Power of Order high. That gauge sets everyone''s final damage and protects each player''s Will of the Adversary.'
+lead: Parry the right attacks to keep the shared Power of Order high; it sets the party's damage and protects your Will.
 core:
-- Each player starts with 1000 Adversary's Will; dying costs 200, and reaching 0 ends that player's run.
-- The party shares Power of Order from 0-1000. It falls from time and certain hits, and rises through correct parries.
-- Harvest/NPC casts Indomitable Will, a 0.5-second nullify/parry. Correct parries greatly shorten its cooldown and raise Power of Order.
-- At each Cycle of Power, having at least 400 Power of Order avoids the additional Adversary's Will penalty; higher stages also grant final damage.
+- title: Will of the Adversary
+  text: Your personal life pool; at 0 you are out.
+  detail: Each player has 1000 Will of the Adversary (also called Enemy's Will); a death costs 200 and reaching 0 removes you.
+- title: Power of Order
+  text: Shared gauge that sets the party's final damage by stage.
+  detail: 'Power of Order is shared, starts each phase at 500 and decays 5 per second, but decay alone never drops it below the current stage (MapleSEA v247; one Korean source limits this to Normal and below, unconfirmed for Hard/Extreme). Stages: under 200 = -40% final damage, 200-399 = -20%, 400-599 = 0, 600-799 = +10%, 800+ = +20%.'
+- title: Cycle of Power
+  text: Every 2:18. 600+ is kept; under 400 costs Will and resets to 500.
+  detail: 'Cycle of Power every 2:18 (5s warning). At stage 4 or higher (600+) the gauge is kept (MapleSEA v249). Below 400 everyone also loses Will (100 at 200-399, 200 under 200) and the gauge returns to 500; whether a stage 3 gauge resets to 500 or is kept is unconfirmed.'
+- title: Immortal Will
+  text: 0.5s parry on NPC/Gather. 6s cooldown, 4.5s back on a rewarded parry.
+  detail: Immortal Will (NPC/Gather key; also called Indomitable Will) is a 0.5s parry with a 6s cooldown. A rewarded parry cuts 4.5s off it and raises Power of Order, so a whiff costs the full 6s. It works while you are i-framed, but not during Origin or Ascent casts.
+- title: Party scaling
+  text: Duo/trio gain 50%/34%. Hit loss is 75%/50% on Easy to Hard, 100% on Extreme.
+  detail: 'Compared with solo, duo gauge gain is 50% and trio gain is 34% on every difficulty. Gauge loss in Easy/Normal/Hard/Extreme is 75%/75%/75%/100% for a duo and 50%/50%/50%/100% for a trio. Extreme reduces gains but not losses.'
+- title: Bind
+  text: Cancels his pattern; no critical bind. HP splits 30/30/40.
+  detail: 'Phase 1 (warrior/thief): parry the red strengthened hits; Shadow Partner copies swing before him. Phase 2 (mage/archer): each player gets Fire, Ice or Holy, re-rolled every Cycle, and only matching attacks are rewarding parries. Phase 3 mixes both, with strengthened hits glowing rainbow. HP splits 30/30/40; he can be bound (cancelling his pattern) but not critically bound.'
+phases:
+- name: Phase 1 · Warrior and thief
+  tag: parry red hits
+  items:
+  - title: Red hits
+    text: 'Parry the red strengthened hits.'
+  - title: Shadow Partner
+    text: 'Shadow Partner copies swing just before him.'
+  - title: Opener
+    text: 'Unbound on entry he opens with Sword Shower; its slam deals 1000% unless parried or jumped.'
+  - title: Intense Strike
+    text: 'He hides between two clones; the real body''s daggers glow red and deal 999%. Parry, i-frame, or crouch far.'
+  - title: Stage 5 tornadoes
+    text: 'At 800+ they stand at both edges: 25% HP/s, Slow and gauge drain. They vanish if the stage drops.'
+- name: Phase 2 · Mage and archer
+  tag: parry your element
+  items:
+  - title: Elements
+    text: 'Each player gets Fire, Ice or Holy, re-rolled every Cycle.'
+  - title: Own element
+    text: 'Parry only attacks of your own element.'
+  - title: Altar
+    text: 'Drains the gauge fast on Hard+; the marked player takes it to a corner early.'
+- name: Phase 3 · Both
+  tag: both rule sets
+  items:
+  - title: Both rule sets
+    text: 'Both rule sets; strengthened hits glow rainbow.'
+  - title: Flow and Arrow Rain
+    text: 'They overlap his other attacks; spend Genesis, i-frames or Ascent here. A bind cancels Elemental Flow.'
+  - title: Extreme
+    text: 'His last swings here deal 200%.'
+mechanics:
+- kind: scale
+  title: Power of Order stages
+  bands:
+  - {label: 0-199 · -40% FD, span: 20, tone: red}
+  - {label: 200-399 · -20% FD, span: 20, tone: yellow}
+  - {label: 400-599 · no change, span: 20, tone: neutral}
+  - {label: 600-799 · +10% FD, span: 20, tone: green}
+  - {label: 800+ · +20% FD, span: 20, tone: safe}
+  note: Starts each phase at 500 and decays 5/s, never below the current stage.
+- kind: ledger
+  title: Will of the Adversary
+  rows:
+  - {label: Start, value: '1000'}
+  - {label: Death, value: '-200', direction: down}
+  - {label: Cycle at 200-399, value: '-100', direction: down}
+  - {label: Cycle under 200, value: '-200', direction: down}
+  note: Reaching 0 removes you.
 danger:
-- In Phase 1, only the boss's enhanced/red-glowing attacks count as the rewarding parries.
-- In Phases 2-3, the rewarding parry must match the element assigned to that player.
-- Phase 3 combines the elemental system with earlier melee patterns, making missed parries much more punishing.
+- title: Every hit drains on Hard+
+  text: On Hard/Extreme all hits, map patterns too, drain Power of Order.
+  detail: On Easy/Normal only the hits you were meant to parry drain Power of Order; on Hard/Extreme every hit, map patterns included, drains it.
+- title: Intense Strike (Phase 1)
+  text: The real body (red daggers) deals 999%. Parry, i-frame, or crouch far.
+  detail: 'Intense Strike (Phase 1): he hides between two clones and hits the whole map; the real body, whose daggers briefly glow red, deals 999%. With no parry ready, i-frame, take a clone hit at full HP, or crouch in a far corner.'
+- title: Sword Shower slam
+  text: 1000% unless parried or jumped; his opener if unbound.
+  detail: Sword Shower (also called Greatsword Shower) ends with a slam dealing 1000% unless parried or cleared with a high enough jump; it is his opener when he is not bound on entry.
+- title: Altar (Phase 2)
+  text: Drains fast on Hard+. The marked player takes it to a corner early.
+  detail: Phase 2 Altar drops on a marked player and drains the gauge quickly on Hard/Extreme, so that player should take it to a corner early; moving it at the last moment makes others see it in the wrong place.
+- title: Flow and Arrow Rain (Phase 3)
+  text: Spend Genesis, i-frames or Ascent here. A bind cancels Flow.
+  detail: Phase 3 Elemental Flow and Arrow Rain overlap with his other attacks; they are good slots for Genesis or class i-frames and Ascent skills, and a bind cancels Elemental Flow.
+- title: Stage 5 tornadoes (Phase 1)
+  text: At 800+ on both edges. 25% HP/s and Slow; gone if the stage drops.
+  detail: 'At Stage 5 (800+) in Phase 1, tornadoes stand at both map edges: 25% HP per second plus Slow, and contact drains Power of Order by 10 on Hard or 20 on Extreme. They vanish if the stage drops.'
+- title: Extreme
+  text: Much heavier hits, and party gauge losses are no longer reduced.
+  detail: Extreme adds much heavier hits, including a 999% final Sniping arrow and 200% last swings in Phase 3, and party gauge losses are no longer reduced.
 tips:
-- Prioritize reliable correct parries over damage greed; Power of Order is a shared party resource.
-- Call elemental assignments clearly in Phases 2-3.
-- Indomitable Will can still nullify a hit while you are otherwise invincible.
+- title: Parry reliably
+  text: Enter every Cycle at 600+; once high, dodge instead of forcing parries.
+  detail: Reliable correct parries matter more than damage greed. Aim to enter every Cycle at 600+; once the gauge is high, dodge risky attacks instead of forcing parries.
+- title: Own colour only
+  text: In Phases 2-3, call attributes and parry only yours.
+- title: Stay with aggro
+  text: He can turn around just before strengthened swings.
+  detail: Stay on the same side as whoever holds aggro; he can turn around just before strengthened swings.
+- title: Burst on cooldown
+  text: Don't hold for the Cycle. Ideal is 16 bursts (5 / 4 / 7 by phase).
+  detail: Burst on cooldown rather than waiting for the Cycle, since waiting pushes every later burst back. The guide's ideal is 16 bursts (5 in Phase 1, 4 in Phase 2, 7 in Phase 3).
+- title: Summon Evolve tell
+  text: 'Both wings folded: centre. Both spread: sides. One folded: that side.'
+- title: Skip Sniping safely
+  text: On lock-on, stand on his centre and i-frame the final arrow.
+  detail: To skip Sniping safely, move onto his centre once the crossbow locks on and hold a blink or i-frame until the final arrow passes; no gauge gain, no risk.
+- title: Pre-Cycle window
+  text: No casts ~5s before a Cycle, no big patterns 10-15s before.
+  detail: He casts nothing for about 5s before each Cycle, and big patterns stop 10-15s before it, so that is a safe damage window.
+notes:
+- title: 600+ survives the Cycle
+  text: MapleSEA v249 (Mar 2026), from KMS 1.2.407.
+  detail: MapleSEA v249 (Mar 2026) applied the KMS 1.2.407 change, so a gauge at stage 4 or higher keeps its value through the Cycle of Power.
+- title: Limits
+  text: 30 min · 10s potions · 1-3 players · one clear a week.
+  detail: 30-minute limit, 10-second potion cooldown, 1-3 players. One clear per week shared across all difficulties; it counts on the Phase 3 kill.
+- title: Destiny Resolve per clear
+  text: Normal 15 · Hard 120 · Extreme 500, split among entrants.
+  detail: 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Normal 15, Hard 120, Extreme 500.'
+- title: Odium symbol Lv 11
+  text: +20% damage against this boss (MapleSEA v251).
+- title: Weekly kill cap
+  text: 12 boss kills a week (MapleSEA v249).
+difficulties:
+- name: Easy
+  entry_level: 270
+  boss_level: 270
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 220}
+  hp:
+  - {phase: '1', value: 171t}
+  - {phase: '2', value: 171t}
+  - {phase: '3', value: 228t}
+  recommended_spec:
+    kind: HEXA-converted stat
+    text: 'Trio 25k, duo 30k, solo 40k.'
+    parties:
+    - {party: Trio, value: 25k}
+    - {party: Duo, value: 30k}
+    - {party: Solo, value: 40k}
+  notes:
+  - title: After OVERDRIVE
+    text: HP ≈ 114t/114t/152t (-33.2%), 20 min. SEA due Oct-Nov 2026.
+    detail: 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 114t/114t/152t (33.2% less), 20-minute limit.'
+- name: Normal
+  entry_level: 270
+  boss_level: 280
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 320}
+  hp:
+  - {phase: '1', value: 495t}
+  - {phase: '2', value: 495t}
+  - {phase: '3', value: 660t}
+  recommended_spec:
+    kind: HEXA-converted stat
+    text: 'Trio 40k, duo 45k, solo 60k.'
+    parties:
+    - {party: Trio, value: 40k}
+    - {party: Duo, value: 45k}
+    - {party: Solo, value: 60k}
+  notes:
+  - title: After OVERDRIVE
+    text: HP ≈ 331t/331t/441t (-33.2%), 20 min. SEA due Oct-Nov 2026.
+    detail: 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 331t/331t/441t (33.2% less), 20-minute limit.'
+- name: Hard
+  entry_level: 270
+  boss_level: 285
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 340}
+  hp:
+  - {phase: '1', value: 3.135q}
+  - {phase: '2', value: 3.135q}
+  - {phase: '3', value: 4.18q}
+  recommended_spec:
+    kind: HEXA-converted stat
+    text: 'Trio 85k, duo 100k, solo 118k.'
+    parties:
+    - {party: Trio, value: 85k}
+    - {party: Duo, value: 100k}
+    - {party: Solo, value: 118k}
+  notes:
+  - title: After OVERDRIVE
+    text: HP ≈ 2.09q/2.09q/2.79q (-33.2%), 20 min. SEA due Oct-Nov 2026.
+    detail: 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 2.09q/2.09q/2.79q (33.2% less), 20-minute limit.'
+- name: Extreme
+  entry_level: 270
+  boss_level: 290
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 460}
+  hp:
+  - {phase: '1', value: 9.655q}
+  - {phase: '2', value: 9.655q}
+  - {phase: '3', value: 12.87q}
+  recommended_spec: {kind: HEXA-converted stat, text: 'Strongly composition-dependent; roughly 112-113k with a Lynn for a minimum clear.', value: ≈ 112k}
+  notes:
+  - title: After OVERDRIVE
+    text: HP ≈ 6.45q/6.45q/8.60q (-33.2%), 20 min. SEA due Oct-Nov 2026.
+    detail: 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 6.45q/6.45q/8.60q (33.2% less), 20-minute limit.'
+- name: Destiny
+  entry_level: 275
+  boss_level: 285
+  pdr_percent: 380
+  party_max: 1
+  force: {kind: sacred, value: 340}
+  mission:
+    series: destiny-weapon
+    order: 4
+    title: Battle, The First Adversary
+    modifier: {text: '-20% Final Damage, +50% Power of Order lost', direction: down}
+    needs: 10,000 Adversary's Resolve
+    rules: [Practice Mode clears count, No Cross World]
+  notes:
+  - title: Hard, solo
+    text: Hard rules in Destiny Mode. OVERDRIVE's phase practice won't count.
+    detail: 'Destiny Weapon 2nd Growth mission "Battle, The First Adversary" (MapleSEA v252): Hard solo in Destiny Mode with Final Damage -20% and 50% more Power of Order lost when hit. Fourth mission, after Carling; needs 10,000 Adversary''s Resolve. Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
+strategies:
+- name: Parry to Stage 4
+  when: Parties that parry reliably; most useful at minimum spec on Hard/Extreme
+  risk: medium
+  damage: low
+  payoff: The first burst lands at stage 4 or higher, and that stage now survives the Cycle
+  steps:
+  - Do not bind on entry, so his first cast is Sword Shower.
+  - Up-jump or i-frame the first slam, then everyone parries the second slam. In a trio one parry alone will not reach stage 4.
+  - Burst as soon as the gauge reaches Stage 4 (600+, +10% final damage); do not hold the burst to chase Stage 5.
+- name: Bind on entry
+  when: Damage is comfortable, or someone cannot yet parry the opener reliably (inferred from the guide's wording, not stated as a recommendation)
+  risk: low
+  damage: high
+  payoff: Immediate damage with no opener risk, but the first burst runs at stage 3 with no bonus
+  steps:
+  - Bind as you enter; the bind cancels his current pattern.
+  - Burst during the bind and build the gauge with later red parries.
+- name: Parry the last Sniping arrow
+  when: Players confident in the timing; skip on Extreme unless practised, since the final arrow deals 999%
+  risk: high
+  damage: low
+  payoff: Large gauge gain (solo +250 on Easy, +200 otherwise; duos and trios get the party share)
+  steps:
+  - During the six regular shots, steer the crossbow so it fires away from you.
+  - Parry the final arrow of your own attribute; practise the timing before relying on it.
+- name: Start at Stage 5
+  when: Parties where everyone parries reliably. Described for Easy (about 3 parries) and Normal (about 4); untested on Hard/Extreme, where other guides burst right after the opener parry
+  risk: high
+  damage: low
+  payoff: The first burst runs at +20% final damage instead of +10%, but a missed parry or a death delays it long enough to lose more than the bonus
+  steps:
+  - Do not bind or burst on entry; deal sustained damage and have everyone parry the opening strengthened attacks.
+  - Burst the moment the shared gauge crosses 800 (Stage 5); nothing above 800 adds damage, so do not build toward 1000.
+  - Stay off the map edges once the Stage 5 tornadoes appear.
 sources:
-- https://mapletools.app/bosses/first-adversary/guide
-- https://maplestorywiki.net/w/First_Adversary
+- url: https://docs.google.com/document/d/1kVb7FMPvHtntji69dnfAsU025yT_hqdDM1aWVRodxXU/edit
+  title: MapleStory Complete First Adversary Guide
+  author: iSIingGunz
+  kind: guide
+  fetched: '2026-09-24'
+- url: https://www.maplesea.com/updates/view/v247_Patch/
+  title: MapleSEA v247 - Ascent Skills & The First Adversary
+  author: Nexon (MapleSEA)
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v249_Patch_IBF/
+  title: MapleSEA v249 - Patch notes (Cycle of Power change)
+  author: Nexon (MapleSEA)
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v251_Content/
+  title: MapleSEA v251 - Content update (Symbol Growth Level 11)
+  author: Nexon (MapleSEA)
+  kind: official
+  fetched: '2026-10-02'
+- url: https://orangemushroom.net/2025/09/24/kms-ver-1-2-407-epic-dungeon-nightmare-paradise/
+  title: KMS ver. 1.2.407 (First Adversary gauge change)
+  author: Orange Mushroom
+  kind: official
+  fetched: '2026-10-02'
+- url: https://orangemushroom.net/2026/07/04/kms-ver-1-2-416-maplestory-overdrive-ruler-of-covenants-lethe/
+  title: KMS ver. 1.2.416 - MapleStory OVERDRIVE
+  author: Orange Mushroom
+  kind: official
+  fetched: '2026-10-02'
+- url: https://mapletools.app/bosses/first-adversary/guide
+  title: MapleTools - First Adversary guide
+  author: MapleTools
+  kind: tool
+  fetched: '2026-09-05'
+- url: https://maplestorywiki.net/w/First_Adversary
+  title: MapleStory Wiki - First Adversary
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v252_Content/
+  title: MapleSEA v252 content (Destiny Weapon 2nd Growth)
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-05'
+- url: https://mitemprice.kr/bossblog/firstadversary.php
+  title: mitemprice - First Adversary guide
+  author: mitemprice.kr
+  kind: guide
+  fetched: '2026-10-05'
+- url: https://maplestorywiki.net/w/Destiny_Weapon
+  title: MapleStory Wiki - Destiny Weapon
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-10-05'

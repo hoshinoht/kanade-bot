@@ -1,0 +1,3434 @@
+{
+  "cases": [
+    {
+      "case_id": "worked-example-question-rsvp-and-add",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "dropped": [],
+              "planned": [
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "HMaleficStar",
+                      "HFA"
+                    ],
+                    "confidence": 0.8,
+                    "day_ref": "wed",
+                    "evidence_message_ids": [
+                      "1"
+                    ],
+                    "is_question": true,
+                    "kind": "move",
+                    "participants": [
+                      "11"
+                    ],
+                    "rsvp": null,
+                    "target_run_hint": "#a1a1",
+                    "time_ref": null
+                  },
+                  "kind": "move",
+                  "match_code": "",
+                  "match_reason": "model pointed at #a1a1a1a1",
+                  "needs_answer": true,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": "2026-09-02T21:30:00+08:00",
+                    "clock": "21:30:00",
+                    "day": "2026-09-02",
+                    "known": true
+                  },
+                  "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                  "summary": "HMaleficStar+HFA proposed for Wed; NMaleficStar tomorrow 930"
+                },
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [],
+                    "confidence": 0.9,
+                    "day_ref": "wed",
+                    "evidence_message_ids": [
+                      "2"
+                    ],
+                    "is_question": false,
+                    "kind": "rsvp",
+                    "participants": [
+                      "22"
+                    ],
+                    "rsvp": "yes",
+                    "target_run_hint": "#a1a1",
+                    "time_ref": null
+                  },
+                  "kind": "rsvp",
+                  "match_code": "",
+                  "match_reason": "model pointed at #a1a1a1a1",
+                  "needs_answer": true,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": null,
+                    "clock": null,
+                    "day": "2026-09-02",
+                    "known": true
+                  },
+                  "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                  "summary": "HMaleficStar+HFA proposed for Wed; NMaleficStar tomorrow 930"
+                },
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "NMaleficStar"
+                    ],
+                    "confidence": 0.8,
+                    "day_ref": "tmr",
+                    "evidence_message_ids": [
+                      "3"
+                    ],
+                    "is_question": true,
+                    "kind": "add",
+                    "participants": [
+                      "11"
+                    ],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "930"
+                  },
+                  "kind": "add",
+                  "match_code": "no-boss-overlap",
+                  "match_reason": "no run here has those bosses",
+                  "needs_answer": true,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": true,
+                    "at": "2026-08-31T21:30:00+08:00",
+                    "clock": "21:30:00",
+                    "day": "2026-08-31",
+                    "known": true
+                  },
+                  "run_id": null,
+                  "summary": "HMaleficStar+HFA proposed for Wed; NMaleficStar tomorrow 930"
+                }
+              ],
+              "summary": "HMaleficStar+HFA proposed for Wed; NMaleficStar tomorrow 930"
+            }
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "runs": [
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-08-31T21:30:00+08:00",
+            "id": "a1a1a1a1-0000-4000-8000-000000000001",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HCarling",
+              "XKalos"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-01T22:00:00+08:00",
+            "id": "b2b2b2b2-0000-4000-8000-000000000002",
+            "participants": [
+              "11",
+              "22",
+              "44"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-07T21:30:00+08:00",
+            "id": "d4d4d4d4-0000-4000-8000-000000000004",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-09-03T00:00:00+08:00"
+          }
+        ],
+        "steps": [
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "author_ids": {
+              "1": "11",
+              "2": "22",
+              "3": "11"
+            },
+            "burst_messages": [
+              {
+                "author_id": "11",
+                "content": "mon cannot leh, can change to wed?",
+                "id": "1"
+              },
+              {
+                "author_id": "22",
+                "content": "okay for wed",
+                "id": "2"
+              },
+              {
+                "author_id": "11",
+                "content": "and we add our nstar tmr 930?",
+                "id": "3"
+              }
+            ],
+            "burst_order": [
+              "1",
+              "2",
+              "3"
+            ],
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002"
+            ],
+            "guild_runs": [],
+            "min_confidence": 0.0,
+            "now": "2026-08-30T13:07:00+08:00",
+            "op": "plan_burst",
+            "raw": "{\"amendments\": [{\"kind\": \"move\", \"bosses\": [\"HMaleficStar\", \"HFA\"], \"day_ref\": \"wed\", \"time_ref\": null, \"participants\": [\"11\"], \"rsvp\": null, \"is_question\": true, \"confidence\": 0.8, \"evidence_message_ids\": [\"1\"], \"target_run_hint\": \"#a1a1\"}, {\"kind\": \"rsvp\", \"bosses\": [], \"day_ref\": \"wed\", \"time_ref\": null, \"participants\": [\"22\"], \"rsvp\": \"yes\", \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"2\"], \"target_run_hint\": \"#a1a1\"}, {\"kind\": \"add\", \"bosses\": [\"NMaleficStar\"], \"day_ref\": \"tmr\", \"time_ref\": \"930\", \"participants\": [\"11\"], \"rsvp\": null, \"is_question\": true, \"confidence\": 0.8, \"evidence_message_ids\": [\"3\"], \"target_run_hint\": null}], \"summary\": \"HMaleficStar+HFA proposed for Wed; NMaleficStar tomorrow 930\"}",
+            "use_boss_table": true
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "normalised-bosses-and-injected-rsvps",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "dropped": [],
+              "planned": [
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "HMaleficStar",
+                      "HFA",
+                      "hkalos"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": "wed",
+                    "evidence_message_ids": [
+                      "1"
+                    ],
+                    "is_question": false,
+                    "kind": "move",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "10pm"
+                  },
+                  "kind": "move",
+                  "match_code": "",
+                  "match_reason": "bosses 2, participants 1",
+                  "needs_answer": false,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": "2026-09-02T22:00:00+08:00",
+                    "clock": "22:00:00",
+                    "day": "2026-09-02",
+                    "known": true
+                  },
+                  "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                  "summary": "a burst"
+                },
+                {
+                  "also_mentioned": [],
+                  "ambiguous": true,
+                  "amendment": {
+                    "bosses": [],
+                    "confidence": 0.9,
+                    "day_ref": null,
+                    "evidence_message_ids": [
+                      "2"
+                    ],
+                    "is_question": false,
+                    "kind": "rsvp",
+                    "participants": [
+                      "22"
+                    ],
+                    "rsvp": "yes",
+                    "target_run_hint": null,
+                    "time_ref": null
+                  },
+                  "kind": "rsvp",
+                  "match_code": "",
+                  "match_reason": "2 runs match equally well",
+                  "needs_answer": true,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": null,
+                    "clock": null,
+                    "day": null,
+                    "known": false
+                  },
+                  "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                  "summary": "a burst"
+                },
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [],
+                    "confidence": 0.9,
+                    "day_ref": null,
+                    "evidence_message_ids": [
+                      "3"
+                    ],
+                    "is_question": false,
+                    "kind": "rsvp",
+                    "participants": [
+                      "33"
+                    ],
+                    "rsvp": "yes",
+                    "target_run_hint": null,
+                    "time_ref": null
+                  },
+                  "kind": "rsvp",
+                  "match_code": "",
+                  "match_reason": "bosses 0, participants 1",
+                  "needs_answer": true,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": null,
+                    "clock": null,
+                    "day": null,
+                    "known": false
+                  },
+                  "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                  "summary": "a burst"
+                },
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [],
+                    "confidence": 0.9,
+                    "day_ref": "tue",
+                    "evidence_message_ids": [
+                      "4"
+                    ],
+                    "is_question": false,
+                    "kind": "rsvp",
+                    "participants": [
+                      "44"
+                    ],
+                    "rsvp": "no",
+                    "target_run_hint": null,
+                    "time_ref": null
+                  },
+                  "kind": "rsvp",
+                  "match_code": "",
+                  "match_reason": "bosses 0, participants 1",
+                  "needs_answer": true,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": null,
+                    "clock": null,
+                    "day": "2026-09-01",
+                    "known": true
+                  },
+                  "run_id": "b2b2b2b2-0000-4000-8000-000000000002",
+                  "summary": "a burst"
+                }
+              ],
+              "summary": "a burst"
+            }
+          },
+          {
+            "value": {
+              "dropped": [],
+              "planned": [
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "hstar"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": "wed",
+                    "evidence_message_ids": [
+                      "1"
+                    ],
+                    "is_question": false,
+                    "kind": "add",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "10pm"
+                  },
+                  "kind": "add",
+                  "match_code": "no-boss-overlap",
+                  "match_reason": "no run here has those bosses",
+                  "needs_answer": false,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": "2026-09-02T22:00:00+08:00",
+                    "clock": "22:00:00",
+                    "day": "2026-09-02",
+                    "known": true
+                  },
+                  "run_id": null,
+                  "summary": "a burst"
+                }
+              ],
+              "summary": "a burst"
+            }
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "runs": [
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-08-31T21:30:00+08:00",
+            "id": "a1a1a1a1-0000-4000-8000-000000000001",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HCarling",
+              "XKalos"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-01T22:00:00+08:00",
+            "id": "b2b2b2b2-0000-4000-8000-000000000002",
+            "participants": [
+              "11",
+              "22",
+              "44"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-07T21:30:00+08:00",
+            "id": "d4d4d4d4-0000-4000-8000-000000000004",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-09-03T00:00:00+08:00"
+          }
+        ],
+        "steps": [
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "author_ids": {
+              "1": "11",
+              "2": "22",
+              "3": "33",
+              "4": "44",
+              "5": "22"
+            },
+            "burst_messages": [
+              {
+                "author_id": "11",
+                "content": "hstar wed 10pm",
+                "id": "1"
+              },
+              {
+                "author_id": "22",
+                "content": "Can",
+                "id": "2"
+              },
+              {
+                "author_id": "33",
+                "content": "ok",
+                "id": "3"
+              },
+              {
+                "author_id": "44",
+                "content": "tue kenot sry",
+                "id": "4"
+              },
+              {
+                "author_id": "22",
+                "content": "can?",
+                "id": "5"
+              }
+            ],
+            "burst_order": [
+              "1",
+              "2",
+              "3",
+              "4",
+              "5"
+            ],
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002"
+            ],
+            "guild_runs": [],
+            "min_confidence": 0.0,
+            "now": "2026-08-30T13:07:00+08:00",
+            "op": "plan_burst",
+            "raw": "{\"amendments\": [{\"kind\": \"move\", \"bosses\": [\"hstar\", \"HFA\", \"HMaleficStar\", \"hkalos\"], \"day_ref\": \"wed\", \"time_ref\": \"10pm\", \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"1\"], \"target_run_hint\": null}, {\"kind\": \"rsvp\", \"bosses\": [], \"day_ref\": null, \"time_ref\": null, \"participants\": [\"33\"], \"rsvp\": \"yes\", \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"3\"], \"target_run_hint\": null}], \"summary\": \"a burst\"}",
+            "use_boss_table": true
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "author_ids": {
+              "1": "11"
+            },
+            "burst_messages": [
+              {
+                "author_id": "11",
+                "content": "hstar wed 10pm",
+                "id": "1"
+              }
+            ],
+            "burst_order": [
+              "1"
+            ],
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002"
+            ],
+            "guild_runs": [],
+            "min_confidence": 0.0,
+            "now": "2026-08-30T13:07:00+08:00",
+            "op": "plan_burst",
+            "raw": "{\"amendments\": [{\"kind\": \"move\", \"bosses\": [\"hstar\"], \"day_ref\": \"wed\", \"time_ref\": \"10pm\", \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"1\"], \"target_run_hint\": null}], \"summary\": \"a burst\"}",
+            "use_boss_table": false
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "drop-reasons",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "dropped": [
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "HCarling"
+                    ],
+                    "confidence": 0.4,
+                    "day_ref": "wed",
+                    "evidence_message_ids": [
+                      "1"
+                    ],
+                    "is_question": false,
+                    "kind": "move",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "9pm"
+                  },
+                  "kind": "move",
+                  "match_code": "",
+                  "match_reason": "bosses 1, participants 1",
+                  "needs_answer": false,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": "2026-09-02T21:00:00+08:00",
+                    "clock": "21:00:00",
+                    "day": "2026-09-02",
+                    "known": true
+                  },
+                  "run_id": "b2b2b2b2-0000-4000-8000-000000000002",
+                  "summary": "a burst"
+                },
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "NBaldrix"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": null,
+                    "evidence_message_ids": [
+                      "1"
+                    ],
+                    "is_question": false,
+                    "kind": "cancel",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": null
+                  },
+                  "kind": "cancel",
+                  "match_code": "no-boss-overlap",
+                  "match_reason": "no run matched (no run here has those bosses)",
+                  "needs_answer": true,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": null,
+                    "clock": null,
+                    "day": null,
+                    "known": false
+                  },
+                  "run_id": null,
+                  "summary": "a burst"
+                },
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "HLimbo"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": null,
+                    "evidence_message_ids": [
+                      "2"
+                    ],
+                    "is_question": false,
+                    "kind": "add",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": null
+                  },
+                  "kind": "add",
+                  "match_code": "no-boss-overlap",
+                  "match_reason": "a stated add with no day or time",
+                  "needs_answer": true,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": null,
+                    "clock": null,
+                    "day": null,
+                    "known": false
+                  },
+                  "run_id": null,
+                  "summary": "a burst"
+                },
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "HMaleficStar"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": "ytd",
+                    "evidence_message_ids": [
+                      "2"
+                    ],
+                    "is_question": false,
+                    "kind": "move",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "9pm"
+                  },
+                  "kind": "move",
+                  "match_code": "",
+                  "match_reason": "already passed",
+                  "needs_answer": false,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": "2026-08-29T21:00:00+08:00",
+                    "clock": "21:00:00",
+                    "day": "2026-08-29",
+                    "known": true
+                  },
+                  "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                  "summary": "a burst"
+                },
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "XKalos"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": "tue",
+                    "evidence_message_ids": [
+                      "3"
+                    ],
+                    "is_question": false,
+                    "kind": "move",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "10pm"
+                  },
+                  "kind": "move",
+                  "match_code": "",
+                  "match_reason": "already scheduled",
+                  "needs_answer": false,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": "2026-09-01T22:00:00+08:00",
+                    "clock": "22:00:00",
+                    "day": "2026-09-01",
+                    "known": true
+                  },
+                  "run_id": "b2b2b2b2-0000-4000-8000-000000000002",
+                  "summary": "a burst"
+                },
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "HFA"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": "mon",
+                    "evidence_message_ids": [
+                      "3"
+                    ],
+                    "is_question": false,
+                    "kind": "add",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "9:30pm"
+                  },
+                  "kind": "add",
+                  "match_code": "",
+                  "match_reason": "already scheduled",
+                  "needs_answer": false,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": "2026-08-31T21:30:00+08:00",
+                    "clock": "21:30:00",
+                    "day": "2026-08-31",
+                    "known": true
+                  },
+                  "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                  "summary": "a burst"
+                }
+              ],
+              "planned": [
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "NLimbo"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": null,
+                    "evidence_message_ids": [
+                      "3"
+                    ],
+                    "is_question": true,
+                    "kind": "add",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": null
+                  },
+                  "kind": "add",
+                  "match_code": "no-boss-overlap",
+                  "match_reason": "no run here has those bosses",
+                  "needs_answer": true,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": null,
+                    "clock": null,
+                    "day": null,
+                    "known": false
+                  },
+                  "run_id": null,
+                  "summary": "a burst"
+                }
+              ],
+              "summary": "a burst"
+            }
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "runs": [
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-08-31T21:30:00+08:00",
+            "id": "a1a1a1a1-0000-4000-8000-000000000001",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HCarling",
+              "XKalos"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-01T22:00:00+08:00",
+            "id": "b2b2b2b2-0000-4000-8000-000000000002",
+            "participants": [
+              "11",
+              "22",
+              "44"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-07T21:30:00+08:00",
+            "id": "d4d4d4d4-0000-4000-8000-000000000004",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-09-03T00:00:00+08:00"
+          }
+        ],
+        "steps": [
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "author_ids": {
+              "1": "11",
+              "2": "22",
+              "3": "33"
+            },
+            "burst_messages": [
+              {
+                "author_id": "11",
+                "content": "x",
+                "id": "1"
+              },
+              {
+                "author_id": "22",
+                "content": "y",
+                "id": "2"
+              },
+              {
+                "author_id": "33",
+                "content": "z",
+                "id": "3"
+              }
+            ],
+            "burst_order": [
+              "1",
+              "2",
+              "3"
+            ],
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002"
+            ],
+            "guild_runs": [],
+            "min_confidence": 0.5,
+            "now": "2026-08-30T13:07:00+08:00",
+            "op": "plan_burst",
+            "raw": "{\"amendments\": [{\"kind\": \"move\", \"bosses\": [\"HCarling\"], \"day_ref\": \"wed\", \"time_ref\": \"9pm\", \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.4, \"evidence_message_ids\": [\"1\"], \"target_run_hint\": null}, {\"kind\": \"cancel\", \"bosses\": [\"NBaldrix\"], \"day_ref\": null, \"time_ref\": null, \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"1\"], \"target_run_hint\": null}, {\"kind\": \"add\", \"bosses\": [\"HLimbo\"], \"day_ref\": null, \"time_ref\": null, \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"2\"], \"target_run_hint\": null}, {\"kind\": \"add\", \"bosses\": [\"NLimbo\"], \"day_ref\": null, \"time_ref\": null, \"participants\": [], \"rsvp\": null, \"is_question\": true, \"confidence\": 0.9, \"evidence_message_ids\": [\"3\"], \"target_run_hint\": null}, {\"kind\": \"move\", \"bosses\": [\"HMaleficStar\"], \"day_ref\": \"ytd\", \"time_ref\": \"9pm\", \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"2\"], \"target_run_hint\": null}, {\"kind\": \"move\", \"bosses\": [\"XKalos\"], \"day_ref\": \"tue\", \"time_ref\": \"10pm\", \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"3\"], \"target_run_hint\": null}, {\"kind\": \"add\", \"bosses\": [\"HFA\"], \"day_ref\": \"mon\", \"time_ref\": \"9:30pm\", \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"3\"], \"target_run_hint\": null}], \"summary\": \"a burst\"}",
+            "use_boss_table": true
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "ambiguous-matches",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "dropped": [
+                {
+                  "also_mentioned": [],
+                  "ambiguous": true,
+                  "amendment": {
+                    "bosses": [],
+                    "confidence": 0.9,
+                    "day_ref": "thu",
+                    "evidence_message_ids": [
+                      "1"
+                    ],
+                    "is_question": false,
+                    "kind": "move",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": null
+                  },
+                  "kind": "move",
+                  "match_code": "",
+                  "match_reason": "ambiguous (2 runs match equally well)",
+                  "needs_answer": true,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": null,
+                    "clock": null,
+                    "day": "2026-09-03",
+                    "known": true
+                  },
+                  "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                  "summary": "a burst"
+                }
+              ],
+              "planned": [
+                {
+                  "also_mentioned": [],
+                  "ambiguous": true,
+                  "amendment": {
+                    "bosses": [],
+                    "confidence": 0.9,
+                    "day_ref": null,
+                    "evidence_message_ids": [
+                      "1"
+                    ],
+                    "is_question": true,
+                    "kind": "sub",
+                    "participants": [
+                      "11"
+                    ],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": null
+                  },
+                  "kind": "sub",
+                  "match_code": "",
+                  "match_reason": "2 runs match equally well",
+                  "needs_answer": true,
+                  "payload": {
+                    "add": [],
+                    "remove": [
+                      "11"
+                    ]
+                  },
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": null,
+                    "clock": null,
+                    "day": null,
+                    "known": false
+                  },
+                  "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                  "summary": "a burst"
+                },
+                {
+                  "also_mentioned": [],
+                  "ambiguous": true,
+                  "amendment": {
+                    "bosses": [],
+                    "confidence": 0.9,
+                    "day_ref": null,
+                    "evidence_message_ids": [
+                      "2"
+                    ],
+                    "is_question": false,
+                    "kind": "rsvp",
+                    "participants": [
+                      "11"
+                    ],
+                    "rsvp": "no",
+                    "target_run_hint": null,
+                    "time_ref": null
+                  },
+                  "kind": "rsvp",
+                  "match_code": "",
+                  "match_reason": "2 runs match equally well",
+                  "needs_answer": true,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": null,
+                    "clock": null,
+                    "day": null,
+                    "known": false
+                  },
+                  "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                  "summary": "a burst"
+                }
+              ],
+              "summary": "a burst"
+            }
+          },
+          {
+            "value": {
+              "dropped": [
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [],
+                    "confidence": 0.9,
+                    "day_ref": "thu",
+                    "evidence_message_ids": [
+                      "1"
+                    ],
+                    "is_question": false,
+                    "kind": "move",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": null
+                  },
+                  "kind": "move",
+                  "match_code": "",
+                  "match_reason": "no run matched (no bosses named and no participant overlap)",
+                  "needs_answer": true,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": null,
+                    "clock": null,
+                    "day": "2026-09-03",
+                    "known": true
+                  },
+                  "run_id": null,
+                  "summary": "a burst"
+                }
+              ],
+              "planned": [],
+              "summary": "a burst"
+            }
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "runs": [
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-08-31T21:30:00+08:00",
+            "id": "a1a1a1a1-0000-4000-8000-000000000001",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HCarling",
+              "XKalos"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-01T22:00:00+08:00",
+            "id": "b2b2b2b2-0000-4000-8000-000000000002",
+            "participants": [
+              "11",
+              "22",
+              "44"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-07T21:30:00+08:00",
+            "id": "d4d4d4d4-0000-4000-8000-000000000004",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-09-03T00:00:00+08:00"
+          }
+        ],
+        "steps": [
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "author_ids": {
+              "1": "11",
+              "2": "11"
+            },
+            "burst_messages": [
+              {
+                "author_id": "11",
+                "content": "can change to thu? find temp for me",
+                "id": "1"
+              },
+              {
+                "author_id": "11",
+                "content": "idk",
+                "id": "2"
+              }
+            ],
+            "burst_order": [
+              "1",
+              "2"
+            ],
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002"
+            ],
+            "guild_runs": [],
+            "min_confidence": 0.0,
+            "now": "2026-08-30T13:07:00+08:00",
+            "op": "plan_burst",
+            "raw": "{\"amendments\": [{\"kind\": \"move\", \"bosses\": [], \"day_ref\": \"thu\", \"time_ref\": null, \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"1\"], \"target_run_hint\": null}, {\"kind\": \"sub\", \"bosses\": [], \"day_ref\": null, \"time_ref\": null, \"participants\": [\"11\"], \"rsvp\": null, \"is_question\": true, \"confidence\": 0.9, \"evidence_message_ids\": [\"1\"], \"target_run_hint\": null}, {\"kind\": \"rsvp\", \"bosses\": [], \"day_ref\": null, \"time_ref\": null, \"participants\": [\"11\"], \"rsvp\": \"no\", \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"2\"], \"target_run_hint\": null}], \"summary\": \"a burst\"}",
+            "use_boss_table": true
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "author_ids": {
+              "1": "99"
+            },
+            "burst_messages": [
+              {
+                "author_id": "99",
+                "content": "can change to thu?",
+                "id": "1"
+              }
+            ],
+            "burst_order": [
+              "1"
+            ],
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002"
+            ],
+            "guild_runs": [],
+            "min_confidence": 0.0,
+            "now": "2026-08-30T13:07:00+08:00",
+            "op": "plan_burst",
+            "raw": "{\"amendments\": [{\"kind\": \"move\", \"bosses\": [], \"day_ref\": \"thu\", \"time_ref\": null, \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"1\"], \"target_run_hint\": null}], \"summary\": \"a burst\"}",
+            "use_boss_table": true
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "no-run-here-becomes-an-add",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "dropped": [
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "HLimbo"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": null,
+                    "evidence_message_ids": [
+                      "2"
+                    ],
+                    "is_question": false,
+                    "kind": "move",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "9pm"
+                  },
+                  "kind": "move",
+                  "match_code": "no-boss-overlap",
+                  "match_reason": "no run matched (no run here has those bosses)",
+                  "needs_answer": false,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": "2026-08-30T21:00:00+08:00",
+                    "clock": "21:00:00",
+                    "day": "2026-08-30",
+                    "known": true
+                  },
+                  "run_id": null,
+                  "summary": "a burst"
+                }
+              ],
+              "planned": [
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "NBaldrix"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": "wed",
+                    "evidence_message_ids": [
+                      "1"
+                    ],
+                    "is_question": false,
+                    "kind": "add",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "9pm"
+                  },
+                  "kind": "add",
+                  "match_code": "no-boss-overlap",
+                  "match_reason": "no run here has those bosses",
+                  "needs_answer": false,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": "2026-09-02T21:00:00+08:00",
+                    "clock": "21:00:00",
+                    "day": "2026-09-02",
+                    "known": true
+                  },
+                  "run_id": null,
+                  "summary": "a burst"
+                },
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "NLimbo"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": "thu",
+                    "evidence_message_ids": [
+                      "1"
+                    ],
+                    "is_question": false,
+                    "kind": "add",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "10pm"
+                  },
+                  "kind": "add",
+                  "match_code": "no-boss-overlap",
+                  "match_reason": "no run here has those bosses",
+                  "needs_answer": false,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": "2026-09-03T22:00:00+08:00",
+                    "clock": "22:00:00",
+                    "day": "2026-09-03",
+                    "known": true
+                  },
+                  "run_id": null,
+                  "summary": "a burst"
+                }
+              ],
+              "summary": "a burst"
+            }
+          },
+          {
+            "value": {
+              "dropped": [
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [],
+                    "confidence": 0.9,
+                    "day_ref": "thu",
+                    "evidence_message_ids": [
+                      "2"
+                    ],
+                    "is_question": false,
+                    "kind": "rsvp",
+                    "participants": [
+                      "22"
+                    ],
+                    "rsvp": "no",
+                    "target_run_hint": null,
+                    "time_ref": null
+                  },
+                  "kind": "rsvp",
+                  "match_code": "",
+                  "match_reason": "no run matched (no runs to match against)",
+                  "needs_answer": true,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": null,
+                    "clock": null,
+                    "day": "2026-09-03",
+                    "known": true
+                  },
+                  "run_id": null,
+                  "summary": "a burst"
+                }
+              ],
+              "planned": [
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "NBaldrix"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": "thu",
+                    "evidence_message_ids": [
+                      "1",
+                      "2"
+                    ],
+                    "is_question": false,
+                    "kind": "add",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "9pm"
+                  },
+                  "kind": "add",
+                  "match_code": "",
+                  "match_reason": "no runs to match against",
+                  "needs_answer": false,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": "2026-09-03T21:00:00+08:00",
+                    "clock": "21:00:00",
+                    "day": "2026-09-03",
+                    "known": true
+                  },
+                  "run_id": null,
+                  "summary": "a burst"
+                }
+              ],
+              "summary": "a burst"
+            }
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "runs": [
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-08-31T21:30:00+08:00",
+            "id": "a1a1a1a1-0000-4000-8000-000000000001",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HCarling",
+              "XKalos"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-01T22:00:00+08:00",
+            "id": "b2b2b2b2-0000-4000-8000-000000000002",
+            "participants": [
+              "11",
+              "22",
+              "44"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-07T21:30:00+08:00",
+            "id": "d4d4d4d4-0000-4000-8000-000000000004",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-09-03T00:00:00+08:00"
+          }
+        ],
+        "steps": [
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "author_ids": {
+              "1": "11",
+              "2": "11"
+            },
+            "burst_messages": [
+              {
+                "author_id": "11",
+                "content": "nbald wed 9pm, nlimbo thu",
+                "id": "1"
+              },
+              {
+                "author_id": "11",
+                "content": "hlimbo 9pm",
+                "id": "2"
+              }
+            ],
+            "burst_order": [
+              "1",
+              "2"
+            ],
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002"
+            ],
+            "guild_runs": [],
+            "min_confidence": 0.0,
+            "now": "2026-08-30T13:07:00+08:00",
+            "op": "plan_burst",
+            "raw": "{\"amendments\": [{\"kind\": \"move\", \"bosses\": [\"NBaldrix\"], \"day_ref\": \"wed\", \"time_ref\": \"9pm\", \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"1\"], \"target_run_hint\": null}, {\"kind\": \"split\", \"bosses\": [\"NLimbo\"], \"day_ref\": \"thu\", \"time_ref\": \"10pm\", \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"1\"], \"target_run_hint\": null}, {\"kind\": \"move\", \"bosses\": [\"HLimbo\"], \"day_ref\": null, \"time_ref\": \"9pm\", \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"2\"], \"target_run_hint\": null}], \"summary\": \"a burst\"}",
+            "use_boss_table": true
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "author_ids": {
+              "1": "11",
+              "2": "22"
+            },
+            "burst_messages": [
+              {
+                "author_id": "11",
+                "content": "nbald wed?",
+                "id": "1"
+              },
+              {
+                "author_id": "22",
+                "content": "no, thu 9pm",
+                "id": "2"
+              }
+            ],
+            "burst_order": [
+              "1",
+              "2"
+            ],
+            "channel_runs": [],
+            "guild_runs": [],
+            "min_confidence": 0.0,
+            "now": "2026-08-30T13:07:00+08:00",
+            "op": "plan_burst",
+            "raw": "{\"amendments\": [{\"kind\": \"add\", \"bosses\": [\"NBaldrix\"], \"day_ref\": \"wed\", \"time_ref\": null, \"participants\": [], \"rsvp\": null, \"is_question\": true, \"confidence\": 0.9, \"evidence_message_ids\": [\"1\"], \"target_run_hint\": null}, {\"kind\": \"move\", \"bosses\": [\"NBaldrix\"], \"day_ref\": \"thu\", \"time_ref\": \"9pm\", \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"2\"], \"target_run_hint\": null}], \"summary\": \"a burst\"}",
+            "use_boss_table": true
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "spans-runs-payloads-and-inheritance",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "dropped": [],
+              "planned": [
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "HMaleficStar",
+                      "HFA"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": null,
+                    "evidence_message_ids": [
+                      "1",
+                      "2"
+                    ],
+                    "is_question": true,
+                    "kind": "sub",
+                    "participants": [
+                      "11"
+                    ],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": null
+                  },
+                  "kind": "sub",
+                  "match_code": "",
+                  "match_reason": "one of 2 runs it spans",
+                  "needs_answer": true,
+                  "payload": {
+                    "add": [
+                      "44"
+                    ],
+                    "remove": [
+                      "11"
+                    ]
+                  },
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": null,
+                    "clock": null,
+                    "day": null,
+                    "known": false
+                  },
+                  "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                  "summary": "a burst"
+                },
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "HCarling",
+                      "XKalos"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": null,
+                    "evidence_message_ids": [
+                      "1",
+                      "2"
+                    ],
+                    "is_question": true,
+                    "kind": "sub",
+                    "participants": [
+                      "11"
+                    ],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": null
+                  },
+                  "kind": "sub",
+                  "match_code": "",
+                  "match_reason": "one of 2 runs it spans",
+                  "needs_answer": true,
+                  "payload": {
+                    "add": [
+                      "44"
+                    ],
+                    "remove": [
+                      "11"
+                    ]
+                  },
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": null,
+                    "clock": null,
+                    "day": null,
+                    "known": false
+                  },
+                  "run_id": "b2b2b2b2-0000-4000-8000-000000000002",
+                  "summary": "a burst"
+                },
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "HMaleficStar",
+                      "HFA"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": null,
+                    "evidence_message_ids": [
+                      "3"
+                    ],
+                    "is_question": false,
+                    "kind": "cancel",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": null
+                  },
+                  "kind": "cancel",
+                  "match_code": "",
+                  "match_reason": "one of 2 runs it spans",
+                  "needs_answer": true,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": null,
+                    "clock": null,
+                    "day": null,
+                    "known": false
+                  },
+                  "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                  "summary": "a burst"
+                },
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "HCarling",
+                      "XKalos"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": null,
+                    "evidence_message_ids": [
+                      "3"
+                    ],
+                    "is_question": false,
+                    "kind": "cancel",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": null
+                  },
+                  "kind": "cancel",
+                  "match_code": "",
+                  "match_reason": "one of 2 runs it spans",
+                  "needs_answer": true,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": null,
+                    "clock": null,
+                    "day": null,
+                    "known": false
+                  },
+                  "run_id": "b2b2b2b2-0000-4000-8000-000000000002",
+                  "summary": "a burst"
+                }
+              ],
+              "summary": "a burst"
+            }
+          },
+          {
+            "value": {
+              "dropped": [],
+              "planned": [
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "XKalos"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": null,
+                    "evidence_message_ids": [
+                      "1"
+                    ],
+                    "is_question": false,
+                    "kind": "split",
+                    "participants": [
+                      "22"
+                    ],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": null
+                  },
+                  "kind": "split",
+                  "match_code": "",
+                  "match_reason": "bosses 1, participants 1",
+                  "needs_answer": true,
+                  "payload": {
+                    "bosses": [
+                      "XKalos"
+                    ],
+                    "participants": [
+                      "22"
+                    ]
+                  },
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": null,
+                    "clock": null,
+                    "day": null,
+                    "known": false
+                  },
+                  "run_id": "b2b2b2b2-0000-4000-8000-000000000002",
+                  "summary": "a burst"
+                },
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "HLimbo",
+                      "NBaldrix"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": "tue",
+                    "evidence_message_ids": [
+                      "2"
+                    ],
+                    "is_question": false,
+                    "kind": "fix",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "1030pm onwards"
+                  },
+                  "kind": "fix",
+                  "match_code": "no-boss-overlap",
+                  "match_reason": "no run here has those bosses",
+                  "needs_answer": false,
+                  "payload": {
+                    "time": "22:30",
+                    "weekday": 1
+                  },
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": "2026-09-01T22:30:00+08:00",
+                    "clock": "22:30:00",
+                    "day": "2026-09-01",
+                    "known": true
+                  },
+                  "run_id": null,
+                  "summary": "a burst"
+                },
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "NKalos"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": "fri",
+                    "evidence_message_ids": [
+                      "2"
+                    ],
+                    "is_question": false,
+                    "kind": "fix",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": null
+                  },
+                  "kind": "fix",
+                  "match_code": "no-boss-overlap",
+                  "match_reason": "no run here has those bosses",
+                  "needs_answer": true,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": null,
+                    "clock": null,
+                    "day": "2026-09-04",
+                    "known": true
+                  },
+                  "run_id": null,
+                  "summary": "a burst"
+                },
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "HMaleficStar"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": null,
+                    "evidence_message_ids": [
+                      "3"
+                    ],
+                    "is_question": false,
+                    "kind": "move",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "10pm"
+                  },
+                  "kind": "move",
+                  "match_code": "",
+                  "match_reason": "bosses 1, participants 1",
+                  "needs_answer": false,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": "2026-08-31T22:00:00+08:00",
+                    "clock": "22:00:00",
+                    "day": "2026-08-31",
+                    "known": true
+                  },
+                  "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                  "summary": "a burst"
+                }
+              ],
+              "summary": "a burst"
+            }
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "runs": [
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-08-31T21:30:00+08:00",
+            "id": "a1a1a1a1-0000-4000-8000-000000000001",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HCarling",
+              "XKalos"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-01T22:00:00+08:00",
+            "id": "b2b2b2b2-0000-4000-8000-000000000002",
+            "participants": [
+              "11",
+              "22",
+              "44"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-07T21:30:00+08:00",
+            "id": "d4d4d4d4-0000-4000-8000-000000000004",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-09-03T00:00:00+08:00"
+          }
+        ],
+        "steps": [
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "author_ids": {
+              "1": "11",
+              "2": "44",
+              "3": "22"
+            },
+            "burst_messages": [
+              {
+                "author_id": "11",
+                "content": "mon and tue got stuff, find temp for me?",
+                "id": "1"
+              },
+              {
+                "author_id": "44",
+                "content": "I can take",
+                "id": "2"
+              },
+              {
+                "author_id": "22",
+                "content": "or we skip both",
+                "id": "3"
+              }
+            ],
+            "burst_order": [
+              "1",
+              "2",
+              "3"
+            ],
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002"
+            ],
+            "guild_runs": [],
+            "min_confidence": 0.0,
+            "now": "2026-08-30T13:07:00+08:00",
+            "op": "plan_burst",
+            "raw": "{\"amendments\": [{\"kind\": \"sub\", \"bosses\": [\"HMaleficStar\", \"HCarling\"], \"day_ref\": null, \"time_ref\": null, \"participants\": [\"11\"], \"rsvp\": null, \"is_question\": true, \"confidence\": 0.9, \"evidence_message_ids\": [\"1\", \"2\"], \"target_run_hint\": null}, {\"kind\": \"cancel\", \"bosses\": [\"HFA\", \"XKalos\"], \"day_ref\": null, \"time_ref\": null, \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"3\"], \"target_run_hint\": null}], \"summary\": \"a burst\"}",
+            "use_boss_table": true
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "author_ids": {
+              "1": "22",
+              "2": "11",
+              "3": "33"
+            },
+            "burst_messages": [
+              {
+                "author_id": "22",
+                "content": "i duo xkalos",
+                "id": "1"
+              },
+              {
+                "author_id": "11",
+                "content": "hlimbo nbald lock in tue 1030pm onwards",
+                "id": "2"
+              },
+              {
+                "author_id": "33",
+                "content": "hstar amend to 10pm",
+                "id": "3"
+              }
+            ],
+            "burst_order": [
+              "1",
+              "2",
+              "3"
+            ],
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002"
+            ],
+            "guild_runs": [],
+            "min_confidence": 0.0,
+            "now": "2026-08-30T13:07:00+08:00",
+            "op": "plan_burst",
+            "raw": "{\"amendments\": [{\"kind\": \"split\", \"bosses\": [\"XKalos\"], \"day_ref\": null, \"time_ref\": null, \"participants\": [\"22\"], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"1\"], \"target_run_hint\": null}, {\"kind\": \"fix\", \"bosses\": [\"HLimbo\", \"NBaldrix\"], \"day_ref\": \"tue\", \"time_ref\": \"1030pm onwards\", \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"2\"], \"target_run_hint\": null}, {\"kind\": \"fix\", \"bosses\": [\"NKalos\"], \"day_ref\": \"fri\", \"time_ref\": null, \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"2\"], \"target_run_hint\": null}, {\"kind\": \"move\", \"bosses\": [\"HMaleficStar\"], \"day_ref\": null, \"time_ref\": \"10pm\", \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"3\"], \"target_run_hint\": null}], \"summary\": \"a burst\"}",
+            "use_boss_table": true
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "one-change-per-run-and-later-weeks",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "dropped": [],
+              "planned": [
+                {
+                  "also_mentioned": [
+                    "cancel"
+                  ],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "HMaleficStar"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": "wed",
+                    "evidence_message_ids": [
+                      "2"
+                    ],
+                    "is_question": false,
+                    "kind": "move",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "9pm"
+                  },
+                  "kind": "move",
+                  "match_code": "",
+                  "match_reason": "bosses 1, participants 1",
+                  "needs_answer": false,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": "2026-09-02T21:00:00+08:00",
+                    "clock": "21:00:00",
+                    "day": "2026-09-02",
+                    "known": true
+                  },
+                  "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                  "summary": "a burst"
+                },
+                {
+                  "also_mentioned": [
+                    "otot"
+                  ],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "HCarling"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": "wed",
+                    "evidence_message_ids": [
+                      "1",
+                      "2"
+                    ],
+                    "is_question": false,
+                    "kind": "move",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "9pm"
+                  },
+                  "kind": "move",
+                  "match_code": "",
+                  "match_reason": "bosses 1, participants 1",
+                  "needs_answer": false,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": "2026-09-02T21:00:00+08:00",
+                    "clock": "21:00:00",
+                    "day": "2026-09-02",
+                    "known": true
+                  },
+                  "run_id": "b2b2b2b2-0000-4000-8000-000000000002",
+                  "summary": "a burst"
+                }
+              ],
+              "summary": "a burst"
+            }
+          },
+          {
+            "value": {
+              "dropped": [
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "HMaleficStar"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": "wed",
+                    "evidence_message_ids": [
+                      "1"
+                    ],
+                    "is_question": false,
+                    "kind": "move",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "9pm"
+                  },
+                  "kind": "move",
+                  "match_code": "",
+                  "match_reason": "no run matched (every run here belongs to a later boss week)",
+                  "needs_answer": false,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": "2026-09-02T21:00:00+08:00",
+                    "clock": "21:00:00",
+                    "day": "2026-09-02",
+                    "known": true
+                  },
+                  "run_id": null,
+                  "summary": "a burst"
+                }
+              ],
+              "planned": [],
+              "summary": "a burst"
+            }
+          },
+          {
+            "value": {
+              "dropped": [],
+              "planned": [
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "HMaleficStar"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": "next mon",
+                    "evidence_message_ids": [
+                      "1"
+                    ],
+                    "is_question": false,
+                    "kind": "move",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "10pm"
+                  },
+                  "kind": "move",
+                  "match_code": "",
+                  "match_reason": "bosses 1, participants 1",
+                  "needs_answer": false,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": "2026-08-31T22:00:00+08:00",
+                    "clock": "22:00:00",
+                    "day": "2026-08-31",
+                    "known": true
+                  },
+                  "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                  "summary": "a burst"
+                }
+              ],
+              "summary": "a burst"
+            }
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "runs": [
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-08-31T21:30:00+08:00",
+            "id": "a1a1a1a1-0000-4000-8000-000000000001",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HCarling",
+              "XKalos"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-01T22:00:00+08:00",
+            "id": "b2b2b2b2-0000-4000-8000-000000000002",
+            "participants": [
+              "11",
+              "22",
+              "44"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-07T21:30:00+08:00",
+            "id": "d4d4d4d4-0000-4000-8000-000000000004",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-09-03T00:00:00+08:00"
+          }
+        ],
+        "steps": [
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "author_ids": {
+              "1": "11",
+              "2": "22"
+            },
+            "burst_messages": [
+              {
+                "author_id": "11",
+                "content": "hcarl wed? hstar off?",
+                "id": "1"
+              },
+              {
+                "author_id": "22",
+                "content": "we otot hcarl",
+                "id": "2"
+              }
+            ],
+            "burst_order": [
+              "1",
+              "2"
+            ],
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002"
+            ],
+            "guild_runs": [],
+            "min_confidence": 0.0,
+            "now": "2026-08-30T13:07:00+08:00",
+            "op": "plan_burst",
+            "raw": "{\"amendments\": [{\"kind\": \"move\", \"bosses\": [\"HCarling\"], \"day_ref\": \"wed\", \"time_ref\": null, \"participants\": [], \"rsvp\": null, \"is_question\": true, \"confidence\": 0.9, \"evidence_message_ids\": [\"1\"], \"target_run_hint\": null}, {\"kind\": \"otot\", \"bosses\": [\"HCarling\"], \"day_ref\": null, \"time_ref\": null, \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"2\"], \"target_run_hint\": null}, {\"kind\": \"cancel\", \"bosses\": [\"HMaleficStar\"], \"day_ref\": null, \"time_ref\": null, \"participants\": [], \"rsvp\": null, \"is_question\": true, \"confidence\": 0.9, \"evidence_message_ids\": [\"1\"], \"target_run_hint\": null}, {\"kind\": \"move\", \"bosses\": [\"HMaleficStar\"], \"day_ref\": \"wed\", \"time_ref\": \"9pm\", \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"2\"], \"target_run_hint\": null}], \"summary\": \"a burst\"}",
+            "use_boss_table": true
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "author_ids": {
+              "1": "11"
+            },
+            "burst_messages": [
+              {
+                "author_id": "11",
+                "content": "hstar wed 9pm",
+                "id": "1"
+              }
+            ],
+            "burst_order": [
+              "1"
+            ],
+            "channel_runs": [
+              "d4d4d4d4-0000-4000-8000-000000000004"
+            ],
+            "guild_runs": [],
+            "min_confidence": 0.0,
+            "now": "2026-08-30T13:07:00+08:00",
+            "op": "plan_burst",
+            "raw": "{\"amendments\": [{\"kind\": \"move\", \"bosses\": [\"HMaleficStar\"], \"day_ref\": \"wed\", \"time_ref\": \"9pm\", \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"1\"], \"target_run_hint\": null}], \"summary\": \"a burst\"}",
+            "use_boss_table": true
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "author_ids": {
+              "1": "11"
+            },
+            "burst_messages": [
+              {
+                "author_id": "11",
+                "content": "hstar next mon 10pm",
+                "id": "1"
+              }
+            ],
+            "burst_order": [
+              "1"
+            ],
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "d4d4d4d4-0000-4000-8000-000000000004"
+            ],
+            "guild_runs": [],
+            "min_confidence": 0.0,
+            "now": "2026-08-30T13:07:00+08:00",
+            "op": "plan_burst",
+            "raw": "{\"amendments\": [{\"kind\": \"move\", \"bosses\": [\"HMaleficStar\"], \"day_ref\": \"next mon\", \"time_ref\": \"10pm\", \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"1\"], \"target_run_hint\": null}], \"summary\": \"a burst\"}",
+            "use_boss_table": true
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "rescan-consolidates-to-one-entry-per-target",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "consolidated": [
+                {
+                  "also_mentioned": [
+                    "otot"
+                  ],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "HMaleficStar"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": "wed",
+                    "evidence_message_ids": [
+                      "2"
+                    ],
+                    "is_question": false,
+                    "kind": "move",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "10pm"
+                  },
+                  "kind": "move",
+                  "match_code": "",
+                  "match_reason": "bosses 1, participants 1",
+                  "needs_answer": false,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": "2026-09-02T22:00:00+08:00",
+                    "clock": "22:00:00",
+                    "day": "2026-09-02",
+                    "known": true
+                  },
+                  "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                  "summary": "monday"
+                },
+                {
+                  "also_mentioned": [],
+                  "ambiguous": false,
+                  "amendment": {
+                    "bosses": [
+                      "NLimbo"
+                    ],
+                    "confidence": 0.9,
+                    "day_ref": "fri",
+                    "evidence_message_ids": [
+                      "2"
+                    ],
+                    "is_question": false,
+                    "kind": "add",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "10pm"
+                  },
+                  "kind": "add",
+                  "match_code": "no-boss-overlap",
+                  "match_reason": "no run here has those bosses",
+                  "needs_answer": false,
+                  "payload": {},
+                  "resolved": {
+                    "assumed_pm": false,
+                    "at": "2026-09-04T22:00:00+08:00",
+                    "clock": "22:00:00",
+                    "day": "2026-09-04",
+                    "known": true
+                  },
+                  "run_id": null,
+                  "summary": "monday"
+                }
+              ],
+              "plans": [
+                {
+                  "dropped": [],
+                  "planned": [
+                    {
+                      "also_mentioned": [],
+                      "ambiguous": false,
+                      "amendment": {
+                        "bosses": [
+                          "HMaleficStar"
+                        ],
+                        "confidence": 0.9,
+                        "day_ref": "wed",
+                        "evidence_message_ids": [
+                          "1"
+                        ],
+                        "is_question": true,
+                        "kind": "move",
+                        "participants": [],
+                        "rsvp": null,
+                        "target_run_hint": null,
+                        "time_ref": null
+                      },
+                      "kind": "move",
+                      "match_code": "",
+                      "match_reason": "bosses 1, participants 1",
+                      "needs_answer": true,
+                      "payload": {},
+                      "resolved": {
+                        "assumed_pm": false,
+                        "at": "2026-09-02T21:30:00+08:00",
+                        "clock": "21:30:00",
+                        "day": "2026-09-02",
+                        "known": true
+                      },
+                      "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                      "summary": "sunday"
+                    },
+                    {
+                      "also_mentioned": [],
+                      "ambiguous": false,
+                      "amendment": {
+                        "bosses": [
+                          "NLimbo"
+                        ],
+                        "confidence": 0.9,
+                        "day_ref": "fri",
+                        "evidence_message_ids": [
+                          "1"
+                        ],
+                        "is_question": true,
+                        "kind": "add",
+                        "participants": [],
+                        "rsvp": null,
+                        "target_run_hint": null,
+                        "time_ref": "9pm"
+                      },
+                      "kind": "add",
+                      "match_code": "no-boss-overlap",
+                      "match_reason": "no run here has those bosses",
+                      "needs_answer": true,
+                      "payload": {},
+                      "resolved": {
+                        "assumed_pm": false,
+                        "at": "2026-09-04T21:00:00+08:00",
+                        "clock": "21:00:00",
+                        "day": "2026-09-04",
+                        "known": true
+                      },
+                      "run_id": null,
+                      "summary": "sunday"
+                    }
+                  ],
+                  "summary": "sunday"
+                },
+                {
+                  "dropped": [],
+                  "planned": [
+                    {
+                      "also_mentioned": [
+                        "otot"
+                      ],
+                      "ambiguous": false,
+                      "amendment": {
+                        "bosses": [
+                          "HMaleficStar"
+                        ],
+                        "confidence": 0.9,
+                        "day_ref": "wed",
+                        "evidence_message_ids": [
+                          "2"
+                        ],
+                        "is_question": false,
+                        "kind": "move",
+                        "participants": [],
+                        "rsvp": null,
+                        "target_run_hint": null,
+                        "time_ref": "10pm"
+                      },
+                      "kind": "move",
+                      "match_code": "",
+                      "match_reason": "bosses 1, participants 1",
+                      "needs_answer": false,
+                      "payload": {},
+                      "resolved": {
+                        "assumed_pm": false,
+                        "at": "2026-09-02T22:00:00+08:00",
+                        "clock": "22:00:00",
+                        "day": "2026-09-02",
+                        "known": true
+                      },
+                      "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                      "summary": "monday"
+                    },
+                    {
+                      "also_mentioned": [],
+                      "ambiguous": false,
+                      "amendment": {
+                        "bosses": [
+                          "NLimbo"
+                        ],
+                        "confidence": 0.9,
+                        "day_ref": "fri",
+                        "evidence_message_ids": [
+                          "2"
+                        ],
+                        "is_question": false,
+                        "kind": "add",
+                        "participants": [],
+                        "rsvp": null,
+                        "target_run_hint": null,
+                        "time_ref": "10pm"
+                      },
+                      "kind": "add",
+                      "match_code": "no-boss-overlap",
+                      "match_reason": "no run here has those bosses",
+                      "needs_answer": false,
+                      "payload": {},
+                      "resolved": {
+                        "assumed_pm": false,
+                        "at": "2026-09-04T22:00:00+08:00",
+                        "clock": "22:00:00",
+                        "day": "2026-09-04",
+                        "known": true
+                      },
+                      "run_id": null,
+                      "summary": "monday"
+                    }
+                  ],
+                  "summary": "monday"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "runs": [
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-08-31T21:30:00+08:00",
+            "id": "a1a1a1a1-0000-4000-8000-000000000001",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HCarling",
+              "XKalos"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-01T22:00:00+08:00",
+            "id": "b2b2b2b2-0000-4000-8000-000000000002",
+            "participants": [
+              "11",
+              "22",
+              "44"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-07T21:30:00+08:00",
+            "id": "d4d4d4d4-0000-4000-8000-000000000004",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-09-03T00:00:00+08:00"
+          }
+        ],
+        "steps": [
+          {
+            "bursts": [
+              {
+                "anchor": "2026-08-30T13:07:00+08:00",
+                "author_ids": {
+                  "1": "11"
+                },
+                "burst_messages": [
+                  {
+                    "author_id": "11",
+                    "content": "hstar wed? nlimbo fri 9pm?",
+                    "id": "1"
+                  }
+                ],
+                "burst_order": [
+                  "1"
+                ],
+                "channel_runs": [
+                  "a1a1a1a1-0000-4000-8000-000000000001",
+                  "b2b2b2b2-0000-4000-8000-000000000002"
+                ],
+                "guild_runs": [],
+                "min_confidence": 0.0,
+                "now": "2026-08-30T13:07:00+08:00",
+                "raw": "{\"amendments\": [{\"kind\": \"move\", \"bosses\": [\"HMaleficStar\"], \"day_ref\": \"wed\", \"time_ref\": null, \"participants\": [], \"rsvp\": null, \"is_question\": true, \"confidence\": 0.9, \"evidence_message_ids\": [\"1\"], \"target_run_hint\": null}, {\"kind\": \"add\", \"bosses\": [\"NLimbo\"], \"day_ref\": \"fri\", \"time_ref\": \"9pm\", \"participants\": [], \"rsvp\": null, \"is_question\": true, \"confidence\": 0.9, \"evidence_message_ids\": [\"1\"], \"target_run_hint\": null}], \"summary\": \"sunday\"}",
+                "use_boss_table": true
+              },
+              {
+                "anchor": "2026-08-31T10:00:00+08:00",
+                "author_ids": {
+                  "2": "22",
+                  "3": "33"
+                },
+                "burst_messages": [
+                  {
+                    "author_id": "22",
+                    "content": "wed 10pm then, nlimbo fri 10",
+                    "id": "2"
+                  },
+                  {
+                    "author_id": "33",
+                    "content": "or otot",
+                    "id": "3"
+                  }
+                ],
+                "burst_order": [
+                  "2",
+                  "3"
+                ],
+                "channel_runs": [
+                  "a1a1a1a1-0000-4000-8000-000000000001",
+                  "b2b2b2b2-0000-4000-8000-000000000002"
+                ],
+                "guild_runs": [],
+                "min_confidence": 0.0,
+                "now": "2026-08-31T10:00:00+08:00",
+                "raw": "{\"amendments\": [{\"kind\": \"move\", \"bosses\": [\"HMaleficStar\"], \"day_ref\": \"wed\", \"time_ref\": \"10pm\", \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"2\"], \"target_run_hint\": null}, {\"kind\": \"otot\", \"bosses\": [\"HMaleficStar\"], \"day_ref\": null, \"time_ref\": null, \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"3\"], \"target_run_hint\": null}, {\"kind\": \"add\", \"bosses\": [\"NLimbo\"], \"day_ref\": \"fri\", \"time_ref\": \"10pm\", \"participants\": [], \"rsvp\": null, \"is_question\": false, \"confidence\": 0.9, \"evidence_message_ids\": [\"2\"], \"target_run_hint\": null}], \"summary\": \"monday\"}",
+                "use_boss_table": true
+              }
+            ],
+            "op": "consolidate"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    }
+  ],
+  "family": "plan",
+  "provenance": {
+    "functions": [
+      "bot.extract.llm.parse_response",
+      "bot.extract.pipeline.plan_burst",
+      "bot.extract.pipeline.one_per_run",
+      "bot.extract.pipeline.inherit_from_run",
+      "bot.extract.pipeline.already_passed",
+      "bot.extract.pipeline.is_no_op",
+      "bot.extract.pipeline.volunteers_for",
+      "bot.extract.pipeline.consolidate"
+    ],
+    "inventory_surfaces": [
+      "extract.pipeline-and-backfill",
+      "extract.match",
+      "extract.merge"
+    ],
+    "oracle": "legacy/python bot.extract.pipeline",
+    "source_tests": [
+      "tests/test_extract_pipeline.py"
+    ]
+  },
+  "schema_version": "v5-extract-plan-v1"
+}

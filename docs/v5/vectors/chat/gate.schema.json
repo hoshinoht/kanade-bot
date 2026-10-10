@@ -1,0 +1,747 @@
+{
+  "$defs": {
+    "case": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "expected": {
+          "$ref": "#/$defs/expected"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input",
+        "expected"
+      ],
+      "type": "object"
+    },
+    "channel": {
+      "additionalProperties": false,
+      "properties": {
+        "category_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "pattern": "^[0-9]+$",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "category_id",
+        "parent_id"
+      ],
+      "type": "object"
+    },
+    "expected": {
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/outcome"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "steps"
+      ],
+      "type": "object"
+    },
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "bot_user_id": {
+          "pattern": "^[0-9]+$",
+          "type": "string"
+        },
+        "channels": {
+          "items": {
+            "$ref": "#/$defs/channel"
+          },
+          "type": "array"
+        },
+        "limits": {
+          "additionalProperties": false,
+          "properties": {
+            "count": {
+              "type": "integer"
+            },
+            "pool_count": {
+              "type": "integer"
+            },
+            "pool_window_s": {
+              "type": "number"
+            },
+            "window_s": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "count",
+            "window_s",
+            "pool_count",
+            "pool_window_s"
+          ],
+          "type": "object"
+        },
+        "reset_time": {
+          "type": "string"
+        },
+        "reset_weekday": {
+          "type": "integer"
+        },
+        "self_role_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "settings": {
+          "$ref": "#/$defs/settings"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/step"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "timezone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "timezone",
+        "reset_weekday",
+        "reset_time",
+        "settings",
+        "channels",
+        "bot_user_id",
+        "self_role_id",
+        "limits",
+        "steps"
+      ],
+      "type": "object"
+    },
+    "message": {
+      "additionalProperties": false,
+      "properties": {
+        "author": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "bot": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "pattern": "^[0-9]+$",
+                  "type": "string"
+                },
+                "roles": {
+                  "items": {
+                    "pattern": "^[0-9]+$",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "id",
+                "bot",
+                "roles"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "channel_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "guild_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mentions": {
+          "items": {
+            "pattern": "^[0-9]+$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "role_mentions": {
+          "items": {
+            "pattern": "^[0-9]+$",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "author",
+        "guild_id",
+        "channel_id",
+        "mentions",
+        "role_mentions"
+      ],
+      "type": "object"
+    },
+    "outcome": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "value": {}
+          },
+          "required": [
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "message": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "message"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "replayCase": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input"
+      ],
+      "type": "object"
+    },
+    "result_access_decide": {
+      "additionalProperties": false,
+      "properties": {
+        "act": {
+          "type": "boolean"
+        },
+        "busy": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "retry_after_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "act",
+        "reason",
+        "busy",
+        "retry_after_s"
+      ],
+      "type": "object"
+    },
+    "result_decide": {
+      "additionalProperties": false,
+      "properties": {
+        "act": {
+          "type": "boolean"
+        },
+        "busy": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "retry_after_s": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "act",
+        "reason",
+        "busy",
+        "retry_after_s"
+      ],
+      "type": "object"
+    },
+    "result_is_bot_admin": {
+      "type": "boolean"
+    },
+    "result_is_chat_channel": {
+      "type": "boolean"
+    },
+    "result_mentions_bot": {
+      "type": "boolean"
+    },
+    "result_retry_note": {
+      "type": "string"
+    },
+    "result_would_check_mention": {
+      "type": "boolean"
+    },
+    "settings": {
+      "additionalProperties": false,
+      "properties": {
+        "chat_pilot_category_ids": {
+          "type": "string"
+        },
+        "chat_pilot_channel_ids": {
+          "type": "string"
+        },
+        "chat_pilot_history_ttl_s": {
+          "type": "number"
+        },
+        "chat_pilot_model": {
+          "type": "string"
+        },
+        "chat_pilot_role_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chat_pilot_temperature": {
+          "type": "number"
+        },
+        "chat_pilot_think": {
+          "type": "string"
+        },
+        "chat_pilot_timeout": {
+          "type": "number"
+        },
+        "guild_id": {
+          "pattern": "^[0-9]+$",
+          "type": "string"
+        },
+        "model_context_tokens": {
+          "type": "integer"
+        },
+        "post_channel_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "watched_channel_ids": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "guild_id",
+        "chat_pilot_role_id",
+        "chat_pilot_channel_ids",
+        "chat_pilot_category_ids",
+        "watched_channel_ids",
+        "post_channel_id",
+        "chat_pilot_model",
+        "model_context_tokens",
+        "chat_pilot_history_ttl_s",
+        "chat_pilot_timeout",
+        "chat_pilot_temperature",
+        "chat_pilot_think"
+      ],
+      "type": "object"
+    },
+    "step": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/step_decide"
+        },
+        {
+          "$ref": "#/$defs/step_access_decide"
+        },
+        {
+          "$ref": "#/$defs/step_would_check_mention"
+        },
+        {
+          "$ref": "#/$defs/step_mentions_bot"
+        },
+        {
+          "$ref": "#/$defs/step_is_chat_channel"
+        },
+        {
+          "$ref": "#/$defs/step_is_bot_admin"
+        },
+        {
+          "$ref": "#/$defs/step_retry_note"
+        }
+      ]
+    },
+    "step_access_decide": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "is_admin": {
+          "type": "boolean"
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        },
+        "op": {
+          "const": "access_decide"
+        },
+        "replied_author_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "op",
+        "message",
+        "enabled",
+        "is_admin",
+        "replied_author_id"
+      ],
+      "type": "object"
+    },
+    "step_decide": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "is_admin": {
+          "type": "boolean"
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        },
+        "now": {
+          "type": "number"
+        },
+        "op": {
+          "const": "decide"
+        },
+        "replied_author_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "op",
+        "message",
+        "enabled",
+        "is_admin",
+        "replied_author_id",
+        "now"
+      ],
+      "type": "object"
+    },
+    "step_is_bot_admin": {
+      "additionalProperties": false,
+      "properties": {
+        "admin_role_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "administrator": {
+          "type": "boolean"
+        },
+        "op": {
+          "const": "is_bot_admin"
+        },
+        "owner": {
+          "type": "boolean"
+        },
+        "roles": {
+          "items": {
+            "pattern": "^[0-9]+$",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "op",
+        "administrator",
+        "owner",
+        "roles",
+        "admin_role_id"
+      ],
+      "type": "object"
+    },
+    "step_is_chat_channel": {
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "op": {
+          "const": "is_chat_channel"
+        }
+      },
+      "required": [
+        "op",
+        "channel_id"
+      ],
+      "type": "object"
+    },
+    "step_mentions_bot": {
+      "additionalProperties": false,
+      "properties": {
+        "bot_user_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        },
+        "op": {
+          "const": "mentions_bot"
+        },
+        "replied_author_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "self_role_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "op",
+        "message",
+        "bot_user_id",
+        "self_role_id",
+        "replied_author_id"
+      ],
+      "type": "object"
+    },
+    "step_retry_note": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "retry_note"
+        },
+        "seconds": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "op",
+        "seconds"
+      ],
+      "type": "object"
+    },
+    "step_would_check_mention": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "message": {
+          "$ref": "#/$defs/message"
+        },
+        "op": {
+          "const": "would_check_mention"
+        }
+      },
+      "required": [
+        "op",
+        "message",
+        "enabled"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/case"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "family": {
+      "const": "gate"
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "functions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "inventory_surfaces": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "oracle": {
+          "type": "string"
+        },
+        "source_tests": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "oracle",
+        "functions",
+        "source_tests",
+        "inventory_surfaces"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "v5-chat-gate-v1"
+    }
+  },
+  "required": [
+    "schema_version",
+    "family",
+    "provenance",
+    "cases"
+  ],
+  "title": "Kanade v5 chat vectors: gate",
+  "type": "object"
+}

@@ -1,0 +1,767 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { Page } from '@playwright/test';
+import { boardExists, composite, diff, markdown, MOCKUPS, renderBoard, settle, skeleton } from './fidelity-kit';
+import { ADMIN, expect, PINNED_NOW, PUBLIC, test, choose, openList, setPortal, signInPublic } from './support';
+
+// Layout fidelity against the M3E boards: `bun run fidelity [pair ...] [--keep]`
+// (scripts/fidelity.ts builds with KANADE_FIDELITY=1 so the data-fid tags
+// survive, runs this spec, then rebuilds clean). Writes, per pair, under the
+// git-ignored e2e/.captures/fidelity/: report.md, report.json, composite.png
+// (board left, app right, findings outlined), board.json and app.json.
+// It reports; it never fails on findings.
+const ENABLED = process.env.KANADE_FIDELITY === '1';
+const ONLY = (process.env.KANADE_FIDELITY_ONLY ?? '').split(',').filter(Boolean);
+const OUT = join(import.meta.dirname, '.captures', 'fidelity');
+
+interface Pair {
+  name: string;
+  board: string;
+  path: string;
+  /** The member portal (the public origin, drawn in Otonose) instead of the admin app. */
+  app?: 'public';
+  /** Before the first load: sign in, close the portal, hold back a read. */
+  setup?: (page: Page) => Promise<void>;
+  /** Where the board is a strip of the frame (Mast): open the app at this size, measured against the board's frame. */
+  viewport?: { width: number; height: number };
+  /** Opens the state the board shows and waits for it. */
+  ready: (page: Page) => Promise<void>;
+}
+
+// Member portal pairs (boards: KANADE_MOCKUPS=…/docs/research/2026-10-09-public-portal-mockups).
+const signedOut = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+};
+const signedIn = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.getByRole('tab', { name: /^Devices/ })).toBeVisible();
+};
+const devicesShown = async (page: Page) => {
+  await signedIn(page);
+  await expect(page.getByText('This device')).toBeVisible();
+};
+/** The member Week with its first read in: the board's cards, or the phone list. */
+const weekShown = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('main [data-run]').first()).toBeVisible();
+};
+/** The first of the member's own runs (`mine`) or someone else's, opened from the Week. */
+const openRun = (mine: boolean) => async (page: Page) => {
+  await weekShown(page);
+  await page.locator(`main .member-card--${mine ? 'mine' : 'other'}`).first().click();
+  await expect(page.locator(mine ? 'main [data-fid="week-answer"]' : 'main [data-fid="week-lock"]')).toBeVisible();
+};
+const listShown = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('main [data-row]').first()).toBeVisible();
+};
+const myRunsShown = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('main [data-fid="myruns-row"]').first()).toBeVisible();
+};
+const timingsShown = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('main [data-fid="timings-row"]').first()).toBeVisible();
+};
+const bossesShown = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('main [data-fid="boss-row"]').first()).toBeVisible();
+};
+const guideShown = (name: string) => async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.getByRole('heading', { level: 2, name: new RegExp(`^${name}`) })).toBeVisible();
+};
+/** States: the week's first read held back, so the skeleton shows inside the Week. */
+const holdWeek = async (page: Page) => {
+  await signInPublic(page);
+  await page.route('**/api/public/week*', () => {});
+};
+const weekLoading = async (page: Page) => {
+  await expect(page.locator('main [data-fid="week-board"][aria-busy="true"]')).toBeVisible();
+};
+/** States-Offline: the week arrived, then the network went: the notice over the last-seen week. */
+const weekOffline = async (page: Page) => {
+  await weekShown(page);
+  await page.context().setOffline(true);
+  await expect(page.locator('main [data-fid="week-offline"]')).toBeVisible();
+};
+/** States-Toasts: two refusals of a refresh, each said once as a toast. */
+const weekToasts = async (page: Page) => {
+  await weekShown(page);
+  await page.route('**/api/public/week*', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"internal","message":"The server failed."}' }));
+  const refresh = page.getByRole('button', { name: 'Refresh the week' });
+  await refresh.click();
+  await expect(page.getByRole('group', { name: 'Notification' })).toHaveCount(1);
+  await refresh.click();
+  await expect(page.getByRole('group', { name: 'Notification' })).toHaveCount(2);
+};
+/** Every colourway set open, as the boards draw them (only the current one opens by itself). */
+const allSets = async (page: Page) => {
+  await signedIn(page);
+  const sets = page.getByRole('group', { name: 'Colourway' }).locator('button[aria-expanded="false"]');
+  while ((await sets.count()) > 0) await sets.first().click();
+  // Opening a set scrolls it into view; the boards show the panel from its top.
+  await page.getByRole('tabpanel').evaluate((panel) => panel.scrollTo(0, 0));
+};
+const ended = async (page: Page) => {
+  await devicesShown(page);
+  await page.request.post(`${PUBLIC}/__mock/public/end`);
+  // Reopening the tab re-reads the devices: the 401 ends the screen.
+  await page.getByRole('tab', { name: 'Profile' }).click();
+  await page.getByRole('tab', { name: /^Devices/ }).click();
+  await expect(page.getByRole('heading', { level: 1, name: "You've been signed out" })).toBeVisible();
+};
+/** A Discord link's slot: Wed 30 Sep 21:30 guild time, the last day of the mock's boss week. */
+const MOVE_TO = '2026-09-30T13:30:00Z';
+/** Last week's Kalos (the mock's `p-kalos`) at its old Fri 22:00. */
+const PAST_MOVE_TO = '2026-09-18T14:00:00Z';
+const moveShown = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('main [data-fid="move-result"]')).toBeVisible();
+};
+const moveNotice = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('main [data-fid="move-notice"]')).toBeVisible();
+};
+/** Ren took Asahi off HCarling + HStar after the link was sent. */
+const removedFromCarling = async (page: Page) => {
+  await signInPublic(page);
+  expect((await page.request.post(`${PUBLIC}/__mock/public/remove`, { data: { run: 'r-carling' } })).ok()).toBe(true);
+};
+/** Signed in longer ago than the fresh window: the next write asks "Confirm it's you". */
+const unfresh = async (page: Page) => {
+  await signInPublic(page);
+  expect((await page.request.post(`${PUBLIC}/__mock/public/unfresh`)).ok()).toBe(true);
+};
+const confirmAnswer = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await page.locator('main [data-fid="week-answer"]').getByRole('button', { name: 'Maybe' }).click();
+  await expect(page.getByRole('dialog', { name: "Confirm it's you" })).toBeVisible();
+};
+/** The board's draft: Leave the member's run, with a note (phones have no summary aside). */
+const requestForm = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('main [data-fid="request-note"]')).toBeVisible();
+  await page.getByLabel('Note for the admins · optional').fill('Something came up on Tuesday evening.');
+};
+const requestConfirm = async (page: Page) => {
+  await requestForm(page);
+  await page.getByRole('button', { name: 'Send request' }).click();
+  await expect(page.getByRole('dialog', { name: "Confirm it's you" })).toBeVisible();
+};
+/** Two more requests sent elsewhere fill the three open: the press is refused, the toast says so and the key is off. */
+const requestLimit = async (page: Page) => {
+  await requestForm(page);
+  const session = await page.request.get(`${PUBLIC}/api/public/session`);
+  const token = session.headers()['x-kanade-csrf'] ?? '';
+  for (const run of ['r-limbo', 'r-fa']) {
+    const sent = await page.request.post(`${PUBLIC}/api/public/requests`, {
+      headers: { 'X-Kanade-CSRF': token, 'Idempotency-Key': `fid-limit-${run}` },
+      data: { kind: 'join', run_id: run },
+    });
+    expect(sent.status()).toBe(201);
+  }
+  await page.getByRole('button', { name: 'Send request' }).click();
+  await expect(page.locator('main [data-fid="request-limit"]')).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Notification' })).toBeVisible();
+};
+const requestsShown = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('main [data-fid="requests-row"]').first()).toBeVisible();
+};
+const SIGN_IN = [
+  ['', ''],
+  ['-Expired', 'state'],
+  ['-Failed', 'discord'],
+  ['-Limited', 'rate_limited'],
+  ['-Unavailable', 'unavailable'],
+] as const;
+const PUBLIC_PAIRS: Pair[] = [
+  ...SIGN_IN.flatMap(([variant, code]) => [
+    { name: `pub-signin${variant.toLowerCase()}`, board: `SignIn${variant}`, path: code ? `/?login_error=${code}` : '/', ready: signedOut },
+    { name: `pub-phone-gate${variant.toLowerCase()}`, board: `PhoneGate${variant}`, path: code ? `/?login_error=${code}` : '/', ready: signedOut },
+  ]),
+  ...(['', 'Phone'] as const).map((phone) => ({
+    name: phone ? 'pub-phone-closed' : 'pub-closed',
+    board: `${phone}Closed`,
+    path: '/',
+    setup: (page: Page) => setPortal(page.request, false),
+    ready: signedOut,
+  })),
+  { name: 'pub-denied', board: 'Denied', path: '/?login_error=not_eligible', ready: signedOut },
+  { name: 'pub-phone-denied', board: 'PhoneDenied', path: '/?login_error=not_eligible', ready: signedOut },
+  { name: 'pub-ended', board: 'Ended', path: '/account?tab=devices', setup: signInPublic, ready: ended },
+  { name: 'pub-phone-ended', board: 'PhoneEnded', path: '/account?tab=devices', setup: signInPublic, ready: ended },
+  { name: 'pub-mast', board: 'Mast', path: '/', setup: signInPublic, viewport: { width: 1280, height: 800 }, ready: weekShown },
+  {
+    name: 'pub-phone-drawer',
+    board: 'PhoneDrawer',
+    path: '/',
+    setup: signInPublic,
+    ready: async (page) => {
+      await weekShown(page);
+      await page.getByRole('button', { name: 'Open the navigation' }).click();
+      const drawer = page.getByRole('dialog', { name: 'Navigation' });
+      await expect(drawer).toBeVisible();
+      // The panel slides in; measure it where it lands.
+      await expect.poll(() => drawer.getByRole('navigation', { name: 'Main' }).evaluate((nav) => nav.getBoundingClientRect().x)).toBeGreaterThanOrEqual(0);
+    },
+  },
+  { name: 'pub-account', board: 'Account', path: '/account', setup: signInPublic, ready: signedIn },
+  { name: 'pub-phone-account', board: 'PhoneAccount', path: '/account', setup: signInPublic, ready: signedIn },
+  { name: 'pub-account-devices', board: 'Account-Devices', path: '/account?tab=devices', setup: signInPublic, ready: devicesShown },
+  { name: 'pub-phone-devices', board: 'PhoneDevices', path: '/account?tab=devices', setup: signInPublic, ready: devicesShown },
+  { name: 'pub-account-browser', board: 'Account-Browser', path: '/account?tab=browser', setup: signInPublic, ready: allSets },
+  // The phone board opens only the current set (Base), as the app does by itself.
+  { name: 'pub-phone-browser', board: 'PhoneBrowser', path: '/account?tab=browser', setup: signInPublic, ready: signedIn },
+  // The member Week, its run pane and list, My runs, and the States drawn over the Week.
+  { name: 'pub-main', board: 'Main', path: '/', setup: signInPublic, ready: weekShown },
+  { name: 'pub-week-run-mine', board: 'Week-RunMine', path: '/', setup: signInPublic, ready: openRun(true) },
+  { name: 'pub-week-run-other', board: 'Week-RunOther', path: '/', setup: signInPublic, ready: openRun(false) },
+  { name: 'pub-week-list', board: 'WeekList', path: '/?view=list', setup: signInPublic, ready: listShown },
+  {
+    name: 'pub-week-list-selected',
+    board: 'WeekList-Selected',
+    path: '/?view=list',
+    setup: signInPublic,
+    ready: async (page) => {
+      await listShown(page);
+      await page.locator('main [data-row].week-runs__row--mine').first().click();
+      await expect(page.locator('main [data-fid="week-answer"]')).toBeVisible();
+    },
+  },
+  { name: 'pub-myruns', board: 'MyRuns', path: '/mine', setup: signInPublic, ready: myRunsShown },
+  { name: 'pub-myruns-next', board: 'MyRuns-Next', path: '/mine?week=next', setup: signInPublic, ready: myRunsShown },
+  { name: 'pub-states', board: 'States', path: '/', setup: holdWeek, ready: weekLoading },
+  { name: 'pub-states-offline', board: 'States-Offline', path: '/', setup: signInPublic, ready: weekOffline },
+  { name: 'pub-states-toasts', board: 'States-Toasts', path: '/', setup: signInPublic, ready: weekToasts },
+  { name: 'pub-phone-week', board: 'PhoneWeek', path: '/', setup: signInPublic, ready: weekShown },
+  { name: 'pub-phone-run', board: 'PhoneRun', path: '/', setup: signInPublic, ready: openRun(true) },
+  { name: 'pub-phone-run-other', board: 'PhoneRunOther', path: '/', setup: signInPublic, ready: openRun(false) },
+  { name: 'pub-phone-states', board: 'PhoneStates', path: '/', setup: holdWeek, ready: weekLoading },
+  { name: 'pub-phone-states-offline', board: 'PhoneStates-Offline', path: '/', setup: signInPublic, ready: weekOffline },
+  { name: 'pub-phone-states-toasts', board: 'PhoneStates-Toasts', path: '/', setup: signInPublic, ready: weekToasts },
+  { name: 'pub-phone-myruns', board: 'PhoneMyRuns', path: '/mine', setup: signInPublic, ready: myRunsShown },
+  // Frame 1 of each board (the list); Always in, attendance and suggestions have no API yet (expected gaps).
+  { name: 'pub-myruns-timings-owner', board: 'MyRuns-Timings-Owner', path: '/mine?week=timings', setup: signInPublic, ready: timingsShown },
+  { name: 'pub-phone-myruns-timings-owner', board: 'PhoneMyRuns-Timings-Owner', path: '/mine?week=timings', setup: signInPublic, ready: timingsShown },
+  // Bosses and guides (the admin Bosses window, shared): the list, Carling's guide (Hard, Phases, Destiny), Kai (event).
+  { name: 'pub-bosses', board: 'Bosses', path: '/bosses', setup: signInPublic, ready: bossesShown },
+  { name: 'pub-guide', board: 'Guide', path: '/bosses/Carling', setup: signInPublic, ready: guideShown('Carling') },
+  { name: 'pub-guide-phases', board: 'Guide-Phases', path: '/bosses/Carling?tab=phases', setup: signInPublic, ready: guideShown('Carling') },
+  { name: 'pub-guide-destiny', board: 'Guide-Destiny', path: '/bosses/Carling?difficulty=Destiny', setup: signInPublic, ready: guideShown('Carling') },
+  { name: 'pub-guide-event', board: 'Guide-Event', path: '/bosses/Kai', setup: signInPublic, ready: guideShown('Kai') },
+  { name: 'pub-phone-bosses', board: 'PhoneBosses', path: '/bosses', setup: signInPublic, ready: bossesShown },
+  { name: 'pub-phone-guide', board: 'PhoneGuide', path: '/bosses/Carling', setup: signInPublic, ready: guideShown('Carling') },
+  { name: 'pub-phone-guide-phases', board: 'PhoneGuide-Phases', path: '/bosses/Carling?tab=phases', setup: signInPublic, ready: guideShown('Carling') },
+  { name: 'pub-phone-guide-destiny', board: 'PhoneGuide-Destiny', path: '/bosses/Carling?difficulty=Destiny', setup: signInPublic, ready: guideShown('Carling') },
+  // Member writes: the run's Move page (a Discord link), its stale shapes, the answer's fresh sign-in, the request form and My requests.
+  { name: 'pub-move', board: 'Move', path: `/runs/r-carling?move_to=${MOVE_TO}`, setup: signInPublic, ready: moveShown },
+  { name: 'pub-move-notin', board: 'Move-NotIn', path: `/runs/r-carling?move_to=${MOVE_TO}`, setup: removedFromCarling, ready: moveNotice },
+  { name: 'pub-move-weekover', board: 'Move-WeekOver', path: `/runs/p-kalos?move_to=${PAST_MOVE_TO}`, setup: signInPublic, ready: moveNotice },
+  { name: 'pub-confirm-answer', board: 'ConfirmAnswer', path: '/?run=r-carling', setup: unfresh, ready: confirmAnswer },
+  { name: 'pub-request-form', board: 'RequestForm', path: '/requests/new?run=r-carling', setup: signInPublic, ready: requestForm },
+  { name: 'pub-request-form-confirm', board: 'RequestForm-Confirm', path: '/requests/new?run=r-carling', setup: unfresh, ready: requestConfirm },
+  { name: 'pub-request-form-limit', board: 'RequestForm-Limit', path: '/requests/new?run=r-carling', setup: signInPublic, ready: requestLimit },
+  { name: 'pub-requests', board: 'Requests', path: '/requests', setup: signInPublic, ready: requestsShown },
+  { name: 'pub-requests-expired', board: 'Requests-Expired', path: '/requests?open=req-carling-swap', setup: signInPublic, ready: requestsShown },
+  { name: 'pub-phone-move', board: 'PhoneMove', path: `/runs/r-carling?move_to=${MOVE_TO}`, setup: signInPublic, ready: moveShown },
+  { name: 'pub-phone-move-notin', board: 'PhoneMove-NotIn', path: `/runs/r-carling?move_to=${MOVE_TO}`, setup: removedFromCarling, ready: moveNotice },
+  { name: 'pub-phone-move-weekover', board: 'PhoneMove-WeekOver', path: `/runs/p-kalos?move_to=${PAST_MOVE_TO}`, setup: signInPublic, ready: moveNotice },
+  { name: 'pub-phone-request', board: 'PhoneRequest', path: '/requests/new?run=r-carling', setup: signInPublic, ready: requestForm },
+  { name: 'pub-phone-requests', board: 'PhoneRequests', path: '/requests?open=req-kalos-weekly', setup: signInPublic, ready: requestsShown },
+].map((pair) => ({ ...pair, app: 'public' as const }));
+
+const PAIRS: Pair[] = [
+  {
+    name: 'inbox-self',
+    board: 'B_InboxSelf',
+    path: '/inbox?tab=self_service&item=p-fa-request',
+    ready: (page) => expect(page.getByText('Changed since the member asked')).toBeVisible(),
+  },
+  {
+    name: 'history',
+    board: 'B_History',
+    path: '/history',
+    ready: async (page) => {
+      await page.locator('[data-history]').first().click();
+      await expect(page.getByRole('complementary', { name: 'Change details' })).toBeVisible();
+    },
+  },
+  {
+    name: 'history-ck',
+    board: 'B_HistoryCk',
+    path: '/history',
+    ready: async (page) => {
+      await page.getByRole('tab', { name: 'Checkpoints' }).click();
+      await expect(page.getByRole('table', { name: /Backups/ })).toBeVisible();
+    },
+  },
+  {
+    name: 'fixed',
+    board: 'B_Fixed',
+    path: '/fixed',
+    ready: async (page) => {
+      await page.getByRole('button', { name: /^Edit / }).first().click();
+      await expect(page.getByRole('complementary', { name: 'Weekly timing details' })).toBeVisible();
+    },
+  },
+  {
+    name: 'bosses',
+    board: 'B_Bosses',
+    path: '/bosses/MaleficStar/knowledge',
+    ready: (page) => expect(page.getByRole('heading', { level: 2, name: 'Radiant Malefic Star' })).toBeVisible(),
+  },
+  {
+    name: 'phone-inbox',
+    board: 'B_PhoneInbox',
+    path: '/inbox?tab=extractor&item=p-bm-move',
+    ready: (page) => expect(page.getByRole('heading', { level: 2, name: /Move — Black Mage/ })).toBeVisible(),
+  },
+  {
+    name: 'members',
+    board: 'B_Members',
+    path: '/members',
+    ready: async (page) => {
+      await page.getByRole('button', { name: /^Mika/ }).click();
+      await expect(page.getByRole('complementary', { name: 'Member details' })).toBeVisible();
+    },
+  },
+  {
+    name: 'inbox-extractor',
+    board: 'VarRail2',
+    path: '/inbox?tab=extractor&item=p-bm-move',
+    ready: (page) => expect(page.getByRole('heading', { level: 2, name: /Move — Black Mage/ })).toBeVisible(),
+  },
+  {
+    name: 'cfg',
+    board: 'B_Config',
+    path: '/config?section=chatbot',
+    // The board shows one unsaved change in the save bar.
+    ready: async (page) => {
+      await page.getByRole('spinbutton', { name: 'Answers per person' }).fill('2');
+      await expect(page.getByText('1 unsaved change')).toBeVisible();
+    },
+  },
+  {
+    name: 'cfg-persona',
+    board: 'B_CfgPersona',
+    path: '/config?section=persona',
+    // The board shows two reply profiles selected for a bulk change.
+    ready: async (page) => {
+      const picks = page.getByRole('table', { name: 'Reply profiles' }).locator('tbody').getByRole('checkbox');
+      await picks.nth(0).check();
+      await picks.nth(1).check();
+      await expect(page.getByText('2 profiles selected.')).toBeVisible();
+    },
+  },
+  {
+    name: 'cfg-models',
+    board: 'B_CfgModels',
+    path: '/config?section=models',
+    // The board shows one unsaved change: Chat's reasoning level.
+    ready: async (page) => {
+      const chat = page.getByRole('group', { name: 'Chat' }).getByRole('combobox', { name: 'Reasoning' });
+      const current = await chat.getAttribute('data-value');
+      const values = await (await openList(chat)).getByRole('option').evaluateAll((options) => options.map((o) => (o as HTMLElement).dataset.value ?? ''));
+      await choose(chat, values.find((v) => v !== current && v !== '') ?? values[0]!);
+      await expect(page.getByText('1 unsaved change')).toBeVisible();
+    },
+  },
+  {
+    name: 'cfg-roles',
+    board: 'B_CfgRoles',
+    path: '/config?section=persona',
+    ready: async (page) => {
+      await page.getByRole('tab', { name: /^Role overrides/ }).click();
+      await expect(page.getByText('Current guild roles are loaded.', { exact: false })).toBeVisible();
+      // The board shows a reordered draft.
+      await page.getByRole('list', { name: 'Role assignments in precedence order' }).getByRole('button', { name: 'Move down' }).first().click();
+      await expect(page.getByText('1 unsaved change')).toBeVisible();
+    },
+  },
+  {
+    name: 'week-sel',
+    board: 'B_WeekSel',
+    path: '/',
+    // The board shows today's first run selected in the side pane.
+    ready: async (page) => {
+      await page.locator('[data-run="r-carling"] .plan-card__open').click();
+      await expect(page.getByRole('complementary', { name: 'HCarling + HStar' })).toBeVisible();
+    },
+  },
+  {
+    name: 'week-runs',
+    board: 'B_WeekRuns',
+    path: '/?week=next',
+    ready: async (page) => {
+      await page.getByRole('tab', { name: /^Runs/ }).click();
+      await expect(page.getByRole('table', { name: /Every run/ })).toBeVisible();
+    },
+  },
+  {
+    name: 'week-answers',
+    board: 'B_WeekAnswers',
+    path: '/?week=next',
+    ready: async (page) => {
+      await page.getByRole('tab', { name: /^Answers/ }).click();
+      await expect(page.getByRole('heading', { name: 'Still waiting' })).toBeVisible();
+    },
+  },
+  {
+    name: 'reminders',
+    board: 'B_Reminders',
+    path: '/reminders',
+    // The "In" column and "today" read the browser clock: pin it to the mock's.
+    ready: async (page) => {
+      await page.clock.setFixedTime(PINNED_NOW);
+      await page.reload();
+      await expect(page.getByRole('table', { name: /^Queued reminders/ }).locator('tbody tr').first()).toBeVisible();
+    },
+  },
+  {
+    name: 'limits',
+    board: 'B_Limits',
+    path: '/limits',
+    // The board shows the route unmounted: answer as the Rust server does, then reload.
+    ready: async (page) => {
+      await page.route('**/api/admin/limits', (route) =>
+        route.fulfill({ status: 404, json: { error: 'not_found', message: 'No such endpoint on this origin.' } }),
+      );
+      await page.reload();
+      await expect(page.getByRole('link', { name: /Config → Models/ })).toBeVisible();
+    },
+  },
+  // Live Limits: the boards show the mock's three seeded groups (cloud full and
+  // queueing, local half-open, legacy open), or its default one gateway group.
+  ...(
+    [
+      ['limits-live', 'B_LimitsLive', 'three', 'Backends'],
+      ['limits-live-one', 'B_LimitsLiveOne', 'default', 'Backends'],
+      ['limits-queue', 'B_LimitsQueue', 'three', 'Queue'],
+      ['limits-admission', 'B_LimitsAdmission', 'three', 'Admission'],
+      ['limits-allowances', 'B_LimitsAllowances', 'three', 'Allowances'],
+      ['phone-limits', 'B_PhoneLimits', 'three', 'Backends'],
+      ['phone-limits-admission', 'B_PhoneLimitsAdmission', 'three', 'Admission'],
+    ] as const
+  ).map(
+    ([name, board, groups, tab]): Pair => ({
+      name,
+      board,
+      path: '/limits',
+      ready: async (page) => {
+        await page.request.post(`${ADMIN}/__mock/limits`, { data: { groups } });
+        await page.reload();
+        const chosen = page.getByRole('tab', { name: new RegExp(`^${tab}`) });
+        await chosen.click();
+        await expect(chosen).toHaveAttribute('aria-selected', 'true');
+        await expect(page.getByRole('tabpanel')).toBeVisible();
+      },
+    }),
+  ),
+  {
+    name: 'extract',
+    board: 'B_Extract',
+    // The board shows the newest call open on Chat read (the default tab).
+    path: '/extractions',
+    ready: (page) => expect(page.getByRole('list', { name: 'Messages read' }).getByRole('listitem').first()).toBeVisible(),
+  },
+  {
+    name: 'extract-prompt',
+    board: 'B_ExtractPrompt',
+    path: '/extractions',
+    ready: async (page) => {
+      await page.getByRole('tab', { name: 'Prompt' }).click();
+      await expect(page.getByRole('tabpanel', { name: 'Prompt' }).locator('pre')).toContainText('Messages:');
+    },
+  },
+  {
+    name: 'phone-week',
+    board: 'B_PhoneWeek',
+    path: '/',
+    ready: (page) => expect(page.locator('[data-run="r-carling"]')).toBeVisible(),
+  },
+  ...(
+    [
+      ['cfg-pings', 'B_CfgPings', 'pings', 'Pings'],
+      ['cfg-watch', 'B_CfgWatch', 'watching', 'Chat watching'],
+      ['cfg-self', 'B_CfgSelf', 'self-service', 'Self-service'],
+      ['cfg-notify', 'B_CfgNotify', 'notifications', 'Notifications'],
+      ['cfg-digest', 'B_CfgDigest', 'digest', 'Weekly digest'],
+      ['cfg-reread', 'B_CfgReread', 'rescan', 'Re-read the party channels'],
+      ['cfg-access', 'B_CfgAccess', 'access', 'Channel access'],
+      ['cfg-theme', 'B_CfgTheme', 'theme', 'Theme'],
+      ['cfg-env', 'B_CfgEnv', 'env', 'Set in the environment'],
+    ] as const
+  ).map(([name, board, section, heading]) => ({
+    name,
+    board,
+    path: `/config?section=${section}`,
+    ready: (page: Page) => expect(page.getByRole('heading', { level: 3, name: heading })).toBeVisible(),
+  })),
+  // c-when is the mock's masked turn: two rounds, one tool call and a stored Model view, as the boards show.
+  {
+    name: 'chat',
+    board: 'B_Chat',
+    path: '/chat/c-when',
+    ready: (page) => expect(page.getByRole('button', { name: 'Model view (masked)' })).toBeVisible(),
+  },
+  {
+    name: 'chat-trace',
+    board: 'B_ChatTrace',
+    path: '/chat/c-when',
+    ready: async (page) => {
+      await page.getByRole('tab', { name: /^Model trace/ }).click();
+      await expect(page.getByText('Round 2', { exact: true })).toBeVisible();
+    },
+  },
+  {
+    name: 'inbox-empty',
+    board: 'B_Empty',
+    path: '/inbox',
+    // The board shows nothing waiting: answer with an empty inbox, then reload.
+    ready: async (page) => {
+      await page.route('**/api/admin/inbox', (route) => route.fulfill({ json: [] }));
+      await page.reload();
+      await expect(page.getByRole('heading', { name: 'Nothing waiting' })).toBeVisible();
+    },
+  },
+  {
+    name: 'states-error',
+    board: 'B_States',
+    path: '/members',
+    // The board's "Error and retry" quadrant: a pane whose read failed.
+    ready: async (page) => {
+      await page.route('**/api/admin/members', (route) =>
+        route.fulfill({ status: 503, json: { error: 'unavailable', message: "The server didn't answer in time: the request timed out after 10 seconds." } }),
+      );
+      await page.reload();
+      await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible();
+    },
+  },
+  {
+    name: 'phone-nav',
+    board: 'B_PhoneNav',
+    path: '/',
+    ready: async (page) => {
+      await page.getByRole('button', { name: 'Open the navigation' }).click();
+      const drawer = page.getByRole('dialog', { name: 'Navigation' });
+      await expect(drawer).toBeVisible();
+      // Measure the drawer at rest, not mid-slide.
+      await drawer.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+    },
+  },
+  {
+    name: 'hero-login',
+    board: 'HeroLogin',
+    path: '/login',
+    ready: async (page) => {
+      await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'none' } });
+      await page.goto(`${ADMIN}/login?sw=off`);
+      await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toBeVisible();
+      await expect(page.getByText('Carling + Radiant Malefic Star')).toBeVisible();
+    },
+  },
+  // The run sheet: the phone's full sheet, and the pane's "larger view" on a laptop.
+  {
+    name: 'hero-phone',
+    board: 'HeroPhone',
+    path: '/',
+    ready: async (page) => {
+      await page.locator('[data-run="r-carling"] .plan-card__open').click();
+      await expect(page.getByRole('dialog', { name: 'HCarling + HStar' })).toBeVisible();
+    },
+  },
+  {
+    name: 'hero-sheet',
+    board: 'HeroSheet',
+    path: '/',
+    ready: async (page) => {
+      await page.locator('[data-run="r-carling"] .plan-card__open').click();
+      await page.getByRole('complementary', { name: 'HCarling + HStar' }).getByRole('button', { name: 'Open in a larger view' }).click();
+      await expect(page.getByRole('dialog', { name: 'HCarling + HStar' })).toBeVisible();
+    },
+  },
+  // The date picker (picker boards, KANADE_MOCKUPS=…/2026-10-04-picker-mockups): Chat's
+  // range popover with an applied range reopened, History's "Since", and the phone sheet.
+  {
+    name: 'dates-range',
+    board: 'P_Dates',
+    path: '/chat',
+    ready: async (page) => {
+      await page.getByRole('button', { name: /^Filters/ }).click();
+      const trigger = page.getByRole('button', { name: /^Dates/ });
+      await trigger.click();
+      await page.getByRole('dialog', { name: 'Date range' }).getByRole('button', { name: 'Last 7 days' }).click();
+      await page.getByRole('dialog', { name: 'Date range' }).getByRole('button', { name: 'Apply' }).click();
+      await trigger.click();
+      await expect(page.getByRole('dialog', { name: 'Date range' }).getByRole('grid')).toBeVisible();
+    },
+  },
+  {
+    name: 'dates-since',
+    board: 'P_DatesSpec',
+    path: '/history',
+    ready: async (page) => {
+      const trigger = page.getByRole('complementary', { name: 'Change details' }).getByRole('button', { name: /^Since/ });
+      await trigger.click();
+      await page.getByRole('dialog', { name: 'Since' }).getByRole('button', { name: /^Last reset/ }).click();
+      await trigger.click();
+      await expect(page.getByRole('dialog', { name: 'Since' }).getByRole('grid')).toBeVisible();
+    },
+  },
+  {
+    name: 'dates-phone',
+    board: 'P_DatesPhone',
+    path: '/chat',
+    ready: async (page) => {
+      await page.getByRole('button', { name: /^Filters/ }).click();
+      await page.getByRole('button', { name: /^Dates/ }).click();
+      const sheet = page.getByRole('dialog', { name: 'Dates' });
+      await sheet.getByRole('button', { name: 'Last boss week' }).click();
+      await sheet.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+    },
+  },
+  // The Move picker (KANADE_MOCKUPS=docs/research/2026-10-04-picker-mockups). Next week
+  // has a clash to show: HCarling + HStar on Monday at HFA's 20:00.
+  {
+    name: 'move-pane',
+    board: 'Main',
+    path: '/?week=next',
+    ready: async (page) => {
+      await page.locator('[data-run="n-carling"] .plan-card__open').click();
+      const pane = page.getByRole('complementary', { name: 'HCarling + HStar' });
+      await pane.getByRole('radio', { name: /^Mon 05/ }).click();
+      await pane.getByRole('textbox', { name: 'Type a day and time' }).fill('20:00');
+      await expect(pane.getByRole('status').filter({ hasText: 'Clash:' })).toBeVisible();
+    },
+  },
+  {
+    name: 'move-widths',
+    board: 'P_MoveWidths',
+    path: '/',
+    // The board's first pane: a typed day that has passed.
+    ready: async (page) => {
+      await page.locator('[data-run="r-bm"] .plan-card__open').click();
+      const typed = page.getByRole('complementary', { name: 'XBM' }).getByRole('textbox', { name: 'Type a day and time' });
+      await typed.fill('sat 21:30');
+      await typed.press('Enter');
+      await expect(page.getByText('Sat 26 has passed.', { exact: false })).toBeVisible();
+    },
+  },
+  {
+    name: 'move-phone',
+    board: 'P_MovePhone',
+    path: '/?week=next',
+    ready: async (page) => {
+      await page.locator('[data-run="n-carling"] .plan-card__open').click();
+      await page.getByRole('dialog', { name: 'HCarling + HStar' }).getByRole('button', { name: 'Move HCarling + HStar…' }).click();
+      const view = page.getByRole('dialog', { name: 'Move HCarling + HStar' });
+      await view.getByRole('radio', { name: /^Mon 05/ }).click();
+      await view.getByRole('textbox', { name: 'Or type a day and time' }).fill('20:00');
+      await expect(view.getByRole('status').filter({ hasText: 'Clash:' })).toBeVisible();
+    },
+  },
+  // The dropdown (picker boards P_Select, P_SelectSpec, P_SelectPhone): Reminders'
+  // filters with a run chosen and the list reopened, History's searchable "Who",
+  // the Re-read multi-select, and the phone's pills over native selects.
+  {
+    name: 'select-bar',
+    board: 'P_Select',
+    path: '/reminders',
+    ready: async (page) => {
+      await page.getByRole('button', { name: /^Filters/ }).click();
+      const run = page.getByRole('combobox', { name: 'Run' });
+      await choose(run, { index: 4 });
+      await run.press('ArrowDown');
+      await page.keyboard.press('ArrowDown');
+      await expect(page.getByRole('listbox', { name: 'Run' })).toBeVisible();
+    },
+  },
+  {
+    name: 'select-search',
+    board: 'P_SelectSpec',
+    path: '/history',
+    ready: async (page) => {
+      await page.getByRole('combobox', { name: 'Who' }).click();
+      await page.getByRole('combobox', { name: 'Filter people' }).fill('yu');
+      await expect(page.getByRole('listbox', { name: 'Who' })).toBeVisible();
+    },
+  },
+  {
+    name: 'select-multi',
+    board: 'P_SelectSpec',
+    path: '/config?section=rescan',
+    ready: async (page) => {
+      const channels = page.getByRole('combobox', { name: 'Channels to re-read' });
+      const list = await openList(channels);
+      for (const i of [0, 1, 3]) await list.getByRole('option').nth(i).click();
+      await channels.press('ArrowDown');
+    },
+  },
+  {
+    name: 'select-phone',
+    board: 'P_SelectPhone',
+    path: '/reminders',
+    ready: async (page) => {
+      await page.getByRole('button', { name: /^Filters/ }).click();
+      await choose(page.getByRole('combobox', { name: 'Run' }), { index: 4 });
+    },
+  },
+];
+
+test.describe('layout fidelity', () => {
+  test.skip(!ENABLED, 'run with `bun run fidelity` (needs a KANADE_FIDELITY=1 build)');
+
+  for (const pair of [...PAIRS, ...PUBLIC_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
+    test(pair.name, async ({ page, browser }) => {
+      test.skip(!boardExists(pair.board), `no board ${pair.board}.dc.html under ${MOCKUPS}`);
+      const dir = join(OUT, pair.name);
+      mkdirSync(dir, { recursive: true });
+
+      const board = await renderBoard(browser, pair.board);
+      const boardRegions = await skeleton(board.page);
+      const boardPng = await board.page.screenshot({ animations: 'disabled' });
+      await board.page.close();
+
+      await page.setViewportSize(pair.viewport ?? { width: board.width, height: board.height });
+      // The face the boards are drawn in: the admin boards in Nazuna, the portal's in Otonose.
+      await page.addInitScript((colorway) => {
+        localStorage.setItem('colorway', colorway);
+        localStorage.setItem('theme', 'light');
+      }, pair.app === 'public' ? 'marigold' : 'blossom');
+      await pair.setup?.(page);
+      await page.goto(`${pair.app === 'public' ? PUBLIC : ADMIN}${pair.path}${pair.path.includes('?') ? '&' : '?'}sw=off`);
+      await pair.ready(page);
+      await settle(page);
+      let appRegions = await skeleton(page);
+      // A strip of the frame (Mast): top-level regions keep their place against the board's frame, not the larger page.
+      if (pair.viewport)
+        appRegions = appRegions.map((r) =>
+          r.parent ? r : { ...r, box: { ...r.box, right: board.width - r.abs.x - r.abs.w, bottom: board.height - r.abs.y - r.abs.h, pw: board.width, ph: board.height } },
+        );
+      const appPng = await page.screenshot({ animations: 'disabled', clip: { x: 0, y: 0, width: board.width, height: board.height } });
+
+      const notes: string[] = [];
+      if (board.errors.length) notes.push(`Board script errors: ${board.errors.join(' | ')}`);
+      if (!boardRegions.length) notes.push(`The board has no data-fid tags: tag ${pair.board}.dc.html first.`);
+      if (!appRegions.length) notes.push('The app has no data-fid tags: untagged, or built without KANADE_FIDELITY=1.');
+      const findings = boardRegions.length && appRegions.length ? diff(boardRegions, appRegions) : [];
+
+      writeFileSync(join(dir, 'board.json'), JSON.stringify(boardRegions, null, 2));
+      writeFileSync(join(dir, 'app.json'), JSON.stringify(appRegions, null, 2));
+      writeFileSync(join(dir, 'report.json'), JSON.stringify({ pair, notes, findings }, null, 2));
+      writeFileSync(join(dir, 'report.md'), markdown(pair.name, pair.board, pair.path, findings, notes));
+      await composite(
+        browser,
+        join(dir, 'composite.png'),
+        { png: boardPng, regions: boardRegions, width: board.width, height: board.height },
+        { png: appPng, regions: appRegions, width: board.width, height: board.height },
+        findings,
+      );
+      const counts = [1, 2, 3, 4].map((s) => findings.filter((f) => f.severity === s).length);
+      console.log(`${pair.name}: ${findings.length} findings (structure ${counts[0]}, layout ${counts[1]}, detail ${counts[2]}, app-only ${counts[3]}) → ${dir}`);
+    });
+  }
+});

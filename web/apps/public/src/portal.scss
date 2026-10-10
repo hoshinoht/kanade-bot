@@ -1,0 +1,491 @@
+// The member portal's own placement of the shared pieces (public.scss,
+// _gate.scss, _state-note.scss, _account.scss, _topbar.scss) inside the
+// fixed frame, after the unified 2026-10-09 boards (SignIn, Closed, Denied,
+// Ended, Mast, Account*, States*; phone PhoneGate … PhoneBrowser).
+
+// The page takes the frame's width under the masthead (the boards' 24 px gutters).
+.frame:not(.frame--phone) > .shell {
+  max-width: none;
+  margin: 0;
+  gap: 10px;
+  padding: 13px 24px 18px;
+}
+
+// The account chip sits in the masthead's row as the board's pill.
+.masthead .account {
+  display: flex;
+}
+
+.masthead .account__chip {
+  justify-content: center;
+}
+
+// The phone bar's page name takes the slack (board PhoneAccount).
+.frame--phone .topbar__title {
+  flex: 1 1 auto;
+}
+
+// The drawer's list and foot (board PhoneDrawer): links full width; the foot a column.
+.drawer .navlist {
+  align-items: normal;
+}
+
+.drawer__foot:has(> .drawer__row) {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: normal;
+}
+
+// Devices on a phone: the list fills the whole panel.
+.account-window__panel--flush > .account-sessions {
+  box-sizing: border-box;
+  min-height: 100%;
+}
+
+// The admin login centres its window on an empty page (`.gate`, 100dvh);
+// here the masthead stays, so the window centres in the shell and only the
+// stage scrolls when a short frame cannot hold it.
+.shell > .gate {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0.5rem 0 1rem;
+  overflow: clip auto;
+  overscroll-behavior: contain;
+}
+
+.gate__window {
+  margin: auto;
+}
+
+.gate__bar-title {
+  margin: 0;
+}
+
+// Until the bot's identity answers there is no banner: the colourway
+// itself, the win colour deepened into the accent, with the windows' dot
+// motif fading in from the left.
+.gate__hero--motif {
+  background: linear-gradient(115deg, color-mix(in srgb, var(--win) 60%, black) 15%, color-mix(in srgb, var(--accent) 45%, var(--win)) 100%);
+}
+
+.gate__hero--motif::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background: radial-gradient(circle, color-mix(in srgb, var(--win-ink) 40%, transparent) 1.5px, transparent 2px) 0 0 / 14px 14px;
+  mask-image: linear-gradient(90deg, transparent 20%, black 85%);
+}
+
+// The hero name is the bot's, not the page heading (`.gate__lead` is the h1):
+// the gate's display size, as its monogram.
+.gate__hero .gate__name {
+  font-family: var(--display);
+  font-size: var(--fs-avatar);
+}
+
+// Notices with their mark, on the windows (the boards' `.flash`).
+.gate__body .flash,
+.gate-card__body .flash,
+.portal-offline {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 9px 13px;
+  line-height: 1.45;
+}
+
+.gate__body .flash .icon,
+.gate-card__body .flash .icon,
+.portal-offline .icon {
+  flex: none;
+  margin-top: 3px;
+}
+
+// The key and its hint while sign-in tries are limited.
+.gate__keywrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gate__keywrap .field__hint {
+  text-align: center;
+}
+
+.field__hint {
+  margin: 0;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+// Trust and consent text (oauth-security item 20): a contained box, never bare text.
+.infobox {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--pane);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  line-height: 1.45;
+}
+
+.gate__body .infobox {
+  color: var(--ink);
+  font-size: var(--fs-small);
+}
+
+.infobox .icon {
+  flex: none;
+  margin-top: 2px;
+}
+
+.infobox code {
+  font-family: var(--mono);
+}
+
+.btn--full {
+  width: 100%;
+  justify-content: center;
+}
+
+/* ── Loading and unreachable: one centred window around the shared note ── */
+
+.notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(520px, 100%);
+  margin: auto;
+  padding: 0 24px 24px;
+  border-radius: var(--r-win);
+}
+
+.notice > .card__head {
+  align-self: stretch;
+  min-height: 44px;
+  margin: 0 -24px 24px;
+  border-radius: var(--r-win-in) var(--r-win-in) 0 0;
+}
+
+.notice > .card__head .card__title {
+  font-size: var(--fs-body);
+}
+
+.notice .state-note__actions .btn {
+  min-height: 44px;
+}
+
+.notice--loading {
+  min-height: 220px;
+}
+
+.notice--loading .loading-state {
+  flex: 1 1 auto;
+}
+
+/* ── the masthead (board Mast) ─────────────────────────────────────────── */
+
+.masthead__zone {
+  white-space: nowrap;
+}
+
+// "Live · 12:00", "Offline · 11:42": the chip keeps the state and the time;
+// "updated" / "last updated" stay for screen readers.
+.masthead__meta .fresh__words,
+.masthead__meta .fresh__since,
+.topbar__fresh .fresh__since {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+// The phone's chip is a block (board PhoneWeek `.topbar__fresh`), its line centring the mark and time.
+.frame--phone .topbar__fresh {
+  display: block;
+  line-height: 23px;
+}
+
+// Toasts stack in a centred column over the frame's foot (boards States-Toasts,
+// PhoneStates-Toasts); the frame is the containing block and never scrolls.
+.frame > .toasts {
+  position: absolute;
+  inset: auto auto max(20px, env(safe-area-inset-bottom)) 50%;
+  align-items: normal;
+  width: min(544px, calc(100% - 20px));
+  padding: 0;
+  transform: translateX(-50%);
+}
+
+// Offline signed in (board States-Offline): the account stays, with this above it.
+.portal-offline__words {
+  flex: 1 1 auto;
+}
+
+.portal-offline .btn {
+  flex: none;
+}
+
+/* ── phones (boards PhoneGate … PhoneBrowser) ──────────────────────────── */
+
+// Signed out, the bar names the bot and the zone instead of a menu.
+.topbar--visitor {
+  gap: 10px;
+  padding: 0 12px;
+}
+
+.topbar--visitor .topbar__title {
+  flex: 1 1 auto;
+}
+
+.topbar__me {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.topbar__me:hover {
+  background: var(--raise);
+}
+
+.topbar__me .topbar__avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--accent-fill);
+}
+
+// The title bar of a phone's window: one line (the board's 46 px bar).
+.frame--phone .shell > .card > .card__head {
+  flex-wrap: nowrap;
+  min-height: 46px;
+}
+
+// Sign in's window: the bot's banner, then the words and the key.
+.gate-card {
+  display: flex;
+  flex-direction: column;
+  // Its own height, scrolling inside when a short frame (phone landscape) cannot hold it.
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: clip auto;
+}
+
+.gate-card.window-fill {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.gate-card__hero {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  padding: 18px;
+  overflow: hidden;
+  background: var(--win);
+  color: var(--win-ink);
+}
+
+.gate-card__banner {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.22;
+}
+
+.gate-card__tile {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--win-ink);
+  color: var(--win);
+  font-family: var(--display);
+  font-size: var(--fs-clock);
+  font-weight: 800;
+  object-fit: cover;
+}
+
+.gate-card__who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.gate-card__name {
+  font-family: var(--display);
+  font-size: var(--fs-clock-narrow);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.gate-card__sub {
+  font-size: var(--fs-small);
+  opacity: 0.9;
+}
+
+.gate-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 16px;
+}
+
+.gate-card__body > p:not(.flash, .infobox) {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: 1.5;
+}
+
+// The notes (Closed, Not eligible, Session ended, unavailable): centred in the window.
+.gate-card__pane {
+  min-height: 0;
+  padding: 20px 18px;
+}
+
+.gate-card__pane .state-note__title {
+  font-size: var(--fs-lg);
+}
+
+.gate-card__actions {
+  flex-direction: column;
+  flex-wrap: wrap;
+  justify-content: center;
+  width: 100%;
+}
+
+.gate-card__actions .btn {
+  min-height: 44px;
+}
+
+// Session ended's reasons: a grouped list, left-aligned in the centred note.
+.ended-reasons {
+  width: 100%;
+  text-align: left;
+}
+
+.ended-reasons__row {
+  min-height: 0;
+  padding: 9px 12px;
+  font-size: var(--fs-small);
+}
+
+.ended-reasons__cap {
+  flex: none;
+  width: 84px;
+}
+
+// Account on a phone: the panel holds the sections 14 px apart.
+.phone-tabs .tabs__tab {
+  padding: 0 11px;
+  font-size: var(--fs-body-sm);
+}
+
+// The portal's phone boards keep the window's dots before the tabs (admin drops them).
+.phone-tabs.tabs__strip::before {
+  display: block;
+  margin-right: 14px;
+}
+
+// The tab list sits on the title bar's floor (board `.tabs__tabs`).
+.shell > .card > .tabs__strip > .tabs__tabs {
+  align-self: flex-end;
+}
+
+.account-window__panel--phone {
+  padding: 12px 10px 20px;
+}
+
+.account-window__panel--phone > .account-col {
+  gap: 14px;
+  max-width: none;
+}
+
+// Devices: the list is the whole panel.
+.account-window__panel--flush {
+  padding: 0;
+}
+
+.account-window__panel--flush > .account-sessions {
+  gap: 12px;
+  max-width: none;
+  padding: 14px 10px 20px;
+}
+
+.account-me {
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 20px;
+}
+
+.account-me .account-me__portrait {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  font-size: var(--fs-lg);
+}
+
+.account-me__name {
+  font-family: var(--display);
+  font-size: var(--fs-clock-narrow);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.account-row--tight {
+  min-height: 56px;
+  gap: 12px;
+  padding: 8px 12px 8px 10px;
+}
+
+.account-row--tight .status-chip {
+  flex: none;
+}
+
+.frame--phone .portal-offline {
+  margin: 8px 10px 0;
+}
+
+// The drawer's foot: the zone and Sign out on one line.
+.drawer__row {
+  display: flex;
+  flex: 1 0 100%;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawer__row .btn {
+  margin-left: auto;
+}
+
+@media (max-height: 500px) {
+  .gate__hero {
+    height: 150px;
+  }
+}

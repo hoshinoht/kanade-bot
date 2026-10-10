@@ -1,21 +1,199 @@
 boss: Jupiter
-summary: Keep Mana Synchronization neutral before Commands and merges; off-center play raises Rupture and creates the harsher Perfection/Destruction merged forms.
+summary: Keep the shared Magic Synchronization needle inside 401-600 at every Command and at each merge; drifting off-centre stacks Rupture and sends the party into the harsher Auspicious or Ruinous merged forms.
+lead: 'Keep the shared needle centred (401–600) at every Command and merge; drift stacks Rupture and brings the harsher merged forms.'
 core:
-- Each player has personal Rupture starting at 0; reaching 1000 ejects that player. Death adds 150 Rupture while separated and 200 while combined.
-- While separated, the party shares a 0-1000 Mana Synchronization/Magic Sync gauge starting at 500. Hits on Jupiter's side move it left; hits on Alchemic Matter's side move it right.
-- The neutral band is 400-600. A Command while neutral lowers Rupture; being off-neutral adds Rupture according to how far the gauge has drifted.
-- At merge, neutral creates Jupiter of Balance; left creates Perfection and right creates Destruction. The party can use Ether Warp to change sides and help correct the gauge.
+- title: Rupture
+  text: 'Personal; 1000 ejects you. Deaths add 150 separated, 200 merged.'
+  detail: Rupture (also called Disruption) is personal, starts at 0 and ejects you at 1000. A death adds 150 while separated or 200 while merged.
+- title: Bond Initiative
+  text: 'Up a stage per Auspicious or Ruinous merge, down one per Balanced. Stages 2–3 tax every hit.'
+  detail: 'The Bond Initiative gauge (also called Combination Initiative) rises a stage after each Auspicious/Ruinous merge and falls one after Balanced. At stage 2/3 every hit adds 5/10 Rupture and reaching stage 3 adds 100 at once; getting back to stage 1 quickly refunds part of the hit Rupture.'
+- title: Phase thresholds
+  text: 'One HP bar: Phase 2 at 80%, Phase 3 at 50%. Separated time 150 → 120 → 90s.'
+  detail: Phases are HP thresholds on one bar (Phase 2 at 80%, Phase 3 at 50%); separated time shrinks from 150s to 120s to 90s.
+phases:
+- name: Separated
+  group: Alternating states
+  cycle: true
+  tag: two sides · 3 Commands
+  items:
+  - title: Two sides
+    text: 'Jupiter left, Entity right, max two each. Jupiter hits push the needle down, Entity hits push it up.'
+    detail: 'Separated state: Jupiter on the left, the Alchemical Entity (also called Alchemic Matter) on the right, at most two players per side. Hits on the Jupiter side push the shared 0-1000 Magic Synchronization gauge (also called Mana Sync) down; hits on the Entity side push it up.'
+  - title: Ether Warp
+    text: 'Swaps sides (NPC/Gather key); cooldown 15/20/30s solo/duo/trio.'
+    detail: Ether Warp (NPC/Gather key) swaps sides, cooldown 15/20/30s solo/duo/trio.
+  - title: Commands
+    text: 'Three per state, every 50/40/30s by phase. Centred: −10 Rupture. Off-centre: +60 to +100.'
+    detail: Three Commands check the gauge in each separated state (every 50/40/30s in Phases 1/2/3). Centred, a Command removes 10 Rupture; off-centre it adds 60, 80 or 100 the further out the needle is.
+  - title: Drift
+    text: '5s outside the blue band, the needle slides out 25 per 3s; you take up to 10/15% more damage.'
+    detail: About 5s after the needle leaves the blue band it starts sliding outward 25 every 3s, and you take up to 10/15% extra damage.
+  - title: Phase 3 shove
+    text: 'Each Command throws the needle to 350/650, or 150 further out; re-centre within 30s.'
+- name: Merged (100s)
+  group: Alternating states
+  cycle: true
+  tag: three forms
+  items:
+  - title: Three forms
+    text: 'Set by the needle after the third Command: Balanced, Auspicious (0–400) or Ruinous (601–1000).'
+    detail: After the third Command the party merges for 100s into Balanced (centred), Auspicious (0-400; also called Perfection) or Ruinous (601-1000; also called Destruction) Jupiter.
+  - title: Balanced
+    text: 'Own −7..+7 needle: end within one of 0 for −40 Rupture; far out costs up to +60.'
+    detail: Balanced has its own -7..+7 Deflection needle; finishing within one of 0 removes 40 Rupture, finishing far out adds up to 60.
+  - title: Auspicious and Ruinous
+    text: 'No needle; just survive.'
+  - title: Auspicious marks
+    text: 'Everyone must reach their mark twice or all gain 50 Rupture; Spectral Bane zones cut damage 80%.'
+  - title: Ruinous
+    text: 'Fastest and hardest; cannon bounces and portals chain deaths, and it runs the two-brand combo from Phase 1.'
+mechanics:
+- kind: scale
+  title: Magic Synchronization
+  bands:
+  - {label: 0–400 Auspicious, span: 40, tone: yellow}
+  - {label: 401–600 centred, span: 20, tone: safe}
+  - {label: 601–1000 Ruinous, span: 40, tone: red}
+  note: 'Shared needle. Jupiter-side hits push it down, Entity-side hits push it up.'
+- kind: ledger
+  title: Rupture · personal, out at 1000
+  rows:
+  - {label: Death (separated / merged), value: +150 / +200, direction: down}
+  - {label: Command centred, value: −10, direction: up}
+  - {label: Command off-centre, value: +60 / +80 / +100, direction: down}
+  - {label: Balanced merge within 1 of 0, value: −40, direction: up}
+  - {label: Balanced merge far out, value: up to +60, direction: down}
+  - {label: Hit at Bond stage 2 / 3, value: +5 / +10, direction: down}
+  - {label: Reaching Bond stage 3, value: '+100', direction: down}
+  - {label: Auspicious marks (all reached / a miss), value: −10 / +50 each}
 danger:
-- Commands become more frequent as the fight progresses, and Phase 3 Commands forcibly push the gauge away from center even after the check.
-- Alchemic Matter's Phase 3 Stigma combo becomes lethal at two stacks, where the finisher deals 200% HP.
-- Perfection gains a Phase 3 lock-on bombardment for 200% HP; Destruction gains a Phase 3 tracking crack for 200% HP.
-- Non-Balance merges also worsen the separate Combination Initiative/Rupture economy over the course of the fight.
+- title: Phase 3 Command shove
+  text: 'Each Command throws the needle to 350/650, or 150 further out; re-centre within 30s.'
+  detail: In Phase 3 every Command also shoves the needle, from centre to 350 or 650, or otherwise 150 further out, so the party must re-centre within 30 seconds each time.
+- title: Lance Protocol
+  text: 'Jupiter-side lasers swing the gauge hardest.'
+  detail: Lance Protocol laser sets on the Jupiter side swing the gauge hardest.
+- title: Branding combo
+  text: 'Phase 3 Entity, and Ruinous from Phase 1: two brands make the closer deal 200% HP.'
+  detail: 'Phase 3 Alchemical Entity chain: each hit during the combo brands you (brands are also called Stigma), and the closing execution deals 200% HP at two brands; brands clear after about 5s without a hit. Ruinous Jupiter runs the same branded combo from Phase 1.'
+- title: Tracking blasts
+  text: 'Phase 3 Auspicious (Colossus Impact) and Ruinous (Illusion Kill): 200% HP over a wide radius.'
+  detail: Phase 3 Auspicious adds Colossus Impact and Phase 3 Ruinous adds Illusion Kill; both track you and then detonate for 200% HP over a wide radius.
+- title: Auspicious marks
+  text: 'All must reach their mark twice or everyone gains 50 Rupture. Spectral Bane cuts damage 80%.'
+  detail: Auspicious Commands mark a spot above each head twice; if everyone reaches theirs both times everyone loses 10 Rupture, if anyone misses everyone gains 50. Spectral Bane zones cut your final damage by 80% while you stand in them.
+- title: Ruinous
+  text: 'Fastest, hardest form; cannon bounces and portals can chain into a death.'
+  detail: Ruinous is the fastest and hardest merged form; overlapping Refraction Cannon bounces or Reverb Distortion portals can also chain into a death.
 tips:
-- Near a Command or merge, correct Mana Sync before greeding damage.
-- Use Ether Warp deliberately when one side is taking too many hits or the gauge needs correction.
-- The Jupiter side is generally steadier for damage uptime, while Alchemic Matter moves more and demands more mobility.
+- title: One needle caller
+  text: 'Correct about 15s before each Command (20s from the outer band); ask the other side to balance.'
+  detail: One caller watches the needle and calls drift. Start correcting about 15s before each Command (about 20s from the outermost band), and ask the other side for a balancing hit when your side is hit, never a 200% attack.
+- title: Correct with chosen hits
+  text: 'At full HP: Arcane Rift or Ether Racer push down, Tracking Instinct pushes up.'
+  detail: Correct drift with chosen hits at full HP, e.g. Arcane Rift or Ether Racer (push the needle down) or Tracking Instinct pillars (push it up), while healing on Holy Fountain, which can be installed on both sides.
+- title: Phase 1 matters most
+  text: 'Failed balance costs most there; one bad merge is recoverable.'
+  detail: Failing balance in Phase 1 costs the most; one bad merge is recoverable because a Balanced merge drops Bond Initiative a stage.
+- title: Warp and binds
+  text: 'Warp when one side is overloaded; debuffs persist. Plan binds before merges.'
+  detail: Use Ether Warp deliberately when one side is taking too many hits; your debuffs on the boss persist after warping. Bind resistance is tracked per side, but the merged boss inherits the longer one, so plan binds before merges or burst under invincibility.
+- title: Crouch and step
+  text: 'Crouch Double Sided Attack, Tackle, Cruel Claw, Execution A; step between Mana Plum pillars.'
+  detail: Crouch Double Sided Attack, Tackle, Cruel Claw and Execution A; step between Mana Plum pillars in Balanced.
+- title: Hard forced merges
+  text: 'Save i-frames and Ascent skills for them.'
+  detail: On Hard, keep i-frames and Ascent skills for the forced Auspicious/Ruinous merges.
+strategies:
+- name: One left, two right
+  when: Trios with one strong, steady-uptime player (iSIingGunz guide).
+  risk: medium
+  damage: medium
+  payoff: Steadiest needle, because Jupiter-side lasers swing it hardest.
+  steps:
+  - In the waiting room one player takes Jupiter's side (left) alone; the other two take the Alchemical Entity (right), whose movement suits burst classes.
+  - Putting the strongest player left is a party-building habit, not a rule; whoever goes left must also steer the needle reliably.
+- name: Two left, swap in P3
+  when: Trios still learning the fight, and solo or duo runs (Korean Inven guide).
+  risk: medium
+  damage: medium
+  payoff: Less damage lost while the Entity sinks or teleports out of reach (it is invincible then).
+  steps:
+  - Solo and duo players fight on Jupiter's side; a duo may burst together there and split otherwise.
+  - In a trio, Phases 1-2 put two on Jupiter and one on the Entity.
+  - From Phase 3 swap to one on Jupiter and two on the Entity, since the Entity side starts branding and Commands come every 30s. Say who swaps in the run briefing.
 difficulty_notes:
-  h: Every third combination forces a non-Balance form even if Mana Synchronization is neutral.
+  h:
+    title: Forced merges
+    text: 'Every third merge is Auspicious or Ruinous. Which one when centred is unconfirmed.'
+    detail: Every third merge is forced to Auspicious or Ruinous; off-centre it follows the needle as usual. When centred, the guide says an odd exact gauge value gives Auspicious and an even one Ruinous, while MapleTools says forced merges alternate (unconfirmed).
+notes:
+- title: Limits
+  text: '30 min now (20 after OVERDRIVE), 10s potions; no slows or critical binds.'
+  detail: 30-minute limit in MapleSEA now (20 minutes after OVERDRIVE) and 10-second potion cooldown; Jupiter cannot be slowed or critically bound.
+- title: Shared HP and binds
+  text: 'The five bodies share one bar; bind resistance carries between rooms.'
+  detail: The five bodies share one HP bar, and bind resistance carries over between separated and merged rooms.
+difficulties:
+- name: Normal
+  entry_level: 295
+  boss_level: 295
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 810}
+  hp:
+  - {phase: total, value: 10.266q}
+  recommended_spec:
+    kind: HEXA-converted stat
+    basis: 860 AF, level 300
+    text: Trio 80k, duo 95k, solo 117k, measured at 860 Authentic Force, level 300 and a maxed Grand Authentic Symbol Geardrock, with Sol Hecate.
+    parties:
+    - {party: Trio, value: 80k}
+    - {party: Duo, value: 95k}
+    - {party: Solo, value: 117k}
+  notes:
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 6.98q, 20-minute limit.'
+- name: Hard
+  entry_level: 295
+  boss_level: 295
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 810}
+  hp:
+  - {phase: total, value: 49.4q}
+  recommended_spec:
+    kind: HEXA-converted stat
+    basis: 860 AF, level 300
+    text: Trio 130k, duo 142k, solo not estimated; same assumptions as Normal.
+    parties:
+    - {party: Trio, value: 130k}
+    - {party: Duo, value: 142k}
+  notes:
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 33.6q, 20-minute limit.'
 sources:
-- https://mapletools.app/bosses/jupiter
-- https://www.maplesea.com/updates/view/v252_Jupiter/
+- url: https://docs.google.com/document/d/1DwlX_-lXPA6-KRKCxGZ2g6Xzwl3DPniq-BcBudOyr98/edit
+  title: MapleStory Complete Jupiter Guide
+  author: iSIingGunz
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v252_Jupiter/
+  title: MapleSEA v252 Jupiter update notes
+  author: Nexon (MapleSEA)
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.inven.co.kr/board/maple/2304/46955
+  title: Inven - Jupiter guide
+  author: Inven contributors
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://mapletools.app/bosses/jupiter/guide
+  title: MapleTools - Jupiter
+  author: MapleTools
+  kind: tool
+  fetched: '2026-10-02'
+- url: https://maplestorywiki.net/w/Jupiter/Monster
+  title: MapleStory Wiki - Jupiter
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-10-02'

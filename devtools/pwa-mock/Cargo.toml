@@ -1,0 +1,23 @@
+[package]
+name = "kanade-pwa-mock"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+# Developer tool (devtools/): mock API/static server for web/apps/{admin,public}
+# dev servers, e2e and captures. Not part of the root crate; never shipped.
+# Exact pins, matching the repository rule for Rust dependencies.
+[dependencies]
+axum = "=0.8.9"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+tokio = { version = "=1.53.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync"] }
+tower = "=0.5.3"
+tower-http = { version = "=0.6.11", default-features = false, features = ["fs"] }
+# Reads the tracked boss/knowledge/*.yaml (schema v2).
+yaml_serde = "=0.10.7"
+
+[dev-dependencies]
+# Same pin and features as the root crate; validates responses against docs/v5/api-schemas.
+jsonschema = { version = "=0.40.0", default-features = false }

@@ -1,0 +1,582 @@
+{
+  "$defs": {
+    "amendment": {
+      "additionalProperties": false,
+      "properties": {
+        "bosses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "day_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence_message_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "is_question": {
+          "type": "boolean"
+        },
+        "kind": {
+          "enum": [
+            "move",
+            "add",
+            "cancel",
+            "split",
+            "otot",
+            "sub",
+            "rsvp",
+            "fix"
+          ]
+        },
+        "participants": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rsvp": {
+          "anyOf": [
+            {
+              "enum": [
+                "yes",
+                "no",
+                "maybe"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target_run_hint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "time_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "bosses",
+        "day_ref",
+        "time_ref",
+        "participants",
+        "rsvp",
+        "is_question",
+        "confidence",
+        "evidence_message_ids",
+        "target_run_hint"
+      ],
+      "type": "object"
+    },
+    "caps": {
+      "additionalProperties": false,
+      "properties": {
+        "reasoning_control": {
+          "type": "boolean"
+        },
+        "reasoning_efforts": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sampling_controls": {
+          "type": "boolean"
+        },
+        "structured_output": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "structured_output",
+        "sampling_controls",
+        "reasoning_control",
+        "reasoning_efforts"
+      ],
+      "type": "object"
+    },
+    "case": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "expected": {
+          "$ref": "#/$defs/expected"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input",
+        "expected"
+      ],
+      "type": "object"
+    },
+    "expected": {
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/outcome"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "steps"
+      ],
+      "type": "object"
+    },
+    "extraction": {
+      "additionalProperties": false,
+      "properties": {
+        "amendments": {
+          "items": {
+            "$ref": "#/$defs/amendment"
+          },
+          "type": "array"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "amendments",
+        "summary"
+      ],
+      "type": "object"
+    },
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/step"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "steps"
+      ],
+      "type": "object"
+    },
+    "message": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "content"
+      ],
+      "type": "object"
+    },
+    "outcome": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "value": {}
+          },
+          "required": [
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "message": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "message"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "replayCase": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input"
+      ],
+      "type": "object"
+    },
+    "reply": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "content": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reasoning": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "content",
+            "reasoning"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "raise": {
+              "enum": [
+                "TimeoutError",
+                "ModelUnavailable",
+                "RuntimeError"
+              ]
+            }
+          },
+          "required": [
+            "raise",
+            "message"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "result_extract_call": {
+      "additionalProperties": false,
+      "properties": {
+        "attempts": {
+          "type": "integer"
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "extraction": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/extraction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "misconfigured": {
+          "type": "boolean"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "raw": {
+          "type": "string"
+        },
+        "requests": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "thinking": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "attempts",
+        "error",
+        "raw",
+        "thinking",
+        "misconfigured",
+        "prompt",
+        "extraction",
+        "requests"
+      ],
+      "type": "object"
+    },
+    "result_parse_response": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "extraction": {
+              "$ref": "#/$defs/extraction"
+            },
+            "status": {
+              "const": "accepted"
+            }
+          },
+          "required": [
+            "status",
+            "extraction"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error_class": {
+              "const": "ValueError"
+            },
+            "message": {
+              "type": "string"
+            },
+            "status": {
+              "const": "rejected"
+            }
+          },
+          "required": [
+            "status",
+            "error_class",
+            "message"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error_class": {
+              "const": "ValidationError"
+            },
+            "errors": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "loc": {
+                    "items": {
+                      "type": [
+                        "string",
+                        "integer"
+                      ]
+                    },
+                    "type": "array"
+                  },
+                  "type": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "loc",
+                  "type"
+                ],
+                "type": "object"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "status": {
+              "const": "rejected"
+            }
+          },
+          "required": [
+            "status",
+            "error_class",
+            "errors"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "step": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/step_parse_response"
+        },
+        {
+          "$ref": "#/$defs/step_extract_call"
+        }
+      ]
+    },
+    "step_extract_call": {
+      "additionalProperties": false,
+      "properties": {
+        "caps": {
+          "$ref": "#/$defs/caps"
+        },
+        "extract_model": {
+          "type": "string"
+        },
+        "kanata_timeout": {
+          "type": "number"
+        },
+        "messages": {
+          "items": {
+            "$ref": "#/$defs/message"
+          },
+          "type": "array"
+        },
+        "op": {
+          "const": "extract_call"
+        },
+        "reasoning_effort": {
+          "type": "string"
+        },
+        "replies": {
+          "items": {
+            "$ref": "#/$defs/reply"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "op",
+        "extract_model",
+        "reasoning_effort",
+        "kanata_timeout",
+        "caps",
+        "messages",
+        "replies"
+      ],
+      "type": "object"
+    },
+    "step_parse_response": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "parse_response"
+        },
+        "raw": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "raw"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/case"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "family": {
+      "const": "parse"
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "functions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "inventory_surfaces": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "oracle": {
+          "type": "string"
+        },
+        "source_tests": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "oracle",
+        "functions",
+        "source_tests",
+        "inventory_surfaces"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "v5-extract-parse-v1"
+    }
+  },
+  "required": [
+    "schema_version",
+    "family",
+    "provenance",
+    "cases"
+  ],
+  "title": "Kanade v5 extraction vectors: parse",
+  "type": "object"
+}

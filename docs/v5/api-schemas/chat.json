@@ -1,0 +1,615 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/chat.json",
+  "title": "Chatbot log and turn detail",
+  "$defs": {
+    "ChatOutcome": {
+      "description": "`unknown`: a v4-imported question that maps to no other outcome. `profanity`: the profanity guardrail deflected the question or retried or replaced the reply (see ChatTurn.profanity).",
+      "enum": [
+        "answered",
+        "refused",
+        "clarified",
+        "error",
+        "timeout",
+        "rate_limited",
+        "turned_away",
+        "content_blocked",
+        "withheld",
+        "clean_retry",
+        "profanity",
+        "unknown"
+      ]
+    },
+    "ChatRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "at",
+        "member",
+        "channel",
+        "channel_id",
+        "model",
+        "models",
+        "latency_ms",
+        "outcome",
+        "asked",
+        "tools_used"
+      ],
+      "properties": {
+        "reasoning_tokens": { "$ref": "#/$defs/TokenCount", "description": "Sum of the rounds' reported reasoning counts; null when none reported. Additive, optional for older clients/fixtures." },
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "member": {
+          "$ref": "common.json#/$defs/Member"
+        },
+        "channel": {
+          "$ref": "common.json#/$defs/NullableString"
+        },
+        "member_id": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "The full Discord id even when `member.name` is a placeholder. Always sent by the server; optional so earlier fixtures stay valid."
+        },
+        "channel_id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "latency_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outcome": {
+          "$ref": "#/$defs/ChatOutcome"
+        },
+        "asked": {
+          "type": "string"
+        },
+        "tools_used": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "prompt_tokens": {
+          "$ref": "#/$defs/TokenCount",
+          "description": "Provider-reported prompt tokens summed over the turn's rounds that reported a pair; null when none did (never 0 for unknown). Always sent by the server; optional so earlier fixtures stay valid."
+        },
+        "completion_tokens": {
+          "$ref": "#/$defs/TokenCount",
+          "description": "As `prompt_tokens`, for completion tokens. v4-imported turns may carry one of the two."
+        }
+      }
+    },
+    "ChatSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "count",
+        "answered",
+        "refused",
+        "errors",
+        "p50_ms",
+        "tool_calls"
+      ],
+      "properties": {
+        "model": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "answered": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "refused": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "errors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "p50_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tool_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "prompt_tokens": {
+          "$ref": "#/$defs/TokenCount",
+          "description": "Sum over this model's round rows that reported a pair (never the turn totals); null when none did. Always sent by the server; optional so earlier fixtures stay valid."
+        },
+        "completion_tokens": {
+          "$ref": "#/$defs/TokenCount",
+          "description": "As `prompt_tokens`, for completion tokens."
+        },
+        "reported": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "This model's round rows that reported a usage pair."
+        },
+        "est_ratio": {
+          "$ref": "#/$defs/EstimateRatio"
+        }
+      }
+    },
+    "Chat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "rows",
+        "total",
+        "facets"
+      ],
+      "properties": {
+        "summary": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChatSummary"
+          }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ChatRow"
+          }
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "facets": {
+          "$ref": "common.json#/$defs/LogFacets"
+        }
+      }
+    },
+    "ChatTurn": {
+      "description": "ChatRow plus the full turn: persona and reply profile, per-round model facts as sent, tool calls with their round, the error, guardrail signals and (masked turns only) the Model view.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "at",
+        "member",
+        "channel",
+        "channel_id",
+        "model",
+        "models",
+        "latency_ms",
+        "outcome",
+        "asked",
+        "tools_used",
+        "said",
+        "tools",
+        "rounds",
+        "cards",
+        "raw",
+        "persona",
+        "profile",
+        "profile_source",
+        "route",
+        "error",
+        "error_code",
+        "guardrail",
+        "masked",
+        "model_view"
+      ],
+      "properties": {
+        "reasoning_tokens": { "$ref": "#/$defs/TokenCount" },
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "member": {
+          "$ref": "common.json#/$defs/Member"
+        },
+        "channel": {
+          "$ref": "common.json#/$defs/NullableString"
+        },
+        "member_id": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "The full Discord id even when `member.name` is a placeholder. Always sent by the server; optional so earlier fixtures stay valid."
+        },
+        "channel_id": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "latency_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outcome": {
+          "$ref": "#/$defs/ChatOutcome"
+        },
+        "asked": {
+          "type": "string"
+        },
+        "tools_used": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "prompt_tokens": {
+          "$ref": "#/$defs/TokenCount",
+          "description": "Provider-reported prompt tokens summed over the turn's rounds that reported a pair; null when none did (never 0 for unknown). Always sent by the server; optional so earlier fixtures stay valid."
+        },
+        "completion_tokens": {
+          "$ref": "#/$defs/TokenCount",
+          "description": "As `prompt_tokens`, for completion tokens. v4-imported turns may carry one of the two."
+        },
+        "said": {
+          "type": "string"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "round",
+              "name",
+              "arguments",
+              "result",
+              "took_ms",
+              "outcome"
+            ],
+            "properties": {
+              "round": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The request round (index into `rounds`, 1-based) whose reply asked for this call."
+              },
+              "name": {
+                "type": "string"
+              },
+              "arguments": {
+                "type": "string"
+              },
+              "result": {
+                "type": "string"
+              },
+              "took_ms": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "Wall time of the call; null when unknown (never 0 for unknown)."
+              },
+              "outcome": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "rounds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "round",
+              "requested_tools",
+              "finish",
+              "model",
+              "effort",
+              "route",
+              "latency_ms",
+              "guardrail"
+            ],
+            "properties": {
+              "round": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "1-based logged position; a clean retry after round N is N + 1."
+              },
+              "requested_tools": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "finish": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string",
+                "description": "Alias the request named, as sent."
+              },
+              "effort": {
+                "$ref": "common.json#/$defs/NullableString",
+                "description": "Reasoning effort as sent (after capability shaping); null when none went out."
+              },
+              "route": {
+                "$ref": "#/$defs/ChatRoute",
+                "description": "null for rows recorded before routes were."
+              },
+              "latency_ms": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "null when unknown."
+              },
+              "prompt_tokens": {
+                "$ref": "#/$defs/TokenCount",
+                "description": "Provider-reported prompt tokens of this request; null when not reported. The pair is all-or-nothing. Always sent by the server; optional so earlier fixtures stay valid."
+              },
+              "completion_tokens": {
+                "$ref": "#/$defs/TokenCount",
+                "description": "Provider-reported completion tokens; null when not reported."
+              },
+              "prompt_estimate": {
+                "$ref": "#/$defs/TokenCount",
+                "description": "The local prompt-size estimate the context budget used for this request (completion reserve excluded); null for rows logged before it was."
+              },
+              "reasoning_content": { "$ref": "common.json#/$defs/NullableString", "description": "Response-only text, at most 64 KiB including a visible truncation marker; withheld when the turn is withheld. Never sent in a later request." },
+              "reasoning_tokens": { "$ref": "#/$defs/TokenCount", "description": "Provider-reported reasoning tokens; independent of the usage pair. Null when absent, never substituted with 0." },
+              "request_ids": { "$ref": "common.json#/$defs/RequestIds", "description": "Every `x-request-id` this round sent, in order (`{session_id}-{n}`; transient retries and requeues included). Empty when none was recorded. Additive, optional for older clients/fixtures." },
+              "guardrail": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "clean",
+                  "content_filter"
+                ],
+                "properties": {
+                  "clean": {
+                    "type": "boolean",
+                    "description": "The reserved clean-context retry."
+                  },
+                  "content_filter": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "cards": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "url"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "raw": {
+          "type": "string"
+        },
+        "persona": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "Persona bundle id; null for rows without one (rate limited, imported)."
+        },
+        "profile": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "Reply profile id; null for the bundle default voice."
+        },
+        "profile_source": {
+          "enum": [
+            "saved",
+            "role",
+            "default",
+            null
+          ]
+        },
+        "route": {
+          "$ref": "#/$defs/ChatRoute",
+          "description": "The turn's route (its last round's); null when no model ran."
+        },
+        "error": {
+          "$ref": "common.json#/$defs/NullableString"
+        },
+        "error_code": {
+          "$ref": "common.json#/$defs/NullableString",
+          "description": "Stable code: timeout, malformed, content_blocked, kept_calling_tools, context_budget, route_refused, identity_leak_blocked, rate_limited, a governor refusal (busy, queue_timeout, backend_unavailable, …) or a model error (upstream_timeout, invalid_output, …)."
+        },
+        "session_id": {
+          "$ref": "common.json#/$defs/CorrelationId",
+          "description": "The question session's gateway correlation stem (`kanade-chat-…`): every request it sent, failed ones included, went out as `{session_id}-{n}`. Null when not recorded (older rows, v4 imports, turns that sent no tagged request). Additive, optional for older clients/fixtures."
+        },
+        "guardrail": {
+          "type": "object",
+          "description": "Signals: content_filter, external_unmasked, pseudonymized, identity_leak_blocked {role, kinds, count}, nudges."
+        },
+        "masked": {
+          "type": "boolean",
+          "description": "The turn went through pseudonymization and has a stored Model view."
+        },
+        "model_view": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ModelView"
+            }
+          ],
+          "description": "Admin only; null for passthrough and withheld turns."
+        },
+        "profanity": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["side", "word", "sent"],
+              "properties": {
+                "side": { "enum": ["question", "reply"] },
+                "word": { "type": "string", "description": "The listed word that matched (the first hit)." },
+                "sent": { "type": ["string", "null"], "description": "The line sent instead; null when the reply's clean retry came back clean and was delivered." }
+              }
+            }
+          ],
+          "description": "Set on `profanity` turns (guardrail.profanity). Always sent by the server; optional so earlier fixtures stay valid."
+        }
+      }
+    },
+    "ChatRoute": {
+      "enum": [
+        "homelab",
+        "external_masked",
+        "external_unmasked",
+        null
+      ]
+    },
+    "ModelView": {
+      "description": "A masked turn as the model saw it: per request the messages as the wire sent them (masked; an empty tool result shows the transport's `(no output)` placeholder), the raw reply and tool-call arguments before names were restored; the final reply members saw; the turn's token → member display name mapping (never user ids).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rounds",
+        "reply",
+        "mapping"
+      ],
+      "properties": {
+        "rounds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "round",
+              "clean",
+              "request",
+              "reply",
+              "tool_calls"
+            ],
+            "properties": {
+              "round": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The request's logged position, the same numbering as `ChatTurn.rounds[].round` and `tools[].round` (a clean retry after round N is N + 1), so the lists join on it."
+              },
+              "clean": {
+                "type": "boolean"
+              },
+              "request": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "role"
+                  ],
+                  "properties": {
+                    "role": {
+                      "enum": [
+                        "system",
+                        "user",
+                        "assistant",
+                        "tool"
+                      ]
+                    }
+                  }
+                }
+              },
+              "reply": {
+                "$ref": "common.json#/$defs/NullableString"
+              },
+              "tool_calls": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "arguments"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "arguments": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "reply": {
+          "type": "string"
+        },
+        "mapping": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "token",
+              "name"
+            ],
+            "properties": {
+              "token": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "TokenCount": {
+      "description": "A provider-reported or estimated token count; null = not reported (older rows, v4 imports, failed or cut calls), never 0 for unknown.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "EstimateRatio": {
+      "description": "Median of reported prompt tokens / local prompt estimate over the requests that have both (estimate > 0), rounded to two decimals; the mean of the two middle values for an even count; null when none.",
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    }
+  }
+}

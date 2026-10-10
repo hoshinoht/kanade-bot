@@ -1,0 +1,961 @@
+{
+  "$defs": {
+    "case": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "expected": {
+          "$ref": "#/$defs/expected"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input",
+        "expected"
+      ],
+      "type": "object"
+    },
+    "expected": {
+      "additionalProperties": false,
+      "properties": {
+        "final_state": {
+          "additionalProperties": false,
+          "properties": {
+            "amendments": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "new_datetime": {
+                    "anyOf": [
+                      {
+                        "format": "date-time",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "payload": {
+                    "type": "object"
+                  },
+                  "run_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "status": {
+                    "enum": [
+                      "proposed",
+                      "confirmed",
+                      "rejected",
+                      "superseded",
+                      "expired"
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind",
+                  "status",
+                  "run_id",
+                  "new_datetime",
+                  "payload"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "fixed_runs": {
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "reminders": {
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "rsvps": {
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "runs": {
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "fixed_runs",
+            "runs",
+            "reminders",
+            "rsvps",
+            "amendments"
+          ],
+          "type": "object"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/outcome"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "steps",
+        "final_state"
+      ],
+      "type": "object"
+    },
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "clock": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+          "type": "string"
+        },
+        "countdowns": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "members": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ping_time": {
+          "type": "string"
+        },
+        "reset_time": {
+          "type": "string"
+        },
+        "reset_weekday": {
+          "maximum": 6,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/step"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "uuid_sequence": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "clock",
+        "timezone",
+        "reset_weekday",
+        "reset_time",
+        "ping_time",
+        "countdowns",
+        "members",
+        "uuid_sequence",
+        "steps"
+      ],
+      "type": "object"
+    },
+    "outcome": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "value": {}
+          },
+          "required": [
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "message": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "message"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "replayCase": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input"
+      ],
+      "type": "object"
+    },
+    "result_add_fixed": {
+      "type": "string"
+    },
+    "result_commit": {
+      "additionalProperties": false,
+      "properties": {
+        "amendment_id": {
+          "type": "string"
+        },
+        "applied": {
+          "type": "boolean"
+        },
+        "created_run_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "fixed_callbacks": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "fixed_run_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "old_datetime": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "problem": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "run_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "superseded": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "amendment_id",
+        "kind",
+        "applied",
+        "run_id",
+        "fixed_run_id",
+        "created_run_ids",
+        "old_datetime",
+        "problem",
+        "superseded",
+        "notes",
+        "fixed_callbacks"
+      ],
+      "type": "object"
+    },
+    "result_create_run": {
+      "type": "string"
+    },
+    "result_expire_stale": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "result_find_fixed_run": {
+      "type": "string"
+    },
+    "result_may_commit": {
+      "type": "boolean"
+    },
+    "result_propose": {
+      "type": "string"
+    },
+    "result_reject": {
+      "type": "string"
+    },
+    "result_rematerialise": {
+      "type": "null"
+    },
+    "result_set_clock": {
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+      "type": "string"
+    },
+    "result_set_rsvp": {
+      "type": "string"
+    },
+    "result_supersede": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "step": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/step_create_run"
+        },
+        {
+          "$ref": "#/$defs/step_add_fixed"
+        },
+        {
+          "$ref": "#/$defs/step_propose"
+        },
+        {
+          "$ref": "#/$defs/step_set_rsvp"
+        },
+        {
+          "$ref": "#/$defs/step_set_clock"
+        },
+        {
+          "$ref": "#/$defs/step_rematerialise"
+        },
+        {
+          "$ref": "#/$defs/step_find_fixed_run"
+        },
+        {
+          "$ref": "#/$defs/step_may_commit"
+        },
+        {
+          "$ref": "#/$defs/step_commit"
+        },
+        {
+          "$ref": "#/$defs/step_supersede"
+        },
+        {
+          "$ref": "#/$defs/step_reject"
+        },
+        {
+          "$ref": "#/$defs/step_expire_stale"
+        }
+      ]
+    },
+    "step_add_fixed": {
+      "additionalProperties": false,
+      "properties": {
+        "bosses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "channel_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fixed_key": {
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "type": "string"
+        },
+        "op": {
+          "const": "add_fixed"
+        },
+        "owner_id": {
+          "type": "string"
+        },
+        "participants": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "time": {
+          "type": "string"
+        },
+        "weekday": {
+          "maximum": 6,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "op",
+        "fixed_key",
+        "owner_id",
+        "bosses",
+        "weekday",
+        "time",
+        "participants",
+        "channel_id"
+      ],
+      "type": "object"
+    },
+    "step_commit": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_id": {
+          "type": "string"
+        },
+        "amendment_key": {
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "type": "string"
+        },
+        "channel_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "op": {
+          "const": "commit"
+        },
+        "rematerialise": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "op",
+        "amendment_key",
+        "actor_id",
+        "channel_id",
+        "rematerialise"
+      ],
+      "type": "object"
+    },
+    "step_create_run": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+          "type": "string"
+        },
+        "bosses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "channel_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "op": {
+          "const": "create_run"
+        },
+        "participants": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "run_key": {
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "planned",
+            "confirmed",
+            "at_risk",
+            "otot",
+            "cancelled",
+            "done"
+          ]
+        },
+        "week_start": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "run_key",
+        "week_start",
+        "at",
+        "bosses",
+        "participants",
+        "status",
+        "channel_id"
+      ],
+      "type": "object"
+    },
+    "step_expire_stale": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "expire_stale"
+        }
+      },
+      "required": [
+        "op"
+      ],
+      "type": "object"
+    },
+    "step_find_fixed_run": {
+      "additionalProperties": false,
+      "properties": {
+        "fixed_key": {
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "type": "string"
+        },
+        "op": {
+          "const": "find_fixed_run"
+        },
+        "run_key": {
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "type": "string"
+        },
+        "week_start": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "fixed_key",
+        "week_start",
+        "run_key"
+      ],
+      "type": "object"
+    },
+    "step_may_commit": {
+      "additionalProperties": false,
+      "properties": {
+        "amendment_key": {
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "type": "string"
+        },
+        "has_role": {
+          "type": "boolean"
+        },
+        "is_admin": {
+          "type": "boolean"
+        },
+        "is_owner": {
+          "type": "boolean"
+        },
+        "op": {
+          "const": "may_commit"
+        },
+        "run_key": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "user_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "amendment_key",
+        "run_key",
+        "user_id",
+        "has_role",
+        "is_admin",
+        "is_owner"
+      ],
+      "type": "object"
+    },
+    "step_propose": {
+      "additionalProperties": false,
+      "properties": {
+        "amendment_key": {
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "type": "string"
+        },
+        "bosses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "channel_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confidence": {
+          "type": "number"
+        },
+        "day_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fixed_key": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "is_question": {
+          "type": "boolean"
+        },
+        "kind": {
+          "enum": [
+            "move",
+            "add",
+            "cancel",
+            "split",
+            "otot",
+            "sub",
+            "rsvp",
+            "fix"
+          ]
+        },
+        "new_datetime": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "op": {
+          "const": "propose"
+        },
+        "participants": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "payload": {
+          "type": "object"
+        },
+        "rsvp": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "run_key": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "time_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "week_start": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "amendment_key",
+        "kind",
+        "week_start",
+        "run_key",
+        "fixed_key",
+        "bosses",
+        "new_datetime",
+        "participants",
+        "confidence",
+        "channel_id",
+        "is_question",
+        "rsvp",
+        "day_ref",
+        "time_ref",
+        "payload"
+      ],
+      "type": "object"
+    },
+    "step_reject": {
+      "additionalProperties": false,
+      "properties": {
+        "amendment_key": {
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "type": "string"
+        },
+        "op": {
+          "const": "reject"
+        }
+      },
+      "required": [
+        "op",
+        "amendment_key"
+      ],
+      "type": "object"
+    },
+    "step_rematerialise": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "rematerialise"
+        }
+      },
+      "required": [
+        "op"
+      ],
+      "type": "object"
+    },
+    "step_set_clock": {
+      "additionalProperties": false,
+      "properties": {
+        "clock": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+          "type": "string"
+        },
+        "op": {
+          "const": "set_clock"
+        }
+      },
+      "required": [
+        "op",
+        "clock"
+      ],
+      "type": "object"
+    },
+    "step_set_rsvp": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "set_rsvp"
+        },
+        "run_key": {
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "yes",
+            "no",
+            "maybe"
+          ]
+        },
+        "user_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "run_key",
+        "user_id",
+        "state"
+      ],
+      "type": "object"
+    },
+    "step_supersede": {
+      "additionalProperties": false,
+      "properties": {
+        "bosses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "channel_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "from_channel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "keep_key": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "op": {
+          "const": "supersede"
+        },
+        "run_key": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "op",
+        "run_key",
+        "channel_id",
+        "bosses",
+        "keep_key",
+        "from_channel"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/case"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "family": {
+      "const": "commit"
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "functions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "inventory_surfaces": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "oracle": {
+          "type": "string"
+        },
+        "source_tests": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "oracle",
+        "functions",
+        "source_tests",
+        "inventory_surfaces"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "v5-extract-commit-v1"
+    }
+  },
+  "required": [
+    "schema_version",
+    "family",
+    "provenance",
+    "cases"
+  ],
+  "title": "Kanade v5 extraction vectors: commit",
+  "type": "object"
+}

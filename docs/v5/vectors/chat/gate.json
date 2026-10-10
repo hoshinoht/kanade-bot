@@ -1,0 +1,2116 @@
+{
+  "cases": [
+    {
+      "case_id": "refusal-order",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "act": true,
+              "busy": false,
+              "reason": "ok",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "the author is a bot",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "the bot's own message",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "the author is a bot",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "not a guild message",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "another guild",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "not a chat channel",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "not a chat channel",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "the bot was not mentioned",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "the bot was not mentioned",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "the author does not hold the chat role",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "the author does not hold the chat role",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "the bot was not mentioned",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": true,
+              "busy": false,
+              "reason": "ok",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "not a chat channel",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "another guild",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "chat_mode is off",
+              "retry_after_s": 0.0
+            }
+          }
+        ]
+      },
+      "input": {
+        "bot_user_id": "5000",
+        "channels": [
+          {
+            "category_id": null,
+            "id": "700",
+            "name": "ask-the-bot",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "701",
+            "name": "general",
+            "parent_id": null
+          },
+          {
+            "category_id": "800",
+            "id": "702",
+            "name": "bot-chatter",
+            "parent_id": null
+          },
+          {
+            "category_id": "801",
+            "id": "703",
+            "name": "somewhere-else",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "704",
+            "name": "a-thread",
+            "parent_id": "700"
+          },
+          {
+            "category_id": null,
+            "id": "900",
+            "name": "party-star",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "901",
+            "name": "party-kalos",
+            "parent_id": null
+          }
+        ],
+        "limits": {
+          "count": 2,
+          "pool_count": 3,
+          "pool_window_s": 900.0,
+          "window_s": 300.0
+        },
+        "reset_time": "00:00",
+        "reset_weekday": 3,
+        "self_role_id": "5001",
+        "settings": {
+          "chat_pilot_category_ids": "800",
+          "chat_pilot_channel_ids": "700",
+          "chat_pilot_history_ttl_s": 2700.0,
+          "chat_pilot_model": "synthetic-chat",
+          "chat_pilot_role_id": "6000",
+          "chat_pilot_temperature": 0.7,
+          "chat_pilot_think": "low",
+          "chat_pilot_timeout": 60.0,
+          "guild_id": "1000",
+          "model_context_tokens": 16384,
+          "post_channel_id": null,
+          "watched_channel_ids": "900,901"
+        },
+        "steps": [
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": true,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "5000",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": null,
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": null,
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1001",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "701",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "900",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "22"
+              ],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": []
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6001"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": true,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": []
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": true,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": []
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": true,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": []
+              },
+              "channel_id": "701",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1001",
+              "mentions": [],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": false,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "now": 0.0,
+            "op": "decide",
+            "replied_author_id": null
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "channels-categories-threads",
+      "expected": {
+        "steps": [
+          {
+            "value": true
+          },
+          {
+            "value": true
+          },
+          {
+            "value": true
+          },
+          {
+            "value": false
+          },
+          {
+            "value": false
+          },
+          {
+            "value": false
+          },
+          {
+            "value": false
+          },
+          {
+            "value": false
+          },
+          {
+            "value": {
+              "act": true,
+              "busy": false,
+              "reason": "ok",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": true,
+              "busy": false,
+              "reason": "ok",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "not a chat channel",
+              "retry_after_s": 0.0
+            }
+          }
+        ]
+      },
+      "input": {
+        "bot_user_id": "5000",
+        "channels": [
+          {
+            "category_id": null,
+            "id": "700",
+            "name": "ask-the-bot",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "701",
+            "name": "general",
+            "parent_id": null
+          },
+          {
+            "category_id": "800",
+            "id": "702",
+            "name": "bot-chatter",
+            "parent_id": null
+          },
+          {
+            "category_id": "801",
+            "id": "703",
+            "name": "somewhere-else",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "704",
+            "name": "a-thread",
+            "parent_id": "700"
+          },
+          {
+            "category_id": null,
+            "id": "900",
+            "name": "party-star",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "901",
+            "name": "party-kalos",
+            "parent_id": null
+          }
+        ],
+        "limits": {
+          "count": 2,
+          "pool_count": 3,
+          "pool_window_s": 900.0,
+          "window_s": 300.0
+        },
+        "reset_time": "00:00",
+        "reset_weekday": 3,
+        "self_role_id": "5001",
+        "settings": {
+          "chat_pilot_category_ids": "800",
+          "chat_pilot_channel_ids": "700",
+          "chat_pilot_history_ttl_s": 2700.0,
+          "chat_pilot_model": "synthetic-chat",
+          "chat_pilot_role_id": "6000",
+          "chat_pilot_temperature": 0.7,
+          "chat_pilot_think": "low",
+          "chat_pilot_timeout": 60.0,
+          "guild_id": "1000",
+          "model_context_tokens": 16384,
+          "post_channel_id": null,
+          "watched_channel_ids": "900,901"
+        },
+        "steps": [
+          {
+            "channel_id": "700",
+            "op": "is_chat_channel"
+          },
+          {
+            "channel_id": "702",
+            "op": "is_chat_channel"
+          },
+          {
+            "channel_id": "704",
+            "op": "is_chat_channel"
+          },
+          {
+            "channel_id": "703",
+            "op": "is_chat_channel"
+          },
+          {
+            "channel_id": "701",
+            "op": "is_chat_channel"
+          },
+          {
+            "channel_id": "900",
+            "op": "is_chat_channel"
+          },
+          {
+            "channel_id": "799",
+            "op": "is_chat_channel"
+          },
+          {
+            "channel_id": null,
+            "op": "is_chat_channel"
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "702",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "704",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "703",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "mentions-replies-managed-role",
+      "expected": {
+        "steps": [
+          {
+            "value": false
+          },
+          {
+            "value": true
+          },
+          {
+            "value": false
+          },
+          {
+            "value": false
+          },
+          {
+            "value": true
+          },
+          {
+            "value": false
+          },
+          {
+            "value": false
+          },
+          {
+            "value": {
+              "act": true,
+              "busy": false,
+              "reason": "ok",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "the bot was not mentioned",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": true,
+              "busy": false,
+              "reason": "ok",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": true
+          },
+          {
+            "value": false
+          },
+          {
+            "value": false
+          },
+          {
+            "value": true
+          }
+        ]
+      },
+      "input": {
+        "bot_user_id": "5000",
+        "channels": [
+          {
+            "category_id": null,
+            "id": "700",
+            "name": "ask-the-bot",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "701",
+            "name": "general",
+            "parent_id": null
+          },
+          {
+            "category_id": "800",
+            "id": "702",
+            "name": "bot-chatter",
+            "parent_id": null
+          },
+          {
+            "category_id": "801",
+            "id": "703",
+            "name": "somewhere-else",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "704",
+            "name": "a-thread",
+            "parent_id": "700"
+          },
+          {
+            "category_id": null,
+            "id": "900",
+            "name": "party-star",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "901",
+            "name": "party-kalos",
+            "parent_id": null
+          }
+        ],
+        "limits": {
+          "count": 2,
+          "pool_count": 3,
+          "pool_window_s": 900.0,
+          "window_s": 300.0
+        },
+        "reset_time": "00:00",
+        "reset_weekday": 3,
+        "self_role_id": "5001",
+        "settings": {
+          "chat_pilot_category_ids": "800",
+          "chat_pilot_channel_ids": "700",
+          "chat_pilot_history_ttl_s": 2700.0,
+          "chat_pilot_model": "synthetic-chat",
+          "chat_pilot_role_id": "6000",
+          "chat_pilot_temperature": 0.7,
+          "chat_pilot_think": "low",
+          "chat_pilot_timeout": 60.0,
+          "guild_id": "1000",
+          "model_context_tokens": 16384,
+          "post_channel_id": null,
+          "watched_channel_ids": "900,901"
+        },
+        "steps": [
+          {
+            "bot_user_id": "5000",
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [],
+              "role_mentions": []
+            },
+            "op": "mentions_bot",
+            "replied_author_id": null,
+            "self_role_id": "5001"
+          },
+          {
+            "bot_user_id": "5000",
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [],
+              "role_mentions": [
+                "5001"
+              ]
+            },
+            "op": "mentions_bot",
+            "replied_author_id": null,
+            "self_role_id": "5001"
+          },
+          {
+            "bot_user_id": "5000",
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [],
+              "role_mentions": [
+                "6000"
+              ]
+            },
+            "op": "mentions_bot",
+            "replied_author_id": null,
+            "self_role_id": "5001"
+          },
+          {
+            "bot_user_id": "5000",
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [],
+              "role_mentions": [
+                "5001"
+              ]
+            },
+            "op": "mentions_bot",
+            "replied_author_id": null,
+            "self_role_id": null
+          },
+          {
+            "bot_user_id": "5000",
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [],
+              "role_mentions": []
+            },
+            "op": "mentions_bot",
+            "replied_author_id": "5000",
+            "self_role_id": "5001"
+          },
+          {
+            "bot_user_id": "5000",
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [],
+              "role_mentions": []
+            },
+            "op": "mentions_bot",
+            "replied_author_id": "22",
+            "self_role_id": "5001"
+          },
+          {
+            "bot_user_id": null,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "mentions_bot",
+            "replied_author_id": null,
+            "self_role_id": "5001"
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": "5000"
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": "22"
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [],
+              "role_mentions": [
+                "5001"
+              ]
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [],
+              "role_mentions": []
+            },
+            "op": "would_check_mention"
+          },
+          {
+            "enabled": true,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "900",
+              "guild_id": "1000",
+              "mentions": [],
+              "role_mentions": []
+            },
+            "op": "would_check_mention"
+          },
+          {
+            "enabled": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "would_check_mention"
+          },
+          {
+            "enabled": true,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": []
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "would_check_mention"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "budgets-person-then-pool",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "act": true,
+              "busy": false,
+              "reason": "ok",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": true,
+              "busy": false,
+              "reason": "ok",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": true,
+              "reason": "rate limited",
+              "retry_after_s": 280.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "the bot was not mentioned",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "the author does not hold the chat role",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": true,
+              "busy": false,
+              "reason": "ok",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": true,
+              "busy": false,
+              "reason": "ok",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": true,
+              "reason": "the guild's answer budget is spent",
+              "retry_after_s": 860.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": true,
+              "reason": "the guild's answer budget is spent",
+              "retry_after_s": 850.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": true,
+              "reason": "the guild's answer budget is spent",
+              "retry_after_s": 600.0
+            }
+          },
+          {
+            "value": {
+              "act": true,
+              "busy": false,
+              "reason": "ok",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": true,
+              "busy": false,
+              "reason": "ok",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": true,
+              "reason": "the guild's answer budget is spent",
+              "retry_after_s": 10.0
+            }
+          }
+        ]
+      },
+      "input": {
+        "bot_user_id": "5000",
+        "channels": [
+          {
+            "category_id": null,
+            "id": "700",
+            "name": "ask-the-bot",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "701",
+            "name": "general",
+            "parent_id": null
+          },
+          {
+            "category_id": "800",
+            "id": "702",
+            "name": "bot-chatter",
+            "parent_id": null
+          },
+          {
+            "category_id": "801",
+            "id": "703",
+            "name": "somewhere-else",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "704",
+            "name": "a-thread",
+            "parent_id": "700"
+          },
+          {
+            "category_id": null,
+            "id": "900",
+            "name": "party-star",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "901",
+            "name": "party-kalos",
+            "parent_id": null
+          }
+        ],
+        "limits": {
+          "count": 2,
+          "pool_count": 3,
+          "pool_window_s": 900.0,
+          "window_s": 300.0
+        },
+        "reset_time": "00:00",
+        "reset_weekday": 3,
+        "self_role_id": "5001",
+        "settings": {
+          "chat_pilot_category_ids": "800",
+          "chat_pilot_channel_ids": "700",
+          "chat_pilot_history_ttl_s": 2700.0,
+          "chat_pilot_model": "synthetic-chat",
+          "chat_pilot_role_id": "6000",
+          "chat_pilot_temperature": 0.7,
+          "chat_pilot_think": "low",
+          "chat_pilot_timeout": 60.0,
+          "guild_id": "1000",
+          "model_context_tokens": 16384,
+          "post_channel_id": null,
+          "watched_channel_ids": "900,901"
+        },
+        "steps": [
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "now": 0.0,
+            "op": "decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "now": 10.0,
+            "op": "decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "now": 20.0,
+            "op": "decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [],
+              "role_mentions": []
+            },
+            "now": 25.0,
+            "op": "decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": []
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "now": 26.0,
+            "op": "decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": true,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": []
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "now": 27.0,
+            "op": "decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "22",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "now": 30.0,
+            "op": "decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "33",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "now": 40.0,
+            "op": "decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "33",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "now": 50.0,
+            "op": "decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "now": 300.0,
+            "op": "decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "now": 900.0,
+            "op": "decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "33",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "now": 910.0,
+            "op": "decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "33",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "now": 920.0,
+            "op": "decide",
+            "replied_author_id": null
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "half-configured-pilot",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "the chat pilot is not configured",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": true
+          }
+        ]
+      },
+      "input": {
+        "bot_user_id": "5000",
+        "channels": [
+          {
+            "category_id": null,
+            "id": "700",
+            "name": "ask-the-bot",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "701",
+            "name": "general",
+            "parent_id": null
+          },
+          {
+            "category_id": "800",
+            "id": "702",
+            "name": "bot-chatter",
+            "parent_id": null
+          },
+          {
+            "category_id": "801",
+            "id": "703",
+            "name": "somewhere-else",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "704",
+            "name": "a-thread",
+            "parent_id": "700"
+          },
+          {
+            "category_id": null,
+            "id": "900",
+            "name": "party-star",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "901",
+            "name": "party-kalos",
+            "parent_id": null
+          }
+        ],
+        "limits": {
+          "count": 2,
+          "pool_count": 3,
+          "pool_window_s": 900.0,
+          "window_s": 300.0
+        },
+        "reset_time": "00:00",
+        "reset_weekday": 3,
+        "self_role_id": "5001",
+        "settings": {
+          "chat_pilot_category_ids": "800",
+          "chat_pilot_channel_ids": "700",
+          "chat_pilot_history_ttl_s": 2700.0,
+          "chat_pilot_model": "synthetic-chat",
+          "chat_pilot_role_id": null,
+          "chat_pilot_temperature": 0.7,
+          "chat_pilot_think": "low",
+          "chat_pilot_timeout": 60.0,
+          "guild_id": "1000",
+          "model_context_tokens": 16384,
+          "post_channel_id": null,
+          "watched_channel_ids": "900,901"
+        },
+        "steps": [
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "channel_id": "700",
+            "op": "is_chat_channel"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "category-alone-configures",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "act": true,
+              "busy": false,
+              "reason": "ok",
+              "retry_after_s": 0.0
+            }
+          },
+          {
+            "value": {
+              "act": false,
+              "busy": false,
+              "reason": "not a chat channel",
+              "retry_after_s": 0.0
+            }
+          }
+        ]
+      },
+      "input": {
+        "bot_user_id": "5000",
+        "channels": [
+          {
+            "category_id": null,
+            "id": "700",
+            "name": "ask-the-bot",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "701",
+            "name": "general",
+            "parent_id": null
+          },
+          {
+            "category_id": "800",
+            "id": "702",
+            "name": "bot-chatter",
+            "parent_id": null
+          },
+          {
+            "category_id": "801",
+            "id": "703",
+            "name": "somewhere-else",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "704",
+            "name": "a-thread",
+            "parent_id": "700"
+          },
+          {
+            "category_id": null,
+            "id": "900",
+            "name": "party-star",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "901",
+            "name": "party-kalos",
+            "parent_id": null
+          }
+        ],
+        "limits": {
+          "count": 2,
+          "pool_count": 3,
+          "pool_window_s": 900.0,
+          "window_s": 300.0
+        },
+        "reset_time": "00:00",
+        "reset_weekday": 3,
+        "self_role_id": "5001",
+        "settings": {
+          "chat_pilot_category_ids": "800",
+          "chat_pilot_channel_ids": "",
+          "chat_pilot_history_ttl_s": 2700.0,
+          "chat_pilot_model": "synthetic-chat",
+          "chat_pilot_role_id": "6000",
+          "chat_pilot_temperature": 0.7,
+          "chat_pilot_think": "low",
+          "chat_pilot_timeout": 60.0,
+          "guild_id": "1000",
+          "model_context_tokens": 16384,
+          "post_channel_id": null,
+          "watched_channel_ids": "900,901"
+        },
+        "steps": [
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "702",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          },
+          {
+            "enabled": true,
+            "is_admin": false,
+            "message": {
+              "author": {
+                "bot": false,
+                "id": "11",
+                "roles": [
+                  "6000"
+                ]
+              },
+              "channel_id": "700",
+              "guild_id": "1000",
+              "mentions": [
+                "5000"
+              ],
+              "role_mentions": []
+            },
+            "op": "access_decide",
+            "replied_author_id": null
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "admin-rule-and-retry-note",
+      "expected": {
+        "steps": [
+          {
+            "value": false
+          },
+          {
+            "value": true
+          },
+          {
+            "value": true
+          },
+          {
+            "value": true
+          },
+          {
+            "value": "1s"
+          },
+          {
+            "value": "1s"
+          },
+          {
+            "value": "1s"
+          },
+          {
+            "value": "60s"
+          },
+          {
+            "value": "120s"
+          },
+          {
+            "value": "3 min"
+          },
+          {
+            "value": "3 min"
+          },
+          {
+            "value": "5 min"
+          },
+          {
+            "value": "60 min"
+          }
+        ]
+      },
+      "input": {
+        "bot_user_id": "5000",
+        "channels": [
+          {
+            "category_id": null,
+            "id": "700",
+            "name": "ask-the-bot",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "701",
+            "name": "general",
+            "parent_id": null
+          },
+          {
+            "category_id": "800",
+            "id": "702",
+            "name": "bot-chatter",
+            "parent_id": null
+          },
+          {
+            "category_id": "801",
+            "id": "703",
+            "name": "somewhere-else",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "704",
+            "name": "a-thread",
+            "parent_id": "700"
+          },
+          {
+            "category_id": null,
+            "id": "900",
+            "name": "party-star",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "901",
+            "name": "party-kalos",
+            "parent_id": null
+          }
+        ],
+        "limits": {
+          "count": 2,
+          "pool_count": 3,
+          "pool_window_s": 900.0,
+          "window_s": 300.0
+        },
+        "reset_time": "00:00",
+        "reset_weekday": 3,
+        "self_role_id": "5001",
+        "settings": {
+          "chat_pilot_category_ids": "800",
+          "chat_pilot_channel_ids": "700",
+          "chat_pilot_history_ttl_s": 2700.0,
+          "chat_pilot_model": "synthetic-chat",
+          "chat_pilot_role_id": "6000",
+          "chat_pilot_temperature": 0.7,
+          "chat_pilot_think": "low",
+          "chat_pilot_timeout": 60.0,
+          "guild_id": "1000",
+          "model_context_tokens": 16384,
+          "post_channel_id": null,
+          "watched_channel_ids": "900,901"
+        },
+        "steps": [
+          {
+            "admin_role_id": "6002",
+            "administrator": false,
+            "op": "is_bot_admin",
+            "owner": false,
+            "roles": [
+              "6000"
+            ]
+          },
+          {
+            "admin_role_id": "6002",
+            "administrator": false,
+            "op": "is_bot_admin",
+            "owner": false,
+            "roles": [
+              "6002"
+            ]
+          },
+          {
+            "admin_role_id": null,
+            "administrator": true,
+            "op": "is_bot_admin",
+            "owner": false,
+            "roles": []
+          },
+          {
+            "admin_role_id": null,
+            "administrator": false,
+            "op": "is_bot_admin",
+            "owner": true,
+            "roles": []
+          },
+          {
+            "op": "retry_note",
+            "seconds": 0.0
+          },
+          {
+            "op": "retry_note",
+            "seconds": 0.2
+          },
+          {
+            "op": "retry_note",
+            "seconds": 1.0
+          },
+          {
+            "op": "retry_note",
+            "seconds": 59.5
+          },
+          {
+            "op": "retry_note",
+            "seconds": 120.0
+          },
+          {
+            "op": "retry_note",
+            "seconds": 120.4
+          },
+          {
+            "op": "retry_note",
+            "seconds": 121.0
+          },
+          {
+            "op": "retry_note",
+            "seconds": 290.0
+          },
+          {
+            "op": "retry_note",
+            "seconds": 3600.0
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    }
+  ],
+  "family": "gate",
+  "provenance": {
+    "functions": [
+      "bot.chat.gate.decide",
+      "bot.chat.gate.access_decide",
+      "bot.chat.gate.would_check_mention",
+      "bot.chat.gate.mentions_bot",
+      "bot.chat.gate.is_chat_channel",
+      "bot.chat.ratelimit.RateLimiter",
+      "bot.agent.util.is_bot_admin",
+      "bot.chat.agent.retry_note",
+      "bot.infrastructure.watch.is_watched"
+    ],
+    "inventory_surfaces": [],
+    "oracle": "legacy/python bot.chat.gate",
+    "source_tests": [
+      "tests/test_chat_gate.py",
+      "tests/test_chat_mentions.py",
+      "tests/test_chat_ratelimit.py",
+      "tests/test_chat_injection.py"
+    ]
+  },
+  "schema_version": "v5-chat-gate-v1"
+}

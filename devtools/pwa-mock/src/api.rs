@@ -1,0 +1,646 @@
+//! JSON handlers, mostly the admin origin's. The public origin's member
+//! routes are in `public.rs`; authorization is by which router a route is
+//! mounted on.
+
+use crate::{
+    App,
+    mock::{
+        MoveError, Store,
+        dto::*,
+        extractions::RescanRequest,
+        history::{Actor, Mode},
+        inbox::ApproveRequest,
+        past,
+    },
+};
+use axum::{
+    Json,
+    extract::{Path, Query, RawQuery, State, rejection::JsonRejection},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
+use serde::Deserialize;
+use serde_json::json;
+
+#[derive(Deserialize)]
+pub struct WeekQuery {
+    week: Option<String>,
+}
+
+impl WeekQuery {
+    fn next(&self) -> bool {
+        self.week.as_deref() == Some("next")
+    }
+}
+
+pub fn error(status: StatusCode, code: &str, message: &str) -> Response {
+    (status, Json(json!({ "error": code, "message": message }))).into_response()
+}
+
+/// While the public portal is closed the public origin serves only the shell,
+/// its status, sign-out and the bot identity; everything else answers this.
+pub fn closed() -> Response {
+    error(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "closed",
+        "The schedule is not public right now.",
+    )
+}
+
+pub fn outcome<T: serde::Serialize>(result: Result<T, MoveError>) -> Response {
+    match result {
+        Ok(value) => Json(value).into_response(),
+        Err(MoveError::NotFound) => error(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "That run no longer exists.",
+        ),
+        Err(MoveError::Stale) => error(
+            StatusCode::CONFLICT,
+            "stale",
+            "The week changed since it was loaded.",
+        ),
+        Err(MoveError::Invalid(message)) => {
+            error(StatusCode::UNPROCESSABLE_ENTITY, "invalid", &message)
+        }
+        Err(MoveError::Coded(status, code, message)) => error(
+            StatusCode::from_u16(status).unwrap_or(StatusCode::UNPROCESSABLE_ENTITY),
+            code,
+            &message,
+        ),
+    }
+}
+
+pub async fn week(State(app): State<App>, Query(q): Query<WeekQuery>) -> Response {
+    Json(app.store.lock().await.week(q.next())).into_response()
+}
+
+pub async fn stats(State(app): State<App>, Query(q): Query<WeekQuery>) -> Response {
+    Json(app.store.lock().await.stats(q.next())).into_response()
+}
+
+pub async fn summary(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.summary()).into_response()
+}
+
+pub async fn members(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.member_rows()).into_response()
+}
+
+pub async fn channels() -> Response {
+    Json(Store::channels()).into_response()
+}
+
+/// Guild roles, highest first, `@everyone` left out (the server reads the gateway cache).
+pub async fn roles() -> Response {
+    Json(Store::roles()).into_response()
+}
+
+pub async fn personas() -> Response {
+    Json(Store::personas()).into_response()
+}
+
+pub async fn patch_member(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Json(req): Json<MemberPatch>,
+) -> Response {
+    outcome(app.store.lock().await.patch_member(&id, req))
+}
+
+pub async fn add_alias(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Json(req): Json<AliasRequest>,
+) -> Response {
+    outcome(app.store.lock().await.add_alias(&id, &req.alias))
+}
+
+pub async fn remove_alias(
+    State(app): State<App>,
+    Path((id, alias)): Path<(String, String)>,
+) -> Response {
+    outcome(app.store.lock().await.remove_alias(&id, &alias))
+}
+
+pub async fn fixed(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.fixed_rows()).into_response()
+}
+
+pub async fn create_fixed(State(app): State<App>, Json(req): Json<FixedRequest>) -> Response {
+    outcome(app.store.lock().await.portal(|s| s.create_fixed(req)))
+}
+
+pub async fn update_fixed(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Json(req): Json<FixedRequest>,
+) -> Response {
+    outcome(app.store.lock().await.portal(|s| s.update_fixed(&id, req)))
+}
+
+pub async fn retire_fixed(State(app): State<App>, Path(id): Path<String>) -> Response {
+    outcome(
+        app.store
+            .lock()
+            .await
+            .portal(|s| s.retire_fixed(&id))
+            .map(|cancelled| json!({ "cancelled": cancelled })),
+    )
+}
+
+pub async fn validate_bosses(State(app): State<App>, Json(req): Json<ValidateRequest>) -> Response {
+    outcome(app.store.lock().await.validate_bosses(&req.text))
+}
+
+pub async fn bosses(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.boss_rows()).into_response()
+}
+
+pub async fn reminders(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.reminders()).into_response()
+}
+
+pub async fn reminder_preview(State(app): State<App>, Path(id): Path<String>) -> Response {
+    match app.store.lock().await.reminder_preview(&id) {
+        Some(preview) => Json(preview).into_response(),
+        None => not_found().await,
+    }
+}
+
+#[derive(Deserialize)]
+pub struct VersionBody {
+    version: u64,
+}
+
+pub async fn reset_run(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Json(req): Json<VersionBody>,
+) -> Response {
+    outcome(
+        app.store
+            .lock()
+            .await
+            .portal(|s| s.reset_to_fixed(&id, req.version)),
+    )
+}
+
+/// Mock stand-in for the authenticated caller; carries the CSRF token like the server.
+pub async fn session(State(app): State<App>) -> Response {
+    let (display, method) = {
+        let store = app.store.lock().await;
+        (store.session_display(), store.session_method())
+    };
+    (
+        [(crate::writes::CSRF_HEADER, app.writes.token())],
+        Json(json!({ "display": display, "method": method })),
+    )
+        .into_response()
+}
+
+#[derive(Deserialize)]
+pub struct SessionMethod {
+    method: String,
+    /// With `discord`: the seeded member to sign in as (default Asahi, 1001).
+    #[serde(default)]
+    user: Option<String>,
+}
+
+/// `POST /__mock/session {method}`: sign in again as `discord`, `token` or
+/// `tailscale` (a new CSRF token, as a real sign-in), or sign out with
+/// `none`, so e2e can cover the Discord-only rule and the sign-in flow.
+pub async fn switch_session(State(app): State<App>, Json(req): Json<SessionMethod>) -> Response {
+    let switched = match (req.method.as_str(), req.user.as_deref()) {
+        ("discord", Some(user)) => app.store.lock().await.set_discord_member(user),
+        _ => app.store.lock().await.set_session(&req.method),
+    };
+    if !switched {
+        return error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid",
+            "Method is discord, token, tailscale or none.",
+        );
+    }
+    app.writes.rotate();
+    StatusCode::NO_CONTENT.into_response()
+}
+
+#[derive(Deserialize)]
+pub struct LimitGroups {
+    groups: String,
+}
+
+/// `POST /__mock/limits {groups}`: `three` seeds three model groups (full and
+/// queueing, half-open, open) for Limits and Config; `default` restores the
+/// one gateway group. Dev and e2e only; `/api/admin/reset` also restores it.
+pub async fn seed_limits(State(app): State<App>, Json(req): Json<LimitGroups>) -> Response {
+    if !app.store.lock().await.seed_limit_groups(&req.groups) {
+        return error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid",
+            "Groups is three or default.",
+        );
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
+
+pub async fn move_run(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Json(req): Json<MoveRequest>,
+) -> Response {
+    outcome(app.store.lock().await.portal(|s| s.move_run(&id, req)))
+}
+
+pub async fn swap_runs(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    body: Result<Json<SwapRequest>, JsonRejection>,
+) -> Response {
+    let Json(req) = match body {
+        Ok(body) => body,
+        Err(_) => {
+            return error(
+                StatusCode::BAD_REQUEST,
+                "invalid_body",
+                "Invalid JSON body.",
+            );
+        }
+    };
+    outcome(app.store.lock().await.portal(|s| s.swap_runs(&id, req)))
+}
+
+pub async fn status(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Json(req): Json<StatusRequest>,
+) -> Response {
+    outcome(app.store.lock().await.portal(|s| s.set_status(&id, req)))
+}
+
+pub async fn rsvp(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Json(req): Json<RsvpRequest>,
+) -> Response {
+    outcome(app.store.lock().await.portal(|s| s.rsvp(&id, req)))
+}
+
+pub async fn participants(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Json(req): Json<ParticipantsRequest>,
+) -> Response {
+    outcome(app.store.lock().await.portal(|s| s.participants(&id, req)))
+}
+
+pub async fn ping(State(app): State<App>, Path(id): Path<String>) -> Response {
+    outcome(
+        app.store
+            .lock()
+            .await
+            .ping(&id)
+            .map(|message| json!({ "message": message })),
+    )
+}
+
+pub async fn reset(State(app): State<App>) -> StatusCode {
+    app.store.lock().await.reset();
+    app.writes.forget().await;
+    StatusCode::NO_CONTENT
+}
+
+pub async fn not_found() -> Response {
+    error(
+        StatusCode::NOT_FOUND,
+        "not_found",
+        "No such endpoint on this origin.",
+    )
+}
+
+pub async fn knowledge_v2(State(app): State<App>, Path(key): Path<String>) -> Response {
+    outcome(app.store.lock().await.knowledge_v2(&app.knowledge, &key))
+}
+
+pub async fn events(State(app): State<App>) -> Response {
+    let catalog = app.store.lock().await.catalog().clone();
+    Json(app.knowledge.events(&catalog)).into_response()
+}
+
+pub async fn inbox(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.inbox()).into_response()
+}
+
+#[derive(Deserialize)]
+pub struct PastQuery {
+    before: Option<String>,
+    limit: Option<String>,
+}
+
+/// As the server: `limit` 1-200 (default 50); a bad value or an unknown
+/// `before` is `422 invalid_query`.
+pub async fn inbox_past(State(app): State<App>, Query(q): Query<PastQuery>) -> Response {
+    let invalid = || {
+        error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_query",
+            "Unknown or malformed query parameter.",
+        )
+    };
+    let limit = match q.limit.as_deref() {
+        None => past::DEFAULT_LIMIT,
+        Some(text) => match text.parse::<usize>() {
+            Ok(limit @ 1..=past::MAX_LIMIT) => limit,
+            _ => return invalid(),
+        },
+    };
+    if q.before.as_deref() == Some("") {
+        return invalid();
+    }
+    outcome(
+        app.store
+            .lock()
+            .await
+            .inbox_past(q.before.as_deref(), limit),
+    )
+}
+
+pub async fn approve(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Json(req): Json<ApproveRequest>,
+) -> Response {
+    outcome(
+        app.store
+            .lock()
+            .await
+            .approve_tracked(&id, req)
+            .map(|message| json!({ "message": message })),
+    )
+}
+
+pub async fn reject(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    body: Option<Json<crate::mock::inbox::RejectRequest>>,
+) -> Response {
+    let req = body.map(|Json(r)| r).unwrap_or_default();
+    outcome(
+        app.store
+            .lock()
+            .await
+            .reject(&id, req)
+            .map(|message| json!({ "message": message })),
+    )
+}
+
+pub async fn owner_requests(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.owner_requests()).into_response()
+}
+
+/// Any admin session decides (no Discord sign-in needed); the write guard
+/// already checked CSRF and replays a repeated `Idempotency-Key`.
+pub async fn accept_owner_request(State(app): State<App>, Path(id): Path<String>) -> Response {
+    decide_owner_request(&app, &id, true).await
+}
+
+pub async fn decline_owner_request(State(app): State<App>, Path(id): Path<String>) -> Response {
+    decide_owner_request(&app, &id, false).await
+}
+
+async fn decide_owner_request(app: &App, id: &str, accept: bool) -> Response {
+    outcome(
+        app.store
+            .lock()
+            .await
+            .decide_owner_request(id, accept)
+            .map(|message| json!({ "message": message })),
+    )
+}
+
+pub async fn extractions(
+    State(app): State<App>,
+    Query(q): Query<crate::mock::logfilter::LogQuery>,
+) -> Response {
+    outcome(app.store.lock().await.extractions(&q))
+}
+
+pub async fn extraction(State(app): State<App>, Path(id): Path<String>) -> Response {
+    outcome(app.store.lock().await.extraction(&id))
+}
+
+pub async fn rescan_targets() -> Response {
+    Json(Store::rescan_targets()).into_response()
+}
+
+pub async fn start_rescan(State(app): State<App>, Json(req): Json<RescanRequest>) -> Response {
+    outcome(app.store.lock().await.start_rescan(req))
+}
+
+pub async fn poll_rescan(State(app): State<App>, Path(id): Path<String>) -> Response {
+    outcome(app.store.lock().await.poll_rescan(&id))
+}
+
+pub async fn cancel_rescan(State(app): State<App>, Path(id): Path<String>) -> Response {
+    outcome(app.store.lock().await.cancel_rescan(&id))
+}
+
+pub async fn chat(
+    State(app): State<App>,
+    Query(q): Query<crate::mock::logfilter::LogQuery>,
+) -> Response {
+    outcome(app.store.lock().await.chat(&q))
+}
+
+pub async fn chat_turn(State(app): State<App>, Path(id): Path<String>) -> Response {
+    outcome(app.store.lock().await.chat_turn(&id))
+}
+
+/// The raw query: the mock reads pairs itself so repeated or undecodable
+/// keys are refused as the server refuses them.
+pub async fn rewrites(State(app): State<App>, RawQuery(q): RawQuery) -> Response {
+    outcome(app.store.lock().await.rewrites(q.as_deref()))
+}
+
+pub async fn rewrite(State(app): State<App>, Path(id): Path<String>) -> Response {
+    outcome(app.store.lock().await.rewrite(&id))
+}
+
+pub async fn limits(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.limits()).into_response()
+}
+
+pub async fn me(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.me()).into_response()
+}
+
+pub async fn own_sessions(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.own_sessions()).into_response()
+}
+
+pub async fn end_own_session(State(app): State<App>, Path(handle): Path<String>) -> Response {
+    match app.store.lock().await.end_own_session(&handle) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(refused) => outcome::<()>(Err(refused)),
+    }
+}
+
+pub async fn end_other_sessions(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.end_other_sessions()).into_response()
+}
+
+pub async fn reset_window(State(app): State<App>, Path(id): Path<String>) -> Response {
+    outcome(app.store.lock().await.reset_window(&id))
+}
+
+#[derive(Deserialize)]
+pub struct HistoryQuery {
+    week: Option<String>,
+    actor: Option<String>,
+    run: Option<String>,
+    before: Option<u64>,
+    limit: Option<usize>,
+}
+
+fn actor(text: &str) -> Option<Actor> {
+    let (kind, id) = text.split_once(':')?;
+    matches!(kind, "member" | "admin" | "system").then(|| Actor::new(kind, id))
+}
+
+pub async fn history(State(app): State<App>, Query(q): Query<HistoryQuery>) -> Response {
+    let actor = q.actor.as_deref().and_then(actor);
+    let limit = q.limit.unwrap_or(20).clamp(1, 100);
+    let store = app.store.lock().await;
+    // As the server: `run` stands alone and names a run or its history.
+    if let Some(run) = q.run.as_deref()
+        && (q.week.is_some() || q.actor.is_some() || !store.knows_run(run))
+    {
+        return error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_query",
+            "A query parameter is not valid.",
+        );
+    }
+    Json(store.history_page(
+        q.week.as_deref(),
+        actor.as_ref(),
+        q.run.as_deref(),
+        q.before,
+        limit,
+    ))
+    .into_response()
+}
+
+pub async fn history_record(State(app): State<App>, Path(seq): Path<u64>) -> Response {
+    outcome(
+        app.store
+            .lock()
+            .await
+            .record(seq)
+            .filter(|r| r.seq > 0)
+            .ok_or(MoveError::NotFound),
+    )
+}
+
+#[derive(Deserialize)]
+pub struct RevertRequest {
+    seqs: Vec<u64>,
+    #[serde(flatten)]
+    mode: Mode,
+}
+
+pub async fn revert(State(app): State<App>, Json(req): Json<RevertRequest>) -> Response {
+    outcome(app.store.lock().await.revert_changes(req.seqs, &req.mode))
+}
+
+#[derive(Deserialize)]
+pub struct RestoreRequest {
+    week: String,
+    revision: u64,
+    #[serde(flatten)]
+    mode: Mode,
+}
+
+pub async fn restore_week(State(app): State<App>, Json(req): Json<RestoreRequest>) -> Response {
+    outcome(
+        app.store
+            .lock()
+            .await
+            .restore_week_to(&req.week, req.revision, &req.mode),
+    )
+}
+
+#[derive(Deserialize)]
+pub struct ActorRevertRequest {
+    actor: String,
+    since: String,
+    #[serde(flatten)]
+    mode: Mode,
+}
+
+pub async fn revert_actor(State(app): State<App>, Json(req): Json<ActorRevertRequest>) -> Response {
+    let Some(who) = actor(&req.actor) else {
+        return error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid",
+            "Actor is kind:id, e.g. member:1005.",
+        );
+    };
+    outcome(
+        app.store
+            .lock()
+            .await
+            .revert_by_actor(&who, &req.since, &req.mode),
+    )
+}
+
+pub async fn checkpoints(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.checkpoints()).into_response()
+}
+
+pub async fn sign_ins(State(app): State<App>, RawQuery(q): RawQuery) -> Response {
+    outcome(app.store.lock().await.sign_ins(q.as_deref()))
+}
+
+pub async fn config(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.config_view()).into_response()
+}
+
+pub async fn patch_config(
+    State(app): State<App>,
+    Json(patch): Json<serde_json::Value>,
+) -> Response {
+    outcome(app.store.lock().await.patch_config(&patch))
+}
+
+#[derive(Deserialize)]
+pub struct DigestRequest {
+    week: String,
+    channel_id: Option<String>,
+}
+
+pub async fn reload_profiles(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.reload_profiles()).into_response()
+}
+
+pub async fn digest(State(app): State<App>, Json(req): Json<DigestRequest>) -> Response {
+    outcome(
+        app.store
+            .lock()
+            .await
+            .post_digest(&req.week, req.channel_id.as_deref()),
+    )
+}
+
+/// The manual header rewrite answers `202` at once, as the server does.
+pub async fn rewrite_headers(State(app): State<App>) -> Response {
+    match app.store.lock().await.rewrite_headers() {
+        Ok(value) => (StatusCode::ACCEPTED, Json(value)).into_response(),
+        Err(error) => outcome::<serde_json::Value>(Err(error)),
+    }
+}
+
+pub async fn access(State(app): State<App>) -> Response {
+    Json(app.store.lock().await.access()).into_response()
+}

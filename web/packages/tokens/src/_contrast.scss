@@ -1,0 +1,113 @@
+// v5 contrast corrections: the only deliberate departures from the v4 token
+// values, each needed for WCAG 2.2 AA (4.5:1) on small text as measured by axe
+// across every face (new colourways since 2026-10-04 were tuned to pass
+// without entries here; see ../README.md). Kept apart so the change set is one reviewable file;
+// ratios are v4 -> v5 against the worst background the token sits on.
+
+// Window chrome behind 13px tab labels (on --win-ink).
+[data-colorway="blossom"] {
+  --win: #83656f; // #91707a 3.95 -> 4.68
+}
+
+[data-colorway="periwinkle"] {
+  --win: #646c86; // #6d7692 4.03 -> 4.66
+  --dim: #616776; // #656b7a 4.36 -> 4.63 on --raise
+}
+
+// Marigold is the unattributed default, so it is named both ways.
+:root:not([data-colorway]),
+[data-colorway="marigold"] {
+  --dim: #6c6961; // #6e6b62 4.51 -> 4.64 on --raise
+}
+
+:root {
+  // The game's difficulty pills under white 11px labels (light faces only).
+  --pill-n-bg: #287e99; // #2f93b3 3.53 -> 4.63
+  --pill-h-bg: #ce3c78; // #d9407f 4.21 -> 4.62
+
+  // Text-only variants of the signal and quiet colours. v4 used --ok, --risk,
+  // --faint etc. directly as small-text colours at 3.1-4.3:1. Pulling each a
+  // share toward --ink raises contrast in both faces (ink is dark by day,
+  // light at night) and keeps the hue; borders and fills keep the v4 values.
+  --faint: color-mix(in srgb, var(--dim) 70%, var(--ink)); // v4: dim 85% + surface
+  --dim-text: color-mix(in srgb, var(--dim) 75%, var(--ink));
+  --ok-text: color-mix(in srgb, var(--ok) 42%, var(--ink));
+  --risk-text: color-mix(in srgb, var(--risk) 62%, var(--ink));
+  --own-text: color-mix(in srgb, var(--own) 80%, var(--ink));
+  --warn-text: color-mix(in srgb, var(--warn) 85%, var(--ink));
+  // Accent as link text, and as a fill under --accent-ink (seg buttons, pips):
+  // the blossom accent is 3.5:1 against cream and its ink.
+  --accent-text: color-mix(in srgb, var(--accent) 55%, var(--ink));
+  --accent-fill: color-mix(in srgb, var(--accent) 60%, var(--ink));
+}
+
+// M3E --select-ink (labels on --select): accent-text is 4.37 (blossom) by
+// day; a deeper share of ink gives 5.14, and stays 5.3-6.2:1 at night.
+[data-colorway="blossom"] {
+  --select-ink: color-mix(in srgb, var(--accent) 35%, var(--ink));
+}
+
+// Text on the bare ground (the unboxed page line, fidelity audit 2026-10-02):
+// ink is 3.89 (periwinkle) and 2.51:1 (twilight) on the light grounds; a
+// share of black takes it to 7.0 and 4.9. Dark faces reset it below (ink on
+// their grounds is already 4.5:1 or more).
+[data-colorway="periwinkle"] {
+  --ground-ink: color-mix(in srgb, var(--ink) 50%, black);
+}
+
+[data-colorway="twilight"] {
+  --ground-ink: color-mix(in srgb, var(--ink) 35%, black);
+}
+
+// Dark faces: --dim on --surface/--raise, pills back to v4 night values.
+@mixin night {
+  --ground-ink: var(--ink);
+  // Row hover: an accent layer lands on --select at night (dE ~2); an ink
+  // layer stays apart from pane, row and select while --dim-text and
+  // --accent-text keep 4.5:1 on it.
+  --row-hover: color-mix(in srgb, var(--ink) 7%, var(--row));
+  --dim: #b4ae9a; // #b0ab97 4.48 -> 4.65
+  --pill-n-bg: #3aa7c9;
+  --pill-h-bg: #e8579a;
+}
+
+@mixin night-blossom {
+  --dim: #bda9ad; // #b09aa0 3.89 -> 4.61
+}
+
+@mixin night-periwinkle {
+  --dim: #b0b7c6; // #9aa3b5 3.67 -> 4.63
+}
+
+@mixin night-twilight {
+  --dim: #b1a8be; // #a49bb3 4.00 -> 4.66
+}
+
+// Same two spellings as _tokens.scss: device dark, and dark asked for.
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    @include night;
+  }
+  :root:not([data-theme="light"])[data-colorway="blossom"] {
+    @include night-blossom;
+  }
+  :root:not([data-theme="light"])[data-colorway="periwinkle"] {
+    @include night-periwinkle;
+  }
+  :root:not([data-theme="light"])[data-colorway="twilight"] {
+    @include night-twilight;
+  }
+}
+
+:root[data-theme="dark"] {
+  @include night;
+}
+:root[data-theme="dark"][data-colorway="blossom"] {
+  @include night-blossom;
+}
+:root[data-theme="dark"][data-colorway="periwinkle"] {
+  @include night-periwinkle;
+}
+:root[data-theme="dark"][data-colorway="twilight"] {
+  @include night-twilight;
+}

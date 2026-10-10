@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "V5 scheduler API-service mutation oracle vectors",
+  "type": "object",
+  "required": ["schema_version", "family", "provenance", "cases"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "v5-scheduler-mutations-v1"},
+    "family": {"const": "mutations"},
+    "provenance": {"$ref": "#/$defs/provenance"},
+    "cases": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/case"}}
+  },
+  "$defs": {
+    "id": {"type": "string", "minLength": 1},
+    "snowflake": {"type": "string", "pattern": "^[0-9]+$"},
+    "instant": {"type": "string", "format": "date-time"},
+    "clockTime": {"type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$"},
+    "hhmm": {"type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"},
+    "weekday": {"type": "integer", "minimum": 0, "maximum": 6},
+    "status": {"enum": ["planned", "confirmed", "at_risk", "otot", "done", "cancelled"]},
+    "settableStatus": {"enum": ["planned", "confirmed", "otot", "done", "cancelled"]},
+    "runSource": {"enum": ["fixed", "amend"]},
+    "rsvpState": {"enum": ["yes", "no", "maybe"]},
+    "rsvpSource": {"enum": ["reaction", "chat", "slash"]},
+    "reminderKind": {"type": "string", "pattern": "^(day_of|countdown_(0|[1-9][0-9]*))$"},
+    "strings": {"type": "array", "items": {"$ref": "#/$defs/id"}},
+    "nullableId": {"oneOf": [{"$ref": "#/$defs/id"}, {"type": "null"}]},
+    "errorType": {"const": "BadRequest"},
+    "provenance": {
+      "type": "object",
+      "required": ["oracle", "functions", "source_tests", "inventory_surfaces"],
+      "additionalProperties": false,
+      "properties": {
+        "oracle": {"type": "string", "minLength": 1},
+        "functions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/id"}},
+        "source_tests": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^tests/test_[a-z0-9_]+\\.py::test_[A-Za-z0-9_]+$"}},
+        "inventory_surfaces": {"$ref": "#/$defs/strings"}
+      }
+    },
+    "replayCase": {
+      "type": "object",
+      "required": ["case_id", "input"],
+      "additionalProperties": false,
+      "properties": {"case_id": {"$ref": "#/$defs/id"}, "input": {"$ref": "#/$defs/input"}, "expected": {"$ref": "#/$defs/expected"}}
+    },
+    "case": {"allOf": [{"$ref": "#/$defs/replayCase"}, {"required": ["expected"]}]},
+    "catalog": {
+      "type": "object",
+      "required": ["difficulties", "bosses"],
+      "additionalProperties": false,
+      "properties": {
+        "difficulties": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["prefix", "label"], "additionalProperties": false, "properties": {"prefix": {"type": "string", "pattern": "^[a-z]$"}, "label": {"$ref": "#/$defs/id"}}}},
+        "bosses": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["short"], "additionalProperties": false, "properties": {"short": {"$ref": "#/$defs/id"}, "full": {"$ref": "#/$defs/id"}, "level": {"type": "integer", "minimum": 1}, "difficulties": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^[a-z]$"}}, "aliases": {"$ref": "#/$defs/strings"}}}}
+      }
+    },
+    "member": {
+      "type": "object",
+      "required": ["user_id", "display_name", "nickname", "has_role", "ping_level"],
+      "additionalProperties": false,
+      "properties": {"user_id": {"$ref": "#/$defs/snowflake"}, "display_name": {"$ref": "#/$defs/id"}, "nickname": {"$ref": "#/$defs/nullableId"}, "has_role": {"type": "boolean"}, "ping_level": {"enum": ["essential", "all", "off"]}}
+    },
+    "input": {
+      "type": "object",
+      "required": ["clock", "timezone", "reset_weekday", "reset_time", "ping_time", "countdowns", "watched_channel_ids", "portal_actor_id", "catalog", "members", "uuid_sequence", "steps"],
+      "additionalProperties": false,
+      "properties": {
+        "clock": {"$ref": "#/$defs/instant"},
+        "timezone": {"type": "string", "minLength": 1},
+        "reset_weekday": {"$ref": "#/$defs/weekday"},
+        "reset_time": {"$ref": "#/$defs/clockTime"},
+        "ping_time": {"$ref": "#/$defs/clockTime"},
+        "countdowns": {"type": "array", "items": {"type": "integer", "minimum": 0}},
+        "watched_channel_ids": {"type": "array", "items": {"$ref": "#/$defs/snowflake"}},
+        "portal_actor_id": {"$ref": "#/$defs/snowflake"},
+        "catalog": {"$ref": "#/$defs/catalog"},
+        "members": {"type": "array", "items": {"$ref": "#/$defs/member"}},
+        "uuid_sequence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/id"}},
+        "steps": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/step"}}
+      }
+    },
+    "fixedChanges": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bosses": {"type": "string"},
+        "day": {"type": "string"},
+        "time": {"type": "string"},
+        "participants": {"type": "array", "items": {"type": "string"}},
+        "channel_id": {"type": "string"},
+        "note": {"type": "string"}
+      }
+    },
+    "step": {"oneOf": [
+      {"type": "object", "required": ["op", "fixed_key", "owner_id", "bosses", "weekday", "time", "participants", "channel_id"], "additionalProperties": false, "properties": {"op": {"const": "add_fixed"}, "fixed_key": {"$ref": "#/$defs/id"}, "owner_id": {"$ref": "#/$defs/snowflake"}, "bosses": {"$ref": "#/$defs/strings"}, "weekday": {"$ref": "#/$defs/weekday"}, "time": {"$ref": "#/$defs/hhmm"}, "participants": {"type": "array", "items": {"$ref": "#/$defs/snowflake"}}, "channel_id": {"$ref": "#/$defs/snowflake"}}},
+      {"type": "object", "required": ["op", "run_key", "week_start", "bosses", "at", "participants", "status", "source", "channel_id"], "additionalProperties": false, "properties": {"op": {"const": "create_run"}, "run_key": {"$ref": "#/$defs/id"}, "week_start": {"$ref": "#/$defs/instant"}, "bosses": {"$ref": "#/$defs/strings"}, "at": {"$ref": "#/$defs/instant"}, "participants": {"type": "array", "items": {"$ref": "#/$defs/snowflake"}}, "status": {"$ref": "#/$defs/status"}, "source": {"$ref": "#/$defs/runSource"}, "channel_id": {"$ref": "#/$defs/snowflake"}}},
+      {"type": "object", "required": ["op", "run_key", "user_id", "state", "source"], "additionalProperties": false, "properties": {"op": {"const": "set_rsvp"}, "run_key": {"$ref": "#/$defs/id"}, "user_id": {"$ref": "#/$defs/snowflake"}, "state": {"$ref": "#/$defs/rsvpState"}, "source": {"$ref": "#/$defs/rsvpSource"}}},
+      {"type": "object", "required": ["op", "clock"], "additionalProperties": false, "properties": {"op": {"const": "set_clock"}, "clock": {"$ref": "#/$defs/instant"}}},
+      {"type": "object", "required": ["op"], "additionalProperties": false, "properties": {"op": {"const": "materialise_weeks"}}},
+      {"type": "object", "required": ["op", "run_key", "status", "announce", "mark"], "additionalProperties": false, "properties": {"op": {"const": "set_status"}, "run_key": {"$ref": "#/$defs/id"}, "status": {"$ref": "#/$defs/settableStatus"}, "announce": {"type": "boolean"}, "mark": {"type": "boolean"}}},
+      {"type": "object", "required": ["op", "run_key", "status", "announce", "mark", "error_type"], "additionalProperties": false, "properties": {"op": {"const": "set_status"}, "run_key": {"$ref": "#/$defs/id"}, "status": {"type": "string", "not": {"$ref": "#/$defs/settableStatus"}}, "announce": {"type": "boolean"}, "mark": {"type": "boolean"}, "error_type": {"$ref": "#/$defs/errorType"}}},
+      {"type": "object", "required": ["op", "run_key", "to"], "additionalProperties": false, "properties": {"op": {"const": "amend"}, "run_key": {"$ref": "#/$defs/id"}, "to": {"type": "string", "minLength": 1}, "error_type": {"$ref": "#/$defs/errorType"}}},
+      {"type": "object", "required": ["op", "run_key", "remove", "add", "mark"], "additionalProperties": false, "properties": {"op": {"const": "swap"}, "run_key": {"$ref": "#/$defs/id"}, "remove": {"type": "array", "items": {"type": "string"}}, "add": {"type": "array", "items": {"type": "string"}}, "mark": {"type": "boolean"}, "error_type": {"$ref": "#/$defs/errorType"}}},
+      {"type": "object", "required": ["op", "fixed_key", "changes"], "additionalProperties": false, "properties": {"op": {"const": "update_fixed"}, "fixed_key": {"$ref": "#/$defs/id"}, "changes": {"$ref": "#/$defs/fixedChanges"}, "error_type": {"$ref": "#/$defs/errorType"}}}
+    ]},
+    "runView": {
+      "type": "object",
+      "required": ["id", "status", "datetime", "week_start", "channel_id", "bosses", "participants", "roster_change"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "status": {"$ref": "#/$defs/status"},
+        "datetime": {"$ref": "#/$defs/instant"},
+        "week_start": {"$ref": "#/$defs/instant"},
+        "channel_id": {"$ref": "#/$defs/nullableId"},
+        "bosses": {"$ref": "#/$defs/strings"},
+        "participants": {"type": "array", "items": {"type": "object", "required": ["id", "rsvp"], "additionalProperties": false, "properties": {"id": {"$ref": "#/$defs/snowflake"}, "rsvp": {"oneOf": [{"$ref": "#/$defs/rsvpState"}, {"type": "null"}]}}}},
+        "roster_change": {"type": "object", "required": ["out", "in", "changed"], "additionalProperties": false, "properties": {"out": {"type": "array", "items": {"$ref": "#/$defs/snowflake"}}, "in": {"type": "array", "items": {"$ref": "#/$defs/snowflake"}}, "changed": {"type": "boolean"}}}
+      }
+    },
+    "fixedView": {
+      "type": "object",
+      "required": ["id", "bosses", "weekday", "time", "participants", "channel_id", "channel_watched", "note"],
+      "additionalProperties": false,
+      "properties": {"id": {"$ref": "#/$defs/id"}, "bosses": {"$ref": "#/$defs/strings"}, "weekday": {"$ref": "#/$defs/weekday"}, "time": {"$ref": "#/$defs/hhmm"}, "participants": {"type": "array", "items": {"$ref": "#/$defs/snowflake"}}, "channel_id": {"$ref": "#/$defs/nullableId"}, "channel_watched": {"type": "boolean"}, "note": {"type": ["string", "null"]}}
+    },
+    "result_add_fixed": {"$ref": "#/$defs/id"},
+    "result_create_run": {"$ref": "#/$defs/id"},
+    "result_set_rsvp": {"$ref": "#/$defs/rsvpState"},
+    "result_set_clock": {"$ref": "#/$defs/instant"},
+    "result_materialise_weeks": {"type": "null"},
+    "result_set_status": {"$ref": "#/$defs/runView"},
+    "result_amend": {"$ref": "#/$defs/runView"},
+    "result_swap": {"$ref": "#/$defs/runView"},
+    "result_update_fixed": {"$ref": "#/$defs/fixedView"},
+    "stepResult": {"oneOf": [
+      {"type": "object", "required": ["value"], "additionalProperties": false, "properties": {"value": {"anyOf": [
+        {"$ref": "#/$defs/result_add_fixed"}, {"$ref": "#/$defs/result_set_clock"}, {"$ref": "#/$defs/result_materialise_weeks"},
+        {"$ref": "#/$defs/result_set_status"}, {"$ref": "#/$defs/result_update_fixed"}
+      ]}}},
+      {"type": "object", "required": ["error"], "additionalProperties": false, "properties": {"error": {"type": "object", "required": ["type", "message"], "additionalProperties": false, "properties": {"type": {"$ref": "#/$defs/errorType"}, "message": {"type": "string", "minLength": 1}}}}}
+    ]},
+    "effect": {
+      "type": "object",
+      "required": ["channel_id", "mentions", "effect_kind", "effect_context"],
+      "additionalProperties": false,
+      "properties": {
+        "channel_id": {"$ref": "#/$defs/snowflake"},
+        "mentions": {"type": "array", "items": {"$ref": "#/$defs/snowflake"}},
+        "effect_kind": {"type": "string", "pattern": "^notice\\.[a-z]+(\\.[a-z_]+)+$"},
+        "effect_context": {"type": "array", "items": {"type": ["string", "integer"]}}
+      }
+    },
+    "fixedRow": {"type": "object", "required": ["id", "owner_id", "channel_id", "bosses", "weekday", "time", "participants", "note"], "additionalProperties": false, "properties": {"id": {"$ref": "#/$defs/id"}, "owner_id": {"$ref": "#/$defs/id"}, "channel_id": {"$ref": "#/$defs/nullableId"}, "bosses": {"$ref": "#/$defs/strings"}, "weekday": {"$ref": "#/$defs/weekday"}, "time": {"$ref": "#/$defs/hhmm"}, "participants": {"$ref": "#/$defs/strings"}, "note": {"type": ["string", "null"]}}},
+    "runRow": {"type": "object", "required": ["id", "fixed_run_id", "channel_id", "bosses", "participants", "status", "source", "week_start", "datetime"], "additionalProperties": false, "properties": {"id": {"$ref": "#/$defs/id"}, "fixed_run_id": {"$ref": "#/$defs/nullableId"}, "channel_id": {"$ref": "#/$defs/nullableId"}, "bosses": {"$ref": "#/$defs/strings"}, "participants": {"$ref": "#/$defs/strings"}, "status": {"$ref": "#/$defs/status"}, "source": {"$ref": "#/$defs/runSource"}, "week_start": {"$ref": "#/$defs/instant"}, "datetime": {"$ref": "#/$defs/instant"}}},
+    "reminderRow": {"type": "object", "required": ["id", "run_id", "kind", "fire_at", "sent_at", "message_id"], "additionalProperties": false, "properties": {"id": {"$ref": "#/$defs/id"}, "run_id": {"$ref": "#/$defs/id"}, "kind": {"$ref": "#/$defs/reminderKind"}, "fire_at": {"$ref": "#/$defs/instant"}, "sent_at": {"oneOf": [{"$ref": "#/$defs/instant"}, {"type": "null"}]}, "message_id": {"$ref": "#/$defs/nullableId"}}},
+    "rsvpRow": {"type": "object", "required": ["run_id", "user_id", "state", "source", "at"], "additionalProperties": false, "properties": {"run_id": {"$ref": "#/$defs/id"}, "user_id": {"$ref": "#/$defs/id"}, "state": {"$ref": "#/$defs/rsvpState"}, "source": {"$ref": "#/$defs/rsvpSource"}, "at": {"$ref": "#/$defs/instant"}}},
+    "expected": {"type": "object", "required": ["steps", "final_state"], "additionalProperties": false, "properties": {
+      "steps": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/stepResult"}},
+      "final_state": {"type": "object", "required": ["fixed_runs", "runs", "reminders", "rsvps", "side_effects"], "additionalProperties": false, "properties": {
+        "fixed_runs": {"type": "array", "items": {"$ref": "#/$defs/fixedRow"}},
+        "runs": {"type": "array", "items": {"$ref": "#/$defs/runRow"}},
+        "reminders": {"type": "array", "items": {"$ref": "#/$defs/reminderRow"}},
+        "rsvps": {"type": "array", "items": {"$ref": "#/$defs/rsvpRow"}},
+        "side_effects": {"type": "array", "items": {"$ref": "#/$defs/effect"}}
+      }}
+    }}
+  }
+}

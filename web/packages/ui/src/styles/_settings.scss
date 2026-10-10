@@ -1,0 +1,922 @@
+// Config (spec "Config", boards B_Config and B_Cfg*): one window, a table of
+// contents down the left and one section at a time on the right. v5 drives a
+// vertical ARIA tablist; on phones the list becomes a sideways strip. Each
+// section is a heading, settings cards that scroll, and a save bar that does
+// not (config/SettingsPanel.svelte, SaveBar.svelte, SwitchCard.svelte).
+@use "breakpoints" as *;
+@use "motion-query" as *;
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: clip;
+}
+
+.settings > .card__head {
+  flex: none;
+  margin: 0;
+}
+
+.settings__head {
+  min-height: 48px;
+  flex-wrap: nowrap;
+  padding: 0 0.75rem 0 1rem;
+}
+
+.settings__search {
+  align-self: center;
+  width: min(13.75rem, 42vw);
+  margin-left: auto;
+}
+
+.settings__search input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-small);
+}
+
+.settings__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+// ── Contents list ──────────────────────────────────────────────────────────
+
+.settings__toc {
+  flex: 0 0 14.375rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  border-right: 1.5px solid var(--line);
+  background: var(--pane);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.settings__group {
+  display: grid;
+  gap: 2px;
+}
+
+.settings__group .cap {
+  margin: 0;
+  padding: 10px 12px 4px;
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.settings__none {
+  margin: 0.5rem;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+.settings__tab {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-height: 2.375rem;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-body-sm);
+  font-weight: 600;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings__tab:hover {
+  color: var(--ink);
+  background: var(--row-hover);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.settings__tab[aria-selected="true"] {
+  color: var(--select-ink);
+  background: var(--select);
+  border-radius: 19px;
+  box-shadow: inset 0 0 0 1.5px var(--select-edge);
+}
+
+// The current value where it is short: a quiet mono note, never read as the label.
+.settings__hint {
+  margin-left: auto;
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.settings__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings__scan { display: flex; gap: 8px; min-width: 0; }
+.settings__expanded { display: flex; flex-direction: column; gap: 4px; padding-block: 8px; }
+.settings__expanded .settings__label { white-space: normal; }
+.settings__summary { color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-micro); font-weight: 400; }
+// One fact per line; a fact wraps only at word boundaries.
+.settings__summary { display: flex; flex-direction: column; gap: 2px; overflow-wrap: break-word; }
+.settings__summary > span { display: block; }
+
+.settings__tab .settings__flag {
+  margin-left: 6px;
+}
+
+.settings__tab .settings__label + .settings__flag {
+  margin-left: auto;
+}
+
+// A section holding unsaved changes (its save bar is dirty).
+.settings__dirty {
+  flex: none;
+  margin-left: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-fill);
+}
+
+// The risk chip ("⚠ 2"): words on a risk wash, never colour alone.
+.settings__flag {
+  flex: none;
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--risk) 10%, var(--surface));
+  color: var(--risk-text);
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  font-weight: 600;
+}
+
+.settings__hint + .settings__flag {
+  margin-left: 0;
+}
+
+// ── Section panel ──────────────────────────────────────────────────────────
+
+.settings__detail {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.settings__panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.settings__panel[hidden],
+.settings__tabpanel[hidden] {
+  display: none;
+}
+
+// Only the cards scroll; the save bar below stays put.
+.settings__scroll {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.875rem;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1.125rem 1.375rem;
+}
+
+.settings__scroll > *,
+.settings__tabpanel > * {
+  flex: none;
+  max-width: 68rem;
+}
+
+.settings__scroll > .settings__tabpanel {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.settings__headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.settings__title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--fs-brand);
+  font-weight: 800;
+}
+
+.settings__lead {
+  margin: 0;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+// In-panel pill tabs (Persona, Models).
+.settings__pills {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.settings__pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 15px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings__pill:hover {
+  background: var(--row-hover);
+}
+
+.settings__pill[aria-selected="true"] {
+  background: var(--select);
+  color: var(--select-ink);
+}
+
+// The scrolling strip clips anything outside the pill, so the ring sits inside.
+.settings__pill:focus-visible {
+  outline-offset: -2px;
+}
+
+.settings__pillcount {
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+}
+
+// Settings cards (spec "Panel"): radius 20, --row, an inset --line edge.
+.settings__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+  margin: 0;
+  padding: 1rem 1.125rem;
+  border: 0;
+  border-radius: 20px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.settings__card--row {
+  flex-direction: row;
+  align-items: flex-end;
+}
+
+// The key action inside a panel (Use this persona, Save <Section>, Post it now…).
+.settings__detail .settings__key {
+  flex: none;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 1.375rem;
+  border-width: 0;
+  border-radius: 20px;
+  font-size: var(--fs-body);
+  font-weight: 700;
+}
+
+.settings__card .field {
+  margin: 0;
+}
+
+.settings__cardhead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.settings__cardaction {
+  margin-left: auto;
+}
+
+.settings__cardtitle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  line-height: 1.3;
+  font-family: var(--body);
+  font-size: var(--fs-body);
+  font-weight: 700;
+}
+
+.settings__cardnote {
+  margin: 0;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+  line-height: 1.45;
+}
+
+.settings__card .field__error:empty {
+  display: none;
+}
+
+// A switch card: words on the left, the switch on the right.
+.settings__switchcard {
+  flex-direction: row;
+  align-items: center;
+  gap: 1rem;
+}
+
+.settings__switchtext {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.settings__state {
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+}
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 52px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--ink) 22%, var(--surface));
+  cursor: pointer;
+}
+
+.switch__knob {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--surface);
+  transition: left 0.15s ease;
+}
+
+.switch[aria-checked="true"] {
+  background: var(--accent-fill);
+}
+
+.switch[aria-checked="true"] .switch__knob {
+  left: 24px;
+  background: var(--accent-ink);
+}
+
+.switch[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.switch:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@include motion-reduce {
+  .switch__knob {
+    transition: none;
+  }
+}
+
+// Info, warn and risk boxes (the boards' .info / .warnbox / .riskbox).
+.settings__box {
+  display: flex;
+  gap: 0.625rem;
+  align-items: flex-start;
+  margin: 0;
+  padding: 0.625rem 0.875rem;
+  border-radius: 14px;
+  background: var(--pane);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  line-height: 1.45;
+}
+
+.settings__box .icon {
+  flex: none;
+  margin-top: 0.15rem;
+}
+
+.settings__box--warn {
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 50%, var(--surface));
+}
+
+.settings__box--risk {
+  background: color-mix(in srgb, var(--risk) 16%, var(--surface));
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--risk) 35%, var(--surface));
+}
+
+.settings__box--small {
+  padding: 0.5rem 0.625rem;
+  font-size: var(--fs-mini);
+}
+
+// Capability chips (Models): the route chip first, warn or ok tinted.
+.settings__caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.capchip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 12px;
+  background: var(--chip-fill);
+  font-size: var(--fs-mini);
+}
+
+.capchip--mono {
+  font-family: var(--mono);
+}
+
+.capchip--ext {
+  background: color-mix(in srgb, var(--warn) 10%, var(--surface));
+  color: color-mix(in srgb, var(--warn-text) 80%, var(--ink));
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 50%, var(--surface));
+}
+
+.capchip--home {
+  background: color-mix(in srgb, var(--ok) 12%, var(--surface));
+  color: var(--ok-text);
+}
+
+// A setting found by "Find a setting": a ring that fades (static with reduced motion).
+.settings__found {
+  outline: 3px solid var(--accent-fill);
+  outline-offset: 2px;
+  animation: settings-found 1.6s ease-out forwards;
+}
+
+@keyframes settings-found {
+  0%,
+  45% {
+    outline-color: var(--accent-fill);
+  }
+
+  100% {
+    outline-color: transparent;
+  }
+}
+
+@include motion-reduce {
+  .settings__found {
+    animation: none;
+  }
+}
+
+// Tables inside cards (the boards' .tbl2): rows are --row strips, headings are overlines.
+.settings__table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 2px;
+  font-size: var(--fs-small);
+}
+
+.settings__table caption {
+  text-align: left;
+}
+
+.settings__table thead th {
+  padding: 6px 10px;
+  border: 0;
+  background: none;
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.settings__table tbody :is(td, th) {
+  height: 38px;
+  padding: 0 10px;
+  border: 0;
+  background: var(--row);
+  text-align: left;
+}
+
+.settings__table tbody :is(td, th):first-child {
+  border-radius: 10px 0 0 10px;
+}
+
+.settings__table tbody :is(td, th):last-child {
+  border-radius: 0 10px 10px 0;
+}
+
+.settings__table .num {
+  text-align: right;
+}
+
+// A changed field: the 2 px accent ring (spec "When changes apply").
+.settings__changed {
+  border-color: var(--accent-fill);
+  box-shadow: 0 0 0 2px var(--accent-fill);
+}
+
+.settings__checks {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-small);
+}
+
+.settings__checks li {
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+}
+
+.settings__checks .icon {
+  flex: none;
+  margin-top: 0.15rem;
+}
+
+// A refusal or warning outside a box (the run-length and slider sections).
+.settings__warn:not(.settings__box) {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.55rem 0 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 50%, var(--surface));
+  font-size: var(--fs-small);
+}
+
+.settings__warn .icon {
+  flex: none;
+  margin-top: 0.15rem;
+}
+
+// Self-service modes: a radiogroup of option rows.
+.settings__choices {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.settings__choice {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.1rem 0.75rem;
+  align-items: baseline;
+  padding: 0.75rem 0.875rem;
+  border-radius: 6px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  cursor: pointer;
+}
+
+.settings__choice:has(input:checked) {
+  border-radius: 18px;
+  background: var(--select);
+  box-shadow: inset 0 0 0 1.5px var(--select-edge);
+}
+
+.settings__choice input {
+  accent-color: var(--accent-fill);
+}
+
+.settings__choice small {
+  grid-column: 2;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+.settings__current {
+  grid-column: 3;
+  grid-row: 1;
+  color: var(--select-ink);
+}
+
+.settings__detail input[type="number"] {
+  width: 6rem;
+}
+
+// Chatbot's answer limits, read as a sentence ("Per person [4] answers every [300] seconds").
+.rate {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  font-size: var(--fs-body-sm);
+}
+
+.rate__who {
+  width: 6rem;
+  font-weight: 600;
+}
+
+.settings__detail .rate__field {
+  width: 5rem;
+  font-family: var(--mono);
+  text-align: right;
+}
+
+.settings__detail .rate__field--wide {
+  width: 5.6rem;
+}
+
+.rate__unit {
+  color: var(--dim-text);
+}
+
+// A hint about a value ("was 4 · ≈ 48 per hour"): small, dim, after the units.
+.rate__hint {
+  margin-left: 0.375rem;
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+  font-style: italic;
+}
+
+// ── Save bar ───────────────────────────────────────────────────────────────
+
+.savebar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 60px;
+  padding: 0 1.375rem;
+  border-top: 1.5px solid var(--line);
+  background: var(--surface);
+}
+
+.savebar__summary {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-small);
+}
+
+.savebar__summary > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.savebar__dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent-fill);
+}
+
+.savebar__from,
+.savebar__to {
+  font-family: var(--mono);
+}
+
+.savebar__more,
+.savebar__clean {
+  color: var(--dim-text);
+}
+
+.savebar__tick {
+  color: var(--ok-text);
+  font-weight: 700;
+}
+
+.savebar__discard {
+  border-radius: 16px;
+}
+
+
+// ── Problem chip on the page line ──────────────────────────────────────────
+
+.settings__problem {
+  min-width: 0;
+  max-width: min(30rem, 46vw);
+  height: 30px;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--risk) 35%, var(--surface));
+  background: color-mix(in srgb, var(--risk) 10%, var(--surface));
+  color: var(--risk-text);
+  font-family: var(--body);
+  font-size: var(--fs-small);
+  font-weight: 400;
+  text-decoration: none;
+  text-overflow: ellipsis;
+}
+
+.settings__problem b {
+  font-weight: 700;
+}
+
+.settings__problem:hover {
+  text-decoration: underline;
+}
+
+.settings__problem-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// On a phone the top bar already names the page: the line keeps only the alert.
+.frame--phone .pageline:has(.settings__problem) .pageline__head {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+// ── Narrow ─────────────────────────────────────────────────────────────────
+
+@media #{$single-pane} {
+  .settings__headline,
+  .settings__card--row,
+  .rate {
+    flex-wrap: wrap;
+  }
+
+  .settings__body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  // The strip scrolls inside itself (the _tabs pattern); the frame's shell
+  // never scrolls, and only the selected section's cards scroll below it.
+  .settings__toc {
+    display: flex;
+    flex-basis: auto;
+    flex-direction: row;
+    gap: 0.35rem;
+    padding: 0.5rem;
+    border-right: 0;
+    border-bottom: 1.5px solid var(--line);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    align-items: flex-start;
+  }
+
+  .settings__group {
+    display: contents;
+  }
+
+  .settings__group .cap {
+    display: none;
+  }
+
+  .settings__tab {
+    flex: none;
+    min-height: 2.25rem;
+    border-radius: 999px;
+    background: var(--row);
+    box-shadow: inset 0 0 0 1.5px var(--line);
+    font-size: var(--fs-small);
+    white-space: nowrap;
+    width: 10rem;
+  }
+
+  .settings__tab .settings__hint {
+    display: none;
+  }
+
+  // Not the fill alone: the selected name is underlined too.
+  .settings__tab[aria-selected="true"] .settings__label {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 2px;
+  }
+
+  .settings__scroll {
+    padding: 0.875rem 0.75rem;
+  }
+
+  .savebar {
+    gap: 0.5rem;
+    min-height: 56px;
+    padding: 0.5rem 0.75rem;
+  }
+
+  // Dirty: the summary takes its own row above Discard and Save.
+  .savebar--dirty {
+    flex-wrap: wrap;
+  }
+
+  .savebar--dirty .savebar__summary {
+    flex-basis: 100%;
+  }
+
+  .savebar .savebar__save {
+    margin-left: auto;
+  }
+
+  .settings__switchcard {
+    padding: 0.875rem;
+  }
+}
+
+@media (max-width: 599px) {
+  // Each limit on two lines: the label, then count · "answers every" · window · "seconds".
+  .rate {
+    display: grid;
+    grid-template-columns: minmax(0, 4.25rem) max-content minmax(0, 4.75rem) max-content;
+    gap: 0.375rem 0.5rem;
+  }
+
+  .rate__who,
+  .rate__hint {
+    grid-column: 1 / -1;
+    width: auto;
+  }
+
+  .rate__hint {
+    margin-left: 0;
+  }
+
+  .settings__detail .rate__field,
+  .settings__detail .rate__field--wide {
+    width: 100%;
+  }
+}
+
+@media (max-width: 599px), (max-height: 500px) {
+  .settings__head {
+    min-height: 44px;
+  }
+  .settings__search {
+    width: min(11rem, 54vw);
+  }
+  .settings__problem {
+    max-width: 100%;
+  }
+  .settings__problem-fix {
+    display: none;
+  }
+}
+
+// A changed dropdown (Select): the same accent ring, drawn inside the pill.
+.dd.dd.settings__changed {
+  box-shadow: inset 0 0 0 2px var(--accent-fill);
+}

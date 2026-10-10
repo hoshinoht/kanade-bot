@@ -1,0 +1,73 @@
+// Arrival motion (live updates): what came from elsewhere is marked once.
+// `[data-new]` on a row that just appeared: a short settle and an accent tint
+// that fades back to the row's own colour. `[data-tick]` on a number that
+// just changed: a short colour pulse (badges: a small scale pulse). Set and
+// cleared by motion/arrival.ts; reduced motion keeps only the colour fade
+// (badges stay still). Transform, opacity and colour only.
+
+@use "easing" as *;
+@use "motion-query" as *;
+
+@keyframes arrive-tint {
+  from {
+    background-color: color-mix(in srgb, var(--accent) 24%, transparent);
+  }
+}
+
+@keyframes arrive-settle {
+  from {
+    opacity: 0.35;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes tick-colour {
+  30% {
+    color: var(--accent-text);
+  }
+}
+
+@keyframes tick-scale {
+  35% {
+    transform: scale(1.25);
+  }
+}
+
+[data-new] {
+  animation: arrive-tint 1.2s $standard;
+}
+
+[data-tick] {
+  animation: tick-colour 0.6s $standard;
+}
+
+@include motion-ok {
+  [data-new] {
+    animation:
+      arrive-settle $enter-ms $standard,
+      arrive-tint 1.2s $standard;
+  }
+
+  .navlist__badge[data-tick],
+  .topbar__badge[data-tick] {
+    animation: tick-scale 0.4s $standard;
+  }
+}
+
+@include motion-reduce {
+  // motion.scss cuts every animation to 0.001ms here; the arrival marks are
+  // colour only, so they keep their length (otherwise the tint never shows
+  // and the mark clears within a frame).
+  [data-new] {
+    animation-duration: 1.2s !important;
+  }
+
+  [data-tick] {
+    animation-duration: 0.6s !important;
+  }
+
+  .navlist__badge[data-tick],
+  .topbar__badge[data-tick] {
+    animation: none;
+  }
+}

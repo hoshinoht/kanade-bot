@@ -1,0 +1,199 @@
+//! The watched-message cache.
+
+use chrono::{DateTime, Utc};
+use sqlx::SqliteConnection;
+use sqlx::sqlite::SqliteRow;
+
+use super::{instant, optional_text, read_instant, read_optional_instant, text};
+use crate::domain::model_log::{MessageUpsert, ReadMessage, WatchedMessage, in_order};
+use crate::domain::scheduler::StoreError;
+use crate::infrastructure::store::sqlite::rows::optional_instant;
+use crate::infrastructure::store::sqlite::schedule::store_error;
+
+const COLUMNS: &str = "id, channel_id, author_id, created_at, edited_at, content, processed_at";
+
+fn message_of(row: &SqliteRow) -> Result<WatchedMessage, StoreError> {
+    Ok(WatchedMessage {
+        id: text(row, "id")?,
+        channel_id: text(row, "channel_id")?,
+        author_id: text(row, "author_id")?,
+        created_at: read_instant(row, "created_at")?,
+        edited_at: read_optional_instant(row, "edited_at")?,
+        content: text(row, "content")?,
+        processed_at: read_optional_instant(row, "processed_at")?,
+    })
+}
+
+pub(super) async fn upsert(
+    conn: &mut SqliteConnection,
+    message: &WatchedMessage,
+) -> Result<MessageUpsert, StoreError> {
+    let found = sqlx::query("SELECT content FROM messages WHERE id = ?1")
+        .bind(&message.id)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(store_error)?;
+    match found {
+        None => {
+            sqlx::query(
+                "INSERT INTO messages \
+                 (id, channel_id, author_id, created_at, edited_at, content, processed_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            )
+            .bind(&message.id)
+            .bind(&message.channel_id)
+            .bind(&message.author_id)
+            .bind(instant(&message.created_at)?)
+            .bind(optional_instant(message.edited_at.as_ref())?)
+            .bind(&message.content)
+            .bind(optional_instant(message.processed_at.as_ref())?)
+            .execute(&mut *conn)
+            .await
+            .map_err(store_error)?;
+            Ok(MessageUpsert::Inserted)
+        }
+        Some(row) if optional_text(&row, "content")?.as_deref() == Some(&message.content) => {
+            Ok(MessageUpsert::Unchanged)
+        }
+        Some(_) => {
+            sqlx::query(
+                "UPDATE messages SET content = ?1, edited_at = ?2, processed_at = NULL \
+                 WHERE id = ?3",
+            )
+            .bind(&message.content)
+            .bind(optional_instant(message.edited_at.as_ref())?)
+            .bind(&message.id)
+            .execute(&mut *conn)
+            .await
+            .map_err(store_error)?;
+            Ok(MessageUpsert::Edited)
+        }
+    }
+}
+
+pub(super) async fn mark_processed(
+    conn: &mut SqliteConnection,
+    ids: &[String],
+    at: &DateTime<Utc>,
+) -> Result<u64, StoreError> {
+    let ids = crate::infrastructure::store::sqlite::rows::list(ids);
+    let done = sqlx::query(
+        "UPDATE messages SET processed_at = ?1 WHERE id IN (SELECT value FROM json_each(?2))",
+    )
+    .bind(instant(at)?)
+    .bind(ids)
+    .execute(&mut *conn)
+    .await
+    .map_err(store_error)?;
+    Ok(done.rows_affected())
+}
+
+/// Compare-and-set on content, one constant statement per message in the
+/// caller's transaction; a repeated id counts once (the first wins).
+pub(super) async fn mark_read(
+    conn: &mut SqliteConnection,
+    read: &[ReadMessage],
+    at: &DateTime<Utc>,
+) -> Result<u64, StoreError> {
+    let at = instant(at)?;
+    let mut seen = std::collections::BTreeSet::new();
+    let mut done = 0;
+    for entry in read {
+        if !seen.insert(entry.id.as_str()) {
+            continue;
+        }
+        done += sqlx::query("UPDATE messages SET processed_at = ?1 WHERE id = ?2 AND content = ?3")
+            .bind(&at)
+            .bind(&entry.id)
+            .bind(&entry.content)
+            .execute(&mut *conn)
+            .await
+            .map_err(store_error)?
+            .rows_affected();
+    }
+    Ok(done)
+}
+
+/// All-or-nothing [`mark_read`]: every distinct message is checked before
+/// any is written, all under the caller's `BEGIN IMMEDIATE`.
+pub(super) async fn mark_read_exact(
+    conn: &mut SqliteConnection,
+    read: &[ReadMessage],
+    at: &DateTime<Utc>,
+) -> Result<bool, StoreError> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut distinct = Vec::new();
+    for entry in read {
+        if !seen.insert(entry.id.as_str()) {
+            continue;
+        }
+        let found = sqlx::query("SELECT 1 FROM messages WHERE id = ?1 AND content = ?2")
+            .bind(&entry.id)
+            .bind(&entry.content)
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(store_error)?;
+        if found.is_none() {
+            return Ok(false);
+        }
+        distinct.push(entry.clone());
+    }
+    mark_read(&mut *conn, &distinct, at).await?;
+    Ok(true)
+}
+
+pub(super) async fn delete(conn: &mut SqliteConnection, id: &str) -> Result<bool, StoreError> {
+    let done = sqlx::query("DELETE FROM messages WHERE id = ?1")
+        .bind(id)
+        .execute(&mut *conn)
+        .await
+        .map_err(store_error)?;
+    Ok(done.rows_affected() > 0)
+}
+
+/// Two constant variants: a bound `processed_at` flag would keep SQLite off
+/// the partial `messages_unprocessed` index the extractor's reads need.
+pub(super) fn in_channel_sql(unprocessed_only: bool) -> String {
+    let pending = if unprocessed_only {
+        "AND processed_at IS NULL "
+    } else {
+        ""
+    };
+    format!(
+        "SELECT {COLUMNS} FROM messages WHERE channel_id = ?1 AND created_at >= ?2 \
+         {pending}ORDER BY created_at, id"
+    )
+}
+
+pub(super) async fn in_channel(
+    conn: &mut SqliteConnection,
+    channel_id: &str,
+    since: &DateTime<Utc>,
+    unprocessed_only: bool,
+) -> Result<Vec<WatchedMessage>, StoreError> {
+    let rows = sqlx::query(&in_channel_sql(unprocessed_only))
+        .bind(channel_id)
+        .bind(instant(since)?)
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(store_error)?;
+    rows.iter().map(message_of).collect()
+}
+
+/// Messages by id (ids as a JSON array); the primary key serves it.
+pub(super) fn by_ids_sql() -> String {
+    format!("SELECT {COLUMNS} FROM messages WHERE id IN (SELECT value FROM json_each(?1))")
+}
+
+pub(super) async fn by_ids(
+    conn: &mut SqliteConnection,
+    ids: &[String],
+) -> Result<Vec<WatchedMessage>, StoreError> {
+    let rows = sqlx::query(&by_ids_sql())
+        .bind(crate::infrastructure::store::sqlite::rows::list(ids))
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(store_error)?;
+    let found = rows.iter().map(message_of).collect::<Result<Vec<_>, _>>()?;
+    Ok(in_order(ids, found))
+}

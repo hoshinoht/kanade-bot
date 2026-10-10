@@ -1,0 +1,280 @@
+// Ported from v4 portal/_login-footnote.scss (the sign-in window).
+
+.gate__bar::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-right: 28px;
+  border-radius: 50%;
+  background: currentcolor;
+  opacity: 0.55;
+  box-shadow:
+    12px 0 0 currentcolor,
+    24px 0 0 currentcolor;
+}
+
+/* ── login: the one window on an empty desktop ──────────────────────────── */
+
+.gate {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.gate__window {
+  display: flex;
+  flex-direction: column;
+  width: min(600px, 100%);
+  background: var(--surface);
+  border: 2px solid var(--win);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.gate__bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 42px;
+  padding: 0 12px;
+  background: var(--win);
+  color: var(--win-ink);
+}
+
+.gate__bar-title {
+  font-family: var(--display);
+  font-size: var(--fs-body);
+  font-weight: 700;
+}
+
+/* HeroLogin: the bot's banner (an <img> from /identity/banner, a generated
+   stand-in when nothing is cached) under a scrim, with the avatar and name on it. */
+.gate__hero {
+  position: relative;
+  isolation: isolate;
+  height: 236px;
+  background: var(--win);
+  color: var(--win-ink);
+}
+
+.gate__banner {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
+}
+
+// Dark at the foot so the name reads over any banner (the board's shade).
+.gate__hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(180deg, rgb(12 11 18 / 5%) 30%, rgb(12 11 18 / 82%) 100%);
+}
+
+.gate__id {
+  position: absolute;
+  inset: auto 24px 18px;
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.gate__avatar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 76px;
+  height: 76px;
+  border: 3px solid var(--win-ink);
+  border-radius: 20px;
+  background: var(--win);
+  color: var(--win-ink);
+  font-family: var(--display);
+  font-size: var(--fs-avatar);
+  object-fit: cover;
+}
+
+.gate__who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.gate__name {
+  margin: 0;
+  font-weight: 800;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+.gate__sub,
+.gate__sub a {
+  margin: 0;
+  line-height: 1.25;
+  font-size: var(--fs-body-sm);
+  color: var(--win-ink);
+}
+
+.gate__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 24px 22px;
+}
+
+.gate__body p {
+  font-size: var(--fs-body-sm);
+  margin: 0;
+}
+
+// Notices, boxes and strips keep their own colour (`.flash--*`, the portal's
+// `.infobox`, the admin login's Tonight strip).
+.gate__body p:not(.flash, .infobox, .gate__tonight) {
+  color: var(--dim);
+}
+
+.gate__body label {
+  display: block;
+}
+
+.gate__body input {
+  width: 100%;
+  font-family: var(--mono);
+}
+
+.gate__body .btn {
+  width: 100%;
+  justify-content: center;
+}
+
+// HeroLogin's "Tonight" strip: today's next run, time and bosses (no names).
+.gate__body .gate__tonight {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: var(--chip-fill);
+  color: var(--ink);
+  font-size: var(--fs-body);
+}
+
+.gate__tonight-time {
+  font-family: var(--mono);
+  font-size: var(--fs-clock-narrow);
+  font-weight: 700;
+}
+
+.gate__tonight-bosses {
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.gate__tonight-tally {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+}
+
+// The key action (board: 52 px, fully rounded).
+.gate__body .gate__key {
+  min-height: 52px;
+  font-size: var(--fs-body);
+}
+
+.gate__body form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+/* ── the member portal's windows (Sign in, Closed, Not eligible, Signed out) ── */
+
+// A shorter banner where the window has more to say (Closed, Not eligible),
+// greyed while the portal is closed.
+.gate__hero--short {
+  height: 150px;
+}
+
+.gate__hero--muted {
+  filter: grayscale(1);
+}
+
+// The page heading, under the banner (the title bar names the window).
+.gate__lead {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: var(--fs-lg);
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+// Who Discord signed in (Not eligible).
+.gate__who-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: var(--pane);
+  color: var(--ink);
+  font-size: var(--fs-body-sm);
+}
+
+.gate__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.gate__body .gate__actions > .btn {
+  flex: 1 1 0;
+  width: auto;
+}
+
+// The time zone and the privacy notice, on the window's foot.
+.gate__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 24px;
+  border-top: 1.5px solid var(--line);
+  background: var(--pane);
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+}
+
+@media (max-width: 480px) {
+  .gate__hero {
+    height: 184px;
+  }
+
+  .gate__id {
+    inset: auto 16px 14px;
+    gap: 12px;
+  }
+
+  .gate__avatar {
+    width: 60px;
+    height: 60px;
+    border-radius: 16px;
+  }
+
+  .gate__body {
+    padding: 16px;
+  }
+}

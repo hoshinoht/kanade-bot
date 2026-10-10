@@ -1,0 +1,176 @@
+// The Week page's header row and its board surface (batch 6, user rule
+// "Area follows importance"): v4's "N runs · This/Next week" row also carries
+// v5's view switch, move help and, when compact, the filters; the board sits
+// straight under the filter card with no window chrome, as in v4.
+@use "breakpoints" as *;
+
+.week-head {
+  align-items: center;
+  gap: 0.4rem 0.7rem;
+}
+
+.week-head h1 {
+  margin-right: 0.2rem;
+}
+
+.week-head__past {
+  margin: 0;
+}
+
+.seg__count {
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+}
+
+.week-head__help {
+  padding: 0.3rem 0.6rem;
+  font-size: var(--fs-small);
+}
+
+.week-head__help[aria-expanded="true"] {
+  background: var(--raise);
+}
+
+// Open, the help is its own contained card on the next row: never bare
+// text on the ground (dim ink on a light ground falls below 4.5:1).
+.week-head__helptext {
+  flex: 1 0 100%;
+  max-width: 64rem;
+  margin: 0.2rem 0 0;
+  padding: 0.55rem 0.85rem;
+  border: 2px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+
+// Compact filters: the button and chips flow in the header row; the panel,
+// while open, takes a row of its own inside the header card.
+.filterchips {
+  display: contents;
+}
+
+.filterchips__chip {
+  cursor: pointer;
+}
+
+.filters--popout {
+  flex: 1 0 100%;
+  margin: 0;
+  box-shadow: none;
+}
+
+// The one scrolling area: the board (on the coloured ground, each day its
+// own card, as v4) or, for Runs and Answers, a plain surface.
+.shell > .week-surface {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.week-surface {
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.week-surface:focus-visible {
+  outline-offset: -3px;
+}
+
+.week-surface--sheet {
+  padding: 0.6rem 0.9rem 0.9rem;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+}
+
+.week-surface--sheet thead th {
+  position: sticky;
+  top: -0.6rem;
+  z-index: 1;
+  background: var(--surface);
+}
+
+// Phones: three rows -- count and week; view and help; filters, what is
+// hidden, refresh.
+@media (max-width: 640px) {
+  .week-head {
+    padding: 0.45rem 0.7rem;
+    gap: 0.4rem 0.5rem;
+  }
+
+  .week-head h1 {
+    order: 0;
+  }
+
+  .week-head__week {
+    order: 1;
+    margin-left: auto;
+  }
+
+  .week-head__views {
+    order: 2;
+  }
+
+  .week-head__help {
+    order: 3;
+    margin-left: auto;
+    padding: 0.3rem 0.3rem;
+  }
+
+  .week-head .filterchips > * {
+    order: 4;
+  }
+
+  .week-head__past {
+    order: 5;
+    margin-left: auto;
+  }
+
+  .week-head .page-head__side {
+    order: 6;
+  }
+
+  .week-head__helptext,
+  .week-head .filters--popout {
+    order: 7;
+  }
+}
+
+// Compact frames: tighter segments, and a disabled Undo is noise (the toast
+// after a move offers Undo, and Ctrl/Cmd-Z works).
+@media #{$single-pane}, (max-height: 700px) {
+  .week-head .seg a,
+  .week-head .seg button {
+    padding: 0.3rem 0.55rem;
+  }
+
+  .week-head .page-head__side .btn[disabled] {
+    display: none;
+  }
+}
+
+// Laptop widths: Undo/Refresh keep their conventional icons and accessible
+// names but drop the visible words, so the header stays one row (~1000 px).
+@media (min-width: 641px) and (max-width: 1099px) {
+  .week-head__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+@media (max-height: 700px) {
+  .shell {
+    padding-top: 0.5rem;
+    padding-bottom: 0.4rem;
+  }
+}

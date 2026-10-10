@@ -1,17 +1,264 @@
 boss: Limbo
-summary: 'Spirit Purification is the fight''s currency: avoid hits so it charges, spend it to control Risk, and never let personal Erosion reach 1000.'
+summary: 'Purification is the fight''s currency: avoid chip hits so it charges, press it the moment it fills to clear Risk and each phase''s hazards, and keep your personal Erosion under 1000.'
+lead: Dodge chip hits so Purification charges, press it the moment it fills, and keep your own Erosion under 1000.
 core:
-- Each player has personal Erosion starting at 0; reaching 1000 ejects that player. A normal death adds 150 Erosion.
-- Spirit Purification charges over time but loses charge whenever you are hit. Use Harvest/NPC when full.
-- In Phases 1 and 3, Risk is personal and remaining Risk converts into Erosion at the space/form transition.
-- In Phase 2, Risk is shared by the party and rises automatically, so the party must coordinate Purification casts.
+- title: Erosion
+  text: Personal, from 0; 1000 removes you.
+  detail: Erosion is personal, starts at 0 and removes you at 1000; a death adds 150.
+- title: Purification Energy
+  text: NPC/Gather key. Charges over time, resets when hit; lowers Risk and repairs the room.
+  detail: Purification Energy (NPC/Gather key; also called Spirit Purification) charges over time, and getting hit resets the charge. Besides lowering Risk, each use has a room-specific effect such as restoring floor or clearing pools and walls. Since MapleSEA v251 it can be used while casting Origin and Ascent skills.
+- title: Bind, no slow
+  text: Limbo can be bound but not slowed. HP splits 30/30/40.
+  detail: HP is split 30/30/40 across the phases; Limbo cannot be slowed but can be bound.
+phases:
+- name: Phase 1 · Specters A and B
+  tag: personal Risk
+  items:
+  - title: Personal Risk
+    text: Forms swap every 100s. Each press removes 10%; leftover Risk becomes Erosion.
+    detail: Phases 1 and 3 alternate between two forms every 100s (Specters A/B, then Limbo Black/White). Risk is personal in these phases; it starts full each rotation, each Purification removes 10%, and whatever is left turns into Erosion at the swap (30% left = +30).
+  - title: Bubble fight
+    text: 'Fight Specter A inside its bubble (outside, Erosion ticks up each second); crouch Grasp of Truth, stand on him for Dimensional Collapse.'
+  - title: Specter B floor
+    text: 'A section drops every 30s and falling adds 50 Erosion; Purification restores floor. The slime can hit 5 times.'
+  - title: Specter B burst
+    text: 'Burst with a Genesis i-frame up, or after the slime passes.'
+- name: Phase 2 · Specters C and D
+  tag: shared Risk
+  items:
+  - title: Shared Risk
+    text: Climbs 4%/s from 0. At 100% a special pattern runs and he can't be damaged.
+    detail: 'Phase 2 (Specter C, then Specter D): Risk is shared by the party, starts at 0 and climbs 4% per second. Each press removes less in bigger parties: Specter C 39/19.5/13% on Normal or 50/25/16.7% on Hard for solo/duo/trio, Specter D about half that. At 100% a special pattern runs and the boss cannot be damaged.'
+  - title: Passageway
+    text: Bounce spikes into the Shadow of Origin 3 times in 30s for -150 Erosion.
+    detail: Between Specters C and D, the Passageway gives 30s to bounce spikes into the Shadow of Origin three times; success removes 150 Erosion and failing costs nothing.
+  - title: Specter C fusions
+    text: 'At 80% of Phase 2 HP he vanishes ~5s, then a ~30s fusion with attackable periods. The next one triggers 20 points below the HP reached.'
+    detail: 'Specter C fuses with its Flowers at exactly 80% of Phase 2 HP: he disappears for about 5s, then runs a roughly 30s fusion pattern that is not invulnerable throughout, with periods where he can be damaged; Risk is paused and Purification is unavailable meanwhile. The next fusion triggers 20 percentage points below the HP reached during the fusion (75% means 55%), so getting under 70% before the first one ends removes it (Normal guides; Hard unverified).'
+  - title: Specter D walls
+    text: 'Close at 25/50/75/100% Risk (left, right, bottom, top) for 300% HP; 100% starts Endless Abyss.'
+  - title: Everyone presses
+    text: 'One idle player lets shared Risk hit 100%; against D, pull it under each wall threshold.'
+- name: Phase 3 · Limbo Black and White
+  tag: personal Risk
+  items:
+  - title: Personal Risk again
+    text: Same 100s swap and 10% presses as Phase 1.
+  - title: 'Black''s pools'
+    text: 'A pink pool every 7s; six start a special pattern. Purify beside one to clear it.'
+  - title: 'Black''s grab'
+    text: 'Usually after about four attacks, so expect it after a fifth; stand behind or above. It adds Erosion (100 on Hard).'
+  - title: Bubble fight
+    text: 'Fight Limbo Black inside his bubble (outside, Erosion ticks up each second); crouch Grasp of Truth, stand on him for Dimensional Collapse.'
+  - title: Limbo White
+    text: 'Six Walls of Thought start a special pattern; Monster of Truth ticks every 0.2s.'
+mechanics:
+- kind: ledger
+  title: Erosion
+  rows:
+  - {label: Death, value: '+150', direction: down}
+  - {label: Fall through the floor, value: '+50', direction: down}
+  - {label: 50-Erosion hits on Hard, value: '+80', direction: down}
+  - {label: Black's grab on Hard, value: '+100', direction: down}
+  - {label: Risk left at a swap, value: +1 per 1%, direction: down}
+  - {label: Passageway success, value: '-150', direction: up}
+  note: Starts at 0; 1000 removes you. Destiny starts you at 800, and recovery can take you below it.
+- kind: ledger
+  title: Phase 2 Risk removed per press
+  rows:
+  - {label: Solo, value: N 39% · H 50%}
+  - {label: Duo, value: N 19.5% · H 25%}
+  - {label: Trio, value: N 13% · H 16.7%}
+  note: Specter C; Specter D removes about half.
+- kind: scale
+  title: Specter D walls by shared Risk
+  bands:
+  - {label: Under 25% · open, span: 25, tone: safe}
+  - {label: 25% · left wall, span: 25, tone: yellow}
+  - {label: 50% · right wall, span: 25, tone: yellow}
+  - {label: 75% · bottom wall, span: 25, tone: risk}
+  - {label: '100% · top wall, Endless Abyss', span: 8, tone: red}
+  note: Inside a section as it closes costs 300% HP.
 danger:
-- Phase 1B gradually destroys platforms; falling adds Erosion, while Purification is the tool that restores nearby platforms.
-- Incidental hits are doubly expensive because they may add Erosion and also delay the Purification needed to remove Risk.
-- In later phases, Purification also clears encounter objects such as contamination zones or Walls of Thought, so missing casts compounds the pressure.
+- title: Specter B floor
+  text: A section drops every 30s; falling adds 50. The slime can hit 5 times.
+  detail: Specter B knocks out a floor section every 30s and falling through adds 50 Erosion; Purification restores floor. Its bouncing slime can land five hits in a row and resets your Purification charge.
+- title: Specter D walls
+  text: Close at 25/50/75/100% Risk for 300% HP; 100% starts Endless Abyss.
+  detail: 'Specter D walls off the map at 25/50/75/100% Risk (left, right, bottom, top); being inside a section as it closes deals 300% HP, and 100% starts the Endless Abyss test, the most dangerous pattern in the fight.'
+- title: Limbo Black pools
+  text: One every 7s; six start a special pattern. Purify beside one to clear it.
+  detail: 'Limbo Black: a pink contamination pool appears every 7s and six at once trigger a special pattern; purify next to a pool to remove it. His grab adds Erosion and leaves you open to follow-ups.'
+- title: Limbo White
+  text: Six Walls of Thought start a special pattern; Monster of Truth ticks fast.
+  detail: 'Limbo White: six Walls of Thought trigger a special pattern, and Monster of Truth ticks every 0.2s; on Hard with the sphere debuff it can add hundreds of Erosion per second.'
+- title: Specter C fusions
+  text: At 80% of Phase 2 HP he vanishes ~5s; the ~30s fusion after it has attackable periods.
+  detail: Specter C fuses with its Flowers at exactly 80% of Phase 2 HP. He disappears for about 5s, but the roughly 30s fusion pattern that follows has attackable periods; meanwhile Risk is paused and Purification is unavailable. A second fusion follows 20 percentage points below the HP reached during the first.
+- title: Leaving the bubble
+  text: Away from Specter A or Limbo Black, Erosion ticks up each second.
+  detail: Leaving the bubble around Specter A or Limbo Black makes Erosion tick up every second. On Hard, most 50-Erosion hits become 80 and Limbo Black's grab adds 100.
 tips:
-- Use Spirit Purification promptly rather than hoarding it; the fight expects repeated casts before each transition.
-- In Phase 2, stagger party Purifications so the shared Risk gauge stays controlled.
-- Treat chip-damage avoidance as a mechanic, not merely an HP concern.
+- title: Press on full
+  text: Every phase. Ten presses per 100s clear personal Risk.
+  detail: Press Purification the moment it is full, in every phase; dodging is how you keep it charging. In Phases 1 and 3, ten presses per 100s rotation clear your personal Risk.
+- title: Everyone presses in Phase 2
+  text: One idle player lets Risk hit 100%. Beat each Specter D wall threshold.
+  detail: In Phase 2 every member presses on full, since one idle player can let shared Risk reach 100%. Against Specter D the climb outpaces even a full party, so pull Risk back under each wall threshold before it closes.
+- title: Bubble fights
+  text: Crouch Grasp of Truth; stand on him for Dimensional Collapse.
+  detail: Fight Specter A and Limbo Black inside the bubble; crouch Grasp of Truth and stand on top of him for Dimensional Collapse.
+- title: Grab timing
+  text: Usually after four attacks; after a fifth, expect it. Stand behind or above.
+  detail: Unbound Limbo Black usually grabs after about four other attacks; after a fifth, expect the grab next. Stand behind or above him when the purple line shows.
+- title: Specter B burst
+  text: Burst with a Genesis i-frame up, or after the slime passes.
+- title: Risk Taker
+  text: Usable except against Specter D and Limbo Black.
+notes:
+- title: Limits
+  text: 30 min · 10s potions · 1-3 players · 12 boss kills a week.
+  detail: 30-minute limit, 10-second potion cooldown, 1-3 players. MapleSEA v249 also caps boss kills at 12 per week.
+- title: MapleSEA v251 (Jun 2026)
+  text: Purification works during Origin/Ascent; Phase 3 map ~32% taller.
+  detail: MapleSEA v251 (Jun 2026) made Purification Energy usable during Origin and Ascent casts and made the Phase 3 map (Limbo's Unconscious) about 32% taller.
+- title: Carcion symbol Lv 11
+  text: +20% damage against Limbo (MapleSEA v251).
+- title: Destiny Resolve per clear
+  text: Normal 120 · Hard 360, split among entrants.
+  detail: 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Normal 120, Hard 360.'
+difficulties:
+- name: Normal
+  entry_level: 285
+  boss_level: 285
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 500}
+  hp:
+  - {phase: '1', value: 1.945q}
+  - {phase: 2-1, value: 972.5t}
+  - {phase: 2-2, value: 972.5t}
+  - {phase: '3', value: 2.625q}
+  notes:
+  - title: Aim for 550 Force
+    text: The full 1.25x damage tier; unconfirmed for SEA.
+    detail: 500 Authentic Force to enter; 550 (the full 1.25x damage tier) is strongly recommended. MapleSEA notes do not state the 550 tier, so that part is unconfirmed for SEA.
+  - title: After OVERDRIVE
+    text: HP ≈ 1.31q / 656t / 656t / 1.77q (-32.5%), 20 min. SEA due Oct-Nov 2026.
+    detail: 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 1.31q / 656t / 656t / 1.77q (32.5% less), 20-minute limit.'
+- name: Hard
+  entry_level: 285
+  boss_level: 285
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 500}
+  hp:
+  - {phase: '1', value: 3.78q}
+  - {phase: 2-1, value: 1.89q}
+  - {phase: 2-2, value: 1.89q}
+  - {phase: '3', value: 4.993q}
+  notes:
+  - title: Aim for 550 Force
+    text: The full 1.25x damage tier; unconfirmed for SEA.
+    detail: 500 Authentic Force to enter; 550 (the full 1.25x damage tier) is strongly recommended. MapleSEA notes do not state the 550 tier, so that part is unconfirmed for SEA.
+  - title: After OVERDRIVE
+    text: HP ≈ 2.55q / 1.28q / 1.28q / 3.37q (-32.5%), 20 min. SEA due Oct-Nov 2026.
+    detail: 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 2.55q / 1.28q / 1.28q / 3.37q (32.5% less), 20-minute limit.'
+- name: Destiny
+  entry_level: 285
+  boss_level: 285
+  party_max: 1
+  mission:
+    series: destiny-weapon
+    order: 5
+    title: Battle, Limbo
+    modifier: {text: Starts at 800 Erosion, direction: down}
+    needs: 12,500 Adversary's Resolve
+    rules: [Practice Mode clears count, No Cross World]
+  notes:
+  - title: 200 Erosion of room
+    text: Hard, solo. One death (+150) nearly ends it; avoid every hit and the grab.
+    detail: 'Destiny Weapon 2nd Growth mission "Battle, Limbo" (MapleSEA v252): Hard Limbo solo in Destiny Mode, starting at 800 Erosion instead of 0. Fifth mission; needs 12,500 Adversary''s Resolve. With only 200 Erosion of room, one death (+150) leaves almost nothing; avoid every 50/80-Erosion hit and Limbo Black''s grab. Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. OVERDRIVE''s phase-specific practice will not count.'
+  - title: 800 is only the start
+    text: 'The Passageway (-150) and Phase 3 recovery can take you below 800; record Erosion at each phase.'
+    detail: '800 is a starting value, not a floor: the Passageway after Specter C (-150) and recovery in Phase 3 can bring Erosion below it, so complete them and note your Erosion at each phase entry. The second-fusion skip is described for Normal; do not plan the Hard mission around it.'
+  - title: Never let Risk reach 100%
+    text: Bring enough damage that the Phase 2 special pattern never runs.
+    detail: 'Community advice: bring enough damage that the Phase 2 special pattern (Risk at 100%) never runs.'
+strategies:
+- name: Skip the second fusion
+  when: Parties with comfortable damage for Phase 2. Described for Normal; unverified on Hard.
+  risk: low
+  damage: high
+  payoff: Removes the second disappearance and fusion pattern
+  steps:
+  - At exactly 80% of Phase 2 HP Specter C disappears for about 5s; hold damage until he is back.
+  - Damage him during the attackable parts of the ~30s fusion and get below 70% before it ends.
+  - The next fusion triggers 20 points below the HP reached during the first (75% gives 55%), so under 70% it never comes.
+  - Risk is paused and Purification is off during the fusion; dodge, then purify as soon as it is back.
+- name: Handle both fusions
+  when: Parties near minimum damage
+  risk: low
+  damage: medium
+  payoff: Slower Phase 2, but no burst is spent while he is gone
+  steps:
+  - Do not burst into either ~5s disappearance; keep hitting in the attackable parts of each fusion.
+  - Judge where the next fusion triggers from the current HP (20 points below what you reached) instead of holding everything until the second fusion ends.
 sources:
-- https://mapletools.app/bosses/limbo
+- url: https://docs.google.com/document/d/1OJ9-xZvQVaXZ4p1DmhnIjYurSuK1gtUZlZdzoFk6fHA/edit
+  title: MapleStory Complete Limbo Guide
+  author: iSIingGunz
+  kind: guide
+  fetched: '2026-09-24'
+  updated: '2025-04-04'
+- url: https://www.maplesea.com/updates/view/v237_Patch_Notes/
+  title: MapleSEA v237 - Limbo release
+  author: Nexon (MapleSEA)
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v251_Content2/
+  title: MapleSEA v251 - Content update part 2 (Limbo changes)
+  author: Nexon (MapleSEA)
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v251_Content/
+  title: MapleSEA v251 - Content update (Symbol Growth Level 11)
+  author: Nexon (MapleSEA)
+  kind: official
+  fetched: '2026-10-02'
+- url: https://orangemushroom.net/2024/07/19/kms-ver-1-2-393-maplestory-milestone-limbo/
+  title: KMS ver. 1.2.393 - Limbo launch
+  author: Orange Mushroom
+  kind: official
+  fetched: '2026-10-02'
+- url: https://orangemushroom.net/2026/07/04/kms-ver-1-2-416-maplestory-overdrive-ruler-of-covenants-lethe/
+  title: KMS ver. 1.2.416 - MapleStory OVERDRIVE
+  author: Orange Mushroom
+  kind: official
+  fetched: '2026-10-02'
+- url: https://mapletools.app/bosses/limbo
+  title: MapleTools - Limbo
+  author: MapleTools
+  kind: tool
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v252_Content/
+  title: MapleSEA v252 content (Destiny Weapon 2nd Growth)
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-05'
+- url: https://maplestorywiki.net/w/Destiny_Weapon
+  title: MapleStory Wiki - Destiny Weapon
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-10-05'
+- url: https://www.inven.co.kr/board/maple/2304/40369
+  title: Inven - Limbo Normal guide (fusion timing)
+  author: Inven contributors
+  kind: guide
+  fetched: '2026-10-05'
+- url: https://namu.moe/w/림보(메이플스토리)/보스%20몬스터
+  title: NamuWiki mirror - Limbo boss page
+  author: NamuWiki contributors
+  kind: wiki
+  fetched: '2026-10-05'

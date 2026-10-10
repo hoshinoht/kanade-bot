@@ -1,0 +1,15 @@
+// M3 Expressive motion values, variables only (no CSS output), so any partial
+// can @use it without duplicating rules. Script copies: motion/easing.ts.
+
+// Standard spatial spring (damping 0.9, stiffness 700), sampled. Shape
+// changes only; colour and opacity never overshoot. Identical to SPRING and
+// SPRING_MS in motion/easing.ts: change both together.
+$spring: linear(0, 0.049, 0.16, 0.295, 0.429, 0.552, 0.658, 0.745, 0.814, 0.868, 0.908, 0.938, 0.959, 0.974, 0.985, 0.992, 0.996,
+    0.999, 1, 1.001, 1.001, 1.002, 1.001, 1.001, 1);
+$spring-ms: 250ms;
+
+// Forward/backward and enter (M3 standard), and the accelerating exit.
+$standard: cubic-bezier(0.2, 0, 0, 1);
+$exit: cubic-bezier(0.3, 0, 1, 1);
+$enter-ms: 250ms;
+$exit-ms: 200ms;

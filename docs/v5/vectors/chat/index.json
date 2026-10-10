@@ -1,0 +1,50 @@
+{
+  "families": [
+    {
+      "family": "gate",
+      "schema": "gate.schema.json",
+      "vector": "gate.json"
+    },
+    {
+      "family": "authority",
+      "schema": "authority.schema.json",
+      "vector": "authority.json"
+    },
+    {
+      "family": "participants",
+      "schema": "participants.schema.json",
+      "vector": "participants.json"
+    },
+    {
+      "family": "tool_schemas",
+      "schema": "tool_schemas.schema.json",
+      "vector": "tool_schemas.json"
+    },
+    {
+      "family": "read_tools",
+      "schema": "read_tools.schema.json",
+      "vector": "read_tools.json"
+    },
+    {
+      "family": "propose",
+      "schema": "propose.schema.json",
+      "vector": "propose.json"
+    },
+    {
+      "family": "sanitize",
+      "schema": "sanitize.schema.json",
+      "vector": "sanitize.json"
+    },
+    {
+      "family": "loop",
+      "schema": "loop.schema.json",
+      "vector": "loop.json"
+    },
+    {
+      "family": "context",
+      "schema": "context.schema.json",
+      "vector": "context.json"
+    }
+  ],
+  "schema_version": "v5-chat-index-v1"
+}

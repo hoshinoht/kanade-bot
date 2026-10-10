@@ -1,0 +1,82 @@
+{
+  "chat_members": [
+    {
+      "user_id": "11",
+      "display_name": "Éowyn Star",
+      "nickname": "EOWYN ✨",
+      "aliases": ["eOwYn", "ÉOWYN STAR"]
+    },
+    {
+      "user_id": "22",
+      "display_name": "Míra 🌙",
+      "nickname": null,
+      "aliases": ["mÍrA"]
+    },
+    {
+      "user_id": "33",
+      "display_name": "Renée O'Neil",
+      "nickname": null,
+      "aliases": ["rENée", "HFA"]
+    },
+    {
+      "user_id": "44",
+      "display_name": "Vesper Quill",
+      "nickname": null,
+      "aliases": ["VESPER", "quill"]
+    },
+    {
+      "user_id": "99",
+      "display_name": "Aster Vale",
+      "nickname": null,
+      "aliases": ["AsterV"]
+    }
+  ],
+  "extraction_members": [
+    {
+      "user_id": "114200000000000011",
+      "display_name": "Éowyn Star",
+      "nickname": "EOWYN ✨",
+      "aliases": ["eOwYn", "ÉOWYN STAR"]
+    },
+    {
+      "user_id": "114200000000000022",
+      "display_name": "Míra 🌙",
+      "nickname": null,
+      "aliases": ["mÍrA"]
+    },
+    {
+      "user_id": "114200000000000033",
+      "display_name": "Renée O'Neil",
+      "nickname": null,
+      "aliases": ["rENée", "HFA"]
+    },
+    {
+      "user_id": "114200000000000044",
+      "display_name": "Vesper Quill",
+      "nickname": null,
+      "aliases": ["VESPER", "quill"]
+    },
+    {
+      "user_id": "114200000000000099",
+      "display_name": "Aster Vale",
+      "nickname": null,
+      "aliases": ["AsterV"]
+    }
+  ],
+  "target_id": "11",
+  "boss_alias_collision": "HFA",
+  "chat": {
+    "question": "EOWYN's signup: MÍRA is ready for HFA p1→p2; Vesper appears in #hstar-VESPER-quill. <@114299900000000099> <@&114299900000000902> <#114299900000000901>; https://example.invalid/party/114299900000000903",
+    "name_in_url": "The synthetic profile is https://example.invalid/users/EOWYN?ref=114299900000000903",
+    "non_roster_url": "The synthetic credit is https://example.invalid/users/orbitquill42?ref=114299900000000903",
+    "answer": "Éowyn Star's signup is HFA p1."
+  },
+  "extraction": {
+    "target_id": "114200000000000011",
+    "message_id": "1142000000000009001",
+    "content": "EOWYN's slot: HFA wed 9:30pm? p1→p2; MÍRA and Vesper in #hstar-VESPER-quill. <@114299900000000099> <@&114299900000000902> <#114299900000000901>; https://example.invalid/thread/114299900000000903",
+    "name_in_url": "hfa wed 9pm? see https://example.invalid/users/EOWYN?ref=114299900000000903",
+    "non_roster_url": "hfa wed 9pm? see https://example.invalid/users/orbitquill42?ref=114299900000000903",
+    "summary": "Éowyn Star's group moved to p2."
+  }
+}

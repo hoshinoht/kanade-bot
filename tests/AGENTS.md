@@ -1,15 +1,8 @@
-# Test suite guide
+# Integration tests guide
 
-## Layout and fakes
-
-- Tests are flat and grouped by feature prefixes: `test_extract_*`, `test_chat_*`, `test_api_*`, and `test_portal_*`; other files cover domain, agent, storage, CLI, and deployment behavior.
-- `conftest.py` supplies in-memory repositories, portrait-free catalog copies, model-lock isolation, API clients/auth, and seeded schedules.
-- Use `fake_bot.py` to record Discord side effects without a gateway and `chat_support.py` for scripted model responses and synthetic guild objects.
-- Keep chatbot schedules and all imported clock seams on the same fixture-scoped aware instant. Many async chatbot tests use `pytest.mark.anyio`.
-
-## Fixtures and commands
-
-- `fixtures/extract/*.json` contains anonymized message fixtures. `fixture_loader.py` strictly rejects missing or invented amendments; never copy private exports or PII into fixtures.
-- Default `uv run pytest` excludes the `ollama` marker. Mark only real local-model coverage with `pytest.mark.ollama`; those tests should skip when Ollama is unavailable.
-- Use `uv run pytest -q tests/test_<area>.py::test_<case>` while iterating and `uv run pytest -q -m "not ollama"` for the CI-equivalent test pass.
-- Schema changes require aligned creation/upgrade assertions in `test_migration.py`. Asset tests must remain isolated from git-ignored deployment images.
+- One target per directory (`tests/<target>/main.rs`): `domain`, `scheduler`, `notify`, `store`, `discord`, `delivery`, `persona`, `provider` (target name `provider_contract`), `governor`, `extract`, `api`, `chat`, `runtime_bootstrap`. `tests/fixtures/provider/` holds synthetic model listings and loopback TLS test certs.
+- Shared helpers live in `tests/common/mod.rs` (vector loading, pinned clock and ID sequences, `Deviation`/`apply_deviations`, `assert_sound`) and are included with `#[path = "../common/mod.rs"] mod common;` — never import another target's private files.
+- Vector replays must assert the replayed case count equals the file's, panic on unknown ops, and validate files against their JSON schema.
+- Intentional v5 differences from v4 go through named `Deviation` lists: each entry asserts the frozen v4 value is present before substituting the v5 value, and the test fails if an entry is unused. Do not loosen comparisons instead.
+- Store tests use fresh temp directories and clean up; Discord and model tests use `FakeDiscord`, the fake provider or in-process loopback stubs. No test may touch the network, `.env`, `data/` or private `config/`.
+- Run one target: `cargo test --all-features --test <target>`; everything: `cargo test --all-targets --all-features --locked`.

@@ -1,0 +1,365 @@
+// Shared M3E primitives for both apps' windows (admin.scss and public.scss).
+// Values follow the mockup boards in docs/research/2026-09-28-m3e-mockups/
+// (`.win`, `.tb`, `.tab`, `.tbtn`, `.lrow`, `.seg`, `.key`, `.cap`,
+// `.tonal2`) -- fidelity audit 2026-10-02 -- and the portal's 2026-10-09 boards.
+
+/* ── overlines: mono uppercase labels (mockup `.cap`) ─────────────────────── */
+
+.cap,
+.field > span,
+.field > legend,
+.label,
+.side-pane dl dt {
+  margin: 0;
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+/* ── the window: one frame, a 48 px title bar, panes flush to the frame ──── */
+
+// The three dots (`_base.scss` draws them): the mockups' 8 px dots, 4 apart.
+.card__head::before,
+.modal__head::before {
+  width: 8px;
+  height: 8px;
+  margin-right: 25px;
+  box-shadow:
+    12px 0 0 currentcolor,
+    24px 0 0 currentcolor;
+}
+
+// A page's window holds its panes edge to edge: no inset box inside it.
+.shell > .card {
+  padding: 0;
+}
+
+.shell > .card > .card__head {
+  flex: none;
+  min-height: 48px;
+  margin: 0;
+  padding: 0 10px 0 14px;
+  column-gap: 8px;
+}
+
+.frame--rail .pane__body,
+.frame--rail .tabs__panel,
+.frame--rail .inbox__body {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.card__head .card__title {
+  font-size: var(--fs-body);
+}
+
+// Tabs in the title bar sit on its floor (mockup `.tab`: 38 px, 16 px top corners).
+.shell > .card > .tabs__strip {
+  align-items: flex-end;
+  padding-left: 16px;
+}
+
+// The three dots sit on the tabs' centre line, not the bar's: the tabs sit
+// on the bar's floor, 38 px tall, so the 8 px dots ride 15 px above it.
+.shell > .card > .tabs__strip::before {
+  align-self: flex-end;
+  margin-bottom: 15px;
+}
+
+.shell > .card > .tabs__strip > :not(.tabs__tabs) {
+  align-self: center;
+}
+
+// The tabs fill the strip's height (38 px, as the board's tablist); the
+// strip itself sits on the bar's floor.
+.card__head .tabs__tabs {
+  align-items: normal;
+  gap: 2px;
+}
+
+.card__head .tabs__tab {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 16px 16px 0 0;
+}
+
+.tabs__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  // A ring, no wash: any wash of the bar ink left the count under 4.5:1 on marigold.
+  background: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--win-ink) 40%, transparent);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+}
+
+.tabs__tab[aria-selected="true"] .tabs__count {
+  background: var(--select);
+  box-shadow: none;
+}
+
+// Title-bar controls (mockup `.tbtn`): outlined pills on the bar.
+.card__head .btn {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1.5px solid color-mix(in srgb, var(--win-ink) 45%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--win-ink);
+}
+
+.card__head .btn:hover {
+  border-color: var(--win-ink);
+  background: color-mix(in srgb, var(--win-ink) 12%, transparent);
+  color: var(--win-ink);
+}
+
+.card__head .btn > span,
+.card__head .btn select {
+  color: inherit;
+}
+
+.card__head .btn option {
+  color: var(--ink);
+}
+
+// Search in the title bar (mockup: a 32 px surface pill with a leading
+// magnifier, drawn here so every window's search gets it from one rule). The
+// magnifier's ring and handle are the pill's first flex items, so the pill
+// needs no positioning (as the board's static `label`).
+:where(.card__head) :where([role="search"]):has(> input[type="search"]) {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 14px 0 13px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--dim-text);
+}
+
+:where(.card__head) :where([role="search"]):has(> input[type="search"]):focus-within {
+  outline: 2px solid var(--win-ink);
+  outline-offset: 1px;
+}
+
+:where(.card__head) :where([role="search"]):has(> input[type="search"])::before,
+:where(.card__head) :where([role="search"]):has(> input[type="search"])::after {
+  content: "";
+  flex: none;
+  pointer-events: none;
+}
+
+:where(.card__head) :where([role="search"]):has(> input[type="search"])::before {
+  order: -2;
+  width: 11px;
+  height: 11px;
+  margin-top: -3px;
+  border: 2px solid currentcolor;
+  border-radius: 50%;
+}
+
+:where(.card__head) :where([role="search"]):has(> input[type="search"])::after {
+  order: -1;
+  width: 2px;
+  height: 6px;
+  margin: 10px 9px 0 -1px;
+  border-radius: 1px;
+  background: currentcolor;
+  transform: rotate(-45deg);
+}
+
+.card__head [role="search"] > input[type="search"] {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0.3rem 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink);
+  font-size: var(--fs-small);
+}
+
+.card__head [role="search"] > input[type="search"]:focus {
+  box-shadow: none;
+}
+
+/* ── panes: one frame; items are card surfaces; selection is a tonal fill ── */
+
+.list-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--pane);
+}
+
+.list-pane__options {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 12px;
+  list-style: none;
+}
+
+.list-pane__options:focus-visible { outline-offset: -3px; }
+
+// Every option is a card surface on the pane (mockup `.crow`).
+.list-pane__options > li {
+  border-radius: 6px;
+  background: var(--row);
+}
+
+.side-pane {
+  display: flex;
+  flex: 0 0 min(380px, 38vw);
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-left: 1.5px solid var(--line);
+  background: var(--surface);
+}
+.side-pane--fixed { flex-basis: min(420px, 42vw); }
+.side-pane--history { flex-basis: min(400px, 40vw); }
+
+.thread-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.8rem;
+  border: 0;
+  border-radius: 20px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+// The decision pane (mockup Inbox aside): a tonal container, no outline.
+.decision-card {
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  border: 0;
+  border-radius: 28px;
+  background: var(--select);
+}
+
+.decision-card > .cap {
+  color: var(--select-ink);
+}
+
+// Secondary text on a tinted row (selected, or hovered) takes the text-grade
+// dim: plain --dim on --select or --row-hover falls under 4.5:1. (A hovered
+// selected row used to drop to the pane colour, which hid this.)
+.history-row--active,
+.memberlist__row--active,
+.fixed-list__row--active,
+.history-row:hover,
+.memberlist__row:hover,
+.fixed-list tbody tr:hover {
+  --dim: var(--dim-text);
+}
+
+// "open" on a selected row is for screen readers: the fill and weight show it.
+// Its containing block is the row's list item, so the row keeps static flow.
+.history-timeline > li,
+.fixed-list__open {
+  position: relative;
+}
+
+.memberlist__open,
+.history-row__open,
+.fixed-list__open .cap {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── connected groups (the pill buttons themselves: _m3e-buttons.scss) ── */
+
+// Connected button group (mockup `.seg`): tonal segments 2 px apart, the
+// outer ends round; the chosen one a full accent pill.
+.seg {
+  gap: 2px;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  background: none;
+}
+
+.seg a,
+.seg button {
+  min-height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--seg-fill);
+  color: var(--ink);
+}
+
+.seg > :first-child,
+.seg > :first-child > a,
+.seg > :first-child > button {
+  border-radius: 16px 6px 6px 16px;
+}
+
+.seg > :last-child,
+.seg > :last-child > a,
+.seg > :last-child > button {
+  border-radius: 6px 16px 16px 6px;
+}
+
+.seg a[aria-current="page"],
+.seg a[aria-current="true"],
+.seg button[aria-selected="true"],
+.seg button[aria-pressed="true"] {
+  border-radius: 16px;
+  background: var(--accent-fill);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+/* ── chips: tonal, no outline (mockup `.tonal2`, `.ok2`, `.err2`) ─────────── */
+
+.status-chip,
+.tone {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  min-height: 22px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 999px;
+  font-size: var(--fs-mini);
+  font-weight: 600;
+}
+
+.status-chip--neutral { background: var(--chip-fill); color: var(--ink); }
+.status-chip--ok { background: color-mix(in srgb, var(--ok) 10%, var(--surface)); color: var(--ok-text); }
+.status-chip--risk { background: color-mix(in srgb, var(--risk) 10%, var(--surface)); color: var(--risk-text); }
+// Waiting states (expired, already in effect) are outlined, as the mockups' `.ans.wait`.
+.status-chip--warn { background: transparent; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 40%, var(--surface)); color: color-mix(in srgb, var(--warn-text) 85%, var(--ink)); }
+
+// A settled state stays quieter by shape (an outline, no fill), not by opacity.
+.tone--neutral {
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}

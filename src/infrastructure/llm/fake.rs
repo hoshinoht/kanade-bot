@@ -1,0 +1,123 @@
+use std::{collections::VecDeque, sync::Mutex, time::Duration};
+
+use super::{
+    ChatRequest, CompletionFuture, CompletionResponse, LlmProvider, ModelCapabilities,
+    ProviderFailure, ProviderFailureKind,
+};
+
+#[derive(Clone, Debug)]
+pub enum FakeAction {
+    Response(CompletionResponse),
+    Transient,
+    Permanent,
+    Authentication,
+    Malformed,
+    AdmissionRefused(Option<Duration>),
+    BackendUnavailable,
+    /// Down with the gateway's breaker cooldown as `Retry-After`.
+    BackendUnavailableFor(Duration),
+    UpstreamTimeout,
+    Delayed {
+        delay: Duration,
+        action: Box<FakeAction>,
+    },
+}
+
+pub struct FakeProvider {
+    actions: Mutex<VecDeque<FakeAction>>,
+    requests: Mutex<Vec<ChatRequest>>,
+    request_ids: Mutex<Vec<String>>,
+}
+
+impl FakeProvider {
+    pub fn new(actions: impl IntoIterator<Item = FakeAction>) -> Self {
+        Self {
+            actions: Mutex::new(actions.into_iter().collect()),
+            requests: Mutex::new(Vec::new()),
+            request_ids: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub fn requests(&self) -> Vec<ChatRequest> {
+        self.requests
+            .lock()
+            .expect("fake provider request lock poisoned")
+            .clone()
+    }
+
+    /// The correlation ids tagged requests carried, in order: what the HTTP
+    /// provider sends as `x-request-id`.
+    pub fn request_ids(&self) -> Vec<String> {
+        self.request_ids
+            .lock()
+            .expect("fake provider request lock poisoned")
+            .clone()
+    }
+}
+
+impl LlmProvider for FakeProvider {
+    fn complete(&self, request: &ChatRequest) -> CompletionFuture<'_> {
+        self.requests
+            .lock()
+            .expect("fake provider request lock poisoned")
+            .push(request.clone());
+        let action = self
+            .actions
+            .lock()
+            .expect("fake provider action lock poisoned")
+            .pop_front()
+            .unwrap_or(FakeAction::Permanent);
+        Box::pin(async move { run(action).await })
+    }
+
+    fn complete_tagged(
+        &self,
+        request: &ChatRequest,
+        capabilities: &ModelCapabilities,
+        request_id: &str,
+    ) -> CompletionFuture<'_> {
+        self.request_ids
+            .lock()
+            .expect("fake provider request lock poisoned")
+            .push(request_id.to_owned());
+        self.complete_with(request, capabilities)
+    }
+}
+
+async fn run(action: FakeAction) -> Result<CompletionResponse, ProviderFailure> {
+    match action {
+        FakeAction::Response(response) => Ok(response),
+        FakeAction::Transient => Err(failure(ProviderFailureKind::Transient, "transient")),
+        FakeAction::Permanent => Err(failure(ProviderFailureKind::Permanent, "permanent")),
+        FakeAction::Authentication => Err(failure(
+            ProviderFailureKind::Authentication,
+            "authentication",
+        )),
+        FakeAction::Malformed => Err(failure(ProviderFailureKind::InvalidOutput, "malformed")),
+        FakeAction::AdmissionRefused(retry_after) => Err(failure(
+            ProviderFailureKind::AdmissionRefused { retry_after },
+            "admission",
+        )),
+        FakeAction::BackendUnavailable => Err(failure(
+            ProviderFailureKind::BackendUnavailable { retry_after: None },
+            "backend-unavailable",
+        )),
+        FakeAction::BackendUnavailableFor(retry_after) => Err(failure(
+            ProviderFailureKind::BackendUnavailable {
+                retry_after: Some(retry_after),
+            },
+            "backend-unavailable",
+        )),
+        FakeAction::UpstreamTimeout => {
+            Err(failure(ProviderFailureKind::UpstreamTimeout, "timeout"))
+        }
+        FakeAction::Delayed { delay, action } => {
+            tokio::time::sleep(delay).await;
+            Box::pin(run(*action)).await
+        }
+    }
+}
+
+fn failure(kind: ProviderFailureKind, reason_code: &'static str) -> ProviderFailure {
+    ProviderFailure { kind, reason_code }
+}

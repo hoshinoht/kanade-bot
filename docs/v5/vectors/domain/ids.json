@@ -1,0 +1,141 @@
+{
+  "cases": [
+    {
+      "case_id": "ids.canonical.decorated",
+      "expected": {
+        "value": "a1b2c3d4111142228333444444444444"
+      },
+      "input": {
+        "value": "  #A1B2C3D4-1111-4222-8333-444444444444  "
+      },
+      "op": "canonical"
+    },
+    {
+      "case_id": "ids.short-id",
+      "expected": {
+        "value": "a1b2c3d4"
+      },
+      "input": {
+        "value": "a1b2c3d4-1111-4222-8333-444444444444"
+      },
+      "op": "short_id"
+    },
+    {
+      "case_id": "ids.tag",
+      "expected": {
+        "value": "#a1b2c3d4"
+      },
+      "input": {
+        "value": "a1b2c3d4-1111-4222-8333-444444444444"
+      },
+      "op": "tag"
+    },
+    {
+      "case_id": "ids.resolve.exact",
+      "expected": {
+        "value": "a1b2c3d4-1111-4222-8333-444444444444"
+      },
+      "input": {
+        "candidates": [
+          "a1b2c3d4-1111-4222-8333-444444444444",
+          "a1b2ffff-5555-4666-8777-888888888888",
+          "99999999-0000-4000-8000-000000000000"
+        ],
+        "text": "a1b2c3d4-1111-4222-8333-444444444444"
+      },
+      "op": "resolve_id"
+    },
+    {
+      "case_id": "ids.resolve.unique-prefix",
+      "expected": {
+        "value": "99999999-0000-4000-8000-000000000000"
+      },
+      "input": {
+        "candidates": [
+          "a1b2c3d4-1111-4222-8333-444444444444",
+          "a1b2ffff-5555-4666-8777-888888888888",
+          "99999999-0000-4000-8000-000000000000"
+        ],
+        "text": "#9999"
+      },
+      "op": "resolve_id"
+    },
+    {
+      "case_id": "ids.resolve.ambiguous",
+      "error_type": "IdAmbiguous",
+      "expected": {
+        "error": {
+          "message": "`a1b2` matches 2 rows",
+          "type": "IdAmbiguous"
+        }
+      },
+      "input": {
+        "candidates": [
+          "a1b2c3d4-1111-4222-8333-444444444444",
+          "a1b2ffff-5555-4666-8777-888888888888",
+          "99999999-0000-4000-8000-000000000000"
+        ],
+        "text": "a1b2"
+      },
+      "op": "resolve_id"
+    },
+    {
+      "case_id": "ids.resolve.not-found",
+      "error_type": "IdNotFound",
+      "expected": {
+        "error": {
+          "message": "nothing matches `dead`",
+          "type": "IdNotFound"
+        }
+      },
+      "input": {
+        "candidates": [
+          "a1b2c3d4-1111-4222-8333-444444444444",
+          "a1b2ffff-5555-4666-8777-888888888888",
+          "99999999-0000-4000-8000-000000000000"
+        ],
+        "text": "dead"
+      },
+      "op": "resolve_id"
+    },
+    {
+      "case_id": "ids.resolve.too-short",
+      "error_type": "IdTooShort",
+      "expected": {
+        "error": {
+          "message": "`#abc` is too short - give at least 4 characters",
+          "type": "IdTooShort"
+        }
+      },
+      "input": {
+        "candidates": [
+          "a1b2c3d4-1111-4222-8333-444444444444",
+          "a1b2ffff-5555-4666-8777-888888888888",
+          "99999999-0000-4000-8000-000000000000"
+        ],
+        "text": "#abc"
+      },
+      "op": "resolve_id"
+    }
+  ],
+  "family": "ids",
+  "provenance": {
+    "functions": [
+      "canonical",
+      "short_id",
+      "tag",
+      "resolve_id"
+    ],
+    "inventory_surfaces": [
+      "domain.ids"
+    ],
+    "oracle": "legacy/python bot.domain.ids",
+    "source_tests": [
+      "tests/test_ids.py::test_canonical_strips_decoration",
+      "tests/test_ids.py::test_short_id_is_the_first_eight_hex_characters",
+      "tests/test_ids.py::test_tag_adds_the_hash",
+      "tests/test_ids.py::test_an_ambiguous_prefix_lists_its_candidates"
+    ]
+  },
+  "schema_version": "v5-domain-v1"
+}

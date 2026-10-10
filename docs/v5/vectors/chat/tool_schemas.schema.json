@@ -1,0 +1,344 @@
+{
+  "$defs": {
+    "case": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "expected": {
+          "$ref": "#/$defs/expected"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input",
+        "expected"
+      ],
+      "type": "object"
+    },
+    "expected": {
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/outcome"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "steps"
+      ],
+      "type": "object"
+    },
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/step"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "steps"
+      ],
+      "type": "object"
+    },
+    "outcome": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "value": {}
+          },
+          "required": [
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "message": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "message"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "replayCase": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input"
+      ],
+      "type": "object"
+    },
+    "result_constants": {
+      "additionalProperties": false,
+      "properties": {
+        "anchor_cache": {
+          "type": "integer"
+        },
+        "completion_reserve_tokens": {
+          "type": "integer"
+        },
+        "conversation_budget_tokens": {
+          "type": "integer"
+        },
+        "failure_reply": {
+          "type": "string"
+        },
+        "history_exchanges": {
+          "type": "integer"
+        },
+        "max_member_reply": {
+          "type": "integer"
+        },
+        "max_runs": {
+          "type": "integer"
+        },
+        "max_tool_rounds": {
+          "type": "integer"
+        },
+        "pool_spent_reason": {
+          "type": "string"
+        },
+        "pool_spent_reply": {
+          "type": "string"
+        },
+        "rate_limited_reply": {
+          "type": "string"
+        },
+        "reactions": {
+          "additionalProperties": false,
+          "properties": {
+            "channel_busy": {
+              "type": "string"
+            },
+            "rate_limited": {
+              "type": "string"
+            },
+            "seen": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "seen",
+            "rate_limited",
+            "channel_busy"
+          ],
+          "type": "object"
+        },
+        "read_only_turn": {
+          "type": "string"
+        },
+        "reference_cache": {
+          "type": "integer"
+        },
+        "reply_chain_depth": {
+          "type": "integer"
+        },
+        "spoofed_note": {
+          "type": "string"
+        },
+        "strategy_grounding_failure_reply": {
+          "type": "string"
+        },
+        "unknown_tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "max_tool_rounds",
+        "history_exchanges",
+        "reply_chain_depth",
+        "conversation_budget_tokens",
+        "completion_reserve_tokens",
+        "anchor_cache",
+        "reference_cache",
+        "max_runs",
+        "max_member_reply",
+        "unknown_tool",
+        "read_only_turn",
+        "failure_reply",
+        "strategy_grounding_failure_reply",
+        "rate_limited_reply",
+        "pool_spent_reply",
+        "spoofed_note",
+        "reactions",
+        "pool_spent_reason"
+      ],
+      "type": "object"
+    },
+    "result_surface": {
+      "additionalProperties": false,
+      "properties": {
+        "names": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "text": {
+          "type": "string"
+        },
+        "tokens": {
+          "type": "integer"
+        },
+        "tools": {
+          "items": {
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "write_names": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tools",
+        "text",
+        "tokens",
+        "names",
+        "write_names"
+      ],
+      "type": "object"
+    },
+    "step": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/step_surface"
+        },
+        {
+          "$ref": "#/$defs/step_constants"
+        }
+      ]
+    },
+    "step_constants": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "constants"
+        }
+      },
+      "required": [
+        "op"
+      ],
+      "type": "object"
+    },
+    "step_surface": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "surface"
+        },
+        "read_only": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "op",
+        "read_only"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/case"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "family": {
+      "const": "tool_schemas"
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "functions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "inventory_surfaces": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "oracle": {
+          "type": "string"
+        },
+        "source_tests": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "oracle",
+        "functions",
+        "source_tests",
+        "inventory_surfaces"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "v5-chat-tool-schemas-v1"
+    }
+  },
+  "required": [
+    "schema_version",
+    "family",
+    "provenance",
+    "cases"
+  ],
+  "title": "Kanade v5 chat vectors: tool_schemas",
+  "type": "object"
+}

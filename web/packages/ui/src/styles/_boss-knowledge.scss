@@ -1,0 +1,149 @@
+// B_Bosses: one master/detail window. The catalog and detail own their own
+// scrolling regions so the fixed shell and title bar never move.
+@use "breakpoints" as *;
+@use "motion-query" as *;
+@use "easing" as *;
+@use "boss-guide"; // the guide column inside the knowledge detail
+.bosses-window { display: flex; flex-direction: column; overflow: clip; }
+.frame--rail .bosses-window > .card__head { flex: none; flex-wrap: nowrap; gap: 4px; border-radius: 0; }
+.bosses-window__order { margin-left: auto; color: var(--win-ink); font-size: var(--fs-mini); }
+.bosses-window__body { display: flex; flex: 1 1 auto; min-height: 0; overflow: clip; }
+.bosses-list { display: flex; flex: 0 0 330px; flex-direction: column; min-width: 0; overflow: clip auto; overscroll-behavior: contain; padding: 10px; border-right: 1.5px solid var(--line); background: var(--pane); }
+.bosses-list .grid-bosses { gap: 2px; border: 0; border-radius: 0; background: transparent; overflow: visible; }
+.bosses-list .bossrow { display: flex; gap: 10px; min-height: 52px; padding: 0 10px; border-radius: 6px; background: var(--row); }
+.bosses-list .bossrow__id { flex: 1 1 auto; }
+.bosses-list .bossrow, .bosses-events li { cursor: pointer; }
+.bosses-list .bossrow:hover { background: var(--row-hover); box-shadow: inset 0 0 0 1.5px var(--line); }
+.bosses-list .bossrow--active, .bosses-list .bossrow--active:hover { border-radius: 18px; background: var(--select); box-shadow: inset 0 0 0 1.5px var(--select-edge); }
+.bosses-list .portrait--md { width: 34px; height: 34px; border-radius: 10px; }
+.bosses-list .bossrow__name { display: block; overflow: hidden; font-size: var(--fs-small); font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.bosses-list .bossrow__pills { flex-wrap: nowrap; gap: 3px; overflow: hidden; }
+.bosses-list .bossrow > .row-content { flex: 0 1 46%; width: auto; }
+// Selected and grown (never on phones): identity keeps its own line;
+// difficulties wrap below it, item by item.
+.bosses-list .bossrow:has(> .row-content--expanded) { flex-wrap: wrap; }
+.bosses-list .bossrow:has(> .row-content--expanded) .bossrow__name { white-space: normal; }
+.bosses-list .bossrow:has(> .row-content--expanded) > .bossrow__id { min-height: 52px; }
+.bosses-list .bossrow > .row-content--expanded { flex-basis: 100%; }
+.bossrow__difficulties { display: flex; flex-direction: column; gap: 4px; padding-block: 8px; }
+.bosses-list .bossrow__difficulties { flex-flow: row wrap; gap: 6px 10px; padding: 0 0 10px 44px; }
+.bosses-list .bossrow__difficulties > span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.bossrow__tracked { color: var(--dim-text); font-size: var(--fs-micro); }
+.boss-tick { display: inline-flex; flex: none; align-items: center; min-height: 18px; padding: 0 6px; border-radius: 9px; color: var(--pill-n-fg); font-family: var(--mono); font-size: var(--fs-micro); font-weight: 700; letter-spacing: .04em; }
+.boss-tick--e { background: var(--pill-e-bg); color: var(--pill-e-fg); }
+.boss-tick--n { background: var(--pill-n-bg); color: var(--pill-n-fg); }
+.boss-tick--h { background: var(--pill-h-bg); color: var(--pill-h-fg); }
+.boss-tick--c { background: var(--pill-c-bg); color: var(--pill-c-fg); }
+.boss-tick--x { background: var(--pill-x-bg); color: var(--pill-x-fg); }
+.boss-tick--champion { background: var(--pill-champion-bg); color: var(--pill-champion-fg); }
+.boss-tick--destiny { background: var(--pill-destiny-bg); box-shadow: inset 0 0 0 1px var(--pill-destiny-edge); color: var(--pill-destiny-fg); }
+.boss-tick--more { box-shadow: inset 0 0 0 1.5px var(--line); color: var(--dim-text); }
+.bosses-list__event-title { margin: 14px 0 6px; }
+.bosses-events { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.bosses-events li { border-radius: 6px; background: var(--row); }
+.bosses-events li:hover { background: var(--row-hover); box-shadow: inset 0 0 0 1.5px var(--line); }
+.bosses-events__active { border-radius: 18px !important; background: var(--select) !important; box-shadow: inset 0 0 0 1.5px var(--select-edge); }
+.bosses-events li { display: flex; align-items: center; gap: 6px; min-height: 52px; padding: 0 10px; }
+.bosses-events a { display: flex; flex: 1 1 auto; align-items: center; gap: 8px; min-width: 0; color: var(--ink); text-decoration: none; }
+.bosses-events .portrait--md { width: 34px; height: 34px; border-radius: 10px; }
+.bosses-events strong { overflow: hidden; font-size: var(--fs-small); text-overflow: ellipsis; white-space: nowrap; }
+.bosses-events .status-chip abbr, .knowledge-hero .status-chip abbr { text-decoration: none; }
+// The season label gives way (ellipsis) before the name; the list never scrolls sideways.
+.bosses-events a { flex: 0 0 auto; max-width: 50%; }
+.bosses-events li > .row-content { flex: 1 1 0; width: auto; }
+.bosses-events .status-chip { display: block; flex: 0 1 auto; min-width: 0; min-height: 18px; margin-left: auto; overflow: hidden; padding: 0 6px; font-size: var(--fs-micro); line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+// Selected and grown, like catalog rows: the name keeps its own line and the
+// difficulty ticks sit below it, indented past the smaller event portrait.
+.bosses-events li:has(> .row-content--expanded) { flex-wrap: wrap; }
+.bosses-events li:has(> .row-content--expanded) > a { min-height: 52px; max-width: 100%; }
+.bosses-events li > .row-content--expanded { flex-basis: 100%; }
+.bosses-events .row-content__full .bossrow__difficulties { padding-left: 42px; }
+.knowledge-detail { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; overflow: clip; background: var(--surface); container: knowledge / inline-size; }
+.knowledge-hero { position: relative; flex: none; min-height: 150px; overflow: hidden; border-bottom: 1.5px solid var(--line); }
+.knowledge-hero > * { position: relative; }
+.knowledge-hero__art { position: absolute; top: 0; right: 0; width: 62%; height: 100%; object-fit: cover; object-position: center 30%; opacity: .62; -webkit-mask-image: linear-gradient(90deg, transparent, #000 80%); mask-image: linear-gradient(90deg, transparent, #000 80%); }
+.knowledge-hero__identity { display: flex; align-items: center; gap: 16px; min-height: 150px; padding: 16px 22px; }
+.knowledge-hero__identity .portrait--md { flex: none; width: 72px; height: 72px; border-radius: 20px; }
+.knowledge-hero__identity > div { display: grid; gap: 4px; min-width: 0; }
+.knowledge-hero__identity p, .knowledge-hero__identity h1 { margin: 0; }
+.knowledge-hero__identity h2 { font-family: var(--display); font-size: var(--fs-brand); font-weight: 800; line-height: 1.12; }
+.knowledge-hero__meta { overflow: hidden; font-size: var(--fs-small); text-overflow: ellipsis; white-space: nowrap; }
+.knowledge-hero__meta code { font-family: var(--mono); font-size: var(--fs-mini); }
+.knowledge-hero__identity > .status-chip { align-self: flex-start; margin-top: 16px; }
+// Scrolled down, the hero collapses to one line: small portrait, name and the
+// selected difficulty's pill; art, overline and meta line fade out. Classes
+// only (CSP); reduced motion switches without the transition.
+.knowledge-hero__identity > div > .cap, .knowledge-hero__meta { max-height: 2.5em; }
+.knowledge-hero__pill { display: none; margin-left: 10px; vertical-align: middle; }
+.knowledge-hero--compact { min-height: 0; }
+.knowledge-hero--compact .knowledge-hero__identity { gap: 12px; min-height: 52px; padding-top: 8px; padding-bottom: 8px; }
+.knowledge-hero--compact .knowledge-hero__identity .portrait--md { width: 34px; height: 34px; border-radius: 10px; }
+.knowledge-hero--compact .knowledge-hero__identity > div { gap: 0; }
+.knowledge-hero--compact .knowledge-hero__identity h2 { font-size: var(--fs-lg); }
+.knowledge-hero--compact .knowledge-hero__identity > div > .cap,
+.knowledge-hero--compact .knowledge-hero__meta { max-height: 0; overflow: hidden; opacity: 0; }
+.knowledge-hero--compact .knowledge-hero__art { opacity: 0; }
+.knowledge-hero--compact .knowledge-hero__pill { display: inline-flex; }
+.knowledge-hero--compact .knowledge-hero__identity > .status-chip { display: none; }
+@include motion-ok {
+  .knowledge-hero__identity,
+  .knowledge-hero__identity .portrait--md { transition: min-height 220ms $standard, padding 220ms $standard, width 220ms $standard, height 220ms $standard; }
+  .knowledge-hero__art,
+  .knowledge-hero__identity > div > .cap,
+  .knowledge-hero__meta { transition: opacity 160ms linear, max-height 220ms $standard; }
+}
+// Guide and aside are a grid row sized to the guide's content, so the sticky
+// aside ("On this page" over the timings) can travel the guide's full height;
+// a flex row would size both only to the panel's visible height. The guide
+// ends with room to breathe below its last card (user report 2026-10-05).
+.knowledge-detail__body { display: grid; flex: 1 1 auto; grid-template-columns: minmax(0, 80ch) 240px; justify-content: start; align-items: start; gap: 18px; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 22px; }
+.knowledge-detail__main { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding-bottom: 40px; }
+.knowledge__switch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.knowledge-detail aside { display: flex; flex-direction: column; gap: 8px; padding-bottom: 40px; }
+.knowledge-detail aside h2 { margin: 0 0 8px; }
+.knowledge-detail aside h2:not(:first-child) { margin-top: 16px; }
+// One outlined group with ruled rows, so neighbouring timings stay apart on the light surface.
+.knowledge-detail aside ul { display: grid; margin: 0; padding: 0; overflow: hidden; border-radius: 14px; background: var(--pane); box-shadow: inset 0 0 0 1.5px var(--line); list-style: none; }
+.knowledge-detail aside li + li { border-top: 1.5px solid var(--line); }
+.knowledge-detail aside a { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 12px; color: var(--ink); text-decoration: none; }
+.knowledge-detail aside a:hover { background: var(--row-hover); }
+.knowledge-detail aside a:focus-visible { outline-offset: -3px; }
+.knowledge-detail aside a strong { flex: none; font-family: var(--mono); font-size: var(--fs-small); }
+.knowledge-detail aside .pill { flex: none; min-height: 18px; padding: 0 6px; font-size: var(--fs-micro); }
+.knowledge-aside__others { min-width: 0; overflow: hidden; font-size: var(--fs-mini); text-overflow: ellipsis; white-space: nowrap; }
+.knowledge-aside__count { margin: 0; font-size: var(--fs-small); }
+.knowledge-detail__back { flex: none; align-self: flex-start; margin: 10px 14px 0; }
+// The aside sticks as one block ("On this page" first, then the timings), so
+// nothing scrolls under the contents; wherever it sits under the guide it is static.
+.knowledge-detail__body > aside { position: sticky; top: 0; }
+.knowledge-detail aside .guide-toc { display: flex; flex-direction: column; gap: 2px; padding-bottom: 8px; }
+.knowledge-detail aside .guide-toc h2 { margin: 0 0 6px; }
+.knowledge-detail aside .guide-toc h3 { margin: 10px 0 4px; }
+.knowledge-detail aside .guide-toc ul { display: grid; gap: 2px; overflow: visible; border-radius: 0; background: none; box-shadow: none; }
+.knowledge-detail aside .guide-toc li + li { border-top: 0; }
+.guide-toc button { display: flex; align-items: center; width: 100%; min-height: 30px; padding: 0 12px; border: 0; border-left: 3px solid transparent; border-radius: 0 15px 15px 0; background: transparent; color: var(--ink); font: inherit; font-size: var(--fs-small); text-align: start; cursor: pointer; }
+.guide-toc button:hover { background: var(--row-hover); }
+// Current: the selection fill, a bar at the start and bold text (not colour alone).
+.guide-toc button[aria-current="location"] { border-left-color: var(--accent-fill); background: var(--select); color: var(--select-ink); font-weight: 700; }
+// A narrow detail (1000 px frames: rail, list and detail side by side) puts
+// the timings aside under the guide rather than squeezing the guide.
+@container knowledge (max-width: 760px) {
+  .knowledge-detail__body { display: block; }
+  .knowledge-detail aside { position: static; margin-top: 18px; }
+  .knowledge-detail__main { padding-bottom: 0; }
+  .knowledge-detail aside .guide-toc { display: none; }
+}
+@media #{$single-pane} {
+  .bosses-window--compact { margin: calc(-1 * var(--gutter)) calc(-1 * var(--gutter)) 0; }
+  .bosses-window--compact .bosses-window__body { min-height: 100%; }
+  .bosses-list { flex: 1 1 auto; border-right: 0; }
+  .bosses-list--hidden, .knowledge-detail--hidden { display: none; }
+  .knowledge-detail__body { display: block; padding: 14px; }
+  .knowledge-detail__main { padding-bottom: 0; }
+  .knowledge-detail aside .guide-toc { display: none; }
+  .knowledge-detail aside { position: static; margin-top: 18px; }
+  .knowledge-hero__identity { gap: 12px; padding: 14px; }
+  .knowledge-hero__identity .portrait--md { width: 56px; height: 56px; border-radius: 16px; }
+  .knowledge-hero__identity h2 { font-size: var(--fs-lg); }
+  .knowledge-hero__identity > .status-chip { display: none; }
+}

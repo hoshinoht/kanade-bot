@@ -1,0 +1,463 @@
+//! Run edits: move, status, RSVP, this week's participants, reset to the
+//! weekly timing, and the ping preview.
+
+use std::sync::Arc;
+
+use axum::{
+    Json,
+    extract::{Path as UrlPath, State, rejection::JsonRejection},
+    http::HeaderMap,
+    response::{IntoResponse, Response},
+};
+use chrono::{NaiveTime, TimeZone};
+use serde::{Deserialize, Serialize};
+
+use super::{
+    bad_body, origin,
+    precondition::{Explicit, OverrideRef, SeenField, version_expectations},
+    refusal::{Refusal, scheduler},
+    run_edit::{Answer, Previous, SlotError, load_run, put_answer, reloaded, slot, write_run},
+    state, write_context,
+};
+use crate::{
+    api::{
+        admin::context::{context, roster, run_lengths},
+        auth::AdminSession,
+        dto::{
+            hhmm,
+            week::{RunDto, run_dto},
+        },
+        error::ApiError,
+        listeners::Site,
+        state::ApiState,
+        write::RunWrite,
+    },
+    domain::{
+        history::BlameTarget,
+        members::MemberProfile,
+        schedule::{RsvpState, RunStatus, StatusChange},
+        scheduler::SchedulerError,
+    },
+};
+
+type Reply = Result<Response, Refusal>;
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub(crate) struct RunResult {
+    run: RunDto,
+    version: u64,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub(crate) struct MoveResult {
+    run: RunDto,
+    previous: Previous,
+    version: u64,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub(crate) struct SwapResult {
+    runs: [RunDto; 2],
+    version: u64,
+}
+
+/// The run as it stands after the write, with the version read first (so it
+/// can only lag the data: a later edit at it may 409, never lose an update).
+async fn after(
+    site: &Site,
+    state: &ApiState,
+    run_id: &str,
+    profiles: &[MemberProfile],
+) -> Result<(RunDto, u64), Refusal> {
+    let (snapshot, version) = reloaded(state, run_id).await?;
+    let ctx = context(site, state, roster(profiles), state.now());
+    let run = snapshot
+        .runs
+        .iter()
+        .find(|run| run.id == run_id)
+        .ok_or_else(|| Refusal::from(ApiError::UNAVAILABLE))?;
+    let start = ctx.local_date(run.week_start);
+    let run_lengths = run_lengths(state).await;
+    Ok((run_dto(&ctx, &snapshot, start, run, &run_lengths), version))
+}
+
+/// Run one edit through the writer; a replayed Idempotency-Key answers the
+/// run as it is now, which is the first attempt's result or later.
+async fn edit(
+    site: &Site,
+    session: &AdminSession,
+    headers: &HeaderMap,
+    run_id: &str,
+    fields: &[String],
+    declared: (u64, Explicit),
+    write: RunWrite,
+) -> Result<(RunDto, u64), Refusal> {
+    let state = state(site)?;
+    let origin = origin(session, headers)?;
+    load_run(state, run_id).await?;
+    let profiles = write_run(state, origin, run_id, fields, declared, write).await?;
+    after(site, state, run_id, &profiles).await
+}
+
+async fn after_pair(
+    site: &Site,
+    state: &ApiState,
+    run_id: &str,
+    with_id: &str,
+    profiles: &[MemberProfile],
+) -> Result<([RunDto; 2], u64), Refusal> {
+    let (run, version) = after(site, state, run_id, profiles).await?;
+    let (with, _) = after(site, state, with_id, profiles).await?;
+    Ok(([run, with], version))
+}
+
+fn declared(
+    version: u64,
+    expect: Option<Vec<SeenField>>,
+    overrides: Option<Vec<OverrideRef>>,
+) -> (u64, Explicit) {
+    (version, Explicit { expect, overrides })
+}
+
+pub fn strict_time(text: &str) -> Option<NaiveTime> {
+    let bytes = text.as_bytes();
+    (bytes.len() == 5 && bytes[2] == b':' && text[..2].bytes().all(|b| b.is_ascii_digit()))
+        .then(|| NaiveTime::parse_from_str(text, "%H:%M").ok())
+        .flatten()
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MoveRequest {
+    day: u8,
+    time: Option<String>,
+    version: u64,
+    #[serde(default)]
+    expect: Option<Vec<SeenField>>,
+    #[serde(default, rename = "override")]
+    overrides: Option<Vec<OverrideRef>>,
+}
+
+pub async fn move_run(
+    State(site): State<Arc<Site>>,
+    session: AdminSession,
+    headers: HeaderMap,
+    UrlPath(run_id): UrlPath<String>,
+    body: Result<Json<MoveRequest>, JsonRejection>,
+) -> Reply {
+    let Json(request) = body.map_err(bad_body)?;
+    let state = state(&site)?;
+    if request.day > 6 {
+        return Err(Refusal::invalid("A boss week has seven days."));
+    }
+    let snapshot = load_run(state, &run_id).await?;
+    let run = snapshot
+        .runs
+        .iter()
+        .find(|run| run.id == run_id)
+        .ok_or_else(|| Refusal::from(ApiError::NOT_FOUND))?;
+    // The scheduler would move them; the portal keeps them as the record (mock contract).
+    if run.status.is_terminal() {
+        return Err(Refusal::invalid(
+            "Finished and cancelled runs stay where they were.",
+        ));
+    }
+    let ctx = context(&site, state, roster(&[]), state.now());
+    let previous = Previous::of(&ctx, run);
+    let to = slot(
+        &state.policy,
+        &ctx,
+        run,
+        request.day,
+        request.time.as_deref(),
+    )
+    .map_err(|error| {
+        Refusal::invalid(match error {
+            SlotError::Time => "Times are HH:MM, 00:00 to 23:59.",
+            SlotError::NeedsTime => "A scheduled run needs a time.",
+            SlotError::Missing => "That time does not exist on that day.",
+            SlotError::Range => "That date is out of range.",
+            SlotError::OtherWeek => {
+                "That time falls in another boss week; runs stay in their week."
+            }
+        })
+    })?;
+    let (run, version) = edit(
+        &site,
+        &session,
+        &headers,
+        &run_id,
+        &["slot".to_owned()],
+        declared(request.version, request.expect, request.overrides),
+        RunWrite::Move { to },
+    )
+    .await?;
+    Ok(Json(MoveResult {
+        run,
+        previous,
+        version,
+    })
+    .into_response())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SwapRequest {
+    with: String,
+    version: u64,
+}
+
+/// Exchange two live runs' slots as one writer operation. Validation of their
+/// state is in the domain so an idempotent replay wins before it is re-planned.
+pub async fn swap(
+    State(site): State<Arc<Site>>,
+    session: AdminSession,
+    headers: HeaderMap,
+    UrlPath(run_id): UrlPath<String>,
+    body: Result<Json<SwapRequest>, JsonRejection>,
+) -> Reply {
+    let Json(request) = body.map_err(bad_body)?;
+    if run_id == request.with {
+        return Err(Refusal::invalid("A run cannot be swapped with itself."));
+    }
+    let state = state(&site)?;
+    load_run(state, &run_id).await?;
+    load_run(state, &request.with).await?;
+    let origin = origin(&session, &headers)?;
+    let fields = ["slot".to_owned()];
+    let expect = version_expectations(
+        state.store.as_ref(),
+        &[
+            BlameTarget::Run(run_id.clone()),
+            BlameTarget::Run(request.with.clone()),
+        ],
+        &fields,
+        request.version,
+        origin.request_id.is_some(),
+    )
+    .await?;
+    let (ctx, profiles) = write_context(state).await?;
+    match state
+        .writer
+        .run(
+            origin,
+            expect,
+            &run_id,
+            RunWrite::Swap {
+                with_id: request.with.clone(),
+                version: request.version,
+            },
+            &ctx,
+        )
+        .await
+    {
+        Ok(_) | Err(SchedulerError::AlreadyApplied { .. }) => {}
+        Err(error) => return Err(scheduler(error)),
+    }
+    let (runs, version) = after_pair(&site, state, &run_id, &request.with, &profiles).await?;
+    Ok(Json(SwapResult { runs, version }).into_response())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StatusRequest {
+    status: String,
+    version: u64,
+    #[serde(default)]
+    expect: Option<Vec<SeenField>>,
+    #[serde(default, rename = "override")]
+    overrides: Option<Vec<OverrideRef>>,
+}
+
+pub async fn status(
+    State(site): State<Arc<Site>>,
+    session: AdminSession,
+    headers: HeaderMap,
+    UrlPath(run_id): UrlPath<String>,
+    body: Result<Json<StatusRequest>, JsonRejection>,
+) -> Reply {
+    let Json(request) = body.map_err(bad_body)?;
+    let status = RunStatus::parse(&request.status).map_err(|_| {
+        Refusal::invalid("Pick one of planned, confirmed, own time, done or cancelled.")
+    })?;
+    let (run, version) = edit(
+        &site,
+        &session,
+        &headers,
+        &run_id,
+        &["status".to_owned()],
+        declared(request.version, request.expect, request.overrides),
+        RunWrite::Status(StatusChange {
+            status,
+            announce: true,
+            via_portal: true,
+        }),
+    )
+    .await?;
+    Ok(Json(RunResult { run, version }).into_response())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RsvpRequest {
+    member_id: String,
+    answer: String,
+    version: u64,
+    #[serde(default)]
+    expect: Option<Vec<SeenField>>,
+    #[serde(default, rename = "override")]
+    overrides: Option<Vec<OverrideRef>>,
+}
+
+pub async fn rsvp(
+    State(site): State<Arc<Site>>,
+    session: AdminSession,
+    headers: HeaderMap,
+    UrlPath(run_id): UrlPath<String>,
+    body: Result<Json<RsvpRequest>, JsonRejection>,
+) -> Reply {
+    let Json(request) = body.map_err(bad_body)?;
+    let answer = match request.answer.as_str() {
+        "yes" => Some(RsvpState::Yes),
+        "no" => Some(RsvpState::No),
+        "clear" => None,
+        _ => return Err(Refusal::invalid("An answer is yes, no or clear.")),
+    };
+    let state = state(&site)?;
+    let origin = origin(&session, &headers)?;
+    load_run(state, &run_id).await?;
+    let (_, explicit) = declared(request.version, request.expect, request.overrides);
+    // A member removed since the client's version (with their answer) is 409.
+    let profiles = put_answer(
+        state,
+        origin,
+        &run_id,
+        &request.member_id,
+        Answer::Admin(answer),
+        request.version,
+        &explicit,
+    )
+    .await?;
+    let (run, version) = after(&site, state, &run_id, &profiles).await?;
+    Ok(Json(RunResult { run, version }).into_response())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ParticipantsRequest {
+    #[serde(default)]
+    add: Option<String>,
+    #[serde(default)]
+    remove: Option<String>,
+    version: u64,
+    #[serde(default)]
+    expect: Option<Vec<SeenField>>,
+    #[serde(default, rename = "override")]
+    overrides: Option<Vec<OverrideRef>>,
+}
+
+pub async fn participants(
+    State(site): State<Arc<Site>>,
+    session: AdminSession,
+    headers: HeaderMap,
+    UrlPath(run_id): UrlPath<String>,
+    body: Result<Json<ParticipantsRequest>, JsonRejection>,
+) -> Reply {
+    let Json(request) = body.map_err(bad_body)?;
+    if request.add.is_none() && request.remove.is_none() {
+        return Err(Refusal::invalid("Name someone to add or remove."));
+    }
+    let (run, version) = edit(
+        &site,
+        &session,
+        &headers,
+        &run_id,
+        &["participants".to_owned()],
+        declared(request.version, request.expect, request.overrides),
+        RunWrite::Participants {
+            add: request.add.into_iter().collect(),
+            remove: request.remove.into_iter().collect(),
+        },
+    )
+    .await?;
+    Ok(Json(RunResult { run, version }).into_response())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResetRequest {
+    version: u64,
+    #[serde(default)]
+    expect: Option<Vec<SeenField>>,
+    #[serde(default, rename = "override")]
+    overrides: Option<Vec<OverrideRef>>,
+}
+
+pub async fn reset(
+    State(site): State<Arc<Site>>,
+    session: AdminSession,
+    headers: HeaderMap,
+    UrlPath(run_id): UrlPath<String>,
+    body: Result<Json<ResetRequest>, JsonRejection>,
+) -> Reply {
+    let Json(request) = body.map_err(bad_body)?;
+    let fields: Vec<String> = ["slot", "participants", "bosses", "channel"]
+        .map(str::to_owned)
+        .into();
+    let (run, version) = edit(
+        &site,
+        &session,
+        &headers,
+        &run_id,
+        &fields,
+        declared(request.version, request.expect, request.overrides),
+        RunWrite::Reset,
+    )
+    .await?;
+    Ok(Json(RunResult { run, version }).into_response())
+}
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "PingResult"))]
+pub(crate) struct Message {
+    message: String,
+}
+
+/// A preview only: posting belongs to the delivery tick, which the API does
+/// not drive, so nothing reaches Discord from here.
+pub async fn ping(
+    State(site): State<Arc<Site>>,
+    _: AdminSession,
+    UrlPath(run_id): UrlPath<String>,
+) -> Reply {
+    let state = state(&site)?;
+    let snapshot = load_run(state, &run_id).await?;
+    let run = snapshot
+        .runs
+        .iter()
+        .find(|run| run.id == run_id)
+        .ok_or_else(|| Refusal::from(ApiError::NOT_FOUND))?;
+    let zone = state.policy.zone();
+    let at = hhmm(zone.from_utc_datetime(&run.datetime.naive_utc()));
+    let channel = run.channel_id.as_deref().map_or_else(
+        || "its channel".to_owned(),
+        |id| {
+            state
+                .channels
+                .channels()
+                .into_iter()
+                .find(|channel| channel.id == id)
+                .map_or_else(|| id.to_owned(), |channel| channel.name)
+        },
+    );
+    Ok(Json(Message {
+        message: format!(
+            "Preview (not posted): the morning card for {} at {at} in {channel}.",
+            run.bosses.join(" + ")
+        ),
+    })
+    .into_response())
+}

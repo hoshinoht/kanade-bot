@@ -1,0 +1,1267 @@
+//! Extractor and chatbot proposals over the in-memory store: who may
+//! approve, idempotent approval, supersede, up-front refusal, refusals at ✅
+//! when the schedule moved, attendance rules and TTL expiry.
+
+use chrono::{DateTime, FixedOffset, NaiveTime, TimeZone, Utc, Weekday};
+use chrono_tz::Asia::Kuala_Lumpur;
+use kanade::domain::attendance::AttendancePolicy;
+use kanade::domain::drafts::RequestLimit;
+use kanade::domain::drafts::{DraftStatus, ProposalSource, ProposalStore};
+use kanade::domain::history::{Actor, ChangeHistory, Origin, Surface};
+use kanade::domain::ids::RandomIds;
+use kanade::domain::members::{Directory, Member};
+use kanade::domain::proposals::{Approver, ChangeKind, ProposedChange, Refusal};
+use kanade::domain::requests::{NoFreezes, RequestSpec, Subject};
+use kanade::domain::schedule::{
+    NewFixedRun, NewRun, NoticeChange, ReminderPolicy, RsvpState, RunSource, RunStatus,
+    SchedulePolicy, ScheduleSnapshot, StatusChange,
+};
+use kanade::domain::scheduler::{
+    DraftError, ProposalError, ProposalRequest, RequestError, ScheduleStore, SchedulerService,
+    Scope, Supersede,
+};
+use kanade::infrastructure::store::MemoryScheduleStore;
+
+use crate::common::TestClock;
+
+type Service = SchedulerService<MemoryScheduleStore, RandomIds, TestClock>;
+
+struct Guild;
+
+impl Directory for Guild {
+    fn member(&self, user_id: &str) -> Option<Member> {
+        ["1001", "1002", "1003", "1004"]
+            .contains(&user_id)
+            .then(|| Member {
+                user_id: user_id.to_owned(),
+                has_role: true,
+                ..Member::default()
+            })
+    }
+
+    fn is_watched(&self, _channel_id: &str) -> bool {
+        true
+    }
+}
+
+fn kl(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<FixedOffset> {
+    FixedOffset::east_opt(8 * 3600)
+        .unwrap()
+        .with_ymd_and_hms(2026, month, day, hour, minute, 0)
+        .unwrap()
+}
+
+fn utc(at: DateTime<FixedOffset>) -> DateTime<Utc> {
+    at.with_timezone(&Utc)
+}
+
+fn policy(attendance: AttendancePolicy) -> SchedulePolicy {
+    SchedulePolicy::new(
+        ReminderPolicy {
+            zone: Kuala_Lumpur,
+            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            countdowns: vec![60, 15],
+        },
+        Weekday::Thu,
+        NaiveTime::MIN,
+    )
+    .with_attendance(attendance)
+}
+
+fn member(id: &str) -> Approver {
+    Approver {
+        user_id: id.into(),
+        has_role: true,
+        is_admin: false,
+        via_portal: false,
+    }
+}
+
+/// A standalone run (party 1001–1003, channel 222) and a weekly timing
+/// owned by 1004 (party 1001, 1002) with its runs, on Thu 27 Aug 01:00.
+struct Fixture {
+    service: Service,
+    clock: TestClock,
+    policy: SchedulePolicy,
+    run: String,
+    timing_run: String,
+}
+
+async fn fixture(attendance: AttendancePolicy) -> Fixture {
+    let clock = TestClock::new(kl(8, 27, 1, 0));
+    let policy = policy(attendance);
+    let mut service = SchedulerService::new(MemoryScheduleStore::new(), RandomIds, clock.clone())
+        .with_attendance(attendance);
+    let week = utc(kl(8, 27, 0, 0));
+    let run = service
+        .as_origin(Origin::for_tests())
+        .create_run(NewRun {
+            fixed_run_id: None,
+            channel_id: Some("222".into()),
+            week_start: week,
+            datetime: utc(kl(8, 31, 21, 30)),
+            bosses: vec!["HFA".into()],
+            participants: vec!["1001".into(), "1002".into(), "1003".into()],
+            status: RunStatus::Planned,
+            source: RunSource::Amend,
+        })
+        .await
+        .unwrap();
+    let fixed = service
+        .as_origin(Origin::for_tests())
+        .add_fixed_run(NewFixedRun {
+            // Staff pinned 1004, who is not on the party (user decision 2026-10-09).
+            owner_pinned: true,
+            owner_id: "1004".into(),
+            channel_id: Some("333".into()),
+            bosses: vec!["HLimbo".into()],
+            weekday: Weekday::Tue,
+            time: NaiveTime::from_hms_opt(21, 0, 0).unwrap(),
+            participants: vec!["1001".into(), "1002".into()],
+            note: None,
+        })
+        .await
+        .unwrap();
+    service
+        .as_origin(Origin::for_tests())
+        .materialise_weeks(&policy)
+        .await
+        .unwrap();
+    let state = snapshot(&service).await;
+    let timing_run = state
+        .runs
+        .iter()
+        .find(|row| row.fixed_run_id.as_deref() == Some(fixed.as_str()) && row.week_start == week)
+        .unwrap()
+        .id
+        .clone();
+    Fixture {
+        service,
+        clock,
+        policy,
+        run,
+        timing_run,
+    }
+}
+
+async fn snapshot(service: &Service) -> ScheduleSnapshot {
+    service.store().load(&Scope::All).await.unwrap()
+}
+
+fn cancel(run: &str, channel: &str) -> ProposedChange {
+    ProposedChange {
+        run_id: Some(run.into()),
+        channel_id: Some(channel.into()),
+        ..ProposedChange::new(ChangeKind::Cancel)
+    }
+}
+
+fn answer(run: &str, user: &str, state: RsvpState) -> ProposedChange {
+    ProposedChange {
+        run_id: Some(run.into()),
+        channel_id: Some("222".into()),
+        participants: vec![user.into()],
+        rsvp: Some(state),
+        ..ProposedChange::new(ChangeKind::Rsvp)
+    }
+}
+
+impl Fixture {
+    async fn propose_from(
+        &mut self,
+        change: ProposedChange,
+        source: ProposalSource,
+        supersede: Supersede,
+    ) -> Result<String, ProposalError> {
+        self.service
+            .propose(
+                ProposalRequest {
+                    change,
+                    source,
+                    source_id: "log-1".into(),
+                    supersede,
+                },
+                &self.policy,
+                &Guild,
+            )
+            .await
+            .map(|proposed| proposed.proposal.id)
+    }
+
+    async fn propose(&mut self, change: ProposedChange) -> String {
+        self.propose_from(change, ProposalSource::Extraction, Supersede::Older)
+            .await
+            .unwrap()
+    }
+
+    async fn approve(
+        &mut self,
+        id: &str,
+        approver: &Approver,
+    ) -> Result<kanade::domain::scheduler::ProposalApproved, ProposalError> {
+        self.service
+            .approve_proposal(id, approver, &self.policy, &Guild)
+            .await
+    }
+
+    async fn status(&self, id: &str) -> DraftStatus {
+        let (loaded, _) = self
+            .service
+            .store()
+            .load_proposal(id)
+            .await
+            .unwrap()
+            .unwrap();
+        loaded.draft.status
+    }
+
+    async fn run_status(&self, id: &str) -> RunStatus {
+        let state = snapshot(&self.service).await;
+        state.runs.iter().find(|run| run.id == id).unwrap().status
+    }
+}
+
+#[tokio::test]
+async fn a_participant_approves_through_the_source_surface_quietly() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let id = f.propose(cancel(&f.run.clone(), "222")).await;
+    let approved = f.approve(&id, &member("1002")).await.unwrap();
+    assert_eq!(f.run_status(&f.run.clone()).await, RunStatus::Cancelled);
+    assert_eq!(f.status(&id).await, DraftStatus::Merged);
+    let record = f
+        .service
+        .store()
+        .load_change(approved.merge.seq)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.origin.actor, Actor::member("1002"));
+    assert_eq!(record.origin.surface, Surface::ExtractionApproval);
+    // v4 parity: an approved cancel announces nothing (the card says it).
+    assert!(approved.merge.notices.is_empty());
+    assert!(record.notices.is_empty());
+
+    let timing_run = f.timing_run.clone();
+    let chat = f
+        .propose_from(
+            cancel(&timing_run, "333"),
+            ProposalSource::Chat,
+            Supersede::Older,
+        )
+        .await
+        .unwrap();
+    let approved = f.approve(&chat, &member("1001")).await.unwrap();
+    let record = f
+        .service
+        .store()
+        .load_change(approved.merge.seq)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.origin.surface, Surface::ChatApproval);
+}
+
+#[tokio::test]
+async fn only_participants_admins_and_the_owner_may_answer() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f.propose(cancel(&run, "222")).await;
+    let before = snapshot(&f.service).await;
+    let refused = [
+        member("1004"),
+        Approver {
+            has_role: false,
+            ..member("1001")
+        },
+    ];
+    for approver in &refused {
+        assert_eq!(
+            f.approve(&id, approver).await.unwrap_err(),
+            ProposalError::Unauthorised
+        );
+        assert_eq!(
+            f.service.reject_proposal(&id, approver).await.unwrap_err(),
+            ProposalError::Unauthorised
+        );
+    }
+    // Nothing moved: no record, no status change.
+    assert_eq!(snapshot(&f.service).await, before);
+    assert_eq!(f.status(&id).await, DraftStatus::Submitted);
+    let admin = Approver {
+        has_role: false,
+        is_admin: true,
+        via_portal: false,
+        ..member("9999")
+    };
+    f.approve(&id, &admin).await.unwrap();
+
+    // 1004 owns the weekly timing, so may answer for its run.
+    let timing_run = f.timing_run.clone();
+    let owned = f.propose(cancel(&timing_run, "333")).await;
+    f.approve(&owned, &member("1004")).await.unwrap();
+    assert_eq!(f.run_status(&timing_run).await, RunStatus::Cancelled);
+}
+
+#[tokio::test]
+async fn a_repeated_approval_applies_once_and_posts_nothing() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f.propose(cancel(&run, "222")).await;
+    let first = f.approve(&id, &member("1002")).await.unwrap();
+    let after = snapshot(&f.service).await;
+    assert_eq!(
+        f.approve(&id, &member("1002")).await.unwrap_err(),
+        ProposalError::Draft(DraftError::AlreadyApplied {
+            seq: first.merge.seq,
+            revision: first.merge.revision,
+        })
+    );
+    assert!(matches!(
+        f.approve(&id, &member("1001")).await.unwrap_err(),
+        ProposalError::Draft(DraftError::AlreadyMerged { seq }) if seq == first.merge.seq
+    ));
+    assert_eq!(snapshot(&f.service).await, after);
+}
+
+#[tokio::test]
+async fn a_newer_proposal_supersedes_the_live_one_for_its_target() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let older = f.propose(cancel(&run, "222")).await;
+    let elsewhere = f.propose(cancel(&run, "444")).await;
+    let proposed = f
+        .service
+        .propose(
+            ProposalRequest {
+                change: ProposedChange {
+                    kind: ChangeKind::Otot,
+                    ..cancel(&run, "222")
+                },
+                source: ProposalSource::Extraction,
+                source_id: "log-2".into(),
+                supersede: Supersede::Older,
+            },
+            &f.policy,
+            &Guild,
+        )
+        .await
+        .unwrap();
+    assert_eq!(proposed.superseded, std::slice::from_ref(&older));
+    let (loaded, _) = f
+        .service
+        .store()
+        .load_proposal(&older)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(loaded.draft.status, DraftStatus::Discarded);
+    assert_eq!(loaded.draft.close_reason.as_deref(), Some("superseded"));
+    assert_eq!(loaded.draft.closed_by, Some(Actor::system("extraction")));
+    // Another channel's card is left alone.
+    assert_eq!(f.status(&elsewhere).await, DraftStatus::Submitted);
+}
+
+#[tokio::test]
+async fn approving_retires_the_sibling_proposals() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let mut ids = Vec::new();
+    for change in [cancel(&run, "222"), answer(&run, "1001", RsvpState::Yes)] {
+        ids.push(
+            f.propose_from(change, ProposalSource::Extraction, Supersede::Keep)
+                .await
+                .unwrap(),
+        );
+    }
+    let approved = f.approve(&ids[1], &member("1001")).await.unwrap();
+    assert_eq!(approved.superseded, [ids[0].clone()]);
+    let (loaded, _) = f
+        .service
+        .store()
+        .load_proposal(&ids[0])
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(loaded.draft.close_reason.as_deref(), Some("superseded"));
+}
+
+#[tokio::test]
+async fn an_unappliable_change_is_refused_up_front_and_writes_nothing() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let before = snapshot(&f.service).await;
+    let refused = f
+        .propose_from(
+            ProposedChange {
+                run_id: Some(run.clone()),
+                ..ProposedChange::new(ChangeKind::Move)
+            },
+            ProposalSource::Chat,
+            Supersede::Older,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(refused, ProposalError::Refused(Refusal::NoNewTime));
+    assert_eq!(
+        refused.to_string(),
+        "no new time was agreed - use `/amend` to set one"
+    );
+    // Already in effect: nothing to card either.
+    f.propose(cancel(&run, "222")).await;
+    let only = f.service.store().list_proposals(false).await.unwrap();
+    assert_eq!(only.len(), 1);
+    assert_eq!(snapshot(&f.service).await, before);
+    let id = only[0].draft.id.clone();
+    f.approve(&id, &member("1001")).await.unwrap();
+    assert_eq!(
+        f.propose_from(cancel(&run, "222"), ProposalSource::Chat, Supersede::Older)
+            .await
+            .unwrap_err(),
+        ProposalError::NoEffect
+    );
+}
+
+#[tokio::test]
+async fn an_answer_for_someone_swapped_off_meanwhile_is_refused_at_approval() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f.propose(answer(&run, "1003", RsvpState::Yes)).await;
+    f.service
+        .as_origin(Origin::for_tests())
+        .swap_participants(&run, &["1003".into()], &["1004".into()], false, &Guild)
+        .await
+        .unwrap();
+    let refused = f.approve(&id, &member("1001")).await.unwrap_err();
+    assert_eq!(refused, ProposalError::Refused(Refusal::AnswerForOutsider));
+    assert_eq!(
+        refused.to_string(),
+        "that answer is for somebody who is no longer on the run"
+    );
+    assert_eq!(f.status(&id).await, DraftStatus::Submitted);
+}
+
+#[tokio::test]
+async fn proposed_answers_recount_but_never_end_a_pin_or_move_a_started_run() {
+    let mut f = fixture(AttendancePolicy::V5).await;
+    let run = f.run.clone();
+    f.service
+        .as_origin(Origin::for_tests())
+        .set_status(
+            &run,
+            StatusChange {
+                status: RunStatus::Confirmed,
+                announce: false,
+                via_portal: true,
+            },
+            &f.policy.reminders,
+        )
+        .await
+        .unwrap();
+    let id = f.propose(answer(&run, "1001", RsvpState::No)).await;
+    f.approve(&id, &member("1002")).await.unwrap();
+    let state = snapshot(&f.service).await;
+    let row = state.runs.iter().find(|row| row.id == run).unwrap();
+    assert_eq!(row.status, RunStatus::Confirmed);
+    assert!(row.status_pin.is_some(), "a proposed answer keeps the pin");
+    assert!(
+        state.rsvps.iter().any(|rsvp| rsvp.run_id == run
+            && rsvp.user_id == "1001"
+            && rsvp.state == RsvpState::No)
+    );
+
+    // Frozen once started: an answer applied after the start changes no status.
+    let tonight = f
+        .service
+        .as_origin(Origin::for_tests())
+        .create_run(NewRun {
+            fixed_run_id: None,
+            channel_id: Some("222".into()),
+            week_start: utc(kl(8, 27, 0, 0)),
+            datetime: utc(kl(8, 27, 20, 0)),
+            bosses: vec!["HLimbo".into()],
+            participants: vec!["1001".into(), "1002".into()],
+            status: RunStatus::Planned,
+            source: RunSource::Amend,
+        })
+        .await
+        .unwrap();
+    let late = f
+        .propose_from(
+            answer(&tonight, "1001", RsvpState::No),
+            ProposalSource::Chat,
+            Supersede::Older,
+        )
+        .await
+        .unwrap();
+    let before = f.run_status(&tonight).await;
+    f.clock.set(kl(8, 27, 20, 5));
+    f.approve(&late, &member("1002")).await.unwrap();
+    assert_eq!(f.run_status(&tonight).await, before);
+}
+
+#[tokio::test]
+async fn a_proposed_answer_recounts_an_unpinned_run() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f.propose(answer(&run, "1003", RsvpState::No)).await;
+    f.approve(&id, &member("1001")).await.unwrap();
+    assert_eq!(f.run_status(&run).await, RunStatus::AtRisk);
+}
+
+#[tokio::test]
+async fn a_stranger_on_a_past_ttl_proposal_changes_nothing() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f.propose(cancel(&run, "222")).await;
+    f.clock.set(kl(8, 28, 1, 0));
+    let stranger = member("9999");
+    assert_eq!(
+        f.approve(&id, &stranger).await.unwrap_err(),
+        ProposalError::Unauthorised
+    );
+    assert_eq!(
+        f.service.reject_proposal(&id, &stranger).await.unwrap_err(),
+        ProposalError::Unauthorised
+    );
+    assert_eq!(
+        f.status(&id).await,
+        DraftStatus::Submitted,
+        "authority is checked before expiry closes it"
+    );
+}
+
+#[tokio::test]
+async fn a_proposal_past_its_ttl_is_refused_and_closed() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f.propose(cancel(&run, "222")).await;
+    f.clock.set(kl(8, 28, 1, 0));
+    assert_eq!(
+        f.approve(&id, &member("1001")).await.unwrap_err(),
+        ProposalError::Expired
+    );
+    assert_eq!(f.status(&id).await, DraftStatus::Expired);
+    assert_eq!(f.run_status(&run).await, RunStatus::Planned);
+    assert_eq!(
+        f.service.expire_due_proposals().await.unwrap(),
+        Vec::<String>::new()
+    );
+}
+
+#[tokio::test]
+async fn proposals_leave_member_request_limits_alone() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let mut timing_runs: Vec<_> = snapshot(&f.service)
+        .await
+        .runs
+        .into_iter()
+        .filter(|row| row.fixed_run_id.is_some())
+        .collect();
+    timing_runs.sort_by_key(|row| row.datetime);
+    let subjects: Vec<String> = std::iter::once(run.clone())
+        .chain(timing_runs.into_iter().map(|row| row.id))
+        .collect();
+    assert_eq!(subjects.len(), 4);
+    let join = async |f: &mut Fixture, subject: &str| {
+        f.service
+            .submit_request(
+                "1004",
+                "please",
+                RequestSpec::Join(Subject::Run(subject.to_owned())),
+                None,
+                &f.policy,
+                &Guild,
+                &NoFreezes,
+            )
+            .await
+    };
+    for subject in &subjects[..2] {
+        join(&mut f, subject).await.unwrap();
+    }
+    // 1004 approves a proposal (as an administrator) while two requests wait.
+    let id = f.propose(cancel(&run, "222")).await;
+    let admin = Approver {
+        is_admin: true,
+        via_portal: false,
+        ..member("1004")
+    };
+    f.approve(&id, &admin).await.unwrap();
+    // The third still fits the cap of three; only the fourth is over it.
+    join(&mut f, &subjects[2]).await.unwrap();
+    assert!(matches!(
+        join(&mut f, &subjects[3]).await,
+        Err(RequestError::Limited(RequestLimit::Pending {
+            count: 3,
+            max: 3
+        }))
+    ));
+}
+
+impl Fixture {
+    /// A member's ✅/❌ reaction: the answer and the recount it triggers.
+    async fn react(&mut self, run: &str, user: &str, emoji: &str) {
+        self.service
+            .as_origin(Origin::for_tests())
+            .apply_reaction(run, user, emoji, true)
+            .await
+            .unwrap();
+    }
+
+    async fn hand_set(&mut self, run: &str, status: RunStatus) {
+        self.service
+            .as_origin(Origin::for_tests())
+            .set_status(
+                run,
+                StatusChange {
+                    status,
+                    announce: false,
+                    via_portal: true,
+                },
+                &self.policy.reminders,
+            )
+            .await
+            .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn a_cancel_or_otot_target_wins_over_a_status_that_moved_meanwhile() {
+    for (kind, target) in [
+        (ChangeKind::Cancel, RunStatus::Cancelled),
+        (ChangeKind::Otot, RunStatus::Otot),
+    ] {
+        let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+        let run = f.run.clone();
+        let id = f
+            .propose(ProposedChange {
+                kind,
+                ..cancel(&run, "222")
+            })
+            .await;
+        f.react(&run, "1003", "\u{274c}").await;
+        assert_eq!(f.run_status(&run).await, RunStatus::AtRisk);
+        f.approve(&id, &member("1001")).await.unwrap();
+        assert_eq!(f.run_status(&run).await, target, "{kind:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_proposed_answer_recounts_against_the_status_at_approval() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    for user in ["1002", "1003"] {
+        f.react(&run, user, "\u{2705}").await;
+    }
+    // Drafted, the answer confirms the run; meanwhile 1003 turns to ❌.
+    let id = f.propose(answer(&run, "1001", RsvpState::Yes)).await;
+    f.react(&run, "1003", "\u{274c}").await;
+    assert_eq!(f.run_status(&run).await, RunStatus::AtRisk);
+    f.approve(&id, &member("1002")).await.unwrap();
+    let state = snapshot(&f.service).await;
+    assert_eq!(
+        state.runs.iter().find(|row| row.id == run).unwrap().status,
+        RunStatus::AtRisk
+    );
+    assert!(
+        state.rsvps.iter().any(|rsvp| rsvp.run_id == run
+            && rsvp.user_id == "1001"
+            && rsvp.state == RsvpState::Yes)
+    );
+}
+
+#[tokio::test]
+async fn other_upstream_changes_still_conflict() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f
+        .propose(ProposedChange {
+            new_datetime: Some(utc(kl(9, 1, 21, 30))),
+            ..ProposedChange {
+                kind: ChangeKind::Move,
+                ..cancel(&run, "222")
+            }
+        })
+        .await;
+    let policy = f.policy.clone();
+    f.service
+        .as_origin(Origin::for_tests())
+        .amend_run(&run, utc(kl(9, 2, 21, 0)), &policy)
+        .await
+        .unwrap();
+    let before = snapshot(&f.service).await;
+    assert!(matches!(
+        f.approve(&id, &member("1001")).await.unwrap_err(),
+        ProposalError::Draft(DraftError::Conflicts(_))
+    ));
+    assert_eq!(snapshot(&f.service).await, before);
+}
+
+#[tokio::test]
+async fn a_proposed_move_revives_a_cancelled_or_otot_run() {
+    for status in [RunStatus::Cancelled, RunStatus::Otot] {
+        let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+        let run = f.run.clone();
+        f.react(&run, "1001", "\u{2705}").await;
+        f.hand_set(&run, status).await;
+        let to = utc(kl(9, 1, 21, 30));
+        let id = f
+            .propose(ProposedChange {
+                new_datetime: Some(to),
+                ..ProposedChange {
+                    kind: ChangeKind::Move,
+                    ..cancel(&run, "222")
+                }
+            })
+            .await;
+        f.approve(&id, &member("1002")).await.unwrap();
+        let state = snapshot(&f.service).await;
+        let row = state.runs.iter().find(|row| row.id == run).unwrap();
+        assert_eq!(
+            (row.status, row.datetime),
+            (RunStatus::Planned, to),
+            "{status:?}"
+        );
+        // As v4 `_move`: the answers given are kept.
+        assert!(
+            state
+                .rsvps
+                .iter()
+                .any(|rsvp| rsvp.run_id == run && rsvp.user_id == "1001")
+        );
+    }
+}
+
+#[tokio::test]
+async fn in_v5_a_revived_run_is_rederived_unpinned_or_kept_once_started() {
+    // A future slot re-derives from answers (1003's ❌ makes it at risk); a
+    // slot already started is frozen at the revived `planned`.
+    for (to, want) in [
+        (kl(9, 1, 21, 30), RunStatus::AtRisk),
+        (kl(8, 27, 0, 30), RunStatus::Planned),
+    ] {
+        let mut f = fixture(AttendancePolicy::V5).await;
+        let run = f.run.clone();
+        f.react(&run, "1003", "\u{274c}").await;
+        f.hand_set(&run, RunStatus::Confirmed).await;
+        f.hand_set(&run, RunStatus::Cancelled).await;
+        let id = f
+            .propose(ProposedChange {
+                new_datetime: Some(utc(to)),
+                ..ProposedChange {
+                    kind: ChangeKind::Move,
+                    ..cancel(&run, "222")
+                }
+            })
+            .await;
+        f.approve(&id, &member("1002")).await.unwrap();
+        let state = snapshot(&f.service).await;
+        let row = state.runs.iter().find(|row| row.id == run).unwrap();
+        assert_eq!((row.status, row.status_pin), (want, None), "{to}");
+    }
+}
+
+#[tokio::test]
+async fn an_admin_amend_leaves_a_cancelled_run_cancelled() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    f.hand_set(&run, RunStatus::Cancelled).await;
+    let policy = f.policy.clone();
+    f.service
+        .as_origin(Origin::for_tests())
+        .amend_run(&run, utc(kl(9, 1, 21, 30)), &policy)
+        .await
+        .unwrap();
+    assert_eq!(f.run_status(&run).await, RunStatus::Cancelled);
+}
+
+#[tokio::test]
+async fn a_repeated_approval_never_retires_a_newer_sibling() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f.propose(cancel(&run, "222")).await;
+    f.approve(&id, &member("1001")).await.unwrap();
+    f.clock.set(kl(8, 27, 2, 0));
+    let newer = f
+        .propose_from(
+            answer(&run, "1002", RsvpState::Yes),
+            ProposalSource::Extraction,
+            Supersede::Keep,
+        )
+        .await
+        .unwrap();
+    // The merger (still on the run) and another participant both repeat ✅.
+    for approver in [member("1001"), member("1002")] {
+        assert!(matches!(
+            f.approve(&id, &approver).await.unwrap_err(),
+            ProposalError::Draft(
+                DraftError::AlreadyApplied { .. } | DraftError::AlreadyMerged { .. }
+            )
+        ));
+        assert_eq!(f.status(&newer).await, DraftStatus::Submitted);
+    }
+}
+
+#[tokio::test]
+async fn drafts_and_requests_refuse_proposal_only_operations() {
+    use kanade::domain::drafts::{DraftOp, Target};
+
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = Target::Existing(f.run.clone());
+    let internal = [
+        DraftOp::SetRunBosses {
+            run: run.clone(),
+            bosses: vec!["HFA".into()],
+        },
+        DraftOp::EnsureReminders { run: run.clone() },
+        DraftOp::RecountRun { run: run.clone() },
+        DraftOp::ReviveRun { run: run.clone() },
+    ];
+    let policy = f.policy.clone();
+    let draft = f.service.create_draft("root", "tidy", None).await.unwrap();
+    for op in &internal {
+        assert_eq!(
+            f.service
+                .add_draft_op(
+                    "root",
+                    &draft.id,
+                    draft.version,
+                    op.clone(),
+                    &policy,
+                    &Guild
+                )
+                .await
+                .unwrap_err(),
+            DraftError::ProposalOnlyOp(op.kind())
+        );
+    }
+    let staged = f
+        .service
+        .add_draft_op(
+            "root",
+            &draft.id,
+            draft.version,
+            DraftOp::SetStatus {
+                run: run.clone(),
+                change: StatusChange {
+                    status: RunStatus::Otot,
+                    announce: false,
+                    via_portal: true,
+                },
+            },
+            &policy,
+            &Guild,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        f.service
+            .edit_draft_op(
+                "root",
+                &draft.id,
+                staged.draft.version,
+                0,
+                internal[3].clone(),
+                &policy,
+                &Guild
+            )
+            .await
+            .unwrap_err(),
+        DraftError::ProposalOnlyOp("revive_run")
+    );
+    let request = f
+        .service
+        .submit_request(
+            "1004",
+            "please",
+            RequestSpec::Join(Subject::Run(f.run.clone())),
+            None,
+            &policy,
+            &Guild,
+            &NoFreezes,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        f.service
+            .edit_request(
+                &Actor::admin("root"),
+                &request.id,
+                request.version,
+                vec![internal[1].clone()],
+                &policy,
+                &Guild,
+            )
+            .await
+            .unwrap_err(),
+        RequestError::Draft(DraftError::ProposalOnlyOp("ensure_reminders"))
+    ));
+}
+
+#[tokio::test]
+async fn an_approver_taken_off_the_run_meanwhile_is_refused() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f.propose(cancel(&run, "222")).await;
+    f.service
+        .as_origin(Origin::for_tests())
+        .swap_participants(&run, &["1003".into()], &["1004".into()], false, &Guild)
+        .await
+        .unwrap();
+    let before = snapshot(&f.service).await;
+    assert_eq!(
+        f.approve(&id, &member("1003")).await.unwrap_err(),
+        ProposalError::Unauthorised
+    );
+    assert_eq!(snapshot(&f.service).await, before);
+    assert_eq!(f.status(&id).await, DraftStatus::Submitted);
+}
+
+fn move_to(run: &str, to: DateTime<Utc>) -> ProposedChange {
+    ProposedChange {
+        kind: ChangeKind::Move,
+        new_datetime: Some(to),
+        ..cancel(run, "222")
+    }
+}
+
+impl Fixture {
+    async fn approve_at(
+        &mut self,
+        id: &str,
+        approver: &Approver,
+        edit: DateTime<Utc>,
+    ) -> Result<kanade::domain::scheduler::ProposalApproved, ProposalError> {
+        self.service
+            .approve_proposal_at(id, approver, Some(edit), &self.policy, &Guild)
+            .await
+    }
+
+    async fn head(&self) -> u64 {
+        self.service.store().history_head().await.unwrap().seq
+    }
+
+    async fn merged_detail(&self, id: &str) -> Option<String> {
+        use kanade::domain::drafts::{DraftEventKind, DraftStore};
+        self.service
+            .store()
+            .draft_events(id)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|event| event.kind == DraftEventKind::Merged)
+            .and_then(|event| event.detail)
+    }
+}
+
+#[tokio::test]
+async fn an_edited_approval_merges_one_record_at_the_new_time() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f.propose(move_to(&run, utc(kl(9, 1, 21, 30)))).await;
+    let head = f.head().await;
+    let edit = utc(kl(9, 2, 20, 0));
+    let approved = f.approve_at(&id, &member("1002"), edit).await.unwrap();
+    assert_eq!(approved.merge.seq, head + 1);
+    assert_eq!(f.head().await, head + 1, "one record, no second write");
+    let record = f
+        .service
+        .store()
+        .load_change(approved.merge.seq)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.origin.actor, Actor::member("1002"));
+    assert_eq!(record.origin.surface, Surface::ExtractionApproval);
+    assert_eq!(
+        record.origin.request_id.as_deref(),
+        Some(&*format!("approve:{id}"))
+    );
+    let state = snapshot(&f.service).await;
+    assert_eq!(
+        state
+            .runs
+            .iter()
+            .find(|row| row.id == run)
+            .unwrap()
+            .datetime,
+        edit
+    );
+    assert_eq!(
+        f.merged_detail(&id).await,
+        Some(format!(
+            "{} edited=2026-09-02T12:00:00+00:00",
+            approved.merge.seq
+        ))
+    );
+    // The card keeps what was proposed: the proposal's operations never change.
+    assert_eq!(f.status(&id).await, DraftStatus::Merged);
+
+    // The same edit again answers the first result; another edit, or none,
+    // under the same `approve:<id>` is a different request.
+    assert_eq!(
+        f.approve_at(&id, &member("1002"), edit).await.unwrap_err(),
+        ProposalError::Draft(DraftError::AlreadyApplied {
+            seq: approved.merge.seq,
+            revision: approved.merge.revision,
+        })
+    );
+    // Another edit under the same `approve:<id>` is another request.
+    let refused = f
+        .approve_at(&id, &member("1002"), utc(kl(9, 2, 21, 0)))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            refused,
+            ProposalError::Draft(DraftError::IdempotencyMismatch { .. })
+        ),
+        "{refused:?}"
+    );
+    assert_eq!(f.head().await, head + 1);
+}
+
+#[tokio::test]
+async fn an_edit_equal_to_the_proposed_time_is_a_plain_approval() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let to = utc(kl(9, 1, 21, 30));
+    let id = f.propose(move_to(&run, to)).await;
+    let approved = f.approve_at(&id, &member("1002"), to).await.unwrap();
+    assert_eq!(
+        f.merged_detail(&id).await,
+        Some(approved.merge.seq.to_string())
+    );
+    assert!(matches!(
+        f.approve(&id, &member("1002")).await.unwrap_err(),
+        ProposalError::Draft(DraftError::AlreadyApplied { .. })
+    ));
+}
+
+#[tokio::test]
+async fn an_add_takes_the_edited_slot_and_its_boss_week() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let id = f
+        .propose(ProposedChange {
+            kind: ChangeKind::Add,
+            channel_id: Some("222".into()),
+            bosses: vec!["HLotus".into()],
+            participants: vec!["1001".into()],
+            new_datetime: Some(utc(kl(8, 29, 21, 0))),
+            ..ProposedChange::new(ChangeKind::Add)
+        })
+        .await;
+    // Next boss week (it starts Thu 3 Sep).
+    let edit = utc(kl(9, 4, 20, 0));
+    let approved = f.approve_at(&id, &member("1001"), edit).await.unwrap();
+    let created = approved.run_id.unwrap();
+    let state = snapshot(&f.service).await;
+    let row = state.runs.iter().find(|row| row.id == created).unwrap();
+    assert_eq!((row.datetime, row.week_start), (edit, utc(kl(9, 3, 0, 0))));
+}
+
+#[tokio::test]
+async fn an_edit_needs_a_timed_change_and_a_current_week() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let before = snapshot(&f.service).await;
+    let cancelled = f.propose(cancel(&run, "222")).await;
+    assert_eq!(
+        f.approve_at(&cancelled, &member("1002"), utc(kl(9, 1, 20, 0)))
+            .await
+            .unwrap_err(),
+        ProposalError::EditNotApplicable
+    );
+    let moved = f.propose(move_to(&run, utc(kl(9, 1, 21, 30)))).await;
+    assert_eq!(
+        f.approve_at(&moved, &member("1002"), utc(kl(8, 20, 20, 0)))
+            .await
+            .unwrap_err(),
+        ProposalError::EditInPast
+    );
+    assert_eq!(snapshot(&f.service).await.runs, before.runs);
+    assert_eq!(f.status(&moved).await, DraftStatus::Submitted);
+}
+
+#[tokio::test]
+async fn an_edited_approval_keeps_the_authority_conflict_and_refusal_rules() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f.propose(move_to(&run, utc(kl(9, 1, 21, 30)))).await;
+    let edit = utc(kl(9, 2, 20, 0));
+    assert_eq!(
+        f.approve_at(&id, &member("1004"), edit).await.unwrap_err(),
+        ProposalError::Unauthorised
+    );
+    let policy = f.policy.clone();
+    f.service
+        .as_origin(Origin::for_tests())
+        .amend_run(&run, utc(kl(9, 2, 21, 0)), &policy)
+        .await
+        .unwrap();
+    let before = snapshot(&f.service).await;
+    assert!(matches!(
+        f.approve_at(&id, &member("1001"), edit).await.unwrap_err(),
+        ProposalError::Draft(DraftError::Conflicts(_))
+    ));
+    assert_eq!(snapshot(&f.service).await, before);
+
+    // A weekly's run edited into a week the weekly already holds: v4's words.
+    let timing_run = f.timing_run.clone();
+    let id = f.propose(move_to(&timing_run, utc(kl(8, 31, 20, 0)))).await;
+    assert_eq!(
+        f.approve_at(&id, &member("1001"), utc(kl(9, 7, 20, 0)))
+            .await
+            .unwrap_err(),
+        ProposalError::Refused(Refusal::WeeklyHoldsWeek)
+    );
+}
+
+#[tokio::test]
+async fn previewing_a_proposal_writes_nothing() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f.propose(move_to(&run, utc(kl(9, 1, 21, 30)))).await;
+    let head = f.head().await;
+    let clean = f
+        .service
+        .preview_proposal(&id, None, &f.policy, &Guild)
+        .await
+        .unwrap();
+    assert!(clean.analysis.conflicts.is_empty() && clean.refusal.is_none());
+    assert!(!clean.no_effect && !clean.expired);
+    assert_eq!(clean.info.source, ProposalSource::Extraction);
+    assert!(!clean.analysis.result_changes.unwrap().changes.is_empty());
+
+    let policy = f.policy.clone();
+    f.service
+        .as_origin(Origin::for_tests())
+        .amend_run(&run, utc(kl(9, 2, 21, 0)), &policy)
+        .await
+        .unwrap();
+    let head = head + 1;
+    let moved = f
+        .service
+        .preview_proposal(&id, Some("1001"), &f.policy, &Guild)
+        .await
+        .unwrap();
+    assert!(!moved.analysis.conflicts.is_empty());
+
+    // Past its TTL: reported, never closed by a preview.
+    f.clock.set(kl(8, 28, 2, 0));
+    let late = f
+        .service
+        .preview_proposal(&id, None, &f.policy, &Guild)
+        .await
+        .unwrap();
+    assert!(late.expired);
+    assert_eq!(f.status(&id).await, DraftStatus::Submitted);
+    assert_eq!(f.head().await, head);
+    assert_eq!(
+        f.service
+            .preview_proposal("nope", None, &f.policy, &Guild)
+            .await
+            .unwrap_err(),
+        ProposalError::Draft(DraftError::UnknownDraft("nope".into()))
+    );
+}
+
+#[tokio::test]
+async fn a_plain_approval_after_ones_own_edited_one_is_a_repeat() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f.propose(move_to(&run, utc(kl(9, 1, 21, 30)))).await;
+    let approved = f
+        .approve_at(&id, &member("1002"), utc(kl(9, 2, 20, 0)))
+        .await
+        .unwrap();
+    let head = f.head().await;
+    // The card was not refreshed: the same member's ✅ repeats the merge.
+    assert_eq!(
+        f.approve(&id, &member("1002")).await.unwrap_err(),
+        ProposalError::Draft(DraftError::AlreadyApplied {
+            seq: approved.merge.seq,
+            revision: approved.merge.revision,
+        })
+    );
+    // Anyone else's finds it merged; nothing is written either way.
+    assert!(matches!(
+        f.approve(&id, &member("1001")).await.unwrap_err(),
+        ProposalError::Draft(DraftError::AlreadyMerged { .. })
+    ));
+    assert_eq!(f.head().await, head);
+    let state = snapshot(&f.service).await;
+    let row = state.runs.iter().find(|row| row.id == run).unwrap();
+    assert_eq!(row.datetime, utc(kl(9, 2, 20, 0)));
+}
+
+#[tokio::test]
+async fn an_edited_retry_after_the_reset_answers_its_first_result() {
+    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let run = f.run.clone();
+    let id = f.propose(move_to(&run, utc(kl(9, 1, 21, 30)))).await;
+    let edit = utc(kl(9, 2, 20, 0));
+    let approved = f.approve_at(&id, &member("1002"), edit).await.unwrap();
+    // The boss week of the edit has ended (reset Thu 3 Sep 00:00).
+    f.clock.set(kl(9, 3, 1, 0));
+    assert_eq!(
+        f.approve_at(&id, &member("1002"), edit).await.unwrap_err(),
+        ProposalError::Draft(DraftError::AlreadyApplied {
+            seq: approved.merge.seq,
+            revision: approved.merge.revision,
+        })
+    );
+    // Still a different request when the edit differs.
+    assert!(matches!(
+        f.approve_at(&id, &member("1002"), utc(kl(9, 2, 21, 0)))
+            .await
+            .unwrap_err(),
+        ProposalError::Draft(DraftError::IdempotencyMismatch { .. })
+    ));
+}
+
+/// v4 parity: an approved move is the one proposal that announces, as v4's
+/// `amend_notice` in the run's channel, marked `(via portal)` only when
+/// approved outside the card.
+#[tokio::test]
+async fn an_approved_move_announces_the_move_and_nothing_else() {
+    for via_portal in [false, true] {
+        let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+        let run = f.run.clone();
+        let from = snapshot(&f.service)
+            .await
+            .runs
+            .iter()
+            .find(|row| row.id == run)
+            .unwrap()
+            .datetime;
+        let to = utc(kl(9, 1, 21, 30));
+        let id = f.propose(move_to(&run, to)).await;
+        let approver = Approver {
+            via_portal,
+            ..member("1002")
+        };
+        let approved = f.approve(&id, &approver).await.unwrap();
+        let notices = &approved.merge.notices;
+        assert_eq!(notices.len(), 1, "{notices:?}");
+        assert_eq!(
+            notices[0].change,
+            NoticeChange::RunMoved {
+                run_id: run.clone(),
+                from,
+                to,
+            }
+        );
+        assert_eq!(notices[0].channel_id.as_deref(), Some("222"));
+        assert_eq!(notices[0].listed, ["1001", "1002", "1003"]);
+        assert_eq!(notices[0].via_portal, via_portal);
+        let record = f
+            .service
+            .store()
+            .load_change(approved.merge.seq)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.notices, ["notice.run.move.moved"]);
+    }
+}

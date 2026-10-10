@@ -1,0 +1,309 @@
+//! The admin API over the owned store: files, settings, one shared writer,
+//! sign-in and the staff gate.
+
+use std::sync::Arc;
+
+use twilight_model::id::Id;
+
+use super::{
+    health::LiveHealth,
+    models::{self as model_report, ModelTasks},
+    settings,
+};
+use crate::{
+    api::{
+        admin::{
+            config::{ConfigDesk, ConfigFacts, ConfigInputs, ModelCatalog, PersonaFiles},
+            limits::LimitsDesk,
+        },
+        auth::{
+            self, AdminAuth, Clock,
+            audit::StoreAudit,
+            member::{MemberAuth, PortalOpen, StoreEligibility},
+            staff::{GuildStaffGate, StoreGuildMembers},
+        },
+        avatars::AvatarCache,
+        events::Hub,
+        server::LiveAdmin,
+        state::{ApiState, BackupDir, ChannelList, GuildAccess},
+        write::{ApiClock, SchedulerWriter},
+    },
+    bot::commands::AccessPolicy,
+    chat::persona::PersonaStore,
+    domain::{
+        ids::RandomIds,
+        scheduler::SchedulerService,
+        settings::{RuntimeSettings, SettingsStore},
+    },
+    infrastructure::{
+        files::{KnowledgeDir, LoadError, load_catalog, load_knowledge_dir, load_personas},
+        llm::{
+            governor::XorShift,
+            setup::{ModelRoles, ModelSetup, ModelStack, Models, build_with_groups},
+        },
+        store::SqliteStore,
+    },
+    runtime::{
+        config::{GuildSettings, ModelSettings, ServeConfig},
+        error::Error,
+    },
+};
+
+/// Everything later wiring (gateway, roster, tick, chat) shares with the API.
+pub struct Composition {
+    pub admin: LiveAdmin,
+    /// One instance for the API, the staff gate and the gateway's owner/roster hooks.
+    pub access: Arc<GuildAccess>,
+    pub settings: RuntimeSettings,
+    /// The live persona snapshot; the config API swaps it on a switch or reload.
+    pub personas: Arc<PersonaStore>,
+    /// `None` without `KANADE_MODEL_BASE_URL`. Role aliases and reasoning
+    /// saved in the config API switch it live (next session per role).
+    pub models: Option<Arc<ModelStack>>,
+    /// Validated once at compose time, then shared by the admin API and chat.
+    pub knowledge: Option<Arc<KnowledgeDir>>,
+    /// Catalog refresh and the startup report; aborted when dropped.
+    pub model_tasks: ModelTasks,
+}
+
+fn file_error(error: LoadError) -> Error {
+    Error::Startup(error.to_string())
+}
+
+/// Bounds and duplicate pairs are rejected while parsing the seed. Exact boss
+/// keys and difficulties need the catalog, so reject them after it has loaded
+/// and only when no saved row takes precedence.
+fn validate_run_lengths_seed(
+    seed: Option<&crate::domain::settings::RunLengths>,
+    catalog: &crate::domain::catalog::BossTable,
+) -> Result<(), Error> {
+    let Some(seed) = seed else {
+        return Ok(());
+    };
+    for (index, override_) in seed.overrides.iter().enumerate() {
+        let field = format!("KANADE_RUN_LENGTHS.overrides[{index}]");
+        let boss = catalog.boss(&override_.boss).ok_or_else(|| {
+            Error::Configuration(format!("{field}.boss is not a catalog boss key"))
+        })?;
+        if !boss
+            .difficulties()
+            .iter()
+            .any(|difficulty| difficulty == &override_.difficulty)
+        {
+            return Err(Error::Configuration(format!(
+                "{field}.difficulty is not valid for {}",
+                override_.boss
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn access(guild: &GuildSettings) -> GuildAccess {
+    // Snowflakes are validated non-zero by the config parser.
+    GuildAccess::new(
+        AccessPolicy {
+            bossing_role_id: Id::new(guild.bossing_role_id),
+            admin_role_id: guild.admin_role_id.map(Id::new),
+            debug_user_ids: guild.debug_user_ids.iter().copied().map(Id::new).collect(),
+        },
+        guild.chat_pilot_role_id.map(|id| id.to_string()),
+    )
+}
+
+pub(super) fn model_stack(
+    models: &ModelSettings,
+    settings: &RuntimeSettings,
+) -> Result<Option<Arc<ModelStack>>, Error> {
+    if models.base_url.is_none() {
+        return Ok(None);
+    }
+    let setup = ModelSetup {
+        base_url: models.base_url.clone(),
+        key: models
+            .read_key()?
+            .map(|key| key.expose().as_bytes().to_vec()),
+        ca_file: models.ca_file.clone(),
+        roles: ModelRoles::from(&settings.models),
+        permits: u32::from(models.permits),
+    };
+    let random = Arc::new(XorShift::new(uuid::Uuid::new_v4().as_u64_pair().0));
+    match build_with_groups(setup, &models.groups, random) {
+        Ok(Models::Ready(stack)) => Ok(Some(Arc::from(stack))),
+        Ok(Models::Unavailable) => Ok(None),
+        Err(error) => Err(Error::Startup(format!("model setup: {error}"))),
+    }
+}
+
+pub async fn compose(
+    config: &ServeConfig,
+    store: Arc<SqliteStore>,
+    channels: Arc<dyn ChannelList>,
+    health: LiveHealth,
+) -> Result<Composition, Error> {
+    compose_with(config, store, channels, health, None).await
+}
+
+/// [`compose`]; a `shared` model stack (built once by the caller from the same
+/// config) replaces building one, and its listing and refresh stay the
+/// caller's.
+pub(super) async fn compose_with(
+    config: &ServeConfig,
+    store: Arc<SqliteStore>,
+    channels: Arc<dyn ChannelList>,
+    health: LiveHealth,
+    shared: Option<Arc<ModelStack>>,
+) -> Result<Composition, Error> {
+    let catalog = load_catalog(&config.files.catalog_file).map_err(file_error)?;
+    let knowledge = config
+        .files
+        .knowledge_dir
+        .as_deref()
+        .map(load_knowledge_dir)
+        .transpose()
+        .map_err(file_error)?
+        .map(Arc::new);
+    let mut settings = settings::load(&store, &config.seeds).await?;
+    // Loaded above, so a read failure here is a transient store error.
+    let stored = store
+        .settings_rows()
+        .await
+        .map_err(|_| Error::Startup("runtime settings could not be read".into()))?;
+    // An unsaved seed was applied by `load`; refuse it before anything uses it.
+    if !stored.contains_key(crate::domain::settings::keys::RUN_LENGTHS) {
+        validate_run_lengths_seed(config.seeds.run_lengths.as_ref(), &catalog)?;
+    }
+    let sources = model_report::seed_roles(&mut settings, &config.models, &stored);
+    let (models, model_tasks) = match shared {
+        Some(stack) => (Some(stack), ModelTasks::default()),
+        None => {
+            let models = model_stack(&config.models, &settings)?;
+            let tasks =
+                model_report::start(models.as_ref(), sources, settings.models.context.clone());
+            (models, tasks)
+        }
+    };
+    let personas = load_personas(
+        &config.files.persona_dir,
+        settings::persona(&settings)?.as_ref(),
+    )
+    .map_err(file_error)?;
+    super::persona_log::persona_selected(&personas.snapshot);
+    let policy = settings.schedule_policy(config.runtime.timezone);
+
+    let access = Arc::new(access(&config.guild));
+    let staff = GuildStaffGate::new(
+        access.policy.clone(),
+        Arc::new(StoreGuildMembers::new(store.clone(), access.clone())),
+    );
+    let auth: AdminAuth =
+        auth::from_settings(&config.runtime.admin_auth, store.clone(), Arc::new(staff))?
+            .with_audit(Arc::new(StoreAudit::new(store.clone())));
+    // One portrait cache for both origins.
+    let avatars = Arc::new(AvatarCache::discord(
+        config.runtime.http.identity_dir.as_deref(),
+    ));
+
+    let persona_store = Arc::new(PersonaStore::new(personas.snapshot));
+    let desk = ConfigDesk::new(ConfigInputs {
+        settings: settings.clone(),
+        store: store.clone(),
+        models: models.clone().map(|stack| stack as Arc<dyn ModelCatalog>),
+        facts: ConfigFacts {
+            timezone: config.runtime.timezone.name().to_owned(),
+            model_gateway: config.models.base_url.clone(),
+            model_permits: u32::from(config.models.permits),
+            model_groups: config.models.groups.clone(),
+            chat_pilot_role_id: config.guild.chat_pilot_role_id.map(|id| id.to_string()),
+        },
+        personas: Some(PersonaFiles {
+            dir: config.files.persona_dir.clone(),
+            store: persona_store.clone(),
+        }),
+    });
+    let member = match config.runtime.public_bind {
+        Some(_) => Some(Arc::new(member_realm(config, &store, &desk, &avatars)?)),
+        None => None,
+    };
+
+    // Fixed for the process: the store was migrated when it opened.
+    let schema_version = store
+        .schema_version()
+        .await
+        .map_err(|_| Error::Startup("store schema version could not be read".into()))?;
+    let clock: Clock = Arc::new(auth::system_now);
+    // Every write path (portal, Discord, extractor, tick) commits through this
+    // store, so its write hook is the one place change hints come from.
+    let events = Arc::new(Hub::default());
+    store.observe_writes(events.observer());
+    let catalog = Arc::new(catalog);
+    let writer = SchedulerWriter::new(
+        SchedulerService::new(store.clone(), RandomIds, ApiClock(clock.clone()))
+            .with_attendance(policy.attendance)
+            .with_run_ends(desk.run_ends(Arc::clone(&catalog), policy.clone())),
+    );
+    let state = ApiState {
+        store,
+        writer: Arc::new(writer),
+        policy,
+        catalog,
+        channels,
+        access: access.clone(),
+        knowledge_dir: knowledge.as_ref().map(|dir| dir.path.clone()),
+        guild_id: Some(config.guild.guild_id.to_string()),
+        clock,
+        rescans: None,
+        config: Some(Arc::new(desk)),
+        chat: Some(health.chat()),
+        model_limits: models.as_ref().map(|stack| {
+            let governor = Arc::clone(&stack.governor);
+            Arc::new(move |at| governor.snapshot(at)) as crate::api::state::ModelLimits
+        }),
+        limits: Arc::new(LimitsDesk::default()),
+        proposal_refresh: None,
+        decline_retraction: None,
+        digest_post: None,
+        header_rewrite: None,
+        backups: BackupDir {
+            dir: config.backup_dir.clone(),
+            schema_version,
+        },
+        avatars: Some(avatars),
+        events,
+        marks: Default::default(),
+    };
+    Ok(Composition {
+        admin: LiveAdmin {
+            auth: Arc::new(auth),
+            state: Arc::new(state),
+            health: Arc::new(health),
+            member,
+        },
+        access,
+        settings,
+        personas: persona_store,
+        models,
+        knowledge,
+        model_tasks,
+    })
+}
+
+/// The public portal's member realm: eligibility from the stored roster and
+/// the open switch read live from the admin Config (`self_service.public_portal`).
+fn member_realm(
+    config: &ServeConfig,
+    store: &Arc<SqliteStore>,
+    desk: &ConfigDesk,
+    avatars: &Arc<AvatarCache>,
+) -> Result<MemberAuth, Error> {
+    let changes = desk.subscribe();
+    let open: PortalOpen = Arc::new(move || changes.borrow().settings.self_service.public_portal);
+    Ok(auth::member_from_settings(
+        &config.runtime.public_auth,
+        store.clone(),
+        Arc::new(StoreEligibility::new(store.clone())),
+        open,
+    )?
+    .with_portraits(Arc::clone(avatars))
+    .with_audit(Arc::new(StoreAudit::new(store.clone()))))
+}

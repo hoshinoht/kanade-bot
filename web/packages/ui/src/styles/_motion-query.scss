@@ -1,0 +1,31 @@
+// Reduced motion is the device's `prefers-reduced-motion: reduce` OR this
+// browser's own "Reduce motion" switch (Account › This browser), which
+// theme-boot.js and motion/preference.svelte.ts reflect as
+// `<html data-motion="reduce">`. Mixins only (no CSS output).
+//
+// Content selectors are nested under `:where(:root…)`, which adds no
+// specificity, so the OS path matches exactly what a bare media block did.
+// Use `&` to reach the root element itself (`&, & *` for a blanket rule;
+// `&[data-x] .y` for a state kept on <html>).
+
+// Rules for reduced motion: the device asks for it, or this browser does.
+@mixin motion-reduce {
+  @media (prefers-reduced-motion: reduce) {
+    :where(:root) {
+      @content;
+    }
+  }
+
+  :where(:root[data-motion="reduce"]) {
+    @content;
+  }
+}
+
+// Rules for full motion: the device has no preference and this browser has not asked to reduce.
+@mixin motion-ok {
+  @media (prefers-reduced-motion: no-preference) {
+    :where(:root:not([data-motion="reduce"])) {
+      @content;
+    }
+  }
+}

@@ -1,0 +1,241 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/inbox.json",
+  "title": "Inbox: extractor proposals and self-service requests",
+  "$defs": {
+    "Evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "author", "at", "content", "url", "missing"],
+      "properties": {
+        "id": { "type": "string" },
+        "author": { "type": "string" },
+        "author_id": { "$ref": "common.json#/$defs/NullableString", "description": "Null when the message is gone. Always sent by the server; optional so earlier fixtures stay valid." },
+        "at": { "type": "string" },
+        "content": { "$ref": "common.json#/$defs/NullableString" },
+        "url": { "$ref": "common.json#/$defs/NullableString" },
+        "missing": { "type": "boolean" }
+      }
+    },
+    "ThreadMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A cached channel message around the evidence (deleted or pruned ones are absent); `used` when the proposal cites it as evidence.",
+      "required": ["id", "author", "author_id", "at", "content", "url", "missing", "used"],
+      "properties": {
+        "id": { "type": "string" },
+        "author": { "type": "string" },
+        "author_id": { "$ref": "common.json#/$defs/NullableString" },
+        "at": { "type": "string" },
+        "content": { "$ref": "common.json#/$defs/NullableString" },
+        "url": { "$ref": "common.json#/$defs/NullableString" },
+        "missing": { "type": "boolean" },
+        "used": { "type": "boolean" }
+      }
+    },
+    "ProposalPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["no_effect", "changes", "conflicts"],
+      "properties": {
+        "no_effect": { "type": "boolean" },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field", "from", "to"],
+            "properties": {
+              "field": { "type": "string" },
+              "from": { "type": "string" },
+              "to": { "type": "string" }
+            }
+          }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field", "expected", "found"],
+            "properties": {
+              "field": { "type": "string" },
+              "expected": { "type": "string" },
+              "found": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "ProposalChoice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "label", "when", "amended"],
+      "properties": {
+        "run_id": { "type": "string" },
+        "label": { "type": "string" },
+        "when": { "type": "string" },
+        "amended": { "type": "boolean" }
+      }
+    },
+    "Proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "short_id", "kind", "kind_label", "source", "tab", "version", "flags", "preview",
+        "expires_at", "choices", "public_summary", "bosses", "run_id", "from_when", "when",
+        "participants", "confidence", "is_question", "channel", "read_at", "summary", "evidence",
+        "thread", "card_url", "self_service"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "short_id": { "type": "string" },
+        "kind": {
+          "enum": [
+            "move", "add", "cancel", "split", "otot", "sub", "rsvp", "fix",
+            "new_fixed", "change_fixed", "join", "leave", "swap"
+          ]
+        },
+        "kind_label": { "type": "string" },
+        "source": { "enum": ["extraction", "chat", "self_service"] },
+        "tab": { "enum": ["extractor", "self_service"] },
+        "version": { "type": "integer", "minimum": 0 },
+        "flags": {
+          "type": "array",
+          "items": {
+            "enum": ["conflict", "expired", "requester_frozen", "requester_unauthorised", "no_effect"]
+          }
+        },
+        "preview": { "$ref": "#/$defs/ProposalPreview" },
+        "consequence": { "$ref": "common.json#/$defs/NullableString" },
+        "expires_at": { "$ref": "common.json#/$defs/NullableString" },
+        "choices": {
+          "anyOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/ProposalChoice" } },
+            { "type": "null" }
+          ]
+        },
+        "public_summary": { "$ref": "common.json#/$defs/NullableString" },
+        "bosses": { "$ref": "common.json#/$defs/Bosses" },
+        "run_id": { "$ref": "common.json#/$defs/NullableString" },
+        "from_when": { "$ref": "common.json#/$defs/NullableString" },
+        "when": { "type": "string" },
+        "participants": { "$ref": "common.json#/$defs/Members" },
+        "confidence": { "type": ["number", "null"] },
+        "is_question": { "type": "boolean" },
+        "channel": { "$ref": "common.json#/$defs/NullableString" },
+        "read_at": { "type": "string" },
+        "summary": { "type": "string" },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/Evidence" } },
+        "thread": {
+          "description": "The channel thread around `evidence`, oldest first, at most 37 messages; null for member requests and proposals without a card or evidence.",
+          "anyOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/ThreadMessage" } },
+            { "type": "null" }
+          ]
+        },
+        "card_url": { "$ref": "common.json#/$defs/NullableString" },
+        "self_service": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["member", "via", "note"],
+              "properties": {
+                "member": { "$ref": "common.json#/$defs/Member" },
+                "via": { "type": "string" },
+                "note": { "$ref": "common.json#/$defs/NullableString" }
+              }
+            },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "Proposals": { "type": "array", "items": { "$ref": "#/$defs/Proposal" } },
+    "Decider": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Who closed the item. `name` is ready to show: members and Discord admins by their roster name, other admins as `Admin (…)`, system actors (expiry, superseding) as `Kanade`.",
+      "required": ["kind", "id", "name"],
+      "properties": {
+        "kind": { "enum": ["member", "admin", "system"] },
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "PastItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A closed proposal or member request (Inbox Past tab).",
+      "required": [
+        "id", "short_id", "kind", "kind_label", "tab", "source", "source_id", "summary", "channel",
+        "requester", "outcome", "decided_by", "decided_at", "reason", "created_at", "history_seq",
+        "evidence", "card_url"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "short_id": { "type": "string" },
+        "kind": {
+          "enum": [
+            "move", "add", "cancel", "split", "otot", "sub", "rsvp", "fix",
+            "new_fixed", "change_fixed", "join", "leave", "swap", "change"
+          ]
+        },
+        "kind_label": { "type": "string" },
+        "tab": { "enum": ["extractor", "self_service"], "description": "`extractor` for proposals, `self_service` for member requests." },
+        "source": { "enum": ["extraction", "chat", "self_service"] },
+        "source_id": { "$ref": "common.json#/$defs/NullableString", "description": "The extraction log or chat interaction that staged a proposal; null for requests." },
+        "summary": { "type": "string" },
+        "channel": { "$ref": "common.json#/$defs/NullableString" },
+        "requester": {
+          "description": "The member who asked; null for proposals.",
+          "anyOf": [{ "$ref": "common.json#/$defs/Member" }, { "type": "null" }]
+        },
+        "outcome": { "enum": ["approved", "rejected", "superseded", "discarded", "withdrawn", "expired"] },
+        "decided_by": { "anyOf": [{ "$ref": "#/$defs/Decider" }, { "type": "null" }] },
+        "decided_at": { "type": "string", "description": "RFC 3339 UTC instant it closed." },
+        "reason": { "$ref": "common.json#/$defs/NullableString" },
+        "created_at": { "type": "string", "description": "RFC 3339 UTC instant it was made." },
+        "history_seq": { "type": ["integer", "null"], "minimum": 1, "description": "The History record an approval wrote." },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Evidence" },
+          "description": "A proposal card's cited messages; an uncached one is `missing` but keeps its Discord `url`."
+        },
+        "card_url": { "$ref": "common.json#/$defs/NullableString" }
+      }
+    },
+    "PastPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items", "next_before"],
+      "properties": {
+        "items": { "type": "array", "items": { "$ref": "#/$defs/PastItem" } },
+        "next_before": { "$ref": "common.json#/$defs/NullableString", "description": "Pass as `before` for the next (older) page; null on the last page." }
+      }
+    },
+    "OwnershipRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "An open weekly-timing ownership request (Inbox Ownership tab): a party member asks to own the timing; staff accept or decline before it expires.",
+      "required": ["id", "short_id", "fixed_id", "fixed_short_id", "bosses", "weekday", "weekday_name", "time", "requester", "owner", "channel", "created_at", "expires_at"],
+      "properties": {
+        "id": { "type": "string" },
+        "short_id": { "type": "string" },
+        "fixed_id": { "type": "string" },
+        "fixed_short_id": { "type": "string" },
+        "bosses": { "$ref": "common.json#/$defs/Bosses" },
+        "weekday": { "type": "integer", "minimum": 0, "maximum": 6, "description": "0 = Monday." },
+        "weekday_name": { "type": "string" },
+        "time": { "$ref": "week.json#/$defs/LocalTime" },
+        "requester": { "$ref": "common.json#/$defs/Member" },
+        "owner": { "$ref": "common.json#/$defs/Member", "description": "The timing's effective owner now: the pinned owner, else the first participant." },
+        "channel": { "$ref": "common.json#/$defs/NullableString", "description": "The timing's channel name." },
+        "created_at": { "type": "string", "description": "RFC 3339 UTC instant it was asked." },
+        "expires_at": { "type": "string", "description": "RFC 3339 UTC instant it expires unanswered (24 h after it was asked)." }
+      }
+    },
+    "OwnershipRequests": { "type": "array", "items": { "$ref": "#/$defs/OwnershipRequest" } }
+  }
+}

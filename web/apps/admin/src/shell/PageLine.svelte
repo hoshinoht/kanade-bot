@@ -1,0 +1,65 @@
+<!--
+  The 36 px page line that replaced the page-head card (M3E spec "Frame",
+  gate G2), unboxed on the ground as in the mockups: the page's title, its
+  heading (an h1: the count, its numeral in `.pageline__num`, or the state)
+  and short context, the page's own controls, then the Live chip (or
+  "Quiet mode on" in its place) and the command palette.
+  On a phone the top bar carries the title and the Live chip, so the line
+  keeps only the page's own part.
+-->
+<script lang="ts">
+  import { Freshness, Icon } from '@kanade/ui';
+  import type { Snippet } from 'svelte';
+  import { getChrome } from './chrome';
+  import QuietMode from './QuietMode.svelte';
+
+  let {
+    title = '',
+    class: extra = '',
+    side,
+    children,
+  }: {
+    /** The section's name; omit it when the h1 is the title (detail pages). */
+    title?: string;
+    class?: string;
+    /** The page's own controls, after the title group (each already its own chip, button or field). */
+    side?: Snippet;
+    /** The title group: breadcrumb, h1 and short context. */
+    children: Snippet;
+  } = $props();
+
+  const chrome = getChrome();
+</script>
+
+<div class="page-head pageline {extra}" data-fid="page-line" class:pageline--titled={!!title}>
+  <div class="pageline__head">
+    {#if title && !chrome?.phone}<p class="pageline__title">{title}</p>{/if}
+    {@render children()}
+  </div>
+  {@render side?.()}
+  {#if chrome && !chrome.phone}
+    <div class="pageline__end">
+      <!-- The zone is printed from 1440 px; below that this tooltip (and the footnote on tall frames) carries it. -->
+      <span
+        class="mchip mchip--status"
+        class:mchip--quiet={chrome.quiet}
+        role="group"
+        aria-label="Status"
+        title={chrome.timezone ? `Every time here is ${chrome.timezone}` : undefined}
+      >
+        {#if chrome.quiet}<QuietMode />{:else}<Freshness state={chrome.fresh} updated={chrome.updated} />{/if}
+        {#if chrome.timezone}<span class="masthead__tz">{chrome.timezone}</span>{/if}
+      </span>
+      <button
+        type="button"
+        class="mchip pageline__commands"
+        onclick={() => chrome.palette()}
+        aria-keyshortcuts="Control+K Meta+K"
+        aria-label="Commands"
+        title="Commands (Ctrl K)"
+      >
+        <Icon name="search" /><span class="pageline__kbd">Ctrl K</span>
+      </button>
+    </div>
+  {/if}
+</div>

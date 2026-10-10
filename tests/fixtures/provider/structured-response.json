@@ -1,0 +1,9 @@
+{
+  "model": "synthetic-model-v1",
+  "content": "{\"answer\":\"scheduled\"}",
+  "tool_calls": [
+    {"id": "call_synthetic_1", "name": "read_schedule", "arguments": "{\"week\":\"next\"}"}
+  ],
+  "finish_reason": "tool_calls",
+  "usage": {"prompt_tokens": 12, "completion_tokens": 8}
+}

@@ -1,0 +1,27 @@
+// "Copy transcript" in a log item's header (Chat, Extractions, Rewrites;
+// CopyTranscript.svelte): a short pill format choice beside the primary
+// button, both 36 px tall, kept together as one group so a narrow header
+// wraps them as a pair.
+
+.transcript-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+}
+
+.transcript-format {
+  flex: none;
+  width: 120px;
+}
+
+.transcript-format .dd.dd {
+  min-width: 0;
+  height: 36px;
+  border-radius: 18px;
+}
+
+.transcript-copy {
+  flex: none;
+  min-height: 36px;
+}

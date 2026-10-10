@@ -1,0 +1,147 @@
+// Ported from v4 portal/_motion.scss. Class-driven @keyframes only: Svelte
+// transitions and style attributes are banned under style-src 'self'.
+// M3E motion (m3e-rail-design-spec "Motion and loading"): transform, opacity,
+// radius and colour only; script-driven pieces (pane enter, FLIP) are Web
+// Animations in packages/ui/src/motion/.
+
+@use "easing" as *;
+@use "motion-query" as *;
+
+@keyframes settle {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+
+@keyframes lift {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.99);
+  }
+}
+
+.runcard,
+.card,
+.toast {
+  animation: settle 0.28s cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+}
+
+dialog.modal[open] {
+  animation: lift 0.16s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+// Press shape-morph (Experiment D, approved on by default): key and connected
+// group buttons step their corners down while pressed and spring back on
+// release. Radius only; reduced motion keeps the shape still.
+@include motion-ok {
+  .btn--primary,
+  .btn--key,
+  .btn--risk,
+  .seg a,
+  .seg button {
+    transition: border-radius $spring-ms $spring;
+  }
+
+  .btn--primary:active:not(:disabled, [aria-disabled="true"]),
+  .btn--key:active:not(:disabled, [aria-disabled="true"]),
+  .btn--risk:active:not(:disabled, [aria-disabled="true"]),
+  .seg a:active,
+  .seg button:active:not(:disabled, [aria-disabled="true"]) {
+    border-radius: 10px;
+  }
+}
+
+// Pane exit (the enter is enter.ts): the content steps back out towards the
+// end it came from while `Presence` keeps the node; the list stays still.
+@keyframes pane-exit {
+  to {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+.is-leaving.side-pane {
+  animation: pane-exit $exit-ms $exit forwards;
+  pointer-events: none;
+}
+
+@keyframes toast-exit {
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+.toast.is-leaving {
+  animation: toast-exit $exit-ms $exit forwards;
+  pointer-events: none;
+}
+
+// Dialog exit: a closed dialog stays rendered (and in the top layer) until
+// its fade ends, CSS only. Opening keeps the lift animation, so the open
+// state has no transition of its own.
+dialog.modal,
+dialog.modal::backdrop,
+dialog.drawer,
+dialog.drawer::backdrop {
+  transition:
+    opacity $exit-ms $exit,
+    transform $exit-ms $exit,
+    overlay $exit-ms $exit allow-discrete,
+    display $exit-ms $exit allow-discrete;
+}
+
+dialog.modal[open],
+dialog.modal[open]::backdrop,
+dialog.drawer[open],
+dialog.drawer[open]::backdrop {
+  transition: none;
+}
+
+dialog.modal:not([open]) {
+  opacity: 0;
+  transform: translateY(8px) scale(0.99);
+}
+
+dialog.drawer:not([open]) {
+  transform: translateX(-100%);
+}
+
+dialog.modal:not([open])::backdrop,
+dialog.drawer:not([open])::backdrop {
+  opacity: 0;
+}
+
+// The loading standard (LoadingState.svelte): centred in the waiting pane.
+.loading-state {
+  display: grid;
+  flex: 1 1 auto;
+  place-items: center;
+  min-height: 8rem;
+}
+
+.loading-state__body {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+  color: var(--dim-text, var(--dim));
+  font-size: var(--fs-body-sm);
+}
+
+@include motion-reduce {
+  // `&` is <html>: with `& *` this is every element, as a bare `*` was.
+  &,
+  &::before,
+  &::after,
+  & *,
+  & *::before,
+  & *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

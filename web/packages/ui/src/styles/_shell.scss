@@ -1,0 +1,329 @@
+// Ported from v4 portal/_shell.scss (masthead, brand); the masthead itself
+// follows the member portal's P_ boards ("Shell": 60 px, the bot's tile and
+// name over a mono by-line, the time zone or account button at the end).
+
+.masthead {
+  position: relative; // above the shell's windows (z-index), as the board's
+  flex: none;
+  z-index: 20;
+  background: var(--surface);
+  border-bottom: 2px solid var(--win);
+}
+
+.masthead__inner {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  height: 58px; // + the 2 px border: the board's 60 px
+  padding: 0 24px;
+  min-width: 0;
+}
+
+.masthead__inner > * {
+  min-width: 0;
+}
+
+.masthead__id {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+// The bot's avatar (same-origin /identity/avatar, a generated stand-in when
+// nothing is cached), or its initial when no identity has loaded.
+.masthead__tile {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  background: var(--win);
+  color: var(--win-ink);
+  font-family: var(--display);
+  font-size: var(--fs-body);
+  font-weight: 800;
+  object-fit: cover;
+}
+
+.masthead__words {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.masthead__name,
+.masthead__by {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.masthead__name {
+  font-family: var(--display);
+  font-size: var(--fs-lg);
+  font-weight: 800;
+}
+
+.masthead__by {
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+}
+
+.masthead__meta {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+}
+
+// The zone the portal shows times in, as a quiet outlined pill (board Mast).
+.masthead__zone {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+// The account button on the masthead (P_Account): a 36 px pill with the
+// member's round portrait, name and chevron.
+.masthead .account__chip {
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px 0 4px;
+  border-width: 1.5px;
+  border-radius: 999px;
+  font-family: var(--body);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.masthead .account__initial {
+  width: 28px;
+  height: 28px;
+  font-size: var(--fs-mini);
+}
+
+// The phone frame (P_PhoneWeek/P_PhoneMine top bar): 52 px, no by-line, and
+// the account button shrinks to the portrait (its name stays its label).
+@media (max-width: 600px), (max-height: 500px) {
+  .masthead__inner {
+    gap: 8px;
+    height: 50px;
+    padding: 0 10px 0 12px;
+  }
+
+  .masthead__by {
+    display: none;
+  }
+
+  .masthead .account__chip {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 6px;
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .masthead .account__initial {
+    width: 32px;
+    height: 32px;
+  }
+
+  .masthead .account__name,
+  .masthead .account__chip .icon {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: var(--fs-brand);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+// The bot's avatar (same-origin /identity/avatar, a generated stand-in when
+// nothing is cached), or its initial when no identity has loaded.
+.brand__avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--win);
+  color: var(--win-ink);
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: var(--fs-small);
+}
+
+a.brand {
+  text-decoration: none;
+}
+
+img.brand__avatar {
+  object-fit: cover;
+}
+
+/* ── masthead chips (Material 3 shapes only: chips at the small corner, the
+ * menu a larger rounded surface; our colours, type and motion) */
+.mchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2rem;
+  padding: 0.15rem 0.6rem;
+  border: 2px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  white-space: nowrap;
+}
+
+button.mchip {
+  cursor: pointer;
+}
+
+button.mchip:hover,
+button.mchip[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  color: var(--accent-text);
+}
+
+.mchip--status .masthead__tz {
+  padding-left: 0.45rem;
+  border-left: 2px solid var(--line-soft);
+  color: var(--dim-text);
+}
+
+.account {
+  position: relative;
+}
+
+.account__initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  background: var(--win);
+  color: var(--win-ink);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: var(--fs-micro);
+}
+
+.account__name {
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.account__menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.35rem);
+  z-index: 40;
+  min-width: 13rem;
+  padding: 0.35rem;
+  border: 2px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-family: var(--body);
+}
+
+.account__who {
+  display: grid;
+  gap: 0.1rem;
+  margin: 0 0 0.3rem;
+  padding: 0.3rem 0.55rem 0.45rem;
+  border-bottom: 2px solid var(--line-soft);
+  color: var(--ink);
+  font-size: var(--fs-small);
+}
+
+.account__who span {
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+}
+
+.account__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.25rem;
+  padding: 0.3rem 0.55rem;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.account__item:hover,
+.account__item:focus-visible {
+  background: var(--raise);
+  color: var(--accent-text);
+}
+
+@media (max-width: 640px), (max-height: 500px) {
+  // The footnote already names the timezone: one masthead row stays.
+  .masthead__tz {
+    display: none;
+  }
+}
+
+/* ── area budget (docs/notes/pwa-design-guidelines.md "Area follows importance")
+ * Fixed chrome is taken straight from the one scrolling area, so its quieter
+ * meta gives way first on short or narrow frames (the masthead's own phone
+ * height is set with the masthead above). */
+
+@media (max-width: 640px) {
+  // "Live 12:00:00": the words go, the state and time stay.
+  .fresh__words {
+    display: none;
+  }
+}
+
+@media (max-height: 500px) {
+  .fresh__words {
+    display: none;
+  }
+}

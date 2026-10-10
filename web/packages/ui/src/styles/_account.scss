@@ -1,0 +1,888 @@
+// Account (boards AdminAccount / AdminPhone, direction B, approved
+// 2026-10-05): one window with Profile / Sessions / This browser title-bar
+// tabs, a fixed identity pane beside (or, on phones, above) the one
+// scrolling panel. Grouped rows follow Config's: first 16 16 4 4, middle 4,
+// last 4 4 16 16, 3 px apart, on `--row`.
+
+// The mockups' cookie (as `$state-cookie` in _m3e-primitives).
+$cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 11.7%, 85.9% 17.7%, 87.7% 24.6%, 90.9% 30.1%, 95.9% 35.1%, 99.2% 41.3%, 98.2% 48.3%, 95.2% 54.8%, 94.1% 61%, 94.8% 68.1%, 93.3% 75%, 88% 79.7%, 81.6% 82.7%, 76.7% 86.8%, 72.7% 92.6%, 67.1% 97%, 60% 97.2%, 53.2% 95.4%, 46.8% 95.4%, 40% 97.2%, 32.9% 97%, 27.3% 92.6%, 23.3% 86.8%, 18.4% 82.7%, 12% 79.7%, 6.7% 75%, 5.2% 68.1%, 5.9% 61%, 4.8% 54.8%, 1.8% 48.3%, 0.8% 41.3%, 4.1% 35.1%, 9.1% 30.1%, 12.3% 24.6%, 14.1% 17.7%, 17.9% 11.7%, 24.4% 9.1%, 31.5% 8.5%, 37.5% 6.3%, 43.3% 2.2%);
+$flower: polygon(50% 0%, 59.8% 3.8%, 67.4% 10.9%, 75.1% 15.4%, 85.1% 18.4%, 93.3% 25%, 94.9% 35.4%, 92.5% 45.5%, 92.5% 54.5%, 94.9% 64.6%, 93.3% 75%, 85.1% 81.6%, 75.1% 84.6%, 67.4% 89.1%, 59.8% 96.2%, 50% 100%, 40.2% 96.2%, 32.6% 89.1%, 24.9% 84.6%, 14.9% 81.6%, 6.7% 75%, 5.1% 64.6%, 7.5% 54.5%, 7.5% 45.5%, 5.1% 35.4%, 6.7% 25%, 14.9% 18.4%, 24.9% 15.4%, 32.6% 10.9%, 40.2% 3.8%);
+
+.account-window {
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+}
+
+.account-window__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: clip;
+}
+
+// The one scrolling region.
+.account-window__panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 22px 28px 28px;
+}
+
+.account-window__panel:focus-visible {
+  outline-offset: -3px;
+}
+
+/* ── identity: the board's fixed 300 px aside ────────────────────────────── */
+
+// Fixed, never a second scroller (only the panel scrolls): on short frames it
+// tightens (below), and the diagnostics give way before who and Sign out do.
+.account-id {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 16px;
+  width: 300px;
+  min-height: 0;
+  padding: 24px 22px 20px;
+  border-right: 1.5px solid var(--line);
+  background: var(--pane);
+  overflow: clip;
+}
+
+.account-id > * {
+  flex: none;
+}
+
+.account-id__who {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-align: center;
+}
+
+.account-id__portrait {
+  display: grid;
+  flex: none;
+  width: 116px;
+  height: 116px;
+  place-items: center;
+  clip-path: $cookie;
+  background: var(--win);
+  color: var(--win-ink);
+  font-family: var(--display);
+  font-size: var(--fs-avatar);
+  font-weight: 800;
+}
+
+.account-id__portrait .avatar__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.account-id__portrait .icon {
+  width: 44px;
+  height: 44px;
+  stroke-width: 1.6;
+}
+
+.account-id__who .cap {
+  margin-top: 12px;
+}
+
+// A long display name takes two lines at most (titled with the whole name).
+.account-id__name {
+  display: -webkit-box;
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--fs-clock);
+  font-weight: 800;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+  overflow: clip;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.account-id__method {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  margin-top: 8px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  font-size: var(--fs-small);
+}
+
+// The last to give way: on a frame too short for everything, the rows clip
+// here rather than push Sign out out of the aside.
+.account-id__diag {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow: clip;
+}
+
+.account-id__dl {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  row-gap: 4px;
+  margin: 0;
+  font-size: var(--fs-mini);
+}
+
+.account-id__dl dt {
+  color: var(--dim-text);
+}
+
+.account-id__dl dd {
+  margin: 0;
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.account-id__foot {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1.5px solid var(--line);
+}
+
+// Short frames: the aside tightens (a smaller portrait and spacing). At full
+// size it needs about 480 px (admin) and 410 px (portal), 530 / 460 with a
+// two-line name, i.e. a frame some 660 px tall in either app.
+@media (max-height: 680px) {
+  .account-id {
+    gap: 12px;
+    padding: 18px 22px 16px;
+  }
+
+  .account-id__who .account-id__portrait {
+    width: 72px;
+    height: 72px;
+    font-size: var(--fs-brand);
+  }
+
+  .account-id__who .account-id__portrait .icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .account-id__who .cap {
+    margin-top: 8px;
+  }
+}
+
+// Shorter still (to the 500 px phone line): who sits beside the portrait.
+@media (max-height: 590px) {
+  .account-id {
+    gap: 10px;
+    padding: 14px 18px 12px;
+  }
+
+  .account-id__who {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr);
+    align-items: center;
+    justify-items: start;
+    column-gap: 12px;
+    row-gap: 2px;
+    text-align: left;
+  }
+
+  .account-id__who .account-id__portrait {
+    grid-row: 1 / span 3;
+    width: 56px;
+    height: 56px;
+  }
+
+  .account-id__who .cap,
+  .account-id__method {
+    margin-top: 0;
+  }
+
+  .account-id__foot {
+    padding-top: 10px;
+  }
+}
+
+.account-full {
+  width: 100%;
+  min-height: 40px;
+  justify-content: center;
+}
+
+/* ── phones: a compact strip above the panel ─────────────────────────────── */
+
+.account-strip {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-bottom: 1.5px solid var(--line);
+  background: var(--pane);
+}
+
+.account-strip .account-id__portrait {
+  width: 64px;
+  height: 64px;
+  font-size: var(--fs-brand);
+}
+
+.account-strip .account-id__portrait .icon {
+  width: 26px;
+  height: 26px;
+}
+
+.account-strip__who {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.account-strip__name {
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--fs-clock-narrow);
+  font-weight: 800;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.account-strip__method {
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+.account-window--compact .account-window__body {
+  flex-direction: column;
+}
+
+.account-window--compact .account-window__panel {
+  padding: 14px 12px 18px;
+}
+
+// Phone landscape: the strip stands beside the panel so the panel keeps its area.
+@media (max-height: 500px) {
+  .account-window--compact .account-window__body {
+    flex-direction: row;
+  }
+
+  .account-window--compact .account-strip {
+    flex-direction: column;
+    align-items: flex-start;
+    width: 200px;
+    border-right: 1.5px solid var(--line);
+    border-bottom: 0;
+  }
+
+  .account-window--compact .account-strip .account-id__portrait {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* ── sections and grouped rows ───────────────────────────────────────────── */
+
+.account-col {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  max-width: 720px;
+}
+
+.account-window--compact .account-col {
+  gap: 18px;
+}
+
+.account-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+
+.account-sec__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 6px;
+}
+
+.account-sec__head h3 {
+  margin: 0;
+}
+
+.account-sec__head > .account-sec__end {
+  margin-left: auto;
+}
+
+.account-sec__note {
+  margin: 0;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+.account-sec__title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--fs-brand);
+  font-weight: 800;
+}
+
+.account-grp {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 60px;
+  padding: 10px 16px 10px 12px;
+  border-radius: 4px;
+  background: var(--row);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.account-grp > :first-child { border-radius: 16px 16px 4px 4px; }
+.account-grp > :last-child { border-radius: 4px 4px 16px 16px; }
+.account-grp > :only-child { border-radius: 16px; }
+
+a.account-row:hover,
+button.account-row:hover {
+  background: var(--row-hover);
+  color: var(--ink);
+}
+
+button.account-row {
+  width: 100%;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.account-row--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 16px 18px;
+}
+
+.account-row--sub {
+  min-height: 52px;
+  padding-left: 66px;
+}
+
+.account-window--compact .account-row--sub {
+  padding-left: 16px;
+}
+
+.account-row--plain {
+  padding-left: 16px;
+}
+
+// A setting the board shows ahead of its feature (member portal "coming
+// soon"): quieter words; its control is aria-disabled.
+.account-row--soon .account-row__title,
+.account-row--soon .account-row__sub {
+  opacity: 0.72;
+}
+
+.account-row__text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.account-row__title {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.account-row__sub {
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+
+.account-row__end {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.account-row > .icon:last-child {
+  flex: none;
+}
+
+// The lead glyph on its shape (cookie, flower), as the board's `.lead`.
+.account-lead {
+  display: grid;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  clip-path: $cookie;
+  background: var(--chip-fill);
+  color: var(--ink);
+}
+
+.account-lead--flower {
+  clip-path: $flower;
+}
+
+.account-lead--accent {
+  background: var(--select);
+  color: var(--select-ink);
+}
+
+.account-lead--ok {
+  background: color-mix(in srgb, var(--ok) 12%, var(--surface));
+  color: var(--ok-text);
+}
+
+.account-lead .icon {
+  width: 19px;
+  height: 19px;
+}
+
+.account-chip-acc {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--select);
+  color: var(--select-ink);
+  font-size: var(--fs-small);
+  font-weight: 700;
+}
+
+.account-chip-acc .icon,
+.account-row .status-chip .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.account-row .status-chip {
+  gap: 5px;
+}
+
+// Server roles: the role's colour as a dot beside its name (never colour alone).
+.account-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.account-role {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 10px 0 8px;
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.account-role::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--role, var(--dim));
+}
+
+.account-hidden {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+/* ── allowance ───────────────────────────────────────────────────────────── */
+
+// A solid segmented meter (board `.meter`, user decision 2026-10-05: no wave):
+// the used part and the rest, 4 px apart; `--used` is set through CSSOM.
+.account-meter {
+  display: flex;
+  gap: 4px;
+  height: 10px;
+}
+
+.account-meter > i {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+}
+
+.account-meter__used {
+  flex: none;
+  width: var(--used, 0%);
+  background: var(--accent-fill);
+}
+
+.account-meter__rest {
+  flex: 1 1 auto;
+  background: var(--seg-fill);
+}
+
+// Nothing used: the rest alone, no zero-width segment or stray gap.
+.account-meter--empty {
+  gap: 0;
+}
+
+.account-allow__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  font-size: var(--fs-body);
+}
+
+.account-allow__line b {
+  font-family: var(--mono);
+}
+
+.account-allow__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+/* ── reply style ─────────────────────────────────────────────────────────── */
+
+.account-style__eyebrow {
+  font-size: var(--fs-micro);
+}
+
+.account-style__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.account-style__change {
+  color: var(--accent-text);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+/* ── sessions ────────────────────────────────────────────────────────────── */
+
+.account-sessions {
+  max-width: 760px;
+  gap: 16px;
+}
+
+.account-session--current {
+  background: var(--select);
+  box-shadow: inset 0 0 0 1.5px var(--select-edge);
+}
+
+.account-session--current .account-row__sub {
+  color: var(--select-ink);
+}
+
+.account-session--current .account-lead {
+  background: var(--surface);
+  color: var(--select-ink);
+}
+
+.account-session--current .account-chip-acc {
+  background: var(--surface);
+}
+
+.account-session__mono {
+  font-family: var(--mono);
+}
+
+// "3 of 10": how many sessions live against the cap, after the title.
+.account-sessions__count {
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+}
+
+.account-sessions__count:last-child {
+  margin-left: auto;
+}
+
+/* ── this browser ────────────────────────────────────────────────────────── */
+
+.account-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.account-browser__cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  align-items: start;
+}
+
+.account-browser__col {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+@media (max-width: 1099px) {
+  .account-browser__cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.account-keys {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  width: 120px;
+}
+
+.account-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow:
+    inset 0 -2px 0 var(--line),
+    inset 0 0 0 1.5px var(--line);
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  font-weight: 600;
+}
+
+.account-row--key {
+  min-height: 44px;
+  padding: 8px 14px;
+  font-size: var(--fs-body-sm);
+}
+
+/* ── the reply-style picker: a dialog, a full-screen sheet on phones ─────── */
+
+dialog.modal.reply-picker {
+  width: min(620px, calc(100% - 1.6rem));
+}
+
+.reply-picker .modal__panel {
+  height: min(660px, 88dvh);
+  border-radius: 24px;
+}
+
+.reply-picker .modal__body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.reply-picker__top {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px 10px;
+}
+
+.reply-picker__top > p {
+  margin: 0;
+  font-size: var(--fs-body-sm);
+}
+
+.reply-picker__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 20px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  color: var(--dim-text);
+}
+
+.reply-picker__search:focus-within {
+  box-shadow: inset 0 0 0 2px var(--accent-fill);
+}
+
+// The pill is the field: its input draws no box of its own (`_forms.scss` gives inputs one).
+.reply-picker__search input,
+.reply-picker__search input:focus {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-body-sm);
+  outline: none;
+}
+
+.reply-picker__warn {
+  background: var(--select);
+  color: var(--select-ink);
+}
+
+.reply-picker__count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px 0;
+}
+
+.reply-picker__count .account-session__mono,
+.reply-picker__order {
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+}
+
+.reply-picker__order {
+  margin-left: auto;
+}
+
+.reply-picker__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0 20px 10px;
+  border: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.reply-picker__option {
+  position: relative;
+  align-items: flex-start;
+  min-height: 0;
+  padding: 10px 14px 10px 12px;
+  cursor: pointer;
+}
+
+.reply-picker__option input {
+  flex: none;
+  padding: 0;
+  border: 0;
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  accent-color: var(--accent-fill);
+}
+
+.reply-picker__option:has(input:checked) {
+  border-radius: 18px;
+  background: var(--select);
+  box-shadow: inset 0 0 0 1.5px var(--select-edge);
+  color: var(--select-ink);
+}
+
+.reply-picker__option:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.reply-picker__option:has(input:checked) .account-row__sub {
+  color: var(--select-ink);
+}
+
+.reply-picker__saved {
+  margin-left: 6px;
+  font-weight: 400;
+}
+
+.reply-picker__empty {
+  margin: 12px 6px;
+  color: var(--dim-text);
+}
+
+.reply-picker .modal__foot {
+  gap: 10px;
+  padding: 12px 20px 16px;
+}
+
+.reply-picker__now {
+  margin-right: auto;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+.reply-picker__error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+@media (max-width: 599px), (max-height: 500px) {
+  dialog.modal.reply-picker {
+    width: 100%;
+    max-width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+  }
+
+  .reply-picker .modal__panel {
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+
+  .reply-picker__top {
+    padding: 12px 14px 8px;
+  }
+
+  .reply-picker__list {
+    padding: 0 14px 10px;
+  }
+}

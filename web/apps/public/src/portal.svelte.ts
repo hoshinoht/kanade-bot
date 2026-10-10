@@ -1,0 +1,276 @@
+import type { Identity, MemberAllowance, MemberEventTopic, PublicSession, PublicSessions, PublicStatus, SessionsEnded } from '@kanade/api-types';
+import { ApiRequestError, createClient, createLiveEvents, onUnauthenticated, type LiveEvents } from '@kanade/client';
+import { MemberBosses } from './bosses/bosses.svelte';
+import type { Landing } from './landing';
+import { MemberRequestsList } from './requests/requests.svelte';
+import { MemberTimingsList } from './timings/timings.svelte';
+import { MemberWeeks } from './weeks.svelte';
+import { RunWrites } from './writes/runWrites.svelte';
+
+/** Why Sign in is showing, when there is something to say. */
+export type SignInNotice = 'failed' | 'expired' | 'limited' | 'unavailable' | 'switch' | 'signed-out' | { everywhere: number };
+
+/**
+ * The one screen the app shows (member-auth-contract §6). Signed out, closed
+ * or denied, nothing here reads schedule data; signed in (`member`), the
+ * Week, My runs and Account read the member's own views.
+ */
+export type Screen =
+  | { kind: 'loading' }
+  | { kind: 'closed' }
+  | { kind: 'unreachable'; offline: boolean }
+  | { kind: 'signin'; notice: SignInNotice | null }
+  | { kind: 'denied' }
+  /** `at`: when this device learned the session had ended (epoch ms). */
+  | { kind: 'ended'; at: number }
+  | { kind: 'member'; session: PublicSession };
+
+const client = createClient();
+
+function isError(error: unknown, status: number, code?: string): boolean {
+  return error instanceof ApiRequestError && error.status === status && (code === undefined || error.body?.error === code);
+}
+
+export class Portal {
+  screen = $state<Screen>({ kind: 'loading' });
+  /** The bot's name and art for the sign-in windows; decoration only. */
+  identity = $state<Identity | null>(null);
+  devices = $state<PublicSessions | null>(null);
+  devicesError = $state('');
+  /** The member's own chat allowance (Account), read when Account opens. */
+  allowance = $state<MemberAllowance | null>(null);
+  allowanceError = $state('');
+  /** The device being signed out (`handle`), `everywhere`, or `self`. */
+  busy = $state('');
+  /** When the last session or device read answered (epoch ms). */
+  updated = $state<number | null>(null);
+  /** This week and the next, kept in memory while signed in. */
+  readonly weeks = new MemberWeeks(client, (error) => this.#gone(error));
+  /** The weekly timings the member is on (My runs › Weekly timings), read when My runs opens. */
+  readonly timings = new MemberTimingsList(client, (error) => this.#gone(error));
+  /** The boss list and the open guide (Bosses), read when Bosses opens. */
+  readonly bosses = new MemberBosses(client, (error) => this.#gone(error));
+  /** The member's answers and moves on their own runs, over the weeks above. */
+  readonly runs = new RunWrites(client, this.weeks, (error) => this.#gone(error));
+  /** The member's requests to the admins (Requests, the masthead's waiting count). */
+  readonly requests = new MemberRequestsList(client, (error) => this.#gone(error));
+  /** The member's change hints (`GET /api/public/events`), open while signed in and the tab is shown. */
+  readonly live: LiveEvents<MemberEventTopic> = createLiveEvents<MemberEventTopic>({ url: '/api/public/events' });
+  #landing: Landing;
+  #refreshing: Promise<void> | null = null;
+  #unfollow: (() => void) | null = null;
+
+  constructor(landing: Landing) {
+    this.#landing = landing;
+  }
+
+  /** Status first; open → the session; 401 → Sign in. */
+  async load(): Promise<void> {
+    if (this.screen.kind !== 'loading') this.screen = { kind: 'loading' };
+    let status: PublicStatus;
+    try {
+      status = await client.get<PublicStatus>('/api/public/status');
+    } catch (error) {
+      this.#unreachable(error);
+      return;
+    }
+    const landing = this.#landing;
+    // The callback's outcome is shown once; checking again starts afresh.
+    this.#landing = 'none';
+    if (status.portal === 'closed' || landing === 'closed') {
+      this.screen = { kind: 'closed' };
+      return;
+    }
+    if (landing === 'denied') {
+      this.screen = { kind: 'denied' };
+      return;
+    }
+    try {
+      const session = await client.get<PublicSession>('/api/public/session');
+      this.screen = { kind: 'member', session };
+      this.updated = Date.now();
+      this.weeks.start();
+      this.#follow();
+      void this.loadDevices();
+      // The masthead's and the drawer's Requests count (waiting) shows on every page.
+      void this.requests.load();
+    } catch (error) {
+      // Denied and closed returned above; what remains is a sign-in notice or none.
+      if (isError(error, 401)) this.screen = { kind: 'signin', notice: landing === 'none' ? null : landing };
+      else if (isError(error, 503, 'closed')) this.screen = { kind: 'closed' };
+      else this.#unreachable(error);
+    }
+  }
+
+  /**
+   * Signed in, the offline notice's Try again: re-read the session, the
+   * devices and the weeks in place. A read that fails at the network keeps
+   * the screen as it was; closed and ended still replace it. Any other
+   * screen loads afresh. Single-flight: a press while one is running joins
+   * it, so an older answer can never land after a newer one.
+   */
+  refresh(): Promise<void> {
+    if (this.screen.kind !== 'member') return this.load();
+    this.#refreshing ??= this.#refreshMember(this.screen).finally(() => {
+      this.#refreshing = null;
+    });
+    return this.#refreshing;
+  }
+
+  async #refreshMember(screen: Extract<Screen, { kind: 'member' }>): Promise<void> {
+    try {
+      const session = await client.get<PublicSession>('/api/public/session');
+      if (this.screen !== screen) return;
+      screen.session = session;
+      this.updated = Date.now();
+    } catch (error) {
+      this.#gone(error);
+      return;
+    }
+    await Promise.all([this.loadDevices(), this.weeks.refresh(), this.timings.data ? this.timings.load() : null, this.requests.data ? this.requests.load() : null]);
+  }
+
+  /** The bot identity is public on both origins; a failure renders the monogram. */
+  async loadIdentity(): Promise<void> {
+    this.identity = await client.get<Identity>('/api/identity').catch(() => null);
+  }
+
+  /** A session that ends mid-use (expired, signed out elsewhere, access changed) is the Session ended screen. */
+  watch(): () => void {
+    onUnauthenticated(() => {
+      if (this.screen.kind !== 'member') return;
+      this.#forget();
+      this.screen = { kind: 'ended', at: Date.now() };
+    });
+    return () => onUnauthenticated(null);
+  }
+
+  /** Denied → "Use another account": back to Sign in with how to switch. */
+  switchAccount(): void {
+    this.screen = { kind: 'signin', notice: 'switch' };
+  }
+
+  async loadDevices(): Promise<void> {
+    try {
+      this.devices = await client.get<PublicSessions>('/api/public/sessions');
+      this.devicesError = '';
+      this.updated = Date.now();
+    } catch (error) {
+      if (!this.#gone(error)) this.devicesError = error instanceof Error ? error.message : 'The list did not load.';
+    }
+  }
+
+  async loadAllowance(): Promise<void> {
+    try {
+      this.allowance = await client.get<MemberAllowance>('/api/public/me/allowance');
+      this.allowanceError = '';
+    } catch (error) {
+      if (!this.#gone(error)) this.allowanceError = error instanceof Error ? error.message : 'The allowance did not load.';
+    }
+  }
+
+  /** Sign out one other device. Answers what to tell the member, or null when the screen changed. */
+  async endDevice(handle: string, name: string): Promise<{ message: string; ok: boolean } | null> {
+    if (this.busy) return null;
+    this.busy = handle;
+    try {
+      await client.delete(`/api/public/sessions/${encodeURIComponent(handle)}`);
+      await this.loadDevices();
+      return { message: `Signed out ${name}.`, ok: true };
+    } catch (error) {
+      if (this.#gone(error)) return null;
+      await this.loadDevices();
+      if (isError(error, 404)) return { message: `${name} was already signed out.`, ok: true };
+      return { message: `Couldn't sign out ${name}: ${error instanceof Error ? error.message : 'try again.'}`, ok: false };
+    } finally {
+      this.busy = '';
+    }
+  }
+
+  /** Sign out everywhere, this device too; then the signed-out screen. */
+  async endEverywhere(): Promise<string | null> {
+    if (this.busy) return null;
+    this.busy = 'everywhere';
+    try {
+      const { ended } = await client.post<SessionsEnded>('/api/public/sessions/end-all', {});
+      this.#signedOut({ everywhere: ended });
+      return null;
+    } catch (error) {
+      if (this.#gone(error)) return null;
+      return `Couldn't sign out everywhere: ${error instanceof Error ? error.message : 'try again.'}`;
+    } finally {
+      this.busy = '';
+    }
+  }
+
+  async signOut(): Promise<string | null> {
+    if (this.busy) return null;
+    this.busy = 'self';
+    try {
+      await client.post('/api/public/auth/logout', {});
+      this.#signedOut('signed-out');
+      return null;
+    } catch (error) {
+      if (this.#gone(error)) return null;
+      return `Couldn't sign out: ${error instanceof Error ? error.message : 'try again.'}`;
+    } finally {
+      this.busy = '';
+    }
+  }
+
+  #signedOut(notice: SignInNotice): void {
+    this.#forget();
+    this.screen = { kind: 'signin', notice };
+  }
+
+  /**
+   * Hints re-read what they name, in place: the weeks on `schedule` and
+   * `mine`, the timings and requests (once read) on `mine`, the allowance
+   * (once read) on `allowance`. The weeks poll slower while the stream is open.
+   */
+  #follow(): void {
+    if (this.#unfollow) return;
+    const stops = [
+      this.live.onHealth((live) => this.weeks.pace(live)),
+      this.live.subscribe(['schedule', 'mine'], () => void this.weeks.hinted()),
+      this.live.subscribe(['mine'], () => {
+        if (this.timings.data) void this.timings.hinted();
+        if (this.requests.data) void this.requests.hinted();
+      }),
+      this.live.subscribe(['allowance'], () => {
+        if (this.allowance) void this.loadAllowance();
+      }),
+    ];
+    this.#unfollow = () => {
+      for (const stop of stops) stop();
+      this.weeks.pace(false);
+    };
+  }
+
+  /** Every member read this tab holds (devices, allowance, the weeks) goes with the session, and the stream closes. */
+  #forget(): void {
+    this.#unfollow?.();
+    this.#unfollow = null;
+    this.devices = null;
+    this.allowance = null;
+    this.weeks.clear();
+    this.timings.clear();
+    this.bosses.clear();
+    this.requests.clear();
+  }
+
+  /** A closed portal or an ended session replaces the screen (401 arrives through `watch`). */
+  #gone(error: unknown): boolean {
+    if (isError(error, 503, 'closed')) {
+      this.#forget();
+      this.screen = { kind: 'closed' };
+      return true;
+    }
+    return isError(error, 401, 'unauthenticated');
+  }
+
+  #unreachable(error: unknown): void {
+    const offline = !navigator.onLine || (error instanceof ApiRequestError && error.kind === 'network');
+    this.screen = { kind: 'unreachable', offline };
+  }
+}

@@ -1,0 +1,123 @@
+// Ported from v4 portal/_week-rail.scss: the boss week's shape on a phone.
+// v5 edits: it sits at the top of the scrolling panel (sticky) rather than
+// above a body-scrolled list, so it is compact; finished runs' pips use the
+// faint token instead of 50% opacity; the reset day is an accent edge.
+@use "breakpoints" as *;
+
+.rail {
+  display: none;
+}
+
+@media #{$single-pane} {
+  .rail {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    margin: 0 0 0.6rem;
+    background: var(--surface);
+    border: 2px solid var(--line);
+    border-radius: var(--r);
+    overflow: hidden;
+  }
+
+  .rail__day {
+    position: relative;
+    display: block;
+    min-height: 44px;
+    padding: 0.35rem 0.2rem 0.3rem;
+    border: 0;
+    border-right: 1px solid var(--line-soft);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: center;
+    cursor: pointer;
+  }
+
+  .rail__day:last-child {
+    border-right: 0;
+  }
+
+  .rail__day:hover {
+    background: var(--raise);
+  }
+
+  .rail__dow {
+    display: block;
+    font-size: var(--fs-micro);
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+
+  .rail__num {
+    display: block;
+    font-family: var(--mono);
+    font-size: var(--fs-lg);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
+  }
+
+  .rail__day--empty .rail__num {
+    color: var(--faint);
+  }
+
+  // Today: accent number, heavier, and a bar — not colour alone.
+  .rail__day--today .rail__num {
+    color: var(--accent-text);
+    font-weight: 700;
+  }
+
+  .rail__day--today::after {
+    content: "";
+    position: absolute;
+    inset: auto 22% 0;
+    height: 3px;
+    background: var(--accent);
+    border-radius: 2px 2px 0 0;
+  }
+
+  // Where the boss week begins: an accent edge (v4's corner "reset" word does
+  // not fit a phone-width cell; the cell's name says it, and the day list
+  // below repeats it in words).
+  .rail__day--reset {
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+
+  .rail__pips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 3px;
+    margin-top: 0.25rem;
+    min-height: 7px;
+  }
+
+  .pip-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 2px;
+    background: var(--off);
+  }
+
+  .pip-dot--planned {
+    background: var(--warn);
+  }
+  .pip-dot--confirmed {
+    background: var(--ok);
+  }
+  .pip-dot--at_risk {
+    background: var(--risk);
+  }
+  .pip-dot--otot {
+    background: var(--own);
+  }
+  .pip-dot--cancelled,
+  .pip-dot--done {
+    background: var(--faint);
+  }
+}

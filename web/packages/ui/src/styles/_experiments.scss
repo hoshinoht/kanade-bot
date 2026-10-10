@@ -1,0 +1,39 @@
+// Revertible design experiments (pwa-design-guidelines "Experiments"): the
+// morphing LoadingIndicator (A, `_loading.scss`, shared with the member
+// portal) and the planner overshoot (E). Components only render these classes
+// while the experiments switch is on. WavyProgress (B) graduated to
+// `_progress.scss` (always on, 2026-10-04).
+
+@use "easing" as *;
+@use "motion-query" as *;
+@use "loading";
+
+// Experiment E (opt-in, off by default; `?overshoot=on` with the switch on):
+// the picked-up card (keyboard lift or the pointer ghost) pops with a small
+// overshoot; the landing FLIP uses the expressive spring (motion/easing.ts).
+// `scale` is its own property, so the ghost's CSSOM `translate` is untouched.
+@keyframes xp-pickup {
+  0% {
+    scale: 1;
+  }
+
+  35% {
+    scale: 1.05;
+  }
+
+  70% {
+    scale: 0.995;
+  }
+
+  100% {
+    scale: 1;
+  }
+}
+
+@include motion-ok {
+  // The switches live on <html>, so `&` joins them to the root (see _motion-query).
+  &[data-experiments="on"][data-overshoot="on"] .plan-card--lifted,
+  &[data-experiments="on"][data-overshoot="on"] .dnd-ghost--on {
+    animation: xp-pickup 320ms $standard;
+  }
+}

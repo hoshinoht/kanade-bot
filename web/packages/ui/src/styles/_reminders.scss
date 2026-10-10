@@ -1,0 +1,482 @@
+// Reminders (mockup B_Reminders): one window; title-bar tabs, search and a
+// "Filters (n)" popover; one day-grouped table on the pane surface, 44 px
+// row cards; a 30 px footer. Only the table region scrolls.
+
+.reminders-window {
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+}
+
+.reminders-window__head.tabs__strip {
+  align-items: flex-end;
+}
+
+// The stale tab's count is a warning once anything is in it.
+.tabs__tab .reminders-window__count--warn {
+  background: color-mix(in srgb, var(--warn) 45%, var(--surface));
+  color: color-mix(in srgb, var(--warn-text) 85%, var(--ink));
+}
+
+.reminders-window__actions {
+  display: flex;
+  align-self: center;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.reminders-window__search {
+  width: min(220px, 24vw);
+}
+
+.reminders-window__search input {
+  width: 100%;
+  min-width: 0;
+}
+
+.reminders-filters {
+  position: relative;
+  display: flex;
+}
+
+.card__head .reminders-filters__toggle {
+  gap: 6px;
+}
+
+.reminders-filters__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: max-content;
+  max-width: min(36rem, calc(100vw - 2rem));
+  margin: 0;
+  color: var(--ink);
+}
+
+// The list and the card preview side by side (Members' pattern).
+.reminders-window__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: clip;
+}
+
+.reminders-window__list {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0 10px 10px;
+  background: var(--pane);
+}
+
+.reminders-window__list:focus-visible {
+  outline-offset: -3px;
+}
+
+.reminders-window__list > .flash,
+.reminders-window__list > .empty {
+  margin: 1rem 0 0;
+}
+
+.reminders-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 2px;
+  font-size: var(--fs-body-sm);
+}
+
+.reminders-table th[scope="col"] {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 10px;
+  border: 0;
+  background: var(--pane);
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-transform: uppercase;
+  box-shadow: none;
+}
+
+// A day's label row (mockup `tr.grp`): on the pane, no card.
+.reminders-table__group th {
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  font-family: var(--display);
+  font-size: var(--fs-small);
+  font-weight: 700;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.reminders-table__count {
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  font-weight: 400;
+}
+
+.reminder > td,
+.reminder > th {
+  height: 44px;
+  padding: 0 10px;
+  border: 0;
+  background: var(--row);
+  font-weight: inherit;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.reminder > :first-child { border-radius: 6px 0 0 6px; }
+.reminder > :last-child { border-radius: 0 6px 6px 0; }
+
+.reminder { cursor: pointer; }
+
+.reminder:hover > * {
+  background: var(--row-hover);
+}
+
+// The open preview's row: the selection fill and edge (as Week's runs table).
+.reminder--active > *,
+.reminder--active:hover > * {
+  background: var(--select);
+  box-shadow: inset 0 1.5px 0 var(--select-edge), inset 0 -1.5px 0 var(--select-edge);
+  --dim: var(--dim-text);
+}
+
+.reminder--active > :first-child {
+  border-radius: 18px 0 0 18px;
+  box-shadow: inset 1.5px 1.5px 0 var(--select-edge), inset 0 -1.5px 0 var(--select-edge);
+}
+
+.reminder--active > :last-child {
+  border-radius: 0 18px 18px 0;
+  box-shadow: inset -1.5px 1.5px 0 var(--select-edge), inset 0 -1.5px 0 var(--select-edge);
+}
+
+.reminder__open {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.reminder__open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.reminders-table__at {
+  width: 150px;
+}
+
+td.reminders-table__at {
+  font-weight: 700;
+}
+
+.reminders-table__in {
+  width: 60px;
+}
+
+td.reminders-table__in {
+  color: var(--dim-text);
+}
+
+.reminders-table__kind {
+  width: 80px;
+}
+
+.reminders-table__run {
+  width: 100px;
+}
+
+td.reminders-table__run a {
+  font-size: var(--fs-mini);
+}
+
+.reminders-table__party {
+  width: 220px;
+}
+
+.reminders-table__state {
+  width: 80px;
+}
+
+.reminder__bosses,
+.reminder__party {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.reminder__bosses {
+  gap: 10px;
+}
+
+.reminder__bosses .boss__name {
+  font-weight: 600;
+}
+
+.reminder__party {
+  gap: 4px;
+}
+
+// Party names as small tonal chips (mockup `.pc`).
+.reminder__person.chip {
+  min-height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--chip-fill);
+  color: var(--ink);
+  font-size: var(--fs-mini);
+  font-weight: 600;
+}
+
+// Waiting to fire: a dashed outline (mockup `.st`).
+.reminder__queued {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1.5px dashed var(--select-edge);
+  font-size: var(--fs-mini);
+}
+
+.reminders-table__state .tone {
+  min-height: 22px;
+  font-size: var(--fs-mini);
+  text-decoration: none;
+}
+
+.reminders-window__foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  padding: 0 14px;
+  overflow: hidden;
+  border-top: 1.5px solid var(--line);
+  background: var(--surface);
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+}
+
+.reminders-window__next {
+  color: var(--ink);
+  font-size: var(--fs-body);
+}
+
+.reminders-window__shown {
+  margin-left: auto;
+}
+
+@media (max-width: 839px) {
+  .reminders-window__head.tabs__strip {
+    flex-wrap: wrap;
+    padding-top: 0.5rem;
+  }
+
+  .reminders-window__head .tabs__tabs {
+    order: 1;
+    width: 100%;
+  }
+
+  .reminders-window__actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .reminders-window__search {
+    flex: 1 1 auto;
+    width: auto;
+  }
+
+  // P_SelectPhone: the pills on two columns, the run (the longest value) across both.
+  .reminders-filters__panel {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: min(36rem, calc(100vw - 2rem));
+  }
+
+  .reminders-filters__panel .ddw:nth-child(2),
+  .reminders-filters__panel > .btn {
+    grid-column: 1 / -1;
+  }
+
+  .reminders-filters__panel > .btn {
+    justify-self: start;
+  }
+
+  .reminders-filters__panel .ddw,
+  .reminders-filters__panel .dd.dd {
+    width: 100%;
+  }
+}
+
+/* ── the card preview (O9) ─────────────────────────────────────────────── */
+
+.side-pane--reminder { flex-basis: min(440px, 44vw); }
+
+.reminder-pane__head {
+  display: flex;
+  flex: none;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 16px 16px 14px;
+  border-bottom: 1.5px solid var(--line);
+}
+
+.reminder-pane__who { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; }
+.reminder-pane__who > * { margin: 0; }
+.reminder-pane__who h2 { font-family: var(--display); font-size: var(--fs-brand); line-height: 1.15; overflow-wrap: anywhere; }
+.reminder-pane__when { color: var(--dim-text); font-size: var(--fs-mini); }
+
+.reminder-pane__close.btn {
+  flex: none;
+  justify-content: center;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+}
+
+.reminder-pane__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px 18px;
+}
+
+.reminder-pane__note {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+  line-height: 1.4;
+}
+
+.reminder-pane__note .icon { flex: none; margin-top: 2px; }
+.reminder-pane__link { align-self: flex-start; }
+
+// One Discord message (avatar, author line, text) holding its rich embeds.
+.dcard {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  line-height: 1.375;
+}
+
+.dcard__avatar {
+  display: block;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--win);
+  object-fit: cover;
+}
+
+.dcard__message { min-width: 0; }
+.dcard p { margin: 0; }
+.dcard__line { display: block; min-height: 1em; overflow-wrap: anywhere; }
+.dcard__line--sub { color: var(--dim-text); font-size: var(--fs-mini); }
+
+.dcard__author { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.dcard__author strong { font-size: var(--fs-body-sm); }
+
+.dcard__app {
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #5865f2;
+  color: #fff;
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.dcard__time { color: var(--dim-text); font-size: var(--fs-mini); }
+.dcard__content { margin-top: 2px; }
+
+.dcard__embed {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 16px;
+  max-width: 520px;
+  margin-top: 6px;
+  padding: 8px 16px 16px 12px;
+  border-left: 4px solid var(--card-bar, var(--line));
+  border-radius: 4px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+}
+
+.dcard__body { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding-top: 4px; }
+.dcard__title { font-weight: 700; font-size: var(--fs-body-sm); }
+.dcard__fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; margin: 0; }
+.dcard__field { grid-column: 1 / -1; min-width: 0; }
+.dcard__field--inline { grid-column: auto; }
+.dcard__field dt { margin: 0; font-weight: 700; }
+.dcard__field dd { margin: 2px 0 0; }
+
+.dcard__thumb {
+  grid-column: 2;
+  grid-row: 1;
+  width: 80px;
+  height: 80px;
+  margin-top: 8px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.dcard__image {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-height: 300px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.dcard__footer {
+  grid-column: 1 / -1;
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+}
+
+@media (max-width: 599px) {
+  .dcard { grid-template-columns: 32px minmax(0, 1fr); gap: 8px; padding: 10px; }
+  .dcard__avatar { width: 32px; height: 32px; }
+  .dcard__embed { padding: 8px 10px 12px 10px; }
+  .dcard__thumb { width: 56px; height: 56px; }
+}

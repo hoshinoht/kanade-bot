@@ -1,0 +1,251 @@
+# Kanade v5. Run from the repository root of the live checkout (private files
+# resolve relative to it): docker compose -f deploy/compose.yaml up -d
+# v4 (`kanade-bot`) shares the bot token and the edge alias: stop it first.
+# Runbook: deploy/README.md.
+name: kanade-v5
+services:
+  bot:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        KANADE_IMAGE_REVISION: ${KANADE_IMAGE_REVISION:-unknown}
+        KANADE_IMAGE_VERSION: ${KANADE_IMAGE_VERSION:-dev}
+        KANADE_IMAGE_SOURCE: ${KANADE_IMAGE_SOURCE:-https://github.com/hoshinoht/kanade-bot}
+    image: kanade-v5:local
+    container_name: kanade-v5
+    # Live serve: owns the store and connects the gateway (KANADE_EXPECT_V4_STOPPED=1).
+    command: ["serve"]
+    # Settings live in the private ../kanade.toml (template: kanade.example.toml),
+    # mounted below. Any non-empty KANADE_* variable (this env_file or
+    # `environment:`) overrides its key there; never secrets.
+    env_file:
+      # Optional, for back-compat; remove keys here once they are in kanade.toml.
+      - path: ${KANADE_ENV_FILE:-../.env.v5}
+        required: false
+    # Overrides env_file and kanade.toml: topology and container paths are fixed here.
+    environment:
+      KANADE_CONFIG: /config/kanade.toml
+      KANADE_ALLOW_PRIVATE_BIND: "1"
+      KANADE_ADMIN_BIND: 192.168.97.10:8080
+      KANADE_ADMIN_HOST: kanade.hoshinoht.dev
+      # Edge container's current address on kanade_edge; the edge does not pin
+      # it yet (handover item), so recheck after any edge recreate.
+      KANADE_TRUSTED_PROXY: 192.168.97.2
+      # cloudflared's address on kanade_public. The public listener stays off
+      # until kanade.toml sets [public] bind and host (runbook "Public portal").
+      KANADE_CLOUDFLARED_PEER: 172.25.0.3
+      KANADE_HEALTHCHECK_URL: http://192.168.97.10:8080/healthz
+      KANADE_WEB_DIR: /app/web
+      KANADE_BOSS_DIR: /app/boss
+      KANADE_CATALOG_FILE: /app/boss/bosses.yaml
+      KANADE_KNOWLEDGE_DIR: /app/boss/knowledge
+      KANADE_PERSONA_DIR: /config/personas
+      # The volume root is 0750; serve creates these two 0700 on first start.
+      KANADE_DB_PATH: /data/db/kanade.sqlite
+      KANADE_OWNER_LOCK_DIR: /data/run
+      # The bot's avatar/banner, refreshed after each READY (rootfs is read-only).
+      KANADE_IDENTITY_DIR: /data/identity
+      # Listed by History checkpoints; only the `backup` service writes here.
+      KANADE_BACKUP_DIR: /backups
+      # age public keys, checked at startup (a bad file refuses it). Empty
+      # (feature off) unless KANADE_BACKUP_RECIPIENTS_HOST_FILE is set.
+      KANADE_BACKUP_RECIPIENTS_FILE: ${KANADE_BACKUP_RECIPIENTS_HOST_FILE:+/run/secrets/backup_recipients}
+      KANADE_DISCORD_TOKEN_FILE: /run/secrets/kanade_discord_token
+      KANADE_ADMIN_TOKEN_FILE: /run/secrets/kanade_admin_token
+      KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE: /run/secrets/kanade_discord_client_secret
+      KANADE_MODEL_KEY_FILE: /run/secrets/kanade_model_api_key
+      # Tailscale sign-in is not used: the edge cannot see tailnet peers (Docker NAT).
+    secrets:
+      - kanade_discord_token
+      - kanade_admin_token
+      - kanade_discord_client_secret
+      # Member sign-in (public Discord application); kanade.toml names it as
+      # [public] discord_client_secret_file = "/run/secrets/public_discord_client_secret".
+      - public_discord_client_secret
+      - kanade_model_api_key
+      - backup_recipients
+    networks:
+      # Egress for Discord and Kanata.
+      default: {}
+      edge:
+        ipv4_address: 192.168.97.10
+        # The edge site proxies to kanade-bot:8080; v4 must be stopped.
+        aliases: [kanade-bot]
+      # Internal; only cloudflared joins. Unused until [public] bind is set.
+      public:
+        ipv4_address: 172.25.0.10
+    # No published ports: each listener binds only its internal network address.
+    volumes:
+      # SQLite on a named volume, not a macOS bind mount.
+      - data:/data
+      - ../config/personas:/config/personas:ro
+      # Fails the start when the file is missing instead of creating a directory.
+      - type: bind
+        source: ${KANADE_CONFIG_FILE:-../kanade.toml}
+        target: /config/kanade.toml
+        read_only: true
+        bind:
+          create_host_path: false
+      # Private art (git-ignored) stays on the host.
+      - ../boss/portraits:/app/boss/portraits:ro
+      - ../boss/artwork:/app/boss/artwork:ro
+      # `kanade backup` snapshots and manifests (and the volume tarballs).
+      # Compose does not expand `~`; the directory must already exist.
+      - type: bind
+        source: ${KANADE_BACKUP_HOST_DIR:-${HOME}/.config/kanade/v5/backups}
+        target: /backups
+        read_only: true
+        bind:
+          create_host_path: false
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=16m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 1.0
+    mem_limit: 512m
+    pids_limit: 128
+    # serve's fixed 25 s shutdown budget plus a 5 s margin (KANADE_SHUTDOWN_TIMEOUT_SECONDS caps only the HTTP drain inside it).
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/kanade", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Deploy-time store snapshot; never started by `up` (profile). Run it only
+  # while `bot` is stopped (the owner lock refuses otherwise), with the image
+  # that last served the store so no migration runs first:
+  #   KANADE_BACKUP_IMAGE=kanade-v5:rollback-<sha> docker compose -f deploy/compose.yaml \
+  #     --profile backup run --rm backup backup --name kanade-<stamp>-pre-<sha>.sqlite
+  # With KANADE_BACKUP_RECIPIENTS_HOST_FILE set it writes <name>.age instead.
+  backup:
+    image: ${KANADE_BACKUP_IMAGE:-kanade-v5:local}
+    profiles: [backup]
+    command: ["backup"]
+    # Store paths, the backup dir and the public recipients only: no settings
+    # file, other secrets or network.
+    environment:
+      KANADE_DB_PATH: /data/db/kanade.sqlite
+      KANADE_OWNER_LOCK_DIR: /data/run
+      KANADE_BACKUP_DIR: /backups
+      KANADE_BACKUP_RECIPIENTS_FILE: ${KANADE_BACKUP_RECIPIENTS_HOST_FILE:+/run/secrets/backup_recipients}
+    secrets:
+      - backup_recipients
+    network_mode: none
+    volumes:
+      - data:/data
+      - type: bind
+        source: ${KANADE_BACKUP_HOST_DIR:-${HOME}/.config/kanade/v5/backups}
+        target: /backups
+        bind:
+          create_host_path: false
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=16m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 1.0
+    mem_limit: 512m
+    pids_limit: 128
+
+  # Public portal ingress; never started by `up` (profile). Cloudflare tunnel
+  # (remotely managed, token file) -> bot's public listener on kanade_public.
+  # Runbook: deploy/README.md "Public portal".
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.1@sha256:b269e8abd07a5bf6f3f4be65d5050b2174eca89c56a0241a8ff32a16aec454e4
+    pull_policy: missing
+    profiles: [public]
+    container_name: kanade-v5-cloudflared
+    entrypoint: ["cloudflared", "--no-autoupdate"]
+    # Metrics stay on container loopback; debug logging would record headers.
+    command:
+      - tunnel
+      - --loglevel
+      - info
+      - --metrics
+      - 127.0.0.1:20241
+      - run
+      - --token-file
+      - /run/secrets/kanade_cloudflared_token
+    user: "65532:65532"
+    secrets:
+      - kanade_cloudflared_token
+    networks:
+      public:
+        ipv4_address: 172.25.0.3
+      tunnel_egress:
+        gw_priority: 100
+    # No published ports.
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    cpus: 0.5
+    mem_limit: 256m
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  # Created outside this stack (originally by v4); the edge joins it.
+  edge:
+    name: kanade_edge
+    external: true
+  # bot <-> cloudflared only; internal (no egress). Subnets outside the
+  # engine's default address pools so auto-assigned networks never take them.
+  public:
+    name: kanade_public
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.25.0.0/24
+  # cloudflared's own egress to Cloudflare, separate from the bot's default.
+  tunnel_egress:
+    name: kanade_tunnel_egress
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.24.0.0/24
+
+secrets:
+  # Host files outside the repo, one line each.
+  kanade_discord_token:
+    file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/discord_token
+  kanade_admin_token:
+    file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/admin_token
+  kanade_discord_client_secret:
+    file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/discord_client_secret
+  # The public origin's own Discord application (member sign-in). Must exist;
+  # empty is fine until [public] discord_client_id is set.
+  public_discord_client_secret:
+    file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/public_discord_client_secret
+  # A symlink to the Kanata key file v4 uses, so there is one key to rotate.
+  kanade_model_api_key:
+    file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/model_api_key
+  # Tunnel token (profile public only); never an env var or command argument.
+  kanade_cloudflared_token:
+    file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/kanade-cloudflared
+  # age public keys (age1…) for encrypted backups; set the host path in
+  # deploy/.env (runbook "Encrypted backups"). Unset: /dev/null stands in and
+  # the variable above stays empty, so encryption is off and `up` still
+  # works. Public keys only: the private identity never goes on this host.
+  backup_recipients:
+    file: ${KANADE_BACKUP_RECIPIENTS_HOST_FILE:-/dev/null}
+
+volumes:
+  data:
+    name: kanade_v5_data

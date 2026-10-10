@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/reminders.json",
+  "title": "Reminder cards the bot will post or posted",
+  "$defs": {
+    "ReminderRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "run_id", "run_short_id", "kind", "state", "at", "fire_at", "bosses", "party", "url"],
+      "properties": {
+        "id": { "type": "string" },
+        "run_id": { "type": "string" },
+        "run_short_id": { "type": "string" },
+        "kind": { "$ref": "common.json#/$defs/CardKind" },
+        "state": { "enum": ["queued", "due", "sent", "stale"] },
+        "at": { "type": "string" },
+        "fire_at": { "type": "string", "format": "date-time" },
+        "bosses": { "$ref": "common.json#/$defs/Bosses" },
+        "party": { "type": "array", "items": { "type": "string" } },
+        "url": { "$ref": "common.json#/$defs/NullableString" }
+      }
+    },
+    "Reminders": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["upcoming", "sent", "generated_at"],
+      "properties": {
+        "upcoming": { "type": "array", "items": { "$ref": "#/$defs/ReminderRow" } },
+        "sent": { "type": "array", "items": { "$ref": "#/$defs/ReminderRow" } },
+        "generated_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "CardField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "value", "inline"],
+      "properties": {
+        "name": { "type": "string" },
+        "value": { "type": "string" },
+        "inline": { "type": "boolean" }
+      }
+    },
+    "CardPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content", "color", "title", "description", "fields", "footer", "thumbnail", "image", "more_embeds", "heading_final"],
+      "properties": {
+        "content": { "type": "string" },
+        "color": { "type": "string", "pattern": "^#[0-9a-f]{6}$" },
+        "title": { "$ref": "common.json#/$defs/NullableString" },
+        "description": { "$ref": "common.json#/$defs/NullableString" },
+        "fields": { "type": "array", "items": { "$ref": "#/$defs/CardField" } },
+        "footer": { "$ref": "common.json#/$defs/NullableString" },
+        "thumbnail": { "$ref": "common.json#/$defs/NullableString" },
+        "image": { "$ref": "common.json#/$defs/NullableString" },
+        "more_embeds": {
+          "type": "array",
+          "maxItems": 9,
+          "items": { "$ref": "#/$defs/EmbedPreview" },
+          "description": "The embeds after the first (the redesigned day-of card has one per run)."
+        },
+        "heading_final": { "type": "boolean" }
+      }
+    },
+    "EmbedPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["color", "title", "description", "fields", "footer", "thumbnail", "image"],
+      "properties": {
+        "color": { "type": "string", "pattern": "^#[0-9a-f]{6}$" },
+        "title": { "$ref": "common.json#/$defs/NullableString" },
+        "description": { "$ref": "common.json#/$defs/NullableString" },
+        "fields": { "type": "array", "items": { "$ref": "#/$defs/CardField" } },
+        "footer": { "$ref": "common.json#/$defs/NullableString" },
+        "thumbnail": { "$ref": "common.json#/$defs/NullableString" },
+        "image": { "$ref": "common.json#/$defs/NullableString" }
+      }
+    },
+    "ReminderPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reminder", "card", "run_started", "generated_at"],
+      "properties": {
+        "reminder": { "$ref": "#/$defs/ReminderRow" },
+        "card": {
+          "oneOf": [{ "$ref": "#/$defs/CardPreview" }, { "type": "null" }],
+          "description": "null: posts nothing (cancelled run, unknown kind), retired without posting, or posted before card records were kept."
+        },
+        "run_started": {
+          "type": "boolean",
+          "description": "The reminder's run has started (for a posted card, every run it names): the card is no longer edited, so Discord keeps its last edit from before then."
+        },
+        "generated_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

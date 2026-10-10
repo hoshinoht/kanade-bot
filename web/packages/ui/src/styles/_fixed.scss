@@ -1,0 +1,186 @@
+// M3E weekly timings: the tabular list and editor are sibling scroll owners.
+// `overflow: clip`, not hidden: a hidden box is still a programmatic scroll
+// container, so focusing a row could scroll the window under its title bar.
+@use "breakpoints" as *;
+.fixed-window { display: flex; flex-direction: column; overflow: clip; }
+// The Add key (mockup `.key`): bold, its plus 8 px from the words.
+.pageline .fixed-add { gap: 8px; font-weight: 700; }
+.fixed-window__head { flex-wrap: nowrap; gap: 0.55rem; }
+.fixed-window__search { align-self: center; width: min(240px, 27vw); margin-left: auto; }
+.fixed-window__search input { width: 100%; min-width: 0; }
+
+.fixed-window__body { display: flex; flex: 1 1 auto; min-height: 0; overflow: clip; }
+.fixed-window__body > .flash, .fixed-window__body > .empty { margin: 1rem; }
+.fixed-list { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; background: var(--pane); }
+.fixed-list__table { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+// B_Fixed: the head and every row are one grid (96 px when, the bosses, a
+// 150 px party), not table rows; FixedPage keeps the table roles explicit.
+.fixed-list table, .fixed-list thead { display: block; }
+.fixed-list table { width: 100%; min-width: 42rem; }
+.fixed-list tbody { display: flex; flex-direction: column; gap: 2px; padding: 0 10px 10px; }
+.fixed-list tr { display: grid; grid-template-columns: 96px minmax(0, 1fr) 150px; gap: 10px; align-items: center; padding: 0 12px; }
+.fixed-list th, .fixed-list td { display: block; min-width: 0; padding: 0; text-align: left; }
+// The row is the card: its cells draw no fill or rule of their own (not even
+// the shared table hover).
+.fixed-list .fixed-list__table tr > * { border-bottom: 0; background: none; }
+.fixed-list thead { position: sticky; top: 0; z-index: 2; background: var(--pane); }
+// The head row is the mono overline (mockup `.cap`); its cells inherit it.
+// The head spans the list (B_Fixed: 22 px in, over the rows' 10 + 12).
+.fixed-list thead tr { height: 32px; padding: 0 22px; color: var(--dim); font-family: var(--mono); font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; }
+.fixed-list thead th { font: inherit; }
+// Each row is one card surface (mockup `.lrow`). A pointer anywhere on the
+// row opens it (FixedPage's `forwardRowClicks`; no positioned overlay, which
+// WebKit lets escape a row), so hover, selection and focus show on the card.
+.fixed-list tbody tr { min-height: 52px; border-radius: 6px; background: var(--row); cursor: pointer; }
+.fixed-list__open { display: flex; width: 100%; min-height: 2.6rem; align-items: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.fixed-list__open:focus-visible { outline: none; }
+// Keyboard focus rings the whole row card.
+// Drawn inside the card, so the sticky head never covers the first row's ring.
+.fixed-list tbody tr:has(.fixed-list__open:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+// Hover: the row state layer and a neutral edge (as History and Members);
+// the selected row keeps its fill.
+.fixed-list tbody tr:not(.fixed-list__row--active):hover { background: var(--row-hover); box-shadow: inset 0 0 0 1.5px var(--line); }
+// Selected: the tonal fill with its light edge, rounder ends, a bolder title.
+.fixed-list tbody tr.fixed-list__row--active { border-radius: 18px; background: var(--select); box-shadow: inset 0 0 0 1.5px var(--select-edge); }
+// The non-colour cue: the selected row's day and time go bold (review finding 5).
+.fixed-list__row--active .fixed-list__day { font-weight: 700; }
+.fixed-list__row--active .fixed-list__time { font-weight: 800; }
+// Flags read as the mockup's quiet mono words, not uppercase statuses.
+.fixed-list .status { font-family: var(--mono); font-size: var(--fs-mini); font-weight: 600; letter-spacing: 0; text-transform: none; }
+// On the selected fill the signal words take a share of ink (warn-text on --select is under 4.5:1 at night).
+.fixed-list__row--active .status--planned { color: color-mix(in srgb, var(--warn-text) 60%, var(--ink)); }
+.fixed-list__row--active .status--at_risk { color: color-mix(in srgb, var(--risk-text) 60%, var(--ink)); }
+// B_Fixed row (52 px): the weekday over the bold mono time; the bosses with
+// 28 px portraits on one line each; the party as plain text (no copy
+// buttons, so a clipped name never takes focus), cut with an ellipsis rather
+// than wrapped, the full list in the cell's title.
+.fixed-list__when { display: grid; gap: 0; line-height: 1.25; }
+.fixed-list__day { font-size: var(--fs-small); }
+.fixed-list__time { font-size: var(--fs-body); font-weight: 700; }
+.fixed-list__bosses, .fixed-list__party { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fixed-list__bosses { font-weight: 700; }
+.fixed-list__bossline { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.fixed-list__bossline .bosslist { min-width: 0; gap: 0.2rem; }
+.fixed-list__bossline .boss { min-width: 0; }
+.fixed-list__bossline .boss__name { overflow: hidden; text-overflow: ellipsis; }
+.fixed-list__bossline .status { flex: none; }
+.fixed-list__flags { margin-inline-start: 8px; }
+.fixed-list__flags:empty { display: none; }
+.fixed-list__flags > * + * { margin-inline-start: 6px; }
+.fixed-list__expanded { display: block; padding-block: 6px; }
+// A selected single-boss row grows in place too, but never on phones.
+@media (min-width: 600px) and (min-height: 501px) {
+  .fixed-list__row--active .fixed-list__bossline { flex-wrap: wrap; }
+  .fixed-list__row--active .boss { white-space: normal; }
+  .fixed-list__row--active .boss__name { overflow: visible; }
+  .fixed-list__row--active .pill { flex: none; }
+}
+.fixed-list .portrait--sm { width: 28px; height: 28px; border-width: 1.5px; border-radius: 8px; }
+.fixed-list__party { color: var(--dim); font-size: var(--fs-small); }
+.fixed-list__party .chips { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fixed-list__party .chip { display: inline; padding: 0; border: 0; background: none; color: inherit; font-weight: 400; }
+.fixed-list__party .chip + .chip::before { content: " · "; }
+
+// The editor's head (B_Fixed): the overline and title, the close beside them.
+.fixedsheet__head { display: flex; flex: none; gap: 10px; align-items: flex-start; padding: 12px 16px; border-bottom: 1.5px solid var(--line); }
+.fixedsheet__title { display: flex; flex: 1 1 auto; flex-direction: column; gap: 2px; min-width: 0; }
+.fixedsheet__head .cap, .fixedsheet__head h2 { margin: 0; }
+.fixedsheet__head h2 { font-family: var(--display); font-size: var(--fs-lg); }
+.fixedsheet__close { min-width: 2rem; min-height: 2rem; font-size: var(--fs-lg); }
+.fixedsheet__form { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+// The editor's fields scroll; its head and foot (Retire, Save) stay put and never sit over a field.
+// B_Fixed: one column of sections 12 px apart, 12 px / 16 px in.
+.fixedsheet__content { display: flex; flex: 1 1 auto; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 16px 16px; }
+.fixedsheet__content > * { flex: none; margin: 0; }
+.fixedsheet__content > .field + .field { margin-top: 0; }
+// The boss picker (B_Fixed): compact 44 px rows -- portrait, name and level,
+// then the difficulties as one line of small pills (wrapping only when the
+// pane is too narrow). Scoped here: the Bosses page keeps its own grid.
+.fixedsheet__bosses { display: flex; flex-direction: column; gap: 2px; }
+.fixedsheet__bosses .grid-bosses { gap: 2px; border: 0; border-radius: 0; background: none; overflow: visible; }
+.fixedsheet__bosses .bossrow { display: flex; flex-wrap: nowrap; align-items: center; gap: 10px; min-height: 44px; padding: 0 10px 0 12px; border-radius: 4px; background: var(--row); }
+.fixedsheet__bosses .bossrow:first-child { border-top-left-radius: 14px; border-top-right-radius: 14px; }
+.fixedsheet__bosses .bossrow:last-child { border-bottom-left-radius: 14px; border-bottom-right-radius: 14px; }
+.fixedsheet__bosses .bossrow--on { border-radius: 18px; background: var(--select); box-shadow: inset 0 0 0 1.5px var(--select-edge); --dim: var(--dim-text); --faint: var(--dim-text); }
+.fixedsheet__bosses .bossrow__id { flex: 0 0 7.5rem; gap: 8px; }
+.fixedsheet__bosses .bossrow__id > span { min-width: 0; }
+.fixedsheet__bosses .portrait--md { width: 26px; height: 26px; border-width: 1.5px; border-radius: 8px; font-size: var(--fs-micro); }
+.fixedsheet__bosses .bossrow__name { display: block; overflow: hidden; font-size: var(--fs-small); font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.fixedsheet__bosses .bossrow__lv { font-size: var(--fs-micro); }
+.fixedsheet__bosses .bossrow__pills { flex: 1 1 auto; min-width: 0; gap: 4px; padding: 4px 0; }
+.fixedsheet__bosses .pill-toggle { min-height: 26px; padding: 0 7px; border: 0; box-shadow: inset 0 0 0 1.5px var(--line); font-family: var(--mono); font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.02em; }
+.fixedsheet__bosses .pill-toggle:hover { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.fixedsheet__bosses .pill-toggle:has(input:checked) { box-shadow: none; }
+// The tick only takes room when it shows.
+.fixedsheet__bosses .pill-toggle__tick { display: none; }
+.fixedsheet__bosses .pill-toggle:has(input:checked) .pill-toggle__tick { display: inline; }
+// Under the rows (mockup "All 11 bosses…"): the expander, then the typed
+// field on the same line; the check's tags wrap under both.
+.fixedsheet__more { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding-top: 4px; }
+.fixedsheet__all { flex: none; padding: 4px 2px; font-size: var(--fs-small); }
+.fixedsheet__typed { display: flex; flex: 1 1 12rem; align-items: center; gap: 8px; min-width: 0; color: var(--dim-text); font-size: var(--fs-small); }
+.fixedsheet__typed > span { flex: none; }
+.fixedsheet__content .fixedsheet__more .fixedsheet__typed input { flex: 1 1 auto; width: auto; min-width: 0; min-height: 32px; padding-top: 0; padding-bottom: 0; }
+
+// Fields (mockup `.fld`): 40 px, 12 px corners, the row surface.
+.fixedsheet__content input:not([type="checkbox"], [type="radio"]) { min-height: 40px; border-width: 1.5px; border-radius: 12px; background: var(--row); }
+.fixedsheet__note input, .fixedsheet__fields input { width: 100%; }
+
+// The party (mockup `.pick`): outlined name chips; picked ones accent-filled
+// pills with a tick. The checkbox stays for keyboards, visually hidden.
+.fixedsheet__content .run__people { gap: 5px; margin-top: 8px; }
+.fixedsheet__content .run__people .chip { position: relative; min-height: 30px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; box-shadow: inset 0 0 0 1.5px var(--line); color: var(--ink); font-size: var(--fs-small); font-weight: 400; }
+.fixedsheet__content .run__people .chip input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.fixedsheet__content .run__people .chip:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fixedsheet__content .run__people .chip:has(input:checked) { border-radius: 15px; background: var(--accent-fill); box-shadow: none; color: var(--accent-ink); font-weight: 600; }
+.fixedsheet__content .run__people .chip:has(input:checked)::before { content: "✓"; margin-right: 0.25rem; }
+// "+n" (mockup's last `.pick`): the rest of the roster, one press away.
+.fixedsheet__content .run__people .fixedsheet__more-party { font-family: var(--mono); cursor: pointer; }
+.fixedsheet__content .run__people .fixedsheet__more-party:hover { background: var(--row-hover); }
+.fixedsheet__content .run__people .fixedsheet__more-party:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fixedsheet__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.fixedsheet__note { gap: 4px; }
+// Day, time and owner side by side, the home channel on its own line
+// (B_Fixed): each a column of its overline 4 px over the 40 px box. An owner
+// refusal reads out under the whole line.
+.fixedsheet__fields .field, .fixedsheet__channel { gap: 4px; }
+.fixedsheet__fields .fixedsheet__field-error { grid-column: 1 / -1; margin: 0; }
+.fixedsheet__fields .field + .field { margin-top: 0; }
+.fixedsheet__foot { display: flex; gap: 0.5rem; align-items: center; padding: 0.65rem 1rem; border-top: 1.5px solid var(--line); }
+.fixedsheet__foot .btn--danger { margin-right: auto; }
+.boss-check { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
+.fixedsheet__more .boss-check { flex: 1 0 100%; }
+.choice { margin: 0.6rem 0; padding: 0.5rem 0.7rem; border: 2px solid var(--line-soft); border-radius: var(--r-sm); }
+.choice__opt { display: flex; align-items: center; gap: 0.4rem; min-height: 2rem; }
+.field--grow { flex: 1 1 10rem; }
+
+@media #{$single-pane} {
+  dialog.modal--narrow.fixedsheet { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; }
+  dialog.fixedsheet .modal__panel { min-height: 100dvh; }
+  .fixed-window__search { flex: 1 1 auto; margin-left: 0; }
+  .fixed-window__search input { width: 100%; }
+  .fixed-window__head { flex-wrap: wrap; }
+  .fixed-window__body { overflow: auto; }
+  .fixed-list { min-height: auto; }
+  .fixed-list__table { overflow: visible; }
+  .fixedsheet__fields { grid-template-columns: 1fr; }
+}
+
+// The phone frame (no board): no sideways scroll -- the when and the bosses
+// side by side, the party on its own line under the bosses, the flags
+// wrapping after them. The Party heading stays for assistive tech only.
+.frame--phone .fixed-list table { min-width: 0; }
+.frame--phone .fixed-list tr { grid-template-columns: 76px minmax(0, 1fr); gap: 2px 10px; }
+.frame--phone .fixed-list tbody tr { padding-top: 6px; padding-bottom: 6px; }
+.frame--phone .fixed-list thead tr { padding: 0 22px; }
+.frame--phone .fixed-list thead th:nth-child(3) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.frame--phone .fixed-list__party { grid-column: 2; }
+.frame--phone .fixed-list__bossline { flex-wrap: wrap; row-gap: 2px; }
+// The weekday strip (P_MoveStates "Reuse") takes the line; time and owner share the next.
+.fixedsheet__fields .fixedsheet__day { grid-column: 1 / -1; }
+.fixedsheet__day .daystrip { max-width: 22rem; }
+// The time is the Move picker's stepper (`_move-picker.scss`), typed into:
+// the field's 40 px row, the input bare inside the pill, whose ring is the
+// only focus mark (no `input:focus` wash box inside it).
+.fixedsheet__time .timestep { align-self: start; height: 40px; border-radius: 20px; }
+.fixedsheet__content .timestep input.timestep__value { width: 4.5em; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; outline: none; color: inherit; font-size: var(--fs-body); font-weight: 600; text-align: center; }

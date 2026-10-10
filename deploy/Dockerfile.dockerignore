@@ -1,0 +1,22 @@
+# Allow-list: the build context holds only tracked build inputs. Private
+# config, .env*, data/, .opencode/, target/, art and node_modules
+# never enter any stage.
+*
+!Cargo.toml
+!Cargo.lock
+!src/
+!boss/bosses.yaml
+!boss/knowledge/
+!assets/emojis/
+!web/package.json
+!web/bun.lock
+!web/tsconfig.base.json
+!web/apps/
+!web/packages/
+
+# Re-excluded inside allowed trees (local installs, builds, stray files).
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+**/.env*
+**/.DS_Store

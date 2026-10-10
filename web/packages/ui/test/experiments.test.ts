@@ -1,0 +1,92 @@
+import { createRawSnippet } from 'svelte';
+import { render } from 'svelte/server';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { experiments, initExperiments, setExperiments, setOvershoot } from '../src/experiments/experiments.svelte';
+import LoadingIndicator from '../src/components/LoadingIndicator.svelte';
+import PendingLabel from '../src/components/PendingLabel.svelte';
+
+const store = new Map<string, string>();
+const html = { dataset: {} as Record<string, string> };
+
+beforeEach(() => {
+  store.clear();
+  html.dataset = {};
+  Object.assign(globalThis, {
+    localStorage: {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    },
+    document: { documentElement: html },
+  });
+});
+
+afterEach(() => {
+  delete (globalThis as { localStorage?: unknown }).localStorage;
+  delete (globalThis as { document?: unknown }).document;
+  experiments.on = true;
+  experiments.overshootChosen = false;
+});
+
+const save = createRawSnippet(() => ({ render: () => '<span>Save</span>' }));
+const body = (h: string) => h.replace(/<!--[^>]*-->/g, '');
+
+describe('experiments switch', () => {
+  it('defaults on and reflects on <html>', () => {
+    expect(initExperiments('')).toBe(true);
+    expect(html.dataset.experiments).toBe('on');
+  });
+
+  it('a query turns it off and is remembered', () => {
+    expect(initExperiments('?section=pings&experiments=off')).toBe(false);
+    expect(html.dataset.experiments).toBe('off');
+    expect(initExperiments('')).toBe(false);
+    expect(initExperiments('?experiments=on')).toBe(true);
+    expect(store.get('kanade.experiments')).toBe('on');
+  });
+
+  it('E (overshoot) is off by default, opt-in by query or palette, and needs the switch on', () => {
+    initExperiments('');
+    expect([experiments.overshoot, html.dataset.overshoot]).toEqual([false, 'off']);
+    initExperiments('?overshoot=on');
+    expect([experiments.overshoot, html.dataset.overshoot]).toEqual([true, 'on']);
+    expect(store.get('kanade.overshoot')).toBe('on');
+    setExperiments(false);
+    expect(experiments.overshoot).toBe(false);
+    setExperiments(true);
+    setOvershoot(false);
+    expect([experiments.overshoot, html.dataset.overshoot]).toEqual([false, 'off']);
+  });
+
+  it('ignores unknown query values', () => {
+    setExperiments(false);
+    expect(initExperiments('?experiments=maybe')).toBe(false);
+  });
+});
+
+describe('PendingLabel', () => {
+  it('off: renders the label alone, as before, even while pending', () => {
+    experiments.on = false;
+    expect(body(render(PendingLabel, { props: { pending: true, label: 'Saving…', children: save } }).body)).toBe('<span>Save</span>');
+  });
+
+  it('on but idle: the label alone', () => {
+    expect(body(render(PendingLabel, { props: { pending: false, label: 'Saving…', children: save } }).body)).toBe('<span>Save</span>');
+  });
+
+  it('on and pending: hides the label from AT and names the indicator', () => {
+    const out = render(PendingLabel, { props: { pending: true, label: 'Saving…', children: save } }).body;
+    expect(out).toContain('class="xp-pending__label" aria-hidden="true"');
+    expect(out).toMatch(/role="status" aria-label="Saving…"/);
+    expect(out).toContain('xp-loading--sm');
+  });
+});
+
+describe('LoadingIndicator', () => {
+  it('is a labelled status in the chosen size', () => {
+    const out = render(LoadingIndicator, { props: { label: 'Loading calls', size: 'md' } }).body;
+    expect(out).toContain('role="status"');
+    expect(out).toContain('aria-label="Loading calls"');
+    expect(out).toContain('xp-loading--md');
+  });
+});

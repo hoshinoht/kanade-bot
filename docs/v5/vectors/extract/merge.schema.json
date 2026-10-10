@@ -1,0 +1,308 @@
+{
+  "$defs": {
+    "amendment": {
+      "additionalProperties": false,
+      "properties": {
+        "bosses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "day_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence_message_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "is_question": {
+          "type": "boolean"
+        },
+        "kind": {
+          "enum": [
+            "move",
+            "add",
+            "cancel",
+            "split",
+            "otot",
+            "sub",
+            "rsvp",
+            "fix"
+          ]
+        },
+        "participants": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rsvp": {
+          "anyOf": [
+            {
+              "enum": [
+                "yes",
+                "no",
+                "maybe"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target_run_hint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "time_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "bosses",
+        "day_ref",
+        "time_ref",
+        "participants",
+        "rsvp",
+        "is_question",
+        "confidence",
+        "evidence_message_ids",
+        "target_run_hint"
+      ],
+      "type": "object"
+    },
+    "case": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "expected": {
+          "$ref": "#/$defs/expected"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input",
+        "expected"
+      ],
+      "type": "object"
+    },
+    "expected": {
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/outcome"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "steps"
+      ],
+      "type": "object"
+    },
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/step"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "steps"
+      ],
+      "type": "object"
+    },
+    "outcome": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "value": {}
+          },
+          "required": [
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "message": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "message"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "replayCase": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input"
+      ],
+      "type": "object"
+    },
+    "result_merge": {
+      "items": {
+        "$ref": "#/$defs/amendment"
+      },
+      "type": "array"
+    },
+    "step": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/step_merge"
+        }
+      ]
+    },
+    "step_merge": {
+      "additionalProperties": false,
+      "properties": {
+        "amendments": {
+          "items": {
+            "$ref": "#/$defs/amendment"
+          },
+          "type": "array"
+        },
+        "existing_bosses": {
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "message_order": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "op": {
+          "const": "merge"
+        }
+      },
+      "required": [
+        "op",
+        "amendments",
+        "message_order",
+        "existing_bosses"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/case"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "family": {
+      "const": "merge"
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "functions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "inventory_surfaces": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "oracle": {
+          "type": "string"
+        },
+        "source_tests": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "oracle",
+        "functions",
+        "source_tests",
+        "inventory_surfaces"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "v5-extract-merge-v1"
+    }
+  },
+  "required": [
+    "schema_version",
+    "family",
+    "provenance",
+    "cases"
+  ],
+  "title": "Kanade v5 extraction vectors: merge",
+  "type": "object"
+}

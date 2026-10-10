@@ -1,0 +1,215 @@
+// M3E roster (mockup B_Members): table scan on the left, member editor in the
+// shared side pane.
+@use "breakpoints" as *;
+.members-window {
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+}
+
+.members-window__head { flex-wrap: nowrap; gap: 0.55rem; }
+.members-window__search { align-self: center; width: min(240px, 27vw); margin-left: auto; }
+.members-window__search input { width: 100%; min-width: 0; }
+.members-window__sort { display: flex; flex: none; align-self: center; }
+
+.members-window__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: clip;
+}
+
+.members-window__body > .flash,
+.members-window__body > .empty { margin: 1rem; }
+
+// One frame: the list region is a single pane surface; the column heads, rows
+// and pager sit on it without boxes of their own.
+.members-roster {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--pane);
+}
+.members-roster__pager { flex: none; }
+
+.memberlist {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0 10px 10px;
+  background: var(--pane);
+}
+
+.memberlist__columns,
+.memberlist__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 70px 96px 100px;
+  gap: 10px;
+  align-items: center;
+}
+
+.memberlist__columns {
+  flex: none;
+  min-height: 32px;
+  padding: 0 22px;
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.memberlist__row {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--row);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.memberlist [role='listitem'] + [role='listitem'] { margin-top: 2px; }
+.memberlist__row:hover { background: var(--row-hover); box-shadow: inset 0 0 0 1.5px var(--line); }
+.memberlist__row--active,
+.memberlist__row--active:hover {
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1.5px var(--select-edge);
+  background: var(--select);
+}
+
+// The name and its aliases share one line (aliases ellipsise before the name);
+// the chip stays whole and drops below them when the column is too narrow.
+.memberlist__name { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 0.5rem; overflow: hidden; }
+.memberlist__who { display: flex; flex: 0 1 auto; align-items: baseline; gap: 0.5rem; min-width: 0; max-width: 100%; }
+.memberlist__name strong,
+.memberlist__name .id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memberlist__name strong { flex: none; max-width: 100%; font-size: var(--fs-small); font-weight: 700; }
+.memberlist__name .id { flex: 0 1 auto; color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-mini); }
+.memberlist__name .chip { flex: none; align-self: center; white-space: nowrap; }
+.memberlist__identity { display: flex; flex-direction: column; gap: 3px; padding-block: 8px; font-size: var(--fs-small); }
+.memberlist__identity .id { color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-mini); }
+.memberlist__identity .chip { align-self: flex-start; }
+.memberlist__stat { font-size: var(--fs-small); font-weight: 600; white-space: nowrap; }
+.memberlist__preference,
+.memberlist__style { overflow: hidden; font-size: var(--fs-small); text-overflow: ellipsis; white-space: nowrap; }
+.memberlist__style { color: var(--dim-text); font-size: var(--fs-mini); }
+
+/* ── the detail ───────────────────────────────────────────────────────────── */
+
+.membersheet__head {
+  display: flex;
+  flex: none;
+  gap: 12px;
+  align-items: center;
+  padding: 16px 16px 14px;
+  border-bottom: 1.5px solid var(--line);
+}
+.membersheet__who { display: flex; flex: 1 1 auto; flex-direction: column; gap: 0; min-width: 0; }
+.membersheet__who > * { margin: 0; }
+.membersheet__head h2 { font-family: var(--display); font-size: var(--fs-brand); line-height: 1.15; }
+.membersheet__handle { color: var(--dim-text); font-size: var(--fs-small); line-height: 1.3; }
+.membersheet__avatar { display: grid; flex: none; width: 52px; height: 52px; place-items: center; clip-path: polygon(50% 0%, 75% 7%, 93% 25%, 100% 50%, 93% 75%, 75% 93%, 50% 100%, 25% 93%, 7% 75%, 0% 50%, 7% 25%, 25% 7%); background: var(--win); color: var(--win-ink); font-family: var(--display); font-size: var(--fs-brand); font-weight: 800; }
+.membersheet__avatar--inline { width: 32px; height: 32px; font-size: var(--fs-small); }
+.membersheet__account { display: flex; align-items: center; gap: 8px; }
+
+/* List rows: a 28 px cookie portrait before the name. */
+.memberlist__lead { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.memberlist__lead > :last-child { flex: 1 1 auto; min-width: 0; }
+.memberlist__av { display: grid; flex: none; width: 28px; height: 28px; place-items: center; clip-path: polygon(50% 0%, 75% 7%, 93% 25%, 100% 50%, 93% 75%, 75% 93%, 50% 100%, 25% 93%, 7% 75%, 0% 50%, 7% 25%, 25% 7%); background: var(--win); color: var(--win-ink); font-family: var(--display); font-size: var(--fs-micro); font-weight: 800; }
+.memberlist__row--active .memberlist__lead { align-items: flex-start; }
+.memberlist__row--active .memberlist__av { margin-top: 8px; }
+// Phones give the name column every pixel (125% text included); the sheet
+// still shows the portrait.
+@media (max-width: 599px), (max-height: 500px) {
+  .memberlist__av { display: none; }
+}
+
+.membersheet__close.btn {
+  flex: none;
+  justify-content: center;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+}
+.membersheet__close.btn:hover { background: var(--row-hover); }
+
+.membersheet__content { display: flex; flex-direction: column; gap: 16px; padding: 14px 16px; }
+
+.membersheet__grid { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 10px 12px; align-items: baseline; margin: 0; font-size: var(--fs-small); line-height: 1.3; }
+// Mono overlines in the phone dialog too (the side pane's come from the primitives).
+.membersheet__grid dt { color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; }
+.membersheet__grid dd { min-width: 0; margin: 0; }
+.membersheet__count { font-size: var(--fs-lg); font-weight: 700; line-height: 1; }
+.membersheet__grid .note { font-size: var(--fs-mini); }
+.membersheet__section { display: flex; flex-direction: column; gap: 6px; }
+.membersheet__section > * { margin: 0; }
+.membersheet__section .note { font-size: var(--fs-small); line-height: 1.3; }
+.membersheet__section .field { margin: 0; }
+.membersheet__label { color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.12em; line-height: 1.3; text-transform: uppercase; }
+.membersheet__section .seg { display: inline-flex; align-self: flex-start; }
+.membersheet__section .seg .seg__btn { min-height: 34px; padding: 0 14px; }
+.membersheet__aliases { display: flex; flex-wrap: wrap; gap: 5px; }
+.membersheet__alias { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 1px 0 10px; border-radius: 13px; background: var(--seg-fill); font-family: var(--mono); font-size: var(--fs-mini); font-weight: 500; }
+// The board's "×": a 24px round target inside the chip, 44px where the pointer is a finger.
+.membersheet__alias-remove { display: inline-grid; place-items: center; width: 24px; height: 24px; min-height: 0; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--dim-text); font-size: 13px; cursor: pointer; }
+.membersheet__alias-remove:hover:not(:disabled) { background: var(--row-hover); color: var(--ink); }
+.membersheet__alias-remove:focus-visible { border-radius: 50%; outline-offset: 0; }
+.membersheet__alias-remove:disabled { cursor: default; opacity: 0.5; }
+@media (pointer: coarse) {
+  .membersheet__aliases { gap: 6px; }
+  .membersheet__alias { min-height: 44px; padding-left: 14px; border-radius: 22px; }
+  .membersheet__alias-remove { width: 44px; height: 44px; }
+}
+.membersheet__alias-form { display: flex; gap: 6px; margin: 0; }
+.membersheet__alias-form input { flex: 1 1 auto; min-width: 0; font-size: var(--fs-small); }
+
+.membersheet__runs { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.membersheet__run { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0 12px; border-radius: 4px; background: var(--row); font-size: var(--fs-body); }
+.membersheet__run:first-child { border-top-left-radius: 14px; border-top-right-radius: 14px; }
+.membersheet__run:last-child { border-bottom-left-radius: 14px; border-bottom-right-radius: 14px; }
+.membersheet__run--past { color: var(--dim-text); }
+.membersheet__when { flex: none; font-weight: 600; }
+.membersheet__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.membersheet__answer { margin-left: auto; font-size: var(--fs-mini); }
+.membersheet__answer--yes { color: var(--ok-text); }
+.membersheet__answer--waiting,
+.membersheet__answer--maybe { color: var(--warn-text); }
+.membersheet__answer--no { color: var(--dim-text); }
+.membersheet__notice { margin: 0; color: var(--ok-text); font-size: var(--fs-small); }
+.membersheet__notice:empty { margin-top: -16px; }
+
+@media #{$single-pane} {
+  dialog.modal--narrow.membersheet { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; }
+  dialog.membersheet .modal__panel { min-height: 100dvh; }
+  dialog.membersheet .membersheet__content { padding: 0; }
+  .members-window__search { flex: 1 1 auto; width: auto; margin-left: 0; }
+  .members-window__search input { width: 100%; }
+  .members-window__head { flex-wrap: wrap; }
+  .members-window__body { overflow: auto; }
+  .members-roster { min-height: auto; }
+  .memberlist { overflow: visible; }
+}
+
+// Phones: no reply-style column, so the roster never scrolls sideways.
+@media (max-width: 599px) {
+  .memberlist__columns,
+  .memberlist__row { grid-template-columns: minmax(0, 1fr) 3.75rem 5.25rem; gap: 8px; }
+  .memberlist__columns { white-space: nowrap; }
+  .memberlist__columns > :nth-child(4),
+  .memberlist__style { display: none; }
+}

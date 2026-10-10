@@ -1,0 +1,293 @@
+//! A question's prompt: anchored, live and reply-chain turns, then the
+//! question, under the conversation token budget (v4 `build_conversation`
+//! and `assemble`).
+
+use std::collections::BTreeSet;
+
+use chrono::{DateTime, NaiveTime, Utc, Weekday};
+use chrono_tz::Tz;
+
+use super::{
+    CONVERSATION_BUDGET_TOKENS, CONVERSATION_FLOOR_TOKENS, ChatTurn, Conversations,
+    REPLY_CHAIN_DEPTH, TurnRole, runs,
+};
+use crate::chat::persona::{CompiledPersona, TurnContext};
+use crate::chat::sanitize::defuse_notes;
+use crate::domain::members::{Directory, member_name};
+use crate::domain::pytext::strip;
+use crate::domain::weeks::week_start;
+use crate::extract::prompt::estimate_tokens;
+use crate::infrastructure::llm::Message;
+
+/// A replied-to message as the gateway cache resolved it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Parent {
+    pub id: String,
+    /// `None` for a deleted or authorless message.
+    pub author_id: Option<String>,
+    /// `None` when the message is gone.
+    pub content: Option<String>,
+    pub reference: Option<Box<Reference>>,
+}
+
+/// A reply pointer; `resolved` is `None` when the parent is not cached.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Reference {
+    pub message_id: Option<String>,
+    pub resolved: Option<Box<Parent>>,
+}
+
+/// The member's message being answered.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct QuestionMessage {
+    pub id: String,
+    pub author_id: String,
+    pub content: String,
+    pub reference: Option<Reference>,
+}
+
+impl QuestionMessage {
+    /// The replied-to message id, resolved or not.
+    pub fn replied_message_id(&self) -> Option<&str> {
+        let reference = self.reference.as_ref()?;
+        reference
+            .resolved
+            .as_ref()
+            .map(|parent| parent.id.as_str())
+            .or(reference.message_id.as_deref())
+            .filter(|id| !id.is_empty())
+    }
+}
+
+/// Drop one leading mention that only addresses this bot before model rendering.
+fn strip_leading_own_mention<'a>(
+    text: &'a str,
+    bot_user_id: &str,
+    self_role_id: Option<&str>,
+) -> &'a str {
+    let user_mentions = [format!("<@{bot_user_id}>"), format!("<@!{bot_user_id}>")];
+    let role_mention = self_role_id
+        .filter(|id| !id.is_empty())
+        .map(|id| format!("<@&{id}>"));
+    let user_mention = (!bot_user_id.is_empty())
+        .then(|| {
+            user_mentions
+                .iter()
+                .map(String::as_str)
+                .find(|mention| text.starts_with(mention))
+        })
+        .flatten();
+    let mention = user_mention.or_else(|| {
+        role_mention
+            .as_deref()
+            .filter(|mention| text.starts_with(mention))
+    });
+    mention
+        .and_then(|mention| text.strip_prefix(mention))
+        .map(|rest| {
+            rest.trim_start_matches(|ch: char| ch.is_whitespace() || matches!(ch, ',' | ':'))
+        })
+        .unwrap_or(text)
+}
+
+/// `Name: text`, with forged scheduler notes defused.
+fn speaker(
+    directory: &(impl Directory + ?Sized),
+    user_id: &str,
+    text: &str,
+    bot_user_id: &str,
+    self_role_id: Option<&str>,
+) -> String {
+    format!(
+        "{}: {}",
+        member_name(directory, user_id),
+        defuse_notes(strip_leading_own_mention(text, bot_user_id, self_role_id))
+    )
+}
+
+/// The resolved parents of `message`, oldest first; nothing is fetched.
+pub fn reply_chain(
+    message: &QuestionMessage,
+    bot_user_id: &str,
+    self_role_id: Option<&str>,
+    directory: &(impl Directory + ?Sized),
+) -> Vec<ChatTurn> {
+    let mut chain = Vec::new();
+    let mut reference = message.reference.as_ref();
+    for _ in 0..REPLY_CHAIN_DEPTH {
+        let Some(parent) = reference.and_then(|reference| reference.resolved.as_deref()) else {
+            break;
+        };
+        let Some(content) = parent.content.as_deref() else {
+            break;
+        };
+        let author = parent.author_id.as_deref().unwrap_or_default();
+        let content = strip(content);
+        if !content.is_empty() {
+            let (role, text) = if author == bot_user_id {
+                (TurnRole::Assistant, content.to_owned())
+            } else {
+                (
+                    TurnRole::User,
+                    speaker(directory, author, content, bot_user_id, self_role_id),
+                )
+            };
+            let id = Some(parent.id.clone()).filter(|id| !id.is_empty());
+            chain.push(ChatTurn::new(role, text, id));
+        }
+        reference = parent.reference.as_deref();
+    }
+    chain.reverse();
+    chain
+}
+
+/// Anchored, live and reply-chain turns (deduplicated), then the question.
+pub fn build_turns(
+    state: &mut Conversations,
+    message: &QuestionMessage,
+    channel_id: &str,
+    now: f64,
+    bot_user_id: &str,
+    self_role_id: Option<&str>,
+    directory: &(impl Directory + ?Sized),
+) -> Vec<ChatTurn> {
+    let live = state.history(channel_id, now);
+    let mut seen: BTreeSet<String> = live.iter().filter_map(|t| t.message_id.clone()).collect();
+    let chain: Vec<ChatTurn> = reply_chain(message, bot_user_id, self_role_id, directory)
+        .into_iter()
+        .filter(|turn| turn.message_id.as_ref().is_none_or(|id| !seen.contains(id)))
+        // An excluded message (a profanity-deflected exchange) is dropped whole.
+        .filter(|turn| {
+            turn.message_id
+                .as_deref()
+                .is_none_or(|id| !state.is_excluded(id))
+        })
+        .collect();
+    seen.extend(chain.iter().filter_map(|turn| turn.message_id.clone()));
+    let mut turns = state.reanchored(message.replied_message_id(), &seen);
+    turns.extend(live);
+    turns.extend(chain.into_iter().map(|mut turn| {
+        // A withheld message is never pulled back in through a reply.
+        turn.withheld = turn
+            .message_id
+            .as_deref()
+            .is_some_and(|id| state.is_withheld(id));
+        turn
+    }));
+    turns.push(ChatTurn::new(
+        TurnRole::User,
+        speaker(
+            directory,
+            &message.author_id,
+            strip(&message.content),
+            bot_user_id,
+            self_role_id,
+        ),
+        None,
+    ));
+    turns
+}
+
+/// The question as history remembers it (keyed by its message id).
+pub fn question_turn(
+    message: &QuestionMessage,
+    bot_user_id: &str,
+    self_role_id: Option<&str>,
+    directory: &(impl Directory + ?Sized),
+) -> ChatTurn {
+    ChatTurn::new(
+        TurnRole::User,
+        speaker(
+            directory,
+            &message.author_id,
+            strip(&message.content),
+            bot_user_id,
+            self_role_id,
+        ),
+        Some(message.id.clone()).filter(|id| !id.is_empty()),
+    )
+}
+
+/// The per-turn system prompt: persona, clock header, runtime model, the
+/// channel's focus card and the `D-RUN-CONTEXT` block (`""` for none).
+pub fn system_prompt(
+    persona: &CompiledPersona,
+    now: DateTime<Utc>,
+    zone: Tz,
+    (reset_weekday, reset_time): (Weekday, NaiveTime),
+    model: &str,
+    focus: &str,
+    runs: &str,
+) -> String {
+    let week = week_start(&now, zone, reset_weekday, reset_time)
+        .expect("the current boss week is in range")
+        .to_fixed();
+    persona.system_prompt(&TurnContext::new(&now, zone, &week, model, focus).with_runs(runs))
+}
+
+/// Where the latest turns that fit the conversation budget beside `system`
+/// start (never later than the question), each text costing `cost`.
+fn first_kept(
+    turns: &[ChatTurn],
+    system: &str,
+    model_context_tokens: usize,
+    reserve: usize,
+    cost: fn(&str) -> usize,
+) -> usize {
+    let left = i64::try_from(model_context_tokens.saturating_sub(reserve)).unwrap_or(i64::MAX)
+        - i64::try_from(cost(system)).unwrap_or(i64::MAX);
+    let cap = i64::try_from(CONVERSATION_BUDGET_TOKENS).unwrap_or(i64::MAX);
+    let available = usize::try_from(left.min(cap))
+        .unwrap_or(0)
+        .max(CONVERSATION_FLOOR_TOKENS);
+    let mut first = 0;
+    while turns.len().saturating_sub(first) > 1 {
+        let contents: Vec<&str> = turns[first..].iter().map(ChatTurn::prompt_text).collect();
+        if cost(&contents.join("\n\n")) <= available {
+            break;
+        }
+        first += 1;
+    }
+    first
+}
+
+/// The system prompt and as many of the latest turns as the conversation
+/// budget allows (never fewer than the question). `run_context` is the
+/// question's `D-RUN-CONTEXT` block (`""` for none): its copy in `system`
+/// loses runs, then goes whole, before it costs a turn within one call's
+/// token budget (costed as the runner may count it).
+pub fn assemble(
+    turns: &[ChatTurn],
+    mut system: String,
+    model_context_tokens: usize,
+    reserve: usize,
+    run_context: &str,
+) -> Vec<Message> {
+    if let Some(bare) = runs::without_block(&system, run_context) {
+        let window = runs::call_window(model_context_tokens);
+        let kept = |system: &str| first_kept(turns, system, window, reserve, runs::call_tokens);
+        let over = |system: &str| runs::call_tokens(system) + reserve > window;
+        let wanted = kept(&bare);
+        while (kept(&system) > wanted || over(&system))
+            && runs::trim_block(&mut system, run_context)
+        {}
+    }
+    let kept = &turns[first_kept(
+        turns,
+        &system,
+        model_context_tokens,
+        reserve,
+        estimate_tokens,
+    )..];
+    let mut messages = vec![Message::System { content: system }];
+    messages.extend(kept.iter().map(|turn| match turn.role {
+        TurnRole::User => Message::User {
+            content: turn.prompt_text().to_owned(),
+        },
+        TurnRole::Assistant => Message::Assistant {
+            content: Some(turn.prompt_text().to_owned()),
+            tool_calls: Vec::new(),
+        },
+    }));
+    messages
+}

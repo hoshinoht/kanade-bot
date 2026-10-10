@@ -1,0 +1,786 @@
+// The dropdown (Select.svelte, MultiSelect.svelte, SelectList.svelte; boards
+// P_Select, P_SelectSpec, P_SelectPhone, P_Faces): one pill trigger in three
+// sizes and a rounded listbox popover in the top layer, placed through CSSOM
+// custom properties. Selectors carry two classes where the base `.btn`,
+// `select`, `.filters` and `.field > span` rules would otherwise reshape them.
+@use "easing" as *;
+@use "motion-query" as *;
+
+$cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 11.7%, 85.9% 17.7%, 87.7% 24.6%, 90.9% 30.1%, 95.9% 35.1%, 99.2% 41.3%, 98.2% 48.3%, 95.2% 54.8%, 94.1% 61%, 94.8% 68.1%, 93.3% 75%, 88% 79.7%, 81.6% 82.7%, 76.7% 86.8%, 72.7% 92.6%, 67.1% 97%, 60% 97.2%, 53.2% 95.4%, 46.8% 95.4%, 40% 97.2%, 32.9% 97%, 27.3% 92.6%, 23.3% 86.8%, 18.4% 82.7%, 12% 79.7%, 6.7% 75%, 5.2% 68.1%, 5.9% 61%, 4.8% 54.8%, 1.8% 48.3%, 0.8% 41.3%, 4.1% 35.1%, 9.1% 30.1%, 12.3% 24.6%, 14.1% 17.7%, 17.9% 11.7%, 24.4% 9.1%, 31.5% 8.5%, 37.5% 6.3%, 43.3% 2.2%);
+
+/* ── trigger (board `.dd`) ─────────────────────────────────────────────── */
+
+.ddw.ddw {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 5px;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+
+.ddw.ddw--field {
+  display: flex;
+  width: 100%;
+}
+
+.dd.dd {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+  height: 36px;
+  min-height: 0;
+  margin: 0;
+  padding: 0 10px 0 14px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  color: var(--ink);
+  font: 500 13px var(--body);
+  letter-spacing: normal;
+  text-align: start;
+  text-transform: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 150ms,
+    border-radius 300ms $standard,
+    box-shadow 150ms;
+}
+
+.dd.dd:hover:not(:disabled, .dd--off, .dd--set, .dd--open, .dd--tbar) {
+  background: var(--row-hover);
+}
+
+.dd.dd:active:not(:disabled, .dd--off) {
+  border-radius: 10px;
+}
+
+.dd.dd:active:not(:disabled, .dd--off, .dd--set, .dd--tbar) {
+  background: color-mix(in srgb, var(--accent) 14%, var(--row));
+}
+
+.dd.dd:focus-visible,
+.ddw--native .dd:has(.dd__native:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.dd.dd:disabled,
+.dd.dd--off {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+// The overline inside the pill ("bar", "tbar"); a span, so `.field > span` must not restyle it.
+.dd .dd__label.dd__label {
+  display: inline;
+  flex: none;
+  padding: 0;
+  color: var(--dim-text);
+  font: 600 10px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dd .dd__value {
+  overflow: hidden;
+  flex: 0 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.dd--empty .dd__value {
+  color: var(--dim-text);
+  font-weight: 500;
+}
+
+.dd__chev {
+  display: inline-flex;
+  flex: none;
+  margin-left: auto;
+  transition: transform 200ms $standard;
+}
+
+.dd__chev .icon {
+  width: 14px;
+  height: 14px;
+}
+
+// Filtering: tonal, so a chosen value reads apart from the default.
+.dd.dd--set {
+  background: var(--select);
+  box-shadow: inset 0 0 0 1.5px var(--select-edge);
+}
+
+.dd--set .dd__value {
+  color: var(--select-ink);
+}
+
+.dd.dd--open {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.dd--open .dd__chev {
+  transform: rotate(180deg);
+}
+
+// Form field: 40 px, full width, label outside; an error is a 2 px risk ring plus words.
+.dd.dd--field {
+  justify-content: space-between;
+  width: 100%;
+  min-width: 10rem;
+  height: 40px;
+  border-radius: 20px;
+}
+
+.dd.dd--field .dd__value {
+  font-weight: 500;
+}
+
+.dd.dd--bad,
+.dd.dd--bad.dd--open {
+  box-shadow: inset 0 0 0 2px var(--risk);
+}
+
+.dd-error.dd-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  color: var(--risk-text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.dd-error .icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+}
+
+// On a window's title bar: 32 px, outlined in --win-ink at 45%; open or filtering fills with it.
+.dd.dd--tbar {
+  height: 32px;
+  border-radius: 16px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--win-ink) 45%, transparent);
+  color: var(--win-ink);
+}
+
+.dd--tbar .dd__label.dd__label {
+  color: inherit;
+}
+
+.dd.dd--tbar:hover:not(:disabled, .dd--off, .dd--set, .dd--open) {
+  background: color-mix(in srgb, var(--win-ink) 12%, transparent);
+}
+
+.dd.dd--tbar.dd--open,
+.dd.dd--tbar.dd--set {
+  background: var(--win-ink);
+  box-shadow: none;
+  color: var(--win);
+}
+
+.dd--tbar.dd--set .dd__value {
+  color: var(--win);
+}
+
+.dd.dd--tbar:focus-visible,
+.ddw--native .dd--tbar:has(.dd__native:focus-visible) {
+  outline-color: var(--win-ink);
+}
+
+// The log filters' Dates trigger on a title bar takes the same inline look (P_SelectSpec).
+.card__head .datepick-trigger.datepick-trigger {
+  height: 32px;
+  border-radius: 16px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--win-ink) 45%, transparent);
+  color: var(--win-ink);
+}
+
+.card__head .datepick-trigger .datepick-trigger__label,
+.card__head .datepick-trigger .datepick-trigger__value {
+  color: inherit;
+}
+
+.card__head .datepick-trigger.datepick-trigger:hover:not(:disabled, .datepick-trigger--set, .datepick-trigger--open) {
+  background: color-mix(in srgb, var(--win-ink) 12%, transparent);
+}
+
+.card__head .datepick-trigger.datepick-trigger--set,
+.card__head .datepick-trigger.datepick-trigger--open {
+  background: var(--win-ink);
+  box-shadow: none;
+  color: var(--win);
+}
+
+.card__head .datepick-trigger.datepick-trigger:focus-visible {
+  outline: 2px solid var(--win-ink);
+  outline-offset: 2px;
+}
+
+// Phones: the drawn pill with the real select stretched, unseen, over it.
+.ddw--native .dd.dd--bar,
+.ddw--native .dd.dd--field {
+  height: 44px;
+  padding: 0 12px 0 16px;
+  border-radius: 22px;
+  font-size: 14px;
+}
+
+.dd .dd__native.dd__native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  box-shadow: none;
+  color: transparent;
+  font-size: 16px;
+  opacity: 0;
+  appearance: none;
+  cursor: pointer;
+}
+
+.dd .dd__native:disabled {
+  cursor: not-allowed;
+}
+
+/* ── popover (board `.pop`) ────────────────────────────────────────────── */
+
+.dd-pop.dd-pop {
+  position: fixed;
+  inset: auto;
+  top: var(--dd-top, 8px);
+  left: var(--dd-left, 8px);
+  box-sizing: border-box;
+  width: clamp(300px, var(--dd-min, 300px), 360px);
+  max-width: calc(100vw - 16px);
+  max-height: var(--dd-max, 440px);
+  margin: 0;
+  padding: 6px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 1.5px var(--line),
+    0 18px 36px -16px rgb(0 0 0 / 0.45);
+  color: var(--ink);
+  font-family: var(--body);
+  text-align: start;
+  white-space: normal;
+}
+
+.dd-pop:popover-open {
+  display: flex;
+  flex-direction: column;
+  animation: dd-drop 180ms $standard;
+}
+
+.dd-pop.dd-pop--up:popover-open {
+  animation-name: dd-rise;
+}
+
+.dd-pop.dd-pop--field {
+  width: max(200px, var(--dd-min, 200px));
+}
+
+// Title-bar lists are narrower (P_Select's Kind, P_SelectSpec's Week) unless they search.
+.dd-pop.dd-pop--tbar:not(:has(.dd-search)) {
+  width: clamp(260px, var(--dd-min, 260px), 340px);
+}
+
+.dd-pop.dd-pop--multi {
+  width: clamp(300px, var(--dd-min, 300px), 360px);
+}
+
+.dd-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  outline: none;
+}
+
+.dd-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dd-group__label {
+  padding: 10px 10px 4px;
+  color: var(--dim-text);
+  font: 600 10px var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.dd-opt {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  min-height: 40px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    border-radius 300ms $standard;
+}
+
+.dd-opt:hover {
+  background: var(--row-hover);
+}
+
+.dd-opt.dd-opt--act {
+  background: var(--row-hover);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.dd-opt.dd-opt--sel {
+  border-radius: 20px;
+  background: var(--select);
+  color: var(--select-ink);
+  font-weight: 700;
+}
+
+.dd-opt.dd-opt--on {
+  font-weight: 600;
+}
+
+.dd-opt.dd-opt--dis {
+  background: transparent;
+  color: var(--dim-text);
+  cursor: not-allowed;
+}
+
+.dd-opt--dis .dd-opt__label {
+  text-decoration: line-through;
+}
+
+.dd-opt__text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dd-opt__label {
+  overflow-wrap: anywhere;
+}
+
+.dd-opt__label mark {
+  background: transparent;
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+}
+
+.dd-opt__sub {
+  color: var(--dim-text);
+  font: 400 11.5px var(--mono);
+}
+
+.dd-opt--sel .dd-opt__sub {
+  color: var(--select-ink);
+}
+
+.dd-opt__check {
+  display: inline-flex;
+  flex: none;
+}
+
+.dd-opt__check .icon,
+.dd-lead .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.dd-lead {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--dim-text);
+}
+
+.dd-mono {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--win);
+  color: var(--win-ink);
+  font: 700 12px var(--display);
+  clip-path: $cookie;
+}
+
+.dd-opt--dis .dd-mono {
+  opacity: 0.5;
+}
+
+// Multi rows: a square box, filled when on.
+.dd-box {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1.5px var(--dim-text);
+}
+
+.dd-box .icon {
+  width: 13px;
+  height: 13px;
+  stroke-width: 3;
+}
+
+.dd-opt--on .dd-box,
+.dd-check:has(input:checked) .dd-box {
+  background: var(--accent-fill);
+  box-shadow: none;
+  color: var(--accent-ink);
+}
+
+.dd-opt--dis .dd-box,
+.dd-check--dis .dd-box {
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+// Search (above 10 options): focus sits here and the arrows still drive the list.
+.dd-search.dd-search {
+  display: flex;
+  font-size: 13.5px;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  margin: 0 0 6px;
+  padding: 0 12px;
+  border-radius: 20px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  color: var(--dim-text);
+}
+
+.dd-search:focus-within {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.dd-search .icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+
+.dd-search.dd-search input,
+.dd-search.dd-search input:focus {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink);
+  font: 500 13.5px var(--body);
+  outline: none;
+}
+
+.dd-search input::placeholder {
+  color: var(--dim-text);
+  opacity: 1;
+}
+
+.dd-empty.dd-empty {
+  margin: 0;
+  padding: 18px 10px;
+  color: var(--dim-text);
+  font-size: 13px;
+  text-align: center;
+}
+
+.dd-empty b {
+  display: block;
+  color: var(--ink);
+}
+
+.dd-link.dd-link {
+  min-height: 24px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--accent-text);
+  font: 600 12.5px var(--body);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.dd-link.dd-link[aria-disabled="true"] {
+  color: var(--dim-text);
+  text-decoration: none;
+  cursor: default;
+}
+
+.dd-foot,
+.dd-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 2px;
+  color: var(--dim-text);
+  font-size: 11.5px;
+}
+
+.dd-head {
+  padding: 4px 6px 6px 10px;
+}
+
+.dd-picks {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.dd-foot--multi {
+  margin-top: 6px;
+  padding: 8px 6px 2px 10px;
+  border-top: 1.5px solid var(--line);
+}
+
+.dd-foot--multi b {
+  color: var(--ink);
+}
+
+.dd-done.dd-done {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  min-height: 0;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--accent-fill);
+  box-shadow: none;
+  color: var(--accent-ink);
+  font: 700 13px var(--body);
+  cursor: pointer;
+}
+
+.dd-done:focus-visible,
+.dd-link:focus-visible,
+.dd-sheet__close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── phone sheet (multi only, P_SelectPhone note) ──────────────────────── */
+
+.dd-sheet.dd-sheet {
+  position: fixed;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0;
+  padding: 8px 16px max(16px, env(safe-area-inset-bottom));
+  border: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--body);
+}
+
+.dd-sheet[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: dd-rise-sheet 260ms $standard;
+}
+
+.dd-sheet::backdrop {
+  background: rgb(0 0 0 / 0.38);
+}
+
+.dd-sheet__head {
+  display: flex;
+  align-items: center;
+}
+
+.dd-sheet__head h2 {
+  flex: 1 1 auto;
+  margin: 0;
+  font: 700 17px var(--display);
+}
+
+.dd-sheet__close.dd-sheet__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.dd-sheet__close .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.dd-sheet .dd-head {
+  padding: 0 0 4px;
+  font-size: 13px;
+}
+
+.dd-sheet .dd-link {
+  min-height: 44px;
+  font-size: 14px;
+}
+
+.dd-sheet__list.dd-sheet__list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  border: 0;
+}
+
+.dd-check {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 4px 12px;
+  border-radius: 12px;
+  background: var(--row);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.dd-check:has(input:checked) {
+  font-weight: 600;
+}
+
+.dd-check:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.dd-check.dd-check--dis {
+  color: var(--dim-text);
+  cursor: not-allowed;
+}
+
+// The real checkbox covers the row unseen, so the whole row is its hit area.
+.dd-check.dd-check input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.dd-done.dd-done--sheet {
+  flex: none;
+  height: 48px;
+  border-radius: 24px;
+  font-size: 15px;
+}
+
+/* ── motion ───────────────────────────────────────────────────────────── */
+
+@keyframes dd-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes dd-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes dd-rise-sheet {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+}
+
+@keyframes dd-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+// Reduced motion: a 120 ms fade only; the chevron and shapes change at once.
+@include motion-reduce {
+  // Wins over _motion's blanket 0.001ms: the spec keeps this one opacity-only fade.
+  .dd-pop:popover-open,
+  .dd-pop.dd-pop--up:popover-open,
+  .dd-sheet[open] {
+    animation: dd-fade 120ms linear;
+    animation-duration: 120ms !important;
+  }
+
+  .dd.dd,
+  .dd__chev,
+  .dd-opt {
+    transition: none;
+  }
+}

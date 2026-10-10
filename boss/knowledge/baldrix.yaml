@@ -1,17 +1,266 @@
 boss: Baldrix
-summary: Keep all three local room gauges low before each forced rotation; any Magic Encroachment gained is permanent and 1000 ends the run.
+summary: Magic Erosion is permanent and 1000 ends the run, so keep room gauges low through the forced rotations of Phases 1-2, avoid Magic Marks, and burn off Squeezing Magic with afterimages in Phase 3.
+lead: Magic Erosion never falls and 1000 ends the run. Keep room gauges low, avoid Magic Marks, and burn Squeezing Magic on afterimages.
 core:
-- The party shares Magic Encroachment from 0-1000. Death adds Encroachment based on party size, and the meter never decreases.
-- Phases 1 and 2 split the party across three maps and force a rotation every 120 seconds.
-- Each map has a 0-1000 local gauge. Occupied rooms naturally drain it, empty rooms fill it, and getting hit adds gauge.
-- At each rotation, every room's local gauge is converted into permanent shared Magic Encroachment; higher gauges add progressively more.
+- title: Magic Erosion
+  text: Shared and permanent; 1000 fails the run. Deaths add 200 / 100 / 70 (solo / duo / trio).
+  detail: Magic Erosion (also called Encroachment) is shared, starts at 0, never goes down, and fails the run at 1000. A death adds 200 solo, 100 in a duo, or 70 in a trio.
+- title: Forced rotation
+  text: 'Every 120s in Phases 1-2 the bosses shift one room (A Baldrix, B Sleipnir, C Ancient God become A Sleipnir, B Ancient God, C Baldrix) and room gauges become Erosion.'
+  detail: 'Every 120s in Phases 1-2 the party is moved by force: the bosses shift one room, so rooms A, B and C holding Baldrix, Sleipnir and the Ancient God then hold Sleipnir, the Ancient God and Baldrix. Room gauges convert into Erosion: 20 at 250, 50 at 500, 70 at 750, 90 at 1000 per room.'
+- title: HP split
+  text: Roughly 26/28/46% across the phases.
+phases:
+- name: Phase 1 · Three rooms
+  group: Forced rotation
+  tag: room gauges
+  items:
+  - title: Join order
+    text: Join order, not the leader, sends players to Baldrix, Sleipnir or the Ancient God.
+    detail: 'Phase 1: party join order (not the leader) sends players to Baldrix, his steed Sleipnir (also called the Minion), or the Ancient God. Each room has a 0-1000 gauge that drains 12/10 per second while occupied, fills 8 per second while empty, and rises when you are hit. Solo and duo players get a portal (NPC/Gather key, 10s cooldown) to an empty room.'
+  - title: Room gauge
+    text: Drains 12/10/s while occupied, fills 8/s while empty, rises when you're hit.
+  - title: Portal
+    text: Solo and duo get one to an empty room (NPC/Gather, 10s cooldown).
+  - title: Room penalties
+    text: 'Above 750 a room''s penalty spreads to every room; at 1000 it worsens and sticks until the rotation.'
+  - title: Ancient God room
+    text: '+250 for two missed mirror shots in six; +500 once 4 (Normal) / 3 (Hard) rifts open. Close rifts early.'
+- name: Phase 2 · Three sides
+  group: Forced rotation
+  tag: personal gauge
+  items:
+  - title: Centre, East, West
+    text: Players split across the sides; no bind.
+  - title: Personal gauge
+    text: Decays 5/4/s. At 1000, gain Overflow and a permanent Magic Mark.
+  - title: Marks (trio)
+    text: 6/11/14 Marks copy extra patterns between sides.
+    detail: 'Phase 2 splits players across the Centre, East and West sides, and Baldrix cannot be bound. Your personal gauge decays 5/4 per second; reaching 1000 adds an Overflow stack and a permanent Magic Mark. In a trio, 3/6/8/10/12 Overflow converts to 50/100/150/200/250 Erosion at each swap, and Marks at 6/11/14 copy extra patterns between sides (the last tier also strengthens his Phase 3 Zone).'
+  - title: Magic Storm
+    text: 'Sweeps all three sides in turn; crouch it and warn the next side. Purple pillars/orbs: stand inside; blue: stay out.'
+    detail: 'Phase 2 Magic Storm sweeps the three sides in turn; crouch it, and its exit shows the side it reaches next. For the colour-coded pillar and orb patterns, the purple version is safe inside its area and the blue version generally has to be avoided; learn each tell rather than treating every purple effect alike.'
+  - title: No overflow
+    text: 'Never reaching 1000 all phase earns a shield that blocks the first Ragnarok''s +300.'
+- name: Phase 3 · Together
+  tag: Squeezing Magic
+  items:
+  - title: Squeezing Magic
+    text: Personal, +6/7/s. Take purple afterimages (from 300) to lower it.
+    detail: 'Phase 3 is fought together: personal Squeezing Magic rises 6/7 per second. From 300 his direct attacks leave purple afterimages, and taking an afterimage lowers the gauge. At 1000 it drops to 600 and starts Soul Execution.'
+  - title: At 1000
+    text: Drops to 600 and Soul Execution starts.
+  - title: Ragnarok
+    text: Every 125 s (MapleSEA v246). +300 Squeezing Magic to all; he is immune ~5s.
+    detail: Ragnarok, on a 125-second cooldown in Phase 3 (MapleSEA v246; not the 120 s room rotation), deals no damage but adds 300 Squeezing Magic to everyone while he is invulnerable for about 5s. HP is split roughly 26/28/46% across the phases.
+  - title: Soul Execution
+    text: 'His hits deal 100% HP until afterimages drain you to 0; never leave his Zone.'
+  - title: Pre-Ragnarok lull
+    text: 'No Triple Swing, Triad Thunder or Zone 10-20s before it; take afterimages then.'
+mechanics:
+- kind: scale
+  title: Room gauge at each rotation
+  bands:
+  - {label: Under 250 · no Erosion, span: 25, tone: safe}
+  - {label: 250+ · +20 Erosion, span: 25, tone: yellow}
+  - {label: 500+ · +50 Erosion, span: 25, tone: yellow}
+  - {label: '750+ · +70, penalty spreads', span: 25, tone: risk}
+  - {label: '1000 · +90, penalty sticks', span: 8, tone: red}
+  note: Per room, every 120s in Phases 1-2.
+- kind: zones
+  title: Phase 1 room penalties
+  zones:
+  - {name: Baldrix, sub: -25/30% FD off the weak point}
+  - {name: Sleipnir, sub: Corrupted zones 10% HP/s}
+  - {name: Ancient God, sub: 15/20% of damage shared}
+  note: Hit every room above 750; worse and stuck at 1000 until the rotation.
+- kind: ledger
+  title: Trio Overflow into Erosion
+  rows:
+  - {label: 3 Overflow, value: '+50', direction: down}
+  - {label: 6 Overflow, value: '+100', direction: down}
+  - {label: 8 Overflow, value: '+150', direction: down}
+  - {label: 10 Overflow, value: '+200', direction: down}
+  - {label: 12 Overflow, value: '+250', direction: down}
+  note: Added at each Phase 2 swap.
 danger:
-- Above 750 local gauge, each room gains an extra penalty.
-- Baldrix's room penalizes attacking from the wrong direction, the Minion room gains damaging edge zones, and the Ancient God room makes party members share a portion of each other's incoming damage.
-- A bad rotation permanently consumes run budget because shared Encroachment cannot be reduced.
+- title: Room penalties
+  text: Above 750 they spread to every room; at 1000 they worsen and stick.
+  detail: 'Above 750 a room''s penalty spreads to every room until it falls back; at 1000 it worsens and sticks until the rotation. Baldrix: hitting him away from the weak point costs 25/30% final damage. Sleipnir: corrupted zones deal 10% HP per second. Ancient God: 15/20% of the damage you take is shared onto allies.'
+- title: Soul Execution
+  text: His hits deal 100% HP until afterimages drain you to 0. Never leave his Zone.
+  detail: Soul Execution makes his direct attacks deal 100% HP until afterimages bring your gauge to 0 (or you die), and standing outside his Zone costs 100% HP per tick; reaching 1000 again while in it kills you through i-frames and revive skills.
+- title: Ancient God room
+  text: +250 for two missed mirror shots in six; +500 when 4 (N) / 3 (H) rifts open.
+  detail: The Ancient God room gains 250 if the mirror light fails to hit the possessed statue twice in six shots. It gains 500, and all rifts reset, once 4 rifts on Normal or 3 on Hard are fully open; a rift spawns every 10s and, left alone, the first is fully open after about 40s.
+- title: Magic Storm (Phase 2)
+  text: Sweeps all three sides in turn; crouch it. Purple pillars/orbs are safe inside, blue ones are not.
+  detail: Phase 2 Magic Storm passes through all three sides in turn (crouch it). In the pillar and orb patterns, step inside the purple area and keep out of the blue one; purple never means you may take a hit.
+- title: Sleipnir's chains
+  text: They can stun-lock you; keep Hero's Will or a stun cleanse ready.
 tips:
-- In a 3-player party, keep one player in each room so all three gauges naturally trend downward.
-- Call local gauge levels before the 120-second rotation and prioritize survival as the timer approaches.
-- Do not chase a little extra damage if taking hits will push a room over the next Encroachment threshold.
+- title: Call gauges
+  text: Before each rotation; stop trading gauge for damage near 250/500/750.
+  detail: Call room gauges and leftover bind resistance before each rotation, and stop trading gauge for damage near the 250/500/750 thresholds.
+- title: Zone and weak point
+  text: Fight in his Zone from the weak-point side. Immune ~5s after entry.
+  detail: Fight Baldrix inside his Zone and from the side his weak point shows; he cannot be damaged for about 5s after entry, and a Heavy Rainfall hit hides the weak point for a few seconds.
+- title: Close rifts early
+  text: Best while a statue is possessed; they cost 1, 2, then 3 stacks as they widen.
+  detail: Close Ancient God rifts early, mostly while a statue is possessed; they cost 1, 2 and then 3 attack stacks as they widen, stacks cap at 3, and you can close rifts mid-air.
+- title: Take afterimages
+  text: Especially before Ragnarok; call yours. The triple swing's removes most.
+  detail: In Phase 3, take afterimages on purpose to keep Squeezing Magic low, especially just before Ragnarok; call which afterimage you will take (the triple swing's removes the most).
+- title: Pre-Ragnarok lull
+  text: No Triple Swing, Triad Thunder or Zone 10-20s before it. Stay central.
+  detail: In Phase 3 he does not use Triple Swing, Triad Thunder or Zone in the 10-20s before Ragnarok. Stay near his centre and call Zone explosions and slowing flowers.
+- title: Under Soul Execution
+  text: Meet hits with damage reduction, a shield or i-frames.
+  detail: Under Soul Execution, meet any hit with damage reduction, a shield or i-frames, and never leave the Zone.
+notes:
+- title: Limits
+  text: 30 min now (20 after OVERDRIVE) · 10s potions.
+  detail: 30-minute limit in MapleSEA now (20 minutes after OVERDRIVE) and 10-second potion cooldown. Phases 1-2 keep players in separate rooms, so party buffs do not reach each other until Phase 3.
+- title: Separate rooms
+  text: Party buffs don't reach each other until Phase 3.
+- title: Talahart symbol Lv 11
+  text: +20% damage against him (MapleSEA v251).
+  detail: The Talahart Authentic Symbol at Growth Level 11 gives +20% damage against him (MapleSEA v251). MapleSEA names for the Phase 2-3 mechanics, the portal and the shield are unconfirmed.
+- title: Unconfirmed names
+  text: MapleSEA names for Phase 2-3 mechanics, the portal and shield.
+- title: Destiny Resolve per clear
+  text: Normal 150 · Hard 450, split among entrants.
+  detail: 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Normal 150, Hard 450.'
+difficulties:
+- name: Normal
+  entry_level: 290
+  boss_level: 290
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 700}
+  hp:
+  - {phase: '1', value: 2.379q}
+  - {phase: '2', value: 2.531q}
+  - {phase: '3', value: 4.145q}
+  recommended_spec:
+    kind: HEXA-converted stat
+    text: About 87k-92k for a full-timer minimum clear, depending on party composition (KMS release-era figures).
+    value: 87k-92k
+    basis: KMS release era
+  notes:
+  - title: After OVERDRIVE
+    text: HP ≈ 1.61q / 1.72q / 2.81q (≈ 6.14q), 20 min. SEA due Oct-Nov 2026.
+    detail: 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 1.61q / 1.72q / 2.81q (about 6.14q total), 20-minute limit.'
+- name: Hard
+  entry_level: 290
+  boss_level: 290
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 700}
+  hp:
+  - {phase: '1', value: 5.344q}
+  - {phase: '2', value: 5.685q}
+  - {phase: '3', value: 9.309q}
+  recommended_spec:
+    kind: HEXA-converted stat
+    text: About 108k-113k for a full-timer minimum trio clear, depending on party composition (KMS release-era figures); a duo needs about 115k or more and solo about 131k (KMS plus MapleSEA and MapleScouter research).
+    basis: KMS + MapleSEA, MapleScouter
+    parties:
+    - {party: Trio, value: 108k–113k}
+    - {party: Duo, value: ≈ 115k+}
+    - {party: Solo, value: ≈ 131k}
+  notes:
+  - title: After OVERDRIVE
+    text: HP ≈ 3.62q / 3.85q / 6.31q (≈ 13.8q), 20 min. SEA due Oct-Nov 2026.
+    detail: 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 3.62q / 3.85q / 6.31q (about 13.8q total), 20-minute limit.'
+- name: Destiny
+  entry_level: 290
+  party_max: 1
+  mission:
+    series: destiny-weapon
+    order: 6
+    title: Battle, Baldrix
+    modifier: {text: +30% damage taken, direction: down}
+    needs: 15,000 Adversary's Resolve
+    rules: [Practice Mode clears count, No Cross World]
+  notes:
+  - title: Hard, solo
+    text: The +30% includes %HP attacks (wiki). Last Destiny mission.
+    detail: 'Destiny Weapon 2nd Growth mission "Battle, Baldrix" (MapleSEA v252): Hard Baldrix solo in Destiny Mode taking 30% more damage (the wiki says this includes %HP attacks). The last mission; needs 15,000 Adversary''s Resolve. Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
+strategies:
+- name: P1 room split
+  when: Every party, set before entering.
+  risk: low
+  damage: low
+  payoff: Each player starts in the room that suits them.
+  steps:
+  - First to join goes to Baldrix, second to Sleipnir, third to the Ancient God; leave and rejoin to change the order. In a trio keep one player per room so every gauge drains.
+  - The split only lasts until the first 120 s rotation moves everyone on, so each player still learns every room.
+  - The Baldrix room needs steady uptime inside his Zone and on the weak-point side. Which room is hardest depends on player and class (the guide says Baldrix, KMS players say Sleipnir).
+  - The Sleipnir room wants a stun answer such as Hero's Will for chain stun-locks.
+  - The Ancient God room player keeps closing rifts and steers the mirror light onto the possessed statue.
+- name: Keep P2 mark-free
+  when: Parties that can dodge Phase 2 without overflowing; the guide encourages it.
+  risk: medium
+  damage: medium
+  payoff: A one-time shield that blocks the first Ragnarok's +300 in Phase 3.
+  steps:
+  - Never let your personal gauge reach 1000 in Phase 2; each overflow adds a permanent Magic Mark.
+  - Crouch Magic Storm and warn the next side; the storm's portal shows where it goes next.
+  - Identify each pillar or orb pattern by its tell, then stand inside the purple safe area and keep out of the blue one; never tank a hit because it is purple.
 sources:
-- https://mapletools.app/bosses/baldrix
+- url: https://docs.google.com/document/d/1uBXXBbUt86N2T67HY0dQrFjo7fbOthVrWBMWfUyi4NY/edit
+  title: MapleStory Complete Baldrix Guide
+  author: iSIingGunz
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v244_Patch_Notes/
+  title: MapleSEA v244 patch notes
+  author: Nexon (MapleSEA)
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.inven.co.kr/board/maple/2304/43143
+  title: Inven - Baldrix guide
+  author: Inven contributors
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://www.inven.co.kr/board/maple/2304/43145
+  title: Inven - Baldrix Phase 3 guide
+  author: Inven contributors
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://mapletools.app/bosses/baldrix/guide
+  title: MapleTools - Baldrix
+  author: MapleTools
+  kind: tool
+  fetched: '2026-10-02'
+- url: https://maplestorywiki.net/w/Baldrix/Monster
+  title: MapleStory Wiki - Baldrix
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v252_Content/
+  title: MapleSEA v252 content (Destiny Weapon 2nd Growth)
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-05'
+- url: https://maplestorywiki.net/w/Destiny_Weapon
+  title: MapleStory Wiki - Destiny Weapon
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-10-05'
+- url: https://www.maplesea.com/updates/view/v246_Patch1/
+  title: MapleSEA v246 patch notes (Ragnarok cooldown 125 s)
+  author: Nexon (MapleSEA)
+  kind: official
+  fetched: '2026-10-05'
+- url: https://www.inven.co.kr/board/maple/2304/43214
+  title: Inven - Baldrix Phase 2 guide, part 1
+  author: Inven contributors
+  kind: guide
+  fetched: '2026-10-05'
+- url: https://www.inven.co.kr/board/maple/2304/43216
+  title: Inven - Baldrix Phase 2 guide, part 2
+  author: Inven contributors
+  kind: guide
+  fetched: '2026-10-05'

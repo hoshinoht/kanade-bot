@@ -1,0 +1,352 @@
+//! The redesigned `/schedule` reply: one ink-blue embed titled with the
+//! scope (the channel itself, your runs or every run), a subtext summary
+//! of the boss week, then one field per day in the digest's run shape: a
+//! headline (state, guild-zone time, bosses) and a subtext line (the party
+//! by answer, a one-week stand-in, the run id). Names, never tags: the
+//! reply pings nobody. [`schedule_components`] lays the same parts out as
+//! Components V2 text displays inside one ink-blue container.
+
+use chrono::{DateTime, Datelike, TimeDelta, Utc};
+use chrono_tz::Tz;
+use twilight_model::channel::message::embed::{EmbedField, EmbedFooter};
+use twilight_model::channel::message::{Component, Embed};
+
+use crate::domain::attendance::{AnswerState, AttendanceMode, snapshot_states};
+use crate::domain::catalog::BossTable;
+use crate::domain::ids::short_id;
+use crate::domain::schedule::{Run, RunStatus, ScheduleSnapshot};
+
+use super::super::common::{local_day, local_time};
+use super::v2::{container, separator, text};
+use super::vocab::{DifficultyMarks, INK_BLUE, boss_labels, subtext};
+
+/// The footer with runs hidden, and without.
+pub const SCHEDULE_FOOTER_HIDDEN: &str =
+    "show_past:True for cleared runs · /amend to move · /swap for a stand-in";
+pub const SCHEDULE_FOOTER: &str = "/amend to move · /swap for a stand-in";
+
+/// Whose runs the reply shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScheduleScope<'a> {
+    /// The channel it was asked in, by name when known.
+    Channel(Option<&'a str>),
+    Mine,
+    All,
+}
+
+/// One `/schedule` answer before rendering.
+pub struct ScheduleWeek<'a> {
+    pub snapshot: &'a ScheduleSnapshot,
+    /// Every run in scope this boss week, past and cancelled included.
+    pub runs: &'a [&'a Run],
+    pub show_past: bool,
+    pub week_start: DateTime<Utc>,
+    pub next: bool,
+    pub scope: ScheduleScope<'a>,
+    pub zone: Tz,
+    pub attendance: AttendanceMode,
+    pub catalog: Option<&'a BossTable>,
+    pub marks: &'a DifficultyMarks,
+    /// Said when nothing in scope is left to show.
+    pub empty: &'a str,
+    /// Live runs past their end (frozen until settled): shown as ended,
+    /// never as still to go.
+    pub ended: &'a std::collections::BTreeSet<String>,
+}
+
+impl ScheduleWeek<'_> {
+    /// Still to come: live and not past its end.
+    fn to_go(&self, run: &Run) -> bool {
+        run.status.is_live() && !self.ended.contains(&run.id)
+    }
+}
+
+fn emoji(status: RunStatus) -> &'static str {
+    match status {
+        RunStatus::Done => "🏁",
+        RunStatus::Confirmed => "✅",
+        RunStatus::Planned => "⚠️",
+        RunStatus::AtRisk => "❗",
+        RunStatus::Otot => "🕒",
+        RunStatus::Cancelled => "🚫",
+    }
+}
+
+fn title(scope: ScheduleScope<'_>, next: bool) -> String {
+    let (cap, low) = if next {
+        ("Next", "next")
+    } else {
+        ("This", "this")
+    };
+    match scope {
+        ScheduleScope::Channel(Some(name)) => format!("{cap} boss week in #{name}"),
+        ScheduleScope::Channel(None) => format!("{cap} boss week in this channel"),
+        ScheduleScope::Mine => format!("Your runs {low} boss week"),
+        ScheduleScope::All => format!("Every run {low} boss week"),
+    }
+}
+
+/// `Thu 03 → Wed 09 Sep`, the month written once when both days share it.
+fn range(week_start: DateTime<Utc>, zone: Tz) -> String {
+    let last = week_start + TimeDelta::days(7) - TimeDelta::seconds(1);
+    let first_day = local_day(week_start, zone);
+    let last_day = local_day(last, zone);
+    let same_month = week_start.with_timezone(&zone).month() == last.with_timezone(&zone).month();
+    match first_day.rsplit_once(' ') {
+        Some((without_month, _)) if same_month => format!("{without_month} → {last_day}"),
+        _ => format!("{first_day} → {last_day}"),
+    }
+}
+
+/// `Thu 03 → Wed 09 Sep · 3 to go · 1 ended · 2 cleared (hidden)`.
+fn summary(week: &ScheduleWeek<'_>) -> String {
+    let count = |status: RunStatus| week.runs.iter().filter(|run| run.status == status).count();
+    let live = week.runs.iter().filter(|run| week.to_go(run)).count();
+    let ended = week
+        .runs
+        .iter()
+        .filter(|run| run.status.is_live() && week.ended.contains(&run.id))
+        .count();
+    let hidden = if week.show_past { "" } else { " (hidden)" };
+    let mut parts = vec![range(week.week_start, week.zone), format!("{live} to go")];
+    for (n, word) in [
+        (ended, "ended"),
+        (count(RunStatus::Done), "cleared"),
+        (count(RunStatus::Cancelled), "cancelled"),
+    ] {
+        if n > 0 {
+            parts.push(format!("{n} {word}{hidden}"));
+        }
+    }
+    parts.join(" · ")
+}
+
+/// This week's line-up against its weekly timing: `kanon standing in for
+/// Alvin`, or empty when unchanged (or a one-off).
+fn stand_in(week: &ScheduleWeek<'_>, run: &Run, name: &dyn Fn(&str) -> String) -> String {
+    let Some(fixed) = run
+        .fixed_run_id
+        .as_deref()
+        .and_then(|id| week.snapshot.fixed_runs.iter().find(|fixed| fixed.id == id))
+    else {
+        return String::new();
+    };
+    let list = |from: &[String], without: &[String]| -> String {
+        from.iter()
+            .filter(|user| !without.contains(user))
+            .map(|user| name(user))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let out = list(&fixed.participants, &run.participants);
+    let joined = list(&run.participants, &fixed.participants);
+    match (joined.is_empty(), out.is_empty()) {
+        (false, false) => format!("{joined} standing in for {out}"),
+        (false, true) => format!("{joined} joining this week"),
+        (true, false) => format!("{out} sitting out this week"),
+        (true, true) => String::new(),
+    }
+}
+
+/// The two lines of one run.
+fn run_lines(week: &ScheduleWeek<'_>, run: &Run, name: &dyn Fn(&str) -> String) -> String {
+    let when = if run.status == RunStatus::Otot {
+        "own time".to_owned()
+    } else {
+        format!("`{}`", local_time(run.datetime, week.zone))
+    };
+    let (mut in_, mut waiting, mut out) = (Vec::new(), Vec::new(), Vec::new());
+    for (user, state) in snapshot_states(week.snapshot, run, week.attendance) {
+        let who = name(&user);
+        match state {
+            AnswerState::Confirmed => in_.push(who),
+            AnswerState::Assumed(_) => in_.push(format!("{who} (assumed)")),
+            AnswerState::Unknown => waiting.push(who),
+            AnswerState::Declined => out.push(who),
+        }
+    }
+    let mut parts: Vec<String> = [("In", in_), ("Waiting", waiting), ("Out", out)]
+        .into_iter()
+        .filter(|(_, people)| !people.is_empty())
+        .map(|(word, people)| format!("{word} {}", people.join(", ")))
+        .collect();
+    let stand_in = stand_in(week, run, name);
+    if !stand_in.is_empty() {
+        parts.push(stand_in);
+    }
+    parts.push(format!("#{}", short_id(&run.id)));
+    format!(
+        "{} {when}  {}\n{}",
+        emoji(run.status),
+        boss_labels(&run.bosses, week.catalog, week.marks),
+        subtext(&format!("  {}", parts.join(" · ")))
+    )
+}
+
+/// What either rendering shows.
+struct Parts {
+    title: String,
+    description: String,
+    /// `(day, lines)` in time order.
+    days: Vec<(String, String)>,
+    footer: Option<&'static str>,
+}
+
+fn parts(week: &ScheduleWeek<'_>, name: &dyn Fn(&str) -> String) -> Parts {
+    let mut shown: Vec<&Run> = week
+        .runs
+        .iter()
+        .copied()
+        .filter(|run| week.show_past || week.to_go(run))
+        .collect();
+    shown.sort_by_key(|run| run.datetime);
+    let hidden = week.runs.len() - shown.len();
+    let mut description = subtext(&summary(week));
+    let mut days: Vec<(String, String)> = Vec::new();
+    for run in &shown {
+        let day = local_day(run.datetime, week.zone);
+        let lines = run_lines(week, run, name);
+        match days.last_mut() {
+            Some((heading, value)) if *heading == day => {
+                value.push('\n');
+                value.push_str(&lines);
+            }
+            _ => days.push((day, lines)),
+        }
+    }
+    let footer = match (shown.is_empty(), hidden > 0) {
+        (_, true) => Some(SCHEDULE_FOOTER_HIDDEN),
+        (false, false) => Some(SCHEDULE_FOOTER),
+        (true, false) => None,
+    };
+    if shown.is_empty() {
+        description.push('\n');
+        description.push_str(week.empty);
+    }
+    Parts {
+        title: title(week.scope, week.next),
+        description,
+        days,
+        footer,
+    }
+}
+
+/// The reply's embed; `name` is how a member is written.
+pub fn schedule_embed(week: &ScheduleWeek<'_>, name: &dyn Fn(&str) -> String) -> Embed {
+    let parts = parts(week, name);
+    Embed {
+        author: None,
+        color: Some(INK_BLUE),
+        description: Some(parts.description),
+        fields: parts
+            .days
+            .into_iter()
+            .map(|(name, value)| EmbedField {
+                inline: false,
+                name,
+                value,
+            })
+            .collect(),
+        footer: parts.footer.map(|text| EmbedFooter {
+            icon_url: None,
+            proxy_icon_url: None,
+            text: text.to_owned(),
+        }),
+        image: None,
+        kind: "rich".to_owned(),
+        provider: None,
+        thumbnail: None,
+        timestamp: None,
+        title: Some(parts.title),
+        url: None,
+        video: None,
+    }
+}
+
+/// The reply as one Components V2 container: the title and summary, a
+/// text display per day, the footer as subtext. The caller checks the
+/// budget and falls back to [`schedule_embed`].
+pub fn schedule_components(
+    week: &ScheduleWeek<'_>,
+    name: &dyn Fn(&str) -> String,
+) -> Vec<Component> {
+    let parts = parts(week, name);
+    let mut children = vec![text(format!("## {}\n{}", parts.title, parts.description))];
+    if !parts.days.is_empty() {
+        children.push(separator());
+    }
+    children.extend(
+        parts
+            .days
+            .into_iter()
+            .map(|(day, lines)| text(format!("### {day}\n{lines}"))),
+    );
+    if let Some(footer) = parts.footer {
+        children.push(separator());
+        children.push(text(subtext(footer)));
+    }
+    vec![container(INK_BLUE, children)]
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::TimeZone;
+
+    use super::*;
+
+    #[test]
+    fn the_range_names_the_month_once_when_it_can() {
+        let zone = chrono_tz::Asia::Kuala_Lumpur;
+        // Weeks starting Thursday 00:00 in the guild zone.
+        let thu = |month, day| Utc.with_ymd_and_hms(2026, month, day, 16, 0, 0).unwrap();
+        assert_eq!(range(thu(9, 2), zone), "Thu 03 → Wed 09 Sep");
+        assert_eq!(range(thu(9, 23), zone), "Thu 24 → Wed 30 Sep");
+        assert_eq!(range(thu(9, 30), zone), "Thu 01 → Wed 07 Oct");
+        assert_eq!(range(thu(10, 28), zone), "Thu 29 Oct → Wed 04 Nov");
+    }
+
+    #[test]
+    fn an_ended_run_is_not_to_go_and_is_hidden_with_the_past() {
+        let zone = chrono_tz::Asia::Kuala_Lumpur;
+        let week = Utc.with_ymd_and_hms(2026, 9, 2, 16, 0, 0).unwrap();
+        let run = |id: &str| Run {
+            id: id.into(),
+            fixed_run_id: None,
+            channel_id: None,
+            week_start: week,
+            datetime: week + TimeDelta::days(1),
+            bosses: vec!["Kalos".into()],
+            participants: vec!["1001".into()],
+            status: RunStatus::Planned,
+            source: crate::domain::schedule::RunSource::Amend,
+            attendance: Vec::new(),
+            status_pin: None,
+        };
+        let (open, over) = (run("r-open"), run("r-over"));
+        let runs = [&open, &over];
+        let snapshot = ScheduleSnapshot::default();
+        let ended = std::collections::BTreeSet::from(["r-over".to_owned()]);
+        let view = ScheduleWeek {
+            snapshot: &snapshot,
+            runs: &runs,
+            show_past: false,
+            week_start: week,
+            next: false,
+            scope: ScheduleScope::All,
+            zone,
+            attendance: AttendanceMode::V4Compat,
+            catalog: None,
+            marks: &super::super::NO_MARKS,
+            empty: "",
+            ended: &ended,
+        };
+        assert_eq!(
+            summary(&view),
+            "Thu 03 → Wed 09 Sep · 1 to go · 1 ended (hidden)"
+        );
+        // Only the open run is listed; the ended one is hidden with the past.
+        let shown = parts(&view, &|user: &str| user.to_owned());
+        assert_eq!(shown.days.len(), 1);
+        assert_eq!(shown.footer, Some(SCHEDULE_FOOTER_HIDDEN));
+    }
+}

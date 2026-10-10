@@ -1,0 +1,269 @@
+//! Rescan targets and jobs. `POST` only queues a job through the rescan port
+//! (the runner reads in its own task) and answers with it; `GET` polls it;
+//! `DELETE` cancels it and is safe to repeat. `POST` and `DELETE` honour
+//! `Idempotency-Key` (stored replays, scope `rescan`): a replay answers the
+//! recorded job's current state, the same key with another request is
+//! `422 idempotency_mismatch`.
+
+use std::sync::Arc;
+
+use axum::{
+    Json,
+    extract::{Path as UrlPath, State, rejection::JsonRejection},
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
+};
+use serde::Deserialize;
+
+use super::{Reply, state};
+use crate::api::admin::{limits::record_after_effect, replay::Keyed, write::Refusal};
+use crate::{
+    api::{
+        auth::AdminSession,
+        dto::{Named, rescan::job},
+        error::ApiError,
+        listeners::Site,
+        rescan::{RescanDesk, RescanView},
+        state::ApiState,
+    },
+    domain::history::Surface,
+    extract::rescan::{API_WINDOWS, RescanError, RescanRequest},
+    infrastructure::store::replays::{ReplayScope, StoredReplay},
+};
+
+use super::super::write::{bad_body, origin};
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RescanBody {
+    channels: Vec<String>,
+    window: String,
+}
+
+/// The 503's sentence when no rescan runner is composed (no extraction
+/// model), also the summary's `rescan_off` then.
+pub const RESCAN_UNAVAILABLE: &str =
+    "Re-reading is unavailable: this server runs no extractor (no extraction model is set up).";
+
+fn no_runner() -> Refusal {
+    Refusal::new(
+        StatusCode::SERVICE_UNAVAILABLE,
+        ApiError::UNAVAILABLE.error,
+        RESCAN_UNAVAILABLE,
+    )
+}
+
+fn desk(state: &ApiState) -> Result<&RescanDesk, Refusal> {
+    state.rescans.as_deref().ok_or_else(no_runner)
+}
+
+/// The `extraction_off` refusal's sentence, also the summary's `rescan_off`.
+pub const RESCAN_OFF: &str =
+    "Re-reading needs watching and the extractor switched on (Config → Watching).";
+
+/// Why a re-read would be refused right now, before anyone asks: no
+/// runner at all, or extraction switched off.
+pub fn off_note(state: &ApiState) -> Option<String> {
+    let Some(desk) = state.rescans.as_deref() else {
+        return Some(RESCAN_UNAVAILABLE.to_owned());
+    };
+    matches!(desk.runner.ready(), Err(RescanError::Off)).then(|| RESCAN_OFF.to_owned())
+}
+
+fn refused(error: RescanError) -> Refusal {
+    match error {
+        RescanError::NoChannels => Refusal::invalid("Choose at least one watched channel."),
+        RescanError::Window(_) => {
+            Refusal::invalid("Pick a window: this boss week, since reset or two weeks.")
+        }
+        RescanError::Off => Refusal::new(StatusCode::CONFLICT, "extraction_off", RESCAN_OFF),
+        RescanError::Closed | RescanError::Store(_) => ApiError::UNAVAILABLE.into(),
+    }
+}
+
+/// The stored job id a replayed key names.
+fn recorded_job(replay: &StoredReplay) -> Result<String, Refusal> {
+    serde_json::from_str::<serde_json::Value>(&replay.body)
+        .ok()
+        .and_then(|body| body["job_id"].as_str().map(str::to_owned))
+        .ok_or_else(|| ApiError::UNAVAILABLE.into())
+}
+
+fn channel_name(state: &ApiState) -> impl Fn(&str) -> String {
+    let channels = state.channels.channels();
+    move |id| {
+        channels
+            .iter()
+            .find(|channel| channel.id == id)
+            .map_or_else(|| id.to_owned(), |channel| channel.name.clone())
+    }
+}
+
+fn answer(state: &ApiState, view: &RescanView) -> Reply {
+    Ok(Json(job(view, channel_name(state))).into_response())
+}
+
+fn actor(session: &AdminSession) -> String {
+    format!("{}:{}", session.actor.kind(), session.actor.id())
+}
+
+/// Record the job a keyed write named. The job row is written by the
+/// runner in its own transaction, so this record follows it: a failed
+/// record leaves the job queued and the key unrecorded.
+async fn record(state: &ApiState, keyed: Option<Keyed>, job_id: &str) {
+    if let Some(keyed) = keyed {
+        let body = serde_json::json!({ "job_id": job_id });
+        record_after_effect(state, keyed.answered(StatusCode::OK, &body, state.now())).await;
+    }
+}
+
+/// The recorded job's current state for a replayed key.
+async fn replay(state: &ApiState, desk: &RescanDesk, job_id: &str) -> Reply {
+    match desk.runner.job(job_id.to_owned()).await.map_err(refused)? {
+        Some(view) => answer(state, &view),
+        None => Err(ApiError::NOT_FOUND.into()),
+    }
+}
+
+pub async fn targets(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
+    let state = state(&site)?;
+    let watched: Vec<Named> = state
+        .channels
+        .channels()
+        .into_iter()
+        .filter(|channel| channel.watched)
+        .map(|channel| Named {
+            id: channel.id,
+            name: channel.name,
+        })
+        .collect();
+    Ok(Json(watched).into_response())
+}
+
+pub async fn submit(
+    State(site): State<Arc<Site>>,
+    session: AdminSession,
+    headers: HeaderMap,
+    body: Result<Json<RescanBody>, JsonRejection>,
+) -> Reply {
+    let state = state(&site)?;
+    let key = origin(&session, &headers)?.request_id;
+    let Json(body) = body.map_err(bad_body)?;
+    let desk = desk(state)?;
+    let mut channels: Vec<String> = Vec::new();
+    for channel in body.channels {
+        if !channels.contains(&channel) {
+            channels.push(channel);
+        }
+    }
+    let mut sorted = channels.clone();
+    sorted.sort();
+    let actor = actor(&session);
+    // Held to the end, so a concurrent retry with this key replays this job.
+    let mut keyed = None;
+    let _held = match key {
+        Some(key) => {
+            let held = desk.lock().await;
+            let request = format!("rescan\u{1f}{}\u{1f}{}", body.window, sorted.join("\u{1f}"));
+            let this = Keyed::new(ReplayScope::Rescan, &session, key, &request);
+            if let Some(found) = this.recall(state.store.as_ref(), state.now()).await? {
+                return replay(state, desk, &recorded_job(&found)?).await;
+            }
+            keyed = Some(this);
+            Some(held)
+        }
+        None => None,
+    };
+
+    if !API_WINDOWS.contains(&body.window.as_str()) {
+        return Err(refused(RescanError::Window(
+            crate::extract::window::WindowError::Unknown {
+                window: body.window,
+            },
+        )));
+    }
+    if channels.is_empty() {
+        return Err(refused(RescanError::NoChannels));
+    }
+    let listed = state.channels.channels();
+    let unwatched: Vec<&String> = channels
+        .iter()
+        .filter(|id| {
+            !listed
+                .iter()
+                .any(|channel| &channel.id == *id && channel.watched)
+        })
+        .collect();
+    match unwatched.as_slice() {
+        [] => {}
+        [one] => {
+            let name = channel_name(state)(one);
+            return Err(Refusal::invalid(format!(
+                "{name} is not watched, so there is nothing to re-read."
+            )));
+        }
+        _ => return Err(Refusal::invalid("Choose only watched channels.")),
+    }
+
+    let source = match session.origin().surface {
+        Surface::Cli => "cli",
+        _ => "portal",
+    };
+    let view = desk
+        .runner
+        .submit(RescanRequest {
+            channels,
+            window: body.window,
+            source: source.to_owned(),
+            automated: false,
+            requested_by: Some(actor),
+            unprocessed_only: false,
+        })
+        .await
+        .map_err(refused)?;
+    record(state, keyed, &view.job.id).await;
+    answer(state, &view)
+}
+
+pub async fn poll(
+    State(site): State<Arc<Site>>,
+    _: AdminSession,
+    UrlPath(id): UrlPath<String>,
+) -> Reply {
+    let state = state(&site)?;
+    let desk = desk(state)?;
+    replay(state, desk, &id).await
+}
+
+pub async fn cancel(
+    State(site): State<Arc<Site>>,
+    session: AdminSession,
+    headers: HeaderMap,
+    UrlPath(id): UrlPath<String>,
+) -> Reply {
+    let state = state(&site)?;
+    let key = origin(&session, &headers)?.request_id;
+    let desk = desk(state)?;
+    let mut keyed = None;
+    let _held = match key {
+        Some(key) => {
+            let held = desk.lock().await;
+            let request = format!("cancel\u{1f}{id}");
+            let this = Keyed::new(ReplayScope::Rescan, &session, key, &request);
+            if let Some(found) = this.recall(state.store.as_ref(), state.now()).await? {
+                return replay(state, desk, &recorded_job(&found)?).await;
+            }
+            keyed = Some(this);
+            Some(held)
+        }
+        None => None,
+    };
+    let view = desk
+        .runner
+        .cancel(id.clone())
+        .await
+        .map_err(refused)?
+        .ok_or(ApiError::NOT_FOUND)?;
+    record(state, keyed, &id).await;
+    answer(state, &view)
+}

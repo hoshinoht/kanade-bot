@@ -1,0 +1,829 @@
+{
+  "cases": [
+    {
+      "case_id": "clock-parsing-and-pm-rule",
+      "expected": {
+        "steps": [
+          {
+            "value": 11
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "clock": "21:30:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": true,
+              "clock": "21:30:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": true,
+              "clock": "21:00:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": true,
+              "clock": "22:00:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": true,
+              "clock": "23:00:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": true,
+              "clock": "00:00:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "clock": "00:00:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "clock": "12:00:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "clock": "13:00:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "clock": "21:30:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "clock": "22:30:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": true,
+              "clock": "20:00:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "clock": "21:00:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "clock": "21:00:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "clock": "23:00:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "clock": "21:30:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "clock": "09:00:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "clock": "23:00:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "clock": "21:00:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": true,
+              "clock": "22:00:00"
+            }
+          },
+          {
+            "value": null
+          },
+          {
+            "value": null
+          },
+          {
+            "value": null
+          },
+          {
+            "value": null
+          },
+          {
+            "value": null
+          },
+          {
+            "value": null
+          },
+          {
+            "value": null
+          },
+          {
+            "value": null
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "clock": "00:00:00"
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "clock": "00:30:00"
+            }
+          }
+        ]
+      },
+      "input": {
+        "steps": [
+          {
+            "op": "pm_cutoff"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "9:30pm"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "930"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "9"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "10"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "at 11"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "12"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "12am"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "12pm"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "13"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "2130"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "1030~11+pm"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "8~1130"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "9-10pm"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "9pm-11pm"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "11 to 1145pm"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "9.30 pm"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "9 a.m."
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "11pm onward"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "9pm ish"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "around 10"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "2530"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "990"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "night"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "later"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "after boss"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": ""
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": null
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "24"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "0"
+          },
+          {
+            "op": "parse_clock",
+            "time_ref": "00:30"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "relative-days-and-weekdays",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "assumed_pm": true,
+              "at": "2026-08-30T21:30:00+08:00",
+              "clock": "21:30:00",
+              "day": "2026-08-30",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-08-30T21:00:00+08:00",
+              "clock": "21:00:00",
+              "day": "2026-08-30",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": true,
+              "at": "2026-08-31T21:30:00+08:00",
+              "clock": "21:30:00",
+              "day": "2026-08-31",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": null,
+              "clock": null,
+              "day": "2026-08-31",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-08-29T22:00:00+08:00",
+              "clock": "22:00:00",
+              "day": "2026-08-29",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-09-02T21:30:00+08:00",
+              "clock": "21:30:00",
+              "day": "2026-09-02",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": null,
+              "clock": null,
+              "day": "2026-09-02",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": null,
+              "clock": null,
+              "day": "2026-08-30",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-08-30T22:00:00+08:00",
+              "clock": "22:00:00",
+              "day": "2026-08-30",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-09-06T11:00:00+08:00",
+              "clock": "11:00:00",
+              "day": "2026-09-06",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-09-06T22:00:00+08:00",
+              "clock": "22:00:00",
+              "day": "2026-09-06",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": null,
+              "clock": null,
+              "day": "2026-09-02",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-09-03T22:30:00+08:00",
+              "clock": "22:30:00",
+              "day": "2026-09-03",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-09-04T21:30:00+08:00",
+              "clock": "21:30:00",
+              "day": "2026-09-04",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-08-30T21:30:00+08:00",
+              "clock": "21:30:00",
+              "day": "2026-08-30",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": true,
+              "at": "2026-08-30T23:00:00+08:00",
+              "clock": "23:00:00",
+              "day": "2026-08-30",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-08-31T13:00:00+08:00",
+              "clock": "13:00:00",
+              "day": "2026-08-31",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": null,
+              "clock": null,
+              "day": null,
+              "known": false
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": null,
+              "clock": null,
+              "day": null,
+              "known": false
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-08-31T11:00:00+08:00",
+              "clock": "11:00:00",
+              "day": "2026-08-31",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-08-30T21:00:00+08:00",
+              "clock": "21:00:00",
+              "day": "2026-08-30",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": null,
+              "clock": null,
+              "day": null,
+              "known": false
+            }
+          }
+        ]
+      },
+      "input": {
+        "steps": [
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": "tonight",
+            "op": "resolve",
+            "time_ref": "930"
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": "today",
+            "op": "resolve",
+            "time_ref": "9pm"
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": "tmr",
+            "op": "resolve",
+            "time_ref": "930"
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": "tomorrow night",
+            "op": "resolve",
+            "time_ref": null
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": "ytd",
+            "op": "resolve",
+            "time_ref": "10pm"
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": "weds",
+            "op": "resolve",
+            "time_ref": "9:30pm"
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": "wed",
+            "op": "resolve",
+            "time_ref": null
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": "this sunday",
+            "op": "resolve",
+            "time_ref": null
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": "sun",
+            "op": "resolve",
+            "time_ref": "10pm"
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": "sun",
+            "op": "resolve",
+            "time_ref": "11am"
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": "next sun",
+            "op": "resolve",
+            "time_ref": "10pm"
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": "next wed",
+            "op": "resolve",
+            "time_ref": null
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": "coming thurs",
+            "op": "resolve",
+            "time_ref": "1030~11+pm"
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": "2026-09-04",
+            "op": "resolve",
+            "time_ref": "21:30"
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": "2026-02-30",
+            "op": "resolve",
+            "time_ref": "21:30"
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": "later",
+            "op": "resolve",
+            "time_ref": "at 11"
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": "later",
+            "op": "resolve",
+            "time_ref": "1pm"
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": "sometime",
+            "op": "resolve",
+            "time_ref": "after boss"
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": null,
+            "op": "resolve",
+            "time_ref": null
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": null,
+            "op": "resolve",
+            "time_ref": "11am"
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": null,
+            "op": "resolve",
+            "time_ref": "9pm"
+          },
+          {
+            "anchor": "2026-08-30T13:07:00+08:00",
+            "day_ref": "  ",
+            "op": "resolve",
+            "time_ref": "  "
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "past-times-roll-forward-unless-explicit",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-09-02T21:00:00+08:00",
+              "clock": "21:00:00",
+              "day": "2026-09-02",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": true,
+              "at": "2026-09-02T22:00:00+08:00",
+              "clock": "22:00:00",
+              "day": "2026-09-02",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-09-09T21:30:00+08:00",
+              "clock": "21:30:00",
+              "day": "2026-09-09",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-09-02T23:00:00+08:00",
+              "clock": "23:00:00",
+              "day": "2026-09-02",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-09-03T21:00:00+08:00",
+              "clock": "21:00:00",
+              "day": "2026-09-03",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-09-03T21:00:00+08:00",
+              "clock": "21:00:00",
+              "day": "2026-09-03",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-09-03T21:00:00+08:00",
+              "clock": "21:00:00",
+              "day": "2026-09-03",
+              "known": true
+            }
+          }
+        ]
+      },
+      "input": {
+        "steps": [
+          {
+            "anchor": "2026-09-02T22:10:00+08:00",
+            "day_ref": "today",
+            "op": "resolve",
+            "time_ref": "9pm"
+          },
+          {
+            "anchor": "2026-09-02T22:10:00+08:00",
+            "day_ref": "tonight",
+            "op": "resolve",
+            "time_ref": "10"
+          },
+          {
+            "anchor": "2026-09-02T22:10:00+08:00",
+            "day_ref": "wed",
+            "op": "resolve",
+            "time_ref": "9:30pm"
+          },
+          {
+            "anchor": "2026-09-02T22:10:00+08:00",
+            "day_ref": "wed",
+            "op": "resolve",
+            "time_ref": "11pm"
+          },
+          {
+            "anchor": "2026-09-02T22:10:00+08:00",
+            "day_ref": "later",
+            "op": "resolve",
+            "time_ref": "9pm"
+          },
+          {
+            "anchor": "2026-09-02T22:10:00+08:00",
+            "day_ref": null,
+            "op": "resolve",
+            "time_ref": "9pm"
+          },
+          {
+            "anchor": "2026-09-02T14:10:00+00:00",
+            "day_ref": "tmr",
+            "op": "resolve",
+            "time_ref": "9pm"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "wall-clock-gap-in-dst-zone",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-03-08T02:30:00-05:00",
+              "clock": "02:30:00",
+              "day": "2026-03-08",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-03-08T02:30:00-05:00",
+              "clock": "02:30:00",
+              "day": "2026-03-08",
+              "known": true
+            }
+          },
+          {
+            "value": {
+              "assumed_pm": false,
+              "at": "2026-11-01T01:30:00-04:00",
+              "clock": "01:30:00",
+              "day": "2026-11-01",
+              "known": true
+            }
+          }
+        ]
+      },
+      "input": {
+        "steps": [
+          {
+            "anchor": "2026-03-08T00:30:00-05:00",
+            "day_ref": "today",
+            "op": "resolve",
+            "time_ref": "2:30am"
+          },
+          {
+            "anchor": "2026-03-07T12:00:00-05:00",
+            "day_ref": "sun",
+            "op": "resolve",
+            "time_ref": "2:30am"
+          },
+          {
+            "anchor": "2026-11-01T00:10:00-04:00",
+            "day_ref": "tonight",
+            "op": "resolve",
+            "time_ref": "1:30am"
+          }
+        ],
+        "timezone": "America/New_York"
+      }
+    }
+  ],
+  "family": "resolve",
+  "provenance": {
+    "functions": [
+      "bot.extract.resolve.parse_clock",
+      "bot.extract.resolve.resolve"
+    ],
+    "inventory_surfaces": [
+      "extract.resolve"
+    ],
+    "oracle": "legacy/python bot.extract.resolve",
+    "source_tests": [
+      "tests/test_extract_resolve.py"
+    ]
+  },
+  "schema_version": "v5-extract-resolve-v1"
+}

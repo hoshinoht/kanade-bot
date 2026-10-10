@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/fixed.json",
+  "title": "Weekly timings (fixed runs) and boss-text validation",
+  "$defs": {
+    "FixedRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "short_id", "weekday", "weekday_name", "time", "bosses", "participants",
+        "channel_id", "channel_name", "channel_watched", "owner", "owner_id", "owner_pinned", "note", "runs"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "short_id": { "type": "string" },
+        "weekday": { "type": "integer", "minimum": 0, "maximum": 6, "description": "0 = Monday." },
+        "weekday_name": { "type": "string" },
+        "time": { "$ref": "week.json#/$defs/LocalTime" },
+        "bosses": { "$ref": "common.json#/$defs/Bosses" },
+        "participants": { "$ref": "common.json#/$defs/Members" },
+        "channel_id": { "type": "string" },
+        "channel_name": { "type": "string" },
+        "channel_watched": { "type": "boolean" },
+        "owner": { "type": "string", "description": "The effective owner's display name." },
+        "owner_id": { "type": "string", "description": "The effective owner's Discord user id: the pinned owner, else the first participant. Proposal approval and chat authority accept them." },
+        "owner_pinned": { "type": "boolean", "description": "Staff pinned the owner; otherwise ownership follows the first participant." },
+        "note": { "$ref": "common.json#/$defs/NullableString" },
+        "runs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["run_id", "short_id", "week", "day", "time", "status", "amended"],
+            "properties": {
+              "run_id": { "type": "string" },
+              "short_id": { "type": "string" },
+              "week": { "$ref": "common.json#/$defs/WeekKey" },
+              "day": { "type": "integer", "minimum": 0, "maximum": 6 },
+              "time": { "$ref": "week.json#/$defs/RunTime" },
+              "status": { "$ref": "common.json#/$defs/RunStatus" },
+              "amended": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "FixedRows": { "type": "array", "items": { "$ref": "#/$defs/FixedRow" } },
+    "FixedRequest": {
+      "description": "Request body of `POST /api/admin/fixed` and `PATCH /api/admin/fixed/{id}` (the whole form). `version` is the week version the form was loaded at: required by PATCH (else 422 `version_required`), ignored by POST. `expect`/`override` follow admin-api.md \"Edit preconditions\".",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["weekday", "time", "bosses", "participants", "channel_id", "note"],
+      "properties": {
+        "weekday": { "type": "integer", "minimum": 0, "maximum": 6 },
+        "time": { "type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+        "bosses": { "type": "string" },
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "channel_id": { "type": "string" },
+        "note": { "type": ["string", "null"] },
+        "owner_id": {
+          "type": "string",
+          "description": "Optional. A rostered (bossing-role, non-bot) member, not necessarily in the party, pins the owner; otherwise 422 `invalid` \"Pick an owner from the roster.\" `\"\"` or omitted: POST leaves the timing unpinned (the first participant owns it); on PATCH `\"\"` unpins a pinned owner and omitted leaves the owner unchanged."
+        },
+        "decisions": {
+          "type": "object",
+          "additionalProperties": { "enum": ["update", "keep"] }
+        },
+        "version": { "type": "integer", "minimum": 0 },
+        "expect": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field", "seen"],
+            "properties": {
+              "field": { "type": "string" },
+              "seen": { "type": ["integer", "null"], "minimum": 0 }
+            }
+          }
+        },
+        "override": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["seq", "hash"],
+            "properties": {
+              "seq": { "type": "integer", "minimum": 0 },
+              "hash": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "FixedRetired": {
+      "description": "`DELETE /api/admin/fixed/{id}`: how many live runs were cancelled.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cancelled"],
+      "properties": { "cancelled": { "type": "integer", "minimum": 0 } }
+    },
+    "ValidateResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bosses"],
+      "properties": { "bosses": { "$ref": "common.json#/$defs/Bosses" } }
+    }
+  }
+}

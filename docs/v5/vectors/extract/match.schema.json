@@ -1,0 +1,533 @@
+{
+  "$defs": {
+    "amendment": {
+      "additionalProperties": false,
+      "properties": {
+        "bosses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "day_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evidence_message_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "is_question": {
+          "type": "boolean"
+        },
+        "kind": {
+          "enum": [
+            "move",
+            "add",
+            "cancel",
+            "split",
+            "otot",
+            "sub",
+            "rsvp",
+            "fix"
+          ]
+        },
+        "participants": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rsvp": {
+          "anyOf": [
+            {
+              "enum": [
+                "yes",
+                "no",
+                "maybe"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target_run_hint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "time_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "bosses",
+        "day_ref",
+        "time_ref",
+        "participants",
+        "rsvp",
+        "is_question",
+        "confidence",
+        "evidence_message_ids",
+        "target_run_hint"
+      ],
+      "type": "object"
+    },
+    "case": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "expected": {
+          "$ref": "#/$defs/expected"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input",
+        "expected"
+      ],
+      "type": "object"
+    },
+    "expected": {
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/outcome"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "steps"
+      ],
+      "type": "object"
+    },
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "runs": {
+          "items": {
+            "$ref": "#/$defs/run"
+          },
+          "type": "array"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/step"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "timezone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "timezone",
+        "runs",
+        "steps"
+      ],
+      "type": "object"
+    },
+    "outcome": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "value": {}
+          },
+          "required": [
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "message": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "message"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "replayCase": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input"
+      ],
+      "type": "object"
+    },
+    "result_match_run": {
+      "additionalProperties": false,
+      "properties": {
+        "ambiguous": {
+          "type": "boolean"
+        },
+        "candidate_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "matched": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "reason_code": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "run_id",
+        "reason",
+        "candidate_ids",
+        "ambiguous",
+        "reason_code",
+        "matched"
+      ],
+      "type": "object"
+    },
+    "result_needs_run": {
+      "type": "boolean"
+    },
+    "result_reachable": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "result_runs_spanned": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "run": {
+      "additionalProperties": false,
+      "properties": {
+        "bosses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "channel_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "datetime": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "participants": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "planned",
+            "confirmed",
+            "at_risk",
+            "otot",
+            "cancelled",
+            "done"
+          ]
+        },
+        "week_start": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "bosses",
+        "datetime",
+        "participants",
+        "status",
+        "channel_id",
+        "week_start"
+      ],
+      "type": "object"
+    },
+    "step": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/step_match_run"
+        },
+        {
+          "$ref": "#/$defs/step_runs_spanned"
+        },
+        {
+          "$ref": "#/$defs/step_reachable"
+        },
+        {
+          "$ref": "#/$defs/step_needs_run"
+        }
+      ]
+    },
+    "step_match_run": {
+      "additionalProperties": false,
+      "properties": {
+        "amendment": {
+          "$ref": "#/$defs/amendment"
+        },
+        "author_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "channel_runs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "guild_runs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "mentioned": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "op": {
+          "const": "match_run"
+        }
+      },
+      "required": [
+        "op",
+        "amendment",
+        "channel_runs",
+        "guild_runs",
+        "author_id",
+        "mentioned"
+      ],
+      "type": "object"
+    },
+    "step_needs_run": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "move",
+            "add",
+            "cancel",
+            "split",
+            "otot",
+            "sub",
+            "rsvp",
+            "fix"
+          ]
+        },
+        "op": {
+          "const": "needs_run"
+        }
+      },
+      "required": [
+        "op",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "step_reachable": {
+      "additionalProperties": false,
+      "properties": {
+        "day": {
+          "anyOf": [
+            {
+              "format": "date",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "op": {
+          "const": "reachable"
+        },
+        "runs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "op",
+        "runs",
+        "day"
+      ],
+      "type": "object"
+    },
+    "step_runs_spanned": {
+      "additionalProperties": false,
+      "properties": {
+        "amendment": {
+          "$ref": "#/$defs/amendment"
+        },
+        "author_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "channel_runs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "op": {
+          "const": "runs_spanned"
+        }
+      },
+      "required": [
+        "op",
+        "amendment",
+        "channel_runs",
+        "author_id"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/case"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "family": {
+      "const": "match"
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "functions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "inventory_surfaces": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "oracle": {
+          "type": "string"
+        },
+        "source_tests": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "oracle",
+        "functions",
+        "source_tests",
+        "inventory_surfaces"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "v5-extract-match-v1"
+    }
+  },
+  "required": [
+    "schema_version",
+    "family",
+    "provenance",
+    "cases"
+  ],
+  "title": "Kanade v5 extraction vectors: match",
+  "type": "object"
+}

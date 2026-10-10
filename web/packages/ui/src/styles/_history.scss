@@ -1,0 +1,148 @@
+// M3E history: the timeline owns its list scroll; an opened change is its
+// direct sibling, so audit scanning remains available while reviewing a diff.
+// `overflow: clip`, not hidden: a hidden box is still a programmatic scroll
+// container, so focusing a row could scroll the whole window under the head.
+@use "breakpoints" as *;
+.history-window { display: flex; flex-direction: column; overflow: clip; }
+// Title bar = the shared window tab strip (Inbox) plus compact filter buttons.
+.history-window__head.tabs__strip { align-items: flex-end; }
+.history-window__filters { display: flex; align-self: center; align-items: center; gap: 6px; margin-left: auto; }
+.history-window__filters .dd__value { max-width: 11rem; }
+
+.history-window__body { display: flex; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.history-list-region { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; background: var(--pane); }
+// B_History: one column of week labels and rows, 4 px apart.
+.history-list-region__scroll { display: flex; flex: 1 1 auto; flex-direction: column; gap: 4px; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 12px 14px; }
+.history-list-region__pager { flex: none; padding: 0.5rem 0.7rem; border-top: 1.5px solid var(--line); }
+.history-list-region .flash, .history-list-region .empty { margin: 0; }
+.history__member { flex: none; margin: 0 0 0.4rem; }
+.history__member summary { width: fit-content; }
+.history__member .formrow { margin-top: 0.5rem; }
+.history__week, .history-timeline { display: flex; flex: none; flex-direction: column; gap: 4px; }
+.history__week h3 { margin: 0; padding: 8px 6px 4px; font-size: var(--fs-body-sm); }
+.history-timeline { margin: 0; padding: 0; list-style: none; }
+// A row (mockup `.ev`): the dot, then the facts line over the one-line summary.
+.history-row { display: flex; gap: 12px; align-items: flex-start; width: 100%; padding: 10px 14px; border: 0; border-radius: 6px; background: var(--row); color: var(--ink); font: inherit; line-height: 1.35; text-align: left; cursor: pointer; }
+.history-row__dot { flex: none; width: 10px; height: 10px; margin-top: 4px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--win); }
+.history-row--active .history-row__dot { background: var(--accent); box-shadow: none; }
+.history-row__text { display: flex; flex: 1 1 auto; flex-direction: column; gap: 3px; min-width: 0; }
+// Hover: the row state layer plus a neutral edge -- apart from the pane, the
+// resting row and the selected fill (whose edge is the accent and corners rounder).
+.history-row:hover { background: var(--row-hover); box-shadow: inset 0 0 0 1.5px var(--line); }
+// The non-colour cue: the selected row's actor goes bold (review finding 5).
+.history-row--active .history-row__actor { font-weight: 800; }
+.history-row .row-content--expanded .history-row__actor { overflow: visible; white-space: normal; }
+.history-row--active, .history-row--active:hover { border-radius: 18px; box-shadow: inset 0 0 0 1.5px var(--select-edge); background: var(--select); }
+.history-row__head { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; min-width: 0; }
+.history-row__seq { font-size: var(--fs-small); font-weight: 700; }
+.history-row__head .chip { min-height: 0; padding: 1px 8px; border: 0; border-radius: 9px; background: var(--chip-fill); color: var(--ink); font-size: var(--fs-mini); font-weight: 500; }
+.history-row__actor { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-row__time, .history-row__rows { color: var(--dim); font-size: var(--fs-mini); white-space: nowrap; }
+.history-row__rows { margin-left: auto; }
+.history-row__open { margin-left: auto; color: var(--select-ink); }
+.history-row__summary { font-size: var(--fs-small); }
+// One rail (the chain is linear): a line from each dot down to the next row's
+// dot, drawn over the gap and the rows so it reads as one line per boss week.
+.history-timeline > li:not(:last-child)::before { content: ""; position: absolute; z-index: 1; top: 24px; left: 18.25px; width: 1.5px; height: calc(100% - 6px); background: var(--line); pointer-events: none; }
+// A rollback is a diamond; a record it undid, a dashed ring (both also tagged in words).
+.history-row__dot--revert { border-radius: 2px; transform: rotate(45deg) scale(0.9); }
+.history-row__dot--undone { box-shadow: none; border: 2px dashed var(--dim-text); }
+.history-row--active .history-row__dot--undone { border-color: var(--accent); }
+// A Config save (outside the chain): a square dot plus the "Config" chip in words.
+.history-row__dot--config { border-radius: 2px; }
+.history-row__head .history-row__config { box-shadow: inset 0 0 0 1.5px var(--line); background: transparent; font-weight: 700; }
+// Tags sit at the row's end on every row, compact or opened.
+.history-row__tags { display: flex; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 45%; margin-left: auto; }
+.history-tag { display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px; border: 1.5px solid var(--line); border-radius: 9px; color: var(--ink); font-size: var(--fs-mini); font-weight: 600; line-height: 1.35; white-space: nowrap; }
+.history-tag .icon { width: 12px; height: 12px; }
+.history-tag--undone { border-style: dashed; color: var(--dim-text); }
+.history-tag--backup { border-color: color-mix(in srgb, var(--ok) 45%, var(--surface)); background: color-mix(in srgb, var(--ok) 12%, var(--surface)); color: var(--ok-text); }
+
+// The change pane (B_History): the head on its own band, then one column of
+// the rows' diffs, the raw link, the actions and, at the foot, the
+// member-revert box.
+.history-detail__head { display: flex; flex: none; flex-direction: column; gap: 3px; }
+.history-detail__head > * { margin: 0; }
+.history-detail__top { display: flex; align-items: flex-start; gap: 8px; }
+.history-detail__top > .cap { flex: 1 1 auto; min-width: 0; }
+// The close overhangs the overline's line rather than growing the head.
+.history-detail__close { flex: none; min-width: 2rem; min-height: 2rem; margin: -0.5rem -0.5rem -0.5rem 0; padding: 0; justify-content: center; font-size: var(--fs-lg); }
+.history-detail__head h2 { font-family: var(--display); font-size: var(--fs-lg); line-height: 1.25; }
+.history-detail__meta { color: var(--dim); font-size: var(--fs-small); line-height: 1.35; }
+.history-detail__body { display: flex; flex-direction: column; gap: 10px; margin-top: 1rem; }
+.side-pane--history .history-detail__head { padding: 12px 16px; border-bottom: 1.5px solid var(--line); }
+.side-pane--history .history-detail__body { flex: 1 0 auto; margin-top: 0; padding: 12px 16px; }
+.history-detail__rows { display: flex; flex-direction: column; gap: 10px; }
+.history-detail__rows > h3 { margin: 0; }
+.history-diff { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 14px; background: var(--row); box-shadow: inset 0 0 0 1.5px var(--line); }
+.history-diff > p { margin: 0; color: var(--dim); font-size: var(--fs-mini); line-height: 1.35; overflow-wrap: anywhere; }
+// One line per field (mockup `.drow`): the name, was → now; long values (a
+// roster of IDs, a timestamp) wrap inside their own column.
+.history-diff__fields { display: grid; grid-template-columns: minmax(64px, max-content) minmax(0, 1fr) 14px minmax(0, 1fr); gap: 4px 8px; margin: 0; }
+.history-diff__field { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: baseline; font-size: var(--fs-small); line-height: 1.35; }
+.history-diff__field dt, .history-diff__field dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.history-diff__field dt { color: var(--dim); font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.history-diff__was { color: var(--dim); }
+.history-diff__arrow { color: var(--dim); text-align: center; }
+.history-diff__now { font-weight: 700; }
+.history-detail__raw { font-size: var(--fs-small); text-align: start; }
+.history-detail__note { margin: 0; color: var(--dim); font-size: var(--fs-small); line-height: 1.4; }
+.history-detail__actions { display: flex; gap: 8px; margin-top: 4px; }
+// Revert a member's changes (B_History): a tonal box pinned to the pane's foot.
+.history-member { display: flex; flex-direction: column; gap: 8px; margin-top: auto; padding: 12px; border-radius: 18px; background: var(--pane); }
+.history-member > h3 { margin: 0; }
+.history-member__fields { display: flex; gap: 6px; }
+.history-member__who { flex: 1 1 auto; min-width: 0; }
+.history-member__fields { align-items: center; }
+.history-member__since { flex: none; }
+.history-member .btn { align-self: flex-start; }
+
+// Checkpoints (B_HistoryCk): the verification card over the backups table.
+// The card stays put; the table region scrolls (both ways on narrow screens).
+.history-checkpoints { display: flex; flex: 1 1 auto; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 14px 18px; }
+.history-checkpoints > * { flex: none; margin: 0; }
+.history-checkpoints__error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.history-verify { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-radius: 20px; background: color-mix(in srgb, var(--ok) 10%, var(--surface)); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ok) 45%, var(--surface)); }
+.history-verify--risk { background: color-mix(in srgb, var(--risk) 10%, var(--surface)); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--risk) 45%, var(--surface)); }
+// The mockups' cookie shape (as `$cookie` in _inbox).
+.history-verify__glyph { display: grid; flex: none; width: 40px; height: 40px; place-items: center; background: var(--ok-text); color: var(--surface); clip-path: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 11.7%, 85.9% 17.7%, 87.7% 24.6%, 90.9% 30.1%, 95.9% 35.1%, 99.2% 41.3%, 98.2% 48.3%, 95.2% 54.8%, 94.1% 61%, 94.8% 68.1%, 93.3% 75%, 88% 79.7%, 81.6% 82.7%, 76.7% 86.8%, 72.7% 92.6%, 67.1% 97%, 60% 97.2%, 53.2% 95.4%, 46.8% 95.4%, 40% 97.2%, 32.9% 97%, 27.3% 92.6%, 23.3% 86.8%, 18.4% 82.7%, 12% 79.7%, 6.7% 75%, 5.2% 68.1%, 5.9% 61%, 4.8% 54.8%, 1.8% 48.3%, 0.8% 41.3%, 4.1% 35.1%, 9.1% 30.1%, 12.3% 24.6%, 14.1% 17.7%, 17.9% 11.7%, 24.4% 9.1%, 31.5% 8.5%, 37.5% 6.3%, 43.3% 2.2%); }
+.history-verify--risk .history-verify__glyph { background: var(--risk-text); }
+.history-verify__glyph .icon { width: 20px; height: 20px; }
+.history-verify__text { display: flex; flex: 1 1 16rem; flex-direction: column; gap: 2px; min-width: 0; margin: 0; font-size: var(--fs-small); line-height: 1.4; }
+.history-verify__text strong { font-size: var(--fs-body); }
+.history-verify--risk .history-verify__text strong { color: var(--risk-text); }
+.history-verify__again[aria-disabled="true"] { cursor: progress; opacity: 0.75; }
+
+// The table (mockup `.tbl3`): mono overline headings stuck to the top, rows
+// as 44 px `--row` strips; the backup name stays in view when scrolled sideways.
+.history-backups__wrap { flex: 0 1 auto; min-height: 8rem; overflow: auto; overscroll-behavior: contain; }
+.history-backups { width: 100%; border-collapse: separate; border-spacing: 0 2px; font-size: var(--fs-small); }
+.history-backups th, .history-backups td { padding: 0 10px; border: 0; vertical-align: middle; white-space: nowrap; }
+.history-backups thead th { position: sticky; top: 0; z-index: 1; padding: 8px 10px; background: var(--pane); color: var(--dim-text); font-family: var(--mono); letter-spacing: 0.1em; }
+.history-backups tbody th, .history-backups td { height: 44px; background: var(--row); }
+.history-backups tbody th { position: sticky; left: 0; font-weight: 400; }
+.history-backups thead th:first-child { left: 0; z-index: 2; }
+.history-backups tbody th { border-radius: 6px 0 0 6px; }
+.history-backups td:last-child { border-radius: 0 6px 6px 0; }
+.history-anchor { gap: 4px; }
+.history-anchor .icon { width: 13px; height: 13px; stroke-width: 3; }
+// Older schema: still anchored, but only restorable with that schema's image -- an outline, dashed.
+.history-anchor--older_schema { background: transparent; box-shadow: none; border: 1.5px dashed color-mix(in srgb, var(--warn) 55%, var(--surface)); color: color-mix(in srgb, var(--warn-text) 85%, var(--ink)); }
+.history-anchor__ring { width: 7px; height: 7px; border: 1.5px solid currentColor; border-radius: 50%; }
+.history-backups__note { display: flex; gap: 10px; align-items: flex-start; padding: 4px 14px; color: var(--dim-text); font-size: var(--fs-small); line-height: 1.45; }
+.history-backups__note .icon { flex: none; width: 16px; height: 16px; margin-top: 2px; }
+.history-backups__note strong { color: var(--ink); }
+
+@media #{$single-pane} {
+  .history-checkpoints { padding: 12px; }
+  .history-verify { flex-wrap: wrap; padding: 12px 14px; }
+  // The pinned name wraps so the other columns keep room to scroll past it.
+  .history-backups tbody th { width: 11rem; min-width: 11rem; max-width: 11rem; padding: 6px 10px; white-space: normal; overflow-wrap: anywhere; }
+  dialog.modal--narrow.history-detail { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; }
+  dialog.history-detail .modal__panel { min-height: 100dvh; }
+  .history-window__head.tabs__strip { flex-wrap: wrap; padding-top: 0.5rem; }
+  .history-window__head .tabs__tabs { order: 1; width: 100%; }
+  .history-window__filters { width: 100%; margin-left: 0; padding-bottom: 0; }
+  .history-window__filters .ddw { flex: 1 1 0; }
+  .history-window__filters .dd { width: 100%; }
+}

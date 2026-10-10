@@ -2,8 +2,11 @@
 # Environment variants may contain the same secrets.
 .env.*
 !.env.example
+# Private v5 settings; kanade.example.toml is the tracked template.
+/kanade.toml
 data/
 .venv/
+target/
 __pycache__/
 *.py[cod]
 *.sqlite
@@ -15,6 +18,7 @@ bot/api/static/portal.css
 .ruff_cache/
 .DS_Store
 .opencode/*
+.omp/
 
 # Untracked game assets.
 boss/portraits/*
@@ -34,29 +38,41 @@ config/presets/staging.yaml
 
 .claude
 
-# Track templates only; all live prompt content stays private.
+# v5 personas: track only the public examples; all live prompt content stays private.
 config/personas/*
 !config/personas/README.md
-!config/personas/personas.example.yaml
-!config/personas/personas/
-config/personas/personas/*
-!config/personas/personas/kanade/
-!config/personas/personas/kanade/identity.md
-!config/personas/personas/kanade/default.md
-!config/personas/personas/kanade/staging.yaml
-!config/personas/behaviour-plugins/
-config/personas/behaviour-plugins/*
-!config/personas/behaviour-plugins/example.md
-!config/personas/behaviours/
-config/personas/behaviours/*
-!config/personas/behaviours/example.md
-!config/personas/behaviours/staging/
-config/personas/behaviours/staging/*
-!config/personas/behaviours/staging/example.yaml
+!config/personas/catalog.example.yaml
+!config/personas/bundles/
+config/personas/bundles/*
+!config/personas/bundles/kanade.yaml
+!config/personas/profiles/
+config/personas/profiles/*
+!config/personas/profiles/example.yaml
+# Private v4 persona layout mounted by the v4 rollback container until cutover.
+config/personas-v4/
 
 # Local design notes.
 DESIGN.md
 
-# The live Caddyfile names the private domain.
-caddy/Caddyfile
-!caddy/Caddyfile.example
+# v5 PWA workspace build output and test artefacts.
+web/**/node_modules/
+web/**/dist/
+web/e2e/.results/
+web/e2e/.results-rust/
+web/e2e/.captures/
+web/**/*.tsbuildinfo
+devtools/pwa-mock/target/
+
+# Local design research captures (kept on disk, not tracked)
+/docs/research/
+
+# Private dev notes, logs, plans and reviews (kept on disk, never tracked; see its AGENTS.md)
+/docs/notes/
+
+# docs/v5: only the setup guides and the test data (frozen vectors, API
+# schemas) are public; contracts, design specs and evaluations stay local.
+/docs/v5/*
+!/docs/v5/runtime-bootstrap.md
+!/docs/v5/v4-import.md
+!/docs/v5/vectors/
+!/docs/v5/api-schemas/

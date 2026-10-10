@@ -1,0 +1,1654 @@
+{
+  "v4/loud/countdown_at_risk/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "⏰ **NMaleficStar** in 1h30m (22:00) — Aria <@1003> · Bex out",
+    "embeds": [
+      {
+        "color": 16309578,
+        "description": "**NMaleficStar** · Radiant Malefic Star (Normal, Lv280)\n❗ at risk · 0/3 ✅ · 1 ❌\nStill to answer: Aria <@1003>",
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/loud/countdown_at_risk/post": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "attachments": [
+      [
+        "MaleficStar.png",
+        "Portrait:MaleficStar"
+      ]
+    ],
+    "content": "⏰ **NMaleficStar** in 1h30m (22:00) — Aria <@1003> · Bex out",
+    "embeds": [
+      {
+        "color": 16309578,
+        "description": "**NMaleficStar** · Radiant Malefic Star (Normal, Lv280)\n❗ at risk · 0/3 ✅ · 1 ❌\nStill to answer: Aria <@1003>",
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/loud/countdown_cleared/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "⏰ **HKalos** in 15m (21:00) — everyone's confirmed ✅",
+    "embeds": [
+      {
+        "color": 5763719,
+        "description": "**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n🏁 done · 2/2 ✅",
+        "thumbnail": {
+          "url": "attachment://Kalos.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/loud/countdown_cleared/post": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "attachments": [
+      [
+        "Kalos.png",
+        "Portrait:Kalos"
+      ]
+    ],
+    "content": "⏰ **HKalos** in 15m (21:00) — everyone's confirmed ✅",
+    "embeds": [
+      {
+        "color": 5763719,
+        "description": "**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n🏁 done · 2/2 ✅",
+        "thumbnail": {
+          "url": "attachment://Kalos.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/loud/countdown_pending/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "⏰ **HMaleficStar + HKalos** in 15m (21:30) — <@1001> <@1003> · Bex out",
+    "embeds": [
+      {
+        "color": 16309578,
+        "description": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 ✅ · 1 ❌\nStill to answer: <@1003>",
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/loud/countdown_pending/post": {
+    "allowed_mentions": {
+      "parse": [],
+      "users": [
+        "1001",
+        "1003"
+      ]
+    },
+    "attachments": [
+      [
+        "MaleficStar.png",
+        "Portrait:MaleficStar"
+      ]
+    ],
+    "content": "⏰ **HMaleficStar + HKalos** in 15m (21:30) — <@1001> <@1003> · Bex out",
+    "embeds": [
+      {
+        "color": 16309578,
+        "description": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 ✅ · 1 ❌\nStill to answer: <@1003>",
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/loud/countdown_settled/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "⏰ **XKalos** in 1h (23:00) — everyone's confirmed ✅",
+    "embeds": [
+      {
+        "color": 5763719,
+        "description": "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n✅ confirmed · 2/2 ✅",
+        "thumbnail": {
+          "url": "attachment://Kalos.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/loud/countdown_settled/post": {
+    "allowed_mentions": {
+      "parse": [],
+      "users": [
+        "1001"
+      ]
+    },
+    "attachments": [
+      [
+        "Kalos.png",
+        "Portrait:Kalos"
+      ]
+    ],
+    "content": "⏰ **XKalos** in 1h (23:00) — everyone's confirmed ✅",
+    "embeds": [
+      {
+        "color": 5763719,
+        "description": "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n✅ confirmed · 2/2 ✅",
+        "thumbnail": {
+          "url": "attachment://Kalos.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/loud/day_of/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "📅 **Today — Wed 09 Sep**\n<@1001> Bex <@1003>",
+    "embeds": [
+      {
+        "color": 16309578,
+        "fields": [
+          {
+            "inline": false,
+            "name": "🕘 21:30  ·  HMaleficStar + HKalos",
+            "value": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 ✅ · 1 ❌\nStill to answer: <@1003>"
+          },
+          {
+            "inline": false,
+            "name": "🕘 23:00  ·  XKalos",
+            "value": "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n✅ confirmed · 2/2 ✅"
+          }
+        ],
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "image": {
+          "url": "attachment://image-MaleficStar.png"
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/loud/day_of/post": {
+    "allowed_mentions": {
+      "parse": [],
+      "users": [
+        "1001",
+        "1003"
+      ]
+    },
+    "attachments": [
+      [
+        "MaleficStar.png",
+        "Portrait:MaleficStar"
+      ],
+      [
+        "image-MaleficStar.png",
+        "Entry:MaleficStar"
+      ]
+    ],
+    "content": "📅 **Today — Wed 09 Sep**\n<@1001> Bex <@1003>",
+    "embeds": [
+      {
+        "color": 16309578,
+        "fields": [
+          {
+            "inline": false,
+            "name": "🕘 21:30  ·  HMaleficStar + HKalos",
+            "value": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 ✅ · 1 ❌\nStill to answer: <@1003>"
+          },
+          {
+            "inline": false,
+            "name": "🕘 23:00  ·  XKalos",
+            "value": "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n✅ confirmed · 2/2 ✅"
+          }
+        ],
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "image": {
+          "url": "attachment://image-MaleficStar.png"
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/loud/day_of_heading/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "📅 **Two runs tonight!**\n<@1003> Aria Bex",
+    "embeds": [
+      {
+        "color": 5793266,
+        "fields": [
+          {
+            "inline": false,
+            "name": "🕒 own time  ·  XFoo",
+            "value": "**XFoo** · XFoo\n🕒 own time · 0/1 ✅\nStill to answer: <@1003>"
+          },
+          {
+            "inline": false,
+            "name": "🕘 21:30  ·  HMaleficStar + HKalos",
+            "value": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 ✅ · 1 ❌\nStill to answer: <@1003>"
+          }
+        ],
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/loud/day_of_heading/post": {
+    "allowed_mentions": {
+      "parse": [],
+      "users": [
+        "1003"
+      ]
+    },
+    "attachments": [],
+    "content": "📅 **Two runs tonight!**\n<@1003> Aria Bex",
+    "embeds": [
+      {
+        "color": 5793266,
+        "fields": [
+          {
+            "inline": false,
+            "name": "🕒 own time  ·  XFoo",
+            "value": "**XFoo** · XFoo\n🕒 own time · 0/1 ✅\nStill to answer: <@1003>"
+          },
+          {
+            "inline": false,
+            "name": "🕘 21:30  ·  HMaleficStar + HKalos",
+            "value": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 ✅ · 1 ❌\nStill to answer: <@1003>"
+          }
+        ],
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/loud/digest/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "🗓️ Boss week of Thu 03 Sep",
+    "embeds": [
+      {
+        "color": 5793266,
+        "description": "**1/5 Cleared** · 5 run(s) across 4 day(s) · **2** still unconfirmed ⚠️ · **1** at risk ❗",
+        "fields": [
+          {
+            "inline": false,
+            "name": "Sat 05 Sep",
+            "value": "**HKalos** · 🏁 **Cleared**\n`21:00` · 2/2 ✅ · <#222> · `#c1d2e3f4`"
+          },
+          {
+            "inline": false,
+            "name": "Mon 07 Sep",
+            "value": "**XFoo** · 🕒 **Own time**\n`own time` · 0/1 ✅ · <#111> · `#b0b0b0b0`"
+          },
+          {
+            "inline": false,
+            "name": "Tue 08 Sep",
+            "value": "**NMaleficStar** · ❗ **At risk**\n`22:00` · 0/3 ✅ · 1 ❌ · <#111> · `#f1e2d3c4`"
+          },
+          {
+            "inline": false,
+            "name": "Wed 09 Sep",
+            "value": "**HMaleficStar + HKalos** · ⚠️ **Planned**\n`21:30` · 1/3 ✅ · 1 ❌ · <#111> · `#a1b2c3d4`\n\n**XKalos** · ✅ **Confirmed**\n`23:00` · 2/2 ✅ · <#111> · `#e5f6a7b8`"
+          }
+        ],
+        "footer": {
+          "text": "React ✅/❌ on your run's reminders · /schedule scope:mine for just yours"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/loud/digest/post": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "attachments": [],
+    "content": "🗓️ Boss week of Thu 03 Sep",
+    "embeds": [
+      {
+        "color": 5793266,
+        "description": "**1/5 Cleared** · 5 run(s) across 4 day(s) · **2** still unconfirmed ⚠️ · **1** at risk ❗",
+        "fields": [
+          {
+            "inline": false,
+            "name": "Sat 05 Sep",
+            "value": "**HKalos** · 🏁 **Cleared**\n`21:00` · 2/2 ✅ · <#222> · `#c1d2e3f4`"
+          },
+          {
+            "inline": false,
+            "name": "Mon 07 Sep",
+            "value": "**XFoo** · 🕒 **Own time**\n`own time` · 0/1 ✅ · <#111> · `#b0b0b0b0`"
+          },
+          {
+            "inline": false,
+            "name": "Tue 08 Sep",
+            "value": "**NMaleficStar** · ❗ **At risk**\n`22:00` · 0/3 ✅ · 1 ❌ · <#111> · `#f1e2d3c4`"
+          },
+          {
+            "inline": false,
+            "name": "Wed 09 Sep",
+            "value": "**HMaleficStar + HKalos** · ⚠️ **Planned**\n`21:30` · 1/3 ✅ · 1 ❌ · <#111> · `#a1b2c3d4`\n\n**XKalos** · ✅ **Confirmed**\n`23:00` · 2/2 ✅ · <#111> · `#e5f6a7b8`"
+          }
+        ],
+        "footer": {
+          "text": "React ✅/❌ on your run's reminders · /schedule scope:mine for just yours"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/loud/digest_empty/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "🗓️ Boss week of Thu 03 Sep",
+    "embeds": [
+      {
+        "color": 5793266,
+        "description": "Nothing on the schedule yet. Add a baseline with `/fixed add`.",
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/loud/digest_empty/post": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "attachments": [],
+    "content": "🗓️ Boss week of Thu 03 Sep",
+    "embeds": [
+      {
+        "color": 5793266,
+        "description": "Nothing on the schedule yet. Add a baseline with `/fixed add`.",
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/quiet/countdown_at_risk/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "⏰ **NMaleficStar** in 1h30m (22:00) — Aria (unnamed) · Bex out",
+    "embeds": [
+      {
+        "color": 16309578,
+        "description": "**NMaleficStar** · Radiant Malefic Star (Normal, Lv280)\n❗ at risk · 0/3 ✅ · 1 ❌\nStill to answer: Aria (unnamed)",
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/quiet/countdown_at_risk/post": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "attachments": [
+      [
+        "MaleficStar.png",
+        "Portrait:MaleficStar"
+      ]
+    ],
+    "content": "⏰ **NMaleficStar** in 1h30m (22:00) — Aria (unnamed) · Bex out",
+    "embeds": [
+      {
+        "color": 16309578,
+        "description": "**NMaleficStar** · Radiant Malefic Star (Normal, Lv280)\n❗ at risk · 0/3 ✅ · 1 ❌\nStill to answer: Aria (unnamed)",
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/quiet/countdown_cleared/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "⏰ **HKalos** in 15m (21:00) — everyone's confirmed ✅",
+    "embeds": [
+      {
+        "color": 5763719,
+        "description": "**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n🏁 done · 2/2 ✅",
+        "thumbnail": {
+          "url": "attachment://Kalos.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/quiet/countdown_cleared/post": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "attachments": [
+      [
+        "Kalos.png",
+        "Portrait:Kalos"
+      ]
+    ],
+    "content": "⏰ **HKalos** in 15m (21:00) — everyone's confirmed ✅",
+    "embeds": [
+      {
+        "color": 5763719,
+        "description": "**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n🏁 done · 2/2 ✅",
+        "thumbnail": {
+          "url": "attachment://Kalos.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/quiet/countdown_pending/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "⏰ **HMaleficStar + HKalos** in 15m (21:30) — Aria (unnamed) · Bex out",
+    "embeds": [
+      {
+        "color": 16309578,
+        "description": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 ✅ · 1 ❌\nStill to answer: (unnamed)",
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/quiet/countdown_pending/post": {
+    "allowed_mentions": {
+      "parse": [],
+      "users": [
+        "1001",
+        "1003"
+      ]
+    },
+    "attachments": [
+      [
+        "MaleficStar.png",
+        "Portrait:MaleficStar"
+      ]
+    ],
+    "content": "⏰ **HMaleficStar + HKalos** in 15m (21:30) — Aria (unnamed) · Bex out",
+    "embeds": [
+      {
+        "color": 16309578,
+        "description": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 ✅ · 1 ❌\nStill to answer: (unnamed)",
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/quiet/countdown_settled/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "⏰ **XKalos** in 1h (23:00) — everyone's confirmed ✅",
+    "embeds": [
+      {
+        "color": 5763719,
+        "description": "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n✅ confirmed · 2/2 ✅",
+        "thumbnail": {
+          "url": "attachment://Kalos.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/quiet/countdown_settled/post": {
+    "allowed_mentions": {
+      "parse": [],
+      "users": [
+        "1001"
+      ]
+    },
+    "attachments": [
+      [
+        "Kalos.png",
+        "Portrait:Kalos"
+      ]
+    ],
+    "content": "⏰ **XKalos** in 1h (23:00) — everyone's confirmed ✅",
+    "embeds": [
+      {
+        "color": 5763719,
+        "description": "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n✅ confirmed · 2/2 ✅",
+        "thumbnail": {
+          "url": "attachment://Kalos.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/quiet/day_of/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "📅 **Today — Wed 09 Sep**\nAria Bex (unnamed)",
+    "embeds": [
+      {
+        "color": 16309578,
+        "fields": [
+          {
+            "inline": false,
+            "name": "🕘 21:30  ·  HMaleficStar + HKalos",
+            "value": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 ✅ · 1 ❌\nStill to answer: (unnamed)"
+          },
+          {
+            "inline": false,
+            "name": "🕘 23:00  ·  XKalos",
+            "value": "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n✅ confirmed · 2/2 ✅"
+          }
+        ],
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "image": {
+          "url": "attachment://image-MaleficStar.png"
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/quiet/day_of/post": {
+    "allowed_mentions": {
+      "parse": [],
+      "users": [
+        "1001",
+        "1003"
+      ]
+    },
+    "attachments": [
+      [
+        "MaleficStar.png",
+        "Portrait:MaleficStar"
+      ],
+      [
+        "image-MaleficStar.png",
+        "Entry:MaleficStar"
+      ]
+    ],
+    "content": "📅 **Today — Wed 09 Sep**\nAria Bex (unnamed)",
+    "embeds": [
+      {
+        "color": 16309578,
+        "fields": [
+          {
+            "inline": false,
+            "name": "🕘 21:30  ·  HMaleficStar + HKalos",
+            "value": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 ✅ · 1 ❌\nStill to answer: (unnamed)"
+          },
+          {
+            "inline": false,
+            "name": "🕘 23:00  ·  XKalos",
+            "value": "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n✅ confirmed · 2/2 ✅"
+          }
+        ],
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "image": {
+          "url": "attachment://image-MaleficStar.png"
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/quiet/day_of_heading/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "📅 **Two runs tonight!**\n(unnamed) Aria Bex",
+    "embeds": [
+      {
+        "color": 5793266,
+        "fields": [
+          {
+            "inline": false,
+            "name": "🕒 own time  ·  XFoo",
+            "value": "**XFoo** · XFoo\n🕒 own time · 0/1 ✅\nStill to answer: (unnamed)"
+          },
+          {
+            "inline": false,
+            "name": "🕘 21:30  ·  HMaleficStar + HKalos",
+            "value": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 ✅ · 1 ❌\nStill to answer: (unnamed)"
+          }
+        ],
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/quiet/day_of_heading/post": {
+    "allowed_mentions": {
+      "parse": [],
+      "users": [
+        "1003"
+      ]
+    },
+    "attachments": [],
+    "content": "📅 **Two runs tonight!**\n(unnamed) Aria Bex",
+    "embeds": [
+      {
+        "color": 5793266,
+        "fields": [
+          {
+            "inline": false,
+            "name": "🕒 own time  ·  XFoo",
+            "value": "**XFoo** · XFoo\n🕒 own time · 0/1 ✅\nStill to answer: (unnamed)"
+          },
+          {
+            "inline": false,
+            "name": "🕘 21:30  ·  HMaleficStar + HKalos",
+            "value": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 ✅ · 1 ❌\nStill to answer: (unnamed)"
+          }
+        ],
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/quiet/digest/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "🗓️ Boss week of Thu 03 Sep",
+    "embeds": [
+      {
+        "color": 5793266,
+        "description": "**1/5 Cleared** · 5 run(s) across 4 day(s) · **2** still unconfirmed ⚠️ · **1** at risk ❗",
+        "fields": [
+          {
+            "inline": false,
+            "name": "Sat 05 Sep",
+            "value": "**HKalos** · 🏁 **Cleared**\n`21:00` · 2/2 ✅ · <#222> · `#c1d2e3f4`"
+          },
+          {
+            "inline": false,
+            "name": "Mon 07 Sep",
+            "value": "**XFoo** · 🕒 **Own time**\n`own time` · 0/1 ✅ · <#111> · `#b0b0b0b0`"
+          },
+          {
+            "inline": false,
+            "name": "Tue 08 Sep",
+            "value": "**NMaleficStar** · ❗ **At risk**\n`22:00` · 0/3 ✅ · 1 ❌ · <#111> · `#f1e2d3c4`"
+          },
+          {
+            "inline": false,
+            "name": "Wed 09 Sep",
+            "value": "**HMaleficStar + HKalos** · ⚠️ **Planned**\n`21:30` · 1/3 ✅ · 1 ❌ · <#111> · `#a1b2c3d4`\n\n**XKalos** · ✅ **Confirmed**\n`23:00` · 2/2 ✅ · <#111> · `#e5f6a7b8`"
+          }
+        ],
+        "footer": {
+          "text": "React ✅/❌ on your run's reminders · /schedule scope:mine for just yours"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/quiet/digest/post": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "attachments": [],
+    "content": "🗓️ Boss week of Thu 03 Sep",
+    "embeds": [
+      {
+        "color": 5793266,
+        "description": "**1/5 Cleared** · 5 run(s) across 4 day(s) · **2** still unconfirmed ⚠️ · **1** at risk ❗",
+        "fields": [
+          {
+            "inline": false,
+            "name": "Sat 05 Sep",
+            "value": "**HKalos** · 🏁 **Cleared**\n`21:00` · 2/2 ✅ · <#222> · `#c1d2e3f4`"
+          },
+          {
+            "inline": false,
+            "name": "Mon 07 Sep",
+            "value": "**XFoo** · 🕒 **Own time**\n`own time` · 0/1 ✅ · <#111> · `#b0b0b0b0`"
+          },
+          {
+            "inline": false,
+            "name": "Tue 08 Sep",
+            "value": "**NMaleficStar** · ❗ **At risk**\n`22:00` · 0/3 ✅ · 1 ❌ · <#111> · `#f1e2d3c4`"
+          },
+          {
+            "inline": false,
+            "name": "Wed 09 Sep",
+            "value": "**HMaleficStar + HKalos** · ⚠️ **Planned**\n`21:30` · 1/3 ✅ · 1 ❌ · <#111> · `#a1b2c3d4`\n\n**XKalos** · ✅ **Confirmed**\n`23:00` · 2/2 ✅ · <#111> · `#e5f6a7b8`"
+          }
+        ],
+        "footer": {
+          "text": "React ✅/❌ on your run's reminders · /schedule scope:mine for just yours"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/quiet/digest_empty/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "🗓️ Boss week of Thu 03 Sep",
+    "embeds": [
+      {
+        "color": 5793266,
+        "description": "Nothing on the schedule yet. Add a baseline with `/fixed add`.",
+        "type": "rich"
+      }
+    ]
+  },
+  "v4/quiet/digest_empty/post": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "attachments": [],
+    "content": "🗓️ Boss week of Thu 03 Sep",
+    "embeds": [
+      {
+        "color": 5793266,
+        "description": "Nothing on the schedule yet. Add a baseline with `/fixed add`.",
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/loud/countdown_at_risk/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "⏰ **NMaleficStar** in 1h30m (22:00) — Aria <@1003> · Bex out",
+    "embeds": [
+      {
+        "color": 16309578,
+        "description": "**NMaleficStar** · Radiant Malefic Star (Normal, Lv280)\n❗ at risk · 0/3 (1 out)\nStill to answer: Aria <@1003>",
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/loud/countdown_at_risk/post": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "attachments": [
+      [
+        "MaleficStar.png",
+        "Portrait:MaleficStar"
+      ]
+    ],
+    "content": "⏰ **NMaleficStar** in 1h30m (22:00) — Aria <@1003> · Bex out",
+    "embeds": [
+      {
+        "color": 16309578,
+        "description": "**NMaleficStar** · Radiant Malefic Star (Normal, Lv280)\n❗ at risk · 0/3 (1 out)\nStill to answer: Aria <@1003>",
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/loud/countdown_cleared/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "⏰ **HKalos** in 15m (21:00) — everyone's confirmed ✅",
+    "embeds": [
+      {
+        "color": 5763719,
+        "description": "**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n🏁 done · 2/2",
+        "thumbnail": {
+          "url": "attachment://Kalos.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/loud/countdown_cleared/post": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "attachments": [
+      [
+        "Kalos.png",
+        "Portrait:Kalos"
+      ]
+    ],
+    "content": "⏰ **HKalos** in 15m (21:00) — everyone's confirmed ✅",
+    "embeds": [
+      {
+        "color": 5763719,
+        "description": "**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n🏁 done · 2/2",
+        "thumbnail": {
+          "url": "attachment://Kalos.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/loud/countdown_pending/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "⏰ **HMaleficStar + HKalos** in 15m (21:30) — <@1001> <@1003> · Bex out",
+    "embeds": [
+      {
+        "color": 16309578,
+        "description": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 (1 out)\nStill to answer: <@1003>",
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/loud/countdown_pending/post": {
+    "allowed_mentions": {
+      "parse": [],
+      "users": [
+        "1001",
+        "1003"
+      ]
+    },
+    "attachments": [
+      [
+        "MaleficStar.png",
+        "Portrait:MaleficStar"
+      ]
+    ],
+    "content": "⏰ **HMaleficStar + HKalos** in 15m (21:30) — <@1001> <@1003> · Bex out",
+    "embeds": [
+      {
+        "color": 16309578,
+        "description": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 (1 out)\nStill to answer: <@1003>",
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/loud/countdown_settled/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "⏰ **XKalos** in 1h (23:00) — everyone's confirmed ✅",
+    "embeds": [
+      {
+        "color": 5763719,
+        "description": "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n✅ confirmed · 2/2",
+        "thumbnail": {
+          "url": "attachment://Kalos.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/loud/countdown_settled/post": {
+    "allowed_mentions": {
+      "parse": [],
+      "users": [
+        "1001"
+      ]
+    },
+    "attachments": [
+      [
+        "Kalos.png",
+        "Portrait:Kalos"
+      ]
+    ],
+    "content": "⏰ **XKalos** in 1h (23:00) — everyone's confirmed ✅",
+    "embeds": [
+      {
+        "color": 5763719,
+        "description": "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n✅ confirmed · 2/2",
+        "thumbnail": {
+          "url": "attachment://Kalos.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/loud/day_of/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "📅 **Today — Wed 09 Sep**\n<@1001> Bex <@1003>",
+    "embeds": [
+      {
+        "color": 16309578,
+        "fields": [
+          {
+            "inline": false,
+            "name": "🕘 21:30  ·  HMaleficStar + HKalos",
+            "value": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 (1 out)\nStill to answer: <@1003>"
+          },
+          {
+            "inline": false,
+            "name": "🕘 23:00  ·  XKalos",
+            "value": "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n✅ confirmed · 2/2"
+          }
+        ],
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "image": {
+          "url": "attachment://image-MaleficStar.png"
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/loud/day_of/post": {
+    "allowed_mentions": {
+      "parse": [],
+      "users": [
+        "1001",
+        "1003"
+      ]
+    },
+    "attachments": [
+      [
+        "MaleficStar.png",
+        "Portrait:MaleficStar"
+      ],
+      [
+        "image-MaleficStar.png",
+        "Entry:MaleficStar"
+      ]
+    ],
+    "content": "📅 **Today — Wed 09 Sep**\n<@1001> Bex <@1003>",
+    "embeds": [
+      {
+        "color": 16309578,
+        "fields": [
+          {
+            "inline": false,
+            "name": "🕘 21:30  ·  HMaleficStar + HKalos",
+            "value": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 (1 out)\nStill to answer: <@1003>"
+          },
+          {
+            "inline": false,
+            "name": "🕘 23:00  ·  XKalos",
+            "value": "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n✅ confirmed · 2/2"
+          }
+        ],
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "image": {
+          "url": "attachment://image-MaleficStar.png"
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/loud/day_of_heading/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "📅 **Two runs tonight!**\n<@1003> Aria Bex",
+    "embeds": [
+      {
+        "color": 5793266,
+        "fields": [
+          {
+            "inline": false,
+            "name": "🕒 own time  ·  XFoo",
+            "value": "**XFoo** · XFoo\n🕒 own time · 0/1\nStill to answer: <@1003>"
+          },
+          {
+            "inline": false,
+            "name": "🕘 21:30  ·  HMaleficStar + HKalos",
+            "value": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 (1 out)\nStill to answer: <@1003>"
+          }
+        ],
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/loud/day_of_heading/post": {
+    "allowed_mentions": {
+      "parse": [],
+      "users": [
+        "1003"
+      ]
+    },
+    "attachments": [],
+    "content": "📅 **Two runs tonight!**\n<@1003> Aria Bex",
+    "embeds": [
+      {
+        "color": 5793266,
+        "fields": [
+          {
+            "inline": false,
+            "name": "🕒 own time  ·  XFoo",
+            "value": "**XFoo** · XFoo\n🕒 own time · 0/1\nStill to answer: <@1003>"
+          },
+          {
+            "inline": false,
+            "name": "🕘 21:30  ·  HMaleficStar + HKalos",
+            "value": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 (1 out)\nStill to answer: <@1003>"
+          }
+        ],
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/loud/digest/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "🗓️ Boss week of Thu 03 Sep",
+    "embeds": [
+      {
+        "color": 5793266,
+        "description": "**1/5 Cleared** · 5 run(s) across 4 day(s) · **2** still unconfirmed ⚠️ · **1** at risk ❗",
+        "fields": [
+          {
+            "inline": false,
+            "name": "Sat 05 Sep",
+            "value": "**HKalos** · 🏁 **Cleared**\n`21:00` · 2/2 · <#222> · `#c1d2e3f4`"
+          },
+          {
+            "inline": false,
+            "name": "Mon 07 Sep",
+            "value": "**XFoo** · 🕒 **Own time**\n`own time` · 0/1 · <#111> · `#b0b0b0b0`"
+          },
+          {
+            "inline": false,
+            "name": "Tue 08 Sep",
+            "value": "**NMaleficStar** · ❗ **At risk**\n`22:00` · 0/3 (1 out) · <#111> · `#f1e2d3c4`"
+          },
+          {
+            "inline": false,
+            "name": "Wed 09 Sep",
+            "value": "**HMaleficStar + HKalos** · ⚠️ **Planned**\n`21:30` · 1/3 (1 out) · <#111> · `#a1b2c3d4`\n\n**XKalos** · ✅ **Confirmed**\n`23:00` · 2/2 · <#111> · `#e5f6a7b8`"
+          }
+        ],
+        "footer": {
+          "text": "React ✅/❌ on your run's reminders · /schedule scope:mine for just yours"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/loud/digest/post": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "attachments": [],
+    "content": "🗓️ Boss week of Thu 03 Sep",
+    "embeds": [
+      {
+        "color": 5793266,
+        "description": "**1/5 Cleared** · 5 run(s) across 4 day(s) · **2** still unconfirmed ⚠️ · **1** at risk ❗",
+        "fields": [
+          {
+            "inline": false,
+            "name": "Sat 05 Sep",
+            "value": "**HKalos** · 🏁 **Cleared**\n`21:00` · 2/2 · <#222> · `#c1d2e3f4`"
+          },
+          {
+            "inline": false,
+            "name": "Mon 07 Sep",
+            "value": "**XFoo** · 🕒 **Own time**\n`own time` · 0/1 · <#111> · `#b0b0b0b0`"
+          },
+          {
+            "inline": false,
+            "name": "Tue 08 Sep",
+            "value": "**NMaleficStar** · ❗ **At risk**\n`22:00` · 0/3 (1 out) · <#111> · `#f1e2d3c4`"
+          },
+          {
+            "inline": false,
+            "name": "Wed 09 Sep",
+            "value": "**HMaleficStar + HKalos** · ⚠️ **Planned**\n`21:30` · 1/3 (1 out) · <#111> · `#a1b2c3d4`\n\n**XKalos** · ✅ **Confirmed**\n`23:00` · 2/2 · <#111> · `#e5f6a7b8`"
+          }
+        ],
+        "footer": {
+          "text": "React ✅/❌ on your run's reminders · /schedule scope:mine for just yours"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/loud/digest_empty/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "🗓️ Boss week of Thu 03 Sep",
+    "embeds": [
+      {
+        "color": 5793266,
+        "description": "Nothing on the schedule yet. Add a baseline with `/fixed add`.",
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/loud/digest_empty/post": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "attachments": [],
+    "content": "🗓️ Boss week of Thu 03 Sep",
+    "embeds": [
+      {
+        "color": 5793266,
+        "description": "Nothing on the schedule yet. Add a baseline with `/fixed add`.",
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/quiet/countdown_at_risk/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "⏰ **NMaleficStar** in 1h30m (22:00) — Aria (unnamed) · Bex out",
+    "embeds": [
+      {
+        "color": 16309578,
+        "description": "**NMaleficStar** · Radiant Malefic Star (Normal, Lv280)\n❗ at risk · 0/3 (1 out)\nStill to answer: Aria (unnamed)",
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/quiet/countdown_at_risk/post": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "attachments": [
+      [
+        "MaleficStar.png",
+        "Portrait:MaleficStar"
+      ]
+    ],
+    "content": "⏰ **NMaleficStar** in 1h30m (22:00) — Aria (unnamed) · Bex out",
+    "embeds": [
+      {
+        "color": 16309578,
+        "description": "**NMaleficStar** · Radiant Malefic Star (Normal, Lv280)\n❗ at risk · 0/3 (1 out)\nStill to answer: Aria (unnamed)",
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/quiet/countdown_cleared/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "⏰ **HKalos** in 15m (21:00) — everyone's confirmed ✅",
+    "embeds": [
+      {
+        "color": 5763719,
+        "description": "**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n🏁 done · 2/2",
+        "thumbnail": {
+          "url": "attachment://Kalos.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/quiet/countdown_cleared/post": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "attachments": [
+      [
+        "Kalos.png",
+        "Portrait:Kalos"
+      ]
+    ],
+    "content": "⏰ **HKalos** in 15m (21:00) — everyone's confirmed ✅",
+    "embeds": [
+      {
+        "color": 5763719,
+        "description": "**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n🏁 done · 2/2",
+        "thumbnail": {
+          "url": "attachment://Kalos.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/quiet/countdown_pending/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "⏰ **HMaleficStar + HKalos** in 15m (21:30) — Aria (unnamed) · Bex out",
+    "embeds": [
+      {
+        "color": 16309578,
+        "description": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 (1 out)\nStill to answer: (unnamed)",
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/quiet/countdown_pending/post": {
+    "allowed_mentions": {
+      "parse": [],
+      "users": [
+        "1001",
+        "1003"
+      ]
+    },
+    "attachments": [
+      [
+        "MaleficStar.png",
+        "Portrait:MaleficStar"
+      ]
+    ],
+    "content": "⏰ **HMaleficStar + HKalos** in 15m (21:30) — Aria (unnamed) · Bex out",
+    "embeds": [
+      {
+        "color": 16309578,
+        "description": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 (1 out)\nStill to answer: (unnamed)",
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/quiet/countdown_settled/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "⏰ **XKalos** in 1h (23:00) — everyone's confirmed ✅",
+    "embeds": [
+      {
+        "color": 5763719,
+        "description": "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n✅ confirmed · 2/2",
+        "thumbnail": {
+          "url": "attachment://Kalos.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/quiet/countdown_settled/post": {
+    "allowed_mentions": {
+      "parse": [],
+      "users": [
+        "1001"
+      ]
+    },
+    "attachments": [
+      [
+        "Kalos.png",
+        "Portrait:Kalos"
+      ]
+    ],
+    "content": "⏰ **XKalos** in 1h (23:00) — everyone's confirmed ✅",
+    "embeds": [
+      {
+        "color": 5763719,
+        "description": "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n✅ confirmed · 2/2",
+        "thumbnail": {
+          "url": "attachment://Kalos.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/quiet/day_of/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "📅 **Today — Wed 09 Sep**\nAria Bex (unnamed)",
+    "embeds": [
+      {
+        "color": 16309578,
+        "fields": [
+          {
+            "inline": false,
+            "name": "🕘 21:30  ·  HMaleficStar + HKalos",
+            "value": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 (1 out)\nStill to answer: (unnamed)"
+          },
+          {
+            "inline": false,
+            "name": "🕘 23:00  ·  XKalos",
+            "value": "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n✅ confirmed · 2/2"
+          }
+        ],
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "image": {
+          "url": "attachment://image-MaleficStar.png"
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/quiet/day_of/post": {
+    "allowed_mentions": {
+      "parse": [],
+      "users": [
+        "1001",
+        "1003"
+      ]
+    },
+    "attachments": [
+      [
+        "MaleficStar.png",
+        "Portrait:MaleficStar"
+      ],
+      [
+        "image-MaleficStar.png",
+        "Entry:MaleficStar"
+      ]
+    ],
+    "content": "📅 **Today — Wed 09 Sep**\nAria Bex (unnamed)",
+    "embeds": [
+      {
+        "color": 16309578,
+        "fields": [
+          {
+            "inline": false,
+            "name": "🕘 21:30  ·  HMaleficStar + HKalos",
+            "value": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 (1 out)\nStill to answer: (unnamed)"
+          },
+          {
+            "inline": false,
+            "name": "🕘 23:00  ·  XKalos",
+            "value": "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n✅ confirmed · 2/2"
+          }
+        ],
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "image": {
+          "url": "attachment://image-MaleficStar.png"
+        },
+        "thumbnail": {
+          "url": "attachment://MaleficStar.png"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/quiet/day_of_heading/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "📅 **Two runs tonight!**\n(unnamed) Aria Bex",
+    "embeds": [
+      {
+        "color": 5793266,
+        "fields": [
+          {
+            "inline": false,
+            "name": "🕒 own time  ·  XFoo",
+            "value": "**XFoo** · XFoo\n🕒 own time · 0/1\nStill to answer: (unnamed)"
+          },
+          {
+            "inline": false,
+            "name": "🕘 21:30  ·  HMaleficStar + HKalos",
+            "value": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 (1 out)\nStill to answer: (unnamed)"
+          }
+        ],
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/quiet/day_of_heading/post": {
+    "allowed_mentions": {
+      "parse": [],
+      "users": [
+        "1003"
+      ]
+    },
+    "attachments": [],
+    "content": "📅 **Two runs tonight!**\n(unnamed) Aria Bex",
+    "embeds": [
+      {
+        "color": 5793266,
+        "fields": [
+          {
+            "inline": false,
+            "name": "🕒 own time  ·  XFoo",
+            "value": "**XFoo** · XFoo\n🕒 own time · 0/1\nStill to answer: (unnamed)"
+          },
+          {
+            "inline": false,
+            "name": "🕘 21:30  ·  HMaleficStar + HKalos",
+            "value": "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n**HKalos** · Gatekeeper Kalos (Hard, Lv265)\n⚠️ unconfirmed · 1/3 (1 out)\nStill to answer: (unnamed)"
+          }
+        ],
+        "footer": {
+          "text": "React ✅ if you're on, ❌ if not."
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/quiet/digest/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "🗓️ Boss week of Thu 03 Sep",
+    "embeds": [
+      {
+        "color": 5793266,
+        "description": "**1/5 Cleared** · 5 run(s) across 4 day(s) · **2** still unconfirmed ⚠️ · **1** at risk ❗",
+        "fields": [
+          {
+            "inline": false,
+            "name": "Sat 05 Sep",
+            "value": "**HKalos** · 🏁 **Cleared**\n`21:00` · 2/2 · <#222> · `#c1d2e3f4`"
+          },
+          {
+            "inline": false,
+            "name": "Mon 07 Sep",
+            "value": "**XFoo** · 🕒 **Own time**\n`own time` · 0/1 · <#111> · `#b0b0b0b0`"
+          },
+          {
+            "inline": false,
+            "name": "Tue 08 Sep",
+            "value": "**NMaleficStar** · ❗ **At risk**\n`22:00` · 0/3 (1 out) · <#111> · `#f1e2d3c4`"
+          },
+          {
+            "inline": false,
+            "name": "Wed 09 Sep",
+            "value": "**HMaleficStar + HKalos** · ⚠️ **Planned**\n`21:30` · 1/3 (1 out) · <#111> · `#a1b2c3d4`\n\n**XKalos** · ✅ **Confirmed**\n`23:00` · 2/2 · <#111> · `#e5f6a7b8`"
+          }
+        ],
+        "footer": {
+          "text": "React ✅/❌ on your run's reminders · /schedule scope:mine for just yours"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/quiet/digest/post": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "attachments": [],
+    "content": "🗓️ Boss week of Thu 03 Sep",
+    "embeds": [
+      {
+        "color": 5793266,
+        "description": "**1/5 Cleared** · 5 run(s) across 4 day(s) · **2** still unconfirmed ⚠️ · **1** at risk ❗",
+        "fields": [
+          {
+            "inline": false,
+            "name": "Sat 05 Sep",
+            "value": "**HKalos** · 🏁 **Cleared**\n`21:00` · 2/2 · <#222> · `#c1d2e3f4`"
+          },
+          {
+            "inline": false,
+            "name": "Mon 07 Sep",
+            "value": "**XFoo** · 🕒 **Own time**\n`own time` · 0/1 · <#111> · `#b0b0b0b0`"
+          },
+          {
+            "inline": false,
+            "name": "Tue 08 Sep",
+            "value": "**NMaleficStar** · ❗ **At risk**\n`22:00` · 0/3 (1 out) · <#111> · `#f1e2d3c4`"
+          },
+          {
+            "inline": false,
+            "name": "Wed 09 Sep",
+            "value": "**HMaleficStar + HKalos** · ⚠️ **Planned**\n`21:30` · 1/3 (1 out) · <#111> · `#a1b2c3d4`\n\n**XKalos** · ✅ **Confirmed**\n`23:00` · 2/2 · <#111> · `#e5f6a7b8`"
+          }
+        ],
+        "footer": {
+          "text": "React ✅/❌ on your run's reminders · /schedule scope:mine for just yours"
+        },
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/quiet/digest_empty/edit": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "content": "🗓️ Boss week of Thu 03 Sep",
+    "embeds": [
+      {
+        "color": 5793266,
+        "description": "Nothing on the schedule yet. Add a baseline with `/fixed add`.",
+        "type": "rich"
+      }
+    ]
+  },
+  "v5/quiet/digest_empty/post": {
+    "allowed_mentions": {
+      "parse": []
+    },
+    "attachments": [],
+    "content": "🗓️ Boss week of Thu 03 Sep",
+    "embeds": [
+      {
+        "color": 5793266,
+        "description": "Nothing on the schedule yet. Add a baseline with `/fixed add`.",
+        "type": "rich"
+      }
+    ]
+  }
+}

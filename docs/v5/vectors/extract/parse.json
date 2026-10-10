@@ -1,0 +1,3055 @@
+{
+  "cases": [
+    {
+      "case_id": "accepted-and-coerced",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "extraction": {
+                "amendments": [
+                  {
+                    "bosses": [
+                      "HMaleficStar"
+                    ],
+                    "confidence": 0.8,
+                    "day_ref": "wed",
+                    "evidence_message_ids": [
+                      "1"
+                    ],
+                    "is_question": true,
+                    "kind": "move",
+                    "participants": [
+                      "11"
+                    ],
+                    "rsvp": null,
+                    "target_run_hint": "#a1a1",
+                    "time_ref": null
+                  }
+                ],
+                "summary": "move to wed"
+              },
+              "status": "accepted"
+            }
+          },
+          {
+            "value": {
+              "extraction": {
+                "amendments": [
+                  {
+                    "bosses": [
+                      "HMaleficStar"
+                    ],
+                    "confidence": 0.8,
+                    "day_ref": "wed",
+                    "evidence_message_ids": [
+                      "1"
+                    ],
+                    "is_question": true,
+                    "kind": "move",
+                    "participants": [
+                      "11"
+                    ],
+                    "rsvp": null,
+                    "target_run_hint": "#a1a1",
+                    "time_ref": null
+                  }
+                ],
+                "summary": "move to wed"
+              },
+              "status": "accepted"
+            }
+          },
+          {
+            "value": {
+              "extraction": {
+                "amendments": [
+                  {
+                    "bosses": [
+                      "HMaleficStar"
+                    ],
+                    "confidence": 0.8,
+                    "day_ref": "wed",
+                    "evidence_message_ids": [
+                      "1"
+                    ],
+                    "is_question": true,
+                    "kind": "move",
+                    "participants": [
+                      "11"
+                    ],
+                    "rsvp": null,
+                    "target_run_hint": "#a1a1",
+                    "time_ref": null
+                  }
+                ],
+                "summary": "move to wed"
+              },
+              "status": "accepted"
+            }
+          },
+          {
+            "value": {
+              "extraction": {
+                "amendments": [],
+                "summary": "no schedule change"
+              },
+              "status": "accepted"
+            }
+          },
+          {
+            "value": {
+              "extraction": {
+                "amendments": [],
+                "summary": ""
+              },
+              "status": "accepted"
+            }
+          },
+          {
+            "value": {
+              "extraction": {
+                "amendments": [],
+                "summary": ""
+              },
+              "status": "accepted"
+            }
+          },
+          {
+            "value": {
+              "extraction": {
+                "amendments": [
+                  {
+                    "bosses": [
+                      "HMaleficStar",
+                      "HFA"
+                    ],
+                    "confidence": 0.82,
+                    "day_ref": null,
+                    "evidence_message_ids": [
+                      "7"
+                    ],
+                    "is_question": true,
+                    "kind": "move",
+                    "participants": [
+                      "11",
+                      "22"
+                    ],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": "9pm"
+                  }
+                ],
+                "summary": ""
+              },
+              "status": "accepted"
+            }
+          },
+          {
+            "value": {
+              "extraction": {
+                "amendments": [
+                  {
+                    "bosses": [],
+                    "confidence": 0.0,
+                    "day_ref": null,
+                    "evidence_message_ids": [],
+                    "is_question": false,
+                    "kind": "rsvp",
+                    "participants": [],
+                    "rsvp": "yes",
+                    "target_run_hint": null,
+                    "time_ref": null
+                  },
+                  {
+                    "bosses": [],
+                    "confidence": 0.0,
+                    "day_ref": null,
+                    "evidence_message_ids": [],
+                    "is_question": false,
+                    "kind": "otot",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": null
+                  }
+                ],
+                "summary": ""
+              },
+              "status": "accepted"
+            }
+          }
+        ]
+      },
+      "input": {
+        "steps": [
+          {
+            "op": "parse_response",
+            "raw": "{\"amendments\":[{\"kind\":\"move\",\"bosses\":[\"HMaleficStar\"],\"day_ref\":\"wed\",\"time_ref\":null,\"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\"evidence_message_ids\":[\"1\"],\"target_run_hint\":\"#a1a1\"}],\"summary\":\"move to wed\"}"
+          },
+          {
+            "op": "parse_response",
+            "raw": "```json\n{\"amendments\":[{\"kind\":\"move\",\"bosses\":[\"HMaleficStar\"],\"day_ref\":\"wed\",\"time_ref\":null,\"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\"evidence_message_ids\":[\"1\"],\"target_run_hint\":\"#a1a1\"}],\"summary\":\"move to wed\"}\n```"
+          },
+          {
+            "op": "parse_response",
+            "raw": "```\n{\"amendments\":[{\"kind\":\"move\",\"bosses\":[\"HMaleficStar\"],\"day_ref\":\"wed\",\"time_ref\":null,\"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\"evidence_message_ids\":[\"1\"],\"target_run_hint\":\"#a1a1\"}],\"summary\":\"move to wed\"}```"
+          },
+          {
+            "op": "parse_response",
+            "raw": "{\"amendments\": [], \"summary\": \"no schedule change\"}"
+          },
+          {
+            "op": "parse_response",
+            "raw": "{}"
+          },
+          {
+            "op": "parse_response",
+            "raw": "{\"amendments\": null, \"summary\": null}"
+          },
+          {
+            "op": "parse_response",
+            "raw": "{\"amendments\": {\"kind\": \" MOVE \", \"bosses\": \"HMaleficStar; HFA, ,null\", \"participants\": [\"<@11>\", \"<@!22>\", \"11\"], \"day_ref\": \"null\", \"time_ref\": \"  9pm \", \"rsvp\": \"N/A\", \"is_question\": \"yes\", \"confidence\": 82, \"evidence_message_ids\": 7, \"target_run_hint\": \"TBD\", \"extra\": 1}, \"summary\": \"-\", \"note\": \"ignored\"}"
+          },
+          {
+            "op": "parse_response",
+            "raw": "{\"amendments\": [{\"kind\": \"rsvp\", \"rsvp\": \"YES\", \"confidence\": \"high\"}, {\"kind\": \"otot\", \"confidence\": -3, \"is_question\": \"0\"}]}"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "rejected-responses",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "error_class": "ValueError",
+              "message": "the model returned an empty response",
+              "status": "rejected"
+            }
+          },
+          {
+            "value": {
+              "error_class": "ValueError",
+              "message": "not JSON: Expecting value: line 1 column 4 (char 3)",
+              "status": "rejected"
+            }
+          },
+          {
+            "value": {
+              "error_class": "ValueError",
+              "message": "not JSON: Expecting value: line 1 column 1 (char 0)",
+              "status": "rejected"
+            }
+          },
+          {
+            "value": {
+              "error_class": "ValueError",
+              "message": "not JSON: Expecting ',' delimiter: line 1 column 32 (char 31)",
+              "status": "rejected"
+            }
+          },
+          {
+            "value": {
+              "error_class": "ValueError",
+              "message": "expected a JSON object, got list",
+              "status": "rejected"
+            }
+          },
+          {
+            "value": {
+              "error_class": "ValueError",
+              "message": "expected a JSON object, got str",
+              "status": "rejected"
+            }
+          },
+          {
+            "value": {
+              "error_class": "ValueError",
+              "message": "not JSON: Expecting value: line 1 column 1 (char 0)",
+              "status": "rejected"
+            }
+          },
+          {
+            "value": {
+              "error_class": "ValidationError",
+              "errors": [
+                {
+                  "loc": [
+                    "amendments",
+                    0,
+                    "kind"
+                  ],
+                  "type": "literal_error"
+                }
+              ],
+              "status": "rejected"
+            }
+          },
+          {
+            "value": {
+              "error_class": "ValidationError",
+              "errors": [
+                {
+                  "loc": [
+                    "amendments",
+                    0,
+                    "rsvp"
+                  ],
+                  "type": "literal_error"
+                }
+              ],
+              "status": "rejected"
+            }
+          },
+          {
+            "value": {
+              "extraction": {
+                "amendments": [
+                  {
+                    "bosses": [
+                      "{}"
+                    ],
+                    "confidence": 0.0,
+                    "day_ref": null,
+                    "evidence_message_ids": [],
+                    "is_question": false,
+                    "kind": "move",
+                    "participants": [],
+                    "rsvp": null,
+                    "target_run_hint": null,
+                    "time_ref": null
+                  }
+                ],
+                "summary": ""
+              },
+              "status": "accepted"
+            }
+          },
+          {
+            "value": {
+              "error_class": "ValidationError",
+              "errors": [
+                {
+                  "loc": [
+                    "amendments"
+                  ],
+                  "type": "list_type"
+                }
+              ],
+              "status": "rejected"
+            }
+          },
+          {
+            "value": {
+              "error_class": "ValidationError",
+              "errors": [
+                {
+                  "loc": [
+                    "amendments",
+                    0,
+                    "kind"
+                  ],
+                  "type": "missing"
+                }
+              ],
+              "status": "rejected"
+            }
+          }
+        ]
+      },
+      "input": {
+        "steps": [
+          {
+            "op": "parse_response",
+            "raw": ""
+          },
+          {
+            "op": "parse_response",
+            "raw": "   "
+          },
+          {
+            "op": "parse_response",
+            "raw": "Sure! Here is the JSON:\n{\"amendments\":[{\"kind\":\"move\",\"bosses\":[\"HMaleficStar\"],\"day_ref\":\"wed\",\"time_ref\":null,\"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\"evidence_message_ids\":[\"1\"],\"target_run_hint\":\"#a1a1\"}],\"summary\":\"move to wed\"}"
+          },
+          {
+            "op": "parse_response",
+            "raw": "{\"amendments\": [{\"kind\": \"move\""
+          },
+          {
+            "op": "parse_response",
+            "raw": "[]"
+          },
+          {
+            "op": "parse_response",
+            "raw": "\"just a string\""
+          },
+          {
+            "op": "parse_response",
+            "raw": "```json\n{}\n``` trailing"
+          },
+          {
+            "op": "parse_response",
+            "raw": "{\"amendments\": [{\"kind\": \"reschedule\"}]}"
+          },
+          {
+            "op": "parse_response",
+            "raw": "{\"amendments\": [{\"kind\": \"rsvp\", \"rsvp\": \"perhaps\"}]}"
+          },
+          {
+            "op": "parse_response",
+            "raw": "{\"amendments\": [{\"kind\": \"move\", \"is_question\": \"maybe\", \"bosses\": {}}]}"
+          },
+          {
+            "op": "parse_response",
+            "raw": "{\"amendments\": \"move\"}"
+          },
+          {
+            "op": "parse_response",
+            "raw": "{\"amendments\": [{}]}"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "guarded-call-accepts-first-answer",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "attempts": 1,
+              "error": null,
+              "extraction": {
+                "amendments": [
+                  {
+                    "bosses": [
+                      "HMaleficStar"
+                    ],
+                    "confidence": 0.8,
+                    "day_ref": "wed",
+                    "evidence_message_ids": [
+                      "1"
+                    ],
+                    "is_question": true,
+                    "kind": "move",
+                    "participants": [
+                      "11"
+                    ],
+                    "rsvp": null,
+                    "target_run_hint": "#a1a1",
+                    "time_ref": null
+                  }
+                ],
+                "summary": "move to wed"
+              },
+              "misconfigured": false,
+              "ok": true,
+              "prompt": "SYSTEM\n\n[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+              "raw": "{\"amendments\":[{\"kind\":\"move\",\"bosses\":[\"HMaleficStar\"],\"day_ref\":\"wed\",\"time_ref\":null,\"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\"evidence_message_ids\":[\"1\"],\"target_run_hint\":\"#a1a1\"}],\"summary\":\"move to wed\"}",
+              "requests": [
+                {
+                  "messages": [
+                    {
+                      "content": "SYSTEM",
+                      "role": "system"
+                    },
+                    {
+                      "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                      "role": "user"
+                    }
+                  ],
+                  "model": "extractor",
+                  "response_format": {
+                    "json_schema": {
+                      "name": "extraction",
+                      "schema": {
+                        "$defs": {
+                          "Amendment": {
+                            "additionalProperties": false,
+                            "description": "One proposed change, exactly as the model saw it in the conversation.",
+                            "properties": {
+                              "bosses": {
+                                "description": "canonical boss names from the boss table, e.g. HMaleficStar, XKalos",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Bosses",
+                                "type": "array"
+                              },
+                              "confidence": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "title": "Confidence",
+                                "type": "number"
+                              },
+                              "day_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the day exactly as written: weds, tmr, tonight, 2026-09-02",
+                                "title": "Day Ref"
+                              },
+                              "evidence_message_ids": {
+                                "description": "the [msg_id]s this came from",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Evidence Message Ids",
+                                "type": "array"
+                              },
+                              "is_question": {
+                                "description": "true if this was asked, not decided",
+                                "title": "Is Question",
+                                "type": "boolean"
+                              },
+                              "kind": {
+                                "description": "what kind of change this is",
+                                "enum": [
+                                  "move",
+                                  "add",
+                                  "cancel",
+                                  "split",
+                                  "otot",
+                                  "sub",
+                                  "rsvp",
+                                  "fix"
+                                ],
+                                "title": "Kind",
+                                "type": "string"
+                              },
+                              "participants": {
+                                "description": "discord user ids of the people this is about",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Participants",
+                                "type": "array"
+                              },
+                              "rsvp": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "yes",
+                                      "no",
+                                      "maybe"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "for kind=rsvp: yes, no or maybe",
+                                "title": "Rsvp"
+                              },
+                              "target_run_hint": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the short run id from the RUNS list, if one clearly matches",
+                                "title": "Target Run Hint"
+                              },
+                              "time_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the time exactly as written: 9:30pm, 930, 1030~11+pm",
+                                "title": "Time Ref"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "bosses",
+                              "day_ref",
+                              "time_ref",
+                              "participants",
+                              "rsvp",
+                              "is_question",
+                              "confidence",
+                              "evidence_message_ids",
+                              "target_run_hint"
+                            ],
+                            "title": "Amendment",
+                            "type": "object"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "Everything the model found in one burst of messages.",
+                        "properties": {
+                          "amendments": {
+                            "items": {
+                              "$ref": "#/$defs/Amendment"
+                            },
+                            "title": "Amendments",
+                            "type": "array"
+                          },
+                          "summary": {
+                            "description": "one line a human can read",
+                            "title": "Summary",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "amendments",
+                          "summary"
+                        ],
+                        "title": "Extraction",
+                        "type": "object"
+                      },
+                      "strict": true
+                    },
+                    "type": "json_schema"
+                  },
+                  "seed": 0,
+                  "temperature": 0
+                }
+              ],
+              "thinking": "thinking about it"
+            }
+          },
+          {
+            "value": {
+              "attempts": 1,
+              "error": null,
+              "extraction": {
+                "amendments": [
+                  {
+                    "bosses": [
+                      "HMaleficStar"
+                    ],
+                    "confidence": 0.8,
+                    "day_ref": "wed",
+                    "evidence_message_ids": [
+                      "1"
+                    ],
+                    "is_question": true,
+                    "kind": "move",
+                    "participants": [
+                      "11"
+                    ],
+                    "rsvp": null,
+                    "target_run_hint": "#a1a1",
+                    "time_ref": null
+                  }
+                ],
+                "summary": "move to wed"
+              },
+              "misconfigured": false,
+              "ok": true,
+              "prompt": "SYSTEM\n\n[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+              "raw": "{\"amendments\":[{\"kind\":\"move\",\"bosses\":[\"HMaleficStar\"],\"day_ref\":\"wed\",\"time_ref\":null,\"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\"evidence_message_ids\":[\"1\"],\"target_run_hint\":\"#a1a1\"}],\"summary\":\"move to wed\"}",
+              "requests": [
+                {
+                  "messages": [
+                    {
+                      "content": "SYSTEM\n\nOUTPUT FORMAT\nAnswer with exactly one JSON object and nothing else: no prose, no markdown. It must validate against this JSON Schema:\n{\"$defs\":{\"Amendment\":{\"description\":\"One proposed change, exactly as the model saw it in the conversation.\",\"properties\":{\"kind\":{\"description\":\"what kind of change this is\",\"enum\":[\"move\",\"add\",\"cancel\",\"split\",\"otot\",\"sub\",\"rsvp\",\"fix\"],\"title\":\"Kind\",\"type\":\"string\"},\"bosses\":{\"description\":\"canonical boss names from the boss table, e.g. HMaleficStar, XKalos\",\"items\":{\"type\":\"string\"},\"title\":\"Bosses\",\"type\":\"array\"},\"day_ref\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"the day exactly as written: weds, tmr, tonight, 2026-09-02\",\"title\":\"Day Ref\"},\"time_ref\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"the time exactly as written: 9:30pm, 930, 1030~11+pm\",\"title\":\"Time Ref\"},\"participants\":{\"description\":\"discord user ids of the people this is about\",\"items\":{\"type\":\"string\"},\"title\":\"Participants\",\"type\":\"array\"},\"rsvp\":{\"anyOf\":[{\"enum\":[\"yes\",\"no\",\"maybe\"],\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"for kind=rsvp: yes, no or maybe\",\"title\":\"Rsvp\"},\"is_question\":{\"description\":\"true if this was asked, not decided\",\"title\":\"Is Question\",\"type\":\"boolean\"},\"confidence\":{\"maximum\":1.0,\"minimum\":0.0,\"title\":\"Confidence\",\"type\":\"number\"},\"evidence_message_ids\":{\"description\":\"the [msg_id]s this came from\",\"items\":{\"type\":\"string\"},\"title\":\"Evidence Message Ids\",\"type\":\"array\"},\"target_run_hint\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"the short run id from the RUNS list, if one clearly matches\",\"title\":\"Target Run Hint\"}},\"required\":[\"kind\",\"bosses\",\"day_ref\",\"time_ref\",\"participants\",\"rsvp\",\"is_question\",\"confidence\",\"evidence_message_ids\",\"target_run_hint\"],\"title\":\"Amendment\",\"type\":\"object\",\"additionalProperties\":false}},\"description\":\"Everything the model found in one burst of messages.\",\"properties\":{\"amendments\":{\"items\":{\"$ref\":\"#/$defs/Amendment\"},\"title\":\"Amendments\",\"type\":\"array\"},\"summary\":{\"description\":\"one line a human can read\",\"title\":\"Summary\",\"type\":\"string\"}},\"title\":\"Extraction\",\"type\":\"object\",\"required\":[\"amendments\",\"summary\"],\"additionalProperties\":false}",
+                      "role": "system"
+                    },
+                    {
+                      "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                      "role": "user"
+                    }
+                  ],
+                  "model": "extractor",
+                  "reasoning_effort": "low"
+                }
+              ],
+              "thinking": ""
+            }
+          }
+        ]
+      },
+      "input": {
+        "steps": [
+          {
+            "caps": {
+              "reasoning_control": false,
+              "reasoning_efforts": null,
+              "sampling_controls": true,
+              "structured_output": true
+            },
+            "extract_model": "extractor",
+            "kanata_timeout": 30.0,
+            "messages": [
+              {
+                "content": "SYSTEM",
+                "role": "system"
+              },
+              {
+                "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                "role": "user"
+              }
+            ],
+            "op": "extract_call",
+            "reasoning_effort": "low",
+            "replies": [
+              {
+                "content": "{\"amendments\":[{\"kind\":\"move\",\"bosses\":[\"HMaleficStar\"],\"day_ref\":\"wed\",\"time_ref\":null,\"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\"evidence_message_ids\":[\"1\"],\"target_run_hint\":\"#a1a1\"}],\"summary\":\"move to wed\"}",
+                "reasoning": "thinking about it"
+              }
+            ]
+          },
+          {
+            "caps": {
+              "reasoning_control": true,
+              "reasoning_efforts": null,
+              "sampling_controls": false,
+              "structured_output": false
+            },
+            "extract_model": "extractor",
+            "kanata_timeout": 30.0,
+            "messages": [
+              {
+                "content": "SYSTEM",
+                "role": "system"
+              },
+              {
+                "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                "role": "user"
+              }
+            ],
+            "op": "extract_call",
+            "reasoning_effort": "low",
+            "replies": [
+              {
+                "content": "{\"amendments\":[{\"kind\":\"move\",\"bosses\":[\"HMaleficStar\"],\"day_ref\":\"wed\",\"time_ref\":null,\"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\"evidence_message_ids\":[\"1\"],\"target_run_hint\":\"#a1a1\"}],\"summary\":\"move to wed\"}",
+                "reasoning": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "guarded-call-retries-once-then-quarantines",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "attempts": 2,
+              "error": null,
+              "extraction": {
+                "amendments": [
+                  {
+                    "bosses": [
+                      "HMaleficStar"
+                    ],
+                    "confidence": 0.8,
+                    "day_ref": "wed",
+                    "evidence_message_ids": [
+                      "1"
+                    ],
+                    "is_question": true,
+                    "kind": "move",
+                    "participants": [
+                      "11"
+                    ],
+                    "rsvp": null,
+                    "target_run_hint": "#a1a1",
+                    "time_ref": null
+                  }
+                ],
+                "summary": "move to wed"
+              },
+              "misconfigured": false,
+              "ok": true,
+              "prompt": "SYSTEM\n\n[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+              "raw": "{\"amendments\":[{\"kind\":\"move\",\"bosses\":[\"HMaleficStar\"],\"day_ref\":\"wed\",\"time_ref\":null,\"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\"evidence_message_ids\":[\"1\"],\"target_run_hint\":\"#a1a1\"}],\"summary\":\"move to wed\"}",
+              "requests": [
+                {
+                  "messages": [
+                    {
+                      "content": "SYSTEM",
+                      "role": "system"
+                    },
+                    {
+                      "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                      "role": "user"
+                    }
+                  ],
+                  "model": "extractor",
+                  "response_format": {
+                    "json_schema": {
+                      "name": "extraction",
+                      "schema": {
+                        "$defs": {
+                          "Amendment": {
+                            "additionalProperties": false,
+                            "description": "One proposed change, exactly as the model saw it in the conversation.",
+                            "properties": {
+                              "bosses": {
+                                "description": "canonical boss names from the boss table, e.g. HMaleficStar, XKalos",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Bosses",
+                                "type": "array"
+                              },
+                              "confidence": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "title": "Confidence",
+                                "type": "number"
+                              },
+                              "day_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the day exactly as written: weds, tmr, tonight, 2026-09-02",
+                                "title": "Day Ref"
+                              },
+                              "evidence_message_ids": {
+                                "description": "the [msg_id]s this came from",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Evidence Message Ids",
+                                "type": "array"
+                              },
+                              "is_question": {
+                                "description": "true if this was asked, not decided",
+                                "title": "Is Question",
+                                "type": "boolean"
+                              },
+                              "kind": {
+                                "description": "what kind of change this is",
+                                "enum": [
+                                  "move",
+                                  "add",
+                                  "cancel",
+                                  "split",
+                                  "otot",
+                                  "sub",
+                                  "rsvp",
+                                  "fix"
+                                ],
+                                "title": "Kind",
+                                "type": "string"
+                              },
+                              "participants": {
+                                "description": "discord user ids of the people this is about",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Participants",
+                                "type": "array"
+                              },
+                              "rsvp": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "yes",
+                                      "no",
+                                      "maybe"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "for kind=rsvp: yes, no or maybe",
+                                "title": "Rsvp"
+                              },
+                              "target_run_hint": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the short run id from the RUNS list, if one clearly matches",
+                                "title": "Target Run Hint"
+                              },
+                              "time_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the time exactly as written: 9:30pm, 930, 1030~11+pm",
+                                "title": "Time Ref"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "bosses",
+                              "day_ref",
+                              "time_ref",
+                              "participants",
+                              "rsvp",
+                              "is_question",
+                              "confidence",
+                              "evidence_message_ids",
+                              "target_run_hint"
+                            ],
+                            "title": "Amendment",
+                            "type": "object"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "Everything the model found in one burst of messages.",
+                        "properties": {
+                          "amendments": {
+                            "items": {
+                              "$ref": "#/$defs/Amendment"
+                            },
+                            "title": "Amendments",
+                            "type": "array"
+                          },
+                          "summary": {
+                            "description": "one line a human can read",
+                            "title": "Summary",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "amendments",
+                          "summary"
+                        ],
+                        "title": "Extraction",
+                        "type": "object"
+                      },
+                      "strict": true
+                    },
+                    "type": "json_schema"
+                  },
+                  "seed": 0,
+                  "temperature": 0
+                },
+                {
+                  "messages": [
+                    {
+                      "content": "SYSTEM",
+                      "role": "system"
+                    },
+                    {
+                      "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                      "role": "user"
+                    },
+                    {
+                      "content": "not json",
+                      "role": "assistant"
+                    },
+                    {
+                      "content": "Your previous answer did not fit the schema:\nnot JSON: Expecting value: line 1 column 1 (char 0)\nAnswer again with the same information in the required shape. Do not add anything the messages do not say.",
+                      "role": "user"
+                    }
+                  ],
+                  "model": "extractor",
+                  "response_format": {
+                    "json_schema": {
+                      "name": "extraction",
+                      "schema": {
+                        "$defs": {
+                          "Amendment": {
+                            "additionalProperties": false,
+                            "description": "One proposed change, exactly as the model saw it in the conversation.",
+                            "properties": {
+                              "bosses": {
+                                "description": "canonical boss names from the boss table, e.g. HMaleficStar, XKalos",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Bosses",
+                                "type": "array"
+                              },
+                              "confidence": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "title": "Confidence",
+                                "type": "number"
+                              },
+                              "day_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the day exactly as written: weds, tmr, tonight, 2026-09-02",
+                                "title": "Day Ref"
+                              },
+                              "evidence_message_ids": {
+                                "description": "the [msg_id]s this came from",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Evidence Message Ids",
+                                "type": "array"
+                              },
+                              "is_question": {
+                                "description": "true if this was asked, not decided",
+                                "title": "Is Question",
+                                "type": "boolean"
+                              },
+                              "kind": {
+                                "description": "what kind of change this is",
+                                "enum": [
+                                  "move",
+                                  "add",
+                                  "cancel",
+                                  "split",
+                                  "otot",
+                                  "sub",
+                                  "rsvp",
+                                  "fix"
+                                ],
+                                "title": "Kind",
+                                "type": "string"
+                              },
+                              "participants": {
+                                "description": "discord user ids of the people this is about",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Participants",
+                                "type": "array"
+                              },
+                              "rsvp": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "yes",
+                                      "no",
+                                      "maybe"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "for kind=rsvp: yes, no or maybe",
+                                "title": "Rsvp"
+                              },
+                              "target_run_hint": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the short run id from the RUNS list, if one clearly matches",
+                                "title": "Target Run Hint"
+                              },
+                              "time_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the time exactly as written: 9:30pm, 930, 1030~11+pm",
+                                "title": "Time Ref"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "bosses",
+                              "day_ref",
+                              "time_ref",
+                              "participants",
+                              "rsvp",
+                              "is_question",
+                              "confidence",
+                              "evidence_message_ids",
+                              "target_run_hint"
+                            ],
+                            "title": "Amendment",
+                            "type": "object"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "Everything the model found in one burst of messages.",
+                        "properties": {
+                          "amendments": {
+                            "items": {
+                              "$ref": "#/$defs/Amendment"
+                            },
+                            "title": "Amendments",
+                            "type": "array"
+                          },
+                          "summary": {
+                            "description": "one line a human can read",
+                            "title": "Summary",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "amendments",
+                          "summary"
+                        ],
+                        "title": "Extraction",
+                        "type": "object"
+                      },
+                      "strict": true
+                    },
+                    "type": "json_schema"
+                  },
+                  "seed": 0,
+                  "temperature": 0
+                }
+              ],
+              "thinking": ""
+            }
+          },
+          {
+            "value": {
+              "attempts": 2,
+              "error": "1 validation error for Extraction\namendments.0.kind\n  Input should be 'move', 'add', 'cancel', 'split', 'otot', 'sub', 'rsvp' or 'fix' [type=literal_error, input_value='reschedule', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/literal_error",
+              "extraction": null,
+              "misconfigured": false,
+              "ok": false,
+              "prompt": "SYSTEM\n\n[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+              "raw": "{\"amendments\": [{\"kind\": \"reschedule\"}]}",
+              "requests": [
+                {
+                  "messages": [
+                    {
+                      "content": "SYSTEM",
+                      "role": "system"
+                    },
+                    {
+                      "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                      "role": "user"
+                    }
+                  ],
+                  "model": "extractor",
+                  "response_format": {
+                    "json_schema": {
+                      "name": "extraction",
+                      "schema": {
+                        "$defs": {
+                          "Amendment": {
+                            "additionalProperties": false,
+                            "description": "One proposed change, exactly as the model saw it in the conversation.",
+                            "properties": {
+                              "bosses": {
+                                "description": "canonical boss names from the boss table, e.g. HMaleficStar, XKalos",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Bosses",
+                                "type": "array"
+                              },
+                              "confidence": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "title": "Confidence",
+                                "type": "number"
+                              },
+                              "day_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the day exactly as written: weds, tmr, tonight, 2026-09-02",
+                                "title": "Day Ref"
+                              },
+                              "evidence_message_ids": {
+                                "description": "the [msg_id]s this came from",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Evidence Message Ids",
+                                "type": "array"
+                              },
+                              "is_question": {
+                                "description": "true if this was asked, not decided",
+                                "title": "Is Question",
+                                "type": "boolean"
+                              },
+                              "kind": {
+                                "description": "what kind of change this is",
+                                "enum": [
+                                  "move",
+                                  "add",
+                                  "cancel",
+                                  "split",
+                                  "otot",
+                                  "sub",
+                                  "rsvp",
+                                  "fix"
+                                ],
+                                "title": "Kind",
+                                "type": "string"
+                              },
+                              "participants": {
+                                "description": "discord user ids of the people this is about",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Participants",
+                                "type": "array"
+                              },
+                              "rsvp": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "yes",
+                                      "no",
+                                      "maybe"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "for kind=rsvp: yes, no or maybe",
+                                "title": "Rsvp"
+                              },
+                              "target_run_hint": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the short run id from the RUNS list, if one clearly matches",
+                                "title": "Target Run Hint"
+                              },
+                              "time_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the time exactly as written: 9:30pm, 930, 1030~11+pm",
+                                "title": "Time Ref"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "bosses",
+                              "day_ref",
+                              "time_ref",
+                              "participants",
+                              "rsvp",
+                              "is_question",
+                              "confidence",
+                              "evidence_message_ids",
+                              "target_run_hint"
+                            ],
+                            "title": "Amendment",
+                            "type": "object"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "Everything the model found in one burst of messages.",
+                        "properties": {
+                          "amendments": {
+                            "items": {
+                              "$ref": "#/$defs/Amendment"
+                            },
+                            "title": "Amendments",
+                            "type": "array"
+                          },
+                          "summary": {
+                            "description": "one line a human can read",
+                            "title": "Summary",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "amendments",
+                          "summary"
+                        ],
+                        "title": "Extraction",
+                        "type": "object"
+                      },
+                      "strict": true
+                    },
+                    "type": "json_schema"
+                  },
+                  "seed": 0,
+                  "temperature": 0
+                },
+                {
+                  "messages": [
+                    {
+                      "content": "SYSTEM",
+                      "role": "system"
+                    },
+                    {
+                      "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                      "role": "user"
+                    },
+                    {
+                      "content": "Your previous answer did not fit the schema:\nthe model returned an empty response\nAnswer again with the same information in the required shape. Do not add anything the messages do not say.",
+                      "role": "user"
+                    }
+                  ],
+                  "model": "extractor",
+                  "response_format": {
+                    "json_schema": {
+                      "name": "extraction",
+                      "schema": {
+                        "$defs": {
+                          "Amendment": {
+                            "additionalProperties": false,
+                            "description": "One proposed change, exactly as the model saw it in the conversation.",
+                            "properties": {
+                              "bosses": {
+                                "description": "canonical boss names from the boss table, e.g. HMaleficStar, XKalos",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Bosses",
+                                "type": "array"
+                              },
+                              "confidence": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "title": "Confidence",
+                                "type": "number"
+                              },
+                              "day_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the day exactly as written: weds, tmr, tonight, 2026-09-02",
+                                "title": "Day Ref"
+                              },
+                              "evidence_message_ids": {
+                                "description": "the [msg_id]s this came from",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Evidence Message Ids",
+                                "type": "array"
+                              },
+                              "is_question": {
+                                "description": "true if this was asked, not decided",
+                                "title": "Is Question",
+                                "type": "boolean"
+                              },
+                              "kind": {
+                                "description": "what kind of change this is",
+                                "enum": [
+                                  "move",
+                                  "add",
+                                  "cancel",
+                                  "split",
+                                  "otot",
+                                  "sub",
+                                  "rsvp",
+                                  "fix"
+                                ],
+                                "title": "Kind",
+                                "type": "string"
+                              },
+                              "participants": {
+                                "description": "discord user ids of the people this is about",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Participants",
+                                "type": "array"
+                              },
+                              "rsvp": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "yes",
+                                      "no",
+                                      "maybe"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "for kind=rsvp: yes, no or maybe",
+                                "title": "Rsvp"
+                              },
+                              "target_run_hint": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the short run id from the RUNS list, if one clearly matches",
+                                "title": "Target Run Hint"
+                              },
+                              "time_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the time exactly as written: 9:30pm, 930, 1030~11+pm",
+                                "title": "Time Ref"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "bosses",
+                              "day_ref",
+                              "time_ref",
+                              "participants",
+                              "rsvp",
+                              "is_question",
+                              "confidence",
+                              "evidence_message_ids",
+                              "target_run_hint"
+                            ],
+                            "title": "Amendment",
+                            "type": "object"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "Everything the model found in one burst of messages.",
+                        "properties": {
+                          "amendments": {
+                            "items": {
+                              "$ref": "#/$defs/Amendment"
+                            },
+                            "title": "Amendments",
+                            "type": "array"
+                          },
+                          "summary": {
+                            "description": "one line a human can read",
+                            "title": "Summary",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "amendments",
+                          "summary"
+                        ],
+                        "title": "Extraction",
+                        "type": "object"
+                      },
+                      "strict": true
+                    },
+                    "type": "json_schema"
+                  },
+                  "seed": 0,
+                  "temperature": 0
+                }
+              ],
+              "thinking": ""
+            }
+          },
+          {
+            "value": {
+              "attempts": 2,
+              "error": "expected a JSON object, got list",
+              "extraction": null,
+              "misconfigured": false,
+              "ok": false,
+              "prompt": "SYSTEM\n\n[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+              "raw": "[]",
+              "requests": [
+                {
+                  "messages": [
+                    {
+                      "content": "SYSTEM",
+                      "role": "system"
+                    },
+                    {
+                      "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                      "role": "user"
+                    }
+                  ],
+                  "model": "extractor",
+                  "response_format": {
+                    "json_schema": {
+                      "name": "extraction",
+                      "schema": {
+                        "$defs": {
+                          "Amendment": {
+                            "additionalProperties": false,
+                            "description": "One proposed change, exactly as the model saw it in the conversation.",
+                            "properties": {
+                              "bosses": {
+                                "description": "canonical boss names from the boss table, e.g. HMaleficStar, XKalos",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Bosses",
+                                "type": "array"
+                              },
+                              "confidence": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "title": "Confidence",
+                                "type": "number"
+                              },
+                              "day_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the day exactly as written: weds, tmr, tonight, 2026-09-02",
+                                "title": "Day Ref"
+                              },
+                              "evidence_message_ids": {
+                                "description": "the [msg_id]s this came from",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Evidence Message Ids",
+                                "type": "array"
+                              },
+                              "is_question": {
+                                "description": "true if this was asked, not decided",
+                                "title": "Is Question",
+                                "type": "boolean"
+                              },
+                              "kind": {
+                                "description": "what kind of change this is",
+                                "enum": [
+                                  "move",
+                                  "add",
+                                  "cancel",
+                                  "split",
+                                  "otot",
+                                  "sub",
+                                  "rsvp",
+                                  "fix"
+                                ],
+                                "title": "Kind",
+                                "type": "string"
+                              },
+                              "participants": {
+                                "description": "discord user ids of the people this is about",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Participants",
+                                "type": "array"
+                              },
+                              "rsvp": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "yes",
+                                      "no",
+                                      "maybe"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "for kind=rsvp: yes, no or maybe",
+                                "title": "Rsvp"
+                              },
+                              "target_run_hint": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the short run id from the RUNS list, if one clearly matches",
+                                "title": "Target Run Hint"
+                              },
+                              "time_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the time exactly as written: 9:30pm, 930, 1030~11+pm",
+                                "title": "Time Ref"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "bosses",
+                              "day_ref",
+                              "time_ref",
+                              "participants",
+                              "rsvp",
+                              "is_question",
+                              "confidence",
+                              "evidence_message_ids",
+                              "target_run_hint"
+                            ],
+                            "title": "Amendment",
+                            "type": "object"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "Everything the model found in one burst of messages.",
+                        "properties": {
+                          "amendments": {
+                            "items": {
+                              "$ref": "#/$defs/Amendment"
+                            },
+                            "title": "Amendments",
+                            "type": "array"
+                          },
+                          "summary": {
+                            "description": "one line a human can read",
+                            "title": "Summary",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "amendments",
+                          "summary"
+                        ],
+                        "title": "Extraction",
+                        "type": "object"
+                      },
+                      "strict": true
+                    },
+                    "type": "json_schema"
+                  },
+                  "seed": 0,
+                  "temperature": 0
+                },
+                {
+                  "messages": [
+                    {
+                      "content": "SYSTEM",
+                      "role": "system"
+                    },
+                    {
+                      "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                      "role": "user"
+                    },
+                    {
+                      "content": "Your previous answer did not fit the schema:\nthe model returned an empty response\nAnswer again with the same information in the required shape. Do not add anything the messages do not say.",
+                      "role": "user"
+                    }
+                  ],
+                  "model": "extractor",
+                  "response_format": {
+                    "json_schema": {
+                      "name": "extraction",
+                      "schema": {
+                        "$defs": {
+                          "Amendment": {
+                            "additionalProperties": false,
+                            "description": "One proposed change, exactly as the model saw it in the conversation.",
+                            "properties": {
+                              "bosses": {
+                                "description": "canonical boss names from the boss table, e.g. HMaleficStar, XKalos",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Bosses",
+                                "type": "array"
+                              },
+                              "confidence": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "title": "Confidence",
+                                "type": "number"
+                              },
+                              "day_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the day exactly as written: weds, tmr, tonight, 2026-09-02",
+                                "title": "Day Ref"
+                              },
+                              "evidence_message_ids": {
+                                "description": "the [msg_id]s this came from",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Evidence Message Ids",
+                                "type": "array"
+                              },
+                              "is_question": {
+                                "description": "true if this was asked, not decided",
+                                "title": "Is Question",
+                                "type": "boolean"
+                              },
+                              "kind": {
+                                "description": "what kind of change this is",
+                                "enum": [
+                                  "move",
+                                  "add",
+                                  "cancel",
+                                  "split",
+                                  "otot",
+                                  "sub",
+                                  "rsvp",
+                                  "fix"
+                                ],
+                                "title": "Kind",
+                                "type": "string"
+                              },
+                              "participants": {
+                                "description": "discord user ids of the people this is about",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Participants",
+                                "type": "array"
+                              },
+                              "rsvp": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "yes",
+                                      "no",
+                                      "maybe"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "for kind=rsvp: yes, no or maybe",
+                                "title": "Rsvp"
+                              },
+                              "target_run_hint": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the short run id from the RUNS list, if one clearly matches",
+                                "title": "Target Run Hint"
+                              },
+                              "time_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the time exactly as written: 9:30pm, 930, 1030~11+pm",
+                                "title": "Time Ref"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "bosses",
+                              "day_ref",
+                              "time_ref",
+                              "participants",
+                              "rsvp",
+                              "is_question",
+                              "confidence",
+                              "evidence_message_ids",
+                              "target_run_hint"
+                            ],
+                            "title": "Amendment",
+                            "type": "object"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "Everything the model found in one burst of messages.",
+                        "properties": {
+                          "amendments": {
+                            "items": {
+                              "$ref": "#/$defs/Amendment"
+                            },
+                            "title": "Amendments",
+                            "type": "array"
+                          },
+                          "summary": {
+                            "description": "one line a human can read",
+                            "title": "Summary",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "amendments",
+                          "summary"
+                        ],
+                        "title": "Extraction",
+                        "type": "object"
+                      },
+                      "strict": true
+                    },
+                    "type": "json_schema"
+                  },
+                  "seed": 0,
+                  "temperature": 0
+                }
+              ],
+              "thinking": ""
+            }
+          }
+        ]
+      },
+      "input": {
+        "steps": [
+          {
+            "caps": {
+              "reasoning_control": false,
+              "reasoning_efforts": null,
+              "sampling_controls": true,
+              "structured_output": true
+            },
+            "extract_model": "extractor",
+            "kanata_timeout": 30.0,
+            "messages": [
+              {
+                "content": "SYSTEM",
+                "role": "system"
+              },
+              {
+                "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                "role": "user"
+              }
+            ],
+            "op": "extract_call",
+            "reasoning_effort": "low",
+            "replies": [
+              {
+                "content": "not json",
+                "reasoning": null
+              },
+              {
+                "content": "{\"amendments\":[{\"kind\":\"move\",\"bosses\":[\"HMaleficStar\"],\"day_ref\":\"wed\",\"time_ref\":null,\"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\"evidence_message_ids\":[\"1\"],\"target_run_hint\":\"#a1a1\"}],\"summary\":\"move to wed\"}",
+                "reasoning": null
+              }
+            ]
+          },
+          {
+            "caps": {
+              "reasoning_control": false,
+              "reasoning_efforts": null,
+              "sampling_controls": true,
+              "structured_output": true
+            },
+            "extract_model": "extractor",
+            "kanata_timeout": 30.0,
+            "messages": [
+              {
+                "content": "SYSTEM",
+                "role": "system"
+              },
+              {
+                "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                "role": "user"
+              }
+            ],
+            "op": "extract_call",
+            "reasoning_effort": "low",
+            "replies": [
+              {
+                "content": "",
+                "reasoning": null
+              },
+              {
+                "content": "{\"amendments\": [{\"kind\": \"reschedule\"}]}",
+                "reasoning": null
+              }
+            ]
+          },
+          {
+            "caps": {
+              "reasoning_control": false,
+              "reasoning_efforts": null,
+              "sampling_controls": true,
+              "structured_output": true
+            },
+            "extract_model": "extractor",
+            "kanata_timeout": 30.0,
+            "messages": [
+              {
+                "content": "SYSTEM",
+                "role": "system"
+              },
+              {
+                "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                "role": "user"
+              }
+            ],
+            "op": "extract_call",
+            "reasoning_effort": "low",
+            "replies": [
+              {
+                "content": null,
+                "reasoning": null
+              },
+              {
+                "content": "[]",
+                "reasoning": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "guarded-call-transport-failures",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "attempts": 1,
+              "error": "the model did not answer within 30s",
+              "extraction": null,
+              "misconfigured": false,
+              "ok": false,
+              "prompt": "SYSTEM\n\n[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+              "raw": "",
+              "requests": [
+                {
+                  "messages": [
+                    {
+                      "content": "SYSTEM",
+                      "role": "system"
+                    },
+                    {
+                      "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                      "role": "user"
+                    }
+                  ],
+                  "model": "extractor",
+                  "response_format": {
+                    "json_schema": {
+                      "name": "extraction",
+                      "schema": {
+                        "$defs": {
+                          "Amendment": {
+                            "additionalProperties": false,
+                            "description": "One proposed change, exactly as the model saw it in the conversation.",
+                            "properties": {
+                              "bosses": {
+                                "description": "canonical boss names from the boss table, e.g. HMaleficStar, XKalos",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Bosses",
+                                "type": "array"
+                              },
+                              "confidence": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "title": "Confidence",
+                                "type": "number"
+                              },
+                              "day_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the day exactly as written: weds, tmr, tonight, 2026-09-02",
+                                "title": "Day Ref"
+                              },
+                              "evidence_message_ids": {
+                                "description": "the [msg_id]s this came from",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Evidence Message Ids",
+                                "type": "array"
+                              },
+                              "is_question": {
+                                "description": "true if this was asked, not decided",
+                                "title": "Is Question",
+                                "type": "boolean"
+                              },
+                              "kind": {
+                                "description": "what kind of change this is",
+                                "enum": [
+                                  "move",
+                                  "add",
+                                  "cancel",
+                                  "split",
+                                  "otot",
+                                  "sub",
+                                  "rsvp",
+                                  "fix"
+                                ],
+                                "title": "Kind",
+                                "type": "string"
+                              },
+                              "participants": {
+                                "description": "discord user ids of the people this is about",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Participants",
+                                "type": "array"
+                              },
+                              "rsvp": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "yes",
+                                      "no",
+                                      "maybe"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "for kind=rsvp: yes, no or maybe",
+                                "title": "Rsvp"
+                              },
+                              "target_run_hint": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the short run id from the RUNS list, if one clearly matches",
+                                "title": "Target Run Hint"
+                              },
+                              "time_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the time exactly as written: 9:30pm, 930, 1030~11+pm",
+                                "title": "Time Ref"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "bosses",
+                              "day_ref",
+                              "time_ref",
+                              "participants",
+                              "rsvp",
+                              "is_question",
+                              "confidence",
+                              "evidence_message_ids",
+                              "target_run_hint"
+                            ],
+                            "title": "Amendment",
+                            "type": "object"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "Everything the model found in one burst of messages.",
+                        "properties": {
+                          "amendments": {
+                            "items": {
+                              "$ref": "#/$defs/Amendment"
+                            },
+                            "title": "Amendments",
+                            "type": "array"
+                          },
+                          "summary": {
+                            "description": "one line a human can read",
+                            "title": "Summary",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "amendments",
+                          "summary"
+                        ],
+                        "title": "Extraction",
+                        "type": "object"
+                      },
+                      "strict": true
+                    },
+                    "type": "json_schema"
+                  },
+                  "seed": 0,
+                  "temperature": 0
+                }
+              ],
+              "thinking": ""
+            }
+          },
+          {
+            "value": {
+              "attempts": 1,
+              "error": "ModelUnavailable: gateway returned 503",
+              "extraction": null,
+              "misconfigured": false,
+              "ok": false,
+              "prompt": "SYSTEM\n\n[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+              "raw": "",
+              "requests": [
+                {
+                  "messages": [
+                    {
+                      "content": "SYSTEM",
+                      "role": "system"
+                    },
+                    {
+                      "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                      "role": "user"
+                    }
+                  ],
+                  "model": "extractor",
+                  "response_format": {
+                    "json_schema": {
+                      "name": "extraction",
+                      "schema": {
+                        "$defs": {
+                          "Amendment": {
+                            "additionalProperties": false,
+                            "description": "One proposed change, exactly as the model saw it in the conversation.",
+                            "properties": {
+                              "bosses": {
+                                "description": "canonical boss names from the boss table, e.g. HMaleficStar, XKalos",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Bosses",
+                                "type": "array"
+                              },
+                              "confidence": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "title": "Confidence",
+                                "type": "number"
+                              },
+                              "day_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the day exactly as written: weds, tmr, tonight, 2026-09-02",
+                                "title": "Day Ref"
+                              },
+                              "evidence_message_ids": {
+                                "description": "the [msg_id]s this came from",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Evidence Message Ids",
+                                "type": "array"
+                              },
+                              "is_question": {
+                                "description": "true if this was asked, not decided",
+                                "title": "Is Question",
+                                "type": "boolean"
+                              },
+                              "kind": {
+                                "description": "what kind of change this is",
+                                "enum": [
+                                  "move",
+                                  "add",
+                                  "cancel",
+                                  "split",
+                                  "otot",
+                                  "sub",
+                                  "rsvp",
+                                  "fix"
+                                ],
+                                "title": "Kind",
+                                "type": "string"
+                              },
+                              "participants": {
+                                "description": "discord user ids of the people this is about",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Participants",
+                                "type": "array"
+                              },
+                              "rsvp": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "yes",
+                                      "no",
+                                      "maybe"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "for kind=rsvp: yes, no or maybe",
+                                "title": "Rsvp"
+                              },
+                              "target_run_hint": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the short run id from the RUNS list, if one clearly matches",
+                                "title": "Target Run Hint"
+                              },
+                              "time_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the time exactly as written: 9:30pm, 930, 1030~11+pm",
+                                "title": "Time Ref"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "bosses",
+                              "day_ref",
+                              "time_ref",
+                              "participants",
+                              "rsvp",
+                              "is_question",
+                              "confidence",
+                              "evidence_message_ids",
+                              "target_run_hint"
+                            ],
+                            "title": "Amendment",
+                            "type": "object"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "Everything the model found in one burst of messages.",
+                        "properties": {
+                          "amendments": {
+                            "items": {
+                              "$ref": "#/$defs/Amendment"
+                            },
+                            "title": "Amendments",
+                            "type": "array"
+                          },
+                          "summary": {
+                            "description": "one line a human can read",
+                            "title": "Summary",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "amendments",
+                          "summary"
+                        ],
+                        "title": "Extraction",
+                        "type": "object"
+                      },
+                      "strict": true
+                    },
+                    "type": "json_schema"
+                  },
+                  "seed": 0,
+                  "temperature": 0
+                }
+              ],
+              "thinking": ""
+            }
+          },
+          {
+            "value": {
+              "attempts": 1,
+              "error": "RuntimeError: boom",
+              "extraction": null,
+              "misconfigured": false,
+              "ok": false,
+              "prompt": "SYSTEM\n\n[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+              "raw": "",
+              "requests": [
+                {
+                  "messages": [
+                    {
+                      "content": "SYSTEM",
+                      "role": "system"
+                    },
+                    {
+                      "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                      "role": "user"
+                    }
+                  ],
+                  "model": "extractor",
+                  "response_format": {
+                    "json_schema": {
+                      "name": "extraction",
+                      "schema": {
+                        "$defs": {
+                          "Amendment": {
+                            "additionalProperties": false,
+                            "description": "One proposed change, exactly as the model saw it in the conversation.",
+                            "properties": {
+                              "bosses": {
+                                "description": "canonical boss names from the boss table, e.g. HMaleficStar, XKalos",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Bosses",
+                                "type": "array"
+                              },
+                              "confidence": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "title": "Confidence",
+                                "type": "number"
+                              },
+                              "day_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the day exactly as written: weds, tmr, tonight, 2026-09-02",
+                                "title": "Day Ref"
+                              },
+                              "evidence_message_ids": {
+                                "description": "the [msg_id]s this came from",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Evidence Message Ids",
+                                "type": "array"
+                              },
+                              "is_question": {
+                                "description": "true if this was asked, not decided",
+                                "title": "Is Question",
+                                "type": "boolean"
+                              },
+                              "kind": {
+                                "description": "what kind of change this is",
+                                "enum": [
+                                  "move",
+                                  "add",
+                                  "cancel",
+                                  "split",
+                                  "otot",
+                                  "sub",
+                                  "rsvp",
+                                  "fix"
+                                ],
+                                "title": "Kind",
+                                "type": "string"
+                              },
+                              "participants": {
+                                "description": "discord user ids of the people this is about",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Participants",
+                                "type": "array"
+                              },
+                              "rsvp": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "yes",
+                                      "no",
+                                      "maybe"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "for kind=rsvp: yes, no or maybe",
+                                "title": "Rsvp"
+                              },
+                              "target_run_hint": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the short run id from the RUNS list, if one clearly matches",
+                                "title": "Target Run Hint"
+                              },
+                              "time_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the time exactly as written: 9:30pm, 930, 1030~11+pm",
+                                "title": "Time Ref"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "bosses",
+                              "day_ref",
+                              "time_ref",
+                              "participants",
+                              "rsvp",
+                              "is_question",
+                              "confidence",
+                              "evidence_message_ids",
+                              "target_run_hint"
+                            ],
+                            "title": "Amendment",
+                            "type": "object"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "Everything the model found in one burst of messages.",
+                        "properties": {
+                          "amendments": {
+                            "items": {
+                              "$ref": "#/$defs/Amendment"
+                            },
+                            "title": "Amendments",
+                            "type": "array"
+                          },
+                          "summary": {
+                            "description": "one line a human can read",
+                            "title": "Summary",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "amendments",
+                          "summary"
+                        ],
+                        "title": "Extraction",
+                        "type": "object"
+                      },
+                      "strict": true
+                    },
+                    "type": "json_schema"
+                  },
+                  "seed": 0,
+                  "temperature": 0
+                }
+              ],
+              "thinking": ""
+            }
+          },
+          {
+            "value": {
+              "attempts": 2,
+              "error": "the model did not answer within 30s",
+              "extraction": null,
+              "misconfigured": false,
+              "ok": false,
+              "prompt": "SYSTEM\n\n[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+              "raw": "nope",
+              "requests": [
+                {
+                  "messages": [
+                    {
+                      "content": "SYSTEM",
+                      "role": "system"
+                    },
+                    {
+                      "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                      "role": "user"
+                    }
+                  ],
+                  "model": "extractor",
+                  "response_format": {
+                    "json_schema": {
+                      "name": "extraction",
+                      "schema": {
+                        "$defs": {
+                          "Amendment": {
+                            "additionalProperties": false,
+                            "description": "One proposed change, exactly as the model saw it in the conversation.",
+                            "properties": {
+                              "bosses": {
+                                "description": "canonical boss names from the boss table, e.g. HMaleficStar, XKalos",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Bosses",
+                                "type": "array"
+                              },
+                              "confidence": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "title": "Confidence",
+                                "type": "number"
+                              },
+                              "day_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the day exactly as written: weds, tmr, tonight, 2026-09-02",
+                                "title": "Day Ref"
+                              },
+                              "evidence_message_ids": {
+                                "description": "the [msg_id]s this came from",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Evidence Message Ids",
+                                "type": "array"
+                              },
+                              "is_question": {
+                                "description": "true if this was asked, not decided",
+                                "title": "Is Question",
+                                "type": "boolean"
+                              },
+                              "kind": {
+                                "description": "what kind of change this is",
+                                "enum": [
+                                  "move",
+                                  "add",
+                                  "cancel",
+                                  "split",
+                                  "otot",
+                                  "sub",
+                                  "rsvp",
+                                  "fix"
+                                ],
+                                "title": "Kind",
+                                "type": "string"
+                              },
+                              "participants": {
+                                "description": "discord user ids of the people this is about",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Participants",
+                                "type": "array"
+                              },
+                              "rsvp": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "yes",
+                                      "no",
+                                      "maybe"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "for kind=rsvp: yes, no or maybe",
+                                "title": "Rsvp"
+                              },
+                              "target_run_hint": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the short run id from the RUNS list, if one clearly matches",
+                                "title": "Target Run Hint"
+                              },
+                              "time_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the time exactly as written: 9:30pm, 930, 1030~11+pm",
+                                "title": "Time Ref"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "bosses",
+                              "day_ref",
+                              "time_ref",
+                              "participants",
+                              "rsvp",
+                              "is_question",
+                              "confidence",
+                              "evidence_message_ids",
+                              "target_run_hint"
+                            ],
+                            "title": "Amendment",
+                            "type": "object"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "Everything the model found in one burst of messages.",
+                        "properties": {
+                          "amendments": {
+                            "items": {
+                              "$ref": "#/$defs/Amendment"
+                            },
+                            "title": "Amendments",
+                            "type": "array"
+                          },
+                          "summary": {
+                            "description": "one line a human can read",
+                            "title": "Summary",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "amendments",
+                          "summary"
+                        ],
+                        "title": "Extraction",
+                        "type": "object"
+                      },
+                      "strict": true
+                    },
+                    "type": "json_schema"
+                  },
+                  "seed": 0,
+                  "temperature": 0
+                },
+                {
+                  "messages": [
+                    {
+                      "content": "SYSTEM",
+                      "role": "system"
+                    },
+                    {
+                      "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                      "role": "user"
+                    },
+                    {
+                      "content": "nope",
+                      "role": "assistant"
+                    },
+                    {
+                      "content": "Your previous answer did not fit the schema:\nnot JSON: Expecting value: line 1 column 1 (char 0)\nAnswer again with the same information in the required shape. Do not add anything the messages do not say.",
+                      "role": "user"
+                    }
+                  ],
+                  "model": "extractor",
+                  "response_format": {
+                    "json_schema": {
+                      "name": "extraction",
+                      "schema": {
+                        "$defs": {
+                          "Amendment": {
+                            "additionalProperties": false,
+                            "description": "One proposed change, exactly as the model saw it in the conversation.",
+                            "properties": {
+                              "bosses": {
+                                "description": "canonical boss names from the boss table, e.g. HMaleficStar, XKalos",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Bosses",
+                                "type": "array"
+                              },
+                              "confidence": {
+                                "maximum": 1.0,
+                                "minimum": 0.0,
+                                "title": "Confidence",
+                                "type": "number"
+                              },
+                              "day_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the day exactly as written: weds, tmr, tonight, 2026-09-02",
+                                "title": "Day Ref"
+                              },
+                              "evidence_message_ids": {
+                                "description": "the [msg_id]s this came from",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Evidence Message Ids",
+                                "type": "array"
+                              },
+                              "is_question": {
+                                "description": "true if this was asked, not decided",
+                                "title": "Is Question",
+                                "type": "boolean"
+                              },
+                              "kind": {
+                                "description": "what kind of change this is",
+                                "enum": [
+                                  "move",
+                                  "add",
+                                  "cancel",
+                                  "split",
+                                  "otot",
+                                  "sub",
+                                  "rsvp",
+                                  "fix"
+                                ],
+                                "title": "Kind",
+                                "type": "string"
+                              },
+                              "participants": {
+                                "description": "discord user ids of the people this is about",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "title": "Participants",
+                                "type": "array"
+                              },
+                              "rsvp": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "yes",
+                                      "no",
+                                      "maybe"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "for kind=rsvp: yes, no or maybe",
+                                "title": "Rsvp"
+                              },
+                              "target_run_hint": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the short run id from the RUNS list, if one clearly matches",
+                                "title": "Target Run Hint"
+                              },
+                              "time_ref": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ],
+                                "description": "the time exactly as written: 9:30pm, 930, 1030~11+pm",
+                                "title": "Time Ref"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "bosses",
+                              "day_ref",
+                              "time_ref",
+                              "participants",
+                              "rsvp",
+                              "is_question",
+                              "confidence",
+                              "evidence_message_ids",
+                              "target_run_hint"
+                            ],
+                            "title": "Amendment",
+                            "type": "object"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "description": "Everything the model found in one burst of messages.",
+                        "properties": {
+                          "amendments": {
+                            "items": {
+                              "$ref": "#/$defs/Amendment"
+                            },
+                            "title": "Amendments",
+                            "type": "array"
+                          },
+                          "summary": {
+                            "description": "one line a human can read",
+                            "title": "Summary",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "amendments",
+                          "summary"
+                        ],
+                        "title": "Extraction",
+                        "type": "object"
+                      },
+                      "strict": true
+                    },
+                    "type": "json_schema"
+                  },
+                  "seed": 0,
+                  "temperature": 0
+                }
+              ],
+              "thinking": ""
+            }
+          },
+          {
+            "value": {
+              "attempts": 1,
+              "error": "ModelConfigError: EXTRACT_MODEL is not set",
+              "extraction": null,
+              "misconfigured": true,
+              "ok": false,
+              "prompt": "SYSTEM\n\n[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+              "raw": "",
+              "requests": [],
+              "thinking": ""
+            }
+          }
+        ]
+      },
+      "input": {
+        "steps": [
+          {
+            "caps": {
+              "reasoning_control": false,
+              "reasoning_efforts": null,
+              "sampling_controls": true,
+              "structured_output": true
+            },
+            "extract_model": "extractor",
+            "kanata_timeout": 30.0,
+            "messages": [
+              {
+                "content": "SYSTEM",
+                "role": "system"
+              },
+              {
+                "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                "role": "user"
+              }
+            ],
+            "op": "extract_call",
+            "reasoning_effort": "low",
+            "replies": [
+              {
+                "message": "",
+                "raise": "TimeoutError"
+              }
+            ]
+          },
+          {
+            "caps": {
+              "reasoning_control": false,
+              "reasoning_efforts": null,
+              "sampling_controls": true,
+              "structured_output": true
+            },
+            "extract_model": "extractor",
+            "kanata_timeout": 30.0,
+            "messages": [
+              {
+                "content": "SYSTEM",
+                "role": "system"
+              },
+              {
+                "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                "role": "user"
+              }
+            ],
+            "op": "extract_call",
+            "reasoning_effort": "low",
+            "replies": [
+              {
+                "message": "gateway returned 503",
+                "raise": "ModelUnavailable"
+              }
+            ]
+          },
+          {
+            "caps": {
+              "reasoning_control": false,
+              "reasoning_efforts": null,
+              "sampling_controls": true,
+              "structured_output": true
+            },
+            "extract_model": "extractor",
+            "kanata_timeout": 30.0,
+            "messages": [
+              {
+                "content": "SYSTEM",
+                "role": "system"
+              },
+              {
+                "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                "role": "user"
+              }
+            ],
+            "op": "extract_call",
+            "reasoning_effort": "low",
+            "replies": [
+              {
+                "message": "boom",
+                "raise": "RuntimeError"
+              }
+            ]
+          },
+          {
+            "caps": {
+              "reasoning_control": false,
+              "reasoning_efforts": null,
+              "sampling_controls": true,
+              "structured_output": true
+            },
+            "extract_model": "extractor",
+            "kanata_timeout": 30.0,
+            "messages": [
+              {
+                "content": "SYSTEM",
+                "role": "system"
+              },
+              {
+                "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                "role": "user"
+              }
+            ],
+            "op": "extract_call",
+            "reasoning_effort": "low",
+            "replies": [
+              {
+                "content": "nope",
+                "reasoning": null
+              },
+              {
+                "message": "",
+                "raise": "TimeoutError"
+              }
+            ]
+          },
+          {
+            "caps": {
+              "reasoning_control": false,
+              "reasoning_efforts": null,
+              "sampling_controls": true,
+              "structured_output": true
+            },
+            "extract_model": "",
+            "kanata_timeout": 30.0,
+            "messages": [
+              {
+                "content": "SYSTEM",
+                "role": "system"
+              },
+              {
+                "content": "[1] [2026-08-30 13:01 Sun] [Alvin tan <@11>] wed?",
+                "role": "user"
+              }
+            ],
+            "op": "extract_call",
+            "reasoning_effort": "low",
+            "replies": []
+          }
+        ]
+      }
+    }
+  ],
+  "family": "parse",
+  "provenance": {
+    "functions": [
+      "bot.extract.llm.parse_response",
+      "bot.extract.llm.Extractor.extract",
+      "bot.extract.llm.RETRY_INSTRUCTION",
+      "bot.extract.schema.Extraction",
+      "bot.extract.schema.Amendment"
+    ],
+    "inventory_surfaces": [
+      "extract.schema",
+      "extract.kanata-gateway-adapter"
+    ],
+    "oracle": "legacy/python bot.extract.llm, bot.extract.schema",
+    "source_tests": [
+      "tests/test_extract_llm.py",
+      "tests/test_extract_schema.py"
+    ]
+  },
+  "schema_version": "v5-extract-parse-v1"
+}

@@ -1,0 +1,347 @@
+// The page line (docs/notes/m3e-rail-design-spec.md "Frame", gate G2) in place
+// of the page-head card. Unboxed on the ground, as in every mockup board
+// (docs/research/2026-09-28-m3e-mockups/B_*.dc.html `.top`; fidelity audit
+// 2026-10-02 replaced the 2026-10-01 contained title shape):
+//
+//   display title (20/800) -- the heading (h1: a bold mono numeral and a
+//   serif noun, or the state) -- " · " and the short context in the body
+//   face; then the page's own controls, and at the end the Live chip and
+//   Commands, each its own pill.
+//
+// Text on the ground is `--ground-ink` (ink, deepened per face to 4.5:1 in
+// `_contrast.scss`); quieter greys never sit on the bare ground.
+//
+// Height: 36 px; controls 32 px, the Live chip 28.
+
+.pageline {
+  flex: none;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px 12px;
+  min-height: 36px;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  color: var(--ground-ink);
+}
+
+// Week's open help and filter panel take a row of their own, as do
+// phones' Week rows: only then does the line wrap.
+.pageline:has(.week-head__helptext:not([hidden]), .filters--popout),
+.frame--phone .pageline {
+  flex-wrap: wrap;
+}
+
+.pageline__head {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 4px 12px;
+  min-width: 0;
+  padding: 0 4px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.pageline__head > * {
+  flex: none;
+  min-width: 0;
+}
+
+// Controls keep to 32 px, inside the line's 36.
+.pageline .btn {
+  padding-top: 0.15rem;
+  padding-bottom: 0.15rem;
+  line-height: 1.3;
+}
+
+.pageline .seg a,
+.pageline .seg button {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  line-height: 1.3;
+}
+
+.pageline > * {
+  min-width: 0;
+}
+
+.pageline .pageline__title {
+  margin: 0;
+  color: var(--ground-ink);
+  font-family: var(--display);
+  font-size: var(--fs-brand);
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+// Without a title (detail pages, Config) the h1 is the title.
+.pageline h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: var(--fs-brand);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+// With one, the h1 is the count: its numeral bold in the mono face, the
+// noun in the body face (mockup `.top`: 17/700 mono + 14 serif).
+.pageline--titled h1 {
+  font-family: var(--body);
+  font-size: var(--fs-body-sm);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.pageline__num {
+  font-family: var(--mono);
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+// What used to be the card's eyebrow, now the context after the count (or,
+// on detail pages, the breadcrumb before the title).
+.pageline .eyebrow,
+.pageline .note,
+.pageline .pageline__context {
+  margin: 0;
+  color: var(--ground-ink);
+  font-family: var(--body);
+  font-size: var(--fs-body-sm);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+// After a count the context reads on as one phrase: "20 bossers · synced…".
+.pageline--titled h1 + .pageline__context::before {
+  content: "· ";
+}
+
+.pageline--titled .pageline__head {
+  column-gap: 0.3em;
+}
+
+.pageline--titled .pageline__title {
+  margin-right: calc(12px - 0.3em);
+}
+
+// The context gives way first: the title shape shrinks to fit the line and
+// its context ellipsizes before anything else gives.
+.pageline .pageline__context {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pageline .eyebrow a,
+.pageline .note a,
+.pageline .linklike,
+.pageline .pageline__context a {
+  color: var(--ground-ink);
+  text-decoration-color: currentcolor;
+}
+
+// A page's own controls sit before the status at the end, at their own
+// width: the title shape gives way first.
+.pageline .page-head__side {
+  flex: none;
+  flex-wrap: nowrap;
+  margin-left: auto;
+}
+
+.pageline .filters {
+  flex: none;
+}
+
+.pageline .btn--ghost {
+  background: var(--surface);
+}
+
+.pageline .field__error:not(:empty) {
+  margin: 0;
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.pageline .field__error:empty {
+  display: none;
+}
+
+// History's filters: each label and its select in one Full-shape field
+// chip, so the label never sits on the bare ground.
+.pageline .filters {
+  flex-wrap: nowrap;
+  align-items: center;
+  margin: 0 0 0 auto;
+  gap: 0.4rem;
+}
+
+.pageline .filters .field {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0 2px 0 0.75rem;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.pageline .filters .field > span {
+  color: var(--ink);
+}
+
+.pageline .filters .field select {
+  border-color: transparent;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.pageline .filters select,
+.pageline .filters input {
+  max-width: 11rem;
+  height: 2rem;
+  padding-top: 0.1rem;
+  padding-bottom: 0.1rem;
+}
+
+// Week's move help and open filter panel take a row of their own, below
+// the whole line (status included).
+.pageline .week-head__helptext,
+.pageline .filters--popout {
+  order: 10;
+}
+
+.pageline__end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.pageline:has(.page-head__side, .filters) .pageline__end {
+  margin-left: 0;
+}
+
+// The Live chip (mockup `.chip`): a 28 px pill, "Live" in the ok ink and
+// the time bold in the mono face.
+.pageline__end .mchip--status {
+  min-height: 28px;
+  padding: 0 10px;
+  border-width: 1.5px;
+  border-radius: 999px;
+  font-family: var(--body);
+  font-size: var(--fs-small);
+}
+
+.pageline__end .fresh--live {
+  color: var(--ok-text);
+}
+
+.pageline__end .mchip--quiet {
+  background: var(--chip-fill);
+}
+
+.pageline__end .fresh__time {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-weight: 700;
+}
+
+// Commands (VarRail): a 32 px outlined pill, the glyph and "Ctrl K".
+.pageline__commands {
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border-width: 1.5px;
+  border-radius: 999px;
+}
+
+.pageline__kbd {
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+}
+
+/* ── width: the status and the Week controls shrink before the line wraps ─ */
+
+@mixin hide-visually {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+// The Live chip says "Live 12:00", as the mockups'; "· updated" stays for
+// screen readers. Week's Undo, Refresh and move help keep their glyphs, a
+// tooltip and their accessible names (the spec's title-bar icon buttons).
+.pageline__end .fresh__words,
+.frame--rail:not(.frame--phone) .pageline .week-head__label {
+  @include hide-visually;
+}
+
+// Below the expanded rail's width: the time zone moves into the status
+// chip's tooltip (and the footnote), the palette to its glyph.
+@media (max-width: 1439px) {
+  .pageline__end .masthead__tz {
+    @include hide-visually;
+  }
+}
+
+// Laptop widths: the rail names the page (aria-current), so the title goes;
+// "This | Next" keep "week" for screen readers, and the Live chip its mark.
+@media (max-width: 1199px) {
+  .pageline .pageline__title {
+    display: none;
+  }
+
+  .pageline {
+    column-gap: 8px;
+  }
+
+  .pageline__end .fresh__state,
+  .pageline__kbd,
+  .frame--rail:not(.frame--phone) .week-head__wk {
+    @include hide-visually;
+  }
+}
+
+/* ── phones: the top bar has the title and the status ───────────────────── */
+
+.frame--phone .pageline {
+  gap: 4px 8px;
+}
+
+.frame--phone .pageline h1 {
+  font-size: var(--fs-lg);
+}
+
+.frame--phone .pageline .eyebrow:not(:has(a, button)),
+.frame--phone .pageline__context {
+  display: none;
+}
+
+// A line that only repeats the top bar's title (Config) gives its height
+// back on a phone; its h1 stays for screen readers.
+.frame--phone .pageline--echo {
+  position: absolute;
+  border: 0;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

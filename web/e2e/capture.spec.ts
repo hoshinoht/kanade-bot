@@ -1,0 +1,476 @@
+import type { Page } from '@playwright/test';
+import { busyWeek } from './busy-week';
+import { ADMIN, PUBLIC, REAL_ART, expect, settle as settleMotion, setPortal, signInPublic, test, choose, expectValue } from './support';
+
+// Reference captures for the v4 comparison, both git-ignored. Default: the
+// synthetic placeholder art (fixtures, not the game's art) into
+// e2e/.captures/synthetic/. With KANADE_REAL_ART=1: the local, private art
+// into e2e/.captures/real/ for the user's visual review.
+const OUT = REAL_ART ? 'e2e/.captures/real' : 'e2e/.captures/synthetic';
+const VIEWPORTS = [
+  { name: 'wide', width: 1280, height: 800 },
+  { name: 'narrow', width: 390, height: 844 },
+];
+const LOOKS = [
+  { name: 'marigold-light', colorway: 'marigold', theme: 'light' },
+  { name: 'marigold-dark', colorway: 'marigold', theme: 'dark' },
+  { name: 'twilight-dark', colorway: 'twilight', theme: 'dark' },
+  // The face the user reviews the live site in.
+  { name: 'blossom-light', colorway: 'blossom', theme: 'light' },
+];
+
+// Each capture is independent (own files, fresh mock), and this file is the
+// suite's longest: spread its tests across workers.
+test.describe.configure({ mode: 'parallel' });
+
+async function settle(page: Page) {
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    // Lazy images outside the viewport never decode; wait for the rest, briefly.
+    const eager = [...document.images].filter((i) => i.loading !== 'lazy' || i.getBoundingClientRect().top < innerHeight);
+    await Promise.race([Promise.all(eager.map((i) => i.decode().catch(() => {}))), new Promise((r) => setTimeout(r, 3000))]);
+  });
+}
+
+async function shot(page: Page, name: string) {
+  await settle(page);
+  await page.screenshot({ path: `${OUT}/${name}.png`, animations: 'disabled' });
+}
+
+for (const vp of VIEWPORTS) {
+  for (const look of LOOKS) {
+    test(`capture ${vp.name} ${look.name}`, async ({ page }) => {
+      // About thirty settled shots: well past 30 s on a loaded 4-vCPU runner.
+      test.setTimeout(120_000);
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.addInitScript(
+        ([c, t]) => {
+          localStorage.setItem('colorway', c!);
+          localStorage.setItem('theme', t!);
+        },
+        [look.colorway, look.theme],
+      );
+      const tag = `${vp.name}-${look.name}`;
+
+      await page.goto(`${ADMIN}/?sw=off`);
+      await expect(page.locator('[data-run="r-carling"]')).toBeVisible();
+      await shot(page, `admin-week-${tag}`);
+
+      if (vp.name === 'narrow') {
+        // The phone's navigation drawer (M3E gate G7).
+        await page.getByRole('button', { name: 'Open the navigation' }).click();
+        await expect(page.getByRole('dialog', { name: 'Navigation' })).toBeVisible();
+        await shot(page, `admin-drawer-${tag}`);
+        await page.keyboard.press('Escape');
+      }
+
+      await page.locator('[data-run="r-carling"] .plan-card__open').click();
+      // Wide screens open the run in the Week window's side pane (gate G4).
+      await expect(page.getByRole(vp.name === 'wide' ? 'complementary' : 'dialog', { name: 'HCarling + HStar' })).toBeVisible();
+      await shot(page, `admin-sheet-${tag}`);
+      await page.keyboard.press('Escape');
+
+      await page.goto(`${ADMIN}/config?section=access&sw=off`);
+      await expect(page.getByRole('table', { name: "The bot's permissions in each channel" })).toBeVisible();
+      await shot(page, `admin-config-access-${tag}`);
+
+      for (const [section, name, ready] of [
+        ['models', 'admin-config-models', page.getByRole('tab', { name: 'Capacity' })],
+        ['persona', 'admin-config-persona', page.getByText(/Reload profiles/)],
+        ['self-service', 'admin-config-self-service', page.getByText('How self-service works')],
+      ] as const) {
+        await page.goto(`${ADMIN}/config?section=${section}&sw=off`);
+        await expect(ready).toBeVisible();
+        await shot(page, `${name}-${tag}`);
+      }
+      // Models with the cloud warning showing.
+      await page.goto(`${ADMIN}/config?section=models&sw=off`);
+      await choose(page.getByRole('combobox', { name: /^Model/ }).first(), 'kanata/chat-cloud');
+      await expect(page.getByText(/raw member names, IDs, messages, and URLs leave the homelab/i)).toBeVisible();
+      await shot(page, `admin-config-models-cloud-${tag}`);
+
+      for (const path of ['fixed', 'bosses', 'members', 'reminders', 'inbox', 'extractions', 'chat', 'limits', 'history', 'config']) {
+        await page.goto(`${ADMIN}/${path}?sw=off`);
+        await expect(page.getByRole('heading', { level: 1 })).not.toHaveText(
+          /^(Weekly timings|Bosses|Members|Reminders|Inbox|Extractions|Chat|Limits|0 changes)$/,
+        );
+        await shot(page, `admin-${path}-${tag}`);
+      }
+
+      for (const [path, name] of [
+        ['extractions/x-kalos', 'extraction'],
+        ['chat/c-move', 'chat-turn'],
+        ['bosses/MaleficStar/knowledge', 'knowledge'],
+        ['bosses/Kai/knowledge', 'knowledge-event'],
+      ] as const) {
+        await page.goto(`${ADMIN}/${path}?sw=off`);
+        await expect(page.getByRole('tablist').or(page.getByRole('heading', { name: 'Sources' })).first()).toBeVisible();
+        await shot(page, `admin-${name}-${tag}`);
+      }
+
+      await page.goto(`${ADMIN}/history?sw=off`);
+       await page.locator('[data-history="2"]').click();
+       await page.getByRole(vp.name === 'wide' ? 'complementary' : 'dialog', { name: vp.name === 'wide' ? 'Change details' : 'Change #2' }).getByRole('button', { name: 'Revert…' }).click();
+      await expect(page.getByRole('dialog', { name: 'Revert #2?' }).getByRole('alert')).toBeVisible();
+      await shot(page, `admin-history-revert-${tag}`);
+      await page.keyboard.press('Escape');
+      await page.getByRole('button', { name: 'Show raw JSON' }).click();
+      await expect(page.getByRole('dialog', { name: 'Change #2 raw JSON' })).toBeVisible();
+      await shot(page, `admin-history-raw-${tag}`);
+
+      await page.goto(`${ADMIN}/fixed?sw=off`);
+      await page.getByRole('button', { name: 'Edit Friday 21:30 — XKalos' }).click();
+      const fixedEditor = vp.name === 'wide' ? page.getByRole('complementary', { name: 'Weekly timing details' }) : page.getByRole('dialog');
+      await expect(fixedEditor).toBeVisible();
+      await shot(page, `admin-fixed-editor-${tag}`);
+      await fixedEditor.getByLabel('Time').fill('21:00');
+      await fixedEditor.getByRole('button', { name: 'Save…' }).click();
+      await expect(fixedEditor.getByRole('radio', { name: 'Update to the new timing' })).toBeVisible();
+      await shot(page, `admin-fixed-choice-${tag}`);
+
+      await page.goto(`${ADMIN}/members?sw=off`);
+      await page.getByRole('button', { name: /^Asahi/ }).click();
+      await expect(vp.name === 'wide' ? page.getByRole('complementary', { name: 'Member details' }) : page.getByRole('dialog', { name: 'Asahi' })).toBeVisible();
+      await shot(page, `admin-member-sheet-${tag}`);
+
+      await page.goto(`${ADMIN}/login?sw=off`);
+      await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toBeVisible();
+      await shot(page, `admin-login-${tag}`);
+    });
+
+    // The member portal (D4-A, D5-A): Sign in, Denied, Account, Session ended, Closed.
+    test(`capture public portal ${vp.name} ${look.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.addInitScript(
+        ([c, t]) => {
+          localStorage.setItem('colorway', c!);
+          localStorage.setItem('theme', t!);
+        },
+        [look.colorway, look.theme],
+      );
+      const tag = `${vp.name}-${look.name}`;
+
+      await page.goto(`${PUBLIC}/?sw=off`);
+      await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toBeVisible();
+      await shot(page, `public-signin-${tag}`);
+
+      await page.goto(`${PUBLIC}/?login_error=not_eligible&sw=off`);
+      await expect(page.getByRole('heading', { name: "This account can't see the schedule" })).toBeVisible();
+      await shot(page, `public-denied-${tag}`);
+
+      await signInPublic(page);
+      await page.goto(`${PUBLIC}/account?tab=devices&sw=off`);
+      await expect(page.getByText('This device')).toBeVisible();
+      await shot(page, `public-account-${tag}`);
+
+      // The session ends on the server; the next request finds out.
+      await page.request.post(`${PUBLIC}/__mock/public/end`);
+      await page.getByRole('button', { name: /^Sign out Safari · iPhone/ }).click();
+      await expect(page.getByRole('heading', { name: "You've been signed out" })).toBeVisible();
+      await shot(page, `public-ended-${tag}`);
+
+      await setPortal(page.request, false);
+      await page.goto(`${PUBLIC}/?sw=off`);
+      await expect(page.getByRole('heading', { name: "The schedule isn't open right now" })).toBeVisible();
+      await shot(page, `public-closed-${tag}`);
+    });
+  }
+}
+
+// The planner card's grip: at rest, under a fine pointer's hover, and with
+// keyboard focus. Full frame plus a close crop around the card.
+for (const look of LOOKS) {
+  test(`capture admin grip states ${look.name}`, async ({ page }) => {
+    await page.addInitScript(
+      ([c, t]) => {
+        localStorage.setItem('colorway', c!);
+        localStorage.setItem('theme', t!);
+      },
+      [look.colorway, look.theme],
+    );
+    await page.goto(`${ADMIN}/?sw=off`);
+    const card = page.locator('[data-run="r-carling"]');
+    await expect(card).toBeVisible();
+    const crop = async (name: string) => {
+      await settle(page);
+      const box = (await card.boundingBox())!;
+      await page.screenshot({
+        path: `${OUT}/${name}-crop.png`,
+        animations: 'disabled',
+        clip: { x: box.x - 24, y: box.y - 24, width: box.width + 48, height: box.height + 48 },
+      });
+    };
+    await crop(`admin-week-grip-rest-wide-${look.name}`);
+    await card.hover();
+    await settleMotion(page);
+    await shot(page, `admin-week-grip-hover-wide-${look.name}`);
+    await crop(`admin-week-grip-hover-wide-${look.name}`);
+    await page.mouse.move(2, 2);
+    await page.locator('[data-handle="r-carling"]').focus();
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Tab');
+    await expect(page.locator('[data-handle="r-carling"]')).toBeFocused();
+    await settleMotion(page);
+    await shot(page, `admin-week-grip-focus-wide-${look.name}`);
+    await crop(`admin-week-grip-focus-wide-${look.name}`);
+  });
+}
+
+// A run on every day squeezes the columns to their 230 px track: 1, 2 and 3
+// bosses beside the grip.
+for (const vp of VIEWPORTS) {
+  test(`capture admin busy week grip ${vp.name}`, async ({ page }) => {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await busyWeek(page);
+    await page.goto(`${ADMIN}/?sw=off`);
+    await expect(page.locator('[data-run="busy-0-3"]')).toBeVisible();
+    await shot(page, `admin-week-busy-${vp.name}`);
+    const cards = page.locator('[data-run^="busy-0-"]');
+    const boxes = await cards.evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => ({ x: r.x, y: r.y, r: r.right, b: r.bottom })));
+    const x = Math.min(...boxes.map((b) => b.x)) - 16;
+    const y = Math.min(...boxes.map((b) => b.y)) - 16;
+    await page.screenshot({
+      path: `${OUT}/admin-week-busy-grip-${vp.name}-crop.png`,
+      animations: 'disabled',
+      clip: { x, y, width: Math.max(...boxes.map((b) => b.r)) + 16 - x, height: Math.min(Math.max(...boxes.map((b) => b.b)) + 16, vp.height) - y },
+    });
+  });
+}
+
+test('capture admin keyboard lift and palette', async ({ page }) => {
+  await page.goto(`${ADMIN}/?sw=off`);
+  await page.locator('[data-handle="r-carling"]').focus();
+  await page.keyboard.press('m');
+  await page.keyboard.press('ArrowRight');
+  await shot(page, 'admin-wide-lifted');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('ControlOrMeta+k');
+  await page.getByRole('combobox', { name: 'Search commands' }).fill('go');
+  await shot(page, 'admin-wide-palette');
+});
+
+// Side-by-side with the live v4 captures in e2e/.captures/v4-live/ (same page
+// names, 1280×800 wide; 422 px narrow like v4's). Only with KANADE_REAL_ART=1.
+const COMPARE: [string, string][] = [
+  ['week', '/'],
+  ['week-next', '/?week=next'],
+  ['fixed', '/fixed'],
+  ['bosses', '/bosses'],
+  ['boss-knowledge', '/bosses/Carling/knowledge'],
+  ['inbox', '/inbox'],
+  ['extractions', '/extractions'],
+  ['extraction-detail', '/extractions/x-kalos'],
+  ['chat', '/chat'],
+  ['chat-detail', '/chat/c-move'],
+  ['limits', '/limits'],
+  ['members', '/members'],
+  ['reminders', '/reminders'],
+  ['audit', '/history'],
+  ['config', '/config'],
+  ['config-pings', '/config?section=pings'],
+  ['config-watching', '/config?section=watching'],
+  ['config-chatbot', '/config?section=chatbot'],
+  ['config-persona', '/config?section=persona'],
+  ['config-models', '/config?section=models'],
+  ['config-self-service', '/config?section=self-service'],
+  ['config-notifications', '/config?section=notifications'],
+  ['config-theme', '/config?section=theme'],
+  ['config-digest', '/config?section=digest'],
+  ['config-rescan', '/config?section=rescan'],
+  ['config-access', '/config?section=access'],
+  ['config-env', '/config?section=env'],
+];
+for (const vp of [
+  { name: 'wide', width: 1280, height: 800 },
+  { name: 'narrow', width: 422, height: 900 },
+]) {
+  test(`capture v4 comparison set ${vp.name}`, async ({ page }) => {
+    test.skip(!REAL_ART, 'real art only');
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await page.addInitScript(() => {
+      localStorage.setItem('colorway', 'marigold');
+      localStorage.setItem('theme', 'light');
+    });
+    for (const [name, path] of COMPARE) {
+      await page.goto(`${ADMIN}${path}${path.includes('?') ? '&' : '?'}sw=off`);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      await settleMotion(page);
+      await shot(page, `compare/v5-${name}-${vp.name}`);
+    }
+    await page.goto(`${ADMIN}/?sw=off`);
+    await page.locator('[data-run="r-carling"] .plan-card__open').click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await shot(page, `compare/v5-run-sheet-${vp.name}`);
+  });
+}
+
+// Batch 6 evidence: Week at the five layout sizes, the Inbox (both tabs,
+// wide and narrow) and filtered Chat / Extractions.
+test('capture batch 6 layout set', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => {
+    localStorage.setItem('colorway', 'marigold');
+    localStorage.setItem('theme', 'light');
+  });
+  for (const [w, h] of [[1280, 800], [1000, 670], [1280, 600], [390, 844], [844, 390]] as const) {
+    await page.setViewportSize({ width: w, height: h });
+    await page.goto(`${ADMIN}/?sw=off`);
+    await expect(page.locator('[data-run="r-carling"]')).toBeVisible();
+    await shot(page, `b6/week-${w}x${h}`);
+  }
+  for (const [w, h, name] of [[1280, 800, 'wide'], [390, 844, 'narrow']] as const) {
+    await page.setViewportSize({ width: w, height: h });
+    await page.goto(`${ADMIN}/inbox?tab=extractor&sw=off`);
+    await expect(page.getByRole('listbox')).toBeVisible();
+    await shot(page, `b6/inbox-extractor-${name}`);
+    await page.goto(`${ADMIN}/inbox?tab=self_service&item=p-fa-request&sw=off`);
+    await expect(page.getByText('Changed since the member asked')).toBeVisible();
+    await shot(page, `b6/inbox-self-service-${name}`);
+    await page.goto(`${ADMIN}/chat?outcome=timeout,error,refused&sw=off`);
+    await page.getByRole('button', { name: /^Filters/ }).click();
+    await shot(page, `b6/chat-filtered-${name}`);
+    await page.goto(`${ADMIN}/extractions?outcome=proposed,failed&model=kanata%2Fextract&sw=off`);
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('of 34');
+    await shot(page, `b6/extractions-filtered-${name}`);
+  }
+});
+
+// Planner time drops (workplan step planner-time-drops): mid-drag with the
+// drop indicator and a clash, the clash on the cards after the drop, and the
+// Config → Run lengths section.
+test('capture planner time drops and run lengths', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => {
+    localStorage.setItem('colorway', 'marigold');
+    localStorage.setItem('theme', 'light');
+  });
+  await page.goto(`${ADMIN}/?sw=off`);
+  await expect(page.locator('.board[data-hydrated]')).toBeVisible();
+  const from = (await page.locator('[data-run="r-fa"]').boundingBox())!;
+  const bm = (await page.locator('[data-run="r-bm"]').boundingBox())!;
+  const [x0, y0] = [from.x + from.width / 2, from.y + from.height / 2];
+  const [x1, y1] = [bm.x + bm.width / 2, bm.y + bm.height + 12];
+  await page.mouse.move(x0, y0);
+  await page.mouse.down();
+  for (let i = 1; i <= 12; i++) await page.mouse.move(x0 + ((x1 - x0) * i) / 12, y0 + ((y1 - y0) * i) / 12);
+  await page.mouse.move(x1 + 1, y1 + 1);
+  await expect(page.locator('.dnd-ghost--on .plan-clash')).toBeVisible();
+  await shot(page, 'admin-planner-drop-wide-marigold-light');
+  await page.mouse.up();
+  await expect(page.getByText(/Moved HFA/)).toBeVisible();
+  await shot(page, 'admin-planner-clash-wide-marigold-light');
+
+  for (const vp of VIEWPORTS) {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await page.goto(`${ADMIN}/config?section=run-lengths&sw=off`);
+    await expect(page.getByRole('heading', { name: 'Run lengths' })).toBeVisible();
+    await expectValue(page.getByRole('combobox', { name: 'Boss', exact: true }), 'BM');
+    await shot(page, `admin-config-run-lengths-${vp.name}-marigold-light`);
+  }
+});
+
+// Planner swap (workplan step planner-swap): the drag indicator over another
+// card, and the run sheet's "Swap timing with…" picker, wide and narrow.
+test('capture planner swap', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => {
+    localStorage.setItem('colorway', 'marigold');
+    localStorage.setItem('theme', 'light');
+  });
+  await page.goto(`${ADMIN}/?sw=off`);
+  await expect(page.locator('.board[data-hydrated]')).toBeVisible();
+  const from = (await page.locator('[data-run="r-fa"]').boundingBox())!;
+  const bm = (await page.locator('[data-run="r-bm"]').boundingBox())!;
+  const [x0, y0] = [from.x + from.width / 2, from.y + from.height / 2];
+  const [x1, y1] = [bm.x + bm.width / 2, bm.y + bm.height / 2];
+  await page.mouse.move(x0, y0);
+  await page.mouse.down();
+  for (let i = 1; i <= 12; i++) await page.mouse.move(x0 + ((x1 - x0) * i) / 12, y0 + ((y1 - y0) * i) / 12);
+  await page.mouse.move(x1 + 1, y1 + 1);
+  await expect(page.locator('.dnd-ghost--on')).toContainText('Swap with XBM');
+  await shot(page, 'admin-planner-swap-wide-marigold-light');
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+
+  for (const vp of VIEWPORTS) {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await page.goto(`${ADMIN}/?sw=off`);
+    await page.locator('[data-run="r-fa"] .plan-card__open').click();
+    const sheet = page.getByRole(vp.name === 'wide' ? 'complementary' : 'dialog', { name: 'HFA' });
+    if (vp.name !== 'wide') await sheet.getByRole('button', { name: 'More actions' }).click();
+    await sheet.getByRole('button', { name: 'Swap timing with…' }).click();
+    await choose(sheet.getByRole('combobox', { name: 'Swap with' }), { label: 'Tue 29 23:30 · XBM' });
+    await expect(sheet.getByText('HFA → Tue 29 23:30')).toBeVisible();
+    await sheet.getByRole('group', { name: /Swap HFA's timing/ }).scrollIntoViewIfNeeded();
+    await shot(page, `admin-sheet-swap-${vp.name}-marigold-light`);
+  }
+});
+
+// Live Limits (B_LimitsLive and its tab boards) for review: the mock's three
+// seeded groups and its default one gateway group, every tab at 1280×800 and
+// Backends + Admission on a phone, in blossom light and twilight dark.
+for (const groups of ['three', 'default'] as const) {
+  test(`capture live Limits set (${groups})`, async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.request.post(`${ADMIN}/__mock/limits`, { data: { groups } });
+    for (const look of LOOKS.filter((l) => l.name === 'blossom-light' || l.name === 'twilight-dark')) {
+      for (const [w, h, tabs] of [
+        [1280, 800, ['Backends', 'Queue', 'Admission', 'Allowances']],
+        [390, 844, ['Backends', 'Admission']],
+      ] as const) {
+        await page.setViewportSize({ width: w, height: h });
+        await page.goto(`${ADMIN}/limits?sw=off`);
+        await page.evaluate(({ colorway, theme }) => {
+          localStorage.setItem('colorway', colorway);
+          localStorage.setItem('theme', theme);
+        }, look);
+        await page.reload();
+        for (const tab of tabs) {
+          const chosen = page.getByRole('tab', { name: new RegExp(`^${tab}`) });
+          await chosen.click();
+          await expect(chosen).toHaveAttribute('aria-selected', 'true');
+          await settleMotion(page);
+          await shot(page, `limits/${groups}-${look.name}-${w}x${h}-${tab.toLowerCase()}`);
+        }
+      }
+    }
+  });
+}
+
+// The profanity guardrail (user decision 2026-10-05): Config → Profanity with
+// the built-in word search open, and the three profanity turns in Chat.
+for (const vp of VIEWPORTS) {
+  for (const look of [
+    { name: 'blossom-light', colorway: 'blossom', theme: 'light' },
+    { name: 'blossom-dark', colorway: 'blossom', theme: 'dark' },
+  ]) {
+    test(`capture profanity ${vp.name} ${look.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.addInitScript(
+        ([c, t]) => {
+          localStorage.setItem('colorway', c!);
+          localStorage.setItem('theme', t!);
+        },
+        [look.colorway, look.theme],
+      );
+      const tag = `${vp.name}-${look.name}`;
+      await page.goto(`${ADMIN}/config?section=profanity&sw=off`);
+      const panel = page.getByRole('tabpanel', { name: 'Profanity' });
+      await expect(panel.getByRole('switch', { name: 'Check replies' })).toBeVisible();
+      await settleMotion(page);
+      await shot(page, `admin-config-profanity-top-${tag}`);
+      await panel.getByRole('textbox', { name: 'Add blocked words' }).fill('heck');
+      await panel.getByRole('button', { name: 'Add', exact: true }).click();
+      await panel.getByRole('combobox', { name: 'Find a built-in word to allow again' }).fill('ra');
+      await expect(panel.getByRole('listbox', { name: 'Built-in words' })).toBeVisible();
+      await settleMotion(page);
+      await shot(page, `admin-config-profanity-${tag}`);
+      for (const id of ['c-deflected', 'c-safe-line', 'c-recovered']) {
+        await page.goto(`${ADMIN}/chat/${id}?sw=off`);
+        await expect(page.locator('.chat-guard')).toBeVisible();
+        await settleMotion(page);
+        await shot(page, `admin-chat-${id}-${tag}`);
+      }
+    });
+  }
+}

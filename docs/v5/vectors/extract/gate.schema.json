@@ -1,0 +1,566 @@
+{
+  "$defs": {
+    "boss_hit": {
+      "additionalProperties": false,
+      "properties": {
+        "canonical": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "difficulty": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fuzzy": {
+          "type": "boolean"
+        },
+        "short": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "token",
+        "short",
+        "difficulty",
+        "canonical",
+        "fuzzy"
+      ],
+      "type": "object"
+    },
+    "case": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "expected": {
+          "$ref": "#/$defs/expected"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input",
+        "expected"
+      ],
+      "type": "object"
+    },
+    "catalog": {
+      "additionalProperties": false,
+      "properties": {
+        "bosses": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "aliases": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "difficulties": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "full": {
+                "type": "string"
+              },
+              "short": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "short",
+              "full",
+              "aliases"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "difficulties": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "prefix": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "prefix",
+              "label"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "difficulties",
+        "bosses"
+      ],
+      "type": "object"
+    },
+    "expected": {
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/outcome"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "steps"
+      ],
+      "type": "object"
+    },
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "catalog": {
+          "$ref": "#/$defs/catalog"
+        },
+        "roster_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/step"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "catalog",
+        "roster_ids",
+        "steps"
+      ],
+      "type": "object"
+    },
+    "outcome": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "value": {}
+          },
+          "required": [
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "message": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "message"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "replayCase": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input"
+      ],
+      "type": "object"
+    },
+    "result_canonical_bosses": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "result_evaluate": {
+      "additionalProperties": false,
+      "properties": {
+        "bosses": {
+          "items": {
+            "$ref": "#/$defs/boss_hit"
+          },
+          "type": "array"
+        },
+        "days": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hit": {
+          "type": "boolean"
+        },
+        "mentions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "reasons": {
+          "type": "string"
+        },
+        "signals": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "strong": {
+          "type": "boolean"
+        },
+        "times": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "signals",
+        "bosses",
+        "times",
+        "days",
+        "mentions",
+        "hit",
+        "strong",
+        "reasons"
+      ],
+      "type": "object"
+    },
+    "result_explicit_rsvp": {
+      "enum": [
+        "yes",
+        "no",
+        null
+      ]
+    },
+    "result_find_bosses": {
+      "items": {
+        "$ref": "#/$defs/boss_hit"
+      },
+      "type": "array"
+    },
+    "result_find_days": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "result_find_mentions": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "result_find_times": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "result_should_extract": {
+      "type": "boolean"
+    },
+    "result_urgent": {
+      "type": "boolean"
+    },
+    "step": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/step_find_bosses"
+        },
+        {
+          "$ref": "#/$defs/step_canonical_bosses"
+        },
+        {
+          "$ref": "#/$defs/step_find_times"
+        },
+        {
+          "$ref": "#/$defs/step_find_days"
+        },
+        {
+          "$ref": "#/$defs/step_find_mentions"
+        },
+        {
+          "$ref": "#/$defs/step_explicit_rsvp"
+        },
+        {
+          "$ref": "#/$defs/step_evaluate"
+        },
+        {
+          "$ref": "#/$defs/step_should_extract"
+        },
+        {
+          "$ref": "#/$defs/step_urgent"
+        }
+      ]
+    },
+    "step_canonical_bosses": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "canonical_bosses"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "text"
+      ],
+      "type": "object"
+    },
+    "step_evaluate": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "evaluate"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "text"
+      ],
+      "type": "object"
+    },
+    "step_explicit_rsvp": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "explicit_rsvp"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "text"
+      ],
+      "type": "object"
+    },
+    "step_find_bosses": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "find_bosses"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "text"
+      ],
+      "type": "object"
+    },
+    "step_find_days": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "find_days"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "text"
+      ],
+      "type": "object"
+    },
+    "step_find_mentions": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "find_mentions"
+        },
+        "roster_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "text",
+        "roster_ids"
+      ],
+      "type": "object"
+    },
+    "step_find_times": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "find_times"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "text"
+      ],
+      "type": "object"
+    },
+    "step_should_extract": {
+      "additionalProperties": false,
+      "properties": {
+        "context_is_scheduling": {
+          "type": "boolean"
+        },
+        "op": {
+          "const": "should_extract"
+        },
+        "texts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "op",
+        "texts",
+        "context_is_scheduling"
+      ],
+      "type": "object"
+    },
+    "step_urgent": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "urgent"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "text"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/case"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "family": {
+      "const": "gate"
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "functions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "inventory_surfaces": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "oracle": {
+          "type": "string"
+        },
+        "source_tests": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "oracle",
+        "functions",
+        "source_tests",
+        "inventory_surfaces"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "v5-extract-gate-v1"
+    }
+  },
+  "required": [
+    "schema_version",
+    "family",
+    "provenance",
+    "cases"
+  ],
+  "title": "Kanade v5 extraction vectors: gate",
+  "type": "object"
+}

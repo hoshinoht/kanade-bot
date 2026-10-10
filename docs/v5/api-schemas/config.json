@@ -1,0 +1,423 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/config.json",
+  "title": "Runtime settings (GET/PATCH /api/admin/config) and the channel access report",
+  "$defs": {
+    "IdList": {
+      "description": "Discord ids as strings, in saved order (the server only stores canonical positive ids; like other channel id fields the schema leaves the format open).",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "IdListSource": {
+      "description": "`saved` once an explicit list save stored the list (it then overrides the env seed); `env` while it follows the seed.",
+      "enum": ["saved", "env"]
+    },
+    "MessageStyle": { "enum": ["classic", "redesigned"], "description": "How reminder and digest cards look in Discord; presentation only." },
+    "SelfServiceMode": { "enum": ["cards_and_link", "link_first", "cards_only"] },
+    "Rate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "window_s"],
+      "properties": {
+        "count": { "type": "integer", "minimum": 0, "maximum": 100, "description": "Answers per window: 1-100; member_rate also accepts 0 (staff only)." },
+        "window_s": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "RunLengthOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["boss", "difficulty", "minutes"],
+      "properties": {
+        "boss": { "type": "string", "description": "Exact stable catalog boss key." },
+        "difficulty": { "type": "string", "description": "Exact lowercase catalog difficulty letter for boss." },
+        "minutes": { "type": "integer", "minimum": 5, "maximum": 480 }
+      }
+    },
+    "RunLengths": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default_minutes", "overrides"],
+      "properties": {
+        "default_minutes": { "type": "integer", "minimum": 5, "maximum": 240 },
+        "overrides": { "type": "array", "items": { "$ref": "#/$defs/RunLengthOverride" }, "description": "Replaced whole by PATCH; boss+difficulty pairs must be unique and valid in the catalog." }
+      }
+    },
+    "ProfanitySettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["extra_words", "allowed_words", "check_questions", "check_replies", "deflection_line", "builtin_words"],
+      "properties": {
+        "extra_words": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/ProfanityWord" }, "description": "Admin-added words, matched whole with the built-in suffixes. Replaced whole by PATCH; trimmed and lowercased; not built-ins and no repeats (422 otherwise)." },
+        "allowed_words": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/ProfanityWord" }, "description": "Built-in words allowed again (each must be in builtin_words; 422 otherwise). Replaced whole by PATCH." },
+        "check_questions": { "type": "boolean", "description": "A listed word in a member's question sends deflection_line with no model call (charged like an answer)." },
+        "check_replies": { "type": "boolean", "description": "A listed word in a finished reply spends the clean retry once; a retry that is unavailable or hits again sends deflection_line." },
+        "deflection_line": { "type": "string", "minLength": 1, "maxLength": 200, "description": "One line; it must not itself contain a listed word (422)." },
+        "builtin_words": { "type": "array", "items": { "type": "string" }, "description": "Read-only: the code-owned list, sorted; each entry may be allowed again." }
+      }
+    },
+    "ProfanityWord": { "type": "string", "minLength": 2, "maxLength": 32 },
+    "ModelInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "trust_zone", "leaves_homelab", "function_tools", "structured_output",
+        "sampling_controls", "reasoning_control", "reasoning_efforts", "admission"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "trust_zone": { "enum": ["homelab", "external", "unknown"] },
+        "leaves_homelab": { "type": "boolean" },
+        "function_tools": { "type": "boolean" },
+        "structured_output": { "type": "boolean" },
+        "sampling_controls": { "type": "boolean" },
+        "reasoning_control": { "type": "boolean" },
+        "reasoning_efforts": {
+          "anyOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }]
+        },
+        "context_tokens": { "type": "integer", "minimum": 1, "description": "Published Kanata context window when present." },
+        "max_output_tokens": { "type": "integer", "minimum": 1, "description": "Published Kanata maximum completion size when present." },
+        "off_allowed": {
+          "type": "boolean",
+          "description": "False when the alias requires reasoning (a published `reasoning_efforts` list without `none`): hide `off`; a stranded role falls back to the lowest published level."
+        },
+        "variant_of": {
+          "type": "string",
+          "description": "Present on a `<base>:<level>` alias whose base is listed (a known effort suffix only): the picker lists the base and chooses reasoning separately."
+        },
+        "fixed_effort": {
+          "type": "string",
+          "description": "The variant's baked-in level in the `reasoning` vocabulary (`:none` is `off`)."
+        },
+        "admission": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["max_in_flight"],
+              "properties": {
+                "max_in_flight": { "type": "integer", "minimum": 0 },
+                "adapter_max_in_flight": { "type": "integer", "minimum": 0 }
+              }
+            },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "RoleModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alias", "reasoning"],
+      "properties": {
+        "alias": { "type": "string" },
+        "reasoning": { "type": "string", "description": "`off`, a published effort, or `\"\"` = same as extraction (chat and rewrite only)." },
+        "variant_of": { "type": "string", "description": "The stored alias is a listed variant of this base; show \"<variant_of> (fixed: <fixed_effort>)\"." },
+        "fixed_effort": { "type": "string", "description": "The stored variant's baked-in level; it wins over `reasoning`." },
+        "running": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["alias", "reasoning"],
+          "description": "What the role's next session opens with (saved roles apply live); absent while the role is unrouted, no gateway is configured, or its feature waits for a restart (extraction or heading rewrites with no model at startup).",
+          "properties": {
+            "alias": { "type": "string" },
+            "reasoning": { "type": ["string", "null"], "description": "The level requests send: inherit resolved, a variant's fixed level or a published floor applied." }
+          }
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["window", "reserve", "prompt_budget", "source", "clamped_by_published", "clamped_by_hard_cap", "clamped_by_role_cap", "local_warning"],
+          "properties": {
+            "window": { "type": "integer", "minimum": 1 },
+            "reserve": { "type": "integer", "minimum": 1 },
+            "prompt_budget": { "type": "integer", "minimum": 0 },
+            "source": { "enum": ["override", "catalog", "cloud_default", "local_default"] },
+            "clamped_by_published": { "type": "boolean" },
+            "clamped_by_hard_cap": { "type": "boolean" },
+            "clamped_by_role_cap": { "type": "boolean" },
+            "local_warning": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "CapacityGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "group", "permits", "in_use"],
+      "properties": {
+        "model": { "type": "string" },
+        "group": { "type": "string" },
+        "permits": { "type": ["integer", "null"] },
+        "in_use": { "type": ["integer", "null"], "minimum": 0, "description": "The group's permits held by calls in flight (the governor snapshot Limits reads); null while model serving is not composed or the governor runs no such group." }
+      }
+    },
+    "AliasLimit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alias", "max_in_flight", "source"],
+      "properties": {
+        "alias": { "type": "string" },
+        "max_in_flight": { "type": "integer", "minimum": 0 },
+        "adapter_max_in_flight": { "type": "integer", "minimum": 0 },
+        "source": { "enum": ["published", "declared"] }
+      }
+    },
+    "KeyLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_in_flight", "shared"],
+      "properties": {
+        "max_in_flight": { "type": ["integer", "null"], "minimum": 0, "description": "null: Kanata publishes no per-key limit." },
+        "shared": { "type": "boolean" }
+      }
+    },
+    "ContextRole": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reserve", "cap"],
+      "properties": {
+        "reserve": { "type": "integer", "minimum": 1, "maximum": 131072 },
+        "cap": { "type": ["integer", "null"], "minimum": 1, "maximum": 131072 }
+      }
+    },
+    "ContextSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cloud_default", "local_default", "chat", "extraction", "rewrite"],
+      "properties": {
+        "cloud_default": { "type": "integer", "minimum": 1, "maximum": 131072 },
+        "local_default": { "type": "integer", "minimum": 1, "maximum": 131072 },
+        "chat": { "$ref": "#/$defs/ContextRole" },
+        "extraction": { "$ref": "#/$defs/ContextRole" },
+        "rewrite": { "$ref": "#/$defs/ContextRole" },
+        "overrides": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 1, "maximum": 131072 }, "description": "Window per exact route alias; optional in a PATCH (defaults to {}), always present in the view. Matching is exact, so an override on a base alias does not apply to its `<base>:<level>` variants." }
+      }
+    },
+    "CapacityCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "message"],
+      "properties": {
+        "level": { "enum": ["ok", "warning", "error"] },
+        "message": { "type": "string" },
+        "group": { "type": ["string", "null"], "description": "The capacity group (models.groups[].group) the check is about; null for checks spanning groups (a role in no group, Kanata unreachable). An alias Kanata does not list is reported once, under the first group naming it." }
+      }
+    },
+    "LastDigest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["posted_at", "week_start", "this_week", "channel_id", "channel_name", "url"],
+      "properties": {
+        "posted_at": { "type": "string", "format": "date-time", "description": "RFC 3339 in the guild's offset, whole seconds." },
+        "week_start": { "type": "string", "format": "date", "description": "Guild-local boss-week start date." },
+        "this_week": { "type": "boolean", "description": "week_start is the current boss week's start." },
+        "channel_id": { "type": "string" },
+        "channel_name": { "type": ["string", "null"], "description": "null when the channel is not in the guild's current channel list." },
+        "url": { "type": ["string", "null"], "description": "Discord message link; null while the guild id is unknown." }
+      }
+    },
+    "RoleProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role_id", "role_name", "profile"],
+      "properties": {
+        "role_id": { "type": "string" },
+      "role_name": { "type": ["string", "null"] },
+        "profile": { "type": "string" }
+      }
+    },
+    "ReplyProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "name", "public", "voice", "prompt_summary"],
+      "properties": {
+        "key": { "type": "string" },
+        "name": { "type": "string" },
+        "public": { "type": "boolean" },
+        "voice": { "type": "string" },
+        "prompt_summary": { "type": "string" }
+      }
+    },
+    "ConfigView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pings", "watching", "chatbot", "notifications", "self_service", "persona", "models", "run_lengths", "profanity", "manage_messages", "env"],
+      "properties": {
+        "pings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["day_of_ping_time", "countdown_minutes"],
+          "properties": {
+            "day_of_ping_time": { "type": "string" },
+            "countdown_minutes": { "type": "array", "items": { "type": "integer", "minimum": 0 } }
+          }
+        },
+        "watching": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["paused", "extract_enabled", "channel_ids", "channel_ids_source", "category_ids", "category_ids_source"],
+          "properties": {
+            "paused": { "type": "boolean" },
+            "extract_enabled": { "type": "boolean" },
+            "channel_ids": { "$ref": "#/$defs/IdList", "description": "Effective watched channel ids: the saved row, else KANADE_WATCH_CHANNEL_IDS." },
+            "channel_ids_source": { "$ref": "#/$defs/IdListSource" },
+            "category_ids": { "$ref": "#/$defs/IdList", "description": "Effective watched category ids: the saved row, else KANADE_WATCH_CATEGORY_IDS." },
+            "category_ids_source": { "$ref": "#/$defs/IdListSource" }
+          }
+        },
+        "chatbot": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "configured", "missing_env", "member_rate", "guild_rate", "category_ids", "category_ids_source"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "configured": { "type": "boolean" },
+            "missing_env": { "type": "array", "items": { "type": "string" } },
+            "member_rate": { "$ref": "#/$defs/Rate" },
+            "guild_rate": { "$ref": "#/$defs/Rate" },
+            "category_ids": { "$ref": "#/$defs/IdList", "description": "Effective chat category ids: the saved row, else KANADE_CHAT_CATEGORY_IDS." },
+            "category_ids_source": { "$ref": "#/$defs/IdListSource" }
+          }
+        },
+        "notifications": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["quiet_mode", "message_style"],
+          "properties": {
+            "quiet_mode": { "type": "boolean" },
+            "message_style": { "$ref": "#/$defs/MessageStyle" },
+            "header_generation_time": {
+              "description": "HH:MM in the guild's zone: when the daily reminder-header rewrite batch runs (default 00:00). Always sent by the server; optional so earlier fixtures stay valid.",
+              "type": "string",
+              "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+            }
+          }
+        },
+        "self_service": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "effective_mode", "public_portal"],
+          "properties": {
+            "mode": { "$ref": "#/$defs/SelfServiceMode" },
+            "effective_mode": { "$ref": "#/$defs/SelfServiceMode" },
+            "public_portal": { "type": "boolean" }
+          }
+        },
+        "persona": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["active", "personas", "profiles", "role_profiles", "role_profiles_digest"],
+          "properties": {
+            "active": { "type": "string" },
+            "personas": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["key", "name", "bundle"],
+                "properties": {
+                  "key": { "type": "string" },
+                  "name": { "type": "string" },
+                  "bundle": { "type": "string" }
+                }
+              }
+            },
+            "profiles": { "type": "array", "items": { "$ref": "#/$defs/ReplyProfile" } },
+            "role_profiles": { "type": "array", "items": { "$ref": "#/$defs/RoleProfile" } },
+            "role_profiles_digest": {
+              "type": "string",
+              "description": "Opaque assignment-specific revision for the ordered role_id/profile list; send it as the PATCH precondition."
+            }
+          }
+        },
+        "models": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reachable", "catalog", "roles", "groups", "alias_limits", "key_limits", "capacity_check", "pii_pseudonymise", "context"],
+          "properties": {
+            "reachable": { "type": "boolean" },
+            "catalog": { "type": "array", "items": { "$ref": "#/$defs/ModelInfo" } },
+            "roles": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["extraction", "chat", "rewrite"],
+              "properties": {
+                "extraction": { "$ref": "#/$defs/RoleModel" },
+                "chat": { "$ref": "#/$defs/RoleModel" },
+                "rewrite": { "$ref": "#/$defs/RoleModel" }
+              }
+            },
+            "groups": { "type": "array", "items": { "$ref": "#/$defs/CapacityGroup" } },
+            "groups_source": { "enum": ["default", "config"], "description": "default: one gateway group of KANADE_MODEL_PERMITS over the role aliases; config: kanade.toml [[models.groups]]." },
+            "alias_limits": { "type": "array", "items": { "$ref": "#/$defs/AliasLimit" } },
+            "key_limits": { "$ref": "#/$defs/KeyLimits" },
+            "capacity_check": { "type": "array", "items": { "$ref": "#/$defs/CapacityCheck" } },
+            "pii_pseudonymise": { "type": "boolean", "const": false, "description": "Read-only compatibility field; new model requests are not pseudonymized. Historical masked chat turns remain readable." },
+            "context": { "$ref": "#/$defs/ContextSettings", "description": "Saved context settings; PATCH sends the complete object. The effective per-role result is roles.<role>.context." }
+          }
+        },
+        "run_lengths": { "$ref": "#/$defs/RunLengths", "description": "Saved planner run durations. PATCH accepts default_minutes and/or a complete overrides array." },
+        "profanity": { "$ref": "#/$defs/ProfanitySettings", "description": "The chat profanity guardrail. PATCH accepts any of extra_words, allowed_words, check_questions, check_replies, deflection_line; changes apply to the next question and nudge rewrite." },
+        "manage_messages": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["missing"],
+          "properties": { "missing": { "type": "array", "items": { "type": "string" } } }
+        },
+        "notices": {
+          "description": "Present on PATCH responses that reset a stranded reasoning level.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "env": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "label", "value", "reason"],
+            "properties": {
+              "key": { "type": "string" },
+              "label": { "type": "string" },
+              "value": { "type": "string" },
+              "reason": { "type": "string" },
+              "copy": { "type": ["string", "null"], "description": "The raw env value for key (ids comma-joined, weekday mon..sun); null when unset or the row has no single env value. Never a secret." }
+            }
+          }
+        },
+        "last_digest": {
+          "description": "The newest active weekly digest by posted_at; null (or absent) when none or the journal is unreadable.",
+          "oneOf": [{ "$ref": "#/$defs/LastDigest" }, { "type": "null" }]
+        }
+      }
+    },
+    "AccessReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["connected", "checked_at", "rows"],
+      "properties": {
+        "connected": { "type": "boolean" },
+        "checked_at": { "type": "string" },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "watched", "digest", "view", "send", "history", "embed", "react", "manage_messages"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "watched": { "type": "boolean" },
+              "digest": { "type": "boolean" },
+              "view": { "type": "boolean" },
+              "send": { "type": "boolean" },
+              "history": { "type": "boolean" },
+              "embed": { "type": "boolean" },
+              "react": { "type": "boolean" },
+              "manage_messages": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

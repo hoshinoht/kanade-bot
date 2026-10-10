@@ -1,0 +1,55 @@
+{
+  "families": [
+    {
+      "family": "gate",
+      "schema": "gate.schema.json",
+      "vector": "gate.json"
+    },
+    {
+      "family": "window",
+      "schema": "window.schema.json",
+      "vector": "window.json"
+    },
+    {
+      "family": "resolve",
+      "schema": "resolve.schema.json",
+      "vector": "resolve.json"
+    },
+    {
+      "family": "match",
+      "schema": "match.schema.json",
+      "vector": "match.json"
+    },
+    {
+      "family": "merge",
+      "schema": "merge.schema.json",
+      "vector": "merge.json"
+    },
+    {
+      "family": "prompt",
+      "schema": "prompt.schema.json",
+      "vector": "prompt.json"
+    },
+    {
+      "family": "parse",
+      "schema": "parse.schema.json",
+      "vector": "parse.json"
+    },
+    {
+      "family": "plan",
+      "schema": "plan.schema.json",
+      "vector": "plan.json"
+    },
+    {
+      "family": "commit",
+      "schema": "commit.schema.json",
+      "vector": "commit.json"
+    },
+    {
+      "family": "cards",
+      "schema": "cards.schema.json",
+      "vector": "cards.json"
+    }
+  ],
+  "schema_version": "v5-extract-index-v1"
+}

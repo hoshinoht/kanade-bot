@@ -1,0 +1,9 @@
+# Copy to catalog.yaml (private, git-ignored) and edit.
+# Bundle files are derived from IDs: bundles/<id>.yaml. Aliases only map old
+# selection tokens to a canonical ID when importing or configuring.
+schema_version: 1
+default: kanade
+personas:
+  - id: kanade
+    label: Kanade
+    aliases: []

@@ -1,0 +1,166 @@
+// Ported from v4 portal/_filters-forms.scss (fields, inputs, segmented control).
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.field > span,
+.field > legend,
+.label {
+  display: block;
+  padding: 0;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.field + .field {
+  margin-top: 0.8rem;
+}
+
+.field__error {
+  font-size: var(--fs-small);
+  color: var(--risk-text);
+  margin: 0.15rem 0 0;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  max-width: 100%;
+  color: var(--ink);
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 0.36rem 0.6rem;
+  min-width: 0;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+
+input[aria-invalid="true"] {
+  border-color: var(--risk);
+}
+
+.formrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem 0.8rem;
+}
+
+.formrow .field + .field {
+  margin-top: 0;
+}
+
+.seg {
+  display: inline-flex;
+  border: 2px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.seg a {
+  padding: 0.4rem 0.75rem;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--dim);
+  text-decoration: none;
+  border-right: 2px solid var(--line);
+}
+
+.seg a:last-child {
+  border-right: 0;
+}
+
+.seg a[aria-current="page"],
+.seg a[aria-current="true"] {
+  background: var(--accent-fill);
+  color: var(--accent-ink);
+}
+
+// Segment buttons (Week view switch, answer group, guide difficulty): shared
+// by both apps, so the base lives here, not in the admin-only Week head.
+.seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  border: 0;
+  border-right: 2px solid var(--line);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.seg button:last-child {
+  border-right: 0;
+}
+
+// Selected: filled and bold, not colour alone.
+.seg button[aria-selected="true"] {
+  background: var(--accent-fill);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+// v4 filter bar (live-filtering in v5, so no submit button).
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin: 1.1rem 0 0.4rem;
+}
+
+/* A filter bar that is a page's own control sits on the ground, so it gets a
+   panel; the ones nested inside a card already have one. */
+.filters--panel {
+  padding: 0.75rem 0.9rem;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow);
+}
+
+/* Tall enough for body-size text plus its padding and border, which 2.2rem no
+   longer was once the scale came up -- a fixed height shorter than its content
+   clips the descenders rather than growing. */
+.filters input,
+.filters select,
+.filters .btn {
+  height: 2.5rem;
+}
+
+// Side by side in a row: the stacked-form spacing would push every field
+// after the first down and make the bar taller than v4's.
+.filters .field + .field {
+  margin-top: 0;
+}
+
+
+@media (max-height: 850px) {
+  .filters--panel {
+    margin: 0 0 0.4rem;
+    padding: 0.45rem 0.7rem;
+  }
+}

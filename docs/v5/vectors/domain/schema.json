@@ -1,0 +1,951 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "V5 pure-domain oracle vectors",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "family",
+    "provenance",
+    "cases"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "v5-domain-v1"
+    },
+    "family": {
+      "enum": [
+        "weeks",
+        "timeutil",
+        "ids",
+        "bosses"
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "oracle",
+        "functions",
+        "source_tests",
+        "inventory_surfaces"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "oracle": {
+          "type": "string"
+        },
+        "functions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source_tests": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "inventory_surfaces": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "fixtures": {
+      "type": "object"
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 1
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "family": {
+              "const": "weeks"
+            },
+            "cases": {
+              "items": {
+                "$ref": "#/$defs/weeksCase"
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "family": {
+              "const": "timeutil"
+            },
+            "cases": {
+              "items": {
+                "$ref": "#/$defs/timeutilCase"
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "family": {
+              "const": "ids"
+            },
+            "cases": {
+              "items": {
+                "$ref": "#/$defs/idsCase"
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "family": {
+              "const": "bosses"
+            },
+            "fixtures": {
+              "required": [
+                "catalogs"
+              ],
+              "properties": {
+                "catalogs": {
+                  "type": "object",
+                  "required": [
+                    "synthetic-bosses-v1"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "synthetic-bosses-v1": {
+                      "$ref": "#/$defs/syntheticCatalog"
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "cases": {
+              "items": {
+                "$ref": "#/$defs/bossesCase"
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "$defs": {
+    "case": {
+      "type": "object",
+      "required": [
+        "case_id",
+        "op",
+        "input",
+        "expected"
+      ],
+      "properties": {
+        "case_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "op": {
+          "type": "string"
+        },
+        "input": {
+          "type": "object"
+        },
+        "error_type": {
+          "enum": [
+            "ValueError",
+            "BossParseError",
+            "IdAmbiguous",
+            "IdNotFound",
+            "IdTooShort"
+          ]
+        },
+        "expected": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "value"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "value": {}
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "error"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "error": {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "message"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "not": {
+                "required": [
+                  "error_type"
+                ]
+              },
+              "properties": {
+                "expected": {
+                  "type": "object",
+                  "required": [
+                    "value"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "value": {}
+                  }
+                }
+              }
+            },
+            {
+              "required": [
+                "error_type"
+              ],
+              "oneOf": [
+                {
+                  "properties": {
+                    "error_type": {"const": "ValueError"},
+                    "expected": {"properties": {"error": {"properties": {"type": {"const": "ValueError"}}}}}
+                  }
+                },
+                {
+                  "properties": {
+                    "error_type": {"const": "BossParseError"},
+                    "expected": {"properties": {"error": {"properties": {"type": {"const": "BossParseError"}}}}}
+                  }
+                },
+                {
+                  "properties": {
+                    "error_type": {"const": "IdAmbiguous"},
+                    "expected": {"properties": {"error": {"properties": {"type": {"const": "IdAmbiguous"}}}}}
+                  }
+                },
+                {
+                  "properties": {
+                    "error_type": {"const": "IdNotFound"},
+                    "expected": {"properties": {"error": {"properties": {"type": {"const": "IdNotFound"}}}}}
+                  }
+                },
+                {
+                  "properties": {
+                    "error_type": {"const": "IdTooShort"},
+                    "expected": {"properties": {"error": {"properties": {"type": {"const": "IdTooShort"}}}}}
+                  }
+                }
+              ],
+              "properties": {
+                "expected": {
+                  "$ref": "#/$defs/errorExpected"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "stringExpected": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "value"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/errorExpected"
+        }
+      ]
+    },
+    "integerExpected": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "value"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/errorExpected"
+        }
+      ]
+    },
+    "arrayExpected": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "value"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "type": "array"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/errorExpected"
+        }
+      ]
+    },
+    "objectExpected": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "value"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "type": "object"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/errorExpected"
+        }
+      ]
+    },
+    "errorExpected": {
+      "type": "object",
+      "required": [
+        "error"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "type": "object",
+          "required": [
+            "type",
+            "message"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "resetInput": {
+      "type": "object",
+      "required": [
+        "at",
+        "timezone",
+        "reset_weekday",
+        "reset_time"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "reset_weekday": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6
+        },
+        "reset_time": {
+          "type": "string"
+        }
+      }
+    },
+    "weekEndInput": {
+      "type": "object",
+      "required": [
+        "timezone",
+        "week_start"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "timezone": {
+          "type": "string"
+        },
+        "week_start": {
+          "type": "string"
+        }
+      }
+    },
+    "valueInput": {
+      "type": "object",
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "catalogTextInput": {
+      "type": "object",
+      "required": [
+        "catalog_id",
+        "text"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "catalog_id": {
+          "const": "synthetic-bosses-v1"
+        },
+        "text": {
+          "type": "string"
+        }
+      }
+    },
+    "catalogTokenInput": {
+      "type": "object",
+      "required": [
+        "catalog_id",
+        "token"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "catalog_id": {
+          "const": "synthetic-bosses-v1"
+        },
+        "token": {
+          "type": "string"
+        }
+      }
+    },
+    "catalogCanonicalInput": {
+      "type": "object",
+      "required": [
+        "catalog_id",
+        "canonical"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "catalog_id": {
+          "const": "synthetic-bosses-v1"
+        },
+        "canonical": {
+          "type": "string"
+        }
+      }
+    },
+    "weeksCase": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/case"
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "op": {
+                  "const": "week_start"
+                },
+                "input": {
+                  "$ref": "#/$defs/resetInput"
+                },
+                "expected": {
+                  "$ref": "#/$defs/stringExpected"
+                }
+              }
+            },
+            {
+              "properties": {
+                "op": {
+                  "const": "calendar_week_bounds"
+                },
+                "input": {
+                  "$ref": "#/$defs/resetInput"
+                },
+                "expected": {
+                  "$ref": "#/$defs/objectExpected"
+                }
+              }
+            },
+            {
+              "properties": {
+                "op": {
+                  "const": "materialised_week_starts"
+                },
+                "input": {
+                  "$ref": "#/$defs/resetInput"
+                },
+                "expected": {
+                  "$ref": "#/$defs/arrayExpected"
+                }
+              }
+            },
+            {
+              "properties": {
+                "op": {
+                  "const": "slot_in_week"
+                },
+                "input": {
+                  "type": "object",
+                  "required": [
+                    "timezone",
+                    "week_start",
+                    "weekday",
+                    "time"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "timezone": {
+                      "type": "string"
+                    },
+                    "week_start": {
+                      "type": "string"
+                    },
+                    "weekday": {
+                      "type": "integer"
+                    },
+                    "time": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "expected": {
+                  "$ref": "#/$defs/stringExpected"
+                }
+              }
+            },
+            {
+              "properties": {
+                "op": {
+                  "const": "week_end"
+                },
+                "input": {
+                  "$ref": "#/$defs/weekEndInput"
+                },
+                "expected": {
+                  "$ref": "#/$defs/stringExpected"
+                }
+              }
+            },
+            {
+              "properties": {
+                "op": {
+                  "const": "parse_weekday"
+                },
+                "input": {
+                  "$ref": "#/$defs/valueInput"
+                },
+                "expected": {
+                  "$ref": "#/$defs/integerExpected"
+                }
+              }
+            },
+            {
+              "properties": {
+                "op": {
+                  "const": "parse_hhmm"
+                },
+                "input": {
+                  "$ref": "#/$defs/valueInput"
+                },
+                "expected": {
+                  "$ref": "#/$defs/stringExpected"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "timeutilCase": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/case"
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "op": {
+                  "const": "to_iso"
+                },
+                "input": {
+                  "type": "object",
+                  "required": [
+                    "at"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "expected": {
+                  "$ref": "#/$defs/stringExpected"
+                }
+              }
+            },
+            {
+              "properties": {
+                "op": {
+                  "const": "from_iso"
+                },
+                "input": {
+                  "$ref": "#/$defs/valueInput"
+                },
+                "expected": {
+                  "$ref": "#/$defs/stringExpected"
+                }
+              }
+            },
+            {
+              "properties": {
+                "op": {
+                  "const": "local_naive"
+                },
+                "input": {
+                  "type": "object",
+                  "required": [
+                    "at",
+                    "timezone"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": {
+                      "type": "string"
+                    },
+                    "timezone": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "expected": {
+                  "$ref": "#/$defs/stringExpected"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "idsCase": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/case"
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "op": {
+                  "enum": [
+                    "canonical",
+                    "short_id",
+                    "tag"
+                  ]
+                },
+                "input": {
+                  "$ref": "#/$defs/valueInput"
+                },
+                "expected": {
+                  "$ref": "#/$defs/stringExpected"
+                }
+              }
+            },
+            {
+              "properties": {
+                "op": {
+                  "const": "resolve_id"
+                },
+                "input": {
+                  "type": "object",
+                  "required": [
+                    "text",
+                    "candidates"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "candidates": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "expected": {
+                  "$ref": "#/$defs/stringExpected"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "bossesCase": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/case"
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "op": {
+                  "const": "parse_token"
+                },
+                "input": {
+                  "$ref": "#/$defs/catalogTokenInput"
+                },
+                "expected": {
+                  "$ref": "#/$defs/stringExpected"
+                }
+              }
+            },
+            {
+              "properties": {
+                "op": {
+                  "enum": [
+                    "parse",
+                    "names_in"
+                  ]
+                },
+                "input": {
+                  "$ref": "#/$defs/catalogTextInput"
+                },
+                "expected": {
+                  "$ref": "#/$defs/arrayExpected"
+                }
+              }
+            },
+            {
+              "properties": {
+                "op": {
+                  "const": "resolve_reference"
+                },
+                "input": {
+                  "$ref": "#/$defs/catalogTextInput"
+                },
+                "expected": {
+                  "$ref": "#/$defs/objectExpected"
+                }
+              }
+            },
+            {
+              "properties": {
+                "op": {
+                  "enum": [
+                    "describe",
+                    "detail"
+                  ]
+                },
+                "input": {
+                  "$ref": "#/$defs/catalogCanonicalInput"
+                },
+                "expected": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/stringExpected"
+                    },
+                    {
+                      "$ref": "#/$defs/objectExpected"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "syntheticCatalog": {
+      "type": "object",
+      "required": [
+        "difficulties",
+        "bosses"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "difficulties": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "prefixItems": [
+            {
+              "type": "object",
+              "required": [
+                "prefix",
+                "label"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "prefix": {
+                  "const": "n"
+                },
+                "label": {
+                  "const": "Normal"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "prefix",
+                "label"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "prefix": {
+                  "const": "h"
+                },
+                "label": {
+                  "const": "Hard"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "prefix",
+                "label"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "prefix": {
+                  "const": "x"
+                },
+                "label": {
+                  "const": "Extreme"
+                }
+              }
+            }
+          ],
+          "items": false
+        },
+        "bosses": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "prefixItems": [
+            {
+              "type": "object",
+              "required": [
+                "short",
+                "full",
+                "level",
+                "difficulties",
+                "aliases"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "short": {
+                  "const": "Star"
+                },
+                "full": {
+                  "const": "Radiant Star"
+                },
+                "level": {
+                  "const": 280
+                },
+                "difficulties": {
+                  "const": [
+                    "n",
+                    "h"
+                  ]
+                },
+                "aliases": {
+                  "const": [
+                    "star",
+                    "rstar"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": [
+                "short",
+                "full",
+                "level",
+                "difficulties",
+                "aliases"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "short": {
+                  "const": "Kalos"
+                },
+                "full": {
+                  "const": "Gatekeeper Kalos"
+                },
+                "level": {
+                  "const": 265
+                },
+                "difficulties": {
+                  "const": [
+                    "n",
+                    "x"
+                  ]
+                },
+                "aliases": {
+                  "const": [
+                    "kalos",
+                    "gatekeeper kalos"
+                  ]
+                }
+              }
+            }
+          ],
+          "items": false
+        }
+      }
+    }
+  }
+}
