@@ -8,7 +8,7 @@ use super::{MoveError, Store};
 
 const KEYS: [&str; 6] = ["realm", "event", "actor", "from", "to", "before"];
 const REALMS: [&str; 2] = ["admin", "member"];
-const EVENTS: [&str; 7] = [
+const EVENTS: [&str; 8] = [
     "login_succeeded",
     "login_refused",
     "break_glass_used",
@@ -16,6 +16,7 @@ const EVENTS: [&str; 7] = [
     "session_rotated",
     "rate_limited",
     "revoke_failed",
+    "write_refused",
 ];
 
 struct Row {

@@ -57,8 +57,8 @@ pub enum AuditEvent {
         user: Option<String>,
     },
     /// A member write refused: `reason` is `csrf`, `reauth_required` or the
-    /// refusal's 403/404/409 code; `route` is the method and path.
-    /// Logged only: the stored log's event CHECK has no such kind.
+    /// refusal's 403/404/409 code; `route` is the method and path (stored
+    /// as the row's `request`).
     WriteRefused {
         actor: String,
         route: String,
@@ -173,9 +173,8 @@ impl AuditRecord {
         }
     }
 
-    /// The stored row (`seq` is assigned by the store); `None` for events the
-    /// log's event CHECK cannot hold, which stay stderr lines only.
-    pub fn row(&self) -> Option<AuditRow> {
+    /// The stored row (`seq` is assigned by the store).
+    pub fn row(&self) -> AuditRow {
         let owned = |text: &str| Some(text.to_owned());
         let (event, actor, method, reason, request, device) = match &self.event {
             AuditEvent::LoginSucceeded {
@@ -237,7 +236,18 @@ impl AuditRecord {
                 None,
                 None,
             ),
-            AuditEvent::WriteRefused { .. } => return None,
+            AuditEvent::WriteRefused {
+                actor,
+                route,
+                reason,
+            } => (
+                AuditKind::WriteRefused,
+                owned(actor),
+                None,
+                owned(reason),
+                owned(route),
+                None,
+            ),
         };
         // Bounded as the store checks; a longer value is cut, never refused.
         let cut = |text: Option<String>, max: usize| {
@@ -252,7 +262,7 @@ impl AuditRecord {
                 text
             })
         };
-        Some(AuditRow {
+        AuditRow {
             seq: 0,
             at: self.at,
             realm: match self.realm {
@@ -267,7 +277,7 @@ impl AuditRecord {
             client: cut(self.client.clone(), 64),
             device: cut(device, 64),
             request_id: cut(Some(self.request_id.clone()), 128).unwrap_or_default(),
-        })
+        }
     }
 }
 
@@ -294,9 +304,6 @@ impl<S: AuthAuditStore + Send + Sync + 'static> AuditSink for StoreAudit<S> {
     fn record(&self, record: AuditRecord) {
         let row = record.row();
         StderrAudit.record(record);
-        let Some(row) = row else {
-            return;
-        };
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             return;
         };
@@ -373,7 +380,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn refused_writes_are_log_lines_without_a_stored_row() {
+    fn refused_writes_are_stored_rows_with_route_and_reason() {
         let context = AuditContext {
             request_id: "req-1".into(),
             client: None,
@@ -389,7 +396,18 @@ mod tests {
             ),
             DateTime::UNIX_EPOCH,
         );
-        assert_eq!(refused.row(), None);
+        let row = refused.row();
+        assert_eq!(row.event, AuditKind::WriteRefused);
+        assert_eq!(row.actor.as_deref(), Some("discord:1001"));
+        assert_eq!(
+            row.request.as_deref(),
+            Some("PUT /api/public/runs/r-1/answer")
+        );
+        assert_eq!(row.reason.as_deref(), Some("not_in_run"));
+        assert_eq!(
+            row.client, None,
+            "member records carry only the realm's tag"
+        );
         assert_eq!(refused.event.level(), "WARN");
         let line: serde_json::Value = serde_json::to_value(&refused).unwrap();
         assert_eq!(line["event"], "write_refused");
@@ -416,7 +434,7 @@ mod tests {
             },
             DateTime::UNIX_EPOCH,
         );
-        let row = limited.row().expect("a stored kind");
+        let row = limited.row();
         assert_eq!(row.event, AuditKind::RateLimited);
         assert_eq!(row.reason.as_deref(), Some("member_read"));
     }

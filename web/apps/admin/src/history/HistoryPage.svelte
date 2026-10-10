@@ -181,6 +181,7 @@
     { value: 'session_rotated', label: 'New address' },
     { value: 'rate_limited', label: 'Rate limited' },
     { value: 'revoke_failed', label: 'Revoke failed' },
+    { value: 'write_refused', label: 'Write refused' },
   ];
   function tabKey(event: KeyboardEvent, index: number) {
     const moves: Record<string, number> = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: TABS.length - 1 };

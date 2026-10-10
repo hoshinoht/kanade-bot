@@ -294,7 +294,7 @@ export type Surface =
   | 'request_merge'
   | 'cherry_pick';
 
-// History › Sign-ins (stored sign-in audit log, migration 0032).
+// History › Sign-ins (stored sign-in audit log, migrations 0032 and 0036).
 export type SignInRealm = 'admin' | 'member';
 export type SignInEvent =
   | 'login_succeeded'
@@ -303,7 +303,8 @@ export type SignInEvent =
   | 'session_ended'
   | 'session_rotated'
   | 'rate_limited'
-  | 'revoke_failed';
+  | 'revoke_failed'
+  | 'write_refused';
 
 export type RowKey = { table: 'runs' | 'fixed_runs' | 'reminders'; id: string } | { table: 'rsvps'; run_id: string; user_id: string };
 

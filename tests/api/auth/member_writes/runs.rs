@@ -12,6 +12,7 @@ use kanade::{
         schedule::{Change, RunStatus},
         scheduler::{ScheduleStore, Scope},
     },
+    infrastructure::store::auth_audit::AuditKind,
 };
 use serde_json::{Value, json};
 
@@ -602,10 +603,11 @@ async fn member_run_writes_take_the_member_write_tokens() {
     );
 }
 
-/// Every refused member write is a log line naming the member, the route
-/// and the reason: CSRF, a stale sign-in, and the 403/404/409 codes. None of
-/// them is a stored sign-in row; a refusal without a member (no session) and
-/// an invalid body are not write refusals.
+/// Every refused member write is audited naming the member, the route and
+/// the reason: CSRF, a stale sign-in, and the 403/404/409 codes. Each is a
+/// stored sign-in row (route as `request`, member client as its tag only); a
+/// refusal without a member (no session) and an invalid body are not write
+/// refusals.
 #[tokio::test]
 async fn refused_member_writes_are_audited_with_route_and_reason() {
     let portal = portal().await;
@@ -666,7 +668,7 @@ async fn refused_member_writes_are_audited_with_route_and_reason() {
         .records()
         .into_iter()
         .filter_map(|record| {
-            let stored = record.row().is_some();
+            let stored = record.row();
             match record.event {
                 AuditEvent::WriteRefused {
                     actor,
@@ -674,7 +676,17 @@ async fn refused_member_writes_are_audited_with_route_and_reason() {
                     reason,
                 } => {
                     assert_eq!(record.realm, Realm::Member);
-                    assert!(!stored, "never a stored row");
+                    assert_eq!(stored.event, AuditKind::WriteRefused);
+                    assert_eq!(stored.actor.as_deref(), Some(actor.as_str()));
+                    assert_eq!(stored.request.as_deref(), Some(route.as_str()));
+                    assert_eq!(stored.reason.as_deref(), Some(reason.as_str()));
+                    // Only the keyed tag of the address, never the address.
+                    assert!(
+                        stored.client.as_deref().is_none_or(|tag| tag.len() == 64
+                            && tag.bytes().all(|byte| byte.is_ascii_hexdigit())),
+                        "{:?}",
+                        stored.client
+                    );
                     Some((actor, route, reason))
                 }
                 _ => None,
@@ -696,6 +708,67 @@ async fn refused_member_writes_are_audited_with_route_and_reason() {
             row(ALICE, "PUT", answer_path("r-star"), "run_closed"),
             row(ALICE, "POST", move_path("r-kalos"), "csrf"),
             row(ALICE, "PUT", answer_path("r-kalos"), "reauth_required"),
+        ]
+    );
+}
+
+/// Only writes are audited: a GET on a write route is the unmounted
+/// fallback's 404, not a refused write. Identical refusals by one member
+/// (route and reason) store one row a minute; another route, another member
+/// or the same refusal after the window is stored again.
+#[tokio::test]
+async fn only_writes_are_audited_and_identical_refusals_are_coalesced() {
+    let portal = portal().await;
+    let (alice, bob) = (portal.sign_in(ALICE).await, portal.sign_in(BOB).await);
+    let yes = json!({"answer": "yes", "version": portal.version().await});
+    let read = portal.get(Some(&alice), &answer_path("r-kalos")).await;
+    assert_eq!(refused(&read), (404, "not_found".into()));
+
+    let mut attempts = vec![
+        (&alice, "r-nope", "w-1"),
+        (&alice, "r-nope", "w-2"),
+        (&alice, "r-gone", "w-3"),
+        (&bob, "r-nope", "w-4"),
+        (&alice, "r-nope", "w-5"),
+    ];
+    let late = attempts.split_off(4);
+    for (browser, id, key) in attempts {
+        let reply = portal
+            .write(browser, "PUT", &answer_path(id), key, Some(&yes))
+            .await;
+        assert_eq!(refused(&reply), (404, "not_found".into()), "{key}");
+    }
+    portal.harness.advance(TimeDelta::seconds(61));
+    for (browser, id, key) in late {
+        let reply = portal
+            .write(browser, "PUT", &answer_path(id), key, Some(&yes))
+            .await;
+        assert_eq!(refused(&reply), (404, "not_found".into()), "{key}");
+    }
+
+    let refusals: Vec<(String, String)> = portal
+        .harness
+        .audit
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            AuditEvent::WriteRefused { actor, route, .. } => Some((actor, route)),
+            _ => None,
+        })
+        .collect();
+    let row = |member: u64, id: &str| {
+        (
+            format!("discord:{member}"),
+            format!("PUT {}", answer_path(id)),
+        )
+    };
+    assert_eq!(
+        refusals,
+        [
+            row(ALICE, "r-nope"),
+            row(ALICE, "r-gone"),
+            row(BOB, "r-nope"),
+            row(ALICE, "r-nope"),
         ]
     );
 }
