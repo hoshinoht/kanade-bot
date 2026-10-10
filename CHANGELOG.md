@@ -4,6 +4,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 ## 1.0.0-beta.5 (in development)
 
+**Changed**
+
+- Trusted Types are enforced on both origins: the `Content-Security-Policy` now carries `require-trusted-types-for 'script'; trusted-types kanade-sw` (the service-worker registration is the only policy), so a raw HTML or script string sink is refused instead of only reported, and the report-only header is gone. The pwa-mock sends the same policy, so every e2e test runs under enforcement.
+
 **Fixed**
 
 - Weekly-timing ownership: naming the current owner, or accepting an ask whose requester already owns the timing, is no longer taken as a retry, so a former owner or any other member can no longer skip the owner check, close other members' asks or probe who owns a timing; only the caller's own recorded key on the same surface replays (a Discord staff decision is never finished as staff from the portal). A retry only finishes what its first attempt left: a hand-off closes just the asks opened before its pin, and only while that owner still owns the timing; an accept closes just its own request; an admin's Inbox accept retry closes just the asks its pin owed. An accept that lands while the requester withdraws still reports the new owner. The writer re-checks the owner and party on the timing it commits over (portal and Discord alike, staff keeping their Discord bypass), and on the public portal an ask you cannot see (not yours, and not on a timing you own) answers `404 not_found` like a missing one.

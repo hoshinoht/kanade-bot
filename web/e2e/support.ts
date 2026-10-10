@@ -87,7 +87,7 @@ interface Sink {
   seen: boolean;
 }
 
-/** Every page records `securitypolicyviolation` events (enforced and report-only). */
+/** Every page records `securitypolicyviolation` events (CSP and Trusted Types, all enforced). */
 async function watch(page: Page, sink: Sink) {
   await page.exposeFunction('__kanadeCspSeen', () => {
     sink.seen = true;
@@ -162,7 +162,7 @@ export const test = base.extend<{ cspControl: boolean; csp: Sink }>({
       }
       expect.soft(sink.console, 'CSP / Trusted Types console messages').toEqual([]);
       expect.soft(sink.violations, 'securitypolicyviolation events').toEqual([]);
-      expect(server, 'CSP reports received by the server (enforced + report-only)').toEqual([]);
+      expect(server, 'CSP / Trusted Types reports received by the server').toEqual([]);
     },
     { auto: true },
   ],

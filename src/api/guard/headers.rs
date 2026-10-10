@@ -12,13 +12,12 @@ use axum::{
 
 use crate::api::listeners::{Origin, Site};
 
+/// Enforced on both origins, Trusted Types included: `kanade-sw` (the service
+/// worker registration, `@kanade/ui` `registerServiceWorker`) is the only policy
+/// the apps create, so any other policy or raw HTML/script sink is refused.
 pub const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; \
 media-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; \
-base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
-
-pub const CSP_REPORT_ONLY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; \
-img-src 'self' data:; media-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; \
-worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; \
+base-uri 'none'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; \
 trusted-types kanade-sw";
 
 pub const HSTS: &str = "max-age=31536000; includeSubDomains";
@@ -73,11 +72,6 @@ pub async fn apply(State(site): State<Arc<Site>>, request: Request, next: Next) 
     let success = response.status().is_success() || response.status().is_redirection();
     let headers = response.headers_mut();
     set(headers, "content-security-policy", CSP);
-    set(
-        headers,
-        "content-security-policy-report-only",
-        CSP_REPORT_ONLY,
-    );
     set(headers, "x-content-type-options", "nosniff");
     set(headers, "referrer-policy", "no-referrer");
     set(headers, "cross-origin-opener-policy", "same-origin");
@@ -87,10 +81,19 @@ pub async fn apply(State(site): State<Arc<Site>>, request: Request, next: Next) 
         "permissions-policy",
         "camera=(), microphone=(), geolocation=()",
     );
-    headers.insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static(cache_policy(&path, success, site.origin)),
-    );
+    // Event streams (admin and member hints): never stored, and never
+    // compressed or buffered by a proxy (Cloudflare), which would hold the
+    // frames back.
+    let stream = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("text/event-stream"));
+    let policy = if stream && success {
+        "no-store, no-transform"
+    } else {
+        cache_policy(&path, success, site.origin)
+    };
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(policy));
     if site.origin == Origin::Public {
         set(headers, "strict-transport-security", HSTS);
     }
@@ -99,8 +102,17 @@ pub async fn apply(State(site): State<Arc<Site>>, request: Request, next: Next) 
 
 #[cfg(test)]
 mod tests {
-    use super::cache_policy;
+    use super::{CSP, cache_policy};
     use crate::api::listeners::Origin;
+
+    #[test]
+    fn trusted_types_are_enforced_with_only_the_service_worker_policy() {
+        assert!(
+            CSP.ends_with("; require-trusted-types-for 'script'; trusted-types kanade-sw"),
+            "{CSP}"
+        );
+        assert_eq!(CSP.matches("trusted-types").count(), 2, "{CSP}");
+    }
 
     fn admin(path: &str, success: bool) -> &'static str {
         cache_policy(path, success, Origin::Admin)

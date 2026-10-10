@@ -7,20 +7,14 @@ use axum::{
     response::Response,
 };
 
-/// The production policy under test, verbatim, plus `report-uri`. `report-to`
-/// is deliberately absent: Chrome ignores `report-uri` whenever `report-to` is
-/// present and batches Reporting API deliveries for up to a minute, which
-/// would make "zero reports" unobservable in the e2e suite.
+/// The production policy under test, verbatim (Trusted Types enforced, only the
+/// `kanade-sw` policy allowed), plus `report-uri`. `report-to` is deliberately
+/// absent: Chrome ignores `report-uri` whenever `report-to` is present and
+/// batches Reporting API deliveries for up to a minute, which would make "zero
+/// reports" unobservable in the e2e suite.
 pub const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; \
 media-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; \
-base-uri 'none'; form-action 'self'; frame-ancestors 'none'; report-uri /csp-report";
-
-/// Same policy in report-only mode, adding Trusted Types. `trusted-types kanade-sw`
-/// allow-lists the one policy the apps create, so any pass-through policy a
-/// dependency registers is reported too.
-pub const CSP_REPORT_ONLY: &str = "default-src 'none'; script-src 'self'; style-src 'self'; \
-img-src 'self' data:; media-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; \
-worker-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; \
+base-uri 'none'; form-action 'self'; frame-ancestors 'none'; require-trusted-types-for 'script'; \
 trusted-types kanade-sw; report-uri /csp-report";
 
 /// The portraits, as the server: per-user, revalidated by ETag.
@@ -73,17 +67,22 @@ pub async fn apply_public(request: Request, next: Next) -> Response {
     respond(request, next, true).await
 }
 
+/// What a response's `Cache-Control` is: as the server, event streams
+/// (admin and member hints) are never stored nor transformed by a proxy.
+fn policy(path: &str, public: bool, success: bool, stream: bool) -> &'static str {
+    if stream && success {
+        "no-store, no-transform"
+    } else {
+        cache_policy(path, public, success)
+    }
+}
+
 async fn respond(request: Request, next: Next, public: bool) -> Response {
     let path = request.uri().path().to_owned();
     let mut response = next.run(request).await;
     let success = response.status().is_success();
     let headers = response.headers_mut();
     set(headers, "content-security-policy", CSP);
-    set(
-        headers,
-        "content-security-policy-report-only",
-        CSP_REPORT_ONLY,
-    );
     set(headers, "x-content-type-options", "nosniff");
     set(headers, "referrer-policy", "no-referrer");
     set(headers, "cross-origin-opener-policy", "same-origin");
@@ -93,9 +92,13 @@ async fn respond(request: Request, next: Next, public: bool) -> Response {
         "permissions-policy",
         "camera=(), microphone=(), geolocation=()",
     );
+    let stream = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("text/event-stream"));
     headers.insert(
         header::CACHE_CONTROL,
-        HeaderValue::from_static(cache_policy(&path, public, success)),
+        HeaderValue::from_static(policy(&path, public, success, stream)),
     );
     if path.ends_with(".webmanifest") {
         headers.insert(
@@ -146,9 +149,18 @@ mod tests {
     }
 
     #[test]
-    fn both_policies_allow_same_origin_media() {
-        for policy in [super::CSP, super::CSP_REPORT_ONLY] {
-            assert!(policy.contains("; media-src 'self';"), "{policy}");
+    fn event_streams_are_never_stored_or_transformed_and_refusals_keep_the_api_rule() {
+        for (path, public) in [("/api/admin/events", false), ("/api/public/events", true)] {
+            assert_eq!(
+                super::policy(path, public, true, true),
+                "no-store, no-transform"
+            );
+            assert_eq!(super::policy(path, public, false, false), "no-store");
         }
+    }
+
+    #[test]
+    fn the_policy_allows_same_origin_media() {
+        assert!(super::CSP.contains("; media-src 'self';"), "{}", super::CSP);
     }
 }
