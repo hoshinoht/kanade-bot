@@ -28,6 +28,9 @@ pub struct ServeConfig {
     pub seeds: SettingSeeds,
     /// `KANADE_BACKUP_DIR`, listed read only by History checkpoints.
     pub backup_dir: Option<PathBuf>,
+    /// `KANADE_BACKUP_RECIPIENTS_FILE`, checked at startup so a broken key
+    /// file fails the deploy, not the next backup.
+    pub backup_recipients_file: Option<PathBuf>,
 }
 
 /// Initial runtime settings; applied only where the store has none yet.
@@ -69,6 +72,7 @@ impl ServeConfig {
             instance_id: instance_id(values)?,
             seeds: SettingSeeds::from_mapping(values)?,
             backup_dir: super::backup::optional_dir(values)?,
+            backup_recipients_file: super::backup::recipients_file(values),
         })
     }
 }

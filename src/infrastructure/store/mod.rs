@@ -56,4 +56,4 @@ pub mod web_sessions_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub use memory::MemoryScheduleStore;
 pub use observer::{RunObserver, WriteObserver, Written};
-pub use sqlite::{BackupManifest, SqliteStore, SqliteStoreConfig, SqliteStoreError};
+pub use sqlite::{BackupManifest, Seal, SqliteStore, SqliteStoreConfig, SqliteStoreError};

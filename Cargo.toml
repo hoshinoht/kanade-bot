@@ -9,6 +9,8 @@ publish = false
 test-support = ["tokio/test-util"]
 
 [dependencies]
+# Backup encryption to X25519 recipients (`kanade backup`); no plugin/ssh/armor.
+age = { version = "=0.12.1", default-features = false }
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 chrono = { version = "=0.4.45", default-features = false }
 chrono-tz = "=0.10.4"

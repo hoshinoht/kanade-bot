@@ -104,6 +104,13 @@ sign-in routes as `503 auth_unavailable` and keeps the public portal
 "Sign-in and sessions". The public portal has no open key: live `serve`
 opens it while the admin Config switch `self_service.public_portal` is on
 (read per request) and the public Discord keys are set.
+Idle timeouts count ordinary requests only: an open change-hint stream
+(`GET /api/admin/events`, `GET /api/public/events`), its heartbeats and its
+reconnects (the browser's, and the forced one after each stream lifetime)
+never extend a session, so a tab left open with nothing else to do still
+signs out at the idle limit. Opening or reconnecting a member stream also
+never rotates the session id on a new client address; the next ordinary
+request does.
 
 ### Serve environment
 
@@ -122,6 +129,7 @@ lists are comma-separated.
 | `KANADE_TEST_CHANNEL_ID` | unset | Snowflake. Where `/debug ping` and `/debug header` post without `channel:`. Unset: a run's home channel (else the post channel); sample runs and `/debug header` use the invoking channel, the week's `digest` the post channel. A run's test card posted anywhere but its home channel is display only (reactions do nothing, never refreshed). |
 | `KANADE_DB_PATH`, `KANADE_OWNER_LOCK_DIR` | required | Absolute paths without `..`. The lock directory and the database's directory are created `0700` when absent (existing ones are never re-moded); ownership, symlink and mode checks run when the store opens. A second process on the same store is refused. |
 | `KANADE_BACKUP_DIR` | unset | Absolute path without `..`. Serve only reads it: History checkpoints (`GET /api/admin/history/checkpoints`) list the `kanade backup` manifests there on every request; unset reports `backup_dir_configured: false`. Compose mounts it read-only at `/backups`. |
+| `KANADE_BACKUP_RECIPIENTS_FILE` | unset | age X25519 public keys (`age1…`, one per line, blank lines and `#` comments allowed). Set: `kanade backup` writes `<name>.age` (encrypted) with a plaintext manifest, and checkpoints list it from that manifest without decrypting. Serve and `kanade backup` refuse an unreadable file, one with no keys, a line that is not a recipient, or a pasted private identity (exit `78`). Unset: plaintext snapshots. |
 | `KANADE_CATALOG_FILE` | `boss/bosses.yaml` | Boss catalog. |
 | `KANADE_KNOWLEDGE_DIR` | unset | Boss knowledge root. |
 | `KANADE_PERSONA_DIR` | `config/personas` | Persona layout root. |
@@ -167,7 +175,7 @@ ZDR is operator-stated retention, not a limit on transmission.
 for non-secret settings. Unset or empty keeps the environment-only behaviour.
 Each key sets one variable below, whose rules apply unchanged
 (`src/runtime/config/file/`); all commands (`serve`, `healthcheck`, `import`,
-`models check`) read it.
+`models check`, `backup`) read it.
 
 - Precedence: a non-empty `KANADE_*` environment variable (Compose
   `environment:` or `env_file`) overrides its key; an empty one does not, so a
@@ -228,6 +236,7 @@ Each key sets one variable below, whose rules apply unchanged
 | `discord.test_channel` | `KANADE_TEST_CHANNEL_ID` | snowflake (string or integer) |
 | `store.db_path` | `KANADE_DB_PATH` | string |
 | `store.owner_lock_dir` | `KANADE_OWNER_LOCK_DIR` | string |
+| `backup.recipients_file` | `KANADE_BACKUP_RECIPIENTS_FILE` | string |
 | `files.catalog_file` | `KANADE_CATALOG_FILE` | string |
 | `files.knowledge_dir` | `KANADE_KNOWLEDGE_DIR` | string |
 | `files.persona_dir` | `KANADE_PERSONA_DIR` | string |
@@ -338,6 +347,7 @@ with …") and the view shows no `running` for it. `model_role` lines are
 startup-only.
 
 `serve` (`src/runtime/serve/`) reads the bot token file, checks
+`KANADE_BACKUP_RECIPIENTS_FILE` when set, checks
 `KANADE_EXPECT_V4_STOPPED`, opens and owns the store, loads the catalog,
 knowledge and personas, resolves settings, then serves both listeners: one
 shared `SchedulerWriter`, `ApiState` (schedule policy from settings, one
@@ -690,8 +700,21 @@ first"); it writes `FILE` (a plain `[A-Za-z0-9._-]` name; default
 `FILE.manifest.json` (`created_at` added to `kanade.backup.v1`), never
 overwriting either (exit `78`), and prints the history head, revision and
 schema. Opening the store runs pending migrations, so run it with the image
-that last served the store. `serve --offline` wires no scheduler, persistence,
-Discord, import, admin API or mutation route.
+that last served the store. With `KANADE_BACKUP_RECIPIENTS_FILE` set, the
+snapshot is encrypted with age to those X25519 recipients and published as
+`FILE.age` (0600) beside a plaintext `FILE.age.manifest.json` (metadata
+only); the plaintext copy exists only in the 0700 staging directory and is
+deleted after encryption or with the directory on any failure. `--name`
+refuses `*.age`. Three key tools need no store or settings:
+`backup keygen --out PATH` writes a new identity (0600, never overwrites) and
+prints only its `age1…` public key on stdout; `backup encrypt [--recipients
+PATH]` (default: `KANADE_BACKUP_RECIPIENTS_FILE`) encrypts stdin to stdout;
+`backup decrypt --identity PATH --in PATH --out PATH` writes a new 0600 file,
+refuses an existing `--out`, fails before writing on a wrong identity and
+removes a partial output when the input is damaged or truncated. Key and
+recipient errors name the line number, never its content. The files are
+standard age, so `age -d -i` also opens them. `serve --offline` wires no
+scheduler, persistence, Discord, import, admin API or mutation route.
 
 The runtime installs Rustls' `ring` provider before command processing. SQLx
 and Twilight are intentionally absent until storage and Discord work needs
@@ -718,10 +741,12 @@ src/
 │   └── error.rs         # ApiError
 ├── cli/
 │   ├── mod.rs
+│   ├── backup.rs        # `backup` snapshot and age tool arguments
 │   └── healthcheck.rs
 └── runtime/
     ├── mod.rs
     ├── application.rs   # command dispatch, `/healthz` document
+    ├── backup/          # `kanade backup`: snapshot, age keys (crypt.rs), keygen/encrypt/decrypt (tools.rs)
     ├── serve/           # live serve: store, settings, API composition, health, discord/ (gateway, roster, tick)
     ├── config.rs
     ├── error.rs

@@ -1,6 +1,8 @@
 //! `VACUUM INTO` backups and restore-by-copy.
 
 use std::collections::BTreeMap;
+use std::fs::File;
+use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -10,7 +12,7 @@ use kanade::domain::model_log::ModelLogStore;
 use kanade::domain::notify::DeclineNoticeStore;
 use kanade::domain::schedule::{Change, ScheduleSnapshot};
 use kanade::domain::scheduler::{ScheduleStore, Scope};
-use kanade::infrastructure::store::{SqliteStore, SqliteStoreError};
+use kanade::infrastructure::store::{BackupManifest, Seal, SqliteStore, SqliteStoreError};
 
 use crate::support::{TempDir, commit, fixed, partials, seed, tamper};
 
@@ -91,6 +93,81 @@ async fn a_cancelled_backup_leaves_nothing_behind() {
     assert!(partials(dir.path()).is_empty(), "staging is removed");
     assert!(!copy.exists(), "an abandoned backup is not published");
     store.close().await.expect("close");
+}
+
+/// Every file name under `dir`, recursively (staging directories included).
+fn tree(dir: &Path) -> Vec<String> {
+    let mut names = Vec::new();
+    for entry in std::fs::read_dir(dir).expect("list") {
+        let path = entry.expect("entry").path();
+        if path.is_dir() {
+            names.extend(tree(&path));
+        }
+        names.push(path.strip_prefix(dir).unwrap().display().to_string());
+    }
+    names.sort();
+    names
+}
+
+fn out_dir(dir: &TempDir) -> PathBuf {
+    let out = dir.path().join("out");
+    std::fs::create_dir(&out).expect("out dir");
+    out
+}
+
+#[tokio::test]
+async fn a_sealed_backup_publishes_only_the_sealed_file() {
+    let dir = TempDir::new();
+    let store = SqliteStore::open(&dir.config("sealed"))
+        .await
+        .expect("opens");
+    seed(&store).await;
+    let out = out_dir(&dir);
+    let dest = out.join("snap.sqlite.age");
+    // A stand-in seal: reverses the bytes, so it is not the plaintext.
+    let seal: Seal = Box::new(|mut plain: File, mut sealed: File| {
+        let mut bytes = Vec::new();
+        plain.read_to_end(&mut bytes)?;
+        bytes.reverse();
+        sealed.write_all(&bytes)
+    });
+    store.backup_sealed(&dest, seal).await.expect("backup");
+    let schema_version = store.schema_version().await.expect("version");
+    store.close().await.expect("close");
+    assert_eq!(
+        tree(&out),
+        ["snap.sqlite.age", "snap.sqlite.age.manifest.json"]
+    );
+    assert_eq!(mode(&dest), 0o600);
+    let mut bytes = std::fs::read(&dest).expect("read");
+    assert!(!bytes.starts_with(b"SQLite format 3\0"));
+    bytes.reverse();
+    assert!(bytes.starts_with(b"SQLite format 3\0"));
+    let manifest = BackupManifest::read(&BackupManifest::path_for(&dest)).expect("manifest");
+    assert_eq!(manifest.schema_version, schema_version);
+}
+
+#[tokio::test]
+async fn a_failed_seal_leaves_no_plaintext_and_publishes_nothing() {
+    let dir = TempDir::new();
+    let store = SqliteStore::open(&dir.config("unsealed"))
+        .await
+        .expect("opens");
+    seed(&store).await;
+    let out = out_dir(&dir);
+    let dest = out.join("snap.sqlite.age");
+    // Writes part of the output, then fails mid-stream.
+    let seal: Seal = Box::new(|_: File, mut sealed: File| {
+        sealed.write_all(b"age-encryption.org/v1\n")?;
+        Err(std::io::Error::other("injected seal failure"))
+    });
+    let error = store.backup_sealed(&dest, seal).await.expect_err("fails");
+    assert!(
+        error.to_string().contains("injected seal failure"),
+        "{error}"
+    );
+    store.close().await.expect("close");
+    assert_eq!(tree(&out), Vec::<String>::new(), "no plaintext, no partial");
 }
 
 /// Restore `backup`, expecting a refusal that publishes nothing.

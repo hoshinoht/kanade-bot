@@ -1,18 +1,23 @@
 //! `KANADE_BACKUP_DIR`: where `kanade backup` writes snapshots and their
 //! manifests, and where serve lists them (read only) for History.
+//! `KANADE_BACKUP_RECIPIENTS_FILE` (`backup.recipients_file`): optional age
+//! public keys; when set, snapshots are written encrypted (`<name>.age`).
 
 use std::{collections::BTreeMap, path::PathBuf};
 
 use super::{Error, StoreSettings, non_empty, store::absolute};
 
 const KEY: &str = "KANADE_BACKUP_DIR";
+pub const RECIPIENTS_KEY: &str = "KANADE_BACKUP_RECIPIENTS_FILE";
 
-/// `kanade backup`: the store paths and the backup directory only (no
-/// timezone, Discord, listeners or secrets).
+/// `kanade backup`: the store paths, the backup directory and the optional
+/// recipients file only (no timezone, Discord, listeners or secrets).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BackupConfig {
     pub store: StoreSettings,
     pub dir: PathBuf,
+    /// [`RECIPIENTS_KEY`]; `None` writes plaintext snapshots.
+    pub recipients_file: Option<PathBuf>,
 }
 
 impl BackupConfig {
@@ -20,8 +25,14 @@ impl BackupConfig {
         Ok(Self {
             store: StoreSettings::from_mapping(values)?,
             dir: absolute(values, KEY)?,
+            recipients_file: recipients_file(values),
         })
     }
+}
+
+/// [`RECIPIENTS_KEY`] when set; serve only validates the file at startup.
+pub fn recipients_file(values: &BTreeMap<String, String>) -> Option<PathBuf> {
+    non_empty(values, RECIPIENTS_KEY).map(PathBuf::from)
 }
 
 /// Optional for serve: unset lists no backups.
@@ -67,6 +78,14 @@ mod tests {
         let config = BackupConfig::from_mapping(&values(&pairs)).unwrap();
         assert_eq!(config.dir, PathBuf::from("/backups"));
         assert_eq!(config.store.owner_lock_dir, PathBuf::from("/data/run"));
+        assert_eq!(config.recipients_file, None);
+        pairs.push((RECIPIENTS_KEY, "/run/secrets/backup_recipients"));
+        assert_eq!(
+            BackupConfig::from_mapping(&values(&pairs))
+                .unwrap()
+                .recipients_file,
+            Some(PathBuf::from("/run/secrets/backup_recipients"))
+        );
     }
 
     #[test]

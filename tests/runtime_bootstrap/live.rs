@@ -322,3 +322,31 @@ fn live_serve_refuses_a_missing_bot_token_file_before_opening_the_store() {
     assert!(stderr.contains("KANADE_DISCORD_TOKEN_FILE"), "{stderr}");
     assert!(!live.root.join("db").exists(), "store opened anyway");
 }
+
+#[test]
+fn live_serve_refuses_a_bad_backup_recipients_file_before_opening_the_store() {
+    let _serial = serial();
+    let live = Live::new();
+    let recipients = live.root.join("backup_recipients");
+    for (text, expected) in [
+        (
+            "# no keys yet\n",
+            "KANADE_BACKUP_RECIPIENTS_FILE holds no age recipients",
+        ),
+        (
+            "age1notakey\n",
+            "KANADE_BACKUP_RECIPIENTS_FILE: line 1 is not an age X25519 recipient",
+        ),
+    ] {
+        fs::write(&recipients, text).unwrap();
+        let output = live
+            .command(unused_loopback_port(), None)
+            .env("KANADE_BACKUP_RECIPIENTS_FILE", &recipients)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(78), "{output:?}");
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains(expected), "{stderr}");
+        assert!(!live.root.join("db").exists(), "store opened anyway");
+    }
+}

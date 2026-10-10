@@ -39,7 +39,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use sqlx::{Connection, SqlitePool};
 
-pub use backup::{BACKUP_MANIFEST_FORMAT, BackupManifest};
+pub use backup::{BACKUP_MANIFEST_FORMAT, BackupManifest, Seal};
 use owner::StoreOwner;
 
 use crate::domain::history::{ChangeHistory, ChangeRef};

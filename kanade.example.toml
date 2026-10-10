@@ -93,6 +93,12 @@ debug_user_ids = []
 db_path = "/data/db/kanade.sqlite"
 owner_lock_dir = "/data/run"
 
+[backup]
+# age public keys (age1…, one per line, # comments): `kanade backup` then
+# writes <name>.age; a bad or empty file stops startup. Unset: plaintext.
+# Compose sets it when KANADE_BACKUP_RECIPIENTS_HOST_FILE is set.
+# recipients_file = "/run/secrets/backup_recipients"
+
 [files]
 catalog_file = "boss/bosses.yaml"
 # knowledge_dir = "boss/knowledge"

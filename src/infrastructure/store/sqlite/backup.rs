@@ -4,7 +4,8 @@
 //! sync it and publish it with a hard link, which never replaces an existing
 //! file; a partial or unvalidated copy is never visible under the final name.
 //! The staging directory is removed on every exit path, including
-//! cancellation.
+//! cancellation. A sealed backup (e.g. encrypted) publishes only the sealed
+//! file; the plaintext snapshot never leaves the staging directory.
 
 use std::fs::{self, DirBuilder, File, OpenOptions, Permissions};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
@@ -50,6 +51,11 @@ impl Drop for Staging {
         let _ = fs::remove_dir_all(&self.dir);
     }
 }
+
+/// Rewrites the staged plaintext snapshot (first argument) into the bytes
+/// published under the backup's name (second, a new 0600 file), e.g. by
+/// encrypting it. Runs on the blocking pool; an error publishes nothing.
+pub type Seal = Box<dyn FnOnce(File, File) -> std::io::Result<()> + Send>;
 
 /// Marks a backup abandoned when its caller stops waiting.
 pub(super) struct AbandonOnDrop(pub(super) Arc<AtomicBool>);
@@ -99,6 +105,31 @@ fn publish(staged: &Path, dest: &Path) -> Result<(), SqliteStoreError> {
             .map_err(SqliteStoreError::io(dir))?;
     }
     Ok(())
+}
+
+/// Run `seal` from `staged` into a new 0600 `sealed`, then delete `staged`.
+async fn seal_staged(
+    staged: &Path,
+    sealed: PathBuf,
+    seal: Seal,
+) -> Result<PathBuf, SqliteStoreError> {
+    let plain = File::open(staged).map_err(SqliteStoreError::io(staged))?;
+    let output = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&sealed)
+        .map_err(SqliteStoreError::io(&sealed))?;
+    tokio::task::spawn_blocking(move || seal(plain, output))
+        .await
+        .map_err(|error| SqliteStoreError::Io {
+            path: PathBuf::from("backup seal task"),
+            source: std::io::Error::other(error),
+        })?
+        .map_err(SqliteStoreError::io(&sealed))?;
+    // Plaintext goes as soon as it is sealed; staging's drop covers failures.
+    fs::remove_file(staged).map_err(SqliteStoreError::io(staged))?;
+    Ok(sealed)
 }
 
 /// Integrity and migration-ledger checks on a staged copy, read only.
@@ -155,6 +186,20 @@ impl SqliteStore {
     /// [`SqliteStoreError::Exists`] if `dest` exists, or the copy failed;
     /// `dest` is then left untouched.
     pub async fn backup(&self, dest: &Path) -> Result<(), SqliteStoreError> {
+        self.backup_with(dest, None).await
+    }
+
+    /// [`Self::backup`], publishing `seal`'s output instead of the snapshot.
+    /// The plaintext stays in the 0700 staging directory and is deleted
+    /// right after sealing, or with the directory if sealing fails.
+    ///
+    /// # Errors
+    /// As [`Self::backup`], or the seal's own I/O error.
+    pub async fn backup_sealed(&self, dest: &Path, seal: Seal) -> Result<(), SqliteStoreError> {
+        self.backup_with(dest, Some(seal)).await
+    }
+
+    async fn backup_with(&self, dest: &Path, seal: Option<Seal>) -> Result<(), SqliteStoreError> {
         let identity = self.owner.identity();
         identity.verify()?;
         refuse_existing(dest)?;
@@ -186,10 +231,20 @@ impl SqliteStore {
             }
             let mut manifest = read_manifest(&staged).await?;
             manifest.created_at = Some(created_at);
+            let snapshot = match seal {
+                None => staged,
+                Some(seal) => {
+                    let sealed = seal_staged(&staged, staging.dir.join("sealed"), seal).await?;
+                    if abandoned.load(Ordering::SeqCst) {
+                        return Ok(());
+                    }
+                    sealed
+                }
+            };
             let staged_manifest = staging.dir.join("manifest.json");
             fs::write(&staged_manifest, manifest.to_json())
                 .map_err(SqliteStoreError::io(&staged_manifest))?;
-            publish(&staged, &dest)?;
+            publish(&snapshot, &dest)?;
             let published = publish(&staged_manifest, &manifest_path);
             drop(staging);
             published

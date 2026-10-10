@@ -563,6 +563,48 @@ async fn checkpoints_list_backups_newest_first_with_their_anchor() {
 }
 
 #[tokio::test]
+async fn checkpoints_list_encrypted_backups_from_their_plaintext_manifest() {
+    use kanade::runtime::backup::crypt::{Recipients, generate};
+
+    let reads = Reads::new().await;
+    let dir = reads.backup_dir.clone().expect("configured");
+    let head = reads.store.history_head().await.unwrap();
+    let schema = reads.store.schema_version().await.unwrap();
+    // A real age-encrypted backup; the server never holds an identity.
+    let (_, public) = generate();
+    let recipients_file = dir.parent().unwrap().join("backup_recipients");
+    std::fs::write(&recipients_file, &public).unwrap();
+    let recipients = Recipients::load(&recipients_file, "R").unwrap();
+    let sealed = dir.join("kanade-enc.sqlite.age");
+    reads
+        .store
+        .backup_sealed(
+            &sealed,
+            Box::new(move |plain: std::fs::File, out: std::fs::File| {
+                recipients.encrypt(plain, out)
+            }),
+        )
+        .await
+        .unwrap();
+    assert!(
+        std::fs::read(&sealed)
+            .unwrap()
+            .starts_with(b"age-encryption.org/v1\n")
+    );
+
+    let checkpoints = reads
+        .read("/api/admin/history/checkpoints", CHECKPOINTS)
+        .await;
+    let backups = checkpoints["backups"].as_array().unwrap();
+    assert_eq!(backups.len(), 1, "{backups:?}");
+    assert_eq!(backups[0]["file"], "kanade-enc.sqlite.age");
+    assert_eq!(backups[0]["anchor"], "matches");
+    assert_eq!(backups[0]["history_head"]["seq"], head.seq);
+    assert_eq!(backups[0]["history_head"]["hash"], head.hash.as_str());
+    assert_eq!(backups[0]["schema_version"], schema);
+}
+
+#[tokio::test]
 async fn checkpoints_say_when_no_backup_dir_is_configured() {
     let reads = Reads::without_backup_dir().await;
     let checkpoints = reads

@@ -25,7 +25,10 @@ mod serve;
 mod store;
 
 pub use admin_auth::{AdminAuthSettings, DiscordOAuthSettings};
-pub use backup::BackupConfig;
+pub use backup::{
+    BackupConfig, RECIPIENTS_KEY as BACKUP_RECIPIENTS_KEY,
+    recipients_file as backup_recipients_file,
+};
 pub use discord::DiscordSettings;
 pub use file::{Resolved, resolve};
 pub use files::FileSettings;
