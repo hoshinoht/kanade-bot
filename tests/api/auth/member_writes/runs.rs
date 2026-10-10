@@ -3,7 +3,10 @@
 
 use chrono::{NaiveTime, TimeDelta};
 use kanade::{
-    api::auth::{audit::AuditEvent, rate::MEMBER_WRITE_ROUTE},
+    api::auth::{
+        audit::{AuditEvent, Realm},
+        rate::MEMBER_WRITE_ROUTE,
+    },
     domain::{
         history::{Actor, Surface},
         schedule::{Change, RunStatus},
@@ -596,6 +599,104 @@ async fn member_run_writes_take_the_member_write_tokens() {
             .contains(&AuditEvent::RateLimited {
                 route: MEMBER_WRITE_ROUTE
             })
+    );
+}
+
+/// Every refused member write is a log line naming the member, the route
+/// and the reason: CSRF, a stale sign-in, and the 403/404/409 codes. None of
+/// them is a stored sign-in row; a refusal without a member (no session) and
+/// an invalid body are not write refusals.
+#[tokio::test]
+async fn refused_member_writes_are_audited_with_route_and_reason() {
+    let portal = portal().await;
+    let alice = portal.sign_in(ALICE).await;
+    let bob = portal.sign_in(BOB).await;
+    let v = portal.version().await;
+    let yes = json!({"answer": "yes", "version": v});
+    for (browser, id, key) in [
+        (&alice, "r-nope", "w-1"),
+        (&bob, "n-star", "w-2"),
+        (&alice, "r-star", "w-3"),
+    ] {
+        let reply = portal
+            .write(browser, "PUT", &answer_path(id), key, Some(&yes))
+            .await;
+        assert!(matches!(reply.status, 403 | 404 | 409), "{}", reply.text());
+    }
+    let reply = portal
+        .write(
+            &alice,
+            "PUT",
+            &answer_path("r-kalos"),
+            "w-4",
+            Some(&json!({"answer": "?"})),
+        )
+        .await;
+    assert_eq!(refused(&reply), (422, "invalid_body".into()));
+    let body = yes.to_string();
+    let reply = portal
+        .send(
+            Some(&alice),
+            "POST",
+            &move_path("r-kalos"),
+            &[super::PUB_ORIGIN, ("Idempotency-Key", "w-5")],
+            Some(&body),
+        )
+        .await;
+    assert_eq!(refused(&reply), (403, "csrf".into()));
+    let reply = portal
+        .send(
+            None,
+            "PUT",
+            &answer_path("r-kalos"),
+            &[super::PUB_ORIGIN],
+            Some(&body),
+        )
+        .await;
+    assert_eq!(refused(&reply), (401, "unauthenticated".into()));
+    portal.harness.advance(TimeDelta::minutes(16));
+    let reply = portal
+        .write(&alice, "PUT", &answer_path("r-kalos"), "w-6", Some(&yes))
+        .await;
+    assert_eq!(refused(&reply), (401, "reauth_required".into()));
+
+    let refusals: Vec<(String, String, String)> = portal
+        .harness
+        .audit
+        .records()
+        .into_iter()
+        .filter_map(|record| {
+            let stored = record.row().is_some();
+            match record.event {
+                AuditEvent::WriteRefused {
+                    actor,
+                    route,
+                    reason,
+                } => {
+                    assert_eq!(record.realm, Realm::Member);
+                    assert!(!stored, "never a stored row");
+                    Some((actor, route, reason))
+                }
+                _ => None,
+            }
+        })
+        .collect();
+    let row = |member: u64, method: &str, path: String, reason: &str| {
+        (
+            format!("discord:{member}"),
+            format!("{method} {path}"),
+            reason.to_owned(),
+        )
+    };
+    assert_eq!(
+        refusals,
+        [
+            row(ALICE, "PUT", answer_path("r-nope"), "not_found"),
+            row(BOB, "PUT", answer_path("n-star"), "not_in_run"),
+            row(ALICE, "PUT", answer_path("r-star"), "run_closed"),
+            row(ALICE, "POST", move_path("r-kalos"), "csrf"),
+            row(ALICE, "PUT", answer_path("r-kalos"), "reauth_required"),
+        ]
     );
 }
 

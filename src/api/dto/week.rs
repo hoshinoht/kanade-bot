@@ -51,6 +51,14 @@ impl Context<'_> {
             .map_or_else(|| id.to_owned(), |channel| channel.name.clone())
     }
 
+    /// A channel as members see it: an unlisted channel reads `#unknown`,
+    /// never its raw id.
+    pub fn member_channel_label(&self, id: &str) -> String {
+        self.channels
+            .get(id)
+            .map_or_else(|| "#unknown".to_owned(), |channel| channel.name.clone())
+    }
+
     pub fn local_date(&self, at: DateTime<Utc>) -> NaiveDate {
         self.zone.from_utc_datetime(&at.naive_utc()).date_naive()
     }

@@ -31,7 +31,7 @@ pub(super) async fn events(
     State(site): State<Arc<Site>>,
     _: MemberSession,
 ) -> Result<Json<Vec<EventBoss>>, ApiError> {
-    event_bosses(&site).map(Json)
+    event_bosses(&site).await.map(Json)
 }
 
 /// `GET /api/public/bosses/{key}/knowledge`.

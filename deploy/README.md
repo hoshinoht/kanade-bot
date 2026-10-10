@@ -337,7 +337,9 @@ curl -s -o /dev/null -w '%{http_code}\n' https://pts.kanade.hoshinoht.dev/api/ad
 Behind the edge every member shares the edge's address (the public listener
 trusts forwarding headers only from the cloudflared peer), so per-IP sign-in
 limits pool and IP-change rotation never fires; both are covered by the
-loopback tests. If cloudflared were started by mistake it would reach nothing
+loopback tests. The bot still starts: it refuses a public bind only without
+`KANADE_CLOUDFLARED_PEER`, which Compose always sets, so this stage needs no
+opt-out. If cloudflared were started by mistake it would reach nothing
 (no listener on `172.25.0.10:8081`). At release: switch `bind`/`host` back to
 `172.25.0.10:8081` / `kanade-pub.hoshinoht.dev`, replace the Discord redirect
 (and `discord_redirect_uri`), remove the edge site, then follow "Public

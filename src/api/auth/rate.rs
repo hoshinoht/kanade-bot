@@ -1,8 +1,14 @@
 //! Token buckets per client IP and per route, plus one global bucket per
-//! route, and one write bucket per member for the public origin's member
-//! writes. Time comes from the auth clock so tests pin it; state is bounded.
+//! route, and per member a write bucket for the public origin's member
+//! writes and a read bucket for its data reads. An IPv6 client is keyed by
+//! its /64 (one subscriber's prefix), so rotating addresses within it share
+//! a bucket. Time comes from the auth clock so tests pin it; state is bounded.
 
-use std::{collections::HashMap, net::IpAddr, sync::Mutex};
+use std::{
+    collections::HashMap,
+    net::{IpAddr, Ipv6Addr},
+    sync::Mutex,
+};
 
 use chrono::{DateTime, Utc};
 
@@ -40,6 +46,16 @@ pub const MEMBER_WRITES: Rule = Rule {
 
 /// The audited route name of a refused member write.
 pub const MEMBER_WRITE_ROUTE: &str = "member_write";
+
+/// The public origin's data reads, per member: 120 a minute, generous for a
+/// page's burst of reads and its live refreshes.
+pub const MEMBER_READS: Rule = Rule {
+    burst: 120.0,
+    per_minute: 120.0,
+};
+
+/// The audited route name of a refused member read.
+pub const MEMBER_READ_ROUTE: &str = "member_read";
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Limits {
@@ -105,6 +121,20 @@ struct State {
     global: HashMap<Route, Bucket>,
     /// [`MEMBER_WRITES`] buckets by member id.
     members: HashMap<String, Bucket>,
+    /// [`MEMBER_READS`] buckets by member id.
+    readers: HashMap<String, Bucket>,
+}
+
+/// The bucket key of a client address: IPv4 (and IPv4-mapped IPv6) as is,
+/// other IPv6 by its /64.
+fn client_key(ip: IpAddr) -> IpAddr {
+    match ip.to_canonical() {
+        IpAddr::V6(v6) => {
+            let prefix = u128::from(v6) & !((1u128 << 64) - 1);
+            IpAddr::V6(Ipv6Addr::from(prefix))
+        }
+        v4 => v4,
+    }
 }
 
 pub struct RateLimits {
@@ -160,17 +190,32 @@ impl RateLimits {
     /// Take one of `member`'s [`MEMBER_WRITES`] tokens; `false` (and nothing
     /// taken) when they are spent.
     pub fn take_member_write(&self, member: &str, now: DateTime<Utc>) -> bool {
-        let rule = MEMBER_WRITES;
+        self.take_member(MEMBER_WRITES, |state| &mut state.members, member, now)
+    }
+
+    /// Take one of `member`'s [`MEMBER_READS`] tokens; `false` (and nothing
+    /// taken) when they are spent.
+    pub fn take_member_read(&self, member: &str, now: DateTime<Utc>) -> bool {
+        self.take_member(MEMBER_READS, |state| &mut state.readers, member, now)
+    }
+
+    fn take_member(
+        &self,
+        rule: Rule,
+        table: fn(&mut State) -> &mut HashMap<String, Bucket>,
+        member: &str,
+        now: DateTime<Utc>,
+    ) -> bool {
         let mut state = self.state();
-        let known = state.members.contains_key(member);
-        if !known && state.members.len() >= MAX_CLIENTS {
-            state.members.retain(|_, bucket| {
+        let buckets = table(&mut state);
+        let known = buckets.contains_key(member);
+        if !known && buckets.len() >= MAX_CLIENTS {
+            buckets.retain(|_, bucket| {
                 bucket.refill(rule, now);
                 bucket.tokens < rule.burst
             });
         }
-        let mut bucket = state
-            .members
+        let mut bucket = buckets
             .get(member)
             .copied()
             .unwrap_or_else(|| Bucket::full(rule, now));
@@ -180,8 +225,8 @@ impl RateLimits {
             bucket.tokens -= 1.0;
         }
         // As for clients: a still-full table serves a newcomer unremembered.
-        if known || state.members.len() < MAX_CLIENTS {
-            state.members.insert(member.to_owned(), bucket);
+        if known || buckets.len() < MAX_CLIENTS {
+            buckets.insert(member.to_owned(), bucket);
         }
         allowed
     }
@@ -196,7 +241,7 @@ impl RateLimits {
     ) -> bool {
         let limits = (self.limits)(route);
         let mut state = self.state();
-        let key = (route, client);
+        let key = (route, client.map(client_key));
         let use_client = buckets != Buckets::Global;
         let use_global = buckets != Buckets::Client;
         let mut remember = true;
@@ -315,5 +360,52 @@ mod tests {
         let later = now + TimeDelta::seconds(30);
         assert!(limits.take_member_write("1001", later), "two a minute");
         assert!(!limits.take_member_write("1001", later));
+    }
+
+    #[test]
+    fn member_reads_are_limited_per_member_apart_from_writes() {
+        let limits = RateLimits::default();
+        let now = DateTime::UNIX_EPOCH;
+        for _ in 0..120 {
+            assert!(limits.take_member_read("1001", now));
+        }
+        assert!(!limits.take_member_read("1001", now), "120 a minute");
+        assert!(limits.take_member_read("1002", now), "members are separate");
+        assert!(
+            limits.take_member_write("1001", now),
+            "writes have their own bucket"
+        );
+        let later = now + TimeDelta::seconds(1);
+        assert!(limits.take_member_read("1001", later), "two a second");
+        assert!(limits.take_member_read("1001", later));
+        assert!(!limits.take_member_read("1001", later));
+    }
+
+    #[test]
+    fn ipv6_clients_share_their_slash_64_and_ipv4_stays_exact() {
+        let limits = RateLimits::new(tiny);
+        let now = DateTime::UNIX_EPOCH;
+        let ip = |text: &str| Some(text.parse::<IpAddr>().unwrap());
+        assert!(limits.take_client(Route::DiscordStart, ip("2001:db8:1:2::1"), now));
+        assert!(limits.take_client(Route::DiscordStart, ip("2001:db8:1:2:ffff::9"), now));
+        assert!(
+            !limits.take_client(Route::DiscordStart, ip("2001:db8:1:2:abcd::"), now),
+            "one /64, one bucket"
+        );
+        assert!(
+            limits.take_client(Route::DiscordStart, ip("2001:db8:1:3::1"), now),
+            "the next /64 is another client"
+        );
+        assert!(limits.take_client(Route::DiscordStart, ip("192.0.2.1"), now));
+        assert!(limits.take_client(Route::DiscordStart, ip("192.0.2.1"), now));
+        assert!(limits.take_client(Route::DiscordStart, ip("192.0.2.2"), now));
+        assert!(
+            !limits.take_client(Route::DiscordStart, ip("::ffff:192.0.2.1"), now),
+            "a mapped IPv4 address is that address"
+        );
+        assert_eq!(
+            client_key("2001:db8:1:2:3:4:5:6".parse().unwrap()),
+            "2001:db8:1:2::".parse::<IpAddr>().unwrap()
+        );
     }
 }

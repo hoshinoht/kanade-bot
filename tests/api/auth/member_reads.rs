@@ -8,8 +8,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use chrono::{DateTime, NaiveTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc};
 use kanade::{
+    api::auth::{audit::AuditEvent, rate::MEMBER_READ_ROUTE},
     domain::{
         history::{Actor, ChangeMeta, Origin, Surface},
         members::MemberStore,
@@ -368,6 +369,39 @@ async fn the_member_week_is_the_admin_week_with_only_member_fields() {
     }
 }
 
+/// A run in a channel the bot does not list reads `#unknown` to members,
+/// never the raw channel id; the admin week still shows the id.
+#[tokio::test]
+async fn an_unlisted_channel_reads_unknown_never_its_id() {
+    const GONE: &str = "424242424242424242";
+    let portal = Portal::new().await;
+    let Change::PutRun(mut gone) = put_run(
+        "r-gone",
+        utc(9, 23, 16, 0),
+        utc(9, 25, 13, 0),
+        &["1001"],
+        RunStatus::Planned,
+    ) else {
+        unreachable!("put_run puts a run")
+    };
+    gone.channel_id = Some(GONE.into());
+    commit(&portal.reads, vec![Change::PutRun(gone)]).await;
+    let alice = portal.sign_in(ALICE).await;
+
+    let week = portal.week(&alice, "").await;
+    let view = run(&week, "r-gone");
+    assert_eq!(view["channel"], "#unknown");
+    assert_eq!(view["party"], "#unknown");
+    assert!(!week.to_string().contains(GONE), "{week:#}");
+    assert_eq!(run(&week, "r-kalos")["channel"], "#kalos-four");
+
+    let admin = portal
+        .reads
+        .read("/api/admin/week", "week.json#/$defs/Week")
+        .await;
+    assert_eq!(run(&admin, "r-gone")["channel"], GONE);
+}
+
 /// With the reset at 22:00, Thursday evening belongs to two boss weeks: the
 /// member week places runs on the same day and time as the admin week.
 #[tokio::test]
@@ -512,6 +546,44 @@ async fn art_is_served_to_signed_in_members_and_unchanged_on_admin() {
         assert_eq!(reply.status, 200);
         assert_eq!(reply.body, b"art");
     }
+}
+
+#[tokio::test]
+async fn data_reads_take_the_members_read_bucket_and_art_does_not() {
+    let portal = Portal::new().await;
+    let alice = portal.sign_in(ALICE).await;
+    for n in 0..120 {
+        let reply = portal.get(Some(&alice), ALLOWANCE).await;
+        assert_eq!(reply.status, 200, "read {n}: {}", reply.text());
+    }
+    for path in [WEEK, ALLOWANCE, "/api/public/bosses"] {
+        let reply = portal.get(Some(&alice), path).await;
+        assert_eq!(
+            (reply.status, reply.api_error()),
+            (429, "rate_limited".into()),
+            "{path}"
+        );
+    }
+    assert!(
+        portal
+            .harness
+            .audit
+            .events()
+            .contains(&AuditEvent::RateLimited {
+                route: MEMBER_READ_ROUTE
+            })
+    );
+    assert_eq!(portal.get(Some(&alice), ART).await.status, 200, "art");
+    assert_eq!(
+        portal.get(Some(&alice), "/api/public/session").await.status,
+        200,
+        "the session read"
+    );
+    let bob = portal.sign_in(BOB).await;
+    assert_eq!(portal.week(&bob, "").await["starts"], "2026-09-24");
+    // Two a second.
+    portal.harness.advance(TimeDelta::seconds(1));
+    assert_eq!(portal.get(Some(&alice), ALLOWANCE).await.status, 200);
 }
 
 fn group(name: &str, busy: bool, queue: Vec<QueuedCall>) -> GroupSnapshot {

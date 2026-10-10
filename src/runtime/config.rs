@@ -116,6 +116,14 @@ impl RuntimeConfig {
                 "KANADE_PUBLIC_HOST is required when KANADE_PUBLIC_BIND is set".into(),
             ));
         }
+        // Without the peer no client address survives the proxy: every member
+        // is the proxy's address, so sign-in buckets pool and the session's
+        // client-tag rotation never fires. Local runs name their loopback.
+        if public_bind.is_some() && http.cloudflared_peer.is_none() {
+            return Err(Error::Configuration(
+                "KANADE_CLOUDFLARED_PEER is required when KANADE_PUBLIC_BIND is set".into(),
+            ));
+        }
         if http.public_host.is_some() && http.public_host == http.admin_host {
             return Err(Error::Configuration(
                 "KANADE_PUBLIC_HOST must differ from KANADE_ADMIN_HOST".into(),
@@ -407,6 +415,13 @@ mod tests {
                 ("KANADE_PUBLIC_HOST", "same.example"),
             ]),
             "KANADE_PUBLIC_HOST must differ from KANADE_ADMIN_HOST"
+        );
+        assert_eq!(
+            error_for(&[
+                ("KANADE_PUBLIC_BIND", "127.0.0.1:8081"),
+                ("KANADE_PUBLIC_HOST", "pub.example"),
+            ]),
+            "KANADE_CLOUDFLARED_PEER is required when KANADE_PUBLIC_BIND is set"
         );
 
         let mut input = values();

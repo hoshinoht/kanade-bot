@@ -7,7 +7,10 @@
 
 use std::{net::IpAddr, sync::Arc, sync::Mutex, time::Duration};
 
-use axum::{extract::FromRequestParts, http::request::Parts};
+use axum::{
+    extract::FromRequestParts,
+    http::{Method, Uri, request::Parts},
+};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
@@ -53,6 +56,14 @@ pub enum AuditEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         user: Option<String>,
     },
+    /// A member write refused: `reason` is `csrf`, `reauth_required` or the
+    /// refusal's 403/404/409 code; `route` is the method and path.
+    /// Logged only: the stored log's event CHECK has no such kind.
+    WriteRefused {
+        actor: String,
+        route: String,
+        reason: String,
+    },
 }
 
 impl AuditEvent {
@@ -64,7 +75,24 @@ impl AuditEvent {
             Self::LoginRefused { .. }
             | Self::BreakGlassUsed { .. }
             | Self::RateLimited { .. }
-            | Self::RevokeFailed { .. } => "WARN",
+            | Self::RevokeFailed { .. }
+            | Self::WriteRefused { .. } => "WARN",
+        }
+    }
+
+    /// [`Self::WriteRefused`] of `method` `uri` (path only, at most 256
+    /// bytes; no query) by `actor`.
+    pub fn write_refused(actor: String, method: &Method, uri: &Uri, reason: &str) -> Self {
+        let mut route = format!("{method} {}", uri.path());
+        let mut end = route.len().min(256);
+        while !route.is_char_boundary(end) {
+            end -= 1;
+        }
+        route.truncate(end);
+        Self::WriteRefused {
+            actor,
+            route,
+            reason: reason.to_owned(),
         }
     }
 }
@@ -145,8 +173,9 @@ impl AuditRecord {
         }
     }
 
-    /// The stored row (`seq` is assigned by the store).
-    pub fn row(&self) -> AuditRow {
+    /// The stored row (`seq` is assigned by the store); `None` for events the
+    /// log's event CHECK cannot hold, which stay stderr lines only.
+    pub fn row(&self) -> Option<AuditRow> {
         let owned = |text: &str| Some(text.to_owned());
         let (event, actor, method, reason, request, device) = match &self.event {
             AuditEvent::LoginSucceeded {
@@ -208,6 +237,7 @@ impl AuditRecord {
                 None,
                 None,
             ),
+            AuditEvent::WriteRefused { .. } => return None,
         };
         // Bounded as the store checks; a longer value is cut, never refused.
         let cut = |text: Option<String>, max: usize| {
@@ -222,7 +252,7 @@ impl AuditRecord {
                 text
             })
         };
-        AuditRow {
+        Some(AuditRow {
             seq: 0,
             at: self.at,
             realm: match self.realm {
@@ -237,7 +267,7 @@ impl AuditRecord {
             client: cut(self.client.clone(), 64),
             device: cut(device, 64),
             request_id: cut(Some(self.request_id.clone()), 128).unwrap_or_default(),
-        }
+        })
     }
 }
 
@@ -264,6 +294,9 @@ impl<S: AuthAuditStore + Send + Sync + 'static> AuditSink for StoreAudit<S> {
     fn record(&self, record: AuditRecord) {
         let row = record.row();
         StderrAudit.record(record);
+        let Some(row) = row else {
+            return;
+        };
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             return;
         };
@@ -332,5 +365,59 @@ impl AuditSink for RecordingAudit {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(record);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refused_writes_are_log_lines_without_a_stored_row() {
+        let context = AuditContext {
+            request_id: "req-1".into(),
+            client: None,
+        };
+        let refused = AuditRecord::new(
+            Realm::Member,
+            &context,
+            AuditEvent::write_refused(
+                "discord:1001".into(),
+                &Method::PUT,
+                &"/api/public/runs/r-1/answer?x=1".parse().unwrap(),
+                "not_in_run",
+            ),
+            DateTime::UNIX_EPOCH,
+        );
+        assert_eq!(refused.row(), None);
+        assert_eq!(refused.event.level(), "WARN");
+        let line: serde_json::Value = serde_json::to_value(&refused).unwrap();
+        assert_eq!(line["event"], "write_refused");
+        assert_eq!(line["route"], "PUT /api/public/runs/r-1/answer");
+        assert_eq!(line["reason"], "not_in_run");
+        assert_eq!(line["actor"], "discord:1001");
+        assert_eq!(line["realm"], "member");
+        let long = format!("/{}", "a".repeat(400));
+        let AuditEvent::WriteRefused { route, .. } = AuditEvent::write_refused(
+            "discord:1001".into(),
+            &Method::POST,
+            &long.parse().unwrap(),
+            "csrf",
+        ) else {
+            unreachable!()
+        };
+        assert_eq!(route.len(), 256);
+
+        let limited = AuditRecord::new(
+            Realm::Member,
+            &context,
+            AuditEvent::RateLimited {
+                route: "member_read",
+            },
+            DateTime::UNIX_EPOCH,
+        );
+        let row = limited.row().expect("a stored kind");
+        assert_eq!(row.event, AuditKind::RateLimited);
+        assert_eq!(row.reason.as_deref(), Some("member_read"));
     }
 }

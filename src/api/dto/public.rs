@@ -128,7 +128,10 @@ pub fn member_run(
     user_id: &str,
 ) -> MemberRun {
     let participants = participants(ctx, snapshot, run);
-    let channel = ctx.channel_name(run.channel_id.as_deref().unwrap_or_default());
+    let channel = run
+        .channel_id
+        .as_deref()
+        .map_or_else(String::new, |id| ctx.member_channel_label(id));
     let mine = run.participants.iter().any(|id| id == user_id);
     MemberRun {
         id: run.id.clone(),

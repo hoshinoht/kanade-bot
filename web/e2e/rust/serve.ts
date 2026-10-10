@@ -86,6 +86,8 @@ function serverEnv(): NodeJS.ProcessEnv {
     KANADE_ADMIN_BIND: `127.0.0.1:${adminPort}`,
     KANADE_PUBLIC_BIND: `127.0.0.1:${publicPort}`,
     KANADE_PUBLIC_HOST: `127.0.0.1:${publicPort}`,
+    // Startup needs a trusted peer with a public bind; the browser connects from the loopback.
+    KANADE_CLOUDFLARED_PEER: '127.0.0.1',
     KANADE_DISCORD_GATEWAY: '0',
     KANADE_DISCORD_TOKEN_FILE: join(root, 'discord_token'),
     KANADE_ADMIN_TOKEN_FILE: join(root, 'admin_token'),

@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use axum::{
     extract::State,
-    http::{HeaderMap, StatusCode, Uri, header::SET_COOKIE},
+    http::{HeaderMap, HeaderValue, StatusCode, Uri, header::SET_COOKIE},
     response::{IntoResponse, Response},
 };
 
@@ -62,9 +62,21 @@ fn admitted(member: &MemberAuth, context: &AuditContext, route: Route) -> bool {
     admitted
 }
 
+/// A sign-in starts only as a top-level navigation typed in or from this
+/// site: `Sec-Fetch-Dest: document` and `Sec-Fetch-Site` `none`,
+/// `same-origin` or `same-site`, each checked when the browser sends it.
+/// A page elsewhere cannot then plant a pre-auth cookie (login CSRF).
+fn navigated_here(headers: &HeaderMap) -> bool {
+    let header = |name| headers.get(name).map(HeaderValue::as_bytes);
+    header("sec-fetch-dest").is_none_or(|dest| dest == b"document")
+        && header("sec-fetch-site")
+            .is_none_or(|site| matches!(site, b"none" | b"same-origin" | b"same-site"))
+}
+
 pub(super) async fn start(
     State(site): State<Arc<Site>>,
     context: AuditContext,
+    headers: HeaderMap,
     uri: Uri,
 ) -> Response {
     let Some((member, discord)) = open_login(&site) else {
@@ -72,6 +84,17 @@ pub(super) async fn start(
     };
     if !admitted(member, &context, Route::DiscordStart) {
         return login_error("rate_limited");
+    }
+    if !navigated_here(&headers) {
+        member.audit(
+            &context,
+            AuditEvent::LoginRefused {
+                method: "discord",
+                reason: "cross_site",
+                user: None,
+            },
+        );
+        return ApiError::CSRF.into_response();
     }
     let now = member.now();
     if discord.cooling_down(now) {

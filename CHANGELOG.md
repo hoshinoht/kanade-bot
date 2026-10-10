@@ -4,6 +4,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 ## 1.0.0-beta.5 (in development)
 
+**Fixed**
+
+- Public portal hardening: member views never show a raw channel id (a run, request or form option in a channel the bot does not list reads `#unknown`); boss art and clips stream from disk with `Content-Length` instead of being read whole into memory (Range, ETag and cache headers unchanged), at most 8 art responses at once (a request waits up to 10 s, then `503`); event-boss and knowledge YAML is read off the async workers; members get 120 data reads a minute (`429 rate_limited`, audited as `member_read`, art and the session read not counted); `GET /api/public/auth/discord/start` refuses (`403 csrf`, audited as a `cross_site` refused sign-in) unless it is a top-level navigation typed in or from this site (`Sec-Fetch-Dest: document`, `Sec-Fetch-Site` none/same-origin/same-site, each when sent); per-IP sign-in limits key IPv6 clients by their /64; startup refuses `KANADE_PUBLIC_BIND` without `KANADE_CLOUDFLARED_PEER` (local runs name `127.0.0.1`; Compose already sets it); refused member run and request writes (CSRF, stale sign-in, 403/404/409) are logged as `write_refused` audit lines with route and reason (stderr only, not in History › Sign-ins); expired public sessions are pruned at startup and hourly.
+
 ## 1.0.0-beta.4 (2026-10-10)
 
 Headline: **security hardening, run ownership and the public portal beta.** Members can now sign in to the public portal on the internet, through a Cloudflare tunnel with its own Discord application, to see the boss week, answer and move their own runs, send requests and hand over weekly timings; weekly timings belong to their first participant unless an admin pins an owner, and ended runs ask whether they happened; admins get a stored sign-in audit log; CI gains supply-chain checks; "mine" means the runs you are on.

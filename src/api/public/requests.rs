@@ -230,7 +230,7 @@ impl Basis {
             .filter(|id| ctx.channels.get(*id).is_some_and(|channel| channel.watched))
             .map(|id| Named {
                 id: id.to_owned(),
-                name: ctx.channel_name(id),
+                name: ctx.member_channel_label(id),
             })
             .collect();
         let mut members: Vec<Named> = self

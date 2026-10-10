@@ -16,6 +16,7 @@ pub mod harness;
 mod health;
 pub mod models;
 mod persona_log;
+mod sessions;
 pub mod settings;
 mod store;
 mod tick;
@@ -278,12 +279,18 @@ async fn serve_store(
     let composition =
         api::compose(config, store, Arc::new(StaticChannels(Vec::new())), health).await?;
     logging::discord_disabled();
+    let prune =
+        sessions::SessionPrune::start(composition.admin.member.clone(), sessions::PRUNE_EVERY);
     let shutdown = async {
         shutdown.await;
         clock.start();
         clock.clone()
     };
-    server::serve_bounded(&config.runtime, Some(composition.admin), shutdown).await
+    let served = server::serve_bounded(&config.runtime, Some(composition.admin), shutdown).await;
+    if let Some(prune) = prune {
+        prune.stop().await;
+    }
+    served
 }
 
 async fn serve_live<S, T>(
@@ -311,12 +318,17 @@ where
         discord.until(shutdown).await;
         clock.clone()
     };
+    let prune =
+        sessions::SessionPrune::start(composition.admin.member.clone(), sessions::PRUNE_EVERY);
     let served = clock
         .refusing_reads(
             &store,
             server::serve_bounded(&config.runtime, Some(composition.admin), stopped),
         )
         .await;
+    if let Some(prune) = prune {
+        prune.stop().await;
+    }
     discord.stop().await;
     discord.result().and(served)
 }
