@@ -17,6 +17,8 @@ use serde_json::{Map, Value};
 pub use propose::ProposalCard;
 pub use schemas::ToolName;
 
+use crate::chat::context::RunContext;
+
 /// Runs a schedule answer lists before it is truncated.
 pub const MAX_RUNS: usize = 20;
 /// Member replies stay comfortably below Discord's message ceiling.
@@ -101,6 +103,9 @@ pub struct ToolContext {
     /// (I/me/my/we) names: a mixed self + third-person question, so each
     /// of them and the asker must be read before the reply (`D-MIXED-PEOPLE`).
     pub schedule_people: Vec<String>,
+    /// `D-RUN-CONTEXT`: the bot card the question replies to (its prompt
+    /// block and every run of it); empty when it replies to no card.
+    pub run_context: RunContext,
     /// The answer's single clock reading.
     pub now: DateTime<Utc>,
 }
@@ -130,6 +135,7 @@ impl ToolContext {
             upcoming_only: false,
             next_only: false,
             schedule_people: Vec::new(),
+            run_context: RunContext::default(),
             now,
         }
     }

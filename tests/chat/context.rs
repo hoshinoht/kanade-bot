@@ -179,12 +179,15 @@ async fn replay(case: Value) -> Vec<Value> {
                     (world.policy.reset_weekday, world.policy.reset_time),
                     model,
                     &focus,
+                    // D-RUN-CONTEXT is v5-only: the frozen v4 prompts have no block.
+                    "",
                 );
                 value(messages_json(&assemble(
                     &turns,
                     system,
                     context_tokens,
                     kanade::extract::prompt::CONTEXT_RESERVE,
+                    "",
                 )))
             }
             "budgeted" => {
@@ -202,6 +205,7 @@ async fn replay(case: Value) -> Vec<Value> {
                     &persona.voice_reminder(),
                     context_tokens,
                     kanade::chat::context::COMPLETION_RESERVE_TOKENS,
+                    "",
                 ) {
                     Ok(fits) => value(json!({
                         "messages": messages_json(&fits.messages),

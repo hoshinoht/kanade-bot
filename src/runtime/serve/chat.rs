@@ -7,10 +7,14 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
+use chrono_tz::Tz;
 use serde_json::json;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
+use twilight_model::id::Id;
+use twilight_model::id::marker::MessageMarker;
 
 use crate::{
     api::{
@@ -22,11 +26,13 @@ use crate::{
         chat_feed::{ChatFeed, DiscordSurface, StaffFn},
         commands::{ChatAllowance, Invoker},
         delivery::FixedClock,
+        events::CardIndex,
         guild_cache::GuildCache,
         roster::LiveRoster,
     },
     chat::{
         answer::{AnswerDeps, Generation, GuildView, ProfanityGuard, answer},
+        context::{RunContext, run_block},
         driver::{
             Answerer, Asked, ChatDriver, ChatEvent, ChatHandle, DriverConfig, FollowUpRequest, Job,
             Prepared, RejectionFollowUp, Setup,
@@ -45,8 +51,10 @@ use crate::{
         ids::RandomIds,
         members::{MemberStore, Roster},
         model_log::{ChatInteraction, ModelLogStore},
+        notify::{DeliveryJournal, digest_inclusion},
+        proposals::ProposalCardStore,
         schedule::SchedulePolicy,
-        scheduler::SchedulerService,
+        scheduler::{ScheduleStore, SchedulerService, Scope},
         settings::RuntimeSettings,
     },
     infrastructure::{
@@ -153,6 +161,63 @@ impl<T> ServeAnswerer<T> {
     }
 }
 
+/// `D-RUN-CONTEXT` over a store: the bot card the question replies to
+/// (`replied`, the replied-to message id): a reminder card (day-of,
+/// countdown) through the card index, a proposal card (the run it changes)
+/// or a weekly digest (its week's runs bar cancelled, as the digest shows
+/// them). Empty for no reply or any other message; the schedule is read
+/// only once the message is known to be such a card.
+///
+/// # Errors
+/// A store read failure, as text.
+pub async fn run_context<S>(
+    store: &S,
+    replied: Option<&str>,
+    now: DateTime<Utc>,
+    zone: Tz,
+) -> Result<RunContext, String>
+where
+    S: ScheduleStore + CardIndex + DeliveryJournal + ProposalCardStore + Sync,
+{
+    // Discord ids are non-zero snowflakes; anything else is no card.
+    let Some((message, id)) = replied.and_then(|message| {
+        let id = Id::<MessageMarker>::new_checked(message.parse().ok()?)?;
+        Some((message, id))
+    }) else {
+        return Ok(RunContext::default());
+    };
+    let mut about = store.runs_for_message(id).await.map_err(|error| error.0)?;
+    let cards = store
+        .cards_on_message(message)
+        .await
+        .map_err(|error| error.to_string())?;
+    about.extend(cards.into_iter().filter_map(|card| card.details.run_id));
+    let log = store
+        .load_digests()
+        .await
+        .map_err(|error| error.to_string())?;
+    let weeks: Vec<DateTime<Utc>> = log
+        .digests
+        .iter()
+        .filter(|digest| digest.message_id == message)
+        .map(|digest| digest.week_start)
+        .collect();
+    if about.is_empty() && weeks.is_empty() {
+        return Ok(RunContext::default());
+    }
+    let snapshot = store
+        .load(&Scope::All)
+        .await
+        .map_err(|error| error.to_string())?;
+    for week in weeks {
+        // `ended` changes only the counts, never which runs are listed.
+        let shown = digest_inclusion(&snapshot.runs, week, zone, None)
+            .map_err(|error| error.to_string())?;
+        about.extend(shown.days.into_iter().flat_map(|day| day.run_ids));
+    }
+    Ok(run_block(&snapshot.runs, &about, now, zone))
+}
+
 impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
     fn setup(&self) -> Setup {
         let settings = self.settings();
@@ -253,6 +318,15 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             })
             .chain(bot_names.iter().cloned())
             .collect();
+        let now = (self.clock)();
+        let zone = self.policy.zone();
+        let run_context = run_context(&*self.store, asked.message.replied_message_id(), now, zone)
+            .await
+            .unwrap_or_else(|_| {
+                // The question still goes ahead: its tools read the schedule.
+                logging::event("WARN", "chat_run_context_unreadable", json!({}));
+                RunContext::default()
+            });
         Some(Prepared {
             persona,
             catalog: Arc::clone(&self.catalog),
@@ -266,12 +340,13 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             max_output_tokens: context.reserve,
             context_source: context.source.as_str(),
             route: Some(route),
-            now: (self.clock)(),
-            zone: self.policy.zone(),
+            now,
+            zone,
             reset: (self.policy.reset_weekday, self.policy.reset_time),
             bot_names,
             // Read per question: a saved Profanity change applies to the next one.
             profanity: ProfanityGuard::new(&settings.profanity).with_names(names),
+            run_context,
         })
     }
 

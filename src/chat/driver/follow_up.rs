@@ -442,6 +442,8 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
             turns.push(ChatTurn::new(TurnRole::User, prompt.clone(), None));
             (turns, focus)
         };
+        // No D-RUN-CONTEXT block: this clarifies the rejected card, and no
+        // member replied to a card.
         let system = system_prompt(
             &prepared.persona,
             prepared.now,
@@ -449,6 +451,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
             prepared.reset,
             &prepared.model,
             &focus,
+            "",
         );
         let question = Question {
             ctx: &ctx,
@@ -457,6 +460,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                 system,
                 prepared.context_window,
                 prepared.max_output_tokens as usize,
+                "",
             ),
             reminder: prepared.persona.voice_reminder(),
             offer: ChatPilot::route(&prompt, None, true),

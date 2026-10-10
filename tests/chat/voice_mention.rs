@@ -117,6 +117,7 @@ fn system(world: &World, persona: &CompiledPersona) -> String {
         (world.policy.reset_weekday, world.policy.reset_time),
         MODEL,
         "",
+        "",
     )
 }
 
@@ -136,7 +137,7 @@ fn conversation(
         Some(ROLE),
         &world.guild,
     );
-    assemble(&turns, system(world, persona), 16_384, 1024)
+    assemble(&turns, system(world, persona), 16_384, 1024, "")
 }
 
 /// The driver's trusted tool context (`driver/run.rs` `tool_context`).

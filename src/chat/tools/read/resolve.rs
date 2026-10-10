@@ -182,10 +182,13 @@ pub fn resolve_run<'w>(
 /// model's: the question, and when it follows a bot reply directly, the
 /// asker's message before that reply. Empty when no member asked (a
 /// rejection follow-up's prompt, a lone tool call): nothing to check.
+/// `card` is every run of the bot card the question replies to
+/// (`D-RUN-CONTEXT`, whole ids, whether or not its prompt block shows them).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Heard<'a> {
     pub question: &'a str,
     pub earlier: Option<&'a str>,
+    pub card: &'a [String],
 }
 
 /// `words` carry `run`'s id or a unique prefix of it (`#a1b2c3d4`, pasted ids).
@@ -253,9 +256,10 @@ fn described<'w>(
 /// against the asker's own words ([`ToolWorld::heard`]) unless they carry
 /// its id. Words that name a boss or day the run does not have refuse it
 /// with the runs they do fit; words that fit it and other open runs `among`
-/// allows refuse it with the ambiguity listing, unless a follow-up's earlier
-/// message narrows them to it alone. Words naming no boss or day, or only
-/// where a move goes (`to`), leave the model's choice alone.
+/// allows refuse it with the ambiguity listing, unless the card the question
+/// replies to (`D-RUN-CONTEXT`) or a follow-up's earlier message narrows
+/// them to it alone. Words naming no boss or day, or only where a move goes
+/// (`to`), leave the model's choice alone.
 pub fn require_heard(
     world: &ToolWorld<'_>,
     run: &Run,
@@ -294,6 +298,15 @@ pub fn require_heard(
         fits.push(run);
     }
     if fits.len() <= 1 {
+        return Ok(());
+    }
+    // D-RUN-CONTEXT: replying to a card singles out its run the way a typed
+    // id does, but only among the runs the words fit and only when no other
+    // of the card's runs fits them (the card's whole list, not its trimmed
+    // prompt block), so words about another boss or day still refuse it and
+    // a card with several fitting runs still asks which one.
+    let on_card = |candidate: &Run| heard.card.contains(&candidate.id);
+    if on_card(run) && fits.iter().filter(|&&candidate| on_card(candidate)).count() == 1 {
         return Ok(());
     }
     let narrowed = heard

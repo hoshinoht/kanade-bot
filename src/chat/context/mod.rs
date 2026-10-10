@@ -5,6 +5,7 @@
 
 mod assemble;
 mod budget;
+mod runs;
 mod state;
 
 pub use assemble::{
@@ -12,6 +13,9 @@ pub use assemble::{
     system_prompt,
 };
 pub use budget::{ContextBudgetError, budgeted};
+pub use runs::{
+    FIELD_LIMIT, RUN_CONTEXT_HEADER, RUN_CONTEXT_LIMIT, RunContext, run_block, strip_block_copies,
+};
 pub use state::{Conversations, WITHHELD_CACHE, card_focus};
 
 /// Bounded exchanges kept per channel.

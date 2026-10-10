@@ -9,7 +9,7 @@ use chrono_tz::Tz;
 
 use super::{
     CONVERSATION_BUDGET_TOKENS, CONVERSATION_FLOOR_TOKENS, ChatTurn, Conversations,
-    REPLY_CHAIN_DEPTH, TurnRole,
+    REPLY_CHAIN_DEPTH, TurnRole, runs,
 };
 use crate::chat::persona::{CompiledPersona, TurnContext};
 use crate::chat::sanitize::defuse_notes;
@@ -208,8 +208,8 @@ pub fn question_turn(
     )
 }
 
-/// The per-turn system prompt: persona, clock header, runtime model and the
-/// channel's focus card.
+/// The per-turn system prompt: persona, clock header, runtime model, the
+/// channel's focus card and the `D-RUN-CONTEXT` block (`""` for none).
 pub fn system_prompt(
     persona: &CompiledPersona,
     now: DateTime<Utc>,
@@ -217,35 +217,68 @@ pub fn system_prompt(
     (reset_weekday, reset_time): (Weekday, NaiveTime),
     model: &str,
     focus: &str,
+    runs: &str,
 ) -> String {
     let week = week_start(&now, zone, reset_weekday, reset_time)
         .expect("the current boss week is in range")
         .to_fixed();
-    persona.system_prompt(&TurnContext::new(&now, zone, &week, model, focus))
+    persona.system_prompt(&TurnContext::new(&now, zone, &week, model, focus).with_runs(runs))
 }
 
-/// The system prompt and as many of the latest turns as the conversation
-/// budget allows (never fewer than the question).
-pub fn assemble(
+/// Where the latest turns that fit the conversation budget beside `system`
+/// start (never later than the question), each text costing `cost`.
+fn first_kept(
     turns: &[ChatTurn],
-    system: String,
+    system: &str,
     model_context_tokens: usize,
     reserve: usize,
-) -> Vec<Message> {
+    cost: fn(&str) -> usize,
+) -> usize {
     let left = i64::try_from(model_context_tokens.saturating_sub(reserve)).unwrap_or(i64::MAX)
-        - i64::try_from(estimate_tokens(&system)).unwrap_or(i64::MAX);
+        - i64::try_from(cost(system)).unwrap_or(i64::MAX);
     let cap = i64::try_from(CONVERSATION_BUDGET_TOKENS).unwrap_or(i64::MAX);
     let available = usize::try_from(left.min(cap))
         .unwrap_or(0)
         .max(CONVERSATION_FLOOR_TOKENS);
-    let mut kept: &[ChatTurn] = turns;
-    while kept.len() > 1 {
-        let contents: Vec<&str> = kept.iter().map(ChatTurn::prompt_text).collect();
-        if estimate_tokens(&contents.join("\n\n")) <= available {
+    let mut first = 0;
+    while turns.len().saturating_sub(first) > 1 {
+        let contents: Vec<&str> = turns[first..].iter().map(ChatTurn::prompt_text).collect();
+        if cost(&contents.join("\n\n")) <= available {
             break;
         }
-        kept = &kept[1..];
+        first += 1;
     }
+    first
+}
+
+/// The system prompt and as many of the latest turns as the conversation
+/// budget allows (never fewer than the question). `run_context` is the
+/// question's `D-RUN-CONTEXT` block (`""` for none): its copy in `system`
+/// loses runs, then goes whole, before it costs a turn within one call's
+/// token budget (costed as the runner may count it).
+pub fn assemble(
+    turns: &[ChatTurn],
+    mut system: String,
+    model_context_tokens: usize,
+    reserve: usize,
+    run_context: &str,
+) -> Vec<Message> {
+    if let Some(bare) = runs::without_block(&system, run_context) {
+        let window = runs::call_window(model_context_tokens);
+        let kept = |system: &str| first_kept(turns, system, window, reserve, runs::call_tokens);
+        let over = |system: &str| runs::call_tokens(system) + reserve > window;
+        let wanted = kept(&bare);
+        while (kept(&system) > wanted || over(&system))
+            && runs::trim_block(&mut system, run_context)
+        {}
+    }
+    let kept = &turns[first_kept(
+        turns,
+        &system,
+        model_context_tokens,
+        reserve,
+        estimate_tokens,
+    )..];
     let mut messages = vec![Message::System { content: system }];
     messages.extend(kept.iter().map(|turn| match turn.role {
         TurnRole::User => Message::User {

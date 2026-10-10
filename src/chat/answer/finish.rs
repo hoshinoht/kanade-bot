@@ -2,6 +2,7 @@
 //! `_finalize_read_claim` and `generate`'s shaping).
 
 use super::{Generation, RoundOutcome};
+use crate::chat::context::strip_block_copies;
 use crate::chat::sanitize::{
     claims_new_card, looks_like_clarification, member_facing, shape_reply, strip_context_copies,
     strip_false_card_claim, tidy,
@@ -70,20 +71,27 @@ fn finalize_read_claim(generation: &mut Generation) {
 /// `D-GROUND-WRITE`: a turn whose last write posted a card keeps the model's
 /// card reply; v4 regrounded it, so a time in it pulled in the lookup listing.
 /// `listing` (`D-MIXED-PEOPLE`) is grounded against after every call, as the
-/// latest listing. Returns `true` when the model's words were replaced whole
-/// by fixed text (an unposted write), so members never see them.
-pub(super) fn finish(generation: &mut Generation, listing: Option<&ToolOutcome>) -> bool {
+/// latest listing. `run_context` is the question's `D-RUN-CONTEXT` block:
+/// any copy of it leaves the reply first. Returns `true` when the model's
+/// words were replaced whole by fixed text (an unposted write), so members
+/// never see them.
+pub(super) fn finish(
+    generation: &mut Generation,
+    listing: Option<&ToolOutcome>,
+    run_context: &str,
+) -> bool {
     let replaced = finalize_write_reply(generation);
     finalize_read_claim(generation);
     if !generation.reply.is_empty() {
+        let reply = strip_block_copies(&generation.reply, run_context);
         let mut outcomes = generation.tool_outcomes();
         if posted_card(generation) {
             // Not regrounded, but a copied model-only context line still goes.
-            let reply = strip_context_copies(&generation.reply, &outcomes);
+            let reply = strip_context_copies(&reply, &outcomes);
             generation.reply = shape_reply(&reply, &[]);
         } else {
             outcomes.extend(listing.cloned());
-            generation.reply = shape_reply(&generation.reply, &outcomes);
+            generation.reply = shape_reply(&reply, &outcomes);
         }
     }
     replaced

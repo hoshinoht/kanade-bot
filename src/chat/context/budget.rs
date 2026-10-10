@@ -6,6 +6,7 @@ use std::fmt;
 
 use serde_json::{Value, json};
 
+use super::runs;
 use crate::extract::prompt::estimate_tokens;
 use crate::infrastructure::llm::Message;
 
@@ -100,9 +101,24 @@ pub struct Budgeted {
     pub estimate: usize,
 }
 
-/// The request to send: `messages` plus the voice `reminder`, after dropping
-/// prior history and then eliding older tool results from `messages` itself
-/// (the trim sticks for later rounds).
+/// What the runner reserves for `outgoing` beside `schemas`, before the
+/// completion: the encoded request's bytes / 4 (multi-byte text such as CJK
+/// costs it more than [`estimate_tokens`] says).
+fn runner_tokens(outgoing: &[Message], schemas: &str) -> usize {
+    serde_json::to_vec(outgoing)
+        .map_or(usize::MAX, |bytes| bytes.len())
+        .saturating_add(schemas.len())
+        .div_ceil(4)
+}
+
+/// The request to send: `messages` plus the voice `reminder`, after trimming
+/// the system prompt's copy of `run_context` (the question's `D-RUN-CONTEXT`
+/// block, `""` for none), then dropping prior history and then eliding older
+/// tool results from `messages` itself (the trim sticks for later rounds).
+/// While a copy is there it also yields whenever the request, costed as the
+/// higher of this estimate and the runner's bytes / 4, plus the reserve is
+/// over one call's token budget (`CALL_TOKEN_BUDGET`): it may cost nothing
+/// else, and never the call.
 /// `schemas` is the offered tools' compact JSON (`[]` for none).
 ///
 /// # Errors
@@ -114,6 +130,7 @@ pub fn budgeted(
     reminder: &str,
     model_context_tokens: usize,
     completion_reserve: usize,
+    run_context: &str,
 ) -> Result<Budgeted, ContextBudgetError> {
     let mut current_user = messages
         .iter()
@@ -134,11 +151,24 @@ pub fn budgeted(
         ));
         let estimate = request + schema_tokens;
         let total = estimate + completion_reserve;
-        if total <= model_context_tokens {
+        let has_block = matches!(
+            messages.first(),
+            Some(Message::System { content }) if runs::has_block(content, run_context)
+        );
+        let over_call = || {
+            estimate.max(runner_tokens(&outgoing, schemas)) + completion_reserve
+                > runs::call_window(model_context_tokens)
+        };
+        if total <= model_context_tokens && !(has_block && over_call()) {
             return Ok(Budgeted {
                 messages: outgoing,
                 estimate,
             });
+        }
+        if let Some(Message::System { content }) = messages.first_mut()
+            && runs::trim_block(content, run_context)
+        {
+            continue;
         }
         if current_user > 1 {
             messages.remove(1);
@@ -254,7 +284,7 @@ mod tests {
     #[test]
     fn prior_history_goes_before_any_tool_result() {
         let mut messages = conversation();
-        let outgoing = budgeted(&mut messages, "[]", "voice", 2900, 100)
+        let outgoing = budgeted(&mut messages, "[]", "voice", 2900, 100, "")
             .expect("fits")
             .messages;
         assert_eq!(messages.len(), 6, "both history turns dropped");
@@ -267,7 +297,7 @@ mod tests {
     #[test]
     fn older_tool_results_are_elided_but_the_latest_round_stays() {
         let mut messages = conversation();
-        let outgoing = budgeted(&mut messages, "[]", "voice", 2000, 100)
+        let outgoing = budgeted(&mut messages, "[]", "voice", 2000, 100, "")
             .expect("fits")
             .messages;
         assert!(is_question(&messages[1]));
@@ -287,15 +317,15 @@ mod tests {
                 user(bulk('q')),
             ]
         };
-        let bare = budgeted(&mut lone(), "[]", "voice", 0, 0)
+        let bare = budgeted(&mut lone(), "[]", "voice", 0, 0, "")
             .unwrap_err()
             .estimate;
         // Well under the old 1024 constant, then well over it.
         for reserve in [10, 3000] {
             let window = bare + reserve;
-            let fits = budgeted(&mut lone(), "[]", "voice", window, reserve).expect("fits");
+            let fits = budgeted(&mut lone(), "[]", "voice", window, reserve, "").expect("fits");
             assert_eq!(fits.estimate, bare, "the estimate leaves out the reserve");
-            let error = budgeted(&mut lone(), "[]", "voice", window - 1, reserve).unwrap_err();
+            let error = budgeted(&mut lone(), "[]", "voice", window - 1, reserve, "").unwrap_err();
             assert_eq!(
                 error,
                 ContextBudgetError {
@@ -310,7 +340,7 @@ mod tests {
     #[test]
     fn only_the_protected_turn_left_is_a_budget_error() {
         let mut messages = conversation();
-        let error = budgeted(&mut messages, "[]", "voice", 500, 100).unwrap_err();
+        let error = budgeted(&mut messages, "[]", "voice", 500, 100, "").unwrap_err();
         assert_eq!((error.budget, error.reserve), (500, 100));
         assert!(error.estimate > 500);
         assert_eq!(

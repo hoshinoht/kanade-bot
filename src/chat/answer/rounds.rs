@@ -93,9 +93,10 @@ fn passthrough(identity: &mut PassthroughSession, message: &Message) -> Message 
 
 /// The asker's words in the conversation (a member turn reads `Name: text`):
 /// the closing question, and their own message before a bot reply the
-/// question follows directly. A closing turn that is not theirs (a rejection
-/// follow-up's prompt) hears nothing.
-fn heard<'c>(conversation: &'c [Message], speaker: &str) -> Heard<'c> {
+/// question follows directly, with `card` (every run of the bot card the
+/// question replies to, `D-RUN-CONTEXT`). A closing turn that is not theirs
+/// (a rejection follow-up's prompt) hears nothing.
+fn heard<'c>(conversation: &'c [Message], speaker: &str, card: &'c [String]) -> Heard<'c> {
     let said = |message: &'c Message| match message {
         Message::User { content } => content.strip_prefix(speaker)?.strip_prefix(": "),
         _ => None,
@@ -110,7 +111,11 @@ fn heard<'c>(conversation: &'c [Message], speaker: &str) -> Heard<'c> {
             .and_then(said),
         _ => None,
     };
-    Heard { question, earlier }
+    Heard {
+        question,
+        earlier,
+        card,
+    }
 }
 
 fn finish_name(reason: &FinishReason) -> String {
@@ -292,7 +297,8 @@ where
         .map(|message| passthrough(identity, message))
         .collect();
     let speaker = member_name(guild.directory, &question.ctx.author_id);
-    let heard = heard(&question.conversation, &speaker);
+    let run_context = &question.ctx.run_context;
+    let heard = heard(&question.conversation, &speaker, &run_context.runs);
     let clean_base: Vec<Message> = messages
         .first()
         .into_iter()
@@ -421,6 +427,7 @@ where
             &state.reminder,
             context_tokens,
             settings.max_output_tokens as usize,
+            &run_context.block,
         ) {
             Ok(fits) => fits,
             Err(error) => {
@@ -635,7 +642,8 @@ where
     // The model's own words, before finishing adds grounded records and
     // card lines built from store data (member names are not its words).
     let said = state.generation.reply.clone();
-    let replaced = finish(&mut state.generation, state.grounding.as_ref());
+    let block = &question.ctx.run_context.block;
+    let replaced = finish(&mut state.generation, state.grounding.as_ref(), block);
     // An unposted write's fixed status text replaced the model's words
     // whole: members never see them, so there is nothing to check.
     if let Some(guard) = question.profanity.filter(|_| !replaced) {
@@ -676,7 +684,8 @@ async fn profanity_check<P: LlmProvider>(
     {
         let clean = guard.reply_hit(&content).is_none();
         state.generation.reply = content;
-        let _ = finish(&mut state.generation, state.grounding.as_ref());
+        let block = &state.question.ctx.run_context.block;
+        let _ = finish(&mut state.generation, state.grounding.as_ref(), block);
         if clean && !state.generation.reply.is_empty() {
             sent = None;
         }
@@ -720,8 +729,16 @@ async fn send_clean<P: LlmProvider>(
     session: &mut Session<'_, P>,
     (alias, _seconds, context_tokens, reserve, round): (&str, u64, usize, usize, u32),
 ) -> Result<String, Option<SessionError>> {
-    let outgoing =
-        budgeted(&mut base, "[]", &state.reminder, context_tokens, reserve).map_err(|_| None)?;
+    let block = &state.question.ctx.run_context.block;
+    let outgoing = budgeted(
+        &mut base,
+        "[]",
+        &state.reminder,
+        context_tokens,
+        reserve,
+        block,
+    )
+    .map_err(|_| None)?;
     let request = state.request(alias, outgoing.messages, &state.question.offer, &[]);
     let started = Instant::now();
     let before = session.requests_used();

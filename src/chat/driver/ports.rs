@@ -11,7 +11,7 @@ use chrono_tz::Tz;
 use super::ChatEvent;
 use super::FollowUpRequest;
 use crate::chat::answer::{Generation, ProfanityGuard, Question};
-use crate::chat::context::QuestionMessage;
+use crate::chat::context::{QuestionMessage, RunContext};
 use crate::chat::gate::{ChannelDirectory, IncomingMessage, PilotSettings};
 use crate::chat::persona::CompiledPersona;
 use crate::chat::pilot::StormAlert;
@@ -83,6 +83,9 @@ pub struct Prepared {
     pub bot_names: Vec<String>,
     /// The profanity guardrail as saved when the question started.
     pub profanity: ProfanityGuard,
+    /// `D-RUN-CONTEXT`: the bot card the question replies to (its block and
+    /// every run of it, `chat::context::run_block`); empty for none.
+    pub run_context: RunContext,
 }
 
 /// One question for the model side.

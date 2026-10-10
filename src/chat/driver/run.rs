@@ -121,6 +121,7 @@ fn tool_context(asked: &Asked, prepared: &Prepared, source_id: &str) -> ToolCont
         &asked.message.author_id,
         &prepared.members,
     );
+    ctx.run_context.clone_from(&prepared.run_context);
     ctx
 }
 
@@ -600,6 +601,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
             prepared.reset,
             &prepared.model,
             &focus,
+            &prepared.run_context.block,
         );
         let question = Question {
             ctx: &held.ctx,
@@ -608,6 +610,7 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
                 system,
                 prepared.context_window,
                 prepared.max_output_tokens as usize,
+                &prepared.run_context.block,
             ),
             reminder: prepared.persona.voice_reminder(),
             offer: ChatPilot::route(&asked.message.content, None, held.ctx.read_only),

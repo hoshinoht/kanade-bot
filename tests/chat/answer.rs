@@ -875,6 +875,7 @@ fn estimate_of(request: &ChatRequest) -> Option<u64> {
         &reminder,
         usize::MAX,
         0,
+        "",
     )
     .expect("fits untrimmed");
     Some(u64::try_from(fits.estimate).expect("fits"))

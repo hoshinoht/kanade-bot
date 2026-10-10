@@ -12,6 +12,7 @@ pub struct TurnContext {
     header: String,
     runtime: String,
     focus: String,
+    runs: String,
 }
 
 impl TurnContext {
@@ -27,7 +28,16 @@ impl TurnContext {
             header: prompts::clock_header(now, zone, week_start),
             runtime: prompts::runtime_line(model),
             focus: prompts::focus_line(focus_card),
+            runs: String::new(),
         }
+    }
+
+    /// The `D-RUN-CONTEXT` block (`chat::context::run_block`), after the
+    /// focus line; `""` adds nothing.
+    #[must_use]
+    pub fn with_runs(mut self, block: &str) -> Self {
+        block.clone_into(&mut self.runs);
+        self
     }
 
     pub fn header(&self) -> &str {
@@ -52,6 +62,7 @@ impl CompiledPersona {
             &turn.header,
             &turn.runtime,
             &turn.focus,
+            &turn.runs,
             &self.voice_footer(),
         ])
     }

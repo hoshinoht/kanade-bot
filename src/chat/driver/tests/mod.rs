@@ -231,6 +231,7 @@ impl Answerer for Arc<Fake> {
             reset: (Weekday::Thu, NaiveTime::MIN),
             bot_names: vec!["Kanade".into()],
             profanity: self.profanity.lock().unwrap().clone(),
+            run_context: Default::default(),
         })
     }
 
