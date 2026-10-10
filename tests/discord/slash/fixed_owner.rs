@@ -116,3 +116,30 @@ async fn the_requester_s_own_decline_withdraws_it() {
     assert_eq!(closed.status, OwnerRequestStatus::Withdrawn);
     assert_eq!(owner_of(&slash).await, (ALICE.to_string(), false));
 }
+
+/// F1: naming the current owner is no replay. A former owner is refused
+/// like any non-owner and the open ask stays open.
+#[tokio::test]
+async fn a_former_owner_naming_the_new_owner_changes_nothing() {
+    let slash = Slash::new().await;
+    let hand = |to| sub("owner", json!([opt("id", F_KALOS), user_opt("to", to)]));
+    assert_eq!(
+        slash.run(ALICE, "fixed", hand(BOB)).await,
+        "👑 <@1002> now owns weekly timing `#ffff0001`."
+    );
+    slash
+        .run(ALICE, "fixed", sub("owner", json!([opt("id", F_KALOS)])))
+        .await;
+    let open = slash.store.open_owner_requests().await.unwrap();
+    assert_eq!(open.len(), 1, "Alice asked it back");
+    assert_eq!(
+        slash.run(ALICE, "fixed", hand(BOB)).await,
+        "❌ Only the timing's owner or an admin can do that."
+    );
+    assert_eq!(owner_of(&slash).await, (BOB.to_string(), true));
+    assert_eq!(
+        slash.store.open_owner_requests().await.unwrap(),
+        open,
+        "nothing superseded"
+    );
+}

@@ -13,7 +13,7 @@ use crate::api::ownership::{self, OwnershipError};
 use crate::bot::ids::id_text;
 use crate::bot::transport::InteractionReply;
 use crate::domain::ids::short_id;
-use crate::domain::ownership::{OwnerRequestStatus, OwnershipRefusal};
+use crate::domain::ownership::OwnershipRefusal;
 use crate::domain::scheduler::SchedulerError;
 
 /// Internal path of a request button press (never registered).
@@ -124,17 +124,17 @@ impl FixedCommand {
             Err(error) => return Err(answer(error)),
         };
         let timing = short_id(&change.fixed.id);
-        Ok(InteractionReply::ephemeral(match decided.status {
-            OwnerRequestStatus::Accepted => {
-                format!(
-                    "👑 <@{}> now owns weekly timing `#{timing}`.",
-                    decided.requester
-                )
-            }
-            _ => format!(
+        // An accept whose close lost to a withdraw still moved the owner.
+        Ok(InteractionReply::ephemeral(if accept {
+            format!(
+                "👑 <@{}> now owns weekly timing `#{timing}`.",
+                decided.requester
+            )
+        } else {
+            format!(
                 "Declined <@{}>'s request for `#{timing}`.",
                 decided.requester
-            ),
+            )
         }))
     }
 }

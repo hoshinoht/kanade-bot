@@ -92,9 +92,20 @@ async fn decide(
         OwnerRequestStatus::Declined
     };
     let (write_ctx, profiles) = write_context(state).await?;
+    let desk = OwnerDesk {
+        store: &*state.store,
+        writer: &*state.writer,
+        ctx: &write_ctx,
+    };
     let decided = if request.status == wanted
         && request.decided_by.as_deref() == Some(ownership::actor(&origin).as_str())
     {
+        // This admin's own retry: finish a supersede the first call lost.
+        if accept {
+            desk.finish_accepted(origin, &request, now)
+                .await
+                .map_err(refusal::ownership)?;
+        }
         request
     } else {
         // Staff decide regardless of who owns it; the decider only matters
@@ -103,11 +114,6 @@ async fn decide(
             .discord_user()
             .unwrap_or_else(|| session.actor.id())
             .to_owned();
-        let desk = OwnerDesk {
-            store: &*state.store,
-            writer: &*state.writer,
-            ctx: &write_ctx,
-        };
         desk.decide(origin, id, &decider, true, accept, now)
             .await
             .map_err(refusal::ownership)?

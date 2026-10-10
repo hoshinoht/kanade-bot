@@ -528,10 +528,11 @@ impl Store {
     }
 
     /// `POST /api/public/owner-requests/{id}/accept|decline`: the timing's
-    /// owner only. A closed or expired request answers its state to the owner
-    /// alone; anyone else learns only that they may not decide it. Unlike the
-    /// admin Inbox, a repeat is refused as the server does (`request_closed`,
-    /// or `not_owner` once an accept moved the timing on).
+    /// owner only. A request the caller has no part in (neither the owner nor
+    /// the requester) is the same `404` as an unknown one; the requester gets
+    /// `not_owner`. A closed or expired request answers its state to the
+    /// owner alone. Unlike the admin Inbox, a repeat is refused as the server
+    /// does (`request_closed`, or `404` once an accept moved the timing on).
     pub fn member_decide(
         &mut self,
         me: &'static str,
@@ -543,18 +544,19 @@ impl Store {
         let request = self.owner_requests[index].clone();
         let fi = self.live_timing(&request.fixed_id)?;
         let fixed = &self.fixed[fi];
+        if fixed.owner() != me {
+            return Err(if request.requester == me {
+                not_owner()
+            } else {
+                unknown_request()
+            });
+        }
         if !request.live(now) {
-            if fixed.owner() != me {
-                return Err(not_owner());
-            }
             return Err(if request.status == "open" {
                 request_expired()
             } else {
                 request_closed()
             });
-        }
-        if fixed.owner() != me {
-            return Err(not_owner());
         }
         let who = format!("member:{me}");
         let status = if accept {
@@ -584,10 +586,19 @@ impl Store {
     ) -> Result<MemberOwnerRequest, MoveError> {
         let now = now_secs();
         let index = self.request_index(id)?;
-        let request = &mut self.owner_requests[index];
+        let request = &self.owner_requests[index];
         if request.requester != me {
-            return Err(not_requester());
+            let owns = self
+                .fixed
+                .iter()
+                .any(|f| f.id == request.fixed_id && f.owner() == me);
+            return Err(if owns {
+                not_requester()
+            } else {
+                unknown_request()
+            });
         }
+        let request = &mut self.owner_requests[index];
         if !request.live(now) {
             return Err(request_closed());
         }
@@ -708,10 +719,10 @@ mod tests {
         let jupiter = s.member_timings("1001");
         let jupiter = timing(&jupiter, "f-jupiter");
         assert!(jupiter.you_own && jupiter.owner_pinned);
-        // Minato no longer owns it: a repeat is not his to make.
+        // Minato no longer owns it: the request is no longer his to see.
         assert_eq!(
             code(s.member_decide("1012", &asked.id, true)),
-            (403, "not_owner")
+            (404, "not_found")
         );
         assert_eq!(
             code(s.member_decide("1001", &asked.id, false)),
@@ -769,7 +780,7 @@ mod tests {
         let mut s = store();
         assert_eq!(
             code(s.member_decide("1002", "own-carling", false)),
-            (403, "not_owner")
+            (404, "not_found")
         );
         assert_eq!(
             code(s.member_withdraw("1001", "own-carling")),

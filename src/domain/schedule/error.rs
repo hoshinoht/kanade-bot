@@ -86,6 +86,9 @@ pub enum ScheduleError {
     RunEnded {
         run_id: String,
     },
+    /// v5: an owner change the ownership rules refuse on the committed
+    /// timing ([`OwnerPin`](crate::domain::ownership::OwnerPin)).
+    Ownership(crate::domain::ownership::OwnershipRefusal),
 }
 
 /// What both refusals of a frozen run say.
@@ -237,6 +240,7 @@ impl fmt::Display for ScheduleError {
                 MemberRunRefusal::InThePast => "that time has already passed",
             }),
             Self::RunEnded { .. } => f.write_str(RUN_ENDED),
+            Self::Ownership(refusal) => refusal.fmt(f),
         }
     }
 }

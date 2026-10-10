@@ -2,6 +2,7 @@
 //! oldest first (expired ones left to the tick), counted in the summary's
 //! inbox, and accepted or declined by any admin session as staff.
 
+use chrono::TimeDelta;
 use kanade::domain::ownership::{OwnerRequest, OwnerRequestStatus, OwnerRequestStore};
 
 use super::*;
@@ -221,4 +222,30 @@ async fn a_requester_no_longer_on_the_party_cannot_be_accepted() {
         status(&reads, "own-dan").await,
         OwnerRequestStatus::Declined
     );
+}
+
+/// An admin's accept retry finishes a supersede the first call lost: asks
+/// opened before the pin close, a newer one stays for the new owner.
+#[tokio::test]
+async fn an_accept_retry_finishes_only_the_supersede_its_pin_owed() {
+    let reads = Reads::with_logins().await;
+    let token = (reads.cookie.clone(), reads.csrf.clone());
+    let now = reads.site.state.clone().unwrap().now();
+    ask(&reads, "own-bob", "1002", now - TimeDelta::hours(2)).await;
+    let key = [("Idempotency-Key", "accept-bob-1")];
+    let first = ok(&post(&reads, &token, &decision("own-bob", "accept"), &key).await);
+    assert_eq!(owner(&reads).await, ("1002".into(), true));
+    let after = head(&reads).await;
+    // Its supersede missed Cara's ask from before the pin; Alice asked after.
+    ask(&reads, "own-cara", "1003", now - TimeDelta::hours(1)).await;
+    ask(&reads, "own-alice", "1001", now + TimeDelta::minutes(1)).await;
+
+    let again = ok(&post(&reads, &token, &decision("own-bob", "accept"), &key).await);
+    assert_eq!(first, again, "a replayed accept answers the first result");
+    assert_eq!(head(&reads).await, after, "no second record");
+    assert_eq!(
+        status(&reads, "own-cara").await,
+        OwnerRequestStatus::Superseded
+    );
+    assert_eq!(status(&reads, "own-alice").await, OwnerRequestStatus::Open);
 }
