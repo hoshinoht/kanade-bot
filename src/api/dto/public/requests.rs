@@ -129,7 +129,7 @@ impl RequestView<'_> {
     }
 
     fn channel(&self, id: Option<&String>) -> Option<String> {
-        id.map(|id| self.ctx.channel_name(id))
+        id.map(|id| self.ctx.member_channel_label(id))
     }
 
     fn party(&self, ids: &[String]) -> Vec<Named> {

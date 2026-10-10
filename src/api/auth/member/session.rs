@@ -266,6 +266,15 @@ impl MemberAuth {
             && !(csrf::same_origin(&parts.headers)
                 && csrf::token_matches(csrf::MEMBER, &parts.headers, &id))
         {
+            self.audit(
+                &context,
+                AuditEvent::write_refused(
+                    actor_id(LoginMethod::Discord, &row.subject),
+                    &parts.method,
+                    &parts.uri,
+                    "csrf",
+                ),
+            );
             return (Err(ApiError::CSRF), cookie);
         }
         // 9. Touch at most once a minute (or to record the re-check).

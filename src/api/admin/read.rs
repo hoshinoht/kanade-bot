@@ -206,7 +206,7 @@ async fn bosses(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
 }
 
 async fn events(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
-    Ok(Json(event_bosses(&site)?).into_response())
+    Ok(Json(event_bosses(&site).await?).into_response())
 }
 
 async fn knowledge(
@@ -238,33 +238,48 @@ pub(crate) async fn boss_rows(site: &Site) -> Result<Vec<dto::bosses::BossRow>, 
 }
 
 /// Event bosses (`/api/admin/bosses/events`, `/api/public/bosses/events`).
-pub(crate) fn event_bosses(site: &Site) -> Result<Vec<dto::bosses::EventBoss>, ApiError> {
+/// The directory scan and YAML parsing run on the blocking pool, off the
+/// async workers.
+pub(crate) async fn event_bosses(site: &Site) -> Result<Vec<dto::bosses::EventBoss>, ApiError> {
     let state = state(site)?;
-    let art = Art {
-        root: site.boss_dir.as_deref(),
+    let Some(dir) = state.knowledge_dir.clone() else {
+        return Ok(Vec::new());
     };
-    Ok(state
-        .knowledge_dir
-        .as_deref()
-        .map(|dir| dto::bosses::events(dir, &art))
-        .unwrap_or_default())
+    let root = site.boss_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        dto::bosses::events(
+            &dir,
+            &Art {
+                root: root.as_deref(),
+            },
+        )
+    })
+    .await
+    .map_err(|_| ApiError::UNAVAILABLE)
 }
 
-/// One boss's knowledge page; 404 for an unknown key or a site without knowledge.
+/// One boss's knowledge page; 404 for an unknown key or a site without
+/// knowledge. The document and its mission siblings are read on the blocking
+/// pool.
 pub(crate) async fn boss_knowledge(
     site: &Site,
     key: &str,
 ) -> Result<dto::bosses::Knowledge, ApiError> {
     let state = state(site)?;
-    let dir = state.knowledge_dir.as_deref().ok_or(ApiError::NOT_FOUND)?;
+    let dir = state.knowledge_dir.clone().ok_or(ApiError::NOT_FOUND)?;
     let snapshot = state
         .store
         .snapshot(Scope::Weeks(Vec::new()))
         .await
         .map_err(unavailable)?;
-    let art = Art {
-        root: site.boss_dir.as_deref(),
-    };
-    dto::bosses::knowledge(dir, &state.catalog, &art, &snapshot.fixed_runs, key)
-        .ok_or(ApiError::NOT_FOUND)
+    let (catalog, root, key) = (state.catalog.clone(), site.boss_dir.clone(), key.to_owned());
+    tokio::task::spawn_blocking(move || {
+        let art = Art {
+            root: root.as_deref(),
+        };
+        dto::bosses::knowledge(&dir, &catalog, &art, &snapshot.fixed_runs, &key)
+    })
+    .await
+    .map_err(|_| ApiError::UNAVAILABLE)?
+    .ok_or(ApiError::NOT_FOUND)
 }

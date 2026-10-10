@@ -71,13 +71,13 @@ the container's own listener address) and has a bounded timeout.
 | Variable | Default | Meaning |
 |---|---|---|
 | `KANADE_ADMIN_BIND` | `127.0.0.1:8080` | Admin listener, loopback (or private with the opt-in). Replaces `KANADE_BIND`, which is now refused with a rename error. |
-| `KANADE_PUBLIC_BIND` | unset | Public listener, same address rule; it exists only when set and must differ from the admin bind. |
+| `KANADE_PUBLIC_BIND` | unset | Public listener, same address rule; it exists only when set and must differ from the admin bind. Requires `KANADE_PUBLIC_HOST` and `KANADE_CLOUDFLARED_PEER`. |
 | `KANADE_ALLOW_PRIVATE_BIND` | `0` | `1` lets both listeners bind a private address on an internal container network. Never wildcard or public. |
 | `KANADE_EDGE_SECRET_FILE` | unset | Shared secret (≥ 32 bytes, one line) the edge sends in `X-Kanade-Edge-Auth`; requires `KANADE_TRUSTED_PROXY`. See "Edge contract". |
 | `KANADE_ADMIN_HOST` | unset | Exact `host[:port]` the admin listener serves; unset accepts only `localhost`, `127.0.0.1`, `[::1]` (any port). |
 | `KANADE_PUBLIC_HOST` | unset | Exact `host[:port]` of the public listener; required with `KANADE_PUBLIC_BIND`, must differ from the admin host. |
 | `KANADE_TRUSTED_PROXY` | unset | IP of the edge peer; only it may supply `X-Forwarded-*`/`Forwarded` headers to admin, and `Tailscale-*` only with the edge secret. With `KANADE_EDGE_SECRET_FILE` set it is trusted only when it presents the secret. |
-| `KANADE_CLOUDFLARED_PEER` | unset | IP of the cloudflared peer; only it may supply `X-Forwarded-*` and `CF-*` headers (client IP from `CF-Connecting-IP`) to public. |
+| `KANADE_CLOUDFLARED_PEER` | unset | IP of the cloudflared peer; only it may supply `X-Forwarded-*` and `CF-*` headers (client IP from `CF-Connecting-IP`) to public. Required with `KANADE_PUBLIC_BIND`: without it every member would be the proxy's address (pooled sign-in limits, no client-change rotation), so startup refuses. A request from the peer without `CF-Connecting-IP` counts as the peer itself, so local runs and tests with no proxy name their own loopback (`127.0.0.1`). Compose fixes `172.25.0.3`, which also covers the tailnet test stage. |
 | `KANADE_WEB_DIR` | unset | Web workspace root; serves `apps/admin/dist` and `apps/public/dist` (same layout as `devtools/pwa-mock`). Unset serves no shell. |
 | `KANADE_BOSS_DIR` | unset | Private boss art root (`portraits/`, `portraits/icon/`, `artwork/entry/`). Unset or missing art is 404. |
 | `KANADE_IDENTITY_DIR` | unset | Cached `avatar.*`/`banner.*`; unset serves generated SVG stand-ins. With the gateway on, serve creates it (`0700`) and, after each `READY` and on the bot's own nickname/avatar/user changes, fetches the guild avatar (else user avatar) and banner from Discord's CDN (png/webp/gif/jpeg, ≤ 8 MiB, 20 s timeout, no redirects), replacing files by temp + rename; no avatar/banner removes the file (monogram/wash). Logs `identity_cached {avatar, banner}`; failures log WARN `identity_refresh_failed {kind, reason}` and keep the last files. Compose sets `/data/identity`. |

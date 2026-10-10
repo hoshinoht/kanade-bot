@@ -81,7 +81,8 @@ impl Live {
         if let Some(public) = public {
             command
                 .env("KANADE_PUBLIC_BIND", format!("127.0.0.1:{public}"))
-                .env("KANADE_PUBLIC_HOST", "kanade-pub.test");
+                .env("KANADE_PUBLIC_HOST", "kanade-pub.test")
+                .env("KANADE_CLOUDFLARED_PEER", "127.0.0.1");
         }
         command
     }

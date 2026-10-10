@@ -3,25 +3,38 @@
 //! segment check and a canonical-prefix check against the configured root.
 
 use std::{
+    io::{self, SeekFrom},
     path::{Path, PathBuf},
+    pin::Pin,
     sync::Arc,
-    time::UNIX_EPOCH,
+    task::{self, Poll, ready},
+    time::{Duration, UNIX_EPOCH},
 };
 
 use axum::{
     Json,
-    extract::{Path as UrlPath, State, rejection::PathRejection},
+    body::{Body, Bytes, HttpBody},
+    extract::{Path as UrlPath, Request, State, rejection::PathRejection},
     http::{HeaderMap, Method, StatusCode, Uri, header},
+    middleware::Next,
     response::{IntoResponse, Response},
 };
+use hyper::body::{Frame, SizeHint};
 use ring::digest::{Context, SHA256, digest};
 use serde::Serialize;
+use tokio::{
+    fs::File,
+    io::{AsyncRead, AsyncSeekExt, ReadBuf},
+    sync::{OwnedSemaphorePermit, Semaphore},
+    task::JoinHandle,
+};
 
 use super::{
     dto::bosses::is_event,
     encoding::{self, Coding},
     error::ApiError,
     listeners::{Origin, Site},
+    state::ApiState,
 };
 
 const ART_SUFFIXES: [&str; 4] = ["png", "webp", "jpg", "jpeg"];
@@ -183,9 +196,31 @@ pub async fn art(
 
 /// [`art`] for an already split `kind` and `key`.
 pub async fn art_of(site: &Site, kind: &str, key: String, request: &HeaderMap) -> Response {
-    // With a catalog, only catalog keys (exact case) resolve, through their portrait basename,
-    // and keys an event knowledge document declares (exact case), through the key itself.
-    let basename = match site.state.as_ref() {
+    // Resolving reads an event document and canonicalizes paths: blocking
+    // filesystem work, so it runs off the async workers.
+    let (state, root, wanted) = (site.state.clone(), site.boss_dir.clone(), kind.to_owned());
+    let found = tokio::task::spawn_blocking(move || {
+        art_path(state.as_deref(), root.as_deref(), &wanted, key)
+    })
+    .await;
+    match found {
+        Ok(Some(path)) if kind == "animated" => send_ranged(&path, request).await,
+        Ok(Some(path)) => send(&path, request).await,
+        Ok(None) => ApiError::NOT_FOUND.into_response(),
+        Err(_) => ApiError::UNAVAILABLE.into_response(),
+    }
+}
+
+/// The art file `key` names. With a catalog, only catalog keys (exact case)
+/// resolve, through their portrait basename, and keys an event knowledge
+/// document declares (exact case), through the key itself.
+fn art_path(
+    state: Option<&ApiState>,
+    root: Option<&Path>,
+    kind: &str,
+    key: String,
+) -> Option<PathBuf> {
+    let basename = match state {
         Some(state) => match state.catalog.boss(&key) {
             Some(boss) => boss.portrait().unwrap_or(boss.short()).to_owned(),
             None if state
@@ -195,14 +230,69 @@ pub async fn art_of(site: &Site, kind: &str, key: String, request: &HeaderMap) -
             {
                 key
             }
-            None => return ApiError::NOT_FOUND.into_response(),
+            None => return None,
         },
         None => key,
     };
-    match art_file(site.boss_dir.as_deref(), kind, &basename) {
-        Some(path) if kind == "animated" => send_ranged(&path, request).await,
-        Some(path) => send(&path, request).await,
-        None => ApiError::NOT_FOUND.into_response(),
+    art_file(root, kind, &basename)
+}
+
+/// Concurrent public `/art` responses, held while their bodies stream.
+pub const ART_STREAMS: usize = 8;
+/// How long a request waits for an `/art` slot before `503 unavailable`.
+const ART_WAIT: Duration = Duration::from_secs(10);
+/// The longest one response holds its slot: a reader stalled past this gives
+/// the slot back (its stream goes on), so stalled clients cannot starve art.
+const ART_HOLD: Duration = Duration::from_secs(30);
+
+/// Middleware capping concurrent `/art` responses at the semaphore's permits.
+pub async fn capped(State(slots): State<Arc<Semaphore>>, request: Request, next: Next) -> Response {
+    let Ok(Ok(permit)) = tokio::time::timeout(ART_WAIT, slots.acquire_owned()).await else {
+        return ApiError::UNAVAILABLE.into_response();
+    };
+    held(next.run(request).await, permit)
+}
+
+/// `response` keeping `permit` until its body is dropped, at most [`ART_HOLD`].
+fn held(response: Response, permit: OwnedSemaphorePermit) -> Response {
+    let release = tokio::spawn(async move {
+        let _permit = permit;
+        tokio::time::sleep(ART_HOLD).await;
+    });
+    let (parts, body) = response.into_parts();
+    Response::from_parts(parts, Body::new(Held { body, release }))
+}
+
+/// A body that owns an `/art` slot through its release task.
+struct Held {
+    body: Body,
+    release: JoinHandle<()>,
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        // Aborting drops the task, and with it the permit.
+        self.release.abort();
+    }
+}
+
+impl HttpBody for Held {
+    type Data = Bytes;
+    type Error = axum::Error;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut task::Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, axum::Error>>> {
+        Pin::new(&mut self.body).poll_frame(cx)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.body.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.body.size_hint()
     }
 }
 
@@ -290,17 +380,24 @@ fn file_etag(meta: &std::fs::Metadata) -> String {
 
 /// Video with byte ranges: Safari (and iOS PWAs) will not play media without `206`.
 async fn send_ranged(path: &Path, request: &HeaderMap) -> Response {
-    let (Ok(meta), Ok(bytes)) = (tokio::fs::metadata(path).await, tokio::fs::read(path).await)
-    else {
+    let Some((file, meta)) = open(path).await else {
         return ApiError::NOT_FOUND.into_response();
     };
-    ranged(content_type(path), file_etag(&meta), bytes, request)
+    ranged(
+        content_type(path),
+        file_etag(&meta),
+        file,
+        meta.len(),
+        request,
+    )
+    .await
 }
 
-fn ranged(
+async fn ranged(
     content_type: &'static str,
     etag: String,
-    bytes: Vec<u8>,
+    mut file: File,
+    len: u64,
     request: &HeaderMap,
 ) -> Response {
     let text = |name| request.get(name).and_then(|value| value.to_str().ok());
@@ -311,7 +408,6 @@ fn ranged(
     }
     // An `If-Range` that no longer matches (or is a date: no Last-Modified is sent) asks for the whole file.
     let current = text(header::IF_RANGE).is_none_or(|tag| tag.trim() == etag);
-    let len = bytes.len() as u64;
     let range = if current {
         byte_range(text(header::RANGE), len)
     } else {
@@ -323,14 +419,29 @@ fn ranged(
         (header::ETAG, etag),
     ];
     match range {
-        ByteRange::Full => (StatusCode::OK, common, bytes).into_response(),
-        ByteRange::Part(first, last) => (
-            StatusCode::PARTIAL_CONTENT,
+        ByteRange::Full => (
+            StatusCode::OK,
             common,
-            [(header::CONTENT_RANGE, format!("bytes {first}-{last}/{len}"))],
-            bytes[first as usize..=last as usize].to_vec(),
+            [(header::CONTENT_LENGTH, len.to_string())],
+            file_body(file, len),
         )
             .into_response(),
+        ByteRange::Part(first, last) => {
+            if file.seek(SeekFrom::Start(first)).await.is_err() {
+                return ApiError::NOT_FOUND.into_response();
+            }
+            let part = last - first + 1;
+            (
+                StatusCode::PARTIAL_CONTENT,
+                common,
+                [
+                    (header::CONTENT_RANGE, format!("bytes {first}-{last}/{len}")),
+                    (header::CONTENT_LENGTH, part.to_string()),
+                ],
+                file_body(file, part),
+            )
+                .into_response()
+        }
         ByteRange::Unsatisfiable => (
             StatusCode::RANGE_NOT_SATISFIABLE,
             [
@@ -339,6 +450,73 @@ fn ranged(
             ],
         )
             .into_response(),
+    }
+}
+
+/// The regular file at `path`, opened, with the handle's own metadata, so
+/// the length and validator describe the bytes the body reads.
+async fn open(path: &Path) -> Option<(File, std::fs::Metadata)> {
+    let file = File::open(path).await.ok()?;
+    let meta = file.metadata().await.ok()?;
+    meta.is_file().then_some((file, meta))
+}
+
+/// Bytes read per body frame.
+const CHUNK: u64 = 64 * 1024;
+
+/// The next `len` bytes of `file`, read a chunk at a time as the client
+/// takes them: a response never holds the whole file.
+fn file_body(file: File, len: u64) -> Body {
+    Body::new(FileBody {
+        file,
+        remaining: len,
+        chunk: Vec::new(),
+    })
+}
+
+struct FileBody {
+    file: File,
+    remaining: u64,
+    /// The chunk being read; kept while a read is pending.
+    chunk: Vec<u8>,
+}
+
+impl HttpBody for FileBody {
+    type Data = Bytes;
+    type Error = io::Error;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut task::Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, io::Error>>> {
+        let this = &mut *self;
+        if this.remaining == 0 {
+            return Poll::Ready(None);
+        }
+        let want = this.remaining.min(CHUNK) as usize;
+        if this.chunk.len() != want {
+            this.chunk = vec![0; want];
+        }
+        let mut buf = ReadBuf::new(&mut this.chunk);
+        ready!(Pin::new(&mut this.file).poll_read(cx, &mut buf))?;
+        let read = buf.filled().len();
+        if read == 0 {
+            // Shorter than its declared length (truncated while sent): the
+            // response must fail rather than end early.
+            return Poll::Ready(Some(Err(io::ErrorKind::UnexpectedEof.into())));
+        }
+        this.remaining -= read as u64;
+        let mut chunk = std::mem::take(&mut this.chunk);
+        chunk.truncate(read);
+        Poll::Ready(Some(Ok(Frame::data(Bytes::from(chunk)))))
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.remaining == 0
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        SizeHint::with_exact(self.remaining)
     }
 }
 
@@ -515,18 +693,23 @@ fn contained(root: &Path, relative: &Path) -> Option<PathBuf> {
 
 /// The file, or its best precompressed sibling for the request's `Accept-Encoding`.
 /// Compressible types always carry `Vary`, so a cache never hands one client another's coding.
+/// Other types (images, fonts) stream from disk.
 async fn send(path: &Path, request: &HeaderMap) -> Response {
     let content_type = content_type(path);
     if !compressible(path) {
-        return match tokio::fs::read(path).await {
-            Ok(bytes) => (
-                StatusCode::OK,
-                [(header::CONTENT_TYPE, content_type)],
-                bytes,
-            )
-                .into_response(),
-            Err(_) => ApiError::NOT_FOUND.into_response(),
+        let Some((file, meta)) = open(path).await else {
+            return ApiError::NOT_FOUND.into_response();
         };
+        let len = meta.len();
+        return (
+            StatusCode::OK,
+            [
+                (header::CONTENT_TYPE, content_type.to_owned()),
+                (header::CONTENT_LENGTH, len.to_string()),
+            ],
+            file_body(file, len),
+        )
+            .into_response();
     }
     let accept = request
         .get(header::ACCEPT_ENCODING)
@@ -603,7 +786,70 @@ fn content_type(path: &Path) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{ByteRange, PreviewImage, byte_range, origin_of, relative, reserved, with_preview};
+    use std::sync::Arc;
+
+    use axum::{body::Body, response::Response};
+    use http_body_util::BodyExt;
+    use tokio::{
+        fs::File,
+        io::{AsyncSeekExt, SeekFrom},
+        sync::Semaphore,
+    };
+
+    use super::{
+        ByteRange, CHUNK, PreviewImage, byte_range, file_body, held, origin_of, relative, reserved,
+        with_preview,
+    };
+
+    fn temp_file(bytes: &[u8]) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("kanade-art-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    #[tokio::test]
+    async fn file_bodies_stream_exactly_their_range_in_chunks() {
+        let bytes: Vec<u8> = (0..(3 * CHUNK + 7)).map(|n| (n % 251) as u8).collect();
+        let path = temp_file(&bytes);
+        let mut file = File::open(&path).await.unwrap();
+        file.seek(SeekFrom::Start(5)).await.unwrap();
+        let len = 2 * CHUNK + 3;
+        let mut body = file_body(file, len);
+        let mut frames = Vec::new();
+        while let Some(frame) = body.frame().await {
+            frames.push(frame.unwrap().into_data().unwrap());
+        }
+        assert!(frames.iter().all(|frame| frame.len() as u64 <= CHUNK));
+        assert!(frames.len() >= 3, "{} frames", frames.len());
+        assert_eq!(frames.concat(), bytes[5..5 + len as usize]);
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_file_shorter_than_its_length_fails_the_body() {
+        let path = temp_file(b"short");
+        let file = File::open(&path).await.unwrap();
+        assert!(file_body(file, 10).collect().await.is_err());
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn an_art_slot_is_held_until_the_body_is_dropped() {
+        let slots = Arc::new(Semaphore::new(1));
+        let permit = slots.clone().acquire_owned().await.unwrap();
+        let response = held(Response::new(Body::from("art")), permit);
+        assert_eq!(slots.available_permits(), 0);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(&body[..], b"art");
+        // The release task drops the permit once it has been aborted.
+        for _ in 0..100 {
+            if slots.available_permits() == 1 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(slots.available_permits(), 1);
+    }
 
     const SHELL: &str =
         "<head>\n    <title>Kanade · boss schedule</title>\n    <!-- kanade:preview -->\n</head>";

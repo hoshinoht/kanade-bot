@@ -702,6 +702,113 @@ async fn start_is_limited_per_client_address_and_globally() {
 }
 
 #[tokio::test]
+async fn ipv6_clients_in_one_slash_64_share_the_start_bucket() {
+    let harness = MemberHarness::with(Options {
+        limits: Some(tight),
+        ..Options::default()
+    })
+    .await;
+    let harness = &harness;
+    let start = |ip: &'static str| async move {
+        let reply = harness
+            .get(
+                "/api/public/auth/discord/start",
+                &[("CF-Connecting-IP", ip)],
+            )
+            .await;
+        reply.header("location").unwrap().to_owned()
+    };
+    for ip in ["2001:db8:5:6::1", "2001:db8:5:6:a:b:c:d"] {
+        assert!(start(ip).await.starts_with("https://discord.com/"), "{ip}");
+    }
+    assert_eq!(
+        start("2001:db8:5:6:ffff::1").await,
+        "/?login_error=rate_limited",
+        "a rotated address in the same /64"
+    );
+    assert!(
+        start("2001:db8:5:7::1")
+            .await
+            .starts_with("https://discord.com/"),
+        "another /64"
+    );
+}
+
+/// Each request comes from its own address, so the per-client start bucket
+/// never answers first.
+async fn start_from(harness: &MemberHarness, n: usize, headers: &[(&str, &str)]) -> Reply {
+    let ip = format!("203.0.113.{}", 100 + n);
+    let mut all = vec![("CF-Connecting-IP", ip.as_str())];
+    all.extend_from_slice(headers);
+    harness
+        .get("/api/public/auth/discord/start?next=%2F", &all)
+        .await
+}
+
+#[tokio::test]
+async fn start_is_a_top_level_navigation_from_this_site_only() {
+    let harness = MemberHarness::new().await;
+    let allowed: [&[(&str, &str)]; 6] = [
+        &[],
+        &[("Sec-Fetch-Dest", "document")],
+        &[("Sec-Fetch-Site", "none")],
+        &[("Sec-Fetch-Dest", "document"), ("Sec-Fetch-Site", "none")],
+        &[
+            ("Sec-Fetch-Dest", "document"),
+            ("Sec-Fetch-Site", "same-origin"),
+        ],
+        &[
+            ("Sec-Fetch-Dest", "document"),
+            ("Sec-Fetch-Site", "same-site"),
+        ],
+    ];
+    for (n, headers) in allowed.into_iter().enumerate() {
+        let reply = start_from(&harness, n, headers).await;
+        assert_eq!(reply.status, 303, "{headers:?}");
+        assert!(
+            reply
+                .header("location")
+                .unwrap()
+                .starts_with("https://discord.com/"),
+            "{headers:?}"
+        );
+    }
+    let refused: [&[(&str, &str)]; 5] = [
+        &[
+            ("Sec-Fetch-Dest", "document"),
+            ("Sec-Fetch-Site", "cross-site"),
+        ],
+        &[("Sec-Fetch-Site", "cross-site")],
+        &[
+            ("Sec-Fetch-Dest", "iframe"),
+            ("Sec-Fetch-Site", "same-origin"),
+        ],
+        &[("Sec-Fetch-Dest", "image")],
+        &[
+            ("Sec-Fetch-Dest", "empty"),
+            ("Sec-Fetch-Site", "same-origin"),
+        ],
+    ];
+    for (n, headers) in refused.into_iter().enumerate() {
+        let reply = start_from(&harness, 50 + n, headers).await;
+        assert_eq!(
+            (reply.status, reply.api_error()),
+            (403, "csrf".into()),
+            "{headers:?}"
+        );
+        assert!(
+            reply.cookie(wire::MEMBER_LOGIN_COOKIE).is_none(),
+            "no pre-auth cookie: {headers:?}"
+        );
+    }
+    assert!(harness.audit.events().contains(&AuditEvent::LoginRefused {
+        method: "discord",
+        reason: "cross_site",
+        user: None,
+    }));
+}
+
+#[tokio::test]
 async fn a_discord_429_cools_the_member_login_down() {
     let harness = MemberHarness::new().await;
     harness.discord.rate_limit_next(Duration::from_secs(30));

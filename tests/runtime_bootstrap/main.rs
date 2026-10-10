@@ -115,6 +115,7 @@ fn public_listener_starts_only_when_configured_and_is_closed() {
         .env("KANADE_ADMIN_BIND", format!("127.0.0.1:{admin_port}"))
         .env("KANADE_PUBLIC_BIND", format!("127.0.0.1:{public_port}"))
         .env("KANADE_PUBLIC_HOST", "kanade-pub.test")
+        .env("KANADE_CLOUDFLARED_PEER", "127.0.0.1")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
