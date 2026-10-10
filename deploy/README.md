@@ -47,6 +47,7 @@ resolve from it.
 | Boss art | `boss/portraits/`, `boss/artwork/` | Private, mounted read-only over `/app/boss/*`. |
 | Store | Docker volume `kanade_v5_data` | Created by Compose, mounted at `/data`. Not a bind mount (SQLite on macOS file sharing is unsafe). The database is `/data/db/kanade.sqlite` with its owner lock dir `/data/run`; serve creates both directories `0700` on first start. The bot's cached avatar and banner live in `/data/identity` (`KANADE_IDENTITY_DIR`), created `0700` by the gateway side and refreshed from Discord's CDN after each `READY`; deleting it only brings back the monogram and wash until the next refresh. |
 | Backups | `${KANADE_BACKUP_HOST_DIR:-$HOME/.config/kanade/v5/backups}` | Must exist (Compose does not create it, and the bot then fails to start). Bind mounted **read-only** into `bot` at `/backups` (`KANADE_BACKUP_DIR`, listed by History → Checkpoints) and read-write only into the `backup` tool service. Docker Desktop's file sharing writes as the host user, so a `0700` directory you own works for uid 65532; on a Linux host it must be writable by uid 65532 (e.g. an ACL `setfacl -m u:65532:rwx`). The volume tarballs below live here too; the listing ignores them. |
+| Backup recipients | `KANADE_BACKUP_RECIPIENTS_HOST_FILE` in `deploy/.env` (e.g. `$HOME/.config/kanade/v5/secrets/backup_recipients`) | Optional; turns on encrypted backups ("Encrypted backups" below). age **public** keys only (`age1…`, one per line, `#` comments), mounted read-only as the Compose secret `backup_recipients` into `bot` (checked at startup: a bad or empty file refuses it) and `backup`. Unset: `/dev/null` stands in, `KANADE_BACKUP_RECIPIENTS_FILE` stays empty and backups are plaintext as before. The private identity never goes on this host, in a container or in the repository. |
 | Edge network | `kanade_edge` (external, `192.168.97.0/24`) | Created by the v4 stack; it must exist. v5 takes `192.168.97.10` with the alias `kanade-bot`. If the network is ever recreated with another subnet, update the addresses in `compose.yaml`. |
 | Public networks | `kanade_public` (internal, `172.25.0.0/24`), `kanade_tunnel_egress` (`172.24.0.0/24`) | Created by Compose. The bot joins `kanade_public` at `172.25.0.10` on every `up` (unused until `[public] bind` is set); only cloudflared (`172.25.0.3`, profile `public`) also joins it and alone uses `kanade_tunnel_egress`. Both subnets lie outside the engine's default address pools. |
 
@@ -106,7 +107,9 @@ API alone (no gateway, no tick); for the old shell-only mode set
 
 Snapshots go into the backups directory twice: a `kanade backup` SQLite
 snapshot with its manifest (it anchors the history and shows up in History →
-Checkpoints) and the whole-volume tarball (the rollback fallback).
+Checkpoints) and the whole-volume tarball (the rollback fallback). With
+encrypted backups on, use the steps in "Encrypted backups" below instead of
+steps 4 and 5.
 
 ```sh
 SHA=$(git rev-parse --short HEAD)                 # what is being deployed
@@ -136,6 +139,15 @@ docker exec kanade-v5 /usr/local/bin/kanade healthcheck
 the store, refuses an existing name (exit 78) and never creates a store.
 `docker compose run` (not `docker exec`) is right here: the `backup` service
 has no network, so the bot's fixed address does not clash.
+
+A snapshot is staged in a hidden 0700 directory in the backups directory
+(`.<name>.partial-<uuid>/`, holding the plaintext copy even when encryption is
+on) and published under its name only when complete. A backup killed outright
+(SIGKILL, OOM, power loss) cannot clean that directory up; the next
+`kanade backup` deletes every such directory once it holds the owner lock and
+names them in a `backup_partials_removed` log line (`backup_partial_not_removed`
+if one could not be deleted). To clear one sooner, stop the bot and run a
+backup, or delete it by hand.
 
 The first time, the rollback image predates `kanade backup`, so step 5 can
 only use the new image (`KANADE_BACKUP_IMAGE` unset). That is safe only when
@@ -170,6 +182,129 @@ docker run --rm -v kanade_v5_data:/data -v "${KANADE_BACKUP_HOST_DIR:-$HOME/.con
 
 The restored store's history ends at the manifest's `history_head`, so later
 backups show `mismatch` in Checkpoints until they are removed.
+
+### Encrypted backups
+
+Backups are 0600 but otherwise readable by anything that can read the host
+directory. With a recipients file, `kanade backup` encrypts the snapshot with
+[age](https://age-encryption.org) (X25519) and writes `<name>.age`; the
+plaintext copy exists only in a hidden 0700 staging directory beside it and is
+deleted after encryption (or with the directory when anything fails). The
+manifest stays plaintext (history head, revision, schema, `created_at`) and
+is named after the encrypted file, so History → Checkpoints lists and
+anchor-checks encrypted backups without decrypting them. The image has no
+shell or `age` binary, so every step runs through `kanade` itself. The files
+are standard age: `age -d -i <identity>` (rage, age) opens them too.
+
+Generate the key pair once. Prefer a machine other than the backup host
+(`cargo run --release -- backup keygen --out <path>` from a checkout of this
+release); on the host, keep the identity in a temporary directory and move it
+off straight away:
+
+```sh
+SECRETS="${KANADE_SECRETS_DIR:-$HOME/.config/kanade/v5/secrets}"
+KEYS=$(mktemp -d)                                  # 0700, not the backups directory
+# Writes the identity 0600 (never overwrites) and prints only the public key.
+(umask 077; docker run --rm --network none --user "$(id -u):$(id -g)" \
+  -v "$KEYS:/keys" kanade-v5:local \
+  backup keygen --out /keys/kanade-backup.key > "$SECRETS/backup_recipients")
+cat "$SECRETS/backup_recipients"                   # age1…
+# Store $KEYS/kanade-backup.key (three lines) in the password manager or on
+# another machine, check it is there, then:
+rm -rf "$KEYS"
+# Turn the feature on for every compose command (deploy/.env is git-ignored):
+echo "KANADE_BACKUP_RECIPIENTS_HOST_FILE=$SECRETS/backup_recipients" >> deploy/.env
+docker compose -f deploy/compose.yaml up -d --force-recreate bot   # validates the file
+```
+
+`age-keygen -o <identity>` then `age-keygen -y <identity> > backup_recipients`
+works as well. More than one public key (a second, offline identity) may go in
+the recipients file; any one identity decrypts. Keep the identity out of the
+backups directory, the secrets directory, `deploy/`, every Compose service and
+the repository: whoever holds it can read every backup. The keygen and
+decrypt containers run as your own user (`--user`), so on a Linux host they
+can write `$KEYS`/`$RESTORE` and read the 0600 identity, which uid 65532
+could not; the bot and the `backup` service still run as uid 65532 and must
+be able to read the recipients file (Docker Desktop maps it to your user).
+
+Deploy with encryption on (steps 1–3 and 6 of "Deploy an update" unchanged).
+Run from the repository root; `deploy/.env` supplies the recipients path:
+
+```sh
+set -o pipefail
+STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+BACKUPS="${KANADE_BACKUP_HOST_DIR:-$HOME/.config/kanade/v5/backups}"
+RECIPIENTS="$HOME/.config/kanade/v5/secrets/backup_recipients"   # as in deploy/.env
+# 4. Whole-volume tarball, encrypted on its way to disk (the image's
+#    entrypoint is kanade, so the arguments start at `backup`).
+(umask 077; docker run --rm -v kanade_v5_data:/data:ro alpine tar -C /data -cz . \
+  | docker run --rm -i --network none \
+      -v "$RECIPIENTS:/run/secrets/backup_recipients:ro" \
+      kanade-v5:local backup encrypt --recipients /run/secrets/backup_recipients \
+  > "$BACKUPS/kanade_v5_data-$STAMP-pre-$SHA.tar.gz.age") \
+  || rm -f "$BACKUPS/kanade_v5_data-$STAMP-pre-$SHA.tar.gz.age"
+# 5. SQLite snapshot: the same command; it prints `backup kanade-…sqlite.age: …`.
+KANADE_BACKUP_IMAGE=kanade-v5:rollback-<old-sha> docker compose -f deploy/compose.yaml \
+  --profile backup run --rm backup backup --name kanade-$STAMP-pre-$SHA.sqlite
+ls -l "$BACKUPS" | tail -3                          # .tar.gz.age, .sqlite.age, .sqlite.age.manifest.json
+```
+
+An image older than encrypted backups ignores the recipients setting, so the
+first time step 5 with the rollback image prints a plain `.sqlite` name.
+Encrypt that pair with the new image, then delete the plaintext:
+
+```sh
+NAME=kanade-$STAMP-pre-$SHA.sqlite
+(umask 077; docker run --rm -i --network none \
+  -v "$RECIPIENTS:/run/secrets/backup_recipients:ro" \
+  kanade-v5:local backup encrypt --recipients /run/secrets/backup_recipients \
+  < "$BACKUPS/$NAME" > "$BACKUPS/$NAME.age") &&
+  mv "$BACKUPS/$NAME.manifest.json" "$BACKUPS/$NAME.age.manifest.json" &&
+  rm "$BACKUPS/$NAME"
+```
+
+Restore from an encrypted snapshot: fetch the identity into a fresh 0700
+directory outside the backups directory, decrypt into another one (the
+identity is mounted read-only into a throwaway container with no network,
+never into a Compose service), delete the identity copy, then restore as
+above from the decrypted file:
+
+```sh
+KEYS=$(mktemp -d); RESTORE=$(mktemp -d)
+# Put the identity at $KEYS/kanade-backup.key (0600), e.g. from the password manager.
+docker run --rm --network none --user "$(id -u):$(id -g)" \
+  -v "$KEYS/kanade-backup.key:/run/identity:ro" \
+  -v "$BACKUPS:/backups:ro" -v "$RESTORE:/restore" \
+  kanade-v5:local backup decrypt --identity /run/identity \
+    --in /backups/kanade-<stamp>-pre-<sha>.sqlite.age --out /restore/kanade.sqlite
+rm -rf "$KEYS"
+# With the bot stopped (as in "Restore a SQLite snapshot" above):
+docker run --rm -v kanade_v5_data:/data -v "$RESTORE:/restore:ro" alpine sh -c '
+  mkdir /data/replaced-<stamp> && mv /data/db/kanade.sqlite* /data/replaced-<stamp>/ &&
+  cp /restore/kanade.sqlite /data/db/kanade.sqlite &&
+  chown 65532:65532 /data/db/kanade.sqlite && chmod 600 /data/db/kanade.sqlite'
+rm -rf "$RESTORE"                                   # plaintext member data
+```
+
+`backup decrypt` writes a new 0600 file and never overwrites `--out`; a
+wrong identity fails before writing anything, and a damaged or truncated
+file removes the partial output (exit 78 for each). On a Linux host the
+`.sqlite.age` belongs to uid 65532 (0600), so your user cannot read it in
+place: copy it out first (`docker run --rm -v "$BACKUPS:/backups:ro" -v
+"$RESTORE:/restore" alpine install -m 600 -o "$(id -u)" -g "$(id -g)"
+/backups/<file> /restore/`) and decrypt `--in /restore/<file>`. An encrypted
+tarball (written by your shell, so readable in place) decrypts the same way
+(`--in /backups/kanade_v5_data-<stamp>-pre-<sha>.tar.gz.age
+--out /restore/kanade_v5_data.tar.gz`); then, with the bot stopped, replace
+the whole volume from it:
+
+```sh
+docker run --rm -v kanade_v5_data:/data -v "$RESTORE:/restore:ro" alpine sh -c '
+  find /data -mindepth 1 -delete && tar -C /data -xzpf /restore/kanade_v5_data.tar.gz'
+```
+
+Turn encryption off by removing the line from `deploy/.env` (and
+`backup.recipients_file`, if set, from `kanade.toml`) and recreating the bot.
 
 ## Stop and roll back
 

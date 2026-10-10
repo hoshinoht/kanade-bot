@@ -4,6 +4,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 ## 1.0.0-beta.5 (in development)
 
+**Added**
+
+- Encrypted backups: with `backup.recipients_file` / `KANADE_BACKUP_RECIPIENTS_FILE` (age X25519 public keys, Compose secret `backup_recipients` when `KANADE_BACKUP_RECIPIENTS_HOST_FILE` is set), `kanade backup` writes `<name>.age` (0600) beside a plaintext manifest, and the plaintext snapshot never leaves its 0700 staging directory, even when encryption fails. Serve and `kanade backup` refuse an unreadable or empty recipients file, a malformed line or a pasted private key. New `kanade backup keygen --out FILE`, `backup encrypt [--recipients FILE]` (stdin to stdout, for the volume tarball) and `backup decrypt --identity FILE --in FILE --out FILE` (0600, never overwrites) work inside the shell-less image. History → Checkpoints lists encrypted backups from their manifests without decrypting them. Unset, backups are plaintext as before; runbook in `deploy/README.md` "Encrypted backups".
+
 **Changed**
 
 - Trusted Types are enforced on both origins: the `Content-Security-Policy` now carries `require-trusted-types-for 'script'; trusted-types kanade-sw` (the service-worker registration is the only policy), so a raw HTML or script string sink is refused instead of only reported, and the report-only header is gone. The pwa-mock sends the same policy, so every e2e test runs under enforcement.

@@ -59,14 +59,61 @@ async fn dispatch(command: Command, environment: &BTreeMap<String, String>) -> R
             print!("{report}");
             Ok(())
         }
-        Command::Backup(args) => {
+        Command::Backup(args) => backup(args, environment).await,
+        Command::Models(args) => cli::models::run(args, environment).await,
+        Command::CtlEmojis(args) => cli::emojis::run(&args, environment).await,
+    }
+}
+
+async fn backup(
+    args: cli::backup::Args,
+    environment: &BTreeMap<String, String>,
+) -> Result<(), Error> {
+    use super::backup::tools;
+    match args {
+        cli::backup::Args::Snapshot { name } => {
             let config = BackupConfig::from_mapping(environment)?;
-            let report = super::backup::run(args.name, &config, import::v4::system_now()).await?;
+            let report = super::backup::run(name, &config, import::v4::system_now()).await?;
             print!("{report}");
             Ok(())
         }
-        Command::Models(args) => cli::models::run(args, environment).await,
-        Command::CtlEmojis(args) => cli::emojis::run(&args, environment).await,
+        cli::backup::Args::Keygen { out } => {
+            // stdout carries only the public key, so it can be redirected
+            // straight into a recipients file.
+            println!("{}", tools::keygen(&out)?);
+            Ok(())
+        }
+        cli::backup::Args::Encrypt { recipients } => {
+            let (path, label) = match recipients {
+                Some(path) => (path, "backup encrypt: --recipients"),
+                None => (
+                    config::backup_recipients_file(environment).ok_or_else(|| {
+                        Error::Usage(format!(
+                            "backup encrypt needs --recipients FILE or {}",
+                            config::BACKUP_RECIPIENTS_KEY
+                        ))
+                    })?,
+                    config::BACKUP_RECIPIENTS_KEY,
+                ),
+            };
+            tokio::task::spawn_blocking(move || {
+                tools::encrypt(
+                    &path,
+                    label,
+                    std::io::stdin().lock(),
+                    std::io::stdout().lock(),
+                )
+            })
+            .await
+            .map_err(|error| Error::Unavailable(format!("backup encrypt: {error}")))?
+        }
+        cli::backup::Args::Decrypt {
+            identity,
+            input,
+            output,
+        } => tokio::task::spawn_blocking(move || tools::decrypt(&identity, &input, &output))
+            .await
+            .map_err(|error| Error::Unavailable(format!("backup decrypt: {error}")))?,
     }
 }
 

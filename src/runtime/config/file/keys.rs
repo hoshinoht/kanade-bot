@@ -134,6 +134,11 @@ pub(super) const KEYS: &[(&str, &str, Kind)] = &[
     ("discord.test_channel", "KANADE_TEST_CHANNEL_ID", Id),
     ("store.db_path", "KANADE_DB_PATH", Text),
     ("store.owner_lock_dir", "KANADE_OWNER_LOCK_DIR", Text),
+    (
+        "backup.recipients_file",
+        "KANADE_BACKUP_RECIPIENTS_FILE",
+        Text,
+    ),
     ("files.catalog_file", "KANADE_CATALOG_FILE", Text),
     ("files.knowledge_dir", "KANADE_KNOWLEDGE_DIR", Text),
     ("files.persona_dir", "KANADE_PERSONA_DIR", Text),

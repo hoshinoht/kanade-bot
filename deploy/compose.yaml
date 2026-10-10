@@ -48,6 +48,9 @@ services:
       KANADE_IDENTITY_DIR: /data/identity
       # Listed by History checkpoints; only the `backup` service writes here.
       KANADE_BACKUP_DIR: /backups
+      # age public keys, checked at startup (a bad file refuses it). Empty
+      # (feature off) unless KANADE_BACKUP_RECIPIENTS_HOST_FILE is set.
+      KANADE_BACKUP_RECIPIENTS_FILE: ${KANADE_BACKUP_RECIPIENTS_HOST_FILE:+/run/secrets/backup_recipients}
       KANADE_DISCORD_TOKEN_FILE: /run/secrets/kanade_discord_token
       KANADE_ADMIN_TOKEN_FILE: /run/secrets/kanade_admin_token
       KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE: /run/secrets/kanade_discord_client_secret
@@ -61,6 +64,7 @@ services:
       # [public] discord_client_secret_file = "/run/secrets/public_discord_client_secret".
       - public_discord_client_secret
       - kanade_model_api_key
+      - backup_recipients
     networks:
       # Egress for Discord and Kanata.
       default: {}
@@ -122,15 +126,20 @@ services:
   # that last served the store so no migration runs first:
   #   KANADE_BACKUP_IMAGE=kanade-v5:rollback-<sha> docker compose -f deploy/compose.yaml \
   #     --profile backup run --rm backup backup --name kanade-<stamp>-pre-<sha>.sqlite
+  # With KANADE_BACKUP_RECIPIENTS_HOST_FILE set it writes <name>.age instead.
   backup:
     image: ${KANADE_BACKUP_IMAGE:-kanade-v5:local}
     profiles: [backup]
     command: ["backup"]
-    # Store paths and the backup dir only: no settings file, secrets or network.
+    # Store paths, the backup dir and the public recipients only: no settings
+    # file, other secrets or network.
     environment:
       KANADE_DB_PATH: /data/db/kanade.sqlite
       KANADE_OWNER_LOCK_DIR: /data/run
       KANADE_BACKUP_DIR: /backups
+      KANADE_BACKUP_RECIPIENTS_FILE: ${KANADE_BACKUP_RECIPIENTS_HOST_FILE:+/run/secrets/backup_recipients}
+    secrets:
+      - backup_recipients
     network_mode: none
     volumes:
       - data:/data
@@ -230,6 +239,12 @@ secrets:
   # Tunnel token (profile public only); never an env var or command argument.
   kanade_cloudflared_token:
     file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/kanade-cloudflared
+  # age public keys (age1…) for encrypted backups; set the host path in
+  # deploy/.env (runbook "Encrypted backups"). Unset: /dev/null stands in and
+  # the variable above stays empty, so encryption is off and `up` still
+  # works. Public keys only: the private identity never goes on this host.
+  backup_recipients:
+    file: ${KANADE_BACKUP_RECIPIENTS_HOST_FILE:-/dev/null}
 
 volumes:
   data:
