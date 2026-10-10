@@ -34,8 +34,9 @@ const REMEMBERED: usize = 4096;
 #[derive(Clone, Default)]
 pub struct V2Kit {
     pub avatar: Option<AvatarSource>,
-    /// The public portal origin (`https://host`) for "Open portal"; `None`
-    /// without a public listener (the admin host is tailnet-only).
+    /// The public portal origin (`https://host`) for "Open portal" and the
+    /// notices' "via portal" link; `None` without a public listener (the
+    /// admin host is tailnet-only).
     pub portal: Option<String>,
     /// The live portal switch; `None` is closed. A closed portal's tunnel
     /// is stopped, so its origin would be a dead link.

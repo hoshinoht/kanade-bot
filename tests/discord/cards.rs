@@ -821,7 +821,7 @@ async fn the_outbox_posts_links_unpinged_and_alerts_backlog_drops() {
     };
     assert_eq!(
         message.content.as_deref(),
-        Some("<@1001> Do it yourself! → edit the run: https://portal.example/runs/r?move_to=x")
+        Some("<@1001> Do it yourself! → [edit the run](<https://portal.example/runs/r?move_to=x>)")
     );
     assert!(message.allowed_mentions.users.is_empty());
     assert_eq!(world.discord.count(Op::AddReaction), 0);

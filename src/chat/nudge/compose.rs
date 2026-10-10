@@ -24,8 +24,8 @@ use crate::domain::notify::WeekReset;
 use crate::domain::scheduler::StoreError;
 use crate::infrastructure::llm::governor::Random;
 
-pub const EDIT_RUN_ACTION: &str = "→ edit the run: ";
-pub const REQUEST_CHANGE_ACTION: &str = "→ request a change: ";
+pub const EDIT_RUN_ACTION: &str = "edit the run";
+pub const REQUEST_CHANGE_ACTION: &str = "request a change";
 
 /// Failures and frustration are always gentle, whatever the profile.
 pub fn mood_for(failed: bool, frustrated: bool) -> NudgeMood {
@@ -43,13 +43,14 @@ pub fn action(purpose: NudgePurpose) -> &'static str {
     }
 }
 
-/// `<lead-in> → edit the run: <link>`; without a lead-in (tip already given
-/// this week) only the action and link.
+/// `<lead-in> → [edit the run](<link>)`; without a lead-in (tip already
+/// given this week) only the action and link. A masked link with the preview
+/// suppressed (`<…>`), so Discord unfurls no portal banner under the line.
 pub fn render(lead_in: Option<&str>, purpose: NudgePurpose, link: &str) -> String {
     let action = action(purpose);
     match lead_in {
-        Some(lead_in) => format!("{lead_in} {action}{link}"),
-        None => format!("{action}{link}"),
+        Some(lead_in) => format!("{lead_in} → [{action}](<{link}>)"),
+        None => format!("→ [{action}](<{link}>)"),
     }
 }
 

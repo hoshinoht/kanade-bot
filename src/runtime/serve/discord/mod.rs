@@ -298,9 +298,10 @@ where
         Arc::new(move || cache.self_avatar_url())
     });
     // Members open the public portal; the admin host is tailnet-only, so
-    // without a public listener the digest has no portal button and cards
-    // no links (nor while the live `self_service.public_portal` switch is
-    // off, see `card_kit` and extraction's live self-service settings).
+    // without a public listener the digest has no portal button, notices a
+    // plain "via portal" mark and cards no links (nor while the live
+    // `self_service.public_portal` switch is off, see `card_kit` and
+    // extraction's live self-service settings).
     let portal = config
         .runtime
         .public_bind

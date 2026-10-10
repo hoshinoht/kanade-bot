@@ -5,6 +5,8 @@
 //! `fixed_notice`), with `via_portal` and `quiet_line` appended as v4's
 //! `_announce` and `send_operation_payload` did. Rollback, reset, merge and
 //! request-decision notices are v5-only and keep short texts of their own.
+//! While the public portal is open (read live per render) the `via_portal`
+//! mark in both styles is a masked link into it (v5); closed, it is v4's.
 //! The redesigned style (read live from the [`CardKit`]) renders every kind
 //! through `cards::redesign::notice_text`.
 //!
@@ -36,8 +38,6 @@ const WEEKDAY_NAMES: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun
 const MONTH_NAMES: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
-/// v4 `VIA_PORTAL`.
-const VIA_PORTAL: &str = "_(via portal)_";
 /// v4 `QUIET_NOTE`.
 pub(super) const QUIET_NOTE: &str = "🔕 quiet mode - nobody was notified";
 
@@ -288,7 +288,9 @@ pub fn render_notice(
         MessageStyle::Classic => {
             let mut content = body(notice, schedule, &who, zone)?;
             if notice.via_portal {
-                content = format!("{content}\n{VIA_PORTAL}");
+                // v4 `VIA_PORTAL` (`_(via portal)_`) while the portal is closed.
+                let mark = redesign::via_portal_mark(&notice.change, kit.v2.portal_url());
+                content = format!("{content}\n_({mark})_");
             }
             if quiet {
                 content = format!("{content}\n_{QUIET_NOTE}_");
@@ -302,6 +304,7 @@ pub fn render_notice(
                 catalog: kit.catalog.as_deref(),
                 marks: &kit.marks,
                 quiet,
+                portal: kit.v2.portal_url(),
             };
             redesign::notice_text(notice, &look, &who)?
         }

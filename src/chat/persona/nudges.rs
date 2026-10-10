@@ -24,9 +24,9 @@ pub enum NudgeMood {
 /// What the code-appended action does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NudgePurpose {
-    /// The member can edit the run: `→ edit the run: <link>`.
+    /// The member can edit the run: `→ [edit the run](<link>)`.
     SelfService,
-    /// A request needs approval: `→ request a change: <link>`.
+    /// A request needs approval: `→ [request a change](<link>)`.
     RequestForm,
 }
 

@@ -16,6 +16,7 @@ use crate::domain::schedule::{
     EMOJI_NO, EMOJI_YES, FixedField, Notice, NoticeChange, RequestDecision, Run, RunStatus,
     ScheduleSnapshot,
 };
+use crate::extract::redirect::is_link_id;
 
 use super::super::common::{local_day, local_time};
 use super::vocab::{DifficultyMarks, boss_labels, full_time, relative_time, subtext};
@@ -30,6 +31,7 @@ const WEEKDAYS: [&str; 7] = [
     "Sunday",
 ];
 const QUIET: &str = "🔕 quiet mode, nobody was pinged";
+const VIA_PORTAL: &str = "via portal";
 
 /// What a redesigned change notice reads besides the notice itself.
 #[derive(Clone, Copy)]
@@ -39,6 +41,9 @@ pub struct NoticeLook<'a> {
     pub catalog: Option<&'a BossTable>,
     pub marks: &'a DifficultyMarks,
     pub quiet: bool,
+    /// The public portal origin while it is open now (`V2Kit::portal_url`);
+    /// `None` keeps the "via portal" mark plain.
+    pub portal: Option<&'a str>,
 }
 
 /// One notice taken apart: the line, whom it names after the dash, the
@@ -309,10 +314,37 @@ pub fn notice_text(notice: &Notice, look: &NoticeLook<'_>, who: &Audience) -> Op
             Parts::new(head, listed)
         }
     };
-    Some(assemble(parts, notice.via_portal, look.quiet, who))
+    let via = notice
+        .via_portal
+        .then(|| via_portal_mark(&notice.change, look.portal));
+    Some(assemble(parts, via, look.quiet, who))
 }
 
-fn assemble(parts: Parts<'_>, via_portal: bool, quiet: bool, who: &Audience) -> String {
+/// The "via portal" mark for a notice about `change`: plain while the portal
+/// is closed (`portal` is `None`), else a masked link with the preview
+/// suppressed (`<…>`), so Discord unfurls no portal banner under the notice.
+pub fn via_portal_mark(change: &NoticeChange, portal: Option<&str>) -> String {
+    match portal {
+        Some(origin) => format!("[{VIA_PORTAL}](<{}>)", portal_target(origin, change)),
+        None => VIA_PORTAL.to_owned(),
+    }
+}
+
+/// Where the mark opens the portal: the run, the member's weekly timings, or
+/// the root (several runs, a request, or an id unsafe in a URL).
+fn portal_target(origin: &str, change: &NoticeChange) -> String {
+    match change {
+        NoticeChange::FixedChanged { .. }
+        | NoticeChange::FixedAdded { .. }
+        | NoticeChange::FixedRemoved { .. } => format!("{origin}/mine?week=timings"),
+        _ => match change.run_id().filter(|id| is_link_id(id)) {
+            Some(run_id) => format!("{origin}/?run={run_id}"),
+            None => format!("{origin}/"),
+        },
+    }
+}
+
+fn assemble(parts: Parts<'_>, via: Option<String>, quiet: bool, who: &Audience) -> String {
     let Parts {
         mut head,
         named,
@@ -325,9 +357,7 @@ fn assemble(parts: Parts<'_>, via_portal: bool, quiet: bool, who: &Audience) -> 
         head.push_str(&format_participants(named, Some(who)));
     }
     head.push_str(&lines);
-    if via_portal {
-        facts.push("via portal".to_owned());
-    }
+    facts.extend(via);
     if react {
         facts.push(format!("react {EMOJI_YES}/{EMOJI_NO} here"));
     }

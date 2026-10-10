@@ -281,8 +281,9 @@ fn a_self_service_move_gets_its_link_by_mode() {
     }
 }
 
-/// What serve posts (no lead-in there): the action and the portal link, the
-/// Move page for a run and the request form for a weekly timing.
+/// What serve posts (no lead-in there): the action as a masked link with the
+/// preview suppressed, the Move page for a run and the request form for a
+/// weekly timing.
 #[test]
 fn posted_lines_carry_the_move_page_or_the_request_form() {
     let mine = run(&[AUTHOR]);
@@ -294,7 +295,7 @@ fn posted_lines_carry_the_move_page_or_the_request_form() {
     );
     assert_eq!(
         moved.link.expect("a move link").line(None),
-        format!("→ edit the run: {ORIGIN}/runs/r-1?move_to=2026-09-27T20:00:00Z")
+        format!("→ [edit the run](<{ORIGIN}/runs/r-1?move_to=2026-09-27T20:00:00Z>)")
     );
     let edit = fix_edit(Some("f-1"));
     let asked = plan(&facts(&edit, None), SelfServiceMode::LinkFirst, &links());
@@ -302,7 +303,7 @@ fn posted_lines_carry_the_move_page_or_the_request_form() {
     assert_eq!(
         asked.link.expect("a request link").line(Some("Ask away!")),
         format!(
-            "Ask away! → request a change: {ORIGIN}/requests/new?fixed=f-1&change=edit&day=thu&time=21:30"
+            "Ask away! → [request a change](<{ORIGIN}/requests/new?fixed=f-1&change=edit&day=thu&time=21:30>)"
         )
     );
 }

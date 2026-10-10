@@ -192,8 +192,8 @@ pub fn card_kit(
     // The live message style, read per card like quiet mode per tick.
     let styles = settings.clone();
     let style: StyleSource = Arc::new(move || styles.borrow().settings.notifications.message_style);
-    // The live portal switch, read per digest render: a closed portal's
-    // tunnel is stopped, so its button would be a dead link.
+    // The live portal switch, read per digest and notice render: a closed
+    // portal's tunnel is stopped, so its button or link would be dead.
     let portal = settings.clone();
     let portal_open: PortalSwitch =
         Arc::new(move || portal.borrow().settings.self_service.public_portal);

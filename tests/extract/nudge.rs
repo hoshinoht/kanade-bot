@@ -883,15 +883,20 @@ fn channels_rotate_independently() {
 }
 
 #[test]
-fn rendering_always_ends_with_the_action_and_link() {
+fn rendering_always_ends_with_the_action_as_a_masked_link() {
     let link = "https://kanade-pub.example/runs/r1?move_to=2026-09-26T13:00:00Z";
+    // `<…>` suppresses Discord's link preview (the portal's banner).
     assert_eq!(
         render(Some("Hmph."), NudgePurpose::SelfService, link),
-        format!("Hmph. {EDIT_RUN_ACTION}{link}")
+        format!("Hmph. → [{EDIT_RUN_ACTION}](<{link}>)")
     );
     assert_eq!(
         render(None, NudgePurpose::RequestForm, link),
-        format!("{REQUEST_CHANGE_ACTION}{link}")
+        format!("→ [{REQUEST_CHANGE_ACTION}](<{link}>)")
+    );
+    assert_eq!(
+        render(None, NudgePurpose::SelfService, link),
+        "→ [edit the run](<https://kanade-pub.example/runs/r1?move_to=2026-09-26T13:00:00Z>)"
     );
     assert_eq!(mood_for(false, false), NudgeMood::Playful);
     assert_eq!(mood_for(true, false), NudgeMood::Gentle);

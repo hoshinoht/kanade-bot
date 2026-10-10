@@ -1,13 +1,15 @@
 //! Change notices in both message styles: every kind in the redesigned
 //! grammar (emoji, bosses, what happened, who; the rest in one subtext
 //! line), the classic texts unchanged, and the same allow-list either way,
-//! rendered directly and drained by the tick.
+//! rendered directly and drained by the tick; and the "via portal" mark as a
+//! link into the public portal while it is open.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use kanade::bot::delivery::cards::CardKit;
-use kanade::bot::delivery::cards::redesign::DifficultyMarks;
+use kanade::bot::delivery::cards::redesign::{DifficultyMarks, via_portal_mark};
 use kanade::bot::delivery::render_notice;
 use kanade::bot::transport::OutgoingMessage;
 use kanade::domain::history::Origin;
@@ -448,50 +450,53 @@ fn difficulty_marks_label_the_bosses() {
     );
 }
 
+/// A cancellation made outside the channel, drained by the tick with `kit`:
+/// the run's id and the one post.
+async fn drained_cancel(kit: CardKit) -> (String, OutgoingMessage) {
+    let store = MemoryScheduleStore::new();
+    let world = world();
+    let mut generator = RandomIds;
+    let mut service = support::service(&store, &mut generator, now());
+    let run = service
+        .as_origin(Origin::for_tests())
+        .create_run(NewRun {
+            fixed_run_id: None,
+            channel_id: Some(HOME.into()),
+            week_start: week(),
+            datetime: now() + chrono::Duration::hours(3),
+            bosses: ids(&["HKalos"]),
+            participants: ids(&["1001", "1002"]),
+            status: RunStatus::Planned,
+            source: RunSource::Amend,
+        })
+        .await
+        .expect("run");
+    service
+        .as_origin(Origin::for_tests())
+        .set_status(
+            &run,
+            StatusChange {
+                status: RunStatus::Cancelled,
+                announce: true,
+                via_portal: true,
+            },
+            &config().policy.reminders,
+        )
+        .await
+        .expect("cancel");
+    let mut delivery = delivery(&store, &world, &world.fake).with_cards(kit);
+    let report = delivery.drain_notices(now()).await.expect("drain");
+    assert_eq!(report.sends.len(), 1);
+    let [post]: [OutgoingMessage; 1] = created(&world.fake).try_into().expect("one post");
+    (run, post)
+}
+
 /// A cancellation's outbox notice drained by the tick in each style: the
 /// redesigned text, the same allow-list.
 #[tokio::test]
 async fn the_tick_drains_notices_in_the_live_style() {
-    let mut posts = Vec::new();
-    for style in [MessageStyle::Classic, MessageStyle::Redesigned] {
-        let store = MemoryScheduleStore::new();
-        let world = world();
-        let mut generator = RandomIds;
-        let mut service = support::service(&store, &mut generator, now());
-        let run = service
-            .as_origin(Origin::for_tests())
-            .create_run(NewRun {
-                fixed_run_id: None,
-                channel_id: Some(HOME.into()),
-                week_start: week(),
-                datetime: now() + chrono::Duration::hours(3),
-                bosses: ids(&["HKalos"]),
-                participants: ids(&["1001", "1002"]),
-                status: RunStatus::Planned,
-                source: RunSource::Amend,
-            })
-            .await
-            .expect("run");
-        service
-            .as_origin(Origin::for_tests())
-            .set_status(
-                &run,
-                StatusChange {
-                    status: RunStatus::Cancelled,
-                    announce: true,
-                    via_portal: true,
-                },
-                &config().policy.reminders,
-            )
-            .await
-            .expect("cancel");
-        let mut delivery = delivery(&store, &world, &world.fake).with_cards(styled(style));
-        let report = delivery.drain_notices(now()).await.expect("drain");
-        assert_eq!(report.sends.len(), 1, "{style:?}");
-        let [post]: [OutgoingMessage; 1] = created(&world.fake).try_into().expect("one post");
-        posts.push(post);
-    }
-    let [classic, redesigned]: [OutgoingMessage; 2] = posts.try_into().expect("two posts");
+    let (_, classic) = drained_cancel(styled(MessageStyle::Classic)).await;
+    let (_, redesigned) = drained_cancel(styled(MessageStyle::Redesigned)).await;
     assert_eq!(
         classic.content.as_deref(),
         Some("🚫 **HKalos** (Thu 10 Sep) is cancelled — <@1001> Bex\n_(via portal)_")
@@ -504,4 +509,202 @@ async fn the_tick_drains_notices_in_the_live_style() {
         )
     );
     assert_eq!(classic.allowed_mentions, redesigned.allowed_mentions);
+}
+
+const PORTAL: &str = "https://kanade-pub.example";
+
+/// `style` with the public portal origin, open while `open` is set (read
+/// live per render, like the digest's "Open portal" button).
+fn with_portal(style: MessageStyle, open: &Arc<AtomicBool>) -> CardKit {
+    let open = Arc::clone(open);
+    let mut kit = styled(style);
+    kit.v2.portal = Some(PORTAL.into());
+    kit.v2.portal_open = Some(Arc::new(move || open.load(Ordering::SeqCst)));
+    kit
+}
+
+/// The portal page a notice about `change` links: its run, the weekly
+/// timings, or the root.
+fn target(change: &NoticeChange) -> String {
+    match change {
+        NoticeChange::FixedChanged { .. }
+        | NoticeChange::FixedAdded { .. }
+        | NoticeChange::FixedRemoved { .. } => format!("{PORTAL}/mine?week=timings"),
+        _ => match change.run_id() {
+            Some(run) => format!("{PORTAL}/?run={run}"),
+            None => format!("{PORTAL}/"),
+        },
+    }
+}
+
+#[test]
+fn the_via_portal_mark_links_into_the_open_portal() {
+    let open = Arc::new(AtomicBool::new(true));
+    let closed = Arc::new(AtomicBool::new(false));
+    for style in [MessageStyle::Classic, MessageStyle::Redesigned] {
+        for case in cases() {
+            let case = Case {
+                via_portal: true,
+                ..case
+            };
+            let plain = render(&case, &styled(style));
+            // Closed (or no public origin): today's text, byte for byte.
+            assert_eq!(
+                render(&case, &with_portal(style, &closed)),
+                plain,
+                "{style:?} {}",
+                case.name
+            );
+            let text = plain.content.as_deref().expect("text");
+            let link = format!("[via portal](<{}>)", target(&case.change));
+            let linked = OutgoingMessage {
+                content: Some(text.replacen("via portal", &link, 1)),
+                ..plain.clone()
+            };
+            assert_eq!(
+                render(&case, &with_portal(style, &open)),
+                linked,
+                "{style:?} {}",
+                case.name
+            );
+        }
+    }
+
+    // The run link and the weekly-timing link, spelled out.
+    let moved = &cases()[5];
+    assert_eq!(moved.name, "moved");
+    assert_eq!(
+        render(moved, &with_portal(MessageStyle::Classic, &open))
+            .content
+            .as_deref(),
+        Some(
+            "🔁 **HMaleficStar** moved: ~~Wed 09 Sep 21:00~~ → **Thu 10 Sep 21:30** — Alvin \
+             <@1002> <@1003>\nReact ✅ if you're on, ❌ if not.\n\
+             _([via portal](<https://kanade-pub.example/?run=r>))_"
+        )
+    );
+    assert_eq!(
+        render(moved, &with_portal(MessageStyle::Redesigned, &open))
+            .content
+            .as_deref(),
+        Some(
+            "🔁 Hard Radiant Malefic Star moved to **<t:1789047000:F>** — Alvin <@1002> \
+             <@1003>\n-# was Wed 09 Sep 21:00 · [via portal](<https://kanade-pub.example/?run=r>) \
+             · react ✅/❌ here"
+        )
+    );
+    let timing = Case {
+        via_portal: true,
+        ..cases().swap_remove(8)
+    };
+    assert_eq!(timing.name, "weekly timing changed");
+    assert_eq!(
+        render(&timing, &with_portal(MessageStyle::Classic, &open))
+            .content
+            .as_deref(),
+        Some(
+            "📌 Weekly timing changed: **HMaleficStar** · Wed 21:30 · Alvin <@1002>\n\
+             _([via portal](<https://kanade-pub.example/mine?week=timings>))_"
+        )
+    );
+    assert_eq!(
+        render(&timing, &with_portal(MessageStyle::Redesigned, &open))
+            .content
+            .as_deref(),
+        Some(
+            "📌 Hard Radiant Malefic Star is now every **Wednesday 21:30** — Alvin <@1002>\n\
+             -# [via portal](<https://kanade-pub.example/mine?week=timings>)"
+        )
+    );
+
+    // An open switch without a public origin keeps the plain mark.
+    for style in [MessageStyle::Classic, MessageStyle::Redesigned] {
+        let mut kit = with_portal(style, &open);
+        kit.v2.portal = None;
+        assert_eq!(render(moved, &kit), render(moved, &styled(style)));
+    }
+}
+
+#[test]
+fn flipping_the_portal_switch_between_renders_changes_the_mark() {
+    let open = Arc::new(AtomicBool::new(false));
+    let moved = &cases()[5];
+    for style in [MessageStyle::Classic, MessageStyle::Redesigned] {
+        let kit = with_portal(style, &open);
+        open.store(false, Ordering::SeqCst);
+        let closed = render(moved, &kit).content.expect("text");
+        open.store(true, Ordering::SeqCst);
+        let opened = render(moved, &kit).content.expect("text");
+        assert!(!closed.contains(PORTAL), "{style:?}: {closed}");
+        assert!(
+            opened.contains("[via portal](<https://kanade-pub.example/?run=r>)"),
+            "{style:?}: {opened}"
+        );
+        open.store(false, Ordering::SeqCst);
+        assert_eq!(render(moved, &kit).content.expect("text"), closed);
+    }
+}
+
+/// An id that is unsafe in a URL path or query links the portal root.
+#[test]
+fn a_run_id_unsafe_in_a_link_falls_back_to_the_root() {
+    let open = Arc::new(AtomicBool::new(true));
+    let mut schedule = schedule();
+    schedule.runs[0].id = "../r?x".into();
+    let notice = Notice {
+        change: NoticeChange::RunStatus {
+            run_id: "../r?x".into(),
+            from: RunStatus::Planned,
+            to: RunStatus::Done,
+        },
+        channel_id: Some("222".into()),
+        listed: ids(&PARTY),
+        via_portal: true,
+    };
+    for style in [MessageStyle::Classic, MessageStyle::Redesigned] {
+        let text = render_notice(
+            &notice,
+            &intent(),
+            &schedule,
+            &roster(),
+            ZONE,
+            false,
+            &with_portal(style, &open),
+        )
+        .and_then(|message| message.content)
+        .expect("text");
+        assert!(
+            text.contains("[via portal](<https://kanade-pub.example/>)"),
+            "{style:?}: {text}"
+        );
+        assert!(!text.contains("?run="), "{style:?}: {text}");
+    }
+    assert_eq!(
+        via_portal_mark(&notice.change, Some(PORTAL)),
+        "[via portal](<https://kanade-pub.example/>)"
+    );
+    assert_eq!(via_portal_mark(&notice.change, None), "via portal");
+}
+
+/// The tick reads the live switch from the delivery kit: open, the drained
+/// notice links its run.
+#[tokio::test]
+async fn the_tick_links_the_run_while_the_portal_is_open() {
+    let open = Arc::new(AtomicBool::new(true));
+    let (run, classic) = drained_cancel(with_portal(MessageStyle::Classic, &open)).await;
+    assert_eq!(
+        classic.content,
+        Some(format!(
+            "🚫 **HKalos** (Thu 10 Sep) is cancelled — <@1001> Bex\n\
+             _([via portal](<{PORTAL}/?run={run}>))_"
+        ))
+    );
+    let (run, redesigned) = drained_cancel(with_portal(MessageStyle::Redesigned, &open)).await;
+    assert_eq!(
+        redesigned.content,
+        Some(format!(
+            "🚫 Hard Gatekeeper Kalos is cancelled — <@1001> Bex\n\
+             -# Thu 10 Sep 23:00 · [via portal](<{PORTAL}/?run={run}>)"
+        ))
+    );
 }
