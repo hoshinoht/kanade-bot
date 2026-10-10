@@ -279,9 +279,10 @@ impl OwnerDesk<'_> {
     /// The owner (or staff) accepts or declines a request. Accepting pins the
     /// requester under [`accept_key`] and supersedes the timing's other open
     /// requests. The decider's own retry on the same surface (the pin landed,
-    /// the close did not) only closes the accepted request itself. A
-    /// committed pin whose close lost to a withdraw still counts: the owner
-    /// changed, and the request is answered as it now is.
+    /// the close did not) closes the accepted request and finishes the
+    /// supersede its first attempt may have lost ([`leftover`]). A committed
+    /// pin whose close lost to a withdraw still counts: the owner changed,
+    /// and the request is answered as it now is.
     ///
     /// # Errors
     /// [`OwnershipError`].
@@ -301,9 +302,10 @@ impl OwnerDesk<'_> {
             .ok_or(OwnershipError::UnknownRequest)?;
         let fixed = timing(store, &request.fixed_run_id).await?;
         let who = actor(&origin);
-        let (status, committed) = if accept {
+        let (status, committed, record) = if accept {
             let origin = origin.with_request_id(accept_key(&request));
-            if recorded(store, &origin).await?.is_none() {
+            let mut record = recorded(store, &origin).await?;
+            if record.is_none() {
                 ownership::may_decide(&fixed, &request, decider, staff, true, now)?;
             }
             let change = OwnerPin::Accept {
@@ -311,15 +313,19 @@ impl OwnerDesk<'_> {
                 staff,
                 requester: &request.requester,
             };
-            let committed = pin(writer, origin, &fixed.id, change, ctx).await?;
+            let committed = pin(writer, origin.clone(), &fixed.id, change, ctx).await?;
             #[cfg(any(test, feature = "test-support"))]
             if committed {
                 raced(&request.id).await;
             }
-            (OwnerRequestStatus::Accepted, committed)
+            if !committed && record.is_none() {
+                // A same-key retry that raced the first attempt into the store.
+                record = recorded(store, &origin).await?;
+            }
+            (OwnerRequestStatus::Accepted, committed, record)
         } else {
             ownership::may_decide(&fixed, &request, decider, staff, false, now)?;
-            (OwnerRequestStatus::Declined, false)
+            (OwnerRequestStatus::Declined, false, None)
         };
         let closed = store
             .close_owner_request(request.id.clone(), status, who.clone(), now)
@@ -327,8 +333,12 @@ impl OwnerDesk<'_> {
         if !closed && !committed {
             return Err(OwnershipRefusal::Closed.into());
         }
+        let after = timing(store, &fixed.id).await?;
+        let keep = Some(request.id.as_str());
         let superseded = if committed {
-            supersede(store, &fixed.id, Some(&request.id), None, &who, now).await?
+            supersede(store, &fixed.id, keep, None, &who, now).await?
+        } else if accept {
+            leftover(store, &after, &request.requester, record, keep, &who, now).await?
         } else {
             Vec::new()
         };
@@ -339,10 +349,24 @@ impl OwnerDesk<'_> {
         Ok((
             decided,
             OwnerChange {
-                fixed: timing(store, &fixed.id).await?,
+                fixed: after,
                 superseded,
             },
         ))
+    }
+
+    /// Whether `origin`'s actor recorded the accept of `request` on the same
+    /// surface: a former owner's retry after it handed the timing on.
+    ///
+    /// # Errors
+    /// [`OwnershipError::Store`].
+    pub async fn accepted(
+        &self,
+        origin: &Origin,
+        request: &OwnerRequest,
+    ) -> Result<bool, OwnershipError> {
+        let origin = origin.clone().with_request_id(accept_key(request));
+        Ok(recorded(self.store, &origin).await?.is_some())
     }
 
     /// The decider's retry of an accept that already closed `request`:

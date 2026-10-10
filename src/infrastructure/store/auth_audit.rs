@@ -1,4 +1,4 @@
-//! Sign-in audit log (migration 0032, user decision 2026-10-09): the
+//! Sign-in audit log (migration 0032, `write_refused` since 0036, user decision 2026-10-09): the
 //! security events of the admin and member realms (`api::auth::audit`),
 //! kept [`AUDIT_RETENTION`]. There is no scheduled store maintenance, so
 //! every append deletes the rows past retention in its own transaction.
@@ -54,6 +54,7 @@ text_enum!(
         SessionRotated => "session_rotated",
         RateLimited => "rate_limited",
         RevokeFailed => "revoke_failed",
+        WriteRefused => "write_refused",
     }
 );
 
@@ -68,9 +69,10 @@ pub struct AuditRow {
     pub actor: Option<String>,
     /// Sign-in method, or how break-glass was used.
     pub method: Option<String>,
-    /// Refusal, end or revoke reason, or the rate-limited route.
+    /// Refusal, end or revoke reason, the rate-limited route, or a refused
+    /// write's code.
     pub reason: Option<String>,
-    /// Break-glass request line.
+    /// Break-glass request line, or a refused write's method and path.
     pub request: Option<String>,
     /// Admin rows: the client address; member rows: its keyed tag only.
     pub client: Option<String>,

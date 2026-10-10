@@ -113,6 +113,59 @@ async fn sign_ins_are_stored_and_listed_newest_first_with_filters() {
     assert_eq!(rows(&older).len(), rows(&all).len() - 1);
 }
 
+/// A refused member write is a stored row: `event=write_refused` lists it
+/// with the route as `request` and the refusal code as `reason`, the
+/// member's client as its keyed tag only.
+#[tokio::test]
+async fn refused_member_writes_are_listed_with_route_and_reason() {
+    use chrono::{TimeZone, Utc};
+    use kanade::{
+        api::auth::audit::{AuditContext, AuditEvent, AuditRecord, Realm},
+        infrastructure::store::auth_audit::AuthAuditStore,
+    };
+    let reads = Reads::new().await;
+    let mut record = AuditRecord::new(
+        Realm::Member,
+        &AuditContext {
+            request_id: "req-w".into(),
+            client: None,
+        },
+        AuditEvent::write_refused(
+            "discord:1001".into(),
+            &axum::http::Method::PUT,
+            &"/api/public/runs/r-1/answer?x=1".parse().unwrap(),
+            "not_in_run",
+        ),
+        Utc.with_ymd_and_hms(2026, 9, 29, 3, 0, 0).unwrap(),
+    );
+    let tag = "a".repeat(64);
+    record.client = Some(tag.clone());
+    reads
+        .store
+        .append_audit(record.row())
+        .await
+        .expect("stored");
+
+    let page = reads
+        .read("/api/admin/history/sign-ins?event=write_refused", PAGE)
+        .await;
+    let [row] = rows(&page).as_slice() else {
+        panic!("one refused write: {page}");
+    };
+    assert_eq!(row["event"], "write_refused");
+    assert_eq!(row["realm"], "member");
+    assert_eq!(row["actor"], "discord:1001");
+    assert_eq!(row["request"], "PUT /api/public/runs/r-1/answer");
+    assert_eq!(row["reason"], "not_in_run");
+    assert_eq!(row["client"], tag.as_str());
+    assert_eq!(row["method"], Value::Null);
+    assert!(row["name"].as_str().is_some_and(|name| !name.is_empty()));
+    let others = reads
+        .read("/api/admin/history/sign-ins?event=login_refused", PAGE)
+        .await;
+    assert!(rows(&others).is_empty());
+}
+
 #[tokio::test]
 async fn sign_ins_refuse_bad_filters_and_need_an_admin_session() {
     let reads = Reads::new().await;

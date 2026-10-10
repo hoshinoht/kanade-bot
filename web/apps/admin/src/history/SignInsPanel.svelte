@@ -18,6 +18,7 @@
     session_rotated: { label: 'New address', tone: '' },
     rate_limited: { label: 'Rate limited', tone: 'status-chip--risk' },
     revoke_failed: { label: 'Revoke failed', tone: 'status-chip--warn' },
+    write_refused: { label: 'Write refused', tone: 'status-chip--risk' },
   };
 
   let rows = $state<SignInRow[]>([]);

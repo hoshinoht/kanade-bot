@@ -218,13 +218,16 @@
               "at": { "type": "string" },
               "realm": { "enum": ["admin", "member"] },
               "event": {
-                "enum": ["login_succeeded", "login_refused", "break_glass_used", "session_ended", "session_rotated", "rate_limited", "revoke_failed"]
+                "enum": ["login_succeeded", "login_refused", "break_glass_used", "session_ended", "session_rotated", "rate_limited", "revoke_failed", "write_refused"]
               },
               "actor": { "type": ["string", "null"] },
               "name": { "type": ["string", "null"] },
               "method": { "type": ["string", "null"] },
               "reason": { "type": ["string", "null"] },
-              "request": { "type": ["string", "null"] },
+              "request": {
+                "type": ["string", "null"],
+                "description": "Break-glass request line, or a refused member write's method and path."
+              },
               "client": {
                 "type": ["string", "null"],
                 "description": "Admin rows: the client address. Member rows: only a keyed 64-hex tag of it."

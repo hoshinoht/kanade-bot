@@ -1141,3 +1141,176 @@ async fn an_accept_racing_a_withdraw_still_reports_the_new_owner() {
         OwnerRequestStatus::Superseded
     );
 }
+
+/// ReReviewF1b (a): an accept retry whose pin landed while the close and
+/// supersede were lost closes the request and finishes the supersede through
+/// the shared `decide` (portal and Discord alike), by the replay rule: asks
+/// opened before the pin close, a newer one stays for the new owner.
+#[tokio::test]
+async fn an_accept_retry_after_a_lost_close_finishes_the_supersede() {
+    use kanade::domain::ownership::{OwnerPin, OwnerRequestStatus};
+    let portal = Portal::new().await;
+    let aki = portal.sign_in(AKI).await;
+    let backstage = Backstage::new(&portal).await;
+    backstage.ask(&portal, "older-cho", CHO, -60).await;
+    backstage.ask(&portal, "ben-1", BEN, -30).await;
+    let (decider, requester) = (id(AKI), id(BEN));
+    backstage
+        .pin(
+            Origin::new(Actor::member(id(AKI)), Surface::PublicPortal)
+                .with_request_id("owner-request:ben-1".to_owned()),
+            OwnerPin::Accept {
+                decider: &decider,
+                staff: false,
+                requester: &requester,
+            },
+        )
+        .await;
+    backstage.ask(&portal, "newer-dee", DEE, 1).await;
+    let version = portal.reads.version().await;
+
+    let reply = portal
+        .post(&aki, &decide_path("ben-1", "accept"), "a-1", None)
+        .await;
+    assert_eq!(reply.status, 200, "{}", reply.text());
+    assert_eq!(request_body(&reply)["status"], "accepted");
+    assert_eq!(portal.reads.version().await, version, "no second record");
+    assert_eq!(
+        ask_status(&portal, "older-cho").await,
+        OwnerRequestStatus::Superseded
+    );
+    assert_eq!(
+        ask_status(&portal, "newer-dee").await,
+        OwnerRequestStatus::Open
+    );
+}
+
+/// ReReviewF1b (b): the former owner's retry of an accept whose response was
+/// lost (they no longer own the timing, the request is closed) answers the
+/// request as it now is and finishes a lost supersede; their decline of it
+/// is refused as closed, as the owner's is, never a success. A member who
+/// never accepted it still finds no such request.
+#[tokio::test]
+async fn a_former_owners_accept_retry_answers_the_request_as_it_is() {
+    use kanade::domain::ownership::{OwnerPin, OwnerRequestStatus, OwnerRequestStore};
+    let portal = Portal::new().await;
+    let (aki, cho) = (portal.sign_in(AKI).await, portal.sign_in(CHO).await);
+    let backstage = Backstage::new(&portal).await;
+    backstage.ask(&portal, "older-cho", CHO, -60).await;
+    backstage.ask(&portal, "ben-1", BEN, -30).await;
+    let (decider, requester) = (id(AKI), id(BEN));
+    backstage
+        .pin(
+            Origin::new(Actor::member(id(AKI)), Surface::PublicPortal)
+                .with_request_id("owner-request:ben-1".to_owned()),
+            OwnerPin::Accept {
+                decider: &decider,
+                staff: false,
+                requester: &requester,
+            },
+        )
+        .await;
+    // The first attempt closed the request, then lost its supersede.
+    assert!(
+        OwnerRequestStore::close_owner_request(
+            &*portal.reads.store,
+            "ben-1",
+            OwnerRequestStatus::Accepted,
+            &format!("member:{}", id(AKI)),
+            backstage.state.now(),
+        )
+        .await
+        .unwrap()
+    );
+    let version = portal.reads.version().await;
+
+    let reply = portal
+        .post(&aki, &decide_path("ben-1", "accept"), "a-1", None)
+        .await;
+    assert_eq!(reply.status, 200, "{}", reply.text());
+    assert_eq!(request_body(&reply)["status"], "accepted");
+    let reply = portal
+        .post(&aki, &decide_path("ben-1", "decline"), "d-1", None)
+        .await;
+    assert_eq!(refused(&reply), (409, "request_closed".into()));
+    let ben = portal.sign_in(BEN).await;
+    let owner = portal
+        .post(&ben, &decide_path("ben-1", "decline"), "d-2", None)
+        .await;
+    assert_eq!(reply.json(), owner.json(), "the owner's refusal");
+    assert_eq!(portal.reads.version().await, version, "nothing re-pinned");
+    assert_eq!(
+        ask_status(&portal, "older-cho").await,
+        OwnerRequestStatus::Superseded
+    );
+    assert_eq!(
+        ask_status(&portal, "ben-1").await,
+        OwnerRequestStatus::Accepted
+    );
+    let reply = portal
+        .post(&cho, &decide_path("ben-1", "accept"), "c-1", None)
+        .await;
+    assert_eq!(refused(&reply), (404, "not_found".into()));
+}
+
+/// ReReviewF1b (c): a hand-off replay by a member since taken off the party
+/// gets no timing view, only the 404 an unknown timing answers.
+#[tokio::test]
+async fn a_hand_off_replay_off_the_party_is_not_found() {
+    let portal = Portal::new().await;
+    let aki = portal.sign_in(AKI).await;
+    let first = portal
+        .post(&aki, &owner_path(FIXED), "h-1", Some(&to(BEN)))
+        .await;
+    assert_eq!(first.status, 200, "{}", first.text());
+    portal
+        .admin_edit(|fixed| fixed.participants.retain(|member| *member != id(AKI)))
+        .await;
+    let version = portal.reads.version().await;
+
+    let replay = portal
+        .post(&aki, &owner_path(FIXED), "h-1", Some(&to(BEN)))
+        .await;
+    assert_eq!(refused(&replay), (404, "not_found".into()));
+    let unknown = portal
+        .post(&aki, &owner_path("f-nope"), "h-2", Some(&to(BEN)))
+        .await;
+    assert_eq!(replay.json(), unknown.json(), "the same body as unknown");
+    assert_eq!(portal.reads.version().await, version, "nothing written");
+}
+
+/// A first hand-off by an owner staff pinned off the party commits and is
+/// answered with the timing, never as not found; only its replay, once the
+/// timing is no longer theirs, gets the off-party 404.
+#[tokio::test]
+async fn an_off_party_owners_first_hand_off_answers_the_timing() {
+    let portal = Portal::new().await;
+    portal
+        .admin_edit(|fixed| {
+            fixed.owner_id = id(DEE);
+            fixed.owner_pinned = true;
+        })
+        .await;
+    let dee = portal.sign_in(DEE).await;
+    let version = portal.reads.version().await;
+
+    let reply = portal
+        .post(&dee, &owner_path(FIXED), "h-1", Some(&to(BEN)))
+        .await;
+    assert_eq!(reply.status, 200, "{}", reply.text());
+    let handed = reply.json();
+    assert_valid("public.json#/$defs/MemberTiming", "hand-off", &handed);
+    assert_eq!(handed["owner"], json!({"id": id(BEN), "name": "Ben"}));
+    assert_eq!(handed["you_own"], json!(false));
+    assert_eq!(
+        portal.reads.version().await,
+        version + 1,
+        "one recorded edit"
+    );
+
+    let replay = portal
+        .post(&dee, &owner_path(FIXED), "h-1", Some(&to(BEN)))
+        .await;
+    assert_eq!(refused(&replay), (404, "not_found".into()));
+    assert_eq!(portal.reads.version().await, version + 1, "nothing more");
+}

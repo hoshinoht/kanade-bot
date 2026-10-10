@@ -35,7 +35,7 @@ use crate::{
         state::ApiState,
     },
     domain::{
-        ownership::{OwnerRequest, OwnershipRefusal},
+        ownership::{OwnerRequest, OwnerRequestStatus, OwnershipRefusal},
         schedule::FixedRun,
         scheduler::Scope,
     },
@@ -164,6 +164,9 @@ pub(super) async fn hand_off(
         writer: &*state.writer,
         ctx: &ctx,
     };
+    // Only the owner hands off, and a completed hand-off moved the timing
+    // away from them: owning it now means this call is the first attempt.
+    let first = owns(state, &fixed_id, &session.user_id).await?;
     let change = desk
         .hand_off(
             origin(&session, key),
@@ -175,6 +178,13 @@ pub(super) async fn hand_off(
         )
         .await
         .map_err(refusal)?;
+    // A replay by someone since taken off the party sees no timing view:
+    // to them the timing is as unknown as a missing one. A first attempt
+    // (an owner staff pinned off the party, say) committed, so it is
+    // answered with the timing, never as not found.
+    if !first && !change.fixed.participants.contains(&session.user_id) {
+        return Err(refusal(OwnershipError::UnknownTiming));
+    }
     timing_view(&site, state, &change.fixed, &session.user_id).await
 }
 
@@ -247,7 +257,10 @@ fn not_theirs(request: &OwnerRequest, me: &str) -> Refusal {
 
 /// Accept or decline: the timing's owner only. A closed or expired request
 /// answers its state to the owner alone; its requester learns only that they
-/// may not decide it, anyone else that there is no such request.
+/// may not decide it, anyone else that there is no such request. A former
+/// owner who accepted it here (their lost-response retry) gets it as it now
+/// is, after the accept's unfinished supersede; their decline is refused as
+/// closed, as the owner's would be.
 async fn decide(
     site: &Site,
     audit: &AuditContext,
@@ -270,17 +283,35 @@ async fn decide(
         .await
         .map_err(unavailable)?
         .ok_or_else(|| refusal(OwnershipError::UnknownRequest))?;
-    if !request.live(now) && !owns(state, &request.fixed_run_id, me).await? {
-        return Err(not_theirs(&request, me));
-    }
     let (ctx, _) = write_context(state).await?;
     let desk = OwnerDesk {
         store: &*state.store,
         writer: &*state.writer,
         ctx: &ctx,
     };
+    let acting = origin(session, key);
+    if !request.live(now) && !owns(state, &request.fixed_run_id, me).await? {
+        if !desk.accepted(&acting, &request).await.map_err(refusal)? {
+            return Err(not_theirs(&request, me));
+        }
+        // An accept whose close never landed finishes through `decide`, and
+        // so does every decline: the request is closed to them as to the
+        // owner (`request_closed`), never answered as a success.
+        if accept && request.status != OwnerRequestStatus::Open {
+            desk.finish_accepted(acting, &request, now)
+                .await
+                .map_err(refusal)?;
+            let current = state
+                .store
+                .owner_request(id)
+                .await
+                .map_err(unavailable)?
+                .ok_or_else(|| refusal(OwnershipError::UnknownRequest))?;
+            return request_view(site, state, &current, me).await;
+        }
+    }
     let (decided, _) = desk
-        .decide(origin(session, key), &id, me, false, accept, now)
+        .decide(acting, &id, me, false, accept, now)
         .await
         .map_err(|error| match error {
             OwnershipError::Refused(OwnershipRefusal::NotOwner) => not_theirs(&request, me),
