@@ -4,7 +4,7 @@
  * inside the boss week on screen, never across weeks.
  */
 import type { WeekDay } from '@kanade/api-types';
-import type { Slot } from '../planner/keyboardMove';
+import type { Slot } from './slot';
 
 export type Parsed = { ok: true; slot: Slot } | { ok: false; message: string };
 

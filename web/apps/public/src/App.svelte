@@ -2,14 +2,15 @@
   The member portal (member-auth-contract §6): status first; closed → Closed
   (sign-in hidden); open → the session: 401 → Sign in, 200 → the member's
   screens. `?login_error=` lands on Denied, Closed or Sign in with a notice.
-  Signed in: `/` the Week, `/mine` My runs, `/account` Account; nothing
+  Signed in: `/` the Week, `/mine` My runs, `/requests` My requests and
+  `/requests/new` the request form, `/account` Account; nothing
   member-specific is read before sign-in or kept after it.
 
   Chrome (boards Mast, PhoneDrawer): wide screens keep the masthead (the
-  time zone when signed out; signed in, the Week · My runs tabs, the
-  freshness chip, the zone and the account menu); below 900 px (and phone
-  landscape) a 48 px top bar and, signed in, the navigation drawer. Requests
-  joins the masthead with its screen; Bosses (`/bosses`) is there.
+  time zone when signed out; signed in, the Week · My runs · Requests ·
+  Bosses tabs (My runs counts this week's runs, Requests the waiting ones),
+  the freshness chip, the zone and the account menu); below 900 px (and
+  phone landscape) a 48 px top bar and, signed in, the navigation drawer.
 -->
 <script lang="ts">
   import { AccountMenu, Freshness, Icon, LoadingState, Masthead, NavDrawer, PHONE_QUERY, pulse, registerServiceWorker, SINGLE_PANE_QUERY, StateNote, ToastRegion, Toaster, type FreshState } from '@kanade/ui';
@@ -23,6 +24,9 @@
   import SignIn from './SignIn.svelte';
   import TopBar from './TopBar.svelte';
   import BossesPage from './bosses/BossesPage.svelte';
+  import MovePage from './move/MovePage.svelte';
+  import RequestForm from './requests/RequestForm.svelte';
+  import RequestsPage from './requests/RequestsPage.svelte';
   import WeekPage from './week/WeekPage.svelte';
   import { landingOf, safeNext, withoutLoginError } from './landing';
   import { Portal } from './portal.svelte';
@@ -92,8 +96,10 @@
   const updated = $derived(seen === null ? '' : new Date(seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }));
   const freshness: FreshState = $derived(offline ? 'offline' : !weeks.this ? 'loading' : 'live');
   const myRuns = $derived(weeks.this ? weeks.this.runs.filter((r) => r.mine).length : null);
+  // The masthead's and the drawer's counts: My runs this week, Requests waiting on the admins.
+  const counts: Partial<Record<Page, number | null>> = $derived({ mine: myRuns, requests: portal.requests.waiting });
 
-  const TITLES: Record<Page, string> = { week: 'Week', mine: 'My runs', account: 'Account', bosses: 'Bosses' };
+  const TITLES: Record<Page, string> = { week: 'Week', mine: 'My runs', account: 'Account', bosses: 'Bosses', move: 'Move run', requests: 'Requests', request: 'Ask for a change' };
   // An open guide on a phone: the top bar's "← {boss}" back to the catalog (board PhoneGuide).
   let bossBack = $state<{ label: string; name: string; go: () => void } | null>(null);
   const SCREEN_TITLES: Record<string, string> = {
@@ -162,9 +168,10 @@
     if (message) toaster.show({ message, tone: 'error' });
   }
 
-  const NAV: { page: Page; label: string; href: string; icon: 'calendar' | 'clock' | 'shield' | 'users' }[] = [
+  const NAV: { page: Page; label: string; href: string; icon: 'calendar' | 'clock' | 'message-square' | 'shield' | 'users' }[] = [
     { page: 'week', label: 'Week', href: '/', icon: 'calendar' },
     { page: 'mine', label: 'My runs', href: '/mine', icon: 'clock' },
+    { page: 'requests', label: 'Requests', href: '/requests', icon: 'message-square' },
     { page: 'bosses', label: 'Bosses', href: '/bosses', icon: 'shield' },
     { page: 'account', label: 'Account', href: '/account', icon: 'users' },
   ];
@@ -203,7 +210,9 @@
         ? { label: 'Week', chip: phoneRun.mine ? "YOU'RE IN" : 'not in this run · view only', mine: phoneRun.mine, onback: () => route.set({ run: '' }) }
         : page === 'bosses' && bossBack
           ? { label: bossBack.label, name: bossBack.name, onback: bossBack.go }
-          : null}
+          : page === 'request'
+            ? { label: '', name: 'Back to My requests', title: TITLES.request, onback: () => route.go('/requests') }
+            : null}
       onmenu={() => (drawerOpen = true)}
       onprofile={() => void jump('profile', 'acct-page')}
       fresh={page === 'account' ? undefined : freshChip}
@@ -221,9 +230,9 @@
                   follow(event);
                   go(item.page, event);
                 }}
-                ><span class="navlist__ind"><Icon name={item.icon} /></span><span class="navlist__label">{item.label}</span>{#if item.page === 'mine' && myRuns !== null}<span
+                ><span class="navlist__ind"><Icon name={item.icon} /></span><span class="navlist__label">{item.label}</span>{#if counts[item.page] != null}<span
                     class="navlist__badge mono"
-                    {@attach pulse(myRuns, weeks.arrival)}>{myRuns}</span
+                    {@attach pulse(counts[item.page], weeks.arrival)}>{counts[item.page]}</span
                   >{/if}</a
               >
             {/each}
@@ -251,7 +260,7 @@
           <nav class="masthead__nav" aria-label="Main" data-fid="mast-nav">
             {#each NAV.filter((item) => item.page !== 'account') as item (item.page)}
               <a class="ptab masthead__tab" href={item.href} aria-current={page === item.page ? 'page' : undefined} onclick={(event) => go(item.page, event)}
-                >{item.label}{#if item.page === 'mine' && myRuns !== null}<span class="ptab__count mono" {@attach pulse(myRuns, weeks.arrival)}>{myRuns}</span>{/if}</a
+                >{item.label}{#if counts[item.page] != null}<span class="ptab__count mono" {@attach pulse(counts[item.page], weeks.arrival)}>{counts[item.page]}</span>{/if}</a
               >
             {/each}
           </nav>
@@ -330,10 +339,20 @@
     {:else if screen.kind === 'ended'}
       <Ended {identity} {zone} {phone} {next} at={screen.at} />
     {:else if page === 'week'}
-      <WeekPage {weeks} {route} memberId={screen.session.member.id} {phone} {toaster} notice={offlineNotice} />
+      <WeekPage
+        {weeks}
+        runs={portal.runs}
+        {route}
+        session={screen.session}
+        current={portal.devices?.sessions.find((s) => s.current) ?? null}
+        {phone}
+        {toaster}
+        notice={offlineNotice}
+      />
     {:else if page === 'mine'}
       <MyRuns
         {weeks}
+        runs={portal.runs}
         timings={portal.timings}
         {route}
         session={screen.session}
@@ -344,6 +363,31 @@
       />
     {:else if page === 'bosses'}
       <BossesPage bosses={portal.bosses} {route} {phone} onback={(step) => (bossBack = step)} />
+    {:else if page === 'move'}
+      <MovePage
+        {route}
+        runs={portal.runs}
+        {weeks}
+        session={screen.session}
+        current={portal.devices?.sessions.find((s) => s.current) ?? null}
+        {toaster}
+        {phone}
+        {zone}
+      />
+    {:else if page === 'requests'}
+      <RequestsPage requests={portal.requests} {weeks} timings={portal.timings} {route} {toaster} {phone} {timeZone} notice={offlineNotice} />
+    {:else if page === 'request'}
+      <RequestForm
+        requests={portal.requests}
+        {weeks}
+        timings={portal.timings}
+        {route}
+        session={screen.session}
+        current={portal.devices?.sessions.find((s) => s.current) ?? null}
+        {toaster}
+        {phone}
+        notice={offlineNotice}
+      />
     {:else}
       <Account {portal} session={screen.session} {toaster} {phone} {zone} {timeZone} {tab} ontab={showTab} notice={offlineNotice} />
     {/if}

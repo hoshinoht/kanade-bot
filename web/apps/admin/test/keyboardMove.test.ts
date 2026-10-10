@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { IDLE, onKey, cancel, fromMinutes, toMinutes, type LiftState, type MovableRun } from '../src/planner/keyboardMove';
+import { IDLE, onKey, cancel, type LiftState, type MovableRun } from '../src/planner/keyboardMove';
 
 const DAYS = ['Thu 24', 'Fri 25', 'Sat 26', 'Sun 27', 'Mon 28', 'Tue 29', 'Wed 30'];
 const ctx = { dayLabel: (d: number) => DAYS[d]!, lastDay: 6 };
@@ -78,12 +78,6 @@ describe('keyboard move reducer', () => {
     const up = onKey(lifted, 'ArrowUp', own, ctx);
     expect(up.announce).toBe('Own-time runs have no time to change.');
     expect(onKey(lifted, 'ArrowRight', own, ctx).announce).toBe('NBellona: Tue 29, own time.');
-  });
-
-  it('round-trips clock arithmetic', () => {
-    expect(toMinutes('21:30')).toBe(1290);
-    expect(fromMinutes(1290)).toBe('21:30');
-    expect(fromMinutes(0)).toBe('00:00');
   });
 });
 

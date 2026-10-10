@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { clashes, dropTime, snapTime, swapSlots, timedOthers, zoneAt, type TimedRun } from '../src/planner/dropTime';
+import type { TimedRun } from '@kanade/ui';
+import { dropTime, snapTime, swapSlots, timedOthers, zoneAt } from '../src/planner/dropTime';
 
 const run = (id: string, time: string | null, minutes: number, extra: Partial<TimedRun> = {}): TimedRun => ({ id, day: 4, time, minutes, ...extra });
 
@@ -75,34 +76,6 @@ describe('Shift jumps', () => {
   it('never offers a point outside the day', () => {
     expect(snapTime(run('x', '01:00', 120), '00:00', [run('a', '00:30', 30)], 1)).toBeNull();
     expect(snapTime(run('x', '23:00', 30), '23:00', [run('a', '22:30', 120)], -1)).toBeNull();
-  });
-});
-
-describe('clashes', () => {
-  const a = run('a', '21:00', 60, { members: ['asahi', 'ren'] });
-
-  it('reports an overlap only when a member is on both', () => {
-    const other = run('b', '21:30', 30, { members: ['ren', 'mika'] });
-    expect(clashes(a, [a, other])).toEqual([{ with: other, members: ['ren'] }]);
-  });
-
-  it('allows overlaps without a shared member', () => {
-    expect(clashes(a, [run('b', '21:30', 30, { members: ['mika'] })])).toEqual([]);
-  });
-
-  it('back-to-back runs do not overlap', () => {
-    expect(clashes(a, [run('b', '22:00', 30, { members: ['asahi'] })])).toEqual([]);
-    expect(clashes(a, [run('b', '20:00', 60, { members: ['asahi'] })])).toEqual([]);
-  });
-
-  it('counts an overlap across midnight into the next day', () => {
-    const late = run('late', '23:30', 60, { members: ['asahi'] });
-    expect(clashes(late, [run('next', '00:00', 30, { day: 5, members: ['asahi'] })])).toHaveLength(1);
-  });
-
-  it('own-time runs and runs on other days never clash', () => {
-    expect(clashes(a, [run('own', null, 30, { members: ['asahi'] }), run('b', '21:00', 30, { day: 2, members: ['asahi'] })])).toEqual([]);
-    expect(clashes(run('own', null, 30, { members: ['asahi'] }), [a])).toEqual([]);
   });
 });
 

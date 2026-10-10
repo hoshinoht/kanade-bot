@@ -2,8 +2,9 @@
   An open run on a phone (boards PhoneRun, PhoneRunOther): its own screen,
   the top bar's "‹ Week" going back. The admin phone sheet's hero (clock,
   bosses, chips) and a Party window; the member's own run shows their answer
-  (read-only for now) and Move / Ask drawn disabled ("coming soon"); anyone
-  else's run a lock box and "Ask to join" in a foot bar, disabled. Its
+  (In / Maybe / Out, live), "Move this week…" (the run's Move page, while it
+  can still move) and "Ask for another change…"; anyone else's run a lock
+  box and "Ask to join…" in a foot bar. Both asks open the request form. Its
   parts come in forward (`enter`), as the admin's list-detail screens do on
   a phone; the Week comes back backward (WeekPage).
 -->
@@ -11,9 +12,33 @@
   import type { MemberRun, MemberWeek } from '@kanade/api-types';
   import { ANSWER_MARKS, answerCounts, Avatar, BossArt, BossTag, dayLabel, enter, Icon, StatusMark } from '@kanade/ui';
   import { countdownWords, yours, youFirst } from '../member';
-  import AnswerSoon from './AnswerSoon.svelte';
+  import type { Route } from '../route.svelte';
+  import type { WeekKey } from '../weeks.svelte';
+  import AnswerChoice from '../writes/AnswerChoice.svelte';
+  import type { RunFlow } from '../writes/flow.svelte';
+  import { follow } from '../writes/follow';
+  import { askPath, movable, moveReturn, type Choice } from '../writes/runs';
 
-  let { run, week, memberId }: { run: MemberRun; week: MemberWeek; memberId: string } = $props();
+  let {
+    run,
+    week,
+    which,
+    memberId,
+    flow,
+    route,
+    picked = null,
+    onpress,
+  }: {
+    run: MemberRun;
+    week: MemberWeek;
+    which: WeekKey;
+    memberId: string;
+    flow: RunFlow;
+    route: Route;
+    /** The answer a fresh sign-in came back with, not saved yet. */
+    picked?: Choice | null;
+    onpress?: () => void;
+  } = $props();
 
   const counts = $derived(answerCounts(run.participants));
   const art = $derived(run.bosses.find((b) => b.art) ?? null);
@@ -21,6 +46,8 @@
   const mine = $derived(yours(run, memberId));
   // The enter replays only when the run itself changes: a fresh read hands in a new object for the same run.
   const runId = $derived(run.id);
+  const ask = $derived(askPath(run));
+  const moveTo = $derived(moveReturn(run, null));
 </script>
 
 <h1 class="vh">{run.mine ? 'Your run' : 'View only'}: {run.bosses.map((b) => b.name).join(' + ')}, {dayLabel(week, run.day)} {run.time ?? 'own time'}</h1>
@@ -37,14 +64,14 @@
     <StatusMark status={run.status} words pill />
     <span class="tone tone--neutral"><b class="mono">{run.tally.on}/{run.tally.total}</b>&nbsp;on</span>
     {#if counts.no}<span class="tone tone--danger mono">{counts.no} out</span>{/if}
-    <span class="tone tone--neutral mono">#{run.channel}</span>
+    <span class="tone tone--neutral mono">{run.channel}</span>
   </div>
   {#if mine}
-    <AnswerSoon answer={mine.answer} data-fid="week-answer" />
-    {#if run.can_edit}
-      <button type="button" class="btn btn--primary btn--key member-hero__full" aria-disabled="true"><Icon name="move" />Move this week… <span class="status-chip status-chip--warn">coming soon</span></button>
+    <AnswerChoice {run} {week} {which} {memberId} {flow} {picked} {onpress} hint={false} data-fid="week-answer" />
+    {#if movable(run, week, which, memberId)}
+      <a class="btn btn--primary btn--key member-hero__full" href={moveTo} onclick={(event) => follow(route, event, moveTo)}><Icon name="calendar" />Move this week…</a>
     {/if}
-    <button type="button" class="btn member-hero__full" aria-disabled="true">Ask for another change… <span class="status-chip status-chip--warn">coming soon</span></button>
+    <a class="btn member-hero__full" href={ask} onclick={(event) => follow(route, event, ask)}>Ask for another change…</a>
   {:else}
     <p class="member-lock" data-fid="week-lock"><Icon name="lock" /><span>You're not in this run, so you can't answer or move it.</span></p>
   {/if}
@@ -71,7 +98,7 @@
 </section>
 {#if !run.mine}
   <div class="member-hero__foot" data-fid="sheet-foot" {@attach enter(runId)}>
-    <button type="button" class="btn btn--primary btn--key member-hero__full" aria-disabled="true">Ask to join… <span class="status-chip status-chip--warn">coming soon</span></button>
+    <a class="btn btn--primary btn--key member-hero__full" href={ask} onclick={(event) => follow(route, event, ask)}>Ask to join…</a>
     <p class="field__hint">A request goes to the admins; the party doesn't change until one approves it.</p>
   </div>
 {/if}

@@ -56,7 +56,7 @@ fn clear_cookie(mut response: Response) -> Response {
 }
 
 /// A rotated session's new cookie and token ride on whatever this request answers.
-fn carry(mut response: Response, current: &Current) -> Response {
+pub(crate) fn carry(mut response: Response, current: &Current) -> Response {
     if current.rotated {
         set_cookie(&mut response, &current.id, MAX_AGE_SECS);
         if let Ok(token) = HeaderValue::from_str(&current.csrf) {
@@ -97,7 +97,11 @@ fn refused_csrf() -> Response {
 
 /// `require_session` in the order the contract lists: closed, cookie,
 /// rotation, CSRF on unsafe methods, touch. The refusal is the whole answer.
-async fn member(app: &App, method: &Method, headers: &HeaderMap) -> Result<Current, Box<Response>> {
+pub(crate) async fn member(
+    app: &App,
+    method: &Method,
+    headers: &HeaderMap,
+) -> Result<Current, Box<Response>> {
     let mut store = app.store.lock().await;
     if !store.public_portal() {
         return Err(Box::new(closed()));
@@ -356,9 +360,10 @@ pub async fn boss_knowledge(
 }
 
 /// A member write as the server's `admit`: the session and its token, the
-/// required `Idempotency-Key`, then for an owner change a fresh sign-in. The
-/// mock does not rate-limit member writes.
-async fn admit(
+/// required `Idempotency-Key`, then for an owner change (and every member
+/// write but a withdrawal) a fresh sign-in. The mock does not rate-limit
+/// member writes.
+pub(crate) async fn admit(
     app: &App,
     method: &Method,
     headers: &HeaderMap,
@@ -384,9 +389,9 @@ async fn admit(
     Ok((current, key))
 }
 
-/// An ownership write's answer (`status` on success). Its change reaches open
+/// A member write's answer (`status` on success). Its change reaches open
 /// admin pages as the server's would: the Inbox and the schedule.
-fn written<T: Serialize>(
+pub(crate) fn written<T: Serialize>(
     app: &App,
     current: &Current,
     status: StatusCode,

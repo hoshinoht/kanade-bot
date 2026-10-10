@@ -4,11 +4,13 @@
  * parseWhen, suggestions from the picked day's runs and the planner's clash
  * wording. Pure, so every state is unit-tested.
  */
-import type { Run, WeekDay } from '@kanade/api-types';
-import { runTitle } from '@kanade/ui';
-import { clashes, fromMinutes, toMinutes, type TimedRun } from '../planner/dropTime';
-import type { Slot } from '../planner/keyboardMove';
+import type { Boss, Participant, RunStatus, WeekDay } from '@kanade/api-types';
+import { runTitle } from '../format';
 import { parseWhen } from './parseWhen';
+import { clashes, fromMinutes, toMinutes, type Slot, type TimedRun } from './slot';
+
+/** The run fields the picker reads: the admin `Run` and the member's `MemberRun` both have them. */
+type MovableRun = { id: string; day: number; time: string | null; bosses: Boss[]; status: RunStatus; minutes?: number; participants: Participant[] };
 
 export const DAY_MINUTES = 24 * 60;
 /** At most this many dots for a day's other runs; the label says the count. */
@@ -21,7 +23,7 @@ export interface PickerRun extends TimedRun {
 }
 
 /** As the planner weighs it: own-time runs have no time, a no is not playing. */
-export function pickerRun(run: Run): PickerRun {
+export function pickerRun(run: MovableRun): PickerRun {
   return {
     id: run.id,
     day: run.day,
@@ -33,10 +35,10 @@ export function pickerRun(run: Run): PickerRun {
 }
 
 /** The runs that can still clash: finished and cancelled ones are left out. */
-export const liveRuns = (runs: Run[]): PickerRun[] => runs.filter((r) => r.status !== 'done' && r.status !== 'cancelled').map(pickerRun);
+export const liveRuns = (runs: MovableRun[]): PickerRun[] => runs.filter((r) => r.status !== 'done' && r.status !== 'cancelled').map(pickerRun);
 
 /** Member names as the runs carry them. */
-export function namesIn(runs: Run[]): (id: string) => string {
+export function namesIn(runs: Pick<MovableRun, 'participants'>[]): (id: string) => string {
   const names = new Map(runs.flatMap((r) => r.participants).map((p) => [p.id, p.name]));
   return (id) => names.get(id) ?? id;
 }

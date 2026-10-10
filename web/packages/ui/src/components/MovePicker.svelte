@@ -1,18 +1,35 @@
 <!--
-  The Move picker (boards Main, P_MoveWidths, P_MoveStates, P_MovePhone):
-  the boss week's day strip, the time stepper (Config → Run lengths), the
-  typed shortcut read live ("reads as …", errors only on Enter or blur),
-  suggestions from the picked day's runs and the planner's clash wording,
-  which warns and never blocks. `foot` adds "Moves to …", Cancel and Move.
+  The Move picker (admin boards Main, P_MoveWidths, P_MoveStates,
+  P_MovePhone; the member portal's run pane and Move page): the boss week's
+  day strip, the time stepper (Config → Run lengths), the typed shortcut read
+  live ("reads as …", errors only on Enter or blur), suggestions from the
+  picked day's runs and the planner's clash wording, which warns and never
+  blocks. `foot` adds "Moves to …", Cancel and Move. Styles come with the
+  caller (`@kanade/ui/styles/move-picker.scss`); fidelity tags too (`fids`).
 -->
+<script lang="ts" module>
+  /** `data-fid` tags for the picker's regions, from the app's call site. */
+  export interface MovePickerFids {
+    picker?: string;
+    time?: string;
+    type?: string;
+    error?: string;
+    suggest?: string;
+    clash?: string;
+    acts?: string;
+    result?: string;
+    submit?: string;
+  }
+</script>
+
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
   import type { WeekDay } from '@kanade/api-types';
-  import { DayStrip, Icon, TimeStepper } from '@kanade/ui';
-  import '@kanade/ui/styles/move-picker.scss';
-  import { fromMinutes, toMinutes } from '../planner/dropTime';
-  import type { Slot } from '../planner/keyboardMove';
-  import { clashText, dayCells, edgeDay, readTyped, suggestions, type PickerRun } from './move';
+  import { clashText, dayCells, edgeDay, readTyped, suggestions, type PickerRun } from '../move/picker';
+  import { fromMinutes, toMinutes, type Slot } from '../move/slot';
+  import DayStrip from './DayStrip.svelte';
+  import Icon from './Icon.svelte';
+  import TimeStepper from './TimeStepper.svelte';
 
   let {
     days,
@@ -32,6 +49,11 @@
     autofocus = false,
     value = $bindable(),
     blocked = $bindable(true),
+    hint = '',
+    submitLabel = 'Move',
+    fids = {},
+    showClash = true,
+    extra,
     onsubmit,
     oncancel,
   }: {
@@ -63,6 +85,14 @@
     value?: Slot;
     /** True while there is nothing to move to or a typed error stands (out). */
     blocked?: boolean;
+    /** Replaces the stepper hint ("↑ ↓ step 30 min · Run lengths"). */
+    hint?: string;
+    submitLabel?: string;
+    fids?: MovePickerFids;
+    /** The clash line under the suggestions; off where the caller lists clashes itself (`extra`). */
+    showClash?: boolean;
+    /** Below the suggestions: what the caller checks about the picked slot (the member's checklist). */
+    extra?: Snippet<[Slot]>;
     onsubmit: (slot: Slot) => void;
     /** Cancel and Escape: leave the picker (the sheet's Move view); without it they only reset. */
     oncancel?: () => void;
@@ -147,7 +177,7 @@
 </script>
 
 <div class="movepick movepick--{variant}" class:movepick--fill={fill} bind:this={root} onkeydown={escape} role="presentation">
-  <fieldset class="movepick__set" data-fid="move-picker">
+  <fieldset class="movepick__set" data-fid={fids.picker}>
     <legend class="movepick__legend">
       <span class="cap movepick__title">{legend}</span>
       {#if aside}<span class="mono movepick__from">{aside}</span>{/if}
@@ -161,7 +191,7 @@
       onenter={submit}
     />
     {#if variant === 'phone'}<span class="cap movepick__title">Time</span>{/if}
-    <div class="movepick__row">
+    <div class="movepick__row" data-fid={fids.time}>
       <TimeStepper
         value={slot.time === null ? null : toMinutes(slot.time)}
         {step}
@@ -175,7 +205,7 @@
         >
       {/if}
       {#if variant === 'pane'}<span class="movepick__or" aria-hidden="true">or</span>{/if}
-      <label class="movepick__typed" class:movepick__typed--bad={error} data-fid="move-type">
+      <label class="movepick__typed" class:movepick__typed--bad={error} data-fid={fids.type}>
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"
           ><rect x="2" y="6" width="20" height="12" rx="2" /><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" /></svg
         >
@@ -195,15 +225,15 @@
       </label>
     </div>
     <p class="movepick__hint" id="{uid}-hint">
-      {#if variant !== 'card'}<span>{variant === 'phone' ? `steps ${step} min` : `↑ ↓ step ${step} min · Run lengths`}</span>{/if}
+      {#if variant !== 'card'}<span>{hint || (variant === 'phone' ? `steps ${step} min` : `↑ ↓ step ${step} min · Run lengths`)}</span>{/if}
       <span class="mono movepick__reads" aria-live="polite">{reading?.kind === 'ok' ? `reads as ${label(reading.slot)}` : ''}</span>
     </p>
     {#if error}
-      <p class="movepick__error" id="{uid}-err" role="alert" data-fid="move-error"><Icon name="alert-circle" />{error}</p>
+      <p class="movepick__error" id="{uid}-err" role="alert" data-fid={fids.error}><Icon name="alert-circle" />{error}</p>
     {/if}
     {#if ideas.length}
       {#if variant !== 'card'}<span class="cap movepick__title movepick__title--sub">Suggestions · {label({ day: slot.day, time: null }).replace(/ own time$/, '')}</span>{/if}
-      <div class="movepick__ideas" role="group" aria-label="Suggestions" data-fid="move-suggest">
+      <div class="movepick__ideas" role="group" aria-label="Suggestions" data-fid={fids.suggest}>
         {#each ideas as idea (idea.label)}
           {@const hit = clashText(subject, { day: slot.day, time: idea.time }, field, names)}
           {@const on = idea.time === slot.time}
@@ -220,23 +250,24 @@
         {/each}
       </div>
     {/if}
-    {#if clash}
-      <p class="movepick__clash" role="status" data-fid="move-clash"><Icon name="alert-triangle" /><span><b>Clash:</b> {clash}. {clashTail}</span></p>
+    {#if clash && showClash}
+      <p class="movepick__clash" role="status" data-fid={fids.clash}><Icon name="alert-triangle" /><span><b>Clash:</b> {clash}. {clashTail}</span></p>
     {/if}
+    {@render extra?.(slot)}
   </fieldset>
   {#if foot}
     <div class="movepick__foot">
       <p class="movepick__result">
         <span class="cap">Moves to</span>
-        <b class="mono movepick__to" data-fid="move-result">{label(slot)}</b>
+        <b class="mono movepick__to" data-fid={fids.result}>{label(slot)}</b>
         {#if own && !same}<s class="mono movepick__was"><span class="vh">was </span>{label(own)}</s>{/if}
       </p>
-      <div class="movepick__acts">
+      <div class="movepick__acts" data-fid={fids.acts}>
         <button type="button" class="btn" disabled={busy} onclick={() => (oncancel ? oncancel() : reset())}>Cancel</button>
-        <button type="button" class="btn btn--primary btn--key movepick__go" data-fid="move-submit" disabled={busy || blocked} onclick={submit}
+        <button type="button" class="btn btn--primary btn--key movepick__go" data-fid={fids.submit} disabled={busy || blocked} onclick={submit}
           ><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"
             ><path d="M5 12h14M13 6l6 6-6 6" /></svg
-          >Move</button
+          >{submitLabel}</button
         >
       </div>
     </div>

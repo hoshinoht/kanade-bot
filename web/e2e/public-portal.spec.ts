@@ -17,10 +17,10 @@ const ALLOWED: Record<string, true> = {
   '/api/public/sessions': true,
   '/api/identity': true,
 };
-/** Signed in, the member's own reads join them: the week, the allowance and boss art. */
+/** Signed in, the member's own reads join them: the week, the allowance, their requests (the masthead's count) and boss art. */
 const memberRead = (request: string) => {
   const path = request.split(' ')[1]!;
-  return ALLOWED[path] || path === '/api/public/week' || path === '/api/public/me/allowance' || path.startsWith('/art/');
+  return ALLOWED[path] || path === '/api/public/week' || path === '/api/public/me/allowance' || path === '/api/public/requests/mine' || path.startsWith('/art/');
 };
 /** `name` as a whole word ("Ren", not "Render"). */
 const word = (name: string) => new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);

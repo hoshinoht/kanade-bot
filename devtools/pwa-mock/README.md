@@ -92,17 +92,47 @@ not_owner`/`not_requester`, `409 not_on_party`/`already_owner`/
 `request_closed`/`request_expired`, `404 not_found`. Every write needs the
 session's token and an `Idempotency-Key` (`400 invalid_idempotency_key`);
 hand-off and accept also need the 15-minute fresh window after sign-in
-(`401 reauth_required`, never hit while `KANADE_MOCK_NOW` pins the clock).
+(`401 reauth_required`; the pinned clock never ages a sign-in, so
+`POST /__mock/public/unfresh` does).
 Only the ask and the hand-off replay by key, as on the server; a repeated
 accept, decline or withdraw is refused. Member writes are not rate-limited.
 Changes show in the admin Inbox and emit `inbox` + `schedule` hints.
+
+Member writes (`src/member_writes.rs`, `src/mock/member_runs.rs`,
+`src/mock/requests.rs`, as the member-writes contract): `PUT
+/api/public/runs/{id}/answer {answer, version}` (yes/maybe/no; a no puts a
+live run at risk) and `POST /runs/{id}/move {day, time, version}` (this boss
+week, not started, to a slot after now; own-time runs keep their clock on
+`null`) answer `MemberRunResult`/`MemberMoveResult`; refusals `404
+not_found` (also last week's runs), `403 not_in_run`, `409
+run_closed`/`week_over`/`run_started`/`stale`, `422
+invalid_body`/`invalid_time`/`in_the_past`. Staleness follows the history
+records newer than `version`: only a change to the run's slot (move) or the
+caller's own RSVP (answer) is `409 stale`. `GET /runs/{id}` is
+`MemberRunLink` (this, next or a past week the member was on; `removed` from
+the record that took her off; the seeded last-week `p-kalos` points at this
+week's `r-kalos`). Requests: `GET /api/public/requests/mine`
+(`MemberRequests`, seeded with a waiting weekly change, approved, rejected,
+withdrawn and expired ones), `POST /api/public/requests` (`201`, an exact
+retry `200`, the key with another body `422 idempotency_mismatch`; `429
+request_limit` with `limit: open|today` at 3 waiting or 6 sent in 24 h;
+`404`/`409 already_in_party`/`no_effect`/`422 field_not_allowed`) and
+`POST /requests/{id}/withdraw` (no fresh sign-in; `409 request_closed`).
+Answer, move and submit need the fresh window; every write replays by key.
+Requests sent here stay in the member's list only: the admin Inbox's
+self-service items are its own seed, and no admin decides the portal's.
+
 Mock control, public origin only: `POST /__mock/public/sign-in` signs in without the
 redirects (cookie + token), `POST /__mock/public/discord {"error": code}`
 makes the next start end with `/?login_error=<code>` (`not_eligible` sets no
 cookie), `POST /__mock/public/end` ends every session (expired or no longer
 eligible), and `POST /__mock/public/rotate` makes each session rotate its id
 and token on its next request, as after a client IP change. Session lifetimes
-are not simulated.
+are not simulated: `POST /__mock/public/unfresh` ages every sign-in past the
+fresh window (until the next sign-in). `POST /__mock/public/remove {"run":
+id}` has Ren take Asahi off a run (a recorded admin edit), and `POST
+/__mock/public/end-week` makes this boss week's runs read as past (`week:
+"past"`, writes refused) as after a reset with the page open.
 
 The mock's admin signs in with Discord as Asahi (staff, `admin:discord:1001`)
 after every `POST /api/admin/reset`; `POST /__mock/session {"method":

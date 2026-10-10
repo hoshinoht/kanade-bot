@@ -5,8 +5,7 @@
  * `time` is always `HH:MM`.
  */
 import type { Proposal, Run, Week, WeekDay } from '@kanade/api-types';
-import type { Slot } from '../planner/keyboardMove';
-import { parseWhen } from '../sheet/parseWhen';
+import { parseWhen, type Slot } from '@kanade/ui';
 
 const DOWS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

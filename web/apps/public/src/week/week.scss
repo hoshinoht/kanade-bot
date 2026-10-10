@@ -310,6 +310,15 @@
   cursor: pointer;
 }
 
+a.week-glance__fact {
+  color: inherit;
+  text-decoration: none;
+}
+
+.member-glance__answer {
+  padding-top: 4px;
+}
+
 .member-glance__soon[aria-disabled="true"],
 .member-glance__clear {
   cursor: default;
@@ -365,16 +374,25 @@
   cursor: default;
 }
 
+.member-answer[aria-busy="true"] .seg__btn {
+  cursor: progress;
+}
+
+// The answer a fresh sign-in came back with, not saved yet: a ring and the
+// "Not saved yet" line under the group, never colour alone.
+.member-answer .member-answer__btn--picked {
+  box-shadow: inset 0 0 0 2px var(--accent-fill);
+}
+
+.member-answer__hint--picked {
+  color: var(--ink);
+}
+
 .member-pane__ask {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-}
-
-.member-pane__ask .btn[aria-disabled="true"],
-.member-hero__full[aria-disabled="true"] {
-  cursor: default;
 }
 
 .member-lock {
@@ -389,8 +407,45 @@
   line-height: 1.45;
 }
 
-.member-move .movepick__typed {
-  position: relative;
+/* ── Move: the pane's form and the Move page's (move/MemberMove) ─────── */
+
+.member-move,
+.member-move__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.member-move--page,
+.member-move--phone {
+  flex: 1 1 auto;
+}
+
+// The choices scroll; the foot stays at the window's bottom.
+.member-move--page .member-move__body,
+.member-move--phone .member-move__body {
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
+.member-move--phone .member-move__body {
+  padding: 12px 14px;
+}
+
+.member-move--phone .member-move__foot {
+  flex: none;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 10px 14px 14px;
+  border-top: 2px solid var(--line);
+  background: var(--surface);
+}
+
+.member-move--phone .movepick__acts .btn {
+  flex: 1 1 0;
+  min-height: 44px;
+  justify-content: center;
 }
 
 .member-move .movepick__acts {
@@ -402,6 +457,33 @@
   flex-wrap: nowrap;
 }
 
+// The Move page (board Move): the picker sits flush in the form, its
+// suggestions follow the stepper hint without a title of their own, and the
+// foot is one row: "Moves to …" on the left, Cancel and Move it on the right.
+.member-move--page .movepick__set {
+  padding: 0;
+}
+
+.member-move--page .movepick__title--sub {
+  display: none;
+}
+
+.member-move--page .member-move__foot {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 12px 0 0;
+}
+
+.member-move--page .movepick__result {
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+}
+
+.member-move--page .movepick__acts {
+  justify-content: flex-end;
+}
+
 .member-move .movepick__legend {
   display: flex;
   align-items: center;
@@ -409,8 +491,42 @@
   width: 100%;
 }
 
-.member-move .movepick__set:disabled .movepick__title {
-  color: var(--dim-text);
+.member-move__hint {
+  margin: 0;
+}
+
+.member-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  font-size: var(--fs-small);
+  list-style: none;
+}
+
+.member-checks li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.member-checks .icon {
+  flex: none;
+  margin-top: 2px;
+}
+
+.member-checks__ok .icon {
+  color: var(--ok-text);
+}
+
+.member-checks__warn {
+  color: color-mix(in srgb, var(--warn-text) 85%, var(--ink));
+}
+
+.member-checks__bad {
+  color: var(--risk-text);
+  font-weight: 600;
 }
 
 /* ── phones: the week as one list, an open run as its own screen ───── */
@@ -722,6 +838,30 @@
   align-items: center;
   gap: 4px 6px;
   margin: 0;
+}
+
+.member-run__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: var(--fs-small);
+}
+
+.member-run__links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+}
+
+.frame--phone .member-run__links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.frame--phone .member-run__links .btn {
+  justify-content: center;
+  min-height: 44px;
 }
 
 .member-run__was {

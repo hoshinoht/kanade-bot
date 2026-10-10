@@ -2624,6 +2624,242 @@ async fn public_member_ownership_matches_the_contract() {
     );
 }
 
+/// The member writes' routes (member-writes-contract): the session, the
+/// token, a required key with replay, a fresh sign-in on all but a
+/// withdrawal, and the refusal codes. The bodies' schemas belong to the API
+/// lane's `public.json`; here only status and error codes are walked.
+#[tokio::test]
+async fn public_member_writes_follow_the_contract() {
+    let h = Harness::new();
+    let none: &[(&str, &str)] = &[];
+    let answer = "/api/public/runs/r-carling/answer";
+    let moved = "/api/public/runs/r-carling/move";
+    let link = "/api/public/runs/r-carling";
+    let submit = "/api/public/requests";
+    let withdraw = "/api/public/requests/req-kalos-weekly/withdraw";
+    let call = |method: &'static str,
+                path: &'static str,
+                body: Option<Value>,
+                headers: Vec<(&'static str, String)>| {
+        let h = &h;
+        async move {
+            let pairs: Vec<(&str, &str)> = headers.iter().map(|(k, v)| (*k, v.as_str())).collect();
+            let (status, _, value) = h.send_with(true, method, path, body, &pairs).await;
+            (
+                status,
+                value["error"].as_str().unwrap_or_default().to_owned(),
+                value,
+            )
+        }
+    };
+
+    // Signed out: 401 everywhere.
+    for (method, path) in [
+        ("GET", link),
+        ("PUT", answer),
+        ("POST", moved),
+        ("GET", "/api/public/requests/mine"),
+        ("POST", submit),
+        ("POST", withdraw),
+    ] {
+        let (status, _, _) = h.send_with(true, method, path, None, none).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{method} {path}");
+    }
+    let (_, headers, _) = h
+        .send_with(true, "POST", "/__mock/public/sign-in", None, none)
+        .await;
+    let cookie = session_cookie(&headers);
+    let token = header_value(&headers, "x-kanade-csrf").to_owned();
+    let with = |key: &str| {
+        vec![
+            ("cookie", cookie.clone()),
+            ("x-kanade-csrf", token.clone()),
+            ("idempotency-key", key.to_owned()),
+        ]
+    };
+
+    // The link view needs only the session.
+    let (status, _, view) = call("GET", link, None, vec![("cookie", cookie.clone())]).await;
+    assert_eq!(
+        (status, view["week"].as_str()),
+        (StatusCode::OK, Some("current"))
+    );
+    let (status, code, _) = call(
+        "GET",
+        "/api/public/runs/nope",
+        None,
+        vec![("cookie", cookie.clone())],
+    )
+    .await;
+    assert_eq!(
+        (status, code.as_str()),
+        (StatusCode::NOT_FOUND, "not_found")
+    );
+
+    // Writes: no token 403, no key 400, a bad body 422.
+    let body = json!({ "answer": "maybe", "version": 1 });
+    let (status, code, _) = call(
+        "PUT",
+        answer,
+        Some(body.clone()),
+        vec![("cookie", cookie.clone()), ("idempotency-key", "k".into())],
+    )
+    .await;
+    assert_eq!((status, code.as_str()), (StatusCode::FORBIDDEN, "csrf"));
+    let (status, code, _) = call(
+        "PUT",
+        answer,
+        Some(body.clone()),
+        vec![("cookie", cookie.clone()), ("x-kanade-csrf", token.clone())],
+    )
+    .await;
+    assert_eq!(
+        (status, code.as_str()),
+        (StatusCode::BAD_REQUEST, "invalid_idempotency_key")
+    );
+    let (status, code, _) = call(
+        "PUT",
+        answer,
+        Some(json!({ "answer": "maybe" })),
+        with("bad"),
+    )
+    .await;
+    assert_eq!(
+        (status, code.as_str()),
+        (StatusCode::UNPROCESSABLE_ENTITY, "invalid_body")
+    );
+
+    // The week's version, then an answer, its replay and a mismatched reuse of the key.
+    let (_, _, week) = call(
+        "GET",
+        "/api/public/week",
+        None,
+        vec![("cookie", cookie.clone())],
+    )
+    .await;
+    let v = week["version"].as_u64().unwrap();
+    let body = json!({ "answer": "maybe", "version": v });
+    let (status, _, first) = call("PUT", answer, Some(body.clone()), with("a-1")).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _, again) = call("PUT", answer, Some(body), with("a-1")).await;
+    assert_eq!((status, &again), (StatusCode::OK, &first));
+    let (status, code, _) = call(
+        "PUT",
+        answer,
+        Some(json!({ "answer": "no", "version": v })),
+        with("a-1"),
+    )
+    .await;
+    assert_eq!(
+        (status, code.as_str()),
+        (StatusCode::UNPROCESSABLE_ENTITY, "idempotency_mismatch")
+    );
+    let v = first["version"].as_u64().unwrap();
+    let (status, code, _) = call(
+        "POST",
+        "/api/public/runs/r-kalos/move",
+        Some(json!({ "day": 6, "time": "21:00", "version": v })),
+        with("m-1"),
+    )
+    .await;
+    assert_eq!(
+        (status, code.as_str()),
+        (StatusCode::CONFLICT, "run_started")
+    );
+    let (status, _, moved_run) = call(
+        "POST",
+        moved,
+        Some(json!({ "day": 6, "time": "21:30", "version": v })),
+        with("m-2"),
+    )
+    .await;
+    assert_eq!(
+        (status, moved_run["previous"]["time"].as_str()),
+        (StatusCode::OK, Some("22:00"))
+    );
+
+    // Requests: the list, a submit (201, then 200 on retry), the open limit with its `limit`.
+    let (status, _, mine) = call(
+        "GET",
+        "/api/public/requests/mine",
+        None,
+        vec![("cookie", cookie.clone())],
+    )
+    .await;
+    assert_eq!((status, mine["open"].as_u64()), (StatusCode::OK, Some(1)));
+    let leave = |run: &str| json!({ "kind": "leave", "run_id": run });
+    let (status, _, sent) = call("POST", submit, Some(leave("r-carling")), with("r-1")).await;
+    assert_eq!(
+        (status, sent["state"].as_str()),
+        (StatusCode::CREATED, Some("waiting"))
+    );
+    let (status, _, retried) = call("POST", submit, Some(leave("r-carling")), with("r-1")).await;
+    assert_eq!((status, &retried["id"]), (StatusCode::OK, &sent["id"]));
+    let (status, code, _) = call(
+        "POST",
+        submit,
+        Some(json!({ "kind": "leave", "run_id": "r-carling", "extra": 1 })),
+        with("r-2"),
+    )
+    .await;
+    assert_eq!(
+        (status, code.as_str()),
+        (StatusCode::UNPROCESSABLE_ENTITY, "invalid_body")
+    );
+    call("POST", submit, Some(leave("n-carling")), with("r-3")).await;
+    let (status, code, limited) = call("POST", submit, Some(leave("n-kalos")), with("r-4")).await;
+    assert_eq!(
+        (status, code.as_str(), limited["limit"].as_str()),
+        (StatusCode::TOO_MANY_REQUESTS, "request_limit", Some("open"))
+    );
+
+    // A sign-in older than the fresh window: every write but a withdrawal asks for a new one.
+    h.send_with(true, "POST", "/__mock/public/unfresh", None, none)
+        .await;
+    for (method, path, body) in [
+        ("PUT", answer, json!({ "answer": "yes", "version": v })),
+        (
+            "POST",
+            moved,
+            json!({ "day": 6, "time": "22:00", "version": v }),
+        ),
+        ("POST", submit, leave("r-jupiter")),
+    ] {
+        let (status, code, _) = call(method, path, Some(body), with("fresh-1")).await;
+        assert_eq!(
+            (status, code.as_str()),
+            (StatusCode::UNAUTHORIZED, "reauth_required"),
+            "{path}"
+        );
+    }
+    let (status, _, withdrawn) = call("POST", withdraw, Some(json!({})), with("w-1")).await;
+    assert_eq!(
+        (status, withdrawn["state"].as_str()),
+        (StatusCode::OK, Some("withdrawn"))
+    );
+    let (status, code, _) = call("POST", withdraw, Some(json!({})), with("w-2")).await;
+    assert_eq!(
+        (status, code.as_str()),
+        (StatusCode::CONFLICT, "request_closed")
+    );
+
+    // Closed: every route answers `closed`.
+    let csrf = h.csrf.clone();
+    h.send_with(
+        false,
+        "PATCH",
+        "/api/admin/config",
+        Some(json!({ "self_service": { "public_portal": false } })),
+        &[("x-kanade-csrf", &csrf)],
+    )
+    .await;
+    let (status, code, _) = call("GET", link, None, vec![("cookie", cookie.clone())]).await;
+    assert_eq!(
+        (status, code.as_str()),
+        (StatusCode::SERVICE_UNAVAILABLE, "closed")
+    );
+}
+
 impl Harness {
     /// `GET /api/admin/events` as `EventSource` sends it: the SSE text.
     async fn events(&self, last: Option<u64>) -> String {

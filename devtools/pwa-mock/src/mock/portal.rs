@@ -239,6 +239,16 @@ impl Portal {
         }
     }
 
+    /// `/__mock/public/unfresh`: every sign-in is older than the fresh-write
+    /// window (the pinned clock never ages one), so writes that need a fresh
+    /// sign-in answer `401 reauth_required` until the next sign-in.
+    pub fn age_sign_ins(&mut self) {
+        let old = now_secs() - FRESH_SECS - 5 * 60;
+        for session in &mut self.sessions {
+            session.signed_in = session.signed_in.min(old);
+        }
+    }
+
     pub fn fail_next(&mut self, code: &'static str) {
         self.error = Some(code);
     }
@@ -300,5 +310,16 @@ mod tests {
         assert!(portal.end_one(&me.id, "000000000000000000000000").is_err());
         assert_eq!(portal.end_all(), 3);
         assert!(portal.token(&me.id).is_none());
+    }
+
+    #[test]
+    fn aged_sign_ins_are_no_longer_fresh_until_the_next_one() {
+        let mut portal = Portal::default();
+        let me = portal.sign_in(None);
+        assert!(portal.fresh(&me.id));
+        portal.age_sign_ins();
+        assert!(!portal.fresh(&me.id));
+        let again = portal.sign_in(None);
+        assert!(portal.fresh(&again.id));
     }
 }

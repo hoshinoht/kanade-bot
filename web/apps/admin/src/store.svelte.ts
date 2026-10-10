@@ -3,7 +3,7 @@ import { ApiRequestError, createClient, createPoller, wroteWithin, type LiveEven
 import { arrival, live, OWN_ECHO_MS } from './resource.svelte';
 import { clockTime, runTitle, whenLabel, type FreshState } from '@kanade/ui';
 import { directory } from './names/directory.svelte';
-import type { Slot } from './planner/keyboardMove';
+import type { Slot } from '@kanade/ui';
 import { swapSlots } from './planner/dropTime';
 import { tick } from 'svelte';
 

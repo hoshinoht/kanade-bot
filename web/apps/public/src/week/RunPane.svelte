@@ -1,28 +1,52 @@
 <!--
   The run open beside the board (boards Week-RunMine, Week-RunOther,
-  WeekList-Selected): the admin run pane (`RunSheet.svelte` pane,
-  `.week-pane`) as the member sees it. Their own run: "YOU'RE IN", the art
-  header, their answer (read-only for now), Move and "Ask for another
-  change" drawn disabled ("coming soon"). Anyone else's run: view only, a
-  lock box saying why, the party, and "Ask to join" disabled. It enters
-  forward (`enter`) and leaves through `is-leaving` while the page's
-  `Presence` keeps it, as the admin's side panes do.
+  WeekList-Selected, ConfirmAnswer): the admin run pane (`RunSheet.svelte`
+  pane, `.week-pane`) as the member sees it. Their own run: "YOU'RE IN", the
+  art header, their answer (In / Maybe / Out, live), Move to (this boss week
+  only, while the run can still move) and "Ask for another change…". Anyone
+  else's run: view only, a lock box saying why, the party, and "Ask to
+  join…". Both asks open the request form. It enters forward (`enter`) and
+  leaves through `is-leaving` while the page's `Presence` keeps it, as the
+  admin's side panes do.
 -->
 <script lang="ts">
   import type { MemberRun, MemberWeek } from '@kanade/api-types';
   import { ANSWER_MARKS, answerCounts, AnswerBar, BossArt, BossTag, dayLabel, enter, Icon, runCountdown, runFullTitle, StatusMark, WavyProgress } from '@kanade/ui';
   import { countdownWords, yours } from '../member';
-  import AnswerSoon from './AnswerSoon.svelte';
-  import MoveSoon from './MoveSoon.svelte';
+  import MemberMove from '../move/MemberMove.svelte';
+  import type { Route } from '../route.svelte';
+  import type { WeekKey } from '../weeks.svelte';
+  import AnswerChoice from '../writes/AnswerChoice.svelte';
+  import type { RunFlow } from '../writes/flow.svelte';
+  import { follow } from '../writes/follow';
+  import { askPath, movable, type Choice } from '../writes/runs';
 
   let {
     run,
     week,
+    which,
     memberId,
+    flow,
+    route,
+    picked = null,
+    onpress,
     leaving = false,
     onleft,
     onclose,
-  }: { run: MemberRun; week: MemberWeek; memberId: string; leaving?: boolean; onleft?: (event: AnimationEvent) => void; onclose: () => void } = $props();
+  }: {
+    run: MemberRun;
+    week: MemberWeek;
+    which: WeekKey;
+    memberId: string;
+    flow: RunFlow;
+    route: Route;
+    /** The answer a fresh sign-in came back with, not saved yet. */
+    picked?: Choice | null;
+    onpress?: () => void;
+    leaving?: boolean;
+    onleft?: (event: AnimationEvent) => void;
+    onclose: () => void;
+  } = $props();
 
   const counts = $derived(answerCounts(run.participants));
   const art = $derived(run.bosses.find((b) => b.art) ?? null);
@@ -32,6 +56,7 @@
   const title = $derived(`${runFullTitle(run)}, ${dayLabel(week, run.day)} ${run.time ?? 'own time'}`);
   // The enter replays only when the run itself changes: a fresh read hands in a new object for the same run.
   const runId = $derived(run.id);
+  const ask = $derived(askPath(run));
 </script>
 
 <aside
@@ -83,7 +108,7 @@
           {#if counts.no}<span class="tone tone--danger mono">{counts.no} out</span>{/if}
           {#if counts.maybe}<span class="tone tone--info">{counts.maybe} maybe</span>{/if}
           {#if counts.waiting}<span class="tone tone--neutral">{counts.waiting} waiting</span>{/if}
-          <span class="tone tone--neutral mono">#{run.channel}</span>
+          <span class="tone tone--neutral mono">{run.channel}</span>
         </p>
         <AnswerBar participants={run.participants} class="member-pane__answers" />
       </div>
@@ -92,9 +117,23 @@
       {#if mine}
         <section class="member-pane__sec" aria-labelledby="member-answer-title">
           <p class="cap" id="member-answer-title">Your answer</p>
-          <AnswerSoon answer={mine.answer} data-fid="week-answer" />
+          <AnswerChoice {run} {week} {which} {memberId} {flow} {picked} {onpress} data-fid="week-answer" />
         </section>
-        {#if run.can_edit}<MoveSoon {run} {week} />{/if}
+        {#if movable(run, week, which, memberId)}
+          <MemberMove
+            {run}
+            {week}
+            {memberId}
+            {flow}
+            variant="pane"
+            step={30}
+            legend="Move to"
+            stepHint="↑ ↓ step 30 min · this week only{run.fixed_id ? ', your weekly timing stays the same' : ''}"
+            fids={{ time: 'move-time', type: 'move-type' }}
+            onmoved={(result) => flow.moved(result, week)}
+            data-fid="week-move"
+          />
+        {/if}
       {:else}
         <p class="member-lock" data-fid="week-lock"><Icon name="lock" /><span>You're not in this run, so you can't answer or move it.</span></p>
         <!-- Their party; on the member's own run the answer bar above and Your week carry it (board Week-RunMine). -->
@@ -109,8 +148,7 @@
         </ul>
       {/if}
       <div class="member-pane__ask">
-        <button type="button" class="btn" aria-disabled="true">{run.mine ? 'Ask for another change… (leave, swap, weekly)' : 'Ask to join…'}</button>
-        <span class="status-chip status-chip--warn">coming soon</span>
+        <a class="btn" href={ask} onclick={(event) => follow(route, event, ask)}>{run.mine ? 'Ask for another change… (leave, swap, weekly)' : 'Ask to join…'}</a>
       </div>
       {#if !run.mine}<p class="field__hint">A request goes to the admins; the party doesn't change until one approves it.</p>{/if}
     </div>

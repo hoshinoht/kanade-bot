@@ -4,11 +4,10 @@
   import { tick, type Snippet } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import type { Run, WeekKey } from '@kanade/api-types';
-  import { dayNumber, experiments, flip, replay, Icon, LoadingState, longDate, NapWindow, SPRING_BOUNCY, SPRING_BOUNCY_MS, runTitle, sortRuns, WavyProgress, weekProgress } from '@kanade/ui';
+  import { dayNumber, experiments, flip, replay, Icon, LoadingState, longDate, NapWindow, SPRING_BOUNCY, SPRING_BOUNCY_MS, runTitle, sortRuns, WavyProgress, weekProgress, type Slot } from '@kanade/ui';
   import Planner from '../planner/Planner.svelte';
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
-  import type { Slot } from '../planner/keyboardMove';
   import { isPast, type AdminWeek } from '../store.svelte';
   import { directory, memberLabel } from '../names/directory.svelte';
   import Filters from '../week/Filters.svelte';

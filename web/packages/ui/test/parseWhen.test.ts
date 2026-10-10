@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WeekDay } from '@kanade/api-types';
-import { parseWhen } from '../src/sheet/parseWhen';
+import { parseWhen } from '../src/move/parseWhen';
 
 const days: WeekDay[] = ['Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue', 'Wed'].map((dow, index) => ({
   index,

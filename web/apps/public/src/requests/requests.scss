@@ -1,0 +1,482 @@
+// Ask for a change and My requests (boards RequestForm*, PhoneRequest,
+// Requests*, PhoneRequests): one window each; the form beside its summary,
+// the list beside the open request. Rows are card surfaces on the pane
+// (mockup `.lrow`), the chosen one a tonal fill and a rounder shape; the
+// request type is a connected group (mockup `.seg`). Board hex values map
+// to the Otonose tokens.
+
+.req-window {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.req-window__end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.req-window__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.req-form__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 18px 22px;
+}
+
+.req-field {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.req-field + .req-field {
+  margin-top: 0;
+}
+
+.req-field > legend {
+  margin-bottom: 6px;
+}
+
+// The native radio covers its whole option: keyboard, label and form semantics; the option draws the state.
+.req-pick {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.req-pick:disabled {
+  cursor: default;
+}
+
+/* ── What do you want? (a connected group; a list of rows on phones) ── */
+
+.req-seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.req-seg__opt {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: 6px;
+  background: var(--seg-fill);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.req-seg__opt:first-child { border-radius: 16px 6px 6px 16px; }
+.req-seg__opt:last-child { border-radius: 6px 16px 16px 6px; }
+
+.req-seg__opt--on,
+.req-seg__opt--on:first-child,
+.req-seg__opt--on:last-child {
+  border-radius: 16px;
+  background: var(--accent-fill);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+.req-seg__opt:has(:focus-visible),
+.req-run:has(:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.req-seg--stack {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 3px;
+}
+
+.req-seg--stack .req-seg__opt {
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: 4px;
+  background: var(--row);
+  font-size: var(--fs-body);
+}
+
+.req-seg--stack .req-seg__opt:first-child { border-radius: 16px 16px 4px 4px; }
+.req-seg--stack .req-seg__opt:last-child { border-radius: 4px 4px 16px 16px; }
+
+.req-seg--stack .req-seg__opt--on,
+.req-seg--stack .req-seg__opt--on:first-child,
+.req-seg--stack .req-seg__opt--on:last-child {
+  border-radius: 18px;
+  background: var(--select);
+  box-shadow: inset 0 0 0 1.5px var(--select-edge);
+  color: var(--ink);
+  font-weight: 800;
+}
+
+/* ── Which run (a contained list) ── */
+
+.req-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.req-run {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--row);
+  cursor: pointer;
+}
+
+.req-run:first-child { border-radius: 16px 16px 6px 6px; }
+.req-run:last-child { border-radius: 6px 6px 16px 16px; }
+.req-run:only-child { border-radius: 16px; }
+
+.req-run--on,
+.req-run--on:first-child,
+.req-run--on:last-child {
+  border-radius: 18px;
+  background: var(--select);
+  box-shadow: inset 0 0 0 1.5px var(--select-edge);
+}
+
+.req-run--on .req-run__title {
+  font-weight: 800;
+}
+
+// Not this kind's to take: recessed and grey, the words say which kind can (mockup `.viewonly`).
+.req-run--blocked {
+  background: var(--raise);
+  color: var(--dim-text);
+  cursor: default;
+}
+
+.req-run--blocked .portrait {
+  filter: grayscale(1);
+}
+
+.req-run__blocked {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.req-run__when {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* ── The kind's fields ── */
+
+.req-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 16px;
+}
+
+.req-note {
+  min-height: 4.5rem;
+  resize: vertical;
+}
+
+.req-note__hint--over {
+  color: var(--risk-text);
+}
+
+/* ── The summary beside the form ── */
+
+.req-aside {
+  flex-basis: min(330px, 34vw);
+  gap: 12px;
+  padding: 18px;
+  background: var(--select);
+  border-left-color: var(--select-edge);
+}
+
+.req-aside > * {
+  margin: 0;
+}
+
+.req-aside .cap {
+  color: var(--accent-text);
+}
+
+.req-aside__title {
+  font-family: var(--display);
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.req-aside__line,
+.req-aside__text {
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+
+.req-aside__spacer {
+  flex: 1 1 auto;
+}
+
+.req-limit {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+}
+
+.req-limit .icon {
+  flex: none;
+  margin-top: 2px;
+}
+
+// A key that cannot send yet stays focusable with its reason; it reads as off.
+.req-send[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ── Chips and the stepper ── */
+
+// Waiting: the warn outline, dashed (a state still open).
+.req-chip--waiting {
+  box-shadow: none;
+  border: 1.5px dashed color-mix(in srgb, var(--warn) 55%, var(--surface));
+}
+
+.req-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 520px;
+}
+
+.req-steps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.req-steps__dot {
+  display: grid;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 13px;
+  background: var(--chip-fill);
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  font-weight: 700;
+}
+
+.req-steps__dot--done {
+  background: var(--accent-fill);
+  color: var(--accent-ink);
+}
+
+.req-steps__dot--gone {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.req-steps__bar {
+  flex: 1 1 auto;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.req-steps__bar--done {
+  background: var(--accent-fill);
+}
+
+.req-steps__labels {
+  display: flex;
+  justify-content: space-between;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+/* ── My requests: the list and the open request ── */
+
+.req-list {
+  display: flex;
+  flex: 0 0 min(380px, 36vw);
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px;
+}
+
+.req-list > * {
+  flex-shrink: 0;
+}
+
+.req-row {
+  border-radius: 6px;
+  background: var(--row);
+  color: inherit;
+  text-decoration: none;
+}
+
+.req-row__head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.req-row--on {
+  border-radius: 18px;
+  background: var(--select);
+  box-shadow: inset 0 0 0 1.5px var(--select-edge);
+}
+
+.req-row--on .req-row__title {
+  font-weight: 800;
+}
+
+.req-row__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.req-row__top > .status-chip {
+  margin-left: auto;
+}
+
+.req-row__title {
+  font-size: var(--fs-body);
+}
+
+.req-row__line {
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+}
+
+.req-detail {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  max-width: 720px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 20px 26px;
+}
+
+.req-detail > p,
+.req-detail__head > * {
+  margin: 0;
+}
+
+.req-detail__head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.req-detail__title {
+  font-family: var(--display);
+  font-size: 1.3rem;
+  font-weight: 800;
+}
+
+.req-detail__chips,
+.req-detail__acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.req-detail__note {
+  margin: 0;
+  background: var(--row);
+  font-size: var(--fs-body);
+}
+
+.req-empty {
+  display: grid;
+  flex: 1 1 auto;
+  place-items: center;
+  padding: 24px;
+}
+
+/* ── Phones (boards PhoneRequest, PhoneRequests) ── */
+
+.req-window--phone .req-form__body {
+  padding: 14px 12px 16px;
+}
+
+.req-form__foot {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  padding: 10px 10px 16px;
+  border-top: 2px solid var(--line);
+  background: var(--surface);
+}
+
+.req-form__foot .req-send {
+  flex: 1 1 auto;
+}
+
+.req-list--phone {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 12px 10px 16px;
+}
+
+.req-list--phone .req-row__head {
+  min-height: 64px;
+  padding: 12px 14px;
+}
+
+.req-row__more {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 14px 14px;
+}
+
+.req-row__more > p {
+  margin: 0;
+}
+
+.req-row__more .btn {
+  min-height: 44px;
+}

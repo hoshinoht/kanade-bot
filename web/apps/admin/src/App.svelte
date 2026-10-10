@@ -18,6 +18,7 @@
     TWO_PANE_QUERY,
     whenLabel,
     type Command,
+    type Slot,
   } from '@kanade/ui';
   import Lazy from './pages/Lazy.svelte';
   import NotFoundPage from './pages/NotFoundPage.svelte';
@@ -25,7 +26,6 @@
   import type { Run, Session } from '@kanade/api-types';
   import { onUnauthenticated } from '@kanade/client';
   import { loginHref, safeNext } from './auth';
-  import type { Slot } from './planner/keyboardMove';
   import { match, Router } from './router.svelte';
   import { DETAILS, ROUTES, SECTIONS } from './routes';
   import type RunSheetType from './RunSheet.svelte';

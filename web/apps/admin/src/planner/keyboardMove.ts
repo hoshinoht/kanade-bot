@@ -6,17 +6,11 @@
  * one that day, Enter/Space drops, S swaps with the run whose slot it is on,
  * Escape cancels. Pure so the announcements are unit-tested.
  */
-import { FIRST_MINUTE, LAST_MINUTE, fromMinutes, snapTime, toMinutes, type TimedRun } from './dropTime';
-
-export { fromMinutes, toMinutes };
+import { fromMinutes, toMinutes, type Slot, type TimedRun } from '@kanade/ui';
+import { FIRST_MINUTE, LAST_MINUTE, snapTime } from './dropTime';
 
 /** The pick-up shortcut; also exposed as `aria-keyshortcuts` on each card. */
 export const PICK_KEY = 'M';
-
-export interface Slot {
-  day: number;
-  time: string | null;
-}
 
 export type LiftState = { kind: 'idle' } | { kind: 'lifted'; runId: string; origin: Slot; at: Slot };
 

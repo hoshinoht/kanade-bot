@@ -4,7 +4,8 @@
   and the time zone. Signed in (`member`): the menu that opens the drawer,
   the page's name, the freshness chip and the member's portrait, which opens
   their Account. An open run (PhoneRun) swaps the menu and title for a
-  "‹ Week" back step and a chip saying whose run it is.
+  "‹ Week" back step and a chip saying whose run it is; the request form
+  (PhoneRequest) a back step to My requests and its own title.
 -->
 <script lang="ts">
   import type { PublicMember } from '@kanade/api-types';
@@ -36,8 +37,8 @@
     drawerId?: string;
     /** Where the drawer returns focus. */
     menu?: HTMLButtonElement;
-    /** In place of the menu and title: where back goes, its accessible name and what the chip says (no chip: an open guide). */
-    back?: { label: string; name?: string; chip?: string; mine?: boolean; onback: () => void } | null;
+    /** In place of the menu and title: where back goes, its accessible name, what the chip says (no chip: an open guide) or the page's title (the request form). */
+    back?: { label: string; name?: string; chip?: string; mine?: boolean; title?: string; onback: () => void } | null;
     fresh?: Snippet;
     onmenu?: () => void;
     onprofile?: () => void;
@@ -47,7 +48,7 @@
 <header class="topbar" class:topbar--visitor={!member} data-fid="topbar">
   {#if member && back}
     <button type="button" class="btn topbar__back" aria-label={back.name} onclick={back.onback}><Icon name="chevron-left" />{back.label}</button>
-    <span class="topbar__spacer"></span>
+    {#if back.title}<p class="topbar__title" data-fid="topbar-title">{back.title}</p>{:else}<span class="topbar__spacer"></span>{/if}
     {#if back.chip}<span class={back.mine ? 'you-chip' : 'member-card__view'}>{back.chip}</span>{/if}
     <button type="button" class="topbar__me" aria-label="Account: {member.display}" onclick={onprofile}
       ><Avatar class="topbar__avatar" src={member.avatar} name={member.display} /></button

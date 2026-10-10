@@ -105,11 +105,14 @@ pub async fn discord_start(
     ))
 }
 
-/// `next` as one query value (it is already a safe path).
+/// `next` as one query value (it is already a safe path). A `+` is encoded
+/// too: the query parser reads a bare one as a space, which `safe_next`
+/// refuses (a request draft's note carries them).
 pub fn query_value(next: &str) -> String {
     next.replace('%', "%25")
         .replace('&', "%26")
         .replace('#', "%23")
+        .replace('+', "%2B")
 }
 
 /// The landing page refreshes to `next` from this origin, so the first load
@@ -193,4 +196,19 @@ pub async fn fail_next_discord(
     };
     app.store.lock().await.fail_next_discord(code);
     StatusCode::NO_CONTENT.into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{query_value, safe_next};
+    use axum::extract::Query;
+    use std::collections::HashMap;
+
+    #[test]
+    fn a_next_with_plus_survives_the_callback_query() {
+        let next = "/requests/new?kind=leave&run=r-carling&note=Something+came+up.";
+        let uri: axum::http::Uri = format!("/cb?next={}", query_value(next)).parse().unwrap();
+        let Query(q) = Query::<HashMap<String, String>>::try_from_uri(&uri).unwrap();
+        assert_eq!(safe_next(q.get("next")), next);
+    }
 }

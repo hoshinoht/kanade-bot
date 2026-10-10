@@ -2,20 +2,27 @@
   The Week window's pane while no run is open (board Main, `glance`): the
   admin "at a glance" pane (`week/Glance.svelte`, `.week-glance`) for one
   member: their next run with its art, countdown and party, then Needs you
-  (answers they owe, either week). Asking for a change and the calendar feed
-  are drawn as the board draws them, marked "coming soon" and disabled.
+  (answers they owe, either week), with In / Maybe / Out for the first one
+  so it can be answered here. "Ask for a change…" opens the request form;
+  the calendar feed is drawn as the board draws it, marked "coming soon".
 -->
 <script lang="ts">
   import type { Answer, MemberRun, MemberWeek } from '@kanade/api-types';
   import { ANSWER_MARKS, BossArt, BossTag, Icon, openPlaces, pulse, runCountdown, runTitle, STATUS_WORDS, WavyProgress, weekStartLabel } from '@kanade/ui';
   import { answersOwed, countdownWords, nextOwn, youFirst } from '../member';
+  import type { Route } from '../route.svelte';
   import type { WeekKey } from '../weeks.svelte';
+  import AnswerChoice from '../writes/AnswerChoice.svelte';
+  import type { RunFlow } from '../writes/flow.svelte';
+  import { follow } from '../writes/follow';
 
   let {
     current,
     next,
     memberId,
     arrival,
+    flow,
+    route,
     onopen,
   }: {
     current: MemberWeek;
@@ -23,6 +30,8 @@
     memberId: string;
     /** `MemberWeeks.arrival`: numbers that change with a week from elsewhere pulse once (the admin Glance's ticks). */
     arrival: number;
+    flow: RunFlow;
+    route: Route;
     onopen: (run: MemberRun, which: WeekKey) => void;
   } = $props();
 
@@ -106,6 +115,17 @@
               ></button
             >
           </li>
+          <li class="member-glance__answer">
+            <AnswerChoice
+              run={first.run}
+              week={first.week}
+              which={first.which}
+              {memberId}
+              {flow}
+              hint={false}
+              label="Your answer for {runTitle(first.run)}, {first.week.days[first.run.day]?.dow ?? ''} {first.run.time ?? 'own time'}"
+            />
+          </li>
         {:else}
           <li class="week-glance__fact member-glance__clear"><span>Nothing owed: you've answered every run</span><Icon name="check" /></li>
         {/if}
@@ -114,9 +134,7 @@
   </div>
 
   <div class="week-glance__foot" data-fid="glance-foot">
-    <button type="button" class="week-glance__fact member-glance__soon" aria-disabled="true"
-      ><span>Ask for a change…</span><span class="status-chip status-chip--warn">coming soon</span></button
-    >
+    <a class="week-glance__fact" href="/requests/new" onclick={(event) => follow(route, event, '/requests/new')}><span>Ask for a change…</span><Icon name="chevron-right" /></a>
     <button type="button" class="week-glance__fact member-glance__soon" aria-disabled="true"
       ><span>Add my runs to my calendar</span><span class="status-chip status-chip--warn">coming soon</span></button
     >

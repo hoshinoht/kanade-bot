@@ -92,6 +92,11 @@ export { dayOf, rangeWords, serverClock, type ServerClock } from './components/c
 // The Move picker's day strip and time stepper (P_MoveStates), and the weekday-only strip.
 export { default as DayStrip, type StripDay } from './components/DayStrip.svelte';
 export { default as TimeStepper } from './components/TimeStepper.svelte';
+// The Move picker itself (admin run sheet and Inbox, the member portal's run pane and Move page), its rules and the shared slot/clash helpers.
+export { default as MovePicker, type MovePickerFids } from './components/MovePicker.svelte';
+export { clashText, dayCells, DAY_MINUTES, edgeDay, liveRuns, MAX_DOTS, MAX_SUGGESTIONS, namesIn, nextOpenDay, pickerRun, readTyped, stepTime, suggestions, type DayCell, type PickerRun, type Suggestion, type Typed } from './move/picker';
+export { parseWhen, type Parsed } from './move/parseWhen';
+export { clashes, fromMinutes, toMinutes, type Clash, type Slot, type TimedRun } from './move/slot';
 // The dropdown (P_Select boards): select-only combobox, multi-select, and the phone's native picker.
 export { default as Select } from './components/Select.svelte';
 export { default as MultiSelect } from './components/MultiSelect.svelte';

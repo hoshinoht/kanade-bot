@@ -48,7 +48,7 @@ pub struct MemberWeek {
 /// One admin run as the caller sees it. Both boss weeks the portal reads
 /// (this and next) still take member writes, so `can_edit` turns on the
 /// caller's place and the run's status only.
-fn member_run(run: Run) -> MemberRun {
+pub(super) fn member_run(run: Run) -> MemberRun {
     let participants: Vec<MemberParticipant> = run
         .participants
         .iter()

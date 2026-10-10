@@ -12,34 +12,15 @@
  *   earlier lands on 00:00, one that would start later on 23:59, and the
  *   result says which edge it was held at.
  */
+import { fromMinutes, toMinutes, type TimedRun } from '@kanade/ui';
 
 export const FIRST_MINUTE = 0;
 export const LAST_MINUTE = 23 * 60 + 59;
-const DAY = 24 * 60;
-
-export interface TimedRun {
-  id: string;
-  day: number;
-  /** `HH:MM`, or null for own time. */
-  time: string | null;
-  minutes: number;
-  /** Member ids on the run; those who answered no are left out by the caller. */
-  members?: string[];
-}
 
 export interface DropTime {
   time: string | null;
   /** Set when the computed start fell outside the day and was held at an edge. */
   held?: 'start' | 'end';
-}
-
-export function toMinutes(time: string): number {
-  const [h = '0', m = '0'] = time.split(':');
-  return Number(h) * 60 + Number(m);
-}
-
-export function fromMinutes(minutes: number): string {
-  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 }
 
 function hold(minutes: number): DropTime {
@@ -86,34 +67,6 @@ export function snapTime(run: TimedRun, at: string, others: TimedRun[], directio
     .filter((m) => m >= FIRST_MINUTE && m <= LAST_MINUTE && (direction < 0 ? m < now : m > now));
   if (points.length === 0) return null;
   return fromMinutes(direction < 0 ? Math.max(...points) : Math.min(...points));
-}
-
-export interface Clash {
-  /** The other run it overlaps. */
-  with: TimedRun;
-  /** Member ids on both. */
-  members: string[];
-}
-
-/**
- * Runs `run` would overlap (by start + minutes, across midnight too) that
- * share a member. Overlap alone is allowed and not reported.
- */
-export function clashes(run: TimedRun, runs: TimedRun[]): Clash[] {
-  if (run.time === null || !run.members?.length) return [];
-  const start = run.day * DAY + toMinutes(run.time);
-  const end = start + Math.max(run.minutes, 1);
-  const mine = new Set(run.members);
-  const found: Clash[] = [];
-  for (const other of runs) {
-    if (other.id === run.id || other.time === null) continue;
-    const otherStart = other.day * DAY + toMinutes(other.time);
-    const otherEnd = otherStart + Math.max(other.minutes, 1);
-    if (otherStart >= end || start >= otherEnd) continue;
-    const shared = (other.members ?? []).filter((m) => mine.has(m));
-    if (shared.length) found.push({ with: other, members: shared });
-  }
-  return found;
 }
 
 /**

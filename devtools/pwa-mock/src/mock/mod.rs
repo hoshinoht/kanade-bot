@@ -14,6 +14,7 @@ pub mod knowledge;
 mod limits;
 pub mod logfilter;
 pub mod member;
+pub mod member_runs;
 mod model_context;
 mod ownership;
 pub mod past;
@@ -21,6 +22,7 @@ mod people;
 pub mod portal;
 mod profanity;
 mod reminders;
+pub mod requests;
 mod rewrites;
 mod seed;
 mod sign_ins;
@@ -105,6 +107,14 @@ pub struct Store {
     ended_sessions: Vec<&'static str>,
     /// Public-origin member sessions (`portal.rs`).
     portal: portal::Portal,
+    /// Member answers, moves and withdrawals already answered, by `Idempotency-Key`.
+    member_writes: Vec<member_runs::KeyedWrite>,
+    /// Last boss week's runs the Discord link view still finds.
+    past_runs: Vec<Rec>,
+    /// `/__mock/public/end-week`: this boss week's runs read as past.
+    week_over: bool,
+    /// Member requests sent from the portal (`requests.rs`).
+    member_requests: Vec<requests::MemberRequestRec>,
     version: u64,
     next_id: u32,
     catalog: Catalog,
@@ -135,6 +145,10 @@ impl Store {
             arrived_extraction: false,
             ended_sessions: Vec::new(),
             portal: portal::Portal::default(),
+            member_writes: Vec::new(),
+            past_runs: Vec::new(),
+            week_over: false,
+            member_requests: Vec::new(),
             version: 1,
             next_id: 1,
             catalog,
@@ -175,6 +189,10 @@ impl Store {
         self.arrived_extraction = false;
         self.ended_sessions.clear();
         self.portal = portal::Portal::default();
+        self.member_writes.clear();
+        self.past_runs = member_runs::past_runs();
+        self.week_over = false;
+        self.member_requests = requests::seed();
         self.seed_history();
     }
 

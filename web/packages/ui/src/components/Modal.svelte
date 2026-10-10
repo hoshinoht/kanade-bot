@@ -16,6 +16,7 @@
     footer,
     onclose,
     returnFocus,
+    fid = '',
     ...data
   }: {
     open: boolean;
@@ -37,11 +38,14 @@
     lightDismiss?: boolean;
     /** Optional page-specific dialog class; keeps shared dialog semantics intact. */
     className?: string;
-    /** `data-*` attributes for the dialog (a call site's layout-fidelity tag). */
+    /** The layout-fidelity tag (`e2e/fidelity.spec.ts`): the dialog's, and `-head`, `-body`, `-foot` for its parts. */
+    fid?: string;
+    /** `data-*` attributes for the dialog. */
     [attribute: `data-${string}`]: string | undefined;
   } = $props();
 
   const uid = $props.id();
+  const part = (name: string) => (fid ? `${fid}-${name}` : undefined);
   let dialog: HTMLDialogElement;
   let returnTo: HTMLElement | null = null;
   // A selection drag from the panel that ends on the backdrop is not a dismiss: both ends must hit it.
@@ -86,6 +90,7 @@
 
 <dialog
   {...data}
+  data-fid={fid || undefined}
   bind:this={dialog}
    class={`modal ${className}`}
   class:modal--narrow={narrow}
@@ -102,18 +107,18 @@
   }}
 >
   <div class="modal__panel">
-    <header class="modal__head">
+    <header class="modal__head" data-fid={part('head')}>
       <div>
         {#if eyebrow}<p class="eyebrow">{eyebrow}</p>{/if}
         <h2 class="modal__title" id="{uid}-title">{title}</h2>
       </div>
       <button type="button" class="modal__x" disabled={!dismissible} onclick={close}><Icon name="x" label="Close" /></button>
     </header>
-    <div class="modal__body" class:modal__body--flush={flush}>
+    <div class="modal__body" class:modal__body--flush={flush} data-fid={part('body')}>
       {@render children()}
     </div>
     {#if footer}
-      <footer class="modal__foot">{@render footer(close)}</footer>
+      <footer class="modal__foot" data-fid={part('foot')}>{@render footer(close)}</footer>
     {/if}
   </div>
 </dialog>

@@ -8,15 +8,13 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { ApproveRequest, Evidence, Proposal, RunStatus, Week } from '@kanade/api-types';
-  import { Avatar, BossTag, DecisionCard, Icon, PendingLabel, Portrait, RUN_TONE, STATUS_WORDS, StatusChip, ThreadPanel, WavyProgress } from '@kanade/ui';
+  import { Avatar, BossTag, DecisionCard, Icon, liveRuns, MovePicker, namesIn, PendingLabel, Portrait, RUN_TONE, STATUS_WORDS, StatusChip, ThreadPanel, WavyProgress, type Slot } from '@kanade/ui';
   import { directory } from '../names/directory.svelte';
   import Mentions from '../names/Mentions.svelte';
   import Name from '../names/Name.svelte';
   import { memberAvatar } from '../shared/avatar';
   import { discordLink } from '../shared/discordLink.svelte';
-  import type { Slot } from '../planner/keyboardMove';
-  import MovePicker from '../sheet/MovePicker.svelte';
-  import { liveRuns, namesIn } from '../sheet/move';
+  import '@kanade/ui/styles/move-picker.scss';
   import { editable, editText, editWeek, isoToday } from './edit';
   import { proposalExpiry } from './expiry';
   import { blocked, DISCORD_ONLY, isProposal, SOURCE_LABEL } from './flags';
@@ -298,6 +296,7 @@
       <div id="{uid}-edit" class:proposal__edit--open={editOpen} class="proposal__edit">
         {#if editOpen}
           <MovePicker
+            fids={{ picker: 'move-picker', type: 'move-type', error: 'move-error', suggest: 'move-suggest', clash: 'move-clash', result: 'move-result', submit: 'move-submit' }}
             days={editAt.days}
             subject={editSubject}
             own={editAt.own}

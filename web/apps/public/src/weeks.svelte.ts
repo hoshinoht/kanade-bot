@@ -6,7 +6,7 @@
 // A timed read that changes a shown week is an arrival (as in the admin
 // store): the board glides and marks it, numbers pulse. The member's own
 // Refresh, a reconnect and a write's echo are not.
-import type { MemberWeek } from '@kanade/api-types';
+import type { MemberRun, MemberWeek } from '@kanade/api-types';
 import { ApiRequestError, createPoller, wroteWithin, type Client, type Poller } from '@kanade/client';
 
 export type WeekKey = 'this' | 'next';
@@ -94,6 +94,28 @@ export class MemberWeeks {
 
   week(which: WeekKey): MemberWeek | null {
     return which === 'next' ? this.next : this.this;
+  }
+
+  /** The run with this id in either week, and which week holds it. */
+  find(id: string): { run: MemberRun; which: WeekKey; week: MemberWeek } | null {
+    for (const which of ['this', 'next'] as const) {
+      const week = this.week(which);
+      const run = week?.runs.find((r) => r.id === id);
+      if (week && run) return { run, which, week };
+    }
+    return null;
+  }
+
+  /**
+   * Puts this copy of a run on screen in place of the one with its id (an
+   * optimistic answer, its rollback, or a write's answer with the new
+   * `version`), without waiting for the next read.
+   */
+  put(run: MemberRun, version?: number): void {
+    const found = this.find(run.id);
+    if (!found) return;
+    found.week.runs = found.week.runs.map((r) => (r.id === run.id ? run : r));
+    if (version !== undefined) for (const week of [this.this, this.next]) if (week) week.version = version;
   }
 
   start(): void {

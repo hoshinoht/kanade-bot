@@ -9,7 +9,7 @@
 <script lang="ts">
   import type { PublicSession, PublicSessionRow } from '@kanade/api-types';
   import { Avatar, Icon, Modal } from '@kanade/ui';
-  import { discordStart } from '../landing';
+  import ConfirmFresh from '../writes/ConfirmFresh.svelte';
   import type { Route } from '../route.svelte';
   import { returnPath, rowControl, type OwnerFlow } from './flow.svelte';
   import OwnIcon from './OwnIcon.svelte';
@@ -97,40 +97,23 @@
   {/snippet}
 </Modal>
 
-<Modal
+<ConfirmFresh
   bind:open={() => confirming !== null, (open) => !open && (flow.confirming = null)}
-  eyebrow="Fresh sign-in"
-  title="Confirm it's you"
-  narrow
-  className={phone ? 'own-sheet' : ''}
+  what={confirming?.kind === 'accept' ? 'Accepting an ask to own' : 'Handing over a weekly timing'}
+  next={confirming ? returnPath(confirming) : '/mine?week=timings'}
+  {session}
+  {current}
+  {phone}
+  hint="{confirming?.kind === 'accept' ? 'Handing over a timing' : 'Accepting an ask to own'} needs the same sign-in. Asking, declining and withdrawing don't."
   returnFocus={() => rowControl(about)}
-  data-fid="confirm"
 >
   {#if confirming}
     {@const what = `${tokenWords(confirming.timing)}, ${whenWords(confirming.timing)}`}
-    <p class="own-dialog__lead">
-      {confirming.kind === 'hand' ? 'Handing over a weekly timing' : 'Accepting an ask to own'} needs {freshWords}.{fresh ? ' Yours was at ' : ''}{#if fresh}<span
-          class="mono">{fresh.at}</span
-        >.{/if}
-    </p>
-    <p class="infobox own-dialog__box">
-      <OwnIcon name="save" /><span>
-        {#if confirming.kind === 'hand'}
-          <b>Not saved yet:</b> {confirming.to.name} as owner of {what}. After signing in you're back on Weekly timings with {confirming.to.name} picked; press Hand to {confirming.to.name}
-          once more.
-        {:else if confirming.kind === 'accept'}
-          <b>Not saved yet:</b> {confirming.request.requester.name} as owner of {what}. After signing in you're back on Weekly timings; press Accept once more.
-        {/if}
-      </span>
-    </p>
-    <p class="field__hint">
-      {confirming.kind === 'hand' ? 'Accepting an ask to own' : 'Handing over a timing'} needs the same sign-in. Asking, declining and withdrawing don't.
-    </p>
-  {/if}
-  {#snippet footer(close)}
-    <button type="button" class="btn" onclick={close}>Not now</button>
-    {#if confirming}
-      <a class="btn btn--primary" href={discordStart(returnPath(confirming))}><Icon name="log-in" />Sign in again</a>
+    {#if confirming.kind === 'hand'}
+      <b>Not saved yet:</b> {confirming.to.name} as owner of {what}. After signing in you're back on Weekly timings with {confirming.to.name} picked; press Hand to {confirming.to.name}
+      once more.
+    {:else if confirming.kind === 'accept'}
+      <b>Not saved yet:</b> {confirming.request.requester.name} as owner of {what}. After signing in you're back on Weekly timings; press Accept once more.
     {/if}
-  {/snippet}
-</Modal>
+  {/if}
+</ConfirmFresh>

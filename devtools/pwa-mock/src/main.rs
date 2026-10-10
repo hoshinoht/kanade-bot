@@ -11,6 +11,7 @@ mod contract;
 mod etag;
 mod events;
 mod headers;
+mod member_writes;
 mod mock;
 mod public;
 mod reports;
@@ -22,7 +23,7 @@ use axum::{
     http::StatusCode,
     middleware,
     response::{IntoResponse, Response},
-    routing::{any, delete, get, patch, post},
+    routing::{any, delete, get, patch, post, put},
 };
 use mock::{Store, catalog::Catalog};
 use std::{convert::Infallible, env, path::PathBuf, sync::Arc};
@@ -330,11 +331,42 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
             "/api/public/owner-requests/{id}/withdraw",
             post(public::withdraw).fallback(public::unmounted),
         )
+        // Member writes and requests (member-writes-contract).
+        .route(
+            "/api/public/runs/{id}",
+            get(member_writes::link).fallback(public::unmounted),
+        )
+        .route(
+            "/api/public/runs/{id}/answer",
+            put(member_writes::answer).fallback(public::unmounted),
+        )
+        .route(
+            "/api/public/runs/{id}/move",
+            post(member_writes::move_run).fallback(public::unmounted),
+        )
+        .route(
+            "/api/public/requests",
+            post(member_writes::submit).fallback(public::unmounted),
+        )
+        .route(
+            "/api/public/requests/mine",
+            get(member_writes::requests).fallback(public::unmounted),
+        )
+        .route(
+            "/api/public/requests/{id}/withdraw",
+            post(member_writes::withdraw).fallback(public::unmounted),
+        )
         .route("/api/public/{*rest}", any(public::unmounted))
         .route("/__mock/public/sign-in", post(public::mock_sign_in))
         .route("/__mock/public/discord", post(public::mock_discord))
         .route("/__mock/public/end", post(public::mock_end))
-        .route("/__mock/public/rotate", post(public::mock_rotate));
+        .route("/__mock/public/rotate", post(public::mock_rotate))
+        .route("/__mock/public/unfresh", post(member_writes::mock_unfresh))
+        .route("/__mock/public/remove", post(member_writes::mock_remove))
+        .route(
+            "/__mock/public/end-week",
+            post(member_writes::mock_end_week),
+        );
 
     (
         common(&app, admin_api, web.join("apps/admin/dist"), false),

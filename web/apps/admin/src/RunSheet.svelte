@@ -11,16 +11,14 @@
   import type { Member, Participant, Run, RunStatus, Week } from '@kanade/api-types';
   import '@kanade/ui/styles/run-sheet.scss';
   import '@kanade/ui/styles/select.scss';
-  import { ANSWER_MARKS, AnswerBar, AnswerChip, BossArt, BossTag, enter, Icon, Modal, Select, StatusMark, WavyProgress, dayLabel, runCountdown, runTitle, sortRuns, whenLabel } from '@kanade/ui';
+  import { ANSWER_MARKS, AnswerBar, AnswerChip, BossArt, BossTag, enter, Icon, liveRuns, Modal, MovePicker, namesIn, pickerRun, Select, StatusMark, WavyProgress, dayLabel, runCountdown, runTitle, sortRuns, whenLabel, type Slot } from '@kanade/ui';
   import { swapSlots } from './planner/dropTime';
   import { directory, memberLabel } from './names/directory.svelte';
   import Name from './names/Name.svelte';
   import RunLog from './sheet/RunLog.svelte';
-  import MovePicker from './sheet/MovePicker.svelte';
-  import { liveRuns, namesIn, pickerRun } from './sheet/move';
+  import '@kanade/ui/styles/move-picker.scss';
   import { discordLink } from './shared/discordLink.svelte';
   import { STATUS_LABELS, type MoveOutcome } from './store.svelte';
-  import type { Slot } from './planner/keyboardMove';
 
   let {
     open = $bindable(false),
@@ -377,6 +375,7 @@
   <!-- A fresh pick per run and slot; a failed move keeps it. -->
   {#key `${run.id}@${run.day}@${own.time}`}
     <MovePicker
+      fids={{ picker: 'move-picker', type: 'move-type', error: 'move-error', suggest: 'move-suggest', clash: 'move-clash', result: 'move-result', submit: 'move-submit' }}
       days={week.days}
       subject={pickerRun(run)}
       {own}

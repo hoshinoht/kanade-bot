@@ -1,20 +1,27 @@
 <!--
   The member's Week (boards Main, Week-RunMine, Week-RunOther, WeekList,
-  WeekList-Selected, States*; phone PhoneWeek, PhoneStates*): the admin Week
-  window (`pages/WeekPage.svelte`, `_week.scss`) read-only. Title-bar tabs
-  Week / List n; This week / Next week, Only my runs and Refresh; the board
-  beside Your week and the footer, the list alone at full width, or either
-  with the open run's pane (`?run=`, `?view=list`,
-  `?week=next` deep-link it). Phones show the week as one list; an open run
-  is its own screen (PhoneRun). Times are the guild's, named in the footer.
+  WeekList-Selected, ConfirmAnswer, States*; phone PhoneWeek, PhoneRun*,
+  PhoneStates*): the admin Week window (`pages/WeekPage.svelte`,
+  `_week.scss`). Title-bar tabs Week / List n; This week / Next week, Only
+  my runs and Refresh; the board beside Your week and the footer, the list
+  alone at full width, or either with the open run's pane (`?run=`,
+  `?view=list`, `?week=next` deep-link it). Phones show the week as one
+  list; an open run is its own screen (PhoneRun). The member answers and
+  moves their own runs here (`RunFlow`); back from "Confirm it's you"
+  (`&answer=`) the run is open with that answer picked, not saved yet.
+  Times are the guild's, named in the footer.
 -->
 <script lang="ts">
-  import type { MemberRun, MemberWeek } from '@kanade/api-types';
+  import type { MemberRun, MemberWeek, PublicSession, PublicSessionRow } from '@kanade/api-types';
   import { dayNumber, enter, flip, Icon, LoadingState, longDate, Presence, replay, StateNote, WavyProgress, weekProgress, type Toaster } from '@kanade/ui';
   import { tick, untrack, type Snippet } from 'svelte';
   import { countdownWords, isPast, nextOwn, shownRuns } from '../member';
   import type { Route } from '../route.svelte';
   import type { MemberWeeks, WeekKey } from '../weeks.svelte';
+  import ConfirmRun from '../writes/ConfirmRun.svelte';
+  import { RunFlow } from '../writes/flow.svelte';
+  import type { RunWrites } from '../writes/runWrites.svelte';
+  import { returnedChoice, type Choice } from '../writes/runs';
   import MemberCard from './MemberCard.svelte';
   import PhoneRun from './PhoneRun.svelte';
   import RunPane from './RunPane.svelte';
@@ -24,21 +31,29 @@
 
   let {
     weeks,
+    runs: writes,
     route,
-    memberId,
+    session,
+    current,
     phone,
     toaster,
     notice,
   }: {
     weeks: MemberWeeks;
+    /** The member's answers and moves (`Portal.runs`). */
+    runs: RunWrites;
     route: Route;
-    memberId: string;
+    session: PublicSession;
+    /** This device's row in the session list, for when it signed in (Confirm it's you). */
+    current: PublicSessionRow | null;
     phone: boolean;
     toaster: Toaster;
     /** The offline notice: under the page line, or inside the phone window. */
     notice?: Snippet;
   } = $props();
 
+  const memberId = $derived(session.member.id);
+  const flow = untrack(() => new RunFlow(writes, toaster));
   const which: WeekKey = $derived(route.params.get('week') === 'next' ? 'next' : 'this');
   const view = $derived(route.params.get('view') === 'list' ? 'list' : 'week');
   const week = $derived(weeks.week(which));
@@ -46,6 +61,18 @@
   let showPast = $state(false);
   const runs = $derived(week ? shownRuns(week.runs, { onlyMine, showPast }) : []);
   const hidden = $derived(week && !showPast ? week.runs.filter((r) => isPast(r) && (!onlyMine || r.mine)).length : 0);
+
+  // Back from the fresh sign-in (`&answer=`): that answer picked on the open run until a press.
+  let picked = $state<{ run: string; answer: Choice } | null>(null);
+  $effect(() => {
+    const answer = returnedChoice(route.params.get('answer'));
+    if (!route.params.has('answer')) return;
+    const run = route.params.get('run') ?? '';
+    untrack(() => {
+      picked = answer && run ? { run, answer } : null;
+      route.set({ answer: '' });
+    });
+  });
   const yoursCount = $derived(week ? week.runs.filter((r) => r.mine).length : 0);
   // The open run stays open even when a filter hides its card.
   const selected = $derived(week?.runs.find((r) => r.id === route.params.get('run')) ?? null);
@@ -189,7 +216,16 @@
 {/snippet}
 
 {#if phone && selected && week}
-  <PhoneRun run={selected} {week} {memberId} />
+  <PhoneRun
+    run={selected}
+    {week}
+    {which}
+    {memberId}
+    {flow}
+    {route}
+    picked={picked?.run === selected.id ? picked.answer : null}
+    onpress={() => (picked = null)}
+  />
 {:else if !week && weeks.error && !weeks.offline}
   <section class="card window-fill" aria-labelledby="{uid}-failed">
     <div class="card__head"><h1 class="card__title" id="{uid}-failed">Week</h1></div>
@@ -287,13 +323,18 @@
         {#key paneRun.run.id}<RunPane
             run={paneRun.run}
             week={paneRun.week}
+            {which}
             {memberId}
+            {flow}
+            {route}
+            picked={picked?.run === paneRun.run.id ? picked.answer : null}
+            onpress={() => (picked = null)}
             leaving={pane.leaving && !selected}
             onleft={(event) => pane.done(event)}
             onclose={() => void close()}
           />{/key}
       {:else if week && weeks.this && view !== 'list'}
-        <YourWeek current={weeks.this} next={weeks.next} {memberId} arrival={weeks.arrival} onopen={open} />
+        <YourWeek current={weeks.this} next={weeks.next} {memberId} arrival={weeks.arrival} {flow} {route} onopen={open} />
       {:else if !week}
         <aside class="side-pane week-glance member-glance" aria-label="Your week" data-fid="glance"></aside>
       {/if}
@@ -301,3 +342,4 @@
     {#if view !== 'list' || !week}{@render foot()}{/if}
   </section>
 {/if}
+<ConfirmRun {flow} {session} {current} {phone} />

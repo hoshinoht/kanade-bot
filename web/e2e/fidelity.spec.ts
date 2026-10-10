@@ -112,6 +112,64 @@ const ended = async (page: Page) => {
   await page.getByRole('tab', { name: /^Devices/ }).click();
   await expect(page.getByRole('heading', { level: 1, name: "You've been signed out" })).toBeVisible();
 };
+/** A Discord link's slot: Wed 30 Sep 21:30 guild time, the last day of the mock's boss week. */
+const MOVE_TO = '2026-09-30T13:30:00Z';
+/** Last week's Kalos (the mock's `p-kalos`) at its old Fri 22:00. */
+const PAST_MOVE_TO = '2026-09-18T14:00:00Z';
+const moveShown = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('main [data-fid="move-result"]')).toBeVisible();
+};
+const moveNotice = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('main [data-fid="move-notice"]')).toBeVisible();
+};
+/** Ren took Asahi off HCarling + HStar after the link was sent. */
+const removedFromCarling = async (page: Page) => {
+  await signInPublic(page);
+  expect((await page.request.post(`${PUBLIC}/__mock/public/remove`, { data: { run: 'r-carling' } })).ok()).toBe(true);
+};
+/** Signed in longer ago than the fresh window: the next write asks "Confirm it's you". */
+const unfresh = async (page: Page) => {
+  await signInPublic(page);
+  expect((await page.request.post(`${PUBLIC}/__mock/public/unfresh`)).ok()).toBe(true);
+};
+const confirmAnswer = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await page.locator('main [data-fid="week-answer"]').getByRole('button', { name: 'Maybe' }).click();
+  await expect(page.getByRole('dialog', { name: "Confirm it's you" })).toBeVisible();
+};
+/** The board's draft: Leave the member's run, with a note (phones have no summary aside). */
+const requestForm = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('main [data-fid="request-note"]')).toBeVisible();
+  await page.getByLabel('Note for the admins · optional').fill('Something came up on Tuesday evening.');
+};
+const requestConfirm = async (page: Page) => {
+  await requestForm(page);
+  await page.getByRole('button', { name: 'Send request' }).click();
+  await expect(page.getByRole('dialog', { name: "Confirm it's you" })).toBeVisible();
+};
+/** Two more requests sent elsewhere fill the three open: the press is refused, the toast says so and the key is off. */
+const requestLimit = async (page: Page) => {
+  await requestForm(page);
+  const session = await page.request.get(`${PUBLIC}/api/public/session`);
+  const token = session.headers()['x-kanade-csrf'] ?? '';
+  for (const run of ['r-limbo', 'r-fa']) {
+    const sent = await page.request.post(`${PUBLIC}/api/public/requests`, {
+      headers: { 'X-Kanade-CSRF': token, 'Idempotency-Key': `fid-limit-${run}` },
+      data: { kind: 'join', run_id: run },
+    });
+    expect(sent.status()).toBe(201);
+  }
+  await page.getByRole('button', { name: 'Send request' }).click();
+  await expect(page.locator('main [data-fid="request-limit"]')).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Notification' })).toBeVisible();
+};
+const requestsShown = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('main [data-fid="requests-row"]').first()).toBeVisible();
+};
 const SIGN_IN = [
   ['', ''],
   ['-Expired', 'state'],
@@ -198,6 +256,21 @@ const PUBLIC_PAIRS: Pair[] = [
   { name: 'pub-phone-guide', board: 'PhoneGuide', path: '/bosses/Carling', setup: signInPublic, ready: guideShown('Carling') },
   { name: 'pub-phone-guide-phases', board: 'PhoneGuide-Phases', path: '/bosses/Carling?tab=phases', setup: signInPublic, ready: guideShown('Carling') },
   { name: 'pub-phone-guide-destiny', board: 'PhoneGuide-Destiny', path: '/bosses/Carling?difficulty=Destiny', setup: signInPublic, ready: guideShown('Carling') },
+  // Member writes: the run's Move page (a Discord link), its stale shapes, the answer's fresh sign-in, the request form and My requests.
+  { name: 'pub-move', board: 'Move', path: `/runs/r-carling?move_to=${MOVE_TO}`, setup: signInPublic, ready: moveShown },
+  { name: 'pub-move-notin', board: 'Move-NotIn', path: `/runs/r-carling?move_to=${MOVE_TO}`, setup: removedFromCarling, ready: moveNotice },
+  { name: 'pub-move-weekover', board: 'Move-WeekOver', path: `/runs/p-kalos?move_to=${PAST_MOVE_TO}`, setup: signInPublic, ready: moveNotice },
+  { name: 'pub-confirm-answer', board: 'ConfirmAnswer', path: '/?run=r-carling', setup: unfresh, ready: confirmAnswer },
+  { name: 'pub-request-form', board: 'RequestForm', path: '/requests/new?run=r-carling', setup: signInPublic, ready: requestForm },
+  { name: 'pub-request-form-confirm', board: 'RequestForm-Confirm', path: '/requests/new?run=r-carling', setup: unfresh, ready: requestConfirm },
+  { name: 'pub-request-form-limit', board: 'RequestForm-Limit', path: '/requests/new?run=r-carling', setup: signInPublic, ready: requestLimit },
+  { name: 'pub-requests', board: 'Requests', path: '/requests', setup: signInPublic, ready: requestsShown },
+  { name: 'pub-requests-expired', board: 'Requests-Expired', path: '/requests?open=req-carling-swap', setup: signInPublic, ready: requestsShown },
+  { name: 'pub-phone-move', board: 'PhoneMove', path: `/runs/r-carling?move_to=${MOVE_TO}`, setup: signInPublic, ready: moveShown },
+  { name: 'pub-phone-move-notin', board: 'PhoneMove-NotIn', path: `/runs/r-carling?move_to=${MOVE_TO}`, setup: removedFromCarling, ready: moveNotice },
+  { name: 'pub-phone-move-weekover', board: 'PhoneMove-WeekOver', path: `/runs/p-kalos?move_to=${PAST_MOVE_TO}`, setup: signInPublic, ready: moveNotice },
+  { name: 'pub-phone-request', board: 'PhoneRequest', path: '/requests/new?run=r-carling', setup: signInPublic, ready: requestForm },
+  { name: 'pub-phone-requests', board: 'PhoneRequests', path: '/requests?open=req-kalos-weekly', setup: signInPublic, ready: requestsShown },
 ].map((pair) => ({ ...pair, app: 'public' as const }));
 
 const PAIRS: Pair[] = [

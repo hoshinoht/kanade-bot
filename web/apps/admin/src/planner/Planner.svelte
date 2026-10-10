@@ -1,9 +1,9 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { Run, Week } from '@kanade/api-types';
-  import { Icon, LiveRegion, WeekRail, dayLabel, runTitle, scrollEdges, sortRuns, whenLabel } from '@kanade/ui';
-  import { clashes, dropTime, swapSlots, timedOthers, zoneAt, type DropTime, type TimedRun } from './dropTime';
-  import { IDLE, cancel, describeSlot, onKey, type LiftState, type MovableRun, type Slot } from './keyboardMove';
+  import { clashes, Icon, LiveRegion, WeekRail, dayLabel, runTitle, scrollEdges, sortRuns, whenLabel, type Slot, type TimedRun } from '@kanade/ui';
+  import { dropTime, swapSlots, timedOthers, zoneAt, type DropTime } from './dropTime';
+  import { IDLE, cancel, describeSlot, onKey, type LiftState, type MovableRun } from './keyboardMove';
   import PlannerCard from './PlannerCard.svelte';
   import PlannerColumn from './PlannerColumn.svelte';
   import type { PointerDrag } from './pointerDrag';

@@ -4,14 +4,16 @@
   next week's `MemberWeek`, and the weekly timings they are on, as title-bar
   tabs This week n / Next week n / Weekly timings n (`?week=next`,
   `?week=timings`). Each run is a card with its art veil: the time and day,
-  bosses (`BossStack`), channel · fill · teammates, and the member's answer,
-  read-only for now. Weekly timings carry their ownership (`timings/`).
-  What changed comes later. Beside the runs (wide screens): this week's
-  counts and the calendar feed, marked "coming soon".
+  bosses (`BossStack`), channel · fill · teammates, the member's answer (In /
+  Maybe / Out, live), "Move this week…" (the run's Move page, while it can
+  still move) and "Ask for a change…" (the request form). Weekly timings
+  carry their ownership (`timings/`). What changed comes later. Beside the
+  runs (wide screens): this week's counts and the calendar feed, marked
+  "coming soon".
 -->
 <script lang="ts">
   import type { MemberRun, MemberWeek, PublicSession, PublicSessionRow } from '@kanade/api-types';
-  import { ANSWER_MARKS, BossArt, BossStack, dayLabel, dayNumber, Icon, LoadingState, longDate, sortRuns, STATUS_WORDS, type Toaster } from '@kanade/ui';
+  import { ANSWER_MARKS, BossArt, BossStack, dayLabel, dayNumber, Icon, LoadingState, longDate, runTitle, sortRuns, STATUS_WORDS, type Toaster } from '@kanade/ui';
   import { tick, untrack, type Snippet } from 'svelte';
   import { answersOwed, countdownWords, isPast, youFirst, yours } from './member';
   import type { Route } from './route.svelte';
@@ -20,10 +22,16 @@
   import type { MemberTimingsList } from './timings/timings.svelte';
   import TimingsPanel from './timings/TimingsPanel.svelte';
   import type { MemberWeeks, WeekKey } from './weeks.svelte';
-  import AnswerSoon from './week/AnswerSoon.svelte';
+  import AnswerChoice from './writes/AnswerChoice.svelte';
+  import ConfirmRun from './writes/ConfirmRun.svelte';
+  import { RunFlow } from './writes/flow.svelte';
+  import { follow } from './writes/follow';
+  import type { RunWrites } from './writes/runWrites.svelte';
+  import { askPath, movable, moveReturn } from './writes/runs';
 
   let {
     weeks,
+    runs: writes,
     timings,
     route,
     session,
@@ -33,6 +41,8 @@
     notice,
   }: {
     weeks: MemberWeeks;
+    /** The member's answers and moves (`Portal.runs`). */
+    runs: RunWrites;
     timings: MemberTimingsList;
     route: Route;
     session: PublicSession;
@@ -71,6 +81,7 @@
   });
   const tabs: Partial<Record<Tab, HTMLButtonElement>> = {};
   const flow = untrack(() => new OwnerFlow(timings, toaster));
+  const runFlow = untrack(() => new RunFlow(writes, toaster));
 
   // Every visit reads the timings afresh: other members ask and decide meanwhile.
   $effect(() => untrack(() => void timings.load()));
@@ -112,7 +123,7 @@
         {:else}
           <span class="status-chip" class:status-chip--risk={run.status === 'at_risk'}>{STATUS_WORDS[run.status]}</span>
         {/if}
-        <span class="account-row__sub">#{run.channel} · {run.tally.on} of {run.tally.total} on{mates.length ? ` · with ${mates.join(', ')}` : ''}</span>
+        <span class="account-row__sub">{run.channel} · {run.tally.on} of {run.tally.total} on{mates.length ? ` · with ${mates.join(', ')}` : ''}</span>
       </p>
       <p class="member-run__party">
         {#each youFirst(run, memberId) as person (person.id)}
@@ -124,12 +135,26 @@
         {/each}
       </p>
     </div>
-    {#if me && !phone}
+    {#if me}
       <div class="member-run__acts">
         {#if isPast(run)}
           <p class="member-run__was">You were {me.answer === 'yes' ? 'In' : me.answer === 'no' ? 'Out' : me.answer === 'maybe' ? 'Maybe' : 'unanswered'}</p>
         {:else}
-          <AnswerSoon answer={me.answer} hint={false} />
+          {@const ask = askPath(run)}
+          {@const moveTo = moveReturn(run, null)}
+          <AnswerChoice
+            {run}
+            week={w}
+            {which}
+            {memberId}
+            flow={runFlow}
+            hint={false}
+            label="Your answer, {dayLabel(w, run.day)}{soon ? ` · ${soon}` : ''} {run.time ?? 'own time'} {runTitle(run)}"
+          />
+          <span class="member-run__links">
+            {#if movable(run, w, which, memberId)}<a class:btn={phone} href={moveTo} onclick={(event) => follow(route, event, moveTo)}>Move this week…</a>{/if}
+            <a class:btn={phone} href={ask} onclick={(event) => follow(route, event, ask)}>Ask for a change…</a>
+          </span>
         {/if}
       </div>
     {/if}
@@ -150,9 +175,7 @@
       <h3 class="cap member-runs__cap">Done {which === 'next' ? 'next week' : 'this week'}</h3>
       <div class="member-runs__group">{#each done as run (run.id)}{@render card(run, week)}{/each}</div>
     {/if}
-    <p class="field__hint member-runs__hint">
-      <span class="status-chip status-chip--warn">coming soon</span> Answering and moving here; react on the run's card in Discord for now.
-    </p>
+    <p class="field__hint member-runs__hint">Answers save at once, the same as reacting on the run's card in Discord. Moves are for this boss week only.</p>
   {/if}
 {/snippet}
 
@@ -242,3 +265,4 @@
   </section>
 {/if}
 <OwnerDialogs list={timings} {flow} {route} {session} {current} {phone} />
+<ConfirmRun flow={runFlow} {session} {current} {phone} />

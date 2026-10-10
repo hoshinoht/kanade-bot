@@ -2,8 +2,10 @@ import type { Identity, MemberAllowance, PublicSession, PublicSessions, PublicSt
 import { ApiRequestError, createClient, onUnauthenticated } from '@kanade/client';
 import { MemberBosses } from './bosses/bosses.svelte';
 import type { Landing } from './landing';
+import { MemberRequestsList } from './requests/requests.svelte';
 import { MemberTimingsList } from './timings/timings.svelte';
 import { MemberWeeks } from './weeks.svelte';
+import { RunWrites } from './writes/runWrites.svelte';
 
 /** Why Sign in is showing, when there is something to say. */
 export type SignInNotice = 'failed' | 'expired' | 'limited' | 'unavailable' | 'switch' | 'signed-out' | { everywhere: number };
@@ -48,6 +50,10 @@ export class Portal {
   readonly timings = new MemberTimingsList(client, (error) => this.#gone(error));
   /** The boss list and the open guide (Bosses), read when Bosses opens. */
   readonly bosses = new MemberBosses(client, (error) => this.#gone(error));
+  /** The member's answers and moves on their own runs, over the weeks above. */
+  readonly runs = new RunWrites(client, this.weeks, (error) => this.#gone(error));
+  /** The member's requests to the admins (Requests, the masthead's waiting count). */
+  readonly requests = new MemberRequestsList(client, (error) => this.#gone(error));
   #landing: Landing;
   #refreshing: Promise<void> | null = null;
 
@@ -82,6 +88,8 @@ export class Portal {
       this.updated = Date.now();
       this.weeks.start();
       void this.loadDevices();
+      // The masthead's and the drawer's Requests count (waiting) shows on every page.
+      void this.requests.load();
     } catch (error) {
       // Denied and closed returned above; what remains is a sign-in notice or none.
       if (isError(error, 401)) this.screen = { kind: 'signin', notice: landing === 'none' ? null : landing };
@@ -115,7 +123,7 @@ export class Portal {
       this.#gone(error);
       return;
     }
-    await Promise.all([this.loadDevices(), this.weeks.refresh(), this.timings.data ? this.timings.load() : null]);
+    await Promise.all([this.loadDevices(), this.weeks.refresh(), this.timings.data ? this.timings.load() : null, this.requests.data ? this.requests.load() : null]);
   }
 
   /** The bot identity is public on both origins; a failure renders the monogram. */
@@ -218,6 +226,7 @@ export class Portal {
     this.weeks.clear();
     this.timings.clear();
     this.bosses.clear();
+    this.requests.clear();
   }
 
   /** A closed portal or an ended session replaces the screen (401 arrives through `watch`). */

@@ -1,20 +1,33 @@
 // The portal's address (public-portal-plan § Screens and routes): `/` the
-// Week (`?week=next`, `?view=list`, `?run=<id>` the open run), `/mine` My runs
+// Week (`?week=next`, `?view=list`, `?run=<id>` the open run; `&answer=` back
+// from a fresh sign-in picks that answer again), `/mine` My runs
 // (`?week=next`, `?week=timings`; `&hand=<timing>&to=<member>` back from a
-// fresh sign-in reopens Hand to…), `/account` Account (`?tab=`), `/bosses`
+// fresh sign-in reopens Hand to…), `/runs/{id}` a run's Move page
+// (`?move_to=<RFC 3339>` from a Discord link), `/requests` My requests
+// (`?open=<id>`), `/requests/new` the request form (`?run=`, `?kind=`,
+// `?fixed=&change=&day=&time=`), `/account` Account (`?tab=`), `/bosses`
 // Bosses and `/bosses/{key}` a guide (`?difficulty=`, `?tab=`, `?phase=`).
 // Pages change with `history.pushState`; filters and selections replace the entry.
 
-export type Page = 'week' | 'mine' | 'account' | 'bosses';
+export type Page = 'week' | 'mine' | 'account' | 'bosses' | 'move' | 'requests' | 'request';
 
 import { SvelteURLSearchParams } from 'svelte/reactivity';
 
-const PAGES: Record<string, Page> = { '/': 'week', '/mine': 'mine', '/account': 'account' };
+const PAGES: Record<string, Page> = { '/': 'week', '/mine': 'mine', '/account': 'account', '/requests': 'requests', '/requests/new': 'request' };
+
+function pageOf(path: string): Page {
+  if (PAGES[path]) return PAGES[path];
+  if (path === '/bosses' || path.startsWith('/bosses/')) return 'bosses';
+  if (/^\/runs\/[^/]+$/.test(path)) return 'move';
+  return 'week';
+}
 
 export class Route {
   path = $state(location.pathname);
   params = $state(new SvelteURLSearchParams(location.search));
-  readonly page: Page = $derived(PAGES[this.path] ?? (this.path === '/bosses' || this.path.startsWith('/bosses/') ? 'bosses' : 'week'));
+  readonly page: Page = $derived(pageOf(this.path));
+  /** `/runs/{id}`: the run the Move page is about. */
+  readonly runId: string = $derived(this.page === 'move' ? decodeURIComponent(this.path.slice('/runs/'.length)) : '');
 
   /** Back and Forward: the address is the state. */
   watch(): () => void {
