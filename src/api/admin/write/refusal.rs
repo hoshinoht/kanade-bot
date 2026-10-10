@@ -12,7 +12,7 @@ use crate::{
     api::error::ApiError,
     domain::{
         history::PreconditionError,
-        schedule::ScheduleError,
+        schedule::{MemberRunRefusal, ScheduleError},
         scheduler::{SchedulerError, StoreError},
     },
 };
@@ -141,6 +141,17 @@ fn schedule(error: ScheduleError) -> Refusal {
             Refusal::new(S::UNPROCESSABLE_ENTITY, "nothing_to_change", message)
         }
         ScheduleError::NotOnRun(_) => Refusal::new(S::UNPROCESSABLE_ENTITY, "not_on_run", message),
+        // Only the public origin's own-run writes are refused this way.
+        ScheduleError::MemberRun(refusal) => {
+            let (status, code) = match refusal {
+                MemberRunRefusal::NotInRun => (S::FORBIDDEN, "not_in_run"),
+                MemberRunRefusal::Closed => (S::CONFLICT, "run_closed"),
+                MemberRunRefusal::WeekOver => (S::CONFLICT, "week_over"),
+                MemberRunRefusal::Started => (S::CONFLICT, "run_started"),
+                MemberRunRefusal::InThePast => (S::UNPROCESSABLE_ENTITY, "in_the_past"),
+            };
+            Refusal::new(status, code, message)
+        }
         // Configuration, not the request: never the client's to fix.
         ScheduleError::AttendanceMismatch { .. } => ApiError::UNAVAILABLE.into(),
         _ => Refusal::invalid(message),

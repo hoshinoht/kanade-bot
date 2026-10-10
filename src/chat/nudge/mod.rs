@@ -14,7 +14,7 @@ mod safety;
 
 pub use compose::{
     EDIT_RUN_ACTION, LineSource, Nudge, NudgeFacts, Nudger, REQUEST_CHANGE_ACTION, SeedReason,
-    VIEW_RUN_ACTION, WordSource, action, mood_for, render,
+    WordSource, action, mood_for, render,
 };
 pub use governed::{
     DynRewrite, GovernedRewriter, REWRITE_MAX_OUTPUT_TOKENS, RewriteReserve, SharedRewriter,

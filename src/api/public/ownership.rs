@@ -1,9 +1,9 @@
 //! The signed-in member's weekly timings and their ownership actions (user
 //! decision 2026-10-10): hand off, ask, accept, decline and withdraw. Rules
 //! and writes are [`crate::api::ownership`], shared with Discord; on this
-//! origin nobody acts as staff. Every write takes a member-write token, a
-//! required `Idempotency-Key` (request id `public:<key>`) and, when it
-//! changes the owner, a fresh sign-in.
+//! origin nobody acts as staff. Every write is admitted by [`super::write`]
+//! (a member-write token and a required `Idempotency-Key`, request id
+//! `public:<key>`) and, when it changes the owner, needs a fresh sign-in.
 
 use std::sync::Arc;
 
@@ -17,18 +17,14 @@ use axum::{
 };
 use serde::Deserialize;
 
+use super::write::{admit, invalid_body, keyed_id, origin, path_id, snowflake};
 use crate::{
     api::{
         admin::{
             context::{context, roster, unavailable},
-            write::{Refusal, required_idempotency_key, scheduler, state, write_context},
+            write::{Refusal, scheduler, state, write_context},
         },
-        auth::{
-            audit::{AuditContext, AuditEvent},
-            crypto,
-            member::{MemberAuth, MemberSession},
-            rate::MEMBER_WRITE_ROUTE,
-        },
+        auth::{audit::AuditContext, member::MemberSession},
         dto::public::{
             MemberOwnerRequest, MemberTiming, MemberTimings, member_owner_request, member_timing,
             member_timings,
@@ -39,7 +35,6 @@ use crate::{
         state::ApiState,
     },
     domain::{
-        history::{Actor, Origin, Surface},
         ownership::{OwnerRequest, OwnershipRefusal},
         schedule::FixedRun,
         scheduler::Scope,
@@ -76,64 +71,6 @@ fn refusal(error: OwnershipError) -> Refusal {
         OwnershipError::Scheduler(error) => scheduler(error),
         OwnershipError::Store(_) => ApiError::UNAVAILABLE.into(),
     }
-}
-
-/// A Discord user id: 17-20 digits.
-fn snowflake(text: &str) -> bool {
-    (17..=20).contains(&text.len()) && text.bytes().all(|byte| byte.is_ascii_digit())
-}
-
-fn invalid_body() -> Refusal {
-    Refusal::new(
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "invalid_body",
-        "The request body is not valid.",
-    )
-}
-
-fn path_id(path: Result<UrlPath<String>, PathRejection>) -> Result<String, Refusal> {
-    path.map(|UrlPath(id)| id)
-        .map_err(|_| ApiError::NOT_FOUND.into())
-}
-
-/// Every member write: one of the member's write tokens (a refusal is
-/// audited), then the required `Idempotency-Key`.
-fn admit<'a>(
-    site: &'a Site,
-    audit: &AuditContext,
-    session: &MemberSession,
-    headers: &'a HeaderMap,
-) -> Result<(&'a MemberAuth, &'a str), Refusal> {
-    let member = site.member.as_deref().ok_or(ApiError::AUTH_UNAVAILABLE)?;
-    if !member
-        .rate()
-        .take_member_write(&session.user_id, member.now())
-    {
-        member.audit(
-            audit,
-            AuditEvent::RateLimited {
-                route: MEMBER_WRITE_ROUTE,
-            },
-        );
-        return Err(ApiError::RATE_LIMITED.into());
-    }
-    Ok((member, required_idempotency_key(headers)?))
-}
-
-/// The member through the portal; `public:` keeps the request id apart from
-/// Discord's and the admin portal's.
-fn origin(session: &MemberSession, key: &str) -> Origin {
-    Origin::new(
-        Actor::member(session.user_id.clone()),
-        Surface::PublicPortal,
-    )
-    .with_request_id(format!("public:{key}"))
-}
-
-/// The id of the request `member` asks with `key`, so a retried ask finds it.
-fn ask_id(member: &str, key: &str) -> String {
-    let digest = crypto::sha256_hex(format!("{member}:{key}").as_bytes());
-    format!("public-{}", &digest[..40])
 }
 
 async fn timing(state: &ApiState, fixed_id: &str) -> Result<FixedRun, Refusal> {
@@ -281,7 +218,7 @@ pub(super) async fn ask(
     let fixed_id = path_id(path)?;
     let state = state(&site)?;
     let me = session.user_id.as_str();
-    let id = ask_id(me, key);
+    let id = keyed_id(me, key);
     let (status, request) = match asked(state, &id, me, &fixed_id).await? {
         Some(found) => (StatusCode::OK, found),
         None => match ownership::ask(&*state.store, &fixed_id, me, id.clone(), state.now()).await {

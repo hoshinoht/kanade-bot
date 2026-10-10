@@ -1,18 +1,20 @@
 //! Admin mutations (A4). Every handler takes [`AdminSession`] (CSRF on unsafe
 //! methods), attributes its change to the session (`Surface::AdminPortal`,
 //! or `Cli` for the bearer), maps `Idempotency-Key` to the request id, and
-//! writes through the one scheduler writer.
+//! writes through the one scheduler writer. The run-edit steps are shared
+//! with the member's own writes on the public origin (`run_edit`).
 
 mod fixed;
 mod members;
 mod precondition;
 mod refusal;
+mod run_edit;
 mod runs;
 
 #[cfg(test)]
 pub(crate) use {
     fixed::ValidateResult,
-    runs::{Message, MoveResult, Previous, RunResult, SwapResult},
+    runs::{Message, MoveResult, RunResult, SwapResult},
 };
 
 use std::sync::Arc;
@@ -31,8 +33,14 @@ use crate::{
     domain::{history::Origin, members::MemberProfile},
 };
 
-pub use refusal::{Refusal, scheduler};
-pub use runs::strict_time;
+pub use {
+    precondition::Explicit,
+    refusal::{Refusal, scheduler},
+    run_edit::{
+        Answer, Previous, SlotError, load_run, put_answer, reloaded, run_not_found, slot, write_run,
+    },
+    runs::strict_time,
+};
 
 pub fn routes() -> Router<Arc<Site>> {
     Router::new()
@@ -119,19 +127,21 @@ pub async fn write_context(
         .members()
         .await
         .map_err(|error| Refusal::from(unavailable(error)))?;
-    let mut directory = roster(&profiles);
+    Ok((write_context_of(state, &profiles), profiles))
+}
+
+/// [`write_context`] over member rows the caller already read.
+pub fn write_context_of(state: &ApiState, profiles: &[MemberProfile]) -> WriteContext {
+    let mut directory = roster(profiles);
     for channel in state.channels.channels() {
         if channel.watched {
             directory.watch(&channel.id);
         }
     }
-    Ok((
-        WriteContext {
-            policy: state.policy.clone(),
-            directory,
-        },
-        profiles,
-    ))
+    WriteContext {
+        policy: state.policy.clone(),
+        directory,
+    }
 }
 
 /// A malformed or unknown-field JSON body.

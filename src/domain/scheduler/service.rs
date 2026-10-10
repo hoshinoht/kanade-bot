@@ -22,9 +22,9 @@ use crate::domain::members::Directory;
 use crate::domain::notify::{DeclineNotice, DeclineNoticeStore};
 use crate::domain::schedule::{
     self, AmendedRun, Draft, FixedEdit, FixedEditRequest, FixedField, FixedRun, FixedRunPatch,
-    NewFixedRun, NewRun, Notice, NoticeChange, Op, OpResult, Outcome, ReactionResult, Reminder,
-    ReminderPolicy, RsvpSource, RsvpState, RunState, RunStatus, ScheduleError, SchedulePolicy,
-    StatusChange, WeekStart, apply_op, utc_instant,
+    MemberRunRefusal, NewFixedRun, NewRun, Notice, NoticeChange, Op, OpResult, Outcome,
+    ReactionResult, Reminder, ReminderPolicy, RsvpSource, RsvpState, RunState, RunStatus,
+    ScheduleError, SchedulePolicy, StatusChange, WeekStart, apply_op, utc_instant,
 };
 use crate::domain::time::AwareDateTime;
 
@@ -423,6 +423,17 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
     /// Apply `op` in one attributed transaction (the single mutation path);
     /// its request digest and notices are recorded with the change.
     async fn apply(self, scope: Scope, op: Op<'_>) -> SchedulerResult<Outcome<OpResult>> {
+        self.apply_guarded(scope, op, |_, _| Ok(())).await
+    }
+
+    /// [`Self::apply`] with `guard` checked on each planning attempt's draft,
+    /// so a refusal and the commit read the same revision.
+    async fn apply_guarded(
+        self,
+        scope: Scope,
+        op: Op<'_>,
+        guard: impl Fn(&Draft, DateTime<Utc>) -> Result<(), ScheduleError>,
+    ) -> SchedulerResult<Outcome<OpResult>> {
         if let Some(policy) = op.schedule_policy() {
             self.service.check_policy(policy)?;
         }
@@ -446,6 +457,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
                 meta,
                 scope,
                 |draft, ids, now| {
+                    guard(draft, now)?;
                     apply_op(draft, ids, &op, now).map(|outcome| on_surface(&op, surface, outcome))
                 },
                 |outcome: &Outcome<OpResult>| {
@@ -772,6 +784,30 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
         };
         // The target week's runs decide conflicts, so the whole schedule is read.
         Ok(run_state(self.apply(Scope::All, op).await?))
+    }
+
+    /// A member moves their own run (public portal): [`Self::amend_run`],
+    /// refused inside the commit unless they are on the live run, it is in
+    /// the current boss week and has not started, and `to` is still ahead.
+    /// The request digest is `amend_run`'s.
+    pub async fn member_amend_run(
+        self,
+        member: &str,
+        run_id: &str,
+        to: DateTime<Utc>,
+        policy: &SchedulePolicy,
+    ) -> SchedulerResult<Outcome<RunState>> {
+        let op = Op::AmendRun {
+            run_id: run_id.to_owned(),
+            to,
+            policy,
+        };
+        let guard = |draft: &Draft, now| {
+            let run = draft.require_run(run_id)?;
+            MemberRunRefusal::check(&run, member, &member_weeks(policy, now, 1)?, Some(to), now)
+                .map_err(ScheduleError::MemberRun)
+        };
+        Ok(run_state(self.apply_guarded(Scope::All, op, guard).await?))
     }
 
     /// Exchange two runs' slots as one history-recorded transaction.
@@ -1158,8 +1194,41 @@ impl<S: ScheduleStore + DeclineNoticeStore, I: IdSource, C: Clock> Attributed<'_
         answer: Option<RsvpState>,
         context: DeclineNoticeContext,
     ) -> SchedulerResult<DeclineRsvpResult<bool>> {
+        self.answer_with_decline(run_id, user_id, answer, context, None)
+            .await
+    }
+
+    /// A member's own answer (public portal): [`Self::portal_answer_with_decline`],
+    /// refused inside the commit unless the run is live and in this or next
+    /// boss week.
+    pub async fn member_answer_with_decline(
+        self,
+        run_id: &str,
+        user_id: &str,
+        answer: RsvpState,
+        context: DeclineNoticeContext,
+        policy: &SchedulePolicy,
+    ) -> SchedulerResult<DeclineRsvpResult<bool>> {
+        self.answer_with_decline(run_id, user_id, Some(answer), context, Some(policy))
+            .await
+    }
+
+    async fn answer_with_decline(
+        self,
+        run_id: &str,
+        user_id: &str,
+        answer: Option<RsvpState>,
+        context: DeclineNoticeContext,
+        member: Option<&SchedulePolicy>,
+    ) -> SchedulerResult<DeclineRsvpResult<bool>> {
         let request = digest("portal_answer", &(run_id, user_id, answer));
         self.commit_rsvp_with_decline(run_id, user_id, context, request, |draft, now| {
+            if let Some(policy) = member {
+                let run = draft.require_run(run_id)?;
+                let weeks = member_weeks(policy, now, 2)?;
+                MemberRunRefusal::check(&run, user_id, &weeks, None, now)
+                    .map_err(ScheduleError::MemberRun)?;
+            }
             let before = draft.require_run(run_id)?;
             if !before.participants.iter().any(|user| user == user_id) {
                 return Err(ScheduleError::NotOnRun(vec![user_id.to_owned()]));
@@ -1212,6 +1281,20 @@ fn count(result: OpResult) -> usize {
         OpResult::Count(count) => count,
         other => unreachable!("expected a count, got {other:?}"),
     }
+}
+
+/// The first `count` boss weeks from the one holding `now` (start instants).
+fn member_weeks(
+    policy: &SchedulePolicy,
+    now: DateTime<Utc>,
+    count: usize,
+) -> Result<Vec<DateTime<Utc>>, ScheduleError> {
+    policy
+        .materialised_weeks(now)?
+        .iter()
+        .take(count)
+        .map(|week| utc_instant(week).map_err(ScheduleError::from))
+        .collect()
 }
 
 fn run_state(outcome: Outcome<OpResult>) -> Outcome<RunState> {

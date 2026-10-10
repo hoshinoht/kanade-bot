@@ -307,7 +307,39 @@ pub fn operations(
 /// The longest rejection reason, in characters.
 pub const MAX_REASON: usize = 500;
 
-/// A rejection reason, trimmed: 1..=500 characters, no control characters.
+/// Characters free text may not carry: controls (Cc), format characters
+/// (Cf: bidi overrides, zero-width, U+FEFF, tags) and the line and paragraph
+/// separators (Zl, Zp). Cf is listed per Unicode 15.1.
+pub fn is_hidden_char(c: char) -> bool {
+    c.is_control()
+        || matches!(
+            c,
+            '\u{00AD}'
+                | '\u{0600}'..='\u{0605}'
+                | '\u{061C}'
+                | '\u{06DD}'
+                | '\u{070F}'
+                | '\u{0890}'..='\u{0891}'
+                | '\u{08E2}'
+                | '\u{180E}'
+                | '\u{200B}'..='\u{200F}'
+                | '\u{2028}'..='\u{202E}'
+                | '\u{2060}'..='\u{2064}'
+                | '\u{2066}'..='\u{206F}'
+                | '\u{FEFF}'
+                | '\u{FFF9}'..='\u{FFFB}'
+                | '\u{110BD}'
+                | '\u{110CD}'
+                | '\u{13430}'..='\u{1343F}'
+                | '\u{1BCA0}'..='\u{1BCA3}'
+                | '\u{1D173}'..='\u{1D17A}'
+                | '\u{E0001}'
+                | '\u{E0020}'..='\u{E007F}'
+        )
+}
+
+/// A rejection reason, trimmed: 1..=500 characters, none of them hidden
+/// ([`is_hidden_char`]).
 ///
 /// # Errors
 /// [`RequestRefusal::ReasonRequired`] or [`RequestRefusal::ReasonInvalid`].
@@ -316,7 +348,7 @@ pub fn check_reason(reason: &str) -> Result<String, RequestRefusal> {
     if reason.is_empty() {
         return Err(RequestRefusal::ReasonRequired);
     }
-    if reason.chars().count() > MAX_REASON || reason.chars().any(char::is_control) {
+    if reason.chars().count() > MAX_REASON || reason.chars().any(is_hidden_char) {
         return Err(RequestRefusal::ReasonInvalid);
     }
     Ok(reason.to_owned())

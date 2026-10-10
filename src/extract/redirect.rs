@@ -5,7 +5,7 @@
 
 use chrono::{DateTime, Datelike, NaiveTime, Timelike, Utc, Weekday};
 
-use crate::chat::nudge::{VIEW_RUN_ACTION, render};
+use crate::chat::nudge::render;
 use crate::chat::persona::NudgePurpose;
 use crate::domain::notify::WeekReset;
 use crate::domain::proposals::{ChangeKind, Payload, ProposedChange};
@@ -115,7 +115,8 @@ fn classify_move(facts: &RedirectFacts<'_>) -> RedirectCase {
         return RedirectCase::Unclear;
     }
     let on_run = run.participants.iter().any(|id| id == facts.author_id);
-    if !on_run || !run.status.is_live() {
+    // The portal refuses moves of started runs and into the past.
+    if !on_run || !run.status.is_live() || run.datetime <= facts.now || to <= facts.now {
         return RedirectCase::NeedsApproval;
     }
     let (Ok(current), Ok(target)) = (
@@ -161,11 +162,6 @@ pub trait PortalLinks {
         weekday: Option<Weekday>,
         time: Option<NaiveTime>,
     ) -> Option<String>;
-    /// Links that only open the run for viewing (no Move or Requests page
-    /// yet): the card stays in every mode and no weekly tip is spent.
-    fn view_only(&self) -> bool {
-        false
-    }
 }
 
 /// Row ids are UUIDs (v4 and v5 alike); anything outside `[A-Za-z0-9_-]` gets
@@ -189,9 +185,11 @@ impl std::fmt::Display for InvalidOrigin {
 
 impl std::error::Error for InvalidOrigin {}
 
-/// Provisional route shapes (the public PWA routes are not specified yet):
-/// `{origin}/runs/{run_id}?move_to=<UTC RFC 3339>` and
-/// `{origin}/requests/new?fixed={id}&change={edit|remove}[&day=thu][&time=HH:MM]`.
+/// The public portal's routes (`member-writes-contract.md`):
+/// `{origin}/runs/{run_id}?move_to=<UTC RFC 3339>` (the Move page) and
+/// `{origin}/requests/new?fixed={id}&change={edit|remove}[&day=thu][&time=HH:MM]`
+/// (the request form). The page treats a link as stale once the run started
+/// or its boss week reset; the server re-validates every write.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PublicPortalLinks {
     origin: String,
@@ -221,42 +219,6 @@ fn checked_origin(origin: &str) -> Result<String, InvalidOrigin> {
         return Err(InvalidOrigin);
     }
     Ok(origin.to_ascii_lowercase())
-}
-
-/// Interim links (user decision 2026-10-09) while the portal has no Move or
-/// Requests screen: `{origin}/?run={run_id}` opens the run in the member
-/// Week; weekly-timing changes get no link.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PortalViewLinks {
-    origin: String,
-}
-
-impl PortalViewLinks {
-    pub fn new(origin: &str) -> Result<Self, InvalidOrigin> {
-        Ok(Self {
-            origin: checked_origin(origin)?,
-        })
-    }
-}
-
-impl PortalLinks for PortalViewLinks {
-    fn move_run(&self, run_id: &str, _to: DateTime<Utc>) -> Option<String> {
-        is_link_id(run_id).then(|| format!("{}/?run={run_id}", self.origin))
-    }
-
-    fn request_fixed(
-        &self,
-        _fixed_run_id: &str,
-        _change: FixedChange,
-        _weekday: Option<Weekday>,
-        _time: Option<NaiveTime>,
-    ) -> Option<String> {
-        None
-    }
-
-    fn view_only(&self) -> bool {
-        true
-    }
 }
 
 impl PortalLinks for PublicPortalLinks {
@@ -319,19 +281,12 @@ fn day_code(weekday: Weekday) -> &'static str {
 pub struct RedirectLink {
     pub purpose: NudgePurpose,
     pub url: String,
-    /// Opens the run for viewing only ([`PortalLinks::view_only`]).
-    pub view_only: bool,
 }
 
 impl RedirectLink {
-    /// The posted line: `<lead-in> → edit the run: <url>`, or for a view
-    /// link `→ see the run: <url>` (never with a lead-in).
+    /// The posted line: the lead-in, the purpose's action and the URL.
     pub fn line(&self, lead_in: Option<&str>) -> String {
-        if self.view_only {
-            format!("{VIEW_RUN_ACTION}{}", self.url)
-        } else {
-            render(lead_in, self.purpose, &self.url)
-        }
+        render(lead_in, self.purpose, &self.url)
     }
 }
 
@@ -372,12 +327,10 @@ pub fn plan<L: PortalLinks + ?Sized>(
             };
             Redirect {
                 case,
-                // A view link cannot replace the card's approval.
-                keep_card: mode != SelfServiceMode::LinkFirst || links.view_only(),
+                keep_card: mode != SelfServiceMode::LinkFirst,
                 link: Some(RedirectLink {
                     purpose: NudgePurpose::SelfService,
                     url,
-                    view_only: links.view_only(),
                 }),
             }
         }
@@ -403,7 +356,6 @@ pub fn plan<L: PortalLinks + ?Sized>(
                 link: Some(RedirectLink {
                     purpose: NudgePurpose::RequestForm,
                     url,
-                    view_only: links.view_only(),
                 }),
             }
         }

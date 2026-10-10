@@ -100,7 +100,6 @@ where
             .self_service
             .as_ref()
             .and_then(|deps| deps.lead_ins.as_ref())
-            .filter(|_| !tip.link.view_only)
         else {
             return tip;
         };

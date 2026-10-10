@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kanade.invalid/api-schemas/public.json",
-  "title": "Public portal: status, the member session, the member's signed-in devices, the member week, the member's weekly timings and their ownership, the member's own chat allowance and boss guides",
+  "title": "Public portal: status, the member session, the member's signed-in devices, the member week, the member's own runs (answer, move, deep link), the member's weekly timings and their ownership, the member's requests, the member's own chat allowance and boss guides",
   "$defs": {
     "PublicStatus": {
       "type": "object",
@@ -165,6 +165,197 @@
       "required": ["to"],
       "properties": {
         "to": { "type": "string", "pattern": "^[0-9]{17,20}$", "description": "Discord user id (snowflake) of another party member." }
+      }
+    },
+    "MemberAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Request body of `PUT /api/public/runs/{id}/answer`: the caller's own answer (no clear from the portal); anything else is 422 `invalid_body`.",
+      "required": ["answer", "version"],
+      "properties": {
+        "answer": { "enum": ["yes", "maybe", "no"] },
+        "version": { "type": "integer", "minimum": 0, "description": "`MemberWeek.version` the member saw; only a change to their own answer since then is 409 `stale`." }
+      }
+    },
+    "MemberMove": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Request body of `POST /api/public/runs/{id}/move`: a new slot inside the run's (current) boss week; anything else is 422 `invalid_body`.",
+      "required": ["day", "time", "version"],
+      "properties": {
+        "day": { "type": "integer", "minimum": 0, "maximum": 6, "description": "Day index from the boss-week reset day (0), as `MemberRun.day`." },
+        "time": { "$ref": "week.json#/$defs/RunTime", "description": "Guild-local `HH:MM`; null only for an own-time run, which keeps its clock. An own-time run given a time moves to it (this week only)." },
+        "version": { "type": "integer", "minimum": 0, "description": "`MemberWeek.version` the member saw; a change to the run's slot since then is 409 `stale`." }
+      }
+    },
+    "MemberRunResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Answers `PUT /api/public/runs/{id}/answer`: the run as the member now sees it and the version to send next. A retry with the same Idempotency-Key answers the run as it is, writing nothing.",
+      "required": ["run", "version"],
+      "properties": {
+        "run": { "$ref": "#/$defs/MemberRun" },
+        "version": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "MemberMoveResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Answers `POST /api/public/runs/{id}/move`; `previous` is where the run was before this move (a retry with the same Idempotency-Key answers the first move's).",
+      "required": ["run", "previous", "version"],
+      "properties": {
+        "run": { "$ref": "#/$defs/MemberRun" },
+        "previous": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["day", "time"],
+          "properties": {
+            "day": { "type": "integer", "minimum": 0, "maximum": 6 },
+            "time": { "$ref": "week.json#/$defs/RunTime" }
+          }
+        },
+        "version": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "MemberRunLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "GET /api/public/runs/{id}: the run a Discord link opens. 404 `not_found` unless the run is in this or next boss week or the member is or was on it. `Cache-Control: no-store`.",
+      "required": ["run", "week", "week_starts", "week_ends_at", "started", "removed", "this_week", "timing", "generated_at"],
+      "properties": {
+        "run": { "$ref": "#/$defs/MemberRun", "description": "`can_edit` is false outside this and next boss week." },
+        "week": { "enum": ["current", "next", "past", "later"], "description": "The run's boss week relative to now." },
+        "week_starts": { "type": "string", "description": "Local date of that boss week's reset day (YYYY-MM-DD)." },
+        "week_ends_at": { "type": "string", "description": "The reset that ends that boss week (ISO-8601 UTC)." },
+        "started": { "type": "boolean", "description": "The run's start has passed." },
+        "removed": {
+          "description": "The member was on this run and no longer is: who took them off (a member's name, `an admin` or `Kanade`) and when; null otherwise.",
+          "anyOf": [{ "$ref": "#/$defs/MemberRemoved" }, { "type": "null" }]
+        },
+        "this_week": {
+          "description": "When `week` is `past`: this boss week's run of the same weekly timing, if any.",
+          "anyOf": [{ "$ref": "#/$defs/MemberRun" }, { "type": "null" }]
+        },
+        "timing": {
+          "description": "The run's weekly timing slot, when it came from one.",
+          "anyOf": [{ "$ref": "#/$defs/MemberTimingSlot" }, { "type": "null" }]
+        },
+        "generated_at": { "type": "string", "description": "The server's clock when this was read (ISO-8601 UTC)." }
+      }
+    },
+    "MemberRemoved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["by", "at"],
+      "properties": {
+        "by": { "type": "string", "description": "A member's display name, `an admin` or `Kanade`; never an administrator's id or label." },
+        "at": { "type": "string", "description": "ISO-8601 UTC." }
+      }
+    },
+    "MemberTimingSlot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["day", "time"],
+      "properties": {
+        "day": { "type": "integer", "minimum": 0, "maximum": 6, "description": "Guild-local weekday, 0 = Monday (as `MemberTiming.weekday`)." },
+        "time": { "type": "string", "description": "Guild-local start (`HH:MM`)." }
+      }
+    },
+    "MemberRequestBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Request body of `POST /api/public/requests`. join/leave/swap take `run_id` xor `fixed_id` (runs of this and next boss week only), swap also `with`; change_fixed takes `fixed_id` and any of `day`, `time`, `channel_id`, `party`; new_fixed takes `day`, `time`, `channel_id`, `bosses` and optionally `party` (the requester always leads it). A field the kind does not take is 422 `field_not_allowed`; anything else malformed, or outside `MemberRequests.options`, is 422 `invalid_body`.",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["join", "leave", "swap", "new_fixed", "change_fixed"] },
+        "run_id": { "type": "string" },
+        "fixed_id": { "type": "string" },
+        "with": { "type": "string", "description": "The member taking the requester's place (an `options.members` id)." },
+        "day": { "type": "integer", "minimum": 0, "maximum": 6, "description": "Weekly weekday, 0 = Monday." },
+        "time": { "type": "string", "pattern": "^[0-9]{2}:[0-9]{2}$" },
+        "channel_id": { "type": "string", "description": "An `options.channels` id." },
+        "party": { "type": "array", "items": { "type": "string" }, "description": "`options.members` ids." },
+        "bosses": { "type": "array", "items": { "type": "string" }, "description": "Boss tokens (`XKalos`); new_fixed only." },
+        "note": { "type": "string", "maxLength": 200, "description": "Free text for the admins, trimmed; at most 200 characters, no control characters." }
+      }
+    },
+    "MemberRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One of the member's requests. Answers `POST /api/public/requests` (201, or 200 for a retry with the same Idempotency-Key) and `POST /api/public/requests/{id}/withdraw`.",
+      "required": ["id", "kind", "state", "summary", "note", "run", "fixed_id", "bosses", "channel", "with", "proposed", "sent_at", "decided_at", "decided_by", "reason", "expires_at"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "enum": ["join", "leave", "swap", "new_fixed", "change_fixed"] },
+        "state": { "enum": ["waiting", "approved", "rejected", "withdrawn", "expired"], "description": "`expired` once its boss week has passed, even before the expiry tick closes it." },
+        "summary": { "type": "string", "description": "The generated public summary admins see (`member request: join run:<id>`)." },
+        "note": { "$ref": "common.json#/$defs/NullableString", "description": "The member's note, if they wrote one." },
+        "run": {
+          "description": "The run it is about, as the member sees it now; null for weekly timings and runs that are gone.",
+          "anyOf": [{ "$ref": "#/$defs/MemberRun" }, { "type": "null" }]
+        },
+        "fixed_id": { "$ref": "common.json#/$defs/NullableString", "description": "The weekly timing it is about." },
+        "bosses": { "$ref": "common.json#/$defs/Bosses" },
+        "channel": { "$ref": "common.json#/$defs/NullableString", "description": "Channel name only." },
+        "with": {
+          "description": "Swap: who takes the requester's place.",
+          "anyOf": [{ "$ref": "common.json#/$defs/Member" }, { "type": "null" }]
+        },
+        "proposed": {
+          "description": "new_fixed and change_fixed: the asked-for slot; null fields are left as they are.",
+          "anyOf": [{ "$ref": "#/$defs/MemberProposed" }, { "type": "null" }]
+        },
+        "sent_at": { "type": "string", "description": "ISO-8601 UTC." },
+        "decided_at": { "$ref": "common.json#/$defs/NullableString", "description": "When it was approved, rejected, withdrawn or closed as expired (ISO-8601 UTC)." },
+        "decided_by": { "$ref": "common.json#/$defs/NullableString", "description": "A member's name, `an admin` or `Kanade`." },
+        "reason": { "$ref": "common.json#/$defs/NullableString", "description": "A rejection's reason." },
+        "expires_at": { "$ref": "common.json#/$defs/NullableString", "description": "The reset that closes its boss week (ISO-8601 UTC); null for weekly-timing requests, which never expire." }
+      }
+    },
+    "MemberProposed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["day", "time", "channel", "party"],
+      "properties": {
+        "day": { "type": ["integer", "null"], "minimum": 0, "maximum": 6, "description": "Weekly weekday, 0 = Monday." },
+        "time": { "$ref": "common.json#/$defs/NullableString", "description": "`HH:MM`." },
+        "channel": { "$ref": "common.json#/$defs/NullableString", "description": "Channel name only." },
+        "party": { "anyOf": [{ "$ref": "common.json#/$defs/Members" }, { "type": "null" }] }
+      }
+    },
+    "MemberRequestOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channels", "members"],
+      "properties": {
+        "channels": { "type": "array", "items": { "$ref": "common.json#/$defs/Member" }, "description": "Watched channels this and next boss week's runs or the weekly timings use, `{id, name}`." },
+        "members": { "type": "array", "items": { "$ref": "common.json#/$defs/Member" }, "description": "Every member with the bossing role (swap partners, weekly parties)." }
+      }
+    },
+    "MemberRequests": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "GET /api/public/requests/mine: the member's own requests, newest first, with the limits and the form's choices. `Cache-Control: no-store`.",
+      "required": ["requests", "open", "today", "max_open", "max_today", "options", "generated_at"],
+      "properties": {
+        "requests": { "type": "array", "items": { "$ref": "#/$defs/MemberRequest" } },
+        "open": { "type": "integer", "minimum": 0, "description": "Undecided requests, as the `open` limit counts them." },
+        "today": { "type": "integer", "minimum": 0, "description": "Requests sent in the last 24 hours (withdrawn ones count), as the `today` limit counts them." },
+        "max_open": { "type": "integer", "minimum": 0 },
+        "max_today": { "type": "integer", "minimum": 0 },
+        "options": { "$ref": "#/$defs/MemberRequestOptions" },
+        "generated_at": { "type": "string", "description": "The server's clock when this was read (ISO-8601 UTC)." }
+      }
+    },
+    "MemberRequestLimit": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The 429 body of `POST /api/public/requests` over a limit: `error.json#/$defs/ApiError` plus which limit refused.",
+      "required": ["error", "message", "limit"],
+      "properties": {
+        "error": { "const": "request_limit" },
+        "message": { "type": "string" },
+        "limit": { "enum": ["open", "today"] }
       }
     },
     "PublicKnowledge": {

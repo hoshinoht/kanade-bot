@@ -5,9 +5,8 @@
 //!
 //! Needs a model gateway with an extraction route; without one messages are
 //! only counted and health reports `degraded` while the switch is on.
-//! Self-service links: interim view links into the public portal (user
-//! decision 2026-10-09), only with a public listener and while `self_service`
-//! is open, read live.
+//! Self-service links: the public portal's Move page and request form, only
+//! with a public listener and while `self_service` is open, read live.
 //!
 //! Stop (after the gateway handler, the feed's only sender, is gone):
 //! `Rescans::close` (queued jobs cancelled, the running one stops before its
@@ -54,7 +53,7 @@ use crate::{
             CallContext, DEFAULT_DEBOUNCE, DEFAULT_DRAIN_INTERVAL, Deps, Extractor, Pipeline,
             PipelineConfig, SelfServiceConfig, SelfServiceDeps,
         },
-        redirect::{PortalViewLinks, SelfServiceMode},
+        redirect::{PublicPortalLinks, SelfServiceMode},
         rescan::Rescans,
     },
     infrastructure::{
@@ -138,10 +137,10 @@ fn self_service_config(saved: &SelfService) -> SelfServiceConfig {
     }
 }
 
-/// View links into the portal, without lead-ins: there is no Move page yet,
-/// so no weekly tip is spent on them.
+/// Move and request links into the portal, posted bare: the weekly lead-in
+/// is not composed here, so no weekly tip is spent on them.
 fn self_service(portal: Option<&str>) -> Option<SelfServiceDeps> {
-    let links = PortalViewLinks::new(portal?).ok()?;
+    let links = PublicPortalLinks::new(portal?).ok()?;
     Some(SelfServiceDeps {
         links: Arc::new(links),
         lead_ins: None,
@@ -409,5 +408,39 @@ impl Extraction {
             );
             settle(&mut running).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{NaiveTime, TimeZone, Utc, Weekday};
+
+    use super::self_service;
+    use crate::extract::redirect::FixedChange;
+
+    #[test]
+    fn serve_links_open_the_move_page_and_the_request_form() {
+        assert!(self_service(None).is_none());
+        assert!(self_service(Some("http://kanade.example")).is_none());
+        let deps = self_service(Some("https://Kanade-Pub.example/")).expect("links");
+        assert!(deps.lead_ins.is_none(), "posted bare, no weekly tip");
+        let to = Utc.with_ymd_and_hms(2026, 10, 9, 13, 30, 0).unwrap();
+        assert_eq!(
+            deps.links.move_run("r-1", to).as_deref(),
+            Some("https://kanade-pub.example/runs/r-1?move_to=2026-10-09T13:30:00Z")
+        );
+        assert_eq!(
+            deps.links
+                .request_fixed(
+                    "f-1",
+                    FixedChange::Edit,
+                    Some(Weekday::Thu),
+                    NaiveTime::from_hms_opt(21, 30, 0),
+                )
+                .as_deref(),
+            Some(
+                "https://kanade-pub.example/requests/new?fixed=f-1&change=edit&day=thu&time=21:30"
+            )
+        );
     }
 }

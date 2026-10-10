@@ -2,16 +2,20 @@
 //! only while the admin switch `self_service.public_portal` is on and the
 //! public Discord application is configured; then members sign in and see
 //! their own session and devices, the boss week, their weekly timings (and
-//! move their ownership), their chat allowance, boss guides and boss art. Closed, the
-//! origin serves the shell, status and identity, sign-in answers `closed`
-//! and data and art answer `503 closed`. Every session route sits behind
-//! [`member::require_session`]; nothing here reads an admin credential.
+//! move their ownership), their chat allowance, boss guides and boss art;
+//! they answer and move their own runs and send and withdraw requests.
+//! Closed, the origin serves the shell, status and identity, sign-in answers
+//! `closed` and data and art answer `503 closed`. Every session route sits
+//! behind [`member::require_session`]; nothing here reads an admin credential.
 
 mod auth;
 mod bosses;
 mod ownership;
 mod read;
+mod requests;
+mod runs;
 mod sessions;
+mod write;
 
 use std::sync::Arc;
 
@@ -20,7 +24,7 @@ use axum::{
     extract::{Request, State},
     middleware::{Next, from_fn_with_state},
     response::{IntoResponse, Response},
-    routing::{any, delete, get, post},
+    routing::{any, delete, get, post, put},
 };
 use serde::Serialize;
 
@@ -55,6 +59,27 @@ pub fn routes(site: Arc<Site>) -> Router<Arc<Site>> {
         .route(
             "/api/public/bosses/{key}/knowledge",
             get(bosses::knowledge).fallback(unmounted),
+        )
+        .route("/api/public/runs/{id}", get(runs::link).fallback(unmounted))
+        .route(
+            "/api/public/runs/{id}/answer",
+            put(runs::answer).fallback(unmounted),
+        )
+        .route(
+            "/api/public/runs/{id}/move",
+            post(runs::move_run).fallback(unmounted),
+        )
+        .route(
+            "/api/public/requests",
+            post(requests::submit).fallback(unmounted),
+        )
+        .route(
+            "/api/public/requests/mine",
+            get(requests::mine).fallback(unmounted),
+        )
+        .route(
+            "/api/public/requests/{id}/withdraw",
+            post(requests::withdraw).fallback(unmounted),
         )
         .route(
             "/api/public/timings",

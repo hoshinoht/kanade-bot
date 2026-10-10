@@ -11,7 +11,9 @@ register every file as an in-memory resource under its `$id`.
 - Tightening over api-types' `number`: counts, days, versions, seqs,
   revisions and latencies are `integer` (≥ 0 where they cannot be negative);
   scores, rates and seconds stay `number`.
-- Every non-2xx JSON body on both origins is `error.json#/$defs/ApiError`.
+- Every non-2xx JSON body on both origins is `error.json#/$defs/ApiError`,
+  except `429 request_limit`, which adds `limit`
+  (`public.json#/$defs/MemberRequestLimit`).
 - Successful admin JSON `GET`s (outside `/api/admin/auth/`) carry a strong
   `ETag`; `If-None-Match` naming it answers `304` with no body and the same
   headers.
@@ -38,6 +40,12 @@ Pointers are `<file>#/$defs/<Name>`.
 | `POST /api/public/timings/{id}/owner` | body `public.json#/$defs/OwnerHandOff`; `public.json#/$defs/MemberTiming` (owner only; fresh sign-in, else 401 `reauth_required`) |
 | `POST /api/public/timings/{id}/owner-requests` | `public.json#/$defs/MemberOwnerRequest` (201; 200 for a retry with the same Idempotency-Key) |
 | `POST /api/public/owner-requests/{id}/accept`, `/decline`, `/withdraw` | `public.json#/$defs/MemberOwnerRequest` (accept/decline: owner only, accept needs a fresh sign-in; withdraw: requester only) |
+| `GET /api/public/runs/{id}` | `public.json#/$defs/MemberRunLink` (the Discord deep link; 404 `not_found` unless the run is in this or next boss week or the caller is or was on it) |
+| `PUT /api/public/runs/{id}/answer` | body `public.json#/$defs/MemberAnswer`; `public.json#/$defs/MemberRunResult` (participant only, fresh sign-in; 403 `not_in_run`, 409 `run_closed`/`stale`) |
+| `POST /api/public/runs/{id}/move` | body `public.json#/$defs/MemberMove`; `public.json#/$defs/MemberMoveResult` (participant only, current boss week, fresh sign-in; 409 `week_over`/`run_started`/`run_closed`/`stale`, 422 `outside_week`/`in_the_past`/`invalid_time`) |
+| `GET /api/public/requests/mine` | `public.json#/$defs/MemberRequests` (the caller's own requests, limits and form choices) |
+| `POST /api/public/requests` | body `public.json#/$defs/MemberRequestBody`; `public.json#/$defs/MemberRequest` (201; 200 for a retry with the same Idempotency-Key; fresh sign-in; 429 `public.json#/$defs/MemberRequestLimit` over a limit) |
+| `POST /api/public/requests/{id}/withdraw` | `public.json#/$defs/MemberRequest` (requester only, while waiting; 404 `not_found`, 409 `request_closed`) |
 | `GET /api/public/bosses` | `bosses.json#/$defs/BossRows` (as admin) |
 | `GET /api/public/bosses/events` | `bosses.json#/$defs/EventBosses` (as admin) |
 | `GET /api/public/bosses/{key}/knowledge` | `public.json#/$defs/PublicKnowledge` (no `path`, no bullet `detail`; 404 `not_found` for an unknown key) |

@@ -45,6 +45,26 @@ export type MemberTiming = { id: string, bosses: Array<Boss>, weekday: number, t
 
 export type MemberTimings = { timings: Array<MemberTiming>, generated_at: string, };
 
+export type MemberRunResult = { run: MemberRun, version: number, };
+
+export type MemberMoveResult = { run: MemberRun, previous: MovePrevious, version: number, };
+
+export type MemberRemoved = { by: string, at: string, };
+
+export type MemberTimingSlot = { day: number, time: string, };
+
+export type MemberRunLink = { run: MemberRun, week: 'current' | 'next' | 'past' | 'later', week_starts: string, week_ends_at: string, started: boolean, removed: MemberRemoved | null, this_week: MemberRun | null, timing: MemberTimingSlot | null, generated_at: string, };
+
+export type MemberProposed = { day: number | null, time: string | null, channel: string | null, party: Array<Member> | null, };
+
+export type MemberRequest = { id: string, kind: 'join' | 'leave' | 'swap' | 'new_fixed' | 'change_fixed', state: 'waiting' | 'approved' | 'rejected' | 'withdrawn' | 'expired', summary: string, note: string | null, run: MemberRun | null, fixed_id: string | null, bosses: Array<Boss>, channel: string | null, with: Member | null, proposed: MemberProposed | null, sent_at: string, decided_at: string | null, decided_by: string | null, reason: string | null, expires_at: string | null, };
+
+export type MemberRequestOptions = { channels: Array<Member>, members: Array<Member>, };
+
+export type MemberRequests = { requests: Array<MemberRequest>, open: number, today: number, max_open: number, max_today: number, options: MemberRequestOptions, generated_at: string, };
+
+export type MemberRequestLimit = { error: 'request_limit', message: string, limit: 'open' | 'today', };
+
 export type ApiError = { error: string, message: string, };
 
 export type Identity = { name: string, 

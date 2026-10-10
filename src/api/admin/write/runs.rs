@@ -14,17 +14,18 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     bad_body, origin,
-    precondition::{Explicit, OverrideRef, SeenField, expectations, version_expectations},
+    precondition::{Explicit, OverrideRef, SeenField, version_expectations},
     refusal::{Refusal, scheduler},
+    run_edit::{Answer, Previous, SlotError, load_run, put_answer, reloaded, slot, write_run},
     state, write_context,
 };
 use crate::{
     api::{
-        admin::context::{context, roster},
+        admin::context::{context, roster, run_lengths},
         auth::AdminSession,
         dto::{
             hhmm,
-            week::{RunDto, day_index, run_dto, run_time},
+            week::{RunDto, run_dto},
         },
         error::ApiError,
         listeners::Site,
@@ -32,11 +33,10 @@ use crate::{
         write::RunWrite,
     },
     domain::{
-        history::{BlameTarget, rsvp_field},
-        members::{Directory, MemberProfile},
-        schedule::{RsvpState, RunStatus, ScheduleSnapshot, StatusChange},
-        scheduler::DeclineNoticeContext,
-        scheduler::{SchedulerError, Scope},
+        history::BlameTarget,
+        members::MemberProfile,
+        schedule::{RsvpState, RunStatus, StatusChange},
+        scheduler::SchedulerError,
     },
 };
 
@@ -47,13 +47,6 @@ type Reply = Result<Response, Refusal>;
 pub(crate) struct RunResult {
     run: RunDto,
     version: u64,
-}
-
-#[derive(Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "MovePrevious"))]
-pub(crate) struct Previous {
-    day: u8,
-    time: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -71,23 +64,6 @@ pub(crate) struct SwapResult {
     version: u64,
 }
 
-async fn load_run(state: &ApiState, run_id: &str) -> Result<ScheduleSnapshot, Refusal> {
-    let snapshot = state
-        .store
-        .snapshot(Scope::Run(run_id.to_owned()))
-        .await
-        .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
-    if snapshot.runs.iter().any(|run| run.id == run_id) {
-        Ok(snapshot)
-    } else {
-        Err(Refusal::new(
-            axum::http::StatusCode::NOT_FOUND,
-            "not_found",
-            "That run no longer exists.",
-        ))
-    }
-}
-
 /// The run as it stands after the write, with the version read first (so it
 /// can only lag the data: a later edit at it may 409, never lose an update).
 async fn after(
@@ -96,13 +72,7 @@ async fn after(
     run_id: &str,
     profiles: &[MemberProfile],
 ) -> Result<(RunDto, u64), Refusal> {
-    let version = state
-        .store
-        .head()
-        .await
-        .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?
-        .seq;
-    let snapshot = load_run(state, run_id).await?;
+    let (snapshot, version) = reloaded(state, run_id).await?;
     let ctx = context(site, state, roster(profiles), state.now());
     let run = snapshot
         .runs
@@ -110,10 +80,7 @@ async fn after(
         .find(|run| run.id == run_id)
         .ok_or_else(|| Refusal::from(ApiError::UNAVAILABLE))?;
     let start = ctx.local_date(run.week_start);
-    let run_lengths = match &state.config {
-        Some(desk) => desk.settings().await.run_lengths,
-        None => Default::default(),
-    };
+    let run_lengths = run_lengths(state).await;
     Ok((run_dto(&ctx, &snapshot, start, run, &run_lengths), version))
 }
 
@@ -125,27 +92,13 @@ async fn edit(
     headers: &HeaderMap,
     run_id: &str,
     fields: &[String],
-    (version, explicit): (u64, Explicit),
+    declared: (u64, Explicit),
     write: RunWrite,
 ) -> Result<(RunDto, u64), Refusal> {
     let state = state(site)?;
     let origin = origin(session, headers)?;
-    // A missing run is a plain 404, never a precondition refusal.
     load_run(state, run_id).await?;
-    let expect = expectations(
-        state.store.as_ref(),
-        BlameTarget::Run(run_id.to_owned()),
-        fields,
-        Some(version),
-        &explicit,
-        origin.request_id.is_some(),
-    )
-    .await?;
-    let (ctx, profiles) = write_context(state).await?;
-    match state.writer.run(origin, expect, run_id, write, &ctx).await {
-        Ok(_) | Err(SchedulerError::AlreadyApplied { .. }) => {}
-        Err(error) => return Err(scheduler(error)),
-    }
+    let profiles = write_run(state, origin, run_id, fields, declared, write).await?;
     after(site, state, run_id, &profiles).await
 }
 
@@ -212,39 +165,26 @@ pub async fn move_run(
             "Finished and cancelled runs stay where they were.",
         ));
     }
-    let zone = state.policy.zone();
-    let current = zone.from_utc_datetime(&run.datetime.naive_utc());
-    let time = match (&request.time, run.status) {
-        (Some(text), _) => {
-            strict_time(text).ok_or_else(|| Refusal::invalid("Times are HH:MM, 00:00 to 23:59."))?
-        }
-        // Own-time runs keep their clock; only the day moves.
-        (None, RunStatus::Otot) => current.time(),
-        (None, _) => return Err(Refusal::invalid("A scheduled run needs a time.")),
-    };
     let ctx = context(&site, state, roster(&[]), state.now());
-    let start = ctx.local_date(run.week_start);
-    let previous = Previous {
-        day: day_index(&ctx, start, run.datetime),
-        time: run_time(&ctx, run),
-    };
-    let date = start + chrono::Days::new(u64::from(request.day));
-    let to = zone
-        .from_local_datetime(&date.and_time(time))
-        .earliest()
-        .ok_or_else(|| Refusal::invalid("That time does not exist on that day."))?
-        .with_timezone(&chrono::Utc);
-    // With a non-midnight reset, day 0 before the reset time belongs to the
-    // previous boss week; a run never leaves its week.
-    let week = state
-        .policy
-        .week_of(&to)
-        .map_err(|_| Refusal::invalid("That date is out of range."))?;
-    if week.to_fixed() != run.week_start {
-        return Err(Refusal::invalid(
-            "That time falls in another boss week; runs stay in their week.",
-        ));
-    }
+    let previous = Previous::of(&ctx, run);
+    let to = slot(
+        &state.policy,
+        &ctx,
+        run,
+        request.day,
+        request.time.as_deref(),
+    )
+    .map_err(|error| {
+        Refusal::invalid(match error {
+            SlotError::Time => "Times are HH:MM, 00:00 to 23:59.",
+            SlotError::NeedsTime => "A scheduled run needs a time.",
+            SlotError::Missing => "That time does not exist on that day.",
+            SlotError::Range => "That date is out of range.",
+            SlotError::OtherWeek => {
+                "That time falls in another boss week; runs stay in their week."
+            }
+        })
+    })?;
     let (run, version) = edit(
         &site,
         &session,
@@ -388,43 +328,19 @@ pub async fn rsvp(
     };
     let state = state(&site)?;
     let origin = origin(&session, &headers)?;
-    // Membership is checked by the scheduler, after the preconditions: a
-    // member removed since the client's version (with their answer) is 409.
     load_run(state, &run_id).await?;
     let (_, explicit) = declared(request.version, request.expect, request.overrides);
-    let expect = expectations(
-        state.store.as_ref(),
-        BlameTarget::Run(run_id.clone()),
-        &[rsvp_field(&request.member_id)],
-        Some(request.version),
+    // A member removed since the client's version (with their answer) is 409.
+    let profiles = put_answer(
+        state,
+        origin,
+        &run_id,
+        &request.member_id,
+        Answer::Admin(answer),
+        request.version,
         &explicit,
-        origin.request_id.is_some(),
     )
     .await?;
-    let (ctx, profiles) = write_context(state).await?;
-    let decline = DeclineNoticeContext {
-        channel_id: None,
-        reference_id: None,
-        display_name: ctx
-            .directory
-            .display_name(&request.member_id)
-            .unwrap_or_else(|| request.member_id.clone()),
-    };
-    match state
-        .writer
-        .rsvp(origin, expect, &run_id, &request.member_id, answer, decline)
-        .await
-    {
-        Ok(result) => {
-            if result.retract {
-                state
-                    .retract_decline(run_id.clone(), request.member_id.clone())
-                    .await;
-            }
-        }
-        Err(SchedulerError::AlreadyApplied { .. }) => {}
-        Err(error) => return Err(scheduler(error)),
-    }
     let (run, version) = after(&site, state, &run_id, &profiles).await?;
     Ok(Json(RunResult { run, version }).into_response())
 }

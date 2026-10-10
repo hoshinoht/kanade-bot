@@ -14,7 +14,7 @@ use tokio::sync::Notify;
 
 use super::{auth::Clock as ApiClockFn, state::ReadStore};
 use crate::domain::{
-    drafts::{ProposalStore, StoredDraft},
+    drafts::{DraftStatus, ProposalStore, StoredDraft},
     history::{
         Actor, ChangeHistory, Expect, HeldReminders, Origin, RevertMode, RevertOutcome, Surface,
     },
@@ -22,14 +22,14 @@ use crate::domain::{
     members::Roster,
     notify::DeclineNoticeStore,
     proposals::Approver,
-    requests::NoFreezes,
+    requests::{NoFreezes, RequestSpec},
     schedule::{
         FixedEditChoices, FixedEditRequest, NewFixedRun, RsvpState, SchedulePolicy, StatusChange,
     },
     scheduler::{
-        Approved, Clock, DeclineNoticeContext, DeclineRsvpResult, IdSource, ProposalApproved,
-        ProposalError, ProposalPreview, Rejected, RequestError, RequestPreview, ScheduleStore,
-        SchedulerResult, SchedulerService, StoreError,
+        Approved, Clock, DeclineNoticeContext, DeclineRsvpResult, DraftError, IdSource,
+        ProposalApproved, ProposalError, ProposalPreview, Rejected, RequestError, RequestPreview,
+        ScheduleStore, SchedulerResult, SchedulerService, StoreError,
     },
 };
 
@@ -166,6 +166,11 @@ pub enum RunWrite {
     Move {
         to: DateTime<Utc>,
     },
+    /// The origin's member moves their own run (public portal): the same
+    /// move, refused inside the commit unless it is theirs to move now.
+    MemberMove {
+        to: DateTime<Utc>,
+    },
     Swap {
         with_id: String,
         version: u64,
@@ -204,6 +209,19 @@ pub trait Writer: Send + Sync {
         user_id: &'a str,
         answer: Option<RsvpState>,
         decline: DeclineNoticeContext,
+    ) -> WriteFuture<'a, DeclineRsvpResult<bool>>;
+
+    /// The origin's member answers their own run (public portal), refused
+    /// inside the commit unless they are on it and it is live in this or next
+    /// boss week.
+    fn member_answer<'a>(
+        &'a self,
+        origin: Origin,
+        expect: Expect,
+        run_id: &'a str,
+        answer: RsvpState,
+        decline: DeclineNoticeContext,
+        ctx: &'a WriteContext,
     ) -> WriteFuture<'a, DeclineRsvpResult<bool>>;
 
     /// A new weekly timing and its runs in the materialised weeks, in one
@@ -302,6 +320,25 @@ pub trait Writer: Send + Sync {
         version: u64,
         reason: &'a str,
     ) -> DecideFuture<'a, Rejected, RequestError>;
+
+    /// A member's request, keyed by `request_id` (an exact retry answers the
+    /// stored request); `true` when this call created it.
+    fn submit_request<'a>(
+        &'a self,
+        member: &'a str,
+        title: &'a str,
+        spec: RequestSpec,
+        request_id: String,
+        ctx: &'a WriteContext,
+    ) -> DecideFuture<'a, (StoredDraft, bool), RequestError>;
+
+    /// The requester withdraws their request at `version`.
+    fn withdraw_request<'a>(
+        &'a self,
+        member: &'a str,
+        id: &'a str,
+        version: u64,
+    ) -> DecideFuture<'a, StoredDraft, RequestError>;
 
     /// `edit`: the portal's "edit, then approve" time.
     fn approve_proposal<'a>(
@@ -409,10 +446,15 @@ where
             let mut service = self.service.lock().await;
             // v4 parity: a Discord swap carries no "(via portal)" mark.
             let via_portal = origin.surface != Surface::Discord;
+            let member = origin.actor.id().to_owned();
             let handle = service.as_origin(origin).expecting(expect);
             // Notices are already in the store's outbox, written with the change.
             match write {
                 RunWrite::Move { to } => handle.amend_run(run_id, to, &ctx.policy).await.map(drop),
+                RunWrite::MemberMove { to } => handle
+                    .member_amend_run(&member, run_id, to, &ctx.policy)
+                    .await
+                    .map(drop),
                 RunWrite::Swap { with_id, version } => handle
                     .swap_run_slots_at_version(run_id, &with_id, Some(version), &ctx.policy)
                     .await
@@ -449,6 +491,26 @@ where
                 .as_origin(origin)
                 .expecting(expect)
                 .portal_answer_with_decline(run_id, user_id, answer, decline)
+                .await
+        })
+    }
+
+    fn member_answer<'a>(
+        &'a self,
+        origin: Origin,
+        expect: Expect,
+        run_id: &'a str,
+        answer: RsvpState,
+        decline: DeclineNoticeContext,
+        ctx: &'a WriteContext,
+    ) -> WriteFuture<'a, DeclineRsvpResult<bool>> {
+        Box::pin(async move {
+            let mut service = self.service.lock().await;
+            let member = origin.actor.id().to_owned();
+            service
+                .as_origin(origin)
+                .expecting(expect)
+                .member_answer_with_decline(run_id, &member, answer, decline, &ctx.policy)
                 .await
         })
     }
@@ -662,6 +724,61 @@ where
         Box::pin(async move {
             let mut service = self.service.lock().await;
             service.reject_request(actor, id, version, reason).await
+        })
+    }
+
+    fn submit_request<'a>(
+        &'a self,
+        member: &'a str,
+        title: &'a str,
+        spec: RequestSpec,
+        request_id: String,
+        ctx: &'a WriteContext,
+    ) -> DecideFuture<'a, (StoredDraft, bool), RequestError> {
+        Box::pin(async move {
+            let mut service = self.service.lock().await;
+            // Under the writer lock, so a concurrent retry cannot slip between.
+            let replay = service
+                .store()
+                .recorded_draft_request(&Actor::member(member), &request_id)
+                .await?
+                .is_some();
+            let request = service
+                .submit_request(
+                    member,
+                    title,
+                    spec,
+                    Some(request_id),
+                    &ctx.policy,
+                    &ctx.directory,
+                    &GATE,
+                )
+                .await?;
+            Ok((request, !replay))
+        })
+    }
+
+    fn withdraw_request<'a>(
+        &'a self,
+        member: &'a str,
+        id: &'a str,
+        version: u64,
+    ) -> DecideFuture<'a, StoredDraft, RequestError> {
+        Box::pin(async move {
+            let mut service = self.service.lock().await;
+            // An admin edit bumps the version while it still waits: withdraw
+            // the request as it now is.
+            let mut version = version;
+            loop {
+                match service.withdraw_request(member, id, version).await {
+                    Err(RequestError::Draft(DraftError::Stale {
+                        status: DraftStatus::Submitted,
+                        version: now,
+                        ..
+                    })) if now != version => version = now,
+                    other => return other,
+                }
+            }
         })
     }
 

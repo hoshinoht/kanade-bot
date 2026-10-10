@@ -16,7 +16,7 @@ use axum::{
 use crate::{
     api::{
         admin::{
-            context::{context, frames, next_week, roster, state, unavailable},
+            context::{context, frames, next_week, roster, run_lengths, state, unavailable},
             limits::{allowance_row, allowance_snapshot},
         },
         assets::art_of,
@@ -64,10 +64,7 @@ pub(super) async fn week(
         .map_err(unavailable)?;
     let profiles = state.store.members().await.map_err(unavailable)?;
     let ctx = context(&site, state, roster(&profiles), now);
-    let run_lengths = match &state.config {
-        Some(desk) => desk.settings().await.run_lengths,
-        None => Default::default(),
-    };
+    let run_lengths = run_lengths(state).await;
     Ok(Json(member_week(
         &ctx,
         &snapshot,

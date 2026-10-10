@@ -12,6 +12,7 @@ mod member_reads;
 mod member_sessions;
 mod member_signin;
 pub(crate) mod member_support;
+mod member_writes;
 mod own_sessions;
 mod roster;
 mod sessions;

@@ -1,6 +1,18 @@
 //! Wire shapes of the member session routes (`public.json`). The structs
 //! carry no doc comments so the generated TypeScript stays exactly the
-//! frozen shapes; the schema documents each field.
+//! frozen shapes; the schema documents each field. The member's own-run
+//! writes and requests are in `runs` and `requests`.
+
+mod requests;
+mod runs;
+
+pub use requests::{
+    MemberProposed, MemberRequest, MemberRequestLimit, MemberRequestOptions, MemberRequests,
+    RequestView,
+};
+pub use runs::{
+    MemberMoveResult, MemberRemoved, MemberRunLink, MemberRunResult, MemberTimingSlot, RunWeek,
+};
 
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::Serialize;
@@ -15,6 +27,7 @@ use super::{
 };
 use crate::{
     domain::{
+        history::Actor,
         ownership::OwnerRequest,
         schedule::{FixedRun, Run, ScheduleSnapshot},
         settings::RunLengths,
@@ -103,8 +116,8 @@ pub struct MemberAllowance {
 }
 
 /// One run as `user_id` sees it: the admin run's shared fields plus whether
-/// it is theirs. Only this and next boss week are ever projected, so
-/// `can_edit` needs no week check of its own.
+/// it is theirs. `can_edit` assumes this or next boss week; runs from other
+/// weeks go through [`member_run_in`].
 pub fn member_run(
     ctx: &Context<'_>,
     snapshot: &ScheduleSnapshot,
@@ -130,6 +143,31 @@ pub fn member_run(
         fixed_id: run.fixed_run_id.clone(),
         mine,
         can_edit: mine && !run.status.is_terminal(),
+    }
+}
+
+/// [`member_run`] for a run of any boss week: editable only in this or next.
+pub fn member_run_in(
+    ctx: &Context<'_>,
+    snapshot: &ScheduleSnapshot,
+    run: &Run,
+    week: RunWeek,
+    run_lengths: &RunLengths,
+    user_id: &str,
+) -> MemberRun {
+    let start = ctx.local_date(run.week_start);
+    let mut view = member_run(ctx, snapshot, start, run, run_lengths, user_id);
+    view.can_edit &= week.open();
+    view
+}
+
+/// Who made a change, as members may see it: a member's name, never an
+/// administrator's or a component's label.
+pub fn actor_label(ctx: &Context<'_>, actor: &Actor) -> String {
+    match actor {
+        Actor::Member { id } => ctx.name(id),
+        Actor::Admin { .. } => "an admin".to_owned(),
+        Actor::System { .. } => "Kanade".to_owned(),
     }
 }
 

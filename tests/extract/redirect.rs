@@ -7,8 +7,8 @@ use kanade::domain::notify::WeekReset;
 use kanade::domain::proposals::{ChangeKind, Payload, ProposedChange};
 use kanade::domain::schedule::{Run, RunSource, RunStatus};
 use kanade::extract::redirect::{
-    FixedChange, PortalLinks, PortalViewLinks, PublicPortalLinks, RedirectCase, RedirectFacts,
-    RedirectLink, SelfServiceMode, classify, effective_mode, is_link_id, plan,
+    FixedChange, PortalLinks, PublicPortalLinks, RedirectCase, RedirectFacts, RedirectLink,
+    SelfServiceMode, classify, effective_mode, is_link_id, plan,
 };
 
 const AUTHOR: &str = "111111111111111111";
@@ -237,6 +237,24 @@ fn modes_parse_and_closed_portal_forces_cards_only() {
     assert_eq!(SelfServiceMode::parse("link-first"), None);
 }
 
+/// The portal refuses moves of a started run and into the past, so link-first
+/// never drops the card for them.
+#[test]
+fn started_runs_and_past_targets_keep_their_card() {
+    let mut started = run(&[AUTHOR]);
+    started.datetime = utc(9, 25, 11);
+    let later = move_to(utc(9, 27, 20));
+    let past = move_to(utc(9, 25, 10));
+    let mine = run(&[AUTHOR]);
+    for (change, target) in [(&later, &started), (&past, &mine)] {
+        let facts = facts(change, Some(target));
+        assert_eq!(classify(&facts), RedirectCase::NeedsApproval);
+        let redirect = plan(&facts, SelfServiceMode::LinkFirst, &links());
+        assert!(redirect.keep_card);
+        assert_eq!(redirect.link, None);
+    }
+}
+
 #[test]
 fn a_self_service_move_gets_its_link_by_mode() {
     let mine = run(&[AUTHOR]);
@@ -245,7 +263,6 @@ fn a_self_service_move_gets_its_link_by_mode() {
     let link = RedirectLink {
         purpose: NudgePurpose::SelfService,
         url: format!("{ORIGIN}/runs/r-1?move_to=2026-09-27T20:00:00Z"),
-        view_only: false,
     };
 
     let both = plan(&facts, SelfServiceMode::CardsAndLink, &links());
@@ -264,30 +281,30 @@ fn a_self_service_move_gets_its_link_by_mode() {
     }
 }
 
-/// Interim view links (user decision 2026-10-09): the run opens in the
-/// member Week, the card stays in every mode, weekly timings get no link.
+/// What serve posts (no lead-in there): the action and the portal link, the
+/// Move page for a run and the request form for a weekly timing.
 #[test]
-fn view_links_open_the_run_and_never_replace_the_card() {
-    let views = PortalViewLinks::new(&format!("{ORIGIN}/")).expect("origin");
+fn posted_lines_carry_the_move_page_or_the_request_form() {
     let mine = run(&[AUTHOR]);
     let change = move_to(utc(9, 27, 20));
-    for mode in [SelfServiceMode::CardsAndLink, SelfServiceMode::LinkFirst] {
-        let redirect = plan(&facts(&change, Some(&mine)), mode, &views);
-        assert!(redirect.keep_card, "{mode:?}");
-        let link = redirect.link.expect("a view link");
-        assert_eq!(link.url, format!("{ORIGIN}/?run=r-1"));
-        assert!(link.view_only);
-        assert_eq!(
-            link.line(Some("Do it yourself!")),
-            format!("→ see the run: {ORIGIN}/?run=r-1"),
-            "a view link never carries a lead-in"
-        );
-    }
+    let moved = plan(
+        &facts(&change, Some(&mine)),
+        SelfServiceMode::CardsAndLink,
+        &links(),
+    );
+    assert_eq!(
+        moved.link.expect("a move link").line(None),
+        format!("→ edit the run: {ORIGIN}/runs/r-1?move_to=2026-09-27T20:00:00Z")
+    );
     let edit = fix_edit(Some("f-1"));
-    let redirect = plan(&facts(&edit, None), SelfServiceMode::LinkFirst, &views);
-    assert!(redirect.keep_card);
-    assert_eq!(redirect.link, None);
-    assert!(PortalViewLinks::new("http://kanade.example").is_err());
+    let asked = plan(&facts(&edit, None), SelfServiceMode::LinkFirst, &links());
+    assert!(asked.keep_card);
+    assert_eq!(
+        asked.link.expect("a request link").line(Some("Ask away!")),
+        format!(
+            "Ask away! → request a change: {ORIGIN}/requests/new?fixed=f-1&change=edit&day=thu&time=21:30"
+        )
+    );
 }
 
 #[test]
@@ -301,7 +318,6 @@ fn weekly_timing_changes_keep_their_card_and_link_the_request_form() {
             Some(RedirectLink {
                 purpose: NudgePurpose::RequestForm,
                 url: format!("{ORIGIN}/requests/new?fixed=f-1&change=edit&day=thu&time=21:30"),
-                view_only: false,
             })
         );
     }

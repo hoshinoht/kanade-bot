@@ -112,7 +112,7 @@ pub trait Personas: Send + Sync {
 pub struct SelfServiceDeps {
     pub links: Arc<dyn PortalLinks + Send + Sync>,
     /// The author's once-per-boss-week lead-in; `None` posts links bare and
-    /// spends no tip (serve, while links are view-only).
+    /// spends no tip (serve).
     pub lead_ins: Option<LeadIns>,
 }
 

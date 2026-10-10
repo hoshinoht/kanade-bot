@@ -113,6 +113,14 @@ pub trait ReadStore: Send + Sync {
     fn live_proposals(&self) -> ReadFuture<'_, Vec<StoredProposal>>;
     /// Submitted member requests with their operations, oldest first.
     fn submitted_requests(&self) -> ReadFuture<'_, Vec<LoadedDraft>>;
+    /// One member's requests with their operations, newest first.
+    fn member_requests(&self, user_id: String) -> ReadFuture<'_, Vec<LoadedDraft>>;
+    /// The request `user_id` stored under `request_id`, if any (a retry).
+    fn recorded_request(
+        &self,
+        user_id: String,
+        request_id: String,
+    ) -> ReadFuture<'_, Option<StoredDraft>>;
     /// Closed proposals and member requests, rows only (no operations).
     fn closed_inbox(&self) -> ReadFuture<'_, Vec<ClosedItem>>;
     /// Any draft (admin, request or proposal) with its operations.
@@ -303,6 +311,38 @@ where
                     requests.push(loaded);
                 }
             }
+            Ok(requests)
+        })
+    }
+
+    fn recorded_request(
+        &self,
+        user_id: String,
+        request_id: String,
+    ) -> ReadFuture<'_, Option<StoredDraft>> {
+        Box::pin(async move {
+            Ok(self
+                .recorded_draft_request(&Actor::member(user_id), &request_id)
+                .await?
+                .map(|(_, draft)| draft))
+        })
+    }
+
+    fn member_requests(&self, user_id: String) -> ReadFuture<'_, Vec<LoadedDraft>> {
+        Box::pin(async move {
+            let author = Actor::member(user_id);
+            let mut requests = Vec::new();
+            for draft in self.list_drafts(None).await? {
+                if draft.kind == DraftKind::Request
+                    && draft.author == author
+                    && let Some(loaded) = self.load_draft(&draft.id).await?
+                {
+                    requests.push(loaded);
+                }
+            }
+            requests.sort_by(|a, b| {
+                (b.draft.created_at, &b.draft.id).cmp(&(a.draft.created_at, &a.draft.id))
+            });
             Ok(requests)
         })
     }

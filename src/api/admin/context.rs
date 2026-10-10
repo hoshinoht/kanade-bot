@@ -22,6 +22,7 @@ use crate::{
         members::{MemberProfile, Roster},
         schedule::utc_instant,
         scheduler::StoreError,
+        settings::RunLengths,
     },
 };
 
@@ -70,6 +71,14 @@ pub fn roster(profiles: &[MemberProfile]) -> Roster {
         roster.upsert(profile.member.clone());
     }
     roster
+}
+
+/// The configured run lengths (defaults without a config desk).
+pub async fn run_lengths(state: &ApiState) -> RunLengths {
+    match &state.config {
+        Some(desk) => desk.settings().await.run_lengths,
+        None => RunLengths::default(),
+    }
 }
 
 pub fn context<'a>(
