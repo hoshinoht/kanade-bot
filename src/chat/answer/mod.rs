@@ -65,6 +65,8 @@ pub struct GuildView<'a> {
     pub reset_weekday: Weekday,
     pub reset_time: NaiveTime,
     pub guides: Option<&'a (dyn StrategyGuides + Sync)>,
+    /// v5: when runs end; `None` keeps v4's reading (over once started).
+    pub run_ends: Option<&'a crate::domain::completion::RunEnds>,
 }
 
 /// Per-question model settings.

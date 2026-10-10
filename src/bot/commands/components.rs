@@ -10,6 +10,9 @@
 //!   deferred update (the card itself shows the result), then answered by
 //!   the reaction worker exactly as ✅/❌ by the presser would be. Only a
 //!   refusal or a stale button gets an ephemeral follow-up.
+//! * `run:done|missed|later:<run>:<ask>`: a run completion prompt's Done /
+//!   Didn't happen / Not yet, as the presser's internal `/status` call
+//!   (`run_prompt.rs`), answered ephemerally; the tick edits the prompt.
 
 use std::sync::Arc;
 
@@ -30,6 +33,7 @@ use crate::bot::cards::{CardPress, CardReaction, Pressed};
 use crate::bot::events::RsvpAnswer;
 use crate::bot::ids::id_text;
 use crate::bot::transport::InteractionRef;
+use crate::domain::completion::PromptOutcome;
 
 /// The answer to a stale, forged or unknown button.
 pub const INACTIVE: &str = "This button is no longer active.";
@@ -125,6 +129,33 @@ impl Press {
             options: vec![
                 text("request", request_id),
                 text("answer", if accept { "accept" } else { "decline" }),
+            ],
+            autocomplete: false,
+            owner_id: None,
+        }
+    }
+
+    /// A run completion prompt's press, as the presser's internal `/status`
+    /// call (through that command's gate).
+    pub fn prompt_answer(&self, run_id: &str, ask: u32, outcome: PromptOutcome) -> Invocation {
+        let text = |name: &str, value: &str| CommandDataOption {
+            name: name.to_owned(),
+            value: CommandOptionValue::String(value.to_owned()),
+        };
+        Invocation {
+            interaction: self.interaction.clone(),
+            guild_id: self.guild_id,
+            channel_id: self.channel_id,
+            invoker: self.invoker.clone(),
+            invoker_name: self.invoker_name.clone(),
+            path: vec![
+                "status".to_owned(),
+                super::run_prompt::PROMPT_PRESS.to_owned(),
+            ],
+            options: vec![
+                text("run", run_id),
+                text("ask", &ask.to_string()),
+                text("answer", outcome.as_str()),
             ],
             autocomplete: false,
             owner_id: None,

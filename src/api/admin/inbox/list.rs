@@ -12,7 +12,7 @@ use chrono::{DateTime, Utc};
 
 use super::{
     super::{
-        context::{context, frames, roster},
+        context::{context, frames, roster, run_ends},
         write::{Refusal, state, write_context},
     },
     messages::said,
@@ -86,7 +86,7 @@ fn amended(
         _ => None,
     })?;
     let runs = preview_fixed_edit(
-        &Draft::new(current.clone()),
+        &Draft::new(current.clone()).with_run_ends(Some(std::sync::Arc::clone(&common.ends))),
         &id,
         &edit,
         common.policy,
@@ -127,6 +127,7 @@ pub async fn list(
         ctx: &ctx,
         policy: &state.policy,
         current: &current,
+        ends: std::sync::Arc::new(run_ends(state).await),
         frames: &frames,
     };
     let approver = session.discord_user();

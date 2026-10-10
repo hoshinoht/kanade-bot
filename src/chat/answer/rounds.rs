@@ -153,6 +153,7 @@ fn tool_world<'a>(
         reset_time: guild.reset_time,
         pending,
         guides: guild.guides,
+        run_ends: guild.run_ends,
         heard,
     }
 }

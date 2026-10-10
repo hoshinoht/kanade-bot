@@ -49,6 +49,16 @@ pub struct ScheduleWeek<'a> {
     pub marks: &'a DifficultyMarks,
     /// Said when nothing in scope is left to show.
     pub empty: &'a str,
+    /// Live runs past their end (frozen until settled): shown as ended,
+    /// never as still to go.
+    pub ended: &'a std::collections::BTreeSet<String>,
+}
+
+impl ScheduleWeek<'_> {
+    /// Still to come: live and not past its end.
+    fn to_go(&self, run: &Run) -> bool {
+        run.status.is_live() && !self.ended.contains(&run.id)
+    }
 }
 
 fn emoji(status: RunStatus) -> &'static str {
@@ -88,17 +98,22 @@ fn range(week_start: DateTime<Utc>, zone: Tz) -> String {
     }
 }
 
-/// `Thu 03 → Wed 09 Sep · 3 to go · 2 cleared (hidden)`.
+/// `Thu 03 → Wed 09 Sep · 3 to go · 1 ended · 2 cleared (hidden)`.
 fn summary(week: &ScheduleWeek<'_>) -> String {
     let count = |status: RunStatus| week.runs.iter().filter(|run| run.status == status).count();
-    let live = week.runs.iter().filter(|run| run.status.is_live()).count();
+    let live = week.runs.iter().filter(|run| week.to_go(run)).count();
+    let ended = week
+        .runs
+        .iter()
+        .filter(|run| run.status.is_live() && week.ended.contains(&run.id))
+        .count();
     let hidden = if week.show_past { "" } else { " (hidden)" };
     let mut parts = vec![range(week.week_start, week.zone), format!("{live} to go")];
-    for (status, word) in [
-        (RunStatus::Done, "cleared"),
-        (RunStatus::Cancelled, "cancelled"),
+    for (n, word) in [
+        (ended, "ended"),
+        (count(RunStatus::Done), "cleared"),
+        (count(RunStatus::Cancelled), "cancelled"),
     ] {
-        let n = count(status);
         if n > 0 {
             parts.push(format!("{n} {word}{hidden}"));
         }
@@ -182,7 +197,7 @@ fn parts(week: &ScheduleWeek<'_>, name: &dyn Fn(&str) -> String) -> Parts {
         .runs
         .iter()
         .copied()
-        .filter(|run| week.show_past || run.status.is_live())
+        .filter(|run| week.show_past || week.to_go(run))
         .collect();
     shown.sort_by_key(|run| run.datetime);
     let hidden = week.runs.len() - shown.len();
@@ -288,5 +303,50 @@ mod tests {
         assert_eq!(range(thu(9, 23), zone), "Thu 24 → Wed 30 Sep");
         assert_eq!(range(thu(9, 30), zone), "Thu 01 → Wed 07 Oct");
         assert_eq!(range(thu(10, 28), zone), "Thu 29 Oct → Wed 04 Nov");
+    }
+
+    #[test]
+    fn an_ended_run_is_not_to_go_and_is_hidden_with_the_past() {
+        let zone = chrono_tz::Asia::Kuala_Lumpur;
+        let week = Utc.with_ymd_and_hms(2026, 9, 2, 16, 0, 0).unwrap();
+        let run = |id: &str| Run {
+            id: id.into(),
+            fixed_run_id: None,
+            channel_id: None,
+            week_start: week,
+            datetime: week + TimeDelta::days(1),
+            bosses: vec!["Kalos".into()],
+            participants: vec!["1001".into()],
+            status: RunStatus::Planned,
+            source: crate::domain::schedule::RunSource::Amend,
+            attendance: Vec::new(),
+            status_pin: None,
+        };
+        let (open, over) = (run("r-open"), run("r-over"));
+        let runs = [&open, &over];
+        let snapshot = ScheduleSnapshot::default();
+        let ended = std::collections::BTreeSet::from(["r-over".to_owned()]);
+        let view = ScheduleWeek {
+            snapshot: &snapshot,
+            runs: &runs,
+            show_past: false,
+            week_start: week,
+            next: false,
+            scope: ScheduleScope::All,
+            zone,
+            attendance: AttendanceMode::V4Compat,
+            catalog: None,
+            marks: &super::super::NO_MARKS,
+            empty: "",
+            ended: &ended,
+        };
+        assert_eq!(
+            summary(&view),
+            "Thu 03 → Wed 09 Sep · 1 to go · 1 ended (hidden)"
+        );
+        // Only the open run is listed; the ended one is hidden with the past.
+        let shown = parts(&view, &|user: &str| user.to_owned());
+        assert_eq!(shown.days.len(), 1);
+        assert_eq!(shown.footer, Some(SCHEDULE_FOOTER_HIDDEN));
     }
 }

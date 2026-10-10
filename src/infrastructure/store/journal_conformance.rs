@@ -387,6 +387,7 @@ async fn suppressed_digest_never_touches_replaces<S: ScheduleStore + DeliveryJou
         },
         channels: &channels,
         journal: &view,
+        ended: None,
     })
     .expect("plan")
     .expect("a channel");

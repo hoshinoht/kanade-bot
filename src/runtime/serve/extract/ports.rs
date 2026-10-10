@@ -79,6 +79,7 @@ pub struct StoreProposer {
     pub clock: Clock,
     pub policy: SchedulePolicy,
     pub directory: Arc<LiveRoster>,
+    pub run_ends: crate::domain::completion::RunEndsSource,
 }
 
 impl StoreProposer {
@@ -89,6 +90,7 @@ impl StoreProposer {
             ApiClock(Arc::clone(&self.clock)),
         )
         .with_attendance(self.policy.attendance)
+        .with_run_ends(self.run_ends.clone())
     }
 }
 

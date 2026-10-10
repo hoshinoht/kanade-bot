@@ -141,11 +141,14 @@ fn schedule(error: ScheduleError) -> Refusal {
             Refusal::new(S::UNPROCESSABLE_ENTITY, "nothing_to_change", message)
         }
         ScheduleError::NotOnRun(_) => Refusal::new(S::UNPROCESSABLE_ENTITY, "not_on_run", message),
+        // A live run past its end is frozen until it is settled.
+        ScheduleError::RunEnded { .. } => Refusal::new(S::CONFLICT, "run_ended", message),
         // Only the public origin's own-run writes are refused this way.
         ScheduleError::MemberRun(refusal) => {
             let (status, code) = match refusal {
                 MemberRunRefusal::NotInRun => (S::FORBIDDEN, "not_in_run"),
                 MemberRunRefusal::Closed => (S::CONFLICT, "run_closed"),
+                MemberRunRefusal::Ended => (S::CONFLICT, "run_ended"),
                 MemberRunRefusal::WeekOver => (S::CONFLICT, "week_over"),
                 MemberRunRefusal::Started => (S::CONFLICT, "run_started"),
                 MemberRunRefusal::InThePast => (S::UNPROCESSABLE_ENTITY, "in_the_past"),
@@ -248,6 +251,16 @@ mod tests {
                 ScheduleError::NotOnRun(vec!["1".into()]).into(),
                 422,
                 "not_on_run",
+            ),
+            (
+                ScheduleError::RunEnded { run_id: "r".into() }.into(),
+                409,
+                "run_ended",
+            ),
+            (
+                ScheduleError::MemberRun(MemberRunRefusal::Ended).into(),
+                409,
+                "run_ended",
             ),
             (ScheduleError::NoParticipants.into(), 422, "invalid"),
             (

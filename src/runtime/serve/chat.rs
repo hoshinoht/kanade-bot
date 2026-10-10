@@ -309,6 +309,10 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
         if guides.is_none() {
             question.offer.disallow(Bundle::Strategy);
         }
+        let source = self
+            .config
+            .run_ends(Arc::clone(&self.catalog), self.policy.clone());
+        let ends = source.now();
         let guild = GuildView {
             members: &members,
             directory: &*prepared.directory,
@@ -321,10 +325,12 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             guides: guides
                 .as_ref()
                 .map(|guides| guides as &(dyn StrategyGuides + Sync)),
+            run_ends: Some(&ends),
         };
         let mut service =
             SchedulerService::new(Arc::clone(&self.store), RandomIds, FixedClock(prepared.now))
-                .with_attendance(self.policy.attendance);
+                .with_attendance(self.policy.attendance)
+                .with_run_ends(source);
         let mut proposer = Proposer {
             service: &mut service,
             policy: &self.policy,

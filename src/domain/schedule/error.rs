@@ -80,7 +80,16 @@ pub enum ScheduleError {
     /// v5: a member's write on their own run is not allowed (see
     /// [`MemberRunRefusal`]); checked inside the commit.
     MemberRun(MemberRunRefusal),
+    /// v5 (user decision 2026-10-10): a live run whose end has passed is
+    /// frozen until it is settled; move, swap, amend and late answers are
+    /// refused ([`RunEnds`](crate::domain::completion::RunEnds)).
+    RunEnded {
+        run_id: String,
+    },
 }
+
+/// What both refusals of a frozen run say.
+pub const RUN_ENDED: &str = "That run has already ended.";
 
 /// Why a member may not answer or move their own run now (public portal).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,6 +97,8 @@ pub enum MemberRunRefusal {
     NotInRun,
     /// Done or cancelled.
     Closed,
+    /// Live but past its end: frozen until it is settled.
+    Ended,
     /// Answers: outside this and next boss week. Moves: outside this one.
     WeekOver,
     Started,
@@ -97,19 +108,23 @@ pub enum MemberRunRefusal {
 
 impl MemberRunRefusal {
     /// May `member` write `run` now? `weeks` are the boss weeks (start
-    /// instants) they may act in; a move also needs the run not started and
-    /// its target (`to`) still ahead.
+    /// instants) they may act in; `ended` is whether the run is frozen
+    /// ([`crate::domain::completion::RunEnds::frozen`]); a move also needs
+    /// the run not started and its target (`to`) still ahead.
     pub fn check(
         run: &super::Run,
         member: &str,
         weeks: &[chrono::DateTime<chrono::Utc>],
         to: Option<chrono::DateTime<chrono::Utc>>,
+        ended: bool,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), Self> {
         if !run.participants.iter().any(|id| id == member) {
             Err(Self::NotInRun)
         } else if run.status.is_terminal() {
             Err(Self::Closed)
+        } else if ended {
+            Err(Self::Ended)
         } else if !weeks.contains(&run.week_start) {
             Err(Self::WeekOver)
         } else if to.is_some() && run.datetime <= now {
@@ -216,10 +231,12 @@ impl fmt::Display for ScheduleError {
             Self::MemberRun(refusal) => f.write_str(match refusal {
                 MemberRunRefusal::NotInRun => "you are not on this run",
                 MemberRunRefusal::Closed => "this run is finished or cancelled",
+                MemberRunRefusal::Ended => RUN_ENDED,
                 MemberRunRefusal::WeekOver => "this run is outside the boss week you can change",
                 MemberRunRefusal::Started => "this run has already started",
                 MemberRunRefusal::InThePast => "that time has already passed",
             }),
+            Self::RunEnded { .. } => f.write_str(RUN_ENDED),
         }
     }
 }

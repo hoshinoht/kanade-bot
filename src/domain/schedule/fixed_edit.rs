@@ -115,7 +115,7 @@ pub fn preview_fixed_edit(
         let Some(run) = draft.run_for_fixed(fixed_id, week_start) else {
             continue;
         };
-        if run.status.is_terminal() {
+        if run.status.is_terminal() || draft.ended(run, now) {
             continue;
         }
         let slot = |weekday, time| {
@@ -347,7 +347,7 @@ pub fn apply_party_delta(
         let Some(run) = draft.run_for_fixed(fixed_id, week).cloned() else {
             continue;
         };
-        if run.status.is_terminal() {
+        if run.status.is_terminal() || draft.ended(&run, now) {
             continue;
         }
         let next = party_delta(&run.participants, add, remove);

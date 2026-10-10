@@ -305,6 +305,8 @@ pub struct CommandContext {
     pub store: Arc<dyn ReadStore>,
     pub writer: Arc<dyn Writer>,
     pub members: Arc<dyn MemberRows>,
+    /// Run completion prompts, which their buttons answer.
+    pub run_prompts: Arc<dyn crate::domain::completion::RunPromptStore>,
     pub policy: SchedulePolicy,
     pub catalog: Arc<BossTable>,
     pub channels: Arc<dyn GuildChannels>,

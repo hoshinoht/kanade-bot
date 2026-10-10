@@ -24,7 +24,8 @@ use crate::domain::{
     proposals::Approver,
     requests::{NoFreezes, RequestSpec},
     schedule::{
-        FixedEditChoices, FixedEditRequest, NewFixedRun, RsvpState, SchedulePolicy, StatusChange,
+        FixedEditChoices, FixedEditRequest, NewFixedRun, RsvpState, SchedulePolicy, SettleRun,
+        StatusChange,
     },
     scheduler::{
         Approved, Clock, DeclineNoticeContext, DeclineRsvpResult, DraftError, IdSource,
@@ -275,6 +276,17 @@ pub trait Writer: Send + Sync {
         ctx: &'a WriteContext,
     ) -> WriteFuture<'a, Vec<String>>;
 
+    /// A completion prompt's Done / Didn't happen (`domain::completion`):
+    /// the run becomes the asked status unannounced only if, on the
+    /// committed state, it is still live, still at the start the presser
+    /// saw and they are on it or staff; `false` when not settled.
+    fn settle_run<'a>(
+        &'a self,
+        origin: Origin,
+        settle: SettleRun,
+        ctx: &'a WriteContext,
+    ) -> WriteFuture<'a, bool>;
+
     /// A rollback by the origin's admin (`Surface::Rollback`), or its preview,
     /// which writes nothing and ignores the request id. `held` is re-read on
     /// every commit attempt.
@@ -410,6 +422,7 @@ pub struct SchedulerWriter<S, I, C> {
     /// The same store, for previews outside the writer lock.
     reader: S,
     attendance: crate::domain::attendance::AttendancePolicy,
+    run_ends: Option<crate::domain::completion::RunEndsSource>,
 }
 
 impl<S: ScheduleStore + Clone, I: IdSource, C: Clock> SchedulerWriter<S, I, C> {
@@ -417,13 +430,18 @@ impl<S: ScheduleStore + Clone, I: IdSource, C: Clock> SchedulerWriter<S, I, C> {
         Self {
             reader: service.store().clone(),
             attendance: service.attendance(),
+            run_ends: service.run_ends_source().cloned(),
             service: Mutex::new(service),
         }
     }
 
     fn previewer(&self, now: DateTime<Utc>) -> SchedulerService<S, RandomIds, Pinned> {
-        SchedulerService::new(self.reader.clone(), RandomIds, Pinned(now))
-            .with_attendance(self.attendance)
+        let service = SchedulerService::new(self.reader.clone(), RandomIds, Pinned(now))
+            .with_attendance(self.attendance);
+        match &self.run_ends {
+            Some(source) => service.with_run_ends(source.clone()),
+            None => service,
+        }
     }
 }
 
@@ -611,6 +629,21 @@ where
             service
                 .as_origin(origin)
                 .materialise_weeks(&ctx.policy)
+                .await
+        })
+    }
+
+    fn settle_run<'a>(
+        &'a self,
+        origin: Origin,
+        settle: SettleRun,
+        ctx: &'a WriteContext,
+    ) -> WriteFuture<'a, bool> {
+        Box::pin(async move {
+            let mut service = self.service.lock().await;
+            service
+                .as_origin(origin)
+                .settle_run(settle, &ctx.policy.reminders)
                 .await
         })
     }

@@ -22,9 +22,12 @@ use crate::domain::weeks::{slot_in_week, week_end};
 /// reset inside a DST gap keeps its wall clock, as v4 does; slots are placed
 /// from that wall clock.
 ///
-/// A slot already past is not created. A timing whose week already holds
-/// exactly one matching standalone run adopts it in place instead; adopted
-/// runs are not in the returned ids of newly created runs.
+/// A slot already over is not created: past its end
+/// ([`RunEnds`](crate::domain::completion::RunEnds)), or under
+/// v4 rules (no run ends, the vector replays) 2 h after its start. A timing
+/// whose week already holds exactly one matching standalone run adopts it in
+/// place instead; adopted runs are not in the returned ids of newly created
+/// runs.
 ///
 /// # Errors
 /// [`ScheduleError::RunMoveConflict`] or [`ScheduleError::DateOutOfRange`].
@@ -50,7 +53,11 @@ pub fn materialise_week(
         if slot.wall() < start.wall() || slot.wall() >= end.wall() {
             continue;
         }
-        if is_past_slot(&slot, now)? {
+        let over = match draft.run_ends() {
+            Some(ends) => ends.slot_ended(slot.to_fixed().with_timezone(&Utc), &fixed.bosses, now),
+            None => is_past_slot(&slot, now)?,
+        };
+        if over {
             continue;
         }
         let run_at = slot.to_fixed().with_timezone(&Utc);
@@ -81,7 +88,7 @@ pub fn materialise_week(
 
 /// The one standalone run in that week `fixed` should take over, if exactly
 /// one fits: same bosses (as a set), same home channel, not done/cancelled,
-/// not past and not already tied to a timing.
+/// not over (as for a slot) and not already tied to a timing.
 pub fn adoptable_run(
     draft: &Draft,
     fixed: &FixedRun,
@@ -97,7 +104,10 @@ pub fn adoptable_run(
                 && !run.status.is_terminal()
                 && run.bosses.iter().collect::<BTreeSet<_>>() == wanted
                 && run.channel_id == fixed.channel_id
-                && !is_past(run.datetime, now)
+                && !match draft.run_ends() {
+                    Some(ends) => ends.ended(run, now),
+                    None => is_past(run.datetime, now),
+                }
         })
         .collect();
     if found.len() == 1 { found.pop() } else { None }

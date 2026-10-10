@@ -113,6 +113,8 @@ pub struct Extractor<S, P, X, O> {
     pub(super) config: PipelineConfig,
     live_context: Option<LiveContext>,
     live_self_service: Option<LiveSelfService>,
+    /// v5: a run past its end is already over (`None`: v4's 2 h rule).
+    pub(super) run_ends: Option<crate::domain::completion::RunEndsSource>,
     cancel: tokio::sync::watch::Sender<Cut>,
     claims: Claims,
 }
@@ -176,6 +178,7 @@ where
             config,
             live_context: None,
             live_self_service: None,
+            run_ends: None,
             cancel: tokio::sync::watch::Sender::new(Cut::default()),
             claims: Claims::default(),
         }
@@ -194,6 +197,13 @@ where
     #[must_use]
     pub fn with_live_self_service(mut self, live: LiveSelfService) -> Self {
         self.live_self_service = Some(live);
+        self
+    }
+
+    /// Judge "already passed" runs by their end ([`crate::domain::completion::RunEnds`]).
+    #[must_use]
+    pub fn with_run_ends(mut self, source: crate::domain::completion::RunEndsSource) -> Self {
+        self.run_ends = Some(source);
         self
     }
 

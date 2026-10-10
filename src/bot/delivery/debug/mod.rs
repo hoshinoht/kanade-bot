@@ -374,8 +374,16 @@ where
         let card_content = match (kind, shown.run) {
             (TestKind::Digest, _) => Some(IntentContent::Digest {
                 week_start: shown.week,
-                inclusion: digest_inclusion(&shown.schedule.runs, shown.week, ctx.zone)
-                    .map_err(|error| error.to_string())?,
+                inclusion: digest_inclusion(
+                    &shown.schedule.runs,
+                    shown.week,
+                    ctx.zone,
+                    self.cards
+                        .run_ends(&self.policy)
+                        .as_ref()
+                        .map(|ends| (ends, (self.now)())),
+                )
+                .map_err(|error| error.to_string())?,
             }),
             (TestKind::DayOf, Some(run)) => Some(IntentContent::DayOf {
                 run_ids: vec![run.id.clone()],

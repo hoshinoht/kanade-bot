@@ -14,6 +14,7 @@ use super::drafts::{
 };
 use super::ports::{Clock, IdSource, ScheduleStore, Scope, StoreError};
 use super::service::{SchedulerError, SchedulerService, digest};
+use crate::domain::completion::RunEnds;
 use crate::domain::drafts::{
     DEFAULT_PROPOSAL_TTL, DraftChange, DraftOp, DraftStale, DraftStatus, DraftUpdate, DraftWrite,
     ExistingProposal, LoadedDraft, MergeAnalysis, NewProposal, ProposalCreated, ProposalInfo,
@@ -27,7 +28,8 @@ use crate::domain::proposals::{
     fill_approver, live_timing_runs, may_commit, translate,
 };
 use crate::domain::schedule::{
-    Notice, NoticeChange, OpResult, ScheduleError, SchedulePolicy, ScheduleSnapshot, utc_instant,
+    Notice, NoticeChange, OpResult, RUN_ENDED, RunStatus, ScheduleError, SchedulePolicy,
+    ScheduleSnapshot, utc_instant,
 };
 use crate::domain::time::to_iso;
 
@@ -265,12 +267,16 @@ fn allowed(subject: &ProposalSubject, approver: &Approver, snapshot: &ScheduleSn
     )
 }
 
-/// What must still hold before merging: the target exists, and carded
-/// answers are for members still on the run.
+/// What must still hold before merging: the target exists, carded answers
+/// are for members still on the run, and a cancel or own-time change does
+/// not settle a run that has ended since it was proposed (only its
+/// completion prompt, the cutoff and staff `/status` settle an ended run).
 fn still_applies(
     subject: &ProposalSubject,
     ops: &[DraftOp],
     snapshot: &ScheduleSnapshot,
+    ends: Option<&RunEnds>,
+    now: DateTime<Utc>,
 ) -> Result<(), Refusal> {
     if let Some(run_id) = &subject.run_id {
         let Some(run) = snapshot.runs.iter().find(|run| &run.id == run_id) else {
@@ -281,6 +287,13 @@ fn still_applies(
         });
         if outsider {
             return Err(Refusal::AnswerForOutsider);
+        }
+        let settles = ops.iter().any(|op| {
+            matches!(op, DraftOp::SetStatus { change, .. }
+                if matches!(change.status, RunStatus::Cancelled | RunStatus::Otot))
+        });
+        if settles && ends.is_some_and(|ends| ends.frozen(run, now)) {
+            return Err(Refusal::Rule(RUN_ENDED.to_owned()));
         }
     }
     if let Some(fixed) = &subject.fixed_run_id
@@ -449,11 +462,14 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
     ) -> ProposalResult<(NewProposal, ProposalSubject)> {
         self.check_policy(policy)?;
         let now = self.clock.now();
+        let ends = self.run_ends();
         let (snapshot, head) = self.store.snapshot_with_head().await?;
-        let Translation { ops, subject } = translate(&request.change, &snapshot, policy, now)?;
-        let replayed = replay(&snapshot, &ops, policy, directory, now).map_err(|rejected| {
-            Refusal::from_replay(subject.kind, removes_timing(&ops), &rejected.error)
-        })?;
+        let Translation { ops, subject } =
+            translate(&request.change, &snapshot, policy, ends.as_deref(), now)?;
+        let replayed =
+            replay(&snapshot, &ops, policy, ends.as_ref(), directory, now).map_err(|rejected| {
+                Refusal::from_replay(subject.kind, removes_timing(&ops), &rejected.error)
+            })?;
         if replayed.draft.clone().into_changes().is_empty() {
             return Err(ProposalError::NoEffect);
         }
@@ -712,6 +728,7 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
     ) -> ProposalResult<ProposalApproved> {
         self.check_policy(policy)?;
         let now = self.clock.now();
+        let ends = self.run_ends();
         let actor = Actor::member(approver.user_id.clone());
         let request_id = format!("approve:{id}");
         // Stored operations never change, so the edit normalises the same
@@ -773,12 +790,12 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
             ),
             None => (loaded.draft_ops(), None),
         };
-        still_applies(&subject, &ops, &snapshot)?;
+        still_applies(&subject, &ops, &snapshot, ends.as_deref(), now)?;
         fill_approver(&mut ops, &approver.user_id);
         if note.is_some() {
             // The edited time was never dry-run: refuse in v4's words, as
             // proposing does.
-            replay(&snapshot, &ops, policy, directory, now).map_err(|rejected| {
+            replay(&snapshot, &ops, policy, ends.as_ref(), directory, now).map_err(|rejected| {
                 Refusal::from_replay(subject.kind, removes_timing(&ops), &rejected.error)
             })?;
         }
@@ -905,6 +922,7 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
     ) -> ProposalResult<ProposalPreview> {
         self.check_policy(policy)?;
         let now = self.clock.now();
+        let ends = self.run_ends();
         let (loaded, info) = self
             .store
             .load_proposal(id)
@@ -913,7 +931,7 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
         let subject = subject_of(&loaded)?;
         let flow = upstream(&self.store, &loaded.draft.base).await?;
         let mut ops = loaded.draft_ops();
-        let mut refusal = still_applies(&subject, &ops, &flow.current).err();
+        let mut refusal = still_applies(&subject, &ops, &flow.current, ends.as_deref(), now).err();
         if let Some(user) = approver {
             fill_approver(&mut ops, user);
         }
@@ -922,12 +940,14 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
             &flow.current,
             &ops,
             policy,
+            ends.as_ref(),
             directory,
             now,
             &status_at_apply(&ops),
         );
         if refusal.is_none()
-            && let Err(rejected) = replay(&flow.current, &ops, policy, directory, now)
+            && let Err(rejected) =
+                replay(&flow.current, &ops, policy, ends.as_ref(), directory, now)
         {
             refusal = Some(Refusal::from_replay(
                 subject.kind,

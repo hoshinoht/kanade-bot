@@ -90,9 +90,15 @@ pub fn when_label(at: &DateTime<Utc>, zone: Tz) -> String {
     format!("{} {}", day_label(wall.date()), hhmm(wall.time()))
 }
 
-/// A run is over when done or at/before `now`.
-pub fn is_over(run: &Run, now: DateTime<Utc>) -> bool {
-    run.status == RunStatus::Done || run.datetime <= now
+/// A run is over when done or past its end ([`ToolWorld::run_ends`]: a
+/// live run past its end is frozen and reads as ended); with no run ends
+/// (v4 replays), once it has started.
+pub fn is_over(world: &ToolWorld<'_>, run: &Run, now: DateTime<Utc>) -> bool {
+    run.status == RunStatus::Done
+        || match world.run_ends {
+            Some(ends) => ends.frozen(run, now),
+            None => run.datetime <= now,
+        }
 }
 
 /// A clickable `<#id>`, only for a channel the bot can see by name.
@@ -140,7 +146,7 @@ pub fn run_line(
     {
         parts.push(where_);
     }
-    if is_over(run, now) {
+    if is_over(world, run, now) {
         parts.push("*already happened*".to_owned());
     }
     format!(
@@ -197,7 +203,8 @@ pub fn run_context(
     asker: Option<&str>,
     now: DateTime<Utc>,
 ) -> Option<String> {
-    if is_over(run, now) {
+    // Time until it only reads for a run still ahead.
+    if is_over(world, run, now) || run.datetime <= now {
         return None;
     }
     let answers = rsvps(world, &run.id);

@@ -51,8 +51,71 @@ pub fn mark_done(draft: &mut Draft, now: DateTime<Utc>) -> Vec<String> {
     changed
 }
 
+/// v5 (run completion, user decision 2026-10-09): retire one live run as
+/// `done` at its completion cutoff and drop its unsent pings, as
+/// [`mark_done`] does; a run already done or cancelled is left as it is.
+/// `true` when it changed.
+///
+/// # Errors
+/// [`ScheduleError::UnknownRun`].
+pub fn finish_run(draft: &mut Draft, run_id: &str) -> Result<bool, ScheduleError> {
+    if !draft.require_run(run_id)?.status.is_live() {
+        return Ok(false);
+    }
+    draft.set_run_status(run_id, RunStatus::Done);
+    draft.delete_unsent_reminders(run_id, &[]);
+    Ok(true)
+}
+
+/// A completion prompt press (user decisions 2026-10-09/10): what the
+/// presser saw and asks for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SettleRun {
+    pub run_id: String,
+    /// `done` or `cancelled`.
+    pub status: RunStatus,
+    /// The run's start when the presser read it; a move since refuses the
+    /// press. Bosses are not compared, so the press and the tick agree.
+    pub datetime: DateTime<Utc>,
+    pub user: String,
+    /// Staff may settle a run they are not on.
+    pub staff: bool,
+}
+
+/// Apply `settle` only if, on this draft, the run is still live, still at
+/// what the presser saw, and theirs to settle; unannounced. `true` when it
+/// changed. A second press, a cutoff or a move that landed first wins.
+///
+/// # Errors
+/// [`ScheduleError::UnknownRun`] or [`ScheduleError::DateOutOfRange`].
+pub fn settle_run(
+    draft: &mut Draft,
+    ids: &mut impl IdGenerator,
+    settle: &SettleRun,
+    policy: &ReminderPolicy,
+    now: DateTime<Utc>,
+) -> Result<bool, ScheduleError> {
+    let run = draft.require_run(&settle.run_id)?;
+    let allowed = settle.staff || run.participants.contains(&settle.user);
+    if !run.status.is_live()
+        || run.datetime != settle.datetime
+        || !allowed
+        || !matches!(settle.status, RunStatus::Done | RunStatus::Cancelled)
+    {
+        return Ok(false);
+    }
+    let change = super::mutate::StatusChange {
+        status: settle.status,
+        announce: false,
+        via_portal: false,
+    };
+    super::mutate::set_status(draft, ids, &settle.run_id, change, policy, now)?;
+    Ok(true)
+}
+
 /// Push the touched fields of an edited weekly timing onto its runs in
-/// `week_starts`; done/cancelled runs are left as the record. Only a weekday or
+/// `week_starts`; done/cancelled runs are left as the record, and so is a live
+/// run past its end (frozen until settled, [`Draft::ended`]). Only a weekday or
 /// time change re-snaps the slot (and rebuilds reminders), so editing a note
 /// never undoes an amend. Returns how many runs were touched.
 ///
@@ -110,7 +173,7 @@ impl FixedPush<'_> {
             let Some(run) = draft.run_for_fixed(self.fixed_id, week).cloned() else {
                 continue;
             };
-            if run.status.is_terminal() {
+            if run.status.is_terminal() || draft.ended(&run, now) {
                 continue;
             }
             if touched_field(FixedField::Bosses) {
@@ -149,7 +212,8 @@ impl FixedPush<'_> {
 }
 
 /// Delete a weekly timing and cancel its live runs in `week_starts`, rebuilding
-/// their reminders to none. Returns how many runs were cancelled.
+/// their reminders to none; a run past its end is left for its completion
+/// prompt ([`Draft::ended`]). Returns how many runs were cancelled.
 ///
 /// # Errors
 /// [`ScheduleError::DateOutOfRange`].
@@ -167,7 +231,7 @@ pub fn retire_fixed_run(
         let Some(run) = draft.run_for_fixed(fixed_id, week).cloned() else {
             continue;
         };
-        if run.status.is_terminal() {
+        if run.status.is_terminal() || draft.ended(&run, now) {
             continue;
         }
         draft.set_run_status(&run.id, RunStatus::Cancelled);

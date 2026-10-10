@@ -326,12 +326,8 @@ async fn members_move_their_own_runs_within_this_boss_week() {
         (&alice, "n-kalos", at(6, json!("21:00")), (409, "week_over")),
         (&alice, "r-off", at(6, json!("21:00")), (409, "run_closed")),
         (&alice, "r-star", at(6, json!("21:00")), (409, "run_closed")),
-        (
-            &alice,
-            "r-early",
-            at(6, json!("21:00")),
-            (409, "run_started"),
-        ),
+        // Started hours ago, so past its end too: frozen until it is settled.
+        (&alice, "r-early", at(6, json!("21:00")), (409, "run_ended")),
         (&dan, "r-kalos", at(2, json!("21:00")), (422, "in_the_past")),
         (&dan, "r-kalos", at(5, json!("11:00")), (422, "in_the_past")),
         (

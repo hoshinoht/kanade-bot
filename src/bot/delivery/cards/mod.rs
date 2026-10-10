@@ -119,6 +119,9 @@ pub struct CardKit {
     /// The avatar, portal origin and switch and which posted messages are
     /// V2; shared by every clone of the kit.
     pub v2: V2Kit,
+    /// v5: the live run lengths, read per digest re-render so a run past its
+    /// end counts as ended; `None` keeps v4's counts.
+    pub run_lengths: Option<crate::domain::completion::RunLengthsNow>,
 }
 
 impl CardKit {
@@ -127,6 +130,19 @@ impl CardKit {
         self.style
             .as_ref()
             .map_or(MessageStyle::Classic, |style| style())
+    }
+
+    /// When runs end now under `policy`; `None` without live run lengths.
+    pub fn run_ends(
+        &self,
+        policy: &crate::domain::schedule::SchedulePolicy,
+    ) -> Option<crate::domain::completion::RunEnds> {
+        let lengths = self.run_lengths.as_ref()?;
+        Some(crate::domain::completion::RunEnds::new(
+            lengths(),
+            self.catalog.clone(),
+            policy.clone(),
+        ))
     }
 }
 

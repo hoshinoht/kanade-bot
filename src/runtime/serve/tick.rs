@@ -197,6 +197,8 @@ pub fn card_kit(
     let portal = settings.clone();
     let portal_open: PortalSwitch =
         Arc::new(move || portal.borrow().settings.self_service.public_portal);
+    // The live run lengths, read per digest re-render (runs past their end).
+    let lengths = settings.clone();
     // The live profanity list, read per rewrite like chat reads it per question.
     let live = settings.clone();
     let words: WordSource = Arc::new(move || {
@@ -242,6 +244,9 @@ pub fn card_kit(
             portal_open: Some(portal_open),
             ..V2Kit::default()
         },
+        run_lengths: Some(Arc::new(move || {
+            lengths.borrow().settings.run_lengths.clone()
+        })),
     }
 }
 
@@ -259,6 +264,8 @@ pub fn delivery_config(
         quiet_mode: settings.notifications.quiet_mode,
         max_sends_per_tick: DEFAULT_MAX_SENDS_PER_TICK,
         max_notice_age: DEFAULT_MAX_NOTICE_AGE,
+        run_lengths: settings.run_lengths.clone(),
+        freeze_ended: true,
     }
 }
 
@@ -339,6 +346,7 @@ impl<T: DiscordTransport> TickLoop<T> {
         if let Ok(settings) = settings::load(&self.store, &self.seeds).await {
             config.post_channel_id = settings.posting.channel_id.clone();
             config.quiet_mode = settings.notifications.quiet_mode;
+            config.run_lengths.clone_from(&settings.run_lengths);
             self.quiet.store(config.quiet_mode, Ordering::Relaxed);
             config.post_channel_id.clone_into(
                 &mut self
@@ -390,7 +398,11 @@ fn tick_failed(step: &'static str, error: &DeliveryError) {
 
 fn log_report(report: &TickReport) {
     let sends = report.dispatch.sends.len() + report.notices.sends.len();
-    if sends == 0 && report.materialised.is_empty() && report.done.is_empty() {
+    if sends == 0
+        && report.materialised.is_empty()
+        && report.done.is_empty()
+        && report.prompts.posted.is_empty()
+    {
         return;
     }
     logging::event(
@@ -400,6 +412,7 @@ fn log_report(report: &TickReport) {
             "materialised": report.materialised.len(),
             "done": report.done.len(),
             "sends": sends,
+            "prompts": report.prompts.posted.len(),
             "deferred": report.dispatch.deferred,
         }),
     );

@@ -55,6 +55,7 @@ impl<T: GatewayTransport> Commands<T> {
             store: Arc::clone(&state.store),
             writer: Arc::clone(&state.writer),
             members,
+            run_prompts: self.members.clone(),
             policy: state.policy.clone(),
             catalog: Arc::clone(&state.catalog),
             channels: self.channels.clone(),

@@ -25,6 +25,7 @@ use crate::bot::delivery::cards::redesign::{
 };
 use crate::bot::ids::id_text;
 use crate::bot::transport::InteractionReply;
+use crate::domain::completion::RunEnds;
 use crate::domain::members::MemberProfile;
 use crate::domain::schedule::{RsvpState, Run, ScheduleSnapshot};
 use crate::domain::scheduler::Scope;
@@ -112,6 +113,16 @@ impl ScheduleCommand {
             })
     }
 
+    /// When runs end now: the saved run lengths (defaults without a desk).
+    fn run_ends(&self) -> RunEnds {
+        let catalog = Some(Arc::clone(&self.ctx.catalog));
+        let policy = self.ctx.policy.clone();
+        match &self.ctx.config {
+            Some(desk) => desk.run_ends(Arc::clone(&self.ctx.catalog), policy).now(),
+            None => RunEnds::new(Default::default(), catalog, policy),
+        }
+    }
+
     async fn schedule(&self, invocation: &Invocation) -> Result<InteractionReply, CommandError> {
         let args = Args(&invocation.options);
         let channel = invocation.channel_id.map(id_text).unwrap_or_default();
@@ -139,6 +150,14 @@ impl ScheduleCommand {
             .filter(|run| scope != "channel" || run.channel_id.as_deref() == Some(&channel))
             .collect();
         let show_past = args.flag("show_past").unwrap_or(false);
+        // Live runs past their end are frozen until settled: shown as past.
+        let ends = self.run_ends();
+        let now = self.ctx.now();
+        let ended: std::collections::BTreeSet<String> = everything
+            .iter()
+            .filter(|run| ends.frozen(run, now))
+            .map(|run| run.id.clone())
+            .collect();
         if self.style() == MessageStyle::Redesigned {
             let name = self.ctx.channels.name(&channel);
             let view = ScheduleWeek {
@@ -157,6 +176,7 @@ impl ScheduleCommand {
                 catalog: Some(self.ctx.catalog.as_ref()),
                 marks: &NO_MARKS,
                 empty: empty_text(scope),
+                ended: &ended,
             };
             let name = |user: &str| member_name(&profiles, user);
             let components = schedule_components(&view, &name);
@@ -178,7 +198,7 @@ impl ScheduleCommand {
         let runs: Vec<&Run> = everything
             .iter()
             .copied()
-            .filter(|run| show_past || run.status.is_live())
+            .filter(|run| show_past || (run.status.is_live() && !ended.contains(&run.id)))
             .collect();
         let hidden = everything.len() - runs.len();
 

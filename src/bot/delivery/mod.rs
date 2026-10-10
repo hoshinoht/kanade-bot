@@ -19,6 +19,7 @@ mod pregen;
 pub mod preview;
 mod refresh;
 mod render;
+mod run_prompts;
 mod tick;
 
 pub use alerts::{ALERT_WINDOW, AdminAlert, AlertRecorder, AlertSink, AlertThrottle, LogAlerts};
@@ -39,6 +40,10 @@ pub use pregen::{
 pub(crate) use refresh::edit_lock;
 pub use refresh::{CardRefresh, MAX_PENDING_RUNS, Now, RefreshQueue};
 pub use render::render;
+pub use run_prompts::{
+    DIDNT_HAPPEN, DONE, NOT_YET, RUN_PROMPT_EFFECT, RunPromptReport, outcome_components,
+    outcome_text, prompt_components,
+};
 pub use tick::{
     DEFAULT_MAX_SENDS_PER_TICK, Delivery, DeliveryConfig, DeliveryError, DigestOutcome,
     DigestReport, DispatchReport, TICK_OPERATION, TickReport,

@@ -46,7 +46,7 @@ enum Kind {
 }
 
 pub struct RunCommand {
-    ctx: Arc<CommandContext>,
+    pub(super) ctx: Arc<CommandContext>,
     kind: Kind,
 }
 
@@ -360,6 +360,12 @@ impl SlashCommand for RunCommand {
         Box::pin(async move {
             match self.kind {
                 Kind::Amend => self.amend_run(invocation).await,
+                Kind::Status
+                    if invocation.path.get(1).map(String::as_str)
+                        == Some(super::run_prompt::PROMPT_PRESS) =>
+                {
+                    self.prompt_press(invocation).await
+                }
                 Kind::Status => self.set_status(invocation).await,
                 Kind::Swap => self.swap_people(invocation).await,
                 Kind::Rsvp => self.answer(invocation).await,

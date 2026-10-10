@@ -290,12 +290,14 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         }
         check_title(title)?;
         let now = self.clock.now();
+        let ends = self.run_ends();
         let (snapshot, head) = self.store.snapshot_with_head().await?;
         let kind = spec.request_type();
         let subject = spec.subject();
         authorise(kind, subject.as_ref(), member, &snapshot, directory)?;
         let ops = operations(&spec, member, &snapshot)?;
-        let replayed = replay(&snapshot, &ops, policy, directory, now).map_err(replay_failed)?;
+        let replayed = replay(&snapshot, &ops, policy, ends.as_ref(), directory, now)
+            .map_err(replay_failed)?;
         let expires = expires_week(&ops, &replayed.created, &snapshot, &replayed.draft, policy);
         if is_expired(expires, policy, now)? {
             return Err(DraftError::Expired.into());
@@ -368,11 +370,19 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         require_admin(actor)?;
         check_stageable(&ops)?;
         let now = self.clock.now();
+        let ends = self.run_ends();
         let loaded = load_request(&self.store, id).await?;
         require_submitted(&loaded, expected_version)?;
         let flow = upstream(&self.store, &loaded.draft.base).await?;
-        let replayed =
-            replay(&flow.base_snapshot, &ops, policy, directory, now).map_err(replay_failed)?;
+        let replayed = replay(
+            &flow.base_snapshot,
+            &ops,
+            policy,
+            ends.as_ref(),
+            directory,
+            now,
+        )
+        .map_err(replay_failed)?;
         let expires = expires_week(
             &ops,
             &replayed.created,
@@ -415,6 +425,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         self.check_policy(policy)?;
         require_admin(actor)?;
         let now = self.clock.now();
+        let ends = self.run_ends();
         let loaded = load_request(&self.store, id).await?;
         let (kind, ops, _) = approval_ops(&loaded, choices)?;
         let requester = requester_of(&loaded.draft)
@@ -434,10 +445,11 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             &flow.current,
             &ops,
             policy,
+            ends.as_ref(),
             directory,
             now,
         );
-        let warnings = replay(&flow.current, &ops, policy, directory, now)
+        let warnings = replay(&flow.current, &ops, policy, ends.as_ref(), directory, now)
             .map(|replayed| skipped_runs(&replayed.results))
             .unwrap_or_default();
         Ok(RequestPreview {

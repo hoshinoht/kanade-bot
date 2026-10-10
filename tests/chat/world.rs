@@ -332,6 +332,7 @@ impl World {
             reset_time: policy.reset_time,
             pending: &[],
             guides: Some(&*guides),
+            run_ends: None,
             heard: Heard::default(),
         };
         let mut proposer = Proposer { service, policy };
@@ -350,6 +351,7 @@ impl World {
             reset_weekday: self.policy.reset_weekday,
             reset_time: self.policy.reset_time,
             guides: Some(&self.guides),
+            run_ends: None,
         }
     }
 
@@ -382,6 +384,7 @@ impl World {
             reset_weekday: policy.reset_weekday,
             reset_time: policy.reset_time,
             guides: Some(&*guides),
+            run_ends: None,
         };
         (view, Proposer { service, policy })
     }
@@ -399,6 +402,7 @@ impl World {
             reset_time: self.policy.reset_time,
             pending: &[],
             guides: Some(&self.guides),
+            run_ends: None,
             heard: Heard::default(),
         }
     }

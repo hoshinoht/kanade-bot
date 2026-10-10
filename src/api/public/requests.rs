@@ -24,7 +24,7 @@ use super::write::{admit, invalid_body, keyed_id, path_id};
 use crate::{
     api::{
         admin::{
-            context::{context, frames, roster, run_lengths, unavailable},
+            context::{context, frames, roster, run_ends, unavailable},
             write::{Refusal, scheduler, state, write_context_of},
         },
         auth::{audit::AuditContext, member::MemberSession},
@@ -41,13 +41,13 @@ use crate::{
         state::ApiState,
     },
     domain::{
+        completion::RunEnds,
         drafts::{DraftKind, DraftStatus, LoadedDraft, RequestLimit},
         history::Actor,
         members::MemberProfile,
         requests::{DEFAULT_LIMITS, RequestRefusal, Subject, public_summary},
         schedule::ScheduleSnapshot,
         scheduler::{DraftError, RequestError, Scope},
-        settings::RunLengths,
     },
 };
 use form::{Choices, RequestBody};
@@ -173,7 +173,7 @@ struct Basis {
     /// This and next boss week's runs, and every weekly timing.
     base: ScheduleSnapshot,
     profiles: Vec<MemberProfile>,
-    run_lengths: RunLengths,
+    ends: RunEnds,
 }
 
 impl Basis {
@@ -191,7 +191,7 @@ impl Basis {
             frames,
             base,
             profiles,
-            run_lengths: run_lengths(state).await,
+            ends: run_ends(state).await,
         })
     }
 
@@ -205,7 +205,7 @@ impl Basis {
             ctx,
             frames: &self.frames,
             policy: &state.policy,
-            run_lengths: &self.run_lengths,
+            ends: &self.ends,
             user_id,
         }
     }

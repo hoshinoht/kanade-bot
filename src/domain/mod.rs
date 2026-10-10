@@ -5,6 +5,7 @@
 
 pub mod attendance;
 pub mod catalog;
+pub mod completion;
 pub mod drafts;
 pub mod history;
 pub mod ids;

@@ -1,13 +1,20 @@
 //! The scheduler tick (v4 `BossBot.tick`): materialise on a boss-week
-//! rollover (taking the week's automatic history checkpoint), mark finished
-//! runs done, recount attendance (v5 mode only), expire past-week drafts and
-//! proposals past their TTL, drain the notice outbox, post the weekly
+//! rollover (taking the week's automatic history checkpoint), mark runs past
+//! their completion cutoff done, recount attendance (v5 mode only), expire
+//! past-week drafts and proposals past their TTL, drain the notice outbox,
+//! post ownership requests and run completion prompts, post the weekly
 //! digest, then dispatch due reminders. One clock reading and one journal
 //! lease per tick.
 //!
 //! v5 deviation (user decision): the digest posts only when the current boss
 //! week is after the last recorded one. A clock that reads an earlier week
 //! alerts and posts nothing; v4 compared for equality and re-posted.
+//!
+//! v5 deviation (user decisions 2026-10-09/10): v4 marked every live run
+//! done two hours after its start (`mark_done`, kept for the vector
+//! replays); the tick now asks each run's channel half an hour after it ends
+//! and marks it done only when answered or at its cutoff
+//! (`run_prompts.rs`).
 
 use std::fmt;
 use std::sync::Arc;
@@ -29,10 +36,12 @@ use super::notices::NoticeReport;
 use super::owner_requests::OwnerRequestReport;
 use super::ports::{FixedClock, IdsRef, StoreRef};
 use super::render::{render, unrendered};
+use super::run_prompts::RunPromptReport;
 use crate::bot::{
     gateway::{DeliveryEligibility, DeliveryOperation},
     transport::{DiscordTransport, OutgoingMessage},
 };
+use crate::domain::completion::{RunEnds, RunEndsSource, RunPromptStore};
 use crate::domain::drafts::ProposalStore;
 use crate::domain::history::{
     Actor, CheckpointKind, Checkpoints, NewCheckpoint, Origin, Surface, auto_checkpoint_name,
@@ -49,6 +58,7 @@ use crate::domain::schedule::ScheduleSnapshot;
 use crate::domain::scheduler::{
     Clock, IdSource, ScheduleStore, SchedulerError, SchedulerService, Scope, StoreError,
 };
+use crate::domain::settings::RunLengths;
 use crate::domain::time::{DateOutOfRange, from_iso};
 
 /// The lease operation kind every tick runs under.
@@ -70,6 +80,13 @@ pub struct DeliveryConfig {
     /// Outbox notices older than this at drain time are retired `stale`
     /// unsent ([`crate::domain::notify::DEFAULT_MAX_NOTICE_AGE`]).
     pub max_notice_age: TimeDelta,
+    /// Run lengths (`v5.run_lengths`) for completion prompts; live like the
+    /// post channel.
+    pub run_lengths: RunLengths,
+    /// v5 (user decision 2026-10-10): a live run past its end is frozen and
+    /// counts as ended in the digest; `false` keeps v4's rules (2 h after
+    /// the start) for the v4 vector replays only.
+    pub freeze_ended: bool,
 }
 
 impl DeliveryConfig {
@@ -213,6 +230,8 @@ pub struct TickReport {
     pub notices: NoticeReport,
     /// Weekly-timing ownership requests expired, posted and settled.
     pub owner_requests: OwnerRequestReport,
+    /// Run completion prompts opened, posted, closed and settled.
+    pub prompts: RunPromptReport,
     pub digest: DigestReport,
     pub dispatch: DispatchReport,
 }
@@ -385,12 +404,33 @@ where
         Ok(self.store.recover_on_start(now).await?)
     }
 
-    fn service(
+    pub(super) fn service(
         &mut self,
         now: DateTime<Utc>,
     ) -> SchedulerService<StoreRef<'a, S>, IdsRef<'_, I>, FixedClock> {
-        SchedulerService::new(StoreRef(self.store), IdsRef(&mut self.ids), FixedClock(now))
-            .with_attendance(self.config.policy.attendance)
+        let source = self.run_ends_source();
+        let service =
+            SchedulerService::new(StoreRef(self.store), IdsRef(&mut self.ids), FixedClock(now))
+                .with_attendance(self.config.policy.attendance);
+        match source {
+            Some(source) => service.with_run_ends(source),
+            None => service,
+        }
+    }
+
+    /// When runs end this tick (`None` under v4 rules).
+    fn run_ends_source(&self) -> Option<RunEndsSource> {
+        self.config.freeze_ended.then(|| {
+            RunEndsSource::fixed(
+                self.config.run_lengths.clone(),
+                self.cards.catalog.clone(),
+                self.config.policy.clone(),
+            )
+        })
+    }
+
+    pub(super) fn run_ends(&self) -> Option<RunEnds> {
+        self.run_ends_source().map(|source| source.now())
     }
 
     pub(super) fn throttle(&self) -> &AlertThrottle {
@@ -429,7 +469,7 @@ where
     /// The first failing step; the lease is ended regardless.
     pub async fn tick(&mut self, clock: &impl Clock) -> Result<TickReport, DeliveryError>
     where
-        S: DigestPhraseStore + OwnerRequestStore,
+        S: DigestPhraseStore + OwnerRequestStore + RunPromptStore,
     {
         self.tick_at(clock.now()).await
     }
@@ -440,7 +480,7 @@ where
     /// The first failing step; the lease is ended regardless.
     pub async fn tick_at(&mut self, now: DateTime<Utc>) -> Result<TickReport, DeliveryError>
     where
-        S: DigestPhraseStore + OwnerRequestStore,
+        S: DigestPhraseStore + OwnerRequestStore + RunPromptStore,
     {
         self.leased(now, async move |this: &mut Self, lease: &Lease| {
             let current = this.config.reset().current_week(now)?;
@@ -449,16 +489,13 @@ where
             } else {
                 this.materialise_now(now).await?
             };
-            let done = this
-                .service(now)
-                .as_origin(tick_origin())
-                .mark_done()
-                .await?;
+            let done = this.complete_runs(now).await?;
             let recounted = this.recount_attendance(now).await;
             this.expire_drafts(now).await;
             this.expire_proposals(now).await;
             let notices = this.notices_in(lease, now).await?;
             let owner_requests = this.owner_requests_in(lease, now).await?;
+            let prompts = this.run_prompts_in(lease, now).await?;
             let digest = this.digest_in(lease, now).await?;
             let dispatch = this.dispatch_in(lease, now).await?;
             Ok(TickReport {
@@ -468,6 +505,7 @@ where
                 recounted,
                 notices,
                 owner_requests,
+                prompts,
                 digest,
                 dispatch,
             })
@@ -675,6 +713,7 @@ where
         let log = self.store.load_digests().await?;
         let week = self.store.load(&Scope::Weeks(vec![week_start])).await?;
         let view = self.store.load_view().await?;
+        let ends = self.run_ends();
         let post = plan_digest_post(&DigestPostInput {
             week_start,
             current_week,
@@ -685,6 +724,7 @@ where
             settings: self.config.settings(),
             channels: self.channels,
             journal: &view,
+            ended: ends.as_ref().map(|ends| (ends, now)),
         })?;
         let Some(post) = post else {
             report.outcome = DigestOutcome::NoChannel;
@@ -855,6 +895,7 @@ where
         let week = self.store.load(&Scope::Weeks(vec![current_week])).await?;
         let runs = &week.runs;
         let view = self.store.load_view().await?;
+        let ends = self.run_ends();
         let post = plan_digest_post(&DigestPostInput {
             week_start: current_week,
             current_week,
@@ -865,6 +906,7 @@ where
             settings: self.config.settings(),
             channels: self.channels,
             journal: &view,
+            ended: ends.as_ref().map(|ends| (ends, now)),
         })?;
         let Some(post) = post else {
             report.outcome = DigestOutcome::NoChannel;

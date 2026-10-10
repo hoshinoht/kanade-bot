@@ -214,10 +214,17 @@ where
         schedule: &ScheduleSnapshot,
         digest: &WeeklyDigest,
     ) -> bool {
+        let ends = self.cards.run_ends(&self.policy);
+        let now = (self.now)();
         let (Some(channel), Some(message), Ok(inclusion)) = (
             parse_id(&digest.channel_id),
             parse_id(&digest.message_id),
-            digest_inclusion(&schedule.runs, digest.week_start, self.policy.zone()),
+            digest_inclusion(
+                &schedule.runs,
+                digest.week_start,
+                self.policy.zone(),
+                ends.as_ref().map(|ends| (ends, now)),
+            ),
         ) else {
             return false;
         };

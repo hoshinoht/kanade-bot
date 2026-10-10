@@ -161,7 +161,8 @@ impl ReactionResult {
 /// the RSVP only when it is the answer currently recorded.
 ///
 /// # Errors
-/// [`ScheduleError::UnknownRun`].
+/// [`ScheduleError::UnknownRun`], or [`ScheduleError::RunEnded`] for a
+/// participant's answer on a live run past its end (frozen).
 pub fn apply_reaction(
     draft: &mut Draft,
     run_id: &str,
@@ -184,6 +185,7 @@ pub fn apply_reaction(
     if !run.participants.iter().any(|user| user == user_id) {
         return Ok(result);
     }
+    draft.refuse_ended(run_id, now)?;
     if added {
         draft.set_rsvp(run_id, user_id, state, RsvpSource::Reaction, now);
     } else {

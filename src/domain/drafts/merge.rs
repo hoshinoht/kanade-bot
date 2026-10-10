@@ -6,12 +6,14 @@
 //! and must hold exactly what the three-way merge expects, field by field.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 
 use super::conflict::{Entity, Field, FieldValue, MergeConflict, Removal};
 use super::op::DraftOp;
 use super::replay::{Replay, replay_partial};
+use crate::domain::completion::RunEnds;
 use crate::domain::history::{ChangeRecord, ChangeRef, HistoryGap, rewind};
 use crate::domain::members::Directory;
 use crate::domain::schedule::{ChangeSet, Notice, SchedulePolicy, ScheduleSnapshot, utc_instant};
@@ -54,40 +56,56 @@ pub fn analyze_merge_since(
     upstream: &[ChangeRecord],
     ops: &[DraftOp],
     policy: &SchedulePolicy,
+    ends: Option<&Arc<RunEnds>>,
     directory: &(dyn Directory + Sync),
     now: DateTime<Utc>,
 ) -> Result<MergeAnalysis, HistoryGap> {
     let base = rewind(current, base, head, upstream)?;
-    Ok(analyze_merge(&base, current, ops, policy, directory, now))
+    Ok(analyze_merge(
+        &base, current, ops, policy, ends, directory, now,
+    ))
 }
 
-/// Analyse merging `ops`, drafted on `base`, into `current`.
+/// Analyse merging `ops`, drafted on `base`, into `current`; `ends` as for
+/// [`super::replay`].
 pub fn analyze_merge(
     base: &ScheduleSnapshot,
     current: &ScheduleSnapshot,
     ops: &[DraftOp],
     policy: &SchedulePolicy,
+    ends: Option<&Arc<RunEnds>>,
     directory: &(dyn Directory + Sync),
     now: DateTime<Utc>,
 ) -> MergeAnalysis {
-    analyze_merge_applying(base, current, ops, policy, directory, now, &BTreeSet::new())
+    analyze_merge_applying(
+        base,
+        current,
+        ops,
+        policy,
+        ends,
+        directory,
+        now,
+        &BTreeSet::new(),
+    )
 }
 
 /// [`analyze_merge`] where the status of each run in `status_at_apply` is
 /// whatever the operations make of the current schedule: it never
 /// conflicts with an upstream status change (a proposal's cancel/otot
 /// target or its recount, v4 parity). Every other field is checked as usual.
+#[allow(clippy::too_many_arguments)]
 pub fn analyze_merge_applying(
     base: &ScheduleSnapshot,
     current: &ScheduleSnapshot,
     ops: &[DraftOp],
     policy: &SchedulePolicy,
+    ends: Option<&Arc<RunEnds>>,
     directory: &(dyn Directory + Sync),
     now: DateTime<Utc>,
     status_at_apply: &BTreeSet<String>,
 ) -> MergeAnalysis {
-    let (drafted, drafted_rejected) = replay_partial(base, ops, policy, directory, now);
-    let (merged, merged_rejected) = replay_partial(current, ops, policy, directory, now);
+    let (drafted, drafted_rejected) = replay_partial(base, ops, policy, ends, directory, now);
+    let (merged, merged_rejected) = replay_partial(current, ops, policy, ends, directory, now);
     let mut analysis = MergeAnalysis {
         conflicts: Vec::new(),
         result_changes: None,

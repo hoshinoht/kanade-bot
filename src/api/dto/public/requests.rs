@@ -12,10 +12,10 @@ use crate::{
         week::{Context, WeekFrame},
     },
     domain::{
+        completion::RunEnds,
         drafts::{DraftOp, DraftStatus, LoadedDraft, StoredDraft},
         requests::{RequestType, Subject, public_summary},
         schedule::{SchedulePolicy, ScheduleSnapshot, utc_instant},
-        settings::RunLengths,
     },
 };
 
@@ -93,7 +93,7 @@ pub struct RequestView<'a> {
     /// This and next boss week.
     pub frames: &'a [WeekFrame; 2],
     pub policy: &'a SchedulePolicy,
-    pub run_lengths: &'a RunLengths,
+    pub ends: &'a RunEnds,
     pub user_id: &'a str,
 }
 
@@ -160,7 +160,7 @@ impl RequestView<'_> {
                         snapshot,
                         found,
                         week,
-                        self.run_lengths,
+                        self.ends,
                         self.user_id,
                     ));
                     bosses = &found.bosses;

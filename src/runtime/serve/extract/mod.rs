@@ -127,6 +127,8 @@ pub struct Inputs<T> {
     /// The public portal origin (`https://host`) when a public listener is
     /// configured; cards link into it.
     pub portal: Option<String>,
+    /// When runs end (live run lengths): proposals and "already passed".
+    pub run_ends: crate::domain::completion::RunEndsSource,
 }
 
 /// The planner's view of the saved `self_service` section.
@@ -235,6 +237,7 @@ pub fn start<T: GatewayTransport>(mut inputs: Inputs<T>) -> Extraction {
                     clock: Arc::clone(&inputs.clock),
                     policy: inputs.policy,
                     directory: Arc::clone(&inputs.roster),
+                    run_ends: inputs.run_ends.clone(),
                 }),
                 outbox: Arc::new(CardOutbox(inputs.desk)),
                 clock,
@@ -261,7 +264,8 @@ pub fn start<T: GatewayTransport>(mut inputs: Inputs<T>) -> Extraction {
         .with_live_self_service({
             let saved = super::context::changes_or(changes.clone(), &inputs.settings);
             Arc::new(move || self_service_config(&saved.borrow().settings.self_service))
-        }),
+        })
+        .with_run_ends(inputs.run_ends.clone()),
     );
 
     let (events, queue) = mpsc::channel(EVENT_QUEUE);

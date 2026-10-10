@@ -150,7 +150,8 @@ pub fn set_status(
 /// `at_risk` go back to `planned`; reminders are rebuilt.
 ///
 /// # Errors
-/// [`ScheduleError::MoveConflict`], [`ScheduleError::UnknownRun`] or
+/// [`ScheduleError::MoveConflict`], [`ScheduleError::UnknownRun`],
+/// [`ScheduleError::RunEnded`] for a live run past its end, or
 /// [`ScheduleError::DateOutOfRange`].
 pub fn amend_run(
     draft: &mut Draft,
@@ -161,6 +162,7 @@ pub fn amend_run(
     now: DateTime<Utc>,
 ) -> Result<Outcome<RunState>, ScheduleError> {
     let run = draft.require_run(run_id)?;
+    draft.refuse_ended(run_id, now)?;
     let zone = policy.zone();
     let week_start = policy.week_of(&to)?;
     let week = utc_instant(&week_start)?;
@@ -227,6 +229,8 @@ pub fn swap_run_slots(
             status: second.status.as_str().to_owned(),
         });
     }
+    draft.refuse_ended(run_id, now)?;
+    draft.refuse_ended(with_id, now)?;
 
     let zone = policy.zone();
     let first_local = zone.from_utc_datetime(&first.datetime.naive_utc());
@@ -333,6 +337,7 @@ pub fn swap_participants(
     now: DateTime<Utc>,
 ) -> Result<Outcome<RunState>, ScheduleError> {
     let run = draft.require_run(run_id)?;
+    draft.refuse_ended(run_id, now)?;
     let leaving: Vec<String> = remove.to_vec();
     let joining = if add.is_empty() {
         Vec::new()
@@ -409,7 +414,8 @@ pub fn swap_participants(
 /// # Errors
 /// [`ScheduleError::UnknownRun`], [`ScheduleError::NotAFixedRun`],
 /// [`ScheduleError::FixedRunRetired`], [`ScheduleError::RunNotLive`],
-/// [`ScheduleError::ResetSlotPassed`] or [`ScheduleError::DateOutOfRange`].
+/// [`ScheduleError::RunEnded`], [`ScheduleError::ResetSlotPassed`] or
+/// [`ScheduleError::DateOutOfRange`].
 pub fn reset_to_fixed(
     draft: &mut Draft,
     ids: &mut impl IdGenerator,
@@ -430,6 +436,7 @@ pub fn reset_to_fixed(
             status: run.status.as_str().to_owned(),
         });
     }
+    draft.refuse_ended(run_id, now)?;
     // Re-derive the zoned week so a reset inside a DST gap keeps its wall clock.
     let week_start = policy.week_of(&run.week_start)?;
     let slot = slot_in_week(&week_start, policy.zone(), fixed.weekday, fixed.time)?;

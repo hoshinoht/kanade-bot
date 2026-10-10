@@ -9,6 +9,7 @@ mod fixed_owner;
 mod members;
 mod ports;
 mod registry;
+mod run_prompt;
 mod runs;
 mod schedule;
 mod surface;
@@ -380,6 +381,7 @@ impl Slash {
             store: store.clone(),
             writer,
             members: store.clone(),
+            run_prompts: store.clone(),
             policy: SchedulePolicy::new(
                 ReminderPolicy {
                     zone: chrono_tz::Asia::Kuala_Lumpur,
@@ -504,8 +506,12 @@ impl Slash {
     /// A press of the bot's button `custom_id` by a bossing-role member in
     /// the party channel; the reply.
     pub async fn press(&self, invoker: u64, custom_id: &str) -> String {
-        let mut interaction =
-            self.interaction(2, invoker, &[BOSSING_ROLE], KALOS, "press", json!([]));
+        self.press_as(invoker, &[BOSSING_ROLE], custom_id).await
+    }
+
+    /// As [`Self::press`], with the presser's roles.
+    pub async fn press_as(&self, invoker: u64, roles: &[u64], custom_id: &str) -> String {
+        let mut interaction = self.interaction(2, invoker, roles, KALOS, "press", json!([]));
         interaction.kind = InteractionType::MessageComponent;
         interaction.data = Some(InteractionData::MessageComponent(Box::new(parse::<
             MessageComponentInteractionData,

@@ -642,6 +642,7 @@ where
             );
             return record;
         };
+        let ends = self.run_ends.as_ref().map(|source| source.now());
         let inputs = BurstInputs {
             anchor: prepared.anchor,
             now: self.clock.now(),
@@ -655,6 +656,7 @@ where
             message_times: &prepared.message_times,
             min_confidence: self.config.min_confidence,
             boss_table: Some(&loaded.bosses),
+            run_ends: ends.as_ref(),
         };
         match plan_burst(&extraction, &inputs) {
             Ok(plan) => {

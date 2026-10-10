@@ -5,6 +5,7 @@ mod attendance_v5;
 mod draft_service;
 mod drafts;
 mod fixed_create;
+mod frozen;
 mod invariants;
 mod mutations_family;
 mod mutations_v5;

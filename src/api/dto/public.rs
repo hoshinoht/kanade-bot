@@ -27,10 +27,10 @@ use super::{
 };
 use crate::{
     domain::{
+        completion::RunEnds,
         history::Actor,
         ownership::OwnerRequest,
         schedule::{FixedRun, Run, ScheduleSnapshot},
-        settings::RunLengths,
     },
     infrastructure::llm::governor::{CallKind, GroupSnapshot},
 };
@@ -117,13 +117,14 @@ pub struct MemberAllowance {
 
 /// One run as `user_id` sees it: the admin run's shared fields plus whether
 /// it is theirs. `can_edit` assumes this or next boss week; runs from other
-/// weeks go through [`member_run_in`].
+/// weeks go through [`member_run_in`]. A live run past its end is frozen
+/// until it is settled, so it is not editable either.
 pub fn member_run(
     ctx: &Context<'_>,
     snapshot: &ScheduleSnapshot,
     start_date: NaiveDate,
     run: &Run,
-    run_lengths: &RunLengths,
+    ends: &RunEnds,
     user_id: &str,
 ) -> MemberRun {
     let participants = participants(ctx, snapshot, run);
@@ -133,7 +134,7 @@ pub fn member_run(
         id: run.id.clone(),
         day: day_index(ctx, start_date, run.datetime),
         time: run_time(ctx, run),
-        minutes: run_lengths.minutes_for(ctx.catalog, &run.bosses),
+        minutes: ends.minutes(&run.bosses),
         status: run.status.as_str(),
         bosses: ctx.bosses(&run.bosses),
         tally: tally(&participants),
@@ -142,7 +143,7 @@ pub fn member_run(
         channel,
         fixed_id: run.fixed_run_id.clone(),
         mine,
-        can_edit: mine && !run.status.is_terminal(),
+        can_edit: mine && !run.status.is_terminal() && !ends.frozen(run, ctx.now),
     }
 }
 
@@ -152,11 +153,11 @@ pub fn member_run_in(
     snapshot: &ScheduleSnapshot,
     run: &Run,
     week: RunWeek,
-    run_lengths: &RunLengths,
+    ends: &RunEnds,
     user_id: &str,
 ) -> MemberRun {
     let start = ctx.local_date(run.week_start);
-    let mut view = member_run(ctx, snapshot, start, run, run_lengths, user_id);
+    let mut view = member_run(ctx, snapshot, start, run, ends, user_id);
     view.can_edit &= week.open();
     view
 }
@@ -177,7 +178,7 @@ pub fn member_week(
     snapshot: &ScheduleSnapshot,
     frame: &WeekFrame,
     version: u64,
-    run_lengths: &RunLengths,
+    ends: &RunEnds,
     user_id: &str,
 ) -> MemberWeek {
     let start_date = ctx.local_date(frame.start);
@@ -190,7 +191,7 @@ pub fn member_week(
             .runs
             .iter()
             .filter(|run| run.week_start == frame.start)
-            .map(|run| member_run(ctx, snapshot, start_date, run, run_lengths, user_id))
+            .map(|run| member_run(ctx, snapshot, start_date, run, ends, user_id))
             .collect(),
         generated_at: iso_instant(ctx.now),
         version,

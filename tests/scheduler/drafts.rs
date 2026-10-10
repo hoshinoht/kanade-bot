@@ -266,7 +266,7 @@ async fn merge(upstream: &[DraftOp], draft: &[DraftOp]) -> (MergeAnalysis, Sched
         commit(&mut f.service, op).await;
     }
     let current = snapshot(&f.service).await;
-    let analysis = analyze_merge(&base, &current, draft, &policy(), &Guild, now());
+    let analysis = analyze_merge(&base, &current, draft, &policy(), None, &Guild, now());
     (analysis, current)
 }
 
@@ -592,8 +592,8 @@ async fn replay_is_deterministic_resolves_created_targets_and_writes_nothing() {
         },
         rsvp(&f.runs[0], "1002", RsvpState::Yes),
     ];
-    let first = replay(&base, &ops, &policy(), &Guild, now()).unwrap();
-    let second = replay(&base, &ops, &policy(), &Guild, now()).unwrap();
+    let first = replay(&base, &ops, &policy(), None, &Guild, now()).unwrap();
+    let second = replay(&base, &ops, &policy(), None, &Guild, now()).unwrap();
     assert_eq!(first.draft.to_snapshot(), second.draft.to_snapshot());
     let created = first.created[0].clone().unwrap();
     assert!(created.starts_with("preview-"));
@@ -606,7 +606,7 @@ async fn replay_is_deterministic_resolves_created_targets_and_writes_nothing() {
         run: Target::Created(0),
         to: utc(kl(30, 20, 0)),
     }];
-    let rejected = replay(&base, &bad, &policy(), &Guild, now()).unwrap_err();
+    let rejected = replay(&base, &bad, &policy(), None, &Guild, now()).unwrap_err();
     assert_eq!(rejected.ord, 0);
 }
 
@@ -653,7 +653,7 @@ async fn rewinding_the_records_after_a_base_restores_the_base_snapshot() {
     assert_eq!(rewound, base, "record order does not matter");
 
     let draft = vec![rsvp(&f.runs[2], "1001", RsvpState::Yes)];
-    let direct = analyze_merge(&base, &current, &draft, &policy(), &Guild, now());
+    let direct = analyze_merge(&base, &current, &draft, &policy(), None, &Guild, now());
     let since = analyze_merge_since(
         &current,
         &head,
@@ -661,6 +661,7 @@ async fn rewinding_the_records_after_a_base_restores_the_base_snapshot() {
         &records,
         &draft,
         &policy(),
+        None,
         &Guild,
         now(),
     )
@@ -757,6 +758,7 @@ async fn rewind_refuses_an_incomplete_or_unlinked_record_list() {
             &missing_middle,
             &draft,
             &policy(),
+            None,
             &Guild,
             now()
         )
@@ -1244,7 +1246,7 @@ async fn a_retirement_staged_before_a_reset_goes_stale() {
         fixed: existing(&f.fixed),
         weeks: staged.clone(),
     }];
-    let analysis = analyze_merge(&base, &base, &retire, &policy(), &Guild, now());
+    let analysis = analyze_merge(&base, &base, &retire, &policy(), None, &Guild, now());
     assert!(analysis.is_clean(), "{:?}", analysis.conflicts);
 
     // After the next reset the fourth week is materialised with a live run.
@@ -1263,7 +1265,15 @@ async fn a_retirement_staged_before_a_reset_goes_stale() {
         .expect("the fourth week's run")
         .id
         .clone();
-    let analysis = analyze_merge(&base, &current, &retire, &policy(), &Guild, utc(later));
+    let analysis = analyze_merge(
+        &base,
+        &current,
+        &retire,
+        &policy(),
+        None,
+        &Guild,
+        utc(later),
+    );
     let expected = MergeConflict::StaleWeeks {
         ord: 0,
         staged: staged.clone(),
@@ -1285,7 +1295,15 @@ async fn a_retirement_staged_before_a_reset_goes_stale() {
         fixed: existing(&f.fixed),
         weeks: materialised_now(utc(later)),
     }];
-    let analysis = analyze_merge(&base, &current, &restaged, &policy(), &Guild, utc(later));
+    let analysis = analyze_merge(
+        &base,
+        &current,
+        &restaged,
+        &policy(),
+        None,
+        &Guild,
+        utc(later),
+    );
     assert!(
         !analysis
             .conflicts

@@ -629,6 +629,27 @@ impl DeliveryJournal for MemoryScheduleStore {
             }))
     }
 
+    async fn bound_source(
+        &self,
+        source: &str,
+        ordinal: i64,
+    ) -> Result<Option<crate::domain::notify::Receipt>, JournalError> {
+        let key = DedupeKey::source(source, ordinal);
+        let tables = self.tables();
+        Ok(tables
+            .journal
+            .attempts
+            .values()
+            .filter(|row| row.dedupe_key == key && row.state == AttemptState::Bound)
+            .max_by_key(|row| row.intended_at)
+            .and_then(|row| {
+                Some(crate::domain::notify::Receipt {
+                    channel_id: row.channel_id.clone(),
+                    message_id: row.message_id.clone()?,
+                })
+            }))
+    }
+
     async fn load_digests(&self) -> Result<DigestLog, JournalError> {
         let tables = self.tables();
         Ok(DigestLog {

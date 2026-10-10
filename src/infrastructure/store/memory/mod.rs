@@ -38,6 +38,7 @@ mod owner_requests;
 mod proposal_cards;
 mod proposals;
 mod replays;
+mod run_prompts;
 mod settings;
 mod web_sessions;
 
@@ -142,6 +143,7 @@ pub struct MemoryScheduleStore {
     replays: Mutex<replays::ReplayTable>,
     audit: Mutex<auth_audit::AuditTable>,
     owner_requests: Mutex<owner_requests::OwnerRequestTable>,
+    run_prompts: Mutex<run_prompts::RunPromptTable>,
     runs_written: super::observer::Observer,
     written: super::observer::WriteHook,
 }

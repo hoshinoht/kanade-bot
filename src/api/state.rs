@@ -896,6 +896,18 @@ impl ApiState {
         (self.clock)()
     }
 
+    /// When runs end, live from the config desk (defaults without one).
+    pub fn run_ends_source(&self) -> crate::domain::completion::RunEndsSource {
+        match &self.config {
+            Some(desk) => desk.run_ends(Arc::clone(&self.catalog), self.policy.clone()),
+            None => crate::domain::completion::RunEndsSource::fixed(
+                Default::default(),
+                Some(Arc::clone(&self.catalog)),
+                self.policy.clone(),
+            ),
+        }
+    }
+
     /// Refresh the proposal cards touched by a committed inbox decision.
     pub async fn refresh_proposals(&self, proposal_ids: Vec<String>) {
         if !proposal_ids.is_empty()

@@ -124,6 +124,8 @@ impl Host {
                     },
                     channels: &self.channels,
                     journal: &held,
+                    // The v4 digest vectors keep v4's counts.
+                    ended: None,
                 })
                 .expect("in range");
                 // No channel: nothing is stamped.

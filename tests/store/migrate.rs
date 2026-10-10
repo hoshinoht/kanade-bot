@@ -35,7 +35,7 @@ async fn empty_file_migrates_to_the_newest_version_with_sound_foreign_keys() {
     )
     .expect("chmod");
     let store = SqliteStore::open(&config).await.expect("opens");
-    assert_eq!(store.schema_version().await.expect("version"), 34);
+    assert_eq!(store.schema_version().await.expect("version"), 35);
     assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
     let empty = store.load(&Scope::All).await.expect("load");
     assert_eq!(empty.revision, 0);
@@ -44,7 +44,7 @@ async fn empty_file_migrates_to_the_newest_version_with_sound_foreign_keys() {
         ledger(&config).await,
         [
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25, 26, 27, 28, 29, 30, 31, 32, 33, 34
+            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35
         ]
     );
 }
@@ -59,7 +59,7 @@ async fn reopen_is_idempotent_and_keeps_rows() {
     store.close().await.expect("close");
     for _ in 0..2 {
         let store = SqliteStore::open(&config).await.expect("reopens");
-        assert_eq!(store.schema_version().await.expect("version"), 34);
+        assert_eq!(store.schema_version().await.expect("version"), 35);
         assert_eq!(store.load(&Scope::All).await.expect("load"), before);
         store.close().await.expect("close");
     }
@@ -67,7 +67,7 @@ async fn reopen_is_idempotent_and_keeps_rows() {
         ledger(&config).await,
         [
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25, 26, 27, 28, 29, 30, 31, 32, 33, 34
+            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35
         ]
     );
 }
@@ -102,7 +102,7 @@ async fn future_schema_version_refuses_to_open() {
         .expect("close");
     tamper(
         &config,
-        "INSERT INTO schema_migrations VALUES (35, 'next', '2027-01-01T00:00:00+00:00')",
+        "INSERT INTO schema_migrations VALUES (36, 'next', '2027-01-01T00:00:00+00:00')",
     )
     .await;
     let error = SqliteStore::open(&config).await.err().expect("refused");
@@ -110,8 +110,8 @@ async fn future_schema_version_refuses_to_open() {
         matches!(
             error,
             SqliteStoreError::FutureVersion {
-                found: 35,
-                known: 34
+                found: 36,
+                known: 35
             }
         ),
         "{error}"
@@ -120,7 +120,7 @@ async fn future_schema_version_refuses_to_open() {
         ledger(&config).await,
         [
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35
+            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36
         ],
         "a refused open writes nothing"
     );
@@ -189,6 +189,7 @@ async fn upgrading_from_v19_preserves_declines_and_reenables_foreign_keys() {
          DROP TABLE idempotency_replays;
          DROP TABLE auth_audit;
          DROP TABLE owner_requests;
+         DROP TABLE run_prompts;
          ALTER TABLE fixed_runs DROP COLUMN owner_pinned;
          DELETE FROM schema_migrations WHERE version >= 20;
          ALTER TABLE extractions DROP COLUMN reasoning_content;
@@ -312,6 +313,7 @@ async fn a_version_one_store_gains_the_later_tables_on_open() {
          DROP TABLE idempotency_replays;
          DROP TABLE auth_audit;
          DROP TABLE owner_requests;
+         DROP TABLE run_prompts;
          ALTER TABLE fixed_runs DROP COLUMN owner_pinned;
          DELETE FROM schema_migrations WHERE version >= 2;
          UPDATE store_meta SET schema_version = 1;",
@@ -319,14 +321,14 @@ async fn a_version_one_store_gains_the_later_tables_on_open() {
     .await;
     assert_eq!(ledger(&config).await, [1]);
     let store = SqliteStore::open(&config).await.expect("migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 34);
+    assert_eq!(store.schema_version().await.expect("version"), 35);
     assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
     store.close().await.expect("close");
     assert_eq!(
         ledger(&config).await,
         [
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25, 26, 27, 28, 29, 30, 31, 32, 33, 34
+            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35
         ]
     );
     let mut conn = SqliteConnectOptions::new()
@@ -379,6 +381,7 @@ DROP TABLE settings_changes;
          DROP TABLE idempotency_replays;
          DROP TABLE auth_audit;
          DROP TABLE owner_requests;
+         DROP TABLE run_prompts;
          ALTER TABLE fixed_runs DROP COLUMN owner_pinned;
          DELETE FROM schema_migrations WHERE version >= 23;
          UPDATE store_meta SET schema_version = 22;
@@ -386,7 +389,7 @@ DROP TABLE settings_changes;
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("v22 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 34);
+    assert_eq!(store.schema_version().await.expect("version"), 35);
     let rows = store.settings_rows().await.expect("rows");
     assert_eq!(rows.get(keys::QUIET_MODE).map(String::as_str), Some("1"));
     assert!(
@@ -471,6 +474,7 @@ async fn upgrading_from_v24_keeps_sessions_and_adds_the_avatar_hash() {
              DROP TABLE idempotency_replays;
              DROP TABLE auth_audit;
              DROP TABLE owner_requests;
+             DROP TABLE run_prompts;
              ALTER TABLE fixed_runs DROP COLUMN owner_pinned;
              DELETE FROM schema_migrations WHERE version >= 25;
              UPDATE store_meta SET schema_version = 24;
@@ -483,7 +487,7 @@ async fn upgrading_from_v24_keeps_sessions_and_adds_the_avatar_hash() {
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("v24 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 34);
+    assert_eq!(store.schema_version().await.expect("version"), 35);
     let before = store.load_session(&old).await.expect("load").expect("kept");
     assert_eq!(
         (before.subject.as_str(), before.avatar_hash.as_deref()),
@@ -574,6 +578,7 @@ async fn upgrading_from_v25_keeps_sessions_and_adds_the_device() {
              DROP TABLE idempotency_replays;
              DROP TABLE auth_audit;
              DROP TABLE owner_requests;
+             DROP TABLE run_prompts;
              ALTER TABLE fixed_runs DROP COLUMN owner_pinned;
              DELETE FROM schema_migrations WHERE version >= 26;
              UPDATE store_meta SET schema_version = 25;
@@ -586,7 +591,7 @@ async fn upgrading_from_v25_keeps_sessions_and_adds_the_device() {
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("v25 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 34);
+    assert_eq!(store.schema_version().await.expect("version"), 35);
     let before = store.load_session(&old).await.expect("load").expect("kept");
     assert_eq!(before.device, None);
     let signed_in = WebSession {
@@ -648,6 +653,7 @@ async fn upgrading_from_v29_keeps_sessions_and_adds_rotation_grace() {
             "DROP TABLE idempotency_replays;
              DROP TABLE auth_audit;
              DROP TABLE owner_requests;
+             DROP TABLE run_prompts;
              ALTER TABLE fixed_runs DROP COLUMN owner_pinned;
              ALTER TABLE web_sessions DROP COLUMN superseded_until;
              ALTER TABLE web_sessions DROP COLUMN client_tag;
@@ -662,7 +668,7 @@ async fn upgrading_from_v29_keeps_sessions_and_adds_rotation_grace() {
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("v29 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 34);
+    assert_eq!(store.schema_version().await.expect("version"), 35);
     let before = store.load_session(&old).await.expect("load").expect("kept");
     assert_eq!(
         (
@@ -755,6 +761,7 @@ async fn upgrading_from_v30_adds_replays() {
         "DROP TABLE idempotency_replays;
          DROP TABLE auth_audit;
          DROP TABLE owner_requests;
+         DROP TABLE run_prompts;
          ALTER TABLE fixed_runs DROP COLUMN owner_pinned;
          DELETE FROM schema_migrations WHERE version >= 31;
          UPDATE store_meta SET schema_version = 30;
@@ -763,7 +770,7 @@ async fn upgrading_from_v30_adds_replays() {
     .await;
     assert_eq!(ledger(&config).await.last(), Some(&30));
     let store = SqliteStore::open(&config).await.expect("v30 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 34);
+    assert_eq!(store.schema_version().await.expect("version"), 35);
     let rows = store.settings_rows().await.expect("rows");
     assert_eq!(rows.get(keys::QUIET_MODE).map(String::as_str), Some("1"));
     let now = Utc.with_ymd_and_hms(2026, 10, 9, 4, 0, 0).unwrap();
@@ -806,5 +813,74 @@ async fn upgrading_from_v30_adds_replays() {
             .await;
         assert!(refused.is_err(), "{column} = {bad}");
     }
+    conn.close().await.expect("close");
+}
+
+#[tokio::test]
+async fn upgrading_from_v34_adds_run_prompts_that_close_once() {
+    use chrono::{TimeZone, Utc};
+    use kanade::domain::completion::{PromptClose, PromptOutcome, RunPrompt, RunPromptStore};
+
+    let dir = TempDir::new();
+    let config = dir.config("v34-run-prompts");
+    let store = SqliteStore::open(&config).await.expect("opens");
+    seed(&store).await;
+    let before = store.load(&Scope::All).await.expect("load");
+    store.close().await.expect("close");
+    tamper(
+        &config,
+        "DROP TABLE run_prompts;
+         DELETE FROM schema_migrations WHERE version >= 35;
+         UPDATE store_meta SET schema_version = 34;",
+    )
+    .await;
+    assert_eq!(ledger(&config).await.last(), Some(&34));
+    let store = SqliteStore::open(&config).await.expect("v34 migrates");
+    assert_eq!(store.schema_version().await.expect("version"), 35);
+    assert_eq!(
+        store.load(&Scope::All).await.expect("load"),
+        before,
+        "the schedule is untouched"
+    );
+    let at = |hour| Utc.with_ymd_and_hms(2026, 10, 10, hour, 0, 0).unwrap();
+    let ask = RunPrompt::open("r-1".into(), 0, at(12), at(13), at(16));
+    store.create_run_prompt(ask.clone()).await.expect("create");
+    let close = PromptClose {
+        outcome: PromptOutcome::Done,
+        decided_by: Some("1001".into()),
+        at: at(14),
+        next: None,
+    };
+    assert!(
+        store
+            .close_run_prompt("r-1".into(), 0, close)
+            .await
+            .expect("close")
+    );
+    store.close().await.expect("close");
+
+    let mut conn = SqliteConnectOptions::new()
+        .filename(&config.db_path)
+        .connect()
+        .await
+        .expect("raw connection");
+    for (column, bad) in [
+        ("outcome", "'auto_done'"),
+        ("decided_by", "NULL"),
+        ("cutoff_at", "due_at"),
+        ("message_settled", "2"),
+    ] {
+        let refused = sqlx::query(&format!("UPDATE run_prompts SET {column} = {bad}"))
+            .execute(&mut conn)
+            .await;
+        assert!(refused.is_err(), "{column} = {bad}");
+    }
+    let second_open = sqlx::query(
+        "INSERT INTO run_prompts (run_id, ask, ends_at, due_at, cutoff_at) VALUES \
+         ('r-2', 0, 'a', 'b', 'c'), ('r-2', 1, 'a', 'b', 'c')",
+    )
+    .execute(&mut conn)
+    .await;
+    assert!(second_open.is_err(), "one open ask per run");
     conn.close().await.expect("close");
 }

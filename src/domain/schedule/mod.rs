@@ -25,13 +25,14 @@ pub use attendance::{
     record_attendance, recount_attendance, set_attendance_default, set_standing_answer,
 };
 pub use draft::Draft;
-pub use error::{MemberRunRefusal, ScheduleError};
+pub use error::{MemberRunRefusal, RUN_ENDED, ScheduleError};
 pub use fixed_edit::{
     AmendedRun, AmendedRunChoice, FixedEdit, FixedEditChoices, FixedEditRequest, PartyDelta,
     apply_fixed_edit, apply_party_delta, party_delta, preview_fixed_edit,
 };
 pub use lifecycle::{
-    RUN_DONE_AFTER, apply_fixed_to_runs, is_past, is_past_slot, mark_done, retire_fixed_run,
+    RUN_DONE_AFTER, SettleRun, apply_fixed_to_runs, finish_run, is_past, is_past_slot, mark_done,
+    retire_fixed_run, settle_run,
 };
 pub use materialise::{adoptable_run, materialise_week, materialise_weeks};
 pub use mutate::{

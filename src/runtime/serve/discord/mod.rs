@@ -311,17 +311,20 @@ where
     let cards = stop_aware::cards(kit, shutdown.clone());
     // One desk for extraction cards, chat cards and the reaction worker's
     // ✅/❌, which all read the same stored cards.
-    let desk = Arc::new(card_desk(
-        config,
-        &store,
-        &transport,
-        &wiring.clock,
-        &roster,
-        &access,
-        &policy,
-        Some(Arc::clone(&decline_retraction)),
-        cards.clone(),
-    ));
+    let desk = Arc::new(
+        card_desk(
+            config,
+            &store,
+            &transport,
+            &wiring.clock,
+            &roster,
+            &access,
+            &policy,
+            Some(Arc::clone(&decline_retraction)),
+            cards.clone(),
+        )
+        .with_run_ends(composition.admin.state.run_ends_source()),
+    );
     let proposal_refresh: ProposalCardRefresh = {
         let desk = Arc::clone(&desk);
         Arc::new(move |proposal_ids| {
@@ -348,7 +351,8 @@ where
             RandomIds,
             ApiClock(Arc::clone(&wiring.clock)),
         )
-        .with_attendance(policy.attendance),
+        .with_attendance(policy.attendance)
+        .with_run_ends(composition.admin.state.run_ends_source()),
     );
     let rsvp_replay = crate::bot::rsvp_replay::RsvpReplay::new(
         Arc::clone(&store),
@@ -379,6 +383,7 @@ where
         timing: wiring.extraction,
         guild_ready: ready.clone(),
         portal,
+        run_ends: state.run_ends_source(),
     });
     // Nothing has cloned the state yet: compose returned the only handle.
     match Arc::get_mut(&mut composition.admin.state) {

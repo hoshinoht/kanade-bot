@@ -10,6 +10,8 @@ use twilight_model::channel::message::component::{
     TextDisplay, Thumbnail, UnfurledMediaItem,
 };
 
+use crate::domain::completion::PromptOutcome;
+
 /// Components per message, nested ones (and a section's accessory) counted.
 pub const MAX_COMPONENTS: usize = 40;
 /// Characters across every text display of one message.
@@ -28,6 +30,12 @@ const CARD_APPLY: &str = "card:apply:";
 const CARD_REJECT: &str = "card:reject:";
 const OWNER_ACCEPT: &str = "owner:accept:";
 const OWNER_DECLINE: &str = "owner:decline:";
+/// A run completion prompt's buttons: `<prefix><run id>:<ask>`.
+const RUN_PROMPT: [(PromptOutcome, &str); 3] = [
+    (PromptOutcome::Done, "run:done:"),
+    (PromptOutcome::DidntHappen, "run:missed:"),
+    (PromptOutcome::NotYet, "run:later:"),
+];
 
 /// What one of the bot's buttons asks for, read back from its custom id.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -38,6 +46,13 @@ pub enum ButtonId {
     /// A weekly-timing ownership request's buttons, by request id.
     OwnerAccept(String),
     OwnerDecline(String),
+    /// A run completion prompt's Done / Didn't happen / Not yet, by run and
+    /// ask (only the three pressed outcomes are ever built or parsed).
+    RunPrompt {
+        outcome: PromptOutcome,
+        run_id: String,
+        ask: u32,
+    },
 }
 
 /// Proposal ids are short ASCII tokens; anything else is not ours.
@@ -66,6 +81,20 @@ impl ButtonId {
         if let Some(id) = custom_id.strip_prefix(OWNER_DECLINE) {
             return proposal_id(id).then(|| Self::OwnerDecline(id.to_owned()));
         }
+        for (outcome, prefix) in RUN_PROMPT {
+            if let Some(rest) = custom_id.strip_prefix(prefix) {
+                let (run_id, ask) = rest.rsplit_once(':')?;
+                let ask = ask
+                    .parse()
+                    .ok()
+                    .filter(|_| ask.bytes().all(|b| b.is_ascii_digit()))?;
+                return proposal_id(run_id).then(|| Self::RunPrompt {
+                    outcome,
+                    run_id: run_id.to_owned(),
+                    ask,
+                });
+            }
+        }
         None
     }
 
@@ -76,6 +105,17 @@ impl ButtonId {
             Self::CardReject(id) => format!("{CARD_REJECT}{id}"),
             Self::OwnerAccept(id) => format!("{OWNER_ACCEPT}{id}"),
             Self::OwnerDecline(id) => format!("{OWNER_DECLINE}{id}"),
+            Self::RunPrompt {
+                outcome,
+                run_id,
+                ask,
+            } => {
+                let prefix = RUN_PROMPT
+                    .iter()
+                    .find(|(known, _)| known == outcome)
+                    .map_or("run:done:", |(_, prefix)| prefix);
+                format!("{prefix}{run_id}:{ask}")
+            }
         }
     }
 }

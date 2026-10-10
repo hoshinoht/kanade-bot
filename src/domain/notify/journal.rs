@@ -377,6 +377,14 @@ pub trait DeliveryJournal {
 
     fn load_digests(&self) -> impl Future<Output = Result<DigestLog, JournalError>> + Send;
 
+    /// The receipt of the bound attempt claimed by `(source, ordinal)`, if
+    /// any: recovers a post bound before its caller recorded it.
+    fn bound_source(
+        &self,
+        source: &str,
+        ordinal: i64,
+    ) -> impl Future<Output = Result<Option<Receipt>, JournalError>> + Send;
+
     /// Start a live operation lease for this process.
     fn begin_lease(
         &self,

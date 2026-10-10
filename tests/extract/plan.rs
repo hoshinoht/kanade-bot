@@ -88,6 +88,8 @@ fn planned<'a>(input: &Value, step: &Value, pool: &'a [Run]) -> Plan<'a> {
         message_times: &HashMap::new(),
         min_confidence: step["min_confidence"].as_f64().expect("min_confidence"),
         boss_table: flag(&step["use_boss_table"]).then_some(&table),
+        // The frozen v4 planning vectors keep v4's 2 h rule.
+        run_ends: None,
     };
     plan_burst(&extraction, &inputs).expect("in range")
 }

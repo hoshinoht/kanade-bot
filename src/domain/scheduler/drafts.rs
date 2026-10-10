@@ -384,7 +384,8 @@ fn expired_on_current(
     directory: &(dyn Directory + Sync),
     now: DateTime<Utc>,
 ) -> Result<bool, ScheduleError> {
-    match replay(current, ops, policy, directory, now) {
+    // Expiry reads only the week a draft touches: no run is frozen here.
+    match replay(current, ops, policy, None, directory, now) {
         Ok(replayed) => is_expired(
             expires_week(ops, &replayed.created, current, &replayed.draft, policy),
             policy,
@@ -491,6 +492,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         self.check_policy(policy)?;
         check_stageable(std::slice::from_ref(&op))?;
         let now = self.clock.now();
+        let ends = self.run_ends();
         let loaded = load_live(&self.store, draft_id, expected_version).await?;
         let flow = upstream(&self.store, &loaded.draft.base).await?;
         let mut staged: Vec<StagedOp> = loaded.ops.clone();
@@ -501,13 +503,18 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             added_at: now,
         });
         let ops: Vec<DraftOp> = staged.iter().map(|staged| staged.op.clone()).collect();
-        let replayed =
-            replay(&flow.base_snapshot, &ops, policy, directory, now).map_err(|rejected| {
-                DraftError::ReplayFailed {
-                    ord: rejected.ord,
-                    error: rejected.error,
-                }
-            })?;
+        let replayed = replay(
+            &flow.base_snapshot,
+            &ops,
+            policy,
+            ends.as_ref(),
+            directory,
+            now,
+        )
+        .map_err(|rejected| DraftError::ReplayFailed {
+            ord: rejected.ord,
+            error: rejected.error,
+        })?;
         let expires = expires_week(
             &ops,
             &replayed.created,
@@ -543,6 +550,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         self.check_policy(policy)?;
         check_stageable(std::slice::from_ref(&op))?;
         let now = self.clock.now();
+        let ends = self.run_ends();
         let loaded = load_live(&self.store, draft_id, expected_version).await?;
         if ord >= loaded.ops.len() {
             return Err(DraftError::EditRefused(EditRefusal::UnknownOp { ord }));
@@ -559,13 +567,18 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         ops[ord] = op;
         // The whole list must still replay on the base.
         let flow = upstream(&self.store, &loaded.draft.base).await?;
-        let replayed =
-            replay(&flow.base_snapshot, &ops, policy, directory, now).map_err(|rejected| {
-                DraftError::ReplayFailed {
-                    ord: rejected.ord,
-                    error: rejected.error,
-                }
-            })?;
+        let replayed = replay(
+            &flow.base_snapshot,
+            &ops,
+            policy,
+            ends.as_ref(),
+            directory,
+            now,
+        )
+        .map_err(|rejected| DraftError::ReplayFailed {
+            ord: rejected.ord,
+            error: rejected.error,
+        })?;
         let expires = expires_week(
             &ops,
             &replayed.created,
@@ -600,6 +613,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
     ) -> DraftResult<LoadedDraft> {
         self.check_policy(policy)?;
         let now = self.clock.now();
+        let ends = self.run_ends();
         let loaded = load_live(&self.store, draft_id, expected_version).await?;
         if ord >= loaded.ops.len() {
             return Err(DraftError::EditRefused(EditRefusal::UnknownOp { ord }));
@@ -624,13 +638,18 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             }
         }
         let flow = upstream(&self.store, &loaded.draft.base).await?;
-        let replayed =
-            replay(&flow.base_snapshot, &ops, policy, directory, now).map_err(|rejected| {
-                DraftError::ReplayFailed {
-                    ord: rejected.ord,
-                    error: rejected.error,
-                }
-            })?;
+        let replayed = replay(
+            &flow.base_snapshot,
+            &ops,
+            policy,
+            ends.as_ref(),
+            directory,
+            now,
+        )
+        .map_err(|rejected| DraftError::ReplayFailed {
+            ord: rejected.ord,
+            error: rejected.error,
+        })?;
         let expires = expires_week(
             &ops,
             &replayed.created,
@@ -698,6 +717,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
     ) -> DraftResult<MergeAnalysis> {
         self.check_policy(policy)?;
         let now = self.clock.now();
+        let ends = self.run_ends();
         let loaded = load_admin(&self.store, draft_id).await?;
         if is_expired(loaded.draft.scope.expires_week(), policy, now)? {
             return Err(DraftError::Expired);
@@ -711,6 +731,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             &flow.current,
             &loaded.draft_ops(),
             policy,
+            ends.as_ref(),
             directory,
             now,
         ))
@@ -728,6 +749,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
     ) -> DraftResult<StoredDraft> {
         self.check_policy(policy)?;
         let now = self.clock.now();
+        let ends = self.run_ends();
         let loaded = load_live(&self.store, draft_id, expected_version).await?;
         let flow = upstream(&self.store, &loaded.draft.base).await?;
         let analysis = analyze_merge(
@@ -735,6 +757,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             &flow.current,
             &loaded.draft_ops(),
             policy,
+            ends.as_ref(),
             directory,
             now,
         );
@@ -743,12 +766,18 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         }
         // The new base is the current schedule, so replay there for the
         // re-derived scope.
-        let replayed = replay(&flow.current, &loaded.draft_ops(), policy, directory, now).map_err(
-            |rejected| DraftError::ReplayFailed {
-                ord: rejected.ord,
-                error: rejected.error,
-            },
-        )?;
+        let replayed = replay(
+            &flow.current,
+            &loaded.draft_ops(),
+            policy,
+            ends.as_ref(),
+            directory,
+            now,
+        )
+        .map_err(|rejected| DraftError::ReplayFailed {
+            ord: rejected.ord,
+            error: rejected.error,
+        })?;
         let expires = expires_week(
             &loaded.draft_ops(),
             &replayed.created,
@@ -912,6 +941,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             return Err(DraftError::Empty);
         }
         let mut attempt = 1;
+        let ends = self.run_ends();
         loop {
             let flow = upstream(&self.store, &draft.base).await?;
             // Upstream may have moved a drafted run into a past week since the
@@ -927,25 +957,45 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
                 &flow.current,
                 &ops,
                 policy,
+                ends.as_ref(),
                 directory,
                 now,
                 &status_at_apply,
             );
             if !analysis.conflicts.is_empty() {
+                // A run past its end refuses the merge in its own words.
+                if let Some((ord, error)) = analysis.conflicts.iter().find_map(|conflict| {
+                    match conflict {
+                        MergeConflict::OpRejected {
+                            ord,
+                            error: error @ ReplayError::Schedule(ScheduleError::RunEnded { .. }),
+                            on_base: false,
+                        } => Some((*ord, error.clone())),
+                        _ => None,
+                    }
+                }) {
+                    return Err(DraftError::ReplayFailed { ord, error });
+                }
                 return Err(DraftError::Conflicts(analysis.conflicts));
             }
-            let preview =
-                replay(&flow.current, &ops, policy, directory, now).map_err(|rejected| {
-                    DraftError::ReplayFailed {
-                        ord: rejected.ord,
-                        error: rejected.error,
-                    }
-                })?;
-            let real = replay_real(&flow.current, &ops, policy, directory, now, &mut self.ids)
+            let preview = replay(&flow.current, &ops, policy, ends.as_ref(), directory, now)
                 .map_err(|rejected| DraftError::ReplayFailed {
                     ord: rejected.ord,
                     error: rejected.error,
                 })?;
+            let real = replay_real(
+                &flow.current,
+                &ops,
+                policy,
+                ends.as_ref(),
+                directory,
+                now,
+                &mut self.ids,
+            )
+            .map_err(|rejected| DraftError::ReplayFailed {
+                ord: rejected.ord,
+                error: rejected.error,
+            })?;
             let mut timing_notices: Vec<Notice> = real
                 .notices
                 .iter()
@@ -970,7 +1020,9 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             // Routine materialisation the merge commits alongside the draft
             // stays quiet: compare against the current schedule materialised
             // the same way.
-            let mut routine = Draft::new(flow.current.clone()).with_attendance(policy.attendance);
+            let mut routine = Draft::new(flow.current.clone())
+                .with_attendance(policy.attendance)
+                .with_run_ends(ends.clone());
             materialise_weeks(&mut routine, &mut PreviewIds::default(), policy, now)?;
             let mut notices = match &replaced {
                 Some(notices) => notices.clone(),

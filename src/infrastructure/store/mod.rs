@@ -47,6 +47,8 @@ pub mod proposal_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod replay_conformance;
 #[cfg(any(test, feature = "test-support"))]
+pub mod run_prompt_conformance;
+#[cfg(any(test, feature = "test-support"))]
 pub mod settings_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod web_sessions_conformance;

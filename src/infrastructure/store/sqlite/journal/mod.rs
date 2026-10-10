@@ -340,6 +340,34 @@ impl DeliveryJournal for SqliteStore {
         }))
     }
 
+    async fn bound_source(
+        &self,
+        source: &str,
+        ordinal: i64,
+    ) -> Result<Option<crate::domain::notify::Receipt>, JournalError> {
+        let key = crate::domain::notify::DedupeKey::source(source, ordinal);
+        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        let row = sqlx::query(
+            "SELECT channel_id, message_id FROM delivery_attempts
+             WHERE dedupe_scope = 'source' AND dedupe_key = ?1 AND state = 'bound'
+             ORDER BY intended_at DESC LIMIT 1",
+        )
+        .bind(key.as_str())
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(backend)?;
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        Ok(Some(crate::domain::notify::Receipt {
+            channel_id: row
+                .try_get::<Option<String>, _>("channel_id")
+                .map_err(corrupt)?
+                .unwrap_or_default(),
+            message_id: row.try_get("message_id").map_err(corrupt)?,
+        }))
+    }
+
     async fn load_digests(&self) -> Result<DigestLog, JournalError> {
         let mut conn = self.readers.acquire().await.map_err(backend)?;
         let last_digest_week = sqlx::query_scalar("SELECT value FROM config WHERE key = ?1")

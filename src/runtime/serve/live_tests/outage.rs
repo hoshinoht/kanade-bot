@@ -65,6 +65,8 @@ fn delivery_config(policy: SchedulePolicy, post_channel_id: Option<String>) -> D
         quiet_mode: false,
         max_sends_per_tick: DEFAULT_MAX_SENDS_PER_TICK,
         max_notice_age: crate::domain::notify::DEFAULT_MAX_NOTICE_AGE,
+        run_lengths: crate::domain::settings::RunLengths::default(),
+        freeze_ended: true,
     }
 }
 

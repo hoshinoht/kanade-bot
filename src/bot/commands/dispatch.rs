@@ -218,10 +218,16 @@ impl Dispatcher {
                 Disposition::Unknown,
             ));
         };
-        match self
-            .policy
-            .check(command.gate(), &invocation.invoker, owner_id)
+        // A completion prompt press answers to the run's party or staff, not
+        // the bossing role; the handler enforces that (user decision F5).
+        let gate = if invocation.path.get(1).map(String::as_str)
+            == Some(super::run_prompt::PROMPT_PRESS)
         {
+            Gate::Anyone
+        } else {
+            command.gate()
+        };
+        match self.policy.check(gate, &invocation.invoker, owner_id) {
             Ok(()) => Ok(command.as_ref()),
             Err(denial) => Err((
                 InteractionReply::ephemeral(denial.message(name)),
@@ -380,6 +386,17 @@ impl Dispatcher {
             }
             Some(ButtonId::OwnerDecline(id)) => {
                 let invocation = press.owner_answer(&id, false);
+                return Some(
+                    self.run_pressed(transport, &press, invocation, owner_id)
+                        .await,
+                );
+            }
+            Some(ButtonId::RunPrompt {
+                outcome,
+                run_id,
+                ask,
+            }) => {
+                let invocation = press.prompt_answer(&run_id, ask, outcome);
                 return Some(
                     self.run_pressed(transport, &press, invocation, owner_id)
                         .await,

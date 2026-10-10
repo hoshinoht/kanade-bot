@@ -79,6 +79,7 @@ fn plan<'a>(
             message_times: &times,
             min_confidence: 0.6,
             boss_table: None,
+            run_ends: None,
         },
     )
     .expect("in range")

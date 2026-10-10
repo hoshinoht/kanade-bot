@@ -107,6 +107,9 @@ pub struct BurstInputs<'i, 'a> {
     pub min_confidence: f64,
     /// Canonicalises model boss names when given.
     pub boss_table: Option<&'i BossTable>,
+    /// v5: a matched run past its end is already over; `None` keeps v4's
+    /// 2 h after its start (the vector replays).
+    pub run_ends: Option<&'i crate::domain::completion::RunEnds>,
 }
 
 /// Kinds that can be about several runs at once, one candidate per run.
@@ -326,7 +329,7 @@ pub fn plan_burst<'a>(
             // Before the staleness and no-op checks, which judge the instant a
             // half-stated move only has once the run fills in the rest.
             entry.resolved = inherit_from_run(&entry, zone)?;
-            if already_passed(&entry, inputs.now, zone) {
+            if already_passed(&entry, inputs.now, zone, inputs.run_ends) {
                 entry.match_reason = "already passed".to_owned();
                 plan.dropped.push(entry);
                 continue;

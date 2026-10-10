@@ -21,7 +21,7 @@ use super::write::{admit, invalid_body, origin, path_id};
 use crate::{
     api::{
         admin::{
-            context::{context, frames, roster, run_lengths, unavailable},
+            context::{context, frames, roster, run_ends, unavailable},
             write::{
                 Answer, Explicit, Previous, Refusal, SlotError, load_run, put_answer, reloaded,
                 run_not_found, scheduler, slot, state, write_run,
@@ -42,13 +42,13 @@ use crate::{
         write::RunWrite,
     },
     domain::{
+        completion::RunEnds,
         history::{Actor, ChangeFilter, ChangeRecord, MAX_PAGE, Origin, RowKey, RowValue},
         members::MemberProfile,
         schedule::{
             MemberRunRefusal, RsvpState, Run, ScheduleError, ScheduleSnapshot, utc_instant,
         },
         scheduler::Scope,
-        settings::RunLengths,
     },
 };
 
@@ -84,7 +84,8 @@ fn find<'a>(snapshot: &'a ScheduleSnapshot, run_id: &str) -> Result<&'a Run, Ref
 }
 
 /// The caller's run in this or next boss week, still open: unknown and
-/// out-of-window runs are the same 404; someone else's run is `not_in_run`.
+/// out-of-window runs are the same 404; someone else's run is `not_in_run`;
+/// a run past its end is `run_ended` (frozen until it is settled).
 async fn own_run(
     state: &ApiState,
     run_id: &str,
@@ -92,7 +93,8 @@ async fn own_run(
 ) -> Result<(ScheduleSnapshot, RunWeek), Refusal> {
     let snapshot = load_run(state, run_id).await?;
     let run = find(&snapshot, run_id)?;
-    let week = RunWeek::of(&frames(state, state.now())?, run.week_start);
+    let now = state.now();
+    let week = RunWeek::of(&frames(state, now)?, run.week_start);
     if !week.open() {
         return Err(run_not_found());
     }
@@ -104,6 +106,11 @@ async fn own_run(
             StatusCode::CONFLICT,
             "run_closed",
             "This run is finished or cancelled.",
+        ));
+    }
+    if run_ends(state).await.frozen(run, now) {
+        return Err(scheduler(
+            ScheduleError::MemberRun(MemberRunRefusal::Ended).into(),
         ));
     }
     Ok((snapshot, week))
@@ -122,9 +129,9 @@ async fn after(
     let ctx = context(site, state, roster(profiles), now);
     let run = find(&snapshot, run_id)?;
     let week = RunWeek::of(&frames(state, now)?, run.week_start);
-    let run_lengths = run_lengths(state).await;
+    let endings = run_ends(state).await;
     Ok((
-        member_run_in(&ctx, &snapshot, run, week, &run_lengths, me),
+        member_run_in(&ctx, &snapshot, run, week, &endings, me),
         version,
     ))
 }
@@ -232,9 +239,11 @@ pub(super) async fn move_run(
     } else {
         let (snapshot, week) = own_run(state, &run_id, me).await?;
         let run = find(&snapshot, &run_id)?;
-        let refusal = MemberRunRefusal::check(run, me, &[week_start(state, now)?], None, now)
-            .err()
-            .or((run.datetime <= now).then_some(MemberRunRefusal::Started));
+        // own_run already refused a frozen run.
+        let refusal =
+            MemberRunRefusal::check(run, me, &[week_start(state, now)?], None, false, now)
+                .err()
+                .or((run.datetime <= now).then_some(MemberRunRefusal::Started));
         if week != RunWeek::Current || refusal.is_some() {
             return Err(scheduler(
                 ScheduleError::MemberRun(refusal.unwrap_or(MemberRunRefusal::WeekOver)).into(),
@@ -334,7 +343,7 @@ async fn this_week(
     ctx: &Context<'_>,
     frames: &[WeekFrame; 2],
     fixed_id: &str,
-    run_lengths: &RunLengths,
+    endings: &RunEnds,
     me: &str,
 ) -> Result<Option<MemberRun>, Refusal> {
     let snapshot = state
@@ -346,7 +355,7 @@ async fn this_week(
         .runs
         .iter()
         .find(|run| run.fixed_run_id.as_deref() == Some(fixed_id))
-        .map(|run| member_run_in(ctx, &snapshot, run, RunWeek::Current, run_lengths, me)))
+        .map(|run| member_run_in(ctx, &snapshot, run, RunWeek::Current, endings, me)))
 }
 
 /// `GET /api/public/runs/{id}`: the run a Discord link opens. Runs of this
@@ -376,14 +385,14 @@ pub(super) async fn link(
     }
     let profiles = state.store.members().await.map_err(unavailable)?;
     let ctx = context(&site, state, roster(&profiles), now);
-    let run_lengths = run_lengths(state).await;
+    let endings = run_ends(state).await;
     let fixed = run
         .fixed_run_id
         .as_deref()
         .and_then(|id| snapshot.fixed_runs.iter().find(|fixed| fixed.id == id));
     let this_week = match fixed {
         Some(fixed) if week == RunWeek::Past => {
-            this_week(state, &ctx, &frames, &fixed.id, &run_lengths, me).await?
+            this_week(state, &ctx, &frames, &fixed.id, &endings, me).await?
         }
         _ => None,
     };
@@ -394,7 +403,7 @@ pub(super) async fn link(
         .and_then(|weeks| utc_instant(&weeks[1]).ok())
         .ok_or_else(|| Refusal::from(ApiError::UNAVAILABLE))?;
     Ok(Json(MemberRunLink {
-        run: member_run_in(&ctx, &snapshot, run, week, &run_lengths, me),
+        run: member_run_in(&ctx, &snapshot, run, week, &endings, me),
         week: week.as_str(),
         week_starts: iso_date(ctx.local_date(run.week_start)),
         week_ends_at: iso_instant(ends),

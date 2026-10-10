@@ -511,6 +511,9 @@ where
                     prepared.view.versions.get("status").copied(),
                 ),
             ]);
+            // No run ends on purpose: recovery replays reactions members made
+            // while the bot was away, possibly before the run ended, so the
+            // ended-run freeze must not refuse them.
             let mut service = SchedulerService::new(
                 Arc::clone(&self.store),
                 RandomIds,

@@ -163,7 +163,7 @@ pub(crate) fn members() -> Roster {
 }
 
 pub(crate) fn inclusion(schedule: &ScheduleSnapshot) -> DigestInclusion {
-    digest_inclusion(&schedule.runs, week_start(), ZONE).expect("inclusion")
+    digest_inclusion(&schedule.runs, week_start(), ZONE, None).expect("inclusion")
 }
 
 pub(crate) fn context<'a>(

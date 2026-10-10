@@ -4,6 +4,7 @@ use chrono::{DateTime, Datelike, NaiveDate, NaiveTime, TimeDelta, Utc};
 use chrono_tz::Tz;
 
 use super::{Payload, Planned};
+use crate::domain::completion::RunEnds;
 use crate::domain::schedule::{RUN_DONE_AFTER, Run, RunStatus};
 use crate::domain::time::{DateOutOfRange, ZonedDateTime};
 use crate::extract::resolve::Resolved;
@@ -163,8 +164,15 @@ pub fn is_no_op(entry: &Planned<'_>, zone: Tz) -> bool {
 }
 
 /// Acting on this would change something already over: a day before today,
-/// a time more than [`STALE_GRACE`] behind `now`, or a finished run.
-pub fn already_passed(entry: &Planned<'_>, now: DateTime<Utc>, zone: Tz) -> bool {
+/// a time more than [`STALE_GRACE`] behind `now`, or a finished run (done,
+/// cancelled, or past its end by `ends`; without run ends, v4's
+/// [`RUN_DONE_AFTER`] after its start).
+pub fn already_passed(
+    entry: &Planned<'_>,
+    now: DateTime<Utc>,
+    zone: Tz,
+    ends: Option<&RunEnds>,
+) -> bool {
     if entry
         .resolved
         .at
@@ -179,9 +187,13 @@ pub fn already_passed(entry: &Planned<'_>, now: DateTime<Utc>, zone: Tz) -> bool
     {
         return true;
     }
-    entry
-        .run
-        .is_some_and(|run| run.status.is_terminal() || run.datetime + RUN_DONE_AFTER < now)
+    entry.run.is_some_and(|run| {
+        run.status.is_terminal()
+            || match ends {
+                Some(ends) => ends.frozen(run, now),
+                None => run.datetime + RUN_DONE_AFTER < now,
+            }
+    })
 }
 
 /// Who offered to stand in: authors of a `sub`'s evidence other than the

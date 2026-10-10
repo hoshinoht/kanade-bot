@@ -87,8 +87,8 @@ fn ambiguous(world: &ToolWorld<'_>, text: &str, runs: &[&Run], now: DateTime<Utc
     ))
 }
 
-/// The runs a description can still change: neither cancelled nor done, in
-/// the materialised boss weeks.
+/// The runs a description can still change: neither cancelled nor done nor
+/// past their end (frozen, read as past), in the materialised boss weeks.
 fn open_runs<'w>(world: &'w ToolWorld<'_>, now: DateTime<Utc>) -> ToolResult<Vec<&'w Run>> {
     let weeks = materialised_week_starts(world.zone, world.reset_weekday, world.reset_time, &now)
         .map_err(|error| ToolError(error.to_string()))?;
@@ -96,7 +96,9 @@ fn open_runs<'w>(world: &'w ToolWorld<'_>, now: DateTime<Utc>) -> ToolResult<Vec
     for start in &weeks {
         let start = utc_instant(start).map_err(|error| ToolError(error.to_string()))?;
         open.extend(world.snapshot.runs.iter().filter(|run| {
-            run.week_start == start && !matches!(run.status, RunStatus::Cancelled | RunStatus::Done)
+            run.week_start == start
+                && !matches!(run.status, RunStatus::Cancelled | RunStatus::Done)
+                && !world.run_ends.is_some_and(|ends| ends.frozen(run, now))
         }));
     }
     Ok(open)

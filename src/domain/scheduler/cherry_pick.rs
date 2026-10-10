@@ -173,16 +173,21 @@ fn op<'a>(
 }
 
 /// Replay the steps on `snapshot` through the normal mutation path; after
-/// an answer the run's status is recounted as a reaction does.
+/// an answer the run's status is recounted as a reaction does. `ends`
+/// freezes runs past their end, so an edit of one is refused.
+#[allow(clippy::too_many_arguments)]
 fn replay_steps(
     snapshot: ScheduleSnapshot,
     plan: &PickPlan,
     ids: &mut impl IdSource,
     policy: &SchedulePolicy,
+    ends: Option<std::sync::Arc<crate::domain::completion::RunEnds>>,
     directory: &(dyn Directory + Sync),
     now: DateTime<Utc>,
 ) -> PickResult<(Draft, Vec<Notice>)> {
-    let mut draft = Draft::new(snapshot).with_attendance(policy.attendance);
+    let mut draft = Draft::new(snapshot)
+        .with_attendance(policy.attendance)
+        .with_run_ends(ends);
     let mut notices = Vec::new();
     for step in &plan.steps {
         let applied = apply_op(&mut draft, ids, &op(step, policy, directory), now)?;
@@ -246,7 +251,9 @@ impl<S: ScheduleStore + ChangeHistory + BlameIndex, I: IdSource, C: Clock>
                 }));
             }
             let mut ids = crate::domain::drafts::PreviewIds::default();
-            let (draft, notices) = replay_steps(snapshot, &plan, &mut ids, policy, directory, now)?;
+            let ends = self.run_ends();
+            let (draft, notices) =
+                replay_steps(snapshot, &plan, &mut ids, policy, ends, directory, now)?;
             return Ok(PickPreview {
                 no_effect: draft.into_changes().is_empty(),
                 strict_refuses: !plan.conflicts.is_empty(),
@@ -304,6 +311,7 @@ impl<S: ScheduleStore + ChangeHistory + BlameIndex, I: IdSource, C: Clock>
             });
         }
         let record = self.picked_record(seq).await?;
+        let ends = self.run_ends();
         let mut attempt = 1;
         loop {
             let snapshot = self.store.load(&Scope::All).await?;
@@ -325,8 +333,15 @@ impl<S: ScheduleStore + ChangeHistory + BlameIndex, I: IdSource, C: Clock>
                     current
                 }
             };
-            let (draft, notices) =
-                replay_steps(snapshot, &plan, &mut self.ids, policy, directory, now)?;
+            let (draft, notices) = replay_steps(
+                snapshot,
+                &plan,
+                &mut self.ids,
+                policy,
+                ends.clone(),
+                directory,
+                now,
+            )?;
             let changes = draft.into_changes();
             if changes.is_empty() {
                 return Err(PickError::NoEffect);

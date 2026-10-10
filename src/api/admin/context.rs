@@ -19,6 +19,7 @@ use crate::{
         state::ApiState,
     },
     domain::{
+        completion::RunEnds,
         members::{MemberProfile, Roster},
         schedule::utc_instant,
         scheduler::StoreError,
@@ -79,6 +80,15 @@ pub async fn run_lengths(state: &ApiState) -> RunLengths {
         Some(desk) => desk.settings().await.run_lengths,
         None => RunLengths::default(),
     }
+}
+
+/// When runs end now: the configured lengths, the catalog and the reset.
+pub async fn run_ends(state: &ApiState) -> RunEnds {
+    RunEnds::new(
+        run_lengths(state).await,
+        Some(Arc::clone(&state.catalog)),
+        state.policy.clone(),
+    )
 }
 
 pub fn context<'a>(

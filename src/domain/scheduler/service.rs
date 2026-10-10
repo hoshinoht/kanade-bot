@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 use std::fmt;
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 
@@ -11,6 +12,7 @@ use super::ports::{
 use crate::domain::attendance::{
     self, AttendanceActor, AttendanceMode, AttendancePolicy, AttendanceRefusal,
 };
+use crate::domain::completion::{RunEnds, RunEndsSource};
 use crate::domain::history::{
     Actor, ChangeFilter, ChangeHistory, ChangeMeta, ChangeQuery, ChangeRecord, ChangeRef,
     CheckedChange, Checkpoint, CheckpointKind, Checkpoints, EDIT_OVERRIDE, Expect, HeldReminders,
@@ -116,6 +118,9 @@ pub struct SchedulerService<S, I, C> {
     /// The attendance rules every status recount follows; set it from the
     /// guild's `SchedulePolicy.attendance` (v4-compatible by default).
     pub(super) attendance: AttendancePolicy,
+    /// v5: when runs end, read once per operation; `None` keeps v4's rules
+    /// (nothing frozen, slots past 2 h after their start: the vector replays).
+    pub(super) run_ends: Option<RunEndsSource>,
 }
 
 /// One attributed mutation: `service.as_origin(origin).amend_run(..)`.
@@ -152,6 +157,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> SchedulerService<S, I, C> {
             ids,
             clock,
             attendance: AttendancePolicy::V4_COMPAT,
+            run_ends: None,
         }
     }
 
@@ -164,6 +170,34 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> SchedulerService<S, I, C> {
 
     pub fn attendance(&self) -> AttendancePolicy {
         self.attendance
+    }
+
+    /// Freeze runs past their end (user decision 2026-10-10) under `source`,
+    /// read at each operation.
+    #[must_use]
+    pub fn with_run_ends(mut self, source: RunEndsSource) -> Self {
+        self.run_ends = Some(source);
+        self
+    }
+
+    /// The run ends as they stand now; `None` under v4 rules.
+    pub fn run_ends(&self) -> Option<Arc<RunEnds>> {
+        self.run_ends.as_ref().map(|source| Arc::new(source.now()))
+    }
+
+    pub fn run_ends_source(&self) -> Option<&RunEndsSource> {
+        self.run_ends.as_ref()
+    }
+
+    /// A working copy of `snapshot` under this scheduler's rules.
+    pub(super) fn draft(
+        &self,
+        snapshot: schedule::ScheduleSnapshot,
+        ends: Option<Arc<RunEnds>>,
+    ) -> Draft {
+        Draft::new(snapshot)
+            .with_attendance(self.attendance)
+            .with_run_ends(ends)
     }
 
     /// The scheduler's attendance rules are the only source: a call whose
@@ -217,11 +251,12 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> SchedulerService<S, I, C> {
     ) -> SchedulerResult<T> {
         check_request(&self.store, &meta).await?;
         let now = self.clock.now();
+        let ends = self.run_ends();
         let mut attempt = 1;
         loop {
             let snapshot = self.store.load(&scope).await?;
             let revision = snapshot.revision;
-            let mut draft = Draft::new(snapshot).with_attendance(self.attendance);
+            let mut draft = self.draft(snapshot, ends.clone());
             let value = match plan(&mut draft, &mut self.ids, now) {
                 Ok(value) => value,
                 Err(error) => return Err(self.explain_refusal(revision, &meta, error).await),
@@ -368,7 +403,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> SchedulerService<S, I, C> {
     ) -> SchedulerResult<Vec<AmendedRun>> {
         self.check_policy(policy)?;
         let now = self.clock.now();
-        let draft = Draft::new(self.store.load(&Scope::All).await?);
+        let draft = self.draft(self.store.load(&Scope::All).await?, self.run_ends());
         Ok(schedule::preview_fixed_edit(
             &draft, fixed_id, edit, policy, now,
         )?)
@@ -583,6 +618,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
                     if !before.participants.contains(&user) {
                         return Err(ScheduleError::NotOnRun(vec![user.clone()]));
                     }
+                    draft.refuse_ended(&run, now)?;
                     match answer {
                         Some(state) => draft.set_rsvp(&run, &user, state, RsvpSource::Chat, now),
                         None => draft.clear_rsvp(&run, &user),
@@ -746,6 +782,36 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
         Ok(ids(self.apply(Scope::All, Op::MarkDone).await?.value))
     }
 
+    /// v5 (run completion): mark one live run done at its cutoff, without a
+    /// notice; `false` when it was no longer live.
+    pub async fn finish_run(self, run_id: &str) -> SchedulerResult<bool> {
+        let op = Op::FinishRun {
+            run_id: run_id.to_owned(),
+        };
+        match self.apply(Scope::Run(run_id.to_owned()), op).await?.value {
+            OpResult::Changed(changed) => Ok(changed),
+            other => unreachable!("finish_run returned {other:?}"),
+        }
+    }
+
+    /// v5 (run completion): a prompt press, applied only if the run is still
+    /// live, unmoved and the presser's to settle on the committed state.
+    pub async fn settle_run(
+        self,
+        settle: crate::domain::schedule::SettleRun,
+        policy: &ReminderPolicy,
+    ) -> SchedulerResult<bool> {
+        let scope = Scope::Run(settle.run_id.clone());
+        match self
+            .apply(scope, Op::SettleRun { settle, policy })
+            .await?
+            .value
+        {
+            OpResult::Changed(changed) => Ok(changed),
+            other => unreachable!("settle_run returned {other:?}"),
+        }
+    }
+
     /// Materialise the current and next two boss weeks, then reconcile
     /// day-of pings (v4 `BossBot.materialise_weeks`). Returns created run ids.
     pub async fn materialise_weeks(self, policy: &SchedulePolicy) -> SchedulerResult<Vec<String>> {
@@ -787,9 +853,9 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
     }
 
     /// A member moves their own run (public portal): [`Self::amend_run`],
-    /// refused inside the commit unless they are on the live run, it is in
-    /// the current boss week and has not started, and `to` is still ahead.
-    /// The request digest is `amend_run`'s.
+    /// refused inside the commit unless they are on the live run, it has not
+    /// ended, it is in the current boss week and has not started, and `to` is
+    /// still ahead. The request digest is `amend_run`'s.
     pub async fn member_amend_run(
         self,
         member: &str,
@@ -804,7 +870,9 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
         };
         let guard = |draft: &Draft, now| {
             let run = draft.require_run(run_id)?;
-            MemberRunRefusal::check(&run, member, &member_weeks(policy, now, 1)?, Some(to), now)
+            let weeks = member_weeks(policy, now, 1)?;
+            let ended = draft.ended(&run, now);
+            MemberRunRefusal::check(&run, member, &weeks, Some(to), ended, now)
                 .map_err(ScheduleError::MemberRun)
         };
         Ok(run_state(self.apply_guarded(Scope::All, op, guard).await?))
@@ -1088,6 +1156,7 @@ impl<S: ScheduleStore + DeclineNoticeStore, I: IdSource, C: Clock> Attributed<'_
             outbox: Vec::new(),
         };
         check_request(&self.service.store, &meta).await?;
+        let ends = self.service.run_ends();
         let mut attempt = 1;
         loop {
             let snapshot = self
@@ -1096,7 +1165,7 @@ impl<S: ScheduleStore + DeclineNoticeStore, I: IdSource, C: Clock> Attributed<'_
                 .load(&Scope::Run(run_id.to_owned()))
                 .await?;
             let revision = snapshot.revision;
-            let mut draft = Draft::new(snapshot).with_attendance(self.service.attendance);
+            let mut draft = self.service.draft(snapshot, ends.clone());
             let (value, declined, retract, home_channel) = match plan(&mut draft, now) {
                 Ok(value) => value,
                 Err(error) => {
@@ -1199,8 +1268,8 @@ impl<S: ScheduleStore + DeclineNoticeStore, I: IdSource, C: Clock> Attributed<'_
     }
 
     /// A member's own answer (public portal): [`Self::portal_answer_with_decline`],
-    /// refused inside the commit unless the run is live and in this or next
-    /// boss week.
+    /// refused inside the commit unless the run is live, has not ended and is
+    /// in this or next boss week.
     pub async fn member_answer_with_decline(
         self,
         run_id: &str,
@@ -1226,13 +1295,15 @@ impl<S: ScheduleStore + DeclineNoticeStore, I: IdSource, C: Clock> Attributed<'_
             if let Some(policy) = member {
                 let run = draft.require_run(run_id)?;
                 let weeks = member_weeks(policy, now, 2)?;
-                MemberRunRefusal::check(&run, user_id, &weeks, None, now)
+                let ended = draft.ended(&run, now);
+                MemberRunRefusal::check(&run, user_id, &weeks, None, ended, now)
                     .map_err(ScheduleError::MemberRun)?;
             }
             let before = draft.require_run(run_id)?;
             if !before.participants.iter().any(|user| user == user_id) {
                 return Err(ScheduleError::NotOnRun(vec![user_id.to_owned()]));
             }
+            draft.refuse_ended(run_id, now)?;
             let was_no = draft.rsvps(run_id).get(user_id) == Some(&RsvpState::No);
             match answer {
                 Some(state) => draft.set_rsvp(run_id, user_id, state, RsvpSource::Chat, now),
@@ -1425,6 +1496,8 @@ fn op_digest(op: &Op<'_>) -> SchedulerResult<String> {
         Op::SetRunBosses { run_id, bosses, .. } => digest("set_run_bosses", &(run_id, bosses)),
         Op::RecountRun { run_id } => digest("recount_run", run_id),
         Op::ReviveRun { run_id } => digest("revive_run", run_id),
+        Op::FinishRun { run_id } => digest("finish_run", run_id),
+        Op::SettleRun { settle, .. } => digest("settle_run", settle),
     })
 }
 

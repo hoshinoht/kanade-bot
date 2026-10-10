@@ -9,9 +9,10 @@ use chrono::{DateTime, Utc};
 
 use super::change::{ChangeKind, Payload, ProposalSubject, ProposedChange};
 use super::refusal::Refusal;
+use crate::domain::completion::RunEnds;
 use crate::domain::drafts::{DraftOp, Target};
 use crate::domain::schedule::{
-    FixedEdit, FixedEditChoices, NewFixedRun, RsvpSource, Run, RunSource, RunStatus,
+    FixedEdit, FixedEditChoices, NewFixedRun, RUN_ENDED, RsvpSource, Run, RunSource, RunStatus,
     SchedulePolicy, ScheduleSnapshot, StatusChange, utc_instant,
 };
 
@@ -32,11 +33,14 @@ pub struct Translation {
 /// with the approver by [`fill_approver`], as v4 used the confirming member.
 ///
 /// # Errors
-/// The [`Refusal`] v4 `commit` would have reported for this change.
+/// The [`Refusal`] v4 `commit` would have reported for this change; v5 also
+/// refuses cancelling or own-timing a run past its end (`ends`): only its
+/// completion prompt, the cutoff and staff `/status` settle it.
 pub fn translate(
     change: &ProposedChange,
     snapshot: &ScheduleSnapshot,
     policy: &SchedulePolicy,
+    ends: Option<&RunEnds>,
     now: DateTime<Utc>,
 ) -> Result<Translation, Refusal> {
     let run = change
@@ -54,8 +58,8 @@ pub fn translate(
     let ops = match change.kind {
         ChangeKind::Move => move_run(change, run.ok_or(Refusal::RunGone)?, snapshot, policy)?,
         ChangeKind::Add => add(change, policy)?,
-        ChangeKind::Cancel => status(run, RunStatus::Cancelled)?,
-        ChangeKind::Otot => status(run, RunStatus::Otot)?,
+        ChangeKind::Cancel => status(run, RunStatus::Cancelled, ends, now)?,
+        ChangeKind::Otot => status(run, RunStatus::Otot, ends, now)?,
         ChangeKind::Sub => sub(change, run.ok_or(Refusal::RunGone)?)?,
         ChangeKind::Split => split(change, run.ok_or(Refusal::RunGone)?, snapshot, policy)?,
         ChangeKind::Rsvp => rsvp(change, run.ok_or(Refusal::RunGone)?)?,
@@ -129,8 +133,16 @@ fn add(change: &ProposedChange, policy: &SchedulePolicy) -> Result<Vec<DraftOp>,
     ])
 }
 
-fn status(run: Option<&Run>, to: RunStatus) -> Result<Vec<DraftOp>, Refusal> {
+fn status(
+    run: Option<&Run>,
+    to: RunStatus,
+    ends: Option<&RunEnds>,
+    now: DateTime<Utc>,
+) -> Result<Vec<DraftOp>, Refusal> {
     let run = run.ok_or(Refusal::RunGone)?;
+    if ends.is_some_and(|ends| ends.frozen(run, now)) {
+        return Err(Refusal::Rule(RUN_ENDED.to_owned()));
+    }
     Ok(vec![DraftOp::SetStatus {
         run: Target::Existing(run.id.clone()),
         change: StatusChange {

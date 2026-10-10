@@ -40,6 +40,7 @@ pub trait Store:
     + kanade::bot::delivery::cards::ReminderCardStore
     + kanade::bot::delivery::cards::DigestPhraseStore
     + kanade::domain::ownership::OwnerRequestStore
+    + kanade::domain::completion::RunPromptStore
     + Sync
 {
 }
@@ -55,6 +56,7 @@ impl<S> Store for S where
         + kanade::bot::delivery::cards::ReminderCardStore
         + kanade::bot::delivery::cards::DigestPhraseStore
         + kanade::domain::ownership::OwnerRequestStore
+        + kanade::domain::completion::RunPromptStore
         + Sync
 {
 }
@@ -132,6 +134,9 @@ pub fn config(input: &Value) -> DeliveryConfig {
         quiet_mode: false,
         max_sends_per_tick: DEFAULT_MAX_SENDS_PER_TICK,
         max_notice_age: kanade::domain::notify::DEFAULT_MAX_NOTICE_AGE,
+        run_lengths: kanade::domain::settings::RunLengths::default(),
+        // The v4 vector replays keep v4's 2 h rule.
+        freeze_ended: false,
     }
 }
 

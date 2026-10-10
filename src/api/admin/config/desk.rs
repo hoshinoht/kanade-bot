@@ -276,6 +276,20 @@ impl ConfigDesk {
         self.current.lock().await.clone()
     }
 
+    /// When runs end, read live from the saved `v5.run_lengths`.
+    pub fn run_ends(
+        &self,
+        catalog: Arc<crate::domain::catalog::BossTable>,
+        policy: crate::domain::schedule::SchedulePolicy,
+    ) -> crate::domain::completion::RunEndsSource {
+        let changes = self.subscribe();
+        crate::domain::completion::RunEndsSource::new(
+            Arc::new(move || changes.borrow().settings.run_lengths.clone()),
+            Some(catalog),
+            policy,
+        )
+    }
+
     /// The sole live member-choice source. It combines the latest saved list
     /// with the current readable profile snapshot on every call.
     pub fn profile_choices(&self) -> LiveProfileChoices {

@@ -10,8 +10,11 @@ use crate::domain::attendance::{
     StatusPin,
 };
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+
+use crate::domain::completion::RunEnds;
 
 use super::error::ScheduleError;
 use super::run::{
@@ -32,6 +35,13 @@ pub struct Draft {
     rsvps: BTreeMap<RsvpKey, Rsvp>,
     /// The attendance rules status recounts follow (v4 unless set).
     attendance: AttendancePolicy,
+    /// v5: when runs end ([`RunEnds`]); `None` keeps v4's rules (the vector
+    /// replays): nothing is frozen and a slot is past 2 h after its start.
+    ends: Option<Arc<RunEnds>>,
+    /// Runs a proposal move revived in this draft, with their status before:
+    /// the freeze is judged on that, so moving a cancelled or own-time run
+    /// away from its old slot still works.
+    revived: BTreeMap<String, RunStatus>,
 }
 
 impl Draft {
@@ -43,6 +53,8 @@ impl Draft {
             rsvps: keyed(&base.rsvps, rsvp_key),
             base,
             attendance: AttendancePolicy::V4_COMPAT,
+            ends: None,
+            revived: BTreeMap::new(),
         }
     }
 
@@ -55,6 +67,57 @@ impl Draft {
 
     pub fn attendance(&self) -> AttendancePolicy {
         self.attendance
+    }
+
+    /// Freeze ended runs under `ends` (the scheduler's, read at the commit).
+    #[must_use]
+    pub fn with_run_ends(mut self, ends: Option<Arc<RunEnds>>) -> Self {
+        self.ends = ends;
+        self
+    }
+
+    pub fn run_ends(&self) -> Option<&RunEnds> {
+        self.ends.as_deref()
+    }
+
+    /// A live run past its end, frozen ([`RunEnds::frozen`]); never under
+    /// v4 rules. Not [`super::is_frozen`], the v5 status hold from the start.
+    /// A run revived in this draft is judged on its status before.
+    pub fn ended(&self, run: &Run, now: DateTime<Utc>) -> bool {
+        let Some(ends) = &self.ends else {
+            return false;
+        };
+        match self.revived.get(&run.id) {
+            Some(&status) => ends.frozen(
+                &Run {
+                    status,
+                    ..run.clone()
+                },
+                now,
+            ),
+            None => ends.frozen(run, now),
+        }
+    }
+
+    /// Revive a cancelled or own-time run to `planned` (a proposal move),
+    /// remembering its status for [`Self::ended`].
+    pub fn revive_run(&mut self, run_id: &str, from: RunStatus) {
+        self.revived.entry(run_id.to_owned()).or_insert(from);
+        self.set_run_status(run_id, RunStatus::Planned);
+    }
+
+    /// Refuse an edit of a frozen run: move, swap, amend and late answers.
+    /// A missing run is the caller's to report.
+    ///
+    /// # Errors
+    /// [`ScheduleError::RunEnded`].
+    pub fn refuse_ended(&self, run_id: &str, now: DateTime<Utc>) -> Result<(), ScheduleError> {
+        match self.runs.get(run_id) {
+            Some(run) if self.ended(run, now) => Err(ScheduleError::RunEnded {
+                run_id: run_id.to_owned(),
+            }),
+            _ => Ok(()),
+        }
     }
 
     pub fn add_fixed_run(&mut self, ids: &mut impl IdGenerator, new: NewFixedRun) -> String {

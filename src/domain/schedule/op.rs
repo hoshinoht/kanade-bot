@@ -8,7 +8,9 @@ use chrono_tz::Tz;
 use super::draft::Draft;
 use super::error::ScheduleError;
 use super::fixed_edit::{FixedEditRequest, apply_fixed_edit, apply_party_delta};
-use super::lifecycle::{apply_fixed_to_runs, mark_done, retire_fixed_run};
+use super::lifecycle::{
+    SettleRun, apply_fixed_to_runs, finish_run, mark_done, retire_fixed_run, settle_run,
+};
 use super::materialise::{materialise_week, materialise_weeks};
 use super::mutate::{
     StatusChange, amend_run, reset_to_fixed, set_status, swap_participants, swap_run_slots,
@@ -210,6 +212,16 @@ pub enum Op<'a> {
     ReviveRun {
         run_id: String,
     },
+    /// v5 only (run completion): one live run becomes `done` at its cutoff,
+    /// quietly; a run no longer live is left alone.
+    FinishRun {
+        run_id: String,
+    },
+    /// v5 only (run completion): a prompt press, guarded on the draft.
+    SettleRun {
+        settle: SettleRun,
+        policy: &'a ReminderPolicy,
+    },
 }
 
 impl Op<'_> {
@@ -323,6 +335,8 @@ pub fn apply_op(
             state,
             source,
         } => {
+            // A late answer on a run past its end is refused (frozen).
+            draft.refuse_ended(run_id, now)?;
             draft.set_rsvp(run_id, user_id, *state, *source, now);
             quiet(OpResult::Done)
         }
@@ -413,6 +427,10 @@ pub fn apply_op(
             quiet(OpResult::Count(reconcile_day_of(draft, policy, now)?))
         }
         Op::MarkDone => quiet(OpResult::Ids(mark_done(draft, now))),
+        Op::FinishRun { run_id } => quiet(OpResult::Changed(finish_run(draft, run_id)?)),
+        Op::SettleRun { settle, policy } => quiet(OpResult::Changed(settle_run(
+            draft, ids, settle, policy, now,
+        )?)),
         Op::MaterialiseWeeks { policy } => {
             quiet(OpResult::Ids(materialise_weeks(draft, ids, policy, now)?))
         }
@@ -522,6 +540,7 @@ pub fn apply_op(
             policy,
         } => {
             draft.require_run(run_id)?;
+            draft.refuse_ended(run_id, now)?;
             draft.set_run_bosses(run_id, bosses.clone());
             refresh_run_reminders(draft, ids, run_id, policy, now)?;
             quiet(OpResult::Done)
@@ -535,12 +554,10 @@ pub fn apply_op(
             quiet(OpResult::Changed(status != before.status))
         }
         Op::ReviveRun { run_id } => {
-            let revive = matches!(
-                draft.require_run(run_id)?.status,
-                RunStatus::Cancelled | RunStatus::Otot
-            );
+            let from = draft.require_run(run_id)?.status;
+            let revive = matches!(from, RunStatus::Cancelled | RunStatus::Otot);
             if revive {
-                draft.set_run_status(run_id, RunStatus::Planned);
+                draft.revive_run(run_id, from);
             }
             quiet(OpResult::Changed(revive))
         }

@@ -84,6 +84,9 @@ pub enum AdminAlert {
     /// Expiring, posting or settling weekly-timing ownership requests hit a
     /// store failure; the next tick retries.
     OwnerRequestFailed { detail: String },
+    /// Finishing runs at their cutoff, or planning, posting or settling their
+    /// completion prompts, hit a failure; the next tick retries.
+    RunPromptFailed { detail: String },
 }
 
 impl AdminAlert {
@@ -123,6 +126,7 @@ impl AdminAlert {
             Self::StaleNoticesRetired { .. } => "notice-stale".to_owned(),
             Self::RsvpReplayPermissionDenied { .. } => "rsvp-replay-permission".to_owned(),
             Self::OwnerRequestFailed { .. } => "owner-request".to_owned(),
+            Self::RunPromptFailed { .. } => "run-prompt".to_owned(),
         }
     }
 }

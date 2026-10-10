@@ -236,15 +236,17 @@ pub(super) async fn compose_with(
     // store, so its write hook is the one place change hints come from.
     let events = Arc::new(Hub::default());
     store.observe_writes(events.observer());
+    let catalog = Arc::new(catalog);
     let writer = SchedulerWriter::new(
         SchedulerService::new(store.clone(), RandomIds, ApiClock(clock.clone()))
-            .with_attendance(policy.attendance),
+            .with_attendance(policy.attendance)
+            .with_run_ends(desk.run_ends(Arc::clone(&catalog), policy.clone())),
     );
     let state = ApiState {
         store,
         writer: Arc::new(writer),
         policy,
-        catalog: Arc::new(catalog),
+        catalog,
         channels,
         access: access.clone(),
         knowledge_dir: knowledge.as_ref().map(|dir| dir.path.clone()),

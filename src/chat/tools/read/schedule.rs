@@ -419,12 +419,12 @@ pub fn get_schedule(
     // said; a singular "next run" question gets just the soonest one.
     let upcoming_only = ctx.upcoming_only || ctx.next_only || forward;
     if upcoming_only {
-        runs.retain(|run| !is_over(run, now));
+        runs.retain(|run| !is_over(world, run, now));
     }
     if ctx.next_only {
         runs.truncate(1);
     }
-    let all_over = |list: &[&Run]| list.iter().all(|run| is_over(run, now));
+    let all_over = |list: &[&Run]| list.iter().all(|run| is_over(world, run, now));
     let scope_label = if scope == "channel" {
         "This channel"
     } else {
@@ -452,7 +452,7 @@ pub fn get_schedule(
                 let mut answer = format!("**No upcoming runs for {subject}{where_}{period}.**");
                 let away: Vec<&&Run> = dated
                     .iter()
-                    .filter(|run| !in_here(run) && has(run, who) && !is_over(run, now))
+                    .filter(|run| !in_here(run) && has(run, who) && !is_over(world, run, now))
                     .collect();
                 if !matching.is_empty() && all_over(&matching) {
                     answer.push_str(if for_me {
@@ -480,7 +480,7 @@ pub fn get_schedule(
                 let mut answer = format!("**No upcoming runs in this channel{period}.**");
                 let away = dated
                     .iter()
-                    .filter(|run| !in_here(run) && !is_over(run, now))
+                    .filter(|run| !in_here(run) && !is_over(world, run, now))
                     .count();
                 if !matching.is_empty() && all_over(&matching) {
                     answer.push_str(" The runs scheduled here are already done.");

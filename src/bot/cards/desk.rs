@@ -99,6 +99,8 @@ pub struct CardDesk<S, T, I, A> {
     pub(super) cards: CardKit,
     /// Rebuilt from HTTP on each fresh session; retained across other refreshes.
     pub(super) replay_conflicts: Mutex<BTreeSet<String>>,
+    /// v5: approvals refuse runs past their end (`None`: v4 rules).
+    pub(super) run_ends: Option<crate::domain::completion::RunEndsSource>,
 }
 
 impl<S, T, I, A> std::fmt::Debug for CardDesk<S, T, I, A> {
@@ -329,6 +331,7 @@ where
             settings,
             cards: CardKit::default(),
             replay_conflicts: Mutex::default(),
+            run_ends: None,
         }
     }
 
@@ -337,6 +340,13 @@ where
     #[must_use]
     pub fn with_cards(mut self, cards: CardKit) -> Self {
         self.cards = cards;
+        self
+    }
+
+    /// Freeze runs past their end in approvals and answers.
+    #[must_use]
+    pub fn with_run_ends(mut self, source: crate::domain::completion::RunEndsSource) -> Self {
+        self.run_ends = Some(source);
         self
     }
 
@@ -350,8 +360,13 @@ where
         now: DateTime<Utc>,
     ) -> SchedulerService<StoreRef<'_, S>, I, FixedClock> {
         // The service refuses a policy whose attendance mode differs from its own.
-        SchedulerService::new(StoreRef(&*self.store), self.ids.clone(), FixedClock(now))
-            .with_attendance(self.settings.policy.attendance)
+        let service =
+            SchedulerService::new(StoreRef(&*self.store), self.ids.clone(), FixedClock(now))
+                .with_attendance(self.settings.policy.attendance);
+        match &self.run_ends {
+            Some(source) => service.with_run_ends(source.clone()),
+            None => service,
+        }
     }
 
     pub(super) fn raise(&self, alert: AdminAlert, now: DateTime<Utc>) {

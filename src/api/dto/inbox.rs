@@ -483,6 +483,9 @@ pub struct Common<'a> {
     pub policy: &'a SchedulePolicy,
     pub current: &'a ScheduleSnapshot,
     pub frames: &'a [WeekFrame; 2],
+    /// When runs end: a run past its end is frozen, never an amended run
+    /// a weekly-timing change asks about.
+    pub ends: std::sync::Arc<crate::domain::completion::RunEnds>,
 }
 
 impl Common<'_> {

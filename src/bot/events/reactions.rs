@@ -268,7 +268,11 @@ impl<I: CardIndex, S: ReactionSink> ReactionRouter<I, S> {
                     retract: result.retract,
                     result: result.value,
                 }),
-                Err(SchedulerError::Schedule(ScheduleError::UnknownRun(_))) => {}
+                // A deleted run, or one past its end (frozen until settled):
+                // the answer is not recorded and the card's other runs still are.
+                Err(SchedulerError::Schedule(
+                    ScheduleError::UnknownRun(_) | ScheduleError::RunEnded { .. },
+                )) => {}
                 Err(error) => return Err(RouteError::Scheduler(error)),
             }
         }

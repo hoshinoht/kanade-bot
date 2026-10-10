@@ -75,6 +75,9 @@ pub struct ToolWorld<'a> {
     pub pending: &'a [PendingCard],
     /// `None` when strategy knowledge is unavailable.
     pub guides: Option<&'a (dyn StrategyGuides + Sync)>,
+    /// v5: when runs end ([`RunEnds`](crate::domain::completion::RunEnds));
+    /// `None` keeps v4's reading, a run being over once it started.
+    pub run_ends: Option<&'a crate::domain::completion::RunEnds>,
     /// The asker's own words, which the question loop reads from the
     /// conversation; the run-taking writes check their choice against them.
     pub heard: resolve::Heard<'a>,

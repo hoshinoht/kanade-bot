@@ -10,6 +10,7 @@ use super::intent::{
     NotificationIntent, PlannedSend, canonical_allow_list, choose_channel,
 };
 use super::policy::allowed_mentions;
+use crate::domain::completion::RunEnds;
 use crate::domain::schedule::{Run, RunStatus};
 use crate::domain::time::{DateOutOfRange, local_naive, to_iso};
 use crate::domain::weeks;
@@ -123,17 +124,19 @@ pub struct DigestDay {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DigestInclusion {
     pub days: Vec<DigestDay>,
-    /// `done` runs.
+    /// `done` runs, and live runs past their end (frozen, shown as ended).
     pub cleared: usize,
     /// Every run shown (all but cancelled).
     pub live: usize,
-    /// `planned` or `at_risk`.
+    /// `planned` or `at_risk`, not yet ended.
     pub unsettled: usize,
     /// `at_risk`, also counted as unsettled.
     pub at_risk: usize,
 }
 
-/// The week's runs bar cancelled ones, grouped by guild-local date.
+/// The week's runs bar cancelled ones, grouped by guild-local date. With
+/// `ended` (the run ends and the instant), a live run past its end counts
+/// as cleared, as a done run does; its stored status is untouched.
 ///
 /// # Errors
 /// [`DateOutOfRange`] outside v4's years.
@@ -141,6 +144,7 @@ pub fn digest_inclusion(
     runs: &[Run],
     week_start: DateTime<Utc>,
     zone: Tz,
+    ended: Option<(&RunEnds, DateTime<Utc>)>,
 ) -> Result<DigestInclusion, DateOutOfRange> {
     let mut live: Vec<&Run> = runs
         .iter()
@@ -152,8 +156,10 @@ pub fn digest_inclusion(
         ..DigestInclusion::default()
     };
     for run in live {
+        let over = ended.is_some_and(|(ends, now)| ends.frozen(run, now));
         match run.status {
             RunStatus::Done => inclusion.cleared += 1,
+            _ if over => inclusion.cleared += 1,
             RunStatus::Planned => inclusion.unsettled += 1,
             RunStatus::AtRisk => {
                 inclusion.unsettled += 1;
@@ -186,6 +192,8 @@ pub struct DigestPostInput<'a> {
     pub settings: DeliverySettings<'a>,
     pub channels: &'a dyn ChannelDirectory,
     pub journal: &'a dyn JournalView,
+    /// v5: runs past their end count as ended (`None`: v4's counts).
+    pub ended: Option<(&'a RunEnds, DateTime<Utc>)>,
 }
 
 /// A planned digest post (v4 `BossBot._post_digest`).
@@ -231,7 +239,7 @@ pub fn plan_digest_post(input: &DigestPostInput<'_>) -> Result<Option<DigestSend
         mentions,
         content: IntentContent::Digest {
             week_start: input.week_start,
-            inclusion: digest_inclusion(input.runs, input.week_start, input.zone)?,
+            inclusion: digest_inclusion(input.runs, input.week_start, input.zone, input.ended)?,
         },
         warnings: Vec::new(),
     };

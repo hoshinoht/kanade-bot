@@ -1,10 +1,12 @@
 //! Replaying a draft's operations on a snapshot, writing nothing.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 
 use super::op::{DraftOp, ReplayError, Target, resolve};
+use crate::domain::completion::RunEnds;
 use crate::domain::ids::IdGenerator;
 use crate::domain::members::Directory;
 use crate::domain::schedule::{
@@ -210,7 +212,8 @@ pub struct Rejected {
     pub error: ReplayError,
 }
 
-/// Replay `ops` in order on `snapshot`.
+/// Replay `ops` in order on `snapshot`; `ends` freezes runs past their end
+/// as the scheduler does (`None`: v4 rules).
 ///
 /// # Errors
 /// [`Rejected`] for the first operation that fails; the partial result is
@@ -219,11 +222,12 @@ pub fn replay(
     snapshot: &ScheduleSnapshot,
     ops: &[DraftOp],
     policy: &SchedulePolicy,
+    ends: Option<&Arc<RunEnds>>,
     directory: &(dyn Directory + Sync),
     now: DateTime<Utc>,
 ) -> Result<Replay, Rejected> {
     let mut preview = PreviewGen::default();
-    match run_all(snapshot, ops, policy, directory, now, &mut preview) {
+    match run_all(snapshot, ops, policy, ends, directory, now, &mut preview) {
         (replay, None) => Ok(replay),
         (_, Some(rejected)) => Err(rejected),
     }
@@ -239,11 +243,12 @@ pub fn replay_real(
     snapshot: &ScheduleSnapshot,
     ops: &[DraftOp],
     policy: &SchedulePolicy,
+    ends: Option<&Arc<RunEnds>>,
     directory: &(dyn Directory + Sync),
     now: DateTime<Utc>,
     ids: &mut impl IdGenerator,
 ) -> Result<Replay, Rejected> {
-    match run_all(snapshot, ops, policy, directory, now, ids) {
+    match run_all(snapshot, ops, policy, ends, directory, now, ids) {
         (replay, None) => Ok(replay),
         (_, Some(rejected)) => Err(rejected),
     }
@@ -255,23 +260,27 @@ pub(super) fn replay_partial(
     snapshot: &ScheduleSnapshot,
     ops: &[DraftOp],
     policy: &SchedulePolicy,
+    ends: Option<&Arc<RunEnds>>,
     directory: &(dyn Directory + Sync),
     now: DateTime<Utc>,
 ) -> (Replay, Option<Rejected>) {
     let mut preview = PreviewGen::default();
-    run_all(snapshot, ops, policy, directory, now, &mut preview)
+    run_all(snapshot, ops, policy, ends, directory, now, &mut preview)
 }
 
 fn run_all<G: IdGenerator>(
     snapshot: &ScheduleSnapshot,
     ops: &[DraftOp],
     policy: &SchedulePolicy,
+    ends: Option<&Arc<RunEnds>>,
     directory: &(dyn Directory + Sync),
     now: DateTime<Utc>,
     ids: &mut G,
 ) -> (Replay, Option<Rejected>) {
     let mut body = Body {
-        draft: Draft::new(snapshot.clone()).with_attendance(policy.attendance),
+        draft: Draft::new(snapshot.clone())
+            .with_attendance(policy.attendance)
+            .with_run_ends(ends.cloned()),
         created: Vec::with_capacity(ops.len()),
         results: Vec::with_capacity(ops.len()),
         amended: Vec::with_capacity(ops.len()),
