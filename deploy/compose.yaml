@@ -103,7 +103,7 @@ services:
     cpus: 1.0
     mem_limit: 512m
     pids_limit: 128
-    # Above KANADE_SHUTDOWN_TIMEOUT_SECONDS (default 10, max 120) so the drain finishes.
+    # serve's fixed 25 s shutdown budget plus a 5 s margin (KANADE_SHUTDOWN_TIMEOUT_SECONDS caps only the HTTP drain inside it).
     stop_grace_period: 30s
     healthcheck:
       test: ["CMD", "/usr/local/bin/kanade", "healthcheck"]

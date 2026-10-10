@@ -2,7 +2,7 @@
 
 Container and Compose stack for the Rust runtime. The admin portal is served
 on the tailnet through the shared edge (`~/projects/personal/homelab/edge`,
-site `sites/kanade`); the public portal's tunnel is prepared but not started
+site `sites/kanade`); the public portal runs through a Cloudflare tunnel
 ("Public portal" below).
 
 ## Image
@@ -217,8 +217,9 @@ replaces only `v4-` chat and extraction logs.
 
 Read-only root, `/tmp` tmpfs (16 MiB), all capabilities dropped,
 `no-new-privileges`, 1 CPU, 512 MiB, 128 pids, JSON logs capped at 3 × 10 MB,
-`restart: unless-stopped`, `stop_grace_period: 30s` (above
-`KANADE_SHUTDOWN_TIMEOUT_SECONDS`, default 10; raise both together). No host
+`restart: unless-stopped`, `stop_grace_period: 30s` (serve's fixed 25 s
+shutdown budget plus a 5 s margin; `KANADE_SHUTDOWN_TIMEOUT_SECONDS`, default
+10, caps only the HTTP drain inside that budget). No host
 port is published: the admin listener binds only its `kanade_edge` address
 and the optional public listener only its `kanade_public` one, both internal
 (no egress); Discord and Kanata egress uses the project's `default` network.
@@ -226,7 +227,7 @@ The container healthcheck calls `kanade healthcheck` against its own
 address. cloudflared mirrors this (read-only, no capabilities, uid 65532,
 0.5 CPU, 256 MiB, 64 pids, metrics on its own loopback, no auto-update).
 
-## Public portal (prepared, not started)
+## Public portal
 
 The public origin reaches the internet only through a remotely managed
 Cloudflare tunnel: `cloudflared` (profile `public`, so plain `up` never starts
@@ -235,8 +236,8 @@ listener at `172.25.0.10:8081` on the internal `kanade_public` network. No
 port is published, the edge is not involved, and the public listener mounts
 only public routes (`src/api/listeners.rs`): admin paths answer 404 there.
 The bot trusts `CF-*`/forwarding headers only from `172.25.0.3`
-(`KANADE_CLOUDFLARED_PEER`). Creating the tunnel, its DNS and starting the
-profile each need the owner's go-ahead.
+(`KANADE_CLOUDFLARED_PEER`). The steps below are how the tunnel was set up;
+"Roll back" after them takes it down again.
 
 ```sh
 # 1. Cloudflare Zero Trust -> Networks -> Tunnels: create a cloudflared tunnel

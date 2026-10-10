@@ -1,7 +1,7 @@
 # v5 runtime bootstrap
 
 `kanade` is the single Rust executable, version `1.0.0-beta.4` (the release
-label everywhere: Cargo, CHANGELOG and the planned `v1.0.0-beta.4` tag).
+label everywhere: Cargo, CHANGELOG and the `v1.0.0-beta.4` git tag).
 
 ## Available now
 
@@ -217,6 +217,7 @@ Each key sets one variable below, whose rules apply unchanged
 | `public.session_absolute_hours` | `KANADE_PUBLIC_SESSION_ABSOLUTE_HOURS` | integer |
 | `public.fresh_write_minutes` | `KANADE_PUBLIC_FRESH_WRITE_MINUTES` | integer |
 | `discord.token_file` | `KANADE_DISCORD_TOKEN_FILE` | string |
+| `discord.expect_v4_stopped` | `KANADE_EXPECT_V4_STOPPED` | bool |
 | `discord.gateway` | `KANADE_DISCORD_GATEWAY` | bool |
 | `discord.guild_id` | `KANADE_GUILD_ID` | snowflake (string or integer) |
 | `discord.bossing_role_id` | `KANADE_BOSSING_ROLE_ID` | snowflake (string or integer) |
