@@ -15,10 +15,6 @@ const TRANSPORT: [&str; 4] = ["connection", "content-length", "content-type", "d
 fn expected(public: bool) -> Vec<(&'static str, &'static str)> {
     let mut headers = vec![
         ("content-security-policy", headers::CSP),
-        (
-            "content-security-policy-report-only",
-            headers::CSP_REPORT_ONLY,
-        ),
         ("x-content-type-options", "nosniff"),
         ("referrer-policy", "no-referrer"),
         ("cross-origin-opener-policy", "same-origin"),
@@ -210,8 +206,10 @@ async fn slow_handlers_time_out_with_a_generic_error() {
 }
 
 #[test]
-fn both_policies_allow_same_origin_media() {
-    for policy in [headers::CSP, headers::CSP_REPORT_ONLY] {
-        assert!(policy.contains("; media-src 'self';"), "{policy}");
-    }
+fn the_policy_allows_same_origin_media() {
+    assert!(
+        headers::CSP.contains("; media-src 'self';"),
+        "{}",
+        headers::CSP
+    );
 }

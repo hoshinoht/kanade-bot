@@ -542,11 +542,13 @@ Tailscale headers from any other peer are stripped before routing), then a
 64 KiB declared-body limit (`413`) and a 30 s handler timeout (`503
 timeout`). Errors are `ApiError` bodies `{error, message}` with generic text.
 
-Headers match `devtools/pwa-mock` (CSP, report-only Trusted Types, `nosniff`,
-`no-referrer`, COOP/CORP `same-origin`, Permissions-Policy, per-path
-Cache-Control) without the mock's dev-only `report-uri`; non-2xx answers are
-`no-store`; `Strict-Transport-Security` is sent on the public origin only; no
-CORS headers are ever sent.
+Headers match `devtools/pwa-mock` (CSP with enforced Trusted Types,
+`require-trusted-types-for 'script'; trusted-types kanade-sw`, the one policy
+being the service-worker registration; `nosniff`, `no-referrer`, COOP/CORP
+`same-origin`, Permissions-Policy, per-path Cache-Control) without the mock's
+dev-only `report-uri`; non-2xx answers are `no-store`;
+`Strict-Transport-Security` is sent on the public origin only; no CORS headers
+are ever sent.
 
 | Route | Admin | Public |
 |---|---|---|

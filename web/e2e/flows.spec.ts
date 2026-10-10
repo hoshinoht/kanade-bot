@@ -1,8 +1,8 @@
 import type { Page } from '@playwright/test';
 import { ADMIN, HEADING, csrf, expect, test } from './support';
 
-// Every test here also asserts, via the auto `csp` fixture, zero enforced or
-// report-only (Trusted Types) violations: console, DOM events and server reports.
+// Every test here also asserts, via the auto `csp` fixture, zero CSP or
+// Trusted Types violations: console, DOM events and server reports.
 
 const column = (page: Page, dow: string) => page.locator('section.board__col').filter({ has: page.locator(`h2 .board__dow:text-is("${dow}")`) });
 
