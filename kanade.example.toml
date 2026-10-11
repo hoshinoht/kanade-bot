@@ -118,6 +118,13 @@ key_file = "/run/secrets/kanade_model_api_key"
 # URLs. Kanata provider ZDR concerns retention, not transmission. The retired
 # pseudonymize and allow_external_unmasked keys are rejected if present.
 
+# Capability declarations for aliases whose listing publishes no Kanata
+# metadata (another OpenAI-compatible server); Kanata's published metadata
+# always wins. Fields: structured_output, function_tools, sampling_controls,
+# reasoning_control, reasoning_efforts, context_tokens, max_output_tokens.
+# See kanade.openai-compatible.example.toml for the table form.
+# capabilities = { "example-plain-model" = { structured_output = true, function_tools = true } }
+
 # Per-role seeds, used only where no saved setting exists. Reasoning: off,
 # minimal, low, medium, high, xhigh, max; chat and rewrite also inherit.
 [models.extraction]

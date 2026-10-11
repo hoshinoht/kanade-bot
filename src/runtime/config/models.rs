@@ -6,10 +6,10 @@ use std::{collections::BTreeMap, net::IpAddr, path::PathBuf};
 
 use hyper::Uri;
 
-use super::{Error, groups, non_empty, parse_bounded_u64};
+use super::{Error, capabilities, groups, non_empty, parse_bounded_u64};
 use crate::{
     domain::settings::{ContextSettings, Reasoning},
-    infrastructure::llm::setup::CapacityGroup,
+    infrastructure::llm::{ModelCapabilities, setup::CapacityGroup},
     runtime::secrets::Redacted,
 };
 
@@ -49,6 +49,9 @@ pub struct ModelSettings {
     /// Seed windows clamped to the hard cap (`models.context.<path>`), logged
     /// when the seed is applied.
     pub context_clamped: Vec<String>,
+    /// `[models.capabilities]`: per-alias declarations for aliases whose
+    /// listing publishes no metadata (published metadata wins).
+    pub capabilities: BTreeMap<String, ModelCapabilities>,
 }
 
 impl ModelSettings {
@@ -96,15 +99,21 @@ impl ModelSettings {
             groups: groups::parse(values)?,
             context,
             context_clamped,
+            capabilities: capabilities::parse(values)?,
             base_url,
         };
         if settings.base_url.is_none() {
-            let dependent = [KEY_FILE, "KANADE_MODEL_CA_FILE", groups::GROUPS]
-                .into_iter()
-                .chain(ALIASES)
-                .chain(REASONING)
-                .chain([CONTEXT])
-                .find(|key| non_empty(values, key).is_some());
+            let dependent = [
+                KEY_FILE,
+                "KANADE_MODEL_CA_FILE",
+                groups::GROUPS,
+                capabilities::KEY,
+            ]
+            .into_iter()
+            .chain(ALIASES)
+            .chain(REASONING)
+            .chain([CONTEXT])
+            .find(|key| non_empty(values, key).is_some());
             if let Some(key) = dependent {
                 return Err(Error::Configuration(format!(
                     "{key} requires KANADE_MODEL_BASE_URL"
@@ -146,11 +155,16 @@ fn reasoning(values: &BTreeMap<String, String>, key: &str) -> Result<Option<Reas
 fn alias(values: &BTreeMap<String, String>, key: &str) -> Result<Option<String>, Error> {
     non_empty(values, key)
         .map(|name| {
-            let ok = name.len() <= 200 && name.bytes().all(|byte| byte.is_ascii_graphic());
-            ok.then(|| name.to_owned())
+            is_alias(name)
+                .then(|| name.to_owned())
                 .ok_or_else(|| Error::Configuration(format!("{key} must be a model alias")))
         })
         .transpose()
+}
+
+/// Printable ASCII without spaces, at most 200 bytes.
+pub(super) fn is_alias(name: &str) -> bool {
+    !name.is_empty() && name.len() <= 200 && name.bytes().all(|byte| byte.is_ascii_graphic())
 }
 
 /// Mirrors `infrastructure::llm` endpoint parsing.

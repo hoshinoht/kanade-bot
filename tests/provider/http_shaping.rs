@@ -1,18 +1,19 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use kanade::infrastructure::llm::{
-    ChatRequest, CompletionRunner, Effort, ErrorCode, ExecutionLimits, HttpProviderConfig, Message,
-    ModelCapabilities, OpenAiCompatibleProvider, OutputSchema, OutputValidation, Sampling,
-    ToolDefinition, shape_request,
+    BearerKey, ChatRequest, CompletionRunner, Effort, ErrorCode, ExecutionLimits,
+    HttpProviderConfig, Message, ModelCapabilities, OpenAiCompatibleProvider, OutputSchema,
+    OutputValidation, Sampling, ToolDefinition, shape_request,
 };
 use serde_json::{Value, json};
 
 use super::{
-    stub::{Stub, gateway, kanata_models, ollama_models},
+    stub::{Reply, Stub, gateway, kanata_models, ollama_models},
     support::{default_retry, tool_schema},
 };
 
 const ANSWER: &str = r#"{"answer":"ok"}"#;
+const KEY: &str = "sk-generic-provider-secret-sentinel";
 const SCHEMA_TEXT: &str = r#"{"additionalProperties":false,"properties":{"answer":{"type":"string"}},"required":["answer"],"type":"object"}"#;
 const INSTRUCTION: &str = "OUTPUT FORMAT\nAnswer with exactly one JSON value and nothing else: no prose, no markdown. It must validate against this JSON Schema:\n";
 
@@ -120,33 +121,76 @@ async fn kanata_metadata_model_gets_every_supported_field() {
 }
 
 #[tokio::test]
-async fn bare_ollama_model_uses_operator_declared_capabilities() {
-    let stub = Stub::start(gateway(ollama_models(), ANSWER)).await;
+async fn generic_openai_compatible_server_uses_declared_and_minimal_capabilities() {
+    let models = json!({
+        "object": "list",
+        "data": [
+            {"id": "declared-model", "object": "model"},
+            {"id": "minimal-model", "object": "model"}
+        ]
+    });
+    let backend = gateway(models, ANSWER);
+    let expected_header = format!("Bearer {KEY}");
+    let handler_header = expected_header.clone();
+    let stub = Stub::start(move |request| {
+        if request.header("authorization") == Some(handler_header.as_str()) {
+            backend(request)
+        } else {
+            Reply::Json(
+                401,
+                json!({"error": {"message": "authentication required"}}),
+            )
+        }
+    })
+    .await;
     let declared = ModelCapabilities {
         structured_output: true,
         sampling_controls: true,
+        reasoning_control: true,
         function_tools: true,
         ..ModelCapabilities::minimal()
     };
-    let provider = provider(
-        stub.url(),
-        BTreeMap::from([("qwen3:8b".to_owned(), declared)]),
+    let mut config = HttpProviderConfig::new(format!("{}/v1", stub.url()));
+    config.declared = BTreeMap::from([("declared-model".to_owned(), declared.clone())]);
+    config.bearer_key = Some(BearerKey::from_bytes(KEY.as_bytes()).unwrap());
+    let provider = Arc::new(OpenAiCompatibleProvider::new(config).unwrap());
+
+    let listed = provider.list_models().await.unwrap();
+    assert_eq!(listed.len(), 2);
+    assert!(listed.iter().all(|model| model.capabilities.is_none()));
+    assert_eq!(
+        provider.model_capabilities("minimal-model").await,
+        ModelCapabilities::minimal()
     );
-    let mut request = structured("qwen3:8b");
+    assert_eq!(
+        provider.model_capabilities("declared-model").await,
+        declared
+    );
+
+    let mut request = structured("declared-model");
     request.tools = vec![ToolDefinition {
         name: "tool".into(),
         description: Some("synthetic".into()),
         input_schema: tool_schema(),
     }];
-    runner(provider).complete(&request).await.unwrap();
+    let completed = runner(provider).complete(&request).await.unwrap();
+    assert_eq!(completed.content.as_deref(), Some(ANSWER));
 
-    let chats = stub.chat_requests();
-    assert_eq!(chats.len(), 1);
-    assert_eq!(chats[0].path, "/v1/chat/completions");
+    let requests = stub.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].method, "GET");
+    assert_eq!(requests[0].path, "/v1/models");
+    assert_eq!(requests[1].method, "POST");
+    assert_eq!(requests[1].path, "/v1/chat/completions");
+    assert!(
+        requests
+            .iter()
+            .all(|request| { request.header("authorization") == Some(expected_header.as_str()) })
+    );
     assert_eq!(
-        chats[0].body,
+        requests[1].body,
         json!({
-            "model": "qwen3:8b",
+            "model": "declared-model",
             "messages": messages("sys"),
             "tools": [{
                 "type": "function",
@@ -159,7 +203,8 @@ async fn bare_ollama_model_uses_operator_declared_capabilities() {
             "max_tokens": 64,
             "temperature": 0.25,
             "seed": 7,
-            "top_p": 0.5
+            "top_p": 0.5,
+            "reasoning_effort": "high"
         })
     );
 }

@@ -39,6 +39,7 @@ pub(super) fn setup(base_url: Option<String>) -> ModelSetup {
         ca_file: None,
         roles: roles("sumi-structured"),
         permits: 2,
+        capabilities: Default::default(),
     }
 }
 

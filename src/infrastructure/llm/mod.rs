@@ -14,6 +14,7 @@ pub mod setup;
 mod shaping;
 mod wire;
 
+pub(crate) use capabilities::MAX_OUTPUT_TOKENS;
 pub use capabilities::{
     AdmissionLimits, Capability, Effort, ListedModel, ModelCapabilities, TrustZone, off_allowed,
     parse_models_list, reasoning_floor, resolve as resolve_capabilities,

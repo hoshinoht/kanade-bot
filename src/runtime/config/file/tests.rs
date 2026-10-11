@@ -4,6 +4,7 @@ use super::{keys::KEYS, merge, resolve};
 use crate::runtime::config::{ModelSettings, RuntimeConfig, ServeConfig};
 
 const EXAMPLE: &str = include_str!("../../../../kanade.example.toml");
+const OPENAI_COMPATIBLE: &str = include_str!("../../../../kanade.openai-compatible.example.toml");
 
 fn env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
@@ -32,6 +33,29 @@ fn the_example_file_is_a_complete_live_config() {
         ["kanata/extract", "kanata/chat"]
     );
     assert_eq!(config.seeds.watch_channel_ids, Vec::<u64>::new());
+}
+
+#[test]
+fn the_openai_compatible_fragment_declares_its_role_aliases() {
+    let resolved = merge(OPENAI_COMPATIBLE, BTreeMap::new()).unwrap();
+    let models = ModelSettings::from_mapping(&resolved.values).unwrap();
+    let roles = [
+        models.extract_model.as_deref(),
+        models.chat_model.as_deref(),
+        models.rewrite_model.as_deref(),
+    ];
+    let declared: Vec<_> = models.capabilities.keys().map(String::as_str).collect();
+    assert_eq!(
+        declared,
+        ["example-chat", "example-extract", "example-rewrite"]
+    );
+    assert!(
+        roles
+            .iter()
+            .all(|alias| alias.is_some_and(|alias| declared.contains(&alias)))
+    );
+    assert!(models.capabilities["example-chat"].function_tools);
+    assert!(models.capabilities["example-extract"].structured_output);
 }
 
 /// Every key is documented: uncommenting the example's keys covers the table.
@@ -268,6 +292,89 @@ fn groups_feed_the_model_settings() {
         error.to_string(),
         "KANADE_MODEL_PERMITS and KANADE_MODEL_GROUPS are exclusive; set permits per group \
          (kanade.toml `models.permits`)"
+    );
+}
+
+#[test]
+fn capability_declarations_feed_the_model_settings() {
+    use crate::infrastructure::llm::{Effort, ModelCapabilities};
+
+    let base = "[models]\nbase_url = \"https://llm.example/v1\"\n";
+    let models = |tables: &str| {
+        let resolved = merge(&format!("{base}{tables}"), BTreeMap::new()).unwrap();
+        ModelSettings::from_mapping(&resolved.values)
+            .map_err(|error| resolved.annotate(error).to_string())
+    };
+    let settings = models(
+        "[models.capabilities.\"plain/chat\"]\nfunction_tools = true\nstructured_output = true\n\
+         reasoning_control = true\nreasoning_efforts = [\"off\", \"medium\"]\n\
+         context_tokens = 32768\nmax_output_tokens = 2048\n\
+         [models.capabilities.\"plain/extract\"]\nstructured_output = true\n",
+    )
+    .unwrap();
+    assert_eq!(
+        settings.capabilities,
+        BTreeMap::from([
+            (
+                "plain/chat".to_owned(),
+                ModelCapabilities {
+                    function_tools: true,
+                    structured_output: true,
+                    reasoning_control: true,
+                    reasoning_efforts: Some(vec![Effort::Off, Effort::Medium]),
+                    context_tokens: Some(32_768),
+                    max_output_tokens: Some(2048),
+                    ..ModelCapabilities::minimal()
+                }
+            ),
+            (
+                "plain/extract".to_owned(),
+                ModelCapabilities {
+                    structured_output: true,
+                    ..ModelCapabilities::minimal()
+                }
+            ),
+        ])
+    );
+    assert!(models("").unwrap().capabilities.is_empty());
+
+    // Unknown fields and bad values refuse, pointing at the TOML key.
+    assert_eq!(
+        models("[models.capabilities.m]\nstreaming = true\n").unwrap_err(),
+        "KANADE_MODEL_CAPABILITIES `m` has an unknown field `streaming`; declare \
+         structured_output, function_tools, sampling_controls, reasoning_control, \
+         reasoning_efforts, context_tokens or max_output_tokens (kanade.toml `models.capabilities`)"
+    );
+    assert_eq!(
+        models("[models.capabilities.m]\nfunction_tools = \"sentinel-value\"\n").unwrap_err(),
+        "KANADE_MODEL_CAPABILITIES `m`.function_tools must be true or false \
+         (kanade.toml `models.capabilities`)"
+    );
+    assert_eq!(
+        models("[models.capabilities.m]\nmax_output_tokens = 0\n").unwrap_err(),
+        "KANADE_MODEL_CAPABILITIES `m`.max_output_tokens must be a token count from 1 to 1048576 \
+         (kanade.toml `models.capabilities`)"
+    );
+    assert_eq!(
+        models("[models.capabilities]\nm = 3\n").unwrap_err(),
+        "KANADE_MODEL_CAPABILITIES `m` must be a table of capability fields \
+         (kanade.toml `models.capabilities`)"
+    );
+    assert_eq!(
+        error("[models]\ncapabilities = 3\n"),
+        "kanade.toml `models.capabilities` must be a table of model alias tables"
+    );
+    // Declarations need a model gateway, like every other model key.
+    let resolved = merge(
+        "[models.capabilities.m]\nfunction_tools = true\n",
+        BTreeMap::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        resolved
+            .annotate(ModelSettings::from_mapping(&resolved.values).unwrap_err())
+            .to_string(),
+        "KANADE_MODEL_CAPABILITIES requires KANADE_MODEL_BASE_URL (kanade.toml `models.capabilities`)"
     );
 }
 

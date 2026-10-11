@@ -98,7 +98,7 @@ impl LiveRoles {
         let mut roles = self.lock();
         let before = running(governor);
         let listing = catalog.listing();
-        let efforts = efforts(&next, listing.as_deref());
+        let efforts = efforts(&next, catalog, listing.as_deref());
         let targets = ModelRoles::ALL.into_iter().map(|role| {
             let target = next.get(role).alias.as_ref().map(|alias| RouteTarget {
                 alias: alias.trim().to_owned(),
@@ -128,21 +128,23 @@ impl LiveRoles {
     }
 }
 
-/// Effective level per routed role against `listing` (see `ModelStack::efforts`).
+/// Effective level per routed role against `listing` and the operator's
+/// declarations (see `ModelStack::efforts`).
 pub(super) fn efforts(
     roles: &ModelRoles,
+    catalog: &CatalogState,
     listing: Option<&[ListedModel]>,
 ) -> BTreeMap<Role, EffortStatus> {
     let listed = |alias: &str| listing.is_some_and(|models| models.iter().any(|m| m.id == alias));
     effort::resolve(
         roles,
-        |alias| catalog::published(listing?, alias).cloned(),
+        |alias| catalog.capabilities(listing, alias).cloned(),
         |alias| variant_of(alias, listed).map(|variant| variant.effort),
     )
 }
 
 fn push_efforts(roles: &ModelRoles, governor: &Governor, catalog: &CatalogState) {
-    let efforts = efforts(roles, catalog.listing().as_deref());
+    let efforts = efforts(roles, catalog, catalog.listing().as_deref());
     for role in ModelRoles::ALL {
         governor.set_effort(role, efforts.get(&role).map(|status| status.effort));
     }

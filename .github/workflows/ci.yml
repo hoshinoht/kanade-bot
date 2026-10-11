@@ -44,6 +44,7 @@ jobs:
               - rust-toolchain.toml
               - deny.toml
               - kanade.example.toml
+              - kanade.openai-compatible.example.toml
               - boss/**
               - config/personas/**
               - docs/v5/vectors/**

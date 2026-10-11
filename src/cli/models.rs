@@ -41,7 +41,7 @@ pub async fn check(
     environment: &BTreeMap<String, String>,
     out: &mut impl Write,
 ) -> Result<(), Error> {
-    let settings = ModelSettings::from_mapping(environment)?;
+    let mut settings = ModelSettings::from_mapping(environment)?;
     let Some(base_url) = settings.base_url.clone() else {
         return Err(Error::Configuration(
             "KANADE_MODEL_BASE_URL is not set; models are disabled".into(),
@@ -81,6 +81,7 @@ pub async fn check(
         key,
         ca_file: settings.ca_file.clone(),
         permits: u32::from(settings.permits),
+        capabilities: std::mem::take(&mut settings.capabilities),
     };
     let random = Arc::new(XorShift::new(uuid::Uuid::new_v4().as_u64_pair().0));
     let stack = match build_with_groups(setup, &settings.groups, random) {

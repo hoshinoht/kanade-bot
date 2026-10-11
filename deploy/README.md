@@ -41,7 +41,7 @@ resolve from it.
 |---|---|---|
 | Settings | `kanade.toml` (or `KANADE_CONFIG_FILE=/path`) | Private, git-ignored copy of the tracked `kanade.example.toml`, mounted read-only at `/config/kanade.toml` (`KANADE_CONFIG`); a missing file fails the start. Non-secret settings only (key → variable table: `docs/v5/runtime-bootstrap.md` "Config file"). Required: `runtime.timezone`, `discord.guild_id`, `discord.bossing_role_id`, and `models.base_url` (Compose always sets `KANADE_MODEL_KEY_FILE`, which is refused without it). Usually also `discord.admin_role_id`, `[models.*]` roles and `[[models.groups]]`, and `[settings]` (starting settings, applied only until the store holds a value). Compose's `environment:` fixes the admin bind and host, trusted proxy, cloudflared peer, healthcheck URL and container paths (store, files, secret files), so those keys in the file are overridden; `[public] bind`/`host` stay in the file (the public listener's opt-in). Keep the three `admin.discord_*` keys all set or all unset. |
 | Legacy env | `.env.v5` (or `KANADE_ENV_FILE=/path`) | Optional (back-compat). Every non-empty `KANADE_*` variable in it overrides the matching `kanade.toml` key; move its settings into `kanade.toml` and delete it so there is one source. |
-| Secrets | `${KANADE_SECRETS_DIR:-$HOME/.config/kanade/v5/secrets}/` | One line per file: `discord_token`, `admin_token` (≥ 32 bytes, e.g. `openssl rand -base64 48`), `discord_client_secret`, `public_discord_client_secret` (member sign-in; may stay empty until it is configured), and `model_api_key` (a symlink to the Kanata key file v4 uses); `kanade-cloudflared` (the tunnel token) only for profile `public`. Docker Desktop lets uid 65532 read `0600` files; on a Linux host make them readable by uid 65532. |
+| Secrets | `${KANADE_SECRETS_DIR:-$HOME/.config/kanade/v5/secrets}/` | One line per file: `discord_token`, `admin_token` (≥ 32 bytes, e.g. `openssl rand -base64 48`), `discord_client_secret`, `public_discord_client_secret` (member sign-in; may stay empty until it is configured), and `model_api_key` (the bearer key for the model gateway, Kanata or another OpenAI-compatible server; a symlink to v4's Kanata key still works when using Kanata); `kanade-cloudflared` (the tunnel token) only for profile `public`. Docker Desktop lets uid 65532 read `0600` files; on a Linux host make them readable by uid 65532. |
 | Personas | `config/personas/` | Mounted read-only at `/config/personas`. |
 | Catalog | `boss/bosses.yaml` | Tracked; mounted read-only at `/app/boss/bosses.yaml` (the image carries only `boss/knowledge`). |
 | Boss art | `boss/portraits/`, `boss/artwork/` | Private, mounted read-only over `/app/boss/*`. |
@@ -422,7 +422,8 @@ shutdown budget plus a 5 s margin; `KANADE_SHUTDOWN_TIMEOUT_SECONDS`, default
 10, caps only the HTTP drain inside that budget). No host
 port is published: the admin listener binds only its `kanade_edge` address
 and the optional public listener only its `kanade_public` one, both internal
-(no egress); Discord and Kanata egress uses the project's `default` network.
+(no egress); Discord and the model gateway (Kanata or another
+OpenAI-compatible server) use the project's `default` network.
 The container healthcheck calls `kanade healthcheck` against its own
 address. cloudflared mirrors this (read-only, no capabilities, uid 65532,
 0.5 CPU, 256 MiB, 64 pids, metrics on its own loopback, no auto-update).

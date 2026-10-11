@@ -126,6 +126,7 @@ pub(super) fn model_stack(
         ca_file: models.ca_file.clone(),
         roles: ModelRoles::from(&settings.models),
         permits: u32::from(models.permits),
+        capabilities: models.capabilities.clone(),
     };
     let random = Arc::new(XorShift::new(uuid::Uuid::new_v4().as_u64_pair().0));
     match build_with_groups(setup, &models.groups, random) {

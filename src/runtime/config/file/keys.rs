@@ -20,6 +20,9 @@ pub(super) enum Kind {
     Context,
     /// `[settings.run_lengths]`, encoded as JSON for the runtime settings seed.
     RunLengths,
+    /// `[models.capabilities]` (alias → capability table), encoded as JSON;
+    /// values are checked there.
+    Capabilities,
 }
 
 use Kind::*;
@@ -148,6 +151,11 @@ pub(super) const KEYS: &[(&str, &str, Kind)] = &[
     ("models.permits", "KANADE_MODEL_PERMITS", Int),
     ("models.groups", "KANADE_MODEL_GROUPS", Groups),
     ("models.context", "KANADE_MODEL_CONTEXT", Context),
+    (
+        "models.capabilities",
+        "KANADE_MODEL_CAPABILITIES",
+        Capabilities,
+    ),
     ("models.extraction.model", "KANADE_EXTRACT_MODEL", Text),
     (
         "models.extraction.reasoning",

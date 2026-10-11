@@ -4,6 +4,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 ## 1.0.0-beta.6 (in development)
 
+**Added**
+
+- Other OpenAI-compatible model servers are supported: `[models.capabilities."<alias>"]` in `kanade.toml` (or `KANADE_MODEL_CAPABILITIES` as JSON) declares what each model can do (structured output, function tools, sampling controls, reasoning control and efforts, context and output token limits). Startup refuses unknown fields and out-of-range values. A server without Kanata's published metadata used to run every model on the minimal profile, which ruled out extraction and chat tools; Kanata's metadata still wins over a declaration, and the trust zone and raw-data warning are unchanged. Setup guide in `docs/v5/runtime-bootstrap.md` ("Other OpenAI-compatible providers") and a secret-free `kanade.openai-compatible.example.toml`.
+
 **Changed**
 
 - Persona, boss knowledge and boss catalog files are opened without following symlinks and without blocking on a FIFO, and must be regular files with one hard link and at most 256 KiB, checked on the opened file. Up to 256 persona profiles and 256 knowledge documents are read; past that the load fails as a whole (a persona reload keeps the previous set), and an unreadable knowledge directory entry now fails the load instead of being skipped.

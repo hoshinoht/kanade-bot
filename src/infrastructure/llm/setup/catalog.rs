@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, RwLock},
+};
 
 use serde::Serialize;
 
@@ -15,6 +18,8 @@ pub struct CatalogSnapshot {
     pub models: Vec<CatalogModel>,
 }
 
+/// Capabilities shown are the published metadata, else the operator's
+/// declaration, else the minimal profile (the provider's precedence).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct CatalogModel {
     pub alias: String,
@@ -102,9 +107,29 @@ pub(super) fn published<'a>(
 #[derive(Debug, Default)]
 pub(super) struct CatalogState {
     listing: RwLock<Option<Arc<[ListedModel]>>>,
+    /// Operator declarations; never consulted for trust zones or admission.
+    declared: BTreeMap<String, ModelCapabilities>,
 }
 
 impl CatalogState {
+    pub fn new(declared: BTreeMap<String, ModelCapabilities>) -> Self {
+        Self {
+            listing: RwLock::default(),
+            declared,
+        }
+    }
+
+    /// Published metadata in `listed`, else the operator's declaration.
+    pub fn capabilities<'a>(
+        &'a self,
+        listed: Option<&'a [ListedModel]>,
+        alias: &str,
+    ) -> Option<&'a ModelCapabilities> {
+        listed
+            .and_then(|listed| published(listed, alias))
+            .or_else(|| self.declared.get(alias))
+    }
+
     /// Listing observer: keeps the snapshot and re-derives each route's
     /// `external` flag from its current alias. A failed refresh keeps the
     /// last derivation.
@@ -129,7 +154,9 @@ impl CatalogState {
             .map(|model| {
                 let caps = model.capabilities.as_ref();
                 let minimal = ModelCapabilities::minimal();
-                let shown = caps.unwrap_or(&minimal);
+                let shown = caps
+                    .or_else(|| self.declared.get(&model.id))
+                    .unwrap_or(&minimal);
                 CatalogModel {
                     alias: model.id.clone(),
                     published: caps.is_some(),

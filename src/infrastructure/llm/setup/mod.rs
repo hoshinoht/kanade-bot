@@ -19,7 +19,7 @@ use std::{
 
 use super::{
     BearerKey, Effort, ExecutionLimits, HttpConfigError, HttpProviderConfig, LlmError,
-    OpenAiCompatibleProvider, RetryPolicy, TrustRoots,
+    ModelCapabilities, OpenAiCompatibleProvider, RetryPolicy, TrustRoots,
     governor::{
         ConfigError, Governor, GovernorConfig, GroupConfig, ModelClient, Random, Role, RoleConfig,
     },
@@ -105,6 +105,9 @@ pub struct ModelSetup {
     pub ca_file: Option<PathBuf>,
     pub roles: ModelRoles,
     pub permits: u32,
+    /// Operator capability declarations per alias, used where the listing
+    /// publishes no metadata for it (published metadata wins).
+    pub capabilities: BTreeMap<String, ModelCapabilities>,
 }
 
 /// Operator-declared backend group; aliases sharing hardware share its permits.
@@ -123,6 +126,7 @@ impl fmt::Debug for ModelSetup {
             .field("ca_file", &self.ca_file)
             .field("roles", &self.roles)
             .field("permits", &self.permits)
+            .field("capabilities", &self.capabilities)
             .finish()
     }
 }
@@ -193,7 +197,9 @@ pub fn build_with_groups(
     if setup.roles.extraction.effort == RoleEffort::Inherit {
         return Err(SetupError::ExtractionInherits);
     }
+    let catalog = Arc::new(CatalogState::new(setup.capabilities.clone()));
     let mut config = HttpProviderConfig::new(base_url);
+    config.declared = setup.capabilities;
     config.bearer_key = setup
         .key
         .as_deref()
@@ -212,7 +218,6 @@ pub fn build_with_groups(
         .is_empty()
         .then(|| gateway_group(setup.permits, Vec::new()));
     let roles = Arc::new(LiveRoles::new(setup.roles, open));
-    let catalog = Arc::new(CatalogState::default());
     roles.refresh(&governor, &catalog);
     {
         let (catalog, governor, roles) = (catalog.clone(), governor.clone(), roles.clone());
@@ -333,11 +338,16 @@ impl ModelStack {
         self.catalog.snapshot()
     }
 
-    /// Effective level per routed role against the current listing: inherit
-    /// resolved, a variant's fixed level applied, a stranded level reset to
-    /// `off` or the lowest published level (reported in `stranded`).
+    /// Effective level per routed role against the current listing and the
+    /// operator's declarations: inherit resolved, a variant's fixed level
+    /// applied, a stranded level reset to `off` or the lowest accepted level
+    /// (reported in `stranded`).
     pub fn efforts(&self) -> BTreeMap<Role, EffortStatus> {
-        live::efforts(&self.roles.get(), self.catalog.listing().as_deref())
+        live::efforts(
+            &self.roles.get(),
+            &self.catalog,
+            self.catalog.listing().as_deref(),
+        )
     }
 
     /// What a role's requests should send as `reasoning` (its live route).

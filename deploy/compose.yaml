@@ -66,7 +66,8 @@ services:
       - kanade_model_api_key
       - backup_recipients
     networks:
-      # Egress for Discord and Kanata.
+      # Egress for Discord and the model gateway (Kanata or another
+      # OpenAI-compatible server).
       default: {}
       edge:
         ipv4_address: 192.168.97.10
@@ -233,7 +234,8 @@ secrets:
   # empty is fine until [public] discord_client_id is set.
   public_discord_client_secret:
     file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/public_discord_client_secret
-  # A symlink to the Kanata key file v4 uses, so there is one key to rotate.
+  # Bearer key for the model gateway (Kanata or another OpenAI-compatible
+  # server); a symlink to v4's Kanata key still works when using Kanata.
   kanade_model_api_key:
     file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/model_api_key
   # Tunnel token (profile public only); never an env var or command argument.

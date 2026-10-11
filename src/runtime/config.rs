@@ -13,6 +13,7 @@ use super::error::Error;
 mod admin_auth;
 mod admin_client;
 mod backup;
+mod capabilities;
 mod context;
 mod discord;
 mod file;

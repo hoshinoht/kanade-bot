@@ -169,6 +169,10 @@ fn convert(value: &Value, kind: Kind, path: &str) -> Result<String, Error> {
         Kind::RunLengths => {
             serde_json::to_string(value).map_err(|_| wrong(path, "a run lengths settings table"))
         }
+        Kind::Capabilities => value
+            .as_table()
+            .and_then(|_| serde_json::to_string(value).ok())
+            .ok_or_else(|| wrong(path, "a table of model alias tables")),
     }
 }
 
