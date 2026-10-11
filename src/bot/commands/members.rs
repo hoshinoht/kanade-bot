@@ -1,6 +1,7 @@
 //! A member's own settings: `/pings` (mention level) and `/style` (reply
 //! style), plus staff-only `/nick` (chat aliases). Members are not history
-//! rows: these are portal-owned member edits, as the admin API makes them.
+//! rows: these are portal-owned member edits, recorded in History's
+//! `members` section as the admin API records its own.
 
 use std::sync::Arc;
 
@@ -19,6 +20,7 @@ use crate::bot::ids::id_text;
 use crate::bot::transport::InteractionReply;
 use crate::domain::members::{GatewayMember, MemberProfile, PingLevel, PortalEdit, is_valid_alias};
 use crate::domain::scheduler::StoreError;
+use crate::infrastructure::store::replays::{PortalRecord, PortalWrite};
 
 /// v4 `PING_LEVEL_HELP`, in the command's own words.
 pub fn ping_help(level: PingLevel) -> &'static str {
@@ -91,13 +93,36 @@ impl MemberCommand {
             .map_err(store_failed)
     }
 
-    async fn edit(&self, user_id: String, edit: PortalEdit) -> Result<MemberProfile, CommandError> {
-        match self.ctx.store.edit_member(user_id.clone(), edit).await {
-            Ok(Some(profile)) => Ok(profile),
-            Ok(None) => Err(CommandError::User(format!(
+    /// The edit and its History record (actor: the invoker), in one write.
+    /// Discord commands store no idempotency replay: redelivery is deduped
+    /// by the dispatcher.
+    async fn edit(
+        &self,
+        invocation: &Invocation,
+        user_id: String,
+        edit: PortalEdit,
+    ) -> Result<MemberProfile, CommandError> {
+        let origin = self.ctx.plain_origin(&invocation.invoker);
+        let record = PortalRecord {
+            at: self.ctx.now(),
+            actor: origin.actor,
+            surface: origin.surface,
+        };
+        match self
+            .ctx
+            .store
+            .edit_member_recorded(user_id.clone(), edit, record, None)
+            .await
+        {
+            Ok(PortalWrite::Edited(profile)) => Ok(profile),
+            Ok(PortalWrite::Missing) => Err(CommandError::User(format!(
                 "{} isn't on the roster yet - try again in a minute.",
                 mention(&user_id)
             ))),
+            // Only a keyed write answers these, and this one carries no key.
+            Ok(PortalWrite::Replayed | PortalWrite::KeyTaken) => Err(CommandError::Internal(
+                "unkeyed member edit answered as a replay".into(),
+            )),
             Err(StoreError::Constraint(_)) => Err(CommandError::User(
                 "That alias already names someone.".into(),
             )),
@@ -131,6 +156,7 @@ impl MemberCommand {
         let chosen = PingLevel::parse_stored(level)
             .map_err(|error| CommandError::User(error.to_string()))?;
         self.edit(
+            invocation,
             user,
             PortalEdit {
                 ping_level: Some(chosen),
@@ -222,6 +248,7 @@ impl MemberCommand {
             ));
         };
         self.edit(
+            invocation,
             user,
             PortalEdit {
                 reply_style: Some(chosen.clone()),
@@ -250,6 +277,7 @@ impl MemberCommand {
         }
         let profile = self
             .edit(
+                invocation,
                 target.clone(),
                 PortalEdit {
                     add_alias: Some(alias),

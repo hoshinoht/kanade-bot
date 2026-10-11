@@ -16,6 +16,7 @@ mod decline_notices;
 mod drafts;
 mod history;
 mod journal;
+mod maintenance;
 mod members;
 mod migrate;
 mod model_log;

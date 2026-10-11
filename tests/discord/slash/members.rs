@@ -2,7 +2,10 @@
 
 use serde_json::json;
 
+use kanade::domain::history::{Actor, Surface};
 use kanade::domain::members::{MemberStore, PingLevel};
+use kanade::domain::settings::{SettingsChangeQuery, SettingsStore};
+use kanade::infrastructure::store::replays::MEMBERS_SECTION;
 
 use super::super::support::{ADMIN_ROLE, BOSSING_ROLE};
 use super::{ALICE, BOB, CARA, DAN, KALOS, PILOT_ROLE, Slash, focused, opt, user_opt};
@@ -46,6 +49,60 @@ async fn pings_reads_and_sets_the_invokers_level() {
         .unwrap();
     assert!(row.member.has_role);
     assert_eq!(row.member.ping_level, PingLevel::Off);
+}
+
+#[tokio::test]
+async fn member_edits_are_recorded_in_history_as_the_discord_invoker() {
+    let slash = Slash::new().await;
+    let saves = async || {
+        slash
+            .store
+            .settings_changes(SettingsChangeQuery::default())
+            .await
+            .unwrap()
+    };
+    assert!(saves().await.is_empty());
+    slash.run(DAN, "pings", json!([opt("level", "all")])).await;
+    let recorded = saves().await;
+    assert_eq!(recorded.len(), 1, "{recorded:?}");
+    let save = &recorded[0];
+    assert_eq!(save.actor, Actor::member(DAN.to_string()));
+    assert_eq!(save.surface, Surface::Discord);
+    assert_eq!(save.section, MEMBERS_SECTION);
+    assert_eq!(save.revision, 0);
+    let key = format!("member.{DAN}");
+    let diff = &save.values[&key];
+    assert!(
+        diff.from.contains(r#""ping_level":"essential""#),
+        "{diff:?}"
+    );
+    assert!(diff.to.contains(r#""ping_level":"all""#), "{diff:?}");
+    assert_eq!(save.values.len(), 1);
+
+    // The same level again changes nothing and records nothing.
+    assert_eq!(
+        slash.run(DAN, "pings", json!([opt("level", "all")])).await,
+        "🔔 Pings set to **all** — everything that lists you, including moves, swaps and \
+         weekly-timing changes."
+    );
+    assert_eq!(saves().await.len(), 1, "a no-op edit records nothing");
+
+    // A staff edit of another member is the staff member's.
+    let reply = slash
+        .run_in(
+            ALICE,
+            &[ADMIN_ROLE],
+            KALOS,
+            "nick",
+            json!([user_opt("user", BOB), opt("alias", "my")]),
+        )
+        .await;
+    assert_eq!(reply.content, "✅ <@1002> is now also known as: `my`");
+    let recorded = saves().await;
+    assert_eq!(recorded.len(), 2, "{recorded:?}");
+    assert_eq!(recorded[0].actor, Actor::member(ALICE.to_string()));
+    assert_eq!(recorded[0].surface, Surface::Discord);
+    assert!(recorded[0].values.contains_key(&format!("member.{BOB}")));
 }
 
 #[tokio::test]

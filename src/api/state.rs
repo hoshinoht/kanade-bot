@@ -151,15 +151,9 @@ pub trait ReadStore: Send + Sync {
         actor: Actor,
         request_id: String,
     ) -> ReadFuture<'_, Option<ChangeRecord>>;
-    /// A member edit outside the admin API (the Discord command): no History
-    /// record or replay. Members are not history rows, so it bypasses the scheduler.
-    fn edit_member(
-        &self,
-        user_id: String,
-        edit: PortalEdit,
-    ) -> ReadFuture<'_, Option<MemberProfile>>;
-    /// An admin portal member edit with its History record and keyed
-    /// replay, in one write (see [`ReplayStore::apply_portal_recorded`]).
+    /// A member edit (admin portal or Discord command) with its History
+    /// record and keyed replay, in one write (see
+    /// [`ReplayStore::apply_portal_recorded`]).
     fn edit_member_recorded(
         &self,
         user_id: String,
@@ -438,14 +432,6 @@ where
             };
             self.load_change(recorded.committed.seq).await
         })
-    }
-
-    fn edit_member(
-        &self,
-        user_id: String,
-        edit: PortalEdit,
-    ) -> ReadFuture<'_, Option<MemberProfile>> {
-        Box::pin(async move { self.apply_portal(&user_id, edit).await })
     }
 
     fn edit_member_recorded(

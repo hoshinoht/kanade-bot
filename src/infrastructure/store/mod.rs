@@ -4,6 +4,7 @@
 
 pub mod auth_audit;
 mod history;
+pub mod maintenance;
 mod observer;
 mod order;
 pub mod replays;

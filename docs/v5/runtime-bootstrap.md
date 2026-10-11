@@ -774,8 +774,13 @@ bot applies it and ends the sessions of the old token.
 Live serve prunes the model logs (extraction, chat and rewrite logs,
 processed cached messages, drained notices) older than 90 days by its clock
 at startup and then every 24 hours on a monotonic timer, off the request
-path; a run is cut after 60 s (the store deletes in short batches) and
-shutdown cancels a run in progress before the store closes.
+path, then checkpoints the store's WAL into the database and truncates it
+(`PRAGMA wal_checkpoint(TRUNCATE)` on the write connection, held only for
+the checkpoint; readers still open can leave it `busy`, which is not an
+error). Prune and checkpoint share one 60 s limit per run (the store
+deletes in short batches; a prune that hits the limit skips that day's
+checkpoint), failures only log, and shutdown cancels a run in progress
+before the store closes.
 
 The runtime installs Rustls' `ring` provider before command processing. SQLx
 and Twilight are intentionally absent until storage and Discord work needs
@@ -854,6 +859,9 @@ JSON lines on stderr (`level`, `event`, fields). None carries question or reply 
 | `model_logs_pruned` | INFO | `cutoff` (ISO-8601 UTC), `extractions`, `chats`, `messages`, `notices`, `rewrites` (deleted counts) | each retention run of live serve (startup, then daily) |
 | `model_logs_prune_failed` | WARN | no additional fields | a retention run failed in the store (retried the next day) |
 | `model_logs_prune_cut` | WARN | `limit_seconds` | a retention run hit its time limit; the rest goes the next day |
+| `wal_checkpointed` | INFO | `busy` (a reader or writer kept it from finishing), `log`, `checkpointed` (WAL frame counts SQLite reported) | after each retention run's prune |
+| `wal_checkpoint_failed` | WARN | no additional fields | the checkpoint failed in the store (retried the next day) |
+| `wal_checkpoint_cut` | WARN | `limit_seconds` | the checkpoint ran out the run's time limit |
 | `persona_selected` | INFO; WARN on a fallback source, any candidate issue, unreadable profiles or `profiles_issue` | `configured`, `effective`, `source` (`configured`/`catalog_default`/`tracked_fallback`), `bundle_file`, `profiles`, `profile_ids`, `unreadable_profiles` [{`file`,`error`}], `profiles_issue`, `issues` [{`candidate`,`error`}] | serve startup, after the persona files load |
 | `persona_unavailable` | ERROR | `configured`, `issues` | serve startup when no persona validates (chat stays off) |
 | `settings_changed` | INFO | `revision`, `section`, `keys` (stored keys), `values` {key: {`from`,`to`}}, `actor` (`kind:id`), `surface` (`admin_portal`) | every saved config `PATCH` that changed something |

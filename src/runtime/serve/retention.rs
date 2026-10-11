@@ -1,11 +1,13 @@
 //! Model-log retention (user decision 2026-09-25: 90 days): serve prunes the
 //! extraction, chat and rewrite logs, processed cached messages and drained
 //! notices older than [`DEFAULT_LOG_RETENTION`] at startup and then every
-//! [`EVERY`], off the request path, on the store it owns. The period runs
+//! [`EVERY`], off the request path, on the store it owns, then checkpoints
+//! and truncates the store's WAL (user decision 2026-10-11). The period runs
 //! on tokio's monotonic clock, so a wall-clock step cannot skip or repeat a
-//! run; the cutoff comes from serve's injected wall clock. A run is bounded
-//! by [`RUN_LIMIT`] (the store deletes in short batches, each its own
-//! transaction, so a cut run just resumes the next day); stopping cancels a
+//! run; the cutoff comes from serve's injected wall clock. A run (prune and
+//! checkpoint together) is bounded by [`RUN_LIMIT`] (the store deletes in
+//! short batches, each its own transaction, so a cut run just resumes the
+//! next day; a cut prune leaves no time to checkpoint); stopping cancels a
 //! run in progress and joins the task before the store closes.
 
 use std::{sync::Arc, time::Duration};
@@ -20,6 +22,7 @@ use crate::{
         scheduler::StoreError,
         time::to_iso,
     },
+    infrastructure::store::maintenance::{StoreMaintenance, WalCheckpoint},
     runtime::logging,
 };
 
@@ -37,6 +40,18 @@ async fn prune<S: ModelLogStore>(
     }
 }
 
+/// One run: prune, then (unless the prune used up the limit) checkpoint,
+/// both within [`RUN_LIMIT`] of the start.
+async fn run<S: ModelLogStore + StoreMaintenance>(store: &S, now: chrono::DateTime<chrono::Utc>) {
+    let deadline = tokio::time::Instant::now() + RUN_LIMIT;
+    let pruned = tokio::time::timeout_at(deadline, prune(store, now)).await;
+    let cut = pruned.is_err();
+    report(pruned, now);
+    if !cut {
+        report_checkpoint(tokio::time::timeout_at(deadline, store.checkpoint_wal()).await);
+    }
+}
+
 /// The running retention loop.
 pub(super) struct Retention {
     stop: watch::Sender<bool>,
@@ -44,18 +59,16 @@ pub(super) struct Retention {
 }
 
 impl Retention {
-    /// Prune now, then every `every`, as of `clock`.
+    /// Prune and checkpoint now, then every `every`, as of `clock`.
     pub(super) fn start<S>(store: Arc<S>, clock: Clock, every: Duration) -> Self
     where
-        S: ModelLogStore + Send + Sync + 'static,
+        S: ModelLogStore + StoreMaintenance + Send + Sync + 'static,
     {
         let (stop, mut stopped) = watch::channel(false);
         let task = tokio::spawn(async move {
             loop {
-                let now = clock();
-                let run = tokio::time::timeout(RUN_LIMIT, prune(&*store, now));
                 tokio::select! {
-                    outcome = run => report(outcome, now),
+                    () = run(&*store, clock()) => {}
                     _ = stopped.changed() => return,
                 }
                 tokio::select! {
@@ -99,6 +112,29 @@ fn report(
         Err(_) => logging::event(
             "WARN",
             "model_logs_prune_cut",
+            json!({"limit_seconds": RUN_LIMIT.as_secs()}),
+        ),
+    }
+}
+
+fn report_checkpoint(
+    outcome: Result<Result<WalCheckpoint, StoreError>, tokio::time::error::Elapsed>,
+) {
+    match outcome {
+        Ok(Ok(done)) => logging::event(
+            "INFO",
+            "wal_checkpointed",
+            json!({
+                "busy": done.busy,
+                "log": done.log,
+                "checkpointed": done.checkpointed,
+            }),
+        ),
+        // Store error text may carry paths.
+        Ok(Err(_)) => logging::event("WARN", "wal_checkpoint_failed", json!({})),
+        Err(_) => logging::event(
+            "WARN",
+            "wal_checkpoint_cut",
             json!({"limit_seconds": RUN_LIMIT.as_secs()}),
         ),
     }
@@ -170,5 +206,81 @@ mod tests {
         assert_eq!(pruned[0]["level"], "INFO");
         assert_eq!(pruned[0]["extractions"], 1);
         assert_eq!(pruned[0]["cutoff"], to_iso(&at(-90)).unwrap());
+
+        // Each run checkpoints right after its prune.
+        let order: Vec<_> = logging::captured()
+            .into_iter()
+            .filter_map(|line| line["event"].as_str().map(str::to_owned))
+            .filter(|event| event == "model_logs_pruned" || event == "wal_checkpointed")
+            .collect();
+        assert!(order.len() >= 4, "{order:?}");
+        for pair in order.chunks(2) {
+            assert_eq!(pair, ["model_logs_pruned", "wal_checkpointed"], "{order:?}");
+        }
+    }
+
+    /// On the real store the run's checkpoint empties the WAL the writes
+    /// filled, and logs its frame counts.
+    #[tokio::test]
+    async fn a_run_truncates_the_sqlite_wal_after_pruning() {
+        use std::os::unix::fs::DirBuilderExt;
+
+        use crate::infrastructure::store::{SqliteStore, SqliteStoreConfig};
+
+        logging::capture();
+        let root = std::fs::canonicalize(std::env::temp_dir()).expect("temp dir");
+        let dir = root.join(format!("kanade-retention-{}", uuid::Uuid::new_v4()));
+        for path in [dir.clone(), dir.join("locks")] {
+            std::fs::DirBuilder::new()
+                .mode(0o700)
+                .create(&path)
+                .expect("create");
+        }
+        let store = Arc::new(
+            SqliteStore::open(&SqliteStoreConfig {
+                db_path: dir.join("db.sqlite3"),
+                owner_lock_dir: dir.join("locks"),
+            })
+            .await
+            .expect("open"),
+        );
+        for (n, day) in [-120, -100, 0].into_iter().enumerate() {
+            store
+                .record_extraction(extraction(&format!("x-{n}"), at(day)))
+                .await
+                .unwrap();
+        }
+        let wal = dir.join("db.sqlite3-wal");
+        assert!(std::fs::metadata(&wal).unwrap().len() > 0);
+
+        let running = Retention::start(store.clone(), Arc::new(|| at(0)), EVERY);
+        let mut lines = Vec::new();
+        for _ in 0..500 {
+            lines = logging::captured();
+            if lines.iter().any(|line| line["event"] == "wal_checkpointed") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+        running.stop().await;
+        let events: Vec<_> = lines
+            .iter()
+            .filter(|line| {
+                line["event"] == "model_logs_pruned" || line["event"] == "wal_checkpointed"
+            })
+            .collect();
+        assert_eq!(events.len(), 2, "{lines:?}");
+        assert_eq!(events[0]["event"], "model_logs_pruned");
+        assert_eq!(events[0]["extractions"], 2);
+        let checkpointed = events[1];
+        assert_eq!(checkpointed["level"], "INFO");
+        assert_eq!(checkpointed["busy"], false);
+        assert!(checkpointed["log"].is_i64() && checkpointed["checkpointed"].is_i64());
+        assert_eq!(std::fs::metadata(&wal).unwrap().len(), 0, "{checkpointed}");
+        assert!(store.load_extraction("x-2").await.unwrap().is_some());
+
+        let store = Arc::into_inner(store).expect("the task let go of the store");
+        store.close().await.expect("close");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

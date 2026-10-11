@@ -31,6 +31,7 @@ use super::order::sort_snapshot;
 mod auth_audit;
 mod decline_notices;
 mod journal;
+mod maintenance;
 mod members;
 mod model_log;
 mod outbox;
