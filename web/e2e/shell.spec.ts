@@ -69,7 +69,8 @@ for (const size of [
     const rail = page.locator('.navrail');
     await expect(rail.getByRole('link', { name: /^Inbox/ })).toHaveAttribute('aria-current', 'page');
     expect(await rail.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(0);
-    for (const link of await rail.getByRole('navigation').getByRole('link').all()) {
+    const nav = rail.getByRole('navigation');
+    for (const link of [...(await nav.getByRole('link').all()), nav.getByRole('button', { name: 'More', exact: true })]) {
       const box = (await link.boundingBox())!;
       expect(box.y + box.height).toBeLessThanOrEqual(size.height);
       // The whole item is the link: at least 44 px tall (spec "Accessibility").
@@ -79,6 +80,74 @@ for (const size of [
     expect(account.y + account.height).toBeLessThanOrEqual(size.height);
   });
 }
+
+test('rail: More is a keyboard menu of Rewrites, Limits and Reminders', async ({ page }) => {
+  await page.goto(`${ADMIN}/members?sw=off`);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('13 bossers');
+  const nav = page.locator('.navrail').getByRole('navigation', { name: 'Sections' });
+  const more = nav.getByRole('button', { name: 'More', exact: true });
+  await expect(more).toHaveAttribute('aria-haspopup', 'menu');
+  await expect(more).toHaveAttribute('aria-expanded', 'false');
+  const menu = page.getByRole('menu', { name: 'More destinations' });
+  const item = (name: string) => menu.getByRole('menuitem', { name });
+
+  // Enter opens on the first item; arrows move and wrap, Home/End jump.
+  await more.focus();
+  await page.keyboard.press('Enter');
+  await expect(menu).toBeVisible();
+  await expect(more).toHaveAttribute('aria-expanded', 'true');
+  await expect(item('Rewrites')).toBeFocused();
+  for (const [key, name] of [
+    ['ArrowDown', 'Limits'],
+    ['ArrowDown', 'Reminders'],
+    ['ArrowDown', 'Rewrites'],
+    ['ArrowUp', 'Reminders'],
+    ['Home', 'Rewrites'],
+    ['End', 'Reminders'],
+  ] as const) {
+    await page.keyboard.press(key);
+    await expect(item(name)).toBeFocused();
+  }
+  // Escape closes and gives focus back to More.
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(more).toBeFocused();
+  await expect(more).toHaveAttribute('aria-expanded', 'false');
+  // ↑ opens on the last item; Tab closes and moves on.
+  await page.keyboard.press('ArrowUp');
+  await expect(item('Reminders')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(menu).toBeHidden();
+  // Space opens too; a click elsewhere closes.
+  await more.focus();
+  await page.keyboard.press(' ');
+  await expect(item('Rewrites')).toBeFocused();
+  await page.mouse.click(700, 400);
+  await expect(menu).toBeHidden();
+
+  // Choosing a page lands on it, focus on the page, and More takes its name and highlight.
+  await more.click();
+  await expect(item('Rewrites')).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(`${ADMIN}/limits`);
+  await expect(menu).toBeHidden();
+  await expect(page.locator('#main')).toBeFocused();
+  const here = nav.getByRole('button', { name: 'More, current page Limits', exact: true });
+  await expect(here).toHaveText('Limits');
+  await expect(here).toHaveClass(/navlist__item--here/);
+  await expect(here.locator('[data-icon="gauge"]')).toBeVisible();
+  await expect(nav.locator('[aria-current="page"]')).toHaveCount(0);
+  await here.click();
+  await expect(item('Limits')).toHaveAttribute('aria-current', 'page');
+  await page.keyboard.press('Escape');
+  await expect(here).toBeFocused();
+
+  // Off its pages, More is More again.
+  await nav.getByRole('link', { name: 'Week' }).click();
+  await expect(more).toHaveText('More');
+  await expect(more).not.toHaveClass(/navlist__item--here/);
+});
 
 test('phone: 48 px top bar, Inbox one tap away, and no rail or nav row', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -177,13 +246,48 @@ test('phone: the drawer counts Members and Reminders as their page headings do',
   await expect(page.locator('[data-run="r-carling"]')).toBeVisible();
   for (const label of ['Members', 'Reminders']) {
     await page.getByRole('button', { name: 'Open the navigation' }).click();
-    const link = page.getByRole('dialog', { name: 'Navigation' }).getByRole('link', { name: label, exact: true });
+    const drawer = page.getByRole('dialog', { name: 'Navigation' });
+    if (label === 'Reminders') await drawer.getByRole('button', { name: /^More/ }).click();
+    const link = drawer.getByRole('link', { name: label, exact: true });
     const count = link.locator('.navlist__count');
     await expect(count).toHaveText(/^\d+$/);
     const shown = await count.textContent();
     await link.click();
     await expect(page.getByRole('heading', { level: 1 }).locator('.pageline__num').first()).toHaveText(shown!);
   }
+});
+
+test('phone: the drawer has a More row that opens in place', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${ADMIN}/?sw=off`);
+  await expect(page.locator('[data-run="r-carling"]')).toBeVisible();
+  const menu = page.getByRole('button', { name: 'Open the navigation' });
+  await menu.click();
+  const drawer = page.getByRole('dialog', { name: 'Navigation' });
+  const more = drawer.getByRole('button', { name: /^More/ });
+  await expect(more).toHaveAttribute('aria-expanded', 'false');
+  await expect(more).toContainText('Rewrites, Limits, Reminders');
+  await expect(drawer.getByRole('link', { name: 'Limits' })).toHaveCount(0);
+  await more.click();
+  await expect(more).toHaveAttribute('aria-expanded', 'true');
+  await expect(drawer.getByRole('link')).toContainText(['Rewrites', 'Limits', 'Reminders']);
+  await drawer.getByRole('link', { name: 'Limits' }).click();
+  await expect(page).toHaveURL(`${ADMIN}/limits`);
+  await expect(drawer).toBeHidden();
+
+  // On a More page the drawer opens with More open and the page's own link current and focused.
+  await menu.click();
+  const limits = drawer.getByRole('link', { name: 'Limits' });
+  await expect(limits).toHaveAttribute('aria-current', 'page');
+  await expect(limits).toBeFocused();
+  // Closed, the row takes the page's name and highlight.
+  await more.click();
+  const here = drawer.getByRole('button', { name: 'More, current page Limits', exact: true });
+  await expect(here).toHaveAttribute('aria-expanded', 'false');
+  await expect(here.locator('.navlist__label')).toHaveText('Limits');
+  await expect(here).toHaveClass(/navlist__item--here/);
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeFocused();
 });
 
 test('phone landscape uses the phone frame (the rail would not fit 390 px of height)', async ({ page }) => {

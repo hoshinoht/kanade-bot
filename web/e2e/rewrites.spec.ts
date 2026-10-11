@@ -10,7 +10,8 @@ test('rewrites: list, filter by stage and verdict, open an attempt', async ({ pa
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('8 rewrites');
   await expect(page).toHaveTitle(/^Rewrites — /);
   const nav = page.getByRole('navigation', { name: 'Sections' });
-  await expect(nav.getByRole('link', { name: 'Rewrites' })).toHaveAttribute('aria-current', 'page');
+  // Rewrites is behind More, which takes its name and highlight here.
+  await expect(nav.getByRole('button', { name: 'More, current page Rewrites', exact: true })).toHaveText('Rewrites');
   const list = page.getByRole('listbox', { name: /Rewrite attempts/ });
   await expect(list.getByRole('option')).toHaveCount(8);
   // Wide: the newest attempt is open from the start.

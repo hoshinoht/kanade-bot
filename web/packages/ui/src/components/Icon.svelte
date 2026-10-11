@@ -46,7 +46,9 @@
     | 'lock'
     | 'moon'
     | 'log-in'
-    | 'tag';
+    | 'tag'
+    | 'layers'
+    | 'more-horizontal';
 </script>
 
 <script lang="ts">
@@ -165,6 +167,10 @@
     <polyline points="11 17 6 12 11 7" /><polyline points="18 17 13 12 18 7" />
   {:else if name === 'chevrons-right'}
     <polyline points="13 17 18 12 13 7" /><polyline points="6 17 11 12 6 7" />
+  {:else if name === 'layers'}
+    <polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" />
+  {:else if name === 'more-horizontal'}
+    <circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /><circle cx="5" cy="12" r="1" />
   {/if}
 </svg>
 {#if label}<span class="vh">{label}</span>{/if}

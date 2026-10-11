@@ -99,6 +99,8 @@
   const route = $derived(match(router.path, ROUTES));
   const detail = $derived(DETAILS.find((d) => d.key === route?.key));
   const section = $derived(SECTIONS.find((s) => s.key === (detail?.section ?? route?.key)));
+  // The rail's and drawer's attention badges; More sums those of the pages behind it.
+  const navBadges = $derived({ inbox: store.summary?.inbox ?? 0 });
   const which = $derived(router.query.get('week') === 'next' ? 'next' : 'this');
   const sheetRun = $derived(sheetRunId ? (store.run(sheetRunId) ?? null) : null);
   const OWN_TITLES: Record<string, string> = { login: 'Sign in', account: 'Account' };
@@ -589,7 +591,7 @@
         returnTo={menuButton}
       >
         {#snippet nav(follow)}
-          <NavList active={section?.key ?? ''} inbox={store.summary?.inbox ?? 0} counts={store.drawerCounts} onnavigate={follow} />
+          <NavList active={section?.key ?? ''} badges={navBadges} counts={store.drawerCounts} inline onnavigate={follow} />
         {/snippet}
         {#snippet foot()}
           {@render account()}
@@ -603,7 +605,7 @@
         name={store.identity?.name ?? 'Kanade'}
         avatar={store.identity ? artUrl(store.identity.avatar, store.identity) : null}
         active={section?.key ?? ''}
-        inbox={store.summary?.inbox ?? 0}
+        badges={navBadges}
         {account}
       />
     {/if}

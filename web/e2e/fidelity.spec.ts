@@ -26,7 +26,12 @@ interface Pair {
   viewport?: { width: number; height: number };
   /** Opens the state the board shows and waits for it. */
   ready: (page: Page) => Promise<void>;
+  /** Compare only these regions: the board's subject is part of the frame (the rail), the rest draws another page. */
+  scope?: string[];
 }
+
+/** The rail's own regions (rail option B); boards drawn before it leave them untagged. */
+const RAIL_FIDS = ['rail', 'rail-more', 'rail-more-menu', 'drawer-more'];
 
 // Member portal pairs (boards: KANADE_MOCKUPS=…/docs/research/2026-10-09-public-portal-mockups).
 const signedOut = async (page: Page) => {
@@ -552,6 +557,37 @@ const PAIRS: Pair[] = [
       await drawer.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
     },
   },
+  // Rail option B (KANADE_MOCKUPS=docs/research/2026-10-11-drafts-mockups): the boards
+  // draw the rail over the Drafts page, which has not landed, so only the rail is compared.
+  {
+    name: 'rail-more-800',
+    board: 'B_RailMore800',
+    path: '/history',
+    scope: ['rail', 'rail-more', 'rail-more-menu'],
+    ready: async (page) => {
+      await page.locator('.navrail').getByRole('button', { name: 'More', exact: true }).click();
+      await expect(page.getByRole('menu', { name: 'More destinations' })).toBeVisible();
+    },
+  },
+  {
+    name: 'rail-more-720',
+    board: 'B_RailMore720',
+    path: '/history',
+    scope: ['rail', 'rail-more'],
+    ready: (page) => expect(page.locator('.navrail').getByRole('button', { name: 'More', exact: true })).toBeVisible(),
+  },
+  {
+    name: 'rail-more-drawer',
+    board: 'B_RailMoreDrawer',
+    path: '/history',
+    scope: ['drawer', 'drawer-head', 'drawer-close', 'drawer-more', 'drawer-foot'],
+    ready: async (page) => {
+      await page.getByRole('button', { name: 'Open the navigation' }).click();
+      const drawer = page.getByRole('dialog', { name: 'Navigation' });
+      await expect(drawer.getByRole('button', { name: /^More/ })).toBeVisible();
+      await drawer.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+    },
+  },
   {
     name: 'hero-login',
     board: 'HeroLogin',
@@ -721,7 +757,9 @@ test.describe('layout fidelity', () => {
       mkdirSync(dir, { recursive: true });
 
       const board = await renderBoard(browser, pair.board);
-      const boardRegions = await skeleton(board.page);
+      // A scoped pair compares only its subject's regions, on both sides.
+      const scope = new Set(pair.scope ?? []);
+      const boardRegions = (await skeleton(board.page)).filter((r) => !scope.size || scope.has(r.fid));
       const boardPng = await board.page.screenshot({ animations: 'disabled' });
       await board.page.close();
 
@@ -735,7 +773,13 @@ test.describe('layout fidelity', () => {
       await page.goto(`${pair.app === 'public' ? PUBLIC : ADMIN}${pair.path}${pair.path.includes('?') ? '&' : '?'}sw=off`);
       await pair.ready(page);
       await settle(page);
-      let appRegions = await skeleton(page);
+      // Boards older than rail option B leave the rail and More untagged: on those,
+      // the app's rail regions are no finding (they stay compared where a board tags them).
+      const drawn = new Set(boardRegions.map((r) => r.fid));
+      const untagged = RAIL_FIDS.filter((fid) => !drawn.has(fid));
+      let appRegions = (await skeleton(page))
+        .filter((r) => (!scope.size || scope.has(r.fid)) && !untagged.includes(r.fid))
+        .map((r) => ({ ...r, children: r.children.filter((c) => !untagged.includes(c)) }));
       // A strip of the frame (Mast): top-level regions keep their place against the board's frame, not the larger page.
       if (pair.viewport)
         appRegions = appRegions.map((r) =>

@@ -2,9 +2,11 @@ import { ADMIN, expect, test, HEADING, choose } from './support';
 
 const SECTIONS = {
   Schedule: ['Week', 'Fixed', 'Bosses'],
-  Kanade: ['Inbox', 'Extractions', 'Chat', 'Rewrites', 'Limits'],
-  Operate: ['Members', 'Reminders', 'Config', 'History'],
+  Kanade: ['Inbox', 'Extractions', 'Chat'],
+  Operate: ['Members', 'Config', 'History'],
 };
+/** Rail option B: behind the More item, in its menu. */
+const MORE = ['Rewrites', 'Limits', 'Reminders'];
 
 test('admin: grouped nav has every v4 section as a real route', async ({ page }) => {
   await page.goto(`${ADMIN}/?sw=off`);
@@ -13,9 +15,12 @@ test('admin: grouped nav has every v4 section as a real route', async ({ page })
     const links = nav.getByRole('group', { name: group });
     await expect(links.getByRole('link')).toHaveText(labels.map((l) => new RegExp(`^\\s*${l}`)));
   }
-  for (const label of ['Inbox', 'Extractions', 'Chat', 'Rewrites', 'Limits']) {
-    await expect(nav.getByRole('link', { name: new RegExp(`^${label}`) })).toBeVisible();
-  }
+  // Drafts stays off until its page lands: no destination and no route.
+  await expect(nav.getByRole('link', { name: 'Drafts' })).toHaveCount(0);
+  const more = nav.getByRole('button', { name: 'More', exact: true });
+  await more.click();
+  await expect(page.getByRole('menu', { name: 'More destinations' }).getByRole('menuitem')).toHaveText(MORE);
+  await page.keyboard.press('Escape');
   await expect(nav.getByRole('link', { name: 'Week' })).toHaveAttribute('aria-current', 'page');
 
   await nav.getByRole('link', { name: 'History' }).click();
@@ -36,12 +41,19 @@ test('admin: grouped nav has every v4 section as a real route', async ({ page })
     ['Rewrites', '8 rewrites'],
     ['Limits', 'gateway is at capacity'],
   ] as const) {
-    await nav.getByRole('link', { name: label }).click();
+    if (MORE.includes(label)) {
+      await nav.getByRole('button', { name: /^More/ }).click();
+      await page.getByRole('menuitem', { name: label }).click();
+    } else {
+      await nav.getByRole('link', { name: label }).click();
+    }
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(heading);
   }
 
   await page.goBack();
   await expect(page).toHaveURL(`${ADMIN}/rewrites`);
+  await page.goto(`${ADMIN}/drafts?sw=off`);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText("That doesn't exist");
   // v4's /audit now lands on History's Sign-ins audit log.
   await page.goto(`${ADMIN}/audit?sw=off`);
   await expect(page).toHaveURL(`${ADMIN}/history?tab=sign-ins`);

@@ -14,9 +14,15 @@
     name,
     avatar = null,
     active,
-    inbox = 0,
+    badges = {},
     account,
-  }: { name: string; avatar?: string | null; active: string; inbox?: number; account: Snippet } = $props();
+  }: {
+    name: string;
+    avatar?: string | null;
+    active: string;
+    badges?: Partial<Record<string, number>>;
+    account: Snippet;
+  } = $props();
 
   let collapsed = $state(railCollapsed());
 
@@ -26,7 +32,7 @@
   }
 </script>
 
-<header class="navrail" class:navrail--collapsed={collapsed}>
+<header class="navrail" class:navrail--collapsed={collapsed} data-fid="rail">
   <div class="navrail__head">
     <a class="navrail__brand" href="/">
       {#if avatar}
@@ -46,6 +52,6 @@
       <Icon name={collapsed ? 'chevrons-right' : 'chevrons-left'} />
     </button>
   </div>
-  <NavList {active} {inbox} />
+  <NavList {active} {badges} />
   <div class="navrail__foot">{@render account()}</div>
 </header>

@@ -190,12 +190,15 @@
 }
 
 // Where you are: the select container, its ink on the glyph, a bolder
-// label and aria-current -- never the fill alone.
-.navlist__item[aria-current="page"] {
+// label and aria-current -- never the fill alone. More on one of its pages
+// (`--here`) takes the page's name with the same highlight.
+.navlist__item[aria-current="page"],
+.navlist__item--here {
   font-weight: 700;
 }
 
-.navlist__item[aria-current="page"] .navlist__ind {
+.navlist__item[aria-current="page"] .navlist__ind,
+.navlist__item--here .navlist__ind {
   background: var(--select);
   color: var(--select-ink);
 }
@@ -230,6 +233,104 @@
 
 .navrail .navlist__count {
   display: none;
+}
+
+/* ── More (rail option B): a menu button and its menu beside the rail ──── */
+
+.navmore {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.navmore__button {
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+// Open: the indicator holds the hover fill (B_RailMore800).
+.navrail .navmore__button[aria-expanded="true"]:not(.navlist__item--here) .navlist__ind {
+  background: var(--raise);
+}
+
+// B_RailMore800: 4 px clear of the rail, opening upward from the item.
+.navmore__menu {
+  position: absolute;
+  bottom: 0;
+  left: calc(100% + 4px);
+  z-index: 40;
+  width: 230px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border: 2px solid var(--win);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-family: var(--body);
+  text-align: left;
+}
+
+.navmore__cap {
+  padding: 6px 12px 4px;
+}
+
+.navmore__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 20px;
+  color: var(--ink);
+  font-size: var(--fs-body-sm);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.navmore__item .icon {
+  flex: none;
+  width: 19px;
+  height: 19px;
+}
+
+.navmore__label {
+  flex: 1 1 auto;
+}
+
+.navmore__item:hover,
+.navmore__item:focus-visible {
+  background: var(--raise);
+}
+
+.navmore__item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.navmore__item[aria-current="page"] {
+  background: var(--select);
+  color: var(--select-ink);
+  font-weight: 700;
+}
+
+.navmore__badge {
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  font-weight: 600;
+}
+
+.navmore__note {
+  margin: 0;
+  padding: 6px 12px 4px;
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+  line-height: 1.4;
 }
 
 /* ── the account at the rail's foot ──────────────────────────────────────── */
@@ -317,6 +418,21 @@
       display: none;
     }
 
+    // More has no heading: a divider sets it apart.
+    .navlist__group + .navlist__group--more::before {
+      display: block;
+      width: auto;
+    }
+
+    .navmore {
+      align-items: stretch;
+    }
+
+    // Clear of the 12 px padding to the rail's edge, then 4 px.
+    .navmore__menu {
+      left: calc(100% + 16px);
+    }
+
     .navlist__item {
       width: auto;
       height: 40px;
@@ -340,11 +456,17 @@
       height: 19px;
     }
 
-    .navlist__item:hover {
+    .navlist__item:hover,
+    .navmore__button[aria-expanded="true"]:not(.navlist__item--here) {
       background: var(--raise);
     }
 
-    .navlist__item[aria-current="page"] {
+    .navmore__button[aria-expanded="true"] .navlist__ind {
+      background: none;
+    }
+
+    .navlist__item[aria-current="page"],
+    .navlist__item--here {
       background: var(--select);
       color: var(--select-ink);
     }
@@ -388,7 +510,7 @@
   }
 }
 
-/* ── short frames: the rail fits its twelve destinations without scrolling */
+/* ── short frames: the rail fits its destinations and More without scrolling */
 
 @media (max-height: 760px) {
   .navrail {

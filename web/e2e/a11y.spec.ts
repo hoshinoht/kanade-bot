@@ -242,7 +242,8 @@ const WALK: { name: string; walk: (page: Page) => Promise<void> }[] = [
       await expect(page.getByRole('complementary', { name: 'Member details' })).toBeVisible();
       await serious(page, 'admin member sheet');
       await page.keyboard.press('Escape');
-      await page.getByRole('link', { name: 'Reminders' }).click();
+      await page.getByRole('button', { name: 'More', exact: true }).click();
+      await page.getByRole('menuitem', { name: 'Reminders' }).click();
       await expect(page.getByRole('tab', { name: /^Queued/ })).toBeVisible();
       await serious(page, 'admin reminders');
     },

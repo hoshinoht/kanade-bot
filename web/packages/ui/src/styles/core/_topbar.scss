@@ -315,7 +315,8 @@ dialog.drawer[open]::backdrop {
   text-align: left;
 }
 
-.drawer .navlist__item[aria-current="page"] {
+.drawer .navlist__item[aria-current="page"],
+.drawer .navlist__item--here {
   font-weight: 700;
 }
 
@@ -328,13 +329,61 @@ dialog.drawer[open]::backdrop {
   background: var(--raise);
 }
 
-.drawer .navlist__item[aria-current="page"] {
+.drawer .navlist__item[aria-current="page"],
+.drawer .navlist__item--here {
   background: var(--select);
   color: var(--select-ink);
 }
 
-.drawer .navlist__item[aria-current="page"] .navlist__ind {
+.drawer .navlist__item[aria-current="page"] .navlist__ind,
+.drawer .navlist__item--here .navlist__ind {
   background: none;
+}
+
+// B_RailMoreDrawer: More is an outlined row after History naming what it
+// holds; open, its links follow in place, inset under it.
+.drawer .navlist__group--more {
+  margin-top: 4px;
+}
+
+.drawer .navmore {
+  align-items: stretch;
+  gap: 4px;
+}
+
+.drawer .navmore__button {
+  width: 100%;
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.navmore__peek {
+  margin-left: auto;
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+  font-weight: 400;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.navmore__chevron {
+  flex: none;
+  display: flex;
+}
+
+.navmore__chevron .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.navmore__chevron--open {
+  transform: rotate(180deg);
+}
+
+.navmore__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 16px;
 }
 
 .drawer .navlist__count,

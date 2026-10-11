@@ -56,7 +56,8 @@ async function signature(page: Page): Promise<Signature> {
   await page.waitForTimeout(150); // "nothing starts" needs real time to pass
   const paneAnimations = await animated(page);
 
-  await nav.getByRole('link', { name: /^Limits/ }).click();
+  await nav.getByRole('button', { name: 'More', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Limits' }).click();
   const bars = page.getByRole('progressbar', { name: / permits in use$/ });
   await expect(bars.first()).toBeVisible();
   await page.waitForTimeout(300); // let a drifting wave move if it is going to

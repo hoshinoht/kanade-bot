@@ -1,11 +1,19 @@
 /**
- * Every v4 portal section as a v5 admin route, in v4's nav order and groups.
- * Every page is built; docs/notes/pwa-parity.md tracks what each still lacks.
+ * Every v4 portal section as a v5 admin route, in v4's nav order and groups,
+ * plus v5's own (Drafts). docs/notes/pwa-parity.md tracks what each still lacks.
  */
 
 import type { IconName } from '@kanade/ui';
 
 export type Group = 'Schedule' | 'Kanade' | 'Operate';
+
+/**
+ * Destinations whose page has not landed yet. An entry naming an off
+ * capability is left out everywhere (rail, drawer, palette, router), so its
+ * route answers Not found until the flag turns on with the page.
+ */
+export const CAPABILITIES = { drafts: false } satisfies Record<string, boolean>;
+export type Capability = keyof typeof CAPABILITIES;
 
 export interface Section {
   key: string;
@@ -15,9 +23,14 @@ export interface Section {
   title: string;
   /** The navigation rail's glyph; the label is always shown beside or under it. */
   icon: IconName;
+  /** Under the rail's More item (rail option B) instead of in its group. */
+  more?: true;
+  /** Shown only while this capability is on. */
+  capability?: Capability;
 }
 
-export const SECTIONS: Section[] = [
+/** Every destination, including those behind an off capability; the app uses `SECTIONS`. */
+export const ALL_SECTIONS: Section[] = [
   { key: 'week', href: '/', label: 'Week', group: 'Schedule', title: 'Week', icon: 'calendar' },
   {
     key: 'fixed',
@@ -34,6 +47,15 @@ export const SECTIONS: Section[] = [
     group: 'Schedule',
     title: 'Bosses',
     icon: 'shield',
+  },
+  {
+    key: 'drafts',
+    href: '/drafts',
+    label: 'Drafts',
+    group: 'Schedule',
+    title: 'Drafts',
+    icon: 'layers',
+    capability: 'drafts',
   },
   {
     key: 'inbox',
@@ -66,6 +88,7 @@ export const SECTIONS: Section[] = [
     group: 'Kanade',
     title: 'Rewrites',
     icon: 'edit',
+    more: true,
   },
   {
     key: 'limits',
@@ -74,6 +97,7 @@ export const SECTIONS: Section[] = [
     group: 'Kanade',
     title: 'Limits',
     icon: 'gauge',
+    more: true,
   },
   {
     key: 'members',
@@ -90,12 +114,26 @@ export const SECTIONS: Section[] = [
     group: 'Operate',
     title: 'Reminders',
     icon: 'bell',
+    more: true,
   },
   { key: 'config', href: '/config', label: 'Config', group: 'Operate', title: 'Config', icon: 'sliders' },
   // v4 "Audit", rebuilt on the git-style change history plus the Sign-ins
   // audit log; /audit redirects to /history?tab=sign-ins.
   { key: 'history', href: '/history', label: 'History', group: 'Operate', title: 'History', icon: 'history' },
 ];
+
+/** The destinations whose capability is on (and every one that names none). */
+export const enabledSections = (all: Section[], on: Record<Capability, boolean>): Section[] =>
+  all.filter((s) => !s.capability || on[s.capability]);
+
+export const SECTIONS = enabledSections(ALL_SECTIONS, CAPABILITIES);
+
+/** Behind the rail's More item, in nav order. */
+export const MORE = SECTIONS.filter((s) => s.more);
+
+/** A badge for a set of destinations (More): the sum of theirs. */
+export const sumBadges = (sections: Section[], badges: Partial<Record<string, number>>): number =>
+  sections.reduce((n, s) => n + (badges[s.key] ?? 0), 0);
 
 /** Detail pages reached from a section; they share its nav highlight. */
 export const DETAILS: { key: string; pattern: string; section: string; title: string }[] = [
