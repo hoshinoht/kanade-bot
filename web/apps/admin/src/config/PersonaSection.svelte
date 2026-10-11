@@ -3,7 +3,7 @@
   import { SvelteSet } from 'svelte/reactivity';
   import type { ConfigView, ReplyProfile, Role } from '@kanade/api-types';
   import { Modal, PendingLabel, Select, type Toaster } from '@kanade/ui';
-  import '@kanade/ui/styles/select.scss';
+  import '@kanade/ui/styles/core/select.scss';
   import { send } from '../resource.svelte';
   import Pager from '../pages/Pager.svelte';
   import { paged } from '../pages/paging';

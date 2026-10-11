@@ -8,8 +8,8 @@
 -->
 <script lang="ts">
   import { Select, type Toaster } from '@kanade/ui';
-  import '@kanade/ui/styles/select.scss';
-  import '@kanade/ui/styles/transcript.scss';
+  import '@kanade/ui/styles/core/select.scss';
+  import '@kanade/ui/styles/screens/transcript.scss';
   import { copyText } from '../shared/copy';
   import TextModal from '../shared/TextModal.svelte';
   import { FORMAT_LABEL, type TranscriptFormat } from './transcript';

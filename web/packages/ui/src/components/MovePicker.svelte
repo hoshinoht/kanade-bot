@@ -5,7 +5,7 @@
   live ("reads as …", errors only on Enter or blur), suggestions from the
   picked day's runs and the planner's clash wording, which warns and never
   blocks. `foot` adds "Moves to …", Cancel and Move. Styles come with the
-  caller (`@kanade/ui/styles/move-picker.scss`); fidelity tags too (`fids`).
+  caller (`@kanade/ui/styles/screens/move-picker.scss`); fidelity tags too (`fids`).
 -->
 <script lang="ts" module>
   /** `data-fid` tags for the picker's regions, from the app's call site. */

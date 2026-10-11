@@ -8,7 +8,7 @@
 <script lang="ts">
   import type { ConfigView, ModelInfo, ModelRole, RoleModel } from '@kanade/api-types';
   import { CHECK_TONE, Icon, Select, WavyProgress } from '@kanade/ui';
-  import '@kanade/ui/styles/select.scss';
+  import '@kanade/ui/styles/core/select.scss';
   import {
     groupCap,
     groupRows,

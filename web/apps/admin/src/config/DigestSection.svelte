@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Channel, LastDigest } from '@kanade/api-types';
   import { Icon, Modal, Select, weekStartLabel, type Toaster } from '@kanade/ui';
-  import '@kanade/ui/styles/select.scss';
+  import '@kanade/ui/styles/core/select.scss';
   import SettingsPanel from './SettingsPanel.svelte';
   import { Resource, send } from '../resource.svelte';
   import { discordLink } from '../shared/discordLink.svelte';

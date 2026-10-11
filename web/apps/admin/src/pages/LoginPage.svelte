@@ -1,5 +1,5 @@
 <script lang="ts">
-  import '@kanade/ui/styles/gate.scss';
+  import '@kanade/ui/styles/screens/gate.scss';
   import type { Identity, Session, SignInMethods, Tonight, TonightRun } from '@kanade/api-types';
   import { initial, PendingLabel } from '@kanade/ui';
   import { tick } from 'svelte';

@@ -2,7 +2,7 @@
 // moves as it does under the device's `prefers-reduced-motion: reduce`; off, it
 // follows the device, so a device that asks to reduce is never overridden. The
 // choice is reflected as `<html data-motion="reduce">`, which theme-boot.js sets
-// before first paint, the CSS reads (styles/_motion-query.scss) and
+// before first paint, the CSS reads (styles/core/_motion-query.scss) and
 // `reducedMotion()` checks. It stays in this browser and is never sent anywhere.
 import { prefersReducedMotion } from 'svelte/motion';
 

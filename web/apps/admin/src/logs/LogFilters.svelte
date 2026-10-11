@@ -6,10 +6,10 @@
 -->
 <script lang="ts">
   import type { LogFacets, Member, Week } from '@kanade/api-types';
-  import '@kanade/ui/styles/date-picker.scss';
+  import '@kanade/ui/styles/core/date-picker.scss';
   import { activeCount, KIND_LABEL, NO_LOG_FILTER, OUTCOME_LABEL, STAGE_LABEL, type LogFilter } from './filters';
   import { directory, memberLabel } from '../names/directory.svelte';
-  import '@kanade/ui/styles/select.scss';
+  import '@kanade/ui/styles/core/select.scss';
   import { DatePicker, Icon, Select, serverClock, type SelectOption } from '@kanade/ui';
 
   let {

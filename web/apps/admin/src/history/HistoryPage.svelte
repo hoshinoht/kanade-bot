@@ -2,10 +2,10 @@
      selected change inspectable beside the list on wide screens. -->
 <script lang="ts">
   import PageLine from '../shell/PageLine.svelte';
-  import '@kanade/ui/styles/evidence.scss';
-  import '@kanade/ui/styles/history.scss';
-  import '@kanade/ui/styles/date-picker.scss';
-  import '@kanade/ui/styles/select.scss';
+  import '@kanade/ui/styles/screens/evidence.scss';
+  import '@kanade/ui/styles/screens/history.scss';
+  import '@kanade/ui/styles/core/date-picker.scss';
+  import '@kanade/ui/styles/core/select.scss';
   import type { ChangeRecord, Checkpoints, HistoryPage, RevertPlan, SettingsChangeRow } from '@kanade/api-types';
   import { createClient } from '@kanade/client';
   import { SvelteSet } from 'svelte/reactivity';

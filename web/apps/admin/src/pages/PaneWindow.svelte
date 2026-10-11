@@ -1,5 +1,5 @@
 <script lang="ts">
-  import '@kanade/ui/styles/panes.scss';
+  import '@kanade/ui/styles/core/panes.scss';
   import type { Snippet } from 'svelte';
 
   let {

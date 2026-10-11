@@ -2,7 +2,7 @@
   import { tick, untrack } from 'svelte';
   import type { ConfigView, ReplyProfile, Role, RoleProfileWrite } from '@kanade/api-types';
   import { PendingLabel, Select } from '@kanade/ui';
-  import '@kanade/ui/styles/select.scss';
+  import '@kanade/ui/styles/core/select.scss';
   import type { Change } from './dirty';
   import type { SaveRoleProfiles } from './save';
 

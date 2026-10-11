@@ -6,8 +6,8 @@
   the reply style saves through the Members edit of the admin's own row.
 -->
 <script lang="ts">
-  import '@kanade/ui/styles/settings.scss';
-  import '@kanade/ui/styles/account.scss';
+  import '@kanade/ui/styles/screens/settings.scss';
+  import '@kanade/ui/styles/screens/account.scss';
   import type { AccountSessions, Me, MemberRow, Persona } from '@kanade/api-types';
   import { Icon, LoadError, LoadingState, SessionList, type Toaster } from '@kanade/ui';
   import { tick } from 'svelte';

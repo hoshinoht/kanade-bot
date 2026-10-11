@@ -14,7 +14,7 @@
   import Name from '../names/Name.svelte';
   import { memberAvatar } from '../shared/avatar';
   import { discordLink } from '../shared/discordLink.svelte';
-  import '@kanade/ui/styles/move-picker.scss';
+  import '@kanade/ui/styles/screens/move-picker.scss';
   import { editable, editText, editWeek, isoToday } from './edit';
   import { proposalExpiry } from './expiry';
   import { blocked, DISCORD_ONLY, isProposal, SOURCE_LABEL } from './flags';

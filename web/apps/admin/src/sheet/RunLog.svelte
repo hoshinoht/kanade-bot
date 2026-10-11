@@ -8,7 +8,7 @@
 <script lang="ts">
   import type { ChangeRecord, HistoryPage, Member } from '@kanade/api-types';
   import { initial, Select } from '@kanade/ui';
-  import '@kanade/ui/styles/select.scss';
+  import '@kanade/ui/styles/core/select.scss';
   import { SvelteSet } from 'svelte/reactivity';
   import { SURFACE_LABELS, actorName, describe, localAt, relativeAt } from '../history/describe';
   import { memberLabel } from '../names/directory.svelte';

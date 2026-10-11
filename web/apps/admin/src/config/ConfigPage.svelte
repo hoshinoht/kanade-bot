@@ -7,7 +7,7 @@
 -->
 <script lang="ts">
   import PageLine from '../shell/PageLine.svelte';
-  import '@kanade/ui/styles/settings.scss';
+  import '@kanade/ui/styles/screens/settings.scss';
   import type { ConfigView, Role, RoleProfileWrite } from '@kanade/api-types';
   import { COLORWAYS, currentColorway, Icon, LiveRegion, LoadError, LoadingState, RowContent, SINGLE_PANE_QUERY, ThemeTiles, Toaster } from '@kanade/ui';
   import { tick } from 'svelte';

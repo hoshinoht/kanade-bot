@@ -7,8 +7,8 @@
   the list, then the attempt with "‹ Rewrites" in the top bar.
 -->
 <script lang="ts">
-  import '@kanade/ui/styles/panes.scss';
-  import '@kanade/ui/styles/extract.scss';
+  import '@kanade/ui/styles/core/panes.scss';
+  import '@kanade/ui/styles/screens/extract.scss';
   import { LoadError, LoadingState, SINGLE_PANE_QUERY, type Toaster } from '@kanade/ui';
   import type { LogFacets, Rewrites } from '@kanade/api-types';
   import { tick, untrack } from 'svelte';

@@ -10,7 +10,7 @@
   import type { Channel, RescanJob } from '@kanade/api-types';
   import { createClient, createPoller } from '@kanade/client';
   import { LiveRegion, MultiSelect, Select, WavyProgress } from '@kanade/ui';
-  import '@kanade/ui/styles/select.scss';
+  import '@kanade/ui/styles/core/select.scss';
   import { tick } from 'svelte';
   import { send } from '../resource.svelte';
   import { getChrome } from '../shell/chrome';

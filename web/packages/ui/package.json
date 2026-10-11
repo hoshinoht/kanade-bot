@@ -15,7 +15,8 @@
     "./public.scss": "./src/styles/public.scss",
     "./admin.scss": "./src/styles/admin.scss",
     "./palette": "./src/components/CommandPalette.svelte",
-    "./styles/*.scss": "./src/styles/_*.scss"
+    "./styles/core/*.scss": "./src/styles/core/_*.scss",
+    "./styles/screens/*.scss": "./src/styles/screens/_*.scss"
   },
   "dependencies": {
     "@kanade/tokens": "workspace:*",

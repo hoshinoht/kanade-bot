@@ -1,28 +1,29 @@
 // The public app's stylesheet: only the partials its screens use, so admin
-// page styles never ship to members. Order mirrors v4 portal.scss.
-@use "base";
-@use "shell";
-@use "frame";
-@use "page-furniture";
-@use "forms";
-@use "buttons";
-@use "m3e-buttons"; // the mockups' pill buttons and accent key (P_ boards)
-@use "chips-status";
-@use "bosses";
-@use "runs"; // run cards + the entry-art veil (without it the art renders raw)
-@use "card-window";
-@use "tabs";
-@use "state-note"; // Closed, Denied, Session ended
-@use "avatar"; // the member's portrait (masthead, Account)
-@use "board";
-@use "week-rail"; // the phone's shape of the week (v4 partials/rail.html)
-@use "nav-rail"; // the drawer's list and brand tile
-@use "topbar"; // the phone frame: top bar + drawer
-@use "page-line"; // Account's page line
-@use "m3e-primitives"; // windows edge to edge, title-bar tabs, caps, status chips
-@use "stats-tables";
-@use "theme-tiles"; // Account › This browser
-@use "toast";
-@use "icons";
+// page styles never ship to members. Order mirrors v4 portal.scss; core and
+// screens interleave because the cascade depends on it.
+@use "core/base";
+@use "core/shell";
+@use "core/frame";
+@use "core/page-furniture";
+@use "core/forms";
+@use "core/buttons";
+@use "core/m3e-buttons"; // the mockups' pill buttons and accent key (P_ boards)
+@use "core/chips-status";
+@use "screens/bosses";
+@use "screens/runs"; // run cards + the entry-art veil (without it the art renders raw)
+@use "core/card-window";
+@use "core/tabs";
+@use "core/state-note"; // Closed, Denied, Session ended
+@use "core/avatar"; // the member's portrait (masthead, Account)
+@use "screens/board";
+@use "screens/week-rail"; // the phone's shape of the week (v4 partials/rail.html)
+@use "core/nav-rail"; // the drawer's list and brand tile
+@use "core/topbar"; // the phone frame: top bar + drawer
+@use "core/page-line"; // Account's page line
+@use "core/m3e-primitives"; // windows edge to edge, title-bar tabs, caps, status chips
+@use "core/stats-tables";
+@use "core/theme-tiles"; // Account › This browser
+@use "core/toast";
+@use "core/icons";
 @use "../nap/nap-theme";
-@use "motion";
+@use "core/motion";

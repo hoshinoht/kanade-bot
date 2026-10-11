@@ -1,5 +1,5 @@
 // M3 Expressive motion values for script-driven (Web Animations) motion; the
-// CSS copies live in styles/_easing.scss. Keep the two in step.
+// CSS copies live in styles/core/_easing.scss. Keep the two in step.
 
 /** Standard easing for enter/forward motion. */
 export const STANDARD = 'cubic-bezier(0.2, 0, 0, 1)';

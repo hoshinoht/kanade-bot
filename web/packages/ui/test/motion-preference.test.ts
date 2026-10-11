@@ -95,7 +95,7 @@ describe('Reduce motion switch', () => {
 describe('Reduce motion in the stylesheets', () => {
   it('every reduced-motion query also answers to the switch', () => {
     const dir = new URL('../src/styles/', import.meta.url);
-    const partials = readdirSync(dir).filter((name) => name.endsWith('.scss') && name !== '_motion-query.scss');
+    const partials = (readdirSync(dir, { recursive: true }) as string[]).filter((name) => name.endsWith('.scss') && !name.endsWith('_motion-query.scss'));
     expect(partials.length).toBeGreaterThan(20);
     for (const name of partials) {
       expect(readFileSync(new URL(name, dir), 'utf8'), name).not.toMatch(/prefers-reduced-motion/);

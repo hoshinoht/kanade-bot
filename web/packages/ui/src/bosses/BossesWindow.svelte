@@ -21,7 +21,7 @@
   import KnowledgeGuide from './KnowledgeGuide.svelte';
   import { LETTER, type BossFids } from './guide';
   import { eventAsBoss, seasonTag } from './event';
-  import '@kanade/ui/styles/boss-knowledge.scss';
+  import '@kanade/ui/styles/screens/boss-knowledge.scss';
 
   /** The phone frame's top bar, where a page's own back step goes (admin `Chrome`). */
   interface BackBar {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import '@kanade/ui/styles/boss-grid.scss';
+  import '@kanade/ui/styles/screens/boss-grid.scss';
   import type { BossRow } from '@kanade/api-types';
   import Portrait from '../components/Portrait.svelte';
   import RowContent from '../components/RowContent.svelte';

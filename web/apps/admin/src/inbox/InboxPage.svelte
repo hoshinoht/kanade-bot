@@ -10,9 +10,9 @@
 -->
 <script lang="ts">
   import PageLine from '../shell/PageLine.svelte';
-  import '@kanade/ui/styles/panes.scss';
-  import '@kanade/ui/styles/evidence.scss';
-  import '@kanade/ui/styles/inbox.scss';
+  import '@kanade/ui/styles/core/panes.scss';
+  import '@kanade/ui/styles/screens/evidence.scss';
+  import '@kanade/ui/styles/screens/inbox.scss';
   import type { ApproveRequest, InboxTab, OwnershipRequest, Proposal } from '@kanade/api-types';
   import { Icon, LoadError, LoadingState, Modal, PendingLabel, SINGLE_PANE_QUERY, Toaster, enter } from '@kanade/ui';
   import { tick, untrack } from 'svelte';

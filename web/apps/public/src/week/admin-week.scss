@@ -2,5 +2,5 @@
 // them: without the planner cards and the Answers view, and with the run
 // pane's elements named `member-pane__*`, so no admin-only class name ships
 // in the public bundle (e2e/bundle.spec.ts).
-@use "../../../../packages/ui/src/styles/week" with ($admin: false, $pane: "member-pane");
-@use "../../../../packages/ui/src/styles/run-sheet" with ($pane: "member-pane");
+@use "../../../../packages/ui/src/styles/screens/week" with ($admin: false, $pane: "member-pane");
+@use "../../../../packages/ui/src/styles/screens/run-sheet" with ($pane: "member-pane");

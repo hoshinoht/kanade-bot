@@ -16,6 +16,7 @@
     "leak": "playwright test e2e/bundle.spec.ts",
     "measure": "bun scripts/measure.ts",
     "fidelity": "bun scripts/fidelity.ts",
+    "showcase": "bun scripts/showcase.ts",
     "icons": "bun scripts/icons.ts"
   },
   "devDependencies": {

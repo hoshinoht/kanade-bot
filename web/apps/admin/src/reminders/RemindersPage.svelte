@@ -7,7 +7,7 @@
   times run on the server's clock (`generated_at`), never the browser's.
 -->
 <script lang="ts">
-  import '@kanade/ui/styles/reminders.scss';
+  import '@kanade/ui/styles/screens/reminders.scss';
   import { tick } from 'svelte';
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';

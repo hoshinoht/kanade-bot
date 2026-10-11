@@ -6,9 +6,9 @@
 <script lang="ts">
   import type { Boss, BossRow, Channel, FixedRequest, FixedRow, MemberRow, ValidateResult } from '@kanade/api-types';
   import { BossTag, DayStrip, Modal, Select, TimeStepper, dayLabel, enter } from '@kanade/ui';
-  import '@kanade/ui/styles/select.scss';
-  import '@kanade/ui/styles/fixed.scss';
-  import '@kanade/ui/styles/move-picker.scss';
+  import '@kanade/ui/styles/core/select.scss';
+  import '@kanade/ui/styles/screens/fixed.scss';
+  import '@kanade/ui/styles/screens/move-picker.scss';
   import { tick } from 'svelte';
   import { BossGrid } from '@kanade/ui';
   import { send } from '../resource.svelte';

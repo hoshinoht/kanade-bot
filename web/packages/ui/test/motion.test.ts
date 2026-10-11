@@ -157,7 +157,7 @@ describe('FLIP', () => {
 describe('easing', () => {
   it('the script spring is the stylesheet spring (samples and duration)', async () => {
     const { readFileSync } = await import('node:fs');
-    const scss = readFileSync(new URL('../src/styles/_easing.scss', import.meta.url), 'utf8');
+    const scss = readFileSync(new URL('../src/styles/core/_easing.scss', import.meta.url), 'utf8');
     const samples = (text: string) => /linear\(([^)]*)\)/.exec(text)![1]!.replace(/\s+/g, '');
     expect(samples(scss)).toBe(samples(SPRING));
     expect(/\$spring-ms:\s*(\d+)ms/.exec(scss)![1]).toBe(String(SPRING_MS));

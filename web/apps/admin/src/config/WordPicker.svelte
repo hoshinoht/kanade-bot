@@ -6,7 +6,7 @@
   dropdowns' search.
 -->
 <script lang="ts">
-  import '@kanade/ui/styles/select.scss';
+  import '@kanade/ui/styles/core/select.scss';
   import { matches } from './profanity';
 
   let {

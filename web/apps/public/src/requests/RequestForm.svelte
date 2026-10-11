@@ -14,7 +14,7 @@
   import type { PublicSession, PublicSessionRow } from '@kanade/api-types';
   import { newIdempotencyKey } from '@kanade/client';
   import { DayStrip, DIFFICULTY_WORDS, fromMinutes, Icon, LoadingState, MultiSelect, Portrait, Select, TimeStepper, toMinutes, type StripDay, type Toaster } from '@kanade/ui';
-  import '@kanade/ui/styles/select.scss';
+  import '@kanade/ui/styles/core/select.scss';
   import { untrack, type Snippet } from 'svelte';
   import type { Route } from '../route.svelte';
   import { WEEKDAYS } from '../timings/ownership';

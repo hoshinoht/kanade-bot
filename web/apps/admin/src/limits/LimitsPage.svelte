@@ -13,7 +13,7 @@
   import { tick } from 'svelte';
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
-  import '@kanade/ui/styles/limits.scss';
+  import '@kanade/ui/styles/screens/limits.scss';
   import type { Limits } from '@kanade/api-types';
   import { ApiRequestError, createClient, createPoller } from '@kanade/client';
   import { clockTime, Freshness, Icon, LoadError, LoadingState, Toaster } from '@kanade/ui';

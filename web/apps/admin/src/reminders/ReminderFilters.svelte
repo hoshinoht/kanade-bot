@@ -16,7 +16,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { Icon, Select, type SelectOption } from '@kanade/ui';
-  import '@kanade/ui/styles/select.scss';
+  import '@kanade/ui/styles/core/select.scss';
 
   let {
     filter = $bindable(),

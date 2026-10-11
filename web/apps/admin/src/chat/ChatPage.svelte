@@ -6,10 +6,10 @@
   string. Phones show the list, then the turn with a back step.
 -->
 <script lang="ts">
-  import '@kanade/ui/styles/panes.scss';
+  import '@kanade/ui/styles/core/panes.scss';
   // Its global `pre` (prompts, raw replies, traces) styles the turn's code text.
-  import '@kanade/ui/styles/evidence.scss';
-  import '@kanade/ui/styles/chat.scss';
+  import '@kanade/ui/styles/screens/evidence.scss';
+  import '@kanade/ui/styles/screens/chat.scss';
   import { LoadError, LoadingState, SINGLE_PANE_QUERY, enter, type Toaster } from '@kanade/ui';
   import { tick, untrack } from 'svelte';
   import PageLine from '../shell/PageLine.svelte';

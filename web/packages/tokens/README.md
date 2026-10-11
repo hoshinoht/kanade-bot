@@ -51,7 +51,8 @@ suite (`web/e2e/a11y.spec.ts`) checks all ten faces.
 ## Component map
 
 Global classes keep their v4 names so the partials can be compared line by
-line. Styles live in `@kanade/ui/src/styles/` unless noted.
+line. Styles live in `@kanade/ui/src/styles/` unless noted: core primitives
+in `core/`, Kanade screens in `screens/`.
 
 | v5 component (`@kanade/ui`) | v4 partial / markup | Change |
 |---|---|---|

@@ -2,7 +2,7 @@
   import { tick } from 'svelte';
   import type { MemberPatch, MemberRow, Persona, PingLevel } from '@kanade/api-types';
   import { Avatar, enter, Icon, Modal, Select } from '@kanade/ui';
-  import '@kanade/ui/styles/select.scss';
+  import '@kanade/ui/styles/core/select.scss';
   import { send } from '../resource.svelte';
   import { directory } from '../names/directory.svelte';
   import Name from '../names/Name.svelte';

@@ -8,7 +8,7 @@
 <script lang="ts">
   import type { ConfigView, ContextSettings, ModelInfo, ModelRole } from '@kanade/api-types';
   import { Icon, Select } from '@kanade/ui';
-  import '@kanade/ui/styles/select.scss';
+  import '@kanade/ui/styles/core/select.scss';
   import { tick } from 'svelte';
   import { ROLES } from './capacity';
   import { clampNotes, isLocal, LOCAL_WARNING, MAX_CONTEXT_TOKENS, MAX_RESERVE, overrideMax, reserveHelp, SOURCE_LABELS, tokens } from './context';

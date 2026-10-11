@@ -7,7 +7,7 @@
 <script lang="ts">
   import type { IdListSource } from '@kanade/api-types';
   import { LiveRegion, MultiSelect, PendingLabel } from '@kanade/ui';
-  import '@kanade/ui/styles/select.scss';
+  import '@kanade/ui/styles/core/select.scss';
   import { tick, untrack } from 'svelte';
   import { dirtyReport } from './dirty';
 

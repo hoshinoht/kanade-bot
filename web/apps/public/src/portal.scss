@@ -2,6 +2,7 @@
 // _gate.scss, _state-note.scss, _account.scss, _topbar.scss) inside the
 // fixed frame, after the unified 2026-10-09 boards (SignIn, Closed, Denied,
 // Ended, Mast, Account*, States*; phone PhoneGate … PhoneBrowser).
+@use "../../../packages/ui/src/styles/core/mixins" as *;
 
 // The page takes the frame's width under the masthead (the boards' 24 px gutters).
 .frame:not(.frame--phone) > .shell {
@@ -199,12 +200,7 @@
 .masthead__meta .fresh__words,
 .masthead__meta .fresh__since,
 .topbar__fresh .fresh__since {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+  @include hide-visually;
 }
 
 // The phone's chip is a block (board PhoneWeek `.topbar__fresh`), its line centring the mark and time.

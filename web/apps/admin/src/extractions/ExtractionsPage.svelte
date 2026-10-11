@@ -7,8 +7,8 @@
   with "‹ Extractions" in the top bar — one scrolling panel either way.
 -->
 <script lang="ts">
-  import '@kanade/ui/styles/panes.scss';
-  import '@kanade/ui/styles/extract.scss';
+  import '@kanade/ui/styles/core/panes.scss';
+  import '@kanade/ui/styles/screens/extract.scss';
   import { Icon, LoadError, LoadingState, SINGLE_PANE_QUERY, type Toaster } from '@kanade/ui';
   import type { Channel, Extractions } from '@kanade/api-types';
   import { tick, untrack } from 'svelte';

@@ -20,6 +20,15 @@ the Rust API, answers single byte ranges (`206`, `416` past the end; multi-range
 or malformed `Range` gets the whole file) with `Accept-Ranges`, an ETag and
 `If-Range`.
 
+Core primitives showcase (`showcase/`, dev-only): `bun run build && bun run
+showcase` in `web/` builds it into `apps/admin/dist/__showcase/`, so the mock
+serves it at `/__showcase/` on the admin origin under the production CSP. It
+renders every core primitive (`web/packages/ui/src/styles/core/`, no screen
+partial) for visual checks; `KANADE_SHOWCASE=1 bunx playwright test
+e2e/showcase.spec.ts` captures it per colourway into
+`web/e2e/.captures/showcase/`. A plain `bun run build` empties `dist`, so it
+never ships.
+
 Admin writes follow the server's API-5 contract (`src/writes.rs`): every
 `POST`/`PATCH`/`DELETE` under `/api/admin/` (except the e2e `reset`) needs the
 `X-Kanade-CSRF` token that `GET /api/admin/session` answers with (`403 csrf`),

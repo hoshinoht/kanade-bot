@@ -9,14 +9,14 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
   import type { Member, Participant, Run, RunStatus, Week } from '@kanade/api-types';
-  import '@kanade/ui/styles/run-sheet.scss';
-  import '@kanade/ui/styles/select.scss';
+  import '@kanade/ui/styles/screens/run-sheet.scss';
+  import '@kanade/ui/styles/core/select.scss';
   import { ANSWER_MARKS, AnswerBar, AnswerChip, BossArt, BossTag, enter, Icon, liveRuns, Modal, MovePicker, namesIn, pickerRun, Select, StatusMark, WavyProgress, dayLabel, runCountdown, runTitle, sortRuns, whenLabel, type Slot } from '@kanade/ui';
   import { swapSlots } from './planner/dropTime';
   import { directory, memberLabel } from './names/directory.svelte';
   import Name from './names/Name.svelte';
   import RunLog from './sheet/RunLog.svelte';
-  import '@kanade/ui/styles/move-picker.scss';
+  import '@kanade/ui/styles/screens/move-picker.scss';
   import { discordLink } from './shared/discordLink.svelte';
   import { STATUS_LABELS, type MoveOutcome } from './store.svelte';
 

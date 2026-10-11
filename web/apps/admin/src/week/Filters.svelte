@@ -8,7 +8,7 @@
   import { tick } from 'svelte';
   import type { Member } from '@kanade/api-types';
   import { Icon, Select, type SelectOption } from '@kanade/ui';
-  import '@kanade/ui/styles/select.scss';
+  import '@kanade/ui/styles/core/select.scss';
   import { filtering, NO_FILTER, type WeekFilter } from './filters';
   import { directory, memberLabel } from '../names/directory.svelte';
 
