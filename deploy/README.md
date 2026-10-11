@@ -166,22 +166,35 @@ or take the snapshot after the new bot has started (stop it again, run step
 dry run of step 5 against the real bind mount (`--name dry-run.sqlite`, then
 delete the pair) confirms the container can write there.
 
-Restore a SQLite snapshot (instead of the whole tarball): with the bot
-stopped, move the live database and any `-wal`/`-shm` files aside, copy the
-snapshot in as `/data/db/kanade.sqlite` owned by `65532:65532` with mode
-`0600`, then start the image whose schema matches the manifest's
-`schema_version` (a newer image migrates it forward; an older one refuses a
-newer schema):
+Restore a SQLite snapshot (instead of the whole tarball) with `kanade
+restore`, through the `backup` service (no network, the store volume and the
+backups directory). Stop the bot, dry-run, then apply; use the image you will
+start, i.e. with `KANADE_BACKUP_IMAGE` unset (the restore migrates the
+snapshot to its schema, and refuses a snapshot or a current store newer than
+itself):
 
 ```sh
-docker run --rm -v kanade_v5_data:/data -v "${KANADE_BACKUP_HOST_DIR:-$HOME/.config/kanade/v5/backups}:/backups:ro" alpine sh -c '
-  mkdir /data/replaced-<stamp> && mv /data/db/kanade.sqlite* /data/replaced-<stamp>/ &&
-  cp /backups/kanade-<stamp>-pre-<sha>.sqlite /data/db/kanade.sqlite &&
-  chown 65532:65532 /data/db/kanade.sqlite && chmod 600 /data/db/kanade.sqlite'
+docker compose -f deploy/compose.yaml stop bot
+docker compose -f deploy/compose.yaml --profile backup run --rm backup \
+  restore --from /backups/kanade-<stamp>-pre-<sha>.sqlite
+docker compose -f deploy/compose.yaml --profile backup run --rm backup \
+  restore --from /backups/kanade-<stamp>-pre-<sha>.sqlite --apply
+docker compose -f deploy/compose.yaml up -d
+docker exec kanade-v5 /usr/local/bin/kanade healthcheck
 ```
 
-The restored store's history ends at the manifest's `history_head`, so later
-backups show `mismatch` in Checkpoints until they are removed.
+It refuses while the bot owns the store (exit 69, "stop the bot first") and
+refuses a corrupt snapshot, a newer schema or a symlinked path (exit 78)
+before changing anything. `--apply` keeps the previous database beside the
+new one as `/data/db/kanade.sqlite.pre-restore-<stamp>` (with its `-wal`/
+`-shm` files, if any) and swaps the snapshot in with one rename; delete the
+side copy once the bot runs well on the restored store. A restore killed
+midway can leave a hidden `/data/db/.kanade.sqlite.restore-<uuid>/` staging
+directory: delete it with the bot stopped. The restored store's history ends
+at the manifest's `history_head`, so later backups show `mismatch` in
+Checkpoints until they are removed. To go back to an older image after a
+migration, restore the pre-deploy tarball instead (below and "Stop and roll
+back"): an older image refuses the migrated store.
 
 ### Encrypted backups
 
@@ -264,39 +277,53 @@ NAME=kanade-$STAMP-pre-$SHA.sqlite
 ```
 
 Restore from an encrypted snapshot: fetch the identity into a fresh 0700
-directory outside the backups directory, decrypt into another one (the
-identity is mounted read-only into a throwaway container with no network,
-never into a Compose service), delete the identity copy, then restore as
-above from the decrypted file:
+directory outside the backups directory and run `kanade restore --identity`
+in a throwaway container with no network (the identity is mounted read-only
+there, never into a Compose service); it decrypts into a 0600 file in a
+hidden staging directory beside the database and deletes it afterwards:
 
 ```sh
-KEYS=$(mktemp -d); RESTORE=$(mktemp -d)
+KEYS=$(mktemp -d)
 # Put the identity at $KEYS/kanade-backup.key (0600), e.g. from the password manager.
-docker run --rm --network none --user "$(id -u):$(id -g)" \
-  -v "$KEYS/kanade-backup.key:/run/identity:ro" \
-  -v "$BACKUPS:/backups:ro" -v "$RESTORE:/restore" \
-  kanade-v5:local backup decrypt --identity /run/identity \
-    --in /backups/kanade-<stamp>-pre-<sha>.sqlite.age --out /restore/kanade.sqlite
+docker compose -f deploy/compose.yaml stop bot
+restore() {
+  docker run --rm --network none \
+    -e KANADE_DB_PATH=/data/db/kanade.sqlite -e KANADE_OWNER_LOCK_DIR=/data/run \
+    -v kanade_v5_data:/data -v "$BACKUPS:/backups:ro" \
+    -v "$KEYS/kanade-backup.key:/run/identity:ro" \
+    kanade-v5:local restore --identity /run/identity \
+      --from /backups/kanade-<stamp>-pre-<sha>.sqlite.age "$@"
+}
+restore            # dry run
+restore --apply
 rm -rf "$KEYS"
-# With the bot stopped (as in "Restore a SQLite snapshot" above):
-docker run --rm -v kanade_v5_data:/data -v "$RESTORE:/restore:ro" alpine sh -c '
-  mkdir /data/replaced-<stamp> && mv /data/db/kanade.sqlite* /data/replaced-<stamp>/ &&
-  cp /restore/kanade.sqlite /data/db/kanade.sqlite &&
-  chown 65532:65532 /data/db/kanade.sqlite && chmod 600 /data/db/kanade.sqlite'
-rm -rf "$RESTORE"                                   # plaintext member data
+docker compose -f deploy/compose.yaml up -d
 ```
 
-`backup decrypt` writes a new 0600 file and never overwrites `--out`; a
-wrong identity fails before writing anything, and a damaged or truncated
-file removes the partial output (exit 78 for each). On a Linux host the
-`.sqlite.age` belongs to uid 65532 (0600), so your user cannot read it in
-place: copy it out first (`docker run --rm -v "$BACKUPS:/backups:ro" -v
-"$RESTORE:/restore" alpine install -m 600 -o "$(id -u)" -g "$(id -g)"
-/backups/<file> /restore/`) and decrypt `--in /restore/<file>`. An encrypted
-tarball (written by your shell, so readable in place) decrypts the same way
-(`--in /backups/kanade_v5_data-<stamp>-pre-<sha>.tar.gz.age
---out /restore/kanade_v5_data.tar.gz`); then, with the bot stopped, replace
-the whole volume from it:
+A wrong identity, a damaged or truncated file and a corrupt snapshot fail
+before anything changes (exit 78); without `--identity` an `.age` file is
+refused (exit 64). The container runs as uid 65532, which must be able to read
+the identity: Docker Desktop maps it to your user; on a Linux host copy it
+for that uid first (`docker run --rm -v "$KEYS:/keys" alpine install -m 600
+-o 65532 -g 65532 /keys/kanade-backup.key /keys/restore.key` and mount
+`restore.key`).
+
+`backup decrypt --identity FILE --in FILE --out FILE` still decrypts any age
+file to a new 0600 output (never overwriting `--out`; a wrong identity writes
+nothing, a damaged file removes the partial output; exit 78 for each), for
+the tarball fallback in particular. On a Linux host the `.age` files belong
+to uid 65532 (0600), so your user cannot read them in place: copy one out
+first (`docker run --rm -v "$BACKUPS:/backups:ro" -v "$RESTORE:/restore"
+alpine install -m 600 -o "$(id -u)" -g "$(id -g)" /backups/<file>
+/restore/`) and decrypt `--in /restore/<file>`. An encrypted tarball
+(written by your shell, so readable in place) decrypts with
+`RESTORE=$(mktemp -d)` and `docker run --rm --network none --user "$(id -u):$(id -g)"
+-v "$KEYS/kanade-backup.key:/run/identity:ro" -v "$BACKUPS:/backups:ro" -v
+"$RESTORE:/restore" kanade-v5:local backup decrypt --identity /run/identity
+--in /backups/kanade_v5_data-<stamp>-pre-<sha>.tar.gz.age
+--out /restore/kanade_v5_data.tar.gz`; then, with the bot stopped, replace
+the whole volume from it (and `rm -rf "$RESTORE"` afterwards: plaintext
+member data):
 
 ```sh
 docker run --rm -v kanade_v5_data:/data -v "$RESTORE:/restore:ro" alpine sh -c '
@@ -347,6 +374,44 @@ lock directory (`/data/run`) must already exist, as it must for `serve`.
 To rewrite logs imported by an older mapping, run the same two commands
 with `--refresh-logs` added (dry run, then `--refresh-logs --apply`); it
 replaces only `v4-` chat and extraction logs.
+
+## Operator commands
+
+The public portal switch and the break-glass token's sessions are reachable
+from the shell through the running bot's admin API (the bot keeps the only
+store connection). Each run signs in with the token from
+`/run/secrets/kanade_admin_token`, sends the admin host's `Host`/`Origin` to
+the container's own listener and signs out at the end, also after an error;
+nothing prints the token or the session cookie:
+
+```sh
+docker exec kanade-v5 /usr/local/bin/kanade portal status    # public portal switch: open|closed
+docker exec kanade-v5 /usr/local/bin/kanade portal open       # or: portal close
+docker exec kanade-v5 /usr/local/bin/kanade sessions list     # the token's sessions, by handle
+docker exec kanade-v5 /usr/local/bin/kanade sessions revoke <handle>
+docker exec kanade-v5 /usr/local/bin/kanade sessions sign-out-all
+```
+
+Exit 69 means the API was unreachable, slow or throttled (token sign-in
+allows five per minute) and nothing was changed; 78 a refused token or host;
+64 a refused request such as an unknown handle. Sessions signed in through
+Discord or Tailscale are not listed: the API shows only the caller's own.
+
+Rotate the break-glass token: write a new one into the secrets directory
+(0600; `--force` replaces the old file through a temporary file and a
+rename, never through a symlink), then recreate the bot so the bind-mounted
+secret is read again. Sessions signed in with the old token end.
+
+```sh
+SECRETS="${KANADE_SECRETS_DIR:-$HOME/.config/kanade/v5/secrets}"
+docker run --rm --network none --user "$(id -u):$(id -g)" -v "$SECRETS:/secrets" \
+  kanade-v5:local token rotate --out /secrets/admin_token --force
+docker compose -f deploy/compose.yaml up -d --force-recreate bot
+```
+
+Model logs (extraction, chat and rewrite logs, processed cached messages,
+drained notices) older than 90 days are pruned by the bot itself at startup
+and daily (`model_logs_pruned` log line with the counts).
 
 ## Hardening
 

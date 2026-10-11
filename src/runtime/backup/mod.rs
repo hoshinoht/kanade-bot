@@ -50,8 +50,13 @@ impl fmt::Display for Report {
 
 /// `kanade-20261003T070900Z.sqlite`.
 pub fn default_name(now: DateTime<Utc>) -> String {
+    format!("kanade-{}.sqlite", stamp(now))
+}
+
+/// `20261003T070900Z`: the UTC second in backup and side-copy names.
+pub fn stamp(now: DateTime<Utc>) -> String {
     format!(
-        "kanade-{:04}{:02}{:02}T{:02}{:02}{:02}Z.sqlite",
+        "{:04}{:02}{:02}T{:02}{:02}{:02}Z",
         now.year(),
         now.month(),
         now.day(),

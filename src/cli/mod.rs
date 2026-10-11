@@ -1,20 +1,31 @@
+pub mod admin;
 pub mod backup;
 pub mod emojis;
 pub mod healthcheck;
 pub mod models;
+pub mod restore;
+pub mod token;
 
 use std::path::PathBuf;
 
 use chrono::NaiveDate;
 
-use crate::runtime::error::Error;
+use crate::runtime::{error::Error, restore::Options as RestoreOptions};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
-    Serve { offline: bool },
-    Healthcheck { url: Option<String> },
+    Serve {
+        offline: bool,
+    },
+    Healthcheck {
+        url: Option<String>,
+    },
     ImportV4(ImportV4Args),
     Backup(backup::Args),
+    Restore(RestoreOptions),
+    /// `portal …` and `sessions …`: online, through the admin API.
+    Admin(admin::Args),
+    TokenRotate(token::Args),
     Models(models::Args),
     CtlEmojis(emojis::Args),
 }
@@ -34,6 +45,10 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Command, Err
         },
         "import" => parse_import(&arguments[1..]),
         "backup" => backup::parse(&arguments[1..]).map(Command::Backup),
+        "restore" => restore::parse(&arguments[1..]).map(Command::Restore),
+        "portal" => admin::parse_portal(&arguments[1..]).map(Command::Admin),
+        "sessions" => admin::parse_sessions(&arguments[1..]).map(Command::Admin),
+        "token" => token::parse(&arguments[1..]).map(Command::TokenRotate),
         _ => Err(usage()),
     }
 }
@@ -111,8 +126,11 @@ fn parse_import(arguments: &[String]) -> Result<Command, Error> {
 
 fn usage() -> Error {
     Error::Usage(format!(
-        "usage: kanade {{serve [--offline]|healthcheck [--url http://127.0.0.1:8080/healthz]|models check [--probe]|import v4 --from PATH [--since YYYY-MM-DD] [--refresh-logs] [--apply]|{}|ctl emojis [--dry-run] [--dir PATH]}}",
-        backup::USAGE
+        "usage: kanade {{serve [--offline]|healthcheck [--url http://127.0.0.1:8080/healthz]|models check [--probe]|import v4 --from PATH [--since YYYY-MM-DD] [--refresh-logs] [--apply]|{}|{}|{}|{}|ctl emojis [--dry-run] [--dir PATH]}}",
+        backup::USAGE,
+        restore::USAGE,
+        admin::USAGE,
+        token::USAGE
     ))
 }
 
@@ -158,6 +176,46 @@ mod tests {
             Command::Backup(backup::Args::Encrypt { recipients: None })
         );
         assert!(args("backup --other").is_err());
+    }
+
+    #[test]
+    fn operator_commands_route_to_their_parsers() {
+        assert_eq!(
+            args("restore --from /backups/k.sqlite --apply").unwrap(),
+            Command::Restore(RestoreOptions {
+                from: PathBuf::from("/backups/k.sqlite"),
+                identity: None,
+                apply: true,
+            })
+        );
+        assert_eq!(
+            args("portal status").unwrap(),
+            Command::Admin(admin::Args {
+                action: admin::Action::PortalStatus,
+                url: None,
+            })
+        );
+        assert_eq!(
+            args("sessions list --url http://127.0.0.1:8080").unwrap(),
+            Command::Admin(admin::Args {
+                action: admin::Action::SessionsList,
+                url: Some("http://127.0.0.1:8080".into()),
+            })
+        );
+        assert_eq!(
+            args("token rotate --out /s/admin_token").unwrap(),
+            Command::TokenRotate(token::Args {
+                out: PathBuf::from("/s/admin_token"),
+                force: false,
+            })
+        );
+        for bad in ["restore", "portal", "sessions", "token", "token rotate"] {
+            assert!(args(bad).is_err(), "{bad}");
+        }
+        let text = parse(Vec::<String>::new()).unwrap_err().to_string();
+        for usage in [restore::USAGE, admin::USAGE, token::USAGE] {
+            assert!(text.contains(usage), "{text}");
+        }
     }
 
     #[test]

@@ -1,5 +1,7 @@
 mod backup;
 mod live;
+mod operator;
+mod restore;
 
 use std::{
     io::{Read, Write},

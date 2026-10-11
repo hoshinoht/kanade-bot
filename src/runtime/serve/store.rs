@@ -32,8 +32,8 @@ pub async fn open(settings: &StoreSettings) -> Result<Arc<SqliteStore>, Error> {
 }
 
 /// A container volume starts with only its root, and the image has no shell
-/// to create these.
-fn create_private_dir(path: &Path, key: &str) -> Result<(), Error> {
+/// to create these (serve, and `kanade restore` into an empty volume).
+pub(crate) fn create_private_dir(path: &Path, key: &str) -> Result<(), Error> {
     match DirBuilder::new().mode(0o700).create(path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == ErrorKind::AlreadyExists => Ok(()),

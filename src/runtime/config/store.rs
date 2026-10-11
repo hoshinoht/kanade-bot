@@ -15,7 +15,8 @@ pub struct StoreSettings {
 }
 
 impl StoreSettings {
-    pub(super) fn from_mapping(values: &BTreeMap<String, String>) -> Result<Self, Error> {
+    /// `KANADE_DB_PATH` and `KANADE_OWNER_LOCK_DIR` alone (`kanade restore`).
+    pub fn from_mapping(values: &BTreeMap<String, String>) -> Result<Self, Error> {
         Ok(Self {
             db_path: absolute(values, "KANADE_DB_PATH")?,
             owner_lock_dir: absolute(values, "KANADE_OWNER_LOCK_DIR")?,

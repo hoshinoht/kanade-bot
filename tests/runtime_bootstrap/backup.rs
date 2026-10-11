@@ -13,10 +13,10 @@ use std::{
 use kanade::infrastructure::store::{BackupManifest, SqliteStore, SqliteStoreConfig};
 use sqlx::{ConnectOptions, sqlite::SqliteConnectOptions};
 
-struct TempDir(PathBuf);
+pub(super) struct TempDir(pub(super) PathBuf);
 
 impl TempDir {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let root = std::fs::canonicalize(std::env::temp_dir()).unwrap();
         let path = root.join(format!("kanade-backup-cli-{}", uuid::Uuid::new_v4()));
         for dir in ["", "db", "run", "backups", "keys", "restore"] {
@@ -28,23 +28,23 @@ impl TempDir {
         Self(path)
     }
 
-    fn store(&self) -> SqliteStoreConfig {
+    pub(super) fn store(&self) -> SqliteStoreConfig {
         SqliteStoreConfig {
             db_path: self.0.join("db/kanade.sqlite"),
             owner_lock_dir: self.0.join("run"),
         }
     }
 
-    fn backups(&self) -> PathBuf {
+    pub(super) fn backups(&self) -> PathBuf {
         self.0.join("backups")
     }
 
-    fn backup(&self, args: &[&str]) -> Output {
+    pub(super) fn backup(&self, args: &[&str]) -> Output {
         self.kanade(&[&["backup"], args].concat()).output().unwrap()
     }
 
     /// The binary with only the store and backup paths set.
-    fn kanade(&self, args: &[&str]) -> Command {
+    pub(super) fn kanade(&self, args: &[&str]) -> Command {
         let store = self.store();
         let mut command = Command::new(super::binary());
         command
@@ -57,7 +57,7 @@ impl TempDir {
     }
 
     /// `backup keygen` into `keys/<name>`; returns (identity, recipients file).
-    fn keygen(&self, name: &str) -> (PathBuf, PathBuf) {
+    pub(super) fn keygen(&self, name: &str) -> (PathBuf, PathBuf) {
         let identity = self.0.join("keys").join(name);
         let made = self.backup(&["keygen", "--out", identity.to_str().unwrap()]);
         assert_eq!(made.status.code(), Some(0), "{}", text(&made.stderr));
@@ -85,7 +85,7 @@ impl TempDir {
     }
 }
 
-fn mode(path: &Path) -> u32 {
+pub(super) fn mode(path: &Path) -> u32 {
     std::fs::metadata(path).unwrap().permissions().mode() & 0o777
 }
 
@@ -95,7 +95,7 @@ impl Drop for TempDir {
     }
 }
 
-fn names(dir: &Path) -> Vec<String> {
+pub(super) fn names(dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(dir)
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
@@ -104,7 +104,7 @@ fn names(dir: &Path) -> Vec<String> {
     names
 }
 
-fn text(bytes: &[u8]) -> String {
+pub(super) fn text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
 

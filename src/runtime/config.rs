@@ -11,6 +11,7 @@ use chrono_tz::Tz;
 use super::error::Error;
 
 mod admin_auth;
+mod admin_client;
 mod backup;
 mod context;
 mod discord;
@@ -25,6 +26,7 @@ mod serve;
 mod store;
 
 pub use admin_auth::{AdminAuthSettings, DiscordOAuthSettings};
+pub use admin_client::{AdminClientConfig, TOKEN_FILE_KEY as ADMIN_TOKEN_FILE_KEY};
 pub use backup::{
     BackupConfig, RECIPIENTS_KEY as BACKUP_RECIPIENTS_KEY,
     recipients_file as backup_recipients_file,

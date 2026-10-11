@@ -175,7 +175,7 @@ ZDR is operator-stated retention, not a limit on transmission.
 for non-secret settings. Unset or empty keeps the environment-only behaviour.
 Each key sets one variable below, whose rules apply unchanged
 (`src/runtime/config/file/`); all commands (`serve`, `healthcheck`, `import`,
-`models check`, `backup`) read it.
+`models check`, `backup`, `restore`, `portal`, `sessions`, `token`) read it.
 
 - Precedence: a non-empty `KANADE_*` environment variable (Compose
   `environment:` or `env_file`) overrides its key; an empty one does not, so a
@@ -719,6 +719,62 @@ recipient errors name the line number, never its content. The files are
 standard age, so `age -d -i` also opens them. `serve --offline` wires no
 scheduler, persistence, Discord, import, admin API or mutation route.
 
+`restore --from PATH [--identity FILE] [--apply]` replaces the store with a
+`kanade backup` snapshot while serve is stopped; it is a dry run unless
+`--apply`. It needs only `KANADE_DB_PATH` and `KANADE_OWNER_LOCK_DIR`
+(creating both directories 0700 like serve on an empty volume). It first
+opens the current store through the owner lock (exit `69`, "stop the bot
+first", while serve owns it; that open applies this build's pending
+migrations, and a current store newer than this build is refused, exit
+`78`: use a newer image or the tarball rollback). An `.age` snapshot needs
+`--identity` (exit `64` without it) and is decrypted into a hidden 0700
+`.<db>.restore-<uuid>/` directory beside the database (0600, removed on
+every exit). The snapshot is restored there by the store (`integrity_check`,
+the migration ledger and checksums, a schema no newer than this build, then
+this build's migrations) and closed; a garbage, corrupt, newer-schema or
+wrong-identity snapshot is refused (exit `78`) with nothing outside that
+directory written. `--apply` then closes the current store, keeps it beside
+the database as `<db>.pre-restore-<YYYYMMDDTHHMMSSZ>` (a hard link; any
+`-wal`/`-shm`/`-journal` file is renamed along), renames the restored copy
+over the database (one atomic rename) and reopens it once. It prints the
+snapshot's schema and history head and the side copy's name; delete the side
+copy once the restore is confirmed (it is member data). Neither `--from` nor
+a store path is followed through a symbolic link.
+
+`portal open|close|status` and `sessions list|revoke HANDLE|sign-out-all`
+talk to the running bot's admin API, never the store. The target is
+`KANADE_ADMIN_BIND` (or `--url http://HOST:PORT`): loopback, or the
+listener's private address with `KANADE_ALLOW_PRIVATE_BIND=1`, as for
+`healthcheck`. Each run signs in with the break-glass token from
+`KANADE_ADMIN_TOKEN_FILE` (`POST /api/admin/auth/token`; plain
+`KANADE_ADMIN_TOKEN` is refused), keeps the session cookie and CSRF token in
+memory only, sends `Host`/`Origin` of the listener (`KANADE_ADMIN_HOST` with
+`https://`, else `localhost:PORT` with `http://`), and signs out
+(`POST /api/admin/auth/logout`) at the end, also after a failed step.
+`portal` reads or sets `self_service.public_portal` (`GET`/`PATCH
+/api/admin/config`, the PATCH with a fresh `Idempotency-Key`) and prints
+`public portal switch: open|closed`. `sessions` acts on the break-glass
+token's own sessions (the API's `/api/admin/me/sessions` lists only the
+caller's identity): `list` prints handle, method, device and times with the
+command's own marked `(this command)`, `revoke` ends one by its 24-character
+handle, `sign-out-all` ends every other one and then its own. Exit codes: `69`
+when the API is unreachable, slow (10 s per request), throttled or failing,
+with nothing attempted after a failed sign-in; `78` for a refused token,
+Host or CSRF; `64` for a refused request (an unknown handle). Token sign-in
+allows five attempts a minute per client, so a burst of commands can answer
+`429` (exit `69`). Output and errors never carry the token, the cookie or the
+CSRF token. `token rotate --out FILE [--force]` writes a new break-glass
+token (32 random bytes, base64url, one line) 0600 without following a
+symbolic link, refuses an existing file unless `--force` (then a temporary
+file beside it is renamed over), and prints only the path; restarting the
+bot applies it and ends the sessions of the old token.
+
+Live serve prunes the model logs (extraction, chat and rewrite logs,
+processed cached messages, drained notices) older than 90 days by its clock
+at startup and then every 24 hours on a monotonic timer, off the request
+path; a run is cut after 60 s (the store deletes in short batches) and
+shutdown cancels a run in progress before the store closes.
+
 The runtime installs Rustls' `ring` provider before command processing. SQLx
 and Twilight are intentionally absent until storage and Discord work needs
 them, so the production graph has no SQLx MySQL/RSA path from the spike.
@@ -744,13 +800,17 @@ src/
 │   └── error.rs         # ApiError
 ├── cli/
 │   ├── mod.rs
+│   ├── admin/           # `portal`/`sessions`: arguments, client.rs (signed-in loopback admin API calls)
 │   ├── backup.rs        # `backup` snapshot and age tool arguments
+│   ├── restore.rs       # `restore` arguments
+│   ├── token.rs         # `token rotate`
 │   └── healthcheck.rs
 └── runtime/
     ├── mod.rs
     ├── application.rs   # command dispatch, `/healthz` document
     ├── backup/          # `kanade backup`: snapshot, age keys (crypt.rs), keygen/encrypt/decrypt (tools.rs)
-    ├── serve/           # live serve: store, settings, API composition, health, discord/ (gateway, roster, tick)
+    ├── restore.rs       # `kanade restore`: owner check, staged validation, side copy and swap
+    ├── serve/           # live serve: store, settings, API composition, health, retention, discord/ (gateway, roster, tick)
     ├── config.rs
     ├── error.rs
     ├── logging.rs
@@ -789,6 +849,9 @@ JSON lines on stderr (`level`, `event`, fields). None carries question or reply 
 | --- | --- | --- | --- |
 | `backup_dir_unreadable` | WARN | no additional fields | checkpoints could not list `KANADE_BACKUP_DIR` (it lists no backups) |
 | `backup_manifests_skipped` | WARN | `unreadable`, `missing_snapshot` (counts), `truncated` (more than 4096 entries) | checkpoints skipped unreadable or foreign manifests or ones whose snapshot is gone |
+| `model_logs_pruned` | INFO | `cutoff` (ISO-8601 UTC), `extractions`, `chats`, `messages`, `notices`, `rewrites` (deleted counts) | each retention run of live serve (startup, then daily) |
+| `model_logs_prune_failed` | WARN | no additional fields | a retention run failed in the store (retried the next day) |
+| `model_logs_prune_cut` | WARN | `limit_seconds` | a retention run hit its time limit; the rest goes the next day |
 | `persona_selected` | INFO; WARN on a fallback source, any candidate issue, unreadable profiles or `profiles_issue` | `configured`, `effective`, `source` (`configured`/`catalog_default`/`tracked_fallback`), `bundle_file`, `profiles`, `profile_ids`, `unreadable_profiles` [{`file`,`error`}], `profiles_issue`, `issues` [{`candidate`,`error`}] | serve startup, after the persona files load |
 | `persona_unavailable` | ERROR | `configured`, `issues` | serve startup when no persona validates (chat stays off) |
 | `settings_changed` | INFO | `revision`, `section`, `keys` (stored keys), `values` {key: {`from`,`to`}}, `actor` (`kind:id`), `surface` (`admin_portal`) | every saved config `PATCH` that changed something |

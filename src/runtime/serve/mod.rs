@@ -16,9 +16,10 @@ pub mod harness;
 mod health;
 pub mod models;
 mod persona_log;
+mod retention;
 mod sessions;
 pub mod settings;
-mod store;
+pub(crate) mod store;
 mod tick;
 
 use std::{future::Future, sync::Arc, time::Duration};
@@ -285,11 +286,18 @@ async fn serve_store(
 ) -> Result<(), Error> {
     // No guild cache without the gateway: channel pickers are empty.
     let health = LiveHealth::new(store.clone());
-    let composition =
-        api::compose(config, store, Arc::new(StaticChannels(Vec::new())), health).await?;
+    let composition = api::compose(
+        config,
+        store.clone(),
+        Arc::new(StaticChannels(Vec::new())),
+        health,
+    )
+    .await?;
     logging::discord_disabled();
     let prune =
         sessions::SessionPrune::start(composition.admin.member.clone(), sessions::PRUNE_EVERY);
+    let retention =
+        retention::Retention::start(store, Arc::new(auth::system_now), retention::EVERY);
     let shutdown = async {
         shutdown.await;
         clock.start();
@@ -299,6 +307,7 @@ async fn serve_store(
     if let Some(prune) = prune {
         prune.stop().await;
     }
+    retention.stop().await;
     served
 }
 
@@ -320,8 +329,11 @@ where
         .with_extraction(prepared.extraction.clone());
     let mut composition =
         api::compose(config, store.clone(), prepared.cache.clone(), health).await?;
+    let retention_clock = Arc::clone(&wiring.clock);
     let mut discord =
         discord::start(config, store.clone(), &mut composition, prepared, wiring).await?;
+    // Started only once nothing before it can fail: it holds the store.
+    let retention = retention::Retention::start(store.clone(), retention_clock, retention::EVERY);
     // HTTP keeps serving until the Discord side has stopped, then drains.
     let stopped = async {
         discord.until(shutdown).await;
@@ -338,6 +350,7 @@ where
     if let Some(prune) = prune {
         prune.stop().await;
     }
+    retention.stop().await;
     discord.stop().await;
     discord.result().and(served)
 }

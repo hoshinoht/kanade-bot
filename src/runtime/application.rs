@@ -9,9 +9,12 @@ use crate::{
 };
 
 use super::{
-    config::{self, BackupConfig, HealthcheckConfig, ImportConfig, RuntimeConfig, ServeConfig},
+    config::{
+        self, BackupConfig, HealthcheckConfig, ImportConfig, RuntimeConfig, ServeConfig,
+        StoreSettings,
+    },
     error::Error,
-    serve,
+    restore, serve,
 };
 
 pub async fn run(
@@ -60,6 +63,17 @@ async fn dispatch(command: Command, environment: &BTreeMap<String, String>) -> R
             Ok(())
         }
         Command::Backup(args) => backup(args, environment).await,
+        Command::Restore(options) => {
+            let settings = StoreSettings::from_mapping(environment)?;
+            let report = restore::run(&options, &settings, import::v4::system_now()).await?;
+            print!("{report}");
+            Ok(())
+        }
+        Command::Admin(args) => cli::admin::run(args, environment).await,
+        Command::TokenRotate(args) => {
+            println!("{}", cli::token::rotate(&args)?);
+            Ok(())
+        }
         Command::Models(args) => cli::models::run(args, environment).await,
         Command::CtlEmojis(args) => cli::emojis::run(&args, environment).await,
     }

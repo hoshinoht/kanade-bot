@@ -1247,6 +1247,71 @@ async fn a_disallowed_intents_close_keeps_serving_http_without_reconnecting() {
     store::close(store, Duration::ZERO).await;
 }
 
+/// Retention through live serve: the injected clock decides the cutoff, the
+/// startup run prunes before shutdown is even asked for, and serve's stop
+/// joins the task, so the store closes and opens again.
+#[tokio::test]
+async fn serve_prunes_model_logs_past_retention_and_stops_the_task_on_shutdown() {
+    use sqlx::{ConnectOptions, Connection, sqlite::SqliteConnectOptions};
+
+    use crate::{
+        domain::model_log::ModelLogStore, infrastructure::store::model_log_conformance::extraction,
+    };
+
+    let harness = Harness::new();
+    let now = auth::system_now() + chrono::TimeDelta::days(400);
+    harness
+        .seed(async |store| {
+            for (id, days) in [("x-old", 91), ("x-recent", 89)] {
+                store
+                    .record_extraction(extraction(id, now - chrono::TimeDelta::days(days)))
+                    .await
+                    .unwrap();
+            }
+        })
+        .await;
+    let (events, source) = script();
+    let wiring = Wiring {
+        source,
+        transport: Arc::clone(&harness.fake),
+        clock: Arc::new(move || now),
+        tick: TICK,
+        extraction: extract::Timing::default(),
+    };
+    let db = harness.config.store.db_path.clone();
+    // A plain read-only connection watches the owned store meanwhile.
+    let pruned = async move {
+        let mut probe = SqliteConnectOptions::new()
+            .filename(&db)
+            .read_only(true)
+            .connect()
+            .await
+            .unwrap();
+        eventually!("the startup prune", {
+            let left: i64 =
+                sqlx::query_scalar("SELECT count(*) FROM extractions WHERE id = 'x-old'")
+                    .fetch_one(&mut probe)
+                    .await
+                    .unwrap();
+            left == 0
+        });
+        let _ = probe.close().await;
+    };
+    serve_with(&harness.config, pruned, wiring)
+        .await
+        .expect("serve stops cleanly");
+    drop(events);
+    let store = store::open(&harness.config.store)
+        .await
+        .expect("the retention task released the store");
+    assert_eq!(store.load_extraction("x-old").await.unwrap(), None);
+    assert!(
+        store.load_extraction("x-recent").await.unwrap().is_some(),
+        "inside the 90 days of the injected clock"
+    );
+    store::close(store, Duration::ZERO).await;
+}
+
 #[tokio::test]
 async fn a_fatal_close_reports_closed_health_and_stops_the_discord_side() {
     let harness = Harness::new();
