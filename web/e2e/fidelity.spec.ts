@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { boardExists, composite, diff, markdown, MOCKUPS, renderBoard, settle, skeleton } from './fidelity-kit';
-import { ADMIN, expect, PINNED_NOW, PUBLIC, test, choose, openList, setPortal, signInPublic } from './support';
+import { ADMIN, expect, PINNED_NOW, PUBLIC, test, choose, csrf, openList, setPortal, signInPublic } from './support';
 
 // Layout fidelity against the M3E boards: `bun run fidelity [pair ...] [--keep]`
 // (scripts/fidelity.ts builds with KANADE_FIDELITY=1 so the data-fid tags
@@ -34,8 +34,11 @@ interface Pair {
   prepare?: (board: Page) => Promise<void>;
 }
 
-/** The rail's own regions (rail option B); boards drawn before it leave them untagged. */
-const RAIL_FIDS = ['rail', 'rail-more', 'rail-more-menu', 'drawer-more'];
+/**
+ * Regions newer boards added: the rail's own (rail option B) and the run sheet's
+ * Stage in draft… button (B_RunSheetStage); boards drawn before them leave them untagged.
+ */
+const LATER_FIDS = ['rail', 'rail-more', 'rail-more-menu', 'drawer-more', 'sheet-stage'];
 
 // Member portal pairs (boards: KANADE_MOCKUPS=…/docs/research/2026-10-09-public-portal-mockups).
 const signedOut = async (page: Page) => {
@@ -299,6 +302,294 @@ const editBoard = (centre?: string) => (page: Page) =>
     const dialog = centre ? document.querySelector<HTMLElement>(`[data-fid="${centre}"]`) : null;
     if (dialog) dialog.style.top = `${(innerHeight - dialog.offsetHeight) / 2}px`;
   }, centre);
+
+// Drafts and the request editor (KANADE_MOCKUPS=docs/research/2026-10-11-drafts-mockups).
+// The rail is the rail-more pairs'; the shared DayStrip/TimeStepper keep their own
+// move-picker tags, which these boards do not draw (they tag the strip's box).
+// The phone pairs leave the top bar (phone-nav's) and the screen-reader page line out too.
+const DRAFTS_OMIT = ['rail', 'topbar', 'move-days', 'move-day', 'move-time'];
+const PHONE_DRAFTS_OMIT = [...DRAFTS_OMIT, 'page-line'];
+/** The boards' drafts hold six changes; the mock seeds two (Weekend reshuffle) and three (Carling retime). */
+const moreOps = (id: string, version: number) => async (page: Page) => {
+  const headers = await csrf(page.request);
+  for (const op of [
+    { kind: 'party', run: 'r-bm', add: ['1004'], remove: ['1008'] },
+    { kind: 'status', run: 'r-bm', status: 'confirmed' },
+    { kind: 'move', run: 'r-fa', day: 6, time: '23:00' },
+    { kind: 'status', run: 'r-bellona', status: 'cancelled' },
+  ].slice(0, id === 'd-weekend' ? 4 : 3)) {
+    const done = await page.request.post(`${ADMIN}/api/admin/drafts/${id}/ops`, { headers, data: { version, op } });
+    version = (await done.json()).version;
+  }
+};
+/**
+ * B_DraftsConflict's data on Carling retime: the open draft heads the list (the board's
+ * conflicted draft is its first row), and the upstream cancellation flags changes 3 and 4,
+ * as the board's does, rather than the seeded 2 and 3 (change 2 is a clean one on the board).
+ */
+const conflictLikeBoard = async (page: Page) => {
+  await moreOps('d-carling', 4)(page);
+  await page.route('**/api/admin/drafts?state=open', async (route) => {
+    const list = await (await route.fetch()).json();
+    route.fulfill({ json: { ...list, drafts: [...list.drafts].sort((a: { id: string }, b: { id: string }) => Number(b.id === 'd-carling') - Number(a.id === 'd-carling')) } });
+  });
+  await page.route('**/api/admin/drafts/d-carling/preview', async (route) => {
+    const preview = await (await route.fetch()).json();
+    for (const c of preview.conflicts) if (c.kind === 'upstream_removed') c.ops = [2, 3];
+    route.fulfill({ json: preview });
+  });
+};
+/** The boards list three open drafts: the mock's two plus "Bellona clean-up" with one change. */
+const thirdDraft = async (page: Page) => {
+  const headers = await csrf(page.request);
+  const made = await (await page.request.post(`${ADMIN}/api/admin/drafts`, { headers, data: { title: 'Bellona clean-up' } })).json();
+  await page.request.post(`${ADMIN}/api/admin/drafts/${made.id}/ops`, { headers, data: { version: made.version, op: { kind: 'status', run: 'r-bellona', status: 'cancelled' } } });
+};
+const draftShown = (title: string) => async (page: Page) => {
+  await expect(page.getByRole('heading', { level: 2, name: title })).toBeVisible();
+  await page.waitForLoadState('networkidle');
+};
+const draftsList = async (page: Page) => {
+  await expect(page.getByRole('listbox', { name: 'Open drafts' })).toBeVisible();
+  await page.waitForLoadState('networkidle');
+};
+/** No open drafts; the closed tab gains the board's third, expired row. */
+const noOpenDrafts = async (page: Page) => {
+  await page.route('**/api/admin/drafts?state=open', (route) => route.fulfill({ json: { head: 9, drafts: [] } }));
+  await page.route('**/api/admin/drafts?state=closed', async (route) => {
+    const list = await (await route.fetch()).json();
+    route.fulfill({ json: { ...list, drafts: [...list.drafts, { ...list.drafts[0], id: 'd-old', title: 'Bellona clean-up', status: 'expired', merged_seq: null }] } });
+  });
+};
+const holdDrafts = (page: Page) => page.route('**/api/admin/drafts?state=open', () => {});
+const failDrafts = (page: Page) =>
+  page.route('**/api/admin/drafts?state=open', (route) =>
+    route.fulfill({ status: 503, json: { error: 'unavailable', message: 'The server didn’t answer (timeout after 10 s).' } }),
+  );
+/** The drafts error boards give LoadError's Copy details an icon; the approved B_States (states-error), which the shared LoadError follows, draws none. */
+const errorBoard = (page: Page) =>
+  page.evaluate(() => {
+    for (const icon of document.querySelectorAll('[data-fid="state-actions"] .btn svg')) icon.remove();
+  });
+/** The board's edit: change 1 a step earlier (Sat 22:00), change 2 dropped. */
+const requestEdited = async (page: Page) => {
+  await expect(page.getByRole('heading', { level: 2, name: /Weekly timing change/ })).toBeVisible();
+  await page.getByRole('button', { name: /Edit before approving/ }).click();
+  await page.getByRole('button', { name: /minutes earlier$/ }).click();
+  await page.getByRole('button', { name: 'Drop change 2: the party change' }).click();
+  await page.getByRole('radio', { name: 'Keep as it is' }).check();
+  // Checking the radio scrolls the phone's thread; the board draws it from the top.
+  await page.evaluate(() => {
+    for (const el of document.querySelectorAll('*')) if (el.scrollTop) el.scrollTop = 0;
+  });
+};
+/** Tsubame changes the request under the edit: Approve edited is refused. */
+const requestRefused = async (page: Page) => {
+  await requestEdited(page);
+  await page.request.post(`${ADMIN}/__mock/inbox/kalos-v4`);
+  await page.getByRole('button', { name: 'Approve edited' }).click();
+  await expect(page.locator('[data-fid="inbox-edit-toast"]')).toBeVisible();
+  await page.locator('.toast').evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+};
+/**
+ * The request editor boards redraw the approved Inbox frame around the detail. Left out:
+ * the list (inbox-self's and phone-inbox's subject, with their known row-height gap), the
+ * phone's hidden list bar (phone-inbox's child-order gap), and the refusal toast with the
+ * shared toast region it lives in (the app has one toast system; the board draws the
+ * toast inside the window).
+ */
+const INBOX_EDIT_OMIT = [...DRAFTS_OMIT, 'inbox-list', 'inbox-edit-toast', 'toasts'];
+const PHONE_INBOX_EDIT_OMIT = [...PHONE_DRAFTS_OMIT, 'inbox-list', 'window-bar', 'inbox-edit-toast', 'toasts'];
+/**
+ * The board's window is positioned only to hold its toast (left out above). On the laptop
+ * boards the title names the boss by token on one unwrapping line ("XKalos"); the approved
+ * Inbox boards and the app name it in full, and the app's title wraps whole boss tags (name
+ * beside its pill: inbox-self's known flex-wrap gap). The board's title gets the full name,
+ * drawn as such a tag. The phone boards already break before the boss, as the app does: left
+ * as drawn; they tighten the approved bubble (`.bub2`, 12px 16px in B_PhoneInbox) to 10px 14px,
+ * which the app's Inbox frame keeps.
+ */
+const inboxEditBoard = (page: Page) =>
+  page.evaluate(() => {
+    for (const el of document.querySelectorAll<HTMLElement>('[data-fid="window"]')) el.style.position = 'static';
+    if (innerWidth < 600) {
+      for (const el of document.querySelectorAll<HTMLElement>('[data-fid="inbox-quote"]')) el.style.padding = '';
+      return;
+    }
+    for (const title of document.querySelectorAll<HTMLElement>('[data-fid="inbox-title"]')) {
+      title.style.flexWrap = 'wrap';
+      const h = title.querySelector('h2')!;
+      const pill = title.querySelector('.pill')!;
+      h.textContent = h.textContent!.replace(' XKalos', '');
+      const tag = document.createElement('span');
+      tag.style.cssText = 'display: flex; align-items: center; gap: 8px';
+      const name = h.cloneNode() as HTMLElement;
+      name.textContent = 'Gatekeeper Kalos';
+      tag.append(name, pill);
+      title.append(tag);
+    }
+  });
+/**
+ * The stage boards redraw the whole run sheet; the sheet itself is HeroSheet's and
+ * HeroPhone's (the hero-sheet and hero-phone pairs), so these compare what staging
+ * adds: the stage button, the picker, the strip, the staged clock line and party slot.
+ */
+const STAGE_OMIT = ['rail', 'topbar', 'page-line', 'window-bar', 'move-days', 'move-day', 'move-time'];
+const STAGE_SCOPE = ['sheet-stage', 'sheet-stage-picker', 'sheet-stage-start', 'sheet-staging', 'sheet-stage-stop', 'sheet-staged-when', 'sheet-party-staged'];
+/**
+ * The stage boards redraw HeroSheet's frame their own way; before measuring what staging
+ * adds, the board gets the frame as the approved B_HeroSheet draws it (hero-sheet compares
+ * it): the sheet spans the 1280 px frame under its 48 px title bar (the bar outside the
+ * sheet region), the actions column spreads Move, the actions and the status over the
+ * hero's height (`space-between`), the party grid is 930 px wide beside the panel's side
+ * column and fills the panel, and the clock column carries hero-sheet's known 8 px top gap.
+ * On the phone, the picker is the shared Modal (a fixed dialog) where the board positions
+ * it absolutely in its frame.
+ */
+const stageBoard = (page: Page) =>
+  page.evaluate(() => {
+    for (const el of document.querySelectorAll<HTMLElement>('[data-fid="sheet-party"]')) el.dataset.fid = 'week-party';
+    if (innerWidth < 600) {
+      for (const el of document.querySelectorAll<HTMLElement>('[data-fid="sheet-stage-picker"]')) el.style.position = 'fixed';
+      return;
+    }
+    const sheet = document.querySelector<HTMLElement>('[data-fid="sheet"]')!;
+    Object.assign(sheet.style, { left: '0px', top: '48px', width: '1280px', height: '752px' });
+    const bar = sheet.querySelector<HTMLElement>('[data-fid="window-bar"]')!;
+    Object.assign(bar.style, { position: 'absolute', top: '-48px', left: '0px', right: '0px' });
+    for (const el of document.querySelectorAll<HTMLElement>('[data-fid="sheet-actions"]')) el.style.justifyContent = 'space-between';
+    for (const el of document.querySelectorAll<HTMLElement>('[data-fid="week-party"]')) Object.assign(el.style, { width: '930px', height: '100%' });
+    // hero-sheet's known gap: the app's clock column starts 8 px down (board 0).
+    for (const el of document.querySelectorAll<HTMLElement>('[data-fid="sheet-when"]')) el.style.paddingTop = '8px';
+  });
+const stageApp = (page: Page) =>
+  page.evaluate(() => {
+    // HeroSheet's window around the tabs and panel: the stage boards draw the tabs and party straight in the sheet.
+    for (const el of document.querySelectorAll<HTMLElement>('[data-fid="sheet-window"]')) delete el.dataset.fid;
+    // The phone board tags the action row (Move, More actions, the stage button) and no sheet around the hero.
+    if (innerWidth < 600) {
+      for (const el of document.querySelectorAll<HTMLElement>('[data-fid="sheet"]')) delete el.dataset.fid;
+      for (const el of document.querySelectorAll<HTMLElement>('[data-fid="week-move"]')) el.dataset.fid = 'sheet-actions';
+    }
+  });
+/** HCarling + HStar in the full sheet (the pane's larger view on a laptop, the sheet on a phone). */
+const carlingSheet = async (page: Page) => {
+  await page.locator('[data-run="r-carling"] .plan-card__open').click();
+  const pane = page.getByRole('complementary', { name: 'HCarling + HStar' });
+  if (page.viewportSize()!.width >= 900) {
+    await expect(pane).toBeVisible();
+    await pane.getByRole('button', { name: 'Open in a larger view' }).click();
+  }
+  const sheet = page.getByRole('dialog', { name: 'HCarling + HStar' });
+  await expect(sheet).toBeVisible();
+  await sheet.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+  return sheet;
+};
+const DRAFT_PAIRS: Pair[] = [
+  { name: 'drafts', board: 'B_Drafts', path: '/drafts?item=d-weekend', omit: DRAFTS_OMIT, setup: moreOps('d-weekend', 3), ready: draftShown('Weekend reshuffle') },
+  { name: 'drafts-conflict', board: 'B_DraftsConflict', path: '/drafts?item=d-carling', omit: DRAFTS_OMIT, setup: conflictLikeBoard, ready: draftShown('Carling retime') },
+  {
+    name: 'drafts-empty',
+    board: 'B_DraftsEmpty',
+    path: '/drafts',
+    omit: DRAFTS_OMIT,
+    setup: noOpenDrafts,
+    ready: async (page) => {
+      await expect(page.getByRole('heading', { name: 'No open drafts' })).toBeVisible();
+      await expect(page.locator('[data-fid="empty-recent-row"]').first()).toBeVisible();
+    },
+  },
+  { name: 'drafts-loading', board: 'B_DraftsLoading', path: '/drafts', omit: DRAFTS_OMIT, setup: holdDrafts, ready: (page) => expect(page.getByText('Loading drafts…')).toBeVisible() },
+  { name: 'drafts-error', board: 'B_DraftsError', path: '/drafts', omit: DRAFTS_OMIT, setup: failDrafts, prepare: errorBoard, ready: (page) => expect(page.getByRole('button', { name: 'Try again' })).toBeVisible() },
+  { name: 'phone-drafts', board: 'B_PhoneDrafts', path: '/drafts', omit: PHONE_DRAFTS_OMIT, setup: thirdDraft, ready: draftsList },
+  { name: 'phone-draft-conflict', board: 'B_PhoneDraftConflict', path: '/drafts?item=d-carling', omit: PHONE_DRAFTS_OMIT, setup: conflictLikeBoard, ready: draftShown('Carling retime') },
+  {
+    name: 'phone-drafts-empty',
+    board: 'B_PhoneDraftsEmpty',
+    path: '/drafts',
+    omit: PHONE_DRAFTS_OMIT,
+    setup: noOpenDrafts,
+    ready: async (page) => {
+      await expect(page.getByRole('heading', { name: 'No open drafts' })).toBeVisible();
+      await expect(page.locator('[data-fid="empty-recent-row"]').first()).toBeVisible();
+    },
+  },
+  { name: 'phone-drafts-loading', board: 'B_PhoneDraftsLoading', path: '/drafts', omit: PHONE_DRAFTS_OMIT, setup: holdDrafts, ready: (page) => expect(page.getByText('Loading drafts…')).toBeVisible() },
+  { name: 'phone-drafts-error', board: 'B_PhoneDraftsError', path: '/drafts', omit: PHONE_DRAFTS_OMIT, setup: failDrafts, prepare: errorBoard, ready: (page) => expect(page.getByRole('button', { name: 'Try again' })).toBeVisible() },
+  { name: 'inbox-edit', board: 'B_InboxEdit', path: '/inbox?tab=self_service&item=p-kalos-fixed', omit: INBOX_EDIT_OMIT, prepare: inboxEditBoard, ready: requestEdited },
+  { name: 'inbox-edit-conflict', board: 'B_InboxEditConflict', path: '/inbox?tab=self_service&item=p-kalos-fixed', omit: INBOX_EDIT_OMIT, prepare: inboxEditBoard, ready: requestRefused },
+  { name: 'phone-inbox-edit', board: 'B_PhoneInboxEdit', path: '/inbox?tab=self_service&item=p-kalos-fixed', omit: PHONE_INBOX_EDIT_OMIT, prepare: inboxEditBoard, ready: requestEdited },
+  { name: 'phone-inbox-edit-conflict', board: 'B_PhoneInboxEditConflict', path: '/inbox?tab=self_service&item=p-kalos-fixed', omit: PHONE_INBOX_EDIT_OMIT, prepare: inboxEditBoard, ready: requestRefused },
+  {
+    name: 'run-stage',
+    board: 'B_RunSheetStage',
+    path: '/',
+    omit: STAGE_OMIT,
+    scope: STAGE_SCOPE,
+    prepare: stageBoard,
+    // The board's picker lists three drafts; the mock seeds two.
+    setup: thirdDraft,
+    ready: async (page) => {
+      const sheet = await carlingSheet(page);
+      await sheet.getByRole('button', { name: 'Stage in draft…' }).click();
+      await expect(sheet.getByRole('dialog', { name: 'Stage in draft' }).getByRole('radio', { name: /Weekend reshuffle/ })).toBeChecked();
+      await stageApp(page);
+    },
+  },
+  {
+    name: 'run-stage-active',
+    board: 'B_RunSheetStageActive',
+    path: '/',
+    omit: STAGE_OMIT,
+    scope: STAGE_SCOPE,
+    prepare: stageBoard,
+    // The board's draft already moves this run and adds Hinata to it; its party has six
+    // (the mock adds a second Ren, #1013, this week).
+    setup: async (page) => {
+      const headers = await csrf(page.request);
+      let version = 3;
+      for (const op of [
+        { kind: 'move', run: 'r-carling', day: 6, time: '21:30' },
+        { kind: 'party', run: 'r-carling', add: ['1006'] },
+      ]) {
+        const done = await page.request.post(`${ADMIN}/api/admin/drafts/d-weekend/ops`, { headers, data: { version, op } });
+        version = (await done.json()).version;
+      }
+      await page.route('**/api/admin/week*', async (route) => {
+        const response = await route.fetch();
+        if (response.status() !== 200) return route.fulfill({ response });
+        const week = await response.json();
+        for (const run of week.runs) if (run.id === 'r-carling') run.participants = run.participants.filter((p: { id: string }) => p.id !== '1013');
+        return route.fulfill({ json: week });
+      });
+    },
+    ready: async (page) => {
+      const sheet = await carlingSheet(page);
+      await sheet.getByRole('button', { name: 'Stage in draft…' }).click();
+      await sheet.getByRole('button', { name: 'Start staging' }).click();
+      await expect(sheet.getByText('Staging into Weekend reshuffle')).toBeVisible();
+      await expect(sheet.locator('[data-fid="sheet-party-staged"]')).toBeVisible();
+      await stageApp(page);
+    },
+  },
+  {
+    name: 'run-stage-phone',
+    board: 'B_RunSheetStagePhone',
+    path: '/',
+    omit: STAGE_OMIT,
+    scope: STAGE_SCOPE,
+    prepare: stageBoard,
+    setup: thirdDraft,
+    ready: async (page) => {
+      const sheet = await carlingSheet(page);
+      await sheet.getByRole('button', { name: 'Stage in draft…' }).click();
+      const picker = page.getByRole('dialog', { name: 'Stage in draft' });
+      await expect(picker).toBeVisible();
+      await picker.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+      await stageApp(page);
+    },
+  },
+];
 
 const rosterOff = async (page: Page) => {
   await page.request.post(`${ADMIN}/__mock/modules`, { data: { roster: false } });
@@ -870,7 +1161,7 @@ const PAIRS: Pair[] = [
 test.describe('layout fidelity', () => {
   test.skip(!ENABLED, 'run with `bun run fidelity` (needs a KANADE_FIDELITY=1 build)');
 
-  for (const pair of [...PAIRS, ...PUBLIC_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
+  for (const pair of [...PAIRS, ...DRAFT_PAIRS, ...PUBLIC_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
     test(pair.name, async ({ page, browser }) => {
       test.skip(!boardExists(pair.board), `no board ${pair.board}.dc.html under ${MOCKUPS}`);
       const dir = join(OUT, pair.name);
@@ -894,10 +1185,10 @@ test.describe('layout fidelity', () => {
       await page.goto(`${pair.app === 'public' ? PUBLIC : ADMIN}${pair.path}${pair.path.includes('?') ? '&' : '?'}sw=off`);
       await pair.ready(page);
       await settle(page);
-      // Boards older than rail option B leave the rail and More untagged: on those,
-      // the app's rail regions are no finding (they stay compared where a board tags them).
+      // Boards older than rail option B and staging leave those regions untagged: on those,
+      // the app's are no finding (they stay compared where a board tags them).
       const drawn = new Set(boardRegions.map((r) => r.fid));
-      const untagged = RAIL_FIDS.filter((fid) => !drawn.has(fid));
+      const untagged = LATER_FIDS.filter((fid) => !drawn.has(fid));
       let appRegions = (await skeleton(page, pair.omit))
         .filter((r) => (!scope.size || scope.has(r.fid)) && !untagged.includes(r.fid))
         .map((r) => ({ ...r, children: r.children.filter((c) => !untagged.includes(c)) }));

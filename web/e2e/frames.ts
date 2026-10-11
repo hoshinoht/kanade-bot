@@ -14,6 +14,8 @@ export const SCREENS: [string, string, string][] = [
   ['admin', ADMIN, '/'],
   ['admin', ADMIN, '/fixed'],
   ['admin', ADMIN, '/bosses'],
+  ['admin', ADMIN, '/drafts'],
+  ['admin', ADMIN, '/drafts?item=d-carling'],
   ['admin', ADMIN, '/bosses/Carling/knowledge'],
   ['admin', ADMIN, '/members'],
   ['admin', ADMIN, '/reminders'],

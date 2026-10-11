@@ -15,6 +15,10 @@ export interface Toast {
   action?: ToastAction;
   /** null keeps the toast until dismissed. */
   timeoutMs: number | null;
+  /** A screen's own placement or look for this toast (a class its stylesheet defines). */
+  className?: string;
+  /** The layout-fidelity tag (`e2e/fidelity.spec.ts`), from the call site. */
+  fid?: string;
 }
 
 /** Success/info toasts hide after this; one offering an action (Undo) gets longer. */

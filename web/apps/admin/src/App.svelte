@@ -23,7 +23,7 @@
   import Lazy from './pages/Lazy.svelte';
   import NotFoundPage from './pages/NotFoundPage.svelte';
   import WeekPage, { type WeekTab } from './pages/WeekPage.svelte';
-  import type { Run, Session } from '@kanade/api-types';
+  import type { Run, Session, Week } from '@kanade/api-types';
   import { onUnauthenticated } from '@kanade/client';
   import { loginHref, safeNext } from './auth';
   import { match, Router } from './router.svelte';
@@ -38,7 +38,8 @@
   import { directory } from './names/directory.svelte';
   import { ME_AVATAR } from './shared/avatar';
   import { artUrl } from './shared/identity';
-  import { AdminWeek, type MoveOutcome } from './store.svelte';
+  import { AdminWeek, STATUS_LABELS, type MoveOutcome } from './store.svelte';
+  import { Staging } from './drafts/staging.svelte';
   import { reread } from './week/reread';
 
   // Route-level code splitting: only the Week page (and the run sheet it
@@ -63,11 +64,15 @@
     reminders: () => import('./reminders/RemindersPage.svelte'),
     config: () => import('./config/ConfigPage.svelte'),
     history: () => import('./history/HistoryPage.svelte'),
+    drafts: () => import('./drafts/DraftsPage.svelte'),
   } as const;
 
   const router = new Router();
   const store = new AdminWeek();
   const toaster = new Toaster();
+  // Run-sheet staging lives here, not in the sheet: it outlives a closed sheet
+  // and shows on every run sheet until Stop staging.
+  const staging = new Staging();
   let weekTab = $state<WeekTab>('planner');
   let paletteOpen = $state(false);
   // The palette loads on its first Ctrl/Cmd-K.
@@ -202,6 +207,24 @@
         return { store, toaster, openId: router.query.get('open') ?? '', onopened: () => router.go('/fixed', { replace: true }) };
       case 'history':
         return { store, toaster };
+      case 'drafts':
+        return {
+          store,
+          toaster,
+          tab: router.query.get('tab') ?? '',
+          item: router.query.get('item') ?? '',
+          // As the Inbox: a pick on a phone pushes a tagged entry, so Back returns to the list.
+          onselect: (tab: string, item: string, open: boolean) =>
+            router.go(`/drafts${tab === 'closed' ? '?tab=closed' : ''}${item ? `${tab === 'closed' ? '&' : '?'}item=${encodeURIComponent(item)}` : ''}`, {
+              replace: !open,
+              state: open ? { draftDetail: true } : null,
+            }),
+          // "Add a change": stage into the draft, then pick a run on the Week board.
+          onadd: (draft: { id: string; title: string; version: number }) => {
+            void staging.start({ draft }).then((outcome) => toaster.show({ message: outcome.ok ? `${outcome.message} Open a run to stage a change.` : outcome.message, tone: outcome.ok ? 'ok' : 'error' }));
+            router.go('/');
+          },
+        };
       case 'inbox':
         return {
           store,
@@ -413,6 +436,16 @@
     (handle ?? document.getElementById('main'))?.focus();
   }
 
+  // While staging, the sheet's Move, Swap, party, Reset and Status post draft
+  // operations instead of live writes (B_RunSheetStageActive).
+  async function stage(runId: string, work: (run: Run, week: Week) => Promise<MoveOutcome>, toast = false): Promise<MoveOutcome> {
+    const run = store.run(runId);
+    if (!run || !store.week) return { ok: false, message: 'That run is no longer on the board.' };
+    const outcome = await work(run, store.week);
+    if (toast) toaster.show({ message: outcome.message, tone: outcome.ok ? 'ok' : 'error' });
+    return outcome;
+  }
+
   // One re-read per channel at a time; the button shows it with aria-disabled.
   // The board and the run sheet share this guard, so one channel never runs twice.
   const rereading = new SvelteSet<string>();
@@ -515,12 +548,24 @@
       {wide}
       countdown={store.summary?.next?.run_id === sheetRunId ? store.summary.next.countdown : null}
       onclose={closePane}
-      onmove={(runId, to) => move(runId, to)}
-      onswap={(runId, withId) => swap(runId, withId)}
-      onstatus={(runId, status) => store.setStatus(runId, status)}
+      onmove={(runId, to) => (staging.draft ? stage(runId, (run, week) => staging.move(run, to, week), true) : move(runId, to))}
+      onswap={(runId, withId) => {
+        const other = store.run(withId);
+        return staging.draft && other ? stage(runId, (run, week) => staging.swap(run, other, week), true) : swap(runId, withId);
+      }}
+      onstatus={(runId, status) =>
+        staging.draft ? stage(runId, (run) => staging.status(run, status, STATUS_LABELS[status as keyof typeof STATUS_LABELS] ?? status)) : store.setStatus(runId, status)}
       onrsvp={(runId, memberId, answer) => store.rsvp(runId, memberId, answer)}
-      onroster={(runId, change) => store.roster(runId, change)}
-      onreset={(runId) => store.resetToFixed(runId)}
+      onroster={(runId, change) =>
+        staging.draft
+          ? stage(runId, (run) => staging.party(run, change, store.members.find((m) => m.id === (change.add ?? change.remove))?.name ?? 'Member'))
+          : store.roster(runId, change)}
+      onreset={(runId) => (staging.draft ? stage(runId, (run) => staging.reset(run)) : store.resetToFixed(runId))}
+      {staging}
+      onopendraft={(id) => {
+        sheetOpen = false;
+        router.go(`/drafts?item=${encodeURIComponent(id)}`);
+      }}
       onping={(runId) => store.ping(runId)}
       onreread={rereadChannel}
       rereadOff={store.summary?.rescan_off ?? null}

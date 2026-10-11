@@ -3,6 +3,7 @@
   import { enter, Modal } from '@kanade/ui';
   import type { Snippet } from 'svelte';
   import { SURFACE_LABELS, describe, localAt, type Names } from './describe';
+  import DiffRow from './DiffRow.svelte';
 
   let {
     wide,
@@ -37,18 +38,6 @@
   const seq = $derived(record.seq);
 
   const label = (record: ChangeRecord) => `Change #${record.seq}`;
-
-  type Row = ChangeRecord['rows'][number];
-  const shown = (value: unknown) => (value === undefined ? '—' : typeof value === 'string' ? value : JSON.stringify(value));
-  // Only the fields that differ; the full before/after stays in the raw view.
-  function changedFields(row: Row) {
-    const before = (row.before ?? {}) as Record<string, unknown>;
-    const after = (row.after ?? {}) as Record<string, unknown>;
-    const names = [...new Set([...Object.keys(before), ...Object.keys(after)])];
-    return names
-      .filter((name) => JSON.stringify(before[name]) !== JSON.stringify(after[name]))
-      .map((name) => ({ name, was: row.before ? shown(before[name]) : '—', now: row.after ? shown(after[name]) : '—' }));
-  }
 </script>
 
 <svelte:window
@@ -76,23 +65,7 @@
   <div class="history-detail__body">
     <section class="history-detail__rows" aria-labelledby="history-rows-{record.seq}">
       <h3 class="cap" id="history-rows-{record.seq}">Rows · {record.rows.length}</h3>
-      {#each record.rows as row, i (i)}
-        <article class="history-diff" data-fid="history-diff">
-          <p class="mono">{'id' in row.key ? `${row.key.table}/${row.key.id}` : `rsvps/${row.key.run_id}/${row.key.user_id}`}{#if !row.before} · created{:else if !row.after} · removed{/if}</p>
-          <dl class="history-diff__fields">
-            {#each changedFields(row) as field (field.name)}
-              <div class="history-diff__field">
-                <dt class="mono" title={field.name}>{field.name}</dt>
-                <dd class="history-diff__was" title={field.was}><span class="vh">was </span><s>{field.was}</s></dd>
-                <dd class="history-diff__arrow" aria-hidden="true">→</dd>
-                <dd class="history-diff__now" title={field.now}><span class="vh">now </span>{field.now}</dd>
-              </div>
-            {:else}
-              <div class="history-diff__field"><dt class="mono">—</dt><dd class="history-diff__now">no field changed</dd></div>
-            {/each}
-          </dl>
-        </article>
-      {/each}
+      {#each record.rows as row, i (i)}<DiffRow {row} fid="history-diff" />{/each}
     </section>
 
     <button class="linklike history-detail__raw" data-fid="history-raw" type="button" onclick={() => onraw(record)}>Show raw JSON</button>

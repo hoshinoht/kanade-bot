@@ -8,7 +8,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { ApproveRequest, Evidence, Proposal, RunStatus, Week } from '@kanade/api-types';
-  import { Avatar, BossTag, DecisionCard, Icon, liveRuns, MovePicker, namesIn, PendingLabel, Portrait, RUN_TONE, STATUS_WORDS, StatusChip, ThreadPanel, WavyProgress, type Slot } from '@kanade/ui';
+  import { Avatar, BossTag, DayStrip, DecisionCard, Icon, liveRuns, MovePicker, namesIn, PendingLabel, Portrait, RUN_TONE, STATUS_WORDS, StatusChip, ThreadPanel, TimeStepper, WavyProgress, type Slot } from '@kanade/ui';
   import { directory } from '../names/directory.svelte';
   import Mentions from '../names/Mentions.svelte';
   import Name from '../names/Name.svelte';
@@ -18,6 +18,7 @@
   import { editable, editText, editWeek, isoToday } from './edit';
   import { proposalExpiry } from './expiry';
   import { blocked, DISCORD_ONLY, isProposal, SOURCE_LABEL } from './flags';
+  import { approvesSomething, editBody, memberNote, requestEditable, retimed, slotOf, slotText, WEEKDAYS, type RequestEdit } from './requestEdit';
 
   let {
     p,
@@ -32,6 +33,10 @@
     timeZone = 'Asia/Kuala_Lumpur',
     week = null,
     step = 30,
+    refusal = 0,
+    editAgain = 0,
+    changedFrom = null,
+    onediting,
   }: {
     p: Proposal;
     busy: boolean;
@@ -51,6 +56,14 @@
     week?: Week | null;
     /** The edit picker's time step: Config → Run lengths default minutes. */
     step?: number;
+    /** Bumps when an edited approval was refused (409): the editor closes and its edits are cleared. */
+    refusal?: number;
+    /** Bumps on the refusal toast's Edit again: the editor opens on the new version. */
+    editAgain?: number;
+    /** The request as it was when an edited approval was refused: its version and what each change asked. */
+    changedFrom?: { version: number; asked: Record<string, string> } | null;
+    /** Editing before approving started or stopped (the list row's chip). */
+    onediting?: (on: boolean) => void;
   } = $props();
   const uid = $props.id();
 
@@ -58,10 +71,80 @@
   let picked = $state<Slot>();
   let editBlocked = $state(true);
   // Which action the shared `busy` belongs to, so only that button shows it.
-  let via = $state<'approve' | 'move'>('approve');
+  let via = $state<'approve' | 'move' | 'edit'>('approve');
   let choices = $state<Record<string, 'update' | 'keep'>>({});
+
+  // "Edit before approving" a member request (B_InboxEdit): day/time and leaving changes out.
+  const asked = $derived(p.requested ?? []);
+  let reqEditing = $state(false);
+  let reqEdit = $state<RequestEdit>({ retimed: {}, dropped: {} });
+  let reqButton = $state<HTMLButtonElement>();
+  let reqFirst = $state<HTMLElement>();
+  const member = $derived(p.self_service?.member.name ?? 'The member');
+  const subject = $derived(p.bosses.map((b) => b.token).join(' + '));
+  // The weekday strip runs in boss-week order from the reset day (Thursday first), as the Fixed editor's.
+  const resetDay = $derived(Math.max(0, WEEKDAYS.findIndex((d) => d.startsWith(week?.days[0]?.dow ?? 'Thu'))));
+  const weekdayStrip = $derived(WEEKDAYS.map((_, i) => (resetDay + i) % 7).map((value) => ({ value, dow: WEEKDAYS[value]!.slice(0, 3), label: WEEKDAYS[value]! })));
+  const PART: Record<string, string> = { day_time: 'Weekly timing', party: 'Party', channel: 'Channel' };
+  const partTitle = (part: string, text: string) => `${subject} · ${part === 'day_time' ? 'day and time' : part === 'channel' ? 'channel' : text}`;
+  /** The change the decision card leads with: a day/time still in, else the first change still in. */
+  const lead = $derived(asked.find((c) => c.retimable && !reqEdit.dropped[c.id]) ?? asked.find((c) => !reqEdit.dropped[c.id]) ?? null);
+  const leadSlot = $derived(lead ? slotOf(lead, reqEdit) : null);
+  const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const minutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+
+  function setSlot(id: string, slot: { day: number; time: string }) {
+    reqEdit = { ...reqEdit, retimed: { ...reqEdit.retimed, [id]: slot } };
+  }
+  function toggleDrop(id: string) {
+    const dropped = { ...reqEdit.dropped };
+    if (dropped[id]) delete dropped[id];
+    else dropped[id] = true;
+    reqEdit = { ...reqEdit, dropped };
+  }
+  async function startReqEdit() {
+    reqEdit = { retimed: {}, dropped: {} };
+    reqEditing = true;
+    await tick();
+    (reqFirst?.querySelector<HTMLElement>('[role="radio"][tabindex="0"]') ?? reqFirst?.querySelector<HTMLElement>('button'))?.focus({ preventScroll: true });
+  }
+  $effect(() => {
+    onediting?.(reqEditing);
+    return () => onediting?.(false);
+  });
+  async function stopReqEdit() {
+    reqEditing = false;
+    reqEdit = { retimed: {}, dropped: {} };
+    await tick();
+    reqButton?.focus({ preventScroll: true });
+  }
+  // A refused edited approval closes the editor and clears its edits; Edit again starts over.
+  // svelte-ignore state_referenced_locally
+  let seenRefusal = refusal;
+  // svelte-ignore state_referenced_locally
+  let seenAgain = editAgain;
+  $effect(() => {
+    if (refusal !== seenRefusal) {
+      seenRefusal = refusal;
+      reqEditing = false;
+      reqEdit = { retimed: {}, dropped: {} };
+    }
+    if (editAgain !== seenAgain) {
+      seenAgain = editAgain;
+      void startReqEdit();
+    }
+  });
+
+  function approveEdited() {
+    if (!approvesSomething(asked, reqEdit)) return;
+    const body: ApproveRequest = { version: p.version, edit: editBody(asked, reqEdit) };
+    if (p.choices !== null) body.choices = { ...choices };
+    via = 'edit';
+    onapprove(body);
+  }
   const band = (c: number | null) => (c === null ? 'unknown' : c >= 0.8 ? 'high' : c >= 0.6 ? 'mid' : 'low');
   const stop = $derived(blocked(p));
+  const reqEditable = $derived(requestEditable(p) && !stop);
   const conflicted = $derived(p.preview.conflicts.length > 0);
   const refused = $derived(locked && isProposal(p));
   /** Wide Extractor items (VarRail2): header across, thread beside the decision card. */
@@ -327,6 +410,109 @@
     <button class="btn btn--danger decision__reject" data-fid="decision-reject" class:btn--risk={Boolean(stop) && !refused} class:btn--key={Boolean(stop) && !refused} type="button" disabled={refused} aria-describedby={whyId} onclick={onreject}>Reject…</button>
   {/snippet}
 
+  <!-- B_InboxEdit / B_InboxEditConflict: the request's changes, editable (day/time, Drop / Restore) or read-only. -->
+  {#snippet requested()}
+    <div class="proposal__would reqcard" data-fid="inbox-change" bind:this={reqFirst}>
+      <div class="reqcard__head">
+        <h3 class="cap proposal__cap">Requested changes · {asked.length}</h3>
+        {#if reqEditing}<span class="reqcard__editing"><Icon name="edit" />Editing · not saved</span>
+        {:else if changedFrom}<StatusChip tone="warn">version {p.version}</StatusChip>{/if}
+      </div>
+      {#if bar && lead}
+        <!-- Phones: the summary and consequence sit inside the change card. -->
+        <div class="reqcard__summary" data-fid="inbox-edit-summary">
+          <span class="reqcard__line">{#if lead.now}<span class="mono was">{lead.now}</span> <span aria-hidden="true">→</span><span class="vh">to</span>{/if}
+            <b class="mono">{leadSlot ? slotText(leadSlot) : lead.asked}</b></span
+          >
+          {#if p.consequence}<span class="proposal__consequence" data-fid="decision-consequence">{p.consequence}</span>{/if}
+        </div>
+      {/if}
+      {#if reqEditing}
+        {#each asked as c, i (c.id)}
+          {@const off = Boolean(reqEdit.dropped[c.id])}
+          {@const slot = slotOf(c, reqEdit)}
+          <div class="reqop" class:reqop--off={off} data-fid="inbox-edit-op">
+            <div class="reqop__head">
+              <span class="reqop__ord mono">{i + 1}</span>
+              <span class="reqop__kind">{PART[c.part] ?? p.kind_label}</span>
+              <b class="reqop__title">{#if off}<s>{partTitle(c.part, c.asked)}</s>{:else}{partTitle(c.part, c.asked)}{/if}</b>
+              {#if off}<StatusChip tone="risk">Dropped</StatusChip>{/if}
+              <button class="btn reqop__toggle" type="button" disabled={busy || (!off && asked.filter((a) => !reqEdit.dropped[a.id]).length === 1)} aria-label="{off ? 'Restore' : 'Drop'} change {i + 1}: {c.label}" onclick={() => toggleDrop(c.id)}>{off ? 'Restore' : 'Drop'}</button>
+            </div>
+            {#if c.retimable && !off && slot}
+              <p class="reqop__legend">{#if c.now}<span>Now <span class="mono was">{c.now}</span></span>{/if}<span><i class="reqop__asked" aria-hidden="true"></i>{member} asked <span class="mono">{c.asked}</span></span></p>
+              <div class="reqop__days" data-fid="inbox-edit-day">
+                <DayStrip days={weekdayStrip.map((d) => ({ ...d, from: d.value === c.day, label: `${d.label}${d.value === c.day ? ` (${member} asked)` : ''}` }))} value={slot.day} label="Day for change {i + 1}" compact onpick={(day) => setSlot(c.id, { day, time: slot.time })} />
+              </div>
+              <div class="reqop__time">
+                <div class="reqop__stepper" data-fid="inbox-edit-time" class:reqop__stepper--changed={retimed(c, reqEdit)}>
+                  <TimeStepper value={minutes(slot.time)} {step} label="Time for change {i + 1}" onchange={(m) => setSlot(c.id, { day: slot.day, time: hhmm(m) })} />
+                </div>
+                <span class="reqop__yours">Your edit: <b class="mono">{slotText(slot)}</b></span>
+                {#if retimed(c, reqEdit)}<button class="linklike reqop__reset" type="button" onclick={() => setSlot(c.id, { day: c.day ?? slot.day, time: c.time ?? slot.time })}>Use {c.asked}</button>{/if}
+              </div>
+            {/if}
+          </div>
+        {/each}
+      {:else}
+        <ol class="reqops">
+          {#each asked as c, i (c.id)}
+            {@const changed = changedFrom && changedFrom.asked[c.id] !== undefined && changedFrom.asked[c.id] !== c.asked}
+            <li class="reqop reqop--read" data-fid="inbox-edit-op">
+              <span class="reqop__ord mono">{i + 1}</span>
+              <span class="reqop__kind">{PART[c.part] ?? p.kind_label}</span>
+              <span class="reqop__text">
+                <b>{c.part === 'day_time' ? `${subject} · day and time` : subject}</b>
+                <span>{#if c.now && c.part !== 'party'}<span class="mono">{c.now}</span> → <b class="mono">{c.asked}</b>{:else if c.part === 'party'}{c.asked.replace(/^add /, 'adds ').replace(/^remove /, 'removes ')}{:else}{c.asked}{/if}{#if changed} <StatusChip tone="risk">changed in version {p.version}</StatusChip>{/if}</span>
+              </span>
+            </li>
+          {/each}
+        </ol>
+        {#if p.public_summary}<p class="note">The member sees: “{p.public_summary}”</p>{/if}
+      {/if}
+    </div>
+    {#if reqEditing}
+      <p class="reqnote" data-fid="inbox-edit-note"><Icon name="info" /><span>{memberNote(member, subject, asked, reqEdit)}</span></p>
+    {/if}
+  {/snippet}
+
+  <!-- The decision card for an editable request: what it would change, Approve (edited), Edit before approving. -->
+  {#snippet reqApprove()}
+    {#if reqEditing}
+      <button class="btn btn--primary btn--key decision__approve" data-fid="decision-approve" type="button" disabled={busy || !approvesSomething(asked, reqEdit)} onclick={approveEdited}
+        ><Icon name="check" /><PendingLabel pending={busy && via === 'edit'} label="Approving…">Approve edited</PendingLabel></button
+      >
+    {:else}
+      {@render approveKey()}
+    {/if}
+  {/snippet}
+  {#snippet reqDecision()}
+    {#if lead}
+      <div class="proposal__would reqwould">
+        <h3 class="cap proposal__cap">Would change · {lead.part === 'day_time' ? 'weekly timing' : (PART[lead.part] ?? 'request').toLowerCase()}</h3>
+        {#if lead.now}<span class="mono was">{lead.now}</span>{/if}
+        <strong class="mono proposal__to">{leadSlot ? slotText(leadSlot) : lead.asked}</strong>
+        {#if reqEditing && retimed(lead, reqEdit)}<p class="note">{member} asked <span class="mono">{lead.asked}</span> · edited by you</p>{/if}
+      </div>
+    {/if}
+    {#if p.consequence}<p class="proposal__consequence" data-fid="decision-consequence">{p.consequence}</p>{/if}
+    {@render reqApprove()}
+    {@render why()}
+    {#if !reqEditing}
+      <button class="btn proposal__edit-open reqedit" data-fid="decision-edit" type="button" bind:this={reqButton} disabled={busy} onclick={() => void startReqEdit()}><Icon name="edit" />Edit before approving</button>
+    {/if}
+    <span class="decision__spacer" aria-hidden="true"></span>
+    {#if reqEditing}
+      <div class="decision__footrow" data-fid="decision-foot">
+        <button class="btn btn--ghost proposal__edit-cancel" data-fid="decision-cancel-edit" type="button" onclick={() => void stopReqEdit()}>Cancel edit</button>
+        {@render rejectKey()}
+      </div>
+    {:else}
+      {@render rejectKey()}
+      <p class="decision__foot" data-fid="decision-foot">Reject tells the member, with your reason.</p>
+    {/if}
+  {/snippet}
+
 <article class="proposal" class:proposal--stacked={stacked} aria-labelledby="{uid}-title">
   <!-- The item's column (header, then the thread panel). -->
   <div class="proposal__main" data-fid="inbox-detail">
@@ -363,7 +549,7 @@
     </div>
   {/if}
 
-  {#if !stacked}{@render would()}{/if}
+  {#if !stacked}{#if reqEditable}{@render requested()}{:else}{@render would()}{/if}{/if}
 
   {#if conflicted}
     <div class="proposal__conflicts" data-fid="inbox-risk" role="group" aria-labelledby="{uid}-conflicts">
@@ -375,8 +561,8 @@
   {/if}
 
   {#if p.choices?.length}
-    <fieldset class="proposal__choices">
-      <legend>Runs of this weekly timing</legend>
+    <fieldset class="proposal__choices" data-fid="inbox-choices">
+      <legend class="cap">Runs of this weekly timing</legend>
       {#each p.choices as choice (choice.run_id)}
         <div class="proposal__choice" role="radiogroup" aria-label="{choice.label}, {choice.when}">
           <span>{choice.label} · <span class="mono">{choice.when}</span>{#if choice.amended} <span class="tone tone--warning">amended</span>{/if}</span>
@@ -461,8 +647,22 @@
   </div>
 
   {#if !stacked}
-  <DecisionCard label="Decide this change">
-    {#if bar}
+  <DecisionCard label="Decide this change" overline={reqEditable && !bar ? '' : 'Decision'}>
+    {#if bar && reqEditable}
+      <!-- B_PhoneInboxEdit: the pencil (pressed while editing) toggles the editor; Approve edited approves it. -->
+      {@render why()}
+      <button
+        class="btn proposal__edit-toggle reqtoggle"
+        data-fid="decision-edit"
+        bind:this={reqButton}
+        type="button"
+        aria-label={reqEditing ? 'Stop editing' : 'Edit before approving'}
+        aria-pressed={reqEditing}
+        onclick={() => void (reqEditing ? stopReqEdit() : startReqEdit())}><Icon name="edit" /></button
+      >
+      {@render rejectKey()}
+      {@render reqApprove()}
+    {:else if bar}
       {@render why()}
       {@render editForm()}
       {#if editable(p) && !stop && editAt}
@@ -479,6 +679,8 @@
       {/if}
       {@render rejectKey()}
       {@render approveKey()}
+    {:else if reqEditable}
+      {@render reqDecision()}
     {:else}
       {@render approveKey()}
       {@render why()}

@@ -1,7 +1,7 @@
 import { ADMIN, expect, test, HEADING, choose } from './support';
 
 const SECTIONS = {
-  Schedule: ['Week', 'Fixed', 'Bosses'],
+  Schedule: ['Week', 'Fixed', 'Bosses', 'Drafts'],
   Kanade: ['Inbox', 'Extractions', 'Chat'],
   Operate: ['Members', 'Config', 'History'],
 };
@@ -15,8 +15,6 @@ test('admin: grouped nav has every v4 section as a real route', async ({ page })
     const links = nav.getByRole('group', { name: group });
     await expect(links.getByRole('link')).toHaveText(labels.map((l) => new RegExp(`^\\s*${l}`)));
   }
-  // Drafts stays off until its page lands: no destination and no route.
-  await expect(nav.getByRole('link', { name: 'Drafts' })).toHaveCount(0);
   const more = nav.getByRole('button', { name: 'More', exact: true });
   await more.click();
   await expect(page.getByRole('menu', { name: 'More destinations' }).getByRole('menuitem')).toHaveText(MORE);
@@ -31,6 +29,7 @@ test('admin: grouped nav has every v4 section as a real route', async ({ page })
   await expect(nav.getByRole('link', { name: 'History' })).toHaveAttribute('aria-current', 'page');
 
   for (const [label, heading] of [
+    ['Drafts', '2 open'],
     ['Fixed', '8 weekly timings'],
     ['Bosses', /^11 bosses/],
     ['Members', '13 bossers'],
@@ -52,7 +51,7 @@ test('admin: grouped nav has every v4 section as a real route', async ({ page })
 
   await page.goBack();
   await expect(page).toHaveURL(`${ADMIN}/rewrites`);
-  await page.goto(`${ADMIN}/drafts?sw=off`);
+  await page.goto(`${ADMIN}/nowhere?sw=off`);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText("That doesn't exist");
   // v4's /audit now lands on History's Sign-ins audit log.
   await page.goto(`${ADMIN}/audit?sw=off`);

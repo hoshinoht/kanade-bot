@@ -331,6 +331,9 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
   font-size: var(--fs-mini);
 }
 
+// The facts line spans the head's text column, as the board's span does.
+.proposal__headtext > .proposal__meta { width: 100%; }
+
 .proposal__fact::before {
   content: "· ";
 }
@@ -519,16 +522,25 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
 .proposal__conflicts > * { margin: 0; }
 .proposal__conflicts > .proposal__cap { color: var(--risk-text); }
 
+// The runs of a weekly timing (B_InboxEdit `inbox-choices`): a card of their own.
 .proposal__choices {
-  display: grid;
-  gap: 0.5rem;
-  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 14px 12px;
   border: 0;
+  border-radius: 16px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
 }
 
+// Inside the card, not on its edge (a floated legend leaves the border alone).
 .proposal__choices legend {
-  margin-bottom: 0.3rem;
-  font-weight: 700;
+  float: left;
+  width: 100%;
+  margin: 0;
+  padding: 0;
 }
 
 .proposal__choice {
@@ -536,6 +548,15 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
   flex-wrap: wrap;
   align-items: center;
   gap: 0.3rem 0.9rem;
+  font-size: var(--fs-small);
+}
+
+// Each answer a 32 px row target, its radio beside the words.
+.proposal__choice label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
 }
 
 // The thread (B_PhoneInbox): a pane card with its head, then one row per
@@ -980,12 +1001,13 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
 // The facts wrap to a second line rather than being cut (user decision
 // 2026-10-05), each fact whole; the machine id and read time stay for
 // screen readers only.
-.frame--phone .inbox--compact .proposal__meta { max-width: 100%; color: var(--ground-ink); line-height: 1.5; }
+.frame--phone .inbox--compact .proposal__meta { max-width: 100%; color: var(--ground-ink); line-height: 1.3; }
 .frame--phone .inbox--compact .proposal__meta .proposal__fact { white-space: nowrap; }
 .frame--phone .inbox--compact .proposal__fact--aside { @include hide-visually; }
 
 .frame--phone .inbox--compact .proposal__card { color: var(--ground-ink); }
-.frame--phone .inbox--compact .proposal__meta .chip { min-height: 20px; }
+// The source is one more fact on a phone (B_PhoneInbox, B_PhoneInboxEdit draw the facts as plain text).
+.frame--phone .inbox--compact .proposal__meta .chip { min-height: 0; padding: 0; border: 0; background: none; }
 .frame--phone .inbox--compact .proposal__would { padding: 10px 14px; border-radius: 18px; background: var(--select); box-shadow: none; }
 // The change as one line (B_PhoneInbox): was → now on the baseline; notes or a consequence, when an item has them, stack.
 .frame--phone .inbox--compact .proposal__would:not(:has(> .note, > .proposal__consequence)) { flex-direction: row; align-items: baseline; }
@@ -1027,3 +1049,120 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
 
 // Editing takes the board's 340 px card (P_MoveWidths) so the day strip's tags fit.
 .proposal--stacked .decision-card:has(.proposal__edit--open) { width: 340px; }
+
+/* ── Edit before approving a member request (B_InboxEdit*) ──────────────── */
+
+// The requested changes card: the "Would change" card's surface, one block per change.
+.reqcard { gap: 10px; flex: none; }
+.reqcard__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.reqcard__head > h3 { margin: 0; }
+
+.reqcard__editing {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  padding: 0 10px;
+  border-radius: 11px;
+  background: var(--chip-fill);
+  font-size: var(--fs-mini);
+}
+
+.reqcard__editing .icon { width: 13px; height: 13px; }
+
+// One change being edited (B_InboxEdit `.eop`): its head, then the day strip and stepper.
+.reqop {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1.5px solid var(--line);
+}
+
+.reqop__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 32px; }
+.reqop__ord { min-width: 1.2em; color: var(--dim-text); font-size: var(--fs-mini); font-weight: 600; text-align: center; }
+
+.reqop__kind {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 11px;
+  background: var(--chip-fill);
+  font-size: var(--fs-mini);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.reqop__title { flex: 0 1 auto; min-width: 0; font-size: var(--fs-body-sm); }
+.reqop--off .reqop__title { color: var(--dim-text); font-weight: 600; }
+.reqop__toggle { min-height: 32px; margin-left: auto; border-radius: 16px; }
+.reqop__legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; color: var(--dim-text); font-size: var(--fs-mini); line-height: 1.3; }
+// The member's asked day wears the strip's dashed ring; the legend says so.
+.reqop__asked { display: inline-block; width: 12px; height: 12px; margin-right: 4px; border-radius: 4px; outline: 1.5px dashed var(--warn-text); outline-offset: -2px; vertical-align: -1px; }
+.reqop__time { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: var(--fs-small); }
+.reqop__stepper--changed .timestep { box-shadow: inset 0 0 0 2px var(--accent); }
+.reqop__reset { font-size: var(--fs-small); }
+
+// Read-only changes (B_InboxEditConflict `.opl`): numbered row cards, rounded as one list.
+.reqops { display: flex; flex-direction: column; gap: 3px; margin: 0; padding: 0; list-style: none; }
+.reqop--read { display: grid; grid-template-columns: 20px auto minmax(0, 1fr); align-items: center; gap: 10px; padding: 7px 6px 7px 10px; border: 0; border-radius: 4px; background: var(--row); }
+.reqops > .reqop--read:first-child { border-top-left-radius: 16px; border-top-right-radius: 16px; }
+.reqops > .reqop--read:last-child { border-bottom-left-radius: 16px; border-bottom-right-radius: 16px; }
+.reqop__text { display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: var(--fs-small); line-height: 1.4; }
+.reqop__text .status-chip { min-height: 20px; }
+
+// What the member will see (B_InboxEdit `.info`).
+.reqnote {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: var(--chip-fill);
+  font-size: var(--fs-small);
+  line-height: 1.45;
+}
+
+.reqnote .icon { flex: none; width: 18px; height: 18px; margin-top: 1px; }
+
+// The decision card leads with what approving would change, as the Extractor's does.
+.decision-card .reqwould .note { color: var(--dim-text); font-size: var(--fs-mini); }
+.decision-card .reqedit { align-self: stretch; justify-content: center; }
+
+// Phones: the edited value and consequence sit inside the change card (B_PhoneInboxEdit).
+.reqcard__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: var(--select);
+}
+
+.reqcard__line { display: flex; align-items: baseline; gap: 8px; line-height: 1.2; }
+.reqcard__line b { font-size: var(--fs-clock-narrow); }
+.reqtoggle[aria-pressed="true"] { background: var(--select); border-color: var(--select-edge); }
+
+// The refusal toast (B_InboxEditConflict): over the item's column, kept clear of the
+// decision card. The toast region sits beside the frame, so the frame is asked from the root.
+.toast.inbox-edit-toast { width: min(32rem, 100%); }
+
+@media #{$two-pane} {
+  :root:has(.frame--rail:not(.frame--phone)) .toast.inbox-edit-toast { margin-left: 4rem; }
+}
+
+// Phones: above the decision bar, never over it.
+:root:has(.frame--phone) .toasts:has(> .inbox-edit-toast) { bottom: calc(92px + env(safe-area-inset-bottom)); }
+
+// The editor's day strip and stepper are flex boxes of their own (B_InboxEdit `.wd`, `.ts`).
+.reqop__days { display: flex; }
+.reqop__days > .daystrip { flex: 0 1 auto; width: min(100%, 22rem); }
+.reqop__stepper { display: flex; align-items: center; }
+// While the request is not being edited, Edit before approving is the second action and Reject sits at the foot, its own width.
+.decision-card .reqedit { align-self: auto; }
+.decision-card .reqedit ~ .decision__reject { align-self: flex-start; justify-content: normal; }
+// Phones: the requested changes stack (the one-line "Would change" rule is for a single value).
+.frame--phone .inbox--compact .proposal__would.reqcard { flex-direction: column; align-items: normal; }

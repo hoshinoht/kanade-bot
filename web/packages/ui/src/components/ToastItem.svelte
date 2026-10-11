@@ -23,7 +23,8 @@
 
 <!-- A dismissed toast stays for its exit animation only: inert and hidden from assistive tech. -->
 <div
-  class="toast toast--{toast.tone}"
+  class="toast toast--{toast.tone} {toast.className ?? ''}"
+  data-fid={toast.fid}
   class:is-leaving={leaving}
   role="group"
   aria-label="Notification"

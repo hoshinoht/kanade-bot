@@ -217,7 +217,45 @@
     const result = await send((c) => c.post<{ message: string }>(`/api/admin/inbox/${encodeURIComponent(p.id)}/approve`, body));
     busy = false;
     if (result.ok) await after(result.value.message);
+    else if (body.edit && result.code === 'stale') await editRefused(p);
     else error = refused(result.code, result.message);
+  }
+
+  // An edited approval of a request the member changed meanwhile is refused (409 `stale`;
+  // user decision: no keep-my-edits merge): the editor closes with its edits cleared, the
+  // request reloads read-only at its new version, flagged, and a toast offers Edit again.
+  let refusal = $state(0);
+  let editAgain = $state(0);
+  let changed = $state<Record<string, { version: number; asked: Record<string, string> }>>({});
+  let refusalToast: number | null = null;
+  /** The request open in "Edit before approving", for its list row's chip. */
+  let editingId = $state('');
+  async function editRefused(p: Proposal) {
+    const was = { version: p.version, asked: Object.fromEntries((p.requested ?? []).map((c) => [c.id, c.asked])) };
+    refusal += 1;
+    await inbox.load();
+    const now = inbox.data?.find((item) => item.id === p.id);
+    changed = { ...changed, [p.id]: was };
+    const who = p.self_service?.member.name ?? 'The member';
+    if (refusalToast !== null) toaster.dismiss(refusalToast);
+    refusalToast = toaster.show({
+      message: now
+        ? `Couldn’t approve your edit. ${who} changed this request (now version ${now.version}), so your edits were cleared. Start over from the new version.`
+        : `Couldn’t approve your edit: ${who} changed or withdrew this request.`,
+      tone: 'error',
+      timeoutMs: null,
+      className: 'inbox-edit-toast',
+      fid: 'inbox-edit-toast',
+      action: now
+        ? {
+            label: 'Edit again',
+            run: () => {
+              onselect?.(current, p.id, false);
+              editAgain += 1;
+            },
+          }
+        : undefined,
+    });
   }
 
   let deciding = $state<'' | 'accept' | 'decline'>('');
@@ -396,6 +434,8 @@
           follow={!phone}
           onpick={pick}
           fresh={inbox.fresh}
+          updated={changed}
+          editing={editingId}
         />
       </div>
       <div class="inbox__detail" hidden={!chosen} tabindex="-1" bind:this={detailEl} {@attach enter(chosenId)}>
@@ -416,6 +456,10 @@
               {busy}
               locked={store.proposalsLocked}
               {error}
+              {refusal}
+              {editAgain}
+              changedFrom={changed[chosen.id] ?? null}
+              onediting={(on) => (editingId = on ? chosen!.id : '')}
               onapprove={(body) => void approve(chosen!, body)}
               onmove={(text) => move(chosen!, text)}
               onreject={() => {

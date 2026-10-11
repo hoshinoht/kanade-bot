@@ -17,6 +17,8 @@
     follow,
     onpick,
     fresh,
+    updated = {},
+    editing = '',
   }: {
     items: Proposal[];
     selected: string;
@@ -25,6 +27,10 @@
     onpick: (id: string, open: boolean) => void;
     /** Items a live update just brought in: marked once (`data-new`). */
     fresh?: ReadonlySet<string>;
+    /** Requests that changed under a refused edited approval: flagged "updated · version N". */
+    updated?: Record<string, unknown>;
+    /** The request being edited before approval (B_InboxEdit's "editing" chip). */
+    editing?: string;
   } = $props();
   const uid = $props.id();
   let active = $state('');
@@ -100,10 +106,11 @@
         {#if p.tab === 'extractor' && p.thread?.length}
           <span class="inbox__count">{p.thread.length} message{p.thread.length === 1 ? '' : 's'} · {p.thread.filter((m) => m.used).length} used</span>
         {/if}
-        {#if p.flags.length || p.is_question}
+        {#if p.flags.length || p.is_question || p.id in updated || p.id === editing}
           <span class="inbox__badges">
             {#each p.flags as flag (flag)}<StatusChip tone={FLAG_TONE[flag] === 'danger' ? 'risk' : 'warn'} legacyTone={FLAG_TONE[flag]}>{FLAG_LABEL[flag]}</StatusChip>{/each}
             {#if p.is_question}<StatusChip tone="warn">still a question</StatusChip>{/if}
+            {#if p.id === editing}<StatusChip tone="ok">editing</StatusChip>{:else if p.id in updated}<StatusChip tone="warn">updated · version {p.version}</StatusChip>{/if}
           </span>
         {/if}
         </span>

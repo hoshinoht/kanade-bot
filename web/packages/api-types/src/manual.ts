@@ -202,16 +202,44 @@ export type ProposalKind = 'move' | 'add' | 'cancel' | 'split' | 'otot' | 'sub' 
 
 /**
  * `POST /api/admin/inbox/{id}/approve`. Requests need `version` (and, for
- * `change_fixed`, `choices`, `{}` when none are listed) and take no edit;
- * proposals take an optional `version` and, for a move, new run or split,
- * an edit: `day` (0–6) in the boss week of the proposed time and `time`
- * `HH:MM`. Conflicts always block; there is no `force`.
+ * `change_fixed`, `choices`, `{}` when none are listed) and may carry an
+ * `edit` (new weekly day/time per change, changes left out; 409 `stale`
+ * when the member changed the request meanwhile); proposals take an
+ * optional `version` and, for a move, new run or split, an edit: `day`
+ * (0–6) in the boss week of the proposed time and `time` `HH:MM`.
+ * Conflicts always block; there is no `force`.
  */
 export interface ApproveRequest {
   version?: number;
   choices?: Record<string, 'update' | 'keep'>;
   day?: number;
   time?: string;
+  edit?: RequestEditBody;
+}
+
+/** An approval's changes to a member request: `RequestedChange.id` keys, `day` 0 = Monday. */
+export interface RequestEditBody {
+  retime: { change: string; day: number; time: string }[];
+  drop: string[];
+}
+
+// ── Drafts (docs/v5/api-schemas/drafts.json) ──────────────────────────────
+
+/**
+ * `POST /api/admin/drafts/{id}/ops` `op`: one change to stage. `run` is a
+ * run id (or `created:<n>`); a move's `day` is in the run's boss week
+ * (0 = its reset day), as the run sheet's Move picker names it.
+ */
+export type DraftOpBody =
+  | { kind: 'move'; run: string; day: number; time: string | null }
+  | { kind: 'status'; run: string; status: string }
+  | { kind: 'party'; run: string; add?: string[]; remove?: string[] }
+  | { kind: 'reset'; run: string };
+
+/** `POST /api/admin/drafts/{id}/rebase`: conflict key → keep or take. */
+export interface RebaseRequest {
+  version: number;
+  settle: Record<string, 'keep' | 'take'>;
 }
 
 /** `POST /api/admin/inbox/{id}/reject`: requests need `version` and a reason of 1–500 characters; proposals take no reason (422 `reason_not_applicable`). */

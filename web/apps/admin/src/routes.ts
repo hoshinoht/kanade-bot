@@ -12,7 +12,7 @@ export type Group = 'Schedule' | 'Kanade' | 'Operate';
  * capability is left out everywhere (rail, drawer, palette, router), so its
  * route answers Not found until the flag turns on with the page.
  */
-export const CAPABILITIES = { drafts: false } satisfies Record<string, boolean>;
+export const CAPABILITIES = { drafts: true } satisfies Record<string, boolean>;
 export type Capability = keyof typeof CAPABILITIES;
 
 export interface Section {
