@@ -3,7 +3,13 @@
 //! only, then a sign-out whatever happened in between. Error text never
 //! carries the token, the cookie or the CSRF token.
 
-use std::{pin::pin, time::Duration};
+use std::{
+    future::poll_fn,
+    panic::{AssertUnwindSafe, catch_unwind},
+    pin::pin,
+    task::Poll,
+    time::Duration,
+};
 
 use http_body_util::{BodyExt, Full, Limited};
 use hyper::{
@@ -56,13 +62,15 @@ pub struct Session {
 }
 
 /// Sign in with the token from `KANADE_ADMIN_TOKEN_FILE`, run `work`, then
-/// sign out, also when `work` failed. Nothing is attempted when the sign-in
-/// fails. A failed sign-out after successful work is itself an error: the
-/// session then ends only at the idle limit.
+/// sign out, also when `work` failed or panicked (a panic is reported as a
+/// failure). Nothing is attempted when the sign-in fails. A failed sign-out
+/// after successful work is itself an error: the session then ends only at
+/// the idle limit.
 ///
 /// # Errors
-/// The token file, the sign-in, `work` or the sign-out failed; the message
-/// never contains the token, the cookie or the CSRF token.
+/// The token file, the sign-in, `work` or the sign-out failed, or `work`
+/// panicked; the message never contains the token, the cookie or the CSRF
+/// token.
 pub async fn signed_in(
     config: &AdminClientConfig,
     work: impl AsyncFnOnce(&Session) -> Result<(), Error>,
@@ -71,7 +79,17 @@ pub async fn signed_in(
     let session = sign_in(config, &token)
         .await
         .map_err(|error| scrub(error, &[token.expose()]))?;
-    let worked = work(&session).await;
+    // A panic in `work` is caught where it is polled, so the sign-out below
+    // is still sent; the panic hook has already printed the panic itself.
+    let mut working = pin!(work(&session));
+    let worked = poll_fn(|cx| {
+        catch_unwind(AssertUnwindSafe(|| working.as_mut().poll(cx))).unwrap_or_else(|_| {
+            Poll::Ready(Err(Error::Unavailable(
+                "the command stopped unexpectedly (a bug; see the panic above)".into(),
+            )))
+        })
+    })
+    .await;
     let ended = session
         .call(Method::POST, "/api/admin/auth/logout", None, "sign-out")
         .await;

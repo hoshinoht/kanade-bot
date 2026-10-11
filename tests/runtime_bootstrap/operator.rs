@@ -350,6 +350,46 @@ fn a_failed_action_still_signs_out_and_redacts_echoed_secrets() {
     );
 }
 
+/// A panic inside the signed-in work still signs out exactly once, and is
+/// reported as a failure rather than unwinding past the sign-out.
+#[cfg(feature = "test-support")]
+#[test]
+fn a_panicking_action_still_signs_out_once() {
+    let stub = Stub::start(api);
+    let root = std::fs::canonicalize(std::env::temp_dir())
+        .unwrap()
+        .join(format!("kanade-operator-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&root).unwrap();
+    let _dir = TokenDir(root.clone());
+    let token_file = root.join("admin_token");
+    std::fs::write(&token_file, format!("{TOKEN}\n")).unwrap();
+    let config = kanade::runtime::config::AdminClientConfig {
+        target: format!("127.0.0.1:{}", stub.port).parse().unwrap(),
+        authority: format!("localhost:{}", stub.port),
+        origin: format!("http://localhost:{}", stub.port),
+        token_file,
+    };
+    let outcome = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(kanade::cli::admin::signed_in(&config, async |_session| {
+            panic!("the action panicked")
+        }));
+    let error = outcome.unwrap_err();
+    assert_eq!(error.exit_code(), 69, "{error}");
+    assert_eq!(
+        stub.calls(),
+        ["POST /api/admin/auth/token", "POST /api/admin/auth/logout"]
+    );
+    let seen = stub.seen();
+    assert_eq!(
+        seen[1].header("cookie"),
+        Some(format!("__Host-kanade_admin={COOKIE}").as_str())
+    );
+    assert_eq!(seen[1].header("x-kanade-csrf"), Some(CSRF));
+}
+
 #[test]
 fn an_unavailable_or_refusing_api_is_never_asked_to_change_anything() {
     // Nothing listens there.

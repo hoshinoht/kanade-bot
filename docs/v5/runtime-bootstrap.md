@@ -736,10 +736,12 @@ wrong-identity snapshot is refused (exit `78`) with nothing outside that
 directory written. `--apply` then closes the current store, keeps it beside
 the database as `<db>.pre-restore-<YYYYMMDDTHHMMSSZ>` (a hard link; any
 `-wal`/`-shm`/`-journal` file is renamed along), renames the restored copy
-over the database (one atomic rename) and reopens it once. It prints the
-snapshot's schema and history head and the side copy's name; delete the side
-copy once the restore is confirmed (it is member data). Neither `--from` nor
-a store path is followed through a symbolic link.
+over the database (one atomic rename) and reopens it once, holding the
+owner lock of both the current store and the copy from the close to the
+reopen (a bot started meanwhile exits `69`, never opening either). It
+prints the snapshot's schema and history head and the side copy's name;
+delete the side copy once the restore is confirmed (it is member data).
+Neither `--from` nor a store path is followed through a symbolic link.
 
 `portal open|close|status` and `sessions list|revoke HANDLE|sign-out-all`
 talk to the running bot's admin API, never the store. The target is

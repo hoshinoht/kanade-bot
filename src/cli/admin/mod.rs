@@ -7,6 +7,11 @@
 
 mod client;
 
+/// Test support: the sign-in/sign-out wrapper itself, for a `work` the
+/// commands cannot produce (one that panics).
+#[cfg(feature = "test-support")]
+pub use client::signed_in;
+
 use std::collections::BTreeMap;
 
 use hyper::Method;

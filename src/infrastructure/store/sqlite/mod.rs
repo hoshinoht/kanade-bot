@@ -40,7 +40,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use sqlx::{Connection, SqlitePool};
 
-pub use backup::{BACKUP_MANIFEST_FORMAT, BackupManifest, Seal};
+pub use backup::{BACKUP_MANIFEST_FORMAT, BackupManifest, Seal, SwapOwnership};
 use owner::StoreOwner;
 #[cfg(any(test, feature = "test-support"))]
 pub use snapshots::ReadPause;
@@ -380,6 +380,14 @@ impl SqliteStore {
     /// # Errors
     /// Closing the write connection failed; ownership is released regardless.
     pub async fn close(self) -> Result<(), SqliteStoreError> {
+        let (closed, owner) = self.close_connections().await;
+        drop(owner);
+        closed
+    }
+
+    /// [`Self::close`] without releasing ownership: every connection is
+    /// closed and the still-held ownership is handed back.
+    async fn close_connections(self) -> (Result<(), SqliteStoreError>, StoreOwner) {
         let Self {
             writer,
             readers,
@@ -390,8 +398,7 @@ impl SqliteStore {
         unclosed.armed = false;
         readers.close().await;
         let closed = writer.shutdown().await;
-        drop(owner);
-        Ok(closed?)
+        (closed.map_err(Into::into), owner)
     }
 
     /// The highest applied migration.

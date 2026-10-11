@@ -479,3 +479,98 @@ pub(super) fn remove_published(owner: &StoreOwner, db: &Path) {
         }
     }
 }
+
+/// Ownership held across a caller's file swap at the database path (see
+/// [`SqliteStore::hold_for_swap`]): the closed current store's inode, if
+/// any, and the staged replacement's. Whichever of the two the path names,
+/// another owner is refused ([`SqliteStoreError::Owned`]) and never opens it.
+/// Dropping it releases both.
+#[derive(Debug)]
+pub struct SwapOwnership {
+    db_path: PathBuf,
+    replacement: StoreOwner,
+    previous: Option<StoreOwner>,
+}
+
+impl SqliteStore {
+    /// Close `current` (if any) without releasing ownership of its inode,
+    /// and own the closed database at `staged`, which the caller then puts
+    /// at `config.db_path` before calling [`SwapOwnership::open`].
+    ///
+    /// # Errors
+    /// `staged` cannot be opened, is unsafe ([`SqliteStoreError::UnsafePath`])
+    /// or owned ([`SqliteStoreError::Owned`]), or closing `current` failed.
+    /// On any error `current` is closed and nothing stays owned.
+    pub async fn hold_for_swap(
+        config: &SqliteStoreConfig,
+        current: Option<Self>,
+        staged: &Path,
+    ) -> Result<SwapOwnership, SqliteStoreError> {
+        let replacement = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+            .open(staged)
+            .map_err(SqliteStoreError::io(staged))
+            .and_then(|file| StoreOwner::acquire_file(config, file));
+        let replacement = match replacement {
+            Ok(replacement) => replacement,
+            Err(error) => {
+                if let Some(store) = current {
+                    let _ = store.close().await;
+                }
+                return Err(error);
+            }
+        };
+        let previous = match current {
+            Some(store) => {
+                let (closed, owner) = store.close_connections().await;
+                closed?;
+                Some(owner)
+            }
+            None => None,
+        };
+        Ok(SwapOwnership {
+            db_path: config.db_path.clone(),
+            replacement,
+            previous,
+        })
+    }
+}
+
+impl SwapOwnership {
+    /// Open the swapped-in database as [`SqliteStore::open`] would, still
+    /// owned throughout; the previous inode is released once it is open.
+    /// Runs as its own task, so a cancelled caller never releases ownership
+    /// while SQLite connections are still open.
+    ///
+    /// # Errors
+    /// [`SqliteStoreError::IdentityChanged`] unless the path names the
+    /// replacement, or any open or migration refusal; both are released.
+    pub async fn open(self) -> Result<SqliteStore, SqliteStoreError> {
+        let Self {
+            db_path,
+            replacement,
+            previous,
+        } = self;
+        let abandoned = Arc::new(AtomicBool::new(false));
+        let _abandon_on_drop = AbandonOnDrop(Arc::clone(&abandoned));
+        let task = tokio::spawn(async move {
+            let opened = SqliteStore::open_owned(replacement, &db_path).await;
+            drop(previous);
+            let store = opened.map_err(|(error, _replacement)| error)?;
+            if abandoned.load(Ordering::SeqCst) {
+                let _ = store.close().await;
+                return Err(SqliteStoreError::Io {
+                    path: db_path,
+                    source: std::io::Error::other("open abandoned by its caller"),
+                });
+            }
+            Ok(store)
+        });
+        task.await.map_err(|error| SqliteStoreError::Io {
+            path: PathBuf::from("open task"),
+            source: std::io::Error::other(error),
+        })?
+    }
+}

@@ -238,9 +238,15 @@ async fn update(
             .await
             .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
         if let Some(found) = keyed.check(found)? {
-            let notices = serde_json::from_str::<Notices>(&found.body)
+            let mut notices = serde_json::from_str::<Notices>(&found.body)
                 .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?
                 .notices;
+            // The stored models notice is as of the first answer: retry the
+            // switch now and say what holds today.
+            notices.retain(|notice| notice != MODELS_UNAPPLIED);
+            if reconcile_models(desk, &current.models) {
+                notices.push(MODELS_UNAPPLIED.into());
+            }
             let settings = current.clone();
             drop(current);
             let catalog = desk.catalog().await;

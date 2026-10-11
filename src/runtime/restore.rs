@@ -10,7 +10,9 @@
 //! a dry run (no `--apply`) stops here. `--apply` then closes the current
 //! store, keeps it beside the database as `<db>.pre-restore-<stamp>` (a hard
 //! link, with any `-wal`/`-shm`/`-journal` renamed along), renames the
-//! staged copy over the database and reopens it once. Store paths are never
+//! staged copy over the database and reopens it once; ownership of both
+//! inodes is held from the close to the reopen, so a bot starting meanwhile
+//! is refused (exit 69) instead of opening either. Store paths are never
 //! followed through symbolic links (the store refuses them), nor is
 //! `--from`.
 
@@ -278,13 +280,16 @@ pub async fn run(
             }
         }
     }
-    // Closing checkpoints the WAL into the database file and releases the
-    // lock; keep the bot stopped until the swap below is done.
-    close(current).await?;
+    // Closing checkpoints the WAL into the database file but keeps owning
+    // its inode, and the copy's inode is owned too: from here to the reopen
+    // a starting bot is refused (exit 69) whichever one the path names.
+    let held = SqliteStore::hold_for_swap(&config, current, &prepared.db)
+        .await
+        .map_err(current_error)?;
     swap(db, &prepared.db, side.as_deref())?;
     drop(prepared.staging);
-    // Reopen once: the swapped-in store opens, and nothing else took it.
-    let reopened = SqliteStore::open(&config).await.map_err(|error| {
+    // Reopen once, still owned: the swapped-in store opens.
+    let reopened = held.open().await.map_err(|error| {
         let error = current_error(error);
         Error::Unavailable(format!(
             "{error} (after the swap: the snapshot is in place{})",
@@ -420,6 +425,8 @@ fn swap(db: &Path, staged: &Path, side: Option<&Path>) -> Result<(), Error> {
     let failed = |step: &str, error: io::Error| {
         Error::Unavailable(format!("restore: {step} failed ({})", error.kind()))
     };
+    #[cfg(test)]
+    tests::swap_step(db);
     match side {
         Some(side) => {
             fs::hard_link(db, side).map_err(|error| failed("keeping the current store", error))?;
@@ -430,6 +437,8 @@ fn swap(db: &Path, staged: &Path, side: Option<&Path>) -> Result<(), Error> {
                         .map_err(|error| failed("keeping the current store's journal", error))?;
                 }
             }
+            #[cfg(test)]
+            tests::swap_step(db);
             fs::rename(staged, db).map_err(|error| failed("swapping the snapshot in", error))?;
         }
         None => {
@@ -441,14 +450,33 @@ fn swap(db: &Path, staged: &Path, side: Option<&Path>) -> Result<(), Error> {
             .and_then(|dir| dir.sync_all())
             .map_err(|error| failed("syncing the store directory", error))?;
     }
+    #[cfg(test)]
+    tests::swap_step(db);
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, fs::TryLockError, os::unix::fs::MetadataExt, rc::Rc};
+
     use chrono::TimeZone;
 
     use super::*;
+
+    type SwapStep = Box<dyn FnMut(&Path)>;
+
+    thread_local! {
+        /// Called with the database path at each step of the swap.
+        static SWAP_STEP: RefCell<Option<SwapStep>> = const { RefCell::new(None) };
+    }
+
+    pub(super) fn swap_step(db: &Path) {
+        SWAP_STEP.with_borrow_mut(|step| {
+            if let Some(step) = step {
+                step(db);
+            }
+        });
+    }
 
     #[test]
     fn the_side_copy_is_named_after_the_database_and_the_stamp() {
@@ -461,5 +489,108 @@ mod tests {
             sidecar(Path::new("/data/db/kanade.sqlite"), "-wal"),
             PathBuf::from("/data/db/kanade.sqlite-wal")
         );
+    }
+
+    /// At every step of the swap, whichever inode the database path names
+    /// is locked (a second process's `flock` would block) and serve's own
+    /// open is refused as owned, so it never opens the database mid-swap.
+    #[tokio::test]
+    async fn an_owner_starting_during_the_swap_is_refused() {
+        let root = fs::canonicalize(std::env::temp_dir())
+            .unwrap()
+            .join(format!("kanade-restore-swap-{}", uuid::Uuid::new_v4()));
+        let settings = StoreSettings {
+            db_path: root.join("db/kanade.sqlite"),
+            owner_lock_dir: root.join("locks"),
+        };
+        for dir in [root.join("db"), root.join("locks")] {
+            DirBuilder::new()
+                .mode(0o700)
+                .recursive(true)
+                .create(dir)
+                .unwrap();
+        }
+        let config = SqliteStoreConfig {
+            db_path: settings.db_path.clone(),
+            owner_lock_dir: settings.owner_lock_dir.clone(),
+        };
+        let snapshot = SqliteStoreConfig {
+            db_path: root.join("db/snapshot.sqlite"),
+            owner_lock_dir: settings.owner_lock_dir.clone(),
+        };
+        for config in [&config, &snapshot] {
+            SqliteStore::open(config)
+                .await
+                .unwrap()
+                .close()
+                .await
+                .unwrap();
+        }
+        let before = fs::metadata(&config.db_path).unwrap().ino();
+
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let (log, lock_dir, contender) = (
+            Rc::clone(&seen),
+            settings.owner_lock_dir.clone(),
+            config.clone(),
+        );
+        SWAP_STEP.set(Some(Box::new(move |db: &Path| {
+            let meta = fs::metadata(db).unwrap();
+            let lock = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(lock_dir.join(format!("kanade-{:x}-{:x}.lock", meta.dev(), meta.ino())))
+                .unwrap();
+            assert!(
+                matches!(lock.try_lock(), Err(TryLockError::WouldBlock)),
+                "the inode at the database path is not locked"
+            );
+            let contender = contender.clone();
+            let refused = std::thread::spawn(move || {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap()
+                    .block_on(SqliteStore::open(&contender))
+                    .err()
+            })
+            .join()
+            .unwrap();
+            assert!(
+                matches!(refused, Some(SqliteStoreError::Owned { .. })),
+                "{refused:?}"
+            );
+            log.borrow_mut().push(meta.ino());
+        })));
+        let report = run(
+            &Options {
+                from: snapshot.db_path.clone(),
+                identity: None,
+                apply: true,
+            },
+            &settings,
+            Utc.with_ymd_and_hms(2026, 10, 11, 7, 9, 3).unwrap(),
+        )
+        .await;
+        SWAP_STEP.set(None);
+        let report = report.unwrap();
+        assert_eq!(
+            report.outcome,
+            Outcome::Restored {
+                kept: Some("kanade.sqlite.pre-restore-20261011T070903Z".into())
+            }
+        );
+        let after = fs::metadata(&config.db_path).unwrap().ino();
+        assert_ne!(before, after);
+        // Before the swap, with the side copy kept, and after the rename.
+        assert_eq!(*seen.borrow(), [before, before, after]);
+        // Released once restore is done.
+        SqliteStore::open(&config)
+            .await
+            .unwrap()
+            .close()
+            .await
+            .unwrap();
+        fs::remove_dir_all(root).unwrap();
     }
 }

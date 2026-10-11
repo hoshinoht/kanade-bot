@@ -2567,11 +2567,15 @@ fn says_unapplied(view: &Value) -> bool {
 async fn a_failed_models_switch_stays_visible_and_is_retried_until_it_runs() {
     let config = Config::new().await;
     config.catalog.4.store(true, Ordering::SeqCst);
-    let saved = config
-        .patch(
-            json!({"models": {"roles": {"chat": {"alias": "kanata/legacy", "reasoning": "high"}}}}),
+    let body =
+        json!({"models": {"roles": {"chat": {"alias": "kanata/legacy", "reasoning": "high"}}}});
+    let keyed = || async {
+        view(
+            &config.send("PATCH", PATH, Some("models-k1"), &body).await,
+            "keyed",
         )
-        .await;
+    };
+    let saved = keyed().await;
     // Durable first: the save stands, and the answer says it is not running.
     let wanted = config.desk.settings().await.models;
     assert_eq!(wanted.chat, role("kanata/legacy", Reasoning::High));
@@ -2587,6 +2591,11 @@ async fn a_failed_models_switch_stays_visible_and_is_retried_until_it_runs() {
         .await;
     assert!(says_unapplied(&other), "another section's save");
     assert_eq!(config.catalog.applied().len(), 3);
+    // A replay of the keyed save retries too, instead of answering its
+    // stored notice untouched.
+    let replayed = keyed().await;
+    assert!(says_unapplied(&replayed), "a replay while it still fails");
+    assert_eq!(config.catalog.applied().len(), 4);
 
     // Once a retry succeeds, the running roles are the saved ones and the
     // notice is gone; nothing is re-applied after that.
@@ -2594,10 +2603,15 @@ async fn a_failed_models_switch_stays_visible_and_is_retried_until_it_runs() {
     let healed = config.get().await;
     assert!(!says_unapplied(&healed), "{healed}");
     let applied = config.catalog.applied();
-    assert_eq!(applied.len(), 4);
-    assert_eq!(applied[3], wanted);
+    assert_eq!(applied.len(), 5);
+    assert_eq!(applied[4], wanted);
     assert!(!says_unapplied(&config.get().await));
-    assert_eq!(config.catalog.applied().len(), 4, "no retry once it runs");
+    let replayed = keyed().await;
+    assert!(
+        !says_unapplied(&replayed),
+        "a replay after it runs: {replayed}"
+    );
+    assert_eq!(config.catalog.applied().len(), 5, "no retry once it runs");
 }
 
 #[tokio::test]
