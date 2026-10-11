@@ -2,6 +2,8 @@
 
 Notable changes to the Boss Scheduler Bot, newest first.
 
+## 1.0.0-beta.7 (in development)
+
 ## 1.0.0-beta.6 (2026-10-12)
 
 Headline: **drafts and a character roster.** Admins can stage schedule changes in a draft, see what a merge would write, settle conflicts and merge them as one change, and can edit a member's request before approving it. An optional roster module keeps each member's MapleSEA characters. Kanade can run against other OpenAI-compatible model servers, persona and knowledge files load more defensively, and the run sheet's boss art and the navigation rail are tidied.
