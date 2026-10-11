@@ -72,6 +72,8 @@ struct Extra {
     model_limits: Option<kanade::api::state::ModelLimits>,
     /// A rescan runner composed (the fake); `false` is serve without an extractor.
     rescans: bool,
+    /// The roster module switched on (`modules.roster`).
+    characters: bool,
 }
 
 impl Default for Extra {
@@ -80,6 +82,7 @@ impl Default for Extra {
             backup_dir: true,
             model_limits: None,
             rescans: true,
+            characters: false,
         }
     }
 }
@@ -710,6 +713,22 @@ impl Reads {
         .await
     }
 
+    /// With the roster module on (`modules.roster`), as serve composes it.
+    pub async fn with_characters() -> Self {
+        Self::build(
+            NaiveTime::MIN,
+            false,
+            None,
+            true,
+            true,
+            Extra {
+                characters: true,
+                ..Extra::default()
+            },
+        )
+        .await
+    }
+
     async fn build(
         reset: NaiveTime,
         logins: bool,
@@ -722,6 +741,7 @@ impl Reads {
             backup_dir,
             model_limits,
             rescans: with_rescans,
+            characters,
         } = extra;
         let dir = TempDir::new();
         let backup_dir = backup_dir.then(|| {
@@ -907,6 +927,8 @@ impl Reads {
             events: events.clone(),
             // As serve would list them: only the Normal pill uploaded.
             marks: kanade::bot::delivery::cards::DifficultyMarks::new().with("n", NORMAL_PILL),
+            characters: characters
+                .then(|| store.clone() as Arc<dyn kanade::api::state::CharacterRoster>),
         };
         let mut http = fixture.http();
         if logins {
@@ -992,6 +1014,7 @@ impl Reads {
             avatars: old.avatars.clone(),
             events: old.events.clone(),
             marks: old.marks.clone(),
+            characters: old.characters.clone(),
         };
         self.site.state = Some(Arc::new(state));
         self.admin = spawn(self.site.clone()).await;

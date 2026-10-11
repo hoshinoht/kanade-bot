@@ -8,13 +8,14 @@ use sqlx::{Connection, Row, SqliteConnection};
 use super::SqliteStore;
 use super::rows::instant;
 use super::schedule::store_error;
-use super::{members, settings};
+use super::{characters, members, settings};
+use crate::domain::characters::{CharacterChange, CharacterRecord, CharacterWrite};
 use crate::domain::members::PortalEdit;
 use crate::domain::scheduler::StoreError;
 use crate::domain::settings::SettingsChange;
 use crate::infrastructure::store::Written;
 use crate::infrastructure::store::replays::{
-    PortalRecord, PortalWrite, ReplayScope, ReplayStore, StoredReplay, replayed,
+    KeyedWrite, PortalRecord, PortalWrite, ReplayScope, ReplayStore, StoredReplay, keyed, replayed,
 };
 
 fn corrupt(column: &str, detail: impl std::fmt::Display) -> StoreError {
@@ -178,6 +179,32 @@ impl ReplayStore for SqliteStore {
         if matches!(written, PortalWrite::Edited(_)) {
             self.written().notify(Written::Members);
         }
+        if recorded {
+            self.written().notify(Written::Settings);
+        }
+        Ok(written)
+    }
+
+    async fn apply_character_replayed(
+        &self,
+        change: CharacterChange,
+        record: CharacterRecord,
+        replay: StoredReplay,
+    ) -> Result<KeyedWrite<CharacterWrite>, StoreError> {
+        replay.check()?;
+        // The key is checked inside the write, so a concurrent retry waits
+        // for the first request and then finds its answer.
+        let (written, recorded) = write_txn!(self, tx, async {
+            let found = read(&mut tx, replay.scope, &replay.actor, &replay.key).await?;
+            if let Some(answer) = keyed(found, &replay) {
+                return Ok((answer, false));
+            }
+            let (written, recorded) = characters::apply(&mut tx, change, &record).await?;
+            if written.applied() {
+                put(&mut tx, &replay).await?;
+            }
+            Ok((KeyedWrite::Applied(written), recorded))
+        })?;
         if recorded {
             self.written().notify(Written::Settings);
         }

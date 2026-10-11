@@ -196,6 +196,26 @@ export type Persona = { key: string, name: string,
  */
 voice: string, };
 
+export type CharacterRow = { id: string, member_id: string, ign: string, world: string, class: string | null, level: number | null, role: 'main' | 'alt', 
+/**
+ * When it was retired; `null` while active.
+ */
+retired_at: string | null, created_at: string, updated_at: string, 
+/**
+ * Who made the last write (the create, else the last edit).
+ */
+updated_by: SettingsActor, 
+/**
+ * Send it back as the `PATCH` precondition.
+ */
+version: number, };
+
+export type MemberCharacters = { member_id: string, 
+/**
+ * Retired ones included, oldest first.
+ */
+characters: Array<CharacterRow>, };
+
 export type FixedRunLink = { run_id: string, short_id: string, week: WeekKey, day: number, time: string | null, status: RunStatus, amended: boolean, };
 
 export type FixedRow = { id: string, short_id: string, weekday: number, weekday_name: string, time: string, bosses: Array<Boss>, participants: Array<Member>, channel_id: string, channel_name: string, channel_watched: boolean, 

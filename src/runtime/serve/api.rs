@@ -243,6 +243,11 @@ pub(super) async fn compose_with(
             .with_attendance(policy.attendance)
             .with_run_ends(desk.run_ends(Arc::clone(&catalog), policy.clone())),
     );
+    // Read once: the module's routes answer 404 until a restart turns it on.
+    let characters = config
+        .modules
+        .roster
+        .then(|| store.clone() as Arc<dyn crate::api::state::CharacterRoster>);
     let state = ApiState {
         store,
         writer: Arc::new(writer),
@@ -272,6 +277,7 @@ pub(super) async fn compose_with(
         avatars: Some(avatars),
         events,
         marks: Default::default(),
+        characters,
     };
     Ok(Composition {
         admin: LiveAdmin {

@@ -19,6 +19,8 @@ pub mod auth_audit_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod card_conformance;
 #[cfg(any(test, feature = "test-support"))]
+pub mod characters_conformance;
+#[cfg(any(test, feature = "test-support"))]
 pub mod cherry_pick_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod conformance;

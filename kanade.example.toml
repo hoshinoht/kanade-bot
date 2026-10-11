@@ -104,6 +104,12 @@ catalog_file = "boss/bosses.yaml"
 # knowledge_dir = "boss/knowledge"
 persona_dir = "config/personas"
 
+[modules]
+# Optional modules, read at startup (a restart applies a change). roster:
+# the manual character roster's admin routes (off: they answer 404; stored
+# characters are kept either way).
+# roster = false
+
 [models]
 # https, or http only to loopback, localhost or host.docker.internal; unset
 # disables every model feature.

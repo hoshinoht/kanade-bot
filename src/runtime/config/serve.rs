@@ -31,6 +31,15 @@ pub struct ServeConfig {
     /// `KANADE_BACKUP_RECIPIENTS_FILE`, checked at startup so a broken key
     /// file fails the deploy, not the next backup.
     pub backup_recipients_file: Option<PathBuf>,
+    pub modules: Modules,
+}
+
+/// Optional modules, read once at startup: a change applies on restart.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Modules {
+    /// `KANADE_MODULE_ROSTER` (`modules.roster`, default off): the manual
+    /// character roster's admin routes.
+    pub roster: bool,
 }
 
 /// Initial runtime settings; applied only where the store has none yet.
@@ -73,6 +82,9 @@ impl ServeConfig {
             seeds: SettingSeeds::from_mapping(values)?,
             backup_dir: super::backup::optional_dir(values)?,
             backup_recipients_file: super::backup::recipients_file(values),
+            modules: Modules {
+                roster: flag(values, "KANADE_MODULE_ROSTER")?.unwrap_or(false),
+            },
         })
     }
 }
@@ -275,6 +287,19 @@ mod tests {
         assert_eq!(config.tick, Duration::from_secs(30));
         assert!(config.instance_id.starts_with("kanade-"));
         assert_eq!(config.seeds, SettingSeeds::default());
+        assert_eq!(config.modules, Modules::default(), "modules start off");
+    }
+
+    #[test]
+    fn modules_are_strict_flags() {
+        for (value, roster) in [("", false), ("0", false), ("1", true)] {
+            let modules = config(&[("KANADE_MODULE_ROSTER", value)]).unwrap().modules;
+            assert_eq!(modules.roster, roster, "{value:?}");
+        }
+        assert_eq!(
+            config(&[("KANADE_MODULE_ROSTER", "on")]).unwrap_err(),
+            "KANADE_MODULE_ROSTER must be 0 or 1"
+        );
     }
 
     #[test]

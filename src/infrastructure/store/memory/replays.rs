@@ -8,12 +8,13 @@ use chrono::{DateTime, Utc};
 
 use super::members::portal;
 use super::settings::{append, refuse_change, refuse_unknown};
+use crate::domain::characters::{CharacterChange, CharacterRecord, CharacterWrite};
 use crate::domain::members::PortalEdit;
 use crate::domain::scheduler::StoreError;
 use crate::domain::settings::SettingsChange;
 use crate::infrastructure::store::Written;
 use crate::infrastructure::store::replays::{
-    PortalRecord, PortalWrite, ReplayScope, ReplayStore, StoredReplay, replayed,
+    KeyedWrite, PortalRecord, PortalWrite, ReplayScope, ReplayStore, StoredReplay, keyed, replayed,
 };
 
 pub(super) type ReplayTable = BTreeMap<(ReplayScope, String, String), StoredReplay>;
@@ -139,6 +140,35 @@ impl ReplayStore for super::MemoryScheduleStore {
             self.written.notify(Written::Settings);
         }
         Ok(PortalWrite::Edited(after))
+    }
+
+    async fn apply_character_replayed(
+        &self,
+        change: CharacterChange,
+        record: CharacterRecord,
+        replay: StoredReplay,
+    ) -> Result<KeyedWrite<CharacterWrite>, StoreError> {
+        replay.check()?;
+        let mut characters = self.characters();
+        let mut changes = self.changes();
+        let mut table = self.replays();
+        let key = (replay.scope, replay.actor.clone(), replay.key.clone());
+        if let Some(answer) = keyed(table.get(&key).cloned(), &replay) {
+            return Ok(answer);
+        }
+        let (written, change) = super::characters::apply(&mut characters, change, &record)?;
+        let recorded = change.is_some();
+        if let Some(change) = change {
+            append(&mut changes, change);
+        }
+        if written.applied() {
+            put(&mut table, replay);
+        }
+        drop((characters, changes, table));
+        if recorded {
+            self.written.notify(Written::Settings);
+        }
+        Ok(KeyedWrite::Applied(written))
     }
 
     async fn prune_replays(&self, now: DateTime<Utc>) -> Result<u64, StoreError> {

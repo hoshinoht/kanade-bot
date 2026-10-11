@@ -6,6 +6,7 @@ mod account;
 mod assets;
 mod auth;
 mod avatars;
+mod characters;
 mod config;
 mod etag;
 mod events;

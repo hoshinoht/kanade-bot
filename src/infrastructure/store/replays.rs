@@ -1,16 +1,17 @@
 //! `Idempotency-Key` replays (migration 0031) for admin API effects that are
 //! not scheduler commits: the Limits window clear, the manual digest and
 //! header rewrite (scope `limits`), rescan submit and cancel (`rescan`), the
-//! Config PATCH and the admin member edits (`config`: the writes History
-//! lists beside the change chain). A row keeps the digest of the normalized
-//! full request and the answer to replay until it expires; an expired row
-//! reads as absent, so its key applies anew.
+//! Config PATCH, the admin member edits and the admin character writes
+//! (`config`: the writes History lists beside the change chain). A row keeps
+//! the digest of the normalized full request and the answer to replay until
+//! it expires; an expired row reads as absent, so its key applies anew.
 
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, TimeDelta, Utc};
 use serde_json::json;
 
+use crate::domain::characters::{CharacterChange, CharacterRecord, CharacterWrite};
 use crate::domain::history::{Actor, Surface};
 use crate::domain::members::{MemberProfile, PortalEdit};
 use crate::domain::scheduler::StoreError;
@@ -33,7 +34,7 @@ pub enum ReplayScope {
     Limits,
     /// Rescan submit and cancel.
     Rescan,
-    /// Config PATCH and admin member edits.
+    /// Config PATCH, admin member edits and admin character writes.
     Config,
 }
 
@@ -198,6 +199,30 @@ pub(crate) fn replayed(found: Option<&StoredReplay>, replay: &StoredReplay) -> O
     })
 }
 
+/// What a keyed write did.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum KeyedWrite<T> {
+    /// The write ran; its replay is stored only if it went through.
+    Applied(T),
+    /// The key already answered this request: the stored answer.
+    Replayed(StoredReplay),
+    /// The key is live for another request; nothing written.
+    KeyTaken,
+}
+
+/// The live row under `replay`'s key, as a keyed write sees it.
+pub(crate) fn keyed<T>(
+    found: Option<StoredReplay>,
+    replay: &StoredReplay,
+) -> Option<KeyedWrite<T>> {
+    let found = found.filter(|found| found.live(replay.created_at))?;
+    Some(if found.request == replay.request {
+        KeyedWrite::Replayed(found)
+    } else {
+        KeyedWrite::KeyTaken
+    })
+}
+
 /// Replay rows. There is no scheduled store maintenance, so every replay
 /// write deletes the rows expired at its `created_at` in its own
 /// transaction: the table holds at most a [`REPLAY_TTL`] of keyed requests.
@@ -241,6 +266,18 @@ pub trait ReplayStore {
         record: PortalRecord,
         replay: Option<StoredReplay>,
     ) -> impl Future<Output = Result<PortalWrite, StoreError>> + Send;
+
+    /// A character write (as `CharacterStore::apply_character`, History
+    /// record included) and `replay`, in one transaction. A live replay
+    /// under the key answers [`KeyedWrite::Replayed`] (or
+    /// [`KeyedWrite::KeyTaken`]) and nothing is written; `replay` is stored
+    /// only with a write that went through ([`CharacterWrite::applied`]).
+    fn apply_character_replayed(
+        &self,
+        change: CharacterChange,
+        record: CharacterRecord,
+        replay: StoredReplay,
+    ) -> impl Future<Output = Result<KeyedWrite<CharacterWrite>, StoreError>> + Send;
 
     /// Delete every row expired at `now`; returns how many.
     fn prune_replays(

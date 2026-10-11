@@ -169,6 +169,16 @@ Discord or not. A repeat of the same decision answers 200 with the first
 message; any other decision on a closed request is `409 conflicts`, an
 unknown id `404 not_found`.
 
+Roster characters (module `roster`, `src/mock/characters.rs`; the mock always
+serves them, as the server does with `modules.roster` on): `GET`/`POST
+/api/admin/members/{id}/characters` and `PATCH`/`DELETE
+/api/admin/characters/{id}` follow the server's rules (IGN 4-12 letters or
+digits, unique per world case-insensitively, `422 ign_taken`; the first
+character is the main, `role: main` moves the crown, `409 main_required` for
+retiring, demoting or deleting the main while others are active; `PATCH`
+needs `version`, `409 stale`). None are seeded; `POST /api/admin/reset`
+clears them. Writes record no History rows here.
+
 Live updates: `GET /api/admin/events` answers as the server's stream does
 (`ready {seq, boot}` with one `boot` id per mock process, then `{topic, seq}` hints with no data), emitted after every
 successful admin write (`runs/*`, `fixed`, `history/*` → `schedule`;

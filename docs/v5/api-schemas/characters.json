@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/characters.json",
+  "title": "Manual character roster (module roster)",
+  "$defs": {
+    "CharacterRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "member_id", "ign", "world", "class", "level", "role", "retired_at", "created_at", "updated_at", "updated_by", "version"],
+      "properties": {
+        "id": { "type": "string" },
+        "member_id": { "type": "string" },
+        "ign": { "type": "string", "pattern": "^[A-Za-z0-9]{4,12}$" },
+        "world": { "type": "string", "pattern": "^[a-z0-9-]{1,16}$", "description": "The region; `msea` by default." },
+        "class": { "type": ["string", "null"], "minLength": 1, "maxLength": 32 },
+        "level": { "type": ["integer", "null"], "minimum": 1, "maximum": 300 },
+        "role": { "enum": ["main", "alt"] },
+        "retired_at": { "$ref": "common.json#/$defs/NullableString", "description": "When it was retired; null while active." },
+        "created_at": { "type": "string" },
+        "updated_at": { "type": "string" },
+        "updated_by": { "$ref": "history.json#/$defs/Actor", "description": "Who made the last write (the create, else the last edit)." },
+        "version": { "type": "integer", "minimum": 1, "description": "Send it back as the PATCH precondition." }
+      }
+    },
+    "MemberCharacters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["member_id", "characters"],
+      "properties": {
+        "member_id": { "type": "string" },
+        "characters": { "type": "array", "items": { "$ref": "#/$defs/CharacterRow" }, "description": "Retired ones included, oldest first." }
+      }
+    },
+    "CharacterCreate": {
+      "description": "Request body of `POST /api/admin/members/{id}/characters`. `ign` is 4-12 letters or digits, unique per `world` case-insensitively (retired characters included; else 422 `ign_taken`); `world` is the region, default `msea`; `class` is at most 32 characters (empty: none); `level` 1-300. A member's first active character is their main whatever `role` says; otherwise `role` defaults to `alt`, and `main` takes the crown (the current main becomes an alt in the same write).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ign"],
+      "properties": {
+        "ign": { "type": "string" },
+        "world": { "type": "string" },
+        "class": { "type": ["string", "null"] },
+        "level": { "type": ["integer", "null"] },
+        "role": { "enum": ["main", "alt"] }
+      }
+    },
+    "CharacterPatch": {
+      "description": "Request body of `PATCH /api/admin/characters/{id}`. `version` is the row version the edit was made from (else 422 `version_required`; another version is 409 `stale`). An omitted field is kept; `class`/`level` `null` (or an empty class) clears it; `retired: true` retires (keeping the first time), `false` restores. `role: main` takes the crown; without `role`, an active character with no other active main becomes the main and a restored main becomes an alt while another main is active. The main cannot be retired or made an alt while the member has other active characters (409 `main_required`).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "ign": { "type": "string" },
+        "world": { "type": "string" },
+        "class": { "type": ["string", "null"] },
+        "level": { "type": ["integer", "null"] },
+        "role": { "enum": ["main", "alt"] },
+        "retired": { "type": "boolean" }
+      }
+    }
+  }
+}

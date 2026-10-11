@@ -10,6 +10,7 @@ mod txn;
 
 mod auth_audit;
 mod backup;
+mod characters;
 mod connect;
 mod debug_cards;
 mod decline_notices;

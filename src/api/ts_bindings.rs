@@ -12,8 +12,8 @@ use super::{
     },
     assets::Identity,
     dto::{
-        self, account, bosses, config, events, fixed, history, inbox, inbox_past, limits, logs,
-        members, reminders, rescan, sign_ins, week,
+        self, account, bosses, characters, config, events, fixed, history, inbox, inbox_past,
+        limits, logs, members, reminders, rescan, sign_ins, week,
     },
     error, public,
 };
@@ -128,6 +128,8 @@ fn bindings() -> String {
         // Members, timings, reminders, bosses
         .add::<members::MemberRow>()
         .add::<members::Persona>()
+        .add::<characters::CharacterRow>()
+        .add::<characters::MemberCharacters>()
         .add::<fixed::FixedRunLink>()
         .add::<fixed::FixedRow>()
         .add::<admin::ValidateResult>()

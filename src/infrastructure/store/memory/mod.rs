@@ -29,6 +29,7 @@ use super::history::{changed_rows, touched_keys, touched_weeks};
 use super::order::sort_snapshot;
 
 mod auth_audit;
+mod characters;
 mod decline_notices;
 mod journal;
 mod maintenance;
@@ -146,6 +147,7 @@ pub struct MemoryScheduleStore {
     audit: Mutex<auth_audit::AuditTable>,
     owner_requests: Mutex<owner_requests::OwnerRequestTable>,
     run_prompts: Mutex<run_prompts::RunPromptTable>,
+    characters: Mutex<characters::CharacterTable>,
     runs_written: super::observer::Observer,
     written: super::observer::WriteHook,
 }

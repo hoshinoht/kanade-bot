@@ -2,6 +2,7 @@
 
 mod account;
 pub mod catalog;
+pub mod characters;
 mod chat;
 pub mod clock;
 mod config;
@@ -115,6 +116,8 @@ pub struct Store {
     week_over: bool,
     /// Member requests sent from the portal (`requests.rs`).
     member_requests: Vec<requests::MemberRequestRec>,
+    /// Roster characters (module `roster`); none seeded.
+    characters: Vec<characters::Char>,
     version: u64,
     next_id: u32,
     catalog: Catalog,
@@ -149,6 +152,7 @@ impl Store {
             past_runs: Vec::new(),
             week_over: false,
             member_requests: Vec::new(),
+            characters: Vec::new(),
             version: 1,
             next_id: 1,
             catalog,
@@ -169,6 +173,7 @@ impl Store {
                 seed,
             })
             .collect();
+        self.characters.clear();
         self.version = 1;
         self.next_id = 1;
         self.proposals = inbox::seed();

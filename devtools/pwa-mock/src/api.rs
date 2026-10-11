@@ -123,6 +123,48 @@ pub async fn remove_alias(
     outcome(app.store.lock().await.remove_alias(&id, &alias))
 }
 
+pub async fn characters(State(app): State<App>, Path(id): Path<String>) -> Response {
+    outcome(app.store.lock().await.characters_of(&id))
+}
+
+/// `201` with the new row, as the server answers a create.
+pub async fn create_character(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    body: Result<Json<crate::mock::characters::CharacterCreate>, JsonRejection>,
+) -> Response {
+    let Ok(Json(req)) = body else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "invalid_body",
+            "The request body is not valid.",
+        );
+    };
+    match app.store.lock().await.create_character(&id, req) {
+        Ok(row) => (StatusCode::CREATED, Json(row)).into_response(),
+        Err(refused) => outcome::<()>(Err(refused)),
+    }
+}
+
+pub async fn patch_character(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    body: Result<Json<crate::mock::characters::CharacterPatch>, JsonRejection>,
+) -> Response {
+    let Ok(Json(req)) = body else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "invalid_body",
+            "The request body is not valid.",
+        );
+    };
+    outcome(app.store.lock().await.patch_character(&id, req))
+}
+
+pub async fn delete_character(State(app): State<App>, Path(id): Path<String>) -> Response {
+    outcome(app.store.lock().await.delete_character(&id))
+}
+
 pub async fn fixed(State(app): State<App>) -> Response {
     Json(app.store.lock().await.fixed_rows()).into_response()
 }

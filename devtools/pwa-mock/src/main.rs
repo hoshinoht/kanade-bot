@@ -180,6 +180,14 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
             "/api/admin/members/{id}/aliases/{alias}",
             delete(api::remove_alias),
         )
+        .route(
+            "/api/admin/members/{id}/characters",
+            get(api::characters).post(api::create_character),
+        )
+        .route(
+            "/api/admin/characters/{id}",
+            patch(api::patch_character).delete(api::delete_character),
+        )
         .route("/api/admin/personas", get(api::personas))
         .route("/api/admin/fixed", get(api::fixed).post(api::create_fixed))
         .route(

@@ -428,6 +428,7 @@ mod member_portal {
             avatars: None,
             events: Arc::new(Hub::default()),
             marks: Default::default(),
+            characters: None,
         })
     }
 

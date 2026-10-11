@@ -205,6 +205,7 @@ pub(super) const KEYS: &[(&str, &str, Kind)] = &[
         Ints,
     ),
     ("settings.run_lengths", "KANADE_RUN_LENGTHS", RunLengths),
+    ("modules.roster", "KANADE_MODULE_ROSTER", Flag),
 ];
 
 pub(super) fn lookup(path: &str) -> Option<(&'static str, &'static str, Kind)> {

@@ -4,6 +4,7 @@
 
 pub mod account;
 pub mod bosses;
+pub mod characters;
 pub mod config;
 mod consequence;
 pub mod events;

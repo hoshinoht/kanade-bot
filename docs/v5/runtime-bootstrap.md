@@ -151,6 +151,7 @@ lists are comma-separated.
 | `KANADE_BOSS_WEEK_RESET_WEEKDAY` | unset | Settings seed: `mon` … `sun` (case-insensitive). |
 | `KANADE_BOSS_WEEK_RESET_TIME`, `KANADE_DAY_OF_PING_TIME` | unset | Settings seeds: exactly `HH:MM`, 24-hour. |
 | `KANADE_COUNTDOWN_MINUTES` | unset | Settings seed: positive whole minutes, comma-separated (stored largest first, duplicates dropped). |
+| `KANADE_MODULE_ROSTER` | `0` | `0` or `1`. The manual character roster module (per-member characters; never sent to models): `1` serves its admin routes (`/api/admin/members/{id}/characters`, `/api/admin/characters/{id}`); `0` answers them `404`. Read at startup, so a change applies on restart; the `roster_characters` table and its rows stay either way. |
 
 Seeds apply per key only where the store has no row; an unset seed keeps
 the code default (`docs/v5/api-schemas/config.json` sections). A stored row
@@ -322,6 +323,7 @@ Each key sets one variable below, whose rules apply unchanged
 | `settings.boss_week_reset_time` | `KANADE_BOSS_WEEK_RESET_TIME` | string |
 | `settings.day_of_ping_time` | `KANADE_DAY_OF_PING_TIME` | string |
 | `settings.countdown_minutes` | `KANADE_COUNTDOWN_MINUTES` | integer list |
+| `modules.roster` | `KANADE_MODULE_ROSTER` | bool |
 
 Variables without a key: `KANADE_CONFIG` itself; the refused plain
 secrets (`KANADE_DISCORD_TOKEN`, `KANADE_MODEL_KEY`, `KANADE_ADMIN_TOKEN`,

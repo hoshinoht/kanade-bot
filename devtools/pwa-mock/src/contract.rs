@@ -972,6 +972,69 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         );
     }
 
+    // Roster characters (module roster): CRUD and the main rules.
+    let chars = format!("/api/admin/members/{m}/characters");
+    let first = h
+        .expect(
+            false,
+            "POST",
+            &chars,
+            Some(json!({ "ign": "Wisteria", "role": "alt", "level": 260 })),
+            StatusCode::CREATED,
+            "characters.json#/$defs/CharacterRow",
+        )
+        .await;
+    assert_eq!(first["role"], "main", "the first character is the main");
+    let second = h
+        .expect(
+            false,
+            "POST",
+            &chars,
+            Some(json!({ "ign": "Heather" })),
+            StatusCode::CREATED,
+            "characters.json#/$defs/CharacterRow",
+        )
+        .await;
+    let csrf = h.csrf.clone();
+    let marks = [("x-kanade-csrf", csrf.as_str())];
+    let first_path = format!("/api/admin/characters/{}", s(&first["id"]));
+    h.refused(
+        "DELETE",
+        &first_path,
+        json!({}),
+        &marks,
+        (StatusCode::CONFLICT, "main_required"),
+    )
+    .await;
+    h.refused(
+        "POST",
+        &chars,
+        json!({ "ign": "WISTERIA" }),
+        &marks,
+        (StatusCode::UNPROCESSABLE_ENTITY, "ign_taken"),
+    )
+    .await;
+    let promoted = h
+        .ok(
+            "PATCH",
+            &format!("/api/admin/characters/{}", s(&second["id"])),
+            Some(json!({ "version": 1, "role": "main" })),
+            "characters.json#/$defs/CharacterRow",
+        )
+        .await;
+    assert_eq!(promoted["role"], "main");
+    let listed = h
+        .ok(
+            "GET",
+            &chars,
+            None,
+            "characters.json#/$defs/MemberCharacters",
+        )
+        .await;
+    assert_eq!(listed["characters"][0]["role"], "alt", "the crown moved");
+    h.ok("DELETE", &first_path, None, "common.json#/$defs/Message")
+        .await;
+
     // Weekly timings.
     let row = &fixed[0];
     let tokens: Vec<&str> = row["bosses"]

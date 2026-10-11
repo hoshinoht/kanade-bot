@@ -70,6 +70,10 @@ Pointers are `<file>#/$defs/<Name>`.
 | `PATCH /api/admin/members/{id}` | `members.json#/$defs/MemberRow` (a retry with the same Idempotency-Key answers the member's current row, writing nothing; another request under it is 422 `idempotency_mismatch`; an effective edit adds a History settings row, section `members`) |
 | `POST /api/admin/members/{id}/aliases` | `members.json#/$defs/MemberRow` (Idempotency-Key and History as the PATCH) |
 | `DELETE /api/admin/members/{id}/aliases/{alias}` | `members.json#/$defs/MemberRow` (Idempotency-Key and History as the PATCH) |
+| `GET /api/admin/members/{id}/characters` | `characters.json#/$defs/MemberCharacters` (module `roster`: every character route answers the generic 404 while `modules.roster` is off; 404 `not_found` for a member never seen) |
+| `POST /api/admin/members/{id}/characters` | `201` `characters.json#/$defs/CharacterRow` (body `CharacterCreate`; 422 `invalid`, `ign_taken` (unique per world, case-insensitive, retired included); a member's first active character is the main, and `role: main` moves the crown; a retry with the same Idempotency-Key replays the first answer, another request under it is 422 `idempotency_mismatch`; each write adds one History settings row, section `characters`, a key `character.<id>` per row it changed) |
+| `PATCH /api/admin/characters/{id}` | `characters.json#/$defs/CharacterRow` (body `CharacterPatch`; 422 `version_required`, 409 `stale` for another version, 409 `main_required` to retire or demote the main while the member has other active characters; refusals, Idempotency-Key and History as the POST; a no-op answers the row and records nothing) |
+| `DELETE /api/admin/characters/{id}` | `common.json#/$defs/Message` (removes the row; History keeps its fields; 409 `main_required` for the main while the member has other active characters; Idempotency-Key as the POST) |
 | `GET /api/admin/personas` | `members.json#/$defs/Personas` |
 | `GET /api/admin/channels` | `common.json#/$defs/Channels` |
 | `GET /api/admin/roles` | `common.json#/$defs/Roles` |
@@ -112,9 +116,9 @@ Pointers are `<file>#/$defs/<Name>`.
 
 `common.json` (enums, `Boss`, `Tally`, `Member`, `Channel`, `WeekDay`, `Head`,
 `Message`, `ReloadResult`, `LogFacets`), `error.json`, `identity.json`,
-`public.json`, `week.json`, `members.json`, `fixed.json`, `bosses.json`,
-`reminders.json`, `inbox.json`, `extractions.json`, `chat.json`,
-`rewrites.json`, `limits.json`, `history.json`, `config.json`.
+`public.json`, `week.json`, `members.json`, `characters.json`, `fixed.json`,
+`bosses.json`, `reminders.json`, `inbox.json`, `extractions.json`,
+`chat.json`, `rewrites.json`, `limits.json`, `history.json`, `config.json`.
 
 ## Changes since A0
 
@@ -182,3 +186,6 @@ Pointers are `<file>#/$defs/<Name>`.
   `WithoutDetail`) for `GET /api/public/bosses/{key}/knowledge`; the
   public list and event bosses reuse `bosses.json` `BossRows` and
   `EventBosses`.
+- Character roster (2026-10-11): `characters.json` (`CharacterRow`,
+  `MemberCharacters` and the `CharacterCreate`/`CharacterPatch` bodies)
+  for the admin character routes of module `roster`.

@@ -21,6 +21,7 @@ use crate::{
     },
     domain::{
         catalog::BossTable,
+        characters::{Character, CharacterChange, CharacterRecord, CharacterStore, CharacterWrite},
         drafts::{
             DraftKind, DraftStatus, LoadedDraft, ProposalInfo, ProposalStore, StoredDraft,
             StoredProposal,
@@ -44,7 +45,7 @@ use crate::{
     },
     infrastructure::store::{
         auth_audit::{AuditFilter, AuditRow, AuthAuditStore},
-        replays::{PortalRecord, PortalWrite, ReplayScope, ReplayStore, StoredReplay},
+        replays::{KeyedWrite, PortalRecord, PortalWrite, ReplayScope, ReplayStore, StoredReplay},
         snapshots::{HistoryView, HistoryViewQuery, SnapshotReads},
     },
 };
@@ -238,6 +239,49 @@ pub trait ReadStore: Send + Sync {
     ) -> ReadFuture<'_, ()>;
     fn unsettled_owner_requests(&self) -> ReadFuture<'_, Vec<OwnerRequest>>;
     fn settle_owner_request_message(&self, id: String) -> ReadFuture<'_, ()>;
+}
+
+/// The roster module's store (`modules.roster`), object-safe as
+/// [`ReadStore`]: one member's characters and the recorded, keyed writes.
+pub trait CharacterRoster: Send + Sync {
+    fn member_characters(&self, member_id: String) -> ReadFuture<'_, Vec<Character>>;
+    fn character(&self, id: String) -> ReadFuture<'_, Option<Character>>;
+    /// One write with its History record and, for a keyed request, its
+    /// replay, in one transaction (see
+    /// [`ReplayStore::apply_character_replayed`]).
+    fn write_character(
+        &self,
+        change: CharacterChange,
+        record: CharacterRecord,
+        replay: Option<StoredReplay>,
+    ) -> ReadFuture<'_, KeyedWrite<CharacterWrite>>;
+}
+
+impl<T: CharacterStore + ReplayStore + Send + Sync> CharacterRoster for T {
+    fn member_characters(&self, member_id: String) -> ReadFuture<'_, Vec<Character>> {
+        Box::pin(async move { CharacterStore::member_characters(self, &member_id).await })
+    }
+
+    fn character(&self, id: String) -> ReadFuture<'_, Option<Character>> {
+        Box::pin(async move { CharacterStore::character(self, &id).await })
+    }
+
+    fn write_character(
+        &self,
+        change: CharacterChange,
+        record: CharacterRecord,
+        replay: Option<StoredReplay>,
+    ) -> ReadFuture<'_, KeyedWrite<CharacterWrite>> {
+        Box::pin(async move {
+            match replay {
+                Some(replay) => self.apply_character_replayed(change, record, replay).await,
+                None => self
+                    .apply_character(change, record)
+                    .await
+                    .map(KeyedWrite::Applied),
+            }
+        })
+    }
 }
 
 /// A closed Inbox item: a proposal (with its stored facts) or a member
@@ -875,6 +919,9 @@ pub struct ApiState {
     /// Difficulty emojis for redesigned card previews, as the bot listed
     /// them at startup; empty (written labels) until Discord composes.
     pub marks: crate::bot::delivery::cards::DifficultyMarks,
+    /// The manual character roster (`modules.roster`, read at startup);
+    /// `None` answers its routes `404`.
+    pub characters: Option<Arc<dyn CharacterRoster>>,
 }
 
 impl std::fmt::Debug for ApiState {
