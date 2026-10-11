@@ -102,6 +102,7 @@ pub fn draft(error: DraftError) -> Refusal {
         DraftError::Expired => expired(),
         DraftError::NoEffect => no_effect(),
         DraftError::RequesterUnauthorised => requester_unauthorised(),
+        moved @ DraftError::BaseMoved { .. } => conflicts(moved.to_string()),
         DraftError::HistoryGap(_)
         | DraftError::EditRefused(_)
         | DraftError::Empty
@@ -136,6 +137,11 @@ pub fn request(error: RequestError) -> Refusal {
             }
             RequestRefusal::ReasonRequired => unprocessable("reason_required", refusal.to_string()),
             RequestRefusal::ReasonInvalid => unprocessable("reason_invalid", refusal.to_string()),
+            RequestRefusal::UnknownChange => unprocessable("unknown_change", refusal.to_string()),
+            RequestRefusal::NotRetimable => unprocessable("not_retimable", refusal.to_string()),
+            RequestRefusal::NothingApproved => {
+                unprocessable("nothing_approved", refusal.to_string())
+            }
             RequestRefusal::Frozen
             | RequestRefusal::FieldNotAllowed
             | RequestRefusal::AlreadyInParty => Refusal::invalid(refusal.to_string()),

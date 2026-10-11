@@ -390,11 +390,12 @@ export function instantWords(iso: string, timeZone: string, now: string, clock =
 }
 
 /** The list row's second line after the when: who decided, the reason, or when it was sent. */
-export function rowTail(request: Pick<MemberRequest, 'state' | 'sent_at' | 'decided_by' | 'reason'>, timeZone: string, now: string): string {
+export function rowTail(request: Pick<MemberRequest, 'state' | 'sent_at' | 'decided_by' | 'reason' | 'edited'>, timeZone: string, now: string): string {
   switch (request.state) {
     case 'waiting':
       return `sent ${instantWords(request.sent_at, timeZone, now)}`;
     case 'approved':
+      if (request.edited) return 'approved with changes by an admin';
       return request.decided_by ? `by ${request.decided_by}` : 'approved';
     case 'rejected':
       return request.reason ? `${request.decided_by ?? 'an admin'}: “${request.reason}”` : `declined by ${request.decided_by ?? 'an admin'}`;
@@ -403,4 +404,11 @@ export function rowTail(request: Pick<MemberRequest, 'state' | 'sent_at' | 'deci
     case 'expired':
       return 'not decided in time';
   }
+}
+
+/** An edited approval's head line and what it left out (" Not approved: …."). */
+export function approvedWords(request: Pick<MemberRequest, 'edited' | 'not_approved' | 'decided_by'>): { head: string; left: string } {
+  if (!request.edited) return { head: `Approved${request.decided_by ? ` by ${request.decided_by}` : ''}`, left: '' };
+  const left = request.not_approved.length ? ` Not approved: ${request.not_approved.join(', ')}.` : '';
+  return { head: 'Approved with changes by an admin', left };
 }

@@ -388,6 +388,7 @@ async fn rebase_moves_the_base_and_close_is_final<S: ScheduleStore + ChangeHisto
                 base: tip.clone(),
                 base_revision: snapshot(&service).await.revision,
                 expires_week: None,
+                ops: None,
             },
         })
         .await
@@ -402,6 +403,68 @@ async fn rebase_moves_the_base_and_close_is_final<S: ScheduleStore + ChangeHisto
         DraftScope::Weekly,
         "the rebase stores its derived scope"
     );
+    // A rename bumps the version and keeps everything else.
+    let DraftWrite::Written(renamed) = service
+        .store()
+        .update_draft(DraftUpdate {
+            draft_id: created.id.clone(),
+            expected_version: 2,
+            actor: Actor::admin("root"),
+            at,
+            change: DraftChange::Retitle {
+                title: "weekend reshuffle".into(),
+            },
+        })
+        .await
+        .expect("retitle")
+    else {
+        panic!("retitle: not written");
+    };
+    assert_eq!(
+        (renamed.title.as_str(), renamed.version, &renamed.base),
+        ("weekend reshuffle", 3, &tip)
+    );
+    // A settling rebase replaces the operations in the same write.
+    let staged = crate::domain::drafts::StagedOp {
+        ord: 5,
+        op: crate::domain::drafts::DraftOp::ResetToFixed {
+            run: crate::domain::drafts::Target::Existing("run-1".into()),
+        },
+        author: Actor::admin("root"),
+        added_at: at,
+    };
+    let DraftWrite::Written(settled) = service
+        .store()
+        .update_draft(DraftUpdate {
+            draft_id: created.id.clone(),
+            expected_version: 3,
+            actor: Actor::admin("root"),
+            at,
+            change: DraftChange::Rebase {
+                base: tip.clone(),
+                base_revision: snapshot(&service).await.revision,
+                expires_week: None,
+                ops: Some(vec![staged.clone()]),
+            },
+        })
+        .await
+        .expect("settling rebase")
+    else {
+        panic!("settling rebase: not written");
+    };
+    assert_eq!(settled.version, 4);
+    let loaded = service
+        .store()
+        .load_draft(&created.id)
+        .await
+        .expect("load")
+        .expect("present");
+    assert_eq!(
+        loaded.ops,
+        [crate::domain::drafts::StagedOp { ord: 0, ..staged }],
+        "the rebase renumbers the operations it stores"
+    );
+    assert_eq!(loaded.draft.title, "weekend reshuffle");
     // Only a merge commit closes a draft as merged (it names the record);
     // `Close` refuses non-closing statuses and writes nothing.
     for status in [
@@ -414,7 +477,7 @@ async fn rebase_moves_the_base_and_close_is_final<S: ScheduleStore + ChangeHisto
                 .store()
                 .update_draft(DraftUpdate {
                     draft_id: created.id.clone(),
-                    expected_version: 2,
+                    expected_version: 4,
                     actor: Actor::admin("root"),
                     at,
                     change: DraftChange::Close {
@@ -431,7 +494,7 @@ async fn rebase_moves_the_base_and_close_is_final<S: ScheduleStore + ChangeHisto
         .store()
         .update_draft(DraftUpdate {
             draft_id: created.id.clone(),
-            expected_version: 2,
+            expected_version: 4,
             actor: Actor::admin("root"),
             at,
             change: DraftChange::Close {
@@ -446,7 +509,7 @@ async fn rebase_moves_the_base_and_close_is_final<S: ScheduleStore + ChangeHisto
         panic!("rebase: not closed");
     };
     assert_eq!(closed.status, DraftStatus::Discarded);
-    assert_eq!(closed.version, 2, "closing does not bump the version");
+    assert_eq!(closed.version, 4, "closing does not bump the version");
     assert_eq!(closed.closed_by, Some(Actor::admin("root")));
     // A closed draft refuses every write.
     assert!(matches!(
@@ -454,7 +517,7 @@ async fn rebase_moves_the_base_and_close_is_final<S: ScheduleStore + ChangeHisto
             .store()
             .update_draft(DraftUpdate {
                 draft_id: created.id.clone(),
-                expected_version: 2,
+                expected_version: 4,
                 actor: Actor::admin("root"),
                 at,
                 change: DraftChange::Close {
@@ -479,6 +542,8 @@ async fn rebase_moves_the_base_and_close_is_final<S: ScheduleStore + ChangeHisto
         events.iter().map(|event| event.kind).collect::<Vec<_>>(),
         [
             DraftEventKind::Created,
+            DraftEventKind::Rebased,
+            DraftEventKind::Retitled,
             DraftEventKind::Rebased,
             DraftEventKind::Discarded
         ]

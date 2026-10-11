@@ -2,7 +2,13 @@
 //! mutex, so admin mutations are serialised; reads never take it. The port is
 //! object-safe so `ApiState` stays non-generic.
 
-use std::{collections::BTreeSet, fmt, future::Future, pin::Pin, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+};
 
 #[cfg(any(test, feature = "test-support"))]
 use std::sync::{Mutex as StdMutex, OnceLock};
@@ -14,7 +20,7 @@ use tokio::sync::Notify;
 
 use super::{auth::Clock as ApiClockFn, state::ReadStore};
 use crate::domain::{
-    drafts::{DraftStatus, ProposalStore, StoredDraft},
+    drafts::{DraftOp, DraftStatus, ProposalStore, Settle, StoredDraft},
     history::{
         Actor, ChangeHistory, Expect, HeldReminders, Origin, RevertMode, RevertOutcome, Surface,
     },
@@ -23,15 +29,15 @@ use crate::domain::{
     notify::DeclineNoticeStore,
     ownership::OwnerPin,
     proposals::Approver,
-    requests::{NoFreezes, RequestSpec},
+    requests::{NoFreezes, RequestEdit, RequestSpec},
     schedule::{
         FixedEditChoices, FixedEditRequest, NewFixedRun, RsvpState, SchedulePolicy, SettleRun,
         StatusChange,
     },
     scheduler::{
-        Approved, Clock, DeclineNoticeContext, DeclineRsvpResult, DraftError, IdSource,
-        ProposalApproved, ProposalError, ProposalPreview, Rejected, RequestError, RequestPreview,
-        ScheduleStore, SchedulerResult, SchedulerService, StoreError,
+        Approved, Clock, DeclineNoticeContext, DeclineRsvpResult, DraftError, DraftPreview,
+        IdSource, MergeOutcome, ProposalApproved, ProposalError, ProposalPreview, Rejected,
+        RequestError, RequestPreview, ScheduleStore, SchedulerResult, SchedulerService, StoreError,
     },
 };
 
@@ -191,6 +197,53 @@ pub enum RunWrite {
     Reset,
 }
 
+/// One administrator draft write, as the session's admin; every write but
+/// `Create` names the version it was planned from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DraftCommand {
+    Create {
+        title: String,
+        request_id: Option<String>,
+    },
+    Retitle {
+        id: String,
+        version: u64,
+        title: String,
+    },
+    AddOp {
+        id: String,
+        version: u64,
+        op: DraftOp,
+    },
+    RemoveOp {
+        id: String,
+        version: u64,
+        ord: usize,
+    },
+    /// Settles each conflict by its key.
+    Rebase {
+        id: String,
+        version: u64,
+        settle: BTreeMap<String, Settle>,
+    },
+    Discard {
+        id: String,
+        version: u64,
+    },
+    /// Only on the current head.
+    Merge {
+        id: String,
+        version: u64,
+    },
+}
+
+/// What a draft write did.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DraftDone {
+    Written(StoredDraft),
+    Merged(MergeOutcome),
+}
+
 pub trait Writer: Send + Sync {
     fn run<'a>(
         &'a self,
@@ -327,14 +380,34 @@ pub trait Writer: Send + Sync {
         now: DateTime<Utc>,
     ) -> DecideFuture<'a, ProposalPreview, ProposalError>;
 
+    /// `edit` (possibly empty): the administrator's new days and times and
+    /// left-out changes, merged in place of the request's operations.
     fn approve_request<'a>(
         &'a self,
         actor: &'a Actor,
         id: &'a str,
         version: u64,
         choices: Option<FixedEditChoices>,
+        edit: &'a RequestEdit,
         ctx: &'a WriteContext,
     ) -> DecideFuture<'a, Approved, RequestError>;
+
+    /// An administrator draft write by `admin` (an admin actor id).
+    fn draft<'a>(
+        &'a self,
+        admin: &'a str,
+        command: DraftCommand,
+        ctx: &'a WriteContext,
+    ) -> DecideFuture<'a, DraftDone, DraftError>;
+
+    /// A draft's merge preview; writes nothing and never waits for the
+    /// writer.
+    fn preview_draft<'a>(
+        &'a self,
+        id: &'a str,
+        ctx: &'a WriteContext,
+        now: DateTime<Utc>,
+    ) -> DecideFuture<'a, DraftPreview, DraftError>;
 
     fn reject_request<'a>(
         &'a self,
@@ -757,20 +830,86 @@ where
         id: &'a str,
         version: u64,
         choices: Option<FixedEditChoices>,
+        edit: &'a RequestEdit,
         ctx: &'a WriteContext,
     ) -> DecideFuture<'a, Approved, RequestError> {
         Box::pin(async move {
             let mut service = self.service.lock().await;
             service
-                .approve_request(
+                .approve_request_edited(
                     actor,
                     id,
                     version,
                     choices,
+                    edit,
                     &ctx.policy,
                     &ctx.directory,
                     &GATE,
                 )
+                .await
+        })
+    }
+
+    fn draft<'a>(
+        &'a self,
+        admin: &'a str,
+        command: DraftCommand,
+        ctx: &'a WriteContext,
+    ) -> DecideFuture<'a, DraftDone, DraftError> {
+        Box::pin(async move {
+            let mut service = self.service.lock().await;
+            let (policy, directory) = (&ctx.policy, &ctx.directory);
+            let written = match command {
+                DraftCommand::Create { title, request_id } => {
+                    service.create_draft(admin, &title, request_id).await?
+                }
+                DraftCommand::Retitle { id, version, title } => {
+                    service.retitle_draft(admin, &id, version, &title).await?
+                }
+                DraftCommand::AddOp { id, version, op } => {
+                    service
+                        .add_draft_op(admin, &id, version, op, policy, directory)
+                        .await?
+                        .draft
+                }
+                DraftCommand::RemoveOp { id, version, ord } => {
+                    service
+                        .remove_draft_op(admin, &id, version, ord, policy, directory)
+                        .await?
+                        .draft
+                }
+                DraftCommand::Rebase {
+                    id,
+                    version,
+                    settle,
+                } => {
+                    service
+                        .rebase_draft_settling(admin, &id, version, &settle, policy, directory)
+                        .await?
+                }
+                DraftCommand::Discard { id, version } => {
+                    service.discard_draft(admin, &id, version, None).await?
+                }
+                DraftCommand::Merge { id, version } => {
+                    return service
+                        .merge_draft_on_head(admin, &id, version, policy, directory, None)
+                        .await
+                        .map(DraftDone::Merged);
+                }
+            };
+            Ok(DraftDone::Written(written))
+        })
+    }
+
+    fn preview_draft<'a>(
+        &'a self,
+        id: &'a str,
+        ctx: &'a WriteContext,
+        now: DateTime<Utc>,
+    ) -> DecideFuture<'a, DraftPreview, DraftError> {
+        Box::pin(async move {
+            self.previewer(now)
+                .draft_preview(id, &ctx.policy, &ctx.directory)
                 .await
         })
     }

@@ -57,7 +57,16 @@ export type MemberRunLink = { run: MemberRun, week: 'current' | 'next' | 'past' 
 
 export type MemberProposed = { day: number | null, time: string | null, channel: string | null, party: Array<Member> | null, };
 
-export type MemberRequest = { id: string, kind: 'join' | 'leave' | 'swap' | 'new_fixed' | 'change_fixed', state: 'waiting' | 'approved' | 'rejected' | 'withdrawn' | 'expired', summary: string, note: string | null, run: MemberRun | null, fixed_id: string | null, bosses: Array<Boss>, channel: string | null, with: Member | null, proposed: MemberProposed | null, sent_at: string, decided_at: string | null, decided_by: string | null, reason: string | null, expires_at: string | null, };
+export type MemberRequest = { id: string, kind: 'join' | 'leave' | 'swap' | 'new_fixed' | 'change_fixed', state: 'waiting' | 'approved' | 'rejected' | 'withdrawn' | 'expired', summary: string, note: string | null, run: MemberRun | null, fixed_id: string | null, bosses: Array<Boss>, channel: string | null, with: Member | null, proposed: MemberProposed | null, sent_at: string, decided_at: string | null, decided_by: string | null, reason: string | null, expires_at: string | null, 
+/**
+ * Approved with an administrator's changes; `proposed` then shows what
+ * was approved.
+ */
+edited: boolean, 
+/**
+ * The changes the approval left out, in the member's words.
+ */
+not_approved: Array<string>, };
 
 export type MemberRequestOptions = { channels: Array<Member>, members: Array<Member>, };
 
@@ -370,6 +379,24 @@ export type ProposalChoice = { run_id: string, label: string, when: string, amen
 
 export type ProposalSelfService = { member: Member, via: string, note: string | null, };
 
+/**
+ * One change a member request asks for, as an admin may retime it or leave
+ * it out when approving (`edit.retime[].change`, `edit.drop`).
+ */
+export type RequestedChange = { id: string, part: 'day_time' | 'party' | 'channel' | 'change', 
+/**
+ * The member's words for it, as a notice lists it when left out.
+ */
+label: string, 
+/**
+ * What the member asked, and what it is now (`None` for something new).
+ */
+asked: string, now: string | null, 
+/**
+ * A weekly day and time an admin may change; `day` 0 = Monday.
+ */
+retimable: boolean, day: number | null, time: string | null, };
+
 export type Proposal = { id: string, short_id: string, kind: ProposalKind, kind_label: string, source: ProposalSource, tab: InboxTab, version: number, flags: Array<ProposalFlag>, preview: ProposalPreview, 
 /**
  * One line on what approving does (party, upcoming reminders); `None`
@@ -379,7 +406,12 @@ consequence: string | null, expires_at: string | null, choices: Array<ProposalCh
 /**
  * The channel thread around `evidence`; `None` when there is none.
  */
-thread: Array<ThreadMessage> | null, card_url: string | null, self_service: ProposalSelfService | null, };
+thread: Array<ThreadMessage> | null, card_url: string | null, self_service: ProposalSelfService | null, 
+/**
+ * A member request's changes as an approval may edit them (`None` for
+ * proposals).
+ */
+requested: Array<RequestedChange> | null, };
 
 /**
  * An open weekly-timing ownership request (Inbox Ownership tab): a party
@@ -433,6 +465,109 @@ export type PastPage = { items: Array<PastItem>,
  * The `before` cursor of the next page; `None` on the last.
  */
 next_before: string | null, };
+
+export type DraftRow = { id: string, short_id: string, 
+/**
+ * The admin's title, or one derived from the operations (`titled`
+ * false).
+ */
+title: string, titled: boolean, status: 'open' | 'merged' | 'discarded' | 'expired', 
+/**
+ * The precondition every write sends back.
+ */
+version: number, 
+/**
+ * The history record the draft is based on.
+ */
+base: number, 
+/**
+ * Based on the current head ("Up to date"); else "Base moved".
+ */
+up_to_date: boolean, scope: 'week' | 'weekly', 
+/**
+ * The boss week's first day (guild date) of a week-scoped draft.
+ */
+week: string | null, staged: number, author: PastDecider, created_at: string, updated_at: string, merged_seq: number | null, closed_by: PastDecider | null, close_reason: string | null, };
+
+/**
+ * `GET /api/admin/drafts?state=open|closed`: the admin's own drafts, most
+ * recently changed first, and the current history head.
+ */
+export type DraftList = { head: number, drafts: Array<DraftRow>, };
+
+/**
+ * One staged operation, in order. `run_id`/`fixed_id` name an existing
+ * row; `created_by` the earlier operation that creates the row it acts on.
+ */
+export type StagedOpRow = { ord: number, 
+/**
+ * The operation's codec kind (`amend_run`, `set_status`, ...).
+ */
+kind: string, summary: string, run_id: string | null, fixed_id: string | null, created_by: number | null, author: PastDecider, added_at: string, };
+
+/**
+ * `GET /api/admin/drafts/{id}`.
+ */
+export type DraftDetail = { ops: Array<StagedOpRow>, id: string, short_id: string, 
+/**
+ * The admin's title, or one derived from the operations (`titled`
+ * false).
+ */
+title: string, titled: boolean, status: 'open' | 'merged' | 'discarded' | 'expired', 
+/**
+ * The precondition every write sends back.
+ */
+version: number, 
+/**
+ * The history record the draft is based on.
+ */
+base: number, 
+/**
+ * Based on the current head ("Up to date"); else "Base moved".
+ */
+up_to_date: boolean, scope: 'week' | 'weekly', 
+/**
+ * The boss week's first day (guild date) of a week-scoped draft.
+ */
+week: string | null, staged: number, author: PastDecider, created_at: string, updated_at: string, merged_seq: number | null, closed_by: PastDecider | null, close_reason: string | null, };
+
+/**
+ * The History record behind a conflict: the latest change after the
+ * draft's base that touched the conflicting row.
+ */
+export type ConflictRecord = { seq: number, actor: PastDecider, at: string, };
+
+/**
+ * One conflict the merge analysis reports, with the operations involved
+ * and the answers a rebase accepts for it (`keep` keeps the operations,
+ * reviving a cancelled or finished run; `take` drops them).
+ */
+export type DraftConflict = { 
+/**
+ * What a rebase names it by.
+ */
+key: string, kind: 'both_changed' | 'upstream_removed' | 'op_rejected' | 'choices_stale' | 'stale_weeks' | 'divergent', run_id: string | null, fixed_id: string | null, field: string | null, 
+/**
+ * Both changed: the value drafted on, the draft's and today's.
+ */
+base: string | null, yours: string | null, now: string | null, removal: 'deleted' | 'retired' | 'cancelled' | 'done' | 'left_run' | null, message: string, ops: Array<number>, settle: Array<'keep' | 'take'>, record: ConflictRecord | null, };
+
+/**
+ * `GET /api/admin/drafts/{id}/preview`: the rows a merge would write
+ * against the current schedule (History's diff rows), and the conflicts.
+ * Merge is offered only when `mergeable` (on the head and conflict-free).
+ */
+export type DraftPreviewView = { id: string, version: number, base: number, head: number, up_to_date: boolean, mergeable: boolean, rows: Array<RowChange>, conflicts: Array<DraftConflict>, 
+/**
+ * One line on what merging does; `None` with conflicts or nothing to say.
+ */
+consequence: string | null, };
+
+/**
+ * Every draft write's answer: the draft as it now stands (re-read it for
+ * the rest) and, for a merge, its History record.
+ */
+export type DraftWritten = { id: string, version: number, status: 'open' | 'merged' | 'discarded' | 'expired', seq: number | null, message: string, };
 
 export type ConfigView = { pings: Pings, watching: Watching, chatbot: Chatbot, notifications: Notifications, self_service: SelfServiceSettings, persona: PersonaSettings, models: ModelSettings, run_lengths: RunLengths, profanity: ProfanitySettings, manage_messages: ManageMessages, notices: Array<string>, env: Array<EnvRow>, 
 /**

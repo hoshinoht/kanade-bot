@@ -1073,7 +1073,15 @@ impl DraftStore for MemoryScheduleStore {
                     base,
                     base_revision,
                     expires_week,
+                    ops,
                 } => {
+                    if let Some(ops) = ops {
+                        let mut ops = ops.clone();
+                        for (position, staged) in ops.iter_mut().enumerate() {
+                            staged.ord = position;
+                        }
+                        next.drafts.ops.insert(draft.id.clone(), ops);
+                    }
                     draft.base = base.clone();
                     draft.base_revision = *base_revision;
                     draft.version += 1;
@@ -1090,6 +1098,20 @@ impl DraftStore for MemoryScheduleStore {
                         &update.actor,
                         update.at,
                         Some(format!("{} {}", base.seq, base.hash)),
+                    );
+                }
+                DraftChange::Retitle { title } => {
+                    draft.title.clone_from(title);
+                    draft.version += 1;
+                    draft.updated_at = update.at;
+                    draft_event(
+                        &mut next,
+                        &draft.id,
+                        draft.version,
+                        DraftEventKind::Retitled,
+                        &update.actor,
+                        update.at,
+                        None,
                     );
                 }
                 DraftChange::Close {

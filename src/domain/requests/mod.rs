@@ -7,7 +7,11 @@
 //! Direct member writes (their own RSVP, this-boss-week moves of their own
 //! runs) are not requests: they stay direct edits with preconditions.
 
+mod edit;
+
 use std::fmt;
+
+pub use edit::{ChangeId, Part, RequestEdit, asked_time, changes, describe, retimable};
 
 use chrono::TimeDelta;
 
@@ -167,6 +171,12 @@ pub enum RequestRefusal {
     ReasonRequired,
     /// A reason over 500 characters or with control characters.
     ReasonInvalid,
+    /// An approval's edit names a change the request does not ask for.
+    UnknownChange,
+    /// An approval's edit gives a new time to a change without one.
+    NotRetimable,
+    /// An approval's edit leaves out every change (reject it instead).
+    NothingApproved,
 }
 
 impl fmt::Display for RequestRefusal {
@@ -182,6 +192,9 @@ impl fmt::Display for RequestRefusal {
             Self::AlreadyInParty => "that member is already on it",
             Self::ReasonRequired => "a rejection needs a reason",
             Self::ReasonInvalid => "a reason is at most 500 characters without control characters",
+            Self::UnknownChange => "the request does not ask for that change",
+            Self::NotRetimable => "only a weekly day and time can be changed",
+            Self::NothingApproved => "every change was left out; reject the request instead",
         })
     }
 }
@@ -385,12 +398,14 @@ pub fn choices_note(choices: &FixedEditChoices) -> String {
 
 /// The notice telling the requester what became of their request: it lists
 /// only them, so it mentions nobody else. Posted in `channel_id` (the
-/// subject's home channel) when set.
+/// subject's home channel) when set. `edited` lists what an approval with an
+/// administrator's changes left out.
 pub fn requester_notice(
     request_id: &str,
     requester: &str,
     decision: RequestDecision,
     reason: Option<String>,
+    edited: Option<Vec<String>>,
     channel_id: Option<String>,
 ) -> Notice {
     Notice {
@@ -398,6 +413,7 @@ pub fn requester_notice(
             request: request_id.to_owned(),
             decision,
             reason,
+            edited,
         },
         channel_id,
         listed: vec![requester.to_owned()],
@@ -447,7 +463,7 @@ mod tests {
 
     #[test]
     fn notices_list_only_the_requester() {
-        let notice = requester_notice("q-1", "7", RequestDecision::Rejected, None, None);
+        let notice = requester_notice("q-1", "7", RequestDecision::Rejected, None, None, None);
         assert_eq!(notice.listed, ["7"]);
         assert_eq!(notice.effect_kind(), "notice.request.rejected");
         assert_eq!(notice.effect_context(), ["request:q-1:rejected"]);

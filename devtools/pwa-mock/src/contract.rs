@@ -1417,11 +1417,160 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         .iter()
         .map(|c| (s(&c["run_id"]).to_owned(), json!("keep")))
         .collect();
-    h.ok(
+    let requested: Vec<&str> = fixed_change["requested"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| s(&c["id"]))
+        .collect();
+    assert_eq!(requested, ["0.day_time", "0.party"]);
+    let edit = json!({
+        "retime": [{"change": "0.day_time", "day": 5, "time": "22:00"}],
+        "drop": ["0.party"],
+    });
+    h.refused(
         "POST",
         "/api/admin/inbox/p-kalos-fixed/approve",
-        Some(json!({ "version": fixed_change["version"], "choices": choices })),
-        "common.json#/$defs/Message",
+        json!({ "version": fixed_change["version"], "choices": choices, "edit": {"drop": ["0.day_time", "0.party"]} }),
+        &[("x-kanade-csrf", &h.csrf.clone())],
+        (StatusCode::UNPROCESSABLE_ENTITY, "nothing_approved"),
+    )
+    .await;
+    let approved = h
+        .ok(
+            "POST",
+            "/api/admin/inbox/p-kalos-fixed/approve",
+            Some(json!({ "version": fixed_change["version"], "choices": choices, "edit": edit })),
+            "common.json#/$defs/Message",
+        )
+        .await;
+    assert!(s(&approved["message"]).starts_with("Approved with changes"));
+
+    // Drafts: list, detail, preview, writes, conflicts and merge.
+    let open = h
+        .ok(
+            "GET",
+            "/api/admin/drafts",
+            None,
+            "drafts.json#/$defs/DraftList",
+        )
+        .await;
+    assert_eq!(open["drafts"].as_array().unwrap().len(), 2);
+    h.ok(
+        "GET",
+        "/api/admin/drafts?state=closed",
+        None,
+        "drafts.json#/$defs/DraftList",
+    )
+    .await;
+    h.ok(
+        "GET",
+        "/api/admin/drafts/d-weekend",
+        None,
+        "drafts.json#/$defs/DraftDetail",
+    )
+    .await;
+    let conflicted = h
+        .ok(
+            "GET",
+            "/api/admin/drafts/d-carling/preview",
+            None,
+            "drafts.json#/$defs/DraftPreview",
+        )
+        .await;
+    assert_eq!(conflicted["conflicts"].as_array().unwrap().len(), 2);
+    assert_eq!(conflicted["mergeable"], json!(false));
+    let csrf = [("x-kanade-csrf", h.csrf.clone())];
+    let csrf = [(csrf[0].0, csrf[0].1.as_str())];
+    h.refused(
+        "POST",
+        "/api/admin/drafts/d-carling/merge",
+        json!({"version": 4}),
+        &csrf,
+        (StatusCode::CONFLICT, "base_moved"),
+    )
+    .await;
+    h.refused(
+        "POST",
+        "/api/admin/drafts/d-carling/rebase",
+        json!({"version": 4}),
+        &csrf,
+        (StatusCode::CONFLICT, "conflicts"),
+    )
+    .await;
+    h.ok(
+        "POST",
+        "/api/admin/drafts/d-carling/rebase",
+        Some(json!({"version": 4, "settle": {
+            "both/run:r-carling/slot": "take",
+            "removed/run:r-limbo": "keep",
+        }})),
+        "drafts.json#/$defs/DraftWritten",
+    )
+    .await;
+    let rebased = h
+        .ok(
+            "GET",
+            "/api/admin/drafts/d-carling/preview",
+            None,
+            "drafts.json#/$defs/DraftPreview",
+        )
+        .await;
+    assert_eq!(rebased["mergeable"], json!(true));
+    let merged = h
+        .ok(
+            "POST",
+            "/api/admin/drafts/d-carling/merge",
+            Some(json!({"version": 5})),
+            "drafts.json#/$defs/DraftWritten",
+        )
+        .await;
+    assert_eq!(merged["status"], json!("merged"));
+    h.refused(
+        "POST",
+        "/api/admin/drafts/d-weekend/ops",
+        json!({"version": 1, "op": {"kind": "reset", "run": "r-kalos"}}),
+        &csrf,
+        (StatusCode::CONFLICT, "stale"),
+    )
+    .await;
+    let created = h
+        .expect(
+            false,
+            "POST",
+            "/api/admin/drafts",
+            Some(json!({"title": "Contract"})),
+            StatusCode::CREATED,
+            "drafts.json#/$defs/DraftWritten",
+        )
+        .await;
+    let new = s(&created["id"]).to_owned();
+    h.ok(
+        "POST",
+        &format!("/api/admin/drafts/{new}/ops"),
+        Some(json!({"version": 1, "op": {"kind": "status", "run": "r-kalos", "status": "confirmed"}})),
+        "drafts.json#/$defs/DraftWritten",
+    )
+    .await;
+    h.ok(
+        "PATCH",
+        &format!("/api/admin/drafts/{new}"),
+        Some(json!({"version": 2, "title": "Contract check"})),
+        "drafts.json#/$defs/DraftWritten",
+    )
+    .await;
+    h.ok(
+        "DELETE",
+        &format!("/api/admin/drafts/{new}/ops/0?version=3"),
+        None,
+        "drafts.json#/$defs/DraftWritten",
+    )
+    .await;
+    h.ok(
+        "DELETE",
+        &format!("/api/admin/drafts/{new}?version=4"),
+        None,
+        "drafts.json#/$defs/DraftWritten",
     )
     .await;
     h.ok(

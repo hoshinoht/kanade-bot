@@ -54,6 +54,7 @@ fn decided() -> Notice {
             request: "d-1".into(),
             decision: RequestDecision::Approved,
             reason: None,
+            edited: None,
         },
         channel_id: Some(HOME.into()),
         listed: vec!["1001".into()],

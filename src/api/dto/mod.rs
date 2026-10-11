@@ -7,6 +7,7 @@ pub mod bosses;
 pub mod characters;
 pub mod config;
 mod consequence;
+pub mod drafts;
 pub mod events;
 pub mod fixed;
 pub mod history;

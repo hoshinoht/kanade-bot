@@ -14,7 +14,7 @@ use crate::{
     domain::{
         completion::RunEnds,
         drafts::{DraftOp, DraftStatus, LoadedDraft, StoredDraft},
-        requests::{RequestType, Subject, public_summary},
+        requests::{RequestEdit, RequestType, Subject, public_summary},
         schedule::{SchedulePolicy, ScheduleSnapshot, utc_instant},
     },
 };
@@ -55,6 +55,11 @@ pub struct MemberRequest {
     pub decided_by: Option<String>,
     pub reason: Option<String>,
     pub expires_at: Option<String>,
+    /// Approved with an administrator's changes; `proposed` then shows what
+    /// was approved.
+    pub edited: bool,
+    /// The changes the approval left out, in the member's words.
+    pub not_approved: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -137,8 +142,13 @@ impl RequestView<'_> {
     }
 
     /// `snapshot` holds the subject run, if it still exists, and every
-    /// weekly timing.
-    pub fn request(&self, loaded: &LoadedDraft, snapshot: &ScheduleSnapshot) -> MemberRequest {
+    /// weekly timing; `edit` is a merged request's approval edit.
+    pub fn request(
+        &self,
+        loaded: &LoadedDraft,
+        snapshot: &ScheduleSnapshot,
+        edit: Option<&RequestEdit>,
+    ) -> MemberRequest {
         let draft = &loaded.draft;
         let ctx = self.ctx;
         let kind = draft.request_type.as_deref().and_then(RequestType::parse);
@@ -178,8 +188,10 @@ impl RequestView<'_> {
         }
         let mut with = None;
         let mut proposed = None;
-        for staged in &loaded.ops {
-            match &staged.op {
+        let asked = loaded.draft_ops();
+        let approved = edit.and_then(|edit| edit.apply(&asked).ok());
+        for op in approved.as_ref().unwrap_or(&asked) {
+            match op {
                 DraftOp::AddFixedRun(new) => {
                     bosses = &new.bosses;
                     channel = self.channel(new.channel_id.as_ref());
@@ -232,6 +244,10 @@ impl RequestView<'_> {
                 .scope
                 .expires_week()
                 .and_then(|week| self.deadline(week)),
+            edited: edit.is_some(),
+            not_approved: edit
+                .map(|edit| edit.not_approved(&asked))
+                .unwrap_or_default(),
         }
     }
 }

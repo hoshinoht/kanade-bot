@@ -8,6 +8,7 @@ mod auth;
 mod avatars;
 #[cfg(test)]
 mod contract;
+mod drafts;
 mod etag;
 mod events;
 mod headers;
@@ -90,6 +91,7 @@ fn common(app: &App, api: Router<App>, dist: PathBuf, public: bool) -> Router {
         .route("/__mock/limits", post(api::seed_limits))
         .route("/__mock/discord", post(auth::fail_next_discord))
         .route("/__mock/arrive", post(events::arrive))
+        .route("/__mock/inbox/kalos-v4", post(drafts::kalos_v4))
         .with_state(app.clone())
         .fallback_service(static_site(dist));
     if public {
@@ -211,6 +213,18 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         )
         .route("/api/admin/inbox/{id}/approve", post(api::approve))
         .route("/api/admin/inbox/{id}/reject", post(api::reject))
+        .route("/api/admin/drafts", get(drafts::list).post(drafts::create))
+        .route(
+            "/api/admin/drafts/{id}",
+            get(drafts::detail)
+                .patch(drafts::retitle)
+                .delete(drafts::discard),
+        )
+        .route("/api/admin/drafts/{id}/ops", post(drafts::add_op))
+        .route("/api/admin/drafts/{id}/ops/{op}", delete(drafts::remove_op))
+        .route("/api/admin/drafts/{id}/preview", get(drafts::preview))
+        .route("/api/admin/drafts/{id}/rebase", post(drafts::rebase))
+        .route("/api/admin/drafts/{id}/merge", post(drafts::merge))
         .route("/api/admin/extractions", get(api::extractions))
         .route("/api/admin/extractions/{id}", get(api::extraction))
         .route("/api/admin/rescan/targets", get(api::rescan_targets))

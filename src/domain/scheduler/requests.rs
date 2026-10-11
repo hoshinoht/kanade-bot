@@ -21,8 +21,9 @@ use crate::domain::drafts::{
 use crate::domain::history::{Actor, Surface};
 use crate::domain::members::Directory;
 use crate::domain::requests::{
-    DEFAULT_LIMITS, MemberGate, RequestRefusal, RequestSpec, RequestType, Subject, authorise,
-    check_reason, choices_note, home_channel, operations, public_summary, requester_notice,
+    DEFAULT_LIMITS, MemberGate, RequestEdit, RequestRefusal, RequestSpec, RequestType, Subject,
+    authorise, check_reason, choices_note, home_channel, operations, public_summary,
+    requester_notice,
 };
 use crate::domain::schedule::{
     FixedEditChoices, Notice, RequestDecision, SchedulePolicy, ScheduleSnapshot,
@@ -169,6 +170,7 @@ pub(super) fn decision_notice(
         requester,
         decision,
         reason,
+        None,
         channel,
     ))
 }
@@ -485,11 +487,47 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         directory: &(dyn Directory + Sync),
         gate: &(dyn MemberGate + Sync),
     ) -> RequestResult<Approved> {
+        self.approve_request_edited(
+            actor,
+            id,
+            reviewed_version,
+            choices,
+            &RequestEdit::default(),
+            policy,
+            directory,
+            gate,
+        )
+        .await
+    }
+
+    /// [`Self::approve_request`] with the administrator's `edit` (new
+    /// weekly days and times, changes left out) applied to the operations
+    /// it merges. The request itself is left as the member sent it: the
+    /// edit is recorded in the `merged` event note ([`RequestEdit::note`])
+    /// and the requester's notice lists what was not approved. An empty
+    /// edit approves as asked.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn approve_request_edited(
+        &mut self,
+        actor: &Actor,
+        id: &str,
+        reviewed_version: u64,
+        choices: Option<FixedEditChoices>,
+        edit: &RequestEdit,
+        policy: &SchedulePolicy,
+        directory: &(dyn Directory + Sync),
+        gate: &(dyn MemberGate + Sync),
+    ) -> RequestResult<Approved> {
         self.check_policy(policy)?;
         require_admin(actor)?;
         let now = self.clock.now();
         let request_id = merge_request_id(id, reviewed_version);
-        let request_digest = digest("request_merge", &(id, reviewed_version, &choices));
+        let edit_note = (!edit.is_empty()).then(|| edit.note());
+        // An unedited approval keeps the digest it always had.
+        let request_digest = match &edit_note {
+            None => digest("request_merge", &(id, reviewed_version, &choices)),
+            Some(note) => digest("request_merge", &(id, reviewed_version, &choices, note)),
+        };
         if let Some(recorded) = self.store.recorded_request(actor, &request_id).await? {
             return Err(
                 if recorded.digest.as_deref() == Some(request_digest.as_str()) {
@@ -514,6 +552,17 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             return Err(self.expired(&loaded, now, &snapshot).await);
         }
         require_submitted(&loaded, reviewed_version)?;
+        let (ops, note, not_approved) = match edit_note {
+            None => (ops, note, None),
+            Some(edited) => {
+                let not_approved = edit.not_approved(&ops);
+                let note = match note {
+                    Some(choices) => format!("{choices} {edited}"),
+                    None => edited,
+                };
+                (edit.apply(&ops)?, Some(note), Some(not_approved))
+            }
+        };
         let requester = requester_of(&loaded.draft)
             .ok_or(RequestRefusal::RequesterUnauthorised)?
             .to_owned();
@@ -531,9 +580,17 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             &requester,
             RequestDecision::Approved,
             None,
+            not_approved,
             channel.clone(),
         );
-        let expired = requester_notice(id, &requester, RequestDecision::Expired, None, channel);
+        let expired = requester_notice(
+            id,
+            &requester,
+            RequestDecision::Expired,
+            None,
+            None,
+            channel,
+        );
         let merged = self
             .merge_loaded(
                 MergeInput {
@@ -552,6 +609,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
                     also_notify: vec![approved.clone()],
                     expired_notice: Some(expired.clone()),
                     notices: None,
+                    on_head: false,
                 },
                 policy,
                 directory,
@@ -604,6 +662,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             &requester,
             RequestDecision::Rejected,
             Some(reason.clone()),
+            None,
             channel,
         );
         let request = self

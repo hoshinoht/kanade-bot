@@ -15,15 +15,18 @@ use super::ports::{Clock, IdSource, ScheduleStore, StoreError};
 use super::service::{COMMIT_ATTEMPTS, SchedulerService, digest};
 use crate::domain::drafts::{
     DraftChange, DraftCreated, DraftEventKind, DraftKind, DraftOp, DraftRequest, DraftStale,
-    DraftStatus, DraftStore, DraftUpdate, DraftWrite, LoadedDraft, MergeAnalysis, MergeCommit,
-    MergeConflict, NewDraft, PreviewIds, ReplayError, StagedOp, StoredDraft, Target, analyze_merge,
-    analyze_merge_applying, expires_week, renumber_created, replay, replay_equivalent, replay_real,
+    DraftStatus, DraftStore, DraftUpdate, DraftWrite, Entity, LoadedDraft, MergeAnalysis,
+    MergeCommit, MergeConflict, NewDraft, PreviewIds, Removal, ReplayError, Settle, StagedOp,
+    StoredDraft, Target, analyze_merge, analyze_merge_applying, conflict_ops, expires_week,
+    renumber_created, replay, replay_equivalent, replay_real,
 };
-use crate::domain::history::{Actor, ChangeMeta, ChangeRef, HistoryGap, Origin, Surface, rewind};
+use crate::domain::history::{
+    Actor, ChangeMeta, ChangeRecord, ChangeRef, HistoryGap, Origin, Surface, rewind,
+};
 use crate::domain::members::Directory;
 use crate::domain::schedule::{
-    Draft, FixedRun, Notice, NoticeChange, Run, ScheduleError, SchedulePolicy, ScheduleSnapshot,
-    materialise_weeks,
+    Draft, FixedRun, Notice, NoticeChange, Run, RunStatus, ScheduleError, SchedulePolicy,
+    ScheduleSnapshot, StatusChange, materialise_weeks,
 };
 
 /// A draft refused an edit: the operation is unknown, or removing it would
@@ -101,6 +104,11 @@ pub enum DraftError {
     RequesterUnauthorised,
     /// The operation (its codec kind) exists only for proposals.
     ProposalOnlyOp(&'static str),
+    /// The draft is not based on the current history head (`head`): rebase
+    /// it before merging.
+    BaseMoved {
+        head: u64,
+    },
 }
 
 impl From<ScheduleError> for DraftError {
@@ -162,6 +170,12 @@ impl fmt::Display for DraftError {
             Self::ProposalOnlyOp(kind) => {
                 write!(f, "`{kind}` is staged only by extractor and chat proposals")
             }
+            Self::BaseMoved { head } => {
+                write!(
+                    f,
+                    "the schedule moved to change {head}; rebase the draft first"
+                )
+            }
         }
     }
 }
@@ -193,6 +207,21 @@ pub struct MergeOutcome {
     pub created: Vec<Option<String>>,
     /// Per operation: what it returned, as committed.
     pub results: Vec<crate::domain::schedule::OpResult>,
+}
+
+/// What merging a draft now would do, and what stands behind it.
+#[derive(Clone, Debug)]
+pub struct DraftPreview {
+    pub draft: LoadedDraft,
+    pub analysis: MergeAnalysis,
+    /// Per conflict (in `analysis.conflicts` order): the staged operations
+    /// involved, by `ord` (see [`conflict_ops`]).
+    pub involved: Vec<Vec<usize>>,
+    /// The schedule the analysis merges into, and its history head.
+    pub current: ScheduleSnapshot,
+    pub head: ChangeRef,
+    /// Every record after the draft's base, oldest first.
+    pub upstream: Vec<ChangeRecord>,
 }
 
 /// The `merged` event's note: the caller's note, then the runs a party
@@ -272,6 +301,9 @@ pub(super) struct MergeInput<'a> {
     /// Replaces the per-channel summary notices (proposals: v4 announced
     /// only an approved move); `None` keeps the summaries.
     pub notices: Option<Vec<Notice>>,
+    /// Refuse with [`DraftError::BaseMoved`] unless the draft's base is the
+    /// current head (admin portal merges).
+    pub on_head: bool,
 }
 
 pub(super) fn stale_of(id: &str, stale: DraftStale) -> DraftError {
@@ -356,6 +388,7 @@ pub(super) struct Upstream {
     pub current: ScheduleSnapshot,
     pub head: ChangeRef,
     pub base_snapshot: ScheduleSnapshot,
+    pub records: Vec<ChangeRecord>,
 }
 
 pub(super) async fn upstream<S: ScheduleStore + DraftStore>(
@@ -369,6 +402,7 @@ pub(super) async fn upstream<S: ScheduleStore + DraftStore>(
         current,
         head,
         base_snapshot,
+        records,
     })
 }
 
@@ -715,6 +749,21 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         policy: &SchedulePolicy,
         directory: &(dyn Directory + Sync),
     ) -> DraftResult<MergeAnalysis> {
+        Ok(self
+            .draft_preview(draft_id, policy, directory)
+            .await?
+            .analysis)
+    }
+
+    /// [`Self::preview_draft`] with what stands behind it: the draft, the
+    /// operations each conflict involves, the schedule and head it merges
+    /// into, and the records after its base.
+    pub async fn draft_preview(
+        &self,
+        draft_id: &str,
+        policy: &SchedulePolicy,
+        directory: &(dyn Directory + Sync),
+    ) -> DraftResult<DraftPreview> {
         self.check_policy(policy)?;
         let now = self.clock.now();
         let ends = self.run_ends();
@@ -723,22 +772,41 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             return Err(DraftError::Expired);
         }
         let flow = upstream(&self.store, &loaded.draft.base).await?;
-        if expired_on_current(&flow.current, &loaded.draft_ops(), policy, directory, now)? {
+        let ops = loaded.draft_ops();
+        if expired_on_current(&flow.current, &ops, policy, directory, now)? {
             return Err(DraftError::Expired);
         }
-        Ok(analyze_merge(
+        let analysis = analyze_merge(
             &flow.base_snapshot,
             &flow.current,
-            &loaded.draft_ops(),
+            &ops,
             policy,
             ends.as_ref(),
             directory,
             now,
-        ))
+        );
+        let involved = conflict_ops(
+            &flow.base_snapshot,
+            &ops,
+            &analysis.conflicts,
+            policy,
+            ends.as_ref(),
+            directory,
+            now,
+        );
+        Ok(DraftPreview {
+            draft: loaded,
+            analysis,
+            involved,
+            current: flow.current,
+            head: flow.head,
+            upstream: flow.records,
+        })
     }
 
     /// Re-point the draft at the current head. Refused while the merge
-    /// analysis reports conflicts; the operations must be fixed first.
+    /// analysis reports conflicts; settle them with
+    /// [`Self::rebase_draft_settling`].
     pub async fn rebase_draft(
         &mut self,
         admin: &str,
@@ -747,28 +815,80 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         policy: &SchedulePolicy,
         directory: &(dyn Directory + Sync),
     ) -> DraftResult<StoredDraft> {
+        self.rebase_draft_settling(
+            admin,
+            draft_id,
+            expected_version,
+            &BTreeMap::new(),
+            policy,
+            directory,
+        )
+        .await
+    }
+
+    /// Re-point the draft at the current head, keeping its operations and
+    /// settling each conflict the analysis reports by its
+    /// [`MergeConflict::key`]: `Take` drops the operations involved, `Keep`
+    /// keeps them (reviving a run upstream cancelled or finished, staged
+    /// before the first of them). Operation-level conflicts and upstream
+    /// deletions can only be taken. Any conflict left unsettled refuses with
+    /// those conflicts, and the result must replay on the current schedule;
+    /// nothing is written otherwise. The new operations and base are one
+    /// write.
+    pub async fn rebase_draft_settling(
+        &mut self,
+        admin: &str,
+        draft_id: &str,
+        expected_version: u64,
+        settle: &BTreeMap<String, Settle>,
+        policy: &SchedulePolicy,
+        directory: &(dyn Directory + Sync),
+    ) -> DraftResult<StoredDraft> {
         self.check_policy(policy)?;
         let now = self.clock.now();
         let ends = self.run_ends();
         let loaded = load_live(&self.store, draft_id, expected_version).await?;
         let flow = upstream(&self.store, &loaded.draft.base).await?;
+        let ops = loaded.draft_ops();
         let analysis = analyze_merge(
             &flow.base_snapshot,
             &flow.current,
-            &loaded.draft_ops(),
+            &ops,
             policy,
             ends.as_ref(),
             directory,
             now,
         );
-        if !analysis.conflicts.is_empty() {
-            return Err(DraftError::Conflicts(analysis.conflicts));
-        }
+        let staged = if analysis.conflicts.is_empty() {
+            None
+        } else {
+            let involved = conflict_ops(
+                &flow.base_snapshot,
+                &ops,
+                &analysis.conflicts,
+                policy,
+                ends.as_ref(),
+                directory,
+                now,
+            );
+            Some(settled(
+                &loaded.ops,
+                &analysis.conflicts,
+                &involved,
+                settle,
+                admin,
+                now,
+            )?)
+        };
+        let rebased: Vec<DraftOp> = match &staged {
+            Some(staged) => staged.iter().map(|staged| staged.op.clone()).collect(),
+            None => ops,
+        };
         // The new base is the current schedule, so replay there for the
         // re-derived scope.
         let replayed = replay(
             &flow.current,
-            &loaded.draft_ops(),
+            &rebased,
             policy,
             ends.as_ref(),
             directory,
@@ -779,7 +899,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             error: rejected.error,
         })?;
         let expires = expires_week(
-            &loaded.draft_ops(),
+            &rebased,
             &replayed.created,
             &flow.current,
             &replayed.draft,
@@ -794,6 +914,34 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
                 base: flow.head,
                 base_revision: flow.current.revision,
                 expires_week: expires,
+                ops: staged,
+            },
+        };
+        match self.store.update_draft(update).await? {
+            DraftWrite::Written(draft) => Ok(draft),
+            DraftWrite::Stale(stale) => Err(stale_of(&loaded.draft.id, stale)),
+        }
+    }
+
+    /// Rename a live draft (1..=200 characters); its operations are as
+    /// they were.
+    pub async fn retitle_draft(
+        &mut self,
+        admin: &str,
+        draft_id: &str,
+        expected_version: u64,
+        title: &str,
+    ) -> DraftResult<StoredDraft> {
+        check_title(title)?;
+        let now = self.clock.now();
+        let loaded = load_live(&self.store, draft_id, expected_version).await?;
+        let update = DraftUpdate {
+            draft_id: loaded.draft.id.clone(),
+            expected_version: loaded.draft.version,
+            actor: Actor::admin(admin),
+            at: now,
+            change: DraftChange::Retitle {
+                title: title.to_owned(),
             },
         };
         match self.store.update_draft(update).await? {
@@ -847,6 +995,54 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         directory: &(dyn Directory + Sync),
         request_id: Option<String>,
     ) -> DraftResult<MergeOutcome> {
+        self.merge_admin(
+            admin,
+            draft_id,
+            expected_version,
+            policy,
+            directory,
+            request_id,
+            false,
+        )
+        .await
+    }
+
+    /// [`Self::merge_draft`] only while the draft is based on the current
+    /// history head (the admin portal's rule: what the admin previewed is
+    /// what lands); a moved base is [`DraftError::BaseMoved`], so rebase
+    /// first. The head is re-checked at every commit attempt.
+    pub async fn merge_draft_on_head(
+        &mut self,
+        admin: &str,
+        draft_id: &str,
+        expected_version: u64,
+        policy: &SchedulePolicy,
+        directory: &(dyn Directory + Sync),
+        request_id: Option<String>,
+    ) -> DraftResult<MergeOutcome> {
+        self.merge_admin(
+            admin,
+            draft_id,
+            expected_version,
+            policy,
+            directory,
+            request_id,
+            true,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn merge_admin(
+        &mut self,
+        admin: &str,
+        draft_id: &str,
+        expected_version: u64,
+        policy: &SchedulePolicy,
+        directory: &(dyn Directory + Sync),
+        request_id: Option<String>,
+        on_head: bool,
+    ) -> DraftResult<MergeOutcome> {
         self.check_policy(policy)?;
         let now = self.clock.now();
         let actor = Actor::admin(admin);
@@ -885,6 +1081,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
                 also_notify: Vec::new(),
                 expired_notice: None,
                 notices: None,
+                on_head,
             },
             policy,
             directory,
@@ -920,6 +1117,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             also_notify,
             expired_notice,
             notices: replaced,
+            on_head,
         } = input;
         let draft_id = draft.id.as_str();
         // An expired draft is closed first (idempotently), so the window
@@ -944,6 +1142,11 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         let ends = self.run_ends();
         loop {
             let flow = upstream(&self.store, &draft.base).await?;
+            if on_head && flow.head != draft.base {
+                return Err(DraftError::BaseMoved {
+                    head: flow.head.seq,
+                });
+            }
             // Upstream may have moved a drafted run into a past week since the
             // scope was stored: re-derive it on the schedule being merged into.
             if expired_on_current(&flow.current, &ops, policy, directory, now)? {
@@ -1350,4 +1553,85 @@ fn restage(
             }
         })
         .collect()
+}
+
+/// The staged operations once every conflict is settled (see
+/// [`SchedulerService::rebase_draft_settling`]), renumbered in order; a
+/// revived run's status change is staged by `admin` at `now`.
+fn settled(
+    staged: &[StagedOp],
+    conflicts: &[MergeConflict],
+    involved: &[Vec<usize>],
+    settle: &BTreeMap<String, Settle>,
+    admin: &str,
+    now: DateTime<Utc>,
+) -> DraftResult<Vec<StagedOp>> {
+    let mut unsettled = Vec::new();
+    let mut dropped: BTreeSet<usize> = BTreeSet::new();
+    // Runs to revive, before the operation at this position.
+    let mut revive: Vec<(usize, String)> = Vec::new();
+    for (conflict, ords) in conflicts.iter().zip(involved) {
+        match (settle.get(&conflict.key()), conflict) {
+            (Some(Settle::Take), _) => dropped.extend(ords.iter().copied()),
+            (
+                Some(Settle::Keep),
+                MergeConflict::BothChanged { .. } | MergeConflict::Divergent { .. },
+            ) => {}
+            (
+                Some(Settle::Keep),
+                MergeConflict::UpstreamRemoved {
+                    entity: Entity::Run(id),
+                    removal: Removal::Cancelled | Removal::Done,
+                },
+            ) if !ords.is_empty() => revive.push((ords[0], id.clone())),
+            _ => unsettled.push(conflict.clone()),
+        }
+    }
+    if !unsettled.is_empty() {
+        return Err(DraftError::Conflicts(unsettled));
+    }
+    let mut out: Vec<StagedOp> = Vec::with_capacity(staged.len() + revive.len());
+    let mut moved: Vec<Option<usize>> = vec![None; staged.len()];
+    for (ord, op) in staged.iter().enumerate() {
+        for (_, run) in revive.iter().filter(|(at, _)| *at == ord) {
+            out.push(StagedOp {
+                ord: out.len(),
+                op: DraftOp::SetStatus {
+                    run: Target::Existing(run.clone()),
+                    change: StatusChange {
+                        status: RunStatus::Planned,
+                        announce: true,
+                        via_portal: true,
+                    },
+                },
+                author: Actor::admin(admin),
+                added_at: now,
+            });
+        }
+        if dropped.contains(&ord) {
+            continue;
+        }
+        moved[ord] = Some(out.len());
+        let mut kept = op.clone();
+        kept.ord = out.len();
+        out.push(kept);
+    }
+    for (position, staged) in out.iter_mut().enumerate() {
+        let mut missing = None;
+        staged.op.each_target_mut(|target| {
+            if let Target::Created(old) = target
+                && moved.get(*old).copied().flatten().is_none()
+            {
+                missing = Some(*old);
+            }
+        });
+        if let Some(removed) = missing {
+            return Err(DraftError::EditRefused(EditRefusal::DanglingTarget {
+                removed,
+                used_by: position,
+            }));
+        }
+        renumber_created(&mut staged.op, |old| moved.get(old).copied().flatten());
+    }
+    Ok(out)
 }

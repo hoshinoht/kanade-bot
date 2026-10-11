@@ -8,6 +8,7 @@ mod avatars;
 mod characters;
 pub mod config;
 pub(crate) mod context;
+mod drafts;
 mod etag;
 mod events;
 mod headers;
@@ -50,6 +51,7 @@ pub fn routes() -> Router<Arc<Site>> {
         .merge(write::routes())
         .merge(history::routes())
         .merge(inbox::routes())
+        .merge(drafts::routes())
         .merge(logs::routes())
         .merge(limits::routes())
         .merge(headers::routes())

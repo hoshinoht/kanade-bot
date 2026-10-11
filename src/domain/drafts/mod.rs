@@ -13,10 +13,11 @@ mod replay;
 
 pub use crate::domain::schedule::party_delta;
 pub use codec::{CodecError, DRAFT_OP_FORMAT, decode, encode};
-pub use conflict::{Entity, Field, FieldValue, MergeConflict, Removal};
+pub use conflict::{Entity, Field, FieldValue, MergeConflict, Removal, Settle};
 pub use expiry::expires_week;
 pub use merge::{
-    MergeAnalysis, analyze_merge, analyze_merge_applying, analyze_merge_since, replay_equivalent,
+    MergeAnalysis, analyze_merge, analyze_merge_applying, analyze_merge_since, conflict_ops,
+    replay_equivalent,
 };
 pub use op::{DraftOp, ReplayError, Target, renumber_created, resolve};
 pub use port::{

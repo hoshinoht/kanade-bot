@@ -108,6 +108,9 @@ pub struct MemberRequest {
     pub decided_by: Option<String>,
     pub reason: Option<String>,
     pub expires_at: Option<String>,
+    /// Approved with changes by an admin (never, in the mock).
+    pub edited: bool,
+    pub not_approved: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -345,6 +348,8 @@ impl Store {
             decided_by: r.decided_by.clone(),
             reason: r.reason.clone(),
             expires_at: r.expires.map(iso_secs),
+            edited: false,
+            not_approved: Vec::new(),
         }
     }
 

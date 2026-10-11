@@ -8,6 +8,7 @@ mod auth;
 mod avatars;
 mod characters;
 mod config;
+mod drafts;
 mod etag;
 mod events;
 mod header_rewrite;

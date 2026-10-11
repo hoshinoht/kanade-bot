@@ -519,7 +519,16 @@ pub(super) async fn update_in(
             base,
             base_revision,
             expires_week,
+            ops,
         } => {
+            if let Some(ops) = ops {
+                execute(
+                    conn,
+                    sqlx::query("DELETE FROM draft_ops WHERE draft_id = ?1").bind(&loaded.draft.id),
+                )
+                .await?;
+                insert_ops(conn, &loaded.draft.id, ops).await?;
+            }
             loaded.draft.base = base.clone();
             loaded.draft.base_revision = *base_revision;
             loaded.draft.version += 1;
@@ -551,6 +560,32 @@ pub(super) async fn update_in(
                 &update.actor,
                 &update.at,
                 Some(&format!("{} {}", base.seq, base.hash)),
+            )
+            .await?;
+        }
+        DraftChange::Retitle { title } => {
+            loaded.draft.title.clone_from(title);
+            loaded.draft.version += 1;
+            loaded.draft.updated_at = update.at;
+            execute(
+                conn,
+                sqlx::query(
+                    "UPDATE drafts SET title = ?1, version = ?2, updated_at = ?3 WHERE id = ?4",
+                )
+                .bind(title)
+                .bind(signed(loaded.draft.version, "id")?)
+                .bind(rows::instant(&update.at)?)
+                .bind(&loaded.draft.id),
+            )
+            .await?;
+            append_event(
+                conn,
+                &loaded.draft.id,
+                loaded.draft.version,
+                DraftEventKind::Retitled,
+                &update.actor,
+                &update.at,
+                None,
             )
             .await?;
         }

@@ -11,7 +11,7 @@ use axum::{
     http::HeaderMap,
     response::{IntoResponse, Response},
 };
-use chrono::{DateTime, Days, TimeZone, Utc};
+use chrono::{DateTime, Days, TimeZone, Utc, Weekday};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -29,7 +29,7 @@ use crate::{
         ids::short_id,
         members::MemberProfile,
         proposals::{Approver, ProposalSubject},
-        requests::{RequestType, check_reason},
+        requests::{ChangeId, RequestEdit, RequestRefusal, RequestType, check_reason},
         schedule::{AmendedRunChoice, FixedEditChoices, utc_instant},
         scheduler::{DraftError, ProposalError, RequestError},
     },
@@ -48,6 +48,63 @@ pub struct ApproveBody {
     time: Option<String>,
     /// Refused when true: conflicts always block.
     force: Option<bool>,
+    /// Member requests: approve with an administrator's changes (new
+    /// weekly days and times, changes left out). The request's `version`
+    /// must still be the one edited.
+    edit: Option<EditBody>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EditBody {
+    #[serde(default)]
+    retime: Vec<RetimeBody>,
+    #[serde(default)]
+    drop: Vec<String>,
+}
+
+/// A change's new weekly day (0 = Monday) and `HH:MM` time.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RetimeBody {
+    change: String,
+    day: u8,
+    time: String,
+}
+
+const WEEKDAYS: [Weekday; 7] = [
+    Weekday::Mon,
+    Weekday::Tue,
+    Weekday::Wed,
+    Weekday::Thu,
+    Weekday::Fri,
+    Weekday::Sat,
+    Weekday::Sun,
+];
+
+fn unknown_change() -> Refusal {
+    refusal::request(RequestRefusal::UnknownChange.into())
+}
+
+/// The domain edit an approval names; change keys are `RequestChange.id`.
+fn request_edit(body: EditBody) -> Result<RequestEdit, Refusal> {
+    let mut edit = RequestEdit::default();
+    for retime in body.retime {
+        let change = ChangeId::parse(&retime.change).ok_or_else(unknown_change)?;
+        let day = *WEEKDAYS
+            .get(usize::from(retime.day))
+            .ok_or_else(|| Refusal::invalid("A week has seven days (0 = Monday)."))?;
+        let time = strict_time(&retime.time)
+            .ok_or_else(|| Refusal::invalid("Times are HH:MM, 00:00 to 23:59."))?;
+        if edit.retime.insert(change, (day, time)).is_some() {
+            return Err(Refusal::invalid("Give each change one new time."));
+        }
+    }
+    for key in body.drop {
+        edit.drop
+            .insert(ChangeId::parse(&key).ok_or_else(unknown_change)?);
+    }
+    Ok(edit)
 }
 
 #[derive(Deserialize)]
@@ -199,17 +256,26 @@ pub async fn approve(
         }
         let version = body.version.ok_or_else(version_required)?;
         let choices = body.choices.map(choices).transpose()?;
+        let edit = body.edit.map(request_edit).transpose()?.unwrap_or_default();
+        let verb = if edit.is_empty() {
+            "Approved"
+        } else {
+            "Approved with changes"
+        };
         return match state
             .writer
-            .approve_request(&session.actor, &id, version, choices, &ctx)
+            .approve_request(&session.actor, &id, version, choices, &edit, &ctx)
             .await
         {
             // The store enqueued the merge and requester notices with the merge.
             Ok(_) | Err(RequestError::Draft(DraftError::AlreadyApplied { .. })) => {
-                Ok(message(decided("Approved", &loaded)))
+                Ok(message(decided(verb, &loaded)))
             }
             Err(error) => Err(refusal::request(error)),
         };
+    }
+    if body.edit.is_some() {
+        return Err(edit_not_applicable());
     }
     let approver = approver(&session, &profiles)?;
     if body.choices.is_some() {

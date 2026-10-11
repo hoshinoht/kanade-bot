@@ -327,7 +327,9 @@
         "decided_at": { "$ref": "common.json#/$defs/NullableString", "description": "When it was approved, rejected, withdrawn or closed as expired (ISO-8601 UTC)." },
         "decided_by": { "$ref": "common.json#/$defs/NullableString", "description": "A member's name, `an admin` or `Kanade`." },
         "reason": { "$ref": "common.json#/$defs/NullableString", "description": "A rejection's reason." },
-        "expires_at": { "$ref": "common.json#/$defs/NullableString", "description": "The reset that closes its boss week (ISO-8601 UTC); null for weekly-timing requests, which never expire." }
+        "expires_at": { "$ref": "common.json#/$defs/NullableString", "description": "The reset that closes its boss week (ISO-8601 UTC); null for weekly-timing requests, which never expire." },
+        "edited": { "type": "boolean", "description": "Approved with changes by an admin; `proposed` then shows what was approved." },
+        "not_approved": { "type": "array", "items": { "type": "string" }, "description": "What an edited approval left out, in the member's words (`the party change`)." }
       }
     },
     "MemberProposed": {

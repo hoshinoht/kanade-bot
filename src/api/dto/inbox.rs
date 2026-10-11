@@ -22,7 +22,7 @@ use crate::domain::{
     ids::short_id,
     ownership::OwnerRequest,
     proposals::{ProposalSubject, StoredCard},
-    requests::{RequestType, Subject, public_summary},
+    requests::{self, Part, RequestType, Subject, public_summary},
     schedule::{Change, ChangeSet, FixedRun, SchedulePolicy, ScheduleSnapshot, utc_instant},
     scheduler::{ProposalPreview, RequestPreview},
 };
@@ -172,9 +172,93 @@ pub struct ProposalDto {
     pub thread: Option<Vec<ThreadMessage>>,
     pub card_url: Option<String>,
     pub self_service: Option<SelfService>,
+    /// A member request's changes as an approval may edit them (`None` for
+    /// proposals).
+    pub requested: Option<Vec<RequestedChange>>,
     /// Sort key (oldest first).
     #[serde(skip)]
     pub created_at: DateTime<Utc>,
+}
+
+/// One change a member request asks for, as an admin may retime it or leave
+/// it out when approving (`edit.retime[].change`, `edit.drop`).
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct RequestedChange {
+    pub id: String,
+    #[cfg_attr(test, ts(type = "'day_time' | 'party' | 'channel' | 'change'"))]
+    pub part: &'static str,
+    /// The member's words for it, as a notice lists it when left out.
+    pub label: String,
+    /// What the member asked, and what it is now (`None` for something new).
+    pub asked: String,
+    pub now: Option<String>,
+    /// A weekly day and time an admin may change; `day` 0 = Monday.
+    pub retimable: bool,
+    pub day: Option<u8>,
+    pub time: Option<String>,
+}
+
+fn requested(
+    ctx: &Context<'_>,
+    current: &ScheduleSnapshot,
+    ops: &[DraftOp],
+) -> Vec<RequestedChange> {
+    requests::changes(ops)
+        .into_iter()
+        .map(|id| {
+            let op = &ops[id.ord];
+            let row = match op {
+                DraftOp::ApplyFixedEdit {
+                    fixed: Target::Existing(fixed),
+                    ..
+                } => current.fixed_runs.iter().find(|row| &row.id == fixed),
+                _ => None,
+            };
+            let party = |ids: &[String]| names(ctx, ids);
+            let channel = |id: Option<&String>| opt(id.map(|id| ctx.channel_name(id)).as_deref());
+            let (part, asked, now) = match (id.part, op) {
+                (Part::DayTime, DraftOp::ApplyFixedEdit { edit, .. }) => (
+                    "day_time",
+                    row.map_or_else(
+                        || NONE.to_owned(),
+                        |row| {
+                            slot(
+                                edit.weekday.unwrap_or(row.weekday),
+                                edit.time.unwrap_or(row.time),
+                            )
+                        },
+                    ),
+                    row.map(|row| slot(row.weekday, row.time)),
+                ),
+                (Part::Party, DraftOp::ApplyFixedEdit { edit, .. }) => (
+                    "party",
+                    party(edit.participants.as_deref().unwrap_or_default()),
+                    row.map(|row| party(&row.participants)),
+                ),
+                (Part::Channel, DraftOp::ApplyFixedEdit { edit, .. }) => (
+                    "channel",
+                    channel(edit.channel_id.as_ref()),
+                    row.map(|row| channel(row.channel_id.as_ref())),
+                ),
+                (_, DraftOp::AddFixedRun(new)) => ("change", slot(new.weekday, new.time), None),
+                (_, op) => ("change", super::drafts::summary(ctx, current, op), None),
+            };
+            let asked_at = requests::asked_time(ops, id);
+            RequestedChange {
+                id: id.key(),
+                part,
+                label: requests::describe(ops, id),
+                asked,
+                now,
+                retimable: requests::retimable(ops, id),
+                day: asked_at
+                    .and_then(|(day, _)| day)
+                    .map(|day| day.num_days_from_monday() as u8),
+                time: asked_at.and_then(|(_, time)| time).map(hhmm),
+            }
+        })
+        .collect()
 }
 
 pub fn kind_label(kind: &str) -> &'static str {
@@ -664,6 +748,7 @@ pub fn proposal(
         card_url: card
             .and_then(|card| message_url(ctx, &card.channel_id, card.message_id.as_deref()?)),
         self_service: None,
+        requested: None,
         created_at: draft.created_at,
     }
 }
@@ -793,6 +878,7 @@ pub fn request(
             via: "request",
             note: Some(draft.title.clone()),
         }),
+        requested: Some(requested(ctx, current, &ops)),
         created_at: draft.created_at,
     }
 }

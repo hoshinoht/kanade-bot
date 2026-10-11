@@ -89,10 +89,19 @@ pub(super) fn encode(notice: &Notice) -> Result<String, String> {
             request,
             decision,
             reason,
-        } => json!({
-            "type": "request_decided", "request": request, "decision": decision.as_str(),
-            "reason": reason,
-        }),
+            edited,
+        } => {
+            let mut change = json!({
+                "type": "request_decided", "request": request, "decision": decision.as_str(),
+                "reason": reason,
+            });
+            // Only an edited approval carries the key, so every other
+            // decision keeps its v1 bytes.
+            if let Some(left_out) = edited {
+                change["edited"] = json!(left_out);
+            }
+            change
+        }
         NoticeChange::FixedChanged {
             fixed_id,
             fields,
@@ -236,6 +245,10 @@ fn decode_change(change: &Value) -> Result<NoticeChange, String> {
                     .find(|known| known.as_str() == decision)
                     .ok_or_else(|| format!("unknown decision {decision}"))?,
                 reason: optional_text(change, "reason")?,
+                edited: match change.get("edited") {
+                    None => None,
+                    Some(_) => Some(texts(change, "edited")?),
+                },
             }
         }
         "fixed_changed" => NoticeChange::FixedChanged {
@@ -379,11 +392,19 @@ mod tests {
                 request: "q".into(),
                 decision: RequestDecision::Rejected,
                 reason: Some("no".into()),
+                edited: None,
             },
             NoticeChange::RequestDecided {
                 request: "q".into(),
                 decision: RequestDecision::Expired,
                 reason: None,
+                edited: None,
+            },
+            NoticeChange::RequestDecided {
+                request: "q".into(),
+                decision: RequestDecision::Approved,
+                reason: None,
+                edited: Some(vec!["the party change".into()]),
             },
             NoticeChange::FixedChanged {
                 fixed_id: "f".into(),

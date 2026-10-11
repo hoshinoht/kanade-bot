@@ -3,6 +3,7 @@ import type { Boss, MemberRequest, MemberRequests, MemberRun, MemberTiming, Memb
 import type { Client } from '@kanade/client';
 import { MemberRequestsList } from '../src/requests/requests.svelte';
 import {
+  approvedWords,
   bodyOf,
   cleanNote,
   counterWords,
@@ -244,12 +245,22 @@ describe('request words', () => {
   });
 
   it('each row says who decided, why, or when it was sent', () => {
-    const base: Pick<MemberRequest, 'state' | 'sent_at' | 'decided_by' | 'reason'> = { state: 'waiting', sent_at: '2026-10-10T03:02:00Z', decided_by: null, reason: null };
+    const base: Pick<MemberRequest, 'state' | 'sent_at' | 'decided_by' | 'reason' | 'edited'> = { state: 'waiting', sent_at: '2026-10-10T03:02:00Z', decided_by: null, reason: null, edited: false };
     expect(rowTail(base, TZ, NOW)).toBe('sent today 11:02');
     expect(rowTail({ ...base, state: 'approved', decided_by: 'Asahi' }, TZ, NOW)).toBe('by Asahi');
+    expect(rowTail({ ...base, state: 'approved', decided_by: 'an admin', edited: true }, TZ, NOW)).toBe('approved with changes by an admin');
     expect(rowTail({ ...base, state: 'rejected', decided_by: 'Asahi', reason: 'party is full' }, TZ, NOW)).toBe('Asahi: “party is full”');
     expect(rowTail({ ...base, state: 'expired' }, TZ, NOW)).toBe('not decided in time');
     expect(rowTail({ ...base, state: 'withdrawn' }, TZ, NOW)).toBe('by you');
+  });
+
+  it('an approval with changes says so and lists what was not approved', () => {
+    expect(approvedWords({ edited: false, not_approved: [], decided_by: 'Asahi' })).toEqual({ head: 'Approved by Asahi', left: '' });
+    expect(approvedWords({ edited: true, not_approved: ['the party change'], decided_by: 'an admin' })).toEqual({
+      head: 'Approved with changes by an admin',
+      left: ' Not approved: the party change.',
+    });
+    expect(approvedWords({ edited: true, not_approved: [], decided_by: null })).toEqual({ head: 'Approved with changes by an admin', left: '' });
   });
 
   it('a waiting request says what holds until an admin decides', () => {

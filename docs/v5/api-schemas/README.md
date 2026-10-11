@@ -87,7 +87,15 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/admin/reminders` | `reminders.json#/$defs/Reminders` |
 | `GET /api/admin/inbox` | `inbox.json#/$defs/Proposals` |
 | `GET /api/admin/inbox/past?before=&limit=` | `inbox.json#/$defs/PastPage` (422 `invalid_query`) |
-| `POST /api/admin/inbox/{id}/approve`, `/reject` | `common.json#/$defs/Message` |
+| `POST /api/admin/inbox/{id}/approve`, `/reject` | `common.json#/$defs/Message`. A member request's approve body may carry `edit: {retime: [{change, day, time}], drop: [change]}` (change ids from `Proposal.requested`; `day` 0 = Monday): approved with those changes, 409 `stale` when the request is no longer the `version` edited, 422 `unknown_change`/`not_retimable`/`nothing_approved` |
+| `GET /api/admin/drafts?state=open\|closed` | `drafts.json#/$defs/DraftList` (the session admin's own drafts; 422 `invalid_query`) |
+| `POST /api/admin/drafts` | body `{title?}`; `drafts.json#/$defs/DraftWritten` (201) |
+| `GET /api/admin/drafts/{id}` | `drafts.json#/$defs/DraftDetail` (404 `not_found` for anyone but its author) |
+| `PATCH /api/admin/drafts/{id}`, `DELETE /api/admin/drafts/{id}?version=` | body `{version, title}` / none; `drafts.json#/$defs/DraftWritten` (rename / discard) |
+| `POST /api/admin/drafts/{id}/ops`, `DELETE /api/admin/drafts/{id}/ops/{n}?version=` | body `{version, op}` (`drafts.json#/$defs/OpBody`); `drafts.json#/$defs/DraftWritten` (422 `op_refused`/`op_needed`) |
+| `GET /api/admin/drafts/{id}/preview` | `drafts.json#/$defs/DraftPreview` (410 `expired`) |
+| `POST /api/admin/drafts/{id}/rebase` | body `{version, settle: {conflict key: keep\|take}}`; `drafts.json#/$defs/DraftWritten` (409 `conflicts` while any conflict is unsettled or the result no longer applies) |
+| `POST /api/admin/drafts/{id}/merge` | body `{version}`; `drafts.json#/$defs/DraftWritten` with `seq` (409 `base_moved` off the head, `conflicts`, `no_effect`; 422 `empty`) |
 | `GET /api/admin/inbox/ownership` | `inbox.json#/$defs/OwnershipRequests` (open, unexpired, oldest first) |
 | `POST /api/admin/inbox/ownership/{id}/accept`, `/decline` | `common.json#/$defs/Message` (404 `not_found`; 409 `conflicts` with the rule's words when the request is closed, expired or the requester left the party) |
 | `GET /api/admin/extractions?…` | `extractions.json#/$defs/Extractions` (422 `invalid_filter`) |
@@ -117,7 +125,7 @@ Pointers are `<file>#/$defs/<Name>`.
 `common.json` (enums, `Boss`, `Tally`, `Member`, `Channel`, `WeekDay`, `Head`,
 `Message`, `ReloadResult`, `LogFacets`), `error.json`, `identity.json`,
 `public.json`, `week.json`, `members.json`, `characters.json`, `fixed.json`,
-`bosses.json`, `reminders.json`, `inbox.json`, `extractions.json`,
+`bosses.json`, `reminders.json`, `inbox.json`, `drafts.json`, `extractions.json`,
 `chat.json`, `rewrites.json`, `limits.json`, `history.json`, `config.json`.
 
 ## Changes since A0
@@ -186,6 +194,12 @@ Pointers are `<file>#/$defs/<Name>`.
   `WithoutDetail`) for `GET /api/public/bosses/{key}/knowledge`; the
   public list and event bosses reuse `bosses.json` `BossRows` and
   `EventBosses`.
+- Admin drafts (2026-10-11): `drafts.json` for the Drafts page
+  (list, detail, preview with History diff rows and conflicts, writes;
+  every write takes `version` and honours `Idempotency-Key`);
+  `inbox.json` `Proposal.requested` / `RequestedChange` for approving a
+  member request with changes; `public.json` `MemberRequest.edited` and
+  `not_approved`.
 - Character roster (2026-10-11): `characters.json` (`CharacterRow`,
   `MemberCharacters` and the `CharacterCreate`/`CharacterPatch` bodies)
   for the admin character routes of module `roster`.

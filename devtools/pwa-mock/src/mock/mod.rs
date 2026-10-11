@@ -6,6 +6,7 @@ pub mod characters;
 mod chat;
 pub mod clock;
 mod config;
+pub mod drafts;
 pub mod dto;
 pub mod extractions;
 mod fixed;
@@ -79,6 +80,8 @@ pub struct Store {
     /// Config section saves History lists beside the records.
     settings_changes: Vec<history::SettingsChange>,
     proposals: Vec<inbox::Proposal>,
+    /// Admin drafts (`drafts.rs`).
+    drafts: Vec<drafts::MockDraft>,
     /// Closed inbox items, so a repeated decision answers as the first did.
     decided: Vec<inbox::Decided>,
     /// Weekly-timing ownership requests (Inbox Ownership tab).
@@ -132,6 +135,7 @@ impl Store {
             history: Vec::new(),
             settings_changes: Vec::new(),
             proposals: Vec::new(),
+            drafts: Vec::new(),
             decided: Vec::new(),
             owner_requests: Vec::new(),
             owner_hand_offs: Vec::new(),
@@ -177,6 +181,7 @@ impl Store {
         self.version = 1;
         self.next_id = 1;
         self.proposals = inbox::seed();
+        self.drafts = drafts::seed();
         self.decided.clear();
         self.owner_requests = ownership::seed();
         self.owner_hand_offs.clear();

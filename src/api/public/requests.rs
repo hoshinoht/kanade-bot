@@ -42,10 +42,10 @@ use crate::{
     },
     domain::{
         completion::RunEnds,
-        drafts::{DraftKind, DraftStatus, LoadedDraft, RequestLimit},
+        drafts::{DraftEventKind, DraftKind, DraftStatus, LoadedDraft, RequestLimit},
         history::Actor,
         members::MemberProfile,
-        requests::{DEFAULT_LIMITS, RequestRefusal, Subject, public_summary},
+        requests::{DEFAULT_LIMITS, RequestEdit, RequestRefusal, Subject, public_summary},
         schedule::ScheduleSnapshot,
         scheduler::{DraftError, RequestError, Scope},
     },
@@ -254,6 +254,28 @@ fn outside(base: &ScheduleSnapshot, loaded: &LoadedDraft) -> Option<String> {
     }
 }
 
+/// How an administrator edited a merged request's approval, from its
+/// `merged` event note; `None` when approved as asked (or not merged).
+async fn approval_edit(
+    state: &ApiState,
+    loaded: &LoadedDraft,
+) -> Result<Option<RequestEdit>, Refusal> {
+    if loaded.draft.status != DraftStatus::Merged {
+        return Ok(None);
+    }
+    let events = state
+        .store
+        .draft_events(loaded.draft.id.clone())
+        .await
+        .map_err(unavailable)?;
+    Ok(events
+        .iter()
+        .rev()
+        .find(|event| event.kind == DraftEventKind::Merged)
+        .and_then(|event| event.detail.as_deref())
+        .and_then(RequestEdit::from_note))
+}
+
 /// One request as the member sees it; a run subject outside this and next
 /// boss week is read on its own.
 async fn project(
@@ -262,15 +284,16 @@ async fn project(
     base: &ScheduleSnapshot,
     loaded: &LoadedDraft,
 ) -> Result<MemberRequest, Refusal> {
+    let edit = approval_edit(state, loaded).await?;
     if let Some(id) = outside(base, loaded) {
         let own = state
             .store
             .snapshot(Scope::Run(id))
             .await
             .map_err(unavailable)?;
-        return Ok(view.request(loaded, &own));
+        return Ok(view.request(loaded, &own, edit.as_ref()));
     }
-    Ok(view.request(loaded, base))
+    Ok(view.request(loaded, base, edit.as_ref()))
 }
 
 /// The member's own request `id`; anyone else's is the uniform 404.
@@ -328,17 +351,16 @@ pub(super) async fn mine(
             .await
             .map_err(unavailable)?
     };
-    let shown = requests
-        .iter()
-        .map(|loaded| {
-            let on = if loaded.draft.status.is_live() && outside(&basis.base, loaded).is_some() {
-                &old
-            } else {
-                &basis.base
-            };
-            view.request(loaded, on)
-        })
-        .collect();
+    let mut shown = Vec::with_capacity(requests.len());
+    for loaded in &requests {
+        let on = if loaded.draft.status.is_live() && outside(&basis.base, loaded).is_some() {
+            &old
+        } else {
+            &basis.base
+        };
+        let edit = approval_edit(state, loaded).await?;
+        shown.push(view.request(loaded, on, edit.as_ref()));
+    }
     let count = |n: u64| u32::try_from(n).unwrap_or(u32::MAX);
     Ok(Json(MemberRequests {
         requests: shown,

@@ -2,13 +2,14 @@
 //! rebase, merge, expiry and their errors. Nothing here touches the network,
 //! and previews never write.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{DateTime, FixedOffset, NaiveTime, TimeZone, Utc, Weekday};
 use chrono_tz::Asia::Kuala_Lumpur;
 use kanade::domain::drafts::{
-    DraftEventKind, DraftOp, DraftScope, DraftStatus, DraftStore, ReplayError, Target,
+    DraftEventKind, DraftOp, DraftScope, DraftStatus, DraftStore, MergeConflict, ReplayError,
+    Settle, StagedOp, Target,
 };
 use kanade::domain::history::{BlameTarget, ChangeHistory, Origin, Surface, blame};
 use kanade::domain::ids::RandomIds;
@@ -16,7 +17,7 @@ use kanade::domain::members::{Directory, Member};
 use kanade::domain::notify::{ChannelDirectory, DeliveryJournal, DeliverySettings, plan_notice};
 use kanade::domain::schedule::{
     DRAFT_MERGED, FixedEdit, FixedEditChoices, NewFixedRun, NoticeChange, ReminderPolicy,
-    RsvpSource, RsvpState, RunSource, RunStatus, SchedulePolicy, ScheduleSnapshot,
+    RsvpSource, RsvpState, RunSource, RunStatus, SchedulePolicy, ScheduleSnapshot, StatusChange,
 };
 use kanade::domain::scheduler::{DraftError, ScheduleStore, SchedulerService, Scope, StoreError};
 use kanade::infrastructure::store::MemoryScheduleStore;
@@ -877,6 +878,116 @@ async fn rebase_is_refused_while_conflicted_then_succeeds() {
             .await,
         Err(DraftError::Empty)
     ));
+}
+
+/// Settling a moved base: a field both sides moved is taken (the operation
+/// goes), an upstream cancellation is kept (the run is revived first); the
+/// rest of the draft keeps its edits, and only then does the on-head merge
+/// land.
+#[tokio::test]
+async fn a_settling_rebase_keeps_the_edits_and_lands_on_the_head() {
+    let mut f = fixture().await;
+    let id = stage(
+        &mut f.service,
+        &[
+            amend(&f.runs[0][0], kl(1, 20, 0)),
+            swap(&f.runs[1][0], &[], &["1003"]),
+        ],
+    )
+    .await;
+    // Another admin moves the same run and cancels the other one.
+    f.service
+        .as_origin(Origin::for_tests())
+        .amend_run(&f.runs[0][0], utc(kl(2, 20, 0)), &policy())
+        .await
+        .unwrap();
+    f.service
+        .as_origin(Origin::for_tests())
+        .set_status(
+            &f.runs[1][0],
+            StatusChange {
+                status: RunStatus::Cancelled,
+                announce: false,
+                via_portal: false,
+            },
+            &policy().reminders,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        f.service
+            .merge_draft_on_head("root", &id, 3, &policy(), &Guild, None)
+            .await,
+        Err(DraftError::BaseMoved { .. })
+    ));
+    let preview = f
+        .service
+        .draft_preview(&id, &policy(), &Guild)
+        .await
+        .unwrap();
+    let keys: BTreeMap<String, Vec<usize>> = preview
+        .analysis
+        .conflicts
+        .iter()
+        .map(MergeConflict::key)
+        .zip(preview.involved.iter().cloned())
+        .collect();
+    let slot = format!("both/run:{}/slot", f.runs[0][0]);
+    let cancelled = format!("removed/run:{}", f.runs[1][0]);
+    assert_eq!(
+        keys,
+        BTreeMap::from([(slot.clone(), vec![0]), (cancelled.clone(), vec![1])]),
+        "each conflict names the operation behind it"
+    );
+    // Unsettled conflicts refuse and write nothing.
+    let partial = BTreeMap::from([(slot.clone(), Settle::Take)]);
+    assert!(matches!(
+        f.service
+            .rebase_draft_settling("root", &id, 3, &partial, &policy(), &Guild)
+            .await,
+        Err(DraftError::Conflicts(left)) if left.len() == 1
+    ));
+    let settle = BTreeMap::from([(slot, Settle::Take), (cancelled, Settle::Keep)]);
+    let rebased = f
+        .service
+        .rebase_draft_settling("root", &id, 3, &settle, &policy(), &Guild)
+        .await
+        .unwrap();
+    assert_eq!(rebased.version, 4);
+    assert_eq!(
+        rebased.base,
+        f.service.store().history_head().await.unwrap()
+    );
+    let loaded = f.service.store().load_draft(&id).await.unwrap().unwrap();
+    assert!(matches!(
+        loaded.ops.as_slice(),
+        [
+            StagedOp {
+                ord: 0,
+                op: DraftOp::SetStatus { .. },
+                ..
+            },
+            StagedOp {
+                ord: 1,
+                op: DraftOp::SwapParticipants { .. },
+                ..
+            },
+        ]
+    ));
+    f.service
+        .merge_draft_on_head("root", &id, 4, &policy(), &Guild, None)
+        .await
+        .unwrap();
+    let state = snapshot(&f.service).await;
+    let run = |id: &str| state.runs.iter().find(|run| run.id == id).unwrap().clone();
+    assert_eq!(
+        run(&f.runs[0][0]).datetime,
+        utc(kl(2, 20, 0)),
+        "upstream's time"
+    );
+    let revived = run(&f.runs[1][0]);
+    assert_eq!(revived.status, RunStatus::Planned);
+    assert!(revived.participants.contains(&"1003".to_owned()));
 }
 
 // ---- expiry -------------------------------------------------------------------

@@ -23,8 +23,8 @@ use crate::{
         catalog::BossTable,
         characters::{Character, CharacterChange, CharacterRecord, CharacterStore, CharacterWrite},
         drafts::{
-            DraftKind, DraftStatus, LoadedDraft, ProposalInfo, ProposalStore, StoredDraft,
-            StoredProposal,
+            DraftEvent, DraftKind, DraftStatus, DraftStore, LoadedDraft, ProposalInfo,
+            ProposalStore, StoredDraft, StoredProposal,
         },
         history::{
             Actor, BlameIndex, BlameTarget, ChangeFilter, ChangeHistory, ChangeQuery, ChangeRecord,
@@ -128,6 +128,11 @@ pub trait ReadStore: Send + Sync {
     fn closed_inbox(&self) -> ReadFuture<'_, Vec<ClosedItem>>;
     /// Any draft (admin, request or proposal) with its operations.
     fn draft(&self, id: String) -> ReadFuture<'_, Option<LoadedDraft>>;
+    /// `author`'s administrator drafts with their operations, most recently
+    /// changed first.
+    fn author_drafts(&self, author: Actor) -> ReadFuture<'_, Vec<LoadedDraft>>;
+    /// A draft's events in order (a merged request's edit is in its note).
+    fn draft_events(&self, id: String) -> ReadFuture<'_, Vec<DraftEvent>>;
     fn cards(&self, proposal_ids: Vec<String>) -> ReadFuture<'_, Vec<StoredCard>>;
     /// A channel's cached messages created at or after `since`.
     fn messages(
@@ -419,6 +424,29 @@ where
 
     fn draft(&self, id: String) -> ReadFuture<'_, Option<LoadedDraft>> {
         Box::pin(async move { self.load_draft(&id).await })
+    }
+
+    fn author_drafts(&self, author: Actor) -> ReadFuture<'_, Vec<LoadedDraft>> {
+        Box::pin(async move {
+            let mut drafts = Vec::new();
+            for draft in self.list_drafts(None).await? {
+                if draft.kind == DraftKind::Admin
+                    && draft.author == author
+                    && let Some(loaded) = self.load_draft(&draft.id).await?
+                    && loaded.draft.kind == DraftKind::Admin
+                {
+                    drafts.push(loaded);
+                }
+            }
+            drafts.sort_by(|a, b| {
+                (b.draft.updated_at, &b.draft.id).cmp(&(a.draft.updated_at, &a.draft.id))
+            });
+            Ok(drafts)
+        })
+    }
+
+    fn draft_events(&self, id: String) -> ReadFuture<'_, Vec<DraftEvent>> {
+        Box::pin(async move { DraftStore::draft_events(self, &id).await })
     }
 
     fn cards(&self, proposal_ids: Vec<String>) -> ReadFuture<'_, Vec<StoredCard>> {

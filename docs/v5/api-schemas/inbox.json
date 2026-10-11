@@ -149,7 +149,29 @@
             },
             { "type": "null" }
           ]
+        },
+        "requested": {
+          "description": "Member requests: the changes it asks for, as an approval may retime them or leave them out (`edit` in the approve body). Null for proposals.",
+          "anyOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/RequestedChange" } },
+            { "type": "null" }
+          ]
         }
+      }
+    },
+    "RequestedChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "part", "label", "asked", "now", "retimable", "day", "time"],
+      "properties": {
+        "id": { "type": "string", "description": "`<n>` (a whole change) or `<n>.day_time|party|channel` (part of a weekly-timing change)." },
+        "part": { "enum": ["day_time", "party", "channel", "change"] },
+        "label": { "type": "string", "description": "The member's words for it, as a notice lists it when left out (`the party change`)." },
+        "asked": { "type": "string" },
+        "now": { "$ref": "common.json#/$defs/NullableString" },
+        "retimable": { "type": "boolean" },
+        "day": { "type": ["integer", "null"], "minimum": 0, "maximum": 6, "description": "Asked weekday, 0 = Monday." },
+        "time": { "$ref": "common.json#/$defs/NullableString", "description": "Asked `HH:MM`." }
       }
     },
     "Proposals": { "type": "array", "items": { "$ref": "#/$defs/Proposal" } },

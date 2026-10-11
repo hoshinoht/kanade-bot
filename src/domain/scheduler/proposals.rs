@@ -838,6 +838,7 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
                     also_notify: Vec::new(),
                     expired_notice: None,
                     notices: Some(announced),
+                    on_head: false,
                 },
                 policy,
                 directory,

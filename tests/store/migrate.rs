@@ -35,7 +35,7 @@ async fn empty_file_migrates_to_the_newest_version_with_sound_foreign_keys() {
     )
     .expect("chmod");
     let store = SqliteStore::open(&config).await.expect("opens");
-    assert_eq!(store.schema_version().await.expect("version"), 37);
+    assert_eq!(store.schema_version().await.expect("version"), 38);
     assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
     let empty = store.load(&Scope::All).await.expect("load");
     assert_eq!(empty.revision, 0);
@@ -44,7 +44,7 @@ async fn empty_file_migrates_to_the_newest_version_with_sound_foreign_keys() {
         ledger(&config).await,
         [
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37
+            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38
         ]
     );
 }
@@ -59,7 +59,7 @@ async fn reopen_is_idempotent_and_keeps_rows() {
     store.close().await.expect("close");
     for _ in 0..2 {
         let store = SqliteStore::open(&config).await.expect("reopens");
-        assert_eq!(store.schema_version().await.expect("version"), 37);
+        assert_eq!(store.schema_version().await.expect("version"), 38);
         assert_eq!(store.load(&Scope::All).await.expect("load"), before);
         store.close().await.expect("close");
     }
@@ -67,7 +67,7 @@ async fn reopen_is_idempotent_and_keeps_rows() {
         ledger(&config).await,
         [
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37
+            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38
         ]
     );
 }
@@ -102,7 +102,7 @@ async fn future_schema_version_refuses_to_open() {
         .expect("close");
     tamper(
         &config,
-        "INSERT INTO schema_migrations VALUES (38, 'next', '2027-01-01T00:00:00+00:00')",
+        "INSERT INTO schema_migrations VALUES (39, 'next', '2027-01-01T00:00:00+00:00')",
     )
     .await;
     let error = SqliteStore::open(&config).await.err().expect("refused");
@@ -110,8 +110,8 @@ async fn future_schema_version_refuses_to_open() {
         matches!(
             error,
             SqliteStoreError::FutureVersion {
-                found: 38,
-                known: 37
+                found: 39,
+                known: 38
             }
         ),
         "{error}"
@@ -120,7 +120,7 @@ async fn future_schema_version_refuses_to_open() {
         ledger(&config).await,
         [
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38
+            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39
         ],
         "a refused open writes nothing"
     );
@@ -323,14 +323,14 @@ async fn a_version_one_store_gains_the_later_tables_on_open() {
     .await;
     assert_eq!(ledger(&config).await, [1]);
     let store = SqliteStore::open(&config).await.expect("migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 37);
+    assert_eq!(store.schema_version().await.expect("version"), 38);
     assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
     store.close().await.expect("close");
     assert_eq!(
         ledger(&config).await,
         [
             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37
+            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38
         ]
     );
     let mut conn = SqliteConnectOptions::new()
@@ -392,7 +392,7 @@ DROP TABLE settings_changes;
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("v22 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 37);
+    assert_eq!(store.schema_version().await.expect("version"), 38);
     let rows = store.settings_rows().await.expect("rows");
     assert_eq!(rows.get(keys::QUIET_MODE).map(String::as_str), Some("1"));
     assert!(
@@ -491,7 +491,7 @@ async fn upgrading_from_v24_keeps_sessions_and_adds_the_avatar_hash() {
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("v24 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 37);
+    assert_eq!(store.schema_version().await.expect("version"), 38);
     let before = store.load_session(&old).await.expect("load").expect("kept");
     assert_eq!(
         (before.subject.as_str(), before.avatar_hash.as_deref()),
@@ -596,7 +596,7 @@ async fn upgrading_from_v25_keeps_sessions_and_adds_the_device() {
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("v25 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 37);
+    assert_eq!(store.schema_version().await.expect("version"), 38);
     let before = store.load_session(&old).await.expect("load").expect("kept");
     assert_eq!(before.device, None);
     let signed_in = WebSession {
@@ -674,7 +674,7 @@ async fn upgrading_from_v29_keeps_sessions_and_adds_rotation_grace() {
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("v29 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 37);
+    assert_eq!(store.schema_version().await.expect("version"), 38);
     let before = store.load_session(&old).await.expect("load").expect("kept");
     assert_eq!(
         (
@@ -777,7 +777,7 @@ async fn upgrading_from_v30_adds_replays() {
     .await;
     assert_eq!(ledger(&config).await.last(), Some(&30));
     let store = SqliteStore::open(&config).await.expect("v30 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 37);
+    assert_eq!(store.schema_version().await.expect("version"), 38);
     let rows = store.settings_rows().await.expect("rows");
     assert_eq!(rows.get(keys::QUIET_MODE).map(String::as_str), Some("1"));
     let now = Utc.with_ymd_and_hms(2026, 10, 9, 4, 0, 0).unwrap();
@@ -844,7 +844,7 @@ async fn upgrading_from_v34_adds_run_prompts_that_close_once() {
     .await;
     assert_eq!(ledger(&config).await.last(), Some(&34));
     let store = SqliteStore::open(&config).await.expect("v34 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 37);
+    assert_eq!(store.schema_version().await.expect("version"), 38);
     assert_eq!(
         store.load(&Scope::All).await.expect("load"),
         before,
@@ -964,7 +964,7 @@ async fn upgrading_from_v35_keeps_audit_rows_and_stores_refused_writes() {
     assert_eq!(ledger(&config).await.last(), Some(&35));
 
     let store = SqliteStore::open(&config).await.expect("v35 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 37);
+    assert_eq!(store.schema_version().await.expect("version"), 38);
     assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
     assert_eq!(store.audit_page(&page).await.expect("page"), before);
     let refused = AuditRow {

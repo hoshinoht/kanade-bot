@@ -71,6 +71,7 @@ fn decided(request: &str) -> Notice {
             request: request.into(),
             decision: RequestDecision::Expired,
             reason: None,
+            edited: None,
         },
         channel_id: None,
         listed: vec!["7".into()],

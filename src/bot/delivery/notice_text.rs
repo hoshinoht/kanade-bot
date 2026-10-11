@@ -258,14 +258,24 @@ fn body(notice: &Notice, schedule: &ScheduleSnapshot, who: &Audience, zone: Tz) 
             format!("📝 Schedule updated: {title}{}", run_lines(run_ids))
         }
         NoticeChange::RequestDecided {
-            decision, reason, ..
+            decision,
+            reason,
+            edited,
+            ..
         } => {
             let who = people(&notice.listed);
-            match (decision, reason) {
-                (RequestDecision::Rejected, Some(reason)) => {
+            match (decision, reason, edited) {
+                (RequestDecision::Rejected, Some(reason), _) => {
                     format!("📨 {who} your request was rejected: {reason}")
                 }
-                (decision, _) => format!("📨 {who} your request was {}.", decision.as_str()),
+                (RequestDecision::Approved, _, Some(left_out)) if left_out.is_empty() => {
+                    format!("📨 {who} your request was approved with changes by an admin.")
+                }
+                (RequestDecision::Approved, _, Some(left_out)) => format!(
+                    "📨 {who} your request was approved with changes by an admin. Not approved: {}.",
+                    left_out.join(", ")
+                ),
+                (decision, _, _) => format!("📨 {who} your request was {}.", decision.as_str()),
             }
         }
     })

@@ -1505,5 +1505,154 @@ async fn items_carry_a_one_line_consequence_from_the_preview() {
     assert_eq!(of(&ids.cancel_chat), Value::Null);
 }
 
+/// A weekly-timing change asking for a new time and a bigger party.
+async fn timing_and_party(inbox: &Inbox, title: &str) -> String {
+    let store = &inbox.reads.store;
+    let dir = directory(store).await;
+    let mut now = service(store, utc(9, 29, 4, 0));
+    submit(
+        &mut now,
+        "1001",
+        title,
+        RequestSpec::ChangeFixed {
+            fixed_id: "f-kalos".into(),
+            edit: FixedEdit {
+                weekday: Some(Weekday::Sat),
+                time: Some(NaiveTime::from_hms_opt(22, 30, 0).unwrap()),
+                participants: Some(vec!["1001".into(), "1002".into(), "1004".into()]),
+                ..FixedEdit::default()
+            },
+        },
+        &dir,
+    )
+    .await
+}
+
+/// Approve with changes: the admin moves the asked time and leaves the
+/// party change out. Refused 409 when the request moved on (another
+/// version, or the member withdrew it); nothing is told to the member until
+/// the approval lands, and then it says what was not approved.
+#[tokio::test]
+async fn an_approval_with_changes_retimes_leaves_out_and_tells_the_member() {
+    use kanade::domain::notify::NoticeOutbox;
+    use kanade::domain::scheduler::ScheduleStore;
+    let inbox = seeded().await;
+    let store = &inbox.reads.store;
+    let id = timing_and_party(&inbox, "Saturdays suit everyone better.").await;
+    let item = inbox.item(&id).await;
+    let requested: Vec<&str> = item["requested"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|change| change["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(requested, ["0.day_time", "0.party"]);
+    assert_eq!(item["requested"][0]["asked"], json!("Sat 22:30"));
+    assert_eq!(item["requested"][0]["now"], json!("Tue 22:00"));
+    assert_eq!(item["requested"][0]["retimable"], json!(true));
+    assert_eq!(item["requested"][1]["retimable"], json!(false));
+    let v = item["version"].as_u64().unwrap();
+    let edit = json!({
+        "retime": [{"change": "0.day_time", "day": 5, "time": "22:00"}],
+        "drop": ["0.party"],
+    });
+    let approve = path(&id, "approve");
+    let outbox = store.outbox_notices().await.unwrap().len();
+    let head = inbox.head().await;
+    for (body, expected) in [
+        (
+            json!({"version": v + 1, "choices": {"r-kalos": "keep"}, "edit": edit}),
+            code(409, "stale"),
+        ),
+        (
+            json!({"version": v, "choices": {"r-kalos": "keep"}, "edit": {"drop": ["0.party", "0.day_time"]}}),
+            code(422, "nothing_approved"),
+        ),
+        (
+            json!({"version": v, "choices": {"r-kalos": "keep"}, "edit": {"drop": ["0.channel"]}}),
+            code(422, "unknown_change"),
+        ),
+        (
+            json!({"version": v, "choices": {"r-kalos": "keep"}, "edit": {"retime": [{"change": "0.party", "day": 1, "time": "20:00"}]}}),
+            code(422, "not_retimable"),
+        ),
+    ] {
+        assert_eq!(
+            refused(&inbox.token_call(&approve, body.clone(), &[]).await),
+            expected,
+            "{body}"
+        );
+    }
+    assert_eq!(inbox.head().await, head, "refusals write nothing");
+    assert_eq!(
+        store.outbox_notices().await.unwrap().len(),
+        outbox,
+        "nothing is told to the member before the approval"
+    );
+
+    let body = json!({"version": v, "choices": {"r-kalos": "keep"}, "edit": edit});
+    let key = [("Idempotency-Key", "approve-edited-1")];
+    let message = ok(&inbox.token_call(&approve, body.clone(), &key).await);
+    assert!(message.starts_with("Approved with changes"), "{message}");
+    assert_eq!(
+        ok(&inbox.token_call(&approve, body, &key).await),
+        message,
+        "a replay answers as the first"
+    );
+    assert_eq!(inbox.head().await, head + 1);
+    let fixed = store
+        .load(&kanade::domain::scheduler::Scope::All)
+        .await
+        .unwrap()
+        .fixed_runs
+        .into_iter()
+        .find(|row| row.id == "f-kalos")
+        .unwrap();
+    assert_eq!(
+        (fixed.weekday, fixed.time, fixed.participants.len()),
+        (Weekday::Sat, NaiveTime::from_hms_opt(22, 0, 0).unwrap(), 3),
+        "the admin's time, without the left-out party change"
+    );
+    let merged = crate::outbox::written_by(store, head + 1).await;
+    let told = merged.last().expect("requester notice");
+    assert!(
+        matches!(
+            &told.change,
+            kanade::domain::schedule::NoticeChange::RequestDecided {
+                decision: kanade::domain::schedule::RequestDecision::Approved,
+                edited: Some(left_out),
+                ..
+            } if left_out == &["the party change".to_owned()]
+        ),
+        "{told:?}"
+    );
+    // The member's request keeps what they asked.
+    let loaded = store.load_draft(&id).await.unwrap().unwrap();
+    assert_eq!(loaded.draft.status, DraftStatus::Merged);
+    assert!(matches!(
+        &loaded.ops[0].op,
+        kanade::domain::drafts::DraftOp::ApplyFixedEdit { edit, .. }
+            if edit.participants.as_ref().is_some_and(|party| party.contains(&"1004".to_owned()))
+    ));
+
+    // The member withdraws the next one while the admin edits: refused 409.
+    let next = timing_and_party(&inbox, "Or Sundays.").await;
+    let nv = inbox.item(&next).await["version"].as_u64().unwrap();
+    let mut member = service(store, utc(9, 29, 4, 0));
+    member.withdraw_request("1001", &next, nv).await.unwrap();
+    assert_eq!(
+        refused(
+            &inbox
+                .token_call(
+                    &path(&next, "approve"),
+                    json!({"version": nv, "choices": {"r-kalos": "keep"}, "edit": edit}),
+                    &[],
+                )
+                .await
+        ),
+        code(409, "stale")
+    );
+}
+
 mod ownership;
 mod past;

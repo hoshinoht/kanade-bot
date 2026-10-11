@@ -303,15 +303,26 @@ pub fn notice_text(notice: &Notice, look: &NoticeLook<'_>, who: &Audience) -> Op
             ..Parts::new(format!("📝 Schedule updated: {title}"), &[])
         },
         NoticeChange::RequestDecided {
-            decision, reason, ..
+            decision,
+            reason,
+            edited,
+            ..
         } => {
-            let head = match (decision, reason) {
-                (RequestDecision::Rejected, Some(reason)) => {
+            let head = match (decision, reason, edited) {
+                (RequestDecision::Rejected, Some(reason), _) => {
                     format!("📨 Request rejected: {reason}")
                 }
-                (decision, _) => format!("📨 Request {}", decision.as_str()),
+                (RequestDecision::Approved, _, Some(_)) => {
+                    "📨 Request approved with changes by an admin".to_owned()
+                }
+                (decision, _, _) => format!("📨 Request {}", decision.as_str()),
             };
-            Parts::new(head, listed)
+            match edited {
+                Some(left_out) if !left_out.is_empty() => {
+                    Parts::new(head, listed).fact(format!("Not approved: {}", left_out.join(", ")))
+                }
+                _ => Parts::new(head, listed),
+            }
         }
     };
     let via = notice

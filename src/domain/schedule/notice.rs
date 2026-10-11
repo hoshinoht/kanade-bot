@@ -65,6 +65,10 @@ pub enum NoticeChange {
         decision: RequestDecision,
         /// A rejection's reason.
         reason: Option<String>,
+        /// Approved with an administrator's changes: what was left out
+        /// ("not approved"), in the member's words; `None` when approved
+        /// as asked.
+        edited: Option<Vec<String>>,
     },
     FixedChanged {
         fixed_id: String,

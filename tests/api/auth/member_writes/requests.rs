@@ -31,15 +31,17 @@ const REQUESTS_KEYS: [&str; 7] = [
     "requests",
     "today",
 ];
-const REQUEST_KEYS: [&str; 16] = [
+const REQUEST_KEYS: [&str; 18] = [
     "bosses",
     "channel",
     "decided_at",
     "decided_by",
+    "edited",
     "expires_at",
     "fixed_id",
     "id",
     "kind",
+    "not_approved",
     "note",
     "proposed",
     "reason",
@@ -153,6 +155,8 @@ async fn members_send_list_and_withdraw_their_own_requests() {
             "decided_by": null,
             "reason": null,
             "expires_at": "2026-10-07T16:00:00Z",
+            "edited": false,
+            "not_approved": [],
         })
     );
     assert_eq!(

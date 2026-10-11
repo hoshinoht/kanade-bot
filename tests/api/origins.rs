@@ -99,9 +99,7 @@ async fn every_admin_path_and_method_is_a_generic_404_on_public() {
 async fn admin_api_is_not_served_before_auth_exists() {
     let fixture = Fixture::new();
     let admin = support::admin(&fixture.http()).await;
-    // Drafts routes are deferred (API-6), so this path stays unmounted.
     for path in [
-        "/api/admin/drafts",
         "/api/public/status",
         "/api/public/bosses",
         "/api/public/bosses/events",
@@ -112,7 +110,7 @@ async fn admin_api_is_not_served_before_auth_exists() {
         assert_eq!(reply.api_error(), "not_found");
     }
     // Without a configured sign-in, mounted admin routes fail closed rather than disappear.
-    for path in ["/api/admin/session", "/api/admin/week"] {
+    for path in ["/api/admin/session", "/api/admin/week", "/api/admin/drafts"] {
         let reply = get(admin, ADMIN_HOST, path).await;
         assert_eq!(
             (reply.status, reply.api_error()),

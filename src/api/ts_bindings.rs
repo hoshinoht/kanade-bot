@@ -12,8 +12,8 @@ use super::{
     },
     assets::Identity,
     dto::{
-        self, account, bosses, characters, config, events, fixed, history, inbox, inbox_past,
-        limits, logs, members, reminders, rescan, sign_ins, week,
+        self, account, bosses, characters, config, drafts, events, fixed, history, inbox,
+        inbox_past, limits, logs, members, reminders, rescan, sign_ins, week,
     },
     error, public,
 };
@@ -157,12 +157,22 @@ fn bindings() -> String {
         .add::<inbox::Preview>()
         .add::<inbox::Choice>()
         .add::<inbox::SelfService>()
+        .add::<inbox::RequestedChange>()
         .add::<inbox::ProposalDto>()
         .add::<inbox::OwnerRequestDto>()
         .add::<inbox_past::PastOutcome>()
         .add::<inbox_past::Decider>()
         .add::<inbox_past::PastItem>()
         .add::<inbox_past::PastPage>()
+        // Drafts
+        .add::<drafts::DraftRow>()
+        .add::<drafts::DraftList>()
+        .add::<drafts::StagedOpRow>()
+        .add::<drafts::DraftDetail>()
+        .add::<drafts::ConflictRecord>()
+        .add::<drafts::DraftConflict>()
+        .add::<drafts::DraftPreviewView>()
+        .add::<drafts::DraftWritten>()
         // Config
         .add::<config::ConfigView>()
         .add::<config::Pings>()

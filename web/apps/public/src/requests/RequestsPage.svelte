@@ -17,7 +17,7 @@
   import type { MemberTimingsList } from '../timings/timings.svelte';
   import type { MemberWeeks } from '../weeks.svelte';
   import { follow } from '../writes/follow';
-  import { counterWords, headline, instantWords, KIND_NOUNS, proposalWords, rowTail, runWhen, STATE_TONES, STATE_WORDS, stepsOf, waitingWords, weekly } from './form';
+  import { approvedWords, counterWords, headline, instantWords, KIND_NOUNS, proposalWords, rowTail, runWhen, STATE_TONES, STATE_WORDS, stepsOf, waitingWords, weekly } from './form';
   import type { MemberRequestsList } from './requests.svelte';
   import './requests.scss';
 
@@ -163,7 +163,8 @@
       <Icon name="info" /><span>{waitingWords(r.kind, timing ? whenWords(timing) : '', r.expires_at ? instantWords(r.expires_at, timeZone, now) : '')}</span>
     </p>
   {:else if r.state === 'approved'}
-    <p class="flash flash--ok"><Icon name="check" /><span><b>Approved{r.decided_by ? ` by ${r.decided_by}` : ''}</b>{r.decided_at ? ` ${instantWords(r.decided_at, timeZone, now)}` : ''}. The change is made.</span></p>
+    {@const approved = approvedWords(r)}
+    <p class="flash flash--ok"><Icon name="check" /><span><b>{approved.head}</b>{r.decided_at ? ` ${instantWords(r.decided_at, timeZone, now)}` : ''}. The change is made.{approved.left}</span></p>
   {:else if r.state === 'rejected'}
     <p class="flash flash--error">
       <Icon name="x" /><span><b>Declined{r.decided_by ? ` by ${r.decided_by}` : ''}</b>{r.decided_at ? ` ${instantWords(r.decided_at, timeZone, now)}` : ''}.{r.reason ? ` “${r.reason}”` : ''} Nothing changed.</span>

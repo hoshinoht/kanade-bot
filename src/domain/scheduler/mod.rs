@@ -10,7 +10,8 @@ mod service;
 
 pub use cherry_pick::{PickError, PickPreview, PickResult, Picked};
 pub use drafts::{
-    DraftError, DraftExpiry, DraftResult, EditRefusal, MergeOutcome, MergeWarning, SkipReason,
+    DraftError, DraftExpiry, DraftPreview, DraftResult, EditRefusal, MergeOutcome, MergeWarning,
+    SkipReason,
 };
 pub use ports::{
     AttendanceHistory, Clock, Committed, IdSource, RecordedRequest, ScheduleStore, Scope,

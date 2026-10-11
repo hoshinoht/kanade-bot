@@ -157,6 +157,16 @@ fn request(decision: RequestDecision, reason: Option<&str>) -> NoticeChange {
         request: "q".into(),
         decision,
         reason: reason.map(str::to_owned),
+        edited: None,
+    }
+}
+
+fn edited(left_out: &[&str]) -> NoticeChange {
+    NoticeChange::RequestDecided {
+        request: "q".into(),
+        decision: RequestDecision::Approved,
+        reason: None,
+        edited: Some(left_out.iter().map(|part| (*part).to_owned()).collect()),
     }
 }
 
@@ -366,6 +376,20 @@ fn cases() -> Vec<Case> {
             &["1002"],
             "📨 <@1002> your request was approved.",
             "📨 Request approved — <@1002>",
+        ),
+        case(
+            "request approved with changes",
+            edited(&["the party change"]),
+            &["1002"],
+            "📨 <@1002> your request was approved with changes by an admin. Not approved: the party change.",
+            "📨 Request approved with changes by an admin — <@1002>\n-# Not approved: the party change",
+        ),
+        case(
+            "request approved with a new time only",
+            edited(&[]),
+            &["1002"],
+            "📨 <@1002> your request was approved with changes by an admin.",
+            "📨 Request approved with changes by an admin — <@1002>",
         ),
         case(
             "request rejected",

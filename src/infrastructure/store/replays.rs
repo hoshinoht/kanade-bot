@@ -36,6 +36,9 @@ pub enum ReplayScope {
     Rescan,
     /// Config PATCH, admin member edits and admin character writes.
     Config,
+    /// Admin draft writes (create, rename, stage, remove, rebase, discard,
+    /// merge); migration 0038.
+    Drafts,
 }
 
 impl ReplayScope {
@@ -44,6 +47,7 @@ impl ReplayScope {
             Self::Limits => "limits",
             Self::Rescan => "rescan",
             Self::Config => "config",
+            Self::Drafts => "drafts",
         }
     }
 }

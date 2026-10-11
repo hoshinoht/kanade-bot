@@ -95,6 +95,9 @@ pub struct Proposal {
     /// The server's one-line consequence; served only while the item has no
     /// conflict, expiry or no-effect flag, as the server does.
     pub consequence: Option<&'static str>,
+    /// `change_fixed`: a member the request also adds to the party (its
+    /// second requested change).
+    pub party_add: Option<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -160,6 +163,38 @@ pub struct ProposalDto {
     pub thread: Option<Vec<ThreadMessage>>,
     pub card_url: Option<String>,
     pub self_service: Option<SelfService>,
+    /// Member requests: the changes an approval may retime or leave out.
+    pub requested: Option<Vec<RequestedChange>>,
+}
+
+/// One change a member request asks for, as the server lists it.
+#[derive(Clone, Serialize)]
+pub struct RequestedChange {
+    pub id: &'static str,
+    pub part: &'static str,
+    pub label: &'static str,
+    pub asked: String,
+    pub now: Option<String>,
+    pub retimable: bool,
+    pub day: Option<u8>,
+    pub time: Option<&'static str>,
+}
+
+#[derive(Deserialize, Default, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct EditRequest {
+    #[serde(default)]
+    pub retime: Vec<RetimeRequest>,
+    #[serde(default)]
+    pub drop: Vec<String>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct RetimeRequest {
+    pub change: String,
+    pub day: u8,
+    pub time: String,
 }
 
 #[derive(Deserialize, Default)]
@@ -174,6 +209,62 @@ pub struct ApproveRequest {
     pub choices: Option<std::collections::BTreeMap<String, String>>,
     /// Refused: conflicts always block (`force_unsupported`).
     pub force: Option<bool>,
+    /// Member requests: approve with changes (new weekly time, changes left out).
+    pub edit: Option<EditRequest>,
+}
+
+/// The changes `p` asks for, as `Proposal.requested` lists them.
+fn requested(p: &Proposal, fixed: Option<&seed::Fixed>) -> Vec<RequestedChange> {
+    match (p.kind, p.timing) {
+        ("change_fixed", Some((_, weekday, time))) => {
+            let mut out = vec![RequestedChange {
+                id: "0.day_time",
+                part: "day_time",
+                label: "the day and time change",
+                asked: weekly(weekday, time),
+                now: fixed.map(|f| weekly(f.weekday, &f.time)),
+                retimable: true,
+                day: Some(weekday),
+                time: Some(time),
+            }];
+            if let Some(who) = p.party_add {
+                out.push(RequestedChange {
+                    id: "0.party",
+                    part: "party",
+                    label: "the party change",
+                    asked: format!(
+                        "add {}",
+                        seed::member_name(who).map_or(who, |(_, name)| name)
+                    ),
+                    now: None,
+                    retimable: false,
+                    day: None,
+                    time: None,
+                });
+            }
+            out
+        }
+        ("new_fixed", Some((_, weekday, time))) => vec![RequestedChange {
+            id: "0",
+            part: "change",
+            label: "the new weekly run",
+            asked: weekly(weekday, time),
+            now: None,
+            retimable: true,
+            day: Some(weekday),
+            time: Some(time),
+        }],
+        _ => vec![RequestedChange {
+            id: "0",
+            part: "change",
+            label: "the party change",
+            asked: p.summary.to_owned(),
+            now: None,
+            retimable: false,
+            day: None,
+            time: None,
+        }],
+    }
 }
 
 /// A closed item, kept so a repeated decision answers as the first did.
@@ -234,6 +325,7 @@ pub fn seed() -> Vec<Proposal> {
         timing: None,
         version: 1,
         consequence: None,
+        party_add: None,
     };
     vec![
         Proposal {
@@ -415,6 +507,7 @@ pub fn seed() -> Vec<Proposal> {
                 )
             }),
             timing: Some(("f-kalos", 5, "22:30")),
+            party_add: Some("1004"),
             ..base.clone()
         },
         Proposal {
@@ -831,6 +924,7 @@ impl Store {
                         via: "request",
                         note: Some(q.note.into()),
                     }),
+                    requested: p.request.as_ref().map(|_| requested(p, timing)),
                 }
             })
             .collect()
@@ -912,8 +1006,9 @@ impl Store {
                 "Conflicts cannot be approved over; reject it or change the schedule first.",
             ));
         }
-        let (p, closed) = self.item(id).ok_or(MoveError::NotFound)?;
+        let (mut p, closed) = self.item(id).ok_or(MoveError::NotFound)?;
         let actor = self.decider(&p);
+        let mut edited = false;
         let (edit, digest) = if p.request.is_some() {
             if req.day.is_some() || req.time.is_some() {
                 return Err(coded(
@@ -923,16 +1018,26 @@ impl Store {
                 ));
             }
             let version = req.version.ok_or_else(version_required)?;
-            let digest = format!("{:?}", req.choices);
+            let digest = format!("{:?} {:?}", req.choices, req.edit);
             if let Some(d) = &closed {
                 return Self::replay(d, true, &digest, &actor?);
             }
             if version != p.version {
                 return Err(stale());
             }
+            if let Some(edit) = &req.edit {
+                edited = self.edit_request(&mut p, edit)?;
+            }
             (None, digest)
         } else {
             let actor = actor.as_ref().map_err(Clone::clone)?;
+            if req.edit.is_some() {
+                return Err(coded(
+                    422,
+                    "edit_not_applicable",
+                    "Only member requests are approved with changes.",
+                ));
+            }
             if req.choices.is_some() {
                 return Err(coded(
                     422,
@@ -1020,10 +1125,68 @@ impl Store {
             (None, None) => {}
         }
         self.apply(&p, edit, req.choices.as_ref())?;
-        let message = Self::decided_message("Approved", &p);
+        let verb = if edited {
+            "Approved with changes"
+        } else {
+            "Approved"
+        };
+        let message = Self::decided_message(verb, &p);
         self.close(&p, true, digest, actor, message.clone());
         self.version += 1;
         Ok(message)
+    }
+
+    /// Apply an approval's edit to the request as the server would: new
+    /// weekly day and time, changes left out. `true` when it changed
+    /// anything.
+    fn edit_request(&self, p: &mut Proposal, edit: &EditRequest) -> Result<bool, MoveError> {
+        let fixed = p
+            .timing
+            .and_then(|(id, _, _)| self.fixed.iter().find(|f| f.id == id));
+        let asked = requested(p, fixed);
+        let unknown = || {
+            coded(
+                422,
+                "unknown_change",
+                "the request does not ask for that change",
+            )
+        };
+        let find = |id: &str| asked.iter().find(|c| c.id == id).ok_or_else(unknown);
+        for key in &edit.drop {
+            find(key)?;
+        }
+        if asked.iter().all(|c| edit.drop.iter().any(|d| d == c.id)) {
+            return Err(coded(
+                422,
+                "nothing_approved",
+                "every change was left out; reject the request instead",
+            ));
+        }
+        for retime in &edit.retime {
+            let change = find(&retime.change)?;
+            if !change.retimable || edit.drop.contains(&retime.change) || retime.day > 6 {
+                return Err(coded(
+                    422,
+                    "not_retimable",
+                    "only a weekly day and time can be changed",
+                ));
+            }
+            if let Some((id, _, _)) = p.timing {
+                p.timing = Some((id, retime.day, retime.time.clone().leak()));
+            }
+        }
+        for key in &edit.drop {
+            match key.as_str() {
+                "0.party" => p.party_add = None,
+                "0.day_time" => {
+                    if let (Some((id, _, _)), Some(f)) = (p.timing, fixed) {
+                        p.timing = Some((id, f.weekday, f.time.clone().leak()));
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(!edit.drop.is_empty() || !edit.retime.is_empty())
     }
 
     fn close(
@@ -1128,6 +1291,11 @@ impl Store {
                     .ok_or(MoveError::invalid("That weekly timing is retired."))?;
                 self.fixed[fi].weekday = weekday;
                 self.fixed[fi].time = time.into();
+                if let Some(who) = p.party_add
+                    && !self.fixed[fi].participants.contains(&who)
+                {
+                    self.fixed[fi].participants.push(who);
+                }
                 let timing = &self.fixed[fi];
                 for run in self.runs.iter_mut().filter(|r| {
                     r.fixed_id.as_deref() == Some(fixed_id)
@@ -1221,6 +1389,18 @@ impl Store {
         };
         let actor = self.decider(&p).unwrap_or_else(|_| self.session_actor());
         self.tracked(actor, surface, |s| s.approve(id, req))
+    }
+
+    /// `POST /__mock/inbox/kalos-v4`: Tsubame changes `p-kalos-fixed` to
+    /// Sun 22:30 (version 4), so an approval of the version the admin
+    /// edited is refused 409.
+    pub fn kalos_v4(&mut self) -> bool {
+        let Some(p) = self.proposals.iter_mut().find(|p| p.id == "p-kalos-fixed") else {
+            return false;
+        };
+        p.timing = Some(("f-kalos", 6, "22:30"));
+        p.version = 4;
+        true
     }
 }
 
@@ -1577,5 +1757,38 @@ mod tests {
             code(s.reject("p-kalos-expired", other).unwrap_err()),
             (422, "idempotency_mismatch")
         );
+    }
+
+    /// Approve with changes: refused 409 once the member changed the
+    /// request (version 4); the edited time lands and the party add does not.
+    #[test]
+    fn an_edited_approval_is_refused_after_the_member_changes_it() {
+        let edit = || {
+            Some(super::EditRequest {
+                retime: vec![super::RetimeRequest {
+                    change: "0.day_time".into(),
+                    day: 5,
+                    time: "22:00".into(),
+                }],
+                drop: vec!["0.party".into()],
+            })
+        };
+        let request = |version| ApproveRequest {
+            version: Some(version),
+            choices: keep("r-kalos"),
+            edit: edit(),
+            ..ApproveRequest::default()
+        };
+        let mut s = store();
+        assert!(s.kalos_v4());
+        assert_eq!(
+            code(s.approve("p-kalos-fixed", request(1)).unwrap_err()),
+            (409, "stale")
+        );
+        let message = s.approve("p-kalos-fixed", request(4)).ok().unwrap();
+        assert!(message.starts_with("Approved with changes"), "{message}");
+        let kalos = s.fixed.iter().find(|f| f.id == "f-kalos").unwrap();
+        assert_eq!((kalos.weekday, kalos.time.as_str()), (5, "22:00"));
+        assert!(!kalos.participants.contains(&"1004"));
     }
 }
