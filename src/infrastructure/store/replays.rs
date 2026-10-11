@@ -1,14 +1,20 @@
 //! `Idempotency-Key` replays (migration 0031) for admin API effects that are
 //! not scheduler commits: the Limits window clear, the manual digest and
-//! header rewrite (scope `limits`), rescan submit and cancel (`rescan`) and
-//! the Config PATCH (`config`). A row keeps the digest of the normalized full
-//! request and the answer to replay until it expires; an expired row reads as
-//! absent, so its key applies anew.
+//! header rewrite (scope `limits`), rescan submit and cancel (`rescan`), the
+//! Config PATCH and the admin member edits (`config`: the writes History
+//! lists beside the change chain). A row keeps the digest of the normalized
+//! full request and the answer to replay until it expires; an expired row
+//! reads as absent, so its key applies anew.
+
+use std::collections::BTreeMap;
 
 use chrono::{DateTime, TimeDelta, Utc};
+use serde_json::json;
 
+use crate::domain::history::{Actor, Surface};
+use crate::domain::members::{MemberProfile, PortalEdit};
 use crate::domain::scheduler::StoreError;
-use crate::domain::settings::SettingsChange;
+use crate::domain::settings::{RowDiff, SettingsChange};
 
 /// How long a key replays. The in-memory maps this replaces had no time
 /// limit, only a count, so a key lived until the process restarted (days in
@@ -27,7 +33,7 @@ pub enum ReplayScope {
     Limits,
     /// Rescan submit and cancel.
     Rescan,
-    /// Config PATCH.
+    /// Config PATCH and admin member edits.
     Config,
 }
 
@@ -126,6 +132,72 @@ impl StoredReplay {
     }
 }
 
+/// History's settings section of an admin member edit (beside the Config
+/// saves and the Limits window clears).
+pub const MEMBERS_SECTION: &str = "members";
+
+/// Who made a portal member edit, and when, for its History record.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PortalRecord {
+    pub at: DateTime<Utc>,
+    pub actor: Actor,
+    pub surface: Surface,
+}
+
+impl PortalRecord {
+    /// The History record of an edit from `before` to `after`: one row
+    /// `member.<user id>` whose sides are the portal fields as JSON; `None`
+    /// when no portal field changed.
+    pub fn change(&self, before: &MemberProfile, after: &MemberProfile) -> Option<SettingsChange> {
+        let (from, to) = (portal_fields(before), portal_fields(after));
+        (from != to).then(|| SettingsChange {
+            id: 0,
+            at: self.at,
+            actor: self.actor.clone(),
+            surface: self.surface,
+            section: MEMBERS_SECTION.into(),
+            revision: 0,
+            values: BTreeMap::from([(
+                format!("member.{}", after.member.user_id),
+                RowDiff { from, to },
+            )]),
+        })
+    }
+}
+
+fn portal_fields(profile: &MemberProfile) -> String {
+    json!({
+        "member": profile.member.name().unwrap_or(&profile.member.user_id),
+        "ping_level": profile.member.ping_level.as_str(),
+        "reply_style": profile.reply_style,
+        "aliases": profile.aliases,
+    })
+    .to_string()
+}
+
+/// What a recorded portal edit did.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PortalWrite {
+    /// No such member; nothing written.
+    Missing,
+    /// The row as written (unchanged by a no-op edit).
+    Edited(MemberProfile),
+    /// The key already answered this request; nothing written.
+    Replayed,
+    /// The key is live for another request; nothing written.
+    KeyTaken,
+}
+
+/// A live row under `replay`'s key, as a recorded edit sees it.
+pub(crate) fn replayed(found: Option<&StoredReplay>, replay: &StoredReplay) -> Option<PortalWrite> {
+    let found = found.filter(|found| found.live(replay.created_at))?;
+    Some(if found.request == replay.request {
+        PortalWrite::Replayed
+    } else {
+        PortalWrite::KeyTaken
+    })
+}
+
 /// Replay rows. There is no scheduled store maintenance, so every replay
 /// write deletes the rows expired at its `created_at` in its own
 /// transaction: the table holds at most a [`REPLAY_TTL`] of keyed requests.
@@ -156,6 +228,19 @@ pub trait ReplayStore {
         change: Option<SettingsChange>,
         replay: StoredReplay,
     ) -> impl Future<Output = Result<(), StoreError>> + Send;
+
+    /// A portal member edit (as `MemberStore::apply_portal`), its History
+    /// record ([`PortalRecord::change`], only when a field changed) and
+    /// `replay`, in one transaction. A live replay under the key answers
+    /// [`PortalWrite::Replayed`] (or [`PortalWrite::KeyTaken`] for another
+    /// request) and nothing is written; a refused edit writes nothing.
+    fn apply_portal_recorded(
+        &self,
+        user_id: &str,
+        edit: PortalEdit,
+        record: PortalRecord,
+        replay: Option<StoredReplay>,
+    ) -> impl Future<Output = Result<PortalWrite, StoreError>> + Send;
 
     /// Delete every row expired at `now`; returns how many.
     fn prune_replays(

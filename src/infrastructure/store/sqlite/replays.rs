@@ -8,11 +8,14 @@ use sqlx::{Connection, Row, SqliteConnection};
 use super::SqliteStore;
 use super::rows::instant;
 use super::schedule::store_error;
-use super::settings;
+use super::{members, settings};
+use crate::domain::members::PortalEdit;
 use crate::domain::scheduler::StoreError;
 use crate::domain::settings::SettingsChange;
 use crate::infrastructure::store::Written;
-use crate::infrastructure::store::replays::{ReplayScope, ReplayStore, StoredReplay};
+use crate::infrastructure::store::replays::{
+    PortalRecord, PortalWrite, ReplayScope, ReplayStore, StoredReplay, replayed,
+};
 
 fn corrupt(column: &str, detail: impl std::fmt::Display) -> StoreError {
     StoreError::Backend(format!(
@@ -138,6 +141,47 @@ impl ReplayStore for SqliteStore {
             put(&mut tx, &replay).await
         });
         self.written().after(Written::Settings, result)
+    }
+
+    async fn apply_portal_recorded(
+        &self,
+        user_id: &str,
+        edit: PortalEdit,
+        record: PortalRecord,
+        replay: Option<StoredReplay>,
+    ) -> Result<PortalWrite, StoreError> {
+        if let Some(replay) = &replay {
+            replay.check()?;
+        }
+        // The key is checked inside the write, so a concurrent retry waits
+        // for the first request and then finds its answer.
+        let result = write_txn!(self, tx, async {
+            if let Some(replay) = &replay {
+                let found = read(&mut tx, replay.scope, &replay.actor, &replay.key).await?;
+                if let Some(answer) = replayed(found.as_ref(), replay) {
+                    return Ok((answer, false));
+                }
+            }
+            let Some((before, after)) = members::portal(&mut tx, user_id, &edit).await? else {
+                return Ok((PortalWrite::Missing, false));
+            };
+            let change = record.change(&before, &after);
+            if let Some(change) = &change {
+                settings::append(&mut tx, change).await?;
+            }
+            if let Some(replay) = &replay {
+                put(&mut tx, replay).await?;
+            }
+            Ok((PortalWrite::Edited(after), change.is_some()))
+        });
+        let (written, recorded) = result?;
+        if matches!(written, PortalWrite::Edited(_)) {
+            self.written().notify(Written::Members);
+        }
+        if recorded {
+            self.written().notify(Written::Settings);
+        }
+        Ok(written)
     }
 
     async fn prune_replays(&self, now: DateTime<Utc>) -> Result<u64, StoreError> {

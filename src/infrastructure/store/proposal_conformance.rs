@@ -17,14 +17,22 @@ use crate::domain::notify::{
 use crate::domain::proposals::{CardDetails, ChangeKind, ProposalCardStore, ProposalSubject};
 use crate::domain::schedule::{Change, ChangeSet, Run, RunSource, RunStatus};
 use crate::domain::scheduler::{CARDLESS_CHAT_GRACE, ScheduleStore, Scope, StoreError};
+use crate::infrastructure::store::snapshots::SnapshotReads;
 
 /// Run every check, each against a fresh store from `make`.
 pub async fn run_suite<
-    S: ScheduleStore + ChangeHistory + ProposalStore + ProposalCardStore + DeliveryJournal + Sync,
+    S: ScheduleStore
+        + ChangeHistory
+        + ProposalStore
+        + ProposalCardStore
+        + DeliveryJournal
+        + SnapshotReads
+        + Sync,
 >(
     make: impl AsyncFn() -> S,
 ) {
     create_load_and_list(make().await).await;
+    the_inbox_count_is_live_proposals_and_submitted_requests(make().await).await;
     creation_refusals(make().await).await;
     same_source_ids_replay(make().await).await;
     newer_proposals_supersede_live_ones_with_their_key(make().await).await;
@@ -273,6 +281,51 @@ async fn newer_proposals_supersede_live_ones_with_their_key<
             .collect::<Vec<_>>(),
         ["p-2", "p-3", "p-5"]
     );
+}
+
+async fn the_inbox_count_is_live_proposals_and_submitted_requests<
+    S: ScheduleStore + ChangeHistory + ProposalStore + SnapshotReads,
+>(
+    store: S,
+) {
+    let name = "the_inbox_count_is_live_proposals_and_submitted_requests";
+    let base = base(&store).await;
+    assert_eq!(store.inbox_count().await.expect("count"), 0, "{name}");
+    created(&store, proposal("p-1", &base, Some("run-1"))).await;
+    created(&store, proposal("p-2", &base, None)).await;
+    // Superseding closes p-1: still two live proposals.
+    let mut newer = proposal("p-3", &base, Some("run-1"));
+    newer.at = utc(20, 13, 0);
+    created(&store, newer).await;
+    let draft = |id: &str, kind: DraftKind, submit| NewDraft {
+        id: id.into(),
+        kind,
+        title: "t".into(),
+        author: Actor::member("1"),
+        base: base.0.clone(),
+        base_revision: base.1,
+        request_type: (kind == DraftKind::Request).then(|| "join".into()),
+        subject: Some("run:run-1".into()),
+        at: utc(20, 12, 0),
+        request: None,
+        submit,
+    };
+    let submitted = || {
+        Some(crate::domain::drafts::Submission {
+            ops: Vec::new(),
+            expires_week: None,
+            limits: crate::domain::requests::DEFAULT_LIMITS,
+        })
+    };
+    store
+        .create_draft(draft("q-1", DraftKind::Request, submitted()))
+        .await
+        .expect("submitted request");
+    // An admin draft is not an Inbox item.
+    let mut admin = draft("d-1", DraftKind::Admin, None);
+    admin.author = Actor::admin("root");
+    store.create_draft(admin).await.expect("admin draft");
+    assert_eq!(store.inbox_count().await.expect("count"), 3, "{name}");
 }
 
 async fn ttl_expiry_closes_due_proposals_only<S: ScheduleStore + ChangeHistory + ProposalStore>(

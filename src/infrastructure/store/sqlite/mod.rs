@@ -29,6 +29,7 @@ mod rows;
 mod run_prompts;
 mod schedule;
 mod settings;
+mod snapshots;
 mod web_sessions;
 pub(super) mod writer;
 
@@ -41,6 +42,8 @@ use sqlx::{Connection, SqlitePool};
 
 pub use backup::{BACKUP_MANIFEST_FORMAT, BackupManifest, Seal};
 use owner::StoreOwner;
+#[cfg(any(test, feature = "test-support"))]
+pub use snapshots::ReadPause;
 
 use crate::domain::history::{ChangeHistory, ChangeRef};
 use writer::Writer;
@@ -197,6 +200,9 @@ pub struct SqliteStore {
     /// Told what kind of data each committed write changed.
     written: crate::infrastructure::store::observer::WriteHook,
     unclosed: UnclosedWarning,
+    /// Test support: a pause the next composed read takes.
+    #[cfg(any(test, feature = "test-support"))]
+    read_pause: snapshots::PauseSlot,
     // Declared last: SQLite handles drop before ownership is released.
     owner: StoreOwner,
 }
@@ -358,6 +364,8 @@ impl SqliteStore {
             readers,
             runs_written: Default::default(),
             written: Default::default(),
+            #[cfg(any(test, feature = "test-support"))]
+            read_pause: Default::default(),
             unclosed: UnclosedWarning {
                 armed: true,
                 db_path: db_path.to_owned(),

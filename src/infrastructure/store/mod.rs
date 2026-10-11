@@ -7,6 +7,7 @@ mod history;
 mod observer;
 mod order;
 pub mod replays;
+pub mod snapshots;
 pub mod sqlite;
 pub mod web_sessions;
 

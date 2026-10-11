@@ -25,13 +25,18 @@ use crate::domain::schedule::{
 use crate::domain::scheduler::{
     Clock, Committed, ScheduleStore, SchedulerError, SchedulerService, Scope, StoreError,
 };
+use crate::domain::settings::{RowDiff, SettingsChange, SettingsChangeQuery, SettingsStore};
+use crate::infrastructure::store::snapshots::{HistoryViewQuery, SnapshotReads};
 
 /// Run every check, each against a fresh store from `make`.
-pub async fn run_suite<S: ScheduleStore + ChangeHistory + BlameIndex + Checkpoints + Sync>(
+pub async fn run_suite<
+    S: ScheduleStore + ChangeHistory + BlameIndex + Checkpoints + SettingsStore + SnapshotReads + Sync,
+>(
     make: impl AsyncFn() -> S,
 ) {
     genesis_then_one_attributed_record_per_commit(make().await).await;
     chain_stays_intact_and_pages(make().await).await;
+    a_history_view_reads_head_total_page_and_saves(make().await).await;
     lists_filter_by_week_actor_and_revision(make().await).await;
     a_run_log_lists_every_record_touching_the_run(make().await).await;
     reverts_amend_status_swap_and_fixed_edit(make().await).await;
@@ -411,6 +416,107 @@ async fn chain_stays_intact_and_pages<S: ScheduleStore + ChangeHistory + Sync>(s
         service.store().load_change(3).await.expect("load"),
         Some(records[3].clone())
     );
+}
+
+async fn a_history_view_reads_head_total_page_and_saves<
+    S: ScheduleStore + ChangeHistory + SettingsStore + SnapshotReads,
+>(
+    store: S,
+) {
+    let Fixture { mut service, .. } = fixture(store).await;
+    let run = snapshot(&service).await.runs[0].id.clone();
+    for state in [RsvpState::Yes, RsvpState::No, RsvpState::Yes] {
+        service
+            .as_origin(member("1"))
+            .set_rsvp(&run, "1", state, RsvpSource::Reaction)
+            .await
+            .expect("rsvp");
+    }
+    let store = service.store();
+    store
+        .put_settings_rows_recorded(
+            Vec::new(),
+            SettingsChange {
+                id: 0,
+                at: utc(8, 27, 2, 0),
+                actor: Actor::admin("root"),
+                surface: Surface::AdminPortal,
+                section: "limits".into(),
+                revision: 0,
+                values: [(
+                    "window.1".into(),
+                    RowDiff {
+                        from: "1".into(),
+                        to: "0".into(),
+                    },
+                )]
+                .into(),
+            },
+        )
+        .await
+        .expect("save recorded");
+    let records = all_records(store).await;
+    let view = |filter, before, limit, settings| {
+        store.history_view(HistoryViewQuery {
+            filter,
+            before,
+            limit,
+            settings,
+        })
+    };
+    let first = view(
+        ChangeFilter::All,
+        None,
+        3,
+        Some(SettingsChangeQuery::default()),
+    )
+    .await
+    .expect("first page");
+    let name = "a_history_view_reads_head_total_page_and_saves";
+    assert_eq!(
+        first.head,
+        records.last().expect("records").reference(),
+        "{name}"
+    );
+    assert_eq!(
+        first.total,
+        records.len() as u64 - 1,
+        "{name}: genesis uncounted"
+    );
+    let newest: Vec<u64> = records.iter().rev().take(3).map(|r| r.seq).collect();
+    let seqs: Vec<u64> = first.records.iter().map(|r| r.seq).collect();
+    assert_eq!(seqs, newest, "{name}");
+    assert_eq!(first.next_before, newest.last().copied(), "{name}");
+    assert!(first.run_known, "{name}");
+    assert_eq!(first.cursor_at, None, "{name}");
+    let sections: Vec<&str> = first.settings.iter().map(|c| c.section.as_str()).collect();
+    assert_eq!(sections, ["limits"], "{name}");
+
+    let rest = view(ChangeFilter::All, first.next_before, 100, None)
+        .await
+        .expect("older page");
+    let cursor = &records[usize::try_from(newest[2]).expect("fits")];
+    assert_eq!(rest.cursor_at, Some(cursor.at), "{name}");
+    assert!(rest.settings.is_empty(), "{name}: none asked for");
+    assert_eq!(rest.next_before, None, "{name}");
+    assert!(
+        rest.records.iter().all(|r| r.seq > 0 && r.seq < newest[2]),
+        "{name}"
+    );
+    assert_eq!(rest.records.len() + 3, records.len() - 1, "{name}");
+    let gone = view(ChangeFilter::All, Some(9_999), 3, None)
+        .await
+        .expect("unknown cursor");
+    assert_eq!(gone.cursor_at, None, "{name}: a cursor naming no record");
+
+    let known = view(ChangeFilter::Run(run), None, 3, None)
+        .await
+        .expect("run log");
+    assert!(known.run_known && known.total >= 3, "{name}");
+    let unknown = view(ChangeFilter::Run("no-such-run".into()), None, 3, None)
+        .await
+        .expect("unknown run");
+    assert_eq!((unknown.total, unknown.run_known), (0, false), "{name}");
 }
 
 async fn lists_filter_by_week_actor_and_revision<S: ScheduleStore + ChangeHistory>(store: S) {

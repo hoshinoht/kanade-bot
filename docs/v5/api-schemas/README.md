@@ -67,9 +67,9 @@ Pointers are `<file>#/$defs/<Name>`.
 | `POST /api/admin/runs/{id}/reset` | `week.json#/$defs/RunResult` |
 | `POST /api/admin/runs/{id}/ping` | `common.json#/$defs/Message` |
 | `GET /api/admin/members` | `members.json#/$defs/MemberRows` |
-| `PATCH /api/admin/members/{id}` | `members.json#/$defs/MemberRow` |
-| `POST /api/admin/members/{id}/aliases` | `members.json#/$defs/MemberRow` |
-| `DELETE /api/admin/members/{id}/aliases/{alias}` | `members.json#/$defs/MemberRow` |
+| `PATCH /api/admin/members/{id}` | `members.json#/$defs/MemberRow` (a retry with the same Idempotency-Key answers the member's current row, writing nothing; another request under it is 422 `idempotency_mismatch`; an effective edit adds a History settings row, section `members`) |
+| `POST /api/admin/members/{id}/aliases` | `members.json#/$defs/MemberRow` (Idempotency-Key and History as the PATCH) |
+| `DELETE /api/admin/members/{id}/aliases/{alias}` | `members.json#/$defs/MemberRow` (Idempotency-Key and History as the PATCH) |
 | `GET /api/admin/personas` | `members.json#/$defs/Personas` |
 | `GET /api/admin/channels` | `common.json#/$defs/Channels` |
 | `GET /api/admin/roles` | `common.json#/$defs/Roles` |
@@ -96,7 +96,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/admin/rewrites/{id}` | `rewrites.json#/$defs/Rewrite` |
 | `GET /api/admin/limits` | `limits.json#/$defs/Limits` |
 | `DELETE /api/admin/limits/windows/{id}` | `common.json#/$defs/Message` |
-| `GET`/`PATCH /api/admin/config` | `config.json#/$defs/ConfigView` (PATCH may add `notices`) |
+| `GET`/`PATCH /api/admin/config` | `config.json#/$defs/ConfigView` (PATCH may add `notices`; both carry one while the saved models are not running) |
 | `POST /api/admin/config/profiles/reload` | `common.json#/$defs/ReloadResult` |
 | `POST /api/admin/digest` | `common.json#/$defs/Message` |
 | `POST /api/admin/headers/rewrite` | `202` `common.json#/$defs/Message` (the run continues in the background; `200` when nothing posted this boss week has a header; 409 `ApiError` `rewrite_running`/`rewrite_off`) |

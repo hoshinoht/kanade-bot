@@ -480,175 +480,217 @@ pub(super) fn stored(
     }
 }
 
+/// The history head as a reference (genesis at least).
+pub(super) async fn head_ref(conn: &mut SqliteConnection) -> Result<ChangeRef, StoreError> {
+    let (seq, hash) = head(conn)
+        .await?
+        .ok_or_else(|| StoreError::Backend("the history has no genesis record".into()))?;
+    Ok(ChangeRef { seq, hash })
+}
+
+/// Change `seq` with its stored bytes checked.
+pub(super) async fn checked_in(
+    conn: &mut SqliteConnection,
+    seq: u64,
+) -> Result<CheckedChange, StoreError> {
+    // No stored seq exceeds i64::MAX: such a seq is simply missing.
+    let Ok(seq) = i64::try_from(seq) else {
+        return Ok(CheckedChange::Missing);
+    };
+    let row = sqlx::query(&format!("SELECT {COLUMNS} FROM change_log WHERE seq = ?1"))
+        .bind(seq)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(backend)?;
+    let Some(row) = row else {
+        return Ok(CheckedChange::Missing);
+    };
+    Ok(match stored(&row, None) {
+        Err((_, reason)) => CheckedChange::Tampered(reason),
+        Ok((record, body)) => match record.check_stored(&body) {
+            Ok(()) => CheckedChange::Intact(Box::new(record)),
+            Err(reason) => CheckedChange::Tampered(reason),
+        },
+    })
+}
+
+/// Change `seq`; a tampered record is a backend error.
+pub(super) async fn change_in(
+    conn: &mut SqliteConnection,
+    seq: u64,
+) -> Result<Option<ChangeRecord>, StoreError> {
+    match checked_in(conn, seq).await? {
+        CheckedChange::Missing => Ok(None),
+        CheckedChange::Intact(record) => Ok(Some(*record)),
+        CheckedChange::Tampered(reason) => {
+            Err(StoreError::Backend(format!("change {seq}: {reason}")))
+        }
+    }
+}
+
+pub(super) async fn list_in(
+    conn: &mut SqliteConnection,
+    query: &ChangeQuery,
+) -> Result<ChangePage, StoreError> {
+    enum Arg {
+        Text(String),
+        Int(i64),
+    }
+    let int = |value: u64| i64::try_from(value).map_err(backend);
+    let mut clauses = Vec::new();
+    let mut args = Vec::new();
+    match &query.filter {
+        ChangeFilter::All => {}
+        ChangeFilter::Week(week) => {
+            clauses.push("seq IN (SELECT seq FROM change_log_weeks WHERE week_start = ?)");
+            args.push(Arg::Text(rows::instant(week)?));
+        }
+        ChangeFilter::Actor(actor) => {
+            clauses.push("actor_kind = ? AND actor_id = ?");
+            args.push(Arg::Text(actor.kind().to_owned()));
+            args.push(Arg::Text(actor.id().to_owned()));
+        }
+        ChangeFilter::ActorInWeek(actor, week) => {
+            clauses.push(
+                "actor_kind = ? AND actor_id = ? \
+                 AND seq IN (SELECT seq FROM change_log_weeks WHERE week_start = ?)",
+            );
+            args.push(Arg::Text(actor.kind().to_owned()));
+            args.push(Arg::Text(actor.id().to_owned()));
+            args.push(Arg::Text(rows::instant(week)?));
+        }
+        ChangeFilter::Run(run_id) => {
+            clauses.push(RUN_CLAUSE);
+            args.push(Arg::Text(run_id.clone()));
+        }
+        ChangeFilter::Revisions { from, to } => {
+            clauses.push("revision BETWEEN ? AND ?");
+            args.push(Arg::Int(int(*from)?));
+            args.push(Arg::Int(int(*to)?));
+        }
+    }
+    if let Some(cursor) = query.cursor {
+        clauses.push(if query.newest_first {
+            "seq < ?"
+        } else {
+            "seq > ?"
+        });
+        // Clamping keeps the selection: no stored seq exceeds i64::MAX.
+        args.push(Arg::Int(i64::try_from(cursor).unwrap_or(i64::MAX)));
+    }
+    let filter = if clauses.is_empty() {
+        "1".to_owned()
+    } else {
+        clauses.join(" AND ")
+    };
+    let order = if query.newest_first { "DESC" } else { "ASC" };
+    let sql =
+        format!("SELECT {COLUMNS} FROM change_log WHERE {filter} ORDER BY seq {order} LIMIT ?");
+    args.push(Arg::Int(int(
+        u64::try_from(query.page_size() + 1).unwrap_or(u64::MAX)
+    )?));
+    let mut select = sqlx::query(&sql);
+    for arg in args {
+        select = match arg {
+            Arg::Text(text) => select.bind(text),
+            Arg::Int(value) => select.bind(value),
+        };
+    }
+    let found = select.fetch_all(&mut *conn).await.map_err(backend)?;
+    let records = found
+        .iter()
+        .map(|row| {
+            stored(row, None)
+                .map(|(record, _)| record)
+                .map_err(|(_, reason)| StoreError::Backend(reason))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ChangePage::from_matches(records, query))
+}
+
+pub(super) async fn count_in(
+    conn: &mut SqliteConnection,
+    filter: &ChangeFilter,
+) -> Result<u64, StoreError> {
+    // One constant statement per filter; genesis (seq 0) is never counted.
+    let int = |value: u64| i64::try_from(value).map_err(backend);
+    let count = match filter {
+        ChangeFilter::All => {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM change_log WHERE seq > 0")
+                .fetch_one(&mut *conn)
+                .await
+        }
+        ChangeFilter::Week(week) => {
+            sqlx::query_scalar(
+                "SELECT COUNT(*) FROM change_log WHERE seq > 0 \
+                 AND seq IN (SELECT seq FROM change_log_weeks WHERE week_start = ?1)",
+            )
+            .bind(rows::instant(week)?)
+            .fetch_one(&mut *conn)
+            .await
+        }
+        ChangeFilter::Actor(actor) => {
+            sqlx::query_scalar(
+                "SELECT COUNT(*) FROM change_log WHERE seq > 0 \
+                 AND actor_kind = ?1 AND actor_id = ?2",
+            )
+            .bind(actor.kind())
+            .bind(actor.id())
+            .fetch_one(&mut *conn)
+            .await
+        }
+        ChangeFilter::ActorInWeek(actor, week) => {
+            sqlx::query_scalar(
+                "SELECT COUNT(*) FROM change_log WHERE seq > 0 \
+                 AND actor_kind = ?1 AND actor_id = ?2 \
+                 AND seq IN (SELECT seq FROM change_log_weeks WHERE week_start = ?3)",
+            )
+            .bind(actor.kind())
+            .bind(actor.id())
+            .bind(rows::instant(week)?)
+            .fetch_one(&mut *conn)
+            .await
+        }
+        ChangeFilter::Run(run_id) => {
+            sqlx::query_scalar(&format!(
+                "SELECT COUNT(*) FROM change_log WHERE seq > 0 AND {RUN_CLAUSE}"
+            ))
+            .bind(run_id)
+            .fetch_one(&mut *conn)
+            .await
+        }
+        ChangeFilter::Revisions { from, to } => {
+            sqlx::query_scalar(
+                "SELECT COUNT(*) FROM change_log WHERE seq > 0 AND revision BETWEEN ?1 AND ?2",
+            )
+            .bind(int(*from)?)
+            .bind(int(*to)?)
+            .fetch_one(&mut *conn)
+            .await
+        }
+    }
+    .map_err(backend)?;
+    u64::try_from(count).map_err(backend)
+}
+
 impl ChangeHistory for SqliteStore {
     async fn load_change(&self, seq: u64) -> Result<Option<ChangeRecord>, StoreError> {
-        match self.load_checked(seq).await? {
-            CheckedChange::Missing => Ok(None),
-            CheckedChange::Intact(record) => Ok(Some(*record)),
-            CheckedChange::Tampered(reason) => {
-                Err(StoreError::Backend(format!("change {seq}: {reason}")))
-            }
-        }
+        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        change_in(&mut conn, seq).await
     }
 
     async fn load_checked(&self, seq: u64) -> Result<CheckedChange, StoreError> {
-        // No stored seq exceeds i64::MAX: such a seq is simply missing.
-        let Ok(seq) = i64::try_from(seq) else {
-            return Ok(CheckedChange::Missing);
-        };
-        let row = sqlx::query(&format!("SELECT {COLUMNS} FROM change_log WHERE seq = ?1"))
-            .bind(seq)
-            .fetch_optional(&self.readers)
-            .await
-            .map_err(backend)?;
-        let Some(row) = row else {
-            return Ok(CheckedChange::Missing);
-        };
-        Ok(match stored(&row, None) {
-            Err((_, reason)) => CheckedChange::Tampered(reason),
-            Ok((record, body)) => match record.check_stored(&body) {
-                Ok(()) => CheckedChange::Intact(Box::new(record)),
-                Err(reason) => CheckedChange::Tampered(reason),
-            },
-        })
+        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        checked_in(&mut conn, seq).await
     }
-
     async fn list_changes(&self, query: &ChangeQuery) -> Result<ChangePage, StoreError> {
-        enum Arg {
-            Text(String),
-            Int(i64),
-        }
-        let int = |value: u64| i64::try_from(value).map_err(backend);
-        let mut clauses = Vec::new();
-        let mut args = Vec::new();
-        match &query.filter {
-            ChangeFilter::All => {}
-            ChangeFilter::Week(week) => {
-                clauses.push("seq IN (SELECT seq FROM change_log_weeks WHERE week_start = ?)");
-                args.push(Arg::Text(rows::instant(week)?));
-            }
-            ChangeFilter::Actor(actor) => {
-                clauses.push("actor_kind = ? AND actor_id = ?");
-                args.push(Arg::Text(actor.kind().to_owned()));
-                args.push(Arg::Text(actor.id().to_owned()));
-            }
-            ChangeFilter::ActorInWeek(actor, week) => {
-                clauses.push(
-                    "actor_kind = ? AND actor_id = ? \
-                     AND seq IN (SELECT seq FROM change_log_weeks WHERE week_start = ?)",
-                );
-                args.push(Arg::Text(actor.kind().to_owned()));
-                args.push(Arg::Text(actor.id().to_owned()));
-                args.push(Arg::Text(rows::instant(week)?));
-            }
-            ChangeFilter::Run(run_id) => {
-                clauses.push(RUN_CLAUSE);
-                args.push(Arg::Text(run_id.clone()));
-            }
-            ChangeFilter::Revisions { from, to } => {
-                clauses.push("revision BETWEEN ? AND ?");
-                args.push(Arg::Int(int(*from)?));
-                args.push(Arg::Int(int(*to)?));
-            }
-        }
-        if let Some(cursor) = query.cursor {
-            clauses.push(if query.newest_first {
-                "seq < ?"
-            } else {
-                "seq > ?"
-            });
-            // Clamping keeps the selection: no stored seq exceeds i64::MAX.
-            args.push(Arg::Int(i64::try_from(cursor).unwrap_or(i64::MAX)));
-        }
-        let filter = if clauses.is_empty() {
-            "1".to_owned()
-        } else {
-            clauses.join(" AND ")
-        };
-        let order = if query.newest_first { "DESC" } else { "ASC" };
-        let sql =
-            format!("SELECT {COLUMNS} FROM change_log WHERE {filter} ORDER BY seq {order} LIMIT ?");
-        args.push(Arg::Int(int(
-            u64::try_from(query.page_size() + 1).unwrap_or(u64::MAX)
-        )?));
-        let mut select = sqlx::query(&sql);
-        for arg in args {
-            select = match arg {
-                Arg::Text(text) => select.bind(text),
-                Arg::Int(value) => select.bind(value),
-            };
-        }
-        let found = select.fetch_all(&self.readers).await.map_err(backend)?;
-        let records = found
-            .iter()
-            .map(|row| {
-                stored(row, None)
-                    .map(|(record, _)| record)
-                    .map_err(|(_, reason)| StoreError::Backend(reason))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(ChangePage::from_matches(records, query))
+        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        list_in(&mut conn, query).await
     }
 
     async fn count_changes(&self, filter: &ChangeFilter) -> Result<u64, StoreError> {
-        // One constant statement per filter; genesis (seq 0) is never counted.
-        let int = |value: u64| i64::try_from(value).map_err(backend);
-        let count =
-            match filter {
-                ChangeFilter::All => {
-                    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM change_log WHERE seq > 0")
-                        .fetch_one(&self.readers)
-                        .await
-                }
-                ChangeFilter::Week(week) => {
-                    sqlx::query_scalar(
-                        "SELECT COUNT(*) FROM change_log WHERE seq > 0 \
-                 AND seq IN (SELECT seq FROM change_log_weeks WHERE week_start = ?1)",
-                    )
-                    .bind(rows::instant(week)?)
-                    .fetch_one(&self.readers)
-                    .await
-                }
-                ChangeFilter::Actor(actor) => {
-                    sqlx::query_scalar(
-                        "SELECT COUNT(*) FROM change_log WHERE seq > 0 \
-                 AND actor_kind = ?1 AND actor_id = ?2",
-                    )
-                    .bind(actor.kind())
-                    .bind(actor.id())
-                    .fetch_one(&self.readers)
-                    .await
-                }
-                ChangeFilter::ActorInWeek(actor, week) => {
-                    sqlx::query_scalar(
-                        "SELECT COUNT(*) FROM change_log WHERE seq > 0 \
-                 AND actor_kind = ?1 AND actor_id = ?2 \
-                 AND seq IN (SELECT seq FROM change_log_weeks WHERE week_start = ?3)",
-                    )
-                    .bind(actor.kind())
-                    .bind(actor.id())
-                    .bind(rows::instant(week)?)
-                    .fetch_one(&self.readers)
-                    .await
-                }
-                ChangeFilter::Run(run_id) => {
-                    sqlx::query_scalar(&format!(
-                        "SELECT COUNT(*) FROM change_log WHERE seq > 0 AND {RUN_CLAUSE}"
-                    ))
-                    .bind(run_id)
-                    .fetch_one(&self.readers)
-                    .await
-                }
-                ChangeFilter::Revisions { from, to } => sqlx::query_scalar(
-                    "SELECT COUNT(*) FROM change_log WHERE seq > 0 AND revision BETWEEN ?1 AND ?2",
-                )
-                .bind(int(*from)?)
-                .bind(int(*to)?)
-                .fetch_one(&self.readers)
-                .await,
-            }
-            .map_err(backend)?;
-        u64::try_from(count).map_err(backend)
+        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        count_in(&mut conn, filter).await
     }
 
     async fn verify_history(&self) -> Result<HistoryVerification, StoreError> {
@@ -722,10 +764,7 @@ impl ChangeHistory for SqliteStore {
 
     async fn history_head(&self) -> Result<ChangeRef, StoreError> {
         let mut conn = self.readers.acquire().await.map_err(backend)?;
-        let (seq, hash) = head(&mut conn)
-            .await?
-            .ok_or_else(|| StoreError::Backend("the history has no genesis record".into()))?;
-        Ok(ChangeRef { seq, hash })
+        head_ref(&mut conn).await
     }
 }
 

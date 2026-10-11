@@ -44,15 +44,22 @@ impl SettingsStore for super::MemoryScheduleStore {
         &self,
         query: SettingsChangeQuery,
     ) -> Result<Vec<SettingsChange>, StoreError> {
-        let changes = self.changes();
-        let mut found: Vec<SettingsChange> = changes
-            .iter()
-            .filter(|change| query.matches(change))
-            .cloned()
-            .collect();
-        found.sort_by(|a, b| b.at.cmp(&a.at).then(b.id.cmp(&a.id)));
-        Ok(found)
+        Ok(matching(&self.changes(), &query))
     }
+}
+
+/// The changes `query` selects, newest first (as SQLite orders them).
+pub(super) fn matching(
+    changes: &[SettingsChange],
+    query: &SettingsChangeQuery,
+) -> Vec<SettingsChange> {
+    let mut found: Vec<SettingsChange> = changes
+        .iter()
+        .filter(|change| query.matches(change))
+        .cloned()
+        .collect();
+    found.sort_by(|a, b| b.at.cmp(&a.at).then(b.id.cmp(&a.id)));
+    found
 }
 
 /// As SQLite's `refuse_unknown`: nothing is written when a key is unknown.

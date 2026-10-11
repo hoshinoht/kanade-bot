@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChangeRecord, SettingsChangeRow } from '@kanade/api-types';
-import { mergeTimeline, sectionHref, settingCount, settingFields, settingSummary, windowClear } from '../src/history/settings';
+import { mergeTimeline, sectionHref, settingCount, settingFields, settingOrigin, settingSummary, windowClear } from '../src/history/settings';
 
 const save = (over: Partial<SettingsChangeRow>): SettingsChangeRow => ({
   id: 1,
@@ -29,6 +29,13 @@ describe('Config saves on the History timeline', () => {
     expect(sectionHref('run_lengths')).toBe('/config?section=run-lengths');
     expect(sectionHref('self_service')).toBe('/config?section=self-service');
     expect(sectionHref('persona')).toBe('/config?section=persona');
+  });
+
+  it('sends member edits to Members, not Config', () => {
+    const edit = save({ section: 'members', values: [{ key: 'member.1001', from: '{}', to: '{}' }] });
+    expect(settingOrigin(edit)).toBe('Members');
+    expect(settingSummary(edit)).toBe('Members · member.1001');
+    expect(sectionHref('members')).toBe('/members');
   });
 
   it('lists plain rows as they are and JSON rows field by field', () => {

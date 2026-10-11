@@ -171,14 +171,16 @@ async fn not_admin(conn: &mut SqliteConnection, user_id: &str) -> Result<bool, S
 
 /// Inside one `BEGIN IMMEDIATE`: every other writer waits, so reading the
 /// aliases and writing them back cannot interleave with a gateway write.
-async fn portal(
+/// Returns the row before and after the edit.
+pub(super) async fn portal(
     conn: &mut SqliteConnection,
     user_id: &str,
     edit: &PortalEdit,
-) -> Result<Option<MemberProfile>, StoreError> {
-    let Some(mut profile) = one(conn, user_id).await? else {
+) -> Result<Option<(MemberProfile, MemberProfile)>, StoreError> {
+    let Some(before) = one(conn, user_id).await? else {
         return Ok(None);
     };
+    let mut profile = before.clone();
     if let Some(level) = edit.ping_level {
         profile.member.ping_level = level;
     }
@@ -230,7 +232,7 @@ async fn portal(
             .await
             .map_err(store_error)?;
     }
-    Ok(Some(profile))
+    Ok(Some((before, profile)))
 }
 
 impl MemberStore for SqliteStore {
@@ -272,7 +274,11 @@ impl MemberStore for SqliteStore {
         user_id: &str,
         edit: PortalEdit,
     ) -> Result<Option<MemberProfile>, StoreError> {
-        let result = write_txn!(self, tx, portal(&mut tx, user_id, &edit));
+        let result = write_txn!(self, tx, async {
+            Ok(portal(&mut tx, user_id, &edit)
+                .await?
+                .map(|(_, after)| after))
+        });
         self.written()
             .after_if(Written::Members, result, Option::is_some)
     }

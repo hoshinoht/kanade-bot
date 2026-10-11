@@ -546,6 +546,8 @@ async fn member_edits_hint_members_and_identical_roster_syncs_do_not() {
         )
         .await;
     assert_eq!(stream.hint().await["topic"], "members");
+    // Its History row (a settings save beside the chain) hints History too.
+    assert_eq!(stream.hint().await["topic"], "settings");
     // The gateway resends Bob exactly as stored: nothing changed, nothing hinted.
     let bob = reads.store.load_member("1002").await.unwrap().unwrap();
     reads

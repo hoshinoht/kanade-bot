@@ -6,7 +6,10 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, OnceLock},
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use kanade::{
@@ -127,12 +130,14 @@ fn catalog() -> CatalogSnapshot {
     }
 }
 
-/// Records applied roles; `running` is whatever a test sets.
+/// Records applied roles (every attempt); `running` is whatever a test
+/// sets; while the last field is set, every switch fails.
 pub struct FakeCatalog(
     Mutex<CatalogRead>,
     Mutex<Vec<Models>>,
     Mutex<BTreeMap<Role, RunningRole>>,
     Mutex<Vec<Role>>,
+    AtomicBool,
 );
 
 impl FakeCatalog {
@@ -162,6 +167,9 @@ impl ModelCatalog for FakeCatalog {
 
     fn apply(&self, models: &Models) -> Result<Vec<RoleSwap>, String> {
         self.1.lock().unwrap().push(models.clone());
+        if self.4.load(Ordering::SeqCst) {
+            return Err("governor refused the routes".into());
+        }
         Ok(Vec::new())
     }
 
@@ -297,6 +305,7 @@ impl Config {
             Mutex::default(),
             Mutex::default(),
             Mutex::default(),
+            AtomicBool::new(false),
         ));
         let slot = Arc::new(OnceLock::new());
         let reads = {
@@ -2541,6 +2550,54 @@ async fn a_models_save_switches_the_running_roles_and_the_view_shows_them() {
         .patch(json!({"notifications": {"quiet_mode": true}}))
         .await;
     assert_eq!(config.catalog.applied().len(), 1);
+}
+
+/// The notice every config answer carries while the saved roles are not running.
+const MODELS_UNAPPLIED: &str = "The saved models are not running yet: switching to them failed, so the previous ones stay in use until a retry succeeds or the bot restarts.";
+
+fn says_unapplied(view: &Value) -> bool {
+    view["notices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|notice| notice == MODELS_UNAPPLIED)
+}
+
+#[tokio::test]
+async fn a_failed_models_switch_stays_visible_and_is_retried_until_it_runs() {
+    let config = Config::new().await;
+    config.catalog.4.store(true, Ordering::SeqCst);
+    let saved = config
+        .patch(
+            json!({"models": {"roles": {"chat": {"alias": "kanata/legacy", "reasoning": "high"}}}}),
+        )
+        .await;
+    // Durable first: the save stands, and the answer says it is not running.
+    let wanted = config.desk.settings().await.models;
+    assert_eq!(wanted.chat, role("kanata/legacy", Reasoning::High));
+    assert!(says_unapplied(&saved), "{saved}");
+    assert_eq!(config.catalog.applied().len(), 1);
+
+    // Every later answer retries against the saved roles and keeps saying so.
+    let view = config.get().await;
+    assert!(says_unapplied(&view), "a read while it still fails");
+    assert_eq!(config.catalog.applied().len(), 2);
+    let other = config
+        .patch(json!({"notifications": {"quiet_mode": true}}))
+        .await;
+    assert!(says_unapplied(&other), "another section's save");
+    assert_eq!(config.catalog.applied().len(), 3);
+
+    // Once a retry succeeds, the running roles are the saved ones and the
+    // notice is gone; nothing is re-applied after that.
+    config.catalog.4.store(false, Ordering::SeqCst);
+    let healed = config.get().await;
+    assert!(!says_unapplied(&healed), "{healed}");
+    let applied = config.catalog.applied();
+    assert_eq!(applied.len(), 4);
+    assert_eq!(applied[3], wanted);
+    assert!(!says_unapplied(&config.get().await));
+    assert_eq!(config.catalog.applied().len(), 4, "no retry once it runs");
 }
 
 #[tokio::test]

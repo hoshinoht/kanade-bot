@@ -123,7 +123,7 @@ pub(super) async fn append(
     u64::try_from(id).map_err(corrupt)
 }
 
-async fn list(
+pub(super) async fn list(
     conn: &mut SqliteConnection,
     query: &SettingsChangeQuery,
 ) -> Result<Vec<SettingsChange>, StoreError> {

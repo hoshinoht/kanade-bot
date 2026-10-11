@@ -1,8 +1,9 @@
 //! `Idempotency-Key` replays that survive a restart: the Limits window clear,
-//! manual digest and header rewrite, and rescan submit and cancel. After
-//! [`Reads::restart`] (fresh desks, no in-memory state, same store file) a
-//! key replays its stored answer without reapplying, another request under
-//! it is refused, an expired key applies anew, and expired rows are pruned.
+//! manual digest and header rewrite, rescan submit and cancel, and the admin
+//! member edits. After [`Reads::restart`] (fresh desks, no in-memory state,
+//! same store file) a key replays its stored answer without reapplying,
+//! another request under it is refused, an expired key applies anew, and
+//! expired rows are pruned.
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use kanade::domain::settings::{SettingsChangeQuery, SettingsStore};
@@ -10,7 +11,10 @@ use kanade::infrastructure::store::replays::{REPLAY_TTL, ReplayScope, ReplayStor
 use serde_json::{Value, json};
 use sqlx::{ConnectOptions, Connection, sqlite::SqliteConnectOptions};
 
-use crate::{reads::Reads, support::Reply};
+use crate::{
+    reads::Reads,
+    support::{ADMIN_HOST, Reply, request},
+};
 
 const RESET: &str = "/api/admin/limits/windows/1001";
 const DIGEST: &str = "/api/admin/digest";
@@ -257,4 +261,137 @@ async fn expired_replays_are_pruned() {
             .unwrap(),
         2
     );
+}
+
+async fn member_records(reads: &Reads) -> Vec<kanade::domain::settings::SettingsChange> {
+    reads
+        .store
+        .settings_changes(SettingsChangeQuery::default())
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|change| change.section == "members")
+        .collect()
+}
+
+/// Member patch and alias writes record History rows (beside the Config
+/// saves) and replay their key without a second write, as the other admin
+/// writes do.
+#[tokio::test]
+async fn member_edits_are_recorded_and_replay_across_a_restart() {
+    use kanade::domain::members::{MemberStore, PingLevel};
+
+    let mut reads = Reads::new().await;
+    let alice = "/api/admin/members/1001";
+    let first = keyed(
+        &reads,
+        "PATCH",
+        alice,
+        "member-k",
+        json!({"ping_level": "off"}),
+    )
+    .await;
+    assert_eq!(first.status, 200, "{}", first.text());
+    let records = member_records(&reads).await;
+    assert_eq!(records.len(), 1, "one History row");
+    let row = &records[0].values["member.1001"];
+    assert!(row.from.contains(r#""ping_level":"essential""#), "{row:?}");
+    assert!(row.to.contains(r#""ping_level":"off""#), "{row:?}");
+    assert_eq!(records[0].actor.kind(), "admin");
+
+    reads.restart(TimeDelta::zero(), None).await;
+    // Behind the key, the row moves on; the replay must not undo that.
+    reads
+        .store
+        .apply_portal(
+            "1001",
+            kanade::domain::members::PortalEdit {
+                ping_level: Some(PingLevel::All),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let replay = keyed(
+        &reads,
+        "PATCH",
+        alice,
+        "member-k",
+        json!({"ping_level": "off"}),
+    )
+    .await;
+    assert_eq!(replay.status, 200, "{}", replay.text());
+    assert_eq!(
+        replay.json()["ping_level"],
+        "all",
+        "the current row, not a second write"
+    );
+    assert_eq!(
+        member_records(&reads).await.len(),
+        1,
+        "and nothing recorded"
+    );
+    let other = keyed(
+        &reads,
+        "PATCH",
+        alice,
+        "member-k",
+        json!({"ping_level": "essential"}),
+    )
+    .await;
+    assert_eq!(
+        (other.status, other.api_error()),
+        (422, "idempotency_mismatch".into())
+    );
+    let stored = reads.store.load_member("1001").await.unwrap().unwrap();
+    assert_eq!(
+        stored.member.ping_level,
+        PingLevel::All,
+        "the mismatch wrote nothing"
+    );
+
+    let bob = "/api/admin/members/1002/aliases";
+    let added = keyed(&reads, "POST", bob, "alias-k", json!({"alias": "bobby"})).await;
+    assert_eq!(added.status, 200, "{}", added.text());
+    let again = keyed(&reads, "POST", bob, "alias-k", json!({"alias": "bobby"})).await;
+    assert_eq!((again.status, again.json()), (200, added.json()));
+    assert_eq!(member_records(&reads).await.len(), 2, "the alias once");
+    let gone = keyed(
+        &reads,
+        "DELETE",
+        &format!("{bob}/bobby"),
+        "alias-r",
+        json!({}),
+    )
+    .await;
+    assert_eq!(gone.json()["aliases"], json!([]));
+    // Removing an alias not held changes nothing and records nothing.
+    let noop = keyed(
+        &reads,
+        "DELETE",
+        &format!("{bob}/bobby"),
+        "alias-n",
+        json!({}),
+    )
+    .await;
+    assert_eq!(noop.status, 200, "{}", noop.text());
+    assert_eq!(member_records(&reads).await.len(), 3);
+
+    // History lists them beside the chain.
+    let page = request(
+        reads.admin,
+        "GET",
+        ADMIN_HOST,
+        "/api/admin/history",
+        &[("Cookie", &reads.cookie)],
+    )
+    .await;
+    assert_eq!(page.status, 200, "{}", page.text());
+    let sections: Vec<Value> = page.json()["settings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["section"].clone())
+        .collect();
+    assert_eq!(sections, vec![json!("members"); 3]);
 }

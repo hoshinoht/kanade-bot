@@ -40,6 +40,7 @@ mod proposals;
 mod replays;
 mod run_prompts;
 mod settings;
+mod snapshots;
 mod web_sessions;
 
 use decline_notices::DeclineNotices;
@@ -569,6 +570,52 @@ impl MemoryScheduleStore {
     }
 }
 
+fn list_in(tables: &Tables, query: &ChangeQuery) -> ChangePage {
+    let wanted = query.page_size() + 1;
+    let matches = |record: &&ChangeRecord| query.selects(record);
+    let records: Vec<ChangeRecord> = if query.newest_first {
+        tables
+            .history
+            .records
+            .iter()
+            .rev()
+            .filter(matches)
+            .take(wanted)
+            .cloned()
+            .collect()
+    } else {
+        tables
+            .history
+            .records
+            .iter()
+            .filter(matches)
+            .take(wanted)
+            .cloned()
+            .collect()
+    };
+    ChangePage::from_matches(records, query)
+}
+
+fn count_in(tables: &Tables, filter: &ChangeFilter) -> u64 {
+    let query = ChangeQuery::new(filter.clone());
+    let count = tables
+        .history
+        .records
+        .iter()
+        .filter(|record| record.seq > 0 && query.selects(record))
+        .count();
+    u64::try_from(count).unwrap_or(u64::MAX)
+}
+
+fn head_in(tables: &Tables) -> Result<ChangeRef, StoreError> {
+    tables
+        .history
+        .records
+        .last()
+        .map(ChangeRecord::reference)
+        .ok_or_else(|| StoreError::Backend("the history has no genesis record".into()))
+}
+
 impl ChangeHistory for MemoryScheduleStore {
     async fn load_checked(&self, seq: u64) -> Result<CheckedChange, StoreError> {
         let tables = self.tables();
@@ -594,42 +641,11 @@ impl ChangeHistory for MemoryScheduleStore {
     }
 
     async fn list_changes(&self, query: &ChangeQuery) -> Result<ChangePage, StoreError> {
-        let tables = self.tables();
-        let wanted = query.page_size() + 1;
-        let matches = |record: &&ChangeRecord| query.selects(record);
-        let records: Vec<ChangeRecord> = if query.newest_first {
-            tables
-                .history
-                .records
-                .iter()
-                .rev()
-                .filter(matches)
-                .take(wanted)
-                .cloned()
-                .collect()
-        } else {
-            tables
-                .history
-                .records
-                .iter()
-                .filter(matches)
-                .take(wanted)
-                .cloned()
-                .collect()
-        };
-        Ok(ChangePage::from_matches(records, query))
+        Ok(list_in(&self.tables(), query))
     }
 
     async fn count_changes(&self, filter: &ChangeFilter) -> Result<u64, StoreError> {
-        let query = ChangeQuery::new(filter.clone());
-        let tables = self.tables();
-        let count = tables
-            .history
-            .records
-            .iter()
-            .filter(|record| record.seq > 0 && query.selects(record))
-            .count();
-        Ok(u64::try_from(count).unwrap_or(u64::MAX))
+        Ok(count_in(&self.tables(), filter))
     }
 
     async fn verify_history(&self) -> Result<HistoryVerification, StoreError> {
@@ -643,13 +659,7 @@ impl ChangeHistory for MemoryScheduleStore {
     }
 
     async fn history_head(&self) -> Result<ChangeRef, StoreError> {
-        let tables = self.tables();
-        tables
-            .history
-            .records
-            .last()
-            .map(ChangeRecord::reference)
-            .ok_or_else(|| StoreError::Backend("the history has no genesis record".into()))
+        head_in(&self.tables())
     }
 }
 

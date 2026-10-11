@@ -365,7 +365,7 @@
           "properties": { "missing": { "type": "array", "items": { "type": "string" } } }
         },
         "notices": {
-          "description": "Present on PATCH responses that reset a stranded reasoning level.",
+          "description": "Present on PATCH responses that reset a stranded reasoning level; GET and PATCH both carry one while a failed switch leaves the saved models not running (each answer retries the switch first).",
           "type": "array",
           "items": { "type": "string" }
         },

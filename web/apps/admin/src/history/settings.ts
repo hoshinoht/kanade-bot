@@ -22,10 +22,20 @@ const SECTIONS: Record<string, { label: string; key: string }> = {
 /** A cleared Limits chat window, recorded beside the saves (section `limits`). */
 export const LIMITS_SECTION = 'limits';
 export const isWindowClear = (change: SettingsChangeRow) => change.section === LIMITS_SECTION;
+/** An admin member edit (ping level, reply style, aliases), recorded beside the saves (section `members`). */
+export const MEMBERS_SECTION = 'members';
+export const isMemberEdit = (change: SettingsChangeRow) => change.section === MEMBERS_SECTION;
+/** Where a record comes from: its own page, or a Config section. */
+export const settingOrigin = (change: SettingsChangeRow) => (isWindowClear(change) ? 'Limits' : isMemberEdit(change) ? 'Members' : 'Config');
 
-export const sectionLabel = (section: string) => (section === LIMITS_SECTION ? 'Limits' : (SECTIONS[section]?.label ?? section));
+export const sectionLabel = (section: string) =>
+  section === LIMITS_SECTION ? 'Limits' : section === MEMBERS_SECTION ? 'Members' : (SECTIONS[section]?.label ?? section);
 export const sectionHref = (section: string) =>
-  section === LIMITS_SECTION ? '/limits' : `/config?section=${encodeURIComponent(SECTIONS[section]?.key ?? section)}`;
+  section === LIMITS_SECTION
+    ? '/limits'
+    : section === MEMBERS_SECTION
+      ? '/members'
+      : `/config?section=${encodeURIComponent(SECTIONS[section]?.key ?? section)}`;
 /** A row key without the `v5.` storage prefix. */
 const keyLabel = (key: string) => key.replace(/^v5\./, '');
 
@@ -66,7 +76,7 @@ export function settingSummary(change: SettingsChangeRow): string {
   const keys = change.values.map((row) => keyLabel(row.key));
   const shown = keys.slice(0, 3).join(', ');
   const more = keys.length > 3 ? ` +${keys.length - 3} more` : '';
-  return `Config · ${sectionLabel(change.section)} — ${shown}${more}`;
+  return isMemberEdit(change) ? `Members · ${shown}${more}` : `Config · ${sectionLabel(change.section)} — ${shown}${more}`;
 }
 
 const object = (text: string): Record<string, unknown> | null => {

@@ -44,7 +44,8 @@ use crate::{
     },
     infrastructure::store::{
         auth_audit::{AuditFilter, AuditRow, AuthAuditStore},
-        replays::{ReplayScope, ReplayStore, StoredReplay},
+        replays::{PortalRecord, PortalWrite, ReplayScope, ReplayStore, StoredReplay},
+        snapshots::{HistoryView, HistoryViewQuery, SnapshotReads},
     },
 };
 
@@ -107,7 +108,8 @@ pub trait ReadStore: Send + Sync {
     fn head(&self) -> ReadFuture<'_, ChangeRef>;
     fn members(&self) -> ReadFuture<'_, Vec<MemberProfile>>;
     fn member(&self, user_id: String) -> ReadFuture<'_, Option<MemberProfile>>;
-    /// Live extractor proposals plus submitted member requests.
+    /// Live extractor proposals plus submitted member requests, counted in
+    /// one snapshot.
     fn inbox_count(&self) -> ReadFuture<'_, u64>;
     /// Live proposals, oldest first.
     fn live_proposals(&self) -> ReadFuture<'_, Vec<StoredProposal>>;
@@ -149,12 +151,22 @@ pub trait ReadStore: Send + Sync {
         actor: Actor,
         request_id: String,
     ) -> ReadFuture<'_, Option<ChangeRecord>>;
-    /// Portal member edits bypass the scheduler (members are not history rows).
+    /// A member edit outside the admin API (the Discord command): no History
+    /// record or replay. Members are not history rows, so it bypasses the scheduler.
     fn edit_member(
         &self,
         user_id: String,
         edit: PortalEdit,
     ) -> ReadFuture<'_, Option<MemberProfile>>;
+    /// An admin portal member edit with its History record and keyed
+    /// replay, in one write (see [`ReplayStore::apply_portal_recorded`]).
+    fn edit_member_recorded(
+        &self,
+        user_id: String,
+        edit: PortalEdit,
+        record: PortalRecord,
+        replay: Option<StoredReplay>,
+    ) -> ReadFuture<'_, PortalWrite>;
     /// Newest first, older than `before`, genesis never included.
     fn history_page(
         &self,
@@ -162,7 +174,9 @@ pub trait ReadStore: Send + Sync {
         before: Option<u64>,
         limit: usize,
     ) -> ReadFuture<'_, HistorySlice>;
-    fn history_total(&self, filter: ChangeFilter) -> ReadFuture<'_, u64>;
+    /// One History page (head, total, records and settings saves) read
+    /// from one snapshot, so a concurrent write is wholly in it or out.
+    fn history_view(&self, query: HistoryViewQuery) -> ReadFuture<'_, HistoryView>;
     fn change(&self, seq: u64) -> ReadFuture<'_, Option<ChangeRecord>>;
     fn verify_history(&self) -> ReadFuture<'_, HistoryVerification>;
     /// Whether the chain still holds `anchor` (a backup manifest's head).
@@ -265,6 +279,7 @@ where
         + ReplayStore
         + AuthAuditStore
         + OwnerRequestStore
+        + SnapshotReads
         + Send
         + Sync,
 {
@@ -285,16 +300,7 @@ where
     }
 
     fn inbox_count(&self) -> ReadFuture<'_, u64> {
-        Box::pin(async move {
-            let proposals = self.list_proposals(true).await?.len();
-            let requests = self
-                .list_drafts(Some(DraftStatus::Submitted))
-                .await?
-                .iter()
-                .filter(|draft| draft.kind == DraftKind::Request)
-                .count();
-            Ok((proposals + requests) as u64)
-        })
+        Box::pin(SnapshotReads::inbox_count(self))
     }
 
     fn live_proposals(&self) -> ReadFuture<'_, Vec<StoredProposal>> {
@@ -442,6 +448,19 @@ where
         Box::pin(async move { self.apply_portal(&user_id, edit).await })
     }
 
+    fn edit_member_recorded(
+        &self,
+        user_id: String,
+        edit: PortalEdit,
+        record: PortalRecord,
+        replay: Option<StoredReplay>,
+    ) -> ReadFuture<'_, PortalWrite> {
+        Box::pin(async move {
+            self.apply_portal_recorded(&user_id, edit, record, replay)
+                .await
+        })
+    }
+
     fn history_page(
         &self,
         filter: ChangeFilter,
@@ -480,8 +499,8 @@ where
         })
     }
 
-    fn history_total(&self, filter: ChangeFilter) -> ReadFuture<'_, u64> {
-        Box::pin(async move { ChangeHistory::count_changes(self, &filter).await })
+    fn history_view(&self, query: HistoryViewQuery) -> ReadFuture<'_, HistoryView> {
+        Box::pin(SnapshotReads::history_view(self, query))
     }
 
     fn change(&self, seq: u64) -> ReadFuture<'_, Option<ChangeRecord>> {

@@ -29,10 +29,8 @@ use crate::{
         listeners::Site,
         state::ApiState,
     },
-    domain::{
-        history::{ChangeFilter, ChangeRef},
-        scheduler::Scope,
-    },
+    domain::history::{ChangeFilter, ChangeRef},
+    infrastructure::store::snapshots::HistoryViewQuery,
 };
 
 pub fn routes() -> Router<Arc<Site>> {
@@ -138,48 +136,37 @@ fn page_query(state: &ApiState, uri: &Uri) -> Result<PageQuery, ApiError> {
     })
 }
 
+/// Head, total, records and settings saves come from one store snapshot,
+/// so a write landing mid-read never shows in one part and not another.
 async fn page(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> Reply {
     let state = state(&site)?;
     let query = page_query(state, &uri)?;
-    // Head first, as the Week read: it never runs ahead of the page.
-    let head = state.store.head().await.map_err(unavailable)?;
-    let total = state
+    let view = state
         .store
-        .history_total(query.filter.clone())
+        .history_view(HistoryViewQuery {
+            filter: query.filter.clone(),
+            before: query.before,
+            limit: query.limit,
+            settings: settings::query(&query.filter),
+        })
         .await
         .map_err(unavailable)?;
     // A run with no row and no record is unknown; a gone run keeps its log.
-    if let ChangeFilter::Run(run_id) = &query.filter
-        && total == 0
-        && state
-            .store
-            .snapshot(Scope::Run(run_id.clone()))
-            .await
-            .map_err(unavailable)?
-            .runs
-            .is_empty()
-    {
+    if view.total == 0 && !view.run_known {
         return Err(ApiError::INVALID_QUERY);
     }
-    let slice = state
-        .store
-        .history_page(query.filter.clone(), query.before, query.limit)
-        .await
-        .map_err(unavailable)?;
-    let (settings, settings_total) =
-        settings::page(state, &query.filter, query.before, &slice).await?;
+    let (settings, settings_total) = settings::page(state, &query.filter, query.before, &view)?;
     let records = encoded(
-        slice
-            .records
+        view.records
             .iter()
             .map(dto::record)
             .collect::<Result<Vec<_>, _>>(),
     )?;
     Ok(Json(dto::HistoryPage {
         records,
-        head: (&head).into(),
-        next_before: slice.next_before,
-        total,
+        head: (&view.head).into(),
+        next_before: view.next_before,
+        total: view.total,
         settings,
         settings_total,
     })

@@ -8,14 +8,17 @@ use std::{
     future::Future,
     path::PathBuf,
     pin::Pin,
-    sync::{Arc, Mutex, PoisonError},
+    sync::{
+        Arc, Mutex, PoisonError,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use chrono::{DateTime, Utc};
 
 use tokio::sync::{MutexGuard, watch};
 
-use super::models;
+use super::{changes, models};
 use crate::{
     api::{
         dto::config::{self as dto, ConfigView, EnvRow, KeyLimits, ManageMessages},
@@ -234,6 +237,9 @@ pub struct ConfigDesk {
     /// Which id lists have a stored row: read from the store once, then
     /// kept by the saves (all settings writes go through this desk).
     saved: Mutex<SavedLists>,
+    /// The last switch of the running roles failed: saved and running
+    /// models differ until a retry ([`Self::apply_models`]) succeeds.
+    models_unapplied: AtomicBool,
 }
 
 /// The cached saved-list set and a save count, so a store read that began
@@ -260,6 +266,7 @@ impl ConfigDesk {
             personas: inputs.personas,
             changes,
             saved: Mutex::new(SavedLists::default()),
+            models_unapplied: AtomicBool::new(false),
         }
     }
 
@@ -375,6 +382,33 @@ impl ConfigDesk {
             Some(models) => models.read().await,
             None => CatalogRead::default(),
         }
+    }
+
+    /// Switches the running roles to saved `models`; `true` when they now
+    /// run (never without a gateway). A failure is logged and remembered
+    /// until a later switch succeeds. Callers hold the settings lock, so a
+    /// switch never installs models older than the saved ones.
+    pub(super) fn apply_models(&self, models: &Models) -> bool {
+        let Some(stack) = &self.models else {
+            return false;
+        };
+        let applied = match stack.apply(models) {
+            Ok(swaps) => {
+                changes::models_applied(&swaps);
+                true
+            }
+            Err(error) => {
+                changes::models_apply_failed(&error);
+                false
+            }
+        };
+        self.models_unapplied.store(!applied, Ordering::SeqCst);
+        applied
+    }
+
+    /// The last switch failed: the running models are not the saved ones.
+    pub(super) fn models_unapplied(&self) -> bool {
+        self.models_unapplied.load(Ordering::SeqCst)
     }
 
     /// Env-only facts the chatbot needs before it can be turned on.

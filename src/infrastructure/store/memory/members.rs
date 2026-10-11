@@ -8,7 +8,7 @@ use crate::domain::members::{
 };
 use crate::domain::scheduler::StoreError;
 
-type MemberScheduleGuard<'a> = MutexGuard<'a, BTreeMap<String, MemberProfile>>;
+pub(super) type MemberScheduleGuard<'a> = MutexGuard<'a, BTreeMap<String, MemberProfile>>;
 
 impl MemberStore for super::MemoryScheduleStore {
     async fn list_members(&self) -> Result<Vec<MemberProfile>, StoreError> {
@@ -103,39 +103,8 @@ impl MemberStore for super::MemoryScheduleStore {
         user_id: &str,
         edit: PortalEdit,
     ) -> Result<Option<MemberProfile>, StoreError> {
-        let result = async {
-            let mut members = self.members();
-            if !members.contains_key(user_id) {
-                return Ok(None);
-            }
-            if let Some(alias) = &edit.add_alias {
-                let taken = members
-                    .values()
-                    .any(|other| other.member.user_id != user_id && other.aliases.contains(alias));
-                if taken || !is_valid_alias(alias) {
-                    return Err(StoreError::Constraint(format!("alias {alias:?} refused")));
-                }
-            }
-            let Some(profile) = members.get_mut(user_id) else {
-                return Ok(None);
-            };
-            if let Some(level) = edit.ping_level {
-                profile.member.ping_level = level;
-            }
-            if let Some(style) = edit.reply_style {
-                profile.reply_style = style;
-            }
-            if let Some(alias) = edit.add_alias
-                && !profile.aliases.contains(&alias)
-            {
-                profile.aliases.push(alias);
-            }
-            if let Some(alias) = edit.remove_alias {
-                profile.aliases.retain(|held| *held != alias);
-            }
-            Ok(Some(profile.clone()))
-        }
-        .await;
+        let result =
+            portal(&mut self.members(), user_id, edit).map(|edited| edited.map(|(_, after)| after));
         self.written.after_if(
             crate::infrastructure::store::Written::Members,
             result,
@@ -144,8 +113,46 @@ impl MemberStore for super::MemoryScheduleStore {
     }
 }
 
+/// One portal edit, checked before anything moves; the row before and after.
+pub(super) fn portal(
+    members: &mut BTreeMap<String, MemberProfile>,
+    user_id: &str,
+    edit: PortalEdit,
+) -> Result<Option<(MemberProfile, MemberProfile)>, StoreError> {
+    if !members.contains_key(user_id) {
+        return Ok(None);
+    }
+    if let Some(alias) = &edit.add_alias {
+        let taken = members
+            .values()
+            .any(|other| other.member.user_id != user_id && other.aliases.contains(alias));
+        if taken || !is_valid_alias(alias) {
+            return Err(StoreError::Constraint(format!("alias {alias:?} refused")));
+        }
+    }
+    let Some(profile) = members.get_mut(user_id) else {
+        return Ok(None);
+    };
+    let before = profile.clone();
+    if let Some(level) = edit.ping_level {
+        profile.member.ping_level = level;
+    }
+    if let Some(style) = edit.reply_style {
+        profile.reply_style = style;
+    }
+    if let Some(alias) = edit.add_alias
+        && !profile.aliases.contains(&alias)
+    {
+        profile.aliases.push(alias);
+    }
+    if let Some(alias) = edit.remove_alias {
+        profile.aliases.retain(|held| *held != alias);
+    }
+    Ok(Some((before, profile.clone())))
+}
+
 impl super::MemoryScheduleStore {
-    fn members(&self) -> MemberScheduleGuard<'_> {
+    pub(super) fn members(&self) -> MemberScheduleGuard<'_> {
         self.members
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)

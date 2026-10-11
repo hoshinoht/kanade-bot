@@ -6,11 +6,15 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 
+use super::members::portal;
 use super::settings::{append, refuse_change, refuse_unknown};
+use crate::domain::members::PortalEdit;
 use crate::domain::scheduler::StoreError;
 use crate::domain::settings::SettingsChange;
 use crate::infrastructure::store::Written;
-use crate::infrastructure::store::replays::{ReplayScope, ReplayStore, StoredReplay};
+use crate::infrastructure::store::replays::{
+    PortalRecord, PortalWrite, ReplayScope, ReplayStore, StoredReplay, replayed,
+};
 
 pub(super) type ReplayTable = BTreeMap<(ReplayScope, String, String), StoredReplay>;
 
@@ -93,6 +97,48 @@ impl ReplayStore for super::MemoryScheduleStore {
         }
         .await;
         self.written.after(Written::Settings, result)
+    }
+
+    async fn apply_portal_recorded(
+        &self,
+        user_id: &str,
+        edit: PortalEdit,
+        record: PortalRecord,
+        replay: Option<StoredReplay>,
+    ) -> Result<PortalWrite, StoreError> {
+        if let Some(replay) = &replay {
+            replay.check()?;
+        }
+        // As SQLite's `to_iso`: a record outside years 1..=9999 is refused
+        // before anything moves.
+        crate::domain::time::to_iso(&record.at)
+            .map_err(|error| StoreError::Constraint(format!("{:?}: {error}", record.at)))?;
+        let mut members = self.members();
+        let mut changes = self.changes();
+        let mut table = self.replays();
+        if let Some(replay) = &replay {
+            let key = (replay.scope, replay.actor.clone(), replay.key.clone());
+            if let Some(answer) = replayed(table.get(&key), replay) {
+                return Ok(answer);
+            }
+        }
+        let Some((before, after)) = portal(&mut members, user_id, edit)? else {
+            return Ok(PortalWrite::Missing);
+        };
+        let change = record.change(&before, &after);
+        let recorded = change.is_some();
+        if let Some(change) = change {
+            append(&mut changes, change);
+        }
+        if let Some(replay) = replay {
+            put(&mut table, replay);
+        }
+        drop((members, changes, table));
+        self.written.notify(Written::Members);
+        if recorded {
+            self.written.notify(Written::Settings);
+        }
+        Ok(PortalWrite::Edited(after))
     }
 
     async fn prune_replays(&self, now: DateTime<Utc>) -> Result<u64, StoreError> {

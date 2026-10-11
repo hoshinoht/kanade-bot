@@ -5,7 +5,7 @@
   import type { SettingsChangeRow } from '@kanade/api-types';
   import { enter, Modal } from '@kanade/ui';
   import { SURFACE_LABELS, localAt } from './describe';
-  import { sectionHref, sectionLabel, settingCount, settingFields, windowClear } from './settings';
+  import { isMemberEdit, sectionHref, sectionLabel, settingCount, settingFields, settingOrigin, windowClear } from './settings';
 
   let {
     wide,
@@ -32,6 +32,8 @@
   const fields = $derived(settingFields(change));
   // A cleared Limits window rather than a Config save.
   const clear = $derived(windowClear(change));
+  // An admin member edit, recorded beside the saves.
+  const member = $derived(isMemberEdit(change));
 </script>
 
 <svelte:window
@@ -46,14 +48,14 @@
 {#snippet content()}
   <div class="history-detail__head" data-fid="history-pane-head">
     <div class="history-detail__top">
-      <p class="cap">{clear ? 'Limits' : 'Config'} · {SURFACE_LABELS[change.surface] ?? change.surface} · {localAt(change.at, timezone)}</p>
+      <p class="cap">{settingOrigin(change)} · {SURFACE_LABELS[change.surface] ?? change.surface} · {localAt(change.at, timezone)}</p>
       {#if wide}<button class="btn btn--ghost history-detail__close" type="button" aria-label="Close change details" onclick={onclose}>×</button>{/if}
     </div>
     {#if clear}
       <h2>{clear.member}'s chat window cleared</h2>
       <p class="history-detail__meta">by {actor} · {clear.used} answer{clear.used === 1 ? '' : 's'} in the window · view only</p>
     {:else}
-      <h2>{label} settings saved</h2>
+      <h2>{member ? 'Member edited' : `${label} settings saved`}</h2>
       <p class="history-detail__meta">by {actor} · revision <span class="mono">{change.revision}</span> · {settingCount(change)} · view only</p>
     {/if}
   </div>
@@ -85,6 +87,11 @@
       </p>
       <div class="history-detail__actions" data-fid="history-actions">
         <a class="btn" href={sectionHref(change.section)}>Open Limits</a>
+      </div>
+    {:else if member}
+      <p class="history-detail__note">Member edits are kept for the record; they are not part of the change chain and cannot be reverted here.</p>
+      <div class="history-detail__actions" data-fid="history-actions">
+        <a class="btn" href={sectionHref(change.section)}>Open Members</a>
       </div>
     {:else}
       <p class="history-detail__note">Config saves are kept for the record; they are not part of the change chain and cannot be reverted here.</p>

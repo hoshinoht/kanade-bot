@@ -11,6 +11,7 @@ mod migrate;
 mod model_logs;
 mod owner;
 mod retry;
+mod snapshots;
 mod support;
 
 use chrono::{NaiveTime, TimeZone, Utc, Weekday};

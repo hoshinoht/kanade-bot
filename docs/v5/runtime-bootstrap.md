@@ -319,9 +319,12 @@ before/after values) each role whose running alias or effort changed logs
 ```
 
 (`null` for an unrouted side), and `model_roles_not_applied` (WARN) if the
-stack refused them (the save stands and a notice says they apply at
-restart). Chat reads its route once when a question is prepared; the
-system prompt's runtime line, permit, requests, chat row and
+stack refused them. The save stands; until a switch succeeds every config
+answer (`GET` and each `PATCH`) first retries it against the saved roles
+and, while it still fails, carries a notice that the saved models are not
+running (they apply at restart at the latest). Chat reads its route once
+when a question is prepared; the system prompt's runtime line, permit,
+requests, chat row and
 `chat_answered`/`chat_failed` (`model`, `reasoning`) all use that pinned route,
 so a save landing mid-question applies from the next question. Per-call chat
 and extraction `guardrail.external_unmasked` is set only after a provider

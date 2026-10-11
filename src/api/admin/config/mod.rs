@@ -43,7 +43,7 @@ use crate::{
     domain::{
         history::Surface,
         settings::{
-            LOCAL_CONTEXT_WARNING, RuntimeSettings, Section, SettingsChange, SettingsError,
+            LOCAL_CONTEXT_WARNING, Models, RuntimeSettings, Section, SettingsChange, SettingsError,
             diff_rows,
         },
     },
@@ -57,6 +57,9 @@ struct Notices {
 }
 
 type Reply = Result<axum::response::Response, Refusal>;
+
+/// On every config answer while the saved model roles are not running.
+const MODELS_UNAPPLIED: &str = "The saved models are not running yet: switching to them failed, so the previous ones stay in use until a retry succeeds or the bot restarts.";
 
 pub fn routes() -> Router<Arc<Site>> {
     Router::new()
@@ -185,12 +188,29 @@ async fn last_digest(
     )
 }
 
+/// Retries a failed switch against the saved roles; `true` while the
+/// running models still differ. Callers hold the settings lock.
+fn reconcile_models(desk: &ConfigDesk, saved: &Models) -> bool {
+    if desk.models_unapplied() {
+        desk.apply_models(saved);
+    }
+    desk.models_unapplied()
+}
+
+/// Retries a failed model switch first, so a stack left behind catches up
+/// and the page says so while it has not.
 async fn read(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
     let state = state(&site)?;
     let desk = desk(state)?;
-    let settings = desk.settings().await;
+    let current = desk.lock().await;
+    let mut notices = Vec::new();
+    if reconcile_models(desk, &current.models) {
+        notices.push(MODELS_UNAPPLIED.into());
+    }
+    let settings = current.clone();
+    drop(current);
     let catalog = desk.catalog().await;
-    answer(state, desk, &settings, &catalog, Vec::new()).await
+    answer(state, desk, &settings, &catalog, notices).await
 }
 
 async fn update(
@@ -437,25 +457,24 @@ async fn update(
             changes::local_context_warnings(&context_warnings);
         }
     }
-    // Every models save re-applies, so a stack left behind catches up.
-    if let ("models", Some(stack)) = (name_of(name), &desk.models) {
-        match stack.apply(&next.models) {
-            Ok(swaps) => {
-                changes::models_applied(&swaps);
-                notices.extend(models::awaiting_restart(
-                    &saved_before,
-                    &next.models,
-                    &stack.awaiting_restart(),
-                ));
-            }
-            Err(error) => {
-                changes::models_apply_failed(&error);
-                notices.push(
-                    "Saved, but the running models could not switch; they apply when the bot restarts."
-                        .into(),
-                );
-            }
+    // Every models save re-applies, so a stack left behind catches up; any
+    // other save retries a failed switch against the saved roles.
+    let unapplied = if name_of(name) == "models" {
+        if desk.apply_models(&next.models)
+            && let Some(stack) = &desk.models
+        {
+            notices.extend(models::awaiting_restart(
+                &saved_before,
+                &next.models,
+                &stack.awaiting_restart(),
+            ));
         }
+        desk.models_unapplied()
+    } else {
+        reconcile_models(desk, &next.models)
+    };
+    if unapplied {
+        notices.push(MODELS_UNAPPLIED.into());
     }
     // A no-op PATCH saves nothing, so its answer is written alone; a saved
     // one is updated only when the models switch added notices. The save

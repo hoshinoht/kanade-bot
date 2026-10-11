@@ -1,20 +1,26 @@
 //! `Idempotency-Key` replays every store must keep: scoped per actor and
 //! desk, live until they expire, refusing another request under a live key,
-//! written with settings rows in one transaction, and pruned once expired.
+//! written with settings rows (or a portal member edit) in one transaction,
+//! and pruned once expired.
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
 use crate::domain::history::{Actor, Surface};
+use crate::domain::members::{MemberStore, PingLevel, PortalEdit};
 use crate::domain::scheduler::StoreError;
 use crate::domain::settings::{RowDiff, SettingsChange, SettingsChangeQuery, SettingsStore, keys};
-use crate::infrastructure::store::replays::{REPLAY_TTL, ReplayScope, ReplayStore, StoredReplay};
+use crate::infrastructure::store::members_conformance::gateway;
+use crate::infrastructure::store::replays::{
+    MEMBERS_SECTION, PortalRecord, PortalWrite, REPLAY_TTL, ReplayScope, ReplayStore, StoredReplay,
+};
 
-pub async fn run_suite<S: ReplayStore + SettingsStore>(make: impl AsyncFn() -> S) {
+pub async fn run_suite<S: ReplayStore + SettingsStore + MemberStore>(make: impl AsyncFn() -> S) {
     replays_round_trip_per_scope_actor_and_key(make().await).await;
     a_live_key_refuses_another_request(make().await).await;
     expired_keys_read_as_absent_and_apply_anew(make().await).await;
     prune_and_writes_drop_only_expired_rows(make().await).await;
     settings_rows_record_and_replay_commit_together(make().await).await;
+    portal_edits_record_and_replay_in_one_write(make().await).await;
     malformed_replays_are_refused(make().await).await;
 }
 
@@ -168,6 +174,146 @@ fn change(now: DateTime<Utc>) -> SettingsChange {
         )]
         .into(),
     }
+}
+
+async fn portal_edits_record_and_replay_in_one_write<
+    S: ReplayStore + SettingsStore + MemberStore,
+>(
+    store: S,
+) {
+    let name = "portal_edits_record_and_replay_in_one_write";
+    store
+        .apply_gateway(gateway("200", "Alice", &["20"]))
+        .await
+        .expect("member");
+    let record = PortalRecord {
+        at: at(1),
+        actor: Actor::admin("token"),
+        surface: Surface::AdminPortal,
+    };
+    let off = || PortalEdit {
+        ping_level: Some(PingLevel::Off),
+        ..PortalEdit::default()
+    };
+    let edit = |edit, key: &str, request| {
+        store.apply_portal_recorded(
+            "200",
+            edit,
+            record.clone(),
+            Some(replay(ReplayScope::Config, key, request, at(1))),
+        )
+    };
+    let saves = async || {
+        store
+            .settings_changes(SettingsChangeQuery::default())
+            .await
+            .expect("saves")
+    };
+    let PortalWrite::Edited(edited) = edit(off(), "k", 'a').await.expect("edit") else {
+        panic!("{name}: not edited");
+    };
+    assert_eq!(edited.member.ping_level, PingLevel::Off, "{name}");
+    let recorded = saves().await;
+    assert_eq!(recorded.len(), 1, "{name}: one History row");
+    let change = &recorded[0];
+    assert_eq!(
+        (change.section.as_str(), change.revision, &change.actor),
+        (MEMBERS_SECTION, 0, &Actor::admin("token")),
+        "{name}"
+    );
+    let row = change.values.get("member.200").expect("member row");
+    assert!(row.to.contains(r#""ping_level":"off""#), "{name}: {row:?}");
+    assert!(row.from.contains(r#""member":"Alice""#), "{name}: {row:?}");
+    assert_ne!(row.from, row.to, "{name}");
+    assert!(
+        store
+            .replay(ReplayScope::Config, "admin:token", "k", at(2))
+            .await
+            .expect("replay")
+            .is_some(),
+        "{name}: the key's answer is stored with the edit"
+    );
+
+    // The same key and request writes nothing again; another request under
+    // the live key is refused and writes nothing.
+    let all = PortalEdit {
+        ping_level: Some(PingLevel::All),
+        ..PortalEdit::default()
+    };
+    assert_eq!(
+        edit(off(), "k", 'a').await.expect("retry"),
+        PortalWrite::Replayed,
+        "{name}"
+    );
+    assert_eq!(
+        edit(all.clone(), "k", 'b').await.expect("other"),
+        PortalWrite::KeyTaken,
+        "{name}"
+    );
+    assert_eq!(saves().await.len(), 1, "{name}: no second row");
+    let member = store.load_member("200").await.expect("load").expect("row");
+    assert_eq!(
+        member.member.ping_level,
+        PingLevel::Off,
+        "{name}: no second write"
+    );
+
+    // A no-op edit records nothing but keeps its answer; a missing member or
+    // a refused edit stores neither.
+    let PortalWrite::Edited(_) = edit(off(), "k-noop", 'c').await.expect("no-op") else {
+        panic!("{name}: no-op not answered");
+    };
+    assert_eq!(saves().await.len(), 1, "{name}: a no-op records nothing");
+    let missing = store
+        .apply_portal_recorded(
+            "404",
+            off(),
+            record.clone(),
+            Some(replay(ReplayScope::Config, "k-404", 'd', at(1))),
+        )
+        .await
+        .expect("missing");
+    assert_eq!(missing, PortalWrite::Missing, "{name}");
+    store
+        .apply_gateway(gateway("100", "Bob", &["20"]))
+        .await
+        .expect("member");
+    let taken = PortalEdit {
+        add_alias: Some("ali".into()),
+        ..PortalEdit::default()
+    };
+    store
+        .apply_portal("100", taken.clone())
+        .await
+        .expect("bob's alias");
+    assert!(
+        matches!(
+            edit(taken, "k-taken", 'e').await,
+            Err(StoreError::Constraint(_))
+        ),
+        "{name}: the alias is held"
+    );
+    for key in ["k-404", "k-taken"] {
+        assert!(
+            store
+                .replay(ReplayScope::Config, "admin:token", key, at(2))
+                .await
+                .expect("replay")
+                .is_none(),
+            "{name}: {key} stored nothing"
+        );
+    }
+    assert_eq!(saves().await.len(), 1, "{name}");
+
+    // Without a key the edit is still recorded.
+    let PortalWrite::Edited(_) = store
+        .apply_portal_recorded("200", all, record.clone(), None)
+        .await
+        .expect("unkeyed")
+    else {
+        panic!("{name}: unkeyed not edited");
+    };
+    assert_eq!(saves().await.len(), 2, "{name}: unkeyed edit recorded");
 }
 
 async fn settings_rows_record_and_replay_commit_together<S: ReplayStore + SettingsStore>(store: S) {
