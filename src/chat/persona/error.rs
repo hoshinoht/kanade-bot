@@ -10,6 +10,8 @@ pub enum PersonaError {
     NotRegular,
     Escape,
     TooLarge,
+    Linked,
+    TooManyProfiles,
     InvalidUtf8,
     Io(io::ErrorKind),
     Yaml(YamlIssue),
@@ -51,6 +53,10 @@ impl fmt::Display for PersonaError {
             Self::NotRegular => formatter.write_str("persona path is not a regular file"),
             Self::Escape => formatter.write_str("persona path escapes the persona directory"),
             Self::TooLarge => formatter.write_str("persona file exceeds the size limit"),
+            Self::Linked => formatter.write_str("persona file must have exactly one hard link"),
+            Self::TooManyProfiles => {
+                formatter.write_str("persona profiles directory has too many profile files")
+            }
             Self::InvalidUtf8 => formatter.write_str("persona file is not valid UTF-8"),
             Self::Io(kind) => write!(formatter, "persona file is unreadable ({kind})"),
             Self::Yaml(YamlIssue::DuplicateKey) => {

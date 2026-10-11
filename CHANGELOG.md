@@ -4,6 +4,10 @@ Notable changes to the Boss Scheduler Bot, newest first.
 
 ## 1.0.0-beta.6 (in development)
 
+**Changed**
+
+- Persona, boss knowledge and boss catalog files are opened without following symlinks and without blocking on a FIFO, and must be regular files with one hard link and at most 256 KiB, checked on the opened file. Up to 256 persona profiles and 256 knowledge documents are read; past that the load fails as a whole (a persona reload keeps the previous set), and an unreadable knowledge directory entry now fails the load instead of being skipped.
+
 ## 1.0.0-beta.5 (2026-10-11)
 
 Headline: **safer data and an operator toolkit.** Backups are age-encrypted, and `kanade restore` puts one back with the store locked throughout. New shell commands open and close the public portal, manage admin sessions and rotate the break-glass token. Model logs are finally pruned after 90 days, and member edits from the admin portal and Discord land in History. The public portal gets live change hints, both origins enforce Trusted Types, and the shared UI styles are split into core primitives and screens.

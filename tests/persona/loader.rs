@@ -1,6 +1,6 @@
 use std::{fs, os::unix::fs::symlink, process::Command};
 
-use kanade::chat::persona::{PersonaError, PersonaRoot};
+use kanade::chat::persona::{MAX_PROFILE_FILES, PersonaError, PersonaRoot};
 
 use crate::support::{Fixture, bundle, catalog, pid, prof, profile};
 
@@ -187,4 +187,55 @@ fn missing_profiles_directory_means_no_profiles() {
     fs::remove_dir_all(fixture.path("profiles")).unwrap();
     let set = fixture.root().load_profiles().unwrap();
     assert!(set.readable.is_empty() && set.unreadable.is_empty());
+}
+
+#[test]
+fn hard_linked_files_are_rejected() {
+    let fixture = Fixture::new();
+    let outside = fixture.outside();
+    fs::write(outside.join("Alpha.yaml"), bundle("alpha", "Alpha")).unwrap();
+    fs::hard_link(
+        outside.join("Alpha.yaml"),
+        fixture.path("bundles/alpha.yaml"),
+    )
+    .unwrap();
+    fs::write(outside.join("Style.yaml"), profile("style", None)).unwrap();
+    fs::hard_link(
+        outside.join("Style.yaml"),
+        fixture.path("profiles/style.yaml"),
+    )
+    .unwrap();
+    let root = fixture.root();
+    assert_eq!(
+        root.load_bundle(&pid("alpha")).unwrap_err(),
+        PersonaError::Linked
+    );
+    let set = root.load_profiles().unwrap();
+    assert!(set.readable.is_empty());
+    assert_eq!(set.unreadable[0].error, PersonaError::Linked);
+
+    // Dropping the other name leaves one link, and the file loads.
+    fs::remove_file(outside.join("Alpha.yaml")).unwrap();
+    root.load_bundle(&pid("alpha")).unwrap();
+}
+
+#[test]
+fn more_profile_candidates_than_the_cap_fail_the_whole_load() {
+    let fixture = Fixture::new();
+    // Only `<stem>.yaml` other than the example counts toward the cap.
+    fixture.write("profiles/example.yaml", profile("example", None));
+    fixture.write("profiles/Notes.md", "ignored");
+    fixture.write("profiles/good.yaml", profile("good", None));
+    for index in 1..MAX_PROFILE_FILES {
+        fixture.write(&format!("profiles/Filler{index:03}.yaml"), "");
+    }
+    let set = fixture.root().load_profiles().unwrap();
+    assert_eq!(set.readable.keys().collect::<Vec<_>>(), [&prof("good")]);
+    assert_eq!(set.unreadable.len(), MAX_PROFILE_FILES - 1);
+
+    fixture.write("profiles/Filler999.yaml", "");
+    assert_eq!(
+        fixture.root().load_profiles().unwrap_err(),
+        PersonaError::TooManyProfiles
+    );
 }

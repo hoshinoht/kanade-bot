@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::{load_catalog, load_knowledge_dir, load_personas};
+use super::{knowledge::MAX_KNOWLEDGE_FILES, load_catalog, load_knowledge_dir, load_personas};
 
 fn repo(path: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join(path)
@@ -275,6 +275,97 @@ fn knowledge_requires_schema_v2_meta() {
     assert_eq!(
         load_knowledge_dir(&dir).expect_err("v1").file,
         meta.display().to_string()
+    );
+}
+
+/// An invented valid document for key `Zeta`, written outside the directory.
+#[cfg(unix)]
+fn outside_zeta(temp: &Temp, dir: &Path) -> PathBuf {
+    let text = fs::read_to_string(dir.join("maleficstar.yaml"))
+        .expect("read")
+        .replace("boss: MaleficStar", "boss: Zeta");
+    temp.write("Outside/Zeta.yaml", &text)
+}
+
+#[cfg(unix)]
+#[test]
+fn knowledge_refuses_symlinks_for_documents_and_the_directory() {
+    let temp = Temp::new();
+    let dir = knowledge_fixture(&temp);
+    let target = outside_zeta(&temp, &dir);
+    let link = dir.join("zeta.yaml");
+    std::os::unix::fs::symlink(&target, &link).expect("symlink");
+    let error = load_knowledge_dir(&dir).expect_err("symlinked document");
+    assert_eq!(error.file, link.display().to_string());
+    assert_eq!(error.problem, "is a symbolic link");
+    fs::remove_file(&link).expect("unlink");
+
+    let linked_dir = temp.0.join("Linked-Knowledge");
+    std::os::unix::fs::symlink(&dir, &linked_dir).expect("symlink");
+    let error = load_knowledge_dir(&linked_dir).expect_err("symlinked directory");
+    assert_eq!(error.problem, "is a symbolic link");
+    load_knowledge_dir(&dir).expect("the real directory still loads");
+}
+
+#[cfg(unix)]
+#[test]
+fn knowledge_refuses_a_hard_linked_document() {
+    let temp = Temp::new();
+    let dir = knowledge_fixture(&temp);
+    let target = outside_zeta(&temp, &dir);
+    let doc = dir.join("zeta.yaml");
+    fs::hard_link(&target, &doc).expect("hard link");
+    let error = load_knowledge_dir(&dir).expect_err("hard-linked document");
+    assert_eq!(error.file, doc.display().to_string());
+    assert_eq!(error.problem, "has more than one hard link");
+
+    fs::remove_file(&target).expect("drop the other name");
+    assert_eq!(
+        load_knowledge_dir(&dir).expect("one link").keys,
+        ["MaleficStar", "Zeta"]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn knowledge_refuses_a_fifo_without_blocking() {
+    let temp = Temp::new();
+    let dir = knowledge_fixture(&temp);
+    let fifo = dir.join("zeta.yaml");
+    let c_path = std::ffi::CString::new(std::os::unix::ffi::OsStrExt::as_bytes(fifo.as_os_str()))
+        .expect("no NUL");
+    // SAFETY: `c_path` is a valid NUL-terminated string that outlives the call.
+    assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0, "mkfifo");
+    let (sent, received) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sent.send(load_knowledge_dir(&dir).map(|_| ()));
+    });
+    let error = received
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("load returned promptly")
+        .expect_err("FIFO document");
+    assert_eq!(error.file, fifo.display().to_string());
+    assert_eq!(error.problem, "not a regular file");
+}
+
+#[test]
+fn knowledge_over_the_file_cap_fails_the_whole_load() {
+    let temp = Temp::new();
+    let dir = knowledge_fixture(&temp);
+    // The fixture's one document plus these reach the cap exactly.
+    for index in 1..MAX_KNOWLEDGE_FILES {
+        fs::write(dir.join(format!("Filler{index:03}.yaml")), "").expect("write");
+    }
+    // At the cap the walk passes and the first filler fails on its own.
+    let error = load_knowledge_dir(&dir).expect_err("filler is not a document");
+    assert!(error.file.ends_with("Filler001.yaml"), "{error}");
+
+    fs::write(dir.join("Filler999.yaml"), "").expect("write");
+    let error = load_knowledge_dir(&dir).expect_err("over the cap");
+    assert_eq!(error.file, dir.display().to_string());
+    assert_eq!(
+        error.problem,
+        format!("more than {MAX_KNOWLEDGE_FILES} knowledge documents")
     );
 }
 

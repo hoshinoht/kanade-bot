@@ -14,6 +14,9 @@ const MAX_KNOWLEDGE_BYTES: u64 = 256 * 1024;
 const SCHEMA_FILE: &str = "schema.json";
 const META_FILE: &str = "_meta.yaml";
 const SCHEMA_VERSION: u64 = 2;
+/// Documents a knowledge directory may hold; more fails the whole load
+/// rather than silently dropping some.
+pub(super) const MAX_KNOWLEDGE_FILES: usize = 256;
 
 /// One knowledge document as the API reads it.
 pub(crate) fn read_document(path: &Path) -> Result<Value, LoadError> {
@@ -62,8 +65,12 @@ impl KnowledgeDir {
 }
 
 pub fn load_knowledge_dir(dir: &Path) -> Result<KnowledgeDir, LoadError> {
-    if !fs::metadata(dir).is_ok_and(|metadata| metadata.is_dir()) {
-        return Err(LoadError::new(dir, "not a directory"));
+    match fs::symlink_metadata(dir) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(LoadError::new(dir, "is a symbolic link"));
+        }
+        Ok(metadata) if metadata.is_dir() => {}
+        _ => return Err(LoadError::new(dir, "not a directory")),
     }
     let schema_path = dir.join(SCHEMA_FILE);
     let schema: Value = serde_json::from_str(&read_text(&schema_path, MAX_KNOWLEDGE_BYTES)?)
@@ -80,12 +87,29 @@ pub fn load_knowledge_dir(dir: &Path) -> Result<KnowledgeDir, LoadError> {
         ));
     }
 
-    let mut names: Vec<String> = fs::read_dir(dir)
-        .map_err(|error| LoadError::new(dir, error.to_string()))?
-        .flatten()
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .filter(|name| name.ends_with(".yaml") && !name.starts_with('_'))
-        .collect();
+    let mut names = Vec::new();
+    for entry in fs::read_dir(dir).map_err(|error| LoadError::new(dir, error.to_string()))? {
+        // A failed entry would otherwise leave the set silently incomplete.
+        let entry = entry.map_err(|error| LoadError::new(dir, error.to_string()))?;
+        let Ok(name) = entry.file_name().into_string() else {
+            continue;
+        };
+        if !name.ends_with(".yaml") || name.starts_with('_') {
+            continue;
+        }
+        // `DirEntry::file_type` never follows a symlink; the read below would
+        // refuse one too, but naming it here gives the clearer error.
+        if entry.file_type().is_ok_and(|kind| kind.is_symlink()) {
+            return Err(LoadError::new(&entry.path(), "is a symbolic link"));
+        }
+        if names.len() == MAX_KNOWLEDGE_FILES {
+            return Err(LoadError::new(
+                dir,
+                format!("more than {MAX_KNOWLEDGE_FILES} knowledge documents"),
+            ));
+        }
+        names.push(name);
+    }
     names.sort();
     let mut keys = Vec::with_capacity(names.len());
     let mut events = Vec::new();

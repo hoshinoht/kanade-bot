@@ -18,7 +18,7 @@ pub use compiler::{CompileProvenance, CompiledPersona, ExampleSource, NudgeSeeds
 pub use error::{PersonaError, YamlIssue};
 pub use failures::{Failures, MAX_FAILURE_CHARS, check_failure_line};
 pub use id::{EXAMPLE_PROFILE, FALLBACK_PERSONA, PersonaId, ProfileId, RoleId};
-pub use loader::{Loaded, PersonaRoot, ProfileIssue, ProfileSet, Source};
+pub use loader::{Loaded, MAX_PROFILE_FILES, PersonaRoot, ProfileIssue, ProfileSet, Source};
 pub use nudges::{
     MAX_NUDGE_CHARS, MAX_NUDGE_LINES, MIN_NUDGE_LINES, MoodPools, NUDGE_FIELDS, NudgeMood,
     NudgePurpose, NudgeSource, Nudges, check_nudge_line, fill_nudge,

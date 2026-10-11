@@ -130,9 +130,9 @@ lists are comma-separated.
 | `KANADE_DB_PATH`, `KANADE_OWNER_LOCK_DIR` | required | Absolute paths without `..`. The lock directory and the database's directory are created `0700` when absent (existing ones are never re-moded); ownership, symlink and mode checks run when the store opens. A second process on the same store is refused. |
 | `KANADE_BACKUP_DIR` | unset | Absolute path without `..`. Serve only reads it: History checkpoints (`GET /api/admin/history/checkpoints`) list the `kanade backup` manifests there on every request; unset reports `backup_dir_configured: false`. Compose mounts it read-only at `/backups`. |
 | `KANADE_BACKUP_RECIPIENTS_FILE` | unset | age X25519 public keys (`age1…`, one per line, blank lines and `#` comments allowed). Set: `kanade backup` writes `<name>.age` (encrypted) with a plaintext manifest, and checkpoints list it from that manifest without decrypting. Serve and `kanade backup` refuse an unreadable file, one with no keys, a line that is not a recipient, or a pasted private identity (exit `78`). Unset: plaintext snapshots. |
-| `KANADE_CATALOG_FILE` | `boss/bosses.yaml` | Boss catalog. |
-| `KANADE_KNOWLEDGE_DIR` | unset | Boss knowledge root. |
-| `KANADE_PERSONA_DIR` | `config/personas` | Persona layout root. |
+| `KANADE_CATALOG_FILE` | `boss/bosses.yaml` | Boss catalog. Read like a knowledge document (below). |
+| `KANADE_KNOWLEDGE_DIR` | unset | Boss knowledge root, validated once at startup (no reload). The directory and its `.yaml` documents must not be symlinks; each file (`schema.json`, `_meta.yaml`, documents) is opened without following a symlink or waiting on a FIFO and must then be a regular file with one hard link and at most 256 KiB. More than 256 documents (`*.yaml` not starting with `_`) fail startup. |
+| `KANADE_PERSONA_DIR` | `config/personas` | Persona layout root; file rules in `config/personas/README.md`. |
 | `KANADE_MODEL_BASE_URL` | unset | `https`, or `http` only to loopback, `localhost` or `host.docker.internal`; no userinfo or query. Unset disables models; the key, CA and alias variables then are refused. |
 | `KANADE_MODEL_KEY_FILE`, `KANADE_MODEL_CA_FILE` | unset | Bearer key file (plain `KANADE_MODEL_KEY` is refused) and a CA file (PEM bundle or one DER certificate) that replaces the compiled webpki roots. |
 | `KANADE_EXTRACT_MODEL`, `KANADE_CHAT_MODEL`, `KANADE_REWRITE_MODEL` | unset | Model aliases (printable ASCII, ≤ 200); seeds for a role with no saved alias. |

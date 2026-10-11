@@ -5,10 +5,11 @@ use std::{
 };
 
 use kanade::chat::persona::{
-    PersonaError, PersonaSnapshot, PersonaStore, ProfileQuery, ReloadError, SelectionSource,
+    MAX_PROFILE_FILES, PersonaError, PersonaSnapshot, PersonaStore, ProfileQuery, ReloadError,
+    SelectionSource,
 };
 
-use crate::support::{Fixture, bundle, catalog, pid, profile};
+use crate::support::{Fixture, bundle, catalog, pid, prof, profile};
 
 fn effective(snapshot: &PersonaSnapshot) -> Option<(String, SelectionSource)> {
     let provenance = snapshot.provenance();
@@ -245,6 +246,27 @@ fn reload_with_an_unusable_profile_directory_keeps_last_known_good() {
             .reload(&root, &pid("alpha"), |_| Ok::<_, ()>(()))
             .is_ok()
     );
+}
+
+#[test]
+fn reload_over_the_profile_cap_keeps_last_known_good() {
+    let fixture = with_catalog();
+    let root = fixture.root();
+    fixture.write("profiles/style.yaml", profile("style", Some("kept")));
+    let store = PersonaStore::new(PersonaSnapshot::startup(&root, Some(&pid("alpha"))));
+    let before = store.pin();
+
+    for index in 0..MAX_PROFILE_FILES {
+        fixture.write(&format!("profiles/Extra{index:03}.yaml"), "");
+    }
+    let result = store.reload(&root, &pid("alpha"), |_| Ok::<_, ()>(()));
+    assert!(matches!(
+        result,
+        Err(ReloadError::Invalid(PersonaError::TooManyProfiles))
+    ));
+    assert!(Arc::ptr_eq(&before, &store.pin()));
+    let kept = &before.active().unwrap().profiles;
+    assert!(kept.get(&prof("style")).is_some());
 }
 
 #[test]

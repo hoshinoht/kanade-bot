@@ -2,8 +2,8 @@
 
 use std::{
     collections::BTreeMap,
-    fs::{self, File, Metadata},
-    io::{self, Read},
+    fs::{self, Metadata},
+    io,
     path::{Path, PathBuf},
 };
 
@@ -14,12 +14,16 @@ use super::{
     id::{EXAMPLE_PROFILE, PersonaId, ProfileId},
     schema::{Bundle, Catalog, Profile, parse_bundle, parse_catalog, parse_profile},
 };
+use crate::infrastructure::files::{Refusal, open_regular, read_capped};
 
 const CATALOG_FILE: &str = "catalog.yaml";
 const BUNDLES_DIR: &str = "bundles";
 const PROFILES_DIR: &str = "profiles";
 const EXTENSION: &str = ".yaml";
 const MAX_FILE_BYTES: u64 = 256 * 1024;
+/// Profile files a directory may offer; more fails the whole profile load
+/// rather than silently dropping some.
+pub const MAX_PROFILE_FILES: usize = 256;
 
 /// Non-model-visible provenance: file basename and SHA-256 of its bytes.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -72,6 +76,16 @@ fn io_error(error: io::Error) -> PersonaError {
     }
 }
 
+fn refused(refusal: Refusal) -> PersonaError {
+    match refusal {
+        Refusal::Symlink => PersonaError::Symlink,
+        Refusal::NotRegular => PersonaError::NotRegular,
+        Refusal::Linked => PersonaError::Linked,
+        Refusal::TooLarge => PersonaError::TooLarge,
+        Refusal::Io(error) => io_error(error),
+    }
+}
+
 fn check_dir(path: &Path) -> Result<(), PersonaError> {
     let metadata = fs::symlink_metadata(path).map_err(io_error)?;
     if metadata.file_type().is_symlink() {
@@ -119,21 +133,12 @@ impl PersonaRoot {
         if !resolved.starts_with(&self.canonical) {
             return Err(PersonaError::Escape);
         }
-        if before.len() > MAX_FILE_BYTES {
-            return Err(PersonaError::TooLarge);
-        }
-        let file = File::open(&resolved).map_err(io_error)?;
+        let (file, opened) = open_regular(&resolved, MAX_FILE_BYTES).map_err(refused)?;
         // Reject a file swapped between the checks above and the open.
-        if !same_file(&before, &file.metadata().map_err(io_error)?) {
+        if !same_file(&before, &opened) {
             return Err(PersonaError::Escape);
         }
-        let mut bytes = Vec::new();
-        file.take(MAX_FILE_BYTES + 1)
-            .read_to_end(&mut bytes)
-            .map_err(io_error)?;
-        if bytes.len() as u64 > MAX_FILE_BYTES {
-            return Err(PersonaError::TooLarge);
-        }
+        let bytes = read_capped(file, MAX_FILE_BYTES).map_err(refused)?;
         let sha256 = digest(&SHA256, &bytes)
             .as_ref()
             .iter()
@@ -179,7 +184,8 @@ impl PersonaRoot {
         })
     }
 
-    /// Load every `profiles/<id>.yaml` except the tracked example.
+    /// Load every `profiles/<id>.yaml` except the tracked example. More than
+    /// [`MAX_PROFILE_FILES`] candidates fails the whole load.
     pub fn load_profiles(&self) -> Result<ProfileSet, PersonaError> {
         let dir = self.canonical.join(PROFILES_DIR);
         match check_dir(&dir) {
@@ -191,19 +197,24 @@ impl PersonaRoot {
         for entry in fs::read_dir(&dir).map_err(io_error)? {
             let name = entry.map_err(io_error)?.file_name();
             // Non-UTF-8 names cannot be derived from any ID, so they are never candidates.
-            if let Some(name) = name.to_str() {
-                names.push(name.to_owned());
+            let Some(name) = name.to_str() else {
+                continue;
+            };
+            if name
+                .strip_suffix(EXTENSION)
+                .is_none_or(|stem| stem == EXAMPLE_PROFILE)
+            {
+                continue;
             }
+            if names.len() == MAX_PROFILE_FILES {
+                return Err(PersonaError::TooManyProfiles);
+            }
+            names.push(name.to_owned());
         }
         names.sort();
         let mut set = ProfileSet::default();
         for name in names {
-            let Some(stem) = name.strip_suffix(EXTENSION) else {
-                continue;
-            };
-            if stem == EXAMPLE_PROFILE {
-                continue;
-            }
+            let stem = &name[..name.len() - EXTENSION.len()];
             let loaded = ProfileId::parse(stem).and_then(|id| self.load_profile(&id));
             match loaded {
                 Ok(profile) => {

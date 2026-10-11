@@ -16,8 +16,14 @@ runtime reads only this layout.
 ## Files
 
 Every file is strict YAML with `schema_version: 1`. Unknown or duplicate keys,
-invalid UTF-8, symlinks, non-regular files, and paths outside this directory
-are rejected. Block scalars (`|`) keep their internal newlines.
+invalid UTF-8, symlinks, non-regular files (a FIFO is refused without waiting
+on it), files with more than one hard link, files over 256 KiB, and paths
+outside this directory are rejected; the type, link and size checks run on the
+opened file, so a path swapped after the first look is still refused. More
+than 256 `profiles/<id>.yaml` candidates (the example aside) fail the whole
+profile load: at startup chat runs with no profiles, and an explicit reload
+fails and keeps the current persona. Block scalars (`|`) keep their internal
+newlines.
 
 - **Catalog:** `default` plus `personas`, a list of `{id, label, aliases}`.
   IDs are lowercase slugs (`a-z`, `0-9`, `-`, at most 50 characters). The
