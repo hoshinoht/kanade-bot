@@ -2,12 +2,15 @@
 //! routes answer it (`src/api/admin/characters/`): IGNs 4-12 letters or
 //! digits, unique per world case-insensitively; a member's first active
 //! character is the main, a new main takes the crown, and the main stays
-//! while others are active. No seed: the list starts empty.
+//! while others are active. Seeded with invented characters (the roster
+//! boards in `docs/research/2026-10-11-roster-mockups`); Ren #1013 has none.
+//! The module starts on; `POST /__mock/modules {"roster": false}` turns it
+//! off until the next reset, and its routes then answer the generic 404.
 
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::clock::iso_now;
+use super::clock::{iso_now, iso_secs, now_secs};
 use super::{MoveError, Store};
 
 #[derive(Clone)]
@@ -46,6 +49,45 @@ impl Char {
         self.version += 1;
         self.updated_at = iso_now();
     }
+}
+
+/// Invented characters, oldest first: member, IGN, class, level, main, days
+/// since the last write, retired. Mika has three active and one retired.
+const SEED: [(&str, &str, &str, i64, bool, i64, bool); 10] = [
+    ("1003", "MikaHero", "Hero", 260, false, 46, true),
+    ("1003", "MikaNL", "Night Lord", 286, true, 2, false),
+    ("1003", "MikaBish", "Bishop", 281, false, 2, false),
+    ("1003", "Mikadere", "Lara", 266, false, 21, false),
+    ("1001", "AsahiDK", "Dark Knight", 284, true, 5, false),
+    ("1001", "AsahiMech", "Mechanic", 262, false, 12, false),
+    ("1002", "RenShade", "Shade", 279, true, 3, false),
+    ("1004", "YuzuPala", "Paladin", 270, true, 9, false),
+    ("1005", "TsubaKain", "Kain", 255, true, 14, false),
+    ("1011", "Hotaru7", "Adele", 275, true, 6, false),
+];
+
+/// The seed at the mock's now (a pinned clock gives fixed dates).
+pub fn seed() -> Vec<Char> {
+    let now = now_secs();
+    (0_i64..)
+        .zip(SEED)
+        .map(|(n, (member, ign, class, level, main, days, retired))| {
+            let at = iso_secs(now - days * 86_400);
+            Char {
+                id: format!("ch-s{}", n + 1),
+                member_id: member.into(),
+                ign: ign.into(),
+                world: "msea".into(),
+                class: Some(class.into()),
+                level: Some(level),
+                main,
+                retired_at: retired.then(|| at.clone()),
+                created_at: iso_secs(now - 120 * 86_400 + n * 3_600),
+                updated_at: at,
+                version: 1,
+            }
+        })
+        .collect()
 }
 
 #[derive(Deserialize)]
@@ -154,6 +196,15 @@ fn not_found() -> MoveError {
 }
 
 impl Store {
+    pub fn roster_on(&self) -> bool {
+        self.roster
+    }
+
+    /// `POST /__mock/modules`: the module's startup flag, until the next reset.
+    pub fn set_roster(&mut self, on: bool) {
+        self.roster = on;
+    }
+
     fn has_member(&self, id: &str) -> Result<(), MoveError> {
         self.members
             .iter()
@@ -344,5 +395,34 @@ impl Store {
         }
         self.characters.retain(|c| c.id != id);
         Ok(json!({ "message": format!("{} is deleted.", row.ign) }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_seed_keeps_the_roster_rules() {
+        let rows = seed();
+        for member in ["1001", "1002", "1003", "1004", "1005", "1011"] {
+            let mains = rows
+                .iter()
+                .filter(|c| c.member_id == member && c.active_main())
+                .count();
+            assert_eq!(mains, 1, "{member} has one active main");
+        }
+        let mut igns: Vec<String> = rows.iter().map(|c| c.ign.to_ascii_lowercase()).collect();
+        igns.sort();
+        igns.dedup();
+        assert_eq!(igns.len(), rows.len(), "IGNs are unique, whatever the case");
+        assert!(
+            rows.iter()
+                .all(|c| ign(&c.ign).is_ok() && c.level.is_some_and(|l| level(l).is_ok()))
+        );
+        assert!(
+            !rows.iter().any(|c| c.member_id == "1013"),
+            "Ren #1013 is the empty state"
+        );
     }
 }

@@ -65,10 +65,10 @@ pub fn see_other(location: &str) -> Response {
 }
 
 /// `Session` plus the new CSRF token, as a sign-in answers.
-fn signed_in(app: &App, display: &str, method: &str) -> Response {
+fn signed_in(app: &App, display: &str, method: &str, roster: bool) -> Response {
     (
         [(CSRF_HEADER, app.writes.token())],
-        Json(json!({ "display": display, "method": method })),
+        Json(json!({ "display": display, "method": method, "roster": roster })),
     )
         .into_response()
 }
@@ -164,7 +164,8 @@ pub async fn token_login(
         return unauthenticated();
     }
     let display = sign_in(&app, "token").await;
-    signed_in(&app, &display, "token")
+    let roster = app.store.lock().await.roster_on();
+    signed_in(&app, &display, "token", roster)
 }
 
 pub async fn tailscale_login() -> Response {

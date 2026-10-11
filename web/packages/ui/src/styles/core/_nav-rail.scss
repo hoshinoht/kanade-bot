@@ -20,7 +20,8 @@
   gap: 10px;
 }
 
-.frame--rail .shell > * {
+// Page blocks only: a page's own modal dialog keeps the margins that centre it.
+.frame--rail .shell > :where(:not(dialog)) {
   margin-top: 0;
   margin-bottom: 0;
 }

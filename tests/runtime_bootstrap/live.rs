@@ -220,7 +220,7 @@ fn live_serve_signs_in_with_the_token_and_reads_the_real_store() {
     assert_eq!(session.status, 200, "{}", session.body);
     assert_eq!(
         session.json(),
-        serde_json::json!({"display": "Break-glass token", "method": "token"})
+        serde_json::json!({"display": "Break-glass token", "method": "token", "roster": false})
     );
     let week = call(
         admin,

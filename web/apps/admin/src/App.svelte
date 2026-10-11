@@ -285,6 +285,9 @@
         return { id: params.id ?? '', timeZone: store.week?.timezone ?? 'Asia/Kuala_Lumpur', toaster };
       case 'reminders':
         return { store, run: router.query.get('run') ?? '' };
+      case 'members':
+        // The session says whether the roster module is on; off, no Characters tab and no character requests.
+        return { toaster, roster: store.session?.roster ?? false };
       default:
         return {};
     }

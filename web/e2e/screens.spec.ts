@@ -669,6 +669,8 @@ test('members: "Sort: runs" orders by runs this week, A–Z between equals, and 
 });
 
 test('members: phone uses a full-screen sheet and restores the roster row', async ({ page }) => {
+  // B_Members, the roster module off; with it on, the next test (B_PhoneRosterChars).
+  await page.request.post(`${ADMIN}/__mock/modules`, { data: { roster: false } });
   await page.setViewportSize({ width: 390, height: 844 });
   await go(page, '/members');
   const row = page.getByRole('button', { name: /^Asahi/ });
@@ -676,6 +678,24 @@ test('members: phone uses a full-screen sheet and restores the roster row', asyn
   const sheet = page.getByRole('dialog', { name: 'Asahi' });
   await expect(sheet).toBeVisible();
   await expect(sheet).toHaveCSS('height', '844px');
+  await page.keyboard.press('Escape');
+  await expect(sheet).toBeHidden();
+  await expect(row).toBeFocused();
+});
+
+test('members: with the roster on, the phone sheet is the narrow Modal and restores the roster row', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await go(page, '/members');
+  const row = page.getByRole('button', { name: /^Asahi/ });
+  await row.click();
+  const sheet = page.getByRole('dialog', { name: 'Asahi' });
+  await expect(sheet.getByRole('tab', { name: 'Profile' })).toBeVisible();
+  // B_PhoneRosterChars: inset from the frame's sides and never taller than the frame.
+  const box = (await sheet.locator('.modal__panel').boundingBox())!;
+  expect(box.x).toBeGreaterThan(0);
+  expect(box.x + box.width).toBeLessThan(390);
+  expect(box.y).toBeGreaterThan(0);
+  expect(box.y + box.height).toBeLessThan(844);
   await page.keyboard.press('Escape');
   await expect(sheet).toBeHidden();
   await expect(row).toBeFocused();
@@ -699,6 +719,8 @@ test('members: fixed frame keeps roster and wide detail as the only scroll owner
       documentScroll: document.scrollingElement!.scrollHeight > innerHeight,
       listOverflow: getComputedStyle(list).overflowY,
       paneOverflow: getComputedStyle(pane).overflowY,
+      // With the roster module on (the mock's default) the head and tabs stay; the tab's panel scrolls.
+      panelOverflow: getComputedStyle(pane.querySelector<HTMLElement>('.membersheet__panel')!).overflowY,
       windowHeight: document.querySelector<HTMLElement>('.members-window')!.getBoundingClientRect().height,
       paneLeft: paneBox.left,
       rosterRight: rosterBox.right,
@@ -710,7 +732,8 @@ test('members: fixed frame keeps roster and wide detail as the only scroll owner
   });
   expect(frame.documentScroll).toBe(false);
   expect(frame.listOverflow).toBe('auto');
-  expect(frame.paneOverflow).toBe('auto');
+  expect(frame.paneOverflow).toBe('clip');
+  expect(frame.panelOverflow).toBe('auto');
   expect(frame.windowHeight).toBeGreaterThan(400);
   expect(frame.paneLeft).toBeGreaterThanOrEqual(frame.rosterRight - 2);
   expect(Math.abs(frame.paneTop - frame.rosterTop)).toBeLessThanOrEqual(3);

@@ -89,6 +89,7 @@ fn common(app: &App, api: Router<App>, dist: PathBuf, public: bool) -> Router {
         .route("/__mock/csrf/rotate", post(writes::rotate))
         .route("/__mock/session", post(api::switch_session))
         .route("/__mock/limits", post(api::seed_limits))
+        .route("/__mock/modules", post(api::set_modules))
         .route("/__mock/discord", post(auth::fail_next_discord))
         .route("/__mock/arrive", post(events::arrive))
         .route("/__mock/inbox/kalos-v4", post(drafts::kalos_v4))

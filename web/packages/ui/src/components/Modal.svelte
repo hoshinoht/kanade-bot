@@ -17,6 +17,9 @@
     onclose,
     returnFocus,
     fid = '',
+    fidParts,
+    alert = false,
+    describedby,
     ...data
   }: {
     open: boolean;
@@ -40,12 +43,18 @@
     className?: string;
     /** The layout-fidelity tag (`e2e/fidelity.spec.ts`): the dialog's, and `-head`, `-body`, `-foot` for its parts. */
     fid?: string;
+    /** Instead of `fid`'s three part tags: the tags a board gives the parts, by name (its head and foot only, its title, its close button). */
+    fidParts?: { head?: string; body?: string; foot?: string; title?: string; close?: string };
+    /** A confirmation of a consequential action (`alertdialog`); its text is `describedby`. */
+    alert?: boolean;
+    /** The id of the text that says what the dialog is about. */
+    describedby?: string;
     /** `data-*` attributes for the dialog. */
     [attribute: `data-${string}`]: string | undefined;
   } = $props();
 
   const uid = $props.id();
-  const part = (name: string) => (fid ? `${fid}-${name}` : undefined);
+  const parts = $derived<NonNullable<typeof fidParts>>(fidParts ?? (fid ? { head: `${fid}-head`, body: `${fid}-body`, foot: `${fid}-foot` } : {}));
   let dialog: HTMLDialogElement;
   let returnTo: HTMLElement | null = null;
   // A selection drag from the panel that ends on the backdrop is not a dismiss: both ends must hit it.
@@ -95,7 +104,9 @@
    class={`modal ${className}`}
   class:modal--narrow={narrow}
   class:modal--wide={wide}
+  role={alert ? 'alertdialog' : undefined}
   aria-labelledby="{uid}-title"
+  aria-describedby={describedby}
   onclose={handleClose}
   oncancel={handleCancel}
   onpointerdown={handlePointerDown}
@@ -107,18 +118,18 @@
   }}
 >
   <div class="modal__panel">
-    <header class="modal__head" data-fid={part('head')}>
+    <header class="modal__head" data-fid={parts.head}>
       <div>
         {#if eyebrow}<p class="eyebrow">{eyebrow}</p>{/if}
-        <h2 class="modal__title" id="{uid}-title">{title}</h2>
+        <h2 class="modal__title" id="{uid}-title" data-fid={parts.title}>{title}</h2>
       </div>
-      <button type="button" class="modal__x" disabled={!dismissible} onclick={close}><Icon name="x" label="Close" /></button>
+      <button type="button" class="modal__x" disabled={!dismissible} onclick={close} data-fid={parts.close}><Icon name="x" label="Close" /></button>
     </header>
-    <div class="modal__body" class:modal__body--flush={flush} data-fid={part('body')}>
+    <div class="modal__body" class:modal__body--flush={flush} data-fid={parts.body}>
       {@render children()}
     </div>
     {#if footer}
-      <footer class="modal__foot" data-fid={part('foot')}>{@render footer(close)}</footer>
+      <footer class="modal__foot" data-fid={parts.foot}>{@render footer(close)}</footer>
     {/if}
   </div>
 </dialog>

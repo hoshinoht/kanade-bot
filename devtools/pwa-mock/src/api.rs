@@ -123,7 +123,19 @@ pub async fn remove_alias(
     outcome(app.store.lock().await.remove_alias(&id, &alias))
 }
 
+/// The roster module's routes answer the generic 404 while it is off, as the server's.
+async fn roster_off(app: &App) -> Option<Response> {
+    if app.store.lock().await.roster_on() {
+        None
+    } else {
+        Some(not_found().await)
+    }
+}
+
 pub async fn characters(State(app): State<App>, Path(id): Path<String>) -> Response {
+    if let Some(off) = roster_off(&app).await {
+        return off;
+    }
     outcome(app.store.lock().await.characters_of(&id))
 }
 
@@ -133,6 +145,9 @@ pub async fn create_character(
     Path(id): Path<String>,
     body: Result<Json<crate::mock::characters::CharacterCreate>, JsonRejection>,
 ) -> Response {
+    if let Some(off) = roster_off(&app).await {
+        return off;
+    }
     let Ok(Json(req)) = body else {
         return error(
             StatusCode::BAD_REQUEST,
@@ -151,6 +166,9 @@ pub async fn patch_character(
     Path(id): Path<String>,
     body: Result<Json<crate::mock::characters::CharacterPatch>, JsonRejection>,
 ) -> Response {
+    if let Some(off) = roster_off(&app).await {
+        return off;
+    }
     let Ok(Json(req)) = body else {
         return error(
             StatusCode::BAD_REQUEST,
@@ -162,7 +180,23 @@ pub async fn patch_character(
 }
 
 pub async fn delete_character(State(app): State<App>, Path(id): Path<String>) -> Response {
+    if let Some(off) = roster_off(&app).await {
+        return off;
+    }
     outcome(app.store.lock().await.delete_character(&id))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Modules {
+    roster: bool,
+}
+
+/// `POST /__mock/modules {roster}`: the server's startup module flags, until
+/// the next reset (dev and e2e only; the module starts on).
+pub async fn set_modules(State(app): State<App>, Json(req): Json<Modules>) -> Response {
+    app.store.lock().await.set_roster(req.roster);
+    StatusCode::NO_CONTENT.into_response()
 }
 
 pub async fn fixed(State(app): State<App>) -> Response {
@@ -230,13 +264,17 @@ pub async fn reset_run(
 
 /// Mock stand-in for the authenticated caller; carries the CSRF token like the server.
 pub async fn session(State(app): State<App>) -> Response {
-    let (display, method) = {
+    let (display, method, roster) = {
         let store = app.store.lock().await;
-        (store.session_display(), store.session_method())
+        (
+            store.session_display(),
+            store.session_method(),
+            store.roster_on(),
+        )
     };
     (
         [(crate::writes::CSRF_HEADER, app.writes.token())],
-        Json(json!({ "display": display, "method": method })),
+        Json(json!({ "display": display, "method": method, "roster": roster })),
     )
         .into_response()
 }

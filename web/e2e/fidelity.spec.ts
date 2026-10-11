@@ -28,6 +28,10 @@ interface Pair {
   ready: (page: Page) => Promise<void>;
   /** Compare only these regions: the board's subject is part of the frame (the rail), the rest draws another page. */
   scope?: string[];
+  /** Left out on both sides with everything inside them: the frame another pair already compares. */
+  omit?: string[];
+  /** Before the board is measured: take out what the user decided not to build, tag what the board left untagged (`editBoard`). */
+  prepare?: (board: Page) => Promise<void>;
 }
 
 /** The rail's own regions (rail option B); boards drawn before it leave them untagged. */
@@ -278,6 +282,43 @@ const PUBLIC_PAIRS: Pair[] = [
   { name: 'pub-phone-requests', board: 'PhoneRequests', path: '/requests?open=req-kalos-weekly', setup: signInPublic, ready: requestsShown },
 ].map((pair) => ({ ...pair, app: 'public' as const }));
 
+// The character roster (module `roster`, on in the mock): Mika's sheet on its Characters tab.
+// The Members frame around the sheet is the `members` pair's (B_Members); these pairs
+// compare the sheet, the tab and the dialogs (desktop: the page line, the roster bar
+// and list; phone: also the top bar, which phone-nav compares, and the roster window).
+const ROSTER_FRAME = ['page-line', 'window-bar', 'members-list'];
+const PHONE_ROSTER_FRAME = ['topbar', 'page-line', 'window'];
+// The dialogs' "External data · Later · off" strip is not built (user, 2026-10-11): the
+// board loses it before it is measured, and a dialog the board centres stays centred.
+// The board's Region and Class dropdowns gain the shared Select's `dd-trigger` tag here,
+// as the boards live outside the worktree.
+const editBoard = (centre?: string) => (page: Page) =>
+  page.evaluate((centre) => {
+    for (const fid of ['roster-external', 'roster-estimate', 'roster-external-attrib']) document.querySelector(`[data-fid="${fid}"]`)?.remove();
+    for (const dd of document.querySelectorAll<HTMLElement>('[data-fid="roster-world"] .dd, [data-fid="roster-class"] .dd')) dd.dataset.fid = 'dd-trigger';
+    const dialog = centre ? document.querySelector<HTMLElement>(`[data-fid="${centre}"]`) : null;
+    if (dialog) dialog.style.top = `${(innerHeight - dialog.offsetHeight) / 2}px`;
+  }, centre);
+
+const rosterOff = async (page: Page) => {
+  await page.request.post(`${ADMIN}/__mock/modules`, { data: { roster: false } });
+};
+const rosterTab = async (page: Page, role: 'complementary' | 'dialog', name: string) => {
+  await page.getByRole('button', { name: /^Mika/ }).click();
+  const sheet = page.getByRole(role, { name, exact: true });
+  await sheet.getByRole('tab', { name: /^Characters/ }).click();
+  await expect(sheet.getByRole('list', { name: "Mika's characters" })).toBeVisible();
+  await sheet.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+  return sheet;
+};
+const rosterDelete = async (page: Page, role: 'complementary' | 'dialog', name: string) => {
+  const sheet = await rosterTab(page, role, name);
+  await sheet.getByRole('button', { name: 'More actions for MikaBish' }).click();
+  await page.getByRole('menuitem', { name: 'Delete…' }).click();
+  const confirm = page.getByRole('alertdialog', { name: 'Delete MikaBish?' });
+  await expect(confirm.getByRole('button', { name: 'Cancel' })).toBeFocused();
+};
+
 const PAIRS: Pair[] = [
   {
     name: 'inbox-self',
@@ -328,9 +369,88 @@ const PAIRS: Pair[] = [
     name: 'members',
     board: 'B_Members',
     path: '/members',
+    // B_Members predates the roster module; B_RosterOff: with it off the sheet is exactly this one.
+    setup: rosterOff,
     ready: async (page) => {
       await page.getByRole('button', { name: /^Mika/ }).click();
       await expect(page.getByRole('complementary', { name: 'Member details' })).toBeVisible();
+    },
+  },
+  // The character roster (KANADE_MOCKUPS=docs/research/2026-10-11-roster-mockups):
+  // Mika's Characters tab with MikaBish's menu, the Edit dialog with the IGN
+  // taken and the level out of range, the phone's Add sheet, and Delete. The
+  // States and Off boards are notes over several screens (Off is B_Members, above).
+  {
+    name: 'roster-chars',
+    board: 'B_RosterChars',
+    path: '/members',
+    omit: ROSTER_FRAME,
+    ready: async (page) => {
+      const pane = await rosterTab(page, 'complementary', 'Member details');
+      await pane.getByRole('button', { name: 'More actions for MikaBish' }).click();
+      await expect(pane.getByRole('menu', { name: 'MikaBish' })).toBeVisible();
+    },
+  },
+  {
+    name: 'phone-roster-chars',
+    board: 'B_PhoneRosterChars',
+    path: '/members',
+    omit: PHONE_ROSTER_FRAME,
+    ready: async (page) => {
+      await rosterTab(page, 'dialog', 'Mika');
+    },
+  },
+  {
+    name: 'roster-edit',
+    board: 'B_RosterEdit',
+    path: '/members',
+    omit: ROSTER_FRAME,
+    prepare: editBoard('roster-dialog'),
+    ready: async (page) => {
+      const pane = await rosterTab(page, 'complementary', 'Member details');
+      await pane.getByRole('button', { name: 'Edit MikaBish' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Edit MikaBish' });
+      await dialog.getByRole('textbox', { name: 'IGN' }).fill('hotaru7');
+      await dialog.getByRole('button', { name: 'Save' }).click();
+      await expect(dialog.getByText('already on the roster in MapleSEA')).toBeVisible();
+      await dialog.getByRole('textbox', { name: 'Level' }).fill('312');
+      await dialog.getByRole('button', { name: 'Save' }).click();
+      await expect(dialog.getByText('Fix 2 fields to save:')).toBeVisible();
+    },
+  },
+  {
+    name: 'phone-roster-edit',
+    board: 'B_PhoneRosterEdit',
+    path: '/members',
+    omit: PHONE_ROSTER_FRAME,
+    prepare: editBoard(),
+    ready: async (page) => {
+      const sheet = await rosterTab(page, 'dialog', 'Mika');
+      await sheet.getByRole('button', { name: 'Add character' }).click();
+      const add = page.getByRole('dialog', { name: 'Add character' });
+      await add.getByRole('textbox', { name: 'IGN' }).fill('MikaKain');
+      await choose(add.getByRole('combobox', { name: 'Class' }), { label: 'Kain' });
+      await add.getByRole('textbox', { name: 'Level' }).fill('0');
+      await add.getByRole('button', { name: 'Add character' }).click();
+      await expect(add.getByText('Level is 1 to 300.')).toBeVisible();
+    },
+  },
+  {
+    name: 'roster-delete',
+    board: 'B_RosterDelete',
+    path: '/members',
+    omit: ROSTER_FRAME,
+    ready: async (page) => {
+      await rosterDelete(page, 'complementary', 'Member details');
+    },
+  },
+  {
+    name: 'phone-roster-delete',
+    board: 'B_PhoneRosterDelete',
+    path: '/members',
+    omit: PHONE_ROSTER_FRAME,
+    ready: async (page) => {
+      await rosterDelete(page, 'dialog', 'Mika');
     },
   },
   {
@@ -757,9 +877,10 @@ test.describe('layout fidelity', () => {
       mkdirSync(dir, { recursive: true });
 
       const board = await renderBoard(browser, pair.board);
+      await pair.prepare?.(board.page);
       // A scoped pair compares only its subject's regions, on both sides.
       const scope = new Set(pair.scope ?? []);
-      const boardRegions = (await skeleton(board.page)).filter((r) => !scope.size || scope.has(r.fid));
+      const boardRegions = (await skeleton(board.page, pair.omit)).filter((r) => !scope.size || scope.has(r.fid));
       const boardPng = await board.page.screenshot({ animations: 'disabled' });
       await board.page.close();
 
@@ -777,7 +898,7 @@ test.describe('layout fidelity', () => {
       // the app's rail regions are no finding (they stay compared where a board tags them).
       const drawn = new Set(boardRegions.map((r) => r.fid));
       const untagged = RAIL_FIDS.filter((fid) => !drawn.has(fid));
-      let appRegions = (await skeleton(page))
+      let appRegions = (await skeleton(page, pair.omit))
         .filter((r) => (!scope.size || scope.has(r.fid)) && !untagged.includes(r.fid))
         .map((r) => ({ ...r, children: r.children.filter((c) => !untagged.includes(c)) }));
       // A strip of the frame (Mast): top-level regions keep their place against the board's frame, not the larger page.

@@ -25,6 +25,10 @@
         "method": {
           "enum": ["discord", "tailscale", "token"],
           "description": "How the session signed in; only `discord` sessions may approve or reject proposals. Always sent by the server; optional so earlier fixtures stay valid."
+        },
+        "roster": {
+          "type": "boolean",
+          "description": "The character roster module (`modules.roster`) is on: the admin app shows the Members sheet's Characters tab. Off, the roster routes answer 404 and the app makes no character requests. Always sent by the server; optional so earlier fixtures stay valid."
         }
       }
     },

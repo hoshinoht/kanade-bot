@@ -104,12 +104,15 @@ export async function settle(page: Page): Promise<void> {
   });
 }
 
-export function skeleton(page: Page): Promise<Region[]> {
-  return page.evaluate(({ limit, keys }) => {
+/** Every tagged region's skeleton, except the regions in `omit` and everything inside them (a frame another pair compares). */
+export function skeleton(page: Page, omit: string[] = []): Promise<Region[]> {
+  return page.evaluate(({ limit, keys, omit }) => {
     const owner = (el: Element) => el.parentElement?.closest<HTMLElement>('[data-fid]') ?? null;
+    const omitted = omit.map((fid) => `[data-fid="${fid}"]`).join(',') || ':not(*)';
     const seen = new Map<string, number>();
     const out = [];
     for (const el of document.querySelectorAll<HTMLElement>('[data-fid]')) {
+      if (el.closest(omitted)) continue;
       const fid = el.dataset.fid!;
       const n = seen.get(fid) ?? 0;
       seen.set(fid, n + 1);
@@ -118,7 +121,7 @@ export function skeleton(page: Page): Promise<Region[]> {
       const r = el.getBoundingClientRect();
       const p = parent?.getBoundingClientRect() ?? new DOMRect(0, 0, innerWidth, innerHeight);
       const cs = getComputedStyle(el);
-      const kids = [...el.querySelectorAll<HTMLElement>('[data-fid]')].filter((c) => owner(c) === el).map((c) => c.dataset.fid!);
+      const kids = [...el.querySelectorAll<HTMLElement>('[data-fid]')].filter((c) => owner(c) === el && !c.closest(omitted)).map((c) => c.dataset.fid!);
       const computed = cs as unknown as Record<string, string>;
       const style = Object.fromEntries(keys.map((k) => [k, computed[k] ?? '']));
       out.push({
@@ -134,7 +137,7 @@ export function skeleton(page: Page): Promise<Region[]> {
       });
     }
     return out as Region[];
-  }, { limit: PER_NAME, keys: [...STYLE_KEYS] });
+  }, { limit: PER_NAME, keys: [...STYLE_KEYS], omit });
 }
 
 const num = (v: string | undefined) => (v === undefined || v === 'normal' || v === 'none' ? 0 : parseFloat(v) || 0);

@@ -1,28 +1,41 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import type { MemberPatch, MemberRow, Persona, PingLevel } from '@kanade/api-types';
-  import { Avatar, enter, Icon, Modal, Select } from '@kanade/ui';
+  import type { MemberCharacters, MemberPatch, MemberRow, Persona, PingLevel } from '@kanade/api-types';
+  import { Avatar, enter, Icon, Modal, Select, type Toaster } from '@kanade/ui';
   import '@kanade/ui/styles/core/select.scss';
-  import { send } from '../resource.svelte';
+  import { Resource, send } from '../resource.svelte';
   import { directory } from '../names/directory.svelte';
   import Name from '../names/Name.svelte';
   import { memberAvatar } from '../shared/avatar';
+  import CharacterPanel from './CharacterPanel.svelte';
   import { ANSWER_WORDS, type MemberWeek } from './runs';
 
   let {
     wide,
+    phone = false,
     member,
+    members,
     runs,
     personas,
+    roster = false,
+    timeZone,
+    toaster,
     onchange,
     onclose,
     leaving = false,
     onleft,
   }: {
     wide: boolean;
+    /** The phone frame (Add/Edit as a bottom sheet, 44 px targets). */
+    phone?: boolean;
     member: MemberRow;
+    members: MemberRow[];
     runs: MemberWeek | null;
     personas: Persona[];
+    /** The character roster module is on (the session says so): draw the Profile / Characters tabs. */
+    roster?: boolean;
+    timeZone: string;
+    toaster: Toaster;
     onchange: (row: MemberRow) => void;
     onclose: () => void;
     /** Closed, playing its exit (MembersPage's Presence): inert, and the phone dialog closes. */
@@ -31,7 +44,27 @@
   } = $props();
   // A primitive key: an edited copy of the same member must not replay the enter.
   const memberId = $derived(member.id);
+  const memberName = $derived(directory.label('member', member.id, member.name));
 
+  type Tab = 'profile' | 'characters';
+  // The tab stays put from one member to the next, so a run of character edits keeps its place.
+  let tab = $state<Tab>('profile');
+  const tabs: Record<Tab, HTMLButtonElement | undefined> = $state({ profile: undefined, characters: undefined });
+  // Only while the module is on: off, the app makes no character requests.
+  const characters = $derived(roster ? new Resource<MemberCharacters>(`/api/admin/members/${encodeURIComponent(memberId)}/characters`) : null);
+  $effect(() => {
+    void characters?.load();
+  });
+  const activeCount = $derived(characters?.data?.member_id === memberId ? characters.data.characters.filter((c) => c.retired_at === null).length : null);
+
+  function tabKey(event: KeyboardEvent) {
+    const next = ({ ArrowRight: 1, ArrowLeft: -1, Home: 0, End: 1 } as Record<string, number>)[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    const to: Tab = event.key === 'Home' ? 'profile' : event.key === 'End' ? 'characters' : tab === 'profile' ? 'characters' : 'profile';
+    tab = to;
+    tabs[to]?.focus();
+  }
   const uid = $props.id();
   const LEVELS: { key: PingLevel; label: string; hint: string }[] = [
     { key: 'essential', label: 'Essential', hint: 'only where they have to act' },
@@ -107,7 +140,8 @@
 
 <svelte:window
   onkeydown={(event) => {
-    if (wide && !leaving && event.key === 'Escape') {
+    // A dialog over the pane (a character's Add/Edit or Delete) takes Escape for itself.
+    if (wide && !leaving && event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('dialog[open]')) {
       event.preventDefault();
       onclose();
     }
@@ -218,8 +252,53 @@
   </div>
 {/snippet}
 
+<!-- Module on: Profile / Characters tabs over one scrolling panel (boards
+     B_RosterChars, B_PhoneRosterChars); off, today's sheet unchanged (B_RosterOff). -->
+{#snippet body()}
+  {#if roster && characters}
+    <div class="membersheet__tabs" role="tablist" aria-label="Member sections" data-fid="members-tabs">
+      {#each [{ id: 'profile', label: 'Profile' }, { id: 'characters', label: 'Characters' }] as const as t (t.id)}
+        <button
+          type="button"
+          role="tab"
+          class="ptab"
+          id="{uid}-tab-{t.id}"
+          aria-selected={tab === t.id}
+          aria-controls="{uid}-panel"
+          tabindex={tab === t.id ? 0 : -1}
+          bind:this={tabs[t.id]}
+          onclick={() => (tab = t.id)}
+          onkeydown={tabKey}
+          >{t.label}{#if t.id === 'characters' && activeCount !== null}<span class="ptab__count membersheet__tabcount mono"
+              ><span class="vh">, </span>{activeCount}<span class="vh"> active</span></span
+            >{/if}</button
+        >
+      {/each}
+    </div>
+    <!-- One panel, as the run pane's tabs: only the selected tab's content is mounted. -->
+    <div class="membersheet__panel" role="tabpanel" id="{uid}-panel" aria-labelledby="{uid}-tab-{tab}" tabindex="0">
+      {#if tab === 'profile'}
+        {@render content()}
+      {:else}
+        <CharacterPanel {member} {memberName} {members} {characters} {phone} {timeZone} {toaster} />
+      {/if}
+    </div>
+  {:else}
+    {@render content()}
+  {/if}
+{/snippet}
+
 {#if wide}
-  <aside class="side-pane" class:is-leaving={leaving} inert={leaving} aria-label="Member details" data-fid="members-pane" onanimationend={onleft} {@attach enter(memberId)}>
+  <aside
+    class="side-pane"
+    class:membersheet--tabbed={roster}
+    class:is-leaving={leaving}
+    inert={leaving}
+    aria-label="Member details"
+    data-fid="members-pane"
+    onanimationend={onleft}
+    {@attach enter(memberId)}
+  >
     <header class="membersheet__head" data-fid="members-pane-head">
       <Avatar class="membersheet__avatar" src={memberAvatar(member.id)} name={member.name} />
       <div class="membersheet__who">
@@ -229,11 +308,21 @@
       </div>
       <button class="btn btn--ghost membersheet__close" data-fid="members-close" type="button" aria-label="Close member details" onclick={onclose}><Icon name="x" /></button>
     </header>
-    {@render content()}
+    {@render body()}
   </aside>
 {:else}
-  <Modal open={!leaving} title={directory.label('member', member.id, member.name)} eyebrow={member.bossing ? 'Member' : 'Chat access only'} narrow className="membersheet" onclose={onclose}>
-    {@render content()}
+  <Modal
+    open={!leaving}
+    title={directory.label('member', member.id, member.name)}
+    eyebrow={member.bossing ? 'Member' : 'Chat access only'}
+    narrow
+    flush={roster}
+    className="membersheet {roster ? 'membersheet--tabbed' : ''}"
+    fid={roster ? 'members-pane' : ''}
+    fidParts={roster ? { head: 'members-pane-head', close: 'members-close' } : {}}
+    onclose={onclose}
+  >
+    {@render body()}
     {#snippet footer(close)}
       <button class="btn" type="button" onclick={close}>Close</button>
     {/snippet}

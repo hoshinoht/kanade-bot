@@ -119,8 +119,10 @@ pub struct Store {
     week_over: bool,
     /// Member requests sent from the portal (`requests.rs`).
     member_requests: Vec<requests::MemberRequestRec>,
-    /// Roster characters (module `roster`); none seeded.
+    /// Roster characters (module `roster`), seeded (`characters::seed`).
     characters: Vec<characters::Char>,
+    /// The roster module's startup flag (on unless `/__mock/modules` turns it off).
+    roster: bool,
     version: u64,
     next_id: u32,
     catalog: Catalog,
@@ -157,6 +159,7 @@ impl Store {
             week_over: false,
             member_requests: Vec::new(),
             characters: Vec::new(),
+            roster: true,
             version: 1,
             next_id: 1,
             catalog,
@@ -177,7 +180,8 @@ impl Store {
                 seed,
             })
             .collect();
-        self.characters.clear();
+        self.characters = characters::seed();
+        self.roster = true;
         self.version = 1;
         self.next_id = 1;
         self.proposals = inbox::seed();

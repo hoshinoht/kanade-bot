@@ -972,8 +972,9 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         );
     }
 
-    // Roster characters (module roster): CRUD and the main rules.
-    let chars = format!("/api/admin/members/{m}/characters");
+    // Roster characters (module roster): CRUD and the main rules, on Ren
+    // #1013, who has no seeded characters.
+    let chars = "/api/admin/members/1013/characters".to_owned();
     let first = h
         .expect(
             false,

@@ -94,7 +94,12 @@ export type Session = { display: string,
 /**
  * `discord`, `tailscale` or `token`: only Discord sessions may decide proposals.
  */
-method: SignInMethod, };
+method: SignInMethod, 
+/**
+ * The character roster module (`modules.roster`) is on: the Members
+ * sheet shows Characters. Off, its routes answer `404`.
+ */
+roster: boolean, };
 
 export type SignInMethods = { discord: boolean, 
 /**

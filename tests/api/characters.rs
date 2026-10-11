@@ -55,6 +55,11 @@ async fn created(reads: &Reads, path: &str, body: Value) -> Value {
 #[tokio::test]
 async fn every_route_is_the_generic_404_while_the_module_is_off() {
     let reads = Reads::new().await;
+    // The admin app learns the module is off from its session and draws no tab.
+    let session = reads
+        .read("/api/admin/session", "identity.json#/$defs/Session")
+        .await;
+    assert_eq!(session["roster"], false);
     let id = character("c1");
     for (method, path) in [
         ("GET", ALICE),
@@ -89,6 +94,10 @@ async fn every_route_is_the_generic_404_while_the_module_is_off() {
 #[tokio::test]
 async fn characters_are_created_listed_edited_retired_and_deleted() {
     let reads = Reads::with_characters().await;
+    let session = reads
+        .read("/api/admin/session", "identity.json#/$defs/Session")
+        .await;
+    assert_eq!(session["roster"], true);
     let empty = reads.read(ALICE, LIST).await;
     assert_eq!(empty, json!({"member_id": "1001", "characters": []}));
 

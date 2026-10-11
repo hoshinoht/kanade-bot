@@ -2,16 +2,25 @@
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/screens/members.scss';
   import type { MemberRow, Persona, PingLevel, Week } from '@kanade/api-types';
-  import { Avatar, LoadError, LoadingState, Presence, RowContent, Select, TWO_PANE_QUERY } from '@kanade/ui';
+  import { Avatar, LoadError, LoadingState, PHONE_QUERY, Presence, RowContent, Select, TWO_PANE_QUERY, type Toaster } from '@kanade/ui';
   import '@kanade/ui/styles/core/select.scss';
   import Pager from '../pages/Pager.svelte';
   import { paged } from '../pages/paging';
   import { memberLabel } from '../names/directory.svelte';
   import { Resource } from '../resource.svelte';
   import MemberSheet from './MemberSheet.svelte';
+  import { provideDialogLayer } from './layer.svelte';
   import { memberAvatar } from '../shared/avatar';
   import { memberRuns, orderMembers, runCounts, type MemberOrder } from './runs';
 
+  let {
+    roster = false,
+    toaster,
+  }: {
+    /** The character roster module is on (from the session): the sheet gains Characters. */
+    roster?: boolean;
+    toaster: Toaster;
+  } = $props();
   // The open sheet reads its row from this list, so both follow a roster change.
   const members = new Resource<MemberRow[]>('/api/admin/members', { topics: ['members'] });
   const personas = new Resource<Persona[]>('/api/admin/personas');
@@ -28,6 +37,7 @@
   // `?open=<id>` (Account's "Open my member profile") opens that member's sheet.
   let openId = $state<string | null>(new URLSearchParams(location.search).get('open'));
   let wide = $state(false);
+  let phone = $state(false);
   // The board's default: most runs this week first.
   let order = $state<MemberOrder>('runs');
   let restore = '';
@@ -59,13 +69,22 @@
   // While open the sheet reads the live member (the presence copy lags an effect behind).
   const paneMember = $derived(current ?? pane.shown);
   const paneRuns = $derived(paneMember && week.data ? memberRuns(week.data, paneMember.id) : null);
+  const dialogs = provideDialogLayer();
 
   $effect(() => {
-    const query = window.matchMedia(TWO_PANE_QUERY);
-    const update = () => (wide = query.matches);
+    const twoPane = window.matchMedia(TWO_PANE_QUERY);
+    const phoneFrame = window.matchMedia(PHONE_QUERY);
+    const update = () => {
+      wide = twoPane.matches;
+      phone = phoneFrame.matches;
+    };
     update();
-    query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
+    twoPane.addEventListener('change', update);
+    phoneFrame.addEventListener('change', update);
+    return () => {
+      twoPane.removeEventListener('change', update);
+      phoneFrame.removeEventListener('change', update);
+    };
   });
 
   function replace(row: MemberRow) {
@@ -78,6 +97,24 @@
   }
 </script>
 
+<!-- The side pane belongs to the roster window; the phone's sheet is a dialog over the page. -->
+{#snippet sheet(shown: MemberRow)}
+  <MemberSheet
+    {wide}
+    {phone}
+    member={paneMember ?? shown}
+    members={members.data ?? []}
+    runs={paneRuns}
+    personas={personas.data ?? []}
+    {roster}
+    timeZone={week.data?.timezone ?? 'Asia/Kuala_Lumpur'}
+    {toaster}
+    onchange={replace}
+    onclose={close}
+    leaving={pane.leaving}
+    onleft={(event) => pane.done(event)}
+  />
+{/snippet}
 <PageLine title={members.data ? 'Members' : ''}>
   <h1>{#if members.data}<span class="pageline__num">{bossers}</span> bosser{bossers === 1 ? '' : 's'}{:else}Members{/if}</h1>
   <p class="pageline__context">synced from the bossing role</p>
@@ -152,8 +189,8 @@
         <div class="members-roster__pager"><Pager bind:page pages={shown.pages} total={rows.length} noun="member" /></div>
       {/if}
     </div>
-    {#if pane.shown}
-      <MemberSheet wide={wide} member={paneMember ?? pane.shown} runs={paneRuns} personas={personas.data ?? []} onchange={replace} onclose={close} leaving={pane.leaving} onleft={(event) => pane.done(event)} />
-    {/if}
+    {#if pane.shown && wide}{@render sheet(pane.shown)}{/if}
   </div>
 </section>
+{#if pane.shown && !wide}{@render sheet(pane.shown)}{/if}
+{@render dialogs.content?.()}

@@ -1,8 +1,9 @@
 <!--
   Feather icons (MIT, (c) 2013-2023 Cole Bemis), the same paths v4's
   partials/icons.html draws; `pin`, `gauge` and `history` are Lucide's
-  (ISC, a Feather fork) for the navigation rail. Decorative by default; pass `label` when the
-  mark is the only thing that says it.
+  (ISC, a Feather fork) for the navigation rail, and `crown` for the roster's
+  main character. Decorative by default; pass `label` when the mark is the
+  only thing that says it.
 -->
 <script lang="ts" module>
   export type IconName =
@@ -48,7 +49,11 @@
     | 'log-in'
     | 'tag'
     | 'layers'
-    | 'more-horizontal';
+    | 'more-horizontal'
+    | 'more-vertical'
+    | 'crown'
+    | 'archive'
+    | 'trash-2';
 </script>
 
 <script lang="ts">
@@ -171,6 +176,14 @@
     <polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" />
   {:else if name === 'more-horizontal'}
     <circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /><circle cx="5" cy="12" r="1" />
+  {:else if name === 'more-vertical'}
+    <circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" />
+  {:else if name === 'crown'}
+    <path d="m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7z" /><path d="M5 20h14" />
+  {:else if name === 'archive'}
+    <polyline points="21 8 21 21 3 21 3 8" /><rect x="1" y="3" width="22" height="5" /><line x1="10" y1="12" x2="14" y2="12" />
+  {:else if name === 'trash-2'}
+    <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" />
   {/if}
 </svg>
 {#if label}<span class="vh">{label}</span>{/if}

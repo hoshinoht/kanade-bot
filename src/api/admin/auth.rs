@@ -60,6 +60,16 @@ pub(crate) struct SessionView {
     /// `discord`, `tailscale` or `token`: only Discord sessions may decide proposals.
     #[cfg_attr(test, ts(type = "SignInMethod"))]
     method: &'static str,
+    /// The character roster module (`modules.roster`) is on: the Members
+    /// sheet shows Characters. Off, its routes answer `404`.
+    roster: bool,
+}
+
+/// Whether the roster module's routes are served (read at startup).
+fn roster_on(site: &Site) -> bool {
+    site.state
+        .as_ref()
+        .is_some_and(|state| state.characters.is_some())
 }
 
 fn session_cookie(auth: &AdminAuth, id: &str) -> HeaderValue {
@@ -72,6 +82,7 @@ fn session_cookie(auth: &AdminAuth, id: &str) -> HeaderValue {
 }
 
 fn signed_in(
+    site: &Site,
     display: String,
     method: LoginMethod,
     csrf: Option<String>,
@@ -80,6 +91,7 @@ fn signed_in(
     let mut response = Json(SessionView {
         display,
         method: method.as_str(),
+        roster: roster_on(site),
     })
     .into_response();
     let headers = response.headers_mut();
@@ -100,9 +112,9 @@ fn login_error(code: &'static str) -> Response {
     )
 }
 
-async fn session(session: AdminSession) -> Response {
+async fn session(State(site): State<Arc<Site>>, session: AdminSession) -> Response {
     let csrf = session.csrf_token();
-    signed_in(session.display, session.method, csrf, None)
+    signed_in(&site, session.display, session.method, csrf, None)
 }
 
 #[derive(Serialize)]
@@ -373,6 +385,7 @@ async fn tailscale_login(State(site): State<Arc<Site>>, request: Request) -> Res
         .await
     {
         Some(id) => signed_in(
+            &site,
             name,
             LoginMethod::Tailscale,
             Some(csrf::token(csrf::ADMIN, &id)),
@@ -448,6 +461,7 @@ async fn token_login(
         .await
     {
         Some(id) => signed_in(
+            &site,
             display.into(),
             LoginMethod::Token,
             Some(csrf::token(csrf::ADMIN, &id)),
