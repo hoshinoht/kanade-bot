@@ -72,17 +72,18 @@ dialog.runsheet--narrow .modal__head {
 
 /* The entry art (`_runs.scss` has the board card's) in the run pane's and the
  * run sheet's identity card (RunSheet `.run__arts`): it lives inside that card
- * only -- never under the Move picker or the party below it -- and only where
- * no words are, so text keeps its contrast from the card's own surface rather
- * than from any treatment of the text (e2e/run-identity-contrast.spec.ts
- * measures every word against the rendered pixels behind it).
+ * only -- never under the Move picker or the party below it. It spans from the
+ * bosses rightwards to the card's edge, so it runs behind words; they keep
+ * their contrast from the card's own colour, laid as a soft-edged plate behind
+ * each text run (see "Words over the art" below), never from a text shadow
+ * (e2e/run-identity-contrast.spec.ts measures every word against the rendered
+ * pixels behind it, art included).
  *
- *  - Laptop sheet: the art is the actions column's backdrop (Move, the other
- *    actions, the status group, all on fills of their own), its left edge
- *    fading into the surface before the bosses and chips.
- *  - Pane and phone sheet: their words run the card's full width, so the art
- *    is a top-right corner beside the clock, fading out leftwards before the
- *    day and downwards before the first boss row.
+ *  - Laptop sheet: from the bosses' column (under the icons, names and chips)
+ *    to the card's right edge; the clock column stays clean.
+ *  - Pane and phone sheet: from where the boss names start (past the
+ *    portraits, which line up with the clock) to the right edge, the card's
+ *    full height. The clock row is plated like any other words.
  *
  * One boss is one picture. Two or three are angled slices, the lead first (on
  * the left, the order they are named in), meeting in soft seams; further
@@ -90,33 +91,53 @@ dialog.runsheet--narrow .modal__head {
  * picture counter-skewed inside it, so the seam is a slanted soft edge at any
  * card height (a slanted gradient alone would tilt with the box's aspect).
  *
- * The veil's opacity sits on the whole group, not on each picture, so a seam
- * is a crossfade rather than a lighter stripe where two washes overlap. */
+ * The veil's opacity and both fades sit on the whole group, not on each
+ * picture, so a seam is a crossfade rather than a lighter stripe where two
+ * washes overlap, and the left fade is one long ramp whatever the slices. */
 .run__arts {
-  /* TUNING KNOBS -- the slant, the seam's softness, the left fade's length,
-     the foot's fade. */
+  /* TUNING KNOBS -- the slant, the seam's softness, the left fade's length
+     (a share of the group's width), the foot's fade. */
   --slice-skew: -12deg;
   --slice-seam: 32px;
   --slice-bleed: 56px;
-  --arts-fade: 96px;
+  --arts-fade: 70%;
   --arts-foot: 44px;
   position: absolute;
-  inset: 0 0 0 auto;
+  inset: 0;
   z-index: -1;
-  width: 72%;
   overflow: clip;
   opacity: var(--art-veil);
-  /* The foot fades into the card, so nothing ends in a hard line. */
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--arts-foot)), transparent);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--arts-foot)), transparent);
+  /* The left edge eases in over a long ramp (slow at first, so no edge shows),
+     and the foot fades into the card, so nothing ends in a hard line. The two
+     masks multiply. A mask reads only alpha, which is why black is named here. */
+  -webkit-mask-image:
+    linear-gradient(
+      to right,
+      transparent,
+      rgb(0 0 0 / 0.12) calc(var(--arts-fade) * 0.35),
+      rgb(0 0 0 / 0.5) calc(var(--arts-fade) * 0.7),
+      #000 var(--arts-fade)
+    ),
+    linear-gradient(to bottom, #000 calc(100% - var(--arts-foot)), transparent);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(
+      to right,
+      transparent,
+      rgb(0 0 0 / 0.12) calc(var(--arts-fade) * 0.35),
+      rgb(0 0 0 / 0.5) calc(var(--arts-fade) * 0.7),
+      #000 var(--arts-fade)
+    ),
+    linear-gradient(to bottom, #000 calc(100% - var(--arts-foot)), transparent);
+  mask-composite: intersect;
   pointer-events: none;
 }
 
-/* Laptop sheet: the card is a grid (clock | identity | actions) and the art is
-   placed on the actions track, reaching back across the gap; its fade starts
-   where the identity column ends. The track's right and bottom lines already
-   land on the card's padding edges, the top one on its content edge (measured;
-   e2e/run-identity.spec.ts `confined` guards the group inside the card). */
+/* Laptop sheet: the card is a grid (clock | identity | actions) and the art
+   spans the identity and actions tracks. The last track's right and bottom
+   lines already land on the card's padding edges, the top one on its content
+   edge (measured; e2e/run-identity.spec.ts `confined` guards the group inside
+   the card). */
 .runsheet--wide .runsheet__hero {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -125,20 +146,24 @@ dialog.runsheet--narrow .modal__head {
 
 .runsheet--wide .runsheet__hero > .run__arts {
   grid-row: 1;
-  grid-column: 3;
-  inset: -14px 0 0 -28px;
-  width: auto;
+  grid-column: 2 / -1;
+  top: -14px;
 }
 
-/* Pane and phone sheet: the top-right corner, beside the clock. */
+/* Pane and phone sheet: the card's padding, a portrait and its gap in from the
+   left (where the names start), full height. */
 .#{$pane}__art > .run__arts,
 .runsheet--narrow .runsheet__hero > .run__arts {
   --slice-seam: 20px;
-  --arts-fade: 56px;
+  --arts-fade: 60%;
   --arts-foot: 40px;
-  inset: 0 0 auto auto;
-  width: 36%;
-  height: 84px;
+  left: calc(14px + 30px + 8px);
+}
+
+.runsheet--narrow .runsheet__hero > .run__arts {
+  /* Faded out before the Move row, the last thing in the phone's card. */
+  --arts-foot: 96px;
+  left: calc(14px + 34px + 9px);
 }
 
 /* Every slice bleeds past the group's outer edges, where the skew would
@@ -148,9 +173,6 @@ dialog.runsheet--narrow .modal__head {
   inset: 0 calc(-1 * var(--slice-bleed));
   overflow: clip;
   transform: skewX(var(--slice-skew));
-  /* The first slice is the group's left edge: a long soft fade into the card. */
-  -webkit-mask-image: linear-gradient(to right, transparent var(--slice-bleed), #000 calc(var(--slice-bleed) + var(--arts-fade)));
-  mask-image: linear-gradient(to right, transparent var(--slice-bleed), #000 calc(var(--slice-bleed) + var(--arts-fade)));
 }
 
 /* Later slices start half a seam before their boundary and fade in across it,
@@ -198,6 +220,30 @@ dialog.runsheet--narrow .modal__head {
   object-position: right var(--art-crop-sheet);
 }
 
+/* Words over the art: each text run on its own soft-edged plate of the card's
+   surface, so any word reads as on the bare card while the art shows between
+   and around them. The plate is a solid background with a blurred spread of
+   the same colour and no padding, so nothing moves. Status, count and link
+   chips already sit on fills of their own; the outlined neutral chips get the
+   surface as theirs. */
+.runsheet__hero .boss,
+.runsheet__hero .chanmark,
+.runsheet__hero .id,
+.runsheet__hero .sheet__offnote,
+.runsheet--narrow .runsheet__when > :not(.runsheet__stripe),
+.#{$pane}__art .boss,
+.#{$pane}__art .chanmark,
+.#{$pane}__art .id,
+.#{$pane}__when > * {
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 0 6px 4px var(--surface);
+}
+
+.runsheet__chips .tone--neutral,
+.#{$pane}__chips .tone--neutral {
+  background: var(--surface);
+}
 
 .runsheet__hero {
   position: relative;

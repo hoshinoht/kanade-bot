@@ -12,6 +12,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 **Changed**
 
 - Persona, boss knowledge and boss catalog files are opened without following symlinks and without blocking on a FIFO, and must be regular files with one hard link and at most 256 KiB, checked on the opened file. Up to 256 persona profiles and 256 knowledge documents are read; past that the load fails as a whole (a persona reload keeps the previous set), and an unreadable knowledge directory entry now fails the load instead of being skipped.
+- Web: the run sheet's and run pane's boss art now spans from the boss names to the card's right edge (the laptop sheet's clock column stays clean) with a longer, softer left fade; the 2- and 3-boss slanted slices and the bottom fade stay. Words over the art sit on soft plates of the card's surface, and the contrast check now covers every colourway, both faces and the portal's run pane at 4.5:1.
 
 ## 1.0.0-beta.5 (2026-10-11)
 

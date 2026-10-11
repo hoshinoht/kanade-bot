@@ -1,12 +1,15 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import type { Week } from '@kanade/api-types';
-import { ADMIN, REAL_ART, expect, settle, test, unconditional } from './support';
+import { COLORWAYS } from '../packages/tokens/src/colorways';
+import { ADMIN, PUBLIC, REAL_ART, expect, settle, signInPublic, test, unconditional } from './support';
 
 // Text contrast over the identity card's entry art, measured from pixels: every
 // text element's colour against the worst rendered background pixel inside its
-// content box, with the words hidden (CSSOM, no inline style attribute) so the
-// glyphs do not count. Normal text needs 4.5:1, the hero clock 3:1. The same
+// content box -- the real composite of the card, the art spanning behind the
+// bosses and chips, and the plates under the words -- with the words hidden
+// (CSSOM, no inline style attribute) so the glyphs do not count. Normal text
+// needs 4.5:1, the hero clock 3:1, in every colourway and face. The same
 // measurement without the art is the card's own baseline. KANADE_REAL_ART=1
 // measures the real pictures; the table goes to e2e/.captures/{real,synthetic}/.
 
@@ -15,6 +18,8 @@ const OUT = REAL_ART ? 'e2e/.captures/real' : 'e2e/.captures/synthetic';
 const TEXT = [
   '.week-pane__time',
   '.week-pane__day',
+  '.member-pane__time',
+  '.member-pane__day',
   '.runsheet__time',
   '.runsheet__day',
   '.boss__name',
@@ -110,10 +115,12 @@ async function worst(context: BrowserContext, png: Buffer, origin: { x: number; 
         const lum = (r: number, g: number, b: number) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
         return list.map(({ color, rect }) => {
           const text = lum(...color);
-          const x = Math.max(0, Math.round(rect.x - origin.x));
-          const y = Math.max(0, Math.round(rect.y - origin.y));
-          const w = Math.min(bitmap.width - x, Math.round(rect.width));
-          const h = Math.min(bitmap.height - y, Math.round(rect.height));
+          // Whole pixels inside the line box only: rounding out would sample a
+          // chip's own outline ring at a fractional edge, which no glyph sits on.
+          const x = Math.max(0, Math.ceil(rect.x - origin.x));
+          const y = Math.max(0, Math.ceil(rect.y - origin.y));
+          const w = Math.min(bitmap.width, Math.floor(rect.x + rect.width - origin.x)) - x;
+          const h = Math.min(bitmap.height, Math.floor(rect.y + rect.height - origin.y)) - y;
           const px = ctx.getImageData(x, y, Math.max(1, w), Math.max(1, h)).data;
           let min = 21;
           for (let i = 0; i < px.length; i += 4) {
@@ -144,10 +151,10 @@ async function measure(page: Page, card: Locator): Promise<{ name: string; need:
   return list.map((item, i) => ({ name: item.name, need: item.large ? 3 : 4.5, art: withArt[i]!, plain: plain[i]! }));
 }
 
-const LOOKS = [
-  { name: 'blossom-light', colorway: 'blossom', theme: 'light' },
-  { name: 'twilight-dark', colorway: 'twilight', theme: 'dark' },
-];
+// Every colourway in both faces; Dynamic is marigold until an avatar palette is cached.
+const LOOKS = COLORWAYS.filter((way) => way.key !== 'dynamic').flatMap((way) =>
+  (['light', 'dark'] as const).map((theme) => ({ name: `${way.key}-${theme}`, colorway: way.key, theme })),
+);
 const SURFACES = [
   { name: 'pane', width: 1280, height: 800 },
   { name: 'sheet', width: 1280, height: 800 },
@@ -189,16 +196,41 @@ test.describe('identity-card contrast over the art', () => {
           }
           await expect(card.locator('.run__arts')).toBeAttached();
           for (const m of await measure(page, card)) {
-            const ok = m.art >= m.need || m.art >= m.plain - 0.05;
-            rows.push(`| ${surface.name} | ${look.name} | ${run.bosses} | ${m.name} | ${m.need} | ${m.art} | ${m.plain} | ${m.art >= m.need ? 'pass' : ok ? 'baseline' : 'FAIL'} |`);
+            const ok = m.art >= m.need;
+            rows.push(`| ${surface.name} | ${look.name} | ${run.bosses} | ${m.name} | ${m.need} | ${m.art} | ${m.plain} | ${ok ? 'pass' : 'FAIL'} |`);
             if (!ok) failures.push(`${run.bosses} bosses: ${m.name} ${m.art} < ${m.need} (plain ${m.plain})`);
           }
         }
         mkdirSync(OUT, { recursive: true });
         writeFileSync(`${OUT}/contrast-${surface.name}-${look.name}.md`, rows.join('\n') + '\n');
-        // Below the bar only where the card is already below it without any art.
+        // Every word at its bar over the art, in every colourway and face.
         expect(failures).toEqual([]);
       });
     }
+    // The member portal's run pane shares the identity card's styles (`$pane: member-pane`).
+    test(`contrast portal pane ${look.name}`, async ({ page }) => {
+      await page.addInitScript(
+        ([c, t]) => {
+          localStorage.setItem('colorway', c!);
+          localStorage.setItem('theme', t!);
+        },
+        [look.colorway, look.theme],
+      );
+      await signInPublic(page);
+      await page.goto(`${PUBLIC}/?sw=off`);
+      await page.getByRole('button', { name: /, you are in$/ }).first().click();
+      const card = page.getByRole('complementary', { name: /^Your run · / }).locator('.member-pane__art');
+      await expect(card.locator('.run__arts')).toBeAttached();
+      const rows: string[] = [];
+      const failures: string[] = [];
+      for (const m of await measure(page, card)) {
+        const ok = m.art >= m.need;
+        rows.push(`| portal | ${look.name} | 1 | ${m.name} | ${m.need} | ${m.art} | ${m.plain} | ${ok ? 'pass' : 'FAIL'} |`);
+        if (!ok) failures.push(`${m.name} ${m.art} < ${m.need} (plain ${m.plain})`);
+      }
+      mkdirSync(OUT, { recursive: true });
+      writeFileSync(`${OUT}/contrast-portal-${look.name}.md`, rows.join('\n') + '\n');
+      expect(failures).toEqual([]);
+    });
   }
 });
