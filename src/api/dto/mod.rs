@@ -20,6 +20,7 @@ pub mod logs;
 pub mod members;
 pub mod presence;
 pub mod public;
+pub mod readiness;
 pub mod reminders;
 pub mod rescan;
 pub mod sign_ins;

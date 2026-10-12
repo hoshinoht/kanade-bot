@@ -1023,6 +1023,20 @@ impl Reads {
     /// The session lives in the store, so the cookie still signs in; later
     /// calls go to the new listener.
     pub async fn restart(&mut self, skew: TimeDelta, config: Option<Arc<ConfigDesk>>) {
+        self.restart_with(skew, config, true).await;
+    }
+
+    /// [`Self::restart`] with module `character_data` switched off.
+    pub async fn restart_without_character_data(&mut self) {
+        self.restart_with(TimeDelta::zero(), None, false).await;
+    }
+
+    async fn restart_with(
+        &mut self,
+        skew: TimeDelta,
+        config: Option<Arc<ConfigDesk>>,
+        character_data: bool,
+    ) {
         let old = self.site.state.clone().expect("state");
         let at = now() + skew;
         let state = ApiState {
@@ -1054,7 +1068,7 @@ impl Reads {
             presence: Default::default(),
             marks: old.marks.clone(),
             characters: old.characters.clone(),
-            character_data: old.character_data.clone(),
+            character_data: old.character_data.clone().filter(|_| character_data),
         };
         self.site.state = Some(Arc::new(state));
         self.admin = spawn(self.site.clone()).await;

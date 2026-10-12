@@ -88,6 +88,8 @@ pub struct Config {
     pub context: model_context::Settings,
     pub run_lengths: RunLengths,
     pub profanity: super::profanity::Settings,
+    /// `v5.character_data.cp_floors` (module `character_data`).
+    pub cp_floors: super::readiness::Floors,
     /// Saved id lists (`Some` after an explicit list save); `None` follows
     /// the env seed, as the server's missing row does.
     pub watched_channel_ids: Option<Vec<String>>,
@@ -559,6 +561,7 @@ pub fn defaults() -> Config {
             }],
         },
         profanity: super::profanity::Settings::default(),
+        cp_floors: super::readiness::seed(),
         started: vec!["extraction", "chat", "rewrite"],
     }
 }
@@ -788,7 +791,7 @@ impl Store {
             .filter(|(id, _, _)| *id == "seren-trio" || *id == "bm-trio")
             .map(|(_, name, _)| *name)
             .collect();
-        json!({
+        let mut view = json!({
             "pings": { "day_of_ping_time": c.day_of_ping_time, "countdown_minutes": c.countdown_minutes },
             "watching": {
                 "paused": c.paused, "extract_enabled": c.extract_enabled,
@@ -843,7 +846,13 @@ impl Store {
             "env": env_rows(c),
             "last_digest": self.last_digest(),
             "notices": Vec::<String>::new(),
-        })
+        });
+        // Module `character_data` (on with the roster): its health and CP floors, absent while off.
+        if let Some(health) = self.chardata_health() {
+            view["character_data"] = health;
+            view["cp_floors"] = self.cp_floors_view();
+        }
+        view
     }
 
     /// One section per request, each partial; arrays are replaced whole.
@@ -1265,6 +1274,12 @@ impl Store {
         if let Some(body) = patch.get("profanity").and_then(Value::as_object) {
             next.profanity = next.profanity.patch(body).map_err(MoveError::Invalid)?;
         }
+        if let Some(p) = patch.get("cp_floors") {
+            let floors = p
+                .get("floors")
+                .ok_or_else(|| bad("cp_floors.floors must be an object of floors."))?;
+            next.cp_floors = super::readiness::parse(floors)?;
+        }
         for (role, feature, before, after) in [
             (
                 "extraction",
@@ -1432,6 +1447,7 @@ pub fn stored_rows(c: &Config) -> std::collections::BTreeMap<&'static str, Strin
         ("v5.model_context", json(&c.context)),
         ("v5.run_lengths", json(&c.run_lengths)),
         ("v5.profanity", json(&c.profanity)),
+        ("v5.character_data.cp_floors", json(&c.cp_floors)),
     ]
     .into_iter()
     .collect()
@@ -1471,6 +1487,7 @@ fn check_patch_keys(patch: &Value) -> Result<(), MoveError> {
                 "deflection_line",
                 "builtin_words",
             ],
+            "cp_floors" => &["floors", "entry_levels"],
             _ => return Err(bad(section)),
         };
         let body = body.as_object().ok_or_else(|| bad(section))?;
@@ -1486,7 +1503,9 @@ fn check_patch_keys(patch: &Value) -> Result<(), MoveError> {
             // As the server: contracted as editable, but it cannot store them yet.
             if matches!(
                 (section.as_str(), key.as_str()),
-                ("models", "groups") | ("profanity", "builtin_words")
+                ("models", "groups")
+                    | ("profanity", "builtin_words")
+                    | ("cp_floors", "entry_levels")
             ) {
                 return Err(MoveError::Coded(
                     422,

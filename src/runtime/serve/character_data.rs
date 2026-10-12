@@ -91,6 +91,9 @@ pub(super) async fn start(
     if let Some(estimates) = scouter {
         service = service.with_estimates(estimates);
     }
+    if let Some(url) = privacy_url(config) {
+        service = service.with_privacy_url(url);
+    }
     let service = Arc::new(service);
     let Some(state) = Arc::get_mut(&mut composition.admin.state) else {
         drop(service);
@@ -121,6 +124,16 @@ impl Module {
         self.task.stop().await;
         close(self.file, wait).await;
     }
+}
+
+/// The public `/privacy` page (the Discord notice and the admin strip link
+/// it); `None` without a public listener.
+pub(super) fn privacy_url(config: &ServeConfig) -> Option<String> {
+    config
+        .runtime
+        .public_bind
+        .and(config.runtime.http.public_host.as_deref())
+        .map(|host| format!("https://{host}{}", crate::bot::chardata::copy::PRIVACY_PATH))
 }
 
 /// Create the file's directory 0700 when absent (Compose: `/chardata/db`

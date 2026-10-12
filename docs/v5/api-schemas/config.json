@@ -42,6 +42,33 @@
         "overrides": { "type": "array", "items": { "$ref": "#/$defs/RunLengthOverride" }, "description": "Replaced whole by PATCH; boss+difficulty pairs must be unique and valid in the catalog." }
       }
     },
+    "CpFloors": {
+      "description": "Run readiness CP floors (module character_data; setting v5.character_data.cp_floors). PATCH {\"cp_floors\": {\"floors\": {...}}} replaces the whole map; 422 invalid for a boss key or difficulty outside the catalog, an empty boss, or a floor outside 1-10000000000; 422 read_only for entry_levels; the generic 404 while the module is off. A save adds one History settings row (section cp_floors, key v5.character_data.cp_floors).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["floors", "entry_levels"],
+      "properties": {
+        "floors": {
+          "type": "object",
+          "description": "Catalog boss key -> lowercase difficulty letter -> whole Combat Power. A pair left out has no floor (not judged).",
+          "additionalProperties": {
+            "type": "object",
+            "minProperties": 1,
+            "propertyNames": { "enum": ["e", "n", "h", "c", "x"] },
+            "additionalProperties": { "type": "integer", "minimum": 1, "maximum": 10000000000 }
+          }
+        },
+        "entry_levels": {
+          "type": "object",
+          "description": "Read-only: every catalog boss and difficulty a floor may name, with its boss knowledge entry_level (null where knowledge has none).",
+          "additionalProperties": {
+            "type": "object",
+            "propertyNames": { "enum": ["e", "n", "h", "c", "x"] },
+            "additionalProperties": { "type": ["integer", "null"], "minimum": 1 }
+          }
+        }
+      }
+    },
     "ProfanitySettings": {
       "type": "object",
       "additionalProperties": false,
@@ -391,6 +418,10 @@
         "character_data": {
           "$ref": "character_data.json#/$defs/CharacterDataHealth",
           "description": "Module character_data's health (informational, never part of /healthz); absent while the module is off."
+        },
+        "cp_floors": {
+          "$ref": "#/$defs/CpFloors",
+          "description": "Run readiness CP floors; absent while module character_data is off."
         }
       }
     },

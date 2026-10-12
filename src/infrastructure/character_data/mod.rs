@@ -158,6 +158,8 @@ pub struct CharacterData {
     desk: OnceLock<Arc<dyn PostDesk>>,
     /// MapleScouter estimates; `None` without `KANADE_SCOUTER_URL`.
     estimates: Option<Estimates>,
+    /// The public `/privacy` page; `None` without a public listener.
+    privacy_url: Option<String>,
 }
 
 impl std::fmt::Debug for CharacterData {
@@ -187,6 +189,7 @@ impl CharacterData {
             wake: Notify::new(),
             desk: OnceLock::new(),
             estimates: None,
+            privacy_url: None,
         }
     }
 
@@ -200,6 +203,19 @@ impl CharacterData {
     /// `None` while estimates are off.
     pub fn estimates(&self) -> Option<&Estimates> {
         self.estimates.as_ref()
+    }
+
+    /// With the public privacy page's URL (a public listener is set).
+    #[must_use]
+    pub fn with_privacy_url(mut self, url: String) -> Self {
+        self.privacy_url = Some(url);
+        self
+    }
+
+    /// The public `/privacy` page the admin strip links; `None` without a
+    /// public listener.
+    pub fn privacy_url(&self) -> Option<&str> {
+        self.privacy_url.as_deref()
     }
 
     /// Cancel and join a running estimate lookup (shutdown, before the

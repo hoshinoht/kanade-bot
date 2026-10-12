@@ -186,10 +186,18 @@ pub async fn delete_character(State(app): State<App>, Path(id): Path<String>) ->
     outcome(app.store.lock().await.delete_character(&id))
 }
 
-/// Module `character_data`: on with the roster (the server refuses it
-/// without), so it answers the generic 404 whenever the roster is off.
+/// Module `character_data` answers the generic 404 while off (it is on only
+/// with the roster: the server refuses it without).
+async fn chardata_off(app: &App) -> Option<Response> {
+    if app.store.lock().await.character_data_on() {
+        None
+    } else {
+        Some(not_found().await)
+    }
+}
+
 pub async fn character_link(State(app): State<App>, Path(id): Path<String>) -> Response {
-    if let Some(off) = roster_off(&app).await {
+    if let Some(off) = chardata_off(&app).await {
         return off;
     }
     outcome(app.store.lock().await.character_link(&id))
@@ -201,7 +209,7 @@ pub async fn request_link(
     Path(id): Path<String>,
     body: Result<Json<crate::mock::character_data::LinkRequest>, JsonRejection>,
 ) -> Response {
-    if let Some(off) = roster_off(&app).await {
+    if let Some(off) = chardata_off(&app).await {
         return off;
     }
     let Ok(Json(req)) = body else {
@@ -218,14 +226,14 @@ pub async fn request_link(
 }
 
 pub async fn unlink(State(app): State<App>, Path(id): Path<String>) -> Response {
-    if let Some(off) = roster_off(&app).await {
+    if let Some(off) = chardata_off(&app).await {
         return off;
     }
     outcome(app.store.lock().await.unlink(&id))
 }
 
 pub async fn refresh_link(State(app): State<App>, Path(id): Path<String>) -> Response {
-    if let Some(off) = roster_off(&app).await {
+    if let Some(off) = chardata_off(&app).await {
         return off;
     }
     outcome(app.store.lock().await.refresh_link(&id))
@@ -236,6 +244,14 @@ pub async fn run_characters(State(app): State<App>, Path(id): Path<String>) -> R
         return off;
     }
     outcome(app.store.lock().await.run_characters(&id))
+}
+
+/// `GET /api/admin/runs/{id}/readiness` (module `character_data`).
+pub async fn run_readiness(State(app): State<App>, Path(id): Path<String>) -> Response {
+    if let Some(off) = chardata_off(&app).await {
+        return off;
+    }
+    outcome(app.store.lock().await.run_readiness(&id))
 }
 
 pub async fn pick_character(
@@ -259,13 +275,32 @@ pub async fn pick_character(
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Modules {
-    roster: bool,
+    #[serde(default)]
+    roster: Option<bool>,
+    #[serde(default)]
+    character_data: Option<bool>,
 }
 
-/// `POST /__mock/modules {roster}`: the server's startup module flags, until
-/// the next reset (dev and e2e only; the module starts on).
+/// `POST /__mock/modules {roster?, character_data?}`: the server's startup
+/// module flags, until the next reset (dev and e2e only; both start on).
 pub async fn set_modules(State(app): State<App>, Json(req): Json<Modules>) -> Response {
-    app.store.lock().await.set_roster(req.roster);
+    let mut store = app.store.lock().await;
+    if let Some(on) = req.roster {
+        store.set_roster(on);
+    }
+    if let Some(on) = req.character_data {
+        store.set_character_data(on);
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
+
+/// `POST /__mock/character-data {health}`: the health Config shows (and, for
+/// `setup`, no Nexon key and no scouter URL), until the next reset.
+pub async fn set_chardata_health(
+    State(app): State<App>,
+    Json(req): Json<crate::mock::character_data::HealthRequest>,
+) -> Response {
+    app.store.lock().await.set_chardata_health(req.health);
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -828,6 +863,12 @@ pub async fn patch_config(
     State(app): State<App>,
     Json(patch): Json<serde_json::Value>,
 ) -> Response {
+    // Module `character_data` off: its section answers as its routes do.
+    if patch.get("cp_floors").is_some()
+        && let Some(off) = chardata_off(&app).await
+    {
+        return off;
+    }
     outcome(app.store.lock().await.patch_config(&patch))
 }
 

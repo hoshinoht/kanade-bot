@@ -130,6 +130,54 @@ pub const DIFFICULTY_NAMES: [(char, &str); 5] = [
     ('x', "Extreme"),
 ];
 
+/// Each boss's knowledge `entry_level` (boss/knowledge; the same for each
+/// of its catalog difficulties).
+const ENTRY_LEVELS: [(&str, u16); 11] = [
+    ("Lotus", 190),
+    ("Seren", 260),
+    ("Kalos", 265),
+    ("FA", 270),
+    ("Carling", 275),
+    ("BM", 255),
+    ("MaleficStar", 280),
+    ("Bellona", 280),
+    ("Limbo", 285),
+    ("Baldrix", 290),
+    ("Jupiter", 295),
+];
+
+/// The entry level of catalog boss `key` at `difficulty`, if it has one.
+pub fn entry_level(key: &str, difficulty: &str) -> Option<u16> {
+    BOSSES
+        .iter()
+        .find(|boss| boss.key == key && boss.difficulties.contains(difficulty))?;
+    ENTRY_LEVELS
+        .iter()
+        .find(|(boss, _)| *boss == key)
+        .map(|(_, level)| *level)
+}
+
+/// `{boss key: {difficulty letter: entry level}}` for every catalog pair,
+/// as Config's `cp_floors.entry_levels`.
+pub fn entry_levels() -> serde_json::Value {
+    BOSSES
+        .iter()
+        .map(|boss| {
+            let levels: serde_json::Map<String, serde_json::Value> = boss
+                .difficulties
+                .chars()
+                .map(|letter| {
+                    let letter = letter.to_string();
+                    let level = entry_level(boss.key, &letter);
+                    (letter, serde_json::json!(level))
+                })
+                .collect();
+            (boss.key.to_owned(), serde_json::Value::Object(levels))
+        })
+        .collect::<serde_json::Map<_, _>>()
+        .into()
+}
+
 /// A boss on a run or timing: token, catalog key, difficulty letter.
 #[derive(Clone, PartialEq, Debug)]
 pub struct BossRef {

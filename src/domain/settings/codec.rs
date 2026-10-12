@@ -9,10 +9,10 @@ use chrono::{NaiveTime, Timelike, Weekday};
 use super::SettingsError;
 use super::keys;
 use super::model::{
-    Chatbot, ContextSettings, MAX_CONTEXT_TOKENS, MAX_ROLE_PROFILE_ASSIGNMENTS, MessageStyle,
-    Models, Notifications, OVERRIDE_RUN_MINUTES, Persona, Pings, Posting, Profanity, RUN_MINUTES,
-    Reasoning, RoleModel, RoleProfileAssignment, RunLengths, RuntimeSettings, Schedule,
-    SelfService, SelfServiceMode, Watching,
+    Chatbot, ContextSettings, CpFloors, MAX_CONTEXT_TOKENS, MAX_ROLE_PROFILE_ASSIGNMENTS,
+    MessageStyle, Models, Notifications, OVERRIDE_RUN_MINUTES, Persona, Pings, Posting, Profanity,
+    RUN_MINUTES, Reasoning, RoleModel, RoleProfileAssignment, RunLengths, RuntimeSettings,
+    Schedule, SelfService, SelfServiceMode, Watching,
 };
 use crate::domain::attendance::AttendanceMode;
 use crate::domain::weeks::{parse_hhmm, parse_weekday};
@@ -30,6 +30,7 @@ pub enum Section {
     Models(Models),
     RunLengths(RunLengths),
     Profanity(Profanity),
+    CpFloors(CpFloors),
     Schedule(Schedule),
     Posting(Posting),
     /// One id list written alone: `Watching`/`Chatbot` saves never write their
@@ -368,6 +369,15 @@ fn profanity(key: &'static str, value: &str) -> Result<Profanity, SettingsError>
     Ok(profanity)
 }
 
+fn cp_floors(key: &'static str, value: &str) -> Result<CpFloors, SettingsError> {
+    let floors: CpFloors = serde_json::from_str(value)
+        .map_err(|_| malformed(key, value, "expected CP floors JSON"))?;
+    floors
+        .check()
+        .map_err(|reason| malformed(key, value, reason))?;
+    Ok(floors)
+}
+
 fn apply(out: &mut RuntimeSettings, key: &'static str, value: &str) -> Result<(), SettingsError> {
     match key {
         keys::DAY_OF_PING_TIME => out.pings.day_of_ping_time = clock(key, value)?,
@@ -411,6 +421,7 @@ fn apply(out: &mut RuntimeSettings, key: &'static str, value: &str) -> Result<()
         keys::MODEL_CONTEXT => out.models.context = context(key, value)?,
         keys::RUN_LENGTHS => out.run_lengths = run_lengths(key, value)?,
         keys::PROFANITY => out.profanity = profanity(key, value)?,
+        keys::CP_FLOORS => out.cp_floors = cp_floors(key, value)?,
         keys::RESET_WEEKDAY => {
             out.schedule.reset_weekday =
                 parse_weekday(value).map_err(|error| malformed(key, value, error.to_string()))?;
@@ -538,6 +549,10 @@ pub(super) fn encode(section: &Section) -> Rows {
             keys::PROFANITY,
             serde_json::to_string(profanity).expect("profanity settings serialize infallibly"),
         )],
+        Section::CpFloors(floors) => vec![(
+            keys::CP_FLOORS,
+            serde_json::to_string(floors).expect("CP floors serialize infallibly"),
+        )],
         Section::Schedule(schedule) => vec![
             (keys::RESET_WEEKDAY, weekday_text(schedule.reset_weekday)),
             (keys::RESET_TIME, clock_text(schedule.reset_time)),
@@ -582,6 +597,7 @@ pub(super) fn encode_checked(section: &Section) -> Result<Rows, SettingsError> {
         Section::Models(_) => Section::Models(probe.models),
         Section::RunLengths(_) => Section::RunLengths(probe.run_lengths),
         Section::Profanity(_) => Section::Profanity(probe.profanity),
+        Section::CpFloors(_) => Section::CpFloors(probe.cp_floors),
         Section::Schedule(_) => Section::Schedule(probe.schedule),
         Section::Posting(_) => Section::Posting(probe.posting),
         Section::IdList(list, _) => Section::IdList(*list, list.get(&probe).clone()),
@@ -607,6 +623,7 @@ impl Section {
             Self::Models(_) => "models",
             Self::RunLengths(_) => "run_lengths",
             Self::Profanity(_) => "profanity",
+            Self::CpFloors(_) => "cp_floors",
             Self::Schedule(_) => "schedule",
             Self::Posting(_) => "posting",
             Self::IdList(list, _) => list.section(),

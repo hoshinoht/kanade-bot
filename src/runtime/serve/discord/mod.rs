@@ -52,7 +52,7 @@ use crate::{
     },
     bot::{
         cards::{CardDesk, CardSettings, DeskDeps},
-        chardata::{DiscordPosts, copy},
+        chardata::DiscordPosts,
         commands::CharacterParts,
         delivery::{
             CardRefresh, Delivery, DigestOutcome, HeaderPregen, LogAlerts, ManualRequest,
@@ -310,10 +310,7 @@ where
         .and(config.runtime.http.public_host.as_deref())
         .map(|host| format!("https://{host}"));
     kit.v2.portal = portal.clone();
-    // The character-data notice links the public `/privacy` page.
-    let privacy_url = portal
-        .as_deref()
-        .map(|origin| format!("{origin}{}", copy::PRIVACY_PATH));
+    let privacy_url = super::character_data::privacy_url(config);
     let cards = stop_aware::cards(kit, shutdown.clone());
     // One desk for extraction cards, chat cards and the reaction worker's
     // ✅/❌, which all read the same stored cards.

@@ -10,8 +10,7 @@ use super::{BatchReport, CharacterData, log};
 use crate::domain::characters::{Character, ign_key};
 use crate::domain::chardata::{
     FUTURE_SKEW, Failure, Link, LinkPut, LinkStatus, MAX_TEXT_CHARS, MAX_URL_CHARS,
-    OCID_RENEW_AFTER, PREPARING_RETRY, REFRESH_AGE, REFRESH_CAP, RefreshState, Snapshot,
-    parse_date,
+    OCID_RENEW_AFTER, PREPARING_RETRY, REFRESH_AGE, RefreshState, Snapshot, parse_date,
 };
 use crate::domain::scheduler::StoreError;
 use crate::infrastructure::nexon::Basic;
@@ -41,8 +40,6 @@ pub enum RefreshOutcome {
     NotConnected,
     /// No active link on an active roster character.
     NotLinked,
-    /// Refreshed less than 24 hours ago: possible from then.
-    TooSoon(DateTime<Utc>),
     /// Calls are held (key refused, maintenance or the day's budget).
     Unavailable(String),
 }
@@ -241,8 +238,8 @@ impl CharacterData {
         Ok(character.map(|character| (link, character)))
     }
 
-    /// `POST /api/admin/characters/{id}/refresh`: once per 24 hours, as the
-    /// batch counts it.
+    /// `POST /api/admin/characters/{id}/refresh`: at any time (user decision
+    /// 2026-10-12); only the shared 24-hour call budget and the holds limit it.
     pub async fn refresh_now(&self, character_id: &str) -> Result<RefreshOutcome, StoreError> {
         if !self.connected() {
             return Ok(RefreshOutcome::NotConnected);
@@ -252,11 +249,6 @@ impl CharacterData {
             return Ok(RefreshOutcome::NotLinked);
         };
         let now = self.now();
-        if let Some(snapshot) = self.store.snapshot(character_id.to_owned(), now).await?
-            && snapshot.fetched_at > now - REFRESH_CAP
-        {
-            return Ok(RefreshOutcome::TooSoon(snapshot.fetched_at + REFRESH_CAP));
-        }
         if let Some(held) = self.held(now) {
             return Ok(RefreshOutcome::Unavailable(held.label()));
         }

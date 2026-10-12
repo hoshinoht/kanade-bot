@@ -57,6 +57,12 @@ fn every_section_round_trips_through_its_rows() {
     settings.profanity.extra_words = vec!["frick".into()];
     settings.profanity.allowed_words = vec!["babi".into()];
     settings.profanity.check_replies = false;
+    settings
+        .cp_floors
+        .0
+        .entry("Kalos".into())
+        .or_default()
+        .insert("x".into(), 70_000_000);
     settings.schedule.reset_weekday = Weekday::Wed;
     settings.schedule.attendance = AttendanceMode::V5;
     settings.posting.channel_id = Some("99".into());
@@ -70,6 +76,7 @@ fn every_section_round_trips_through_its_rows() {
         Section::Models(settings.models.clone()),
         Section::RunLengths(settings.run_lengths.clone()),
         Section::Profanity(settings.profanity.clone()),
+        Section::CpFloors(settings.cp_floors.clone()),
         Section::Schedule(settings.schedule),
         Section::Posting(settings.posting.clone()),
         Section::IdList(
@@ -130,6 +137,44 @@ fn saved_run_lengths_row_wins_over_the_seed() {
         stored,
         "saved settings override only the startup seed"
     );
+}
+
+#[test]
+fn cp_floors_rows_are_strict() {
+    let read = |value: &str| {
+        resolve(
+            &rows(&[(keys::CP_FLOORS, value)]),
+            &RuntimeSettings::default(),
+        )
+    };
+    let floors = read(r#"{"Carling":{"h":45000000},"Kalos":{"x":70000000}}"#)
+        .unwrap()
+        .cp_floors;
+    assert_eq!(floors.floor("Carling", "h"), Some(45_000_000));
+    assert_eq!(floors.floor("Carling", "x"), None);
+    assert_eq!(
+        read(r#"{"Kalos":{"x":10000000000}}"#)
+            .unwrap()
+            .cp_floors
+            .floor("Kalos", "x"),
+        Some(*CP_FLOOR.end())
+    );
+    for bad in [
+        r#"{"Kalos":{"x":0}}"#,
+        r#"{"Kalos":{"x":10000000001}}"#,
+        r#"{"Kalos":{"x":-1}}"#,
+        r#"{"Kalos":{"x":1.5}}"#,
+        r#"{"Kalos":{}}"#,
+        r#"{"":{"x":1}}"#,
+        r#"{"Kalos":{"":1}}"#,
+        r#"[]"#,
+    ] {
+        assert!(
+            matches!(read(bad), Err(SettingsError::Malformed { .. })),
+            "{bad}"
+        );
+    }
+    assert_eq!(RuntimeSettings::default().cp_floors, CpFloors::default());
 }
 
 #[test]

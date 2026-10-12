@@ -2,13 +2,11 @@
 //! `character_data`) and the module's Config health block. The ocid never
 //! appears here.
 
-use chrono::{DateTime, Utc};
-use chrono_tz::Asia::Singapore;
 use serde::Serialize;
 
 use super::{history::SettingsActor, iso_instant};
 use crate::domain::chardata::{
-    ATTRIBUTION, LinkStatus, NOTICE_VERSION, REFRESH_CAP, SNAPSHOT_TTL, Snapshot, date_text,
+    ATTRIBUTION, LinkStatus, NOTICE_VERSION, SNAPSHOT_TTL, Snapshot, date_text,
 };
 use crate::infrastructure::character_data::{Health, LinkView};
 
@@ -40,6 +38,8 @@ pub struct CharacterLink {
     pub refresh: RefreshInfo,
     /// Shown with the data: `Data based on NEXON Open API`.
     pub attribution: &'static str,
+    /// The public `/privacy` page; `null` without a public listener.
+    pub privacy_url: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -63,15 +63,9 @@ pub struct CharacterFacts {
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct RefreshInfo {
-    /// An on-demand refresh is refused until then (24 hours after the last).
-    pub refreshable_at: Option<String>,
     pub next_attempt_at: Option<String>,
     /// The Open API error code (or reason) that stopped the last refresh.
     pub last_error: Option<String>,
-}
-
-fn singapore_day(at: DateTime<Utc>) -> String {
-    date_text(at.with_timezone(&Singapore).date_naive())
 }
 
 fn facts(snapshot: &Snapshot) -> CharacterFacts {
@@ -82,17 +76,16 @@ fn facts(snapshot: &Snapshot) -> CharacterFacts {
         level: snapshot.level,
         combat_power: snapshot.combat_power,
         image_url: snapshot.image_url.clone(),
-        as_of: snapshot
-            .data_date
-            .map_or_else(|| singapore_day(snapshot.fetched_at), date_text),
+        as_of: date_text(snapshot.as_of()),
         fetched_at: iso_instant(snapshot.fetched_at),
         expires_at: iso_instant(snapshot.expires_at),
     }
 }
 
-pub fn link(character_id: &str, view: &LinkView) -> CharacterLink {
+/// The strip's state for a link view (`CharacterLink.state`).
+pub fn link_state(view: &LinkView) -> &'static str {
     let link = view.link.as_ref();
-    let state = match link.map(|link| link.status) {
+    match link.map(|link| link.status) {
         None if view.connected => "not_linked",
         None => "not_connected",
         Some(LinkStatus::Pending) => "pending",
@@ -101,13 +94,12 @@ pub fn link(character_id: &str, view: &LinkView) -> CharacterLink {
             (None, Some(linked)) if linked + SNAPSHOT_TTL <= view.now => "expired",
             _ => "linked",
         },
-    };
-    let refreshable_at = view
-        .snapshot
-        .as_ref()
-        .map(|snapshot| snapshot.fetched_at + REFRESH_CAP)
-        .filter(|at| *at > view.now && state == "linked")
-        .map(iso_instant);
+    }
+}
+
+pub fn link(character_id: &str, view: &LinkView, privacy_url: Option<&str>) -> CharacterLink {
+    let link = view.link.as_ref();
+    let state = link_state(view);
     let refresh = view.refresh.as_ref();
     CharacterLink {
         character_id: character_id.to_owned(),
@@ -129,13 +121,13 @@ pub fn link(character_id: &str, view: &LinkView) -> CharacterLink {
             .filter(|snapshot| snapshot.has_data())
             .map(facts),
         refresh: RefreshInfo {
-            refreshable_at,
             next_attempt_at: refresh
                 .and_then(|state| state.next_attempt_at)
                 .map(iso_instant),
             last_error: refresh.and_then(|state| state.last_error_code.clone()),
         },
         attribution: ATTRIBUTION,
+        privacy_url: privacy_url.map(str::to_owned),
     }
 }
 

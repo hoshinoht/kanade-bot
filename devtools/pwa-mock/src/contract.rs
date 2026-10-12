@@ -1077,6 +1077,37 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     )
     .await;
 
+    // Run readiness and CP floors (module character_data).
+    let ready = h
+        .ok(
+            "GET",
+            "/api/admin/runs/r-carling/readiness",
+            None,
+            "character_data.json#/$defs/RunReadiness",
+        )
+        .await;
+    assert_eq!(ready["nexon_data"], true);
+    let floors = h
+        .ok(
+            "PATCH",
+            "/api/admin/config",
+            Some(json!({ "cp_floors": { "floors": { "Limbo": { "h": 60_000_000 } } } })),
+            "config.json#/$defs/ConfigView",
+        )
+        .await;
+    assert_eq!(
+        floors["cp_floors"]["floors"],
+        json!({ "Limbo": { "h": 60_000_000 } })
+    );
+    h.refused(
+        "PATCH",
+        "/api/admin/config",
+        json!({ "cp_floors": { "floors": { "Limbo": { "x": 1 } } } }),
+        &marks,
+        (StatusCode::UNPROCESSABLE_ENTITY, "invalid"),
+    )
+    .await;
+
     // Weekly timings.
     let row = &fixed[0];
     let tokens: Vec<&str> = row["bosses"]
@@ -3753,6 +3784,122 @@ async fn estimates_match_the_contract() {
         false,
         "GET",
         &format!("{estimates}/{id}"),
+        None,
+        StatusCode::NOT_FOUND,
+        "",
+    )
+    .await;
+    assert!(h.failures.is_empty(), "{}", h.failures.join("\n"));
+}
+
+#[tokio::test]
+async fn character_links_and_health_match_the_contract() {
+    let mut h = Harness::new();
+    let link = "character_data.json#/$defs/CharacterLink";
+    let config = "config.json#/$defs/ConfigView";
+    // Every seeded state: linked, retired-linked, stale, pending, not linked, expired.
+    let mut states = Vec::new();
+    for id in ["ch-s1", "ch-s3", "ch-s4", "ch-s5", "ch-s7", "ch-s10"] {
+        let view = h
+            .ok(
+                "GET",
+                &format!("/api/admin/characters/{id}/link"),
+                None,
+                link,
+            )
+            .await;
+        states.push(view["state"].as_str().unwrap_or_default().to_owned());
+    }
+    assert_eq!(
+        states,
+        [
+            "linked",
+            "linked",
+            "stale",
+            "pending",
+            "not_linked",
+            "expired"
+        ]
+    );
+    // An admin request makes a pending link; Unlink withdraws it.
+    let pending = h
+        .expect(
+            false,
+            "POST",
+            "/api/admin/characters/ch-s7/link",
+            Some(json!({ "version": 0 })),
+            StatusCode::CREATED,
+            link,
+        )
+        .await;
+    assert_eq!(pending["state"], "pending");
+    h.ok(
+        "DELETE",
+        "/api/admin/characters/ch-s7/link",
+        None,
+        "common.json#/$defs/Message",
+    )
+    .await;
+    // An admin Refresh is always allowed: expired and fresh alike.
+    for id in ["ch-s10", "ch-s3"] {
+        let refreshed = h
+            .ok(
+                "POST",
+                &format!("/api/admin/characters/{id}/refresh"),
+                None,
+                link,
+            )
+            .await;
+        assert_eq!(refreshed["state"], "linked", "{id}");
+    }
+    // Held calls refuse it.
+    h.send(
+        false,
+        "POST",
+        "/__mock/character-data",
+        Some(json!({ "health": "refused" })),
+    )
+    .await;
+    let csrf = h.csrf.clone();
+    let marks = [("x-kanade-csrf", csrf.as_str())];
+    h.refused(
+        "POST",
+        "/api/admin/characters/ch-s3/refresh",
+        json!({}),
+        &marks,
+        (StatusCode::SERVICE_UNAVAILABLE, "nexon_unavailable"),
+    )
+    .await;
+    // Every health the boards draw validates; setup (last) has no key.
+    for health in ["ok", "alert", "refused", "setup"] {
+        h.send(
+            false,
+            "POST",
+            "/__mock/character-data",
+            Some(json!({ "health": health })),
+        )
+        .await;
+        let view = h.ok("GET", "/api/admin/config", None, config).await;
+        assert!(view["character_data"].is_object(), "{health}");
+    }
+    let none = h
+        .ok("GET", "/api/admin/characters/ch-s7/link", None, link)
+        .await;
+    assert_eq!(none["state"], "not_connected");
+    // Off: no health block, and the link routes answer the generic 404.
+    h.send(
+        false,
+        "POST",
+        "/__mock/modules",
+        Some(json!({ "character_data": false })),
+    )
+    .await;
+    let view = h.ok("GET", "/api/admin/config", None, config).await;
+    assert!(view.get("character_data").is_none());
+    h.expect(
+        false,
+        "GET",
+        "/api/admin/characters/ch-s3/link",
         None,
         StatusCode::NOT_FOUND,
         "",

@@ -92,6 +92,7 @@ fn common(app: &App, api: Router<App>, dist: PathBuf, public: bool) -> Router {
         .route("/__mock/limits", post(api::seed_limits))
         .route("/__mock/modules", post(api::set_modules))
         .route("/__mock/estimates", post(api::set_estimate_scenario))
+        .route("/__mock/character-data", post(api::set_chardata_health))
         .route("/__mock/discord", post(auth::fail_next_discord))
         .route("/__mock/arrive", post(events::arrive))
         .route("/__mock/inbox/kalos-v4", post(drafts::kalos_v4))
@@ -215,6 +216,7 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         )
         .route("/api/admin/estimates/{job}", get(api::estimate))
         .route("/api/admin/runs/{id}/characters", get(api::run_characters))
+        .route("/api/admin/runs/{id}/readiness", get(api::run_readiness))
         .route(
             "/api/admin/runs/{id}/characters/{member}",
             put(api::pick_character),

@@ -24,8 +24,6 @@ pub const OCID_RENEW_AFTER: TimeDelta = TimeDelta::days(29);
 pub const FUTURE_SKEW: TimeDelta = TimeDelta::minutes(5);
 /// The daily batch refreshes snapshots at least this old.
 pub const REFRESH_AGE: TimeDelta = TimeDelta::hours(20);
-/// An on-demand refresh waits this long after the last one.
-pub const REFRESH_CAP: TimeDelta = TimeDelta::hours(24);
 /// The rolling window of the call budget.
 pub const CALL_WINDOW: TimeDelta = TimeDelta::hours(24);
 /// Hard stop on calls in any [`CALL_WINDOW`] (the development key allows
@@ -192,6 +190,16 @@ impl Snapshot {
         now < self.expires_at
             && self.fetched_at <= now + FUTURE_SKEW
             && self.ocid_fetched_at <= now + FUTURE_SKEW
+    }
+
+    /// The day the data describes: the response's reference date, else the
+    /// fetch day in Singapore (the MapleSEA Open API's zone).
+    pub fn as_of(&self) -> NaiveDate {
+        self.data_date.unwrap_or_else(|| {
+            self.fetched_at
+                .with_timezone(&chrono_tz::Asia::Singapore)
+                .date_naive()
+        })
     }
 
     /// Any field beyond the ocid came back.

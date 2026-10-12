@@ -52,7 +52,7 @@ fn coded(status: u16, code: &'static str, message: &str) -> MoveError {
     MoveError::Coded(status, code, message.into())
 }
 
-fn choice(c: &Char) -> Value {
+pub(super) fn choice(c: &Char) -> Value {
     json!({
         "id": c.id, "ign": c.ign, "world": c.world, "class": c.class, "level": c.level,
         "role": if c.main { "main" } else { "alt" },
@@ -60,7 +60,7 @@ fn choice(c: &Char) -> Value {
 }
 
 impl Store {
-    fn candidates(&self, member: &str) -> Vec<&Char> {
+    pub(super) fn candidates(&self, member: &str) -> Vec<&Char> {
         self.characters
             .iter()
             .filter(|c| c.member_id == member && c.retired_at.is_none())
@@ -75,7 +75,7 @@ impl Store {
 
     /// Who `member` brings to `run`: the picked candidate (`false`), else
     /// the only candidate (`true`).
-    fn brings(&self, run: &Rec, member: &str) -> Option<(String, bool)> {
+    pub(super) fn brings(&self, run: &Rec, member: &str) -> Option<(String, bool)> {
         if !run.participants.iter().any(|p| p.id == member) {
             return None;
         }
@@ -140,7 +140,7 @@ impl Store {
         })
     }
 
-    fn run_rec(&self, id: &str) -> Result<&Rec, MoveError> {
+    pub(super) fn run_rec(&self, id: &str) -> Result<&Rec, MoveError> {
         self.runs
             .iter()
             .find(|r| r.id == id)

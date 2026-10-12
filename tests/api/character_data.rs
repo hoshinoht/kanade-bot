@@ -46,7 +46,7 @@ fn refresh(id: &str) -> String {
 }
 
 /// A fake Open API answering every call with invented data; counts calls.
-async fn fake_nexon() -> (std::net::SocketAddr, Arc<AtomicUsize>) {
+pub(crate) async fn fake_nexon() -> (std::net::SocketAddr, Arc<AtomicUsize>) {
     let calls = Arc::new(AtomicUsize::new(0));
     let counted = Arc::clone(&calls);
     let app = Router::new().fallback(move |request: axum::extract::Request| {
@@ -73,7 +73,7 @@ async fn fake_nexon() -> (std::net::SocketAddr, Arc<AtomicUsize>) {
     (address, calls)
 }
 
-fn config() -> ConfigMaker {
+pub(crate) fn config() -> ConfigMaker {
     Box::new(|store| {
         Arc::new(ConfigDesk::new(ConfigInputs {
             settings: RuntimeSettings::default(),
@@ -281,12 +281,11 @@ async fn an_admin_request_is_pending_until_the_member_confirms() {
     assert_eq!(config["character_data"]["links"]["active"], 1);
     assert_eq!(config["character_data"]["calls_24h"], 3);
 
-    // The refresh shares the 24-hour cap.
-    let capped = reads.call("POST", &refresh(&id), json!(null), &[]).await;
-    assert_eq!(
-        (capped.status, capped.api_error()),
-        (429, "refresh_cap".into())
-    );
+    // An admin refresh may run at any time; only the budget counts it.
+    let refreshed = reads.call("POST", &refresh(&id), json!(null), &[]).await;
+    assert_eq!(refreshed.status, 200, "{}", refreshed.text());
+    assert_valid(LINK, "refresh", &refreshed.json());
+    assert_eq!(calls.load(Ordering::SeqCst), 5, "basic and stat again");
 
     // Unlink: gone at once.
     let unlinked = reads.call("DELETE", &link(&id), json!(null), &[]).await;

@@ -349,9 +349,9 @@ impl Store {
         self.estimates.scenario = scenario;
     }
 
-    /// Estimate routes answer the generic 404 while off (or the roster is).
+    /// Estimate routes answer the generic 404 while off (or the module is).
     pub fn estimates_on(&self) -> bool {
-        self.roster_on() && self.estimates.on()
+        self.character_data_on() && self.estimates.on()
     }
 
     fn subject_of(&self, id: &str) -> Result<Subject, MoveError> {

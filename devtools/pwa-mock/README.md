@@ -181,14 +181,36 @@ needs `version`, `409 stale`). Invented characters are seeded
 them. Writes record no History rows here.
 
 Character data (module `character_data`, `src/mock/character_data.rs`; on
-whenever the roster is): `GET`/`POST`/`DELETE /api/admin/characters/{id}/link`
-and `POST /api/admin/characters/{id}/refresh` follow the server's shapes and
-refusals (`version_required`, `stale`, `already_linked`, `retired`,
-`region`, `not_linked`, `429 refresh_cap`). A request stays `pending`: the
+with the roster, `POST /__mock/modules {"character_data": false}` turns it
+off until the next reset): `GET`/`POST`/`DELETE
+/api/admin/characters/{id}/link` and `POST /api/admin/characters/{id}/refresh`
+follow the server's shapes and refusals (`version_required`, `stale`,
+`already_linked`, `retired`, `region`, `not_linked`, `not_connected`,
+`503 nexon_unavailable`). A request stays `pending`: the
 mock has no Discord confirmation and never calls an Open API. Wholly
-invented data: MikaNL (`ch-s2`) linked, AsahiDK (`ch-s5`) pending.
+invented data at the pinned now: MikaBish (`ch-s3`), MikaNL, YuzuPala
+(`ch-s8`) and TsubaKain (`ch-s9`) linked (MikaBish, YuzuPala and TsubaKain by
+today's 04:01 batch), MikaHero linked but retired, Mikadere stale, Hotaru7
+(`ch-s10`) linked with its data past 30 days (`expired`), AsahiDK (`ch-s5`)
+pending, the rest not linked. An admin Refresh is always allowed (only held
+calls refuse it); every link carries an invented `privacy_url`. `GET
+/api/admin/config` carries the `character_data` health block while the module
+is on; `POST /__mock/character-data {health}` picks `ok` (default), `alert`
+(Nexon backoff, scouter `verification_required`, a stuck and an unknown card),
+`setup` (no key: links read `not_connected`; no scouter URL: estimates off) or
+`refused` (key refused, scouter unreachable).
 
-MapleScouter estimates (`src/mock/estimates.rs`; on with the roster):
+Run readiness and CP floors (`src/mock/readiness.rs`; on with the module):
+`GET /api/admin/runs/{id}/readiness` judges each party slot per boss of the
+run as the server does (fresh NEXON level else the manual one; NEXON combat
+power from fresh data only; entry levels from boss knowledge; `no_floor`
+without a floor). Config's `cp_floors` (`{floors, entry_levels}`) saves
+through `PATCH /api/admin/config {"cp_floors": {"floors": …}}` (the whole
+map; the server's 422 refusals; 404 while the module is off). Seeded floors:
+Kalos Extreme 70.0M, Carling Hard 45.0M, Black Mage Extreme 80.0M, Limbo
+Hard 55.0M; `r-carling`'s party covers every level and power verdict.
+
+MapleScouter estimates (`src/mock/estimates.rs`; on with the module):
 `POST /api/admin/estimates {character_ids | run_id, refresh?}` (`202
 {job}`, `409 estimate_running`, the server's 422/404/400 refusals),
 `GET /api/admin/estimates/{job}` and `GET

@@ -23,6 +23,7 @@ mod origins;
 mod outbox;
 mod presence;
 mod proxy;
+mod readiness;
 mod reads;
 mod reminders;
 mod replays;

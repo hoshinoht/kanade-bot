@@ -7,7 +7,7 @@
       "description": "One roster character's link and its fresh Nexon data. The ocid is never sent.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["character_id", "state", "version", "connected", "requested_by", "requested_at", "consent_version", "consented_at", "linked_at", "notice_version", "data", "refresh", "attribution"],
+      "required": ["character_id", "state", "version", "connected", "requested_by", "requested_at", "consent_version", "consented_at", "linked_at", "notice_version", "data", "refresh", "attribution", "privacy_url"],
       "properties": {
         "character_id": { "type": "string" },
         "state": {
@@ -24,7 +24,8 @@
         "notice_version": { "type": "integer", "minimum": 1, "description": "The current notice version." },
         "data": { "oneOf": [{ "$ref": "#/$defs/CharacterFacts" }, { "type": "null" }], "description": "Fresh Nexon data; null without any (never expired or stamped in the future)." },
         "refresh": { "$ref": "#/$defs/RefreshInfo" },
-        "attribution": { "const": "Data based on NEXON Open API" }
+        "attribution": { "const": "Data based on NEXON Open API" },
+        "privacy_url": { "$ref": "common.json#/$defs/NullableString", "description": "The public /privacy page; null without a public listener." }
       }
     },
     "CharacterFacts": {
@@ -46,9 +47,8 @@
     "RefreshInfo": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["refreshable_at", "next_attempt_at", "last_error"],
+      "required": ["next_attempt_at", "last_error"],
       "properties": {
-        "refreshable_at": { "$ref": "common.json#/$defs/NullableString", "description": "An on-demand refresh is refused (429 refresh_cap) until then." },
         "next_attempt_at": { "$ref": "common.json#/$defs/NullableString" },
         "last_error": { "$ref": "common.json#/$defs/NullableString", "description": "The Open API error code (OPENAPI000NN) or reason (budget, maintenance, key_refused, unavailable, http_NNN) that stopped the last refresh." }
       }
@@ -60,6 +60,74 @@
       "required": ["version"],
       "properties": {
         "version": { "type": "integer", "minimum": 0, "description": "The link version as loaded (0 when not linked)." }
+      }
+    },
+    "RunReadiness": {
+      "description": "GET /api/admin/runs/{id}/readiness: each party slot (as GET .../characters reads them, inferred recomputed) against each boss of the run. Computed on read, never stored, never blocking. NEXON values only from an active link's unexpired data.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "slots", "nexon_data", "attribution"],
+      "properties": {
+        "run_id": { "type": "string" },
+        "slots": { "type": "array", "items": { "$ref": "#/$defs/ReadinessSlot" }, "description": "In party order." },
+        "nexon_data": { "type": "boolean", "description": "Some slot shows a NEXON value: show the attribution." },
+        "attribution": { "const": "Data based on NEXON Open API" }
+      }
+    },
+    "ReadinessSlot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["member_id", "character", "inferred", "link", "level", "power", "bosses"],
+      "properties": {
+        "member_id": { "type": "string" },
+        "character": {
+          "description": "The character the member brings (picked, else the only candidate); null with none.",
+          "oneOf": [{ "$ref": "characters.json#/$defs/CharacterChoice" }, { "type": "null" }]
+        },
+        "inferred": { "type": "boolean", "description": "The character is the only candidate, not a pick." },
+        "link": { "enum": ["not_connected", "not_linked", "pending", "linked", "stale", "expired", null], "description": "The character's link as the strip shows it; null without a character." },
+        "level": {
+          "description": "Fresh NEXON level, else the manual roster level; null with neither.",
+          "oneOf": [{ "$ref": "#/$defs/ReadinessLevel" }, { "type": "null" }]
+        },
+        "power": {
+          "description": "Null without usable data.",
+          "oneOf": [{ "$ref": "#/$defs/ReadinessPower" }, { "type": "null" }]
+        },
+        "bosses": { "type": "array", "items": { "$ref": "#/$defs/BossReadiness" }, "description": "One per boss of the run, in run order." }
+      }
+    },
+    "ReadinessLevel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "source", "as_of"],
+      "properties": {
+        "value": { "type": "integer", "minimum": 1 },
+        "source": { "enum": ["nexon", "manual"] },
+        "as_of": { "type": ["string", "null"], "format": "date", "description": "YYYY-MM-DD (Singapore): the NEXON response date, else its fetch day; null for a manual level." }
+      }
+    },
+    "ReadinessPower": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value", "as_of"],
+      "properties": {
+        "kind": { "enum": ["nexon_cp", "scouter"], "description": "scouter is reserved for MapleScouter's boss values (not sent yet)." },
+        "value": { "type": "integer", "minimum": 0 },
+        "as_of": { "type": ["string", "null"], "format": "date" }
+      }
+    },
+    "BossReadiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["boss", "difficulty", "entry_level", "cp_floor", "level", "power"],
+      "properties": {
+        "boss": { "type": "string", "description": "Catalog boss key." },
+        "difficulty": { "enum": ["e", "n", "h", "c", "x"] },
+        "entry_level": { "type": ["integer", "null"], "minimum": 1, "description": "From boss knowledge; null when it has none." },
+        "cp_floor": { "type": ["integer", "null"], "minimum": 1, "description": "From Config CP floors; null: no floor." },
+        "level": { "enum": ["ok", "under", "unknown"], "description": "ok at or above entry_level; unknown without a level or an entry_level." },
+        "power": { "enum": ["ok", "under", "no_floor", "unknown"], "description": "ok at or above cp_floor; no_floor (not judged) without one; unknown with a floor but no power." }
       }
     },
     "CharacterDataHealth": {

@@ -50,6 +50,10 @@ pub struct ConfigView {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub character_data: Option<super::character_data::CharacterDataHealth>,
+    /// Module `character_data`'s CP floors; absent while the module is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub cp_floors: Option<CpFloors>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -141,6 +145,24 @@ pub fn run_lengths(settings: &StoredRunLengths) -> RunLengths {
         default_minutes: settings.default_minutes,
         overrides: settings.overrides.iter().map(override_).collect(),
     }
+}
+
+/// Run readiness CP floors (`v5.character_data.cp_floors`). `PATCH
+/// {"cp_floors": {"floors": …}}` replaces the whole map.
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct CpFloors {
+    /// Catalog boss key → difficulty letter → whole Combat Power; a pair
+    /// left out has no floor.
+    #[cfg_attr(test, ts(type = "Record<string, Partial<Record<Difficulty, number>>>"))]
+    pub floors: BTreeMap<String, BTreeMap<String, u64>>,
+    /// Read-only: every catalog boss and difficulty a floor may name, with
+    /// its boss knowledge `entry_level` (`null` where knowledge has none).
+    #[cfg_attr(
+        test,
+        ts(type = "Record<string, Partial<Record<Difficulty, number | null>>>")
+    )]
+    pub entry_levels: BTreeMap<String, BTreeMap<String, Option<u16>>>,
 }
 
 /// The chat profanity guardrail. `builtin_words` is read-only: the code-owned

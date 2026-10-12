@@ -18,9 +18,7 @@ use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
 use super::*;
 use crate::domain::characters::{CharacterChange, CharacterRecord, CharacterRole};
-use crate::domain::chardata::{
-    CharDataStore, DAILY_CALLS, Link, LinkStatus, NOTICE_VERSION, Post, REFRESH_CAP,
-};
+use crate::domain::chardata::{CharDataStore, DAILY_CALLS, Link, LinkStatus, NOTICE_VERSION, Post};
 use crate::domain::history::{Actor, Surface};
 use crate::domain::settings::SettingsChangeQuery;
 use crate::infrastructure::nexon::{ApiKey, KEY_HEADER};
@@ -736,13 +734,16 @@ async fn an_empty_answer_is_no_data() {
 }
 
 #[tokio::test]
-async fn the_budget_and_the_24_hour_cap_hold() {
+async fn an_admin_refresh_runs_at_once_until_the_budget_stops_it() {
     let rig = rig().await;
     rig.confirm().await;
+    let before = rig.fake.calls().len();
     assert_eq!(
         rig.service.refresh_now("c1").await.unwrap(),
-        RefreshOutcome::TooSoon(at(11, 0) + REFRESH_CAP)
+        RefreshOutcome::Done(FetchState::Stored),
+        "no per-character wait after the link's own fetch"
     );
+    assert_eq!(rig.fake.calls()[before..], ["basic", "stat"]);
     rig.set_now(at(12, 1));
     for n in 0..DAILY_CALLS {
         rig.file

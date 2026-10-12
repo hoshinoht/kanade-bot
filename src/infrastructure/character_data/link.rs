@@ -70,6 +70,16 @@ pub enum ConfirmOutcome {
 
 impl CharacterData {
     pub async fn view(&self, character_id: &str) -> Result<LinkView, StoreError> {
+        self.read_view(character_id, true).await
+    }
+
+    /// [`Self::view`] without the refresh state, for readers that show no
+    /// refresh (run readiness).
+    pub async fn status(&self, character_id: &str) -> Result<LinkView, StoreError> {
+        self.read_view(character_id, false).await
+    }
+
+    async fn read_view(&self, character_id: &str, refresh: bool) -> Result<LinkView, StoreError> {
         let now = self.now();
         let current = self.current_link(character_id).await?;
         let snapshot = match &current {
@@ -79,13 +89,13 @@ impl CharacterData {
             _ => None,
         };
         let refresh = match &current {
-            Some(_) => self
+            Some(_) if refresh => self
                 .store
                 .refresh_states()
                 .await?
                 .into_iter()
                 .find(|state| state.character_id == character_id),
-            None => None,
+            _ => None,
         };
         Ok(LinkView {
             connected: self.connected(),

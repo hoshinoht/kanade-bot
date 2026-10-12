@@ -27,6 +27,7 @@ mod people;
 pub mod portal;
 pub mod presence;
 mod profanity;
+mod readiness;
 mod reminders;
 pub mod requests;
 mod rewrites;
@@ -135,6 +136,10 @@ pub struct Store {
     estimates: estimates::Estimates,
     /// The roster module's startup flag (on unless `/__mock/modules` turns it off).
     roster: bool,
+    /// Module `character_data`'s startup flag (on with the roster unless
+    /// `/__mock/modules` turns it off) and the health Config shows.
+    character_data: bool,
+    chardata_health: character_data::Health,
     /// Simulated other admins' presence (`presence.rs`); empty after a reset.
     presence: presence::Board,
     version: u64,
@@ -177,6 +182,8 @@ impl Store {
             estimates: estimates::Estimates::seed(),
             picks: Vec::new(),
             roster: true,
+            character_data: true,
+            chardata_health: character_data::Health::Ok,
             presence: presence::Board::default(),
             version: 1,
             next_id: 1,
@@ -203,6 +210,8 @@ impl Store {
         self.links = character_data::seed();
         self.estimates = estimates::Estimates::seed();
         self.roster = true;
+        self.character_data = true;
+        self.chardata_health = character_data::Health::Ok;
         self.version = 1;
         self.next_id = 1;
         self.proposals = inbox::seed();

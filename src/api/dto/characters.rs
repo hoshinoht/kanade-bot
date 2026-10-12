@@ -119,7 +119,7 @@ pub struct RunCharacters {
     pub slots: Vec<RunCharacterSlot>,
 }
 
-fn choice(character: &Character) -> CharacterChoice {
+pub fn choice(character: &Character) -> CharacterChoice {
     CharacterChoice {
         id: character.id.clone(),
         ign: character.ign.clone(),

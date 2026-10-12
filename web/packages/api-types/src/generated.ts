@@ -317,7 +317,11 @@ data: CharacterFacts | null, refresh: RefreshInfo,
 /**
  * Shown with the data: `Data based on NEXON Open API`.
  */
-attribution: string, };
+attribution: string, 
+/**
+ * The public `/privacy` page; `null` without a public listener.
+ */
+privacy_url: string | null, };
 
 export type CharacterFacts = { name: string | null, world: string | null, class: string | null, level: number | null, combat_power: number | null, 
 /**
@@ -333,11 +337,7 @@ as_of: string, fetched_at: string,
  */
 expires_at: string, };
 
-export type RefreshInfo = { 
-/**
- * An on-demand refresh is refused until then (24 hours after the last).
- */
-refreshable_at: string | null, next_attempt_at: string | null, 
+export type RefreshInfo = { next_attempt_at: string | null, 
 /**
  * The Open API error code (or reason) that stopped the last refresh.
  */
@@ -399,6 +399,75 @@ url: string | null, last_lookup_at: string | null,
  * `unreachable`, `unreadable`.
  */
 last_error: string | null, last_error_at: string | null, };
+
+export type RunReadiness = { run_id: string, 
+/**
+ * The slots of `GET …/characters`, in party order.
+ */
+slots: Array<ReadinessSlot>, 
+/**
+ * Some slot shows a NEXON value: show the attribution.
+ */
+nexon_data: boolean, 
+/**
+ * `Data based on NEXON Open API`.
+ */
+attribution: string, };
+
+export type ReadinessSlot = { member_id: string, 
+/**
+ * The character the member brings (picked, else inferred); `null` with
+ * none.
+ */
+character: CharacterChoice | null, 
+/**
+ * The character is the only candidate, not a pick.
+ */
+inferred: boolean, 
+/**
+ * The character's link as the strip shows it; `null` without a
+ * character.
+ */
+link: 'not_connected' | 'not_linked' | 'pending' | 'linked' | 'stale' | 'expired' | null, 
+/**
+ * Fresh NEXON level, else the manual roster level; `null` with neither.
+ */
+level: ReadinessLevel | null, 
+/**
+ * `null` without usable data.
+ */
+power: ReadinessPower | null, 
+/**
+ * One per boss of the run, in run order.
+ */
+bosses: Array<BossReadiness>, };
+
+export type ReadinessLevel = { value: number, source: 'nexon' | 'manual', 
+/**
+ * `YYYY-MM-DD` (Singapore): the NEXON response date, else its fetch
+ * day; `null` for a manual level.
+ */
+as_of: string | null, };
+
+export type ReadinessPower = { 
+/**
+ * `scouter` is reserved for MapleScouter's boss values (not sent yet).
+ */
+kind: 'nexon_cp' | 'scouter', value: number, as_of: string | null, };
+
+export type BossReadiness = { 
+/**
+ * Catalog boss key.
+ */
+boss: string, difficulty: Difficulty, 
+/**
+ * From boss knowledge; `null` when it has none.
+ */
+entry_level: number | null, 
+/**
+ * From Config CP floors; `null`: no floor, power not judged.
+ */
+cp_floor: number | null, level: 'ok' | 'under' | 'unknown', power: 'ok' | 'under' | 'no_floor' | 'unknown', };
 
 /**
  * `GET /api/admin/estimates?character_ids=|run_id=`.
@@ -952,7 +1021,11 @@ last_digest: LastDigest | null,
  * Module `character_data`'s health (informational, never part of
  * `/healthz`); absent while the module is off.
  */
-character_data?: CharacterDataHealth, };
+character_data?: CharacterDataHealth, 
+/**
+ * Module `character_data`'s CP floors; absent while the module is off.
+ */
+cp_floors?: CpFloors, };
 
 export type Pings = { day_of_ping_time: string, countdown_minutes: Array<number>, };
 
@@ -1061,6 +1134,22 @@ group: string | null, };
 export type RunLengths = { default_minutes: number, overrides: Array<RunLengthOverride>, };
 
 export type RunLengthOverride = { boss: string, difficulty: Difficulty, minutes: number, };
+
+/**
+ * Run readiness CP floors (`v5.character_data.cp_floors`). `PATCH
+ * {"cp_floors": {"floors": …}}` replaces the whole map.
+ */
+export type CpFloors = { 
+/**
+ * Catalog boss key → difficulty letter → whole Combat Power; a pair
+ * left out has no floor.
+ */
+floors: Record<string, Partial<Record<Difficulty, number>>>, 
+/**
+ * Read-only: every catalog boss and difficulty a floor may name, with
+ * its boss knowledge `entry_level` (`null` where knowledge has none).
+ */
+entry_levels: Record<string, Partial<Record<Difficulty, number | null>>>, };
 
 /**
  * The chat profanity guardrail. `builtin_words` is read-only: the code-owned

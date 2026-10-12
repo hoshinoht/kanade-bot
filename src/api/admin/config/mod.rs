@@ -112,6 +112,7 @@ fn put(settings: &mut RuntimeSettings, section: Section) {
         Section::Models(value) => settings.models = value,
         Section::RunLengths(value) => settings.run_lengths = value,
         Section::Profanity(value) => settings.profanity = value,
+        Section::CpFloors(value) => settings.cp_floors = value,
         Section::Schedule(value) => settings.schedule = value,
         Section::Posting(value) => settings.posting = value,
         Section::IdList(list, ids) => *list.get_mut(settings) = ids,
@@ -148,8 +149,45 @@ async fn answer(
             &service.health().await,
             state.guild_id.as_deref(),
         ));
+        view.cp_floors = Some(cp_floors(state, &settings.cp_floors).await?);
     }
     Ok(Json(view).into_response())
+}
+
+/// The saved floors and, for every catalog boss difficulty, its knowledge
+/// entry level (the knowledge files are re-read on the blocking pool).
+async fn cp_floors(
+    state: &ApiState,
+    saved: &crate::domain::settings::CpFloors,
+) -> Result<crate::api::dto::config::CpFloors, Refusal> {
+    let catalog = Arc::clone(&state.catalog);
+    let dir = state.knowledge_dir.clone();
+    let entry_levels = tokio::task::spawn_blocking(move || {
+        catalog
+            .ordered()
+            .into_iter()
+            .map(|boss| {
+                let known = dir
+                    .as_deref()
+                    .map(|dir| crate::api::dto::bosses::entry_levels(dir, &catalog, boss.short()));
+                let levels = boss
+                    .difficulties()
+                    .iter()
+                    .map(|letter| {
+                        let level = known.as_ref().and_then(|known| known.get(letter).copied());
+                        (letter.clone(), level)
+                    })
+                    .collect();
+                (boss.short().to_owned(), levels)
+            })
+            .collect()
+    })
+    .await
+    .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
+    Ok(crate::api::dto::config::CpFloors {
+        floors: saved.0.clone(),
+        entry_levels,
+    })
 }
 
 /// Each row's in-flight permits from the governor snapshot the Limits page
@@ -228,6 +266,11 @@ async fn update(
     let state = state(&site)?;
     let key = origin(&session, &headers)?.request_id;
     let Json(body) = body.map_err(bad_body)?;
+    // Module `character_data` off: its section is absent, and a write to it
+    // answers as the module's routes do, before any keyed replay.
+    if state.character_data.is_none() && body.get("cp_floors").is_some() {
+        return Err(ApiError::NOT_FOUND.into());
+    }
     let desk = desk(state)?;
     let actor = format!("{}:{}", session.actor.kind(), session.actor.id());
     let now = state.now();
@@ -345,6 +388,7 @@ async fn update(
             &state.catalog,
         )?),
         "profanity" => Section::Profanity(patch::profanity(&current.profanity, fields)?),
+        "cp_floors" => Section::CpFloors(patch::cp_floors(fields, &state.catalog)?),
         _ => {
             if desk.models.is_none() {
                 return Err(models_unreachable(
@@ -517,6 +561,7 @@ fn name_of(section: &str) -> &'static str {
         "persona" => "persona",
         "run_lengths" => "run_lengths",
         "profanity" => "profanity",
+        "cp_floors" => "cp_floors",
         _ => "models",
     }
 }

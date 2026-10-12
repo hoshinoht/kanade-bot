@@ -1,13 +1,15 @@
 //! Character data (module `character_data`): one roster character's link
-//! and Nexon data. While the module is off (`modules.character_data`, read
-//! at startup) every route answers the generic `404` before the session is
-//! checked, as an unmounted path does. Writes take the session's CSRF token,
-//! replay an `Idempotency-Key` (scope `config`) and record History rows
-//! (section `characters`, key `link.<id>`, status words only). An admin
-//! request is `pending` and calls nothing until the member confirms in
-//! Discord; the refresh shares the batch's 24-hour cap and daily budget.
+//! and Nexon data, and a run's readiness (`readiness.rs`). While the module
+//! is off (`modules.character_data`, read at startup) every route answers
+//! the generic `404` before the session is checked, as an unmounted path
+//! does. Writes take the session's CSRF token, replay an `Idempotency-Key`
+//! (scope `config`) and record History rows (section `characters`, key
+//! `link.<id>`, status words only). An admin request is `pending` and calls
+//! nothing until the member confirms in Discord; the refresh shares the
+//! batch's 24-hour cap and daily budget.
 
 mod estimates;
+mod readiness;
 
 use std::sync::Arc;
 
@@ -45,6 +47,7 @@ pub fn routes() -> Router<Arc<Site>> {
         )
         .route("/api/admin/characters/{id}/refresh", post(refresh))
         .merge(estimates::routes())
+        .merge(readiness::routes())
 }
 
 type Reply = Result<Response, Refusal>;
@@ -127,7 +130,7 @@ async fn require_character(state: &ApiState, id: &str) -> Result<(), Refusal> {
 
 async fn view(module: &CharacterData, id: &str) -> Result<Value, Refusal> {
     let view = module.view(id).await.map_err(unavailable)?;
-    Ok(json!(link(id, &view)))
+    Ok(json!(link(id, &view, module.privacy_url())))
 }
 
 /// `GET`: status, fresh data and the attribution.
@@ -185,7 +188,8 @@ async fn request(
                     snapshot: None,
                     refresh: None,
                     now,
-                }
+                },
+                module.privacy_url(),
             ));
             let replay = keyed
                 .as_ref()
@@ -261,7 +265,7 @@ async fn unlink(
     }
 }
 
-/// `POST …/refresh`: fetch now (once per 24 hours, from the daily budget).
+/// `POST …/refresh`: fetch now, from the daily budget (no per-character cap).
 async fn refresh(
     Module(module): Module,
     State(site): State<Arc<Site>>,
@@ -280,16 +284,6 @@ async fn refresh(
         RefreshOutcome::Done(_) => {}
         RefreshOutcome::NotConnected => return Err(not_connected()),
         RefreshOutcome::NotLinked => return Err(not_linked()),
-        RefreshOutcome::TooSoon(at) => {
-            return Err(Refusal::new(
-                StatusCode::TOO_MANY_REQUESTS,
-                "refresh_cap",
-                format!(
-                    "Refreshed less than 24 hours ago; it can refresh again from {}.",
-                    crate::api::dto::iso_instant(at)
-                ),
-            ));
-        }
         RefreshOutcome::Unavailable(reason) => {
             return Err(Refusal::new(
                 StatusCode::SERVICE_UNAVAILABLE,

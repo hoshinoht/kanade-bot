@@ -13,8 +13,8 @@ use super::{
     assets::Identity,
     dto::{
         self, account, bosses, character_data, characters, config, drafts, estimates, events,
-        fixed, history, inbox, inbox_past, limits, logs, members, presence, reminders, rescan,
-        sign_ins, week,
+        fixed, history, inbox, inbox_past, limits, logs, members, presence, readiness, reminders,
+        rescan, sign_ins, week,
     },
     error, public,
 };
@@ -144,6 +144,11 @@ fn bindings() -> String {
         .add::<character_data::PostHealth>()
         .add::<character_data::PostIssueItem>()
         .add::<character_data::ScouterHealthBlock>()
+        .add::<readiness::RunReadiness>()
+        .add::<readiness::ReadinessSlot>()
+        .add::<readiness::ReadinessLevel>()
+        .add::<readiness::ReadinessPower>()
+        .add::<readiness::BossReadiness>()
         .add::<estimates::EstimateStatus>()
         .add::<estimates::EstimateStarted>()
         .add::<estimates::EstimateJob>()
@@ -228,6 +233,7 @@ fn bindings() -> String {
         .add::<config::CapacityCheck>()
         .add::<config::RunLengths>()
         .add::<config::RunLengthOverride>()
+        .add::<config::CpFloors>()
         .add::<config::Profanity>()
         .add::<config::ManageMessages>()
         .add::<config::EnvRow>()

@@ -1,7 +1,7 @@
 //! `bosses.json`: the catalog list, knowledge pages from the tracked
 //! `boss/knowledge/*.yaml` (schema v2, public) and event bosses.
 
-use std::path::Path;
+use std::{collections::BTreeMap, path::Path};
 
 use serde::Serialize;
 use serde_json::Value;
@@ -83,6 +83,40 @@ fn read_yaml(path: &Path) -> Option<Value> {
 fn stem(key: &str) -> Option<String> {
     (!key.is_empty() && key.len() <= 64 && key.bytes().all(|byte| byte.is_ascii_alphanumeric()))
         .then(|| key.to_ascii_lowercase())
+}
+
+/// Each of catalog boss `key`'s difficulties that its knowledge document
+/// gives an `entry_level`, by difficulty letter; empty without a readable
+/// document for exactly that key. Read from disk on every call.
+pub fn entry_levels(dir: &Path, catalog: &BossTable, key: &str) -> BTreeMap<String, u16> {
+    let (Some(boss), Some(doc)) = (
+        catalog.boss(key),
+        stem(key).and_then(|stem| read_yaml(&dir.join(format!("{stem}.yaml")))),
+    ) else {
+        return BTreeMap::new();
+    };
+    if doc.get("boss").and_then(Value::as_str) != Some(key) {
+        return BTreeMap::new();
+    }
+    let difficulties = doc
+        .get("difficulties")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    boss.difficulties()
+        .iter()
+        .filter_map(|letter| {
+            let name = catalog.difficulty_name(letter);
+            let level = difficulties
+                .iter()
+                .find(|difficulty| {
+                    difficulty.get("name").and_then(Value::as_str) == Some(name.as_str())
+                })?
+                .get("entry_level")?
+                .as_u64()?;
+            Some((letter.clone(), u16::try_from(level).ok()?))
+        })
+        .collect()
 }
 
 #[derive(Serialize)]
