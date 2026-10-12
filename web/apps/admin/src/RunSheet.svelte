@@ -11,7 +11,7 @@
   import type { Member, Participant, Run, RunStatus, Week } from '@kanade/api-types';
   import '@kanade/ui/styles/screens/run-sheet.scss';
   import '@kanade/ui/styles/core/select.scss';
-  import { ANSWER_MARKS, AnswerBar, AnswerChip, BossArt, BossTag, enter, Icon, liveRuns, Modal, MovePicker, namesIn, pickerRun, Select, StatusMark, WavyProgress, dayLabel, runCountdown, runTitle, sortRuns, whenLabel, type Slot } from '@kanade/ui';
+  import { ANSWER_MARKS, AnswerBar, AnswerChip, BossArt, BossTag, enter, Icon, liveRuns, LiveRegion, Modal, MovePicker, namesIn, pickerRun, Select, StatusMark, WavyProgress, dayLabel, runCountdown, runTitle, sortRuns, whenLabel, type Slot } from '@kanade/ui';
   import { swapSlots } from './planner/dropTime';
   import { directory, memberLabel } from './names/directory.svelte';
   import Name from './names/Name.svelte';
@@ -23,6 +23,9 @@
   import type { Staging, StagingDraft } from './drafts/staging.svelte';
   import CharacterPicker from './sheet/CharacterPicker.svelte';
   import { choiceMeta, clashRun, rosterRoutes, RunCharacterSlots, shownCharacter } from './sheet/characters.svelte';
+  import { Presence } from './presence/presence.svelte';
+  import PresenceButton from './presence/PresenceButton.svelte';
+  import PresenceNote from './presence/PresenceNote.svelte';
 
   let {
     open = $bindable(false),
@@ -342,6 +345,15 @@
   let pickBusy = $state(false);
   let partyList = $state<HTMLUListElement>();
   const charTrigger = (member: string) => partyList?.querySelector<HTMLElement>(`[data-char-for="${member}"]`) ?? null;
+
+  // Who else has this run's sheet open (B_PresenceRunSheet): the full sheet only, editing
+  // while Move, Swap, a character pick or staging is active. A hint: it disables nothing.
+  const presence = new Presence('run');
+  const presentAt = $derived(run && (wide ? popped && open : open) ? run.id : null);
+  $effect(() => (presentAt ? presence.watch(presentAt) : undefined));
+  $effect(() => {
+    presence.mode = moving || swapping || stagingOn || pickFor !== null || sheetPickOpen ? 'editing' : 'viewing';
+  });
 
   function openPick(member: string) {
     if (wide) pickFor = pickFor === member ? null : member;
@@ -747,6 +759,11 @@
   </p>
 {/snippet}
 
+<!-- B_PresenceRunSheet: the other admins in the laptop sheet's title bar. -->
+{#snippet sheetPresence()}
+  <PresenceButton list={presence.list} kind="run" variant="dark" />
+{/snippet}
+
 <!-- B_RunSheetStageActive: on every run sheet while staging, until Stop staging. -->
 {#snippet stagingStrip()}
   {#if staging?.draft}
@@ -970,6 +987,7 @@
     flush
     lightDismiss={!dirty && !busy}
     className="runsheet {wide ? 'runsheet--wide' : 'runsheet--narrow'}"
+    actions={wide ? sheetPresence : undefined}
   >
     {#if run}
       {@const tabs = [
@@ -996,7 +1014,9 @@
         </article>
       {:else}
       <article class="runsheet__body runsheet--{run.status}" data-fid="sheet">
+        {#if wide}<PresenceNote list={presence.list} kind="run" variant="strip" />{/if}
         {@render stagingStrip()}
+        <LiveRegion message={presence.announcement} />
         <header class="runsheet__hero" data-fid="sheet-hero">
           {@render arts()}
           <p class="runsheet__when" data-fid="sheet-when">
@@ -1038,6 +1058,7 @@
           {@render swapBox(run)}
           {@render notes()}
         </header>
+        {#if !wide && presence.list.length}<div class="runsheet__presence"><PresenceButton list={presence.list} kind="run" variant="wide" /></div>{/if}
 
         {#if moving}
           <!-- HeroSheet's window turns into the Move picker; Back (or Escape) returns to the tabs. -->

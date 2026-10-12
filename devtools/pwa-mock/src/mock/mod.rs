@@ -24,6 +24,7 @@ mod ownership;
 pub mod past;
 mod people;
 pub mod portal;
+pub mod presence;
 mod profanity;
 mod reminders;
 pub mod requests;
@@ -131,6 +132,8 @@ pub struct Store {
     links: Vec<character_data::Link>,
     /// The roster module's startup flag (on unless `/__mock/modules` turns it off).
     roster: bool,
+    /// Simulated other admins' presence (`presence.rs`); empty after a reset.
+    presence: presence::Board,
     version: u64,
     next_id: u32,
     catalog: Catalog,
@@ -170,6 +173,7 @@ impl Store {
             links: Vec::new(),
             picks: Vec::new(),
             roster: true,
+            presence: presence::Board::default(),
             version: 1,
             next_id: 1,
             catalog,
@@ -219,6 +223,7 @@ impl Store {
         self.past_runs = member_runs::past_runs();
         self.week_over = false;
         self.member_requests = requests::seed();
+        self.presence.clear();
         self.seed_history();
     }
 
@@ -241,6 +246,11 @@ impl Store {
     /// The week version (history head) edits are checked against.
     pub fn version(&self) -> u64 {
         self.version
+    }
+
+    /// Who else is where (`/api/admin/presence`).
+    pub fn presence(&mut self) -> &mut presence::Board {
+        &mut self.presence
     }
 
     fn fresh_id(&mut self, prefix: &str) -> (String, String) {

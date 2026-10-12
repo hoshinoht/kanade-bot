@@ -276,6 +276,7 @@ pub(super) async fn compose_with(
         },
         avatars: Some(avatars),
         events,
+        presence: Default::default(),
         marks: Default::default(),
         characters,
         character_data: None,

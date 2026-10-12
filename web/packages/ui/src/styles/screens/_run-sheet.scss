@@ -836,8 +836,10 @@ dialog.runsheet--narrow .modal__head {
   width: 100%;
 }
 
+// Equal segments across the foot (the same 10 px inset as the party above), each word centred in its segment.
 .runsheet__foot .seg--status .seg__btn {
   flex: 1 1 0;
+  justify-content: center;
   min-width: 0;
   min-height: 38px;
   padding: 0 4px;

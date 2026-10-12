@@ -13,7 +13,7 @@ use super::{
     assets::Identity,
     dto::{
         self, account, bosses, character_data, characters, config, drafts, events, fixed, history,
-        inbox, inbox_past, limits, logs, members, reminders, rescan, sign_ins, week,
+        inbox, inbox_past, limits, logs, members, presence, reminders, rescan, sign_ins, week,
     },
     error, public,
 };
@@ -287,6 +287,14 @@ fn bindings() -> String {
         .add::<history::Checkpoints>()
         .add::<sign_ins::SignInRow>()
         .add::<sign_ins::SignInPage>()
+        // Presence
+        .add::<presence::PlaceKind>()
+        .add::<presence::Mode>()
+        .add::<presence::PlaceBody>()
+        .add::<presence::CheckIn>()
+        .add::<presence::PresenceEntry>()
+        .add::<presence::PresenceHere>()
+        .add::<presence::PresenceList>()
         // Live updates
         .add::<events::Topic>()
         .add::<events::EventHint>()

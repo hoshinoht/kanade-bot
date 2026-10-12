@@ -17,6 +17,7 @@ pub mod inbox_past;
 pub mod limits;
 pub mod logs;
 pub mod members;
+pub mod presence;
 pub mod public;
 pub mod reminders;
 pub mod rescan;

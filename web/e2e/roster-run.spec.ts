@@ -178,7 +178,8 @@ test('roster run: while staging into a draft, a pick saves live and stages nothi
   await expect(pane.getByText('Staging into Weekend reshuffle')).toBeVisible();
   const before = (await (await page.request.get(`${ADMIN}/api/admin/drafts/d-weekend`)).json()).ops.length;
   const writes: string[] = [];
-  page.on('request', (r) => r.method() !== 'GET' && r.url().includes('/api/') && writes.push(`${r.method()} ${new URL(r.url()).pathname}`));
+  // Presence check-ins (the open sheet, editing while picking) write nothing; the rest must be the one pick.
+  page.on('request', (r) => r.method() !== 'GET' && r.url().includes('/api/') && !r.url().includes('/api/admin/presence') && writes.push(`${r.method()} ${new URL(r.url()).pathname}`));
 
   await pane.getByRole('button', { name: 'Open in a larger view' }).click();
   const sheet = page.getByRole('dialog', { name: 'HCarling + HStar' });

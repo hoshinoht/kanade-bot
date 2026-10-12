@@ -29,6 +29,9 @@ pub enum Topic {
     Rescan,
     /// A member row changed (roster sync, departures, portal edits).
     Members,
+    /// Someone arrived at, left or changed mode at an Inbox request or a run
+    /// sheet (`/api/admin/presence`); never sent to members.
+    Presence,
 }
 
 impl From<Written> for Topic {

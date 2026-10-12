@@ -1619,9 +1619,51 @@ export type SignInPage = { rows: Array<SignInRow>,
 next_before: number | null, };
 
 /**
+ * The kind of page a place is: an Inbox member request or a run sheet.
+ */
+export type PresenceKind = "request" | "run";
+
+/**
+ * What the admin is doing there.
+ */
+export type PresenceMode = "viewing" | "editing";
+
+/**
+ * A place as a check-in names it.
+ */
+export type PresencePlace = { kind: PresenceKind, id: string, };
+
+/**
+ * `PUT /api/admin/presence` body. `seq` orders one tab's calls: it grows
+ * with every check-in and leave, and a check-in no newer than the tab's
+ * leave (`DELETE …&seq=`) is ignored, so a late one cannot bring it back.
+ */
+export type PresenceCheckIn = { at: PresencePlace, mode: PresenceMode, seq: number, };
+
+/**
+ * Another admin at the place: `seen_s` is the seconds since their latest
+ * check-in there (an admin with several tabs is listed once, editing if
+ * any tab is).
+ */
+export type PresenceEntry = { admin: Member, mode: PresenceMode, seen_s: number, };
+
+/**
+ * `PUT /api/admin/presence`: who else is there, and the cadence the client
+ * keeps (check in every `heartbeat_s`; an entry is gone `ttl_s` after its
+ * last check-in).
+ */
+export type PresenceHere = { heartbeat_s: number, ttl_s: number, here: Array<PresenceEntry>, };
+
+/**
+ * `GET /api/admin/presence?at=<kind>:<id>`: who else is there, read without
+ * checking in.
+ */
+export type PresenceList = { here: Array<PresenceEntry>, };
+
+/**
  * What kind of data changed.
  */
-export type EventTopic = "schedule" | "inbox" | "chat" | "extraction" | "rewrite" | "delivery" | "settings" | "rescan" | "members";
+export type EventTopic = "schedule" | "inbox" | "chat" | "extraction" | "rewrite" | "delivery" | "settings" | "rescan" | "members" | "presence";
 
 /**
  * The default (`message`) event: one hint. `seq` counts hints since the

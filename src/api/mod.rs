@@ -9,6 +9,7 @@ pub mod events;
 pub mod guard;
 pub mod listeners;
 pub mod ownership;
+pub mod presence;
 pub mod public;
 pub mod rescan;
 pub mod server;

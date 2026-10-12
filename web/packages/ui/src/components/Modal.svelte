@@ -14,6 +14,7 @@
     dismissible = true,
     children,
     footer,
+    actions,
     onclose,
     returnFocus,
     fid = '',
@@ -34,6 +35,8 @@
     dismissible?: boolean;
     children: Snippet;
     footer?: Snippet<[() => void]>;
+    /** Title-bar content beside the close button (the run sheet's presence). */
+    actions?: Snippet;
     onclose?: () => void;
     /** Optional caller-owned destination when the opener will be removed. */
     returnFocus?: () => HTMLElement | null;
@@ -123,6 +126,7 @@
         {#if eyebrow}<p class="eyebrow">{eyebrow}</p>{/if}
         <h2 class="modal__title" id="{uid}-title" data-fid={parts.title}>{title}</h2>
       </div>
+      {@render actions?.()}
       <button type="button" class="modal__x" disabled={!dismissible} onclick={close} data-fid={parts.close}><Icon name="x" label="Close" /></button>
     </header>
     <div class="modal__body" class:modal__body--flush={flush} data-fid={parts.body}>

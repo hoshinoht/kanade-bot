@@ -14,6 +14,7 @@ mod events;
 mod headers;
 mod member_writes;
 mod mock;
+mod presence;
 mod public;
 mod reports;
 mod writes;
@@ -94,6 +95,11 @@ fn common(app: &App, api: Router<App>, dist: PathBuf, public: bool) -> Router {
         .route("/__mock/arrive", post(events::arrive))
         .route("/__mock/inbox/kalos-v4", post(drafts::kalos_v4))
         .route("/__mock/graph/board", post(drafts::graph_board))
+        .route(
+            "/__mock/presence",
+            post(presence::simulate).delete(presence::clear),
+        )
+        .route("/__mock/presence/board", post(presence::board))
         .with_state(app.clone())
         .fallback_service(static_site(dist));
     if public {
@@ -316,6 +322,12 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         )
         .route("/api/admin/runs/{id}/ping", post(api::ping))
         .route("/api/admin/events", get(events::events))
+        .route(
+            "/api/admin/presence",
+            get(presence::read)
+                .put(presence::check_in)
+                .delete(presence::leave),
+        )
         .route("/api/admin/reset", post(api::reset))
         .route_layer(middleware::from_fn_with_state(
             app.clone(),

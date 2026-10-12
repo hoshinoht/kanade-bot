@@ -124,7 +124,10 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/admin/history/{seq}` | `history.json#/$defs/ChangeRecord` |
 | `POST /api/admin/history/revert`, `/restore-week`, `/revert-actor` | `history.json#/$defs/RevertPlan` |
 | `GET /api/admin/history/checkpoints` | `history.json#/$defs/Checkpoints` |
-| `GET /api/admin/events` | `text/event-stream`, not JSON: a `ready` event `{seq, boot}` (`EventReady`; a new `boot` means the server restarted), then one message per change `{topic, seq}` (`EventHint`, topics `schedule`, `inbox`, `chat`, `extraction`, `rewrite`, `delivery`, `settings`, `rescan`; no data) and `: keep-alive` comments; `429 too_many_streams` at the connection cap |
+| `PUT /api/admin/presence` | body `presence.json#/$defs/PresenceCheckIn` (`{at: {kind: request\|run, id}, mode: viewing\|editing, seq}`); `presence.json#/$defs/PresenceHere` (the other admins there; the caller is never listed). Admin origin only, in memory only (never stored; empty after a restart; at most 64 places × 8 tabs, an entry gone 60 s after its last check-in). `seq` grows with each of a tab's calls: a check-in older than the tab's latest, or no newer than its leave, is answered but changes nothing. CSRF like every admin write, no Idempotency-Key; never extends the session's idle window; 400 `invalid_body` for an unknown kind, an id outside `[A-Za-z0-9_-]{1,64}` or a missing `seq` |
+| `GET /api/admin/presence?at=<kind>:<id>` | `presence.json#/$defs/PresenceList` (a read without a check-in; 422 `invalid_query`) |
+| `DELETE /api/admin/presence?at=<kind>:<id>&seq=<n>` | `204`, no body (best effort on leaving the page; the tab is kept as left for 60 s, so a check-in with `seq <= n` arriving later does not bring it back; 422 `invalid_query`) |
+| `GET /api/admin/events` | `text/event-stream`, not JSON: a `ready` event `{seq, boot}` (`EventReady`; a new `boot` means the server restarted), then one message per change `{topic, seq}` (`EventHint`, topics `schedule`, `inbox`, `chat`, `extraction`, `rewrite`, `delivery`, `settings`, `rescan`, `presence`; no data) and `: keep-alive` comments; `429 too_many_streams` at the connection cap |
 | any non-2xx | `error.json#/$defs/ApiError` |
 
 ## Files
@@ -133,7 +136,8 @@ Pointers are `<file>#/$defs/<Name>`.
 `Message`, `ReloadResult`, `LogFacets`), `error.json`, `identity.json`,
 `public.json`, `week.json`, `members.json`, `characters.json`, `fixed.json`,
 `bosses.json`, `reminders.json`, `inbox.json`, `drafts.json`, `extractions.json`,
-`chat.json`, `rewrites.json`, `limits.json`, `history.json`, `config.json`.
+`chat.json`, `rewrites.json`, `limits.json`, `history.json`, `config.json`,
+`presence.json`.
 
 ## Changes since A0
 
@@ -217,3 +221,7 @@ Pointers are `<file>#/$defs/<Name>`.
 - History graph (2026-10-12): `drafts.json` `DraftGraph` and `GraphDraft`
   for `GET /api/admin/drafts/graph?from=&to=` (own drafts spanning the
   loaded History records, with each close time from the draft's event log).
+- Admin presence (2026-10-12): `presence.json` (`PresenceCheckIn` body,
+  `PresenceHere`, `PresenceList`, `PresenceEntry`) for
+  `PUT`/`GET`/`DELETE /api/admin/presence`; the events stream adds topic
+  `presence` (someone arrived at, left or changed mode at a place).

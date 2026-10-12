@@ -591,6 +591,88 @@ const DRAFT_PAIRS: Pair[] = [
   },
 ];
 
+// Presence (KANADE_MOCKUPS=docs/research/2026-10-12-graph-presence-mockups). `POST
+// /__mock/presence/board` seeds the boards' other admins: Ren editing p-kalos-fixed with
+// Kaito viewing it 40 s ago, and Ren editing HCarling + HStar. The Inbox boards redraw
+// B_InboxEdit (the inbox-edit pairs compare it) and the run sheet boards B_RunSheetStage
+// (the stage pairs' frame): these compare what presence adds. B_PresenceDraft and
+// B_PhonePresenceDraft have no pair: drafts are their author's only, so Draft detail
+// shows no presence (the boards draw another admin's view of the draft).
+const PRESENCE_SCOPE = ['presence', 'presence-pop', 'presence-note'];
+const presenceBoard = async (page: Page) => {
+  await page.request.post(`${ADMIN}/__mock/presence/board`);
+};
+/**
+ * B_PresenceInbox draws the popover as a top-level overlay placed for its own window,
+ * which inboxEditBoard then moves (the window goes static): the board's popover goes
+ * under its presence button, 10 px below as drawn, where the app anchors it.
+ */
+const presenceInboxBoard = async (page: Page) => {
+  await inboxEditBoard(page);
+  await page.evaluate(() => {
+    const pop = document.querySelector<HTMLElement>('[data-fid="presence-pop"]');
+    const host = document.querySelector<HTMLElement>('[data-fid="presence"]')?.parentElement;
+    if (!pop || !host) return;
+    host.style.position = 'relative';
+    host.append(pop);
+    Object.assign(pop.style, { left: '0px', top: 'calc(100% + 10px)' });
+  });
+};
+/** The laptop sheet's title bar: the board tags it `window-bar`; the app's is the Modal head. */
+const SHEET_BAR_OMIT = STAGE_OMIT.filter((fid) => fid !== 'window-bar');
+const sheetBar = (page: Page) =>
+  page.evaluate(() => {
+    // The Week window's own bar (behind the sheet) stays out, as STAGE_OMIT leaves it.
+    for (const el of document.querySelectorAll<HTMLElement>('[data-fid="window-bar"]')) delete el.dataset.fid;
+    for (const el of document.querySelectorAll<HTMLElement>('dialog.runsheet .modal__head')) el.dataset.fid = 'window-bar';
+  });
+const PRESENCE_PAIRS: Pair[] = [
+  {
+    name: 'presence-inbox',
+    board: 'B_PresenceInbox',
+    path: '/inbox?tab=self_service&item=p-kalos-fixed',
+    omit: INBOX_EDIT_OMIT,
+    scope: PRESENCE_SCOPE,
+    prepare: presenceInboxBoard,
+    setup: presenceBoard,
+    ready: async (page) => {
+      await requestEdited(page);
+      await page.getByRole('button', { name: /^Other admins here/ }).click();
+      await expect(page.getByRole('dialog', { name: 'Admins here' })).toBeVisible();
+    },
+  },
+  { name: 'phone-presence-inbox', board: 'B_PhonePresenceInbox', path: '/inbox?tab=self_service&item=p-kalos-fixed', omit: PHONE_INBOX_EDIT_OMIT, scope: PRESENCE_SCOPE, prepare: inboxEditBoard, setup: presenceBoard, ready: requestEdited },
+  {
+    name: 'presence-run-sheet',
+    board: 'B_PresenceRunSheet',
+    path: '/',
+    omit: SHEET_BAR_OMIT,
+    scope: [...PRESENCE_SCOPE, 'window-bar'],
+    prepare: stageBoard,
+    setup: presenceBoard,
+    ready: async (page) => {
+      const sheet = await carlingSheet(page);
+      await expect(sheet.locator('.presence-note')).toBeVisible();
+      await stageApp(page);
+      await sheetBar(page);
+    },
+  },
+  {
+    name: 'phone-presence-run-sheet',
+    board: 'B_PhonePresenceRunSheet',
+    path: '/',
+    omit: STAGE_OMIT,
+    scope: PRESENCE_SCOPE,
+    prepare: stageBoard,
+    setup: presenceBoard,
+    ready: async (page) => {
+      const sheet = await carlingSheet(page);
+      await expect(sheet.locator('.presence__btn')).toBeVisible();
+      await stageApp(page);
+    },
+  },
+];
+
 // History graph (KANADE_MOCKUPS=docs/research/2026-10-12-graph-presence-mockups, with the
 // shared render/ beside the boards). `POST /__mock/graph/board` seeds the boards' History
 // (head #39) and drafts. The rail is the rail-more pairs'; the phone top bar phone-nav's.
@@ -1303,7 +1385,7 @@ const PAIRS: Pair[] = [
 test.describe('layout fidelity', () => {
   test.skip(!ENABLED, 'run with `bun run fidelity` (needs a KANADE_FIDELITY=1 build)');
 
-  for (const pair of [...PAIRS, ...DRAFT_PAIRS, ...GRAPH_PAIRS, ...PUBLIC_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
+  for (const pair of [...PAIRS, ...DRAFT_PAIRS, ...GRAPH_PAIRS, ...PRESENCE_PAIRS, ...PUBLIC_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
     test(pair.name, async ({ page, browser }) => {
       test.skip(!boardExists(pair.board), `no board ${pair.board}.dc.html under ${MOCKUPS}`);
       const dir = join(OUT, pair.name);

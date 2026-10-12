@@ -979,6 +979,10 @@ pub struct ApiState {
     /// Change hints for open admin pages (`GET /api/admin/events`), fed by
     /// the store's write hook.
     pub events: Arc<super::events::Hub>,
+    /// Who else has an Inbox request or a run sheet open
+    /// (`/api/admin/presence`): this process's memory only, never stored and
+    /// never read by a write; a new state (a restart) starts it empty.
+    pub presence: super::presence::Presence,
     /// Difficulty emojis for redesigned card previews, as the bot listed
     /// them at startup; empty (written labels) until Discord composes.
     pub marks: crate::bot::delivery::cards::DifficultyMarks,

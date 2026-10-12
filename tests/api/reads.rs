@@ -959,6 +959,7 @@ impl Reads {
             },
             avatars: Some(avatars),
             events: events.clone(),
+            presence: Default::default(),
             // As serve would list them: only the Normal pill uploaded.
             marks: kanade::bot::delivery::cards::DifficultyMarks::new().with("n", NORMAL_PILL),
             characters: characters
@@ -1049,6 +1050,8 @@ impl Reads {
             backups: old.backups.clone(),
             avatars: old.avatars.clone(),
             events: old.events.clone(),
+            // In memory only: a restarted process starts with nobody here.
+            presence: Default::default(),
             marks: old.marks.clone(),
             characters: old.characters.clone(),
             character_data: old.character_data.clone(),

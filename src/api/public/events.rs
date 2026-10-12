@@ -143,7 +143,12 @@ impl Kinds {
                 self.members = true;
                 self.allowance = true;
             }
-            Topic::Extraction | Topic::Rewrite | Topic::Delivery | Topic::Rescan => {}
+            // Admin presence is never a member's business.
+            Topic::Extraction
+            | Topic::Rewrite
+            | Topic::Delivery
+            | Topic::Rescan
+            | Topic::Presence => {}
         }
     }
 }

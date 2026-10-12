@@ -17,6 +17,7 @@ mod history;
 mod inbox;
 pub mod limits;
 mod logs;
+mod presence;
 pub(crate) mod read;
 mod reminders;
 mod replay;
@@ -59,6 +60,7 @@ pub fn routes() -> Router<Arc<Site>> {
         .merge(config::routes())
         .merge(characters::routes())
         .merge(character_data::routes())
+        .merge(presence::routes())
         .merge(events::routes())
         .route_layer(axum::middleware::from_fn(etag::revalidate))
 }

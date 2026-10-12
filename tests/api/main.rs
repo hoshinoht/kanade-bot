@@ -20,6 +20,7 @@ mod limits;
 mod logs;
 mod origins;
 mod outbox;
+mod presence;
 mod proxy;
 mod reads;
 mod reminders;

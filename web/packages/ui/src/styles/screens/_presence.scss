@@ -1,0 +1,58 @@
+// Admin presence (boards B_Presence*): who else has this Inbox request or run
+// sheet open. A pill of avatars and names (on a dark title bar: `--dark`; the
+// phone's full-width row: `--wide`), its popover, and the editing note. Words
+// and shapes carry it: a pencil badge for editing, a faded dashed ring once
+// stale; the fill only tells admins apart.
+
+.presence { position: relative; display: flex; flex: none; min-width: 0; }
+// In a dialog's title bar the title takes the room (`.modal__head > div`), not the presence.
+.modal__head > .presence { flex: none; }
+.presence--wide { width: 100%; }
+.presence__btn { display: inline-flex; align-items: center; gap: 8px; min-width: 0; height: 36px; padding: 0 12px 0 5px; border: 1.5px solid var(--line); border-radius: 18px; background: var(--surface); color: var(--ink); font: inherit; font-size: var(--fs-small); font-weight: 500; text-align: left; cursor: pointer; }
+.presence__btn:hover { background: var(--raise); }
+.presence__btn[aria-expanded="true"] { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: var(--select); }
+.presence__btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.presence--dark .presence__btn { border-color: color-mix(in srgb, var(--win-ink) 45%, transparent); background: transparent; color: var(--win-ink); }
+.presence--dark .presence__btn:focus-visible { outline-color: var(--win-ink); }
+.presence--wide .presence__btn { width: 100%; height: auto; min-height: 48px; padding: 6px 12px 6px 7px; border-radius: 24px; }
+.presence__names { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.presence__dim { color: var(--dim-text); }
+.presence--dark .presence__dim { color: color-mix(in srgb, var(--win-ink) 78%, transparent); }
+.presence__lines { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.presence__rule { color: var(--dim-text); font-size: var(--fs-mini); line-height: 1.35; }
+.presence__stack { display: flex; flex: none; align-items: center; }
+.presence__stack > .presence__av + .presence__av { margin-left: -4px; }
+
+// The avatar: an initial on one of four fills (inverted guide pairs, so the
+// letter keeps its contrast in every colourway and theme).
+.presence__av { position: relative; display: inline-flex; flex: none; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; box-shadow: 0 0 0 2px var(--surface); font-family: var(--display); font-size: 0.72rem; font-weight: 700; line-height: 1; }
+.presence__av--0 { background: var(--guide-yellow-ink); color: var(--guide-yellow); }
+.presence__av--1 { background: var(--guide-blue-ink); color: var(--guide-blue); }
+.presence__av--2 { background: var(--guide-green-ink); color: var(--guide-green); }
+.presence__av--3 { background: var(--guide-red-ink); color: var(--guide-red); }
+.presence__av--stale { opacity: 0.5; outline: 1.5px dashed var(--ink); outline-offset: 1px; }
+.presence--dark .presence__av { box-shadow: 0 0 0 2px var(--win); }
+.presence--dark .presence__av--stale { outline-color: var(--win-ink); }
+.presence__pen { position: absolute; right: -5px; bottom: -5px; display: flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 1.5px var(--surface); color: var(--accent-ink); }
+.presence__pen .icon { width: 9px; height: 9px; }
+
+// The popover: who is here, with mode and age.
+.presence__pop { position: absolute; top: calc(100% + 10px); left: 0; z-index: 30; display: flex; flex-direction: column; gap: 6px; width: min(330px, calc(100vw - 32px)); padding: 12px; border: 2px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: 0 16px 36px -18px rgb(12 11 18 / 50%); color: var(--ink); font-size: var(--fs-body); }
+.presence--dark .presence__pop { right: 0; left: auto; }
+.presence--wide .presence__pop { right: 0; width: auto; }
+.presence__pop:focus { outline: none; }
+.presence__cap { padding: 2px 4px 4px; }
+.presence__rows { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.presence__row { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 12px; background: var(--raise); font-size: var(--fs-small); }
+.presence__row--stale { background: transparent; box-shadow: inset 0 0 0 1.5px var(--line); color: var(--dim-text); }
+.presence__age { font-size: var(--fs-mini); }
+.presence__hint { padding: 4px 4px 2px; color: var(--dim-text); font-size: var(--fs-mini); line-height: 1.45; }
+
+// The editing note: in the Inbox decision card (`--card`), and as the run
+// sheet's strip under its title bar (`--strip`).
+.presence-note { display: flex; flex: none; align-items: center; gap: 10px; margin: 0; font-size: var(--fs-small); line-height: 1.4; }
+.presence-note--card { padding: 8px 12px; border-radius: 14px; background: var(--surface); }
+.presence-note--strip { padding: 8px 18px; border-bottom: 1.5px solid var(--line); background: var(--raise); font-size: var(--fs-body-sm); }
+// The run sheet on phones: the presence row under the hero, above the party (a block, so the row keeps its inline-flex).
+.runsheet__presence { flex: none; padding: 10px 10px 0; }
+.runsheet__presence > .presence { display: block; }

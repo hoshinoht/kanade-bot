@@ -93,6 +93,13 @@ export interface RequestOptions {
   signal?: AbortSignal;
   /** Pin the key to repeat an earlier action; otherwise each call is a new action. */
   idempotencyKey?: string;
+  /**
+   * Not a change anyone made (a presence check-in): no `Idempotency-Key`, and
+   * it never counts as this page's write, so arrivals after it still show.
+   */
+  ambient?: boolean;
+  /** Let the request outlive the page (a best-effort leave on `pagehide`). */
+  keepalive?: boolean;
 }
 
 export interface Client {
@@ -130,6 +137,7 @@ export function createClient(options: ClientOptions = {}): Client {
         // Private API data must never land in the HTTP cache either.
         cache: 'no-store',
         credentials: 'same-origin',
+        ...(opts.keepalive ? { keepalive: true } : {}),
         headers: { Accept: 'application/json', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...extra },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
@@ -189,18 +197,18 @@ export function createClient(options: ClientOptions = {}): Client {
   async function request<T>(method: string, path: string, body: unknown, opts: RequestOptions): Promise<T> {
     if (!UNSAFE.has(method)) return attempt(method, path, body, opts, {});
     // Kept across both retries below: they repeat this action, so the server replays rather than reapplies.
-    const key = opts.idempotencyKey ?? newIdempotencyKey();
+    const key = opts.ambient ? null : (opts.idempotencyKey ?? newIdempotencyKey());
     const csrf = guard();
     const guarded = csrf !== null && csrf.guards(path);
     if (guarded && csrf.token === null) await refreshCsrf(csrf);
     let csrfRetried = false;
     let networkRetried = false;
     for (;;) {
-      const headers: Record<string, string> = { 'Idempotency-Key': key };
+      const headers: Record<string, string> = key === null ? {} : { 'Idempotency-Key': key };
       if (guarded && csrf.token) headers[CSRF_HEADER] = csrf.token;
       try {
         const done = await attempt<T>(method, path, body, opts, headers);
-        wroteAt = Date.now();
+        if (!opts.ambient) wroteAt = Date.now();
         return done;
       } catch (error) {
         if (!(error instanceof ApiRequestError)) throw error;

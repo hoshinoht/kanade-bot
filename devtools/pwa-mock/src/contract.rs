@@ -1522,6 +1522,78 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         (StatusCode::UNPROCESSABLE_ENTITY, "invalid_query"),
     )
     .await;
+    // Presence: the boards' simulated admins, never the caller.
+    h.send(false, "POST", "/__mock/presence/board", None).await;
+    let here = h
+        .ok(
+            "PUT",
+            "/api/admin/presence",
+            Some(json!({"at": {"kind": "request", "id": "p-kalos-fixed"}, "mode": "editing", "seq": 1})),
+            "presence.json#/$defs/PresenceHere",
+        )
+        .await;
+    assert_eq!(here["here"].as_array().unwrap().len(), 2);
+    let run = h
+        .ok(
+            "GET",
+            "/api/admin/presence?at=run%3Ar-carling",
+            None,
+            "presence.json#/$defs/PresenceList",
+        )
+        .await;
+    assert_eq!(run["here"][0]["admin"]["name"], "Ren");
+    let (left, _) = h
+        .send(
+            false,
+            "DELETE",
+            "/api/admin/presence?at=run%3Ar-carling&seq=2",
+            None,
+        )
+        .await;
+    assert_eq!(left, StatusCode::NO_CONTENT);
+    let csrf = h.csrf.clone();
+    h.refused(
+        "PUT",
+        "/api/admin/presence",
+        json!({"at": {"kind": "draft", "id": "d-weekend"}, "mode": "viewing", "seq": 1}),
+        &[("x-kanade-csrf", csrf.as_str())],
+        (StatusCode::BAD_REQUEST, "invalid_body"),
+    )
+    .await;
+    h.refused(
+        "PUT",
+        "/api/admin/presence",
+        json!({"at": {"kind": "run", "id": "r-carling"}, "mode": "viewing", "seq": 1}),
+        &[],
+        (StatusCode::FORBIDDEN, "csrf"),
+    )
+    .await;
+    h.refused(
+        "GET",
+        "/api/admin/presence?at=run:",
+        json!(null),
+        &[],
+        (StatusCode::UNPROCESSABLE_ENTITY, "invalid_query"),
+    )
+    .await;
+    // The seq is required on the check-in and on the leave.
+    h.refused(
+        "PUT",
+        "/api/admin/presence",
+        json!({"at": {"kind": "run", "id": "r-carling"}, "mode": "viewing"}),
+        &[("x-kanade-csrf", csrf.as_str())],
+        (StatusCode::BAD_REQUEST, "invalid_body"),
+    )
+    .await;
+    h.refused(
+        "DELETE",
+        "/api/admin/presence?at=run%3Ar-carling",
+        json!(null),
+        &[("x-kanade-csrf", csrf.as_str())],
+        (StatusCode::UNPROCESSABLE_ENTITY, "invalid_query"),
+    )
+    .await;
+    h.send(false, "DELETE", "/__mock/presence", None).await;
     h.ok(
         "GET",
         "/api/admin/drafts/d-weekend",

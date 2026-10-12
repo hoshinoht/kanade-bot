@@ -8,12 +8,15 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { ApproveRequest, Evidence, Proposal, RunStatus, Week } from '@kanade/api-types';
-  import { Avatar, BossTag, DayStrip, DecisionCard, Icon, liveRuns, MovePicker, namesIn, PendingLabel, Portrait, RUN_TONE, STATUS_WORDS, StatusChip, ThreadPanel, TimeStepper, WavyProgress, type Slot } from '@kanade/ui';
+  import { Avatar, BossTag, DayStrip, DecisionCard, Icon, liveRuns, LiveRegion, MovePicker, namesIn, PendingLabel, Portrait, RUN_TONE, STATUS_WORDS, StatusChip, ThreadPanel, TimeStepper, WavyProgress, type Slot } from '@kanade/ui';
   import { directory } from '../names/directory.svelte';
   import Mentions from '../names/Mentions.svelte';
   import Name from '../names/Name.svelte';
   import { memberAvatar } from '../shared/avatar';
   import { discordLink } from '../shared/discordLink.svelte';
+  import { Presence } from '../presence/presence.svelte';
+  import PresenceButton from '../presence/PresenceButton.svelte';
+  import PresenceNote from '../presence/PresenceNote.svelte';
   import '@kanade/ui/styles/screens/move-picker.scss';
   import { editable, editText, editWeek, isoToday } from './edit';
   import { proposalExpiry } from './expiry';
@@ -118,6 +121,12 @@
     await tick();
     reqButton?.focus({ preventScroll: true });
   }
+  // Who else has this member request open (B_PresenceInbox): editing while the editor is open. A hint only.
+  const presence = new Presence('request');
+  $effect(() => (p.self_service ? presence.watch(p.id) : undefined));
+  $effect(() => {
+    presence.mode = reqEditing ? 'editing' : 'viewing';
+  });
   // A refused edited approval closes the editor and clears its edits; Edit again starts over.
   // svelte-ignore state_referenced_locally
   let seenRefusal = refusal;
@@ -496,6 +505,7 @@
       </div>
     {/if}
     {#if p.consequence}<p class="proposal__consequence" data-fid="decision-consequence">{p.consequence}</p>{/if}
+    {@render presenceNote()}
     {@render reqApprove()}
     {@render why()}
     {#if !reqEditing}
@@ -511,6 +521,9 @@
       {@render rejectKey()}
       <p class="decision__foot" data-fid="decision-foot">Reject tells the member, with your reason.</p>
     {/if}
+  {/snippet}
+  {#snippet presenceNote()}
+    {#if p.self_service && !bar}<PresenceNote list={presence.list} kind="request" variant="card" />{/if}
   {/snippet}
 
 <article class="proposal" class:proposal--stacked={stacked} aria-labelledby="{uid}-title">
@@ -537,6 +550,8 @@
       >
     {/if}
   </header>
+  {#if p.self_service}<PresenceButton list={presence.list} kind="request" variant={bar ? 'wide' : 'pill'} />{/if}
+  <LiveRegion message={presence.announcement} />
 
   {#snippet panel()}
   <ThreadPanel label="Proposal thread and changes">
@@ -682,6 +697,7 @@
     {:else if reqEditable}
       {@render reqDecision()}
     {:else}
+      {@render presenceNote()}
       {@render approveKey()}
       {@render why()}
       {@render editForm()}
