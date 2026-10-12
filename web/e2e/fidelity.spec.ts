@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { boardExists, composite, diff, markdown, MOCKUPS, renderBoard, settle, skeleton } from './fidelity-kit';
 import { ADMIN, expect, PINNED_NOW, PUBLIC, test, choose, csrf, openList, setPortal, signInPublic } from './support';
 
@@ -39,6 +39,18 @@ interface Pair {
  * Stage in draft… button (B_RunSheetStage); boards drawn before them leave them untagged.
  */
 const LATER_FIDS = ['rail', 'rail-more', 'rail-more-menu', 'drawer-more', 'sheet-stage'];
+
+/**
+ * Module `character_data` off (the mock starts with it on): boards drawn before it
+ * (the run sheet's Estimate panel and readiness lines) compare against their own screen.
+ */
+const chardataOff = async (page: Page) => {
+  await page.request.post(`${ADMIN}/__mock/modules`, { data: { character_data: false } });
+};
+const withChardataOff = (setup?: (page: Page) => Promise<void>) => async (page: Page) => {
+  await chardataOff(page);
+  await setup?.(page);
+};
 
 // Member portal pairs (boards: KANADE_MOCKUPS=…/docs/research/2026-10-09-public-portal-mockups).
 const signedOut = async (page: Page) => {
@@ -294,8 +306,9 @@ const PUBLIC_PAIRS: Pair[] = [
 // and list; phone: also the top bar, which phone-nav compares, and the roster window).
 const ROSTER_FRAME = ['page-line', 'window-bar', 'members-list'];
 const PHONE_ROSTER_FRAME = ['topbar', 'page-line', 'window'];
-// The dialogs' "External data · Later · off" strip is not built (user, 2026-10-11): the
-// board loses it before it is measured, and a dialog the board centres stays centred.
+// The roster boards' "External data · Later · off" strip is replaced by the character data
+// strip (chardata-* pairs): the board loses it before it is measured, the app runs with module
+// `character_data` off (its dialog then ends at Retired), and a dialog the board centres stays centred.
 // The board's Region and Class dropdowns gain the shared Select's `dd-trigger` tag here,
 // as the boards live outside the worktree.
 const editBoard = (centre?: string) => (page: Page) =>
@@ -531,7 +544,7 @@ const DRAFT_PAIRS: Pair[] = [
     scope: STAGE_SCOPE,
     prepare: stageBoard,
     // The board's picker lists three drafts; the mock seeds two.
-    setup: thirdDraft,
+    setup: withChardataOff(thirdDraft),
     ready: async (page) => {
       const sheet = await carlingSheet(page);
       await sheet.getByRole('button', { name: 'Stage in draft…' }).click();
@@ -549,6 +562,7 @@ const DRAFT_PAIRS: Pair[] = [
     // The board's draft already moves this run and adds Hinata to it; its party has six
     // (the mock adds a second Ren, #1013, this week).
     setup: async (page) => {
+      await chardataOff(page);
       const headers = await csrf(page.request);
       let version = 3;
       for (const op of [
@@ -582,7 +596,7 @@ const DRAFT_PAIRS: Pair[] = [
     omit: STAGE_OMIT,
     scope: STAGE_SCOPE,
     prepare: stageBoard,
-    setup: thirdDraft,
+    setup: withChardataOff(thirdDraft),
     ready: async (page) => {
       const sheet = await carlingSheet(page);
       await sheet.getByRole('button', { name: 'Stage in draft…' }).click();
@@ -652,7 +666,7 @@ const PRESENCE_PAIRS: Pair[] = [
     omit: SHEET_BAR_OMIT,
     scope: [...PRESENCE_SCOPE, 'window-bar'],
     prepare: stageBoard,
-    setup: presenceBoard,
+    setup: withChardataOff(presenceBoard),
     ready: async (page) => {
       const sheet = await carlingSheet(page);
       await expect(sheet.locator('.presence-note')).toBeVisible();
@@ -667,7 +681,7 @@ const PRESENCE_PAIRS: Pair[] = [
     omit: STAGE_OMIT,
     scope: PRESENCE_SCOPE,
     prepare: stageBoard,
-    setup: presenceBoard,
+    setup: withChardataOff(presenceBoard),
     ready: async (page) => {
       const sheet = await carlingSheet(page);
       await expect(sheet.locator('.presence__btn')).toBeVisible();
@@ -805,6 +819,117 @@ const renPicked = async (page: Page) => {
     await page.request.put(`${ADMIN}/api/admin/runs/${run}/characters/1002`, { headers, data: { character_id: 'ch-s7', version: 0 } });
 };
 
+// Character data (KANADE_MOCKUPS=docs/research/2026-10-12-chardata-mockups). The strip boards
+// splice their dialog into B_RosterEdit's Members window (the roster pairs' frame, left out the
+// same way); the run-sheet boards redraw B_RosterRunPick's sheet, so those pairs compare what
+// the Estimate panel adds; the Config boards are the whole Settings window. The States boards
+// (B_CharStates*, B_EstStates*, B_EstRunStates*) are grids of cells over several screens, not
+// one screen: e2e/chardata.spec.ts covers each of their states instead.
+const scouterOff = async (page: Page) => {
+  await page.request.post(`${ADMIN}/__mock/estimates`, { data: { scenario: 'off' } });
+};
+const chardataHealth = (health: string) => async (page: Page) => {
+  await page.request.post(`${ADMIN}/__mock/character-data`, { data: { health } });
+};
+/** A finished MapleScouter lookup (the mock steps a running job once per read). */
+const lookedUp = (target: { character_ids: string[] } | { run_id: string }) => async (page: Page) => {
+  const headers = await csrf(page.request);
+  const { job } = await (await page.request.post(`${ADMIN}/api/admin/estimates`, { headers, data: target })).json();
+  for (let read = 0; read < 10; read++) if ((await (await page.request.get(`${ADMIN}/api/admin/estimates/${job.id}`)).json()).state !== 'running') break;
+};
+/** The boards' MikaBish unlinked first (B_CharLink asks to link it). */
+const unlinked = async (page: Page) => {
+  await page.request.delete(`${ADMIN}/api/admin/characters/ch-s3/link`, { headers: await csrf(page.request) });
+};
+/** As the roster pairs: the board's dropdowns gain the Select's tag, and a desktop dialog is centred as the app centres it. */
+const stripBoard = (centre: boolean) => (page: Page) =>
+  page.evaluate((centre) => {
+    for (const dd of document.querySelectorAll<HTMLElement>('[data-fid="roster-world"] .dd, [data-fid="roster-class"] .dd')) dd.dataset.fid = 'dd-trigger';
+    const dialog = centre ? document.querySelector<HTMLElement>('[data-fid="roster-dialog"]') : null;
+    if (dialog) dialog.style.top = `${(innerHeight - dialog.offsetHeight) / 2}px`;
+  }, centre);
+/**
+ * MikaBish's Edit dialog, `act` done on its strip, scrolled as the board scrolls it: the board
+ * shifts its IGN field up by `scroll` px from where it sits under its head (66 px into the
+ * desktop dialog, 72 px into the phone sheet), so the app's body scrolls until its IGN field
+ * sits at that same offset in the dialog (its own head is taller).
+ */
+const stripOpen =
+  (role: 'complementary' | 'dialog', name: string, scroll: number, act?: (strip: Locator) => Promise<void>) =>
+  async (page: Page) => {
+    const sheet = await rosterTab(page, role, name);
+    await sheet.getByRole('button', { name: 'Edit MikaBish' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Edit MikaBish' });
+    const strip = dialog.locator('[data-fid="roster-external"]');
+    await expect(strip.locator('[data-fid="chardata-state"]')).toBeVisible();
+    await act?.(strip);
+    await dialog.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+    const base = (page.viewportSize()!.width < 600 ? 72 : 66) - scroll;
+    await dialog.locator('[data-fid="roster-ign"]').evaluate((el, want) => {
+      let box = el.parentElement;
+      while (box && box.scrollHeight <= box.clientHeight) box = box.parentElement;
+      const top = el.getBoundingClientRect().top - el.closest('[data-fid="roster-dialog"]')!.getBoundingClientRect().top;
+      if (box) box.scrollTop += top - want;
+    }, base);
+  };
+// As RUN_PICK_SCOPE: the party list's own box (a scrolling list on the boards' phones, the
+// sheet's panel scrolls in the app) is the hero and roster-run-pick pairs'.
+const ESTIMATE_RUN_SCOPE = [
+  'party-slot',
+  'sheet-aside',
+  'estimate-panel',
+  'estimate-label',
+  'estimate-disclaimer',
+  'estimate-run',
+  'estimate-combined',
+  'estimate-members',
+  'estimate-missing',
+  'estimate-issues',
+];
+const estimateRun = async (page: Page) => {
+  const sheet = await carlingSheet(page);
+  const panel = sheet.locator('[data-fid="estimate-panel"]');
+  await expect(panel.locator('[data-fid="estimate-members"]')).toBeVisible();
+  // The phone board shows the Party list scrolled to the panel at its end.
+  if (page.viewportSize()!.width < 600) await panel.evaluate((el) => el.scrollIntoView({ block: 'end' }));
+};
+const CHARDATA_HEALTH = [
+  ['', 'ok'],
+  ['Alert', 'alert'],
+  ['Setup', 'setup'],
+  ['Refused', 'refused'],
+] as const;
+const healthShown = (page: Page) => expect(page.locator('[data-fid="chardata-nexon-health"]')).toBeVisible();
+const PHONE_CFG_SCOPE = ['cfg-title', 'cfg-savebar', 'cfg-save'];
+const READY_SCOPE = [
+  'party-slot',
+  'party-char',
+  'party-pick',
+  'party-warn',
+  'sheet-aside',
+  'party-ready',
+  'party-ready-note',
+  'party-ready-attrib',
+  'party-ready-rules',
+  'party-ready-floors',
+];
+const readyBoard = async (page: Page) => {
+  await scouterOff(page);
+  await renPicked(page);
+  const headers = await csrf(page.request);
+  await page.request.put(`${ADMIN}/api/admin/runs/r-carling/characters/1003`, { headers, data: { character_id: 'ch-s3', version: 0 } });
+};
+const readyShownOn = async (page: Page) => {
+  const sheet = await carlingSheet(page);
+  await expect(sheet.locator('[data-fid="party-ready"]').first()).toBeVisible();
+  // The phone board shows the Party list scrolled to its end (the rules line).
+  if (page.viewportSize()!.width < 600) await sheet.locator('.ready__hint').evaluate((el) => el.scrollIntoView({ block: 'end' }));
+};
+const floorEdited = async (page: Page) => {
+  await page.getByRole('textbox', { name: 'CP floor for Limbo Hard, in millions' }).fill('60.0');
+  await expect(page.getByText('1 unsaved change')).toBeVisible();
+};
+
 const PAIRS: Pair[] = [
   {
     name: 'inbox-self',
@@ -891,6 +1016,9 @@ const PAIRS: Pair[] = [
     board: 'B_RosterEdit',
     path: '/members',
     omit: ROSTER_FRAME,
+    setup: async (page) => {
+      await chardataOff(page);
+    },
     prepare: editBoard('roster-dialog'),
     ready: async (page) => {
       const pane = await rosterTab(page, 'complementary', 'Member details');
@@ -947,7 +1075,7 @@ const PAIRS: Pair[] = [
     path: '/',
     omit: STAGE_OMIT,
     scope: RUN_PICK_SCOPE,
-    setup: renPicked,
+    setup: withChardataOff(renPicked),
     prepare: runPickBoard,
     ready: async (page) => {
       const sheet = await carlingSheet(page);
@@ -961,7 +1089,7 @@ const PAIRS: Pair[] = [
     path: '/',
     omit: STAGE_OMIT,
     scope: RUN_PICK_SCOPE,
-    setup: renPicked,
+    setup: withChardataOff(renPicked),
     prepare: runPickBoard,
     ready: async (page) => {
       const sheet = await carlingSheet(page);
@@ -971,6 +1099,160 @@ const PAIRS: Pair[] = [
       await picker.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
     },
   },
+  // Character data (KANADE_MOCKUPS=docs/research/2026-10-12-chardata-mockups): the strip,
+  // linked, asking to link, confirming an unlink, and with the estimate row.
+  {
+    name: 'chardata-linked',
+    board: 'B_CharLinked',
+    path: '/members',
+    omit: ROSTER_FRAME,
+    setup: scouterOff,
+    prepare: stripBoard(true),
+    ready: stripOpen('complementary', 'Member details', 0),
+  },
+  {
+    name: 'phone-chardata-linked',
+    board: 'B_PhoneCharLinked',
+    path: '/members',
+    omit: PHONE_ROSTER_FRAME,
+    setup: scouterOff,
+    prepare: stripBoard(false),
+    ready: stripOpen('dialog', 'Mika', 150),
+  },
+  {
+    name: 'chardata-link',
+    board: 'B_CharLink',
+    path: '/members',
+    omit: ROSTER_FRAME,
+    setup: async (page) => {
+      await scouterOff(page);
+      await unlinked(page);
+    },
+    prepare: stripBoard(true),
+    ready: stripOpen('complementary', 'Member details', 150, (strip) => strip.getByRole('button', { name: 'Link…' }).click()),
+  },
+  {
+    name: 'phone-chardata-link',
+    board: 'B_PhoneCharLink',
+    path: '/members',
+    omit: PHONE_ROSTER_FRAME,
+    setup: async (page) => {
+      await scouterOff(page);
+      await unlinked(page);
+    },
+    prepare: stripBoard(false),
+    ready: stripOpen('dialog', 'Mika', 150, (strip) => strip.getByRole('button', { name: 'Link…' }).click()),
+  },
+  {
+    name: 'chardata-unlink',
+    board: 'B_CharUnlink',
+    path: '/members',
+    omit: ROSTER_FRAME,
+    setup: scouterOff,
+    prepare: stripBoard(true),
+    ready: stripOpen('complementary', 'Member details', 230, (strip) => strip.getByRole('button', { name: 'Unlink…' }).click()),
+  },
+  {
+    name: 'phone-chardata-unlink',
+    board: 'B_PhoneCharUnlink',
+    path: '/members',
+    omit: PHONE_ROSTER_FRAME,
+    setup: scouterOff,
+    prepare: stripBoard(false),
+    ready: stripOpen('dialog', 'Mika', 260, (strip) => strip.getByRole('button', { name: 'Unlink…' }).click()),
+  },
+  {
+    name: 'chardata-estimate',
+    board: 'B_CharEstimate',
+    path: '/members',
+    omit: ROSTER_FRAME,
+    setup: lookedUp({ character_ids: ['ch-s3'] }),
+    prepare: stripBoard(true),
+    ready: stripOpen('complementary', 'Member details', 300, (strip) => expect(strip.locator('[data-fid="estimate-result"]')).toBeVisible()),
+  },
+  {
+    name: 'phone-chardata-estimate',
+    board: 'B_PhoneCharEstimate',
+    path: '/members',
+    omit: PHONE_ROSTER_FRAME,
+    setup: lookedUp({ character_ids: ['ch-s3'] }),
+    prepare: stripBoard(false),
+    ready: stripOpen('dialog', 'Mika', 520, (strip) => expect(strip.locator('[data-fid="estimate-result"]')).toBeVisible()),
+  },
+  // The run sheet's Estimate panel over HCarling + HStar (B_RosterRunPick's sheet, Ren (1) picked).
+  {
+    name: 'chardata-estimate-run',
+    board: 'B_CharEstimateRun',
+    path: '/',
+    omit: STAGE_OMIT,
+    scope: ESTIMATE_RUN_SCOPE,
+    setup: async (page) => {
+      await renPicked(page);
+      await lookedUp({ run_id: 'r-carling' })(page);
+      // The board draws the panel without readiness lines (B_CharReady has them).
+      await page.route('**/api/admin/runs/*/readiness', (route) => route.abort());
+    },
+    prepare: runPickBoard,
+    ready: estimateRun,
+  },
+  {
+    name: 'phone-chardata-estimate-run',
+    board: 'B_PhoneCharEstimateRun',
+    path: '/',
+    omit: STAGE_OMIT,
+    scope: ESTIMATE_RUN_SCOPE,
+    setup: async (page) => {
+      await renPicked(page);
+      await lookedUp({ run_id: 'r-carling' })(page);
+      await page.route('**/api/admin/runs/*/readiness', (route) => route.abort());
+    },
+    prepare: runPickBoard,
+    ready: estimateRun,
+  },
+  // Readiness on the Party tab (B_CharReady): Mika brings MikaBish as the board draws; no scouter (no Estimate panel).
+  {
+    name: 'chardata-ready',
+    board: 'B_CharReady',
+    path: '/',
+    omit: STAGE_OMIT,
+    scope: READY_SCOPE,
+    setup: readyBoard,
+    prepare: runPickBoard,
+    ready: readyShownOn,
+  },
+  {
+    name: 'phone-chardata-ready',
+    board: 'B_PhoneCharReady',
+    path: '/',
+    omit: STAGE_OMIT,
+    scope: READY_SCOPE,
+    setup: readyBoard,
+    prepare: runPickBoard,
+    ready: readyShownOn,
+  },
+  // Config › CP floors with one unsaved change (Limbo Hard 55.0M → 60.0M). The phone boards
+  // draw their own Config frame (no phone Config board was approved before them): those pairs
+  // compare the section's contents (PHONE_CFG_SCOPE), not the shared frame.
+  { name: 'cfg-cp-floors', board: 'B_CfgCpFloors', path: '/config?section=cp-floors', ready: floorEdited },
+  {
+    name: 'phone-cfg-cp-floors',
+    board: 'B_PhoneCfgCpFloors',
+    path: '/config?section=cp-floors',
+    scope: [...PHONE_CFG_SCOPE, 'cpfloor-table', 'cpfloor-row', 'cpfloor-add'],
+    ready: floorEdited,
+  },
+  // Config › Character data: all ok, problems, no key, key refused.
+  ...CHARDATA_HEALTH.flatMap(([variant, health]) => [
+    { name: `cfg-chardata${variant ? `-${variant.toLowerCase()}` : ''}`, board: `B_CfgCharHealth${variant}`, path: '/config?section=character-data', setup: chardataHealth(health), ready: healthShown },
+    {
+      name: `phone-cfg-chardata${variant ? `-${variant.toLowerCase()}` : ''}`,
+      board: `B_PhoneCfgCharHealth${variant}`,
+      path: '/config?section=character-data',
+      setup: chardataHealth(health),
+      scope: [...PHONE_CFG_SCOPE, 'chardata-nexon-health', 'chardata-scouter-health', 'chardata-sweeper-health', 'chardata-env', 'chardata-post'],
+      ready: healthShown,
+    },
+  ]),
   {
     name: 'inbox-extractor',
     board: 'VarRail2',
@@ -1242,6 +1524,7 @@ const PAIRS: Pair[] = [
     name: 'hero-phone',
     board: 'HeroPhone',
     path: '/',
+    setup: chardataOff,
     ready: async (page) => {
       await page.locator('[data-run="r-carling"] .plan-card__open').click();
       await expect(page.getByRole('dialog', { name: 'HCarling + HStar' })).toBeVisible();
@@ -1251,6 +1534,7 @@ const PAIRS: Pair[] = [
     name: 'hero-sheet',
     board: 'HeroSheet',
     path: '/',
+    setup: chardataOff,
     ready: async (page) => {
       await page.locator('[data-run="r-carling"] .plan-card__open').click();
       await page.getByRole('complementary', { name: 'HCarling + HStar' }).getByRole('button', { name: 'Open in a larger view' }).click();

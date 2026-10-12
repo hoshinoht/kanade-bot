@@ -8,11 +8,12 @@
 -->
 <script lang="ts">
   import { tick } from 'svelte';
-  import type { CharacterRow } from '@kanade/api-types';
+  import type { CharacterRow, SettingsActor } from '@kanade/api-types';
   import { Icon, Modal, Select } from '@kanade/ui';
   import '@kanade/ui/styles/core/select.scss';
   import '@kanade/ui/styles/screens/settings.scss';
   import { send } from '../resource.svelte';
+  import CharacterDataStrip from '../chardata/CharacterDataStrip.svelte';
   import {
     checkForm,
     classOptions,
@@ -39,6 +40,7 @@
     sheet,
     timeZone,
     updatedBy,
+    actor,
     onsaved,
     ondelete,
     onrefresh,
@@ -55,6 +57,8 @@
     sheet: boolean;
     timeZone: string;
     updatedBy: (row: CharacterRow) => string;
+    /** A History actor's name (who asked for a link, who started a lookup). */
+    actor: (who: SettingsActor) => string;
     onsaved: (row: CharacterRow, message: string) => void;
     ondelete: (row: CharacterRow) => void;
     /** Re-read the list (after a stale or missing answer); resolves to the fresh rows. */
@@ -344,6 +348,8 @@
           }}><span class="switch__knob" aria-hidden="true"></span></button
         >
       </div>
+      <!-- Module `character_data`: NEXON data and estimates (draws nothing while the module is off). -->
+      <CharacterDataStrip {character} {memberName} {sheet} {timeZone} updatedBy={updatedBy(character)} {actor} />
     {/if}
   </form>
   {#snippet footer(close)}

@@ -1,9 +1,10 @@
 <!--
   Feather icons (MIT, (c) 2013-2023 Cole Bemis), the same paths v4's
   partials/icons.html draws; `pin`, `gauge` and `history` are Lucide's
-  (ISC, a Feather fork) for the navigation rail, and `crown` for the roster's
-  main character. Decorative by default; pass `label` when the mark is the
-  only thing that says it.
+  (ISC, a Feather fork) for the navigation rail, `crown` for the roster's
+  main character, and `unlink` and `plug` (Lucide) for character data.
+  Decorative by default; pass `label` when the mark is the only thing that
+  says it.
 -->
 <script lang="ts" module>
   export type IconName =
@@ -55,7 +56,11 @@
     | 'archive'
     | 'trash-2'
     | 'eye-off'
-    | 'git-branch';
+    | 'git-branch'
+    | 'link'
+    | 'unlink'
+    | 'plug'
+    | 'minus';
 </script>
 
 <script lang="ts">
@@ -190,6 +195,14 @@
     <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" />
   {:else if name === 'git-branch'}
     <line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" />
+  {:else if name === 'link'}
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+  {:else if name === 'unlink'}
+    <path d="m18.84 12.25 1.72-1.71a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="m5.17 11.75-1.71 1.71a5 5 0 0 0 7.07 7.07l1.71-1.71" /><line x1="8" y1="2" x2="8" y2="5" /><line x1="2" y1="8" x2="5" y2="8" /><line x1="16" y1="19" x2="16" y2="22" /><line x1="19" y1="16" x2="22" y2="16" />
+  {:else if name === 'plug'}
+    <path d="M12 22v-5" /><path d="M9 8V2" /><path d="M15 8V2" /><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8z" />
+  {:else if name === 'minus'}
+    <line x1="5" y1="12" x2="19" y2="12" />
   {/if}
 </svg>
 {#if label}<span class="vh">{label}</span>{/if}

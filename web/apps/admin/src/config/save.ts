@@ -1,4 +1,4 @@
-import type { CapacityGroup, ConfigView, ContextSettings, MessageStyle, ModelRole, RoleProfileWrite, SelfServiceMode } from '@kanade/api-types';
+import type { CapacityGroup, ConfigView, ContextSettings, CpFloors, MessageStyle, ModelRole, RoleProfileWrite, SelfServiceMode } from '@kanade/api-types';
 
 type Rate = { count?: number; window_s?: number };
 
@@ -26,6 +26,8 @@ export interface ConfigPatch {
   run_lengths?: Partial<ConfigView['run_lengths']>;
   /** Lists replace whole; `builtin_words` is read-only (422). */
   profanity?: Partial<Omit<ConfigView['profanity'], 'builtin_words'>>;
+  /** Module `character_data`: the whole floor map (`entry_levels` is read-only, 422). */
+  cp_floors?: { floors: CpFloors['floors'] };
 }
 
 /** The opposite change, offered as Undo on the success toast (switches and visibility). */

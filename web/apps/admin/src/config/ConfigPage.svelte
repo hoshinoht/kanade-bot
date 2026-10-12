@@ -35,6 +35,9 @@
   import { findSetting, settleFrames } from './find';
   import RescanPanel from '../extractions/RescanPanel.svelte';
   import type { Channel } from '@kanade/api-types';
+  import CharacterDataSection from './CharacterDataSection.svelte';
+  import CpFloorsSection from './CpFloorsSection.svelte';
+  import { healthNote, postIssues } from '../chardata/format';
 
   let {
     toaster,
@@ -43,6 +46,7 @@
     onrunlengths,
     onquiet,
     rescanOff = null,
+    timeZone = 'Asia/Kuala_Lumpur',
   }: {
     toaster: Toaster;
     section?: string;
@@ -53,9 +57,12 @@
     onquiet?: (on: boolean) => void;
     /** Why Re-read is refused right now (the summary's `rescan_off`). */
     rescanOff?: string | null;
+    /** The guild's time zone (the week's), for times in the health view. */
+    timeZone?: string;
   } = $props();
 
   // `terms` hold the cards' own titles too, so a search names a setting, not only a section.
+  // A `module` section is listed only while the server has that module on.
   const SECTIONS = [
     { key: 'pings', label: 'Pings', group: 'Bot', terms: 'morning ping time countdowns reminder' },
     { key: 'run-lengths', label: 'Run lengths', group: 'Bot', terms: 'duration boss default overrides' },
@@ -67,9 +74,17 @@
     { key: 'self-service', label: 'Self-service', group: 'Members', terms: 'public portal cards links how members are answered' },
     { key: 'notifications', label: 'Notifications', group: 'Members', terms: 'quiet mode pings discord message style classic redesigned header rewrites generation time' },
     { key: 'digest', label: 'Weekly digest', group: 'Members', terms: 'post channel week' },
+    { key: 'cp-floors', label: 'CP floors', group: 'Members', terms: 'combat power floors readiness boss difficulty entry level', module: 'character_data' },
     { key: 'channels', label: 'Channels', group: 'Server', terms: 'watched channels categories chat categories ids environment seed' },
     { key: 'rescan', label: 'Re-read', group: 'Server', terms: 'channels extractor running' },
     { key: 'access', label: 'Channel access', group: 'Server', terms: 'manage messages permissions check' },
+    {
+      key: 'character-data',
+      label: 'Character data',
+      group: 'Server',
+      terms: 'nexon open api key budget batch links maplescouter scouter estimates sweeper shared cards health',
+      module: 'character_data',
+    },
     { key: 'theme', label: 'Theme', group: 'Server', terms: 'colourway colorway mode system light dark' },
     { key: 'env', label: 'Set in the environment', group: 'Read-only', terms: 'environment variables timezone' },
   ] as const;
@@ -85,11 +100,15 @@
   $effect(() => config.watch());
 
   const uid = $props.id();
-  const selected = $derived<Key>(SECTIONS.some((s) => s.key === section) ? (section as Key) : 'pings');
+  // Module `character_data`: Config's health block is absent while it is off.
+  const chardataOn = $derived(config.data?.character_data !== undefined);
+  const sections = $derived(SECTIONS.filter((s) => !('module' in s) || chardataOn));
+  // Until the settings arrive a module section's deep link waits rather than falling back.
+  const selected = $derived<Key>((config.data ? sections : SECTIONS).some((s) => s.key === section) ? (section as Key) : 'pings');
   const GROUPS = ['Bot', 'Members', 'Server', 'Read-only'] as const;
   let query = $state('');
   const search = $derived(query.trim().toLowerCase());
-  const shown = $derived(SECTIONS.filter((item) => !search || `${item.label} ${item.terms}`.toLowerCase().includes(search)));
+  const shown = $derived(sections.filter((item) => !search || `${item.label} ${item.terms}`.toLowerCase().includes(search)));
   // Filtered-out tabs stay in the DOM (hidden) so the open panel keeps its
   // label; the roving tab stop moves to the first match when the open one is hidden.
   const stop = $derived<Key | undefined>(shown.some((item) => item.key === selected) ? selected : shown[0]?.key);
@@ -167,6 +186,8 @@
       strip.scrollLeft = start - (strip.clientWidth - tab.offsetWidth) / 2;
   }
   $effect(() => {
+    // A module's tab mounts once the settings say the module is on.
+    void sections;
     const tab = tabs[selected];
     const strip = toc;
     if (!strip || !tab) return;
@@ -247,6 +268,11 @@
       case 'models': return `${Object.values(c.models.roles).filter((r) => r.alias).length}`;
       case 'self-service': return c.self_service.public_portal ? 'open' : 'closed';
       case 'theme': return colorway.toLowerCase();
+      case 'character-data': return c.character_data ? healthNote(c.character_data).text : '';
+      case 'cp-floors': {
+        const n = Object.values(c.cp_floors?.floors ?? {}).reduce((sum, byDifficulty) => sum + Object.keys(byDifficulty).length, 0);
+        return n ? `${n} set` : 'none';
+      }
       case 'env': return `${c.env.length}`;
       default: return '';
     }
@@ -274,6 +300,7 @@
       case 'self-service': return [`Portal ${hint(item)}`, c.self_service.effective_mode.replaceAll('_', ' ')];
       case 'notifications': return [`Quiet mode ${c.notifications.quiet_mode ? 'on' : 'off'}`];
       case 'digest': return ['Weekly post', 'Channel and preview'];
+      case 'cp-floors': return [hint(item), 'Judged on the run sheet, never blocking'];
       case 'channels': return [
         `${c.watching.channel_ids.length} watched channels`,
         `${c.watching.category_ids.length} watched categories`,
@@ -282,6 +309,10 @@
       case 'rescan': return [`${targets.data?.length ?? 0} available channels`];
       case 'access': return [`${missingManage.length} channels missing Manage Messages`];
       case 'theme': return [colorway, 'Kept in this browser'];
+      case 'character-data': {
+        const h = c.character_data;
+        return h ? [`NEXON ${h.nexon.replace('_', ' ')}`, `MapleScouter ${h.scouter.state.replace('_', ' ')}`, `${postIssues(h)} shared cards need a hand`] : [];
+      }
       case 'env': return c.env.map((setting) => setting.label);
     }
   }
@@ -400,7 +431,7 @@
       {#each GROUPS as group (group)}
         <div class="settings__group" role="presentation" hidden={!shown.some((item) => item.group === group)}>
           <p class="cap" aria-hidden="true">{group}</p>
-          {#each SECTIONS.filter((item) => item.group === group) as item (item.key)}
+          {#each sections.filter((item) => item.group === group) as item (item.key)}
             {@const index = shown.indexOf(item)}
             <button
               type="button"
@@ -425,7 +456,10 @@
               {#if item.key === 'access' && missingManage.length}<span class="settings__flag"
                   ><span aria-hidden="true">⚠ {missingManage.length}</span><span class="vh">, {missingManage.length} need attention</span></span
                 >
-              {:else if item.key === 'models' && modelsBlocked}<span class="settings__flag"><Icon name="alert-triangle" label="needs attention" /></span>{/if}
+              {:else if item.key === 'models' && modelsBlocked}<span class="settings__flag"><Icon name="alert-triangle" label="needs attention" /></span>
+              {:else if item.key === 'character-data' && config.data?.character_data && healthNote(config.data.character_data).flagged}
+                {@const flagged = healthNote(config.data.character_data).flagged}
+                <span class="settings__flag"><span aria-hidden="true">⚠ {flagged}</span><span class="vh">, {flagged} need attention</span></span>{/if}
             </button>
           {/each}
         </div>
@@ -463,7 +497,11 @@
               <AccessSection {toaster} />
             {:else if config.data}
               {@const c = config.data}
-              {#if item.key === 'pings'}
+              {#if item.key === 'character-data'}
+                {#if c.character_data}<CharacterDataSection health={c.character_data} {timeZone} />{/if}
+              {:else if item.key === 'cp-floors'}
+                {#if c.cp_floors}<CpFloorsSection cpFloors={c.cp_floors} {save} />{/if}
+              {:else if item.key === 'pings'}
                 <PingsSection pings={c.pings} {save} />
               {:else if item.key === 'run-lengths'}
                 <RunLengthsSection runLengths={c.run_lengths} {save} onsaved={onrunlengths} />

@@ -294,6 +294,7 @@
           },
           onquiet: (on: boolean) => store.setQuiet(on),
           rescanOff: store.summary?.rescan_off ?? null,
+          timeZone: store.week?.timezone ?? 'Asia/Kuala_Lumpur',
         };
       case 'bosses':
       case 'boss-knowledge':

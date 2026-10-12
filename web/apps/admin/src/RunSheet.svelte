@@ -8,10 +8,10 @@
 -->
 <script lang="ts">
   import { tick, untrack } from 'svelte';
-  import type { Member, Participant, Run, RunStatus, Week } from '@kanade/api-types';
+  import type { Member, Participant, Run, RunStatus, SettingsActor, Week } from '@kanade/api-types';
   import '@kanade/ui/styles/screens/run-sheet.scss';
   import '@kanade/ui/styles/core/select.scss';
-  import { ANSWER_MARKS, AnswerBar, AnswerChip, BossArt, BossTag, enter, Icon, liveRuns, LiveRegion, Modal, MovePicker, namesIn, pickerRun, Select, StatusMark, WavyProgress, dayLabel, runCountdown, runTitle, sortRuns, whenLabel, type Slot } from '@kanade/ui';
+  import { ANSWER_MARKS, AnswerBar, AnswerChip, BossArt, BossTag, enter, Icon, liveRuns, LiveRegion, Modal, MovePicker, namesIn, pickerRun, Select, StatusChip, StatusMark, WavyProgress, dayLabel, runCountdown, runTitle, sortRuns, whenLabel, type Slot } from '@kanade/ui';
   import { swapSlots } from './planner/dropTime';
   import { directory, memberLabel } from './names/directory.svelte';
   import Name from './names/Name.svelte';
@@ -26,6 +26,11 @@
   import { Presence } from './presence/presence.svelte';
   import PresenceButton from './presence/PresenceButton.svelte';
   import PresenceNote from './presence/PresenceNote.svelte';
+  import EstimatePanel from './chardata/EstimatePanel.svelte';
+  import { readinessLine, verdictChips } from './chardata/format';
+  import { RunReadinessView } from './chardata/routes.svelte';
+  import '@kanade/ui/styles/screens/character-data.scss';
+  import { actorName } from './history/describe';
 
   let {
     open = $bindable(false),
@@ -330,6 +335,9 @@
   const charRun = $derived(rosterModule && !rosterRoutes.gone && open && run && (!wide || popped) ? run.id : null);
   const chars = $derived(charRun ? new RunCharacterSlots(charRun) : null);
   const charsShown = $derived(Boolean(chars?.data));
+  // MapleScouter (module `character_data` with a scouter URL; B_CharEstimateRun): the Party tab's
+  // Estimate panel, over the same picks. Off, its status route answers 404 and nothing shows.
+  const estimateActor = (who: SettingsActor) => actorName(who, (id) => memberLabel(members, id), (id) => members.some((m) => m.id === id));
   // A party change (add, take off) changes the slots: read them again.
   const partyIds = $derived(run?.participants.map((p) => p.id).join(' ') ?? '');
   $effect(() => {
@@ -338,6 +346,16 @@
     void chars.load();
   });
   $effect(() => chars?.follow());
+  // Module `character_data` (B_CharReady): level and power per slot, judged per boss of the run.
+  // Computed on read and never blocking; read again whenever the picks are.
+  const ready = $derived(charRun ? new RunReadinessView(charRun) : null);
+  $effect(() => {
+    if (!ready || !chars?.data) return;
+    void ready.load();
+  });
+  const readyShown = $derived(Boolean(charsShown && ready?.data));
+  // Each verdict row names its boss when the run has more than one.
+  const bossLabel = (key: string, difficulty: string) => run?.bosses.find((b) => b.key === key && b.difficulty === difficulty)?.token ?? key;
   // The wide sheet's popover (one member's), the narrow sheet's bottom sheet.
   let pickFor = $state<string | null>(null);
   let sheetPick = $state<string | null>(null);
@@ -500,6 +518,45 @@
       {/if}
     </span>
   {/if}
+{/snippet}
+
+{#snippet slotReady(person: Participant)}
+  {@const r = ready?.data?.slots.find((s) => s.member_id === person.id)}
+  {#if r?.character}
+    {@const line = readinessLine(r)}
+    <div class="ready" role="group" aria-label="Readiness of {r.character.ign}" data-fid="party-ready">
+      <span class="ready__line"><span class="ready__values">{line.values}</span><span class="ready__source">{line.source}</span></span>
+      <ul class="ready__bosses">
+        {#each r.bosses as boss (`${boss.boss}-${boss.difficulty}`)}
+          <li class="ready__boss">
+            {#if r.bosses.length > 1}<span class="ready__boss-name">{bossLabel(boss.boss, boss.difficulty)}</span>{/if}
+            {#each verdictChips(boss, r.power?.kind ?? 'nexon_cp') as chip (chip.text)}<StatusChip tone={chip.tone}>{chip.text}</StatusChip>{/each}
+          </li>
+        {/each}
+      </ul>
+    </div>
+  {:else if r && wide && chars?.slot(person.id)?.candidates.length}
+    <span class="ready__source">Readiness shows once a character is picked.</span>
+  {/if}
+{/snippet}
+
+{#snippet readyNote(tag: 'p' | 'li')}
+  <svelte:element this={tag} class="ready__note" data-fid="party-ready-note"
+    ><span><b>Readiness</b>{wide ? ' · level and CP per character and boss, dated. It never blocks a pick or a save.' : ' · never blocks'}</span>{#if ready?.data?.nexon_data}<span
+        class="chardata__attrib"
+        data-fid="party-ready-attrib">{ready.data.attribution}</span
+      >{/if}</svelte:element
+  >
+{/snippet}
+
+{#snippet readyRules()}
+  <div class="runsheet__charrules ready__rules" data-fid="party-ready-rules">
+    <span class="cap">How the verdict reads</span>
+    <span>Per boss of the run: level against its entry level, CP against its floor.</span>
+    <span>A boss with no floor shows CP but doesn’t judge it.</span>
+    <span>Fresh NEXON data first; else the roster level, marked manual.</span>
+    <a href="/config?section=cp-floors" data-fid="party-ready-floors">CP floors in Config</a>
+  </div>
 {/snippet}
 
 {#snippet slotWarn(person: Participant)}
@@ -1101,7 +1158,9 @@
           </div>
           <div class="runsheet__panel runsheet__panel--{sheetTab}" role="tabpanel" id="{uid}-spanel" aria-labelledby="{uid}-stab-{sheetTab}">
             {#if sheetTab === 'party'}
+              {#snippet partyUl()}
               <ul class="runsheet__party" class:runsheet__party--chars={charsShown} aria-label="Party" data-fid="week-party" bind:this={partyList}>
+                {#if readyShown && !wide}{@render readyNote('li')}{/if}
                 {#each run.participants as person (person.id)}
                   <li class="slot slot--{person.answer}" class:slot--chars={charsShown} data-fid={charsShown ? 'party-slot' : undefined}>
                     <span class="slot__head">
@@ -1119,6 +1178,7 @@
                       >
                     </span>
                     {#if charsShown && wide}{@render slotChar(person)}{/if}
+                    {#if readyShown}{@render slotReady(person)}{/if}
                     {#if charsShown}{@render slotWarn(person)}{/if}
                   </li>
                 {/each}
@@ -1147,17 +1207,52 @@
                     </span>
                   </li>
                 {/if}
+                {#if readyShown && !wide}
+                  <li class="hint ready__hint">
+                    Per boss: level against its entry level, CP against its floor; no floor, not judged. <a href="/config?section=cp-floors">CP floors in Config</a>
+                  </li>
+                {/if}
+                {#if charsShown && !wide}
+                  <EstimatePanel
+                    runId={run.id}
+                    bosses={run.bosses}
+                    slots={chars?.data ?? null}
+                    name={(id) => memberLabel(run.participants, id)}
+                    timeZone={week.timezone}
+                    sheet
+                    actor={estimateActor}
+                  />
+                {/if}
               </ul>
+              {/snippet}
+              {#if readyShown && wide}
+                <div class="runsheet__readiness">{@render readyNote('p')}{@render partyUl()}</div>
+              {:else}
+                {@render partyUl()}
+              {/if}
               {#if wide}
                 <aside class="runsheet__aside" aria-label="This week" data-fid="sheet-aside">
                   {@render thisWeek(run)}
-                  {#if charsShown}
+                  <!-- With readiness (B_CharReady) its rules take the Characters box's place. -->
+                  {#if charsShown && !readyShown}
                     <div class="runsheet__charrules" data-fid="party-rules">
                       <span class="cap">Characters</span>
                       <span>One active character: the slot names it, marked “inferred”.</span>
                       <span>More than one: the slot asks to pick.</span>
                       <span>The same character twice for one boss this boss week warns; it still saves.</span>
                     </div>
+                  {/if}
+                  {#if readyShown}{@render readyRules()}{/if}
+                  {#if charsShown}
+                    <EstimatePanel
+                      runId={run.id}
+                      bosses={run.bosses}
+                      slots={chars?.data ?? null}
+                      name={(id) => memberLabel(run.participants, id)}
+                      timeZone={week.timezone}
+                      sheet={false}
+                      actor={estimateActor}
+                    />
                   {/if}
                 </aside>
               {/if}

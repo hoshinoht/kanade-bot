@@ -344,6 +344,7 @@
       sheet={phone}
       {timeZone}
       {updatedBy}
+      actor={(who) => actorName(who, names, known)}
       onrefresh={refresh}
       onsaved={(saved, message) => {
         toaster.show({ message, tone: 'ok' });
