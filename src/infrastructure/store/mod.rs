@@ -21,6 +21,8 @@ pub mod card_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod characters_conformance;
 #[cfg(any(test, feature = "test-support"))]
+pub mod chardata_conformance;
+#[cfg(any(test, feature = "test-support"))]
 pub mod cherry_pick_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod conformance;
@@ -60,8 +62,9 @@ pub mod settings_conformance;
 pub mod web_sessions_conformance;
 
 #[cfg(any(test, feature = "test-support"))]
-pub use memory::MemoryScheduleStore;
+pub use memory::{MemoryCharData, MemoryScheduleStore};
 pub use observer::{RunObserver, WriteObserver, Written};
 pub use sqlite::{
-    BackupManifest, Seal, SqliteStore, SqliteStoreConfig, SqliteStoreError, SwapOwnership,
+    BackupManifest, Seal, SqliteCharData, SqliteStore, SqliteStoreConfig, SqliteStoreError,
+    SwapOwnership,
 };

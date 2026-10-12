@@ -11,6 +11,7 @@ mod txn;
 mod auth_audit;
 mod backup;
 mod characters;
+mod chardata;
 mod connect;
 mod debug_cards;
 mod decline_notices;
@@ -44,6 +45,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use sqlx::{Connection, SqlitePool};
 
 pub use backup::{BACKUP_MANIFEST_FORMAT, BackupManifest, Seal, SwapOwnership};
+pub use chardata::SqliteCharData;
 use owner::StoreOwner;
 #[cfg(any(test, feature = "test-support"))]
 pub use snapshots::ReadPause;

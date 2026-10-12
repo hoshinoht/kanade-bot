@@ -387,6 +387,10 @@
         "last_digest": {
           "description": "The newest active weekly digest by posted_at; null (or absent) when none or the journal is unreadable.",
           "oneOf": [{ "$ref": "#/$defs/LastDigest" }, { "type": "null" }]
+        },
+        "character_data": {
+          "$ref": "character_data.json#/$defs/CharacterDataHealth",
+          "description": "Module character_data's health (informational, never part of /healthz); absent while the module is off."
         }
       }
     },

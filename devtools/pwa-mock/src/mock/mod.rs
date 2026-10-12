@@ -2,6 +2,7 @@
 
 mod account;
 pub mod catalog;
+pub mod character_data;
 pub mod characters;
 mod chat;
 pub mod clock;
@@ -125,6 +126,9 @@ pub struct Store {
     characters: Vec<characters::Char>,
     /// Run character picks (module `roster`), seeded (`run_picks::seed`).
     picks: Vec<run_picks::Pick>,
+    /// Character data links (module `character_data`, on with the roster),
+    /// seeded (`character_data::seed`).
+    links: Vec<character_data::Link>,
     /// The roster module's startup flag (on unless `/__mock/modules` turns it off).
     roster: bool,
     version: u64,
@@ -163,6 +167,7 @@ impl Store {
             week_over: false,
             member_requests: Vec::new(),
             characters: Vec::new(),
+            links: Vec::new(),
             picks: Vec::new(),
             roster: true,
             version: 1,
@@ -187,6 +192,7 @@ impl Store {
             .collect();
         self.characters = characters::seed();
         self.picks = run_picks::seed();
+        self.links = character_data::seed();
         self.roster = true;
         self.version = 1;
         self.next_id = 1;

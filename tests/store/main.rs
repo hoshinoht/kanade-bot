@@ -3,6 +3,7 @@
 //! works in its own fresh temp directory.
 
 mod backup;
+mod chardata;
 mod drafts;
 mod failures;
 mod history;
@@ -390,6 +391,27 @@ async fn sqlite_characters_conform() {
         SqliteStore::open(&dir.config(&format!("characters-{n}")))
             .await
             .expect("fresh store opens")
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn memory_chardata_conforms() {
+    kanade::infrastructure::store::chardata_conformance::run_suite(async || {
+        kanade::infrastructure::store::MemoryCharData::new()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn sqlite_chardata_conforms() {
+    let dir = support::TempDir::new();
+    let counter = std::sync::atomic::AtomicUsize::new(0);
+    kanade::infrastructure::store::chardata_conformance::run_suite(async || {
+        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        kanade::infrastructure::store::SqliteCharData::open(&dir.config(&format!("chardata-{n}")))
+            .await
+            .expect("fresh chardata file opens")
     })
     .await;
 }

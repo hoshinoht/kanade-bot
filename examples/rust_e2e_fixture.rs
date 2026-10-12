@@ -429,6 +429,7 @@ mod member_portal {
             events: Arc::new(Hub::default()),
             marks: Default::default(),
             characters: None,
+            character_data: None,
         })
     }
 

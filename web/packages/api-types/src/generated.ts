@@ -288,6 +288,85 @@ export type RunCharacters = { run_id: string,
  */
 slots: Array<RunCharacterSlot>, };
 
+export type CharacterLink = { character_id: string, 
+/**
+ * `not_connected`: no Nexon key is configured (and no link exists);
+ * `expired`: linked, but the data passed its 30 days.
+ */
+state: 'not_connected' | 'not_linked' | 'pending' | 'linked' | 'stale' | 'expired', 
+/**
+ * Send it back with a link request; 0 while there is no link.
+ */
+version: number, 
+/**
+ * A Nexon key is configured: links can be made.
+ */
+connected: boolean, requested_by: SettingsActor | null, requested_at: string | null, 
+/**
+ * The notice version the member confirmed.
+ */
+consent_version: number | null, consented_at: string | null, linked_at: string | null, 
+/**
+ * The current notice version.
+ */
+notice_version: number, 
+/**
+ * Fresh Nexon data; `null` without any.
+ */
+data: CharacterFacts | null, refresh: RefreshInfo, 
+/**
+ * Shown with the data: `Data based on NEXON Open API`.
+ */
+attribution: string, };
+
+export type CharacterFacts = { name: string | null, world: string | null, class: string | null, level: number | null, combat_power: number | null, 
+/**
+ * Hotlinked from Nexon, never re-hosted.
+ */
+image_url: string | null, 
+/**
+ * `YYYY-MM-DD` (Singapore): the response date, else the fetch day.
+ */
+as_of: string, fetched_at: string, 
+/**
+ * When the data is deleted unless refreshed.
+ */
+expires_at: string, };
+
+export type RefreshInfo = { 
+/**
+ * An on-demand refresh is refused until then (24 hours after the last).
+ */
+refreshable_at: string | null, next_attempt_at: string | null, 
+/**
+ * The Open API error code (or reason) that stopped the last refresh.
+ */
+last_error: string | null, };
+
+export type CharacterDataHealth = { nexon: 'no_key' | 'ok' | 'backoff' | 'key_refused', 
+/**
+ * Every call waits until then (maintenance).
+ */
+backoff_until: string | null, 
+/**
+ * Calls in the last 24 hours; `null` when the file could not be read.
+ */
+calls_24h: number | null, 
+/**
+ * The hard stop on calls per 24 hours.
+ */
+budget: number, last_batch: BatchHealth | null, links: LinkHealth | null, last_sweep: string | null, posts: PostHealth | null, };
+
+export type BatchHealth = { at: string, refreshed: number, failed: number, 
+/**
+ * Why it stopped early, if it did.
+ */
+stopped: string | null, };
+
+export type LinkHealth = { pending: number, active: number, stale: number, };
+
+export type PostHealth = { due: number, unknown: number, stuck: number, overdue: number, };
+
 export type FixedRunLink = { run_id: string, short_id: string, week: WeekKey, day: number, time: string | null, status: RunStatus, amended: boolean, };
 
 export type FixedRow = { id: string, short_id: string, weekday: number, weekday_name: string, time: string, bosses: Array<Boss>, participants: Array<Member>, channel_id: string, channel_name: string, channel_watched: boolean, 
@@ -675,7 +754,12 @@ export type ConfigView = { pings: Pings, watching: Watching, chatbot: Chatbot, n
 /**
  * `null` when no digest is active or the journal could not be read.
  */
-last_digest: LastDigest | null, };
+last_digest: LastDigest | null, 
+/**
+ * Module `character_data`'s health (informational, never part of
+ * `/healthz`); absent while the module is off.
+ */
+character_data?: CharacterDataHealth, };
 
 export type Pings = { day_of_ping_time: string, countdown_minutes: Array<number>, };
 

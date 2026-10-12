@@ -330,15 +330,20 @@ pub async fn update(
     let now = state.now();
     let after = current.edited(&edit, &others, now, &session.origin().actor);
     let body = json!(row(&after));
-    apply(
+    let answer = apply(
         roster.as_ref(),
         keyed,
-        CharacterChange::Update { version, after },
+        CharacterChange::Update {
+            version,
+            after: after.clone(),
+        },
         record(&session, now),
         StatusCode::OK,
         body,
     )
-    .await
+    .await?;
+    unlink_changed(state, &session, &id, Some(&after)).await;
+    Ok(answer)
 }
 
 /// An explicit delete: the row and its History stay apart (History keeps
@@ -358,16 +363,34 @@ pub async fn delete(
     }
     let current = current(roster.as_ref(), &id).await?;
     let body = json!({ "message": format!("{} is deleted.", current.ign) });
-    apply(
+    let answer = apply(
         roster.as_ref(),
         keyed,
         CharacterChange::Delete {
-            id,
+            id: id.clone(),
             version: current.version,
         },
         record(&session, state.now()),
         StatusCode::OK,
         body,
     )
-    .await
+    .await?;
+    unlink_changed(state, &session, &id, None).await;
+    Ok(answer)
+}
+
+/// After a committed roster write: a deleted character, or one whose IGN,
+/// region or member changed, loses its character-data link at once.
+async fn unlink_changed(
+    state: &ApiState,
+    session: &AdminSession,
+    id: &str,
+    after: Option<&Character>,
+) {
+    if let Some(module) = &state.character_data {
+        let origin = session.origin();
+        module
+            .roster_changed(id, after, &origin.actor, origin.surface)
+            .await;
+    }
 }

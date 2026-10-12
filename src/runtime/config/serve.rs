@@ -12,7 +12,7 @@ use crate::domain::settings::{OVERRIDE_RUN_MINUTES, RUN_MINUTES, RunLengths};
 
 use super::{
     DiscordSettings, Error, FileSettings, GuildSettings, ModelSettings, RuntimeConfig,
-    StoreSettings, guild, non_empty, parse_bounded_u64,
+    StoreSettings, character_data::CharacterDataSettings, guild, non_empty, parse_bounded_u64,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,6 +32,8 @@ pub struct ServeConfig {
     /// file fails the deploy, not the next backup.
     pub backup_recipients_file: Option<PathBuf>,
     pub modules: Modules,
+    /// Module `character_data`'s file and key; `None` while it is off.
+    pub character_data: Option<CharacterDataSettings>,
 }
 
 /// Optional modules, read once at startup: a change applies on restart.
@@ -40,6 +42,9 @@ pub struct Modules {
     /// `KANADE_MODULE_ROSTER` (`modules.roster`, default off): the manual
     /// character roster's admin routes.
     pub roster: bool,
+    /// `KANADE_MODULE_CHARACTER_DATA` (`modules.character_data`, default
+    /// off, needs `roster`): NEXON Open API data for linked characters.
+    pub character_data: bool,
 }
 
 /// Initial runtime settings; applied only where the store has none yet.
@@ -64,6 +69,10 @@ pub struct SettingSeeds {
 
 impl ServeConfig {
     pub fn from_mapping(values: &BTreeMap<String, String>) -> Result<Self, Error> {
+        let modules = Modules {
+            roster: flag(values, "KANADE_MODULE_ROSTER")?.unwrap_or(false),
+            character_data: flag(values, super::character_data::FLAG_KEY)?.unwrap_or(false),
+        };
         Ok(Self {
             runtime: RuntimeConfig::from_mapping(values)?,
             discord: DiscordSettings::from_mapping(values)?,
@@ -82,9 +91,12 @@ impl ServeConfig {
             seeds: SettingSeeds::from_mapping(values)?,
             backup_dir: super::backup::optional_dir(values)?,
             backup_recipients_file: super::backup::recipients_file(values),
-            modules: Modules {
-                roster: flag(values, "KANADE_MODULE_ROSTER")?.unwrap_or(false),
-            },
+            character_data: CharacterDataSettings::from_mapping(
+                values,
+                modules.character_data,
+                modules.roster,
+            )?,
+            modules,
         })
     }
 }
@@ -299,6 +311,40 @@ mod tests {
         assert_eq!(
             config(&[("KANADE_MODULE_ROSTER", "on")]).unwrap_err(),
             "KANADE_MODULE_ROSTER must be 0 or 1"
+        );
+    }
+
+    #[test]
+    fn character_data_needs_the_roster_and_its_own_file() {
+        // Off: its keys are ignored and nothing is configured.
+        let off = config(&[("KANADE_CHARACTER_DATA_DB_PATH", "relative")]).unwrap();
+        assert_eq!(off.character_data, None);
+        assert!(!off.modules.character_data);
+        assert_eq!(
+            config(&[("KANADE_MODULE_CHARACTER_DATA", "1")]).unwrap_err(),
+            "KANADE_MODULE_CHARACTER_DATA needs the roster module (KANADE_MODULE_ROSTER=1)"
+        );
+        let on = [
+            ("KANADE_MODULE_ROSTER", "1"),
+            ("KANADE_MODULE_CHARACTER_DATA", "1"),
+        ];
+        assert_eq!(
+            config(&on).unwrap_err(),
+            "KANADE_CHARACTER_DATA_DB_PATH is required"
+        );
+        let mut pairs = on.to_vec();
+        pairs.push(("KANADE_CHARACTER_DATA_DB_PATH", "/chardata/chardata.sqlite"));
+        let settings = config(&pairs).unwrap().character_data.unwrap();
+        assert_eq!(settings.db_path, PathBuf::from("/chardata/chardata.sqlite"));
+        assert_eq!(settings.nexon_key_file, None, "the key is optional");
+        pairs.push(("KANADE_NEXON_API_KEY_FILE", "/run/secrets/nexon_api_key"));
+        assert_eq!(
+            config(&pairs)
+                .unwrap()
+                .character_data
+                .unwrap()
+                .nexon_key_file,
+            Some(PathBuf::from("/run/secrets/nexon_api_key"))
         );
     }
 

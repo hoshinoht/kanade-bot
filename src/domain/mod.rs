@@ -6,6 +6,7 @@
 pub mod attendance;
 pub mod catalog;
 pub mod characters;
+pub mod chardata;
 pub mod completion;
 pub mod drafts;
 pub mod history;

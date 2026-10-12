@@ -180,6 +180,14 @@ needs `version`, `409 stale`). Invented characters are seeded
 (`characters::seed`; Ren #1013 has none); `POST /api/admin/reset` restores
 them. Writes record no History rows here.
 
+Character data (module `character_data`, `src/mock/character_data.rs`; on
+whenever the roster is): `GET`/`POST`/`DELETE /api/admin/characters/{id}/link`
+and `POST /api/admin/characters/{id}/refresh` follow the server's shapes and
+refusals (`version_required`, `stale`, `already_linked`, `retired`,
+`region`, `not_linked`, `429 refresh_cap`). A request stays `pending`: the
+mock has no Discord confirmation and never calls an Open API. Wholly
+invented data: MikaNL (`ch-s2`) linked, AsahiDK (`ch-s5`) pending.
+
 Run character picks (module `roster`, `src/mock/run_picks.rs`): `GET
 /api/admin/runs/{id}/characters` and `PUT
 /api/admin/runs/{id}/characters/{member}` `{character_id | null, version}`

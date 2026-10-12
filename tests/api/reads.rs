@@ -63,7 +63,16 @@ use crate::{
     support::{ADMIN_HOST, Fixture, request, send, spawn},
 };
 
-type ConfigMaker = Box<dyn FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send>;
+pub type ConfigMaker = Box<dyn FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send>;
+/// Builds module `character_data`'s service over the seeded store and the
+/// pinned clock.
+pub type CharacterDataMaker = Box<
+    dyn FnOnce(
+            Arc<SqliteStore>,
+            kanade::api::auth::Clock,
+        ) -> Arc<kanade::infrastructure::character_data::CharacterData>
+        + Send,
+>;
 
 /// The less common parts of a [`Reads`] build.
 struct Extra {
@@ -74,6 +83,8 @@ struct Extra {
     rescans: bool,
     /// The roster module switched on (`modules.roster`).
     characters: bool,
+    /// Module `character_data` switched on.
+    character_data: Option<CharacterDataMaker>,
 }
 
 impl Default for Extra {
@@ -83,6 +94,7 @@ impl Default for Extra {
             model_limits: None,
             rescans: true,
             characters: false,
+            character_data: None,
         }
     }
 }
@@ -729,6 +741,27 @@ impl Reads {
         .await
     }
 
+    /// With the roster and character-data modules on (and the config API
+    /// when `config` is given), as serve composes them.
+    pub async fn with_character_data(
+        config: Option<ConfigMaker>,
+        make: CharacterDataMaker,
+    ) -> Self {
+        Self::build(
+            NaiveTime::MIN,
+            false,
+            config,
+            true,
+            true,
+            Extra {
+                characters: true,
+                character_data: Some(make),
+                ..Extra::default()
+            },
+        )
+        .await
+    }
+
     async fn build(
         reset: NaiveTime,
         logins: bool,
@@ -742,6 +775,7 @@ impl Reads {
             model_limits,
             rescans: with_rescans,
             characters,
+            character_data,
         } = extra;
         let dir = TempDir::new();
         let backup_dir = backup_dir.then(|| {
@@ -929,6 +963,8 @@ impl Reads {
             marks: kanade::bot::delivery::cards::DifficultyMarks::new().with("n", NORMAL_PILL),
             characters: characters
                 .then(|| store.clone() as Arc<dyn kanade::api::state::CharacterRoster>),
+            character_data: character_data
+                .map(|make| make(store.clone(), Arc::new(move || pinned))),
         };
         let mut http = fixture.http();
         if logins {
@@ -1015,6 +1051,7 @@ impl Reads {
             events: old.events.clone(),
             marks: old.marks.clone(),
             characters: old.characters.clone(),
+            character_data: old.character_data.clone(),
         };
         self.site.state = Some(Arc::new(state));
         self.admin = spawn(self.site.clone()).await;

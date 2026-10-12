@@ -109,6 +109,17 @@ persona_dir = "config/personas"
 # the manual character roster's admin routes (off: they answer 404; stored
 # characters are kept either way).
 # roster = false
+# character_data: NEXON Open API data for linked roster characters (needs
+# roster; off: its routes answer 404, no task runs and no file is opened).
+# character_data = false
+
+[character_data]
+# Required while the module is on: its own SQLite file, outside the store
+# and its backups (Compose sets /chardata/chardata.sqlite).
+# db_path = "/chardata/chardata.sqlite"
+# The Open API key (one line). Unset: links are refused; set but
+# unreadable: startup is refused.
+# nexon_key_file = "/run/secrets/nexon_api_key"
 
 [models]
 # https, or http only to loopback, localhost or host.docker.internal; unset

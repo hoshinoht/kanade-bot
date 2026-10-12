@@ -27,6 +27,34 @@ pub(super) async fn writer(path: &Path) -> Result<SqliteConnection, sqlx::Error>
         .await
 }
 
+/// The character-data file's one connection: a rollback journal deleted
+/// after every transaction (no WAL keeping deleted pages) and freed content
+/// overwritten with zeros, so an unlink leaves no copy of the data behind.
+pub(super) async fn chardata(path: &Path) -> Result<SqliteConnection, sqlx::Error> {
+    options(path)
+        .create_if_missing(true)
+        .journal_mode(SqliteJournalMode::Delete)
+        .pragma("secure_delete", "ON")
+        .connect()
+        .await
+}
+
+/// Which file a [`super::writer::Writer`] reconnects to.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum Profile {
+    Store,
+    CharData,
+}
+
+impl Profile {
+    pub(super) async fn connect(self, path: &Path) -> Result<SqliteConnection, sqlx::Error> {
+        match self {
+            Self::Store => writer(path).await,
+            Self::CharData => chardata(path).await,
+        }
+    }
+}
+
 /// Read-only connections; WAL is persistent, so they inherit it. Waiting
 /// for a free one is bounded like a lock wait (SQLx's default is 30 s, as
 /// long as Compose's whole stop grace); a timed-out read fails as a backend

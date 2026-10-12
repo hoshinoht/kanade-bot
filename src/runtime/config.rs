@@ -14,6 +14,7 @@ mod admin_auth;
 mod admin_client;
 mod backup;
 mod capabilities;
+mod character_data;
 mod context;
 mod discord;
 mod file;
@@ -31,6 +32,10 @@ pub use admin_client::{AdminClientConfig, TOKEN_FILE_KEY as ADMIN_TOKEN_FILE_KEY
 pub use backup::{
     BackupConfig, RECIPIENTS_KEY as BACKUP_RECIPIENTS_KEY,
     recipients_file as backup_recipients_file,
+};
+pub use character_data::{
+    CharacterDataSettings, DB_PATH_KEY as CHARACTER_DATA_DB_PATH_KEY,
+    NEXON_KEY_FILE_KEY as NEXON_API_KEY_FILE_KEY,
 };
 pub use discord::DiscordSettings;
 pub use file::{Resolved, resolve};

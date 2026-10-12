@@ -186,6 +186,51 @@ pub async fn delete_character(State(app): State<App>, Path(id): Path<String>) ->
     outcome(app.store.lock().await.delete_character(&id))
 }
 
+/// Module `character_data`: on with the roster (the server refuses it
+/// without), so it answers the generic 404 whenever the roster is off.
+pub async fn character_link(State(app): State<App>, Path(id): Path<String>) -> Response {
+    if let Some(off) = roster_off(&app).await {
+        return off;
+    }
+    outcome(app.store.lock().await.character_link(&id))
+}
+
+/// `201`: pending until the member confirms in Discord.
+pub async fn request_link(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    body: Result<Json<crate::mock::character_data::LinkRequest>, JsonRejection>,
+) -> Response {
+    if let Some(off) = roster_off(&app).await {
+        return off;
+    }
+    let Ok(Json(req)) = body else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "invalid_body",
+            "The request body is not valid.",
+        );
+    };
+    match app.store.lock().await.request_link(&id, req) {
+        Ok(view) => (StatusCode::CREATED, Json(view)).into_response(),
+        Err(refused) => outcome::<()>(Err(refused)),
+    }
+}
+
+pub async fn unlink(State(app): State<App>, Path(id): Path<String>) -> Response {
+    if let Some(off) = roster_off(&app).await {
+        return off;
+    }
+    outcome(app.store.lock().await.unlink(&id))
+}
+
+pub async fn refresh_link(State(app): State<App>, Path(id): Path<String>) -> Response {
+    if let Some(off) = roster_off(&app).await {
+        return off;
+    }
+    outcome(app.store.lock().await.refresh_link(&id))
+}
+
 pub async fn run_characters(State(app): State<App>, Path(id): Path<String>) -> Response {
     if let Some(off) = roster_off(&app).await {
         return off;

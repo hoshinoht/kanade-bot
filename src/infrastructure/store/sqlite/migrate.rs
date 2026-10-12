@@ -183,7 +183,7 @@ const LEDGER: &str = "CREATE TABLE IF NOT EXISTS schema_migrations (
     applied_at TEXT NOT NULL
 )";
 
-fn checksum(sql: &str) -> String {
+pub(super) fn checksum(sql: &str) -> String {
     digest(&SHA256, sql.as_bytes())
         .as_ref()
         .iter()

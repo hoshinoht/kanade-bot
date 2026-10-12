@@ -278,6 +278,7 @@ pub(super) async fn compose_with(
         events,
         marks: Default::default(),
         characters,
+        character_data: None,
     };
     Ok(Composition {
         admin: LiveAdmin {

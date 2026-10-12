@@ -4,6 +4,7 @@
 
 pub mod account;
 pub mod bosses;
+pub mod character_data;
 pub mod characters;
 pub mod config;
 mod consequence;

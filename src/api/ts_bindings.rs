@@ -12,8 +12,8 @@ use super::{
     },
     assets::Identity,
     dto::{
-        self, account, bosses, characters, config, drafts, events, fixed, history, inbox,
-        inbox_past, limits, logs, members, reminders, rescan, sign_ins, week,
+        self, account, bosses, character_data, characters, config, drafts, events, fixed, history,
+        inbox, inbox_past, limits, logs, members, reminders, rescan, sign_ins, week,
     },
     error, public,
 };
@@ -134,6 +134,13 @@ fn bindings() -> String {
         .add::<characters::CharacterClash>()
         .add::<characters::RunCharacterSlot>()
         .add::<characters::RunCharacters>()
+        .add::<character_data::CharacterLink>()
+        .add::<character_data::CharacterFacts>()
+        .add::<character_data::RefreshInfo>()
+        .add::<character_data::CharacterDataHealth>()
+        .add::<character_data::BatchHealth>()
+        .add::<character_data::LinkHealth>()
+        .add::<character_data::PostHealth>()
         .add::<fixed::FixedRunLink>()
         .add::<fixed::FixedRow>()
         .add::<admin::ValidateResult>()

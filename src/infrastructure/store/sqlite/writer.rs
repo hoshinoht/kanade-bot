@@ -38,15 +38,27 @@ impl fmt::Display for LeaseError {
 pub(super) struct Writer {
     db_path: PathBuf,
     identity: Arc<DbIdentity>,
+    profile: connect::Profile,
     slot: Mutex<Option<SqliteConnection>>,
     orphans: std::sync::Mutex<Vec<JoinHandle<()>>>,
 }
 
 impl Writer {
     pub(super) fn new(db_path: PathBuf, identity: Arc<DbIdentity>, conn: SqliteConnection) -> Self {
+        Self::with_profile(db_path, identity, conn, connect::Profile::Store)
+    }
+
+    /// A writer that reconnects with `profile`'s settings.
+    pub(super) fn with_profile(
+        db_path: PathBuf,
+        identity: Arc<DbIdentity>,
+        conn: SqliteConnection,
+        profile: connect::Profile,
+    ) -> Self {
         Self {
             db_path,
             identity,
+            profile,
             slot: Mutex::new(Some(conn)),
             orphans: std::sync::Mutex::default(),
         }
@@ -59,7 +71,9 @@ impl Writer {
         let conn = match slot.take() {
             Some(conn) => conn,
             None => {
-                let conn = connect::writer(&self.db_path)
+                let conn = self
+                    .profile
+                    .connect(&self.db_path)
                     .await
                     .map_err(LeaseError::Connect)?;
                 // The path may have been swapped while it was being opened.

@@ -5,6 +5,7 @@
 mod account;
 mod auth;
 mod avatars;
+mod character_data;
 mod characters;
 pub mod config;
 pub(crate) mod context;
@@ -57,6 +58,7 @@ pub fn routes() -> Router<Arc<Site>> {
         .merge(headers::routes())
         .merge(config::routes())
         .merge(characters::routes())
+        .merge(character_data::routes())
         .merge(events::routes())
         .route_layer(axum::middleware::from_fn(etag::revalidate))
 }

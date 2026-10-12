@@ -4,6 +4,7 @@
 //! guild.
 
 pub mod api;
+mod character_data;
 pub mod chat;
 mod chat_cards;
 mod chat_log;
@@ -286,13 +287,15 @@ async fn serve_store(
 ) -> Result<(), Error> {
     // No guild cache without the gateway: channel pickers are empty.
     let health = LiveHealth::new(store.clone());
-    let composition = api::compose(
+    let mut composition = api::compose(
         config,
         store.clone(),
         Arc::new(StaticChannels(Vec::new())),
         health,
     )
     .await?;
+    let character_data =
+        character_data::start(config, &store, &mut composition, Arc::new(auth::system_now)).await?;
     logging::discord_disabled();
     let prune =
         sessions::SessionPrune::start(composition.admin.member.clone(), sessions::PRUNE_EVERY);
@@ -308,6 +311,9 @@ async fn serve_store(
         prune.stop().await;
     }
     retention.stop().await;
+    if let Some(module) = character_data {
+        module.stop(clock.store(CLOSE_WAIT)).await;
+    }
     served
 }
 
@@ -330,8 +336,19 @@ where
     let mut composition =
         api::compose(config, store.clone(), prepared.cache.clone(), health).await?;
     let retention_clock = Arc::clone(&wiring.clock);
+    let character_data =
+        character_data::start(config, &store, &mut composition, Arc::clone(&wiring.clock)).await?;
     let mut discord =
-        discord::start(config, store.clone(), &mut composition, prepared, wiring).await?;
+        match discord::start(config, store.clone(), &mut composition, prepared, wiring).await {
+            Ok(discord) => discord,
+            Err(error) => {
+                if let Some(module) = character_data {
+                    drop(composition);
+                    module.stop(CLOSE_WAIT).await;
+                }
+                return Err(error);
+            }
+        };
     // Started only once nothing before it can fail: it holds the store.
     let retention = retention::Retention::start(store.clone(), retention_clock, retention::EVERY);
     // HTTP keeps serving until the Discord side has stopped, then drains.
@@ -352,6 +369,9 @@ where
     }
     retention.stop().await;
     discord.stop().await;
+    if let Some(module) = character_data {
+        module.stop(clock.store(CLOSE_WAIT)).await;
+    }
     discord.result().and(served)
 }
 

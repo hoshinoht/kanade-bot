@@ -529,6 +529,7 @@ impl ConfigDesk {
             notices,
             env: self.env(settings, channels),
             last_digest,
+            character_data: None,
         }
     }
 

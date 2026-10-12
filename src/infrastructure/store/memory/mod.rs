@@ -28,8 +28,11 @@ use crate::domain::scheduler::{
 use super::history::{changed_rows, touched_keys, touched_weeks};
 use super::order::sort_snapshot;
 
+pub use chardata::MemoryCharData;
+
 mod auth_audit;
 mod characters;
+mod chardata;
 mod decline_notices;
 mod journal;
 mod maintenance;

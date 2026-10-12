@@ -143,6 +143,11 @@ async fn answer(
         &saved,
     );
     fill_in_use(state, &mut view.models.groups);
+    if let Some(service) = &state.character_data {
+        view.character_data = Some(crate::api::dto::character_data::health(
+            &service.health().await,
+        ));
+    }
     Ok(Json(view).into_response())
 }
 

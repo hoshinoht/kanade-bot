@@ -206,6 +206,21 @@ pub(super) const KEYS: &[(&str, &str, Kind)] = &[
     ),
     ("settings.run_lengths", "KANADE_RUN_LENGTHS", RunLengths),
     ("modules.roster", "KANADE_MODULE_ROSTER", Flag),
+    (
+        "modules.character_data",
+        "KANADE_MODULE_CHARACTER_DATA",
+        Flag,
+    ),
+    (
+        "character_data.db_path",
+        "KANADE_CHARACTER_DATA_DB_PATH",
+        Text,
+    ),
+    (
+        "character_data.nexon_key_file",
+        "KANADE_NEXON_API_KEY_FILE",
+        Text,
+    ),
 ];
 
 pub(super) fn lookup(path: &str) -> Option<(&'static str, &'static str, Kind)> {

@@ -23,7 +23,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target \
     cargo build --locked --release \
     && install -D -m 0555 target/release/kanade /out/kanade \
-    && install -d -m 0750 /out/data
+    && install -d -m 0750 /out/data \
+    && install -d -m 0700 /out/chardata
 
 # glibc runtime (Debian 13, matching the builder) with CA roots for the
 # platform TLS verifier; no shell or package manager.
@@ -44,6 +45,9 @@ COPY boss/knowledge /app/boss/knowledge
 COPY assets/emojis /app/assets/emojis
 # Owned by the runtime user so a fresh named volume at /data inherits it.
 COPY --from=rust --chown=65532:65532 /out/data /data
+# Module character_data's file lives directly in this volume root, which the
+# store requires private (0700) and owned by the runtime user.
+COPY --from=rust --chown=65532:65532 /out/chardata /chardata
 
 ENV KANADE_WEB_DIR=/app/web \
     KANADE_BOSS_DIR=/app/boss \

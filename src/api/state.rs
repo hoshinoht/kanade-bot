@@ -985,6 +985,9 @@ pub struct ApiState {
     /// The manual character roster (`modules.roster`, read at startup);
     /// `None` answers its routes `404`.
     pub characters: Option<Arc<dyn CharacterRoster>>,
+    /// Character data (`modules.character_data`, read at startup); `None`
+    /// answers its routes `404` and leaves Config without its health block.
+    pub character_data: Option<Arc<crate::infrastructure::character_data::CharacterData>>,
 }
 
 impl std::fmt::Debug for ApiState {

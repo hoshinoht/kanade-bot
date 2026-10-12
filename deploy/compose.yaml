@@ -46,6 +46,10 @@ services:
       KANADE_OWNER_LOCK_DIR: /data/run
       # The bot's avatar/banner, refreshed after each READY (rootfs is read-only).
       KANADE_IDENTITY_DIR: /data/identity
+      # Module character_data (on only with [modules] character_data = true):
+      # its file on its own volume, and the optional Open API key file.
+      KANADE_CHARACTER_DATA_DB_PATH: /chardata/chardata.sqlite
+      KANADE_NEXON_API_KEY_FILE: ${KANADE_NEXON_API_KEY_HOST_FILE:+/run/secrets/nexon_api_key}
       # Listed by History checkpoints; only the `backup` service writes here.
       KANADE_BACKUP_DIR: /backups
       # age public keys, checked at startup (a bad file refuses it). Empty
@@ -65,6 +69,7 @@ services:
       - public_discord_client_secret
       - kanade_model_api_key
       - backup_recipients
+      - nexon_api_key
     networks:
       # Egress for Discord and the model gateway (Kanata or another
       # OpenAI-compatible server).
@@ -80,6 +85,8 @@ services:
     volumes:
       # SQLite on a named volume, not a macOS bind mount.
       - data:/data
+      # Module character_data's own file, never in the data volume or backups.
+      - chardata:/chardata
       - ../config/personas:/config/personas:ro
       # Fails the start when the file is missing instead of creating a directory.
       - type: bind
@@ -247,7 +254,16 @@ secrets:
   # works. Public keys only: the private identity never goes on this host.
   backup_recipients:
     file: ${KANADE_BACKUP_RECIPIENTS_HOST_FILE:-/dev/null}
+  # NEXON Open API key for module character_data; set the host path in
+  # deploy/.env (runbook "Character data"). Unset: /dev/null stands in, the
+  # variable above stays empty and links are refused ("no_key").
+  nexon_api_key:
+    file: ${KANADE_NEXON_API_KEY_HOST_FILE:-/dev/null}
 
 volumes:
   data:
     name: kanade_v5_data
+  # Module character_data's file (NEXON Open API data): its own volume, so
+  # the `kanade_v5_data` tarball and `kanade backup` never hold it.
+  chardata:
+    name: kanade_v5_chardata
