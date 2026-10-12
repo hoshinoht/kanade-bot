@@ -27,7 +27,7 @@
   import PresenceButton from './presence/PresenceButton.svelte';
   import PresenceNote from './presence/PresenceNote.svelte';
   import EstimatePanel from './chardata/EstimatePanel.svelte';
-  import { readinessLine, verdictChips } from './chardata/format';
+  import { levelChip, readinessLine } from './chardata/format';
   import { RunReadinessView } from './chardata/routes.svelte';
   import '@kanade/ui/styles/screens/character-data.scss';
   import { actorName } from './history/describe';
@@ -528,9 +528,10 @@
       <span class="ready__line"><span class="ready__values">{line.values}</span><span class="ready__source">{line.source}</span></span>
       <ul class="ready__bosses">
         {#each r.bosses as boss (`${boss.boss}-${boss.difficulty}`)}
+          {@const chip = levelChip(boss)}
           <li class="ready__boss">
             {#if r.bosses.length > 1}<span class="ready__boss-name">{bossLabel(boss.boss, boss.difficulty)}</span>{/if}
-            {#each verdictChips(boss, r.power?.kind ?? 'nexon_cp') as chip (chip.text)}<StatusChip tone={chip.tone}>{chip.text}</StatusChip>{/each}
+            <StatusChip tone={chip.tone}>{chip.text}</StatusChip>
           </li>
         {/each}
       </ul>
@@ -542,7 +543,7 @@
 
 {#snippet readyNote(tag: 'p' | 'li')}
   <svelte:element this={tag} class="ready__note" data-fid="party-ready-note"
-    ><span><b>Readiness</b>{wide ? ' · level and CP per character and boss, dated. It never blocks a pick or a save.' : ' · never blocks'}</span>{#if ready?.data?.nexon_data}<span
+    ><span><b>Readiness</b>{wide ? ' · level and CP per character, dated, and level per boss. It never blocks a pick or a save.' : ' · never blocks'}</span>{#if ready?.data?.nexon_data}<span
         class="chardata__attrib"
         data-fid="party-ready-attrib">{ready.data.attribution}</span
       >{/if}</svelte:element
@@ -552,10 +553,9 @@
 {#snippet readyRules()}
   <div class="runsheet__charrules ready__rules" data-fid="party-ready-rules">
     <span class="cap">How the verdict reads</span>
-    <span>Per boss of the run: level against its entry level, CP against its floor.</span>
-    <span>A boss with no floor shows CP but doesn’t judge it.</span>
+    <span>Per boss of the run: level against its entry level.</span>
+    <span>CP is shown, never judged.</span>
     <span>Fresh NEXON data first; else the roster level, marked manual.</span>
-    <a href="/config?section=cp-floors" data-fid="party-ready-floors">CP floors in Config</a>
   </div>
 {/snippet}
 
@@ -1209,7 +1209,7 @@
                 {/if}
                 {#if readyShown && !wide}
                   <li class="hint ready__hint">
-                    Per boss: level against its entry level, CP against its floor; no floor, not judged. <a href="/config?section=cp-floors">CP floors in Config</a>
+                    Per boss: level against its entry level. CP is shown, never judged.
                   </li>
                 {/if}
                 {#if charsShown && !wide}

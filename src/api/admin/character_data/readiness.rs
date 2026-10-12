@@ -1,9 +1,9 @@
 //! Run readiness (module `character_data`): `GET /api/admin/runs/{id}/readiness`
-//! judges each party slot (the slots of `GET …/characters`, inferred ones
-//! recomputed) against each boss of the run: its level against the boss
-//! knowledge `entry_level`, its power against the Config CP floor. Computed
-//! on read; nothing is stored and nothing is blocked. While the module is
-//! off the route answers the generic `404` before the session is checked.
+//! shows each party slot (the slots of `GET …/characters`, inferred ones
+//! recomputed) with its level and power, and judges its level against the
+//! boss knowledge `entry_level` of each boss of the run. Computed on read;
+//! nothing is stored and nothing is blocked. While the module is off the
+//! route answers the generic `404` before the session is checked.
 
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -29,10 +29,7 @@ use crate::{
         listeners::Site,
         state::ApiState,
     },
-    domain::{
-        chardata::{Requirement, Subject, readiness},
-        settings::CpFloors,
-    },
+    domain::chardata::{Requirement, Subject, readiness},
 };
 
 pub fn routes() -> Router<Arc<Site>> {
@@ -41,11 +38,7 @@ pub fn routes() -> Router<Arc<Site>> {
 
 /// What each boss of the run asks, in run order: tokens as the run's boss
 /// chips project them, entry levels read from the knowledge files.
-async fn requirements(
-    state: &ApiState,
-    tokens: Vec<String>,
-    floors: CpFloors,
-) -> Result<Vec<Requirement>, Refusal> {
+async fn requirements(state: &ApiState, tokens: Vec<String>) -> Result<Vec<Requirement>, Refusal> {
     let catalog = Arc::clone(&state.catalog);
     let dir = state.knowledge_dir.clone();
     tokio::task::spawn_blocking(move || {
@@ -62,7 +55,6 @@ async fn requirements(
                         .copied()
                 });
                 Requirement {
-                    cp_floor: floors.floor(&boss.key, &boss.difficulty),
                     entry_level,
                     boss: boss.key,
                     difficulty: boss.difficulty,
@@ -88,11 +80,7 @@ async fn read(
         .as_ref()
         .ok_or_else(|| Refusal::from(ApiError::NOT_FOUND))?;
     let (run, slots) = party(state, roster.as_ref(), &run_id).await?;
-    let floors = match &state.config {
-        Some(desk) => desk.settings().await.cp_floors,
-        None => CpFloors::default(),
-    };
-    let bosses = requirements(state, run.bosses.clone(), floors).await?;
+    let bosses = requirements(state, run.bosses.clone()).await?;
     let mut answers = Vec::with_capacity(slots.len());
     let mut nexon_data = false;
     for slot in &slots {

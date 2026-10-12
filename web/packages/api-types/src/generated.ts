@@ -463,11 +463,7 @@ boss: string, difficulty: Difficulty,
 /**
  * From boss knowledge; `null` when it has none.
  */
-entry_level: number | null, 
-/**
- * From Config CP floors; `null`: no floor, power not judged.
- */
-cp_floor: number | null, level: 'ok' | 'under' | 'unknown', power: 'ok' | 'under' | 'no_floor' | 'unknown', };
+entry_level: number | null, level: 'ok' | 'under' | 'unknown', };
 
 /**
  * `GET /api/admin/estimates?character_ids=|run_id=`.
@@ -1021,11 +1017,7 @@ last_digest: LastDigest | null,
  * Module `character_data`'s health (informational, never part of
  * `/healthz`); absent while the module is off.
  */
-character_data?: CharacterDataHealth, 
-/**
- * Module `character_data`'s CP floors; absent while the module is off.
- */
-cp_floors?: CpFloors, };
+character_data?: CharacterDataHealth, };
 
 export type Pings = { day_of_ping_time: string, countdown_minutes: Array<number>, };
 
@@ -1134,22 +1126,6 @@ group: string | null, };
 export type RunLengths = { default_minutes: number, overrides: Array<RunLengthOverride>, };
 
 export type RunLengthOverride = { boss: string, difficulty: Difficulty, minutes: number, };
-
-/**
- * Run readiness CP floors (`v5.character_data.cp_floors`). `PATCH
- * {"cp_floors": {"floors": …}}` replaces the whole map.
- */
-export type CpFloors = { 
-/**
- * Catalog boss key → difficulty letter → whole Combat Power; a pair
- * left out has no floor.
- */
-floors: Record<string, Partial<Record<Difficulty, number>>>, 
-/**
- * Read-only: every catalog boss and difficulty a floor may name, with
- * its boss knowledge `entry_level` (`null` where knowledge has none).
- */
-entry_levels: Record<string, Partial<Record<Difficulty, number | null>>>, };
 
 /**
  * The chat profanity guardrail. `builtin_words` is read-only: the code-owned

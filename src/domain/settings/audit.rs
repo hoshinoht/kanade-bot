@@ -64,7 +64,6 @@ fn rows(settings: &RuntimeSettings) -> BTreeMap<&'static str, String> {
         Section::Models(settings.models.clone()),
         Section::RunLengths(settings.run_lengths.clone()),
         Section::Profanity(settings.profanity.clone()),
-        Section::CpFloors(settings.cp_floors.clone()),
         Section::Schedule(settings.schedule),
         Section::Posting(settings.posting.clone()),
     ]

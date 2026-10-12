@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import type { Locator, Page } from '@playwright/test';
-import { ADMIN, choose, csrf, expect, settle, test } from './support';
+import { ADMIN, csrf, expect, settle, test } from './support';
 
 // Character data (module `character_data`; boards in docs/research/2026-10-12-chardata-mockups)
 // over the mock's invented seed: MikaBish (ch-s3) linked by today's 04:01 batch, MikaHero
@@ -295,24 +295,25 @@ test('chardata health: ok, problems, no key and refused; module off hides the se
 const slotOf = (sheet: Locator, name: string) =>
   sheet.locator('.slot').filter({ has: sheet.page().locator('.slot__name', { hasText: new RegExp(`^${name.replace(/[()]/g, '\\$&')}$`) }) });
 
-test('chardata readiness: level and CP per slot, a verdict per boss, attributed and never blocking', async ({ page }) => {
+test('chardata readiness: level and CP per slot, a level verdict per boss, attributed and never blocking', async ({ page }) => {
   const sheet = await carling(page);
   await expect(sheet.locator('.ready__note')).toContainText('It never blocks a pick or a save.');
   await expect(sheet.locator('.ready__note')).toContainText(ATTRIBUTION);
   const yuzu = slotOf(sheet, 'Yuzu').getByRole('group', { name: 'Readiness of YuzuPala' });
   await expect(yuzu).toContainText('Lv. 276 · CP 52.1M');
   await expect(yuzu).toContainText('NEXON · as of 29 Sep');
-  // One verdict row per boss of the run (HCarling + HStar).
-  await expect(yuzu.getByRole('listitem')).toHaveText([/HCarling\s*Lv ok\s*CP ok/, /HStar\s*under Lv\. \d+\s*no floor/]);
+  // One level verdict per boss of the run (HCarling + HStar); CP is shown, never judged.
+  await expect(yuzu.getByRole('listitem')).toHaveText([/^HCarling\s*Lv ok$/, /^HStar\s*under Lv\. \d+$/]);
+  await expect(sheet.locator('.ready__bosses').filter({ hasText: /floor|CP/i })).toHaveCount(0);
   const tsubame = slotOf(sheet, 'Tsubame').getByRole('group', { name: 'Readiness of TsubaKain' });
-  await expect(tsubame.getByRole('listitem').first()).toContainText('under 45.0M');
+  await expect(tsubame.getByRole('listitem')).toHaveText([/^HCarling\s*Lv ok$/, /^HStar\s*Lv ok$/]);
   const hotaru = slotOf(sheet, 'Hotaru').getByRole('group', { name: 'Readiness of Hotaru7' });
   await expect(hotaru).toContainText('Lv. 275 · CP —');
   await expect(hotaru).toContainText('manual · NEXON data expired');
-  await expect(hotaru.getByRole('listitem').first()).toContainText('CP unknown');
+  await expect(hotaru.getByRole('listitem').first()).toHaveText(/^HCarling\s*Lv ok$/);
   await expect(slotOf(sheet, 'Ren (1)').getByRole('group', { name: 'Readiness of RenShade' })).toContainText('manual · not linked');
   await expect(slotOf(sheet, 'Mika')).toContainText('Readiness shows once a character is picked.');
-  await expect(sheet.getByRole('link', { name: 'CP floors in Config' })).toHaveAttribute('href', '/config?section=cp-floors');
+  await expect(sheet.getByRole('link', { name: /floor/i })).toHaveCount(0);
   // Never blocking: a pick saves as before and the lines follow it.
   await sheet.getByRole('button', { name: /^Pick Mika's character/ }).click();
   await sheet.getByRole('dialog', { name: "Mika's character for HCarling + HStar" }).getByRole('option', { name: /MikaBish/ }).click();
@@ -334,40 +335,6 @@ test('chardata readiness: the phone list says it never blocks; module off asks n
   await expect(slotOf(sheet, 'Yuzu')).toBeVisible();
   await expect(sheet.locator('.ready, .ready__note, .ready__rules')).toHaveCount(0);
   expect(asked.length).toBeLessThanOrEqual(1);
-});
-
-test('chardata floors: edit in millions, add a catalog pair, remove, save whole; module off hides it', async ({ page }) => {
-  await page.goto(`${ADMIN}/config?section=cp-floors&sw=off`);
-  const panel = page.getByRole('tabpanel', { name: /^CP floors/ });
-  const table = panel.getByRole('table', { name: 'CP floors' });
-  await expect(table.locator('tbody tr')).toHaveCount(4);
-  await expect(page.getByRole('tab', { name: /^CP floors/ })).toContainText('4 set');
-  const limbo = panel.getByRole('textbox', { name: 'CP floor for Limbo Hard, in millions' });
-  await expect(limbo).toHaveValue('55.0');
-  await limbo.fill('60');
-  await expect(panel.getByRole('status').filter({ hasText: 'unsaved' })).toContainText('1 unsaved change · Limbo Hard 55.0M → 60.0M');
-  await panel.getByRole('button', { name: 'Save CP floors' }).click();
-  await expect(page.locator('.toast').filter({ hasText: 'CP floors saved' })).toBeVisible();
-  const saved = await (await page.request.get(`${ADMIN}/api/admin/config`)).json();
-  expect(saved.cp_floors.floors.Limbo.h).toBe(60_000_000);
-
-  await panel.getByRole('button', { name: 'Remove the Carling Hard floor' }).click();
-  await expect(table.locator('tbody tr')).toHaveCount(3);
-  await choose(panel.getByRole('combobox', { name: 'Add a floor' }), { index: 0 });
-  await expect(table.locator('tbody tr')).toHaveCount(4);
-  await expect(panel.locator('tbody input:focus')).toHaveValue('');
-  await panel.getByRole('button', { name: 'Save CP floors' }).click();
-  await expect(panel.getByRole('alert')).toContainText('a floor is millions with at most one decimal');
-  await panel.locator('tbody input:focus').fill('12.5');
-  await panel.getByRole('button', { name: 'Save CP floors' }).click();
-  await expect(page.locator('.toast').filter({ hasText: 'CP floors saved' }).last()).toBeVisible();
-  const after = await (await page.request.get(`${ADMIN}/api/admin/config`)).json();
-  expect(after.cp_floors.floors.Carling).toBeUndefined();
-  expect(JSON.stringify(after.cp_floors.floors)).toContain('12500000');
-
-  await page.request.post(`${ADMIN}/__mock/modules`, { data: { character_data: false } });
-  await page.reload();
-  await expect(page.getByRole('tab', { name: /^CP floors/ })).toHaveCount(0);
 });
 
 // For user approval (not assertions): every built board's screen at its board size.
@@ -486,12 +453,6 @@ test('chardata capture', async ({ page }) => {
     sheet = await carling(page);
     await expect(sheet.locator('.ready').first()).toBeVisible();
     await shot(`${P}CharReady`, phone ? sheet.locator('.ready__hint') : undefined);
-
-    // Config › CP floors, with one unsaved change (Limbo Hard 55.0M → 60.0M).
-    await reset();
-    await page.goto(`${ADMIN}/config?section=cp-floors&sw=off`);
-    await page.getByRole('textbox', { name: 'CP floor for Limbo Hard, in millions' }).fill('60.0');
-    await shot(`${P}CfgCpFloors`);
 
     // Config › Character data.
     for (const [value, name] of [

@@ -225,10 +225,6 @@ async fn sections_round_trip_and_keep_other_rows<S: SettingsStore>(store: S) {
     wanted.schedule.reset_time = time(3, 30);
     wanted.schedule.attendance = AttendanceMode::V5;
     wanted.posting.channel_id = Some("77".into());
-    wanted
-        .cp_floors
-        .0
-        .insert("Carling".into(), [("h".into(), 45_000_000)].into());
     for section in [
         Section::Chatbot(wanted.chatbot.clone()),
         Section::IdList(IdList::ChatCategories, wanted.chatbot.category_ids.clone()),
@@ -237,7 +233,6 @@ async fn sections_round_trip_and_keep_other_rows<S: SettingsStore>(store: S) {
         Section::Persona(wanted.persona.clone()),
         Section::Schedule(wanted.schedule),
         Section::Posting(wanted.posting.clone()),
-        Section::CpFloors(wanted.cp_floors.clone()),
     ] {
         save_section(&store, &section).await.expect("save");
     }

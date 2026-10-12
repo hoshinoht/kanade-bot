@@ -108,8 +108,8 @@ test("config: search filters the contents, keeps one tab stop and leaves the ope
   await search.fill("zzz");
   await expect(page.getByText("No settings match “zzz”.")).toBeVisible();
   await search.fill("");
-  // 15 sections, plus CP floors and Character data while module `character_data` is on (the mock's default).
-  await expect(visible).toHaveCount(17);
+  // 15 sections, plus Character data while module `character_data` is on (the mock's default).
+  await expect(visible).toHaveCount(16);
 });
 
 test("config: the access problem is a risk chip on the page line that opens Channel access", async ({

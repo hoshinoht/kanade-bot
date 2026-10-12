@@ -36,7 +36,6 @@
   import RescanPanel from '../extractions/RescanPanel.svelte';
   import type { Channel } from '@kanade/api-types';
   import CharacterDataSection from './CharacterDataSection.svelte';
-  import CpFloorsSection from './CpFloorsSection.svelte';
   import { healthNote, postIssues } from '../chardata/format';
 
   let {
@@ -74,7 +73,6 @@
     { key: 'self-service', label: 'Self-service', group: 'Members', terms: 'public portal cards links how members are answered' },
     { key: 'notifications', label: 'Notifications', group: 'Members', terms: 'quiet mode pings discord message style classic redesigned header rewrites generation time' },
     { key: 'digest', label: 'Weekly digest', group: 'Members', terms: 'post channel week' },
-    { key: 'cp-floors', label: 'CP floors', group: 'Members', terms: 'combat power floors readiness boss difficulty entry level', module: 'character_data' },
     { key: 'channels', label: 'Channels', group: 'Server', terms: 'watched channels categories chat categories ids environment seed' },
     { key: 'rescan', label: 'Re-read', group: 'Server', terms: 'channels extractor running' },
     { key: 'access', label: 'Channel access', group: 'Server', terms: 'manage messages permissions check' },
@@ -269,10 +267,6 @@
       case 'self-service': return c.self_service.public_portal ? 'open' : 'closed';
       case 'theme': return colorway.toLowerCase();
       case 'character-data': return c.character_data ? healthNote(c.character_data).text : '';
-      case 'cp-floors': {
-        const n = Object.values(c.cp_floors?.floors ?? {}).reduce((sum, byDifficulty) => sum + Object.keys(byDifficulty).length, 0);
-        return n ? `${n} set` : 'none';
-      }
       case 'env': return `${c.env.length}`;
       default: return '';
     }
@@ -300,7 +294,6 @@
       case 'self-service': return [`Portal ${hint(item)}`, c.self_service.effective_mode.replaceAll('_', ' ')];
       case 'notifications': return [`Quiet mode ${c.notifications.quiet_mode ? 'on' : 'off'}`];
       case 'digest': return ['Weekly post', 'Channel and preview'];
-      case 'cp-floors': return [hint(item), 'Judged on the run sheet, never blocking'];
       case 'channels': return [
         `${c.watching.channel_ids.length} watched channels`,
         `${c.watching.category_ids.length} watched categories`,
@@ -499,8 +492,6 @@
               {@const c = config.data}
               {#if item.key === 'character-data'}
                 {#if c.character_data}<CharacterDataSection health={c.character_data} {timeZone} />{/if}
-              {:else if item.key === 'cp-floors'}
-                {#if c.cp_floors}<CpFloorsSection cpFloors={c.cp_floors} {save} />{/if}
               {:else if item.key === 'pings'}
                 <PingsSection pings={c.pings} {save} />
               {:else if item.key === 'run-lengths'}

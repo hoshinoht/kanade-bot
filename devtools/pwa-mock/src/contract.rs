@@ -1077,7 +1077,7 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     )
     .await;
 
-    // Run readiness and CP floors (module character_data).
+    // Run readiness (module character_data).
     let ready = h
         .ok(
             "GET",
@@ -1087,26 +1087,6 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         )
         .await;
     assert_eq!(ready["nexon_data"], true);
-    let floors = h
-        .ok(
-            "PATCH",
-            "/api/admin/config",
-            Some(json!({ "cp_floors": { "floors": { "Limbo": { "h": 60_000_000 } } } })),
-            "config.json#/$defs/ConfigView",
-        )
-        .await;
-    assert_eq!(
-        floors["cp_floors"]["floors"],
-        json!({ "Limbo": { "h": 60_000_000 } })
-    );
-    h.refused(
-        "PATCH",
-        "/api/admin/config",
-        json!({ "cp_floors": { "floors": { "Limbo": { "x": 1 } } } }),
-        &marks,
-        (StatusCode::UNPROCESSABLE_ENTITY, "invalid"),
-    )
-    .await;
 
     // Weekly timings.
     let row = &fixed[0];

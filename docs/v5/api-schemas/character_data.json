@@ -63,7 +63,7 @@
       }
     },
     "RunReadiness": {
-      "description": "GET /api/admin/runs/{id}/readiness: each party slot (as GET .../characters reads them, inferred recomputed) against each boss of the run. Computed on read, never stored, never blocking. NEXON values only from an active link's unexpired data.",
+      "description": "GET /api/admin/runs/{id}/readiness: each party slot (as GET .../characters reads them, inferred recomputed) with its level and power, and its level against each boss of the run. Computed on read, never stored, never blocking. NEXON values only from an active link's unexpired data.",
       "type": "object",
       "additionalProperties": false,
       "required": ["run_id", "slots", "nexon_data", "attribution"],
@@ -91,7 +91,7 @@
           "oneOf": [{ "$ref": "#/$defs/ReadinessLevel" }, { "type": "null" }]
         },
         "power": {
-          "description": "Null without usable data.",
+          "description": "Shown, never judged. Null without usable data.",
           "oneOf": [{ "$ref": "#/$defs/ReadinessPower" }, { "type": "null" }]
         },
         "bosses": { "type": "array", "items": { "$ref": "#/$defs/BossReadiness" }, "description": "One per boss of the run, in run order." }
@@ -120,14 +120,12 @@
     "BossReadiness": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["boss", "difficulty", "entry_level", "cp_floor", "level", "power"],
+      "required": ["boss", "difficulty", "entry_level", "level"],
       "properties": {
         "boss": { "type": "string", "description": "Catalog boss key." },
         "difficulty": { "enum": ["e", "n", "h", "c", "x"] },
         "entry_level": { "type": ["integer", "null"], "minimum": 1, "description": "From boss knowledge; null when it has none." },
-        "cp_floor": { "type": ["integer", "null"], "minimum": 1, "description": "From Config CP floors; null: no floor." },
-        "level": { "enum": ["ok", "under", "unknown"], "description": "ok at or above entry_level; unknown without a level or an entry_level." },
-        "power": { "enum": ["ok", "under", "no_floor", "unknown"], "description": "ok at or above cp_floor; no_floor (not judged) without one; unknown with a floor but no power." }
+        "level": { "enum": ["ok", "under", "unknown"], "description": "ok at or above entry_level; unknown without a level or an entry_level." }
       }
     },
     "CharacterDataHealth": {

@@ -50,9 +50,9 @@ export function combatPower(value: number): string {
 }
 
 /**
- * How each power signal reads (B_CharReady). The run sheet renders `power`
- * by its kind only: MapleScouter's boss values (`scouter`) replace NEXON's
- * combat power with no other change, compared against the same floors.
+ * How each power value reads (B_CharReady). The run sheet renders `power`
+ * by its kind only: MapleScouter values (`scouter`) replace NEXON's combat
+ * power with no other change. Power is shown, never judged.
  */
 export const POWER_KINDS: Record<ReadinessPower['kind'], { short: string; label: string; source: string }> = {
   nexon_cp: { short: 'CP', label: 'Combat Power', source: 'NEXON' },
@@ -76,36 +76,14 @@ export function readinessLine(slot: ReadinessSlot): { values: string; source: st
   return { values, source: reason ? `manual · ${reason}` : 'manual' };
 }
 
-/** One boss's two verdicts as chips; never blocking, so nothing is red. */
-export function verdictChips(boss: BossReadiness, kind: ReadinessPower['kind']): { text: string; tone: Tone }[] {
-  const short = POWER_KINDS[kind].short;
-  const level =
-    boss.level === 'ok'
-      ? { text: 'Lv ok', tone: 'ok' as const }
-      : boss.level === 'under'
-        ? { text: `under Lv. ${boss.entry_level}`, tone: 'warn' as const }
-        : { text: 'Lv unknown', tone: 'neutral' as const };
-  const power =
-    boss.power === 'ok'
-      ? { text: `${short} ok`, tone: 'ok' as const }
-      : boss.power === 'under'
-        ? { text: `under ${combatPower(boss.cp_floor ?? 0)}`, tone: 'warn' as const }
-        : boss.power === 'no_floor'
-          ? { text: 'no floor', tone: 'neutral' as const }
-          : { text: `${short} unknown`, tone: 'neutral' as const };
-  return [level, power];
+/** One boss's level verdict as a chip; never blocking, so nothing is red. */
+export function levelChip(boss: BossReadiness): { text: string; tone: Tone } {
+  return boss.level === 'ok'
+    ? { text: 'Lv ok', tone: 'ok' }
+    : boss.level === 'under'
+      ? { text: `under Lv. ${boss.entry_level}`, tone: 'warn' }
+      : { text: 'Lv unknown', tone: 'neutral' };
 }
-
-/** A floor typed in millions ("45", "45.0", "1,234.5") as whole CP; null when it isn't one. */
-export function parseFloor(text: string): number | null {
-  const t = text.trim().replace(/,/g, '');
-  if (!/^\d{1,5}(\.\d)?$/.test(t)) return null;
-  const cp = Math.round(Number(t) * 1_000_000);
-  return cp >= 1 && cp <= 10_000_000_000 ? cp : null;
-}
-
-/** Whole CP as the floor field shows it: millions, one decimal, no unit. */
-export const floorText = (cp: number) => (cp / 1_000_000).toFixed(1);
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 

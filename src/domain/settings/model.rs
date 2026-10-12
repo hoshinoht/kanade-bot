@@ -21,7 +21,6 @@ pub struct RuntimeSettings {
     pub models: Models,
     pub run_lengths: RunLengths,
     pub profanity: Profanity,
-    pub cp_floors: CpFloors,
     pub schedule: Schedule,
     pub posting: Posting,
 }
@@ -164,41 +163,6 @@ impl RunLengths {
                     .unwrap_or(self.default_minutes)
             })
             .sum()
-    }
-}
-
-/// Combat Power floors for run readiness (`v5.character_data.cp_floors`,
-/// module `character_data`): catalog boss key → lowercase difficulty letter
-/// → whole CP. A missing pair has no floor and is not judged. Whether a
-/// pair is in the catalog is checked at the API.
-#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-#[serde(transparent)]
-pub struct CpFloors(pub BTreeMap<String, BTreeMap<String, u64>>);
-
-/// A floor is 1 to 10 billion CP (well past any character today, and
-/// exact as a JSON number in the web apps).
-pub const CP_FLOOR: std::ops::RangeInclusive<u64> = 1..=10_000_000_000;
-
-impl CpFloors {
-    pub fn floor(&self, boss: &str, difficulty: &str) -> Option<u64> {
-        self.0.get(boss)?.get(difficulty).copied()
-    }
-
-    /// Why the stored form is refused: an empty key or boss, or a floor
-    /// outside [`CP_FLOOR`].
-    pub fn check(&self) -> Result<(), &'static str> {
-        for (boss, floors) in &self.0 {
-            if boss.is_empty() || floors.is_empty() {
-                return Err("every boss needs a key and at least one floor");
-            }
-            if floors
-                .iter()
-                .any(|(difficulty, cp)| difficulty.is_empty() || !CP_FLOOR.contains(cp))
-            {
-                return Err("floors need a difficulty and 1 to 10000000000 CP");
-            }
-        }
-        Ok(())
     }
 }
 

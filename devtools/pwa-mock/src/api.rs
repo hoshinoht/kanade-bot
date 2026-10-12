@@ -863,12 +863,6 @@ pub async fn patch_config(
     State(app): State<App>,
     Json(patch): Json<serde_json::Value>,
 ) -> Response {
-    // Module `character_data` off: its section answers as its routes do.
-    if patch.get("cp_floors").is_some()
-        && let Some(off) = chardata_off(&app).await
-    {
-        return off;
-    }
     outcome(app.store.lock().await.patch_config(&patch))
 }
 

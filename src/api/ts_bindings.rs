@@ -233,7 +233,6 @@ fn bindings() -> String {
         .add::<config::CapacityCheck>()
         .add::<config::RunLengths>()
         .add::<config::RunLengthOverride>()
-        .add::<config::CpFloors>()
         .add::<config::Profanity>()
         .add::<config::ManageMessages>()
         .add::<config::EnvRow>()

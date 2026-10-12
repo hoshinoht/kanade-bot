@@ -1,6 +1,7 @@
 //! `character_data.json` run readiness (module `character_data`): each party
-//! slot's level and power against each boss of the run. NEXON values appear
-//! only from an active link's unexpired data, with the attribution.
+//! slot's level and power, and its level against each boss of the run.
+//! NEXON values appear only from an active link's unexpired data, with the
+//! attribution.
 
 use serde::Serialize;
 
@@ -8,8 +9,7 @@ use super::characters::{CharacterChoice, choice};
 use crate::domain::{
     characters::Character,
     chardata::{
-        ATTRIBUTION, LevelSource, LevelVerdict, PowerKind, PowerVerdict, Readiness, Requirement,
-        date_text,
+        ATTRIBUTION, LevelSource, LevelVerdict, PowerKind, Readiness, Requirement, date_text,
     },
 };
 
@@ -82,13 +82,8 @@ pub struct BossReadiness {
     pub difficulty: String,
     /// From boss knowledge; `null` when it has none.
     pub entry_level: Option<u16>,
-    /// From Config CP floors; `null`: no floor, power not judged.
-    #[cfg_attr(test, ts(type = "number | null"))]
-    pub cp_floor: Option<u64>,
     #[cfg_attr(test, ts(type = "'ok' | 'under' | 'unknown'"))]
     pub level: &'static str,
-    #[cfg_attr(test, ts(type = "'ok' | 'under' | 'no_floor' | 'unknown'"))]
-    pub power: &'static str,
 }
 
 /// One slot: `brings` is the character and whether it is inferred.
@@ -126,17 +121,10 @@ pub fn slot(
                 boss: boss.boss.clone(),
                 difficulty: boss.difficulty.clone(),
                 entry_level: boss.entry_level,
-                cp_floor: boss.cp_floor,
-                level: match verdict.level {
+                level: match verdict {
                     LevelVerdict::Ok => "ok",
                     LevelVerdict::Under => "under",
                     LevelVerdict::Unknown => "unknown",
-                },
-                power: match verdict.power {
-                    PowerVerdict::Ok => "ok",
-                    PowerVerdict::Under => "under",
-                    PowerVerdict::NoFloor => "no_floor",
-                    PowerVerdict::Unknown => "unknown",
                 },
             })
             .collect(),

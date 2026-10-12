@@ -911,7 +911,6 @@ const READY_SCOPE = [
   'party-ready-note',
   'party-ready-attrib',
   'party-ready-rules',
-  'party-ready-floors',
 ];
 const readyBoard = async (page: Page) => {
   await scouterOff(page);
@@ -924,10 +923,6 @@ const readyShownOn = async (page: Page) => {
   await expect(sheet.locator('[data-fid="party-ready"]').first()).toBeVisible();
   // The phone board shows the Party list scrolled to its end (the rules line).
   if (page.viewportSize()!.width < 600) await sheet.locator('.ready__hint').evaluate((el) => el.scrollIntoView({ block: 'end' }));
-};
-const floorEdited = async (page: Page) => {
-  await page.getByRole('textbox', { name: 'CP floor for Limbo Hard, in millions' }).fill('60.0');
-  await expect(page.getByText('1 unsaved change')).toBeVisible();
 };
 
 const PAIRS: Pair[] = [
@@ -1230,18 +1225,9 @@ const PAIRS: Pair[] = [
     prepare: runPickBoard,
     ready: readyShownOn,
   },
-  // Config › CP floors with one unsaved change (Limbo Hard 55.0M → 60.0M). The phone boards
-  // draw their own Config frame (no phone Config board was approved before them): those pairs
-  // compare the section's contents (PHONE_CFG_SCOPE), not the shared frame.
-  { name: 'cfg-cp-floors', board: 'B_CfgCpFloors', path: '/config?section=cp-floors', ready: floorEdited },
-  {
-    name: 'phone-cfg-cp-floors',
-    board: 'B_PhoneCfgCpFloors',
-    path: '/config?section=cp-floors',
-    scope: [...PHONE_CFG_SCOPE, 'cpfloor-table', 'cpfloor-row', 'cpfloor-add'],
-    ready: floorEdited,
-  },
-  // Config › Character data: all ok, problems, no key, key refused.
+  // Config › Character data: all ok, problems, no key, key refused. The phone boards draw their
+  // own Config frame (no phone Config board was approved before them): those pairs compare the
+  // section's contents (PHONE_CFG_SCOPE), not the shared frame.
   ...CHARDATA_HEALTH.flatMap(([variant, health]) => [
     { name: `cfg-chardata${variant ? `-${variant.toLowerCase()}` : ''}`, board: `B_CfgCharHealth${variant}`, path: '/config?section=character-data', setup: chardataHealth(health), ready: healthShown },
     {

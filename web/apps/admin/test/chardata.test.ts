@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { CharacterDataHealth, CharacterLink, CharacterRow, EstimateError } from '@kanade/api-types';
-import { asOfDate, catalogBoss, clock, combatPower, dayTime, estimateErrorText, healthNote, joinNames, minutes, percent, stripState } from '../src/chardata/format';
+import type { BossReadiness, CharacterDataHealth, CharacterLink, CharacterRow, EstimateError, ReadinessSlot } from '@kanade/api-types';
+import { asOfDate, catalogBoss, clock, combatPower, dayTime, estimateErrorText, healthNote, joinNames, levelChip, minutes, percent, readinessLine, stripState } from '../src/chardata/format';
 
 // Wholly invented data, as the mock seeds it.
 const row = (retired: boolean): CharacterRow => ({
@@ -60,6 +60,34 @@ describe('the character data strip', () => {
     expect(combatPower(1_234_560_000)).toBe('1,234.6M');
     expect(asOfDate('2026-09-29')).toBe('29 Sep 2026');
     expect(dayTime('2026-09-28T20:01:00Z', 'Asia/Singapore')).toBe('29 Sep 04:01');
+  });
+});
+
+describe('run readiness', () => {
+  const boss = (level: BossReadiness['level']): BossReadiness => ({ boss: 'Carling', difficulty: 'h', entry_level: 275, level });
+  const slot = (over: Partial<ReadinessSlot>): ReadinessSlot => ({
+    member_id: '1004',
+    character: null,
+    inferred: false,
+    link: 'linked',
+    level: { value: 276, source: 'nexon', as_of: '2026-09-29' },
+    power: { kind: 'nexon_cp', value: 52_104_000, as_of: '2026-09-29' },
+    bosses: [boss('ok')],
+    ...over,
+  });
+
+  it('shows level and CP with their source; CP is never judged', () => {
+    expect(readinessLine(slot({}))).toEqual({ values: 'Lv. 276 · CP 52.1M', source: 'NEXON · as of 29 Sep' });
+    expect(readinessLine(slot({ link: 'expired', level: { value: 275, source: 'manual', as_of: null }, power: null }))).toEqual({
+      values: 'Lv. 275 · CP —',
+      source: 'manual · NEXON data expired',
+    });
+  });
+
+  it('judges each boss by level only', () => {
+    expect(levelChip(boss('ok'))).toEqual({ text: 'Lv ok', tone: 'ok' });
+    expect(levelChip(boss('under'))).toEqual({ text: 'under Lv. 275', tone: 'warn' });
+    expect(levelChip(boss('unknown'))).toEqual({ text: 'Lv unknown', tone: 'neutral' });
   });
 });
 

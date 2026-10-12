@@ -200,15 +200,12 @@ is on; `POST /__mock/character-data {health}` picks `ok` (default), `alert`
 `setup` (no key: links read `not_connected`; no scouter URL: estimates off) or
 `refused` (key refused, scouter unreachable).
 
-Run readiness and CP floors (`src/mock/readiness.rs`; on with the module):
-`GET /api/admin/runs/{id}/readiness` judges each party slot per boss of the
-run as the server does (fresh NEXON level else the manual one; NEXON combat
-power from fresh data only; entry levels from boss knowledge; `no_floor`
-without a floor). Config's `cp_floors` (`{floors, entry_levels}`) saves
-through `PATCH /api/admin/config {"cp_floors": {"floors": …}}` (the whole
-map; the server's 422 refusals; 404 while the module is off). Seeded floors:
-Kalos Extreme 70.0M, Carling Hard 45.0M, Black Mage Extreme 80.0M, Limbo
-Hard 55.0M; `r-carling`'s party covers every level and power verdict.
+Run readiness (`src/mock/readiness.rs`; on with the module):
+`GET /api/admin/runs/{id}/readiness` answers each party slot as the server
+does: its level (fresh NEXON level else the manual one) and power (NEXON
+combat power from fresh data only; shown, never judged), and its level
+against each boss's entry level from boss knowledge. `r-carling`'s party
+covers every level verdict.
 
 MapleScouter estimates (`src/mock/estimates.rs`; on with the module):
 `POST /api/admin/estimates {character_ids | run_id, refresh?}` (`202

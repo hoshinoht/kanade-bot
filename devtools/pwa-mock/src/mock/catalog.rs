@@ -157,27 +157,6 @@ pub fn entry_level(key: &str, difficulty: &str) -> Option<u16> {
         .map(|(_, level)| *level)
 }
 
-/// `{boss key: {difficulty letter: entry level}}` for every catalog pair,
-/// as Config's `cp_floors.entry_levels`.
-pub fn entry_levels() -> serde_json::Value {
-    BOSSES
-        .iter()
-        .map(|boss| {
-            let levels: serde_json::Map<String, serde_json::Value> = boss
-                .difficulties
-                .chars()
-                .map(|letter| {
-                    let letter = letter.to_string();
-                    let level = entry_level(boss.key, &letter);
-                    (letter, serde_json::json!(level))
-                })
-                .collect();
-            (boss.key.to_owned(), serde_json::Value::Object(levels))
-        })
-        .collect::<serde_json::Map<_, _>>()
-        .into()
-}
-
 /// A boss on a run or timing: token, catalog key, difficulty letter.
 #[derive(Clone, PartialEq, Debug)]
 pub struct BossRef {

@@ -17,11 +17,10 @@ use crate::{
         persona::ProfileId,
     },
     domain::settings::{
-        CP_FLOOR, Chatbot, ContextSettings, CpFloors, IdList, MAX_DEFLECTION_CHARS,
-        MAX_PROFANITY_WORDS, MAX_ROLE_PROFILE_ASSIGNMENTS, MessageStyle, Notifications,
-        OVERRIDE_RUN_MINUTES, PROFANITY_WORD_CHARS, Persona, Pings, Profanity, RUN_MINUTES, Rate,
-        RoleProfileAssignment, RunLengthOverride, RunLengths, SelfService, SelfServiceMode,
-        Watching, is_profanity_word,
+        Chatbot, ContextSettings, IdList, MAX_DEFLECTION_CHARS, MAX_PROFANITY_WORDS,
+        MAX_ROLE_PROFILE_ASSIGNMENTS, MessageStyle, Notifications, OVERRIDE_RUN_MINUTES,
+        PROFANITY_WORD_CHARS, Persona, Pings, Profanity, RUN_MINUTES, Rate, RoleProfileAssignment,
+        RunLengthOverride, RunLengths, SelfService, SelfServiceMode, Watching, is_profanity_word,
     },
 };
 
@@ -88,8 +87,7 @@ fn read_only(section: &str, key: &str) -> Option<&'static str> {
             "reachable" | "catalog" | "groups_source" | "alias_limits" | "capacity_check",
         )
         | ("persona", "personas" | "profiles" | "role_profiles_digest")
-        | ("profanity", "builtin_words")
-        | ("cp_floors", "entry_levels") => Some(DERIVED),
+        | ("profanity", "builtin_words") => Some(DERIVED),
         ("models", "key_limits" | "pii_pseudonymise") => Some(DEPLOYMENT),
         ("models", "groups") => Some(GROUPS),
         _ => None,
@@ -111,7 +109,7 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
     };
     match name.as_str() {
         "pings" | "watching" | "chatbot" | "notifications" | "self_service" | "persona"
-        | "models" | "run_lengths" | "profanity" | "cp_floors" => {}
+        | "models" | "run_lengths" | "profanity" => {}
         "manage_messages" | "env" | "notices" => {
             return Err(PatchError::read_only(name, DEPLOYMENT));
         }
@@ -143,7 +141,6 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
                 | ("persona", "active" | "visibility" | "role_profiles")
                 | ("models", "roles" | "context")
                 | ("run_lengths", "default_minutes" | "overrides")
-                | ("cp_floors", "floors")
                 | (
                     "profanity",
                     "extra_words"
@@ -281,46 +278,6 @@ pub fn run_lengths(
         next.overrides = overrides;
     }
     Ok(next)
-}
-
-/// The whole floors map, replacing the saved one: catalog boss keys, their
-/// own difficulty letters, whole CP in [`CP_FLOOR`]. A boss with no floor
-/// is left out rather than sent empty.
-pub fn cp_floors(
-    body: &Map<String, Value>,
-    catalog: &crate::domain::catalog::BossTable,
-) -> Result<CpFloors, PatchError> {
-    let value = body
-        .get("floors")
-        .ok_or_else(|| field_error("cp_floors.floors", "an object of floors"))?;
-    let mut floors = CpFloors::default();
-    for (key, value) in object(value, "cp_floors.floors")? {
-        let boss = catalog
-            .boss(key)
-            .ok_or_else(|| PatchError::invalid("Pick a catalog boss key."))?;
-        let path = format!("cp_floors.floors.{key}");
-        let difficulties = object(value, &path)?;
-        if difficulties.is_empty() {
-            return Err(PatchError::invalid(
-                "Leave out a boss with no floor rather than sending it empty.",
-            ));
-        }
-        let mut saved = std::collections::BTreeMap::new();
-        for (difficulty, cp) in difficulties {
-            if !boss.difficulties().iter().any(|own| own == difficulty) {
-                return Err(PatchError::invalid("Pick a difficulty that boss has."));
-            }
-            let cp = cp
-                .as_u64()
-                .filter(|cp| CP_FLOOR.contains(cp))
-                .ok_or_else(|| {
-                    PatchError::invalid("A CP floor is a whole number from 1 to 10,000,000,000.")
-                })?;
-            saved.insert(difficulty.clone(), cp);
-        }
-        floors.0.insert(key.clone(), saved);
-    }
-    Ok(floors)
 }
 
 /// A word list as stored: trimmed, lowercased, letters only, bounded, no

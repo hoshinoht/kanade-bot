@@ -1,9 +1,8 @@
-//! Run readiness (design §9): for one party character and each boss of the
-//! run, its level against the boss's entry level and its power against the
-//! guild's CP floor. Computed on read, never stored, never blocking a pick
-//! or a save. NEXON values count only from an active link's unexpired
-//! snapshot; otherwise the level is the manual roster level and there is no
-//! power.
+//! Run readiness (design §9): for one party character, its level and power,
+//! and its level against the entry level of each boss of the run. Computed
+//! on read, never stored, never blocking a pick or a save. NEXON values
+//! count only from an active link's unexpired snapshot; otherwise the level
+//! is the manual roster level and there is no power.
 
 use chrono::{DateTime, NaiveDate, Utc};
 
@@ -24,51 +23,19 @@ pub struct Level {
     pub as_of: Option<NaiveDate>,
 }
 
-/// Where a power value comes from. MapleScouter's boss-specific values join
-/// as a second kind with scouter integration.
+/// Where a power value comes from. MapleScouter values join as a second
+/// kind with scouter integration.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PowerKind {
     NexonCp,
 }
 
+/// A shown power value; nothing is judged against it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Power {
     pub kind: PowerKind,
     pub value: u64,
     pub as_of: Option<NaiveDate>,
-}
-
-/// The power each boss is judged with. Today every boss gets the NEXON
-/// combat power; this is the seam where scouter integration supplies a
-/// boss's own value first, with the NEXON combat power as the fallback.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct PowerSignal {
-    nexon_cp: Option<Power>,
-}
-
-impl PowerSignal {
-    /// The NEXON combat power of usable data (see [`usable_nexon`]).
-    pub fn nexon(snapshot: Option<&Snapshot>) -> Self {
-        Self {
-            nexon_cp: snapshot.and_then(|snapshot| {
-                snapshot.combat_power.map(|value| Power {
-                    kind: PowerKind::NexonCp,
-                    value,
-                    as_of: Some(snapshot.as_of()),
-                })
-            }),
-        }
-    }
-
-    /// The character's power regardless of boss.
-    pub fn general(&self) -> Option<Power> {
-        self.nexon_cp
-    }
-
-    /// The power `boss` at `difficulty` is judged with.
-    pub fn for_boss(&self, _boss: &str, _difficulty: &str) -> Option<Power> {
-        self.nexon_cp
-    }
 }
 
 /// One party character as readiness sees it.
@@ -81,8 +48,8 @@ pub struct Subject<'a> {
     pub snapshot: Option<&'a Snapshot>,
 }
 
-/// What one boss of the run asks: the knowledge entry level and the
-/// guild's CP floor, each `None` when there is none.
+/// What one boss of the run asks: the knowledge entry level, `None` when
+/// there is none.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Requirement {
     /// Catalog boss key.
@@ -90,7 +57,6 @@ pub struct Requirement {
     /// Lowercase difficulty letter.
     pub difficulty: String,
     pub entry_level: Option<u16>,
-    pub cp_floor: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,30 +67,14 @@ pub enum LevelVerdict {
     Unknown,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PowerVerdict {
-    Ok,
-    Under,
-    /// The boss has no floor: power is not judged.
-    NoFloor,
-    /// A floor, but no power to compare.
-    Unknown,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct BossVerdict {
-    pub level: LevelVerdict,
-    pub power: PowerVerdict,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Readiness {
     pub level: Option<Level>,
     pub power: Option<Power>,
     /// A NEXON value is shown (the attribution must be too).
     pub nexon: bool,
-    /// One per requirement, in the same order.
-    pub bosses: Vec<BossVerdict>,
+    /// One level verdict per requirement, in the same order.
+    pub bosses: Vec<LevelVerdict>,
 }
 
 /// The snapshot whose values may count at `now`: an active link's, not
@@ -135,24 +85,17 @@ pub fn usable_nexon<'a>(subject: &Subject<'a>, now: DateTime<Utc>) -> Option<&'a
         .filter(|snapshot| subject.link == Some(LinkStatus::Active) && snapshot.is_fresh(now))
 }
 
-/// Equal to the entry level or the floor is ready.
-pub fn judge(level: Option<Level>, power: Option<Power>, boss: &Requirement) -> BossVerdict {
-    let level = match (level, boss.entry_level) {
+/// Equal to the entry level is ready.
+pub fn judge(level: Option<Level>, boss: &Requirement) -> LevelVerdict {
+    match (level, boss.entry_level) {
         (Some(level), Some(entry)) if level.value >= entry => LevelVerdict::Ok,
         (Some(_), Some(_)) => LevelVerdict::Under,
         _ => LevelVerdict::Unknown,
-    };
-    let power = match (boss.cp_floor, power) {
-        (None, _) => PowerVerdict::NoFloor,
-        (Some(_), None) => PowerVerdict::Unknown,
-        (Some(floor), Some(power)) if power.value >= floor => PowerVerdict::Ok,
-        (Some(_), Some(_)) => PowerVerdict::Under,
-    };
-    BossVerdict { level, power }
+    }
 }
 
 /// `subject` against each of `bosses`: the NEXON level when usable, else
-/// the manual one; the power from [`PowerSignal`].
+/// the manual one; the power is the usable data's NEXON combat power.
 pub fn readiness(subject: &Subject<'_>, bosses: &[Requirement], now: DateTime<Utc>) -> Readiness {
     let nexon = usable_nexon(subject, now);
     let level = nexon
@@ -170,17 +113,19 @@ pub fn readiness(subject: &Subject<'_>, bosses: &[Requirement], now: DateTime<Ut
                 as_of: None,
             })
         });
-    let signal = PowerSignal::nexon(nexon);
-    let power = signal.general();
+    let power = nexon.and_then(|snapshot| {
+        snapshot.combat_power.map(|value| Power {
+            kind: PowerKind::NexonCp,
+            value,
+            as_of: Some(snapshot.as_of()),
+        })
+    });
     Readiness {
         level,
         power,
         nexon: level.is_some_and(|level| level.source == LevelSource::Nexon)
             || power.is_some_and(|power| power.kind == PowerKind::NexonCp),
-        bosses: bosses
-            .iter()
-            .map(|boss| judge(level, signal.for_boss(&boss.boss, &boss.difficulty), boss))
-            .collect(),
+        bosses: bosses.iter().map(|boss| judge(level, boss)).collect(),
     }
 }
 
@@ -214,12 +159,11 @@ mod tests {
         }
     }
 
-    fn boss(key: &str, entry_level: Option<u16>, cp_floor: Option<u64>) -> Requirement {
+    fn boss(key: &str, entry_level: Option<u16>) -> Requirement {
         Requirement {
             boss: key.into(),
             difficulty: "h".into(),
             entry_level,
-            cp_floor,
         }
     }
 
@@ -231,28 +175,13 @@ mod tests {
         }
     }
 
-    fn verdict(level: LevelVerdict, power: PowerVerdict) -> BossVerdict {
-        BossVerdict { level, power }
-    }
-
     #[test]
-    fn equal_to_the_entry_level_and_the_floor_is_ok() {
+    fn equal_to_the_entry_level_is_ok() {
         let data = snapshot(Some(280), Some(45_000_000), TimeDelta::hours(3));
-        let ready = readiness(
-            &linked(&data),
-            &[boss("Star", Some(280), Some(45_000_000))],
-            now(),
-        );
-        assert_eq!(ready.bosses, [verdict(LevelVerdict::Ok, PowerVerdict::Ok)]);
-        let under = readiness(
-            &linked(&data),
-            &[boss("Star", Some(281), Some(45_000_001))],
-            now(),
-        );
-        assert_eq!(
-            under.bosses,
-            [verdict(LevelVerdict::Under, PowerVerdict::Under)]
-        );
+        let ready = readiness(&linked(&data), &[boss("Star", Some(280))], now());
+        assert_eq!(ready.bosses, [LevelVerdict::Ok]);
+        let under = readiness(&linked(&data), &[boss("Star", Some(281))], now());
+        assert_eq!(under.bosses, [LevelVerdict::Under]);
     }
 
     #[test]
@@ -280,7 +209,7 @@ mod tests {
         let expired = snapshot(Some(285), Some(50_000_000), SNAPSHOT_TTL);
         let future = snapshot(Some(285), Some(50_000_000), -TimeDelta::hours(1));
         let fresh = snapshot(Some(285), Some(50_000_000), TimeDelta::hours(3));
-        let floored = [boss("Carling", Some(275), Some(45_000_000))];
+        let carling = [boss("Carling", Some(275))];
         for subject in [
             linked(&expired),
             linked(&future),
@@ -297,7 +226,7 @@ mod tests {
                 ..linked(&fresh)
             },
         ] {
-            let ready = readiness(&subject, &floored, now());
+            let ready = readiness(&subject, &carling, now());
             assert_eq!(
                 ready.level,
                 Some(Level {
@@ -311,10 +240,7 @@ mod tests {
             assert_eq!(ready.power, None);
             assert!(!ready.nexon);
             // NEXON's 285 would pass; the manual 270 does not.
-            assert_eq!(
-                ready.bosses,
-                [verdict(LevelVerdict::Under, PowerVerdict::Unknown)]
-            );
+            assert_eq!(ready.bosses, [LevelVerdict::Under]);
         }
     }
 
@@ -328,29 +254,20 @@ mod tests {
     }
 
     #[test]
-    fn missing_knowledge_floors_or_values_are_not_judged() {
+    fn missing_knowledge_or_levels_are_not_judged() {
         let nothing = Subject::default();
         let ready = readiness(
             &nothing,
-            &[
-                boss("Lucid", None, None),
-                boss("Carling", Some(275), Some(45_000_000)),
-            ],
+            &[boss("Lucid", None), boss("Carling", Some(275))],
             now(),
         );
         assert_eq!((ready.level, ready.power, ready.nexon), (None, None, false));
-        assert_eq!(
-            ready.bosses,
-            [
-                verdict(LevelVerdict::Unknown, PowerVerdict::NoFloor),
-                verdict(LevelVerdict::Unknown, PowerVerdict::Unknown),
-            ]
-        );
-        // A known level against a boss without knowledge or a floor.
+        assert_eq!(ready.bosses, [LevelVerdict::Unknown, LevelVerdict::Unknown]);
+        // A known level against a boss without knowledge.
         let data = snapshot(Some(290), Some(90_000_000), TimeDelta::hours(3));
         assert_eq!(
-            readiness(&linked(&data), &[boss("Lucid", None, None)], now()).bosses,
-            [verdict(LevelVerdict::Unknown, PowerVerdict::NoFloor)]
+            readiness(&linked(&data), &[boss("Lucid", None)], now()).bosses,
+            [LevelVerdict::Unknown]
         );
     }
 
@@ -360,19 +277,15 @@ mod tests {
         let ready = readiness(
             &linked(&data),
             &[
-                boss("Carling", Some(275), Some(45_000_000)),
-                boss("Star", Some(280), None),
-                boss("Limbo", Some(285), Some(55_000_000)),
+                boss("Carling", Some(275)),
+                boss("Star", Some(280)),
+                boss("Limbo", Some(285)),
             ],
             now(),
         );
         assert_eq!(
             ready.bosses,
-            [
-                verdict(LevelVerdict::Ok, PowerVerdict::Ok),
-                verdict(LevelVerdict::Under, PowerVerdict::NoFloor),
-                verdict(LevelVerdict::Under, PowerVerdict::Under),
-            ]
+            [LevelVerdict::Ok, LevelVerdict::Under, LevelVerdict::Under]
         );
     }
 }

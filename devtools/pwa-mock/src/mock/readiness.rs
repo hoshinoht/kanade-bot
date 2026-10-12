@@ -1,80 +1,19 @@
-//! Run readiness and CP floors (module `character_data`), as the server
-//! answers them (`src/api/admin/character_data/readiness.rs`,
-//! `src/domain/chardata/readiness.rs`): Config `cp_floors` (`{boss:
-//! {difficulty: CP}}`, replaced whole by PATCH) and `GET
-//! /api/admin/runs/{id}/readiness`, each party slot's level (fresh NEXON,
-//! else manual) and power (NEXON combat power from fresh data only) judged
-//! per boss of the run. Seeded floors: Kalos Extreme, Carling Hard, Black
-//! Mage Extreme and Limbo Hard; `r-carling`'s party covers every verdict.
-
-use std::collections::BTreeMap;
+//! Run readiness (module `character_data`), as the server answers it
+//! (`src/api/admin/character_data/readiness.rs`,
+//! `src/domain/chardata/readiness.rs`): `GET /api/admin/runs/{id}/readiness`,
+//! each party slot's level (fresh NEXON, else manual) and power (NEXON
+//! combat power from fresh data only, shown, never judged), and its level
+//! judged per boss of the run. `r-carling`'s party covers every level
+//! verdict.
 
 use serde_json::{Value, json};
 
-use super::catalog::{entry_level, valid_run_length_override};
+use super::catalog::entry_level;
 use super::clock::now_secs;
 use super::run_picks::choice;
 use super::{MoveError, Store};
 
-pub type Floors = BTreeMap<String, BTreeMap<String, u64>>;
-
 pub const ATTRIBUTION: &str = super::character_data::ATTRIBUTION;
-const MAX_FLOOR: u64 = 10_000_000_000;
-
-/// Invented guild floors (whole CP).
-pub fn seed() -> Floors {
-    [
-        ("Kalos", "x", 70_000_000),
-        ("Carling", "h", 45_000_000),
-        ("BM", "x", 80_000_000),
-        ("Limbo", "h", 55_000_000),
-    ]
-    .into_iter()
-    .fold(Floors::new(), |mut floors, (boss, difficulty, cp)| {
-        floors
-            .entry(boss.into())
-            .or_default()
-            .insert(difficulty.into(), cp);
-        floors
-    })
-}
-
-/// `cp_floors.floors` as the server takes it: catalog keys, their own
-/// difficulties, whole CP 1 to 10,000,000,000, no empty boss.
-pub fn parse(value: &Value) -> Result<Floors, MoveError> {
-    let bosses = value
-        .as_object()
-        .ok_or_else(|| MoveError::invalid("cp_floors.floors must be an object."))?;
-    let mut floors = Floors::new();
-    for (boss, difficulties) in bosses {
-        let difficulties = difficulties.as_object().ok_or_else(|| {
-            MoveError::invalid(format!("cp_floors.floors.{boss} must be an object."))
-        })?;
-        if difficulties.is_empty() {
-            return Err(MoveError::invalid(
-                "Leave out a boss with no floor rather than sending it empty.",
-            ));
-        }
-        for (difficulty, cp) in difficulties {
-            if !valid_run_length_override(boss, difficulty) {
-                return Err(MoveError::invalid(
-                    "Pick a catalog boss key and difficulty.",
-                ));
-            }
-            let cp = cp
-                .as_u64()
-                .filter(|cp| (1..=MAX_FLOOR).contains(cp))
-                .ok_or_else(|| {
-                    MoveError::invalid("A CP floor is a whole number from 1 to 10,000,000,000.")
-                })?;
-            floors
-                .entry(boss.clone())
-                .or_default()
-                .insert(difficulty.clone(), cp);
-        }
-    }
-    Ok(floors)
-}
 
 fn level_verdict(level: Option<i64>, entry: Option<u16>) -> &'static str {
     match (level, entry) {
@@ -84,21 +23,11 @@ fn level_verdict(level: Option<i64>, entry: Option<u16>) -> &'static str {
     }
 }
 
-fn power_verdict(power: Option<i64>, floor: Option<u64>) -> &'static str {
-    match (floor, power) {
-        (None, _) => "no_floor",
-        (Some(_), None) => "unknown",
-        (Some(floor), Some(power)) if u64::try_from(power).is_ok_and(|p| p >= floor) => "ok",
-        (Some(_), Some(_)) => "under",
-    }
-}
-
 impl Store {
     /// `GET /api/admin/runs/{id}/readiness`: never writes.
     pub fn run_readiness(&self, id: &str) -> Result<Value, MoveError> {
         let run = self.run_rec(id)?;
         let now = now_secs();
-        let floors = &self.config.cp_floors;
         let mut nexon_data = false;
         let slots: Vec<Value> = run
             .participants
@@ -131,12 +60,9 @@ impl Store {
                     .iter()
                     .map(|b| {
                         let entry = entry_level(b.key, b.difficulty);
-                        let floor = floors.get(b.key).and_then(|f| f.get(b.difficulty)).copied();
                         json!({
-                            "boss": b.key, "difficulty": b.difficulty,
-                            "entry_level": entry, "cp_floor": floor,
+                            "boss": b.key, "difficulty": b.difficulty, "entry_level": entry,
                             "level": level_verdict(level, entry),
-                            "power": power_verdict(power.as_ref().map(|(cp, _)| *cp), floor),
                         })
                     })
                     .collect();
@@ -155,14 +81,6 @@ impl Store {
             "run_id": run.id, "slots": slots, "nexon_data": nexon_data, "attribution": ATTRIBUTION,
         }))
     }
-
-    /// Config's `cp_floors` block.
-    pub fn cp_floors_view(&self) -> Value {
-        json!({
-            "floors": self.config.cp_floors,
-            "entry_levels": super::catalog::entry_levels(),
-        })
-    }
 }
 
 #[cfg(test)]
@@ -179,22 +97,13 @@ mod tests {
             .unwrap()
     }
 
-    fn verdicts(answer: &Value, member: &str) -> Vec<(String, String)> {
+    fn verdicts(answer: &Value, member: &str) -> Vec<String> {
         slot(answer, member)["bosses"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|b| {
-                (
-                    b["level"].as_str().unwrap().to_owned(),
-                    b["power"].as_str().unwrap().to_owned(),
-                )
-            })
+            .map(|b| b["level"].as_str().unwrap().to_owned())
             .collect()
-    }
-
-    fn pair(level: &str, power: &str) -> (String, String) {
-        (level.into(), power.into())
     }
 
     #[test]
@@ -205,32 +114,20 @@ mod tests {
         assert_eq!(ready["attribution"], ATTRIBUTION);
         assert_eq!(
             slot(&ready, "1001")["bosses"][0],
-            json!({"boss": "Carling", "difficulty": "h", "entry_level": 275, "cp_floor": 45_000_000,
-                   "level": "ok", "power": "unknown"})
+            json!({"boss": "Carling", "difficulty": "h", "entry_level": 275, "level": "ok"})
         );
         assert_eq!(slot(&ready, "1001")["link"], "pending");
-        assert_eq!(
-            verdicts(&ready, "1002"),
-            [pair("ok", "unknown"), pair("under", "no_floor")]
-        );
+        assert_eq!(verdicts(&ready, "1002"), ["ok", "under"]);
         assert_eq!(slot(&ready, "1003")["character"], Value::Null);
-        assert_eq!(
-            verdicts(&ready, "1003"),
-            [pair("unknown", "unknown"), pair("unknown", "no_floor")]
-        );
+        assert_eq!(verdicts(&ready, "1003"), ["unknown", "unknown"]);
         let yuzu = slot(&ready, "1004");
         assert_eq!(
             (&yuzu["link"], &yuzu["level"]["source"]),
             (&json!("linked"), &json!("nexon"))
         );
-        assert_eq!(
-            verdicts(&ready, "1004"),
-            [pair("ok", "ok"), pair("under", "no_floor")]
-        );
-        assert_eq!(
-            verdicts(&ready, "1005"),
-            [pair("ok", "under"), pair("ok", "no_floor")]
-        );
+        assert_eq!(yuzu["power"]["kind"], "nexon_cp");
+        assert_eq!(verdicts(&ready, "1004"), ["ok", "under"]);
+        assert_eq!(verdicts(&ready, "1005"), ["ok", "ok"]);
         let hotaru = slot(&ready, "1011");
         assert_eq!(hotaru["link"], "expired");
         assert_eq!(
@@ -238,27 +135,7 @@ mod tests {
             json!({"value": 275, "source": "manual", "as_of": null})
         );
         assert_eq!(hotaru["power"], Value::Null);
-        assert_eq!(
-            verdicts(&ready, "1011"),
-            [pair("ok", "unknown"), pair("under", "no_floor")]
-        );
+        assert_eq!(verdicts(&ready, "1011"), ["ok", "under"]);
         assert!(s.run_readiness("nope").is_err());
-    }
-
-    #[test]
-    fn floors_parse_as_the_server_takes_them() {
-        assert_eq!(seed().len(), 4);
-        assert!(parse(&json!({"Kalos": {"x": MAX_FLOOR}})).is_ok());
-        for bad in [
-            json!({"Lucid": {"h": 1}}),
-            json!({"Kalos": {"h": 1}}),
-            json!({"Kalos": {"x": 0}}),
-            json!({"Kalos": {"x": MAX_FLOOR + 1}}),
-            json!({"Kalos": {"x": 1.5}}),
-            json!({"Kalos": {}}),
-            json!([]),
-        ] {
-            assert!(parse(&bad).is_err(), "{bad}");
-        }
     }
 }

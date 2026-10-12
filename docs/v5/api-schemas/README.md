@@ -80,7 +80,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `POST /api/admin/characters/{id}/link` | `201` `character_data.json#/$defs/CharacterLink` (body `LinkRequest`; the link becomes `pending` and no Open API call is made until the member confirms in Discord; 422 `version_required`, 409 `stale` for another link version, 409 `already_linked`, 409 `not_connected` without a Nexon key, 409 `retired`, 422 `region` for a non-`msea` character, 404 `not_found`; Idempotency-Key as the character POST; adds one History settings row, section `characters`, key `link.<id>`, values `unlinked`/`pending`/`linked`/`stale` and the actor only) |
 | `DELETE /api/admin/characters/{id}/link` | `common.json#/$defs/Message` (deletes the link and all its Nexon data in one write, makes the character's tracked Discord posts due for stripping at once; 404 `not_linked`; Idempotency-Key and History as the POST). Deleting a roster character, or changing its IGN, region or member, unlinks it the same way after the roster write commits |
 | `POST /api/admin/characters/{id}/refresh` | `character_data.json#/$defs/CharacterLink` (fetches now, at any time: `basic` + `stat`, plus `id` when the ocid is missing or 29 days old, from the shared 800-call 24-hour budget; 409 `not_linked` unless active on an active character, 409 `not_connected`, 503 `nexon_unavailable` while calls are held (key refused, maintenance); a failed fetch still answers 200 with `refresh.last_error`; a retry with the same Idempotency-Key replays the first answer) |
-| `GET /api/admin/runs/{id}/readiness` | `character_data.json#/$defs/RunReadiness` (module `character_data`, generic 404 before the session check while off; 404 `not_found` for a run that is gone; the slots of `GET …/characters` (inferred recomputed), each with its level (fresh NEXON level, else the manual roster level), power (NEXON combat power, only from an active link's unexpired data) and a verdict per boss of the run against the knowledge `entry_level` and the Config CP floor; computed on read, never stored, never blocking) |
+| `GET /api/admin/runs/{id}/readiness` | `character_data.json#/$defs/RunReadiness` (module `character_data`, generic 404 before the session check while off; 404 `not_found` for a run that is gone; the slots of `GET …/characters` (inferred recomputed), each with its level (fresh NEXON level, else the manual roster level), power (NEXON combat power, only from an active link's unexpired data; shown, never judged) and a level verdict per boss of the run against the knowledge `entry_level`; computed on read, never stored, never blocking) |
 | `POST /api/admin/estimates` | `202` `character_data.json#/$defs/EstimateStarted` (body `EstimateRequest`: `character_ids` (1 to 6) or `run_id`, optional `refresh`; module `character_data` with `KANADE_SCOUTER_URL`: every estimate route answers the generic 404, before the session check, while the module is off or the URL unset; CSRF; nothing stored, no History row. A run looks up each party member's picked, else inferred, character; members without one are `missing`. The job is already `done` with `cache_hit` when the 24-hour memory holds the same IGN set; 409 `estimate_running` while another lookup runs; 422 `invalid`, `region` (not MapleSEA), `unsupported_ign`, `nothing_to_look_up`, `too_many`; 404 `not_found` for an unknown character or run; 400 `invalid_body` for any other field) |
 | `GET /api/admin/estimates?character_ids=<a>,<b>` or `?run_id=<id>` | `character_data.json#/$defs/EstimateStatus` (that target's job and the running job; 422 `invalid` for any other query) |
 | `GET /api/admin/estimates/{job}` | `character_data.json#/$defs/EstimateJob` (404 `not_found` once gone. Jobs live in memory only, lost on restart: one per target, kept 24 hours; a new lookup of the same characters or run replaces it (the old id answers 404). Memory is bounded at 512 targets and 1024 cached IGN sets; only past those is the oldest dropped early) |
@@ -119,7 +119,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/admin/rewrites/{id}` | `rewrites.json#/$defs/Rewrite` |
 | `GET /api/admin/limits` | `limits.json#/$defs/Limits` |
 | `DELETE /api/admin/limits/windows/{id}` | `common.json#/$defs/Message` |
-| `GET`/`PATCH /api/admin/config` | `config.json#/$defs/ConfigView` (PATCH may add `notices`; both carry one while the saved models are not running; `cp_floors` only while module `character_data` is on, and a `cp_floors` PATCH answers the generic 404 while it is off) |
+| `GET`/`PATCH /api/admin/config` | `config.json#/$defs/ConfigView` (PATCH may add `notices`; both carry one while the saved models are not running) |
 | `POST /api/admin/config/profiles/reload` | `common.json#/$defs/ReloadResult` |
 | `POST /api/admin/digest` | `common.json#/$defs/Message` |
 | `POST /api/admin/headers/rewrite` | `202` `common.json#/$defs/Message` (the run continues in the background; `200` when nothing posted this boss week has a header; 409 `ApiError` `rewrite_running`/`rewrite_off`) |
@@ -234,11 +234,10 @@ Pointers are `<file>#/$defs/<Name>`.
   `EstimateResult`, `EstimateError` for `/api/admin/estimates`, and
   `CharacterDataHealth.scouter` (`ScouterHealth`: `off`, `ok`,
   `unreachable`, `verification_required`, the last lookup and error).
-- Run readiness and CP floors (2026-10-12): `character_data.json`
-  `RunReadiness`, `ReadinessSlot`, `ReadinessLevel`, `ReadinessPower`,
-  `BossReadiness` for `GET /api/admin/runs/{id}/readiness`, and
-  `config.json` `CpFloors` (`ConfigView.cp_floors`, PATCH section
-  `cp_floors` with the whole `floors` map).
+- Run readiness (2026-10-12): `character_data.json` `RunReadiness`,
+  `ReadinessSlot`, `ReadinessLevel`, `ReadinessPower`, `BossReadiness` for
+  `GET /api/admin/runs/{id}/readiness` (each slot's level and power, and a
+  level verdict per boss against its knowledge `entry_level`).
 - Admin refresh and privacy link (2026-10-12): `RefreshInfo.refreshable_at`
   and `429 refresh_cap` are removed (an admin may refresh at any time;
   only the call budget limits it); `CharacterLink.privacy_url` names the
