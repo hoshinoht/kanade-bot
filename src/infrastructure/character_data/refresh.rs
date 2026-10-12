@@ -88,6 +88,13 @@ fn invalid_identifier(failed: &CallFailed) -> bool {
     failed.failure() == Some(Failure::InvalidIdentifier)
 }
 
+/// `/id` answers an unknown name with `400 OPENAPI00004` ("Please input
+/// valid parameter"; live MapleSEA, 2026-10-12), not an empty body. The name
+/// is its only parameter, so on `/id` this means no such character.
+fn no_such_name(failed: &CallFailed) -> bool {
+    failed.label() == "OPENAPI00004"
+}
+
 enum Step<T> {
     Ok(T),
     Stale,
@@ -102,7 +109,7 @@ impl CharacterData {
         {
             Ok(Some(ocid)) => Step::Ok(ocid),
             Ok(None) => Step::Stale,
-            Err(failed) if invalid_identifier(&failed) => Step::Stale,
+            Err(failed) if invalid_identifier(&failed) || no_such_name(&failed) => Step::Stale,
             Err(failed) => Step::Failed(failed),
         }
     }

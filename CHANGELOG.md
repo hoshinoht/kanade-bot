@@ -21,6 +21,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - Admin: the Week's Runs list sets every cell on the row's middle line; When, Status, On and Channel sat at the top of taller rows, above the bosses and the party chips.
 - Admin: History's Graph tab sizes the lane column to the lanes it draws (with no drafts, only the History line), the Drafts heading lines up with the chips and Show buttons under it, and the # cell of the fold and Older changes rows takes the row's fill instead of a white block.
 - Admin: an answer in History reads "Tsubame → on for HCarling + HStar (was out)" instead of "→ on on run <id>": the Timeline, the Graph, the change pane and the revert preview name the run from the loaded weeks or the newest loaded change that carries it, and say "a run" when neither has it.
+- Character data: linking an IGN NEXON doesn't know now says so ("NEXON couldn't find …", nothing kept). Live MapleSEA answers an unknown name with `400 OPENAPI00004` rather than an empty body, which was treated as a one-off error: the link stayed and every daily batch called for it again.
 
 ## 1.0.0-beta.6 (2026-10-12)
 

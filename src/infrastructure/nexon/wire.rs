@@ -6,10 +6,9 @@
 
 use serde::Deserialize;
 
-/// The `final_stat` entry holding combat power. **To confirm** with the
-/// first live response once the key exists: the spec gives no SEA labels
-/// (its only example is "Minimum stat attack power"). Matching ignores case
-/// and surrounding spaces.
+/// The `final_stat` entry holding combat power: confirmed on live MapleSEA
+/// (2026-10-12) as `"Combat Power"` with plain digits (e.g. `"123456789"`).
+/// Matching ignores case and surrounding spaces.
 pub const COMBAT_POWER_STAT: &str = "Combat Power";
 
 #[derive(Deserialize)]

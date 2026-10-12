@@ -707,6 +707,14 @@ async fn another_name_or_no_character_makes_the_link_stale() {
         panic!()
     };
     assert_eq!(fetched, FetchState::Stale);
+    // Live MapleSEA answers an unknown name 400 OPENAPI00004, once.
+    let rig = rig_with(true).await;
+    rig.fake.queue("id", [error("OPENAPI00004", 400)]);
+    let ConfirmOutcome::Linked(_, fetched) = rig.confirm().await else {
+        panic!()
+    };
+    assert_eq!(fetched, FetchState::Stale);
+    assert_eq!(rig.fake.calls(), ["id"]);
 }
 
 #[tokio::test]
