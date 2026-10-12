@@ -7,6 +7,8 @@
 //! the classic style; only the layout differs. Messages that ping nobody
 //! (digest, `/schedule`, proposal cards) also have a Components V2 layout
 //! (`v2.rs` builders and budget, `live.rs` the kit and which posts are V2).
+//! The pinging run cards stay legacy and carry an "Open in portal" link
+//! button while the portal is open (`portal.rs`).
 
 mod countdown;
 mod day_of;
@@ -14,6 +16,7 @@ mod digest;
 mod limits;
 mod live;
 mod notice;
+mod portal;
 mod schedule;
 mod v2;
 mod vocab;
@@ -26,6 +29,7 @@ pub use live::{
     AvatarSource, LiveFormats, PortalSwitch, V2Kit, known_or_fetched, learn_after_refusal,
 };
 pub use notice::{NoticeLook, decline_text, notice_text, via_portal_mark};
+pub use portal::{MAX_ROW_BUTTONS, MAX_ROWS, OPEN_IN_PORTAL};
 pub use schedule::{
     SCHEDULE_FOOTER, SCHEDULE_FOOTER_HIDDEN, ScheduleScope, ScheduleWeek, schedule_components,
     schedule_embed,

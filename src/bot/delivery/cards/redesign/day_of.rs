@@ -2,7 +2,8 @@
 //! content, then one embed per run in its lead boss's colour with its own
 //! portrait, In / Waiting / Out as inline fields and the run id in the
 //! footer. Only the first run carries the entry art. Runs past Discord's
-//! limits share one last embed as compact lines.
+//! limits share one last embed as compact lines. While the portal is open,
+//! "Open in portal" goes to the run (the portal's root for several runs).
 
 use super::super::art::{lead_entry_art, lead_portrait};
 use super::super::common::{CardContext, People, everyone_on, lead_colour};
@@ -12,6 +13,7 @@ use super::limits::{
     MAX_DESCRIPTION, MAX_EMBEDS, MAX_FIELD_VALUE, MAX_TITLE, MAX_TOTAL_CHARS, clip, clip_lines,
     embed_chars,
 };
+use super::portal::add_portal_button;
 use super::vocab::{INK_BLUE, boss_labels, names, relative_time, roster, short_time, subtext};
 use crate::domain::attendance::{AttendanceMode, Tally, status_label};
 use crate::domain::ids::short_id;
@@ -43,10 +45,14 @@ pub fn day_of_card(
         .enumerate()
         .map(|(index, run)| run_embed(ctx, &who, run, index == 0))
         .collect();
+    let shown: Vec<&str> = runs.iter().map(|run| run.id.as_str()).collect();
+    let mut rows = Vec::new();
+    add_portal_button(&mut rows, ctx.v2, &shown);
     Card {
         content: format!("📅 **{heading}**\n{}", subtext(&line)),
         embeds: fit(ctx, &runs, full),
         components: Vec::new(),
+        rows: Some(rows),
     }
 }
 

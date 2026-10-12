@@ -203,11 +203,12 @@ impl MessageEdit {
     }
 
     /// See [`v2_body_valid`]; `components: Some([])` is refused too, except
-    /// on a legacy edit that clears its rows.
+    /// on a legacy edit that clears its rows. A legacy edit may re-render
+    /// embeds beside its rows (a run card's "Open in portal").
     pub fn valid(&self) -> bool {
         match &self.components {
             None => true,
-            Some(_) if self.is_legacy() => self.embeds.is_none(),
+            Some(_) if self.is_legacy() => true,
             Some(components) => v2_body_valid(
                 self.content.as_deref(),
                 self.embeds.as_deref().unwrap_or_default(),

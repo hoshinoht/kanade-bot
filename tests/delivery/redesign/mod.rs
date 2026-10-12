@@ -5,6 +5,7 @@
 mod classic;
 mod live;
 pub(crate) mod notices;
+mod portal;
 mod styled;
 
 use std::sync::Arc;

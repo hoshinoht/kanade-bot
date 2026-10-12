@@ -1,11 +1,13 @@
 //! The redesigned countdown: boss, live countdown, phrase and who in the
 //! content; one embed coloured by state (red at risk, amber while someone
-//! is still to answer, else green) with the lead portrait and the answers.
+//! is still to answer, else green) with the lead portrait and the answers;
+//! "Open in portal" to the run while the portal is open.
 
 use super::super::art::lead_portrait;
 use super::super::common::{CardContext, People, REACT_HINT, declined, not_declined, unanswered};
 use super::super::heading::COUNTDOWN_PHRASE_SEED;
 use super::super::{Card, CardEmbed};
+use super::portal::add_portal_button;
 use super::vocab::{
     AT_RISK_RED, SETTLED_GREEN, WAITING_AMBER, boss_labels, relative_time, short_time,
 };
@@ -47,6 +49,8 @@ pub fn countdown_card(
     } else {
         SETTLED_GREEN
     };
+    let mut rows = Vec::new();
+    add_portal_button(&mut rows, ctx.v2, &[run.id.as_str()]);
     Card {
         content,
         embeds: vec![CardEmbed {
@@ -58,5 +62,6 @@ pub fn countdown_card(
             ..CardEmbed::default()
         }],
         components: Vec::new(),
+        rows: Some(rows),
     }
 }

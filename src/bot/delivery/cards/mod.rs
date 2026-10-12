@@ -56,11 +56,17 @@ use crate::domain::settings::MessageStyle;
 /// A card as plain data (v4 `Card`); mentions live in `content` only. The
 /// classic style has exactly one embed. `components`, when set, is the
 /// Components V2 form that is sent instead of the content and embeds.
+/// `rows` are legacy button rows under the content and embeds: `Some` on
+/// run cards (day-of, countdown; the redesigned ones' "Open in portal"), so
+/// every edit sends them and a row the card no longer has (the portal
+/// closed, the style flipped to classic) is cleared; `None` elsewhere, and
+/// an edit leaves the message's components alone.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Card {
     pub content: String,
     pub embeds: Vec<CardEmbed>,
     pub components: Vec<Component>,
+    pub rows: Option<Vec<Component>>,
 }
 
 /// One embed of a card.
@@ -169,7 +175,7 @@ pub fn build(
     mentioned: &[String],
 ) -> Option<Card> {
     let redesigned = ctx.style == MessageStyle::Redesigned;
-    match content {
+    let mut card = match content {
         IntentContent::DayOf { run_ids } => {
             let seed;
             let heading = match header {
@@ -180,32 +186,37 @@ pub fn build(
                     &seed
                 }
             };
-            Some(if redesigned {
+            if redesigned {
                 redesign::day_of_card(ctx, run_ids, heading, mentioned)
             } else {
                 day_of_card(ctx, run_ids, heading, mentioned)
-            })
+            }
         }
         IntentContent::Countdown { run_id, minutes } => {
             let run = ctx.run(run_id)?;
-            Some(if redesigned {
+            if redesigned {
                 redesign::countdown_card(ctx, run, mentioned, header)
             } else {
                 countdown_card(ctx, run, *minutes, mentioned)
-            })
+            }
         }
         IntentContent::Digest {
             week_start,
             inclusion,
-        } => Some(if redesigned {
-            redesign::digest_card(ctx, *week_start, inclusion, header)
-        } else {
-            digest_card(ctx, *week_start, inclusion)
-        }),
-        IntentContent::Notice(_) | IntentContent::ProposalCard { .. } | IntentContent::Plain => {
-            None
+        } => {
+            return Some(if redesigned {
+                redesign::digest_card(ctx, *week_start, inclusion, header)
+            } else {
+                digest_card(ctx, *week_start, inclusion)
+            });
         }
-    }
+        IntentContent::Notice(_) | IntentContent::ProposalCard { .. } | IntentContent::Plain => {
+            return None;
+        }
+    };
+    // A run card owns its rows in either style (none in the classic one).
+    card.rows.get_or_insert_default();
+    Some(card)
 }
 
 impl CardEmbed {
@@ -257,8 +268,15 @@ impl Card {
         Self {
             content,
             embeds: vec![embed],
-            components: Vec::new(),
+            ..Self::default()
         }
+    }
+
+    /// The button rows a legacy post or edit sends, only beside text: rows
+    /// without content would be read as a V2 layout (see
+    /// [`crate::bot::transport::legacy_rows`]).
+    fn legacy_rows(&self) -> Option<Vec<Component>> {
+        self.rows.clone().filter(|_| !self.content.is_empty())
     }
 
     /// `prefix` before the content, or as a first line of a V2 layout's
@@ -317,7 +335,7 @@ impl Card {
             allowed_mentions: mentions::allow_users(mentioned),
             reply_to: None,
             attachments: uploads,
-            components: Vec::new(),
+            components: self.legacy_rows().unwrap_or_default(),
         }
     }
 
@@ -346,7 +364,7 @@ impl Card {
             content: Some(self.content.clone()),
             embeds: Some(embeds),
             allowed_mentions: mentions::none(),
-            components: None,
+            components: self.legacy_rows(),
         }
     }
 }

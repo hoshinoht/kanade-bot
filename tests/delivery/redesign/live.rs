@@ -6,9 +6,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::TimeDelta;
 use kanade::bot::delivery::CardRefresh;
-use kanade::bot::delivery::cards::CardKit;
+use kanade::bot::delivery::cards::redesign::OPEN_IN_PORTAL;
+use kanade::bot::delivery::cards::{CardKit, V2Kit};
 use kanade::domain::settings::MessageStyle;
 use kanade::infrastructure::store::MemoryScheduleStore;
+use twilight_model::channel::message::Component;
 
 use crate::cards::{answer, art_dir, created, edits, kit, pictures, seed_day_of, world};
 use crate::scenarios::{self, now};
@@ -101,4 +103,98 @@ async fn the_tick_posts_and_refresh_edits_in_the_live_style() {
     assert_eq!(refresh.refresh(std::slice::from_ref(&star)).await, 1);
     let latest = edits(&fake).pop().expect("classic edit");
     assert_eq!(latest.embeds.as_ref().expect("embeds").len(), 1, "classic");
+}
+
+/// The link buttons of a legacy post or edit: (label, url).
+fn links(rows: &[Component]) -> Vec<(String, String)> {
+    rows.iter()
+        .flat_map(|row| match row {
+            Component::ActionRow(row) => row.components.as_slice(),
+            _ => &[],
+        })
+        .filter_map(|component| match component {
+            Component::Button(button) => Some((button.label.clone()?, button.url.clone()?)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// "Open in portal" follows the live portal switch and the style on the
+/// next re-render of the posted card (the refresh and header-rewrite path).
+#[tokio::test]
+async fn refresh_adds_and_drops_the_portal_link_with_the_switch() {
+    let art = art_dir();
+    let store = Arc::new(MemoryScheduleStore::new());
+    let world = world();
+    let fake = Arc::new(support::fake());
+    let (star, _) = seed_day_of(&*store).await;
+    let redesigned = Arc::new(AtomicBool::new(true));
+    let open = Arc::new(AtomicBool::new(true));
+    let switch = Arc::clone(&open);
+    let cards = CardKit {
+        v2: V2Kit {
+            portal: Some("https://portal.example".to_owned()),
+            portal_open: Some(Arc::new(move || switch.load(Ordering::SeqCst))),
+            ..V2Kit::default()
+        },
+        ..styled(&art, &redesigned)
+    };
+    let mut delivery = scenarios::delivery(&*store, &world, &*fake).with_cards(cards.clone());
+    delivery.dispatch_reminders(now()).await.expect("dispatch");
+    let posts = created(&fake);
+    let [post] = posts.as_slice() else {
+        panic!("one post: {posts:?}");
+    };
+    // Two runs on the card: the portal's root.
+    let link = vec![(
+        OPEN_IN_PORTAL.to_owned(),
+        "https://portal.example/".to_owned(),
+    )];
+    assert_eq!(links(&post.components), link);
+    assert_eq!(post.embeds.len(), 2);
+
+    let refresh = CardRefresh {
+        store: Arc::clone(&store),
+        transport: Arc::clone(&fake),
+        members: Arc::new(world.roster.clone()),
+        cards,
+        policy: scenarios::config().policy,
+        quiet: Arc::new(AtomicBool::new(false)),
+        now: Arc::new(|| now() + TimeDelta::minutes(1)),
+    };
+    let rerender = async |minutes: i64, user: &str| {
+        answer(
+            &*store,
+            &star,
+            user,
+            true,
+            now() + TimeDelta::minutes(minutes),
+        )
+        .await;
+        assert_eq!(refresh.refresh(std::slice::from_ref(&star)).await, 1);
+        edits(&fake).pop().expect("edit")
+    };
+
+    open.store(false, Ordering::SeqCst);
+    let closed = rerender(1, "1002").await;
+    assert_eq!(
+        closed.components,
+        Some(Vec::new()),
+        "the closed portal's row is cleared"
+    );
+    assert!(closed.valid() && closed.embeds.is_some());
+
+    open.store(true, Ordering::SeqCst);
+    let reopened = rerender(2, "1001").await;
+    assert_eq!(links(reopened.components.as_deref().unwrap()), link);
+    assert!(reopened.valid() && reopened.v2_components().is_none());
+
+    redesigned.store(false, Ordering::SeqCst);
+    let classic = rerender(3, "1002").await;
+    assert_eq!(
+        classic.components,
+        Some(Vec::new()),
+        "classic shows no link"
+    );
+    assert_eq!(classic.embeds.as_ref().expect("embeds").len(), 1);
 }
