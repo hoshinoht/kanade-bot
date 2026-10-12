@@ -1067,6 +1067,8 @@ a.week-foot__item:hover,
   box-shadow: none;
 }
 
+// Every cell on the row's middle line: the shared table rules top-align td, which left When, Status,
+// On and Channel above the bosses' line and the party chips.
 .week-runs__table tbody th,
 .week-runs__table td {
   height: 44px;
@@ -1076,6 +1078,7 @@ a.week-foot__item:hover,
   white-space: nowrap;
   font-weight: inherit;
   text-align: left;
+  vertical-align: middle;
 }
 
 .week-runs__row > :first-child { border-radius: 6px 0 0 6px; }

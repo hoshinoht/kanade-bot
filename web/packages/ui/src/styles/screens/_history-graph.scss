@@ -22,11 +22,11 @@
 .graph__keys .kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 4px; border-bottom-width: 1px; }
 .graph__scroll { flex: 1 1 auto !important; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: none; }
 
-// The table: fixed columns; the lane column's width follows the lane count.
+// The table: fixed columns; the lane column is as wide as the lanes drawn (lane 0, the History line, alone when no draft has one).
 .gx { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: var(--fs-small); }
 .gx th[scope="col"] { position: sticky; top: 0; z-index: 1; padding: 4px 8px 6px; background: var(--pane); color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.1em; text-align: left; text-transform: uppercase; }
 .gx th.gx__lanecol { padding: 0; }
-@for $n from 3 through 8 {
+@for $n from 0 through 8 {
   .gx--lanes-#{$n} .gx__lanecol { width: 28px + $n * 24px; }
   .gx--narrow.gx--lanes-#{$n} .gx__lanecol { width: 18px + $n * 16px; }
 }
@@ -34,7 +34,11 @@
 .gx--narrow .gx__numcol { width: 36px; }
 .gx__draftcol { width: 214px; }
 .gx__draftcol--wide { width: 300px; }
-.gx td, .gx th[scope="row"] { padding: 4px 8px; border-bottom: 2px solid var(--pane); background: var(--row); font-weight: 400; text-align: left; vertical-align: middle; }
+// The Drafts heading starts where its cells' words do: a chip's glyph, an action's label.
+.gx th.gx__draftcol { padding-left: 16px; }
+.gx__drafts .gx__act:first-child { margin-left: -4px; }
+// `:where` keeps the row header at a plain cell's weight, so the row kinds' fills below reach the # cell too.
+.gx td, .gx :where(th[scope="row"]) { padding: 4px 8px; border-bottom: 2px solid var(--pane); background: var(--row); font-weight: 400; text-align: left; vertical-align: middle; }
 .gx tr > :last-child { border-radius: 0 8px 8px 0; }
 .gx__id { border-radius: 8px 0 0 8px; color: var(--ink); font-size: var(--fs-small); font-weight: 700 !important; white-space: nowrap; }
 .gx__id .icon { width: 15px; height: 15px; vertical-align: -3px; }

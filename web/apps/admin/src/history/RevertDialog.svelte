@@ -17,6 +17,7 @@
     path,
     body,
     names,
+    runTitle,
     timezone,
     ondone,
     returnFocus,
@@ -27,6 +28,8 @@
     path: string;
     body: Record<string, unknown>;
     names: Names;
+    /** Names runs the plan's rows carry no row for (`runTitles`). */
+    runTitle?: (id: string) => string | undefined;
     timezone: string;
     ondone: (plan: RevertPlan) => void;
     returnFocus?: () => HTMLElement | null;
@@ -90,6 +93,7 @@
       { format: 'kanade.change.v1', seq: 0, id: '', revision: 0, at: '', actor: { kind: 'admin', id: '' }, surface: 'rollback', request_id: null, weeks: [], rows, notices: [], refs: [], prev_hash: '', hash: '' },
       names,
       timezone,
+      runTitle,
     );
   const refused = $derived(plan?.outcome === 'conflicts');
   /** Rows to show: the plan's own, or on a strict refusal what Force would change. */
@@ -99,7 +103,7 @@
   // Name the row as people know it: bosses for runs and timings, the card for reminders.
   function conflictText(c: Conflict, all: Conflict[]): string {
     const row = (c.found ?? c.expected) as Record<string, unknown> | null;
-    const runName = (id: string) => bossesOf(all.find((o) => 'id' in o.key && o.key.table === 'runs' && o.key.id === id)?.found) || `run ${id}`;
+    const runName = (id: string) => bossesOf(all.find((o) => 'id' in o.key && o.key.table === 'runs' && o.key.id === id)?.found) || runTitle?.(id) || 'a run';
     if (!('id' in c.key)) return `${names(c.key.user_id)}'s answer on ${runName(c.key.run_id)}`;
     if (c.key.table === 'reminders') return `${reminderKind(String(row?.kind ?? ''))} for ${runName(String(row?.run_id ?? ''))}`;
     const name = bossesOf(row) || c.key.id;

@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, csrf, expect, test } from './support';
 
 // History graph (boards docs/research/2026-10-12-graph-presence-mockups). `POST
 // /__mock/graph/board` grows History to head #39 and seeds the boards' drafts:
@@ -154,6 +154,25 @@ test('history graph: Drafts links to the draft in the graph', async ({ page }) =
   const draft = page.getByRole('complementary', { name: 'Draft Carling retime' });
   await expect(draft).toContainText('Conflicts · 2');
   await expect(row(page, 't-d-carling')).toHaveAttribute('aria-selected', 'true');
+});
+
+// An answer's record carries no run row: the summary names the run from the week, says the answer once.
+test('history: an answer reads "→ on for <run>" in the Graph, the Timeline and the change pane', async ({ page }) => {
+  await board(page);
+  const week = (await (await page.request.get(`${ADMIN}/api/admin/week`)).json()) as { version: number; runs: { id: string; participants: { id: string; name: string; answer: string }[] }[] };
+  const who = week.runs.find((r) => r.id === 'r-carling')!.participants.find((p) => p.answer !== 'yes')!;
+  const answered = await page.request.post(`${ADMIN}/api/admin/runs/r-carling/rsvp`, { headers: await csrf(page.request), data: { member_id: who.id, answer: 'yes', version: week.version } });
+  expect(answered.ok()).toBe(true);
+  const line = new RegExp(`${who.name}(?: \\(\\d\\))? → on for HCarling \\+ HStar`);
+  await graph(page);
+  const head = row(page, 'r40');
+  await expect(head.locator('.gx__l2')).toHaveText(line);
+  await expect(head).not.toContainText('on on');
+  await expect(head).not.toContainText('r-carling');
+  await head.click();
+  await expect(page.getByRole('complementary', { name: 'Change details' }).getByRole('heading', { level: 2 })).toHaveText(line);
+  await page.getByRole('tab', { name: /^Timeline/ }).click();
+  await expect(page.locator('[data-history="40"] .history-row__summary').first()).toHaveText(line);
 });
 
 test.describe('phone', () => {

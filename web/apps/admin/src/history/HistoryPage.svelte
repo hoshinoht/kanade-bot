@@ -14,7 +14,7 @@
   import { DatePicker, Icon, LoadError, LoadingState, Presence, RowContent, Select, serverClock, Toaster, TWO_PANE_QUERY, weekStartLabel, type SelectOption } from '@kanade/ui';
   import { live, Resource } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
-  import { SURFACE_LABELS, actorName, describe, localAt, weekDate } from './describe';
+  import { SURFACE_LABELS, actorName, describe, localAt, runTitles, weekDate } from './describe';
   import RevertDialog from './RevertDialog.svelte';
   import HistoryDetail from './HistoryDetail.svelte';
   import ConfigDetail from './ConfigDetail.svelte';
@@ -216,6 +216,10 @@
     document.getElementById(`history-tab-${next.id}`)?.focus({ preventScroll: true });
   }
   const names = (id: string) => memberLabel(store.members, id);
+  // The weeks the app holds (this week too while Next is on the board); records name answers' runs by id.
+  const runs = $derived([...(store.thisWeek?.runs ?? []), ...(store.week?.runs ?? [])]);
+  const titles = $derived(runTitles(runs, records));
+  const runName = (id: string) => titles.get(id);
   const tz = $derived(store.week?.timezone ?? 'Asia/Kuala_Lumpur');
   const timeline = $derived(mergeTimeline(records, settings));
   const itemKey = (item: TimelineItem) => (item.kind === 'change' ? String(item.record.seq) : `c${item.change.id}`);
@@ -323,7 +327,7 @@
 
 <!-- One timeline row (B_History `.ev`): a dot, then the facts line over the summary. -->
 {#snippet rowBody(record: ChangeRecord, isActive: boolean)}
-  {@const lines = describe(record, names, tz)}
+  {@const lines = describe(record, names, tz, runName)}
   {@const count = `${record.rows.length} row${record.rows.length === 1 ? '' : 's'}`}
   {@const backups = snapshots.get(record.hash) ?? []}
   {@const undoneBy = revertedBy.get(record.seq) ?? []}
@@ -464,7 +468,7 @@
         </div>
         {#if nextBefore !== null}<div class="history-list-region__pager"><button class="btn" type="button" disabled={loading} onclick={() => void load(true)}>Older changes</button></div>{/if}
       </div>
-      {#if pane.shown?.kind === 'change'}<HistoryDetail wide={wide} member={memberRevert} record={selected ?? pane.shown.record} week={selected ? selectedWeek : pane.shown.week} timezone={tz} {names} onclose={closeDetail} onrevert={revert} onrestore={restoreWeek} onraw={showRaw} leaving={pane.leaving} onleft={(event) => pane.done(event)} />
+      {#if pane.shown?.kind === 'change'}<HistoryDetail wide={wide} member={memberRevert} record={selected ?? pane.shown.record} week={selected ? selectedWeek : pane.shown.week} timezone={tz} {names} runTitle={runName} onclose={closeDetail} onrevert={revert} onrestore={restoreWeek} onraw={showRaw} leaving={pane.leaving} onleft={(event) => pane.done(event)} />
       {:else if pane.shown?.kind === 'config'}{@const change = selectedSave ?? pane.shown.change}<ConfigDetail wide={wide} {change} timezone={tz} actor={actorName(change.actor, names, known)} onclose={closeDetail} onraw={showSaveRaw} leaving={pane.leaving} onleft={(event) => pane.done(event)} />{/if}
     </div>
   {:else if tab === 'graph'}
@@ -475,6 +479,7 @@
         {known}
         timezone={tz}
         week={store.week}
+        {runs}
         {wide}
         view={graphView}
         onrevert={revert}
@@ -499,5 +504,5 @@
   {/if}
 </section>
 
-<RevertDialog bind:open={dialogOpen} title={dialog.title} path={dialog.path} body={dialog.body} {names} timezone={tz} ondone={done} returnFocus={() => document.querySelector<HTMLElement>(`[data-history-revert="${selectedSeq ?? restore}"]`) ?? document.querySelector<HTMLElement>(`[data-history="${selectedSeq ?? restore}"]`)} />
+<RevertDialog bind:open={dialogOpen} title={dialog.title} path={dialog.path} body={dialog.body} {names} runTitle={runName} timezone={tz} ondone={done} returnFocus={() => document.querySelector<HTMLElement>(`[data-history-revert="${selectedSeq ?? restore}"]`) ?? document.querySelector<HTMLElement>(`[data-history="${selectedSeq ?? restore}"]`)} />
 <TextModal bind:open={raw.open} title={raw.title} eyebrow="History" text={raw.text} {toaster} />

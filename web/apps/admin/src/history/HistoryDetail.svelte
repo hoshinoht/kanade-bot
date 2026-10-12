@@ -13,6 +13,7 @@
     week,
     timezone,
     names,
+    runTitle,
     onclose,
     onrevert,
     onrestore,
@@ -29,6 +30,8 @@
     week: string;
     timezone: string;
     names: Names;
+    /** Names runs the record carries no row for (`runTitles`). */
+    runTitle?: (id: string) => string | undefined;
     onclose: () => void;
     onrevert: (record: ChangeRecord) => void;
     onrestore: (week: string, record: ChangeRecord) => void;
@@ -61,7 +64,7 @@
       <p class="cap">Change #{record.seq} · {SURFACE_LABELS[record.surface] ?? record.surface} · {localAt(record.at, timezone)}</p>
       {#if wide}<button class="btn btn--ghost history-detail__close" type="button" aria-label="Close change details" onclick={onclose}>×</button>{/if}
     </div>
-    <h2>{describe(record, names, timezone)[0] ?? label(record)}</h2>
+    <h2>{describe(record, names, timezone, runTitle)[0] ?? label(record)}</h2>
     <p class="history-detail__meta">revision <span class="mono">{record.revision}</span> · {record.rows.length} row{record.rows.length === 1 ? '' : 's'} · hash <span class="mono">{record.hash.slice(0, 12)}</span></p>
   </div>
 

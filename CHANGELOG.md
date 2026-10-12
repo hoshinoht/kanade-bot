@@ -18,6 +18,9 @@ Notable changes to the Boss Scheduler Bot, newest first.
 **Fixed**
 
 - Character data: the file now lives in a `db/` directory the bot creates 0700 (`/chardata/db/chardata.sqlite` in Compose), so a fresh `kanade_v5_chardata` volume whose root comes up 0755 no longer stops the bot from starting. Existing deployments move the file once before upgrading (runbook "Deploy an update").
+- Admin: the Week's Runs list sets every cell on the row's middle line; When, Status, On and Channel sat at the top of taller rows, above the bosses and the party chips.
+- Admin: History's Graph tab sizes the lane column to the lanes it draws (with no drafts, only the History line), the Drafts heading lines up with the chips and Show buttons under it, and the # cell of the fold and Older changes rows takes the row's fill instead of a white block.
+- Admin: an answer in History reads "Tsubame → on for HCarling + HStar (was out)" instead of "→ on on run <id>": the Timeline, the Graph, the change pane and the revert preview name the run from the loaded weeks or the newest loaded change that carries it, and say "a run" when neither has it.
 
 ## 1.0.0-beta.6 (2026-10-12)
 

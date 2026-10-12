@@ -1,6 +1,6 @@
 import { describe as suite, expect, it } from 'vitest';
 import type { ChangeRecord } from '@kanade/api-types';
-import { actorName, describe, localAt, relativeAt, reminderKind, weekDate } from '../src/history/describe';
+import { actorName, describe, localAt, relativeAt, reminderKind, runTitles, weekDate } from '../src/history/describe';
 import { fieldChanges, fieldLabel, fieldValue, inRun } from '../src/sheet/runLog';
 
 const TZ = 'Asia/Kuala_Lumpur';
@@ -81,15 +81,52 @@ suite('history describe', () => {
       names,
       TZ,
     );
-    expect(lines[1]).toBe('Tsubame → out on XKalos');
+    expect(lines[1]).toBe('Tsubame → out for XKalos');
+  });
+
+  it('says every answer state once, the run named by the page when the record has no run row', () => {
+    const answer = (before: string | null, after: string | null) =>
+      describe(
+        record([
+          {
+            key: { table: 'rsvps', run_id: 'r-live', user_id: '1005' },
+            before: before && { run_id: 'r-live', user_id: '1005', state: before, source: 'chat', at: '' },
+            after: after && { run_id: 'r-live', user_id: '1005', state: after, source: 'chat', at: '' },
+          },
+        ]),
+        names,
+        TZ,
+        (id) => ({ 'r-live': 'HCarling + HStar' })[id],
+      )[0];
+    expect(answer(null, 'yes')).toBe('Tsubame → on for HCarling + HStar');
+    expect(answer(null, 'no')).toBe('Tsubame → out for HCarling + HStar');
+    expect(answer(null, 'maybe')).toBe('Tsubame → maybe for HCarling + HStar');
+    expect(answer('no', 'yes')).toBe('Tsubame → on for HCarling + HStar (was out)');
+    expect(answer('yes', null)).toBe('Tsubame → no answer for HCarling + HStar (was on)');
+  });
+
+  it('reads an unknown run as "a run", never its id', () => {
+    const answer = record([{ key: { table: 'rsvps', run_id: 'r-gone', user_id: '1005' }, before: null, after: { run_id: 'r-gone', user_id: '1005', state: 'yes', source: 'chat', at: '' } }]);
+    expect(describe(answer, names, TZ)).toEqual(['Tsubame → on for a run']);
+    expect(describe(answer, names, TZ, () => undefined)).toEqual(['Tsubame → on for a run']);
+  });
+
+  it('titles runs from the loaded weeks, else the newest loaded record that carries the run', () => {
+    const older = { ...record([{ key: { table: 'runs', id: 'r-past' }, before: null, after: run({ id: 'r-past', bosses: ['HLotus'] }) }]), seq: 2 };
+    const newer = { ...record([{ key: { table: 'runs', id: 'r-past' }, before: run({ id: 'r-past', bosses: ['HLotus'] }), after: run({ id: 'r-past', bosses: ['HLotus', 'HDamien'] }) }]), seq: 3 };
+    const live = [{ id: 'r-live', bosses: [{ token: 'HCarling' }, { token: 'HStar' }] }] as Parameters<typeof runTitles>[0];
+    const titles = runTitles(live, [newer, older]);
+    expect(titles.get('r-past')).toBe('HLotus + HDamien');
+    expect(titles.get('r-live')).toBe('HCarling + HStar');
+    expect(titles.get('r-none')).toBeUndefined();
   });
 
   it('describes reminder rows on their own in plain words', () => {
     const sent = describe(record([{ key: { table: 'reminders', id: 'rem-1' }, before: reminder({}), after: reminder({ sent_at: '2026-09-25T12:30:05+00:00' }) }]), names, TZ);
-    expect(sent).toEqual(['T-1h card for run r sent Fri 25 20:30']);
+    expect(sent).toEqual(['T-1h card for a run sent Fri 25 20:30']);
     const added = describe(record([{ key: { table: 'reminders', id: 'rem-2' }, before: null, after: reminder({ kind: 'day_of', fire_at: '2026-09-25T01:00:00+00:00' }) }]), names, TZ);
-    expect(added).toEqual(['Morning card for run r set for Fri 25 09:00']);
-    expect(describe(record([{ key: { table: 'reminders', id: 'rem-1' }, before: reminder({}), after: null }]), names, TZ)).toEqual(['T-1h card for run r withdrawn']);
+    expect(added).toEqual(['Morning card for a run set for Fri 25 09:00']);
+    expect(describe(record([{ key: { table: 'reminders', id: 'rem-1' }, before: reminder({}), after: null }]), names, TZ)).toEqual(['T-1h card for a run withdrawn']);
     expect(reminderKind('countdown_15')).toBe('T-15m card');
   });
 
@@ -178,11 +215,11 @@ suite('run change log', () => {
     expect(inRun('XKalos: Fri 25 21:30 → Fri 25 22:00', 'XKalos')).toBe('Fri 25 21:30 → Fri 25 22:00');
     expect(inRun('XKalos roster: +Ren', 'XKalos')).toBe('Roster: +Ren');
     expect(inRun('XKalos → HStar', 'XKalos')).toBe('XKalos → HStar');
-    expect(inRun('Tsubame → out on XKalos', 'XKalos')).toBe('Tsubame → out on XKalos');
+    expect(inRun('Tsubame → out for XKalos', 'XKalos')).toBe('Tsubame → out for XKalos');
   });
 
   it('names the run in its own log when the record carries no run row', () => {
     const answer = record([{ key: { table: 'rsvps', run_id: 'r', user_id: '1005' }, before: null, after: { run_id: 'r', user_id: '1005', state: 'no' } }]);
-    expect(describe(answer, names, TZ, () => 'XKalos')).toEqual(['Tsubame → out on XKalos']);
+    expect(describe(answer, names, TZ, () => 'XKalos')).toEqual(['Tsubame → out for XKalos']);
   });
 });

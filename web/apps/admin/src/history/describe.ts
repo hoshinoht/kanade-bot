@@ -4,7 +4,8 @@
  * weekly timings with Monday = 0), so a line never needs another lookup;
  * member names come from the roster when it is loaded.
  */
-import type { ChangeRecord, RowChange } from '@kanade/api-types';
+import type { ChangeRecord, Run, RowChange } from '@kanade/api-types';
+import { runTitle as liveTitle } from '@kanade/ui';
 
 type Row = Record<string, unknown> | null;
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -119,12 +120,14 @@ function runLines(change: RowChange, ctx: Ctx, reminders: number): string[] {
   return lines.length ? lines : [`${name} updated`];
 }
 
+// "Ren → on for XKalos (was out)": "for" as the reminder lines and the answer toasts say it,
+// since the answer word itself can be "on".
 function rsvpLine(change: RowChange, ctx: Ctx): string {
   if (!('user_id' in change.key)) return '';
   const who = ctx.names(change.key.user_id);
   const answer = change.after ? answerWord(change.after.state) : 'no answer';
   const was = change.before ? ` (was ${answerWord(change.before.state)})` : '';
-  return `${who} → ${answer} on ${ctx.runTitle(change.key.run_id)}${was}`;
+  return `${who} → ${answer} for ${ctx.runTitle(change.key.run_id)}${was}`;
 }
 
 function reminderLine(change: RowChange, ctx: Ctx): string {
@@ -157,14 +160,30 @@ function fixedLines(change: RowChange): string[] {
   return lines.length ? lines : [`${name} updated`];
 }
 
-/** `runTitle` names a run the record carries no row for (a run's own log knows its title). */
-export function describe(record: ChangeRecord, names: Names, timeZone: string, runTitle?: (id: string) => string): string[] {
+/**
+ * Run titles by id from what a page already holds, for records that name a run only by id: the
+ * newest run row among the loaded records (a past week's run), overridden by the loaded weeks' runs.
+ */
+export function runTitles(runs: readonly Pick<Run, 'id' | 'bosses'>[], records: readonly ChangeRecord[]): Map<string, string> {
+  const titles = new Map<string, string>();
+  // Records come newest first: the first row seen for a run is its latest title.
+  for (const record of records) {
+    for (const row of record.rows) {
+      if (row.key.table === 'runs' && !titles.has(row.key.id)) titles.set(row.key.id, title(row.after ?? row.before));
+    }
+  }
+  for (const run of runs) titles.set(run.id, liveTitle(run));
+  return titles;
+}
+
+/** `runTitle` names a run the record carries no row for (the page's runs, or a run's own log); unknown runs read "a run". */
+export function describe(record: ChangeRecord, names: Names, timeZone: string, runTitle?: (id: string) => string | undefined): string[] {
   // Answers and reminders name their run by id; the same record usually carries that run's row.
   const titles = new Map<string, string>();
   for (const row of record.rows) {
     if (row.key.table === 'runs') titles.set(row.key.id, title(row.after ?? row.before));
   }
-  const ctx: Ctx = { names, timeZone, runTitle: (id) => titles.get(id) ?? runTitle?.(id) ?? `run ${id}` };
+  const ctx: Ctx = { names, timeZone, runTitle: (id) => titles.get(id) ?? runTitle?.(id) ?? 'a run' };
   // A move re-places its reminders: one line on the run, not one per card.
   const followers = new Map<string, number>();
   for (const row of record.rows) {

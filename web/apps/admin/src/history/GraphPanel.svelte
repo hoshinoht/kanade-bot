@@ -12,14 +12,14 @@
   import '@kanade/ui/styles/screens/drafts.scss';
   import '@kanade/ui/styles/screens/inbox.scss';
   import '@kanade/ui/styles/screens/history-graph.scss';
-  import type { ChangeRecord, DraftDetail, DraftGraph, DraftPreviewView, GraphDraft, HistoryPage, Week } from '@kanade/api-types';
+  import type { ChangeRecord, DraftDetail, DraftGraph, DraftPreviewView, GraphDraft, HistoryPage, Run, Week } from '@kanade/api-types';
   import { createClient } from '@kanade/client';
   import { DecisionCard, Icon, LoadError, LoadingState, Modal, StateNote, StatusChip, runTitle } from '@kanade/ui';
   import { onMount, tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { live } from '../resource.svelte';
   import { draftPath, removalLabel, shortDate } from '../drafts/drafts';
-  import { SURFACE_LABELS, actorName, describe, localAt, shortAt, type Names } from './describe';
+  import { SURFACE_LABELS, actorName, describe, localAt, runTitles, shortAt, type Names } from './describe';
   import { closeWord, draftHref, draftsAt, focusable, laneCount, layout, tipLine, type Chip, type Row } from './graph';
   import GraphLanes from './GraphLanes.svelte';
   import HistoryDetail from './HistoryDetail.svelte';
@@ -29,6 +29,7 @@
     known,
     timezone,
     week,
+    runs,
     wide,
     view,
     onrevert,
@@ -42,6 +43,8 @@
     known: (id: string) => boolean;
     timezone: string;
     week: Week | null;
+    /** The runs of the weeks the app holds, to name an answer's run (records name it by id). */
+    runs: Run[];
     /** Two panes: the side pane and the Drafts column; else the sheet and chips in the row. */
     wide: boolean;
     view: 'graph' | 'list';
@@ -100,10 +103,11 @@
   const selectedKey = $derived(selectedSeq !== null ? `r${selectedSeq}` : selectedDraft ? (reachable.find((r) => r.key === `t-${selectedDraft}` || r.key === `e-${selectedDraft}`)?.key ?? '') : '');
   // The roving tab stop: the focused row, else the selection, else the first row.
   const stop = $derived(reachable.some((r) => r.key === focusKey) ? focusKey : reachable.some((r) => r.key === selectedKey) ? selectedKey : (reachable[0]?.key ?? ''));
-  // Lanes 24 px apart on wide screens, 16 px on phones; at least three lanes wide.
-  const lanes = $derived(Math.max(3, laneCount(rows)));
+  // Lanes 24 px apart on wide screens, 16 px on phones; the column is as wide as the lanes drawn (the History line alone with no drafts).
+  const lanes = $derived(laneCount(rows));
   const x = $derived((lane: number) => (wide ? 14 + lane * 24 : 10 + lane * 16));
   const width = $derived(wide ? 28 + lanes * 24 : 18 + lanes * 16);
+  const titles = $derived(runTitles(runs, records));
   // Nothing to draw anywhere: no lanes in the loaded records and nothing older to load.
   const empty = $derived(loaded && !error && drafts.length === 0 && nextBefore === null && target === null);
   $effect(() => onempty?.(empty));
@@ -443,7 +447,7 @@
     <span class="gx__l1"
       ><b>{who(r)}</b><span class="chip chip--mono">{SURFACE_LABELS[r.surface] ?? r.surface}</span><span class="gx__time mono">{when(r.at)}</span>{#if row.head}<span class="chip chip--mono gx__headchip">head</span>{/if}</span
     >
-    <span class="gx__l2">{describe(r, names, timezone).join(' · ') || `${r.rows.length} row${r.rows.length === 1 ? '' : 's'} changed`}</span>
+    <span class="gx__l2">{describe(r, names, timezone, (id) => titles.get(id)).join(' · ') || `${r.rows.length} row${r.rows.length === 1 ? '' : 's'} changed`}</span>
   {:else if row.kind === 'tip'}
     <span class="gx__l1"><b>{row.draft.title}</b><span class="gx__time mono">{row.draft.author.name} · edited {edited(row.draft.updated_at)}</span></span>
     <span class="gx__l2">{tipLine(row.draft, headSeq)}</span>
@@ -635,7 +639,7 @@
 {/if}
 
 {#if selectedRecord}
-  <HistoryDetail {wide} extra={paneDrafts} record={selectedRecord} week={selectedRecord.weeks[0] ?? ''} {timezone} {names} onclose={closePane} {onrevert} {onrestore} {onraw} />
+  <HistoryDetail {wide} extra={paneDrafts} record={selectedRecord} week={selectedRecord.weeks[0] ?? ''} {timezone} {names} runTitle={(id) => titles.get(id)} onclose={closePane} {onrevert} {onrestore} {onraw} />
 {:else if selectedDraft && wide}
   <aside class="side-pane side-pane--history graph-pane" data-fid="graph-draft-pane" aria-label="Draft {detail?.title ?? ''}">
     {#if detail}

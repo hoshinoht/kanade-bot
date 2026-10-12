@@ -652,7 +652,7 @@ test('history: restore a week to a point, revert a member, and a run’s change 
   // By field: who last set Tsubame's answer.
   await choose(log.getByLabel('By field'), { label: "Tsubame's answer" });
   await expect(rows).toHaveCount(1);
-  await expect(rows.first()).toContainText('Tsubame → out on XKalos');
+  await expect(rows.first()).toContainText('Tsubame → out for XKalos');
   await expect(rows.first()).toContainText('#2');
 });
 
