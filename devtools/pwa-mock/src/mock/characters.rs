@@ -133,14 +133,14 @@ fn invalid(message: &str) -> MoveError {
     MoveError::Coded(422, "invalid", message.into())
 }
 
-fn ign(text: &str) -> Result<String, MoveError> {
+pub(super) fn ign(text: &str) -> Result<String, MoveError> {
     let ign = text.trim();
     ((4..=12).contains(&ign.len()) && ign.bytes().all(|b| b.is_ascii_alphanumeric()))
         .then(|| ign.to_owned())
         .ok_or_else(|| invalid("An IGN is 4-12 letters or digits."))
 }
 
-fn world(text: Option<&str>) -> Result<String, MoveError> {
+pub(super) fn world(text: Option<&str>) -> Result<String, MoveError> {
     let world = text.unwrap_or("").trim().to_ascii_lowercase();
     if world.is_empty() {
         return Ok("msea".into());
@@ -284,8 +284,13 @@ impl Store {
             updated_at: now,
             version: 1,
         };
-        let out = row.json();
+        let mut out = row.json();
+        let ask = (row.world == "msea").then(|| row.id.clone());
         self.characters.push(row);
+        // Module `character_data` connected: a MapleSEA create also asks the
+        // member to link it (pending), as the server's create does.
+        let link = ask.and_then(|id| self.ask_link_on_create(&id));
+        out["link"] = json!(link);
         Ok(out)
     }
 

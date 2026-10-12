@@ -341,6 +341,39 @@ impl Estimates {
     fn running(&self) -> Option<&Job> {
         self.jobs.iter().find(|job| job.state() == "running")
     }
+
+    /// `character_id`'s reading for boss `token` from the newest done job
+    /// that looked them up in the last 24 hours (`null` otherwise), as
+    /// readiness reads the server's memory: never starting a lookup.
+    pub fn reading(&self, character_id: &str, token: &str, now: i64) -> Value {
+        self.jobs
+            .iter()
+            .filter(|job| job.state() == "done")
+            .filter_map(|job| {
+                let at = job.subjects.iter().position(|s| s.character_id == character_id)?;
+                let fetched_at = job.fetched_at.unwrap_or(job.started_at + 20);
+                (now - fetched_at < 24 * 3_600).then_some((fetched_at, job, at))
+            })
+            .max_by_key(|(fetched_at, ..)| *fetched_at)
+            .and_then(|(fetched_at, job, at)| {
+                let members = job.members();
+                let card = members[at]["bosses"]
+                    .as_array()?
+                    .iter()
+                    .find(|card| card["boss"] == token)?
+                    .clone();
+                let share = if card["effective_percentage"].is_null() {
+                    card["percentage"].clone()
+                } else {
+                    card["effective_percentage"].clone()
+                };
+                Some(json!({
+                    "percentage": share, "rating": card["rating"],
+                    "estimated_minutes": card["estimated_minutes"], "fetched_at": iso_secs(fetched_at),
+                }))
+            })
+            .unwrap_or(Value::Null)
+    }
 }
 
 impl Store {

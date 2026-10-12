@@ -1,6 +1,7 @@
 //! The character-data service (module `character_data`): link requests and
-//! confirmations, unlink, refreshes through the Open API under the shared
-//! limiter, budget and backoffs, and the sweeper. One instance per process,
+//! confirmations, unlink, refreshes and the admin's unstored lookup through
+//! the Open API under the shared limiter, budget and backoffs, and the
+//! sweeper. One instance per process,
 //! shared by the admin API, the `CharacterData` task and (S3) Discord.
 //!
 //! Logs carry error codes, counts and reasons only: never an IGN, a Nexon
@@ -10,6 +11,7 @@
 mod calls;
 mod health;
 mod link;
+mod lookup;
 mod member;
 mod posts;
 mod refresh;
@@ -26,6 +28,7 @@ use tokio::sync::Notify;
 
 pub use health::{BatchReport, Health, LinkCounts, NexonState, PostCounts};
 pub use link::{ConfirmOutcome, LinkView, RequestOutcome};
+pub use lookup::{Found, LOOKUP_SPACING, LookupOutcome};
 pub use member::{MemberCharacter, MemberLink};
 pub use posts::{DeskFuture, Located, PostDesk, PostIssue, StripReport, Stripped, Tracked};
 pub use refresh::{FetchState, RefreshOutcome};
@@ -141,6 +144,8 @@ struct Holds {
     last_sweep: Option<DateTime<Utc>>,
     /// Posts whose strip failed, by ref.
     strip_retries: HashMap<String, posts::StripRetry>,
+    /// Each admin's last lookup (`kind:id`), for [`LOOKUP_SPACING`].
+    lookups: HashMap<String, DateTime<Utc>>,
 }
 
 pub struct CharacterData {

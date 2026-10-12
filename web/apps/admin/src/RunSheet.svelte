@@ -27,8 +27,8 @@
   import PresenceButton from './presence/PresenceButton.svelte';
   import PresenceNote from './presence/PresenceNote.svelte';
   import EstimatePanel from './chardata/EstimatePanel.svelte';
-  import { levelChip, readinessLine } from './chardata/format';
-  import { RunReadinessView } from './chardata/routes.svelte';
+  import { dayTime, ESTIMATE_LABEL, ESTIMATE_NOTE, levelChip, readinessLine, scouterAt, scouterChip } from './chardata/format';
+  import { estimateEnds, RunReadinessView } from './chardata/routes.svelte';
   import '@kanade/ui/styles/screens/character-data.scss';
   import { actorName } from './history/describe';
 
@@ -347,13 +347,16 @@
   });
   $effect(() => chars?.follow());
   // Module `character_data` (B_CharReady): level and power per slot, judged per boss of the run.
-  // Computed on read and never blocking; read again whenever the picks are.
+  // Computed on read and never blocking; read again whenever the picks are, and when a
+  // MapleScouter lookup ends (its readings replace the slot's CP).
   const ready = $derived(charRun ? new RunReadinessView(charRun) : null);
   $effect(() => {
     if (!ready || !chars?.data) return;
+    void estimateEnds.count;
     void ready.load();
   });
   const readyShown = $derived(Boolean(charsShown && ready?.data));
+  const scouterShown = $derived(Boolean(ready?.data?.slots.some((s) => scouterAt(s) !== null)));
   // Each verdict row names its boss when the run has more than one.
   const bossLabel = (key: string, difficulty: string) => run?.bosses.find((b) => b.key === key && b.difficulty === difficulty)?.token ?? key;
   // The wide sheet's popover (one member's), the narrow sheet's bottom sheet.
@@ -524,14 +527,22 @@
   {@const r = ready?.data?.slots.find((s) => s.member_id === person.id)}
   {#if r?.character}
     {@const line = readinessLine(r)}
+    {@const readAt = scouterAt(r)}
     <div class="ready" role="group" aria-label="Readiness of {r.character.ign}" data-fid="party-ready">
-      <span class="ready__line"><span class="ready__values">{line.values}</span><span class="ready__source">{line.source}</span></span>
+      <span class="ready__line"
+        ><span class="ready__values">{line.values}</span><span class="ready__source">{line.source}</span>{#if readAt}<span class="ready__source ready__scouter-at"
+            >MapleScouter · <span class="mono">{dayTime(readAt, week.timezone)}</span></span
+          >{/if}</span
+      >
       <ul class="ready__bosses">
         {#each r.bosses as boss (`${boss.boss}-${boss.difficulty}`)}
           {@const chip = levelChip(boss)}
           <li class="ready__boss">
             {#if r.bosses.length > 1}<span class="ready__boss-name">{bossLabel(boss.boss, boss.difficulty)}</span>{/if}
-            <StatusChip tone={chip.tone}>{chip.text}</StatusChip>
+            <StatusChip tone={chip.tone}>{chip.text}</StatusChip>{#if boss.scouter}{@const est = scouterChip(boss.scouter)}<span
+                class="status-chip status-chip--neutral ready__scouter"
+                title={est.rating}>{est.text}<span class="vh"> · {est.rating}</span></span
+              >{/if}
           </li>
         {/each}
       </ul>
@@ -548,13 +559,19 @@
         data-fid="party-ready-attrib">{ready.data.attribution}</span
       >{/if}</svelte:element
   >
+  {#if scouterShown}
+    <!-- Wherever MapleScouter numbers show, its label and note do too (once per panel). -->
+    <svelte:element this={tag} class="ready__estimate" data-fid="party-ready-estimate"
+      ><b>{ESTIMATE_LABEL}</b> · {ESTIMATE_NOTE}. It replaces CP where a character has one.</svelte:element
+    >
+  {/if}
 {/snippet}
 
 {#snippet readyRules()}
   <div class="runsheet__charrules ready__rules" data-fid="party-ready-rules">
     <span class="cap">How the verdict reads</span>
     <span>Per boss of the run: level against its entry level.</span>
-    <span>CP is shown, never judged.</span>
+    <span>CP, or MapleScouter where a lookup is kept, is shown, never judged.</span>
     <span>Fresh NEXON data first; else the roster level, marked manual.</span>
   </div>
 {/snippet}
@@ -1209,7 +1226,7 @@
                 {/if}
                 {#if readyShown && !wide}
                   <li class="hint ready__hint">
-                    Per boss: level against its entry level. CP is shown, never judged.
+                    Per boss: level against its entry level. CP and MapleScouter are shown, never judged.
                   </li>
                 {/if}
                 {#if charsShown && !wide}

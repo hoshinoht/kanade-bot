@@ -22,6 +22,27 @@
         "version": { "type": "integer", "minimum": 1, "description": "Send it back as the PATCH precondition." }
       }
     },
+    "CharacterCreated": {
+      "description": "`201` answer of `POST /api/admin/members/{id}/characters`: the new row plus `link`. With module `character_data` on and a Nexon key, a MapleSEA (`msea`) character's member is asked to link it in the same request (a `pending` link, no Open API call until the member confirms in Discord, a History row as `POST …/link`, removed after 14 days unconfirmed): `pending`; `failed` when that request could not be written (the character is saved; Link… asks again); `null` when none was asked (module off, no key, or another region).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "member_id", "ign", "world", "class", "level", "role", "retired_at", "created_at", "updated_at", "updated_by", "version", "link"],
+      "properties": {
+        "id": { "type": "string" },
+        "member_id": { "type": "string" },
+        "ign": { "type": "string", "pattern": "^[A-Za-z0-9]{4,12}$" },
+        "world": { "type": "string", "pattern": "^[a-z0-9-]{1,16}$" },
+        "class": { "type": ["string", "null"], "minLength": 1, "maxLength": 32 },
+        "level": { "type": ["integer", "null"], "minimum": 1, "maximum": 300 },
+        "role": { "enum": ["main", "alt"] },
+        "retired_at": { "$ref": "common.json#/$defs/NullableString" },
+        "created_at": { "type": "string" },
+        "updated_at": { "type": "string" },
+        "updated_by": { "$ref": "history.json#/$defs/Actor" },
+        "version": { "type": "integer", "minimum": 1 },
+        "link": { "enum": ["pending", "failed", null] }
+      }
+    },
     "MemberCharacters": {
       "type": "object",
       "additionalProperties": false,
@@ -94,7 +115,7 @@
       }
     },
     "CharacterCreate": {
-      "description": "Request body of `POST /api/admin/members/{id}/characters`. `ign` is 4-12 letters or digits, unique per `world` case-insensitively (retired characters included; else 422 `ign_taken`); `world` is the region, default `msea`; `class` is at most 32 characters (empty: none); `level` 1-300. A member's first active character is their main whatever `role` says; otherwise `role` defaults to `alt`, and `main` takes the crown (the current main becomes an alt in the same write).",
+      "description": "Request body of `POST /api/admin/members/{id}/characters`. `ign` is 4-12 letters or digits, unique per `world` case-insensitively (retired characters included; else 422 `ign_taken`); `world` is the region, default `msea`; `class` is at most 32 characters (empty: none); `level` 1-300. `class` and `level` are optional manual values: the admin app sends neither for a MapleSEA character while module `character_data` has a Nexon key (NEXON's values come from the member's link instead and are never copied into the roster). A member's first active character is their main whatever `role` says; otherwise `role` defaults to `alt`, and `main` takes the crown (the current main becomes an alt in the same write).",
       "type": "object",
       "additionalProperties": false,
       "required": ["ign"],

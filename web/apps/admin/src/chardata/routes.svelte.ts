@@ -4,12 +4,38 @@
  * module off, or no scouter URL) is remembered for the session and nothing
  * more is asked or drawn, as the roster's `rosterRoutes` does.
  */
-import type { CharacterLink, EstimateJob, EstimateStarted, EstimateStatus, RunReadiness } from '@kanade/api-types';
+import type { CharacterLink, CharacterLookup, EstimateJob, EstimateStarted, EstimateStatus, LookupStatus, RunReadiness } from '@kanade/api-types';
 import { send, type Outcome } from '../resource.svelte';
 
 export const chardataRoutes = $state({ gone: false, estimatesGone: false });
 
+/**
+ * Lookups this tab saw end (any target): readiness reads it, so its
+ * MapleScouter chips follow a finished Estimate panel or strip lookup.
+ */
+export const estimateEnds = $state({ count: 0 });
+
 const linkPath = (id: string) => `/api/admin/characters/${encodeURIComponent(id)}`;
+
+const LOOKUP = '/api/admin/characters/lookup';
+
+/**
+ * Whether NEXON is connected for the Add character dialog: `false` when the
+ * module is off (and remembered as gone) or has no key, `null` when the read
+ * failed (the dialog then keeps the manual fields).
+ */
+export async function lookupConnected(): Promise<boolean | null> {
+  if (chardataRoutes.gone) return false;
+  const result = await send((c) => c.get<LookupStatus>(LOOKUP));
+  if (result.ok) return result.value.connected;
+  if (result.unbuilt) chardataRoutes.gone = true;
+  return result.unbuilt ? false : null;
+}
+
+/** The Add character lookup: shown only, never stored by anyone. */
+export function lookUp(ign: string, world: string): Promise<Outcome<CharacterLookup>> {
+  return send((c) => c.post<CharacterLookup>(LOOKUP, { ign, world }));
+}
 
 /**
  * A run's readiness (B_CharReady): computed on read by the server, never
@@ -139,6 +165,7 @@ export class EstimateLookup {
       serverOffset = Date.parse(job.started_at) - Date.now();
       this.job = job;
       this.running = job.state === 'running' ? job : null;
+      if (job.state !== 'running') estimateEnds.count += 1;
       this.#busyFrom(job);
       this.#follow();
       return;
@@ -190,6 +217,7 @@ export class EstimateLookup {
           this.#busyFrom(job);
         }
         this.running = job.state === 'running' ? job : null;
+        if (!this.running) estimateEnds.count += 1;
         if (!this.running && this.refused?.code === 'estimate_running') this.refused = null;
         this.#follow();
       } else if (result.unbuilt) chardataRoutes.estimatesGone = true;

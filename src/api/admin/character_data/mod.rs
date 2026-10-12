@@ -1,5 +1,6 @@
 //! Character data (module `character_data`): one roster character's link
-//! and Nexon data, and a run's readiness (`readiness.rs`). While the module
+//! and Nexon data, the Add character lookup (`lookup.rs`, never stored) and
+//! a run's readiness (`readiness.rs`). While the module
 //! is off (`modules.character_data`, read at startup) every route answers
 //! the generic `404` before the session is checked, as an unmounted path
 //! does. Writes take the session's CSRF token, replay an `Idempotency-Key`
@@ -9,6 +10,7 @@
 //! batch's 24-hour cap and daily budget.
 
 mod estimates;
+mod lookup;
 mod readiness;
 
 use std::sync::Arc;
@@ -47,6 +49,7 @@ pub fn routes() -> Router<Arc<Site>> {
         )
         .route("/api/admin/characters/{id}/refresh", post(refresh))
         .merge(estimates::routes())
+        .merge(lookup::routes())
         .merge(readiness::routes())
 }
 

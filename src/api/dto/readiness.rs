@@ -1,16 +1,22 @@
 //! `character_data.json` run readiness (module `character_data`): each party
-//! slot's level and power, and its level against each boss of the run.
-//! NEXON values appear only from an active link's unexpired data, with the
-//! attribution.
+//! slot's level and power, its level against each boss of the run, and the
+//! character's MapleScouter reading per boss when the estimates' 24-hour
+//! memory holds one. NEXON values appear only from an active link's
+//! unexpired data, with the attribution.
 
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-use super::characters::{CharacterChoice, choice};
-use crate::domain::{
-    characters::Character,
-    chardata::{
-        ATTRIBUTION, LevelSource, LevelVerdict, PowerKind, Readiness, Requirement, date_text,
+use super::{
+    characters::{CharacterChoice, choice},
+    iso_instant,
+};
+use crate::{
+    domain::{
+        characters::Character,
+        chardata::{ATTRIBUTION, LevelSource, LevelVerdict, Readiness, Requirement, date_text},
     },
+    infrastructure::scouter::{Member, scouter_keys},
 };
 
 #[derive(Serialize)]
@@ -65,8 +71,7 @@ pub struct ReadinessLevel {
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ReadinessPower {
-    /// `scouter` is reserved for MapleScouter's boss values (not sent yet).
-    #[cfg_attr(test, ts(type = "'nexon_cp' | 'scouter'"))]
+    #[cfg_attr(test, ts(type = "'nexon_cp'"))]
     pub kind: &'static str,
     #[cfg_attr(test, ts(type = "number"))]
     pub value: u64,
@@ -84,15 +89,50 @@ pub struct BossReadiness {
     pub entry_level: Option<u16>,
     #[cfg_attr(test, ts(type = "'ok' | 'under' | 'unknown'"))]
     pub level: &'static str,
+    /// The character's MapleScouter reading for this boss from the
+    /// estimates' 24-hour memory (never looked up here); `null` without
+    /// one, or while estimates are off.
+    pub scouter: Option<ScouterReading>,
 }
 
-/// One slot: `brings` is the character and whether it is inferred.
+/// Shown, never judged: "Estimate for planning only, not eligibility".
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct ScouterReading {
+    /// The character's share (`effective_percentage`), else the card's
+    /// percentage.
+    pub percentage: f64,
+    pub rating: String,
+    pub estimated_minutes: Option<f64>,
+    /// When kanade received it from MapleScouter.
+    pub fetched_at: String,
+}
+
+/// The card for `boss` in `member`'s result, through the scouter key table.
+fn reading(
+    boss: &Requirement,
+    member: &Member,
+    fetched_at: DateTime<Utc>,
+) -> Option<ScouterReading> {
+    let token = format!("{}{}", boss.difficulty.to_ascii_uppercase(), boss.boss);
+    let card = scouter_keys(&token).find_map(|key| member.bosses.get(key))?;
+    Some(ScouterReading {
+        percentage: card.effective_percentage.unwrap_or(card.percentage),
+        rating: card.rating.clone(),
+        estimated_minutes: card.estimated_minutes,
+        fetched_at: iso_instant(fetched_at),
+    })
+}
+
+/// One slot: `brings` is the character and whether it is inferred;
+/// `scouter` its cached MapleScouter result and when it was fetched.
 pub fn slot(
     member_id: &str,
     brings: Option<(&Character, bool)>,
     link: Option<&'static str>,
     readiness: &Readiness,
     bosses: &[Requirement],
+    scouter: Option<&(Member, DateTime<Utc>)>,
 ) -> ReadinessSlot {
     ReadinessSlot {
         member_id: member_id.to_owned(),
@@ -108,9 +148,7 @@ pub fn slot(
             as_of: level.as_of.map(date_text),
         }),
         power: readiness.power.map(|power| ReadinessPower {
-            kind: match power.kind {
-                PowerKind::NexonCp => "nexon_cp",
-            },
+            kind: "nexon_cp",
             value: power.value,
             as_of: power.as_of.map(date_text),
         }),
@@ -126,6 +164,8 @@ pub fn slot(
                     LevelVerdict::Under => "under",
                     LevelVerdict::Unknown => "unknown",
                 },
+                scouter: scouter
+                    .and_then(|(member, fetched_at)| reading(boss, member, *fetched_at)),
             })
             .collect(),
     }

@@ -43,6 +43,20 @@ pub struct MemberCharacters {
     pub characters: Vec<CharacterRow>,
 }
 
+/// The create's answer: the row and, with module `character_data`, the
+/// member's link request the create asked for.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct CharacterCreated {
+    #[serde(flatten)]
+    pub row: CharacterRow,
+    /// `pending`: the member was asked to link it (a MapleSEA character
+    /// with the module on and a Nexon key); `failed`: that request could
+    /// not be made (the character is saved); `null`: none was asked.
+    #[cfg_attr(test, ts(type = "'pending' | 'failed' | null"))]
+    pub link: Option<&'static str>,
+}
+
 pub fn row(character: &Character) -> CharacterRow {
     CharacterRow {
         id: character.id.clone(),

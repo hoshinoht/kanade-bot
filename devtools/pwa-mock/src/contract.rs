@@ -982,10 +982,11 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
             &chars,
             Some(json!({ "ign": "Wisteria", "role": "alt", "level": 260 })),
             StatusCode::CREATED,
-            "characters.json#/$defs/CharacterRow",
+            "characters.json#/$defs/CharacterCreated",
         )
         .await;
     assert_eq!(first["role"], "main", "the first character is the main");
+    assert_eq!(first["link"], "pending", "a MapleSEA create asks to link");
     let second = h
         .expect(
             false,
@@ -993,7 +994,7 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
             &chars,
             Some(json!({ "ign": "Heather" })),
             StatusCode::CREATED,
-            "characters.json#/$defs/CharacterRow",
+            "characters.json#/$defs/CharacterCreated",
         )
         .await;
     let csrf = h.csrf.clone();
@@ -3885,5 +3886,125 @@ async fn character_links_and_health_match_the_contract() {
         "",
     )
     .await;
+    assert!(h.failures.is_empty(), "{}", h.failures.join("\n"));
+}
+
+#[tokio::test]
+async fn character_lookup_matches_the_contract() {
+    let mut h = Harness::new();
+    let path = "/api/admin/characters/lookup";
+    let status = h
+        .ok("GET", path, None, "character_data.json#/$defs/LookupStatus")
+        .await;
+    assert_eq!(status["connected"], true);
+    let found = h
+        .ok(
+            "POST",
+            path,
+            Some(json!({ "ign": "Wisteria" })),
+            "character_data.json#/$defs/CharacterLookup",
+        )
+        .await;
+    assert_eq!(found["name"], "Wisteria");
+    assert_eq!(found["attribution"], "Data based on NEXON Open API");
+    let csrf = h.csrf.clone();
+    let marks = [("x-kanade-csrf", csrf.as_str())];
+    for (body, want) in [
+        (
+            json!({ "ign": "NopeName" }),
+            (StatusCode::NOT_FOUND, "not_found"),
+        ),
+        (
+            json!({ "ign": "BusyName" }),
+            (StatusCode::SERVICE_UNAVAILABLE, "nexon_unavailable"),
+        ),
+        (
+            json!({ "ign": "OfflineAb" }),
+            (StatusCode::CONFLICT, "not_connected"),
+        ),
+        (
+            json!({ "ign": "WaitName" }),
+            (StatusCode::TOO_MANY_REQUESTS, "lookup_cooldown"),
+        ),
+        (
+            json!({ "ign": "Wisteria", "world": "gms" }),
+            (StatusCode::UNPROCESSABLE_ENTITY, "region"),
+        ),
+        (
+            json!({ "ign": "ab" }),
+            (StatusCode::UNPROCESSABLE_ENTITY, "invalid"),
+        ),
+    ] {
+        h.refused("POST", path, body, &marks, want).await;
+    }
+    // A lookup keeps nothing: Mika's roster is as seeded.
+    let mika = h
+        .ok(
+            "GET",
+            "/api/admin/members/1003/characters",
+            None,
+            "characters.json#/$defs/MemberCharacters",
+        )
+        .await;
+    assert_eq!(mika["characters"].as_array().map(Vec::len), Some(4));
+
+    // Another region keeps its manual values and asks no link.
+    let other = h
+        .expect(
+            false,
+            "POST",
+            "/api/admin/members/1013/characters",
+            Some(json!({ "ign": "Primrose", "world": "gms", "class": "Hero", "level": 250 })),
+            StatusCode::CREATED,
+            "characters.json#/$defs/CharacterCreated",
+        )
+        .await;
+    assert_eq!(
+        (&other["level"], &other["link"]),
+        (&json!(250), &Value::Null)
+    );
+    let asked = h
+        .ok(
+            "GET",
+            &format!("/api/admin/characters/{}/link", s(&other["id"])),
+            None,
+            "character_data.json#/$defs/CharacterLink",
+        )
+        .await;
+    assert_eq!(asked["state"], "not_linked");
+
+    // Without a key: not connected, and a create asks nothing.
+    h.send(
+        false,
+        "POST",
+        "/__mock/character-data",
+        Some(json!({ "health": "setup" })),
+    )
+    .await;
+    let status = h
+        .ok("GET", path, None, "character_data.json#/$defs/LookupStatus")
+        .await;
+    assert_eq!(status["connected"], false);
+    let plain = h
+        .expect(
+            false,
+            "POST",
+            "/api/admin/members/1013/characters",
+            Some(json!({ "ign": "Heather9" })),
+            StatusCode::CREATED,
+            "characters.json#/$defs/CharacterCreated",
+        )
+        .await;
+    assert_eq!(plain["link"], Value::Null);
+    // Off: the generic 404.
+    h.send(
+        false,
+        "POST",
+        "/__mock/modules",
+        Some(json!({ "character_data": false })),
+    )
+    .await;
+    h.expect(false, "GET", path, None, StatusCode::NOT_FOUND, "")
+        .await;
     assert!(h.failures.is_empty(), "{}", h.failures.join("\n"));
 }

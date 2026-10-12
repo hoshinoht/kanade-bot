@@ -52,7 +52,7 @@ fn text(value: Option<String>) -> Option<String> {
 
 /// The snapshot `basic` + combat power make, everything optional and
 /// bounded; image URLs only over https.
-fn facts(
+pub(super) fn facts(
     character_id: &str,
     ocid: String,
     ocid_fetched_at: DateTime<Utc>,
@@ -81,14 +81,14 @@ fn facts(
 }
 
 /// A call answered `OPENAPI00003`.
-fn invalid_identifier(failed: &CallFailed) -> bool {
+pub(super) fn invalid_identifier(failed: &CallFailed) -> bool {
     failed.failure() == Some(Failure::InvalidIdentifier)
 }
 
 /// `/id` answers an unknown name with `400 OPENAPI00004` ("Please input
 /// valid parameter"; live MapleSEA, 2026-10-12), not an empty body. The name
 /// is its only parameter, so on `/id` this means no such character.
-fn no_such_name(failed: &CallFailed) -> bool {
+pub(super) fn no_such_name(failed: &CallFailed) -> bool {
     failed.label() == "OPENAPI00004"
 }
 

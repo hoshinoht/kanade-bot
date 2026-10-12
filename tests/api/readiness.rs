@@ -119,15 +119,8 @@ async fn readiness_judges_each_slot_per_boss_and_writes_nothing() {
         skew,
     } = on().await;
     // Alice: linked (NEXON Lv. 271, CP 27,182,818); her manual level is 260.
+    // The create already asked her to link it (pending).
     let alice = character(&reads, "1001", "Wisteria", 260).await;
-    reads
-        .ok(
-            "POST",
-            &format!("/api/admin/characters/{alice}/link"),
-            json!({"version": 0}),
-            "character_data.json#/$defs/CharacterLink",
-        )
-        .await;
     let ConfirmOutcome::Linked(..) = service
         .confirm_link("1001", &alice, NOTICE_VERSION)
         .await
@@ -175,9 +168,10 @@ async fn readiness_judges_each_slot_per_boss_and_writes_nothing() {
         linked["power"],
         json!({"kind": "nexon_cp", "value": NEXON_CP, "as_of": "2026-09-28"})
     );
+    // Estimates off (no scouter URL): never a MapleScouter reading.
     assert_eq!(
         linked["bosses"],
-        json!([{"boss": "Kalos", "difficulty": "x", "entry_level": 265, "level": "ok"}])
+        json!([{"boss": "Kalos", "difficulty": "x", "entry_level": 265, "level": "ok", "scouter": null}])
     );
 
     let none = slot(&ready, "1002");
@@ -195,9 +189,10 @@ async fn readiness_judges_each_slot_per_boss_and_writes_nothing() {
 
     let manual = slot(&ready, "1004");
     assert_eq!(manual["character"]["id"], dan.as_str());
+    // The create asked Dan to link it; until he confirms, manual values.
     assert_eq!(
         (&manual["inferred"], &manual["link"]),
-        (&json!(true), &json!("not_linked"))
+        (&json!(true), &json!("pending"))
     );
     assert_eq!(
         manual["level"],
@@ -215,8 +210,8 @@ async fn readiness_judges_each_slot_per_boss_and_writes_nothing() {
     assert_eq!(
         slot(&star, "1001")["bosses"],
         json!([
-            {"boss": "MaleficStar", "difficulty": "h", "entry_level": 280, "level": "under"},
-            {"boss": "Lucid", "difficulty": "h", "entry_level": null, "level": "unknown"},
+            {"boss": "MaleficStar", "difficulty": "h", "entry_level": 280, "level": "under", "scouter": null},
+            {"boss": "Lucid", "difficulty": "h", "entry_level": null, "level": "unknown", "scouter": null},
         ])
     );
 

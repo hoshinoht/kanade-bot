@@ -6,11 +6,12 @@
 //! and nothing written to the change history.
 
 use std::sync::{
-    Arc,
+    Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
 };
 
 use axum::Router;
+use chrono::TimeDelta;
 use kanade::{
     api::admin::config::{ConfigDesk, ConfigFacts, ConfigInputs},
     domain::{
@@ -32,10 +33,17 @@ use crate::{
 };
 
 const LINK: &str = "character_data.json#/$defs/CharacterLink";
+const LOOKUP: &str = "character_data.json#/$defs/CharacterLookup";
+const LOOKUP_STATUS: &str = "character_data.json#/$defs/LookupStatus";
+const CREATED: &str = "characters.json#/$defs/CharacterCreated";
 const MESSAGE: &str = "common.json#/$defs/Message";
 const CONFIG: &str = "config.json#/$defs/ConfigView";
 const IGN: &str = "Wisteria";
 const OCID: &str = "ocid-invented-api-1";
+/// Names the fake Open API does not know, or answers with maintenance.
+const NOBODY: &str = "Nobody42";
+const DOWNTIME: &str = "Downtime";
+const LOOKUP_PATH: &str = "/api/admin/characters/lookup";
 
 fn link(id: &str) -> String {
     format!("/api/admin/characters/{id}/link")
@@ -46,7 +54,10 @@ fn refresh(id: &str) -> String {
 }
 
 /// A fake Open API answering every call with invented data; counts calls.
+/// `/id` answers [`NOBODY`] as live MapleSEA answers an unknown name
+/// (`400 OPENAPI00004`) and [`DOWNTIME`] with maintenance.
 pub(crate) async fn fake_nexon() -> (std::net::SocketAddr, Arc<AtomicUsize>) {
+    use axum::{http::StatusCode, response::IntoResponse};
     let calls = Arc::new(AtomicUsize::new(0));
     let counted = Arc::clone(&calls);
     let app = Router::new().fallback(move |request: axum::extract::Request| {
@@ -54,14 +65,24 @@ pub(crate) async fn fake_nexon() -> (std::net::SocketAddr, Arc<AtomicUsize>) {
         async move {
             counted.fetch_add(1, Ordering::SeqCst);
             let path = request.uri().path().to_owned();
-            if path.ends_with("/v1/id") {
-                format!(r#"{{"ocid":"{OCID}"}}"#)
+            let query = request.uri().query().unwrap_or_default().to_owned();
+            let failed = |code: &str| {
+                let body = format!(r#"{{"error":{{"name":"{code}","message":"invented"}}}}"#);
+                (StatusCode::BAD_REQUEST, body).into_response()
+            };
+            if path.ends_with("/v1/id") && query.contains(NOBODY) {
+                failed("OPENAPI00004")
+            } else if path.ends_with("/v1/id") && query.contains(DOWNTIME) {
+                failed("OPENAPI00011")
+            } else if path.ends_with("/v1/id") {
+                format!(r#"{{"ocid":"{OCID}"}}"#).into_response()
             } else if path.ends_with("/character/basic") {
                 format!(
                     r#"{{"date":"2026-09-28T00:00+08:00","character_name":"{IGN}","world_name":"Aquila","character_class":"Bishop","character_level":271,"character_image":"https://open.api.nexon.com/static/invented"}}"#
-                )
+                ).into_response()
             } else {
-                r#"{"final_stat":[{"stat_name":"Combat Power","stat_value":"27182818"}]}"#.into()
+                r#"{"final_stat":[{"stat_name":"Combat Power","stat_value":"27182818"}]}"#
+                    .into_response()
             }
         }
     });
@@ -97,12 +118,21 @@ fn module(
     nexon: Option<std::net::SocketAddr>,
     slot: Arc<std::sync::OnceLock<Arc<CharacterData>>>,
 ) -> CharacterDataMaker {
+    skewed(nexon, slot, Arc::default())
+}
+
+/// [`module`] on the pinned clock moved by `skew` (the lookup spacing).
+fn skewed(
+    nexon: Option<std::net::SocketAddr>,
+    slot: Arc<std::sync::OnceLock<Arc<CharacterData>>>,
+    skew: Arc<Mutex<TimeDelta>>,
+) -> CharacterDataMaker {
     Box::new(move |store, clock| {
         let service = Arc::new(CharacterData::new(
             Arc::new(MemoryCharData::new()),
             store as Arc<dyn RosterSide>,
             nexon.map(|address| NexonClient::plain(address, ApiKey::new("invented-key"))),
-            clock,
+            Arc::new(move || clock() + *skew.lock().unwrap()),
             Timing {
                 spacing: std::time::Duration::from_millis(1),
                 rate_limit_unit: std::time::Duration::from_millis(1),
@@ -113,17 +143,22 @@ fn module(
     })
 }
 
-async fn character(reads: &Reads, ign: &str) -> String {
+/// Create a character for Alice: its `CharacterCreated` answer.
+async fn created(reads: &Reads, body: Value) -> Value {
     let reply = reads
-        .call(
-            "POST",
-            "/api/admin/members/1001/characters",
-            json!({"ign": ign}),
-            &[],
-        )
+        .call("POST", "/api/admin/members/1001/characters", body, &[])
         .await;
     assert_eq!(reply.status, 201, "{}", reply.text());
-    reply.json()["id"].as_str().unwrap().to_owned()
+    let value = reply.json();
+    assert_valid(CREATED, "create", &value);
+    value
+}
+
+async fn character(reads: &Reads, ign: &str) -> String {
+    created(reads, json!({"ign": ign})).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
 }
 
 async fn link_rows(reads: &Reads) -> Vec<(String, String, String)> {
@@ -144,12 +179,16 @@ async fn link_rows(reads: &Reads) -> Vec<(String, String, String)> {
 #[tokio::test]
 async fn every_route_is_the_generic_404_while_the_module_is_off() {
     let reads = Reads::with_characters().await;
-    let id = character(&reads, IGN).await;
+    let answer = created(&reads, json!({"ign": IGN})).await;
+    assert_eq!(answer["link"], Value::Null, "no link asked while off");
+    let id = answer["id"].as_str().unwrap().to_owned();
     for (method, path) in [
         ("GET", link(&id)),
         ("POST", link(&id)),
         ("DELETE", link(&id)),
         ("POST", refresh(&id)),
+        ("GET", LOOKUP_PATH.to_owned()),
+        ("POST", LOOKUP_PATH.to_owned()),
     ] {
         let signed_in = reads.call(method, &path, json!({"version": 0}), &[]).await;
         assert_eq!(
@@ -182,7 +221,18 @@ async fn config_has_no_health_block_while_off() {
 async fn without_a_key_links_are_refused_and_health_says_no_key() {
     let slot = Arc::default();
     let reads = Reads::with_character_data(Some(config()), module(None, slot)).await;
-    let id = character(&reads, IGN).await;
+    let answer = created(&reads, json!({"ign": IGN})).await;
+    assert_eq!(answer["link"], Value::Null, "no link asked without a key");
+    let id = answer["id"].as_str().unwrap().to_owned();
+    let lookup = reads.read(LOOKUP_PATH, LOOKUP_STATUS).await;
+    assert_eq!(lookup, json!({"connected": false}));
+    let refused_lookup = reads
+        .call("POST", LOOKUP_PATH, json!({"ign": IGN}), &[])
+        .await;
+    assert_eq!(
+        (refused_lookup.status, refused_lookup.api_error()),
+        (409, "not_connected".into())
+    );
     let status = reads.read(&link(&id), LINK).await;
     assert_eq!(status["state"], "not_connected");
     assert_eq!(status["attribution"], "Data based on NEXON Open API");
@@ -212,10 +262,26 @@ async fn an_admin_request_is_pending_until_the_member_confirms() {
     let reads =
         Reads::with_character_data(Some(config()), module(Some(address), Arc::clone(&slot))).await;
     let service = slot.get().unwrap().clone();
-    let id = character(&reads, IGN).await;
+    // A MapleSEA create asks the member at once: pending, nothing called.
+    let answer = created(&reads, json!({"ign": IGN})).await;
+    assert_eq!(answer["link"], "pending");
+    let id = answer["id"].as_str().unwrap().to_owned();
     let head = kanade::api::state::ReadStore::head(reads.store.as_ref())
         .await
         .unwrap();
+    let asked = reads.read(&link(&id), LINK).await;
+    assert_eq!(
+        (
+            &asked["state"],
+            &asked["version"],
+            &asked["requested_by"]["kind"]
+        ),
+        (&json!("pending"), &json!(1), &json!("admin"))
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0, "a create calls nothing");
+    // Withdrawn, so the explicit request below starts from no link.
+    let withdrawn = reads.call("DELETE", &link(&id), json!(null), &[]).await;
+    assert_eq!(withdrawn.status, 200, "{}", withdrawn.text());
 
     let status = reads.read(&link(&id), LINK).await;
     assert_eq!(
@@ -305,6 +371,9 @@ async fn an_admin_request_is_pending_until_the_member_confirms() {
     assert_eq!(
         rows,
         [
+            // The create's request and its withdrawal, then Link….
+            ("unlinked".into(), "pending".into()),
+            ("pending".into(), "unlinked".into()),
             ("unlinked".into(), "pending".into()),
             ("pending".into(), "linked".into()),
             ("linked".into(), "unlinked".into()),
@@ -380,4 +449,248 @@ async fn roster_deletes_and_ign_edits_unlink() {
     assert_eq!(deleted.status, 200, "{}", deleted.text());
     let rows = link_rows(&reads).await;
     assert_eq!(rows.iter().filter(|(_, to, _)| to == "unlinked").count(), 2);
+}
+
+async fn history_len(reads: &Reads) -> usize {
+    reads
+        .store
+        .settings_changes(SettingsChangeQuery::default())
+        .await
+        .unwrap()
+        .len()
+}
+
+#[tokio::test]
+async fn a_lookup_shows_nexon_data_once_and_stores_nothing() {
+    let (address, calls) = fake_nexon().await;
+    let skew = Arc::new(Mutex::new(TimeDelta::zero()));
+    let slot = Arc::new(std::sync::OnceLock::new());
+    let reads = Reads::with_character_data(
+        Some(config()),
+        skewed(Some(address), Arc::clone(&slot), Arc::clone(&skew)),
+    )
+    .await;
+    let later = |seconds| *skew.lock().unwrap() += TimeDelta::seconds(seconds);
+    let rows = history_len(&reads).await;
+    assert_eq!(
+        reads.read(LOOKUP_PATH, LOOKUP_STATUS).await,
+        json!({"connected": true})
+    );
+
+    // Refused before any call (and before the spacing counts).
+    for (body, want) in [
+        (json!({"ign": "ab"}), (422, "invalid")),
+        (json!({"ign": IGN, "world": "gms"}), (422, "region")),
+        (json!({"ign": IGN, "level": 1}), (400, "invalid_body")),
+    ] {
+        let reply = reads.call("POST", LOOKUP_PATH, body.clone(), &[]).await;
+        assert_eq!(
+            (reply.status, reply.api_error()),
+            (want.0, want.1.into()),
+            "{body}"
+        );
+    }
+    let no_csrf = send(
+        reads.admin,
+        "POST",
+        ADMIN_HOST,
+        LOOKUP_PATH,
+        &[("Cookie", &reads.cookie), ("Origin", "https://kanade.test")],
+        Some(&json!({"ign": IGN}).to_string()),
+    )
+    .await;
+    assert_eq!((no_csrf.status, no_csrf.api_error()), (403, "csrf".into()));
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+    // Found: `id` + `basic` only (no `stat`), attributed, no combat power.
+    let found = reads
+        .call("POST", LOOKUP_PATH, json!({"ign": IGN.to_lowercase()}), &[])
+        .await;
+    assert_eq!(found.status, 200, "{}", found.text());
+    let found = found.json();
+    assert_valid(LOOKUP, "lookup", &found);
+    assert_eq!(
+        found,
+        json!({
+            "name": IGN, "world": "Aquila", "class": "Bishop", "level": 271,
+            "image_url": "https://open.api.nexon.com/static/invented",
+            "as_of": "2026-09-28", "attribution": "Data based on NEXON Open API",
+        })
+    );
+    assert!(!found.to_string().contains(OCID), "the ocid is never sent");
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+
+    // Counted against the shared budget; nothing linked, kept or recorded.
+    let config = reads.read("/api/admin/config", CONFIG).await;
+    assert_eq!(config["character_data"]["calls_24h"], 2);
+    assert_eq!(
+        config["character_data"]["links"],
+        json!({"pending": 0, "active": 0, "stale": 0})
+    );
+    assert_eq!(history_len(&reads).await, rows, "no History row");
+    assert_eq!(
+        reads
+            .read(
+                "/api/admin/members/1001/characters",
+                "characters.json#/$defs/MemberCharacters"
+            )
+            .await["characters"],
+        json!([]),
+        "no roster row"
+    );
+
+    // The same admin waits a few seconds between lookups.
+    let soon = reads
+        .call("POST", LOOKUP_PATH, json!({"ign": IGN}), &[])
+        .await;
+    assert_eq!(
+        (soon.status, soon.api_error()),
+        (429, "lookup_cooldown".into())
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 2, "no call while waiting");
+
+    // Unknown: live MapleSEA's 400 OPENAPI00004 on `/id` is "no such name".
+    later(3);
+    let unknown = reads
+        .call("POST", LOOKUP_PATH, json!({"ign": NOBODY}), &[])
+        .await;
+    assert_eq!(
+        (unknown.status, unknown.api_error()),
+        (404, "not_found".into())
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 3, "`id` only");
+
+    // Maintenance holds every call: the next lookup calls nothing.
+    later(3);
+    let down = reads
+        .call("POST", LOOKUP_PATH, json!({"ign": DOWNTIME}), &[])
+        .await;
+    assert_eq!(
+        (down.status, down.api_error()),
+        (503, "nexon_unavailable".into())
+    );
+    later(3);
+    let held = reads
+        .call("POST", LOOKUP_PATH, json!({"ign": IGN}), &[])
+        .await;
+    assert_eq!(
+        (held.status, held.api_error()),
+        (503, "nexon_unavailable".into())
+    );
+    assert!(
+        held.json()["message"]
+            .as_str()
+            .unwrap()
+            .contains("maintenance")
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
+}
+
+#[tokio::test]
+async fn a_create_asks_only_for_maplesea_and_keeps_manual_values_elsewhere() {
+    let (address, calls) = fake_nexon().await;
+    let slot = Arc::new(std::sync::OnceLock::new());
+    let reads =
+        Reads::with_character_data(Some(config()), module(Some(address), Arc::clone(&slot))).await;
+
+    // Another region: the manual class and level stay; no link is asked.
+    let other = created(
+        &reads,
+        json!({"ign": "Primrose", "world": "gms", "class": "Hero", "level": 250}),
+    )
+    .await;
+    assert_eq!(
+        (&other["class"], &other["level"], &other["link"]),
+        (&json!("Hero"), &json!(250), &Value::Null)
+    );
+    let id = other["id"].as_str().unwrap();
+    assert_eq!(reads.read(&link(id), LINK).await["state"], "not_linked");
+
+    // MapleSEA without class or level: pending; a keyed retry replays it
+    // and asks nothing twice.
+    let key = [("Idempotency-Key", "create-link-1")];
+    let body = json!({"ign": IGN});
+    let first = reads
+        .call(
+            "POST",
+            "/api/admin/members/1001/characters",
+            body.clone(),
+            &key,
+        )
+        .await;
+    assert_eq!(first.status, 201, "{}", first.text());
+    let first = first.json();
+    assert_valid(CREATED, "create", &first);
+    assert_eq!(
+        (&first["class"], &first["level"], &first["link"]),
+        (&Value::Null, &Value::Null, &json!("pending"))
+    );
+    let again = reads
+        .call("POST", "/api/admin/members/1001/characters", body, &key)
+        .await;
+    assert_eq!((again.status, again.json()), (201, first.clone()));
+    let rows = link_rows(&reads).await;
+    assert_eq!(rows.len(), 1, "one request: {rows:?}");
+    assert_eq!(calls.load(Ordering::SeqCst), 0, "pending calls nothing");
+    let id = first["id"].as_str().unwrap();
+    assert_eq!(reads.read(&link(id), LINK).await["state"], "pending");
+
+    // A crash after the roster commit leaves the replay at `link: null`.
+    // The retry resumes: with the request on file it answers `pending`
+    // and asks nothing; with none on file it asks once now.
+    use kanade::api::state::ReadStore;
+    use kanade::infrastructure::store::replays::ReplayScope;
+    let crashed = |reads: &Reads| {
+        let store = reads.store.clone();
+        async move {
+            let stored = ReadStore::replay(
+                store.as_ref(),
+                ReplayScope::Config,
+                "admin:token".into(),
+                "create-link-1".into(),
+                // The API's pinned clock (reads.rs `now`).
+                chrono::TimeZone::with_ymd_and_hms(&chrono::Utc, 2026, 9, 29, 4, 0, 0).unwrap(),
+            )
+            .await
+            .unwrap()
+            .expect("the keyed create's replay");
+            let mut body: Value = serde_json::from_str(&stored.body).unwrap();
+            body["link"] = Value::Null;
+            let mut stored = stored;
+            stored.body = body.to_string();
+            ReadStore::put_replay(store.as_ref(), stored).await.unwrap();
+        }
+    };
+    let retry = json!({"ign": IGN});
+    crashed(&reads).await;
+    let resumed = reads
+        .call(
+            "POST",
+            "/api/admin/members/1001/characters",
+            retry.clone(),
+            &key,
+        )
+        .await;
+    assert_eq!((resumed.status, resumed.json()), (201, first.clone()));
+    assert_eq!(link_rows(&reads).await.len(), 1, "not asked again");
+    crashed(&reads).await;
+    let withdrawn = reads.call("DELETE", &link(id), json!(null), &[]).await;
+    assert_eq!(withdrawn.status, 200, "{}", withdrawn.text());
+    let asked = reads
+        .call("POST", "/api/admin/members/1001/characters", retry, &key)
+        .await;
+    assert_eq!(
+        (asked.status, asked.json()["link"].clone()),
+        (201, json!("pending"))
+    );
+    assert_eq!(reads.read(&link(id), LINK).await["state"], "pending");
+    assert_eq!(calls.load(Ordering::SeqCst), 0, "still no NEXON call");
+    // The listed row is the plain CharacterRow.
+    let listed = reads
+        .read(
+            "/api/admin/members/1001/characters",
+            "characters.json#/$defs/MemberCharacters",
+        )
+        .await;
+    assert!(listed["characters"][0].get("link").is_none());
 }

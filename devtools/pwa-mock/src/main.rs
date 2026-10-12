@@ -201,6 +201,10 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
             patch(api::patch_character).delete(api::delete_character),
         )
         .route(
+            "/api/admin/characters/lookup",
+            get(api::lookup_status).post(api::look_up),
+        )
+        .route(
             "/api/admin/characters/{id}/link",
             get(api::character_link)
                 .post(api::request_link)

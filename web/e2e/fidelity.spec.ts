@@ -1032,6 +1032,10 @@ const PAIRS: Pair[] = [
     board: 'B_PhoneRosterEdit',
     path: '/members',
     omit: PHONE_ROSTER_FRAME,
+    // The board draws the manual Class and Level (no NEXON lookup): module `character_data` off.
+    setup: async (page) => {
+      await chardataOff(page);
+    },
     prepare: editBoard(),
     ready: async (page) => {
       const sheet = await rosterTab(page, 'dialog', 'Mika');

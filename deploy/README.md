@@ -354,12 +354,22 @@ reaches it by a single-label name on a shared network; kanade sends it
 roster IGNs only.
 
 ```sh
-# 1. In the scouter project's compose file (not this repository): add the
-#    external network kanade_edge to its service with the alias `scouter`,
-#    keep its port published on 127.0.0.1 only, then `docker compose up -d`
-#    there. Never add an edge site for it.
-# 2. Uncomment KANADE_SCOUTER_URL: http://scouter:8091 in deploy/compose.yaml
-#    (with [modules] character_data = true) and recreate the bot.
+# 1. In the scouter checkout, a local compose.override.yaml (Compose loads it
+#    beside its compose.yaml, so the scouter source stays untouched) joining
+#    the external network kanade_edge with the alias `scouter`:
+#      services:
+#        scouter:
+#          networks:
+#            default: {}
+#            kanade_edge:
+#              aliases: [scouter]
+#      networks:
+#        kanade_edge:
+#          external: true
+#    Its port stays published on 127.0.0.1 only; never add an edge site for
+#    it. Then `docker compose up -d --build --wait` there.
+# 2. Set KANADE_SCOUTER_URL=http://scouter:8091 in deploy/.env (with
+#    [modules] character_data = true) and recreate the bot.
 docker compose -f deploy/compose.yaml up -d --force-recreate bot
 # 3. Check: Config -> Character data shows MapleScouter "ok" (the bot probes
 #    /healthz at most once a minute). "unreachable": the network or alias is

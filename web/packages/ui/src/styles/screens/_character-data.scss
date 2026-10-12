@@ -503,6 +503,18 @@
   font-size: 11px;
 }
 
+// MapleScouter's reading beside the level verdict: shown, never judged (no tone).
+.ready__scouter {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ready__estimate {
+  margin: 0 0 8px;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
 
 .ready__note {
   display: flex;
@@ -527,6 +539,7 @@
 }
 
 .runsheet--narrow .ready__note,
+.runsheet--narrow .ready__estimate,
 .runsheet--narrow .ready__hint {
   flex-shrink: 0;
   margin: 0;

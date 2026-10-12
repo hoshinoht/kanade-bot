@@ -8,7 +8,7 @@ use super::{history::SettingsActor, iso_instant};
 use crate::domain::chardata::{
     ATTRIBUTION, LinkStatus, NOTICE_VERSION, SNAPSHOT_TTL, Snapshot, date_text,
 };
-use crate::infrastructure::character_data::{Health, LinkView};
+use crate::infrastructure::character_data::{Found, Health, LinkView};
 
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -128,6 +128,44 @@ pub fn link(character_id: &str, view: &LinkView, privacy_url: Option<&str>) -> C
         },
         attribution: ATTRIBUTION,
         privacy_url: privacy_url.map(str::to_owned),
+    }
+}
+
+/// `GET /api/admin/characters/lookup`: whether a lookup (and the link a
+/// MapleSEA create asks for) can be made.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct LookupStatus {
+    /// A Nexon key is configured.
+    pub connected: bool,
+}
+
+/// `POST /api/admin/characters/lookup`: what NEXON says about a typed IGN,
+/// shown in the Add character dialog only. Nothing of it is stored.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct CharacterLookup {
+    pub name: Option<String>,
+    pub world: Option<String>,
+    pub class: Option<String>,
+    pub level: Option<u16>,
+    /// Hotlinked from Nexon, never re-hosted.
+    pub image_url: Option<String>,
+    /// `YYYY-MM-DD` (Singapore): the response date, else the lookup day.
+    pub as_of: String,
+    /// Shown with the values: `Data based on NEXON Open API`.
+    pub attribution: &'static str,
+}
+
+pub fn lookup(found: Found) -> CharacterLookup {
+    CharacterLookup {
+        name: found.name,
+        world: found.world,
+        class: found.class,
+        level: found.level,
+        image_url: found.image_url,
+        as_of: date_text(found.as_of),
+        attribution: ATTRIBUTION,
     }
 }
 

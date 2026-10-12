@@ -917,16 +917,8 @@ async fn scouter_requests_never_carry_nexon_fields() {
     )
     .await;
     let service = slot.get().unwrap().clone();
+    // The create already asked the member to link it (pending).
     let id = character(&reads, "1001", "MikaBish").await;
-    let pending = reads
-        .call(
-            "POST",
-            &format!("/api/admin/characters/{id}/link"),
-            json!({"version": 0}),
-            &[],
-        )
-        .await;
-    assert_eq!(pending.status, 201, "{}", pending.text());
     let ConfirmOutcome::Linked(..) = service
         .confirm_link("1001", &id, NOTICE_VERSION)
         .await
@@ -1031,4 +1023,106 @@ async fn jobs_stay_24_hours_one_per_target_past_many_lookups() {
         .read(&format!("{ESTIMATES}?character_ids={}", ids[0]), STATUS)
         .await;
     assert_eq!(status["job"]["id"], again["id"]);
+}
+
+const READY: &str = "character_data.json#/$defs/RunReadiness";
+
+fn ready_slot<'a>(answer: &'a Value, member: &str) -> &'a Value {
+    answer["slots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|slot| slot["member_id"] == member)
+        .unwrap_or_else(|| panic!("no slot for {member}: {answer}"))
+}
+
+/// Readiness (`r-kalos` XKalos; `r-star` HMaleficStar + HLucid with Alice)
+/// shows each character's cached MapleScouter reading per boss, from a
+/// lookup of them alone or of a run that included them, and never looks
+/// anything up itself. NEXON combat power stays as it was.
+#[tokio::test]
+async fn readiness_shows_cached_scouter_readings_per_boss_and_never_looks_up() {
+    const KALOS: &str = "/api/admin/runs/r-kalos/readiness";
+    const STAR: &str = "/api/admin/runs/r-star/readiness";
+    let (address, fake) = fake_scouter().await;
+    let nexon = fake_nexon().await;
+    let slot = Arc::new(std::sync::OnceLock::new());
+    let reads = Reads::with_character_data(
+        Some(config()),
+        module(Some(address), Some(nexon), Arc::clone(&slot)),
+    )
+    .await;
+    let service = slot.get().unwrap().clone();
+    // Alice brings RenShade (pending, no data), Bob MikaBish (linked), Dan
+    // nobody. A MapleSEA create already asks for the link.
+    let ren = character(&reads, "1001", "RenShade").await;
+    let mika = character(&reads, "1002", "MikaBish").await;
+    let ConfirmOutcome::Linked(..) = service
+        .confirm_link("1002", &mika, NOTICE_VERSION)
+        .await
+        .unwrap()
+    else {
+        panic!("not linked");
+    };
+    let nexon_cp = json!({"kind": "nexon_cp", "value": 48_213_377, "as_of": "2026-09-28"});
+
+    // Nothing looked up yet: no readings, and reading readiness starts nothing.
+    let before = reads.read(KALOS, READY).await;
+    for member in ["1001", "1002", "1004"] {
+        assert_eq!(
+            ready_slot(&before, member)["bosses"][0]["scouter"],
+            Value::Null,
+            "{member}"
+        );
+    }
+    assert!(fake.lookups().is_empty());
+    assert_eq!(
+        reads
+            .read(&format!("{ESTIMATES}?run_id=r-kalos"), STATUS)
+            .await,
+        json!({"job": null, "running": null})
+    );
+
+    // RenShade alone: her reading per boss; MikaBish keeps NEXON CP only.
+    look_up(&reads, json!({"character_ids": [ren]})).await;
+    let mixed = reads.read(KALOS, READY).await;
+    let alice = ready_slot(&mixed, "1001");
+    assert_eq!(
+        alice["bosses"][0]["scouter"],
+        json!({"percentage": 9.0, "rating": "6p Min Cut", "estimated_minutes": 3000.0 / 9.0, "fetched_at": "2026-09-29T04:00:00Z"})
+    );
+    assert_eq!(alice["power"], Value::Null);
+    let bob = ready_slot(&mixed, "1002");
+    assert_eq!(bob["power"], nexon_cp);
+    assert_eq!(bob["bosses"][0]["scouter"], Value::Null);
+    // Mapped bosses only: Star has a card; Lucid has none at MapleScouter.
+    let star = reads.read(STAR, READY).await;
+    let shares: Vec<&Value> = ready_slot(&star, "1001")["bosses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|boss| &boss["scouter"]["percentage"])
+        .collect();
+    assert_eq!(shares, [&json!(21.5), &Value::Null]);
+
+    // The run's lookup includes MikaBish: her reading too, CP still sent.
+    look_up(&reads, json!({"run_id": "r-kalos"})).await;
+    let after = reads.read(KALOS, READY).await;
+    let bob = ready_slot(&after, "1002");
+    assert_eq!(bob["bosses"][0]["scouter"]["percentage"], 9.0);
+    assert_eq!(bob["power"], nexon_cp);
+    assert_eq!(
+        ready_slot(&after, "1004")["bosses"][0]["scouter"],
+        Value::Null
+    );
+    let lookups = fake.lookups().len();
+    reads.read(KALOS, READY).await;
+    reads.read(STAR, READY).await;
+    assert_eq!(fake.lookups().len(), lookups, "readiness never looks up");
+    assert_eq!(
+        reads
+            .read(&format!("{ESTIMATES}?run_id=r-kalos"), STATUS)
+            .await["running"],
+        Value::Null
+    );
 }

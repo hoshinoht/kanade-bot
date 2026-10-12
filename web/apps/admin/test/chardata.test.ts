@@ -1,6 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import type { BossReadiness, CharacterDataHealth, CharacterLink, CharacterRow, EstimateError, ReadinessSlot } from '@kanade/api-types';
-import { asOfDate, catalogBoss, clock, combatPower, dayTime, estimateErrorText, healthNote, joinNames, levelChip, minutes, percent, readinessLine, stripState } from '../src/chardata/format';
+import type {
+  BossReadiness,
+  CharacterDataHealth,
+  CharacterLink,
+  CharacterLookup,
+  CharacterRow,
+  EstimateError,
+  ReadinessSlot,
+  ScouterReading,
+} from '@kanade/api-types';
+import {
+  asOfDate,
+  catalogBoss,
+  clock,
+  combatPower,
+  createdLinkNote,
+  dayTime,
+  estimateErrorText,
+  healthNote,
+  joinNames,
+  levelChip,
+  lookupLine,
+  lookupMiss,
+  minutes,
+  percent,
+  readinessLine,
+  scouterAt,
+  scouterChip,
+  stripState,
+} from '../src/chardata/format';
 
 // Wholly invented data, as the mock seeds it.
 const row = (retired: boolean): CharacterRow => ({
@@ -64,7 +92,14 @@ describe('the character data strip', () => {
 });
 
 describe('run readiness', () => {
-  const boss = (level: BossReadiness['level']): BossReadiness => ({ boss: 'Carling', difficulty: 'h', entry_level: 275, level });
+  const boss = (level: BossReadiness['level'], scouter: ScouterReading | null = null): BossReadiness => ({ boss: 'Carling', difficulty: 'h', entry_level: 275, level, scouter });
+  const reading = (over: Partial<ScouterReading> = {}): ScouterReading => ({
+    percentage: 164.2,
+    rating: '2p Min Cut',
+    estimated_minutes: 18.3,
+    fetched_at: '2026-09-29T02:10:00Z',
+    ...over,
+  });
   const slot = (over: Partial<ReadinessSlot>): ReadinessSlot => ({
     member_id: '1004',
     character: null,
@@ -88,6 +123,21 @@ describe('run readiness', () => {
     expect(levelChip(boss('ok'))).toEqual({ text: 'Lv ok', tone: 'ok' });
     expect(levelChip(boss('under'))).toEqual({ text: 'under Lv. 275', tone: 'warn' });
     expect(levelChip(boss('unknown'))).toEqual({ text: 'Lv unknown', tone: 'neutral' });
+  });
+
+  it('replaces CP with MapleScouter per boss once a slot has a reading', () => {
+    const read = slot({ bosses: [boss('ok', reading()), boss('under')] });
+    expect(readinessLine(read)).toEqual({ values: 'Lv. 276', source: 'NEXON · as of 29 Sep' });
+    expect(scouterAt(read)).toBe('2026-09-29T02:10:00Z');
+    expect(scouterAt(slot({}))).toBeNull();
+    expect(scouterChip(reading())).toEqual({ text: 'MapleScouter 164% · ~18 min', rating: '2p Min Cut' });
+    expect(scouterChip(reading({ percentage: 9, estimated_minutes: null }))).toEqual({ text: 'MapleScouter 9%', rating: '2p Min Cut' });
+    expect(scouterChip(reading({ estimated_minutes: 0.2 })).text).toBe('MapleScouter 164% · ~1 min');
+    // Manual level, no NEXON data: the reading still hides the CP dash.
+    expect(readinessLine(slot({ link: 'not_linked', level: { value: 270, source: 'manual', as_of: null }, power: null, bosses: [boss('unknown', reading())] }))).toEqual({
+      values: 'Lv. 270',
+      source: 'manual · not linked',
+    });
   });
 });
 
@@ -123,5 +173,43 @@ describe('Config › Character data', () => {
     expect(healthNote(health({ nexon: 'key_refused', scouter: { state: 'unreachable', url: 'http://scouter:8091', last_lookup_at: null, last_error: 'unreachable', last_error_at: null } })).flagged).toBe(2);
     const stuck = { due: 0, unknown: 1, stuck: 1, overdue: 0, items: [] };
     expect(healthNote(health({ nexon: 'backoff', posts: stuck })).flagged).toBe(1);
+  });
+});
+
+describe('the Add character lookup', () => {
+  const found: CharacterLookup = {
+    name: 'Wisteria',
+    world: 'Aquila',
+    class: 'Bishop',
+    level: 271,
+    image_url: null,
+    as_of: '2026-09-28',
+    attribution: 'Data based on NEXON Open API',
+  };
+
+  it('reads level, class and world in one line, skipping what NEXON left out', () => {
+    expect(lookupLine(found)).toBe('Lv. 271 · Bishop · Aquila');
+    expect(lookupLine({ ...found, level: null, world: null })).toBe('Bishop');
+    expect(lookupLine({ ...found, level: null, class: null, world: null })).toBe('');
+  });
+
+  it('puts each refusal in words, and still lets the admin add', () => {
+    expect(lookupMiss('not_found', 'Nobody42', 'x')).toEqual({
+      miss: 'not_found',
+      lead: 'Not found.',
+      text: 'NEXON has no MapleSEA character named “Nobody42”. Check the spelling; you can still add it.',
+    });
+    const held = lookupMiss('nexon_unavailable', 'Wisteria', "The Open API can't be called right now (maintenance).");
+    expect(held.miss).toBe('held');
+    expect(held.text).toContain('(maintenance). You can still add Wisteria');
+    expect(lookupMiss('not_connected', 'Wisteria', 'x').miss).toBe('not_connected');
+    expect(lookupMiss('lookup_cooldown', 'Wisteria', 'x').miss).toBe('wait');
+    expect(lookupMiss(null, 'Wisteria', 'The server did not answer.')).toEqual({ miss: 'failed', lead: 'Lookup failed.', text: 'The server did not answer.' });
+  });
+
+  it('tells the toast whether the member was asked to link', () => {
+    expect(createdLinkNote('pending', 'Mika')).toBe(' Asked Mika to link it: they confirm with /character link in Discord.');
+    expect(createdLinkNote('failed', 'Mika')).toContain('use Link… in Edit');
+    expect(createdLinkNote(null, 'Mika')).toBe('');
   });
 });

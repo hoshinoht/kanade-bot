@@ -2,9 +2,10 @@
 //! (`src/api/admin/character_data/readiness.rs`,
 //! `src/domain/chardata/readiness.rs`): `GET /api/admin/runs/{id}/readiness`,
 //! each party slot's level (fresh NEXON, else manual) and power (NEXON
-//! combat power from fresh data only, shown, never judged), and its level
-//! judged per boss of the run. `r-carling`'s party covers every level
-//! verdict.
+//! combat power from fresh data only, shown, never judged), its level
+//! judged per boss of the run, and per boss the character's MapleScouter
+//! reading once a done mock lookup holds one (`null` before, and while
+//! estimates are off). `r-carling`'s party covers every level verdict.
 
 use serde_json::{Value, json};
 
@@ -60,9 +61,15 @@ impl Store {
                     .iter()
                     .map(|b| {
                         let entry = entry_level(b.key, b.difficulty);
+                        let scouter = match brings {
+                            Some((c, _)) if self.estimates_on() => {
+                                self.estimates.reading(&c.id, &b.token, now)
+                            }
+                            _ => Value::Null,
+                        };
                         json!({
                             "boss": b.key, "difficulty": b.difficulty, "entry_level": entry,
-                            "level": level_verdict(level, entry),
+                            "level": level_verdict(level, entry), "scouter": scouter,
                         })
                     })
                     .collect();
@@ -114,7 +121,7 @@ mod tests {
         assert_eq!(ready["attribution"], ATTRIBUTION);
         assert_eq!(
             slot(&ready, "1001")["bosses"][0],
-            json!({"boss": "Carling", "difficulty": "h", "entry_level": 275, "level": "ok"})
+            json!({"boss": "Carling", "difficulty": "h", "entry_level": 275, "level": "ok", "scouter": null})
         );
         assert_eq!(slot(&ready, "1001")["link"], "pending");
         assert_eq!(verdicts(&ready, "1002"), ["ok", "under"]);
@@ -137,5 +144,30 @@ mod tests {
         assert_eq!(hotaru["power"], Value::Null);
         assert_eq!(verdicts(&ready, "1011"), ["ok", "under"]);
         assert!(s.run_readiness("nope").is_err());
+    }
+
+    #[test]
+    fn readings_appear_once_a_lookup_is_done_and_never_while_off() {
+        let mut s = store();
+        let yuzu = |s: &Store| slot(&s.run_readiness("r-carling").ok().unwrap(), "1004").clone();
+        assert_eq!(yuzu(&s)["bosses"][0]["scouter"], Value::Null);
+        let started = s
+            .start_estimate(serde_json::from_value(json!({"run_id": "r-carling"})).unwrap())
+            .ok()
+            .unwrap();
+        let id = started["job"]["id"].as_str().unwrap().to_owned();
+        assert_eq!(
+            yuzu(&s)["bosses"][0]["scouter"],
+            Value::Null,
+            "still running"
+        );
+        while s.estimate(&id).ok().unwrap()["state"] == "running" {}
+        let reading = &yuzu(&s)["bosses"][0]["scouter"];
+        assert_eq!(reading["rating"], "Party-able");
+        assert!(reading["percentage"].as_f64().unwrap() > 0.0);
+        assert!(reading["fetched_at"].is_string());
+        assert_eq!(yuzu(&s)["power"]["kind"], "nexon_cp", "CP is still sent");
+        s.set_estimate_scenario(super::super::estimates::Scenario::Off);
+        assert_eq!(yuzu(&s)["bosses"][0]["scouter"], Value::Null);
     }
 }

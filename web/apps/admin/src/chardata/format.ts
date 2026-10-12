@@ -7,13 +7,14 @@ import type {
   BossRow,
   CharacterDataHealth,
   CharacterLink,
+  CharacterLookup,
   CharacterRow,
   Difficulty,
   EstimateError,
   EstimateJob,
   EstimateMissing,
-  ReadinessPower,
   ReadinessSlot,
+  ScouterReading,
 } from '@kanade/api-types';
 import type { IconName } from '@kanade/ui';
 
@@ -50,21 +51,27 @@ export function combatPower(value: number): string {
 }
 
 /**
- * How each power value reads (B_CharReady). The run sheet renders `power`
- * by its kind only: MapleScouter values (`scouter`) replace NEXON's combat
- * power with no other change. Power is shown, never judged.
+ * The slot's MapleScouter reading time (B_CharReady), when any boss has one:
+ * its readings replace the NEXON CP for that slot (the newest, as they come
+ * from one lookup). Shown, never judged.
  */
-export const POWER_KINDS: Record<ReadinessPower['kind'], { short: string; label: string; source: string }> = {
-  nexon_cp: { short: 'CP', label: 'Combat Power', source: 'NEXON' },
-  scouter: { short: 'CP', label: 'Combat Power (MapleScouter)', source: 'MapleScouter' },
-};
+export function scouterAt(slot: ReadinessSlot): string | null {
+  let at: string | null = null;
+  for (const boss of slot.bosses) if (boss.scouter && (at === null || boss.scouter.fetched_at > at)) at = boss.scouter.fetched_at;
+  return at;
+}
 
-/** "Lv. 283 · CP 48.2M" and its source: "NEXON · as of 29 Sep", "manual · not linked". */
+/**
+ * "Lv. 283 · CP 48.2M" and its source: "NEXON · as of 29 Sep", "manual · not linked".
+ * With a MapleScouter reading the CP is left out ("Lv. 283"): the per-boss chips replace it.
+ */
 export function readinessLine(slot: ReadinessSlot): { values: string; source: string } {
-  const kind = POWER_KINDS[slot.power?.kind ?? 'nexon_cp'];
-  const values = `Lv. ${slot.level?.value ?? '—'} · ${kind.short} ${slot.power ? combatPower(slot.power.value) : '—'}`;
-  const asOf = slot.level?.as_of ?? slot.power?.as_of ?? null;
-  if (slot.level?.source === 'nexon' || slot.power) return { values, source: `${slot.power ? POWER_KINDS[slot.power.kind].source : 'NEXON'}${asOf ? ` · as of ${asOfDate(asOf).replace(/ \d{4}$/, '')}` : ''}` };
+  const scouter = scouterAt(slot) !== null;
+  const power = scouter ? null : slot.power;
+  const level = `Lv. ${slot.level?.value ?? '—'}`;
+  const values = scouter ? level : `${level} · CP ${power ? combatPower(power.value) : '—'}`;
+  const asOf = slot.level?.as_of ?? power?.as_of ?? null;
+  if (slot.level?.source === 'nexon' || power) return { values, source: `NEXON${asOf ? ` · as of ${asOfDate(asOf).replace(/ \d{4}$/, '')}` : ''}` };
   const why: Partial<Record<NonNullable<ReadinessSlot['link']>, string>> = {
     not_linked: 'not linked',
     not_connected: 'not linked',
@@ -74,6 +81,12 @@ export function readinessLine(slot: ReadinessSlot): { values: string; source: st
   };
   const reason = slot.link ? why[slot.link] : undefined;
   return { values, source: reason ? `manual · ${reason}` : 'manual' };
+}
+
+/** One boss's MapleScouter reading as a chip: "MapleScouter 164% · ~18 min"; the rating goes in its title. */
+export function scouterChip(reading: ScouterReading): { text: string; rating: string } {
+  const time = reading.estimated_minutes === null ? '' : ` · ~${Math.max(1, Math.round(reading.estimated_minutes))} min`;
+  return { text: `MapleScouter ${Math.round(reading.percentage)}%${time}`, rating: reading.rating };
 }
 
 /** One boss's level verdict as a chip; never blocking, so nothing is red. */
@@ -223,4 +236,35 @@ export function healthNote(h: CharacterDataHealth): { text: string; flagged: num
   if (flagged) return { text: '', flagged };
   if (h.nexon === 'no_key') return { text: 'no key', flagged: 0 };
   return { text: h.nexon === 'backoff' ? 'backoff' : 'ok', flagged: 0 };
+}
+
+/** The Add character lookup's values in one line: "Lv. 283 · Bishop · Aquila". */
+export function lookupLine(found: CharacterLookup): string {
+  return [found.level !== null ? `Lv. ${found.level}` : '', found.class ?? '', found.world ?? ''].filter(Boolean).join(' · ');
+}
+
+/** Why a lookup has no answer, in the dialog's words. */
+export type LookupMiss = 'not_found' | 'held' | 'not_connected' | 'wait' | 'failed';
+
+/** A refused lookup (its API code) as the dialog's state and line. */
+export function lookupMiss(code: string | null | undefined, ign: string, message: string): { miss: LookupMiss; lead: string; text: string } {
+  switch (code) {
+    case 'not_found':
+      return { miss: 'not_found', lead: 'Not found.', text: `NEXON has no MapleSEA character named “${ign}”. Check the spelling; you can still add it.` };
+    case 'nexon_unavailable':
+      return { miss: 'held', lead: 'NEXON can’t be asked right now.', text: `${message} You can still add ${ign}; the member’s link fills it in later.` };
+    case 'not_connected':
+      return { miss: 'not_connected', lead: 'Character data isn’t connected.', text: 'Without a NEXON key nothing can be looked up: enter the class and level by hand.' };
+    case 'lookup_cooldown':
+      return { miss: 'wait', lead: 'Wait a moment.', text: 'Lookups are a few seconds apart. Try again shortly.' };
+    default:
+      return { miss: 'failed', lead: 'Lookup failed.', text: message };
+  }
+}
+
+/** The Add toast's link part from the create's `link`. */
+export function createdLinkNote(link: 'pending' | 'failed' | null, member: string): string {
+  if (link === 'pending') return ` Asked ${member} to link it: they confirm with /character link in Discord.`;
+  if (link === 'failed') return ' The link request didn’t go through: use Link… in Edit to ask again.';
+  return '';
 }

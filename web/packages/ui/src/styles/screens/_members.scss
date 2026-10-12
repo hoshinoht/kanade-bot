@@ -300,6 +300,16 @@ dialog.rosterdialog--sheet .modal__foot { padding: 10px 16px 18px; }
 .rosterform__switch { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-radius: 16px; background: var(--row); box-shadow: inset 0 0 0 1.5px var(--line); }
 .rosterform__switch-text { display: flex; flex: 1 1 auto; flex-direction: column; gap: 2px; font-size: var(--fs-body-sm); }
 .rosterform__grow { flex: 1 1 auto; }
+// Add character with NEXON connected: IGN + Look up, then the shown-only card.
+.rosterform__ignrow { display: flex; gap: 8px; align-items: stretch; }
+.rosterform__ignrow .rosterform__input { flex: 1 1 auto; min-width: 0; }
+.rosterform__ignrow .btn { flex: none; min-height: 40px; }
+.rosterlookup { display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; border-radius: 16px; background: var(--row); box-shadow: inset 0 0 0 1.5px var(--line); }
+.rosterlookup__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rosterlookup__value { font-size: var(--fs-body-sm); font-weight: 600; }
+.rosterlookup__sub { color: var(--dim-text); font-size: var(--fs-mini); line-height: 1.4; }
+.rosterform__note { display: flex; gap: 8px; align-items: flex-start; font-size: var(--fs-body-sm); line-height: 1.4; }
+.rosterform__note .icon { flex: none; width: 16px; height: 16px; margin-top: 2px; }
 dialog.rosterdialog .modal__foot,
 dialog.rosterconfirm .modal__foot { flex-wrap: nowrap; }
 
@@ -308,6 +318,7 @@ dialog.rosterdialog--sheet { width: 100%; max-width: none; margin: auto 0 0; }
 dialog.rosterdialog--sheet .modal__panel { border-width: 2px 0 0; border-radius: 28px 28px 0 0; padding-bottom: env(safe-area-inset-bottom); }
 dialog.rosterdialog--sheet .modal__body { padding: 4px 16px 12px; }
 dialog.rosterdialog--sheet .rosterform__input { height: 44px; }
+dialog.rosterdialog--sheet .rosterform__ignrow .btn { min-height: 44px; }
 dialog.rosterdialog--sheet .rosterform__pair { gap: 10px; }
 dialog.rosterdialog--sheet .rosterform__levelrole { grid-template-columns: 112px minmax(0, 1fr); gap: 10px; }
 dialog.rosterdialog--sheet .rosterform__role { display: flex; align-self: stretch; }

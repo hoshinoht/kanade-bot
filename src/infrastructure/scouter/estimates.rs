@@ -715,6 +715,21 @@ impl Estimates {
             .map(|kept| kept.job.clone())
     }
 
+    /// `ign`'s newest successful result still in memory, from a lookup of
+    /// that character alone or of a party that included them (a party
+    /// lookup keeps each member under their own IGN too, so this entry is
+    /// always the newest), and when it was fetched. Never starts a lookup.
+    pub fn cached(&self, ign: &RosterIgn) -> Option<(Member, DateTime<Utc>)> {
+        let inner = self.shared.inner();
+        let cached = inner.cached(&ign.key(), false, Instant::now())?;
+        cached
+            .estimate
+            .members
+            .iter()
+            .find(|member| member.ign.eq_ignore_ascii_case(ign.as_str()))
+            .map(|member| (member.clone(), cached.fetched_at))
+    }
+
     /// The running job, whatever it looks up.
     pub fn running(&self) -> Option<Job> {
         let inner = self.shared.inner();
@@ -762,5 +777,92 @@ impl Estimates {
             last_lookup_at: seen.last_lookup_at,
             last_error: seen.last_error.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::TimeZone;
+
+    use super::*;
+    use crate::{
+        domain::characters::{Character, CharacterRole},
+        infrastructure::scouter::Card,
+    };
+
+    fn at(hour: u32) -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 9, 29, hour, 0, 0).unwrap()
+    }
+
+    /// Invented roster IGN.
+    fn ign(name: &str) -> RosterIgn {
+        RosterIgn::of(&Character {
+            id: "ch-1".into(),
+            member_id: "1001".into(),
+            ign: name.into(),
+            world: "msea".into(),
+            class: None,
+            level: None,
+            role: CharacterRole::Main,
+            retired_at: None,
+            created_at: at(0),
+            updated_at: at(0),
+            updated_by: Actor::system("test"),
+            version: 1,
+        })
+        .unwrap()
+    }
+
+    /// Invented answer: one Limbo card worth `percentage`.
+    fn member(ign: &str, percentage: f64) -> Member {
+        Member {
+            ign: ign.into(),
+            preset: "00010".into(),
+            bosses: BTreeMap::from([(
+                "hard_limbo".to_owned(),
+                Card {
+                    percentage,
+                    rating: "Party-able".into(),
+                    party: false,
+                    effective_percentage: Some(percentage),
+                    estimated_minutes: Some(3_000.0 / percentage),
+                },
+            )]),
+        }
+    }
+
+    /// The sidecar is never called: results are put in memory directly.
+    fn estimates(now: Arc<Mutex<DateTime<Utc>>>) -> Estimates {
+        let url = "http://127.0.0.1:9".to_owned();
+        Estimates::new(
+            ScouterClient::new(&url).unwrap(),
+            url,
+            Arc::new(move || *now.lock().unwrap_or_else(PoisonError::into_inner)),
+        )
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_cached_reading_is_the_newest_and_gone_after_24_hours() {
+        let now = Arc::new(Mutex::new(at(4)));
+        let estimates = estimates(Arc::clone(&now));
+        let ren = ign("RenShade");
+        assert_eq!(estimates.cached(&ren), None, "nothing looked up yet");
+
+        estimates.shared.keep_single(member("renshade", 40.0));
+        *now.lock().unwrap_or_else(PoisonError::into_inner) = at(6);
+        tokio::time::advance(Duration::from_secs(2 * 3_600)).await;
+        estimates.shared.keep_single(member("RENSHADE", 72.4));
+        let (newest, fetched_at) = estimates.cached(&ren).unwrap();
+        assert_eq!(
+            (newest.bosses["hard_limbo"].percentage, fetched_at),
+            (72.4, at(6))
+        );
+        assert_eq!(estimates.cached(&ign("MikaBish")), None);
+
+        tokio::time::advance(CACHE_TTL - Duration::from_secs(1)).await;
+        assert!(estimates.cached(&ren).is_some());
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(estimates.cached(&ren), None, "expired");
+        assert!(estimates.running().is_none(), "reading starts nothing");
     }
 }

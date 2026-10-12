@@ -8,6 +8,12 @@ import { ADMIN, choose, expect, test } from './support';
 
 const toast = (page: Page, text: string | RegExp) => page.locator('.toast:not(.is-leaving)').filter({ hasText: text });
 
+// The roster module alone: with module `character_data` off the Add dialog keeps the manual
+// Class and Level (MapleSEA adds with NEXON connected are `add-character.spec.ts`).
+test.beforeEach(async ({ page }) => {
+  await page.request.post(`${ADMIN}/__mock/modules`, { data: { character_data: false } });
+});
+
 async function characters(page: Page, who: RegExp = /^Mika/) {
   await page.goto(`${ADMIN}/members?sw=off`);
   await page.getByRole('button', { name: who }).first().click();

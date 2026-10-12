@@ -54,8 +54,9 @@ services:
       # MapleScouter estimates (admin only): the scouter sidecar is its own
       # private Compose project, never a service here. Attach it to the
       # kanade_edge network with the alias `scouter` (runbook "MapleScouter
-      # estimates"), then uncomment. Unset: estimates are off.
-      # KANADE_SCOUTER_URL: http://scouter:8091
+      # estimates"), then set KANADE_SCOUTER_URL=http://scouter:8091 in
+      # deploy/.env. Unset or empty: estimates are off.
+      KANADE_SCOUTER_URL: ${KANADE_SCOUTER_URL:-}
       # Listed by History checkpoints; only the `backup` service writes here.
       KANADE_BACKUP_DIR: /backups
       # age public keys, checked at startup (a bad file refuses it). Empty

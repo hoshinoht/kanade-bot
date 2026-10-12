@@ -62,6 +62,40 @@
         "version": { "type": "integer", "minimum": 0, "description": "The link version as loaded (0 when not linked)." }
       }
     },
+    "LookupStatus": {
+      "description": "GET /api/admin/characters/lookup: whether the Add character lookup (and the link request a MapleSEA create makes) can be made.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["connected"],
+      "properties": {
+        "connected": { "type": "boolean", "description": "A Nexon key is configured." }
+      }
+    },
+    "CharacterLookupRequest": {
+      "description": "POST /api/admin/characters/lookup body: the IGN as typed (4-12 letters or digits) and its region (`msea` when absent; any other is 422 `region`).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ign"],
+      "properties": {
+        "ign": { "type": "string" },
+        "world": { "type": "string" }
+      }
+    },
+    "CharacterLookup": {
+      "description": "POST /api/admin/characters/lookup: what NEXON says about a typed MapleSEA IGN (`id` + `basic`, never `stat`), shown in the Add character dialog only. Nothing of it is stored (no roster field, nothing in the character-data file, no History row); the values are kept only after the member links the character. The ocid is never sent.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "world", "class", "level", "image_url", "as_of", "attribution"],
+      "properties": {
+        "name": { "type": ["string", "null"], "maxLength": 64 },
+        "world": { "type": ["string", "null"], "maxLength": 64 },
+        "class": { "type": ["string", "null"], "maxLength": 64 },
+        "level": { "type": ["integer", "null"], "minimum": 0 },
+        "image_url": { "type": ["string", "null"], "pattern": "^https://", "description": "Hotlinked from Nexon, never re-hosted." },
+        "as_of": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "Singapore date: the response date, else the lookup day." },
+        "attribution": { "const": "Data based on NEXON Open API" }
+      }
+    },
     "RunReadiness": {
       "description": "GET /api/admin/runs/{id}/readiness: each party slot (as GET .../characters reads them, inferred recomputed) with its level and power, and its level against each boss of the run. Computed on read, never stored, never blocking. NEXON values only from an active link's unexpired data.",
       "type": "object",
@@ -91,7 +125,7 @@
           "oneOf": [{ "$ref": "#/$defs/ReadinessLevel" }, { "type": "null" }]
         },
         "power": {
-          "description": "Shown, never judged. Null without usable data.",
+          "description": "NEXON combat power: shown, never judged. Null without usable data.",
           "oneOf": [{ "$ref": "#/$defs/ReadinessPower" }, { "type": "null" }]
         },
         "bosses": { "type": "array", "items": { "$ref": "#/$defs/BossReadiness" }, "description": "One per boss of the run, in run order." }
@@ -112,7 +146,7 @@
       "additionalProperties": false,
       "required": ["kind", "value", "as_of"],
       "properties": {
-        "kind": { "enum": ["nexon_cp", "scouter"], "description": "scouter is reserved for MapleScouter's boss values (not sent yet)." },
+        "kind": { "const": "nexon_cp" },
         "value": { "type": "integer", "minimum": 0 },
         "as_of": { "type": ["string", "null"], "format": "date" }
       }
@@ -120,12 +154,28 @@
     "BossReadiness": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["boss", "difficulty", "entry_level", "level"],
+      "required": ["boss", "difficulty", "entry_level", "level", "scouter"],
       "properties": {
         "boss": { "type": "string", "description": "Catalog boss key." },
         "difficulty": { "enum": ["e", "n", "h", "c", "x"] },
         "entry_level": { "type": ["integer", "null"], "minimum": 1, "description": "From boss knowledge; null when it has none." },
-        "level": { "enum": ["ok", "under", "unknown"], "description": "ok at or above entry_level; unknown without a level or an entry_level." }
+        "level": { "enum": ["ok", "under", "unknown"], "description": "ok at or above entry_level; unknown without a level or an entry_level." },
+        "scouter": {
+          "description": "The character's MapleScouter reading for this boss from the estimates' 24-hour memory (readiness never looks one up); null without one, for a boss MapleScouter has no card for, or while estimates are off.",
+          "oneOf": [{ "$ref": "#/$defs/ScouterReading" }, { "type": "null" }]
+        }
+      }
+    },
+    "ScouterReading": {
+      "description": "Shown, never judged: Estimate from MapleScouter, for planning only, not eligibility.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["percentage", "rating", "estimated_minutes", "fetched_at"],
+      "properties": {
+        "percentage": { "type": "number", "minimum": 0, "description": "The character's share (effective_percentage), else the card's percentage." },
+        "rating": { "type": "string" },
+        "estimated_minutes": { "type": ["number", "null"], "minimum": 0 },
+        "fetched_at": { "type": "string", "description": "When kanade received it from MapleScouter." }
       }
     },
     "CharacterDataHealth": {

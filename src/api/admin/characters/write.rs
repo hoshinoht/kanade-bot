@@ -23,7 +23,7 @@ use crate::{
             write::{Refusal, bad_body, origin, state},
         },
         auth::AdminSession,
-        dto::characters::row,
+        dto::characters::{CharacterCreated, row},
         error::ApiError,
         listeners::Site,
         state::{ApiState, CharacterRoster},
@@ -34,9 +34,13 @@ use crate::{
             CharacterWrite, DEFAULT_WORLD, new_role, parse_class, parse_ign, parse_level,
             parse_role, parse_world,
         },
+        chardata::LINK_REGION,
         ids::{IdGenerator, RandomIds},
     },
-    infrastructure::store::replays::{KeyedWrite, ReplayScope},
+    infrastructure::{
+        character_data::RequestOutcome,
+        store::replays::{KeyedWrite, ReplayScope, StoredReplay},
+    },
 };
 
 fn not_found() -> Refusal {
@@ -90,6 +94,23 @@ pub(super) fn record(session: &AdminSession, now: DateTime<Utc>) -> CharacterRec
     }
 }
 
+/// Write `change` with a keyed request's `replay` in the same transaction:
+/// `None` once written now, else the answer a retry gets.
+async fn write(
+    roster: &dyn CharacterRoster,
+    change: CharacterChange,
+    record: CharacterRecord,
+    replay: Option<StoredReplay>,
+) -> Result<Option<Response>, Refusal> {
+    match roster.write_character(change, record, replay).await {
+        Ok(KeyedWrite::Applied(written)) if written.applied() => Ok(None),
+        Ok(KeyedWrite::Applied(written)) => Err(refused(written)),
+        Ok(KeyedWrite::Replayed(found)) => replayed(&found).map(Some),
+        Ok(KeyedWrite::KeyTaken) => Err(mismatch()),
+        Err(_) => Err(ApiError::UNAVAILABLE.into()),
+    }
+}
+
 /// Write `change`, answering `status` with `body`, which a keyed request
 /// stores as its replay in the same transaction.
 async fn apply(
@@ -101,15 +122,9 @@ async fn apply(
     body: Value,
 ) -> Reply {
     let replay = keyed.map(|keyed| keyed.answered(status, &body, record.at));
-    match roster.write_character(change, record, replay).await {
-        Ok(KeyedWrite::Applied(written)) if written.applied() => {
-            Ok((status, Json(body)).into_response())
-        }
-        Ok(KeyedWrite::Applied(written)) => Err(refused(written)),
-        Ok(KeyedWrite::Replayed(found)) => replayed(&found),
-        Ok(KeyedWrite::KeyTaken) => Err(mismatch()),
-        Err(_) => Err(ApiError::UNAVAILABLE.into()),
-    }
+    Ok(write(roster, change, record, replay)
+        .await?
+        .unwrap_or_else(|| (status, Json(body)).into_response()))
 }
 
 /// The request's key, if any, and its stored answer when it already has
@@ -193,9 +208,18 @@ pub async fn create(
             "role": asked.map(CharacterRole::as_str),
         })
     );
-    let (keyed, answered) = recall(state, &session, &headers, &request).await?;
-    if let Some(answer) = answered {
-        return Ok(answer);
+    let (keyed, answered) = match origin(&session, &headers)?.request_id {
+        None => (None, None),
+        Some(key) => {
+            let keyed = Keyed::new(ReplayScope::Config, &session, key, &request);
+            match keyed.recall(state.store.as_ref(), state.now()).await? {
+                Some(found) => (None, Some((keyed, found))),
+                None => (Some(keyed), None),
+            }
+        }
+    };
+    if let Some((keyed, found)) = answered {
+        return resume_link(state, &session, &keyed, found).await;
     }
     require_member(state, &member_id).await?;
     let others = member_characters(roster.as_ref(), &member_id).await?;
@@ -215,16 +239,128 @@ pub async fn create(
         updated_by: by,
         version: 1,
     };
-    let body = json!(row(&character));
-    apply(
+    let created = |link| {
+        json!(CharacterCreated {
+            row: row(&character),
+            link,
+        })
+    };
+    let body = created(None);
+    let replay = keyed
+        .as_ref()
+        .map(|keyed| keyed.answered(StatusCode::CREATED, &body, now));
+    if let Some(answer) = write(
         roster.as_ref(),
-        keyed,
-        CharacterChange::Create(character),
+        CharacterChange::Create(character.clone()),
         record(&session, now),
-        StatusCode::CREATED,
-        body,
+        replay,
     )
-    .await
+    .await?
+    {
+        return Ok(answer);
+    }
+    let Some(link) = ask_link(state, &session, &character).await else {
+        return Ok((StatusCode::CREATED, Json(body)).into_response());
+    };
+    let body = created(Some(link));
+    if let Some(keyed) = keyed
+        && state
+            .store
+            .put_replay(keyed.answered(StatusCode::CREATED, &body, now))
+            .await
+            .is_err()
+    {
+        // A retry finds the link on file and answers `pending` (resume_link).
+        crate::runtime::logging::event("WARN", "idempotency_replay_unrecorded", json!({}));
+    }
+    Ok((StatusCode::CREATED, Json(body)).into_response())
+}
+
+/// A keyed create's stored answer, with its link outcome resumed: the
+/// replay is first stored with `link: null` inside the roster write, so a
+/// crash (or a failed replay update) before the link request leaves it
+/// unanswered. A link already on file means the request was made
+/// (`pending`); none means it is asked now, once, and the replay updated.
+async fn resume_link(
+    state: &ApiState,
+    session: &AdminSession,
+    keyed: &Keyed,
+    found: StoredReplay,
+) -> Reply {
+    let mut body: Value =
+        serde_json::from_str(&found.body).map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
+    let unanswered = found.status == StatusCode::CREATED.as_u16()
+        && body.get("link").is_some_and(Value::is_null)
+        && body["world"] == LINK_REGION
+        && state
+            .character_data
+            .as_ref()
+            .is_some_and(|module| module.connected());
+    let roster = state.characters.as_ref();
+    let id = body["id"].as_str().unwrap_or_default().to_owned();
+    let character = match (unanswered, roster) {
+        (true, Some(roster)) => roster.character(id.clone()).await.ok().flatten(),
+        _ => None,
+    };
+    let Some(character) = character else {
+        return replayed(&found);
+    };
+    let module = state.character_data.as_ref().expect("checked connected");
+    let made = module
+        .status(&id)
+        .await
+        .is_ok_and(|view| view.link.is_some());
+    let link = if made {
+        Some("pending")
+    } else {
+        ask_link(state, session, &character).await
+    };
+    body["link"] = json!(link);
+    let now = state.now();
+    let _ = state
+        .store
+        .put_replay(keyed.answered(StatusCode::CREATED, &body, now))
+        .await;
+    Ok((StatusCode::CREATED, Json(body)).into_response())
+}
+
+/// With module `character_data` connected, a new MapleSEA character's
+/// member is asked to link it at once: the same pending request as Link…
+/// (no Nexon call until they confirm in Discord; History row, 14-day
+/// expiry). The character-data file is not the roster's, so this follows
+/// the committed create: `failed` when the request did not go through.
+async fn ask_link(
+    state: &ApiState,
+    session: &AdminSession,
+    character: &Character,
+) -> Option<&'static str> {
+    let module = state
+        .character_data
+        .as_ref()
+        .filter(|module| module.connected())?;
+    if character.world != LINK_REGION {
+        return None;
+    }
+    let origin = session.origin();
+    match module
+        .request_link(&character.id, 0, &origin.actor, origin.surface, |_| None)
+        .await
+    {
+        Ok(RequestOutcome::Requested(_)) => Some("pending"),
+        // Lost a race with a concurrent retry (stale / already linked): the
+        // request on file is the answer, so every retry agrees.
+        _ if module
+            .status(&character.id)
+            .await
+            .is_ok_and(|view| view.link.is_some()) =>
+        {
+            Some("pending")
+        }
+        _ => {
+            crate::runtime::logging::event("WARN", "chardata_create_link_failed", json!({}));
+            Some("failed")
+        }
+    }
 }
 
 /// A present JSON field, `null` included: `Some(None)` clears.

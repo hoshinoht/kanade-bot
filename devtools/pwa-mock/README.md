@@ -200,6 +200,17 @@ is on; `POST /__mock/character-data {health}` picks `ok` (default), `alert`
 `setup` (no key: links read `not_connected`; no scouter URL: estimates off) or
 `refused` (key refused, scouter unreachable).
 
+The Add character lookup (`GET`/`POST /api/admin/characters/lookup`, on with
+the module) answers by IGN prefix, case-insensitive: `Nope…` 404
+`not_found`, `Busy…` 503 `nexon_unavailable` (held), `Offline…` 409
+`not_connected`, `Wait…` 429 `lookup_cooldown`; any other MapleSEA IGN is
+found with an invented class and level (stable per name), world Aquila and
+today's Singapore date. The `setup` health is not connected and `alert` /
+`refused` hold every lookup; there is no real per-admin spacing here.
+Nothing is kept. A character create answers `CharacterCreated`: with the
+module on and connected, a MapleSEA (`msea`) create also makes the member's
+`pending` link (`link: "pending"`), otherwise `link: null`.
+
 Run readiness (`src/mock/readiness.rs`; on with the module):
 `GET /api/admin/runs/{id}/readiness` answers each party slot as the server
 does: its level (fresh NEXON level else the manual one) and power (NEXON

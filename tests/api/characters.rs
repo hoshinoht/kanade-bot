@@ -19,6 +19,7 @@ use crate::{
 };
 
 const ROW: &str = "characters.json#/$defs/CharacterRow";
+const CREATED: &str = "characters.json#/$defs/CharacterCreated";
 const LIST: &str = "characters.json#/$defs/MemberCharacters";
 const MESSAGE: &str = "common.json#/$defs/Message";
 const ALICE: &str = "/api/admin/members/1001/characters";
@@ -48,7 +49,9 @@ async fn created(reads: &Reads, path: &str, body: Value) -> Value {
     let reply = reads.call("POST", path, body, &[]).await;
     assert_eq!(reply.status, 201, "{}", reply.text());
     let value = reply.json();
-    assert_valid(ROW, path, &value);
+    assert_valid(CREATED, path, &value);
+    // Roster alone (module `character_data` off): no link is asked.
+    assert_eq!(value["link"], Value::Null);
     value
 }
 

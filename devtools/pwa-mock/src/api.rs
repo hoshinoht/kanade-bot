@@ -232,6 +232,32 @@ pub async fn unlink(State(app): State<App>, Path(id): Path<String>) -> Response 
     outcome(app.store.lock().await.unlink(&id))
 }
 
+/// `GET /api/admin/characters/lookup`.
+pub async fn lookup_status(State(app): State<App>) -> Response {
+    if let Some(off) = chardata_off(&app).await {
+        return off;
+    }
+    Json(app.store.lock().await.lookup_status()).into_response()
+}
+
+/// `POST /api/admin/characters/lookup`: shown only, nothing kept.
+pub async fn look_up(
+    State(app): State<App>,
+    body: Result<Json<crate::mock::character_data::LookupRequest>, JsonRejection>,
+) -> Response {
+    if let Some(off) = chardata_off(&app).await {
+        return off;
+    }
+    let Ok(Json(req)) = body else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "invalid_body",
+            "The request body is not valid.",
+        );
+    };
+    outcome(app.store.lock().await.look_up(req))
+}
+
 pub async fn refresh_link(State(app): State<App>, Path(id): Path<String>) -> Response {
     if let Some(off) = chardata_off(&app).await {
         return off;

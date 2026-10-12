@@ -87,13 +87,16 @@ export interface FormValues {
 /**
  * What can be told before asking the server: the IGN's shape, a class picked,
  * the level's range, and an IGN the server already refused in this region
- * (`taken`, lower-cased with its region) while it is unchanged.
+ * (`taken`, lower-cased with its region) while it is unchanged. Without
+ * `manual` (a MapleSEA add while NEXON is connected) there is no class or
+ * level to check: those come from the member's link.
  */
-export function checkForm(values: FormValues, taken: ReadonlySet<string>): FieldErrors {
+export function checkForm(values: FormValues, taken: ReadonlySet<string>, manual = true): FieldErrors {
   const errors: FieldErrors = {};
   const ign = values.ign.trim();
   if (!/^[A-Za-z0-9]{4,12}$/.test(ign)) errors.ign = IGN_ERROR;
   else if (taken.has(takenKey(ign, values.world))) errors.ign = takenText(ign, values.world);
+  if (!manual) return errors;
   if (!values.class) errors.class = 'Pick a class.';
   const level = parseLevel(values.level);
   if (level === 'bad' || (level !== null && (level < 1 || level > 300))) errors.level = LEVEL_ERROR;

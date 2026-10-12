@@ -60,6 +60,11 @@ describe('the Add / Edit form', () => {
     expect(checkForm({ ...form, level: '2x' }, new Set()).level).toBe(LEVEL_ERROR);
   });
 
+  it('asks no class or level when NEXON is connected for a MapleSEA add', () => {
+    expect(checkForm({ ign: 'Wisteria', world: 'msea', class: '', level: '' }, new Set(), false)).toEqual({});
+    expect(checkForm({ ign: 'ab', world: 'msea', class: '', level: '999' }, new Set(), false)).toEqual({ ign: IGN_ERROR });
+  });
+
   it('remembers an IGN the server refused in that region, whatever the case', () => {
     const taken = new Set([takenKey('hotaru7', 'msea')]);
     expect(checkForm({ ...form, ign: 'Hotaru7' }, taken).ign).toContain('already on the roster in MapleSEA');

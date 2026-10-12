@@ -1,9 +1,12 @@
 //! Run readiness (module `character_data`): `GET /api/admin/runs/{id}/readiness`
 //! shows each party slot (the slots of `GET …/characters`, inferred ones
 //! recomputed) with its level and power, and judges its level against the
-//! boss knowledge `entry_level` of each boss of the run. Computed on read;
-//! nothing is stored and nothing is blocked. While the module is off the
-//! route answers the generic `404` before the session is checked.
+//! boss knowledge `entry_level` of each boss of the run. With estimates on,
+//! each boss also carries the character's MapleScouter reading when the
+//! estimates' 24-hour memory holds one; readiness never starts a lookup.
+//! Computed on read; nothing is stored and nothing is blocked. While the
+//! module is off the route answers the generic `404` before the session is
+//! checked.
 
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -19,7 +22,9 @@ use super::{
         characters::party,
         write::{Refusal, state},
     },
-    Module, Reply, unavailable,
+    Module, Reply,
+    estimates::lookup_name,
+    unavailable,
 };
 use crate::{
     api::{
@@ -88,7 +93,7 @@ async fn read(
             .bringing()
             .and_then(|id| slot.candidates.iter().find(|character| character.id == id))
             .map(|character| (character, slot.picked.is_none()));
-        let (link, ready) = match brings {
+        let (link, ready, scouter) = match brings {
             Some((character, _)) => {
                 let view = module.status(&character.id).await.map_err(unavailable)?;
                 let subject = Subject {
@@ -96,12 +101,21 @@ async fn read(
                     link: view.link.as_ref().map(|link| link.status),
                     snapshot: view.snapshot.as_ref(),
                 };
+                let scouter = module
+                    .estimates()
+                    .zip(lookup_name(character).ok())
+                    .and_then(|(estimates, ign)| estimates.cached(&ign));
                 (
                     Some(link_state(&view)),
                     readiness(&subject, &bosses, view.now),
+                    scouter,
                 )
             }
-            None => (None, readiness(&Subject::default(), &bosses, state.now())),
+            None => (
+                None,
+                readiness(&Subject::default(), &bosses, state.now()),
+                None,
+            ),
         };
         nexon_data |= ready.nexon;
         answers.push(dto::readiness::slot(
@@ -110,6 +124,7 @@ async fn read(
             link,
             &ready,
             &bosses,
+            scouter.as_ref(),
         ));
     }
     Ok(Json(dto::readiness::run(&run.id, answers, nexon_data)).into_response())

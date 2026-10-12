@@ -154,6 +154,14 @@ pub struct LinkRequest {
     version: Option<u32>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LookupRequest {
+    ign: String,
+    #[serde(default)]
+    world: Option<String>,
+}
+
 fn coded(status: u16, code: &'static str, message: &str) -> MoveError {
     MoveError::Coded(status, code, message.into())
 }
@@ -334,6 +342,85 @@ impl Store {
         let answer = view(id, Some(&link), true, now);
         self.links.push(link);
         Ok(answer)
+    }
+
+    /// After a create: with the module on and connected, the new MapleSEA
+    /// character's member is asked to link it (`pending`; `failed` if that
+    /// were refused); `None` when nothing is asked.
+    pub(super) fn ask_link_on_create(&mut self, id: &str) -> Option<&'static str> {
+        if !self.character_data_on() || !self.connected() {
+            return None;
+        }
+        Some(
+            match self.request_link(id, LinkRequest { version: Some(0) }) {
+                Ok(_) => "pending",
+                Err(_) => "failed",
+            },
+        )
+    }
+
+    /// `GET /api/admin/characters/lookup`.
+    pub fn lookup_status(&self) -> Value {
+        json!({ "connected": self.connected() })
+    }
+
+    /// `POST /api/admin/characters/lookup`: invented answers by IGN prefix
+    /// (`Nope…` not found, `Busy…` calls held, `Offline…` not connected,
+    /// `Wait…` the per-admin spacing), else found; nothing is kept. The
+    /// `setup` health is not connected, `alert`/`refused` hold every call.
+    pub fn look_up(&self, req: LookupRequest) -> Result<Value, MoveError> {
+        let ign = super::characters::ign(&req.ign)?;
+        if super::characters::world(req.world.as_deref())? != "msea" {
+            return Err(coded(
+                422,
+                "region",
+                "Only MapleSEA characters can be looked up.",
+            ));
+        }
+        let prefixed = |prefix: &str| {
+            ign.len() >= prefix.len() && ign[..prefix.len()].eq_ignore_ascii_case(prefix)
+        };
+        if !self.connected() || prefixed("offline") {
+            return Err(coded(
+                409,
+                "not_connected",
+                "Character data isn't connected yet.",
+            ));
+        }
+        if prefixed("wait") {
+            return Err(coded(
+                429,
+                "lookup_cooldown",
+                "Wait a few seconds before looking up again.",
+            ));
+        }
+        if matches!(self.chardata_health, Health::Alert | Health::Refused) || prefixed("busy") {
+            return Err(coded(
+                503,
+                "nexon_unavailable",
+                "The Open API can't be called right now (maintenance).",
+            ));
+        }
+        if prefixed("nope") {
+            return Err(coded(
+                404,
+                "not_found",
+                "NEXON has no MapleSEA character by that name.",
+            ));
+        }
+        // A stable invented class and level per name.
+        const CLASSES: [&str; 6] = ["Bishop", "Kain", "Night Lord", "Paladin", "Adele", "Lara"];
+        let seed = ign.bytes().map(usize::from).sum::<usize>();
+        let now = now_secs();
+        Ok(json!({
+            "name": ign,
+            "world": "Aquila",
+            "class": CLASSES[seed % CLASSES.len()],
+            "level": 220 + seed % 70,
+            "image_url": null,
+            "as_of": iso_date((now + TZ_OFFSET_SECS).div_euclid(DAY)),
+            "attribution": ATTRIBUTION,
+        }))
     }
 
     pub fn unlink(&mut self, id: &str) -> Result<Value, MoveError> {

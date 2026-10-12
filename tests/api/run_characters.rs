@@ -96,7 +96,7 @@ async fn created(reads: &Reads, member: &str, body: Value) -> String {
     let reply = reads.call("POST", &path, body, &[]).await;
     assert_eq!(reply.status, 201, "{}", reply.text());
     let row = reply.json();
-    assert_valid(ROW, &path, &row);
+    assert_valid("characters.json#/$defs/CharacterCreated", &path, &row);
     row["id"].as_str().unwrap().to_owned()
 }
 

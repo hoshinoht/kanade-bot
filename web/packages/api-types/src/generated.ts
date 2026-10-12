@@ -224,6 +224,30 @@ updated_by: SettingsActor,
  */
 version: number, };
 
+/**
+ * The create's answer: the row and, with module `character_data`, the
+ * member's link request the create asked for.
+ */
+export type CharacterCreated = { 
+/**
+ * `pending`: the member was asked to link it (a MapleSEA character
+ * with the module on and a Nexon key); `failed`: that request could
+ * not be made (the character is saved); `null`: none was asked.
+ */
+link: 'pending' | 'failed' | null, id: string, member_id: string, ign: string, world: string, class: string | null, level: number | null, role: 'main' | 'alt', 
+/**
+ * When it was retired; `null` while active.
+ */
+retired_at: string | null, created_at: string, updated_at: string, 
+/**
+ * Who made the last write (the create, else the last edit).
+ */
+updated_by: SettingsActor, 
+/**
+ * Send it back as the `PATCH` precondition.
+ */
+version: number, };
+
 export type MemberCharacters = { member_id: string, 
 /**
  * Retired ones included, oldest first.
@@ -400,6 +424,34 @@ url: string | null, last_lookup_at: string | null,
  */
 last_error: string | null, last_error_at: string | null, };
 
+/**
+ * `GET /api/admin/characters/lookup`: whether a lookup (and the link a
+ * MapleSEA create asks for) can be made.
+ */
+export type LookupStatus = { 
+/**
+ * A Nexon key is configured.
+ */
+connected: boolean, };
+
+/**
+ * `POST /api/admin/characters/lookup`: what NEXON says about a typed IGN,
+ * shown in the Add character dialog only. Nothing of it is stored.
+ */
+export type CharacterLookup = { name: string | null, world: string | null, class: string | null, level: number | null, 
+/**
+ * Hotlinked from Nexon, never re-hosted.
+ */
+image_url: string | null, 
+/**
+ * `YYYY-MM-DD` (Singapore): the response date, else the lookup day.
+ */
+as_of: string, 
+/**
+ * Shown with the values: `Data based on NEXON Open API`.
+ */
+attribution: string, };
+
 export type RunReadiness = { run_id: string, 
 /**
  * The slots of `GET …/characters`, in party order.
@@ -449,11 +501,7 @@ export type ReadinessLevel = { value: number, source: 'nexon' | 'manual',
  */
 as_of: string | null, };
 
-export type ReadinessPower = { 
-/**
- * `scouter` is reserved for MapleScouter's boss values (not sent yet).
- */
-kind: 'nexon_cp' | 'scouter', value: number, as_of: string | null, };
+export type ReadinessPower = { kind: 'nexon_cp', value: number, as_of: string | null, };
 
 export type BossReadiness = { 
 /**
@@ -463,7 +511,27 @@ boss: string, difficulty: Difficulty,
 /**
  * From boss knowledge; `null` when it has none.
  */
-entry_level: number | null, level: 'ok' | 'under' | 'unknown', };
+entry_level: number | null, level: 'ok' | 'under' | 'unknown', 
+/**
+ * The character's MapleScouter reading for this boss from the
+ * estimates' 24-hour memory (never looked up here); `null` without
+ * one, or while estimates are off.
+ */
+scouter: ScouterReading | null, };
+
+/**
+ * Shown, never judged: "Estimate for planning only, not eligibility".
+ */
+export type ScouterReading = { 
+/**
+ * The character's share (`effective_percentage`), else the card's
+ * percentage.
+ */
+percentage: number, rating: string, estimated_minutes: number | null, 
+/**
+ * When kanade received it from MapleScouter.
+ */
+fetched_at: string, };
 
 /**
  * `GET /api/admin/estimates?character_ids=|run_id=`.

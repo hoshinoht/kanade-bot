@@ -23,17 +23,11 @@ pub struct Level {
     pub as_of: Option<NaiveDate>,
 }
 
-/// Where a power value comes from. MapleScouter values join as a second
-/// kind with scouter integration.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PowerKind {
-    NexonCp,
-}
-
-/// A shown power value; nothing is judged against it.
+/// The NEXON combat power of usable data; shown, never judged.
+/// MapleScouter readings are per boss and come from the estimates' memory
+/// (API layer), not from here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Power {
-    pub kind: PowerKind,
     pub value: u64,
     pub as_of: Option<NaiveDate>,
 }
@@ -115,7 +109,6 @@ pub fn readiness(subject: &Subject<'_>, bosses: &[Requirement], now: DateTime<Ut
         });
     let power = nexon.and_then(|snapshot| {
         snapshot.combat_power.map(|value| Power {
-            kind: PowerKind::NexonCp,
             value,
             as_of: Some(snapshot.as_of()),
         })
@@ -123,8 +116,7 @@ pub fn readiness(subject: &Subject<'_>, bosses: &[Requirement], now: DateTime<Ut
     Readiness {
         level,
         power,
-        nexon: level.is_some_and(|level| level.source == LevelSource::Nexon)
-            || power.is_some_and(|power| power.kind == PowerKind::NexonCp),
+        nexon: level.is_some_and(|level| level.source == LevelSource::Nexon) || power.is_some(),
         bosses: bosses.iter().map(|boss| judge(level, boss)).collect(),
     }
 }
@@ -196,7 +188,6 @@ mod tests {
         assert_eq!(
             ready.power,
             Some(Power {
-                kind: PowerKind::NexonCp,
                 value: 50_000_000,
                 as_of: Some(data.as_of()),
             })

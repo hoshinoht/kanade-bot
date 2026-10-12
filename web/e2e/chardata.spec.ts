@@ -320,6 +320,25 @@ test('chardata readiness: level and CP per slot, a level verdict per boss, attri
   await expect(slotOf(sheet, 'Mika').getByRole('group', { name: 'Readiness of MikaBish' })).toContainText('Lv. 283 · CP 48.2M');
 });
 
+test('chardata readiness: after the run lookup ends, MapleScouter per boss replaces the slot CP', async ({ page }) => {
+  const sheet = await carling(page);
+  const yuzu = slotOf(sheet, 'Yuzu').getByRole('group', { name: 'Readiness of YuzuPala' });
+  await expect(yuzu).toContainText('Lv. 276 · CP 52.1M');
+  await expect(yuzu.locator('.ready__scouter')).toHaveCount(0);
+  await expect(sheet.locator('.ready__estimate')).toHaveCount(0);
+  await sheet.locator('.estimate-panel').getByRole('button', { name: 'Look up party' }).click();
+  // No page reload: readiness is read again when the lookup ends.
+  const chip = yuzu.locator('.ready__scouter').first();
+  await expect(chip).toHaveText(/^MapleScouter \d+% · ~\d+ min/, { timeout: 20_000 });
+  await expect(chip).toHaveAttribute('title', 'Party-able');
+  await expect(yuzu.locator('.ready__values')).toHaveText('Lv. 276');
+  await expect(yuzu).not.toContainText('CP 52.1M');
+  await expect(yuzu.locator('.ready__scouter-at')).toContainText(/^MapleScouter · \d+ \w{3} \d{2}:\d{2}$/);
+  // Level chips unchanged; the label and note show once for the panel.
+  await expect(yuzu.getByRole('listitem').first().locator('.status-chip').first()).toHaveText('Lv ok');
+  await expect(sheet.locator('.ready__estimate')).toHaveText(/^Estimate from MapleScouter · Estimate for planning only, not eligibility\./);
+});
+
 test('chardata readiness: the phone list says it never blocks; module off asks nothing', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   let sheet = await carling(page);
@@ -453,6 +472,16 @@ test('chardata capture', async ({ page }) => {
     sheet = await carling(page);
     await expect(sheet.locator('.ready').first()).toBeVisible();
     await shot(`${P}CharReady`, phone ? sheet.locator('.ready__hint') : undefined);
+
+    // The same readiness once a party lookup is kept: MapleScouter per boss replaces the CP.
+    await reset();
+    await page.request.put(`${ADMIN}/api/admin/runs/${RUN}/characters/1003`, { headers: await csrf(page.request), data: { character_id: 'ch-s3', version: 0 } });
+    const started = await page.request.post(`${ADMIN}/api/admin/estimates`, { headers: await csrf(page.request), data: { run_id: RUN } });
+    const jobId = (await started.json()).job.id as string;
+    await expect.poll(async () => (await (await page.request.get(`${ADMIN}/api/admin/estimates/${jobId}`)).json()).state, { timeout: 20_000 }).toBe('done');
+    sheet = await carling(page);
+    await expect(sheet.locator('.ready__scouter').first()).toBeVisible();
+    await shot(`${P}CharReady-scouter`, phone ? sheet.locator('.ready__hint') : undefined);
 
     // Config › Character data.
     for (const [value, name] of [

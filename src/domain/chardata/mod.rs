@@ -18,8 +18,8 @@ pub use model::{
 };
 pub use port::{CharDataStore, LinkPut, StoreFuture};
 pub use readiness::{
-    Level, LevelSource, LevelVerdict, Power, PowerKind, Readiness, Requirement, Subject, judge,
-    readiness, usable_nexon,
+    Level, LevelSource, LevelVerdict, Power, Readiness, Requirement, Subject, judge, readiness,
+    usable_nexon,
 };
 pub use rules::{
     BATCH_TIME, Failure, MAINTENANCE_AGAIN, MAINTENANCE_FIRST, Orphan, PREPARING_RETRY,
