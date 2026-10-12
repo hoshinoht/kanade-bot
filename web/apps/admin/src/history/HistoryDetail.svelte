@@ -8,6 +8,7 @@
   let {
     wide,
     member,
+    extra,
     record,
     week,
     timezone,
@@ -22,6 +23,8 @@
     wide: boolean;
     /** The "revert a member's changes" tool, at the wide pane's foot (B_History). */
     member?: Snippet;
+    /** Between the raw link and the actions: the Graph's "Drafts at this change" (B_HistoryGraph). */
+    extra?: Snippet;
     record: ChangeRecord;
     week: string;
     timezone: string;
@@ -69,6 +72,8 @@
     </section>
 
     <button class="linklike history-detail__raw" data-fid="history-raw" type="button" onclick={() => onraw(record)}>Show raw JSON</button>
+
+    {#if extra}{@render extra()}{/if}
 
     <div class="history-detail__actions" data-fid="history-actions">
       <button class="btn btn--danger" type="button" data-history-revert={record.seq} onclick={() => onrevert(record)}>Revert…</button>

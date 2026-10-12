@@ -210,6 +210,15 @@ impl DraftEventKind {
             .copied()
             .find(|kind| kind.as_str() == value)
     }
+
+    /// Whether this event closes the draft for good (a closed draft logs
+    /// nothing after it).
+    pub fn closes(self) -> bool {
+        matches!(
+            self,
+            Self::Merged | Self::Discarded | Self::Expired | Self::Rejected | Self::Withdrawn
+        )
+    }
 }
 
 /// One logged event, stamped with the draft version it produced.
@@ -222,6 +231,16 @@ pub struct DraftEvent {
     pub at: DateTime<Utc>,
     /// Kind-specific facts (an operation position, a merge seq, a reason).
     pub detail: Option<String>,
+}
+
+/// When a draft closed: the time of its closing event, `None` while it is
+/// live. Derived from the append-only log, so no column records it.
+pub fn closed_at(events: &[DraftEvent]) -> Option<DateTime<Utc>> {
+    events
+        .iter()
+        .rev()
+        .find(|event| event.kind.closes())
+        .map(|event| event.at)
 }
 
 /// A request id for creating a draft (idempotency).

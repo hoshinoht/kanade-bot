@@ -334,7 +334,7 @@ impl Store {
         weeks
     }
 
-    fn push_record(
+    pub(super) fn push_record(
         &mut self,
         before: &Rows,
         actor: Actor,

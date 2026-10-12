@@ -595,6 +595,45 @@ up_to_date: boolean, scope: 'week' | 'weekly',
 week: string | null, staged: number, author: PastDecider, created_at: string, updated_at: string, merged_seq: number | null, closed_by: PastDecider | null, close_reason: string | null, };
 
 /**
+ * One lane of the History graph: the draft's row and when it closed.
+ */
+export type GraphDraft = { 
+/**
+ * When it merged, was discarded or expired (its closing event), to
+ * place the close between the changes around it; `None` while open.
+ */
+closed_at: string | null, id: string, short_id: string, 
+/**
+ * The admin's title, or one derived from the operations (`titled`
+ * false).
+ */
+title: string, titled: boolean, status: 'open' | 'merged' | 'discarded' | 'expired', 
+/**
+ * The precondition every write sends back.
+ */
+version: number, 
+/**
+ * The history record the draft is based on.
+ */
+base: number, 
+/**
+ * Based on the current head ("Up to date"); else "Base moved".
+ */
+up_to_date: boolean, scope: 'week' | 'weekly', 
+/**
+ * The boss week's first day (guild date) of a week-scoped draft.
+ */
+week: string | null, staged: number, author: PastDecider, created_at: string, updated_at: string, merged_seq: number | null, closed_by: PastDecider | null, close_reason: string | null, };
+
+/**
+ * `GET /api/admin/drafts/graph?from=&to=`: the admin's own drafts whose
+ * span (base to merge, close or head) touches History records
+ * `from..=to`, any status, most recently changed first, and the current
+ * head. Conflicts are not analysed here (open a draft's preview for them).
+ */
+export type DraftGraph = { head: number, drafts: Array<GraphDraft>, };
+
+/**
  * The History record behind a conflict: the latest change after the
  * draft's base that touched the conflicting row.
  */

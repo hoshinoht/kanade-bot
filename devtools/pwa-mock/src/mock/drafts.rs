@@ -65,6 +65,9 @@ pub struct MockDraft {
     pub version: u64,
     /// `None`: on the current head (seeded drafts follow the mock's head).
     pub base_lag: Option<u64>,
+    /// The base as a fixed seq: a closed draft's (pinned when it closes, so
+    /// later changes never move it) and the graph scenario's.
+    pub pinned_base: Option<u64>,
     pub ops: Vec<StagedOp>,
     pub conflicts: Vec<SeededConflict>,
     pub created_at: String,
@@ -89,12 +92,12 @@ pub struct Rebase {
     pub settle: std::collections::BTreeMap<String, String>,
 }
 
-fn at(hour: i64) -> String {
+pub(super) fn at(hour: i64) -> String {
     let (today, _) = local_now();
     iso_z(week_start(today) * 1440 + hour * 60)
 }
 
-fn op(kind: &'static str, summary: &str, run: &str, body: Value, hour: i64) -> StagedOp {
+pub(super) fn op(kind: &'static str, summary: &str, run: &str, body: Value, hour: i64) -> StagedOp {
     StagedOp {
         kind,
         summary: summary.into(),
@@ -113,6 +116,7 @@ pub fn seed() -> Vec<MockDraft> {
             status: "open",
             version: 3,
             base_lag: None,
+            pinned_base: None,
             ops: vec![
                 op(
                     "amend_run",
@@ -141,6 +145,7 @@ pub fn seed() -> Vec<MockDraft> {
             status: "open",
             version: 4,
             base_lag: Some(3),
+            pinned_base: None,
             ops: vec![
                 op(
                     "amend_run",
@@ -204,7 +209,9 @@ pub fn seed() -> Vec<MockDraft> {
             title: "Tuesday Kalos".into(),
             status: "merged",
             version: 2,
-            base_lag: Some(6),
+            base_lag: None,
+            // Based on #2, merged as #3 (the change that moved XKalos to 22:00).
+            pinned_base: Some(2),
             ops: vec![op(
                 "amend_run",
                 "Move XKalos to Tue 29 Sep 22:00",
@@ -213,9 +220,9 @@ pub fn seed() -> Vec<MockDraft> {
                 60,
             )],
             conflicts: Vec::new(),
-            created_at: at(58),
-            updated_at: at(61),
-            merged_seq: Some(1),
+            created_at: at(38),
+            updated_at: at(41),
+            merged_seq: Some(3),
             close_reason: None,
         },
         MockDraft {
@@ -223,11 +230,12 @@ pub fn seed() -> Vec<MockDraft> {
             title: "Scratch".into(),
             status: "discarded",
             version: 1,
-            base_lag: Some(8),
+            base_lag: None,
+            pinned_base: Some(1),
             ops: Vec::new(),
             conflicts: Vec::new(),
             created_at: at(40),
-            updated_at: at(41),
+            updated_at: at(43),
             merged_seq: None,
             close_reason: None,
         },
@@ -264,8 +272,10 @@ impl Store {
     }
 
     fn base_of(&self, draft: &MockDraft) -> u64 {
-        self.drafts_head()
-            .saturating_sub(draft.base_lag.unwrap_or(0))
+        draft.pinned_base.unwrap_or_else(|| {
+            self.drafts_head()
+                .saturating_sub(draft.base_lag.unwrap_or(0))
+        })
     }
 
     fn draft_row(&self, draft: &MockDraft) -> Value {
@@ -278,6 +288,16 @@ impl Store {
             (false, Some(first)) => format!("{} and {} more", first.summary, draft.ops.len() - 1),
         };
         let closed = draft.status != "open";
+        // As the server derives it: weekly timings only when every op is one.
+        let weekly = !draft.ops.is_empty() && draft.ops.iter().all(|op| op.run_id.is_none());
+        let closer = || match draft.status {
+            "expired" => Decider {
+                kind: "system",
+                id: "delivery".into(),
+                name: "Kanade".into(),
+            },
+            _ => asahi(),
+        };
         json!({
             "id": draft.id,
             "short_id": draft.id.trim_start_matches("d-"),
@@ -287,14 +307,14 @@ impl Store {
             "version": draft.version,
             "base": base,
             "up_to_date": base == head,
-            "scope": "week",
-            "week": "2026-09-24",
+            "scope": if weekly { "weekly" } else { "week" },
+            "week": (!weekly).then_some("2026-09-24"),
             "staged": draft.ops.len(),
             "author": asahi(),
             "created_at": draft.created_at,
             "updated_at": draft.updated_at,
             "merged_seq": draft.merged_seq,
-            "closed_by": closed.then(asahi),
+            "closed_by": closed.then(closer),
             "close_reason": draft.close_reason,
         })
     }
@@ -442,6 +462,7 @@ impl Store {
             status: "open",
             version: 1,
             base_lag: None,
+            pinned_base: None,
             ops: Vec::new(),
             conflicts: Vec::new(),
             created_at: now.clone(),
@@ -477,6 +498,7 @@ impl Store {
 
     pub fn draft_discard(&mut self, id: &str, version: Option<u64>) -> Result<Value, MoveError> {
         let index = self.live(id, version)?;
+        self.drafts[index].pinned_base = Some(self.base_of(&self.drafts[index]));
         self.drafts[index].status = "discarded";
         self.drafts[index].updated_at = super::clock::iso_now();
         Ok(self.written(index, "Draft discarded; nothing was applied."))
@@ -588,13 +610,14 @@ impl Store {
         draft.ops = ops;
         draft.conflicts.clear();
         draft.base_lag = None;
+        draft.pinned_base = None;
         self.touch(index);
         Ok(self.written(index, "Draft rebased; your changes are kept."))
     }
 
     pub fn draft_merge(&mut self, id: &str, version: Option<u64>) -> Result<Value, MoveError> {
         let index = self.live(id, version)?;
-        if self.drafts[index].base_lag.is_some_and(|lag| lag > 0) {
+        if self.base_of(&self.drafts[index]) != self.drafts_head() {
             return Err(coded(
                 409,
                 "base_moved",
@@ -631,7 +654,10 @@ impl Store {
             Ok(())
         })?;
         let seq = self.drafts_head();
+        // The base it merged from: the head just below its merge record.
+        let base = seq.saturating_sub(1);
         let draft = &mut self.drafts[index];
+        draft.pinned_base = Some(base);
         draft.status = "merged";
         draft.merged_seq = Some(seq);
         draft.updated_at = super::clock::iso_now();
@@ -642,5 +668,79 @@ impl Store {
             "seq": seq,
             "message": format!("Draft merged as change #{seq}."),
         }))
+    }
+
+    /// `GET /api/admin/drafts/graph?from=&to=` (`DraftGraph`): the drafts
+    /// whose span touches records `from..=to`, as the server decides it; a
+    /// closed draft's close time is its last change (`updated_at`).
+    pub fn draft_graph(&self, query: Option<&str>) -> Result<Value, MoveError> {
+        let invalid = || {
+            coded(
+                422,
+                "invalid_query",
+                "from and to are History seqs, from <= to.",
+            )
+        };
+        let pairs: Vec<(&str, &str)> = query
+            .unwrap_or_default()
+            .split('&')
+            .filter(|pair| !pair.is_empty())
+            .map(|pair| pair.split_once('=').unwrap_or((pair, "")))
+            .collect();
+        let seq = |key: &str| -> Result<u64, MoveError> {
+            let mut values = pairs.iter().filter(|(name, _)| *name == key);
+            match (values.next(), values.next()) {
+                (Some((_, text)), None)
+                    if !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()) =>
+                {
+                    text.parse::<u64>()
+                        .ok()
+                        .filter(|seq| *seq <= i64::MAX as u64)
+                        .ok_or_else(invalid)
+                }
+                _ => Err(invalid()),
+            }
+        };
+        if pairs
+            .iter()
+            .any(|(name, _)| *name != "from" && *name != "to")
+        {
+            return Err(invalid());
+        }
+        let (from, to) = (seq("from")?, seq("to")?);
+        if from > to {
+            return Err(invalid());
+        }
+        let head = self.drafts_head();
+        let secs = |text: &str| super::clock::parse_instant(&text.replace("+00:00", "Z"));
+        let from_at = (from > 0)
+            .then(|| self.history.get(from as usize).and_then(|r| secs(&r.at)))
+            .flatten();
+        let mut touching: Vec<&MockDraft> = self
+            .drafts
+            .iter()
+            .filter(|draft| {
+                let reaches = match draft.status {
+                    "open" => head >= from,
+                    "merged" => draft.merged_seq.is_some_and(|seq| seq >= from),
+                    _ => from_at
+                        .is_none_or(|first| secs(&draft.updated_at).is_none_or(|at| at >= first)),
+                };
+                self.base_of(draft) <= to && reaches
+            })
+            .collect();
+        // Most recently changed first, as the server lists them.
+        touching.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        let rows: Vec<Value> = touching
+            .into_iter()
+            .map(|draft| {
+                let mut row = self.draft_row(draft);
+                row["closed_at"] = (draft.status != "open")
+                    .then(|| draft.updated_at.clone())
+                    .into();
+                row
+            })
+            .collect();
+        Ok(json!({"head": head, "drafts": rows}))
     }
 }

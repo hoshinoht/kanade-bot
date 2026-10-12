@@ -23,7 +23,7 @@ pub use op::{DraftOp, ReplayError, Target, renumber_created, resolve};
 pub use port::{
     DraftChange, DraftCreated, DraftEvent, DraftEventKind, DraftKind, DraftRequest, DraftScope,
     DraftStale, DraftStatus, DraftStore, DraftUpdate, DraftWrite, LoadedDraft, MergeCommit,
-    NewDraft, RequestLimit, RequestLimits, StagedOp, StoredDraft, Submission,
+    NewDraft, RequestLimit, RequestLimits, StagedOp, StoredDraft, Submission, closed_at,
 };
 pub use proposal::{
     DEFAULT_PROPOSAL_TTL, ExistingProposal, NewProposal, ProposalCreated, ProposalInfo,

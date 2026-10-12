@@ -2,6 +2,7 @@
      selected change inspectable beside the list on wide screens. -->
 <script lang="ts">
   import PageLine from '../shell/PageLine.svelte';
+  import { getChrome } from '../shell/chrome';
   import '@kanade/ui/styles/screens/evidence.scss';
   import '@kanade/ui/styles/screens/history.scss';
   import '@kanade/ui/styles/core/date-picker.scss';
@@ -9,7 +10,7 @@
   import type { ChangeRecord, Checkpoints, HistoryPage, RevertPlan, SettingsChangeRow } from '@kanade/api-types';
   import { createClient } from '@kanade/client';
   import { SvelteSet } from 'svelte/reactivity';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { DatePicker, Icon, LoadError, LoadingState, Presence, RowContent, Select, serverClock, Toaster, TWO_PANE_QUERY, weekStartLabel, type SelectOption } from '@kanade/ui';
   import { live, Resource } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
@@ -20,11 +21,13 @@
   import { isWindowClear, mergeTimeline, sectionLabel, settingCount, settingOrigin, settingSummary, type TimelineItem } from './settings';
   import CheckpointsPanel from './CheckpointsPanel.svelte';
   import SignInsPanel from './SignInsPanel.svelte';
+  import GraphPanel from './GraphPanel.svelte';
   import TextModal from '../shared/TextModal.svelte';
   import { memberLabel } from '../names/directory.svelte';
 
   let { store, toaster }: { store: AdminWeek; toaster: Toaster } = $props();
   const client = createClient();
+  const chrome = getChrome();
   let week = $state('');
   // `?actor=` (Account's "See my changes") starts filtered to that actor.
   const linkedActor = new URLSearchParams(location.search).get('actor') ?? '';
@@ -155,15 +158,35 @@
     for (const record of records) for (const ref of record.refs) by.set(ref.seq, [...(by.get(ref.seq) ?? []), record.seq]);
     return by;
   });
-  type Tab = 'timeline' | 'checkpoints' | 'sign-ins';
+  type Tab = 'timeline' | 'graph' | 'checkpoints' | 'sign-ins';
   const TABS: { id: Tab; label: string }[] = [
     { id: 'timeline', label: 'Timeline' },
+    { id: 'graph', label: 'Graph' },
     { id: 'checkpoints', label: 'Checkpoints' },
     { id: 'sign-ins', label: 'Sign-ins' },
   ];
-  // `?tab=sign-ins` opens the audit log directly (the old `/audit` link).
+  // `?tab=sign-ins` opens the audit log directly (the old `/audit` link); `?tab=graph` the graph.
   const linkedTab = new URLSearchParams(location.search).get('tab');
   let tab = $state<Tab>(TABS.find((t) => t.id === linkedTab)?.id ?? 'timeline');
+  // The Graph tab's title-bar tools: Graph / List, and Go to # (B_HistoryGraph).
+  let graphView = $state<'graph' | 'list'>('graph');
+  let graphPanel = $state<GraphPanel>();
+  let goOpen = $state(false);
+  let goValue = $state('');
+  let goError = $state('');
+  let goInput = $state<HTMLInputElement>();
+  // No drafts to draw: the phone drops the tools for the empty state (B_PhoneHistoryGraphEmpty).
+  let graphEmpty = $state(false);
+  async function openGo() {
+    goOpen = true;
+    await tick();
+    goInput?.focus();
+  }
+  async function go(event: SubmitEvent) {
+    event.preventDefault();
+    const seq = Number(goValue.replace(/^#/, ''));
+    goError = (await graphPanel?.goTo(seq)) ? '' : `There is no change #${goValue.replace(/^#/, '')}.`;
+  }
   // Sign-ins filters (the Timeline's stay as they were).
   let signInRealm = $state('');
   let signInEvent = $state('');
@@ -347,28 +370,51 @@
   </form>
 {/snippet}
 
-<PageLine title="History">
+<!-- The phone frame has the top bar's title (B_PhoneHistoryGraph): the page line is for screen readers only. -->
+<PageLine title="History" class={chrome?.phone ? 'pageline--echo' : ''}>
   <h1><span class="pageline__num">{(total + settingsTotal).toLocaleString('en')}</span> change{total + settingsTotal === 1 ? '' : 's'}</h1>
   {#if head}<p class="pageline__context">head #{head.seq} · <span class="mono">{head.hash.slice(0, 12)}</span></p>{/if}
 </PageLine>
 
+<!-- On the phone frame the tabs and then the tab's tools sit on the window's surface (B_PhoneHistoryGraph): no title bar. -->
 <section data-fid="window" class="card history-window window-fill" aria-labelledby="history-title">
-  <header class="card__head tabs__strip history-window__head" data-fid="window-bar">
+  <header class="card__head tabs__strip history-window__head" data-fid={chrome?.phone ? undefined : 'window-bar'}>
     <h2 class="vh" id="history-title">History</h2>
     <div class="tabs__tabs" role="tablist" aria-label="History" data-fid="window-tabs">
       {#each TABS as t, index (t.id)}
         <button class="tabs__tab" role="tab" type="button" id="history-tab-{t.id}" aria-selected={tab === t.id} aria-controls="history-{t.id}" tabindex={tab === t.id ? 0 : -1} onclick={() => (tab = t.id)} onkeydown={(event) => tabKey(event, index)}>{t.label}{#if t.id === 'timeline'}<span class="tabs__count">{total + settingsTotal}</span>{:else if t.id === 'checkpoints' && checkpoints.data}<span class="tabs__count">{checkpoints.data.backups.length}</span>{/if}</button>
       {/each}
     </div>
-    <!-- The filters only apply to the Timeline. -->
-    <div class="history-window__filters" data-fid="window-filters" hidden={tab !== 'timeline'} role="search" aria-label="Filter the history">
-      <Select size="tbar" label="Week" options={weekOptions} bind:value={week} />
-      <Select size="tbar" label="Who" options={actorOptions} bind:value={actor} noun="people" />
-    </div>
-    <div class="history-window__filters" hidden={tab !== 'sign-ins'} role="search" aria-label="Filter the sign-ins">
-      <Select size="tbar" label="Portal" options={REALM_OPTIONS} bind:value={signInRealm} />
-      <Select size="tbar" label="Event" options={EVENT_OPTIONS} bind:value={signInEvent} noun="events" />
-    </div>
+    <!-- Each tab's own tools; the filters only apply to the Timeline. -->
+    {#if tab === 'timeline'}
+      <div class="history-window__filters" data-fid="window-filters" role="search" aria-label="Filter the history">
+        <Select size="tbar" label="Week" options={weekOptions} bind:value={week} />
+        <Select size="tbar" label="Who" options={actorOptions} bind:value={actor} noun="people" />
+      </div>
+    {:else if tab === 'sign-ins'}
+      <div class="history-window__filters" role="search" aria-label="Filter the sign-ins">
+        <Select size="tbar" label="Portal" options={REALM_OPTIONS} bind:value={signInRealm} />
+        <Select size="tbar" label="Event" options={EVENT_OPTIONS} bind:value={signInEvent} noun="events" />
+      </div>
+    {:else if tab === 'graph' && !(graphEmpty && chrome?.phone)}
+      <!-- Graph tools (B_HistoryGraph): no Week / Who filters here; a filtered chain has gaps the lanes would point into. -->
+      <div class="history-window__filters graph-tools" data-fid="graph-tools">
+        <div class="seg" role="group" aria-label="Show as">
+          <button type="button" aria-pressed={graphView === 'graph'} onclick={() => (graphView = 'graph')}>Graph</button>
+          <button type="button" aria-pressed={graphView === 'list'} onclick={() => (graphView = 'list')}>List</button>
+        </div>
+        <span class="graph-tools__mine">Drafts: mine</span>
+        {#if goOpen}
+          <form class="graph-tools__go" aria-label="Go to a change" onsubmit={go}>
+            <input bind:this={goInput} bind:value={goValue} aria-label="Change number" inputmode="numeric" autocomplete="off" placeholder="#" aria-describedby="history-go-error" />
+            <button class="btn" type="submit">Go</button>
+            <span class="vh" id="history-go-error" role="status">{goError}</span>
+          </form>
+        {:else}
+          <button class="btn" type="button" onclick={() => void openGo()}>Go to #…</button>
+        {/if}
+      </div>
+    {/if}
   </header>
 
   {#if tab === 'timeline'}
@@ -420,6 +466,27 @@
       </div>
       {#if pane.shown?.kind === 'change'}<HistoryDetail wide={wide} member={memberRevert} record={selected ?? pane.shown.record} week={selected ? selectedWeek : pane.shown.week} timezone={tz} {names} onclose={closeDetail} onrevert={revert} onrestore={restoreWeek} onraw={showRaw} leaving={pane.leaving} onleft={(event) => pane.done(event)} />
       {:else if pane.shown?.kind === 'config'}{@const change = selectedSave ?? pane.shown.change}<ConfigDetail wide={wide} {change} timezone={tz} actor={actorName(change.actor, names, known)} onclose={closeDetail} onraw={showSaveRaw} leaving={pane.leaving} onleft={(event) => pane.done(event)} />{/if}
+    </div>
+  {:else if tab === 'graph'}
+    <div class="history-window__body history-window__body--graph" id="history-graph" role="tabpanel" aria-labelledby="history-tab-graph">
+      <GraphPanel
+        bind:this={graphPanel}
+        {names}
+        {known}
+        timezone={tz}
+        week={store.week}
+        {wide}
+        view={graphView}
+        onrevert={revert}
+        onrestore={restoreWeek}
+        onraw={showRaw}
+        ontimeline={() => (tab = 'timeline')}
+        onwindow={(target) => {
+          goOpen = target !== null || goOpen;
+          goValue = target !== null ? String(target) : '';
+        }}
+        onempty={(empty) => (graphEmpty = empty)}
+      />
     </div>
   {:else if tab === 'checkpoints'}
     <div class="history-window__body" id="history-checkpoints" role="tabpanel" aria-labelledby="history-tab-checkpoints">

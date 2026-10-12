@@ -8,7 +8,7 @@ use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 
 use crate::domain::drafts::{
     DraftChange, DraftCreated, DraftEventKind, DraftScope, DraftStale, DraftStatus, DraftStore,
-    DraftUpdate, DraftWrite, MergeCommit, NewDraft,
+    DraftUpdate, DraftWrite, MergeCommit, NewDraft, closed_at,
 };
 use crate::domain::history::{Actor, ChangeHistory, ChangeMeta, ChangeRef, Origin, Surface};
 use crate::domain::ids::IdGenerator;
@@ -548,6 +548,10 @@ async fn rebase_moves_the_base_and_close_is_final<S: ScheduleStore + ChangeHisto
             DraftEventKind::Discarded
         ]
     );
+    // The log dates the close (the History graph places it by this time),
+    // and it is the row's last change.
+    assert_eq!(closed_at(&events), Some(at));
+    assert_eq!(closed.updated_at, at);
 }
 
 async fn commit_merge_writes_rows_record_and_close<
@@ -615,6 +619,9 @@ async fn commit_merge_writes_rows_record_and_close<
         events.iter().map(|event| event.kind).collect::<Vec<_>>(),
         [DraftEventKind::Created, DraftEventKind::Merged]
     );
+    // `merge_meta`'s time.
+    assert_eq!(closed_at(&events), Some(utc(27, 2, 0)));
+    assert_eq!(loaded.draft.updated_at, utc(27, 2, 0));
     // The record carries the merge surface and request.
     let record = service
         .store()
@@ -899,6 +906,7 @@ async fn expiry_closes_only_past_weeks<S: ScheduleStore + ChangeHistory + DraftS
             DraftEventKind::Expired
         ]
     );
+    assert_eq!(closed_at(&events), Some(utc(27, 4, 0)));
     // Expiring again finds nothing new.
     assert!(
         service
@@ -913,6 +921,19 @@ async fn expiry_closes_only_past_weeks<S: ScheduleStore + ChangeHistory + DraftS
             .expect("expire")
             .is_empty()
     );
+    // The close time stays the first expiry's.
+    let events = service
+        .store()
+        .draft_events("draft-past")
+        .await
+        .expect("events");
+    assert_eq!(closed_at(&events), Some(utc(27, 4, 0)));
+    let live = service
+        .store()
+        .draft_events("draft-current")
+        .await
+        .expect("events");
+    assert_eq!(closed_at(&live), None, "a live draft has no close time");
 }
 
 async fn records_after_pages_the_chain<S: ScheduleStore + ChangeHistory + DraftStore>(store: S) {

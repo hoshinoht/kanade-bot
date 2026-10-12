@@ -1505,6 +1505,23 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "drafts.json#/$defs/DraftList",
     )
     .await;
+    let graph = h
+        .ok(
+            "GET",
+            "/api/admin/drafts/graph?from=1&to=1000",
+            None,
+            "drafts.json#/$defs/DraftGraph",
+        )
+        .await;
+    assert_eq!(graph["drafts"].as_array().unwrap().len(), 4);
+    h.refused(
+        "GET",
+        "/api/admin/drafts/graph?from=2&to=1",
+        json!(null),
+        &[],
+        (StatusCode::UNPROCESSABLE_ENTITY, "invalid_query"),
+    )
+    .await;
     h.ok(
         "GET",
         "/api/admin/drafts/d-weekend",

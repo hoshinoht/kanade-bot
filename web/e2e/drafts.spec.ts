@@ -96,8 +96,8 @@ test('drafts: the list, a draft and its preview, and the closed tab', async ({ p
   await page.getByRole('tab', { name: 'Closed' }).click();
   const closed = page.getByRole('listbox', { name: 'Closed drafts' });
   await expect(closed.getByRole('option')).toHaveCount(2);
-  await expect(closed.getByRole('option').first()).toContainText('merged as #1');
-  await expect(page.getByText('Closed: merged as #1')).toBeVisible();
+  await expect(closed.getByRole('option').first()).toContainText('merged as #3');
+  await expect(page.getByText('Closed: merged as #3')).toBeVisible();
   // A closed draft takes no changes.
   await expect(page.getByRole('button', { name: /^Remove change/ })).toHaveCount(0);
 });
@@ -172,7 +172,7 @@ test('drafts: an empty Open tab shows the note and the recently closed', async (
   await page.route('**/api/admin/drafts?state=open', (route) => route.fulfill({ json: { head: 9, drafts: [] } }));
   await page.goto(`${ADMIN}/drafts?sw=off`);
   await expect(page.getByRole('heading', { name: 'No open drafts' })).toBeVisible();
-  await expect(page.getByRole('link', { name: /Tuesday Kalos/ })).toContainText('merged as #1');
+  await expect(page.getByRole('link', { name: /Tuesday Kalos/ })).toContainText('merged as #3');
 });
 
 test('drafts: a failed read says so and retries', async ({ page }) => {

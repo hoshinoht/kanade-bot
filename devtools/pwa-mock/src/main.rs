@@ -93,6 +93,7 @@ fn common(app: &App, api: Router<App>, dist: PathBuf, public: bool) -> Router {
         .route("/__mock/discord", post(auth::fail_next_discord))
         .route("/__mock/arrive", post(events::arrive))
         .route("/__mock/inbox/kalos-v4", post(drafts::kalos_v4))
+        .route("/__mock/graph/board", post(drafts::graph_board))
         .with_state(app.clone())
         .fallback_service(static_site(dist));
     if public {
@@ -220,6 +221,7 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         .route("/api/admin/inbox/{id}/approve", post(api::approve))
         .route("/api/admin/inbox/{id}/reject", post(api::reject))
         .route("/api/admin/drafts", get(drafts::list).post(drafts::create))
+        .route("/api/admin/drafts/graph", get(drafts::graph))
         .route(
             "/api/admin/drafts/{id}",
             get(drafts::detail)

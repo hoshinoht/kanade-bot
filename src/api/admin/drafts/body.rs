@@ -62,6 +62,30 @@ pub fn version_param(uri: &Uri) -> Result<Option<u64>, Refusal> {
     }
 }
 
+/// `?from=<seq>&to=<seq>` of the graph read: both once, decimal, at most
+/// the largest stored seq, `from <= to`; anything else is `422 invalid_query`.
+pub fn seq_range(uri: &Uri) -> Result<(u64, u64), ApiError> {
+    let pairs = wire::query_pairs(uri.query());
+    let sent = uri.query().map_or(0, |query| {
+        query.split('&').filter(|pair| !pair.is_empty()).count()
+    });
+    if pairs.len() != sent || pairs.iter().any(|(key, _)| key != "from" && key != "to") {
+        return Err(ApiError::INVALID_QUERY);
+    }
+    let seq = |key: &str| {
+        wire::query_value(&pairs, key)
+            .filter(|text| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()))
+            .and_then(|text| text.parse::<u64>().ok())
+            .filter(|seq| *seq <= super::super::history::MAX_SEQ)
+            .ok_or(ApiError::INVALID_QUERY)
+    };
+    let (from, to) = (seq("from")?, seq("to")?);
+    if from > to {
+        return Err(ApiError::INVALID_QUERY);
+    }
+    Ok((from, to))
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AddOpBody {

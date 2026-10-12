@@ -87,6 +87,46 @@
         "ops": { "type": "array", "items": { "$ref": "#/$defs/StagedOp" } }
       }
     },
+    "GraphDraft": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One lane of the History graph: a draft's row plus when it closed.",
+      "required": [
+        "id", "short_id", "title", "titled", "status", "version", "base", "up_to_date", "scope",
+        "week", "staged", "author", "created_at", "updated_at", "merged_seq", "closed_by",
+        "close_reason", "closed_at"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "short_id": { "type": "string" },
+        "title": { "type": "string" },
+        "titled": { "type": "boolean" },
+        "status": { "$ref": "#/$defs/DraftStatus" },
+        "version": { "type": "integer", "minimum": 1 },
+        "base": { "type": "integer", "minimum": 0 },
+        "up_to_date": { "type": "boolean" },
+        "scope": { "enum": ["week", "weekly"] },
+        "week": { "$ref": "common.json#/$defs/NullableString" },
+        "staged": { "type": "integer", "minimum": 0 },
+        "author": { "$ref": "inbox.json#/$defs/Decider" },
+        "created_at": { "type": "string" },
+        "updated_at": { "type": "string" },
+        "merged_seq": { "type": ["integer", "null"], "minimum": 0 },
+        "closed_by": { "anyOf": [{ "$ref": "inbox.json#/$defs/Decider" }, { "type": "null" }] },
+        "close_reason": { "$ref": "common.json#/$defs/NullableString" },
+        "closed_at": { "$ref": "common.json#/$defs/NullableString", "description": "When it merged, was discarded or expired (its closing event); null while open." }
+      }
+    },
+    "DraftGraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "`GET /api/admin/drafts/graph?from=&to=`: the signed-in admin's own drafts whose span (base to merge record, to the last record before a discard or expiry, or to the head while open) touches History records `from..=to`, any status, most recently changed first. No conflict counts: a draft's preview has them.",
+      "required": ["head", "drafts"],
+      "properties": {
+        "head": { "type": "integer", "minimum": 0 },
+        "drafts": { "type": "array", "items": { "$ref": "#/$defs/GraphDraft" } }
+      }
+    },
     "ConflictRecord": {
       "type": "object",
       "additionalProperties": false,

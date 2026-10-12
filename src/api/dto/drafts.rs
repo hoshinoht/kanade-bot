@@ -92,6 +92,28 @@ pub struct DraftDetail {
     pub ops: Vec<StagedOpRow>,
 }
 
+/// `GET /api/admin/drafts/graph?from=&to=`: the admin's own drafts whose
+/// span (base to merge, close or head) touches History records
+/// `from..=to`, any status, most recently changed first, and the current
+/// head. Conflicts are not analysed here (open a draft's preview for them).
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct DraftGraph {
+    pub head: u64,
+    pub drafts: Vec<GraphDraft>,
+}
+
+/// One lane of the History graph: the draft's row and when it closed.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct GraphDraft {
+    #[serde(flatten)]
+    pub draft: DraftRow,
+    /// When it merged, was discarded or expired (its closing event), to
+    /// place the close between the changes around it; `None` while open.
+    pub closed_at: Option<String>,
+}
+
 /// The History record behind a conflict: the latest change after the
 /// draft's base that touched the conflicting row.
 #[derive(Serialize)]

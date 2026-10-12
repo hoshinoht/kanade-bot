@@ -465,7 +465,8 @@ for (const [width, height] of [
       }),
     );
     expect(Object.fromEntries(scrolls)).toEqual({ html: 0, body: 0, '.frame': 0, '.shell': 0, '.window-fill': 0, '.history-window__body': 0 });
-    await expect(page.locator('.pageline, .page-head').first()).toBeInViewport();
+    // The top of the page stays in view: the page line, or on phones (where it is for screen readers only) the tabs.
+    await expect(width < 600 ? page.getByRole('tablist', { name: 'History' }) : page.locator('.pageline, .page-head').first()).toBeInViewport();
   });
 }
 

@@ -591,6 +591,91 @@ const DRAFT_PAIRS: Pair[] = [
   },
 ];
 
+// History graph (KANADE_MOCKUPS=docs/research/2026-10-12-graph-presence-mockups, with the
+// shared render/ beside the boards). `POST /__mock/graph/board` seeds the boards' History
+// (head #39) and drafts. The rail is the rail-more pairs'; the phone top bar phone-nav's.
+const GRAPH_OMIT = ['rail', 'topbar'];
+const PHONE_GRAPH_OMIT = [...GRAPH_OMIT, 'page-line'];
+const graphBoard = async (page: Page) => {
+  await page.request.post(`${ADMIN}/__mock/graph/board`);
+};
+const graphShown = async (page: Page) => {
+  await expect(page.getByRole('grid', { name: /^History graph/ })).toBeVisible();
+  await page.waitForLoadState('networkidle');
+};
+const graphList = async (page: Page) => {
+  await graphShown(page);
+  if (page.viewportSize()!.width < 600) await page.keyboard.press('Escape');
+  await page.getByRole('group', { name: 'Show as' }).getByRole('button', { name: 'List' }).click();
+  await page.locator('.graph__scroll').evaluate((el) => (el.scrollTop = 0));
+};
+const graphLong = async (page: Page) => {
+  await graphShown(page);
+  await page.getByRole('button', { name: 'Go to #…' }).click();
+  await page.getByRole('textbox', { name: 'Change number' }).fill('18');
+  await page.getByRole('button', { name: 'Go', exact: true }).click();
+  await expect(page.getByText('Showing #18 – #28')).toBeVisible();
+  await page.locator('.graph__scroll').evaluate((el) => (el.scrollTop = 0));
+};
+const graphEmpty = (page: Page) => page.route('**/api/admin/drafts/graph?*', (route) => route.fulfill({ json: { head: 9, drafts: [] } }));
+const GRAPH_PAIRS: Pair[] = [
+  {
+    name: 'history-graph',
+    board: 'B_HistoryGraph',
+    path: '/history?tab=graph&seq=38',
+    omit: GRAPH_OMIT,
+    setup: graphBoard,
+    ready: async (page) => {
+      await graphShown(page);
+      await expect(page.getByRole('complementary', { name: 'Change details' })).toBeVisible();
+      await page.locator('tr[data-row="r38"]').focus();
+    },
+  },
+  {
+    name: 'history-graph-draft',
+    board: 'B_HistoryGraphDraft',
+    path: '/history?tab=graph&draft=d-weekend',
+    omit: GRAPH_OMIT,
+    setup: graphBoard,
+    ready: async (page) => {
+      await graphShown(page);
+      await expect(page.getByText('Conflicts · 2')).toBeVisible();
+    },
+  },
+  { name: 'history-graph-list', board: 'B_HistoryGraphList', path: '/history?tab=graph&seq=38', omit: GRAPH_OMIT, setup: graphBoard, ready: graphList },
+  { name: 'history-graph-long', board: 'B_HistoryGraphLong', path: '/history?tab=graph', omit: GRAPH_OMIT, setup: graphBoard, ready: graphLong },
+  {
+    name: 'history-graph-empty',
+    board: 'B_HistoryGraphEmpty',
+    path: '/history?tab=graph',
+    omit: GRAPH_OMIT,
+    setup: graphEmpty,
+    ready: (page) => expect(page.getByRole('heading', { name: 'No drafts to draw yet' })).toBeVisible(),
+  },
+  { name: 'phone-history-graph', board: 'B_PhoneHistoryGraph', path: '/history?tab=graph', omit: PHONE_GRAPH_OMIT, setup: graphBoard, ready: graphShown },
+  {
+    name: 'phone-history-graph-draft',
+    board: 'B_PhoneHistoryGraphDraft',
+    path: '/history?tab=graph&draft=d-weekend',
+    omit: PHONE_GRAPH_OMIT,
+    setup: graphBoard,
+    ready: async (page) => {
+      await expect(page.getByRole('dialog', { name: 'Weekend reshuffle' })).toContainText('Conflicts · 2');
+      await settle(page);
+    },
+  },
+  { name: 'phone-history-graph-list', board: 'B_PhoneHistoryGraphList', path: '/history?tab=graph', omit: PHONE_GRAPH_OMIT, setup: graphBoard, ready: graphList },
+  { name: 'phone-history-graph-long', board: 'B_PhoneHistoryGraphLong', path: '/history?tab=graph', omit: PHONE_GRAPH_OMIT, setup: graphBoard, ready: graphLong },
+  {
+    name: 'phone-history-graph-empty',
+    board: 'B_PhoneHistoryGraphEmpty',
+    path: '/history?tab=graph',
+    omit: PHONE_GRAPH_OMIT,
+    setup: graphEmpty,
+    ready: (page) => expect(page.getByRole('heading', { name: 'No drafts to draw yet' })).toBeVisible(),
+  },
+];
+
 const rosterOff = async (page: Page) => {
   await page.request.post(`${ADMIN}/__mock/modules`, { data: { roster: false } });
 };
@@ -1218,7 +1303,7 @@ const PAIRS: Pair[] = [
 test.describe('layout fidelity', () => {
   test.skip(!ENABLED, 'run with `bun run fidelity` (needs a KANADE_FIDELITY=1 build)');
 
-  for (const pair of [...PAIRS, ...DRAFT_PAIRS, ...PUBLIC_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
+  for (const pair of [...PAIRS, ...DRAFT_PAIRS, ...GRAPH_PAIRS, ...PUBLIC_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
     test(pair.name, async ({ page, browser }) => {
       test.skip(!boardExists(pair.board), `no board ${pair.board}.dc.html under ${MOCKUPS}`);
       const dir = join(OUT, pair.name);

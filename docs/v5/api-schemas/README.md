@@ -92,6 +92,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `POST /api/admin/inbox/{id}/approve`, `/reject` | `common.json#/$defs/Message`. A member request's approve body may carry `edit: {retime: [{change, day, time}], drop: [change]}` (change ids from `Proposal.requested`; `day` 0 = Monday): approved with those changes, 409 `stale` when the request is no longer the `version` edited, 422 `unknown_change`/`not_retimable`/`nothing_approved` |
 | `GET /api/admin/drafts?state=open\|closed` | `drafts.json#/$defs/DraftList` (the session admin's own drafts; 422 `invalid_query`) |
 | `POST /api/admin/drafts` | body `{title?}`; `drafts.json#/$defs/DraftWritten` (201) |
+| `GET /api/admin/drafts/graph?from=&to=` | `drafts.json#/$defs/DraftGraph` (the session admin's own drafts whose span touches History records `from..=to`, any status; both seqs required, `from <= to`, else 422 `invalid_query`) |
 | `GET /api/admin/drafts/{id}` | `drafts.json#/$defs/DraftDetail` (404 `not_found` for anyone but its author) |
 | `PATCH /api/admin/drafts/{id}`, `DELETE /api/admin/drafts/{id}?version=` | body `{version, title}` / none; `drafts.json#/$defs/DraftWritten` (rename / discard) |
 | `POST /api/admin/drafts/{id}/ops`, `DELETE /api/admin/drafts/{id}/ops/{n}?version=` | body `{version, op}` (`drafts.json#/$defs/OpBody`); `drafts.json#/$defs/DraftWritten` (422 `op_refused`/`op_needed`) |
@@ -209,3 +210,6 @@ Pointers are `<file>#/$defs/<Name>`.
   `RunCharacterSlot`, `CharacterChoice`, `CharacterClash` and the
   `CharacterPick` body) for `GET /api/admin/runs/{id}/characters` and
   `PUT /api/admin/runs/{id}/characters/{member}` of module `roster`.
+- History graph (2026-10-12): `drafts.json` `DraftGraph` and `GraphDraft`
+  for `GET /api/admin/drafts/graph?from=&to=` (own drafts spanning the
+  loaded History records, with each close time from the draft's event log).

@@ -173,6 +173,8 @@ fn bindings() -> String {
         .add::<drafts::DraftList>()
         .add::<drafts::StagedOpRow>()
         .add::<drafts::DraftDetail>()
+        .add::<drafts::GraphDraft>()
+        .add::<drafts::DraftGraph>()
         .add::<drafts::ConflictRecord>()
         .add::<drafts::DraftConflict>()
         .add::<drafts::DraftPreviewView>()

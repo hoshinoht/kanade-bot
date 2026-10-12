@@ -47,7 +47,16 @@ fn policy() -> SchedulePolicy {
 
 /// The other admin moves a run on the live schedule.
 async fn moved_upstream(store: &Arc<SqliteStore>, run: &str, to: DateTime<Utc>) {
-    let at = utc(9, 29, 4, 0);
+    moved_upstream_at(store, run, to, utc(9, 29, 4, 0)).await;
+}
+
+/// As [`moved_upstream`], recorded at `at`.
+async fn moved_upstream_at(
+    store: &Arc<SqliteStore>,
+    run: &str,
+    to: DateTime<Utc>,
+    at: DateTime<Utc>,
+) {
     let mut service =
         SchedulerService::new(store.clone(), RandomIds, ApiClock(Arc::new(move || at)));
     service
@@ -578,4 +587,173 @@ async fn take_drops_the_operation_and_closed_drafts_are_listed_read_only() {
     assert_eq!(status, 422);
     // One History record: the other admin's move. Drafts wrote none.
     assert_eq!(desk.head().await, head + 1);
+}
+
+/// The History graph's lanes: own drafts only, any status, each listed while
+/// its span (base to merge, to the last record before its close, or to the
+/// head) touches the asked records; closed drafts carry their close time.
+#[tokio::test]
+async fn the_graph_lists_own_drafts_spanning_the_asked_records() {
+    let desk = Desk::new().await;
+    let base = desk.head().await;
+    let open = create(&desk, "Weekend reshuffle").await;
+    let scratch = create(&desk, "Scratch").await;
+    let discarded = desk
+        .write(
+            "DELETE",
+            &format!("/api/admin/drafts/{scratch}?version=1"),
+            None,
+            None,
+        )
+        .await;
+    assert_eq!(written(&discarded)["status"], json!("discarded"));
+    let merged = create(&desk, "Tuesday Kalos").await;
+    let version = stage(
+        &desk,
+        &merged,
+        1,
+        json!({"kind": "move", "run": "r-kalos", "day": 6, "time": "21:30"}),
+    )
+    .await;
+    let answer = desk
+        .write(
+            "POST",
+            &format!("/api/admin/drafts/{merged}/merge"),
+            Some(json!({"version": version})),
+            None,
+        )
+        .await;
+    let merge_seq = written(&answer)["seq"].as_u64().unwrap();
+    assert_eq!(merge_seq, base + 1);
+    // Another admin's draft never shows.
+    let theirs = desk
+        .call(
+            &desk.other,
+            "POST",
+            "/api/admin/drafts",
+            Some(json!({"title": "Not mine"})),
+            &[],
+        )
+        .await;
+    assert_eq!(theirs.status, 201, "{}", theirs.text());
+    // A later record, an hour after the discard and the merge.
+    moved_upstream_at(
+        &desk.reads.store,
+        "r-star",
+        utc(9, 30, 14, 0),
+        utc(9, 29, 5, 0),
+    )
+    .await;
+    let later = desk.head().await;
+    assert_eq!(later, merge_seq + 1);
+
+    let graph = |from: u64, to: u64| {
+        let desk = &desk;
+        async move {
+            let path = format!("/api/admin/drafts/graph?from={from}&to={to}");
+            let (status, value) = desk
+                .get(&desk.token(), &path, "drafts.json#/$defs/DraftGraph")
+                .await;
+            assert_eq!(status, 200, "{value}");
+            value
+        }
+    };
+    let ids = |value: &Value| -> Vec<String> {
+        let mut ids: Vec<String> = value["drafts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["id"].as_str().unwrap().to_owned())
+            .collect();
+        ids.sort();
+        ids
+    };
+    let sorted = |list: &[&String]| -> Vec<String> {
+        let mut ids: Vec<String> = list.iter().map(|id| (*id).clone()).collect();
+        ids.sort();
+        ids
+    };
+
+    let all = graph(base, later).await;
+    assert_eq!(all["head"], json!(later));
+    assert_eq!(ids(&all), sorted(&[&open, &scratch, &merged]));
+    let row = |value: &Value, id: &str| -> Value {
+        value["drafts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == json!(id))
+            .cloned()
+            .unwrap()
+    };
+    let open_row = row(&all, &open);
+    assert_eq!(
+        (
+            &open_row["status"],
+            &open_row["closed_at"],
+            &open_row["up_to_date"]
+        ),
+        (&json!("open"), &Value::Null, &json!(false)),
+        "base moved, no conflict count"
+    );
+    for (id, status) in [(&scratch, "discarded"), (&merged, "merged")] {
+        let closed = row(&all, id);
+        assert_eq!(closed["status"], json!(status));
+        assert_eq!(
+            closed["closed_at"], closed["updated_at"],
+            "{id}: the close is the row's last change"
+        );
+    }
+    assert_eq!(row(&all, &merged)["merged_seq"], json!(merge_seq));
+
+    // After the merge and the discard: only the open draft still spans.
+    assert_eq!(ids(&graph(later, later).await), std::slice::from_ref(&open));
+    // Below every base: nothing.
+    if base > 0 {
+        assert!(ids(&graph(0, base - 1).await).is_empty());
+    }
+    // The merge record itself: the merged draft and the open one.
+    assert!(ids(&graph(merge_seq, merge_seq).await).contains(&merged));
+
+    for query in [
+        "",
+        "?from=1",
+        "?to=1",
+        "?from=2&to=1",
+        "?from=a&to=1",
+        "?from=&to=1",
+        "?from=1&to=1&from=1",
+        "?from=1&to=1&state=open",
+        "?from=1&to=99999999999999999999",
+    ] {
+        let (status, value) = desk
+            .get(
+                &desk.token(),
+                &format!("/api/admin/drafts/graph{query}"),
+                "",
+            )
+            .await;
+        assert_eq!(status, 422, "{query}: {value}");
+        assert_eq!(value["error"], json!("invalid_query"), "{query}");
+    }
+    // Signed out: refused like every admin read.
+    let anonymous = request(
+        desk.reads.admin,
+        "GET",
+        ADMIN_HOST,
+        &format!("/api/admin/drafts/graph?from={base}&to={later}"),
+        &[],
+    )
+    .await;
+    assert_eq!(anonymous.status, 401);
+    // The other admin sees only their own draft.
+    let (_, other) = desk
+        .get(
+            &desk.other,
+            &format!("/api/admin/drafts/graph?from={base}&to={later}"),
+            "drafts.json#/$defs/DraftGraph",
+        )
+        .await;
+    assert_eq!(other["drafts"].as_array().unwrap().len(), 1);
+    assert_eq!(other["drafts"][0]["title"], json!("Not mine"));
 }

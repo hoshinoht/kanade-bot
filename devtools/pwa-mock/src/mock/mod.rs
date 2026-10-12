@@ -10,6 +10,7 @@ pub mod drafts;
 pub mod dto;
 pub mod extractions;
 mod fixed;
+mod graph;
 pub mod history;
 pub mod inbox;
 pub mod knowledge;

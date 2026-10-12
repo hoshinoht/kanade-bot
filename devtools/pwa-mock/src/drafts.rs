@@ -3,7 +3,7 @@
 
 use axum::{
     Json,
-    extract::{Path, Query, State},
+    extract::{Path, Query, RawQuery, State},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -46,6 +46,10 @@ pub struct MergeBody {
 
 pub async fn list(State(app): State<App>, Query(q): Query<ListQuery>) -> Response {
     outcome(app.store.lock().await.draft_list(q.state.as_deref()))
+}
+
+pub async fn graph(State(app): State<App>, RawQuery(query): RawQuery) -> Response {
+    outcome(app.store.lock().await.draft_graph(query.as_deref()))
 }
 
 pub async fn create(State(app): State<App>, body: Option<Json<CreateBody>>) -> Response {
@@ -124,4 +128,11 @@ pub async fn kalos_v4(State(app): State<App>) -> Response {
     } else {
         StatusCode::NOT_FOUND.into_response()
     }
+}
+
+/// `POST /__mock/graph/board`: the History graph boards' History (head #39)
+/// and drafts (`mock/graph.rs`), on top of the seed.
+pub async fn graph_board(State(app): State<App>) -> Response {
+    app.store.lock().await.graph_board();
+    StatusCode::NO_CONTENT.into_response()
 }

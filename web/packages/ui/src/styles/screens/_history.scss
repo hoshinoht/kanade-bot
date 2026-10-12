@@ -156,3 +156,18 @@
   .history-window__filters .ddw { flex: 1 1 0; }
   .history-window__filters .dd { width: 100%; }
 }
+
+// The phone frame (B_PhoneHistoryGraph*): no title bar. The window is the
+// surface under the top bar, edge to edge; on it the pill tabs, then the
+// tab's own tools (filters on the ground's ink, not the bar's), then the panel.
+.frame--phone .shell:has(> .history-window) { padding: 0; }
+.frame--phone .shell > .history-window.card { position: relative; gap: 8px; padding: 6px 8px 0; border: 0; border-radius: 0; box-shadow: none; }
+.frame--phone .history-window > .card__head { display: contents; color: var(--ink); }
+.frame--phone .history-window > .card__head::before { display: none; }
+.frame--phone .history-window__head .tabs__tabs { order: 0; flex: none; align-items: center; gap: 4px; min-height: 44px; }
+.frame--phone .history-window__head .tabs__tab { min-height: 36px; padding: 0 10px; border-radius: 18px; color: var(--ink); }
+.frame--phone .history-window__head .tabs__tab:hover { background: var(--row-hover); }
+.frame--phone .history-window__head .tabs__tab:focus-visible { outline-color: var(--accent); }
+.frame--phone .history-window__head .tabs__tab[aria-selected="true"] { background: var(--select); color: var(--select-ink); }
+// (Through the shell and strip: the shared strip centres its tools on a title bar.)
+.frame--phone .shell > .history-window > .tabs__strip > .history-window__filters { flex: none; align-self: auto; --win: var(--surface); --win-ink: var(--ink); }

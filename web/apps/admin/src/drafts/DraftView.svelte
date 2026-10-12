@@ -292,7 +292,7 @@
       {#if open}
         <p class="drafts__live" data-fid="drafts-live-note"><Icon name="eye-off" /><span><b>Not live.</b> No pings, cards or reminders until you merge.</span></p>
       {:else}
-        <p class="drafts__live" data-fid="drafts-live-note"><Icon name="info" /><span><b>Closed:</b> {closedLabel(d)}{d.closed_by ? ` by ${d.closed_by.name}` : ''} · {shortAt(d.updated_at, timeZone)}.{#if d.merged_seq !== null} <a href="/history">See it in History</a>{/if}</span></p>
+        <p class="drafts__live" data-fid="drafts-live-note"><Icon name="info" /><span><b>Closed:</b> {closedLabel(d)}{d.closed_by ? ` by ${d.closed_by.name}` : ''} · {shortAt(d.updated_at, timeZone)}. <a href="/history?tab=graph&draft={encodeURIComponent(d.id)}">See it in History</a></span></p>
       {/if}
       {#if open && moved && p}
         <div class="drafts__moved" data-fid="drafts-base-moved" role="note">
@@ -300,7 +300,7 @@
           {#if bar}
             <p><b>The schedule moved since you started.</b> <span class="mono">#{p.base + 1}</span>{#if p.head > p.base + 1}–<span class="mono">#{p.head}</span>{/if} landed after your base.{#if conflicts.length} {conflicts.length} conflict{conflicts.length === 1 ? '' : 's'}, settled below.{/if}</p>
           {:else}
-            <p><b>The schedule moved since you started.</b> {p.head - p.base} change{p.head - p.base === 1 ? '' : 's'} landed after your base <span class="mono">#{p.base}</span> (now <span class="mono">#{p.head}</span>). <a href="/history">See them in History</a></p>
+            <p><b>The schedule moved since you started.</b> {p.head - p.base} change{p.head - p.base === 1 ? '' : 's'} landed after your base <span class="mono">#{p.base}</span> (now <span class="mono">#{p.head}</span>). <a href="/history?tab=graph&draft={encodeURIComponent(d.id)}">See them in History</a></p>
           {/if}
         </div>
       {/if}
