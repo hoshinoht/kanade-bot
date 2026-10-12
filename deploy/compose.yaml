@@ -41,14 +41,15 @@ services:
       KANADE_CATALOG_FILE: /app/boss/bosses.yaml
       KANADE_KNOWLEDGE_DIR: /app/boss/knowledge
       KANADE_PERSONA_DIR: /config/personas
-      # The volume root is 0750; serve creates these two 0700 on first start.
+      # The volume root may come up 0755; serve creates these two 0700 on first start.
       KANADE_DB_PATH: /data/db/kanade.sqlite
       KANADE_OWNER_LOCK_DIR: /data/run
       # The bot's avatar/banner, refreshed after each READY (rootfs is read-only).
       KANADE_IDENTITY_DIR: /data/identity
       # Module character_data (on only with [modules] character_data = true):
-      # its file on its own volume, and the optional Open API key file.
-      KANADE_CHARACTER_DATA_DB_PATH: /chardata/chardata.sqlite
+      # its file on its own volume, in a 0700 directory serve creates (the
+      # volume root itself may come up 0755), and the optional key file.
+      KANADE_CHARACTER_DATA_DB_PATH: /chardata/db/chardata.sqlite
       KANADE_NEXON_API_KEY_FILE: ${KANADE_NEXON_API_KEY_HOST_FILE:+/run/secrets/nexon_api_key}
       # MapleScouter estimates (admin only): the scouter sidecar is its own
       # private Compose project, never a service here. Attach it to the

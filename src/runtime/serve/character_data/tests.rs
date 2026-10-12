@@ -290,3 +290,36 @@ async fn stop_cancels_and_joins_a_running_estimate_lookup() {
         .expect("closed at once");
     assert!(matches!(closed, Ok(0) | Err(_)));
 }
+
+/// A fresh Compose volume root can come up 0755 (2026-10-12 crash-loop): a
+/// file directly in it is refused, one in a subdirectory serve creates opens.
+#[tokio::test]
+async fn the_file_opens_under_a_group_readable_volume_root() {
+    use std::fs::{self, DirBuilder, Permissions};
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+
+    let tmp = fs::canonicalize(std::env::temp_dir()).unwrap();
+    let root = tmp.join(format!("kanade-chardata-volume-{}", uuid::Uuid::new_v4()));
+    let locks = tmp.join(format!("kanade-chardata-locks-{}", uuid::Uuid::new_v4()));
+    DirBuilder::new().mode(0o700).create(&locks).unwrap();
+    fs::create_dir(&root).unwrap();
+    fs::set_permissions(&root, Permissions::from_mode(0o755)).unwrap();
+    let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+
+    let Err(Error::Startup(refused)) = open_file(&root.join("chardata.sqlite"), &locks).await
+    else {
+        panic!("a file in the 0755 root is refused");
+    };
+    assert!(refused.contains("unsafe path"), "{refused}");
+
+    let db = root.join("db/chardata.sqlite");
+    for _ in 0..2 {
+        let file = open_file(&db, &locks).await.expect("opens, then reopens");
+        close(file, Duration::ZERO).await;
+    }
+    assert_eq!(mode(&root.join("db")), 0o700);
+    assert_eq!(mode(&db), 0o600);
+    assert_eq!(mode(&root), 0o755, "the volume root is left alone");
+    fs::remove_dir_all(&root).unwrap();
+    fs::remove_dir_all(&locks).unwrap();
+}

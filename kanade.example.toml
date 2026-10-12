@@ -115,8 +115,9 @@ persona_dir = "config/personas"
 
 [character_data]
 # Required while the module is on: its own SQLite file, outside the store
-# and its backups (Compose sets /chardata/chardata.sqlite).
-# db_path = "/chardata/chardata.sqlite"
+# and its backups (Compose sets /chardata/db/chardata.sqlite). Its directory
+# is created 0700 when absent; an existing one must already be private.
+# db_path = "/chardata/db/chardata.sqlite"
 # The Open API key (one line). Unset: links are refused; set but
 # unreadable: startup is refused.
 # nexon_key_file = "/run/secrets/nexon_api_key"

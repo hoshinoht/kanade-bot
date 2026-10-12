@@ -333,9 +333,15 @@ mod tests {
             "KANADE_CHARACTER_DATA_DB_PATH is required"
         );
         let mut pairs = on.to_vec();
-        pairs.push(("KANADE_CHARACTER_DATA_DB_PATH", "/chardata/chardata.sqlite"));
+        pairs.push((
+            "KANADE_CHARACTER_DATA_DB_PATH",
+            "/chardata/db/chardata.sqlite",
+        ));
         let settings = config(&pairs).unwrap().character_data.unwrap();
-        assert_eq!(settings.db_path, PathBuf::from("/chardata/chardata.sqlite"));
+        assert_eq!(
+            settings.db_path,
+            PathBuf::from("/chardata/db/chardata.sqlite")
+        );
         assert_eq!(settings.nexon_key_file, None, "the key is optional");
         pairs.push(("KANADE_NEXON_API_KEY_FILE", "/run/secrets/nexon_api_key"));
         assert_eq!(

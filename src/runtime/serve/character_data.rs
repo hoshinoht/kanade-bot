@@ -12,6 +12,7 @@
 //! cancels a run in progress and joins the task before either store closes.
 
 use std::{
+    path::Path,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -79,16 +80,7 @@ pub(super) async fn start(
         ),
         None => None,
     };
-    if let Some(parent) = settings.db_path.parent() {
-        create_private_dir(parent, CHARACTER_DATA_DB_PATH_KEY)?;
-    }
-    let file = SqliteCharData::open(&SqliteStoreConfig {
-        db_path: settings.db_path.clone(),
-        owner_lock_dir: config.store.owner_lock_dir.clone(),
-    })
-    .await
-    .map(Arc::new)
-    .map_err(open_error)?;
+    let file = open_file(&settings.db_path, &config.store.owner_lock_dir).await?;
     let mut service = CharacterData::new(
         Arc::clone(&file) as Arc<dyn CharDataStore>,
         Arc::clone(store) as Arc<dyn RosterSide>,
@@ -129,6 +121,21 @@ impl Module {
         self.task.stop().await;
         close(self.file, wait).await;
     }
+}
+
+/// Create the file's directory 0700 when absent (Compose: `/chardata/db`
+/// inside the volume, whose root Docker may leave 0755), then open it.
+async fn open_file(db_path: &Path, owner_lock_dir: &Path) -> Result<Arc<SqliteCharData>, Error> {
+    if let Some(parent) = db_path.parent() {
+        create_private_dir(parent, CHARACTER_DATA_DB_PATH_KEY)?;
+    }
+    SqliteCharData::open(&SqliteStoreConfig {
+        db_path: db_path.to_path_buf(),
+        owner_lock_dir: owner_lock_dir.to_path_buf(),
+    })
+    .await
+    .map(Arc::new)
+    .map_err(open_error)
 }
 
 /// File errors can carry paths and SQLite text; name the variable instead.

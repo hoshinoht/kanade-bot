@@ -180,7 +180,7 @@ fn compose_pins_the_separate_volume() {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("deploy/compose.yaml"),
     )
     .unwrap();
-    assert!(compose.contains("KANADE_CHARACTER_DATA_DB_PATH: /chardata/chardata.sqlite"));
+    assert!(compose.contains("KANADE_CHARACTER_DATA_DB_PATH: /chardata/db/chardata.sqlite"));
     assert!(compose.contains("      - chardata:/chardata\n"));
     assert!(compose.contains("  chardata:\n    name: kanade_v5_chardata\n"));
     let backup = compose
