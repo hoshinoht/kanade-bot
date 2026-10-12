@@ -1,12 +1,14 @@
 //! The manual character roster (module `roster`): one member's characters
-//! and their create, edit (retire included) and delete. While the module is
-//! off (`modules.roster`, read at startup) every route answers the generic
+//! and their create, edit (retire included) and delete, and the character
+//! each party member brings to a run (`runs.rs`). While the module is off
+//! (`modules.roster`, read at startup) every route answers the generic
 //! `404`, before the session is even checked, as an unmounted path does.
 //! Writes take the session's CSRF token, record History rows (section
-//! `characters`, key `character.<id>`) and replay an `Idempotency-Key`
-//! (scope `config`) in the same transaction; roster data never reaches a
-//! model.
+//! `characters`, key `character.<id>` or `pick.<run>.<member>`) and replay
+//! an `Idempotency-Key` (scope `config`) in the same transaction; roster
+//! data never reaches a model.
 
+mod runs;
 mod write;
 
 use std::sync::Arc;
@@ -16,7 +18,7 @@ use axum::{
     extract::{FromRequestParts, Path as UrlPath, State},
     http::{StatusCode, request::Parts},
     response::{IntoResponse, Response},
-    routing::{get, patch},
+    routing::{get, patch, put},
 };
 
 use super::write::{Refusal, state};
@@ -38,6 +40,8 @@ pub fn routes() -> Router<Arc<Site>> {
             "/api/admin/characters/{id}",
             patch(write::update).delete(write::delete),
         )
+        .route("/api/admin/runs/{id}/characters", get(runs::read))
+        .route("/api/admin/runs/{id}/characters/{member}", put(runs::pick))
 }
 
 type Reply = Result<Response, Refusal>;

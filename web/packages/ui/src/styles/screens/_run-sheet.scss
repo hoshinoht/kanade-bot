@@ -593,6 +593,9 @@ dialog.runsheet--narrow .modal__head {
   background: var(--raise);
 }
 
+// The head row only becomes a box when the slot also shows a character (below).
+.slot__head { display: contents; }
+
 .slot--yes {
   border-color: color-mix(in srgb, var(--ok) 45%, var(--line));
   background: color-mix(in srgb, var(--ok) 12%, var(--surface));
@@ -1099,4 +1102,204 @@ dialog.stagesheet .modal__body { padding: 14px 14px max(16px, env(safe-area-inse
 dialog.stagesheet .stagepick__name { min-height: 44px; }
 dialog.stagesheet .stagepick__acts .btn { min-height: 48px; border-radius: 24px; }
 dialog.stagesheet .stagepick__go { flex: 1 1 auto; justify-content: center; }
+
+/* ── who each member brings (module roster; B_RosterRunPick, B_PhoneRosterRunPick) ── */
+
+// A member's slot with its character (`slot--chars`, the board's `.slot` over `.shead`): the
+// head row (mark, name and answer, ×), the chip row, then any clash lines; on phones the chip
+// joins the head row. A staged addition stays the one-row slot B_RunSheetStageActive draws.
+.runsheet__party--chars { grid-auto-rows: auto; }
+
+.slot--chars {
+  position: relative;
+  flex-direction: column;
+  align-items: normal;
+  justify-content: center;
+  gap: 8px;
+  min-height: 64px;
+  padding: 10px 12px;
+}
+
+.slot--chars > .slot__head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+// The name over its answer at the board's line height, so the head row is the board's 32 px.
+.slot--chars .slot__text { line-height: 1.2; }
+// Rows fit the slot: a name, chip or clash line never widens the party (or the phone's sheet).
+.slot--chars > * { contain: inline-size; }
+// Laptop: the chip fills its row, as the board's does. "inferred" follows it there rather than
+// joining the head: a quarter-width slot has 201 px inside, and mark (26), "inferred" (73), ×
+// (32) and three 10 px gaps would leave the name 40 px: "Tsubame" (59) and "Hotaru" (46) cut.
+.runsheet--wide .slotchar__btn { flex: 1 1 auto; min-width: 0; }
+.runsheet--wide .slotchar > .slot__inferred { flex: none; align-self: center; margin-left: 8px; }
+
+// Text, not colour: the slot names its character as the only active one.
+.slot__inferred {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 10px;
+  background: var(--chip-fill);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.slotchar { position: relative; display: flex; min-width: 0; }
+
+.slotchar__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 34px;
+  padding: 0 8px 0 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 17px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-body-sm);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.slotchar__btn:hover { background: var(--row-hover); }
+.slotchar__btn .icon { flex: none; width: 14px; height: 14px; }
+// The IGN is the identity: the class and level give way first.
+.slotchar__ign { flex: 0 0 auto; overflow: hidden; max-width: 100%; text-overflow: ellipsis; }
+.slotchar__meta { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--dim-text); font-size: var(--fs-mini); font-weight: 500; text-overflow: ellipsis; }
+.slotchar__lv,
+.slotchar__count { font-size: var(--fs-mini); font-weight: 600; }
+
+// Nothing picked among several: a dashed call to pick, solid while its picker is open.
+.slotchar__pick {
+  gap: 6px;
+  padding: 0 12px;
+  font-size: var(--fs-small);
+  border: 1.5px dashed var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, var(--surface));
+  color: color-mix(in srgb, var(--warn-text) 85%, var(--ink));
+}
+
+.slotchar__pick:hover { background: color-mix(in srgb, var(--warn) 22%, var(--surface)); }
+.slotchar__pick[aria-expanded="true"] { border-style: solid; box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 24%, var(--surface)); }
+.slotchar__none { color: var(--dim-text); font-size: var(--fs-mini); line-height: 1.4; }
+.slotchar__none a { color: var(--accent-text); }
+
+// The same character on another run of a shared boss this boss week: a note, never a block.
+.slot__warn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: color-mix(in srgb, var(--warn-text) 85%, var(--ink));
+  font-size: var(--fs-mini);
+  line-height: 1.3;
+}
+
+.slot__warn > .icon { flex: none; width: 14px; height: 14px; color: var(--warn-text); }
+
+.runsheet__charrules {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 12px 14px;
+  border: 1.5px dashed var(--line);
+  border-radius: 16px;
+  line-height: 1.45;
+}
+
+// The laptop picker: a popover under the chip; a choice saves at once.
+.charpick--pop {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 6px);
+  // The board lines it up with the slot's edge, not the chip's: back over the slot's 12 px
+  // padding and 1.5 px border, and 0.5 px past it as drawn.
+  left: -14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 330px;
+  max-width: calc(100vw - 2rem);
+  padding: 8px;
+  border: 1.5px solid var(--line);
+  border-radius: 16px;
+  background: var(--row);
+  box-shadow: 0 14px 30px -14px rgb(0 0 0 / 40%);
+  font-weight: 400;
+  white-space: normal;
+}
+
+.charpick__cap { margin: 0; padding: 4px 8px 6px; }
+.charpick__options { display: flex; flex-direction: column; gap: 2px; }
+.charpick__options:focus { outline: none; }
+
+.charpick__option {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.charpick__option:hover { background: var(--row-hover); }
+.charpick__option:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.charpick__option--on,
+.charpick__option--on:hover { border-radius: 18px; background: var(--select); box-shadow: inset 0 0 0 1.5px var(--select-edge); color: var(--select-ink); }
+.charpick__dot { width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--dim-text); }
+.charpick__option--on .charpick__dot { box-shadow: inset 0 0 0 5px var(--accent-fill); }
+.charpick__id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.charpick__ign { display: flex; align-items: center; gap: 6px; font-size: var(--fs-body-sm); font-weight: 700; white-space: nowrap; }
+.charpick__meta { overflow: hidden; color: var(--dim-text); font-size: var(--fs-mini); text-overflow: ellipsis; white-space: nowrap; }
+.charpick__option--on .charpick__meta { color: var(--select-ink); }
+// The main: a crown and the word, not colour alone (the Characters tab's mark).
+.charpick__crown { display: inline-flex; flex: none; align-items: center; gap: 4px; height: 20px; padding: 0 8px 0 6px; border-radius: 10px; background: var(--select); color: var(--select-ink); font-family: var(--mono); font-size: var(--fs-micro); font-weight: 700; letter-spacing: 0.04em; }
+.charpick__option--on .charpick__crown { background: var(--surface); }
+.charpick__crown .icon { width: 13px; height: 13px; }
+.charpick__lv { padding-right: 6px; font-size: var(--fs-small); font-weight: 700; text-align: right; white-space: nowrap; }
+.charpick__lv small { color: var(--dim-text); font-size: var(--fs-micro); font-weight: 500; }
+.charpick__clear { align-self: flex-start; min-height: 36px; margin: 4px 8px 2px; }
+.charpick__clearhint { color: var(--dim-text); font-weight: 500; }
+.charpick__note { margin: 4px 8px 2px; color: var(--dim-text); font-size: var(--fs-mini); line-height: 1.4; }
+
+// Phones: a modal bottom sheet with radios, Cancel and "Use <IGN>"; Escape and × close it.
+dialog.modal.charsheet { width: 100%; max-width: none; margin: auto 0 0; }
+dialog.charsheet[open] { display: flex; flex-direction: column; }
+dialog.charsheet::backdrop { background: rgb(0 0 0 / 38%); }
+// The board's sheet is the rounded element itself.
+dialog.modal.charsheet { border-radius: 28px 28px 0 0; }
+dialog.charsheet .modal__panel { border: 0; border-radius: 28px 28px 0 0; box-shadow: 0 -12px 32px -14px rgb(0 0 0 / 45%); }
+dialog.charsheet .modal__head { position: relative; padding: 18px 8px 4px 18px; background: var(--surface); color: var(--ink); }
+// The grab bar stands where a window's dots would.
+dialog.charsheet .modal__head::before { position: absolute; top: 8px; left: calc(50% - 18px); width: 36px; height: 4px; margin: 0; border-radius: 2px; background: var(--select-edge); opacity: 1; box-shadow: none; }
+dialog.charsheet .modal__head .eyebrow { color: var(--dim-text); }
+dialog.charsheet .modal__x { width: 44px; height: 44px; border-color: transparent; color: var(--ink); }
+dialog.charsheet .modal__x:focus-visible { outline-color: var(--accent); }
+dialog.charsheet .modal__body { display: flex; flex-direction: column; padding: 6px 12px 8px; }
+dialog.charsheet .modal__foot { flex-wrap: nowrap; gap: 8px; padding: 10px 16px max(18px, env(safe-area-inset-bottom)); }
+dialog.charsheet .modal__foot .btn { min-height: 48px; padding: 0 20px; border-radius: 24px; }
+dialog.charsheet .charpick__use { flex: 1 1 auto; justify-content: center; }
+dialog.charsheet .charpick__clear { min-height: 44px; }
+.charpick--sheet { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.charpick--sheet .charpick__option { min-height: 56px; }
+.charpick--sheet input[type="radio"] { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+
+// The narrow sheet's slot: one head row (mark, name, answer, "inferred", chip, ×), clash lines under it.
+// The name sits over its answer here too, so the row keeps room for the chip and ×.
+.runsheet--narrow .slot--chars { height: auto; min-height: 52px; padding: 8px 10px; gap: 6px; }
+.runsheet--narrow .slot--chars > .slot__head { gap: 8px; }
+.runsheet--narrow .slot--chars > .slot__warn { padding-left: 34px; }
+.runsheet--narrow .slot--chars .slot__text { flex-direction: column; align-items: flex-start; gap: 1px; }
+.runsheet--narrow .slot--chars .slot__state { margin-left: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.runsheet--narrow .slot__inferred { padding: 0 5px; letter-spacing: 0.02em; }
+.runsheet--narrow .slotchar__btn { min-height: 36px; padding: 0 10px 0 12px; }
+.runsheet--narrow .slotchar__pick { padding: 0 12px; }
 }

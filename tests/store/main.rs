@@ -395,6 +395,98 @@ async fn sqlite_characters_conform() {
 }
 
 #[tokio::test]
+async fn memory_run_picks_conform() {
+    kanade::infrastructure::store::run_picks_conformance::run_suite(async || {
+        MemoryScheduleStore::new()
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn sqlite_run_picks_conform() {
+    let dir = support::TempDir::new();
+    let counter = std::sync::atomic::AtomicUsize::new(0);
+    kanade::infrastructure::store::run_picks_conformance::run_suite(async || {
+        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        SqliteStore::open(&dir.config(&format!("run-picks-{n}")))
+            .await
+            .expect("fresh store opens")
+    })
+    .await;
+}
+
+/// A pick is stored, not recomputed: it survives a reopen, and the
+/// character's delete after the reopen still drops it.
+#[tokio::test]
+async fn sqlite_run_picks_survive_reopen() {
+    use kanade::domain::characters::{
+        Character, CharacterChange, CharacterRecord, CharacterRole, CharacterStore, PickChange,
+        PickWrite,
+    };
+    use kanade::domain::history::{Actor, Surface};
+
+    let dir = support::TempDir::new();
+    let config = dir.config("run-picks-reopen");
+    let at = Utc.with_ymd_and_hms(2026, 10, 12, 4, 0, 0).unwrap();
+    let record = CharacterRecord {
+        at,
+        actor: Actor::admin("token"),
+        surface: Surface::AdminPortal,
+    };
+    let store = SqliteStore::open(&config).await.expect("open store");
+    let lilac = Character {
+        id: "c-1".into(),
+        member_id: "1001".into(),
+        ign: "Lilac".into(),
+        world: "msea".into(),
+        class: None,
+        level: None,
+        role: CharacterRole::Main,
+        retired_at: None,
+        created_at: at,
+        updated_at: at,
+        updated_by: Actor::admin("token"),
+        version: 1,
+    };
+    store
+        .apply_character(CharacterChange::Create(lilac), record.clone())
+        .await
+        .expect("create");
+    let picked = store
+        .apply_pick(
+            PickChange::Set {
+                run_id: "r-1".into(),
+                member_id: "1001".into(),
+                character_id: "c-1".into(),
+                version: 0,
+            },
+            record.clone(),
+        )
+        .await
+        .expect("pick");
+    let PickWrite::Picked(pick) = picked else {
+        panic!("picked: {picked:?}");
+    };
+    store.close().await.expect("close store");
+
+    let reopened = SqliteStore::open(&config).await.expect("reopen store");
+    let runs = vec!["r-1".to_owned()];
+    assert_eq!(reopened.run_picks(&runs).await.unwrap(), [pick]);
+    reopened
+        .apply_character(
+            CharacterChange::Delete {
+                id: "c-1".into(),
+                version: 1,
+            },
+            record,
+        )
+        .await
+        .expect("delete");
+    assert!(reopened.run_picks(&runs).await.unwrap().is_empty());
+    reopened.close().await.expect("close reopened store");
+}
+
+#[tokio::test]
 async fn sqlite_profile_visibility_defaults_private_and_survives_reopen() {
     let dir = support::TempDir::new();
     let config = dir.config("profile-visibility");

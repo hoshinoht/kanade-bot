@@ -15,14 +15,14 @@ use super::{MoveError, Store};
 
 #[derive(Clone)]
 pub struct Char {
-    id: String,
-    member_id: String,
-    ign: String,
-    world: String,
-    class: Option<String>,
-    level: Option<i64>,
-    main: bool,
-    retired_at: Option<String>,
+    pub(super) id: String,
+    pub(super) member_id: String,
+    pub(super) ign: String,
+    pub(super) world: String,
+    pub(super) class: Option<String>,
+    pub(super) level: Option<i64>,
+    pub(super) main: bool,
+    pub(super) retired_at: Option<String>,
     created_at: String,
     updated_at: String,
     version: u64,
@@ -104,7 +104,7 @@ pub struct CharacterCreate {
     role: Option<String>,
 }
 
-fn present<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
+pub(super) fn present<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
     d: D,
 ) -> Result<Option<Option<T>>, D::Error> {
     Option::<T>::deserialize(d).map(Some)
@@ -394,6 +394,8 @@ impl Store {
             return Err(main_required());
         }
         self.characters.retain(|c| c.id != id);
+        // As the server's cascade: the character's run picks go with it.
+        self.picks.retain(|p| p.character != id);
         Ok(json!({ "message": format!("{} is deleted.", row.ign) }))
     }
 }

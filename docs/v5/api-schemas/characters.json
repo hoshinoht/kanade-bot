@@ -31,6 +31,68 @@
         "characters": { "type": "array", "items": { "$ref": "#/$defs/CharacterRow" }, "description": "Retired ones included, oldest first." }
       }
     },
+    "CharacterChoice": {
+      "description": "One of a party member's active characters, a candidate for the run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "ign", "world", "class", "level", "role"],
+      "properties": {
+        "id": { "type": "string" },
+        "ign": { "type": "string", "pattern": "^[A-Za-z0-9]{4,12}$" },
+        "world": { "type": "string", "pattern": "^[a-z0-9-]{1,16}$" },
+        "class": { "type": ["string", "null"], "minLength": 1, "maxLength": 32 },
+        "level": { "type": ["integer", "null"], "minimum": 1, "maximum": 300 },
+        "role": { "enum": ["main", "alt"] }
+      }
+    },
+    "CharacterClash": {
+      "description": "The same character (picked or inferred) on another run of this boss week (the configured reset) for a boss this run has too, at any difficulty: the weekly clear limit. A warning only; a pick always saves. Cancelled runs never clash.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["character_id", "run_id", "short_id", "day", "time", "bosses", "inferred"],
+      "properties": {
+        "character_id": { "type": "string" },
+        "run_id": { "type": "string" },
+        "short_id": { "type": "string" },
+        "day": { "type": "integer", "minimum": 0, "maximum": 6, "description": "Day index within the boss week (0 = reset day)." },
+        "time": { "$ref": "common.json#/$defs/NullableString", "description": "HH:MM; null for an own-time run." },
+        "bosses": { "type": "array", "items": { "type": "string" }, "minItems": 1, "description": "The other run's boss tokens this run shares by boss." },
+        "inferred": { "type": "boolean", "description": "The character is inferred on the other run, not picked." }
+      }
+    },
+    "RunCharacterSlot": {
+      "description": "One party member on a run. `candidates` are their active characters (no level filter), oldest first; empty when they have none. `picked` is the stored pick while it names a candidate; `inferred`, only with nothing picked, is the one candidate when there is exactly one: recomputed on every read, never stored. `version` is the slot version a pick sends back (0 while nothing is stored).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["member_id", "candidates", "picked", "inferred", "version", "warnings"],
+      "properties": {
+        "member_id": { "type": "string" },
+        "candidates": { "type": "array", "items": { "$ref": "#/$defs/CharacterChoice" } },
+        "picked": { "$ref": "common.json#/$defs/NullableString" },
+        "inferred": { "$ref": "common.json#/$defs/NullableString" },
+        "version": { "type": "integer", "minimum": 0 },
+        "warnings": { "type": "array", "items": { "$ref": "#/$defs/CharacterClash" } }
+      }
+    },
+    "RunCharacters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "slots"],
+      "properties": {
+        "run_id": { "type": "string" },
+        "slots": { "type": "array", "items": { "$ref": "#/$defs/RunCharacterSlot" }, "description": "In party order." }
+      }
+    },
+    "CharacterPick": {
+      "description": "Request body of `PUT /api/admin/runs/{id}/characters/{member}`. `character_id` names one of the member's active characters, or is null to clear the pick (required either way, else 422 `invalid`); `version` is the slot version read (else 422 `version_required`; another is 409 `stale`).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["character_id", "version"],
+      "properties": {
+        "character_id": { "type": ["string", "null"] },
+        "version": { "type": "integer", "minimum": 0 }
+      }
+    },
     "CharacterCreate": {
       "description": "Request body of `POST /api/admin/members/{id}/characters`. `ign` is 4-12 letters or digits, unique per `world` case-insensitively (retired characters included; else 422 `ign_taken`); `world` is the region, default `msea`; `class` is at most 32 characters (empty: none); `level` 1-300. A member's first active character is their main whatever `role` says; otherwise `role` defaults to `alt`, and `main` takes the crown (the current main becomes an alt in the same write).",
       "type": "object",

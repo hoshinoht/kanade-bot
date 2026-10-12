@@ -1,16 +1,22 @@
 //! Manual character roster (module `roster`, behind `modules.roster`): the
-//! MapleStory characters an admin records per member. Kept when a member
-//! leaves, removed only by an explicit admin delete, audited in History's
-//! settings changes, and never sent to a model: chat and extraction never
-//! import this module (pinned below).
+//! MapleStory characters an admin records per member and the one each party
+//! member brings to a run. Kept when a member leaves, removed only by an
+//! explicit admin delete, audited in History's settings changes, and never
+//! sent to a model: chat and extraction never import this module (pinned
+//! below).
 
 mod character;
+mod picks;
 mod port;
 
 pub use character::{
     Character, CharacterEdit, CharacterInvalid, CharacterRole, DEFAULT_WORLD, IGN_CHARS, LEVELS,
     MAX_CLASS_CHARS, MAX_WORLD_CHARS, ign_key, new_role, parse_class, parse_ign, parse_level,
     parse_role, parse_world,
+};
+pub use picks::{
+    Clash, PartySlot, PickChange, PickWrite, PlannedPick, RunPick, party_slots, pick_version,
+    plan_pick,
 };
 pub use port::{
     CHARACTERS_SECTION, CharacterChange, CharacterRecord, CharacterStore, CharacterWrite, Planned,
@@ -36,6 +42,9 @@ mod tests {
                     "CharacterStore",
                     "CharacterRoster",
                     "roster_characters",
+                    "roster_run_picks",
+                    "RunPick",
+                    "PartySlot",
                 ]
                 .iter()
                 .any(|name| text.contains(name))

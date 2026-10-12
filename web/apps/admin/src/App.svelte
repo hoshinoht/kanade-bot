@@ -562,6 +562,7 @@
           : store.roster(runId, change)}
       onreset={(runId) => (staging.draft ? stage(runId, (run) => staging.reset(run)) : store.resetToFixed(runId))}
       {staging}
+      rosterModule={store.session?.roster ?? false}
       onopendraft={(id) => {
         sheetOpen = false;
         router.go(`/drafts?item=${encodeURIComponent(id)}`);

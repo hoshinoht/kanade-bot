@@ -186,6 +186,31 @@ pub async fn delete_character(State(app): State<App>, Path(id): Path<String>) ->
     outcome(app.store.lock().await.delete_character(&id))
 }
 
+pub async fn run_characters(State(app): State<App>, Path(id): Path<String>) -> Response {
+    if let Some(off) = roster_off(&app).await {
+        return off;
+    }
+    outcome(app.store.lock().await.run_characters(&id))
+}
+
+pub async fn pick_character(
+    State(app): State<App>,
+    Path((id, member)): Path<(String, String)>,
+    body: Result<Json<crate::mock::run_picks::CharacterPick>, JsonRejection>,
+) -> Response {
+    if let Some(off) = roster_off(&app).await {
+        return off;
+    }
+    let Ok(Json(req)) = body else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "invalid_body",
+            "The request body is not valid.",
+        );
+    };
+    outcome(app.store.lock().await.pick_character(&id, &member, req))
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Modules {

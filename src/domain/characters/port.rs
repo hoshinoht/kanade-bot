@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use serde_json::json;
 
-use super::{Character, CharacterRole};
+use super::{Character, CharacterRole, PickChange, PickWrite, RunPick};
 use crate::domain::history::{Actor, Surface};
 use crate::domain::scheduler::StoreError;
 use crate::domain::settings::{RowDiff, SettingsChange};
@@ -265,7 +265,8 @@ pub fn plan(
     })
 }
 
-/// Persistence of `roster_characters`. Reads never take the writer.
+/// Persistence of `roster_characters` and `roster_run_picks`. Reads never
+/// take the writer.
 pub trait CharacterStore {
     /// One member's characters, retired included, oldest first.
     fn member_characters(
@@ -282,10 +283,27 @@ pub trait CharacterStore {
     /// ([`CharacterRecord::change`], a demoted main included) in one
     /// transaction. A refusal ([`CharacterWrite::applied`] false) writes
     /// nothing; a row that fails [`Character::check`] is
-    /// [`StoreError::Constraint`].
+    /// [`StoreError::Constraint`]. A delete drops the character's run picks
+    /// in the same write.
     fn apply_character(
         &self,
         change: CharacterChange,
         record: CharacterRecord,
     ) -> impl Future<Output = Result<CharacterWrite, StoreError>> + Send;
+
+    /// The stored picks on these runs (every member), by run then member.
+    fn run_picks(
+        &self,
+        run_ids: &[String],
+    ) -> impl Future<Output = Result<Vec<RunPick>, StoreError>> + Send;
+
+    /// Apply `change` under [`super::plan_pick`] (against the slot's stored
+    /// pick and the character a set names) and append its History record
+    /// in one transaction. A refusal ([`PickWrite::applied`] false) or a
+    /// no-op writes nothing.
+    fn apply_pick(
+        &self,
+        change: PickChange,
+        record: CharacterRecord,
+    ) -> impl Future<Output = Result<PickWrite, StoreError>> + Send;
 }

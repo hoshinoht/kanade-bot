@@ -176,8 +176,22 @@ serves them, as the server does with `modules.roster` on): `GET`/`POST
 digits, unique per world case-insensitively, `422 ign_taken`; the first
 character is the main, `role: main` moves the crown, `409 main_required` for
 retiring, demoting or deleting the main while others are active; `PATCH`
-needs `version`, `409 stale`). None are seeded; `POST /api/admin/reset`
-clears them. Writes record no History rows here.
+needs `version`, `409 stale`). Invented characters are seeded
+(`characters::seed`; Ren #1013 has none); `POST /api/admin/reset` restores
+them. Writes record no History rows here.
+
+Run character picks (module `roster`, `src/mock/run_picks.rs`): `GET
+/api/admin/runs/{id}/characters` and `PUT
+/api/admin/runs/{id}/characters/{member}` `{character_id | null, version}`
+follow the server's rules (active characters as candidates, `inferred`
+computed on read, warnings for the same character on another run of a shared
+boss this boss week; `version_required`, `invalid`, `not_on_run`,
+`not_found`, `not_their_character`, `character_retired`, `409 stale`;
+deleting a character drops its picks). The mock does not model frozen runs,
+so it never answers `run_ended`. Seeded for the run-sheet boards: Asahi
+picks AsahiDK on `r-carling`, Mika has three candidates and no pick, and
+RenShade is inferred on `r-carling` and on the extra done `r-nstar` (Normal
+Star, Sat 21:00), so it warns.
 
 Live updates: `GET /api/admin/events` answers as the server's stream does
 (`ready {seq, boot}` with one `boot` id per mock process, then `{topic, seq}` hints with no data), emitted after every

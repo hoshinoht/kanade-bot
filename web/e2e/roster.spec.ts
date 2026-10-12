@@ -160,7 +160,8 @@ test('roster: a failed read shows Try again and the Profile tab still works', as
 test('roster: module off, no tab and no character requests', async ({ page }) => {
   await page.request.post(`${ADMIN}/__mock/modules`, { data: { roster: false } });
   const asked: string[] = [];
-  page.on('request', (r) => r.url().includes('/characters') && asked.push(r.url()));
+  // API requests only: the shared `characters` module may load as a script chunk of that name.
+  page.on('request', (r) => /\/api\/admin\/.*characters/.test(r.url()) && asked.push(r.url()));
   await page.goto(`${ADMIN}/members?sw=off`);
   await page.getByRole('button', { name: /^Mika/ }).click();
   const pane = page.getByRole('complementary', { name: 'Member details' });

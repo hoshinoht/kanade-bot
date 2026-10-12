@@ -609,6 +609,31 @@ const rosterDelete = async (page: Page, role: 'complementary' | 'dialog', name: 
   const confirm = page.getByRole('alertdialog', { name: 'Delete MikaBish?' });
   await expect(confirm.getByRole('button', { name: 'Cancel' })).toBeFocused();
 };
+/**
+ * The run-pick boards redraw the run sheet; these pairs compare what the roster adds to its
+ * Party tab. The boards' "Later slice" tags and Mikadere's disabled level reason are not
+ * built (user, 2026-10-12: any active character, no level filter): the board loses the tags
+ * and the reason before it is measured, and its picker is the shared Modal on the phone. The
+ * rules box keeps its tag as the header line the app's "Characters" caption stands in.
+ */
+const RUN_PICK_SCOPE = ['party-slot', 'party-char', 'party-pick', 'party-warn', 'party-rules', 'roster-picker', 'roster-picker-option'];
+const runPickBoard = (page: Page) =>
+  page.evaluate(() => {
+    document.querySelector('[data-fid="party-later"]')?.remove();
+    for (const tag of document.querySelectorAll('.ltag')) if (!tag.closest('[data-fid="party-rules"]')) tag.remove();
+    for (const off of document.querySelectorAll<HTMLElement>('[data-fid="roster-picker"] .opt.no')) {
+      off.classList.remove('no');
+      off.removeAttribute('aria-disabled');
+      off.querySelector<HTMLElement>('.cmeta')!.textContent = 'Lara';
+    }
+    if (innerWidth < 600) for (const el of document.querySelectorAll<HTMLElement>('[data-fid="roster-picker"]')) el.style.position = 'fixed';
+  });
+/** The boards' Ren (1) picked RenShade (no "inferred"), as on the other run it clashes with. */
+const renPicked = async (page: Page) => {
+  const headers = await csrf(page.request);
+  for (const run of ['r-carling', 'r-nstar'])
+    await page.request.put(`${ADMIN}/api/admin/runs/${run}/characters/1002`, { headers, data: { character_id: 'ch-s7', version: 0 } });
+};
 
 const PAIRS: Pair[] = [
   {
@@ -742,6 +767,38 @@ const PAIRS: Pair[] = [
     omit: PHONE_ROSTER_FRAME,
     ready: async (page) => {
       await rosterDelete(page, 'dialog', 'Mika');
+    },
+  },
+  // The run-sheet character picker (B_RosterRunPick, B_PhoneRosterRunPick): HCarling + HStar
+  // with Mika's picker open. The sheet around the party is hero-sheet's and hero-phone's.
+  {
+    name: 'roster-run-pick',
+    board: 'B_RosterRunPick',
+    path: '/',
+    omit: STAGE_OMIT,
+    scope: RUN_PICK_SCOPE,
+    setup: renPicked,
+    prepare: runPickBoard,
+    ready: async (page) => {
+      const sheet = await carlingSheet(page);
+      await sheet.getByRole('button', { name: /^Pick Mika's character/ }).click();
+      await expect(sheet.getByRole('dialog', { name: "Mika's character for HCarling + HStar" })).toBeVisible();
+    },
+  },
+  {
+    name: 'phone-roster-run-pick',
+    board: 'B_PhoneRosterRunPick',
+    path: '/',
+    omit: STAGE_OMIT,
+    scope: RUN_PICK_SCOPE,
+    setup: renPicked,
+    prepare: runPickBoard,
+    ready: async (page) => {
+      const sheet = await carlingSheet(page);
+      await sheet.getByRole('button', { name: /^Pick Mika's character/ }).click();
+      const picker = page.getByRole('dialog', { name: "Mika's character" });
+      await expect(picker).toBeVisible();
+      await picker.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
     },
   },
   {

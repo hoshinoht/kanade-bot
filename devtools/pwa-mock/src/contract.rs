@@ -1036,6 +1036,47 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     h.ok("DELETE", &first_path, None, "common.json#/$defs/Message")
         .await;
 
+    // Run character picks (module roster): the seeded boards on r-carling.
+    let run_chars = h
+        .ok(
+            "GET",
+            "/api/admin/runs/r-carling/characters",
+            None,
+            "characters.json#/$defs/RunCharacters",
+        )
+        .await;
+    let ren = run_chars["slots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|slot| slot["member_id"] == "1002")
+        .unwrap();
+    assert_eq!(ren["warnings"][0]["run_id"], "r-nstar");
+    let picked = h
+        .ok(
+            "PUT",
+            "/api/admin/runs/r-carling/characters/1003",
+            Some(json!({ "character_id": "ch-s2", "version": 0 })),
+            "characters.json#/$defs/RunCharacterSlot",
+        )
+        .await;
+    assert_eq!(picked["picked"], "ch-s2");
+    h.refused(
+        "PUT",
+        "/api/admin/runs/r-carling/characters/1003",
+        json!({ "character_id": null, "version": 0 }),
+        &marks,
+        (StatusCode::CONFLICT, "stale"),
+    )
+    .await;
+    h.ok(
+        "PUT",
+        "/api/admin/runs/r-carling/characters/1003",
+        Some(json!({ "character_id": null, "version": 1 })),
+        "characters.json#/$defs/RunCharacterSlot",
+    )
+    .await;
+
     // Weekly timings.
     let row = &fixed[0];
     let tokens: Vec<&str> = row["bosses"]

@@ -21,7 +21,10 @@ use crate::{
     },
     domain::{
         catalog::BossTable,
-        characters::{Character, CharacterChange, CharacterRecord, CharacterStore, CharacterWrite},
+        characters::{
+            Character, CharacterChange, CharacterRecord, CharacterStore, CharacterWrite,
+            PickChange, PickWrite, RunPick,
+        },
         drafts::{
             DraftEvent, DraftKind, DraftStatus, DraftStore, LoadedDraft, ProposalInfo,
             ProposalStore, StoredDraft, StoredProposal,
@@ -247,7 +250,8 @@ pub trait ReadStore: Send + Sync {
 }
 
 /// The roster module's store (`modules.roster`), object-safe as
-/// [`ReadStore`]: one member's characters and the recorded, keyed writes.
+/// [`ReadStore`]: one member's characters, run picks and the recorded,
+/// keyed writes.
 pub trait CharacterRoster: Send + Sync {
     fn member_characters(&self, member_id: String) -> ReadFuture<'_, Vec<Character>>;
     fn character(&self, id: String) -> ReadFuture<'_, Option<Character>>;
@@ -260,6 +264,16 @@ pub trait CharacterRoster: Send + Sync {
         record: CharacterRecord,
         replay: Option<StoredReplay>,
     ) -> ReadFuture<'_, KeyedWrite<CharacterWrite>>;
+    /// The stored picks on these runs.
+    fn run_picks(&self, run_ids: Vec<String>) -> ReadFuture<'_, Vec<RunPick>>;
+    /// One pick write as [`Self::write_character`] (see
+    /// [`ReplayStore::apply_pick_replayed`]).
+    fn write_pick(
+        &self,
+        change: PickChange,
+        record: CharacterRecord,
+        replay: Option<StoredReplay>,
+    ) -> ReadFuture<'_, KeyedWrite<PickWrite>>;
 }
 
 impl<T: CharacterStore + ReplayStore + Send + Sync> CharacterRoster for T {
@@ -282,6 +296,27 @@ impl<T: CharacterStore + ReplayStore + Send + Sync> CharacterRoster for T {
                 Some(replay) => self.apply_character_replayed(change, record, replay).await,
                 None => self
                     .apply_character(change, record)
+                    .await
+                    .map(KeyedWrite::Applied),
+            }
+        })
+    }
+
+    fn run_picks(&self, run_ids: Vec<String>) -> ReadFuture<'_, Vec<RunPick>> {
+        Box::pin(async move { CharacterStore::run_picks(self, &run_ids).await })
+    }
+
+    fn write_pick(
+        &self,
+        change: PickChange,
+        record: CharacterRecord,
+        replay: Option<StoredReplay>,
+    ) -> ReadFuture<'_, KeyedWrite<PickWrite>> {
+        Box::pin(async move {
+            match replay {
+                Some(replay) => self.apply_pick_replayed(change, record, replay).await,
+                None => self
+                    .apply_pick(change, record)
                     .await
                     .map(KeyedWrite::Applied),
             }

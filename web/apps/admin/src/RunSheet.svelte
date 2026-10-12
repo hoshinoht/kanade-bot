@@ -21,6 +21,8 @@
   import { STATUS_LABELS, type MoveOutcome } from './store.svelte';
   import StagePicker from './drafts/StagePicker.svelte';
   import type { Staging, StagingDraft } from './drafts/staging.svelte';
+  import CharacterPicker from './sheet/CharacterPicker.svelte';
+  import { choiceMeta, clashRun, rosterRoutes, RunCharacterSlots, shownCharacter } from './sheet/characters.svelte';
 
   let {
     open = $bindable(false),
@@ -43,6 +45,7 @@
     countdown = null,
     step = 30,
     onclose,
+    rosterModule = false,
   }: {
     open: boolean;
     run: Run | null;
@@ -72,6 +75,8 @@
     staging?: Staging | null;
     /** The staging strip's Open draft. */
     onopendraft?: (id: string) => void;
+    /** The character roster module is on (the session says so): the Party tab names who each member brings. */
+    rosterModule?: boolean;
   } = $props();
 
   const ANSWERS = [
@@ -168,6 +173,8 @@
       sheetTab = 'party';
       moreOpen = false;
       stageOpen = false;
+      pickFor = null;
+      sheetPickOpen = false;
     }
     if (!open) {
       seeded = null;
@@ -314,6 +321,73 @@
     if (run && id) void act(() => onroster(run.id, { add: id }));
   }
   const addOptions = $derived(addable.map((m) => ({ value: m.id, label: memberLabel(members, m.id) })));
+
+  // Module `roster` (B_RosterRunPick): who each party member brings, in the full
+  // sheet's Party tab only. Off (the session, or a 404 since), no character UI and no requests.
+  const charRun = $derived(rosterModule && !rosterRoutes.gone && open && run && (!wide || popped) ? run.id : null);
+  const chars = $derived(charRun ? new RunCharacterSlots(charRun) : null);
+  const charsShown = $derived(Boolean(chars?.data));
+  // A party change (add, take off) changes the slots: read them again.
+  const partyIds = $derived(run?.participants.map((p) => p.id).join(' ') ?? '');
+  $effect(() => {
+    if (!chars) return;
+    void partyIds;
+    void chars.load();
+  });
+  $effect(() => chars?.follow());
+  // The wide sheet's popover (one member's), the narrow sheet's bottom sheet.
+  let pickFor = $state<string | null>(null);
+  let sheetPick = $state<string | null>(null);
+  let sheetPickOpen = $state(false);
+  let pickBusy = $state(false);
+  let partyList = $state<HTMLUListElement>();
+  const charTrigger = (member: string) => partyList?.querySelector<HTMLElement>(`[data-char-for="${member}"]`) ?? null;
+
+  function openPick(member: string) {
+    if (wide) pickFor = pickFor === member ? null : member;
+    else {
+      sheetPick = member;
+      sheetPickOpen = true;
+    }
+  }
+
+  async function closePick(member: string, refocus: boolean) {
+    if (pickFor === member) pickFor = null;
+    if (!refocus) return;
+    await tick();
+    charTrigger(member)?.focus({ preventScroll: true });
+  }
+
+  // Saves live even while staging (picks never enter a draft); a clash warns, never blocks.
+  async function pickCharacter(person: Participant, characterId: string | null, undoable = true) {
+    if (!chars || !run || pickBusy) return;
+    const before = chars.slot(person.id)?.picked ?? null;
+    const label = who(person);
+    const title = runTitle(run);
+    pickBusy = true;
+    const result = await chars.pick(person.id, characterId).finally(() => (pickBusy = false));
+    pickFor = null;
+    sheetPickOpen = false;
+    if (result.ok) {
+      const shown = shownCharacter(result.value);
+      const done = characterId
+        ? `${label} brings ${shown?.ign ?? 'that character'} to ${title}.`
+        : shown
+          ? `Cleared ${label}'s pick: ${shown.ign} is inferred again.`
+          : `Cleared ${label}'s pick.`;
+      notice = {
+        ok: true,
+        message: stagingOn ? `${done} Saved live, not in the draft.` : done,
+        undo: undoable && before !== characterId ? () => void pickCharacter(person, before, false) : undefined,
+      };
+    } else if (result.code === 'stale') {
+      notice = { ok: false, message: `${label}'s character on ${title} changed meanwhile; the slot shows what is saved now.` };
+    } else if (!result.unbuilt) {
+      notice = { ok: false, message: `Couldn't set ${label}'s character: ${result.message}` };
+    }
+    await tick();
+    charTrigger(person.id)?.focus({ preventScroll: true });
+  }
 </script>
 
 <svelte:window
@@ -351,6 +425,83 @@
       />
     {/if}
   </div>
+{/snippet}
+
+<!-- B_RosterRunPick / B_PhoneRosterRunPick: the slot's character, its picker and its clash warning. -->
+{#snippet slotChar(person: Participant)}
+  {@const slot = chars?.slot(person.id)}
+  {#if slot}
+    {@const shown = shownCharacter(slot)}
+    {@const label = who(person)}
+    {@const inferred = Boolean(slot.inferred) && !slot.picked}
+    {#if inferred && !wide}<span class="slot__inferred">inferred</span>{/if}
+    <span class="slotchar">
+      {#if slot.candidates.length === 0}
+        <span class="slotchar__none"
+          >{wide ? 'No characters yet' : 'no characters'} · <a
+            href="/members?open={encodeURIComponent(person.id)}"
+            aria-label="{label} has no characters yet: add them on Members"
+            onclick={leaveFor}>{wide ? 'add on Members' : 'add'}</a
+          ></span
+        >
+      {:else if shown}
+        <button
+          type="button"
+          class="slotchar__btn slotchar__chip"
+          data-fid="party-char"
+          data-char-for={person.id}
+          aria-haspopup="dialog"
+          aria-expanded={pickFor === person.id || (sheetPickOpen && sheetPick === person.id)}
+          aria-label="{label}'s character on {runTitle(run!)}: {shown.ign}{inferred ? ', inferred' : ''}. Change"
+          onclick={() => openPick(person.id)}
+          ><span class="slotchar__ign">{shown.ign}</span>{#if wide}<span class="slotchar__meta">{choiceMeta(shown)}</span><Icon name="chevron-down" />{:else if shown.level}<span
+              class="slotchar__lv mono">{shown.level}</span
+            >{/if}</button
+        >
+      {:else}
+        <button
+          type="button"
+          class="slotchar__btn slotchar__pick"
+          data-fid="party-pick"
+          data-char-for={person.id}
+          aria-haspopup="dialog"
+          aria-expanded={pickFor === person.id || (sheetPickOpen && sheetPick === person.id)}
+          aria-label="Pick {label}'s character on {runTitle(run!)}: {slot.candidates.length} to choose from"
+          onclick={() => openPick(person.id)}
+          >{wide ? 'Pick character' : 'Pick'}<span class="slotchar__count mono">{wide ? `${slot.candidates.length} match` : slot.candidates.length}</span>{#if wide}<Icon
+              name="chevron-down"
+            />{/if}</button
+        >
+      {/if}
+      {#if inferred && wide}<span class="slot__inferred">inferred</span>{/if}
+      {#if wide && pickFor === person.id}
+        <CharacterPicker
+          variant="popover"
+          {slot}
+          name={label}
+          title={runTitle(run!)}
+          busy={pickBusy}
+          staging={stagingOn}
+          onpick={(id) => void pickCharacter(person, id)}
+          onclose={(refocus) => void closePick(person.id, refocus)}
+        />
+      {/if}
+    </span>
+  {/if}
+{/snippet}
+
+{#snippet slotWarn(person: Participant)}
+  {@const slot = chars?.slot(person.id)}
+  {@const shown = slot ? shownCharacter(slot) : null}
+  {#if slot && shown}
+    {#each slot.warnings as clash (clash.run_id)}
+      <span class="slot__warn" data-fid="party-warn" role="note"
+        ><Icon name="alert-triangle" /><span
+          >{wide ? `${shown.ign} is also on` : 'Also on'} {clashRun(week, clash)} this boss week{clash.inferred ? ' (inferred there)' : ''}.</span
+        ></span
+      >
+    {/each}
+  {/if}
 {/snippet}
 
 {#snippet channel(run: Run)}
@@ -929,46 +1080,65 @@
           </div>
           <div class="runsheet__panel runsheet__panel--{sheetTab}" role="tabpanel" id="{uid}-spanel" aria-labelledby="{uid}-stab-{sheetTab}">
             {#if sheetTab === 'party'}
-              <ul class="runsheet__party" aria-label="Party" data-fid="week-party">
+              <ul class="runsheet__party" class:runsheet__party--chars={charsShown} aria-label="Party" data-fid="week-party" bind:this={partyList}>
                 {#each run.participants as person (person.id)}
-                  <li class="slot slot--{person.answer}">
-                    <span class="slot__mark" aria-hidden="true">{ANSWER_MARKS[person.answer].mark}</span>
-                    <span class="slot__text"
-                      ><b class="slot__name">{who(person)}</b><span class="slot__state">{ANSWER_MARKS[person.answer].word}</span></span
-                    >
-                    <button
-                      type="button"
-                      class="chip__x slot__x"
-                      aria-label="Take {who(person)} off this run for this week only"
-                      disabled={busy}
-                      onclick={() => void act(() => onroster(run.id, { remove: person.id }))}>×</button
-                    >
+                  <li class="slot slot--{person.answer}" class:slot--chars={charsShown} data-fid={charsShown ? 'party-slot' : undefined}>
+                    <span class="slot__head">
+                      <span class="slot__mark" aria-hidden="true">{ANSWER_MARKS[person.answer].mark}</span>
+                      <span class="slot__text"
+                        ><b class="slot__name">{who(person)}</b><span class="slot__state">{ANSWER_MARKS[person.answer].word}</span></span
+                      >
+                      {#if charsShown && !wide}{@render slotChar(person)}{/if}
+                      <button
+                        type="button"
+                        class="chip__x slot__x"
+                        aria-label="Take {who(person)} off this run for this week only"
+                        disabled={busy}
+                        onclick={() => void act(() => onroster(run.id, { remove: person.id }))}>×</button
+                      >
+                    </span>
+                    {#if charsShown && wide}{@render slotChar(person)}{/if}
+                    {#if charsShown}{@render slotWarn(person)}{/if}
                   </li>
                 {/each}
                 {#each stagedParty as op (op.ord)}
                   <li class="slot slot--staged" data-fid="sheet-party-staged">
-                    <span class="slot__mark" aria-hidden="true">+</span>
-                    <span class="slot__text"><b class="slot__name">{op.summary.split(': ').at(-1)}</b><span class="slot__state">in draft · change {op.ord + 1}</span></span>
+                    <span class="slot__head">
+                      <span class="slot__mark" aria-hidden="true">+</span>
+                      <span class="slot__text"><b class="slot__name">{op.summary.split(': ').at(-1)}</b><span class="slot__state">in draft · change {op.ord + 1}</span></span>
+                    </span>
                   </li>
                 {/each}
                 {#if addable.length > 0}
-                  <li class="slot slot--open">
-                    <span class="slot__mark" aria-hidden="true">+</span>
-                    <Select
-                      class="slot__add"
-                      label="Add someone to {runTitle(run)} for this week"
-                      bind:value={adding}
-                      options={addOptions}
-                      placeholder="Add someone…"
-                      noun="members"
-                      disabled={busy}
-                      onchange={add}
-                    />
+                  <li class="slot slot--open" class:slot--chars={charsShown} data-fid={charsShown ? 'party-slot' : undefined}>
+                    <span class="slot__head">
+                      <span class="slot__mark" aria-hidden="true">+</span>
+                      <Select
+                        class="slot__add"
+                        label="Add someone to {runTitle(run)} for this week"
+                        bind:value={adding}
+                        options={addOptions}
+                        placeholder="Add someone…"
+                        noun="members"
+                        disabled={busy}
+                        onchange={add}
+                      />
+                    </span>
                   </li>
                 {/if}
               </ul>
               {#if wide}
-                <aside class="runsheet__aside" aria-label="This week" data-fid="sheet-aside">{@render thisWeek(run)}</aside>
+                <aside class="runsheet__aside" aria-label="This week" data-fid="sheet-aside">
+                  {@render thisWeek(run)}
+                  {#if charsShown}
+                    <div class="runsheet__charrules" data-fid="party-rules">
+                      <span class="cap">Characters</span>
+                      <span>One active character: the slot names it, marked “inferred”.</span>
+                      <span>More than one: the slot asks to pick.</span>
+                      <span>The same character twice for one boss this boss week warns; it still saves.</span>
+                    </div>
+                  {/if}
+                </aside>
               {/if}
             {:else if sheetTab === 'answers'}
               <div class="answers__body">{@render answerRows(run)}</div>
@@ -993,6 +1163,25 @@
     <Modal bind:open={stageOpen} title="Stage in draft" narrow className="stagesheet" fid="sheet-stage-picker" fidParts={{}} returnFocus={() => stageButton ?? null}>
       {@render stagePicker()}
     </Modal>
+  {/if}
+  {#if !wide && chars && run && sheetPick}
+    {@const slot = chars.slot(sheetPick)}
+    {@const person = run.participants.find((p) => p.id === sheetPick)}
+    {#if slot && person}
+      <!-- B_PhoneRosterRunPick: the picker as a modal bottom sheet over the sheet. -->
+      <CharacterPicker
+        variant="sheet"
+        bind:open={sheetPickOpen}
+        {slot}
+        name={who(person)}
+        title={runTitle(run)}
+        eyebrow="{runTitle(run)} · {whenLabel(week, run.day, run.status === 'otot' ? null : run.time)}"
+        busy={pickBusy}
+        staging={stagingOn}
+        onpick={(id) => void pickCharacter(person, id)}
+        returnFocus={() => charTrigger(person.id)}
+      />
+    {/if}
   {/if}
 {/if}
 

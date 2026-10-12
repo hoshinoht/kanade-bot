@@ -1,17 +1,20 @@
 //! `Idempotency-Key` replays (migration 0031) for admin API effects that are
 //! not scheduler commits: the Limits window clear, the manual digest and
 //! header rewrite (scope `limits`), rescan submit and cancel (`rescan`), the
-//! Config PATCH, the admin member edits and the admin character writes
-//! (`config`: the writes History lists beside the change chain). A row keeps
-//! the digest of the normalized full request and the answer to replay until
-//! it expires; an expired row reads as absent, so its key applies anew.
+//! Config PATCH, the admin member edits, and the admin character writes and
+//! run picks (`config`: the writes History lists beside the change chain). A
+//! row keeps the digest of the normalized full request and the answer to
+//! replay until it expires; an expired row reads as absent, so its key
+//! applies anew.
 
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, TimeDelta, Utc};
 use serde_json::json;
 
-use crate::domain::characters::{CharacterChange, CharacterRecord, CharacterWrite};
+use crate::domain::characters::{
+    CharacterChange, CharacterRecord, CharacterWrite, PickChange, PickWrite,
+};
 use crate::domain::history::{Actor, Surface};
 use crate::domain::members::{MemberProfile, PortalEdit};
 use crate::domain::scheduler::StoreError;
@@ -282,6 +285,17 @@ pub trait ReplayStore {
         record: CharacterRecord,
         replay: StoredReplay,
     ) -> impl Future<Output = Result<KeyedWrite<CharacterWrite>, StoreError>> + Send;
+
+    /// A run pick write (as `CharacterStore::apply_pick`, History record
+    /// included) and `replay`, in one transaction, keyed as
+    /// [`Self::apply_character_replayed`] (stored only with
+    /// [`PickWrite::applied`]).
+    fn apply_pick_replayed(
+        &self,
+        change: PickChange,
+        record: CharacterRecord,
+        replay: StoredReplay,
+    ) -> impl Future<Output = Result<KeyedWrite<PickWrite>, StoreError>> + Send;
 
     /// Delete every row expired at `now`; returns how many.
     fn prune_replays(

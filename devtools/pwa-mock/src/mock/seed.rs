@@ -425,6 +425,20 @@ pub fn runs() -> Vec<Rec> {
             "hstar-party",
             Some("f-carling"),
         ),
+        // Star again this boss week, from chat: Ren's RenShade is on both
+        // (the run-sheet character warning, module `roster`).
+        rec(
+            "r-nstar",
+            "4d5e6f7a",
+            false,
+            2,
+            Some("21:00"),
+            "done",
+            "NStar",
+            people(&[("1002", "yes"), ("1012", "yes")]),
+            "hstar-party",
+            None,
+        ),
         rec(
             "r-bm",
             "5c6d7e8f",

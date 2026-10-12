@@ -120,7 +120,7 @@ test('admin: this week / next week toggle, filters, the glance pane and the foot
   // v4: done and cancelled runs wait behind "show them".
   await expect(page.locator('[data-run="r-seren"]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Show them' }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 runs');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('10 runs');
   await expect(page.locator('[data-run="r-seren"]')).toBeVisible();
   await page.getByRole('button', { name: 'Hide the past' }).click();
   await expect(page.locator('[data-run="r-baldrix"]')).toHaveCount(0);

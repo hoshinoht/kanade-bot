@@ -23,6 +23,7 @@ mod proxy;
 mod reads;
 mod reminders;
 mod replays;
+mod run_characters;
 mod schemas;
 mod sign_ins;
 mod support;

@@ -73,7 +73,9 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/admin/members/{id}/characters` | `characters.json#/$defs/MemberCharacters` (module `roster`: every character route answers the generic 404 while `modules.roster` is off; 404 `not_found` for a member never seen) |
 | `POST /api/admin/members/{id}/characters` | `201` `characters.json#/$defs/CharacterRow` (body `CharacterCreate`; 422 `invalid`, `ign_taken` (unique per world, case-insensitive, retired included); a member's first active character is the main, and `role: main` moves the crown; a retry with the same Idempotency-Key replays the first answer, another request under it is 422 `idempotency_mismatch`; each write adds one History settings row, section `characters`, a key `character.<id>` per row it changed) |
 | `PATCH /api/admin/characters/{id}` | `characters.json#/$defs/CharacterRow` (body `CharacterPatch`; 422 `version_required`, 409 `stale` for another version, 409 `main_required` to retire or demote the main while the member has other active characters; refusals, Idempotency-Key and History as the POST; a no-op answers the row and records nothing) |
-| `DELETE /api/admin/characters/{id}` | `common.json#/$defs/Message` (removes the row; History keeps its fields; 409 `main_required` for the main while the member has other active characters; Idempotency-Key as the POST) |
+| `DELETE /api/admin/characters/{id}` | `common.json#/$defs/Message` (removes the row and its run picks; History keeps its fields; 409 `main_required` for the main while the member has other active characters; Idempotency-Key as the POST) |
+| `GET /api/admin/runs/{id}/characters` | `characters.json#/$defs/RunCharacters` (module `roster`, generic 404 while off; 404 `not_found` for a run that is gone; one slot per party member with candidates, `picked`, `inferred` (recomputed on every read; a read never writes) and `warnings`) |
+| `PUT /api/admin/runs/{id}/characters/{member}` | body `characters.json#/$defs/CharacterPick`; `characters.json#/$defs/RunCharacterSlot` (that member's slot as it now reads; saves directly, never staged in a draft, outside the history chain; 400 `invalid_body`, 422 `invalid`/`version_required`, 409 `stale` for another slot version, 409 `run_ended` for a live run past its end, 422 `not_on_run` for a member not in the party, 404 `not_found` for an unknown run or character, 422 `not_their_character`, 422 `character_retired`; a no-op answers the slot and records nothing; Idempotency-Key as the character POST; each effective write adds one History settings row, section `characters`, key `pick.<run>.<member>`) |
 | `GET /api/admin/personas` | `members.json#/$defs/Personas` |
 | `GET /api/admin/channels` | `common.json#/$defs/Channels` |
 | `GET /api/admin/roles` | `common.json#/$defs/Roles` |
@@ -203,3 +205,7 @@ Pointers are `<file>#/$defs/<Name>`.
 - Character roster (2026-10-11): `characters.json` (`CharacterRow`,
   `MemberCharacters` and the `CharacterCreate`/`CharacterPatch` bodies)
   for the admin character routes of module `roster`.
+- Run character picks (2026-10-12): `characters.json` (`RunCharacters`,
+  `RunCharacterSlot`, `CharacterChoice`, `CharacterClash` and the
+  `CharacterPick` body) for `GET /api/admin/runs/{id}/characters` and
+  `PUT /api/admin/runs/{id}/characters/{member}` of module `roster`.

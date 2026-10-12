@@ -5,9 +5,12 @@ import { ARRIVAL_FALLBACK_MS } from '@kanade/ui';
 /** The server's generic 404 for a route it does not serve (an unbuilt feature, not a missing item). */
 const UNBUILT = 'No such endpoint on this origin.';
 
+/** The server does not serve this route: an unbuilt feature or a module that is off (not a missing item). */
+export const isUnbuilt = (error: ApiRequestError) => error.status === 404 && error.body?.message === UNBUILT;
+
 /** An error in words; a route this server has not built yet is not an outage. */
 export function errorText(error: ApiRequestError): string {
-  if (error.status === 404 && error.body?.message === UNBUILT) return "This isn't available on this server yet.";
+  if (isUnbuilt(error)) return "This isn't available on this server yet.";
   return error.message;
 }
 
@@ -215,14 +218,17 @@ export function pinnedFirst(source: () => unknown): (rows: readonly { id: string
   };
 }
 
-export type Outcome<T = unknown> = { ok: true; value: T } | { ok: false; message: string; status?: number | null; code?: string | null };
+export type Outcome<T = unknown> =
+  | { ok: true; value: T }
+  | { ok: false; message: string; status?: number | null; code?: string | null; /** The route is not served (`isUnbuilt`). */ unbuilt?: boolean };
 
 /** One request with a typed outcome, for forms that keep their input on failure. */
 export async function send<T>(work: (client: Client) => Promise<T>): Promise<Outcome<T>> {
   try {
     return { ok: true, value: await work(createClient()) };
   } catch (error) {
-    if (error instanceof ApiRequestError) return { ok: false, message: errorText(error), status: error.status, code: error.body?.error ?? null };
+    if (error instanceof ApiRequestError)
+      return { ok: false, message: errorText(error), status: error.status, code: error.body?.error ?? null, unbuilt: isUnbuilt(error) };
     return { ok: false, message: 'Something went wrong.' };
   }
 }

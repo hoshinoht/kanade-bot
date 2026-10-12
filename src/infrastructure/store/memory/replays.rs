@@ -8,7 +8,9 @@ use chrono::{DateTime, Utc};
 
 use super::members::portal;
 use super::settings::{append, refuse_change, refuse_unknown};
-use crate::domain::characters::{CharacterChange, CharacterRecord, CharacterWrite};
+use crate::domain::characters::{
+    CharacterChange, CharacterRecord, CharacterWrite, PickChange, PickWrite,
+};
 use crate::domain::members::PortalEdit;
 use crate::domain::scheduler::StoreError;
 use crate::domain::settings::SettingsChange;
@@ -157,6 +159,35 @@ impl ReplayStore for super::MemoryScheduleStore {
             return Ok(answer);
         }
         let (written, change) = super::characters::apply(&mut characters, change, &record)?;
+        let recorded = change.is_some();
+        if let Some(change) = change {
+            append(&mut changes, change);
+        }
+        if written.applied() {
+            put(&mut table, replay);
+        }
+        drop((characters, changes, table));
+        if recorded {
+            self.written.notify(Written::Settings);
+        }
+        Ok(KeyedWrite::Applied(written))
+    }
+
+    async fn apply_pick_replayed(
+        &self,
+        change: PickChange,
+        record: CharacterRecord,
+        replay: StoredReplay,
+    ) -> Result<KeyedWrite<PickWrite>, StoreError> {
+        replay.check()?;
+        let mut characters = self.characters();
+        let mut changes = self.changes();
+        let mut table = self.replays();
+        let key = (replay.scope, replay.actor.clone(), replay.key.clone());
+        if let Some(answer) = keyed(table.get(&key).cloned(), &replay) {
+            return Ok(answer);
+        }
+        let (written, change) = super::characters::apply_pick(&mut characters, change, &record)?;
         let recorded = change.is_some();
         if let Some(change) = change {
             append(&mut changes, change);

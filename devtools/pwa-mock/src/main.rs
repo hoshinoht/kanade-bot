@@ -191,6 +191,11 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
             "/api/admin/characters/{id}",
             patch(api::patch_character).delete(api::delete_character),
         )
+        .route("/api/admin/runs/{id}/characters", get(api::run_characters))
+        .route(
+            "/api/admin/runs/{id}/characters/{member}",
+            put(api::pick_character),
+        )
         .route("/api/admin/personas", get(api::personas))
         .route("/api/admin/fixed", get(api::fixed).post(api::create_fixed))
         .route(

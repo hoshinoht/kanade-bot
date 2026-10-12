@@ -81,7 +81,7 @@ fn invalid(error: impl std::fmt::Display) -> Refusal {
 }
 
 /// Who writes at `now`, for the History record.
-fn record(session: &AdminSession, now: DateTime<Utc>) -> CharacterRecord {
+pub(super) fn record(session: &AdminSession, now: DateTime<Utc>) -> CharacterRecord {
     let origin = session.origin();
     CharacterRecord {
         at: now,
@@ -114,7 +114,7 @@ async fn apply(
 
 /// The request's key, if any, and its stored answer when it already has
 /// one (`idempotency_mismatch` for another request under it).
-async fn recall(
+pub(super) async fn recall(
     state: &ApiState,
     session: &AdminSession,
     headers: &HeaderMap,
@@ -228,7 +228,7 @@ pub async fn create(
 }
 
 /// A present JSON field, `null` included: `Some(None)` clears.
-fn present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+pub(super) fn present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
 where
     D: Deserializer<'de>,
     T: Deserialize<'de>,

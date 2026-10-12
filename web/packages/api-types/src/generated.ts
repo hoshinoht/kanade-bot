@@ -230,6 +230,64 @@ export type MemberCharacters = { member_id: string,
  */
 characters: Array<CharacterRow>, };
 
+/**
+ * A party member's candidate: one of their active characters.
+ */
+export type CharacterChoice = { id: string, ign: string, world: string, class: string | null, level: number | null, role: 'main' | 'alt', };
+
+/**
+ * The same character on another run this boss week for a boss this run
+ * has too (the weekly clear limit). A warning only: saves go through.
+ */
+export type CharacterClash = { character_id: string, run_id: string, short_id: string, 
+/**
+ * Day index within the boss week (0 = reset day).
+ */
+day: number, 
+/**
+ * `null` for an own-time run.
+ */
+time: string | null, 
+/**
+ * The other run's bosses this run has too, any difficulty.
+ */
+bosses: Array<string>, 
+/**
+ * The character is inferred on the other run, not picked.
+ */
+inferred: boolean, };
+
+/**
+ * One party member's slot on a run.
+ */
+export type RunCharacterSlot = { member_id: string, 
+/**
+ * Their active characters, oldest first; empty when they have none.
+ */
+candidates: Array<CharacterChoice>, 
+/**
+ * The picked character's id.
+ */
+picked: string | null, 
+/**
+ * With nothing picked, the only candidate's id (never stored).
+ */
+inferred: string | null, 
+/**
+ * Send it back with the pick: 0 while nothing is picked.
+ */
+version: number, 
+/**
+ * Other runs with the picked or inferred character for a shared boss.
+ */
+warnings: Array<CharacterClash>, };
+
+export type RunCharacters = { run_id: string, 
+/**
+ * In party order.
+ */
+slots: Array<RunCharacterSlot>, };
+
 export type FixedRunLink = { run_id: string, short_id: string, week: WeekKey, day: number, time: string | null, status: RunStatus, amended: boolean, };
 
 export type FixedRow = { id: string, short_id: string, weekday: number, weekday_name: string, time: string, bosses: Array<Boss>, participants: Array<Member>, channel_id: string, channel_name: string, channel_watched: boolean, 

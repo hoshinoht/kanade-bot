@@ -26,6 +26,7 @@ mod profanity;
 mod reminders;
 pub mod requests;
 mod rewrites;
+pub mod run_picks;
 mod seed;
 mod sign_ins;
 
@@ -121,6 +122,8 @@ pub struct Store {
     member_requests: Vec<requests::MemberRequestRec>,
     /// Roster characters (module `roster`), seeded (`characters::seed`).
     characters: Vec<characters::Char>,
+    /// Run character picks (module `roster`), seeded (`run_picks::seed`).
+    picks: Vec<run_picks::Pick>,
     /// The roster module's startup flag (on unless `/__mock/modules` turns it off).
     roster: bool,
     version: u64,
@@ -159,6 +162,7 @@ impl Store {
             week_over: false,
             member_requests: Vec::new(),
             characters: Vec::new(),
+            picks: Vec::new(),
             roster: true,
             version: 1,
             next_id: 1,
@@ -181,6 +185,7 @@ impl Store {
             })
             .collect();
         self.characters = characters::seed();
+        self.picks = run_picks::seed();
         self.roster = true;
         self.version = 1;
         self.next_id = 1;

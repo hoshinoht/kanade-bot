@@ -8,8 +8,10 @@ use sqlx::{Connection, Row, SqliteConnection};
 use super::SqliteStore;
 use super::rows::instant;
 use super::schedule::store_error;
-use super::{characters, members, settings};
-use crate::domain::characters::{CharacterChange, CharacterRecord, CharacterWrite};
+use super::{characters, members, run_picks, settings};
+use crate::domain::characters::{
+    CharacterChange, CharacterRecord, CharacterWrite, PickChange, PickWrite,
+};
 use crate::domain::members::PortalEdit;
 use crate::domain::scheduler::StoreError;
 use crate::domain::settings::SettingsChange;
@@ -200,6 +202,30 @@ impl ReplayStore for SqliteStore {
                 return Ok((answer, false));
             }
             let (written, recorded) = characters::apply(&mut tx, change, &record).await?;
+            if written.applied() {
+                put(&mut tx, &replay).await?;
+            }
+            Ok((KeyedWrite::Applied(written), recorded))
+        })?;
+        if recorded {
+            self.written().notify(Written::Settings);
+        }
+        Ok(written)
+    }
+
+    async fn apply_pick_replayed(
+        &self,
+        change: PickChange,
+        record: CharacterRecord,
+        replay: StoredReplay,
+    ) -> Result<KeyedWrite<PickWrite>, StoreError> {
+        replay.check()?;
+        let (written, recorded) = write_txn!(self, tx, async {
+            let found = read(&mut tx, replay.scope, &replay.actor, &replay.key).await?;
+            if let Some(answer) = keyed(found, &replay) {
+                return Ok((answer, false));
+            }
+            let (written, recorded) = run_picks::apply(&mut tx, change, &record).await?;
             if written.applied() {
                 put(&mut tx, &replay).await?;
             }

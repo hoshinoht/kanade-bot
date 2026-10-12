@@ -28,6 +28,7 @@ mod proposals;
 mod reminder_cards;
 mod replays;
 mod rows;
+mod run_picks;
 mod run_prompts;
 mod schedule;
 mod settings;
