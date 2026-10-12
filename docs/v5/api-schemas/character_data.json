@@ -66,7 +66,7 @@
       "description": "Config's module health block (informational, never part of /healthz).",
       "type": "object",
       "additionalProperties": false,
-      "required": ["nexon", "backoff_until", "calls_24h", "budget", "last_batch", "links", "last_sweep", "posts"],
+      "required": ["nexon", "backoff_until", "calls_24h", "budget", "last_batch", "links", "last_sweep", "posts", "scouter"],
       "properties": {
         "nexon": { "enum": ["no_key", "ok", "backoff", "key_refused"] },
         "backoff_until": { "$ref": "common.json#/$defs/NullableString" },
@@ -109,17 +109,219 @@
             {
               "type": "object",
               "additionalProperties": false,
-              "required": ["due", "unknown", "stuck", "overdue"],
+              "required": ["due", "unknown", "stuck", "overdue", "items"],
               "properties": {
                 "due": { "type": "integer", "minimum": 0 },
                 "unknown": { "type": "integer", "minimum": 0 },
                 "stuck": { "type": "integer", "minimum": 0 },
-                "overdue": { "type": "integer", "minimum": 0 }
+                "overdue": { "type": "integer", "minimum": 0 },
+                "items": {
+                  "description": "The share cards behind unknown, stuck and overdue, oldest first: ids and states only.",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["reference", "state", "channel_id", "posted_at", "jump_url"],
+                    "properties": {
+                      "reference": { "type": "string", "pattern": "^[0-9a-f]{6}$" },
+                      "state": { "enum": ["unknown", "stuck", "overdue"] },
+                      "channel_id": { "type": "string" },
+                      "posted_at": { "type": "string" },
+                      "jump_url": { "$ref": "common.json#/$defs/NullableString" }
+                    }
+                  }
+                }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "scouter": { "$ref": "#/$defs/ScouterHealth" }
+      }
+    },
+    "ScouterHealth": {
+      "description": "MapleScouter estimates: off without KANADE_SCOUTER_URL; verification_required stays until a lookup succeeds again.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "url", "last_lookup_at", "last_error", "last_error_at"],
+      "properties": {
+        "state": { "enum": ["off", "ok", "unreachable", "verification_required"] },
+        "url": { "type": ["string", "null"], "pattern": "^http://", "description": "The sidecar's http://host[:port]; null while off." },
+        "last_lookup_at": { "$ref": "common.json#/$defs/NullableString" },
+        "last_error": { "$ref": "common.json#/$defs/NullableString", "description": "MapleScouter's error code (busy, upstream_rate_limited, critical_rate_setup_required, verification_required, upstream_blocked, lookup_failed, result_mismatch, extraction_failed, lookup_timeout, …) or timeout, unreachable, unreadable." },
+        "last_error_at": { "$ref": "common.json#/$defs/NullableString" }
+      }
+    },
+    "EstimateRequest": {
+      "description": "POST /api/admin/estimates body: exactly one of character_ids (1 to 6) or run_id; refresh skips the 24-hour memory (Look up again).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "character_ids": { "type": "array", "minItems": 1, "maxItems": 6, "items": { "type": "string", "minLength": 1 } },
+        "run_id": { "type": "string", "minLength": 1 },
+        "refresh": { "type": "boolean" }
+      },
+      "oneOf": [{ "required": ["character_ids"] }, { "required": ["run_id"] }]
+    },
+    "EstimateStarted": {
+      "description": "202 answer to POST /api/admin/estimates.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["job"],
+      "properties": { "job": { "$ref": "#/$defs/EstimateJob" } }
+    },
+    "EstimateStatus": {
+      "description": "GET /api/admin/estimates?character_ids=|run_id=: that target's job (one retained per target for 24 hours; a new lookup of the same target replaces it) and the job running now, whatever it looks up.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["job", "running"],
+      "properties": {
+        "job": { "oneOf": [{ "$ref": "#/$defs/EstimateJob" }, { "type": "null" }] },
+        "running": { "oneOf": [{ "$ref": "#/$defs/EstimateJob" }, { "type": "null" }] }
+      }
+    },
+    "EstimateJob": {
+      "description": "One MapleScouter lookup (admin only). MapleScouter is sent roster IGNs only, never a Nexon field.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "state", "run_id", "character_ids", "started_by", "started_at", "finished_at", "characters", "missing", "progress", "fetched_at", "result", "error", "label", "note"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "state": { "enum": ["running", "done", "failed"] },
+        "run_id": { "$ref": "common.json#/$defs/NullableString", "description": "A run's party; null for a character lookup." },
+        "character_ids": { "type": "array", "items": { "type": "string" }, "description": "The characters asked for (sorted); empty for a run." },
+        "started_by": { "$ref": "history.json#/$defs/Actor" },
+        "started_at": { "type": "string" },
+        "finished_at": { "$ref": "common.json#/$defs/NullableString" },
+        "characters": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["character_id", "member_id", "ign"],
+            "properties": {
+              "character_id": { "type": "string" },
+              "member_id": { "type": "string" },
+              "ign": { "type": "string", "pattern": "^[A-Za-z0-9]{1,32}$", "description": "The roster IGN, as sent to MapleScouter." }
+            }
+          }
+        },
+        "missing": {
+          "type": "array",
+          "description": "Party members not looked up: listed as missing, never 0%.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["member_id", "character_id", "reason"],
+            "properties": {
+              "member_id": { "type": "string" },
+              "character_id": { "$ref": "common.json#/$defs/NullableString" },
+              "reason": { "enum": ["no_characters", "no_character_picked", "other_region", "unsupported_ign"] }
+            }
+          }
+        },
+        "progress": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["done", "total", "current"],
+          "properties": {
+            "done": { "type": "integer", "minimum": 0 },
+            "total": { "type": "integer", "minimum": 1, "maximum": 6 },
+            "current": { "$ref": "common.json#/$defs/NullableString", "description": "The character being looked up now; null between characters, for the party total and once finished." }
+          }
+        },
+        "fetched_at": { "$ref": "common.json#/$defs/NullableString", "description": "When the result came from MapleScouter (a cached answer keeps its first time)." },
+        "result": { "oneOf": [{ "$ref": "#/$defs/EstimateResult" }, { "type": "null" }] },
+        "error": { "oneOf": [{ "$ref": "#/$defs/EstimateError" }, { "type": "null" }] },
+        "label": { "const": "Estimate from MapleScouter" },
+        "note": { "const": "Estimate for planning only, not eligibility" }
+      }
+    },
+    "EstimateResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cache_hit", "complete", "members", "combined"],
+      "properties": {
+        "cache_hit": { "type": "boolean", "description": "Answered from kanade's 24-hour memory (never persisted) without calling MapleScouter." },
+        "complete": { "type": "boolean", "description": "No party member missing and every total complete." },
+        "members": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["character_id", "ign", "preset", "bosses"],
+            "properties": {
+              "character_id": { "type": "string" },
+              "ign": { "type": "string" },
+              "preset": { "type": "string", "pattern": "^[0-9]{5}$" },
+              "bosses": {
+                "type": "array",
+                "description": "Catalog bosses only, in catalog order.",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["boss", "percentage", "effective_percentage", "estimated_minutes", "rating", "party"],
+                  "properties": {
+                    "boss": { "type": "string", "description": "Catalog token, e.g. HLimbo." },
+                    "percentage": { "type": "number" },
+                    "effective_percentage": { "type": ["number", "null"] },
+                    "estimated_minutes": { "type": ["number", "null"] },
+                    "rating": { "type": "string" },
+                    "party": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "combined": {
+          "description": "Party totals (a run's bosses, or every catalog boss for several characters); null for one character.",
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["boss", "combined_percentage", "estimated_minutes", "technically_possible", "complete", "issues"],
+                "properties": {
+                  "boss": { "type": "string" },
+                  "combined_percentage": { "type": ["number", "null"] },
+                  "estimated_minutes": { "type": ["number", "null"] },
+                  "technically_possible": { "type": ["boolean", "null"] },
+                  "complete": { "type": "boolean" },
+                  "issues": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["character_id", "issue"],
+                      "properties": {
+                        "character_id": { "$ref": "common.json#/$defs/NullableString" },
+                        "issue": { "enum": ["missing_boss", "unknown_benchmark_players", "not_covered", "other"] }
+                      }
+                    }
+                  }
+                }
               }
             },
             { "type": "null" }
           ]
         }
+      }
+    },
+    "EstimateError": {
+      "description": "The drawn error states. No total is made from a partial lookup.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "status", "detail", "retry_after_seconds", "character_id"],
+      "properties": {
+        "code": { "enum": ["busy", "critical_rate", "manual_check", "failed"] },
+        "message": { "enum": ["MapleScouter is busy.", "Set up critical rate on MapleScouter first.", "Scouter needs a manual check.", "Lookup failed."] },
+        "status": { "type": ["integer", "null"], "description": "MapleScouter's HTTP status (429, 422, 503, 502, 504); null without an answer." },
+        "detail": { "type": "string", "description": "MapleScouter's error code, or timeout, unreachable, unreadable." },
+        "retry_after_seconds": { "type": ["integer", "null"], "minimum": 0, "description": "429 only: Retry-After." },
+        "character_id": { "$ref": "common.json#/$defs/NullableString", "description": "The character it stopped at, when known." }
       }
     }
   }

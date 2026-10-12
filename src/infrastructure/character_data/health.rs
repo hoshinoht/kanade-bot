@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 
 use super::CharacterData;
 use crate::domain::chardata::{CALL_WINDOW, DAILY_CALLS, LinkStatus, PostState};
+use crate::infrastructure::scouter::ScouterHealth;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NexonState {
@@ -63,6 +64,10 @@ pub struct Health {
     pub links: Option<LinkCounts>,
     pub last_sweep: Option<DateTime<Utc>>,
     pub posts: Option<PostCounts>,
+    /// Posts an admin should look at: `unknown`, `stuck`, `overdue`.
+    pub post_issues: Vec<super::PostIssue>,
+    /// MapleScouter: `off` without `KANADE_SCOUTER_URL`.
+    pub scouter: ScouterHealth,
 }
 
 impl CharacterData {
@@ -93,7 +98,8 @@ impl CharacterData {
             }
             counts
         });
-        let posts = self.store.posts().await.ok().map(|posts| {
+        let stored = self.store.posts().await.ok();
+        let posts = stored.as_ref().map(|posts| {
             let mut counts = PostCounts::default();
             for post in posts {
                 counts.due += u32::from(post.is_due(now));
@@ -103,6 +109,10 @@ impl CharacterData {
             }
             counts
         });
+        let post_issues = stored
+            .as_deref()
+            .map(|posts| super::posts::issues(posts, now))
+            .unwrap_or_default();
         Health {
             nexon,
             backoff_until,
@@ -112,6 +122,11 @@ impl CharacterData {
             links,
             last_sweep,
             posts,
+            post_issues,
+            scouter: match self.estimates() {
+                Some(estimates) => estimates.health().await,
+                None => ScouterHealth::off(),
+            },
         }
     }
 }

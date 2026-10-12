@@ -355,7 +355,7 @@ calls_24h: number | null,
 /**
  * The hard stop on calls per 24 hours.
  */
-budget: number, last_batch: BatchHealth | null, links: LinkHealth | null, last_sweep: string | null, posts: PostHealth | null, };
+budget: number, last_batch: BatchHealth | null, links: LinkHealth | null, last_sweep: string | null, posts: PostHealth | null, scouter: ScouterHealthBlock, };
 
 export type BatchHealth = { at: string, refreshed: number, failed: number, 
 /**
@@ -365,7 +365,200 @@ stopped: string | null, };
 
 export type LinkHealth = { pending: number, active: number, stale: number, };
 
-export type PostHealth = { due: number, unknown: number, stuck: number, overdue: number, };
+export type PostHealth = { due: number, unknown: number, stuck: number, overdue: number, 
+/**
+ * The posts behind `unknown`, `stuck` and `overdue`, oldest first.
+ */
+items: Array<PostIssueItem>, };
+
+/**
+ * A share card an admin should look at. No Nexon data: ids and states.
+ */
+export type PostIssueItem = { 
+/**
+ * The 6-hex ref in the card's footer.
+ */
+reference: string, state: 'unknown' | 'stuck' | 'overdue', channel_id: string, posted_at: string, 
+/**
+ * A Discord link to the message for a manual removal; `null` when
+ * its id or the guild is not known.
+ */
+jump_url: string | null, };
+
+/**
+ * MapleScouter (estimates): `off` without `KANADE_SCOUTER_URL`.
+ */
+export type ScouterHealthBlock = { state: 'off' | 'ok' | 'unreachable' | 'verification_required', 
+/**
+ * The sidecar's `http://host[:port]` (no secret); `null` while off.
+ */
+url: string | null, last_lookup_at: string | null, 
+/**
+ * The last error's code: MapleScouter's (`busy`,
+ * `verification_required`, `lookup_timeout`, …) or `timeout`,
+ * `unreachable`, `unreadable`.
+ */
+last_error: string | null, last_error_at: string | null, };
+
+/**
+ * `GET /api/admin/estimates?character_ids=|run_id=`.
+ */
+export type EstimateStatus = { 
+/**
+ * The newest job for exactly this target (running, or finished in the
+ * last 24 hours); `null` without one.
+ */
+job: EstimateJob | null, 
+/**
+ * The job running now, whatever it looks up (one runs at a time).
+ */
+running: EstimateJob | null, };
+
+/**
+ * `POST /api/admin/estimates` → `202`.
+ */
+export type EstimateStarted = { job: EstimateJob, };
+
+export type EstimateJob = { id: string, state: 'running' | 'done' | 'failed', 
+/**
+ * A run's party; `null` for a character lookup.
+ */
+run_id: string | null, 
+/**
+ * The characters asked for; empty for a run.
+ */
+character_ids: Array<string>, started_by: SettingsActor, started_at: string, finished_at: string | null, 
+/**
+ * Who is looked up, in party order (roster IGNs).
+ */
+characters: Array<EstimateCharacter>, 
+/**
+ * Party members not looked up (listed as missing, never 0%).
+ */
+missing: Array<EstimateMissing>, progress: EstimateProgress, 
+/**
+ * When the result came from MapleScouter (a cached result keeps its
+ * first time); `null` without a result.
+ */
+fetched_at: string | null, result: EstimateResult | null, error: EstimateError | null, 
+/**
+ * `Estimate from MapleScouter`.
+ */
+label: string, 
+/**
+ * `Estimate for planning only, not eligibility`.
+ */
+note: string, };
+
+export type EstimateCharacter = { character_id: string, member_id: string, ign: string, };
+
+export type EstimateMissing = { member_id: string, 
+/**
+ * The character they bring, when there is one.
+ */
+character_id: string | null, reason: 'no_characters' | 'no_character_picked' | 'other_region' | 'unsupported_ign', };
+
+export type EstimateProgress = { 
+/**
+ * Characters looked up so far.
+ */
+done: number, total: number, 
+/**
+ * The character being looked up now; `null` between characters, for
+ * the party total and once finished.
+ */
+current: string | null, };
+
+export type EstimateResult = { 
+/**
+ * Answered from kanade's 24-hour memory without calling MapleScouter.
+ */
+cache_hit: boolean, 
+/**
+ * No party member missing and every total complete.
+ */
+complete: boolean, members: Array<EstimateMember>, 
+/**
+ * The party totals (a run's bosses, or every catalog boss for several
+ * characters); `null` for one character.
+ */
+combined: Array<EstimateCombined> | null, };
+
+export type EstimateMember = { character_id: string, ign: string, 
+/**
+ * The preset MapleScouter read (`00010` unless it fell back for
+ * critical rate).
+ */
+preset: string, 
+/**
+ * Catalog bosses only, in catalog order.
+ */
+bosses: Array<EstimateBoss>, };
+
+export type EstimateBoss = { 
+/**
+ * Catalog token, e.g. `HLimbo`.
+ */
+boss: string, 
+/**
+ * As MapleScouter shows it (a `[Party]` card's whole-party figure).
+ */
+percentage: number, 
+/**
+ * This character's share; `null` when MapleScouter can't tell.
+ */
+effective_percentage: number | null, estimated_minutes: number | null, rating: string, 
+/**
+ * A `[Party]` card.
+ */
+party: boolean, };
+
+export type EstimateCombined = { boss: string, 
+/**
+ * `null` unless every looked-up member has a known share.
+ */
+combined_percentage: number | null, estimated_minutes: number | null, technically_possible: boolean | null, 
+/**
+ * `false` with a missing member or an unknown share.
+ */
+complete: boolean, issues: Array<EstimateIssue>, };
+
+export type EstimateIssue = { 
+/**
+ * `null` for `not_covered`.
+ */
+character_id: string | null, 
+/**
+ * `missing_boss`: no card for this boss; `unknown_benchmark_players`:
+ * a `[Party]` card with an unknown party size; `not_covered`:
+ * MapleScouter has no card for this boss at all.
+ */
+issue: 'missing_boss' | 'unknown_benchmark_players' | 'not_covered' | 'other', };
+
+/**
+ * The drawn error states.
+ */
+export type EstimateError = { 
+/**
+ * `busy` (429; retry after `retry_after_seconds`), `critical_rate`
+ * (422), `manual_check` (503), `failed` (502, 504, timeout, no
+ * connection).
+ */
+code: 'busy' | 'critical_rate' | 'manual_check' | 'failed', message: string, 
+/**
+ * MapleScouter's HTTP status; `null` without an answer.
+ */
+status: number | null, 
+/**
+ * MapleScouter's error code (`busy`, `upstream_rate_limited`,
+ * `lookup_timeout`, `result_mismatch`, …) or `timeout`, `unreachable`,
+ * `unreadable`.
+ */
+detail: string, retry_after_seconds: number | null, 
+/**
+ * The character it stopped at, when known.
+ */
+character_id: string | null, };
 
 export type FixedRunLink = { run_id: string, short_id: string, week: WeekKey, day: number, time: string | null, status: RunStatus, amended: boolean, };
 

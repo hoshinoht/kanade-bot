@@ -1,12 +1,15 @@
 //! The sweeper (hourly and on every unlink): expired and future-stamped
-//! snapshots, the orphan pass, then call records older than the window.
-//! Stripping due posts joins it with the Discord side (S3).
+//! snapshots, the orphan pass (with pending requests past 14 days), due
+//! posts stripped through the Discord side, then call records older than
+//! the window.
 
 use chrono::{DateTime, Utc};
 use serde_json::json;
 
-use super::{CharacterData, log};
-use crate::domain::chardata::{CALL_WINDOW, LinkStatus, Orphan, orphan};
+use super::{CharacterData, StripReport, log};
+use crate::domain::chardata::{
+    CALL_WINDOW, LinkStatus, Orphan, UnlinkReason, orphan, pending_expired,
+};
 use crate::domain::history::{Actor, Surface};
 use crate::domain::scheduler::StoreError;
 
@@ -16,6 +19,9 @@ pub struct SweepReport {
     pub snapshots: Option<u64>,
     pub unlinked: u64,
     pub reconsent: u64,
+    /// Pending requests removed after 14 days.
+    pub expired: u64,
+    pub posts: StripReport,
     pub calls: Option<u64>,
 }
 
@@ -30,6 +36,8 @@ impl CharacterData {
             ..SweepReport::default()
         };
         self.orphans(now, &mut report).await;
+        // After the orphan pass, so the posts of what it unlinked go now.
+        report.posts = self.strip_posts().await;
         report.calls = self.store.prune_calls(now - CALL_WINDOW).await.ok();
         self.holds().last_sweep = Some(now);
         log(
@@ -39,6 +47,11 @@ impl CharacterData {
                 "snapshots": report.snapshots,
                 "unlinked": report.unlinked,
                 "reconsent": report.reconsent,
+                "expired": report.expired,
+                "stripped": report.posts.stripped,
+                "strip_retrying": report.posts.retrying,
+                "stuck": report.posts.stuck,
+                "unknown": report.posts.unknown,
                 "calls": report.calls,
             }),
         );
@@ -56,6 +69,23 @@ impl CharacterData {
         let actor = Actor::system(SWEEPER);
         for link in links {
             let id = link.character_id.clone();
+            // An admin's request the member never confirmed: History says
+            // `pending` → `unlinked`, nothing else.
+            if pending_expired(&link, now) {
+                if let Ok(Some(_)) = self
+                    .unlink(
+                        &id,
+                        &actor,
+                        Surface::DeliveryTick,
+                        UnlinkReason::PendingExpired,
+                        None,
+                    )
+                    .await
+                {
+                    report.expired += 1;
+                }
+                continue;
+            }
             let (Ok(character), Ok(member), Ok(fresh)) = (
                 self.roster.character(id.clone()).await,
                 self.roster.member(link.member_id.clone()).await,
@@ -120,6 +150,10 @@ impl CharacterData {
                     pending.consent_version = None;
                     pending.consented_at = None;
                     pending.linked_at = None;
+                    // A new request by the sweeper: its 14 days start now,
+                    // not at the original request.
+                    pending.requested_by = actor.clone();
+                    pending.requested_at = now;
                     match self.store.put_link(pending, link.version).await {
                         Ok(crate::domain::chardata::LinkPut::Written) => report.reconsent += 1,
                         // Changed concurrently (a fresh confirm): nothing to do.

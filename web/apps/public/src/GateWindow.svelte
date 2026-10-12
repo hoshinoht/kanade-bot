@@ -17,6 +17,7 @@
     zone,
     short = false,
     muted = false,
+    foot,
     children,
   }: {
     identity: Identity | null;
@@ -29,6 +30,8 @@
     muted?: boolean;
     /** The body; its h1 has the id `gate-lead`. */
     children: Snippet;
+    /** The foot's words; the time zone when absent (Privacy: the attribution). */
+    foot?: Snippet;
   } = $props();
   const name = $derived(identity?.name ?? 'Kanade');
 </script>
@@ -53,6 +56,8 @@
     <div class="gate__body" data-fid="gate-body">
       {@render children()}
     </div>
-    <div class="gate__foot" data-fid="gate-foot"><span>Times in {zone}</span></div>
+    <div class="gate__foot" data-fid="gate-foot">
+      {#if foot}{@render foot()}{:else}<span>Times in {zone}</span>{/if}
+    </div>
   </section>
 </div>

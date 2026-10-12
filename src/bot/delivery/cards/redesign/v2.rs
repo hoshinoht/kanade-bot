@@ -30,6 +30,11 @@ const CARD_APPLY: &str = "card:apply:";
 const CARD_REJECT: &str = "card:reject:";
 const OWNER_ACCEPT: &str = "owner:accept:";
 const OWNER_DECLINE: &str = "owner:decline:";
+/// The `/character link` notice's buttons: Link
+/// `<prefix><notice version>:<issued unix seconds>:<character id>`, Cancel
+/// `<prefix><character id>`.
+const CHARACTER_LINK: &str = "chardata:link:";
+const CHARACTER_CANCEL: &str = "chardata:cancel:";
 /// A run completion prompt's buttons: `<prefix><run id>:<ask>`.
 const RUN_PROMPT: [(PromptOutcome, &str); 3] = [
     (PromptOutcome::Done, "run:done:"),
@@ -53,6 +58,14 @@ pub enum ButtonId {
         run_id: String,
         ask: u32,
     },
+    /// The `/character link` notice's Link: the notice version shown and
+    /// when it was shown (it expires 15 minutes later).
+    CharacterLink {
+        character_id: String,
+        notice: u32,
+        issued: i64,
+    },
+    CharacterCancel(String),
 }
 
 /// Proposal ids are short ASCII tokens; anything else is not ours.
@@ -80,6 +93,22 @@ impl ButtonId {
         }
         if let Some(id) = custom_id.strip_prefix(OWNER_DECLINE) {
             return proposal_id(id).then(|| Self::OwnerDecline(id.to_owned()));
+        }
+        if let Some(rest) = custom_id.strip_prefix(CHARACTER_LINK) {
+            let mut parts = rest.splitn(3, ':');
+            let (notice, issued, id) = (parts.next()?, parts.next()?, parts.next()?);
+            let digits = |text: &str| !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit());
+            if !digits(notice) || !digits(issued) || !proposal_id(id) {
+                return None;
+            }
+            return Some(Self::CharacterLink {
+                character_id: id.to_owned(),
+                notice: notice.parse().ok()?,
+                issued: issued.parse().ok()?,
+            });
+        }
+        if let Some(id) = custom_id.strip_prefix(CHARACTER_CANCEL) {
+            return proposal_id(id).then(|| Self::CharacterCancel(id.to_owned()));
         }
         for (outcome, prefix) in RUN_PROMPT {
             if let Some(rest) = custom_id.strip_prefix(prefix) {
@@ -116,6 +145,12 @@ impl ButtonId {
                     .map_or("run:done:", |(_, prefix)| prefix);
                 format!("{prefix}{run_id}:{ask}")
             }
+            Self::CharacterLink {
+                character_id,
+                notice,
+                issued,
+            } => format!("{CHARACTER_LINK}{notice}:{issued}:{character_id}"),
+            Self::CharacterCancel(id) => format!("{CHARACTER_CANCEL}{id}"),
         }
     }
 }
@@ -311,6 +346,24 @@ mod tests {
         }
         let id = ButtonId::CardApply("abc".into());
         assert_eq!(ButtonId::parse(&id.custom_id()), Some(id));
+        let link = ButtonId::CharacterLink {
+            character_id: "c-1".into(),
+            notice: 1,
+            issued: 1_790_000_000,
+        };
+        assert_eq!(link.custom_id(), "chardata:link:1:1790000000:c-1");
+        assert_eq!(ButtonId::parse(&link.custom_id()), Some(link));
+        let cancel = ButtonId::CharacterCancel("c-1".into());
+        assert_eq!(ButtonId::parse(&cancel.custom_id()), Some(cancel));
+        for bad in [
+            "chardata:link:1:x:c-1",
+            "chardata:link::1:c-1",
+            "chardata:link:1:1",
+            "chardata:link:1:1:a b",
+            "chardata:cancel:",
+        ] {
+            assert_eq!(ButtonId::parse(bad), None, "{bad:?}");
+        }
     }
 
     #[test]

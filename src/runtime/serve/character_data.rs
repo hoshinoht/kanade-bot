@@ -26,10 +26,13 @@ use crate::{
     infrastructure::{
         character_data::{CharacterData, RosterSide, Timing},
         nexon::{ApiKey, NexonClient},
+        scouter::{Estimates, ScouterClient},
         store::{SqliteCharData, SqliteStore, SqliteStoreConfig, SqliteStoreError},
     },
     runtime::{
-        config::{CHARACTER_DATA_DB_PATH_KEY, NEXON_API_KEY_FILE_KEY, ServeConfig},
+        config::{
+            CHARACTER_DATA_DB_PATH_KEY, NEXON_API_KEY_FILE_KEY, SCOUTER_URL_KEY, ServeConfig,
+        },
         error::Error,
         logging,
         secrets::Redacted,
@@ -68,6 +71,14 @@ pub(super) async fn start(
         })?),
         None => None,
     };
+    let scouter = match &settings.scouter_url {
+        Some(url) => Some(
+            ScouterClient::new(url)
+                .map(|client| Estimates::new(client, url.clone(), Arc::clone(&clock)))
+                .ok_or_else(|| Error::Startup(format!("{SCOUTER_URL_KEY} could not be read")))?,
+        ),
+        None => None,
+    };
     if let Some(parent) = settings.db_path.parent() {
         create_private_dir(parent, CHARACTER_DATA_DB_PATH_KEY)?;
     }
@@ -78,13 +89,17 @@ pub(super) async fn start(
     .await
     .map(Arc::new)
     .map_err(open_error)?;
-    let service = Arc::new(CharacterData::new(
+    let mut service = CharacterData::new(
         Arc::clone(&file) as Arc<dyn CharDataStore>,
         Arc::clone(store) as Arc<dyn RosterSide>,
         nexon,
         clock,
         Timing::default(),
-    ));
+    );
+    if let Some(estimates) = scouter {
+        service = service.with_estimates(estimates);
+    }
+    let service = Arc::new(service);
     let Some(state) = Arc::get_mut(&mut composition.admin.state) else {
         drop(service);
         close(file, Duration::ZERO).await;
@@ -96,7 +111,10 @@ pub(super) async fn start(
     logging::event(
         "INFO",
         "character_data_started",
-        serde_json::json!({ "connected": service.connected() }),
+        serde_json::json!({
+            "connected": service.connected(),
+            "estimates": service.estimates().is_some(),
+        }),
     );
     Ok(Some(Module {
         file,
@@ -160,10 +178,12 @@ async fn close(mut file: Arc<SqliteCharData>, wait: Duration) {
     }
 }
 
-/// The joined `CharacterData` task.
+/// The joined `CharacterData` task; stopping it also cancels and joins a
+/// running estimate lookup.
 pub(super) struct Task {
     stop: watch::Sender<bool>,
     task: JoinHandle<()>,
+    service: Arc<CharacterData>,
 }
 
 /// The monotonic wait until wall-clock `at`, seen from `now`.
@@ -174,6 +194,7 @@ fn until(now: DateTime<Utc>, at: DateTime<Utc>) -> Duration {
 impl Task {
     pub(super) fn start(service: Arc<CharacterData>, sweep_every: Duration) -> Self {
         let (stop, mut stopped) = watch::channel(false);
+        let joined = Arc::clone(&service);
         let task = tokio::spawn(async move {
             let mut next_sweep = tokio::time::Instant::now();
             // The batch still owed, kept across wakes: whichever timer wakes
@@ -194,6 +215,10 @@ impl Task {
                     .next_retry()
                     .await
                     .map(|at| until(now, at).max(RETRY_FLOOR));
+                // A share card whose strip failed: 5 minutes, then hourly.
+                let strip_in = service
+                    .next_strip_retry()
+                    .map(|at| until(now, at).max(RETRY_FLOOR));
                 let run = async {
                     if due {
                         service.refresh_due().await;
@@ -212,6 +237,9 @@ impl Task {
                         () = tokio::time::sleep(retry_in.unwrap_or(Duration::MAX)), if retry_in.is_some() => {
                             service.retry_due().await;
                         }
+                        () = tokio::time::sleep(strip_in.unwrap_or(Duration::MAX)), if strip_in.is_some() => {
+                            service.strip_posts().await;
+                        }
                     }
                     false
                 };
@@ -224,12 +252,17 @@ impl Task {
                 }
             }
         });
-        Self { stop, task }
+        Self {
+            stop,
+            task,
+            service: joined,
+        }
     }
 
     pub(super) async fn stop(self) {
         let _ = self.stop.send(true);
         let _ = self.task.await;
+        self.service.stop_estimates().await;
     }
 }
 

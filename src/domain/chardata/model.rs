@@ -34,6 +34,12 @@ pub const DAILY_CALLS: u32 = 800;
 /// A tracked post is stripped this long after it was posted, a day before
 /// its data would pass the TTL.
 pub const STRIP_AFTER: TimeDelta = TimeDelta::days(29);
+/// A failed strip (ambiguous, unsent or rate limited) is tried again this
+/// long after its first failure, then every [`STRIP_RETRY_AGAIN`].
+pub const STRIP_RETRY_FIRST: TimeDelta = TimeDelta::minutes(5);
+pub const STRIP_RETRY_AGAIN: TimeDelta = TimeDelta::hours(1);
+/// An admin's link request the member has not confirmed by then is removed.
+pub const PENDING_TTL: TimeDelta = TimeDelta::days(14);
 /// Bounds on stored Nexon text (names, classes, worlds) and image URLs.
 pub const MAX_TEXT_CHARS: usize = 64;
 pub const MAX_URL_CHARS: usize = 1024;

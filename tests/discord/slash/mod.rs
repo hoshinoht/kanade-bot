@@ -4,6 +4,7 @@
 //! weeks reset Thursday 00:00). Expected texts are v4's, printed by the
 //! rollback tree's `bot.agent.commands`/`formatting` where deterministic.
 
+mod character;
 mod fixed;
 mod fixed_owner;
 mod members;
@@ -30,8 +31,8 @@ use kanade::api::rescan::RescanRunner;
 use kanade::api::state::GuildAccess;
 use kanade::api::write::{ApiClock, SchedulerWriter};
 use kanade::bot::commands::{
-    AccessPolicy, ChatAllowance, CommandContext, DebugCards, Dispatcher, Disposition,
-    GuildChannels, register_retained,
+    AccessPolicy, CharacterParts, ChatAllowance, CommandContext, DebugCards, Dispatcher,
+    Disposition, GuildChannels, register_character, register_retained,
 };
 use kanade::bot::transport::{Call, FakeDiscord, InteractionReply, Outcome};
 use kanade::chat::persona::{PersonaRoot, PersonaSnapshot, PersonaStore};
@@ -338,7 +339,13 @@ pub struct Ports {
     pub closed: Vec<String>,
     /// The saved message style (classic by default).
     pub style: MessageStyle,
+    /// Module `character_data`: `/character`'s parts over the store and
+    /// the fake, registered after the retained commands.
+    pub character: Option<CharacterMaker>,
 }
+
+pub type CharacterMaker =
+    Box<dyn FnOnce(Arc<SqliteStore>, Arc<FakeDiscord>) -> CharacterParts<FakeDiscord>>;
 
 pub struct Slash {
     pub store: Arc<SqliteStore>,
@@ -409,7 +416,12 @@ impl Slash {
             clock: Arc::new(move || pinned),
         });
         let discord = Arc::new(FakeDiscord::new());
-        let dispatcher = register_retained(Dispatcher::new(policy), &ctx, discord.clone()).unwrap();
+        let mut dispatcher =
+            register_retained(Dispatcher::new(policy), &ctx, discord.clone()).unwrap();
+        if let Some(make) = ports.character {
+            let parts = make(store.clone(), discord.clone());
+            dispatcher = register_character(dispatcher, &ctx, parts).unwrap();
+        }
         Self {
             store,
             discord,

@@ -221,6 +221,7 @@ pub(super) const KEYS: &[(&str, &str, Kind)] = &[
         "KANADE_NEXON_API_KEY_FILE",
         Text,
     ),
+    ("character_data.scouter_url", "KANADE_SCOUTER_URL", Text),
 ];
 
 pub(super) fn lookup(path: &str) -> Option<(&'static str, &'static str, Kind)> {

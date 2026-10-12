@@ -50,6 +50,7 @@ resolve from it.
 | Backup recipients | `KANADE_BACKUP_RECIPIENTS_HOST_FILE` in `deploy/.env` (e.g. `$HOME/.config/kanade/v5/secrets/backup_recipients`) | Optional; turns on encrypted backups ("Encrypted backups" below). age **public** keys only (`age1…`, one per line, `#` comments), mounted read-only as the Compose secret `backup_recipients` into `bot` (checked at startup: a bad or empty file refuses it) and `backup`. Unset: `/dev/null` stands in, `KANADE_BACKUP_RECIPIENTS_FILE` stays empty and backups are plaintext as before. The private identity never goes on this host, in a container or in the repository. |
 | Character data | Docker volume `kanade_v5_chardata` | Module `character_data` only (`[modules] character_data = true`, which needs `roster`). Mounted at `/chardata`; the file is `/chardata/chardata.sqlite` (0600, owner lock in `/data/run`). Its own volume on purpose: the whole-volume tarball of `kanade_v5_data` and `kanade backup` never hold NEXON data. Losing it loses links (members link again). Never tar, copy or back it up. |
 | Nexon key | `KANADE_NEXON_API_KEY_HOST_FILE` in `deploy/.env` (e.g. `$HOME/.config/kanade/v5/secrets/nexon_api_key`) | Optional; the NEXON Open API key (one line, 0600), mounted as the Compose secret `nexon_api_key`. Unset: `/dev/null` stands in, the module runs with links refused (health `no_key`). Set but unreadable: the bot refuses to start. The key is personal to the registering NEXON ID; never share it. If it leaks, rotate it in the Open API portal and tell help_openapi@nexon.co.kr within 24 hours. |
+| MapleScouter | `KANADE_SCOUTER_URL` in `compose.yaml` (commented) | Optional; admin-only estimates (module `character_data`). The scouter sidecar is its own private Compose project and never a service here; see "MapleScouter estimates" below. Unset: estimates are off (health `off`). No secret. |
 | Edge network | `kanade_edge` (external, `192.168.97.0/24`) | Created by the v4 stack; it must exist. v5 takes `192.168.97.10` with the alias `kanade-bot`. If the network is ever recreated with another subnet, update the addresses in `compose.yaml`. |
 | Public networks | `kanade_public` (internal, `172.25.0.0/24`), `kanade_tunnel_egress` (`172.24.0.0/24`) | Created by Compose. The bot joins `kanade_public` at `172.25.0.10` on every `up` (unused until `[public] bind` is set); only cloudflared (`172.25.0.3`, profile `public`) also joins it and alone uses `kanade_tunnel_egress`. Both subnets lie outside the engine's default address pools. |
 
@@ -334,6 +335,31 @@ docker run --rm -v kanade_v5_data:/data -v "$RESTORE:/restore:ro" alpine sh -c '
 
 Turn encryption off by removing the line from `deploy/.env` (and
 `backup.recipients_file`, if set, from `kanade.toml`) and recreating the bot.
+
+### MapleScouter estimates
+
+The scouter sidecar (private repository, its own Compose project) has no
+authentication, so it must stay on this host's private networks. The bot
+reaches it by a single-label name on a shared network; kanade sends it
+roster IGNs only.
+
+```sh
+# 1. In the scouter project's compose file (not this repository): add the
+#    external network kanade_edge to its service with the alias `scouter`,
+#    keep its port published on 127.0.0.1 only, then `docker compose up -d`
+#    there. Never add an edge site for it.
+# 2. Uncomment KANADE_SCOUTER_URL: http://scouter:8091 in deploy/compose.yaml
+#    (with [modules] character_data = true) and recreate the bot.
+docker compose -f deploy/compose.yaml up -d --force-recreate bot
+# 3. Check: Config -> Character data shows MapleScouter "ok" (the bot probes
+#    /healthz at most once a minute). "unreachable": the network or alias is
+#    missing; "verification_required": run the scouter's own setup, then the
+#    next successful lookup clears it.
+```
+
+Lookups run one at a time and take up to two minutes (the bot waits 130 s).
+Results stay in the bot's memory for 24 hours and are lost on restart; they
+are never written to the store, backups or logs.
 
 ## Stop and roll back
 

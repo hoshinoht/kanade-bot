@@ -26,7 +26,7 @@ use super::components::{CardPresses, INACTIVE, Press, press_follow_up};
 use super::invocation::Invocation;
 use super::split::split_reply;
 use crate::bot::cards::{CardReaction, Pressed};
-use crate::bot::delivery::cards::redesign::ButtonId;
+use crate::bot::delivery::cards::redesign::{ButtonId, text as v2_text};
 use crate::bot::events::RsvpAnswer;
 use crate::bot::transport::{
     DiscordTransport, InteractionRef, InteractionReply, Outcome, RejectionKind,
@@ -402,6 +402,34 @@ impl Dispatcher {
                         .await,
                 );
             }
+            Some(ButtonId::CharacterLink {
+                character_id,
+                notice,
+                issued,
+            }) => {
+                let invocation = press.character_answer(
+                    super::character::LINK_PRESS,
+                    &[
+                        ("character", character_id),
+                        ("notice", notice.to_string()),
+                        ("issued", issued.to_string()),
+                    ],
+                );
+                return Some(
+                    self.update_pressed(transport, &press, invocation, owner_id)
+                        .await,
+                );
+            }
+            Some(ButtonId::CharacterCancel(character_id)) => {
+                let invocation = press.character_answer(
+                    super::character::CANCEL_PRESS,
+                    &[("character", character_id)],
+                );
+                return Some(
+                    self.update_pressed(transport, &press, invocation, owner_id)
+                        .await,
+                );
+            }
             Some(ButtonId::CardApply(id)) => (id, RsvpAnswer::Yes),
             Some(ButtonId::CardReject(id)) => (id, RsvpAnswer::No),
         };
@@ -476,6 +504,39 @@ impl Dispatcher {
         let (mut reply, disposition) = Self::execute(command, &invocation).await;
         reply.ephemeral = true;
         (disposition, deliver(transport, target, &reply, None).await)
+    }
+
+    /// A press whose answer replaces the message the button is on (the
+    /// `/character link` notice): acknowledged with a deferred update, run
+    /// through the command's gate, then the message is edited to the reply.
+    /// The notice is a Components V2 message, so a text reply is sent as
+    /// one text display.
+    async fn update_pressed<T: DiscordTransport>(
+        &self,
+        transport: &T,
+        press: &Press,
+        mut invocation: Invocation,
+        owner_id: Option<Id<UserMarker>>,
+    ) -> (Disposition, Outcome<()>) {
+        invocation.owner_id = owner_id;
+        let target = &press.interaction;
+        let acknowledged = transport.defer_update(target).await;
+        if !acknowledged.is_delivered() {
+            return (Disposition::NotAcknowledged, acknowledged);
+        }
+        let (reply, disposition) = match self.authorise(&invocation, owner_id) {
+            Ok(command) => Self::execute(command, &invocation).await,
+            Err(refusal) => refusal,
+        };
+        let reply = if reply.components.is_empty() {
+            InteractionReply::v2(vec![v2_text(reply.content)], true)
+        } else {
+            reply
+        };
+        (
+            disposition,
+            transport.complete_deferred(target, &reply).await,
+        )
     }
 }
 

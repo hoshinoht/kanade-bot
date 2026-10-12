@@ -36,7 +36,8 @@ use crate::{
     },
     domain::{
         characters::{
-            Character, CharacterRecord, PickChange, PickWrite, RunPick, party_slots, pick_version,
+            Character, CharacterRecord, PartySlot, PickChange, PickWrite, RunPick, party_slots,
+            pick_version,
         },
         members::Roster as Members,
         schedule::{RUN_ENDED, Run},
@@ -101,6 +102,25 @@ async fn run_of(state: &ApiState, run_id: &str) -> Result<Run, Refusal> {
         .into_iter()
         .find(|run| run.id == run_id)
         .ok_or_else(|| ApiError::UNAVAILABLE.into())
+}
+
+/// `run_id`'s run and its party slots as `GET …/characters` reads them
+/// (picked, else inferred), for the run's MapleScouter estimate.
+pub async fn party(
+    state: &ApiState,
+    roster: &dyn CharacterRoster,
+    run_id: &str,
+) -> Result<(Run, Vec<PartySlot>), Refusal> {
+    let run = run_of(state, run_id).await?;
+    let week = Week::load(state, roster, &run).await?;
+    let slots = party_slots(
+        &run,
+        &week.runs,
+        &week.characters,
+        &week.picks,
+        &state.catalog,
+    );
+    Ok((run, slots))
 }
 
 /// What a run's slots are computed from: the runs of its boss week, the

@@ -269,6 +269,73 @@ pub async fn set_modules(State(app): State<App>, Json(req): Json<Modules>) -> Re
     StatusCode::NO_CONTENT.into_response()
 }
 
+/// MapleScouter estimates answer the generic 404 while off (no scouter URL,
+/// or the roster module off), as the server's.
+async fn estimates_off(app: &App) -> Option<Response> {
+    if app.store.lock().await.estimates_on() {
+        None
+    } else {
+        Some(not_found().await)
+    }
+}
+
+/// `POST /api/admin/estimates`: `202 {job}`.
+pub async fn start_estimate(
+    State(app): State<App>,
+    body: Result<Json<crate::mock::estimates::EstimateRequest>, JsonRejection>,
+) -> Response {
+    if let Some(off) = estimates_off(&app).await {
+        return off;
+    }
+    let Ok(Json(req)) = body else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "invalid_body",
+            "The request body is not valid.",
+        );
+    };
+    match app.store.lock().await.start_estimate(req) {
+        Ok(started) => (StatusCode::ACCEPTED, Json(started)).into_response(),
+        Err(refused) => outcome::<()>(Err(refused)),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct EstimateQuery {
+    character_ids: Option<String>,
+    run_id: Option<String>,
+}
+
+pub async fn estimate_status(State(app): State<App>, Query(q): Query<EstimateQuery>) -> Response {
+    if let Some(off) = estimates_off(&app).await {
+        return off;
+    }
+    outcome(
+        app.store
+            .lock()
+            .await
+            .estimate_status(q.character_ids.as_deref(), q.run_id.as_deref()),
+    )
+}
+
+/// Each read advances a running job one step (`mock/estimates.rs`).
+pub async fn estimate(State(app): State<App>, Path(id): Path<String>) -> Response {
+    if let Some(off) = estimates_off(&app).await {
+        return off;
+    }
+    outcome(app.store.lock().await.estimate(&id))
+}
+
+/// `POST /__mock/estimates {scenario}`: what later lookups do, until the
+/// next reset (dev and e2e only).
+pub async fn set_estimate_scenario(
+    State(app): State<App>,
+    Json(req): Json<crate::mock::estimates::ScenarioRequest>,
+) -> Response {
+    app.store.lock().await.set_estimate_scenario(req.scenario);
+    StatusCode::NO_CONTENT.into_response()
+}
+
 pub async fn fixed(State(app): State<App>) -> Response {
     Json(app.store.lock().await.fixed_rows()).into_response()
 }

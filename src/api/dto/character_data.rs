@@ -154,6 +154,26 @@ pub struct CharacterDataHealth {
     pub links: Option<LinkHealth>,
     pub last_sweep: Option<String>,
     pub posts: Option<PostHealth>,
+    pub scouter: ScouterHealthBlock,
+}
+
+/// MapleScouter (estimates): `off` without `KANADE_SCOUTER_URL`.
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct ScouterHealthBlock {
+    #[cfg_attr(
+        test,
+        ts(type = "'off' | 'ok' | 'unreachable' | 'verification_required'")
+    )]
+    pub state: &'static str,
+    /// The sidecar's `http://host[:port]` (no secret); `null` while off.
+    pub url: Option<String>,
+    pub last_lookup_at: Option<String>,
+    /// The last error's code: MapleScouter's (`busy`,
+    /// `verification_required`, `lookup_timeout`, …) or `timeout`,
+    /// `unreachable`, `unreadable`.
+    pub last_error: Option<String>,
+    pub last_error_at: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -181,9 +201,27 @@ pub struct PostHealth {
     pub unknown: u32,
     pub stuck: u32,
     pub overdue: u32,
+    /// The posts behind `unknown`, `stuck` and `overdue`, oldest first.
+    pub items: Vec<PostIssueItem>,
 }
 
-pub fn health(health: &Health) -> CharacterDataHealth {
+/// A share card an admin should look at. No Nexon data: ids and states.
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct PostIssueItem {
+    /// The 6-hex ref in the card's footer.
+    pub reference: String,
+    #[cfg_attr(test, ts(type = "'unknown' | 'stuck' | 'overdue'"))]
+    pub state: &'static str,
+    pub channel_id: String,
+    pub posted_at: String,
+    /// A Discord link to the message for a manual removal; `null` when
+    /// its id or the guild is not known.
+    pub jump_url: Option<String>,
+}
+
+/// `guild_id` makes the items' jump links.
+pub fn health(health: &Health, guild_id: Option<&str>) -> CharacterDataHealth {
     CharacterDataHealth {
         nexon: health.nexon.as_str(),
         backoff_until: health.backoff_until.map(iso_instant),
@@ -206,6 +244,39 @@ pub fn health(health: &Health) -> CharacterDataHealth {
             unknown: posts.unknown,
             stuck: posts.stuck,
             overdue: posts.overdue,
+            items: health
+                .post_issues
+                .iter()
+                .map(|issue| PostIssueItem {
+                    reference: issue.reference.clone(),
+                    state: issue.state,
+                    channel_id: issue.channel_id.clone(),
+                    posted_at: iso_instant(issue.posted_at),
+                    jump_url: guild_id
+                        .zip(issue.message_id.as_deref())
+                        .map(|(guild, message)| {
+                            format!(
+                                "https://discord.com/channels/{guild}/{}/{message}",
+                                issue.channel_id
+                            )
+                        }),
+                })
+                .collect(),
         }),
+        scouter: ScouterHealthBlock {
+            state: health.scouter.state.as_str(),
+            url: health.scouter.url.clone(),
+            last_lookup_at: health.scouter.last_lookup_at.map(iso_instant),
+            last_error: health
+                .scouter
+                .last_error
+                .as_ref()
+                .map(|(code, _)| code.clone()),
+            last_error_at: health
+                .scouter
+                .last_error
+                .as_ref()
+                .map(|(_, at)| iso_instant(*at)),
+        },
     }
 }

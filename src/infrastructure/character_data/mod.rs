@@ -10,12 +10,15 @@
 mod calls;
 mod health;
 mod link;
+mod member;
+mod posts;
 mod refresh;
 mod sweep;
 #[cfg(test)]
 mod tests;
 
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -23,6 +26,8 @@ use tokio::sync::Notify;
 
 pub use health::{BatchReport, Health, LinkCounts, NexonState, PostCounts};
 pub use link::{ConfirmOutcome, LinkView, RequestOutcome};
+pub use member::{MemberCharacter, MemberLink};
+pub use posts::{DeskFuture, Located, PostDesk, PostIssue, StripReport, Stripped, Tracked};
 pub use refresh::{FetchState, RefreshOutcome};
 
 use crate::domain::characters::{Character, CharacterStore};
@@ -31,6 +36,7 @@ use crate::domain::history::Actor;
 use crate::domain::members::{MemberProfile, MemberStore};
 use crate::domain::settings::{SettingsChange, SettingsChangeQuery, SettingsStore};
 use crate::infrastructure::nexon::{Limiter, NexonClient, SPACING};
+use crate::infrastructure::scouter::Estimates;
 use crate::infrastructure::store::replays::{ReplayStore, StoredReplay};
 pub use sweep::{SWEEPER, SweepReport};
 
@@ -42,6 +48,8 @@ pub type Clock = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
 pub trait RosterSide: Send + Sync {
     fn character(&self, id: String) -> StoreFuture<'_, Option<Character>>;
     fn member(&self, user_id: String) -> StoreFuture<'_, Option<MemberProfile>>;
+    /// One member's roster characters, retired included, oldest first.
+    fn member_characters(&self, member_id: String) -> StoreFuture<'_, Vec<Character>>;
     /// The History row (and a keyed request's replay) in one transaction.
     fn record(&self, change: SettingsChange, replay: Option<StoredReplay>) -> StoreFuture<'_, ()>;
     /// `actor`'s latest History row naming `link.<character_id>`.
@@ -58,6 +66,10 @@ where
 {
     fn character(&self, id: String) -> StoreFuture<'_, Option<Character>> {
         Box::pin(async move { CharacterStore::character(self, &id).await })
+    }
+
+    fn member_characters(&self, member_id: String) -> StoreFuture<'_, Vec<Character>> {
+        Box::pin(async move { CharacterStore::member_characters(self, &member_id).await })
     }
 
     fn member(&self, user_id: String) -> StoreFuture<'_, Option<MemberProfile>> {
@@ -127,6 +139,8 @@ struct Holds {
     maintenance_strikes: u32,
     last_batch: Option<BatchReport>,
     last_sweep: Option<DateTime<Utc>>,
+    /// Posts whose strip failed, by ref.
+    strip_retries: HashMap<String, posts::StripRetry>,
 }
 
 pub struct CharacterData {
@@ -140,6 +154,10 @@ pub struct CharacterData {
     holds: Mutex<Holds>,
     /// Wakes the sweeper (an unlink).
     wake: Notify,
+    /// The Discord side that strips posts; unset without a gateway.
+    desk: OnceLock<Arc<dyn PostDesk>>,
+    /// MapleScouter estimates; `None` without `KANADE_SCOUTER_URL`.
+    estimates: Option<Estimates>,
 }
 
 impl std::fmt::Debug for CharacterData {
@@ -167,6 +185,28 @@ impl CharacterData {
             limiter: Limiter::new(timing.spacing),
             holds: Mutex::default(),
             wake: Notify::new(),
+            desk: OnceLock::new(),
+            estimates: None,
+        }
+    }
+
+    /// With MapleScouter estimates (`KANADE_SCOUTER_URL` set).
+    #[must_use]
+    pub fn with_estimates(mut self, estimates: Estimates) -> Self {
+        self.estimates = Some(estimates);
+        self
+    }
+
+    /// `None` while estimates are off.
+    pub fn estimates(&self) -> Option<&Estimates> {
+        self.estimates.as_ref()
+    }
+
+    /// Cancel and join a running estimate lookup (shutdown, before the
+    /// stores close).
+    pub async fn stop_estimates(&self) {
+        if let Some(estimates) = &self.estimates {
+            estimates.stop().await;
         }
     }
 

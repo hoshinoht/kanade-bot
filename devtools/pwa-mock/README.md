@@ -188,6 +188,22 @@ refusals (`version_required`, `stale`, `already_linked`, `retired`,
 mock has no Discord confirmation and never calls an Open API. Wholly
 invented data: MikaNL (`ch-s2`) linked, AsahiDK (`ch-s5`) pending.
 
+MapleScouter estimates (`src/mock/estimates.rs`; on with the roster):
+`POST /api/admin/estimates {character_ids | run_id, refresh?}` (`202
+{job}`, `409 estimate_running`, the server's 422/404/400 refusals),
+`GET /api/admin/estimates/{job}` and `GET
+/api/admin/estimates?character_ids=|run_id=` (`{job, running}`). There is
+no sidecar: each `GET …/{job}` read of a running job advances it one
+character, and a party takes one more read for its total; a repeat lookup
+of the same target answers `done` with `cache_hit` unless `refresh`.
+`POST /__mock/estimates {scenario}` sets later lookups until the next
+reset: `ok`, `busy` (429, 40 s), `critical_rate` (422), `manual_check`
+(503), `failed` (502), `timeout` (504), `hold` (stays running: the running
+state and the 409) or `off` (no scouter URL: every route 404). A party's
+error stops at its last character with no total; the last character of a
+party has no Star card (an incomplete total). Seeded: a done lookup of
+MikaNL (`ch-s2`). Wholly invented numbers.
+
 Run character picks (module `roster`, `src/mock/run_picks.rs`): `GET
 /api/admin/runs/{id}/characters` and `PUT
 /api/admin/runs/{id}/characters/{member}` `{character_id | null, version}`

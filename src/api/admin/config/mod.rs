@@ -146,6 +146,7 @@ async fn answer(
     if let Some(service) = &state.character_data {
         view.character_data = Some(crate::api::dto::character_data::health(
             &service.health().await,
+            state.guild_id.as_deref(),
         ));
     }
     Ok(Json(view).into_response())

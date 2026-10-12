@@ -283,6 +283,9 @@ const PUBLIC_PAIRS: Pair[] = [
   { name: 'pub-phone-move-weekover', board: 'PhoneMove-WeekOver', path: `/runs/p-kalos?move_to=${PAST_MOVE_TO}`, setup: signInPublic, ready: moveNotice },
   { name: 'pub-phone-request', board: 'PhoneRequest', path: '/requests/new?run=r-carling', setup: signInPublic, ready: requestForm },
   { name: 'pub-phone-requests', board: 'PhoneRequests', path: '/requests?open=req-kalos-weekly', setup: signInPublic, ready: requestsShown },
+  // `/privacy` (boards P_Privacy, P_PhonePrivacy: KANADE_MOCKUPS=…/docs/research/2026-10-12-chardata-mockups).
+  { name: 'pub-privacy', board: 'P_Privacy', path: '/privacy', ready: signedOut },
+  { name: 'pub-phone-privacy', board: 'P_PhonePrivacy', path: '/privacy', ready: signedOut },
 ].map((pair) => ({ ...pair, app: 'public' as const }));
 
 // The character roster (module `roster`, on in the mock): Mika's sheet on its Characters tab.

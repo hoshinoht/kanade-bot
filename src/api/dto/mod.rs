@@ -9,6 +9,7 @@ pub mod characters;
 pub mod config;
 mod consequence;
 pub mod drafts;
+pub mod estimates;
 pub mod events;
 pub mod fixed;
 pub mod history;

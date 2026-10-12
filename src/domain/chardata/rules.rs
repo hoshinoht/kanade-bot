@@ -41,6 +41,12 @@ pub enum UnlinkReason {
     MemberDeparted,
     /// Retired and its data has expired.
     RetiredExpired,
+    /// An admin's request the member did not confirm within
+    /// [`super::PENDING_TTL`].
+    PendingExpired,
+    /// The member's confirmation found no such character in the Open API:
+    /// nothing is kept, the request included.
+    NotFound,
 }
 
 impl UnlinkReason {
@@ -51,8 +57,16 @@ impl UnlinkReason {
             Self::IdentityChanged => "identity_changed",
             Self::MemberDeparted => "member_departed",
             Self::RetiredExpired => "retired_expired",
+            Self::PendingExpired => "pending_expired",
+            Self::NotFound => "not_found",
         }
     }
+}
+
+/// A pending request older than [`super::PENDING_TTL`] at `now`: the
+/// sweeper removes it.
+pub fn pending_expired(link: &Link, now: DateTime<Utc>) -> bool {
+    link.status == LinkStatus::Pending && link.requested_at + super::PENDING_TTL <= now
 }
 
 /// The roster character still names what `link` was made for: the same
@@ -365,6 +379,25 @@ mod tests {
         assert_eq!(next_batch(at(10, 12)), at(10, 20));
         assert_eq!(next_batch(at(10, 20)), at(11, 20));
         assert_eq!(next_batch(at(10, 19)), at(10, 20));
+    }
+
+    #[test]
+    fn a_pending_request_expires_after_fourteen_days() {
+        let pending = Link {
+            status: LinkStatus::Pending,
+            consent_version: None,
+            consented_at: None,
+            linked_at: None,
+            ..link()
+        };
+        let asked = pending.requested_at;
+        assert!(!pending_expired(
+            &pending,
+            asked + TimeDelta::days(14) - TimeDelta::seconds(1)
+        ));
+        assert!(pending_expired(&pending, asked + TimeDelta::days(14)));
+        // Only requests: an active link never expires this way.
+        assert!(!pending_expired(&link(), asked + TimeDelta::days(60)));
     }
 
     #[test]

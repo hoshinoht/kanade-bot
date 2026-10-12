@@ -32,7 +32,7 @@ pub use schedule::{
 };
 pub use v2::{
     ButtonId, CARD_CLOSED, DIGEST_MINE, MAX_COMPONENTS, MAX_TEXT_CHARS, action_row, button,
-    component_count, container, separator, text, text_chars, within_budget,
+    component_count, container, section_with_thumbnail, separator, text, text_chars, within_budget,
 };
 pub use vocab::{
     AT_RISK_RED, DifficultyMarks, INK_BLUE, NO_MARKS, Roster, SETTLED_GREEN, StyleSource,

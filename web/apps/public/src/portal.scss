@@ -480,6 +480,55 @@
   margin-left: auto;
 }
 
+// Privacy (boards P_Privacy, P_PhonePrivacy): the notice's items as a term
+// list beside their words; one column on a phone. The foot carries the
+// attribution and the notice version.
+.privacy {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.privacy__list {
+  display: grid;
+  grid-template-columns: minmax(8.5rem, auto) minmax(0, 1fr);
+  gap: 8px 18px;
+  margin: 0;
+  font-size: var(--fs-body-sm);
+  line-height: 1.5;
+}
+
+.privacy__list dt {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.privacy__list dd {
+  margin: 0;
+  color: var(--dim);
+}
+
+.gate-card .privacy__list {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+}
+
+.gate-card .privacy__list dt:not(:first-child) {
+  margin-top: 10px;
+}
+
+.privacy__attrib {
+  font-weight: 700;
+}
+
+.privacy__foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 10px;
+  font-size: var(--fs-mini);
+}
+
 @media (max-height: 500px) {
   .gate__hero {
     height: 150px;

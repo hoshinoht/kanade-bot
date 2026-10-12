@@ -155,6 +155,7 @@ lists are comma-separated.
 | `KANADE_MODULE_CHARACTER_DATA` | `0` | `0` or `1`. NEXON Open API data for linked roster characters (never sent to models, never in backups); startup refuses `1` without `KANADE_MODULE_ROSTER=1`. `1` serves `/api/admin/characters/{id}/link` and `/refresh`, runs the refresh/sweep task and adds Config's health block; `0` answers the routes `404` and opens no file. Read at startup. |
 | `KANADE_CHARACTER_DATA_DB_PATH` | unset | Required while character data is on: absolute path of its own SQLite file (directory created `0700`, file `0600`, owner lock in `KANADE_OWNER_LOCK_DIR`), on a volume of its own so `kanade backup` and the data-volume tarball never hold it. Ignored while off. |
 | `KANADE_NEXON_API_KEY_FILE` | unset | Optional secret file with the Open API key (one line, ≤ 4 KiB). Unset: the module runs with links refused (health `no_key`); set but unreadable: startup is refused. Ignored while off. |
+| `KANADE_SCOUTER_URL` | unset | Optional: the private MapleScouter sidecar (a separate Compose project, no authentication, no secret), e.g. `http://scouter:8091`. Plain `http` to a loopback or private address or a single-label host only (no credentials, path or query); anything else refuses startup. Set: admins can run estimates (`/api/admin/estimates`, one lookup at a time, results kept 24 h in memory only; MapleScouter is sent roster IGNs only). Unset: estimates are off (routes `404`, health `off`). Ignored while character data is off. |
 
 Seeds apply per key only where the store has no row; an unset seed keeps
 the code default (`docs/v5/api-schemas/config.json` sections). A stored row
@@ -330,6 +331,7 @@ Each key sets one variable below, whose rules apply unchanged
 | `modules.character_data` | `KANADE_MODULE_CHARACTER_DATA` | bool |
 | `character_data.db_path` | `KANADE_CHARACTER_DATA_DB_PATH` | string |
 | `character_data.nexon_key_file` | `KANADE_NEXON_API_KEY_FILE` | string |
+| `character_data.scouter_url` | `KANADE_SCOUTER_URL` | string |
 
 Variables without a key: `KANADE_CONFIG` itself; the refused plain
 secrets (`KANADE_DISCORD_TOKEN`, `KANADE_MODEL_KEY`, `KANADE_ADMIN_TOKEN`,

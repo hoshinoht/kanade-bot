@@ -120,6 +120,9 @@ persona_dir = "config/personas"
 # The Open API key (one line). Unset: links are refused; set but
 # unreadable: startup is refused.
 # nexon_key_file = "/run/secrets/nexon_api_key"
+# The private MapleScouter sidecar for admin-only estimates (plain http to a
+# loopback, private or single-label host; no secret). Unset: estimates off.
+# scouter_url = "http://scouter:8091"
 
 [models]
 # https, or http only to loopback, localhost or host.docker.internal; unset

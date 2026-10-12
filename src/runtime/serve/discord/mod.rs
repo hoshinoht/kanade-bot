@@ -52,6 +52,8 @@ use crate::{
     },
     bot::{
         cards::{CardDesk, CardSettings, DeskDeps},
+        chardata::{DiscordPosts, copy},
+        commands::CharacterParts,
         delivery::{
             CardRefresh, Delivery, DigestOutcome, HeaderPregen, LogAlerts, ManualRequest,
             ManualRewrite, RefreshQueue, cards::CardKit,
@@ -65,7 +67,7 @@ use crate::{
     },
     chat::{driver::DriverConfig, nudge::StoreRewriteSink},
     domain::{ids::RandomIds, schedule::SchedulePolicy, scheduler::SchedulerService},
-    infrastructure::store::SqliteStore,
+    infrastructure::{character_data::PostDesk, store::SqliteStore},
     runtime::{config::ServeConfig, error::Error, logging},
 };
 
@@ -308,6 +310,10 @@ where
         .and(config.runtime.http.public_host.as_deref())
         .map(|host| format!("https://{host}"));
     kit.v2.portal = portal.clone();
+    // The character-data notice links the public `/privacy` page.
+    let privacy_url = portal
+        .as_deref()
+        .map(|origin| format!("{origin}{}", copy::PRIVACY_PATH));
     let cards = stop_aware::cards(kit, shutdown.clone());
     // One desk for extraction cards, chat cards and the reaction worker's
     // ✅/❌, which all read the same stored cards.
@@ -545,7 +551,29 @@ where
         quiet,
         post_channel,
     };
-
+    // Module `character_data`: share cards are posted and stripped through
+    // this transport; the `CharacterData` task strips due ones through it.
+    let character = composition
+        .admin
+        .state
+        .character_data
+        .as_ref()
+        .map(|service| {
+            let posts = Arc::new(DiscordPosts {
+                transport: Arc::clone(&transport),
+                self_id: {
+                    let cache = Arc::clone(&cache);
+                    Arc::new(move || cache.self_id())
+                },
+                search_pause: Duration::from_secs(1),
+            });
+            service.attach_posts(Arc::clone(&posts) as Arc<dyn PostDesk>);
+            CharacterParts {
+                service: Arc::clone(service),
+                posts,
+                privacy_url,
+            }
+        });
     let dispatcher = match commands::factory(
         Arc::clone(&composition.admin.state),
         Arc::clone(&store),
@@ -553,6 +581,7 @@ where
         Arc::clone(&transport),
         debug,
         press_port(press_jobs),
+        character,
     ) {
         Ok(dispatcher) => dispatcher,
         Err(error) => {

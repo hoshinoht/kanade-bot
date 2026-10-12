@@ -10,6 +10,7 @@ mod character_data;
 mod characters;
 mod config;
 mod drafts;
+mod estimates;
 mod etag;
 mod events;
 mod header_rewrite;

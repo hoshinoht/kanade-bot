@@ -1,7 +1,9 @@
 //! The slash commands serve registers (guild bulk overwrite on the first
 //! guild availability after each ready) and dispatches: S11's retained set
-//! over the same store, writer and settings the API uses. `/debug ping`
-//! posts through a [`DebugDesk`] over the tick's card kit and live settings.
+//! over the same store, writer and settings the API uses, then
+//! `/character` while module `character_data` is on (off, the overwrite
+//! leaves it out). `/debug ping` posts through a [`DebugDesk`] over the
+//! tick's card kit and live settings.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
@@ -10,8 +12,8 @@ use crate::{
     api::state::ApiState,
     bot::{
         commands::{
-            CardPresses, ChatAllowance, CommandContext, DebugCards, Dispatcher, DuplicateCommand,
-            MemberRows, register_retained,
+            CardPresses, CharacterParts, ChatAllowance, CommandContext, DebugCards, Dispatcher,
+            DuplicateCommand, MemberRows, register_character, register_retained,
         },
         delivery::{AlertThrottle, DebugDesk, cards::CardKit},
         guild_cache::GuildCache,
@@ -33,6 +35,8 @@ struct Commands<T> {
     debug: Arc<dyn DebugCards>,
     /// V2 proposal-card presses, answered by the reaction worker.
     presses: CardPresses,
+    /// `/character`'s parts while module `character_data` is on.
+    character: Option<CharacterParts<T>>,
 }
 
 /// What `/debug ping` shares with the tick: its card kit, the live roster
@@ -72,12 +76,16 @@ impl<T: GatewayTransport> Commands<T> {
             bot_name,
             clock: Arc::clone(&state.clock),
         });
-        register_retained(
+        let retained = register_retained(
             Dispatcher::new(state.access.policy.clone())
                 .with_card_presses(Arc::clone(&self.presses)),
             &ctx,
             Arc::clone(&self.transport),
-        )
+        )?;
+        match &self.character {
+            Some(parts) => register_character(retained, &ctx, parts.clone()),
+            None => Ok(retained),
+        }
     }
 }
 
@@ -90,6 +98,7 @@ pub fn factory<T: GatewayTransport>(
     transport: Arc<T>,
     debug: DebugParts,
     presses: CardPresses,
+    character: Option<CharacterParts<T>>,
 ) -> Result<CommandsFn, Error> {
     let desk: Arc<dyn DebugCards> = Arc::new(DebugDesk {
         store: Arc::clone(&members),
@@ -112,6 +121,7 @@ pub fn factory<T: GatewayTransport>(
         transport,
         debug: desk,
         presses,
+        character,
     };
     let checked = Arc::new(
         commands

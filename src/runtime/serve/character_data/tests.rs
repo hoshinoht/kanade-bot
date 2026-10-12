@@ -27,9 +27,31 @@ struct Rig {
     now: Arc<Mutex<DateTime<Utc>>>,
 }
 
+fn wisteria() -> Character {
+    Character {
+        id: "c1".into(),
+        member_id: "1001".into(),
+        ign: "Wisteria".into(),
+        world: "msea".into(),
+        class: None,
+        level: None,
+        role: CharacterRole::Main,
+        retired_at: None,
+        created_at: at(1, 0),
+        updated_at: at(1, 0),
+        updated_by: Actor::admin("token"),
+        version: 1,
+    }
+}
+
 /// Member 1001 with roster character `c1` (Wisteria), as the link fixture
 /// names them, so the orphan pass keeps the link.
 async fn rig() -> Rig {
+    rig_with(None).await
+}
+
+/// The same, with MapleScouter at `scouter` when given.
+async fn rig_with(scouter: Option<std::net::SocketAddr>) -> Rig {
     let file = Arc::new(MemoryCharData::new());
     let now = Arc::new(Mutex::new(at(11, 0)));
     let clock: Clock = {
@@ -43,20 +65,7 @@ async fn rig() -> Rig {
         .unwrap();
     roster
         .apply_character(
-            CharacterChange::Create(Character {
-                id: "c1".into(),
-                member_id: "1001".into(),
-                ign: "Wisteria".into(),
-                world: "msea".into(),
-                class: None,
-                level: None,
-                role: CharacterRole::Main,
-                retired_at: None,
-                created_at: at(1, 0),
-                updated_at: at(1, 0),
-                updated_by: Actor::admin("token"),
-                version: 1,
-            }),
+            CharacterChange::Create(wisteria()),
             CharacterRecord {
                 at: at(1, 0),
                 actor: Actor::admin("token"),
@@ -65,13 +74,19 @@ async fn rig() -> Rig {
         )
         .await
         .unwrap();
-    let service = Arc::new(CharacterData::new(
+    let mut service = CharacterData::new(
         Arc::clone(&file) as Arc<dyn CharDataStore>,
         roster as Arc<dyn RosterSide>,
         None,
-        clock,
+        Arc::clone(&clock),
         Timing::default(),
-    ));
+    );
+    if let Some(address) = scouter {
+        let url = format!("http://{address}");
+        let client = ScouterClient::new(&url).unwrap();
+        service = service.with_estimates(Estimates::new(client, url, clock));
+    }
+    let service = Arc::new(service);
     Rig { service, file, now }
 }
 
@@ -228,4 +243,50 @@ async fn an_unlink_wakes_the_sweeper_and_stop_joins_the_task() {
     // Woken at once, well inside the hour.
     settle(async || service.health().await.last_sweep != first).await;
     task.stop().await;
+}
+
+/// A lookup the sidecar never answers is cancelled and joined by `stop`,
+/// so it has ended before serve closes the stores (not 130 s later).
+#[tokio::test]
+async fn stop_cancels_and_joins_a_running_estimate_lookup() {
+    use std::time::Duration;
+
+    use tokio::io::AsyncReadExt;
+
+    use crate::infrastructure::scouter::{JobRequest, RosterIgn, Start, Subject, Target};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let rig = rig_with(Some(listener.local_addr().unwrap())).await;
+    let task = Task::start(Arc::clone(&rig.service), SWEEP_EVERY);
+    let estimates = rig.service.estimates().unwrap();
+    let Start::Started(job) = estimates.start(JobRequest {
+        target: Target::Characters(vec!["c1".into()]),
+        subjects: vec![Subject {
+            character_id: "c1".into(),
+            member_id: "1001".into(),
+            ign: RosterIgn::of(&wisteria()).unwrap(),
+        }],
+        missing: Vec::new(),
+        started_by: Actor::admin("token"),
+        refresh: false,
+    }) else {
+        panic!("nothing else runs");
+    };
+    // The lookup is in flight: its request arrived and is never answered.
+    let (mut socket, _) = tokio::time::timeout(Duration::from_secs(5), listener.accept())
+        .await
+        .unwrap()
+        .unwrap();
+    let mut buffer = [0_u8; 1024];
+    assert!(socket.read(&mut buffer).await.unwrap() > 0);
+    assert_eq!(estimates.running().map(|running| running.id), Some(job.id));
+    tokio::time::timeout(Duration::from_secs(5), task.stop())
+        .await
+        .expect("stop returns without waiting for the lookup");
+    // The lookup's connection is already gone when stop returns: the task
+    // ended (and dropped it) before the store close that follows.
+    let closed = tokio::time::timeout(Duration::from_millis(500), socket.read(&mut buffer))
+        .await
+        .expect("closed at once");
+    assert!(matches!(closed, Ok(0) | Err(_)));
 }

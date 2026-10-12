@@ -7,6 +7,8 @@
 //! request is `pending` and calls nothing until the member confirms in
 //! Discord; the refresh shares the batch's 24-hour cap and daily budget.
 
+mod estimates;
+
 use std::sync::Arc;
 
 use axum::{
@@ -42,6 +44,7 @@ pub fn routes() -> Router<Arc<Site>> {
             get(read).post(request).delete(unlink),
         )
         .route("/api/admin/characters/{id}/refresh", post(refresh))
+        .merge(estimates::routes())
 }
 
 type Reply = Result<Response, Refusal>;

@@ -6,14 +6,22 @@
 // (`?move_to=<RFC 3339>` from a Discord link), `/requests` My requests
 // (`?open=<id>`), `/requests/new` the request form (`?run=`, `?kind=`,
 // `?fixed=&change=&day=&time=`), `/account` Account (`?tab=`), `/bosses`
-// Bosses and `/bosses/{key}` a guide (`?difficulty=`, `?tab=`, `?phase=`).
+// Bosses and `/bosses/{key}` a guide (`?difficulty=`, `?tab=`, `?phase=`),
+// `/privacy` the character-data privacy page (public: no session needed).
 // Pages change with `history.pushState`; filters and selections replace the entry.
 
-export type Page = 'week' | 'mine' | 'account' | 'bosses' | 'move' | 'requests' | 'request';
+export type Page = 'week' | 'mine' | 'account' | 'bosses' | 'move' | 'requests' | 'request' | 'privacy';
 
 import { SvelteURLSearchParams } from 'svelte/reactivity';
 
-const PAGES: Record<string, Page> = { '/': 'week', '/mine': 'mine', '/account': 'account', '/requests': 'requests', '/requests/new': 'request' };
+const PAGES: Record<string, Page> = {
+  '/': 'week',
+  '/mine': 'mine',
+  '/account': 'account',
+  '/requests': 'requests',
+  '/requests/new': 'request',
+  '/privacy': 'privacy',
+};
 
 function pageOf(path: string): Page {
   if (PAGES[path]) return PAGES[path];

@@ -239,6 +239,13 @@ impl RosterSide for FlakyRoster {
         RosterSide::member(&*self.inner, user_id)
     }
 
+    fn member_characters(
+        &self,
+        member_id: String,
+    ) -> StoreFuture<'_, Vec<crate::domain::characters::Character>> {
+        RosterSide::member_characters(&*self.inner, member_id)
+    }
+
     fn record(
         &self,
         change: crate::domain::settings::SettingsChange,
@@ -999,4 +1006,84 @@ async fn a_failed_repend_write_serves_nothing_and_audits_once() {
         .filter(|(_, from, to, _)| from == "linked" && to == "pending")
         .count();
     assert_eq!(repends, 1, "one History row for the re-pend");
+}
+
+/// A Discord side that answers every strip with `outcome` and finds
+/// nothing by ref.
+struct Desk(Stripped);
+
+impl PostDesk for Desk {
+    fn strip<'a>(&'a self, _: &'a str, _: &'a str) -> DeskFuture<'a, Stripped> {
+        let outcome = self.0;
+        Box::pin(async move { outcome })
+    }
+
+    fn locate<'a>(&'a self, _: &'a str, _: &'a str) -> DeskFuture<'a, Located> {
+        Box::pin(async { Located::Missing })
+    }
+}
+
+/// Tracking and stripping share cards log refs, channels and counts only.
+#[tokio::test]
+async fn the_post_pipeline_logs_no_nexon_field() {
+    crate::runtime::logging::capture();
+    let rig = rig().await;
+    rig.confirm().await;
+    let Tracked::Ready(post, snapshot) = rig.service.track_post("c1", "900").await.unwrap() else {
+        panic!("fresh data to share")
+    };
+    assert_eq!(snapshot.character_name.as_deref(), Some(IGN));
+    assert_eq!(post.reference.len(), 6);
+    // Not sent yet and past the grace: looked for, not found, unknown.
+    rig.set_now(at(11, 0) + TimeDelta::days(29));
+    rig.service.attach_posts(Arc::new(Desk(Stripped::Stuck)));
+    let report = rig.service.strip_posts().await;
+    assert_eq!(report.unknown, 1);
+    rig.set_now(at(11, 0));
+    let Tracked::Ready(stuck, _) = rig.service.track_post("c1", "900").await.unwrap() else {
+        panic!()
+    };
+    rig.service
+        .post_sent(&stuck.reference, "4242")
+        .await
+        .unwrap();
+    rig.set_now(at(11, 0) + TimeDelta::days(29));
+    let report = rig.service.strip_posts().await;
+    assert_eq!(report.stuck, 1);
+    let health = rig.service.health().await;
+    assert_eq!(health.post_issues.len(), 2);
+    for line in crate::runtime::logging::captured() {
+        nexon_free(&line.to_string());
+    }
+    // Unlinked data is never tracked.
+    rig.set_now(at(11, 0));
+    rig.service
+        .unlink(
+            "c1",
+            &Actor::member("1001"),
+            Surface::Discord,
+            crate::domain::chardata::UnlinkReason::Requested,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        rig.service.track_post("c1", "900").await.unwrap(),
+        Tracked::NoData
+    );
+}
+
+/// A confirmation the budget or a hold cannot serve writes nothing.
+#[tokio::test]
+async fn a_confirmation_nexon_cannot_serve_writes_nothing() {
+    let rig = rig().await;
+    for n in 0..DAILY_CALLS - 2 {
+        rig.file
+            .reserve_call(at(11, 0) - TimeDelta::seconds(i64::from(n)), DAILY_CALLS)
+            .await
+            .unwrap();
+    }
+    assert_eq!(rig.confirm().await, ConfirmOutcome::Busy);
+    assert_eq!(rig.link("c1").await, None);
+    assert!(rig.fake.calls().is_empty());
 }

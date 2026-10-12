@@ -7,6 +7,7 @@
 
 mod access;
 mod build;
+mod character;
 mod components;
 mod context;
 mod debug;
@@ -30,6 +31,7 @@ pub(crate) mod text;
 use std::sync::Arc;
 
 pub use access::{AccessPolicy, Denial, Gate, Invoker};
+pub use character::{CANCEL_PRESS, CharacterCommand, CharacterParts, LINK_PRESS};
 pub use components::{CardPresses, INACTIVE, NOT_YOURS, Press};
 pub use context::{
     ChatAllowance, Clock, CommandContext, DebugCards, GuildChannels, HeaderNote, HeaderRequest,
@@ -79,4 +81,17 @@ pub fn register_retained<T: DiscordTransport + 'static>(
         .register(LimitsCommand::new(Arc::clone(ctx)))?
         .register(RescanCommand::new(Arc::clone(ctx)))?
         .register(SayCommand::new(Arc::clone(ctx), transport))
+}
+
+/// `/character` (module `character_data`), registered after
+/// [`register_retained`] only while the module is on.
+///
+/// # Errors
+/// [`DuplicateCommand`] if `dispatcher` already holds `/character`.
+pub fn register_character<T: DiscordTransport + 'static>(
+    dispatcher: Dispatcher,
+    ctx: &Arc<CommandContext>,
+    parts: CharacterParts<T>,
+) -> Result<Dispatcher, DuplicateCommand> {
+    dispatcher.register(CharacterCommand::new(Arc::clone(ctx), parts))
 }

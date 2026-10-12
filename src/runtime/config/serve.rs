@@ -346,6 +346,23 @@ mod tests {
                 .nexon_key_file,
             Some(PathBuf::from("/run/secrets/nexon_api_key"))
         );
+        // Estimates: off without a scouter URL, refused for a public host.
+        assert_eq!(settings.scouter_url, None, "estimates are optional");
+        let mut public = pairs.clone();
+        public.push(("KANADE_SCOUTER_URL", "http://scouter.example.com:8091"));
+        assert!(
+            config(&public)
+                .unwrap_err()
+                .starts_with("KANADE_SCOUTER_URL must be http://host[:port]")
+        );
+        pairs.push(("KANADE_SCOUTER_URL", "http://scouter:8091"));
+        assert_eq!(
+            config(&pairs).unwrap().character_data.unwrap().scouter_url,
+            Some("http://scouter:8091".into())
+        );
+        // Off, the URL is ignored like the module's other keys.
+        let ignored = config(&[("KANADE_SCOUTER_URL", "https://public.example")]).unwrap();
+        assert_eq!(ignored.character_data, None);
     }
 
     #[test]

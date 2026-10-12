@@ -35,7 +35,7 @@ pub use backup::{
 };
 pub use character_data::{
     CharacterDataSettings, DB_PATH_KEY as CHARACTER_DATA_DB_PATH_KEY,
-    NEXON_KEY_FILE_KEY as NEXON_API_KEY_FILE_KEY,
+    NEXON_KEY_FILE_KEY as NEXON_API_KEY_FILE_KEY, SCOUTER_URL_KEY,
 };
 pub use discord::DiscordSettings;
 pub use file::{Resolved, resolve};

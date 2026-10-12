@@ -50,6 +50,11 @@ services:
       # its file on its own volume, and the optional Open API key file.
       KANADE_CHARACTER_DATA_DB_PATH: /chardata/chardata.sqlite
       KANADE_NEXON_API_KEY_FILE: ${KANADE_NEXON_API_KEY_HOST_FILE:+/run/secrets/nexon_api_key}
+      # MapleScouter estimates (admin only): the scouter sidecar is its own
+      # private Compose project, never a service here. Attach it to the
+      # kanade_edge network with the alias `scouter` (runbook "MapleScouter
+      # estimates"), then uncomment. Unset: estimates are off.
+      # KANADE_SCOUTER_URL: http://scouter:8091
       # Listed by History checkpoints; only the `backup` service writes here.
       KANADE_BACKUP_DIR: /backups
       # age public keys, checked at startup (a bad file refuses it). Empty

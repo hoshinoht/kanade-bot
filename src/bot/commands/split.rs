@@ -3,9 +3,10 @@
 //! embeds, one embed per message after the first. Lengths are counted in
 //! UTF-16 units, never fewer than the characters Discord counts.
 
-use twilight_model::channel::message::Embed;
 use twilight_model::channel::message::embed::EmbedField;
+use twilight_model::channel::message::{Component, Embed};
 
+use crate::bot::delivery::cards::redesign::within_budget;
 use crate::bot::transport::InteractionReply;
 
 pub const CONTENT_LIMIT: usize = 2000;
@@ -153,11 +154,27 @@ pub fn fit_embed(embed: &Embed) -> Vec<Embed> {
 
 /// The messages that carry `reply`, in order: content pieces first (the
 /// first also carries the first embed), then one embed per message. A
-/// Components V2 reply is one message as it stands (its layout is already
-/// within budget, see `delivery::cards::redesign::within_budget`).
+/// Components V2 reply within budget is one message as it stands; one over
+/// it (`delivery::cards::redesign::within_budget`) is split between its
+/// top-level components, as many per message as fit, never inside one.
 pub fn split_reply(reply: &InteractionReply) -> Vec<InteractionReply> {
     if !reply.components.is_empty() {
-        return vec![reply.clone()];
+        if within_budget(&reply.components) {
+            return vec![reply.clone()];
+        }
+        let mut out: Vec<Vec<Component>> = vec![Vec::new()];
+        for component in &reply.components {
+            let current = out.last_mut().expect("a message");
+            current.push(component.clone());
+            if current.len() > 1 && !within_budget(current) {
+                let moved = current.pop().expect("just pushed");
+                out.push(vec![moved]);
+            }
+        }
+        return out
+            .into_iter()
+            .map(|components| InteractionReply::v2(components, reply.ephemeral))
+            .collect();
     }
     let message = |content: String, embeds: Vec<Embed>| InteractionReply {
         content,

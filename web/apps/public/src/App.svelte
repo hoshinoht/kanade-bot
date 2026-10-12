@@ -4,7 +4,8 @@
   screens. `?login_error=` lands on Denied, Closed or Sign in with a notice.
   Signed in: `/` the Week, `/mine` My runs, `/requests` My requests and
   `/requests/new` the request form, `/account` Account; nothing
-  member-specific is read before sign-in or kept after it.
+  member-specific is read before sign-in or kept after it. `/privacy` (the
+  character-data privacy page) shows whatever the session or portal state.
 
   Chrome (boards Mast, PhoneDrawer): wide screens keep the masthead (the
   time zone when signed out; signed in, the Week · My runs · Requests ·
@@ -21,6 +22,7 @@
   import Denied from './Denied.svelte';
   import Ended from './Ended.svelte';
   import MyRuns from './MyRuns.svelte';
+  import Privacy from './Privacy.svelte';
   import SignIn from './SignIn.svelte';
   import TopBar from './TopBar.svelte';
   import BossesPage from './bosses/BossesPage.svelte';
@@ -99,7 +101,16 @@
   // The masthead's and the drawer's counts: My runs this week, Requests waiting on the admins.
   const counts: Partial<Record<Page, number | null>> = $derived({ mine: myRuns, requests: portal.requests.waiting });
 
-  const TITLES: Record<Page, string> = { week: 'Week', mine: 'My runs', account: 'Account', bosses: 'Bosses', move: 'Move run', requests: 'Requests', request: 'Ask for a change' };
+  const TITLES: Record<Page, string> = {
+    week: 'Week',
+    mine: 'My runs',
+    account: 'Account',
+    bosses: 'Bosses',
+    move: 'Move run',
+    requests: 'Requests',
+    request: 'Ask for a change',
+    privacy: 'Privacy',
+  };
   // An open guide on a phone: the top bar's "← {boss}" back to the catalog (board PhoneGuide).
   let bossBack = $state<{ label: string; name: string; go: () => void } | null>(null);
   const SCREEN_TITLES: Record<string, string> = {
@@ -128,7 +139,8 @@
   $effect(() => {
     const kind = screen.kind;
     const now = page;
-    document.title = kind === 'member' ? `${TITLES[now]} · Kanade` : (SCREEN_TITLES[kind] ?? 'Kanade');
+    // `/privacy` is public: the same page whatever the session.
+    document.title = kind === 'member' || now === 'privacy' ? `${TITLES[now]} · Kanade` : (SCREEN_TITLES[kind] ?? 'Kanade');
     if (kind === 'loading') return;
     if (settled) void tick().then(() => main?.focus({ preventScroll: true }));
     settled = true;
@@ -311,7 +323,9 @@
     </Masthead>
   {/if}
   <main class="shell" class:shell--run={phoneRun !== null} id="main" tabindex="-1" bind:this={main}>
-    {#if screen.kind === 'loading'}
+    {#if page === 'privacy'}
+      <Privacy {identity} {zone} {phone} />
+    {:else if screen.kind === 'loading'}
       <div class="gate">
         <section class="card notice notice--loading" aria-busy="true" aria-labelledby="loading-title">
           <div class="card__head"><h1 class="card__title" id="loading-title">Loading</h1></div>

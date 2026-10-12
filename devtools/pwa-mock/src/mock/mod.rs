@@ -9,6 +9,7 @@ pub mod clock;
 mod config;
 pub mod drafts;
 pub mod dto;
+pub mod estimates;
 pub mod extractions;
 mod fixed;
 mod graph;
@@ -130,6 +131,8 @@ pub struct Store {
     /// Character data links (module `character_data`, on with the roster),
     /// seeded (`character_data::seed`).
     links: Vec<character_data::Link>,
+    /// MapleScouter estimate jobs and the scenario (`estimates.rs`).
+    estimates: estimates::Estimates,
     /// The roster module's startup flag (on unless `/__mock/modules` turns it off).
     roster: bool,
     /// Simulated other admins' presence (`presence.rs`); empty after a reset.
@@ -171,6 +174,7 @@ impl Store {
             member_requests: Vec::new(),
             characters: Vec::new(),
             links: Vec::new(),
+            estimates: estimates::Estimates::seed(),
             picks: Vec::new(),
             roster: true,
             presence: presence::Board::default(),
@@ -197,6 +201,7 @@ impl Store {
         self.characters = characters::seed();
         self.picks = run_picks::seed();
         self.links = character_data::seed();
+        self.estimates = estimates::Estimates::seed();
         self.roster = true;
         self.version = 1;
         self.next_id = 1;

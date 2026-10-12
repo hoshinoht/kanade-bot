@@ -12,8 +12,9 @@ use super::{
     },
     assets::Identity,
     dto::{
-        self, account, bosses, character_data, characters, config, drafts, events, fixed, history,
-        inbox, inbox_past, limits, logs, members, presence, reminders, rescan, sign_ins, week,
+        self, account, bosses, character_data, characters, config, drafts, estimates, events,
+        fixed, history, inbox, inbox_past, limits, logs, members, presence, reminders, rescan,
+        sign_ins, week,
     },
     error, public,
 };
@@ -141,6 +142,20 @@ fn bindings() -> String {
         .add::<character_data::BatchHealth>()
         .add::<character_data::LinkHealth>()
         .add::<character_data::PostHealth>()
+        .add::<character_data::PostIssueItem>()
+        .add::<character_data::ScouterHealthBlock>()
+        .add::<estimates::EstimateStatus>()
+        .add::<estimates::EstimateStarted>()
+        .add::<estimates::EstimateJob>()
+        .add::<estimates::EstimateCharacter>()
+        .add::<estimates::EstimateMissing>()
+        .add::<estimates::EstimateProgress>()
+        .add::<estimates::EstimateResult>()
+        .add::<estimates::EstimateMember>()
+        .add::<estimates::EstimateBoss>()
+        .add::<estimates::EstimateCombined>()
+        .add::<estimates::EstimateIssue>()
+        .add::<estimates::EstimateError>()
         .add::<fixed::FixedRunLink>()
         .add::<fixed::FixedRow>()
         .add::<admin::ValidateResult>()

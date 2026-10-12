@@ -162,6 +162,28 @@ impl Press {
         }
     }
 
+    /// A `/character link` notice's Link or Cancel, as the presser's
+    /// internal `/character <leaf>` call (through that command's gate).
+    pub fn character_answer(&self, leaf: &str, options: &[(&str, String)]) -> Invocation {
+        Invocation {
+            interaction: self.interaction.clone(),
+            guild_id: self.guild_id,
+            channel_id: self.channel_id,
+            invoker: self.invoker.clone(),
+            invoker_name: self.invoker_name.clone(),
+            path: vec!["character".to_owned(), leaf.to_owned()],
+            options: options
+                .iter()
+                .map(|(name, value)| CommandDataOption {
+                    name: (*name).to_owned(),
+                    value: CommandOptionValue::String(value.clone()),
+                })
+                .collect(),
+            autocomplete: false,
+            owner_id: None,
+        }
+    }
+
     /// The card press for the proposal a button names.
     pub fn card(&self, proposal_id: &str, answer: RsvpAnswer) -> Option<CardPress> {
         Some(CardPress {

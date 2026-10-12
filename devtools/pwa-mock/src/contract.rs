@@ -3650,3 +3650,113 @@ async fn inbox_ownership_requests_match_the_contract() {
     .await;
     assert!(h.failures.is_empty(), "{}", h.failures.join("\n"));
 }
+
+#[tokio::test]
+async fn estimates_match_the_contract() {
+    let mut h = Harness::new();
+    let job = "character_data.json#/$defs/EstimateJob";
+    let status = "character_data.json#/$defs/EstimateStatus";
+    let estimates = "/api/admin/estimates";
+    // The seeded MikaNL lookup is found again.
+    let seeded = h
+        .ok(
+            "GET",
+            &format!("{estimates}?character_ids=ch-s2"),
+            None,
+            status,
+        )
+        .await;
+    assert_eq!(seeded["job"]["state"], "done");
+    // A run steps one character per read, then the total.
+    let started = h
+        .expect(
+            false,
+            "POST",
+            estimates,
+            Some(json!({ "run_id": "r-carling" })),
+            StatusCode::ACCEPTED,
+            "character_data.json#/$defs/EstimateStarted",
+        )
+        .await;
+    let id = s(&started["job"]["id"]).to_owned();
+    h.refused(
+        "POST",
+        estimates,
+        json!({ "character_ids": ["ch-s3"] }),
+        &[],
+        (StatusCode::FORBIDDEN, "csrf"),
+    )
+    .await;
+    let csrf = h.csrf.clone();
+    let marks = [("x-kanade-csrf", csrf.as_str())];
+    h.refused(
+        "POST",
+        estimates,
+        json!({ "character_ids": ["ch-s3"] }),
+        &marks,
+        (StatusCode::CONFLICT, "estimate_running"),
+    )
+    .await;
+    let mut last = Value::Null;
+    for _ in 0..8 {
+        last = h.ok("GET", &format!("{estimates}/{id}"), None, job).await;
+        if last["state"] != "running" {
+            break;
+        }
+    }
+    assert_eq!(last["state"], "done");
+    // Every error state, the hold (running) and off.
+    for scenario in ["busy", "critical_rate", "manual_check", "failed", "timeout"] {
+        h.send(
+            false,
+            "POST",
+            "/__mock/estimates",
+            Some(json!({ "scenario": scenario })),
+        )
+        .await;
+        let started = h
+            .expect(
+                false,
+                "POST",
+                estimates,
+                Some(json!({ "character_ids": ["ch-s3"], "refresh": true })),
+                StatusCode::ACCEPTED,
+                "character_data.json#/$defs/EstimateStarted",
+            )
+            .await;
+        let failed = h
+            .ok(
+                "GET",
+                &format!("{estimates}/{}", s(&started["job"]["id"])),
+                None,
+                job,
+            )
+            .await;
+        assert_eq!(failed["state"], "failed", "{scenario}");
+    }
+    h.refused(
+        "POST",
+        estimates,
+        json!({ "run_id": "r-carling", "preset": "00110" }),
+        &marks,
+        (StatusCode::BAD_REQUEST, "invalid_body"),
+    )
+    .await;
+    h.send(
+        false,
+        "POST",
+        "/__mock/estimates",
+        Some(json!({ "scenario": "off" })),
+    )
+    .await;
+    h.expect(
+        false,
+        "GET",
+        &format!("{estimates}/{id}"),
+        None,
+        StatusCode::NOT_FOUND,
+        "",
+    )
+    .await;
+    assert!(h.failures.is_empty(), "{}", h.failures.join("\n"));
+}

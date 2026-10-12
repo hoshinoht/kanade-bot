@@ -11,12 +11,15 @@ use super::refresh::FetchState;
 use super::{CharacterData, log};
 use crate::domain::characters::{Character, ign_key};
 use crate::domain::chardata::{
-    LINK_REGION, Link, LinkPut, LinkStatus, NOTICE_VERSION, RefreshState, Snapshot, UnlinkReason,
-    link_change, same_identity,
+    CALL_WINDOW, DAILY_CALLS, LINK_REGION, Link, LinkPut, LinkStatus, NOTICE_VERSION, RefreshState,
+    Snapshot, UnlinkReason, link_change, same_identity,
 };
 use crate::domain::history::{Actor, Surface};
 use crate::domain::scheduler::StoreError;
 use crate::infrastructure::store::replays::StoredReplay;
+
+/// `id` + `basic` + `stat`: what a first fetch needs from the budget.
+const FIRST_FETCH_CALLS: u32 = 3;
 
 /// Everything the admin strip shows for one character.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -59,6 +62,10 @@ pub enum ConfirmOutcome {
     AlreadyLinked,
     /// Changed concurrently; ask again.
     Conflict,
+    /// The 24-hour budget cannot cover the first fetch: nothing written.
+    Busy,
+    /// Calls are held (key refused or maintenance): nothing written.
+    Unavailable(String),
 }
 
 impl CharacterData {
@@ -273,6 +280,14 @@ impl CharacterData {
             return Ok(ConfirmOutcome::AlreadyLinked);
         }
         let now = self.now();
+        // Checked before the consent is written, so a link never becomes
+        // active only to wait a day for its first data.
+        if let Some(held) = self.held(now) {
+            return Ok(ConfirmOutcome::Unavailable(held.label()));
+        }
+        if self.store.calls_since(now - CALL_WINDOW).await? + FIRST_FETCH_CALLS > DAILY_CALLS {
+            return Ok(ConfirmOutcome::Busy);
+        }
         let actor = Actor::member(member_id);
         let expected = current.as_ref().map_or(0, |link| link.version);
         let link = Link {
