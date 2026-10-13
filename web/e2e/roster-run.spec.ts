@@ -157,14 +157,23 @@ test('roster run: a stale pick (409) reloads the slot and says so', async ({ pag
   await sheet.getByRole('button', { name: /^Mika's character on HCarling/ }).click();
   const picker = sheet.getByRole('dialog', { name: "Mika's character for HCarling + HStar" });
   await expect(picker.getByRole('option', { name: /MikaBish/ })).toBeFocused();
-  // Another admin picks MikaNL meanwhile.
-  const other = await page.request.put(`${ADMIN}/api/admin/runs/${RUN}/characters/1003`, {
-    headers: await csrf(page.request),
-    data: { character_id: 'ch-s2', version: 0 },
+  // Another admin picks MikaNL just before this pick reaches the server, so the
+  // sheet's live refresh can't load the new version first.
+  let other = 0;
+  await page.route(`**/api/admin/runs/${RUN}/characters/1003`, async (route) => {
+    if (route.request().method() === 'PUT' && other === 0) {
+      other = (
+        await page.request.put(`${ADMIN}/api/admin/runs/${RUN}/characters/1003`, {
+          headers: await csrf(page.request),
+          data: { character_id: 'ch-s2', version: 0 },
+        })
+      ).status();
+    }
+    await route.continue();
   });
-  expect(other.status()).toBe(200);
   await picker.getByRole('option', { name: /MikaBish/ }).click();
   await expect(notice(sheet)).toContainText("Mika's character on HCarling + HStar changed meanwhile; the slot shows what is saved now.");
+  expect(other).toBe(200);
   await expect(slot(sheet, 'Mika').getByRole('button', { name: /MikaNL\. Change$/ })).toBeVisible();
   expect((await picked(page, '1003')).picked).toBe('ch-s2');
 });
