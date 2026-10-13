@@ -30,7 +30,7 @@ use super::{
     backup::{AGE_SUFFIX, crypt::Identities, stamp},
     config::StoreSettings,
     error::Error,
-    serve::store::create_private_dir,
+    serve::store,
 };
 use crate::{
     domain::history::{ChangeHistory, ChangeRef},
@@ -225,14 +225,7 @@ pub async fn run(
         .as_deref()
         .map(|path| Identities::load(path, "restore: --identity"))
         .transpose()?;
-    create_private_dir(&settings.owner_lock_dir, "KANADE_OWNER_LOCK_DIR")?;
-    if let Some(parent) = settings.db_path.parent() {
-        create_private_dir(parent, "KANADE_DB_PATH")?;
-    }
-    let config = SqliteStoreConfig {
-        db_path: settings.db_path.clone(),
-        owner_lock_dir: settings.owner_lock_dir.clone(),
-    };
+    let config = store::prepare(settings)?;
     let db = &config.db_path;
 
     // Ownership first, so a running bot refuses the restore before

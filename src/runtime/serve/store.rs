@@ -14,21 +14,26 @@ use crate::{
     runtime::{config::StoreSettings, error::Error, logging},
 };
 
-/// Creates the lock and database directories (0700) when absent, then takes
-/// ownership. Existing directories are never re-moded: the store checks them.
+/// Takes ownership of the store [`prepare`]d from `settings`.
 pub async fn open(settings: &StoreSettings) -> Result<Arc<SqliteStore>, Error> {
-    create_private_dir(&settings.owner_lock_dir, "KANADE_OWNER_LOCK_DIR")?;
-    if let Some(parent) = settings.db_path.parent() {
-        create_private_dir(parent, "KANADE_DB_PATH")?;
-    }
-    let config = SqliteStoreConfig {
-        db_path: settings.db_path.clone(),
-        owner_lock_dir: settings.owner_lock_dir.clone(),
-    };
+    let config = prepare(settings)?;
     match SqliteStore::open(&config).await {
         Ok(store) => Ok(Arc::new(store)),
         Err(error) => Err(open_error(&config, error)),
     }
+}
+
+/// Creates the lock and database directories (0700) when absent. Existing
+/// directories are never re-moded: the store checks them.
+pub(crate) fn prepare(settings: &StoreSettings) -> Result<SqliteStoreConfig, Error> {
+    create_private_dir(&settings.owner_lock_dir, "KANADE_OWNER_LOCK_DIR")?;
+    if let Some(parent) = settings.db_path.parent() {
+        create_private_dir(parent, "KANADE_DB_PATH")?;
+    }
+    Ok(SqliteStoreConfig {
+        db_path: settings.db_path.clone(),
+        owner_lock_dir: settings.owner_lock_dir.clone(),
+    })
 }
 
 /// A container volume starts with only its root, and the image has no shell

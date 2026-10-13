@@ -208,16 +208,35 @@ fn non_empty<'a>(values: &'a BTreeMap<String, String>, key: &str) -> Option<&'a 
         .filter(|value| !value.is_empty())
 }
 
+/// A `0`/`1` switch; unset or empty is `None`.
+fn flag(values: &BTreeMap<String, String>, key: &str) -> Result<Option<bool>, Error> {
+    match non_empty(values, key) {
+        None => Ok(None),
+        Some("0") => Ok(Some(false)),
+        Some("1") => Ok(Some(true)),
+        Some(_) => Err(Error::Configuration(format!("{key} must be 0 or 1"))),
+    }
+}
+
+/// Secrets come only from files, so a secret never sits in the process
+/// environment: a set `plain` variable is refused in favour of `file_key`.
+fn refuse_plain(
+    values: &BTreeMap<String, String>,
+    plain: &str,
+    file_key: &str,
+) -> Result<(), Error> {
+    match non_empty(values, plain) {
+        Some(_) => Err(Error::Configuration(format!(
+            "{plain} is not read; use {file_key}"
+        ))),
+        None => Ok(()),
+    }
+}
+
 /// `KANADE_ALLOW_PRIVATE_BIND=1` lets listeners bind a private address on an
 /// internal container network (the edge's); loopback stays the default.
 fn allow_private_bind(values: &BTreeMap<String, String>) -> Result<bool, Error> {
-    match non_empty(values, "KANADE_ALLOW_PRIVATE_BIND") {
-        None | Some("0") => Ok(false),
-        Some("1") => Ok(true),
-        Some(_) => Err(Error::Configuration(
-            "KANADE_ALLOW_PRIVATE_BIND must be 0 or 1".into(),
-        )),
-    }
+    Ok(flag(values, "KANADE_ALLOW_PRIVATE_BIND")?.unwrap_or(false))
 }
 
 /// RFC 1918 and IPv4 link-local; IPv6 unique-local (fc00::/7) and link-local (fe80::/10).

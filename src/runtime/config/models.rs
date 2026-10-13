@@ -6,7 +6,7 @@ use std::{collections::BTreeMap, net::IpAddr, path::PathBuf};
 
 use hyper::Uri;
 
-use super::{Error, capabilities, groups, non_empty, parse_bounded_u64};
+use super::{Error, capabilities, groups, non_empty, parse_bounded_u64, refuse_plain};
 use crate::{
     domain::settings::{ContextSettings, Reasoning},
     infrastructure::llm::{ModelCapabilities, setup::CapacityGroup},
@@ -62,11 +62,7 @@ impl ModelSettings {
         {
             return Err(Error::Configuration(format!("{key} is retired; remove it")));
         }
-        if non_empty(values, "KANADE_MODEL_KEY").is_some() {
-            return Err(Error::Configuration(format!(
-                "KANADE_MODEL_KEY is not read; use {KEY_FILE}"
-            )));
-        }
+        refuse_plain(values, "KANADE_MODEL_KEY", KEY_FILE)?;
         let base_url = non_empty(values, "KANADE_MODEL_BASE_URL")
             .map(|url| {
                 valid_base_url(url).then(|| url.to_owned()).ok_or_else(|| {

@@ -12,7 +12,8 @@ use crate::domain::settings::{OVERRIDE_RUN_MINUTES, RUN_MINUTES, RunLengths};
 
 use super::{
     DiscordSettings, Error, FileSettings, GuildSettings, ModelSettings, RuntimeConfig,
-    StoreSettings, character_data::CharacterDataSettings, guild, non_empty, parse_bounded_u64,
+    StoreSettings, character_data::CharacterDataSettings, flag, guild, non_empty,
+    parse_bounded_u64,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -171,29 +172,9 @@ fn run_lengths(values: &BTreeMap<String, String>) -> Result<Option<RunLengths>, 
     Ok(Some(lengths))
 }
 
-fn flag(values: &BTreeMap<String, String>, key: &str) -> Result<Option<bool>, Error> {
-    match non_empty(values, key) {
-        None => Ok(None),
-        Some("0") => Ok(Some(false)),
-        Some("1") => Ok(Some(true)),
-        Some(_) => Err(Error::Configuration(format!("{key} must be 0 or 1"))),
-    }
-}
-
+/// A three-letter day name (`mon` … `sun`), any case.
 fn weekday(value: &str) -> Option<Weekday> {
-    const DAYS: [(&str, Weekday); 7] = [
-        ("mon", Weekday::Mon),
-        ("tue", Weekday::Tue),
-        ("wed", Weekday::Wed),
-        ("thu", Weekday::Thu),
-        ("fri", Weekday::Fri),
-        ("sat", Weekday::Sat),
-        ("sun", Weekday::Sun),
-    ];
-    let value = value.to_ascii_lowercase();
-    DAYS.iter()
-        .find(|(name, _)| *name == value)
-        .map(|(_, day)| *day)
+    (value.len() == 3).then(|| value.parse().ok()).flatten()
 }
 
 /// Exactly `HH:MM`, 24-hour.

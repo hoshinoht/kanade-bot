@@ -2,9 +2,9 @@
 //! opens with the live admin switch `self_service.public_portal` (D7-B); there
 //! is no open key. Secrets are file paths only, as for admin.
 
-use std::{collections::BTreeMap, path::PathBuf, time::Duration};
+use std::{collections::BTreeMap, time::Duration};
 
-use super::{DiscordOAuthSettings, Error, HttpConfig, non_empty, parse_bounded_u64};
+use super::{DiscordOAuthSettings, Error, HttpConfig, parse_bounded_u64, refuse_plain};
 
 /// The only callback path the public origin serves.
 const CALLBACK_PATH: &str = "/api/public/auth/discord/callback";
@@ -36,12 +36,11 @@ impl PublicAuthSettings {
         values: &BTreeMap<String, String>,
         http: &HttpConfig,
     ) -> Result<Self, Error> {
-        let plain = "KANADE_PUBLIC_DISCORD_CLIENT_SECRET";
-        if non_empty(values, plain).is_some() {
-            return Err(Error::Configuration(format!(
-                "{plain} is not read; use {plain}_FILE"
-            )));
-        }
+        refuse_plain(
+            values,
+            "KANADE_PUBLIC_DISCORD_CLIENT_SECRET",
+            "KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE",
+        )?;
         let idle = parse_bounded_u64(values, "KANADE_PUBLIC_SESSION_IDLE_MINUTES", 30, 5, 60)?;
         let absolute = parse_bounded_u64(values, "KANADE_PUBLIC_SESSION_ABSOLUTE_HOURS", 8, 1, 24)?;
         let fresh = parse_bounded_u64(values, "KANADE_PUBLIC_FRESH_WRITE_MINUTES", 15, 5, 30)?;
@@ -69,40 +68,24 @@ fn discord(
     values: &BTreeMap<String, String>,
     http: &HttpConfig,
 ) -> Result<Option<DiscordOAuthSettings>, Error> {
-    let parts = [
-        non_empty(values, "KANADE_PUBLIC_DISCORD_CLIENT_ID"),
-        non_empty(values, "KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE"),
-        non_empty(values, "KANADE_PUBLIC_DISCORD_REDIRECT_URI"),
+    let keys = [
+        "KANADE_PUBLIC_DISCORD_CLIENT_ID",
+        "KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE",
+        "KANADE_PUBLIC_DISCORD_REDIRECT_URI",
     ];
-    let [Some(client_id), Some(secret_file), Some(redirect_uri)] = parts else {
-        if parts.iter().any(Option::is_some) {
-            return Err(Error::Configuration(
-                "member sign-in needs KANADE_PUBLIC_DISCORD_CLIENT_ID, \
-                 KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE and KANADE_PUBLIC_DISCORD_REDIRECT_URI"
-                    .into(),
-            ));
-        }
+    let Some(settings) = DiscordOAuthSettings::from_keys(values, keys, "member sign-in")? else {
         return Ok(None);
     };
-    if client_id.len() > 20 || !client_id.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Err(Error::Configuration(
-            "KANADE_PUBLIC_DISCORD_CLIENT_ID must be a Discord application id".into(),
-        ));
-    }
     let public_host = http.public_host.as_deref().ok_or_else(|| {
         Error::Configuration("KANADE_PUBLIC_HOST is required for member sign-in".into())
     })?;
     // Exact, and https only: the public origin is never a loopback dev host.
-    if redirect_uri != format!("https://{public_host}{CALLBACK_PATH}") {
+    if settings.redirect_uri != format!("https://{public_host}{CALLBACK_PATH}") {
         return Err(Error::Configuration(format!(
             "KANADE_PUBLIC_DISCORD_REDIRECT_URI must be https://KANADE_PUBLIC_HOST{CALLBACK_PATH}"
         )));
     }
-    Ok(Some(DiscordOAuthSettings {
-        client_id: client_id.to_owned(),
-        client_secret_file: PathBuf::from(secret_file),
-        redirect_uri: redirect_uri.to_owned(),
-    }))
+    Ok(Some(settings))
 }
 
 #[cfg(test)]

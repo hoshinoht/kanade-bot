@@ -4,7 +4,10 @@
 
 use std::{collections::BTreeMap, net::SocketAddr, path::PathBuf, str::FromStr};
 
-use super::{DEFAULT_BIND, Error, allow_private_bind, host, is_private, listener_bind, non_empty};
+use super::{
+    DEFAULT_BIND, Error, allow_private_bind, host, is_private, listener_bind, non_empty,
+    refuse_plain,
+};
 
 pub const TOKEN_FILE_KEY: &str = "KANADE_ADMIN_TOKEN_FILE";
 
@@ -27,12 +30,8 @@ impl AdminClientConfig {
         values: &BTreeMap<String, String>,
         url: Option<&str>,
     ) -> Result<Self, Error> {
-        // Same rule as serve: secrets come only from files.
-        if non_empty(values, "KANADE_ADMIN_TOKEN").is_some() {
-            return Err(Error::Configuration(
-                "KANADE_ADMIN_TOKEN is not read; use KANADE_ADMIN_TOKEN_FILE".into(),
-            ));
-        }
+        // Same rule as serve.
+        refuse_plain(values, "KANADE_ADMIN_TOKEN", TOKEN_FILE_KEY)?;
         let private = allow_private_bind(values)?;
         let target = match url {
             Some(url) => parse_url(url, private)?,
