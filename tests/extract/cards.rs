@@ -3,39 +3,17 @@
 
 use std::collections::BTreeMap;
 
-use kanade::bot::cards::{self, Audience};
+use kanade::bot::cards;
 use kanade::domain::proposals::CardDetails;
 use kanade::domain::schedule::Run;
 use serde_json::{Value, json};
 
-use crate::support::{Outcome, replay_family, run, strings, text, unknown_op, zone};
+use crate::support::{
+    Outcome, audience, card_rows as rows, replay_family, run, runs, strings, text, unknown_op, zone,
+};
 
 fn row(value: &Value) -> CardDetails {
     CardDetails::from_json(value).unwrap_or_else(|| panic!("card row {value}"))
-}
-
-fn rows(value: &Value) -> Vec<CardDetails> {
-    value.as_array().expect("rows").iter().map(row).collect()
-}
-
-fn runs(value: &Value) -> Vec<Run> {
-    value.as_array().expect("runs").iter().map(run).collect()
-}
-
-fn audience(value: &Value) -> Option<Audience> {
-    if value.is_null() {
-        return None;
-    }
-    let names = value["names"]
-        .as_object()
-        .expect("names")
-        .iter()
-        .map(|(id, name)| (id.clone(), text(name).to_owned()))
-        .collect();
-    Some(Audience {
-        names,
-        mentioned: strings(&value["mentioned"]),
-    })
 }
 
 fn replay(input: &Value, step: &Value) -> Outcome {

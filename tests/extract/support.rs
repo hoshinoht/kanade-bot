@@ -5,7 +5,9 @@ use std::{fs, path::PathBuf};
 
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveTime, Timelike, Utc};
 use chrono_tz::Tz;
+use kanade::bot::cards::Audience;
 use kanade::domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec};
+use kanade::domain::proposals::CardDetails;
 use kanade::domain::schedule::{RsvpState, Run, RunSource, RunStatus};
 use kanade::domain::time::IsoDateTime;
 use kanade::extract::resolve::Resolved;
@@ -338,6 +340,33 @@ pub fn select<'a>(pool: &'a [Run], ids: &Value) -> Vec<&'a Run> {
                 .unwrap_or_else(|| panic!("undeclared run id {id}"))
         })
         .collect()
+}
+
+/// The card vectors' amendment rows.
+pub fn card_rows(value: &Value) -> Vec<CardDetails> {
+    value
+        .as_array()
+        .expect("rows")
+        .iter()
+        .map(|row| CardDetails::from_json(row).unwrap_or_else(|| panic!("card row {row}")))
+        .collect()
+}
+
+/// The card vectors' `{names, mentioned}` audience, or none.
+pub fn audience(value: &Value) -> Option<Audience> {
+    if value.is_null() {
+        return None;
+    }
+    let names = value["names"]
+        .as_object()
+        .expect("names")
+        .iter()
+        .map(|(id, name)| (id.clone(), text(name).to_owned()))
+        .collect();
+    Some(Audience {
+        names,
+        mentioned: strings(&value["mentioned"]),
+    })
 }
 
 /// `{role, content}` vector messages.

@@ -6,40 +6,16 @@
 use std::collections::BTreeMap;
 
 use chrono::Utc;
-use kanade::bot::cards::{Audience, CardState, Closure, Look, styled_card};
+use kanade::bot::cards::{CardState, Closure, Look, styled_card};
 use kanade::bot::delivery::cards::DifficultyMarks;
 use kanade::domain::proposals::CardDetails;
 use kanade::domain::schedule::Run;
 use serde_json::{Value, json};
 
 use crate::support::{
-    Outcome, catalog, instant, replay_family, run, strings, text, unknown_op, zone,
+    Outcome, audience, card_rows as rows, catalog, instant, replay_family, run, strings, text,
+    unknown_op, zone,
 };
-
-fn rows(value: &Value) -> Vec<CardDetails> {
-    value
-        .as_array()
-        .expect("rows")
-        .iter()
-        .map(|row| CardDetails::from_json(row).unwrap_or_else(|| panic!("card row {row}")))
-        .collect()
-}
-
-fn audience(value: &Value) -> Option<Audience> {
-    if value.is_null() {
-        return None;
-    }
-    let names = value["names"]
-        .as_object()
-        .expect("names")
-        .iter()
-        .map(|(id, name)| (id.clone(), text(name).to_owned()))
-        .collect();
-    Some(Audience {
-        names,
-        mentioned: strings(&value["mentioned"]),
-    })
-}
 
 fn closure(value: &Value) -> Closure {
     let by = || text(&value["by"]).to_owned();

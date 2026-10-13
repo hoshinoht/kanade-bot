@@ -32,7 +32,7 @@ use kanade::extract::pipeline::{
     PostResult, Proposer, Redirected, SelfServiceDeps,
 };
 use kanade::extract::redirect::PublicPortalLinks;
-use kanade::extract::rescan::{Backfilled, History};
+use kanade::extract::rescan::{Backfilled, History, Rescans};
 use kanade::infrastructure::llm::governor::{
     Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient, Random, Role, RoleConfig,
 };
@@ -59,6 +59,18 @@ pub const STRANGER: &str = "114200000000000099";
 
 pub type Service<'a> = SchedulerService<StoreRef<'a, MemoryScheduleStore>, Ids, TestClock>;
 pub type Core = Extractor<MemoryScheduleStore, Model, Scheduler, Recorder>;
+pub type Jobs = Rescans<MemoryScheduleStore, Model, Scheduler, Recorder, FakeHistory>;
+
+/// Rescan jobs over `extractor`, backfilling from `history`.
+pub fn rescans(extractor: &Arc<Core>, history: FakeHistory) -> Arc<Jobs> {
+    Arc::new(Rescans::new(extractor.clone(), Arc::new(history)))
+}
+
+/// The rescan worker, running until the jobs stop.
+pub fn start(jobs: &Arc<Jobs>) -> JoinHandle<()> {
+    let worker = jobs.clone();
+    tokio::spawn(async move { worker.run().await })
+}
 
 pub fn zone() -> Tz {
     chrono_tz::Asia::Kuala_Lumpur
@@ -467,9 +479,10 @@ impl LlmProvider for Model {
     }
 }
 
-/// `grouped: false` routes extraction to an alias in no backend group, which
-/// the governor refuses for good.
-pub fn client(actions: Vec<FakeAction>, grouped: bool) -> (Arc<Model>, Arc<ModelClient<Model>>) {
+/// One permit and no rate waits, every role on [`ALIAS`]. `grouped: false`
+/// routes extraction to an alias in no backend group, which the governor
+/// refuses for good.
+pub fn governor(grouped: bool) -> Arc<Governor> {
     let config = GovernorConfig {
         groups: vec![GroupConfig {
             name: "local".into(),
@@ -496,7 +509,20 @@ pub fn client(actions: Vec<FakeAction>, grouped: bool) -> (Arc<Model>, Arc<Model
             .collect::<BTreeMap<_, _>>(),
         policy: GovernorPolicy::default(),
     };
-    let governor = Arc::new(Governor::new(&config, Arc::new(Fixed)).expect("valid config"));
+    Arc::new(Governor::new(&config, Arc::new(Fixed)).expect("valid config"))
+}
+
+/// A model client over `provider` on [`governor`], retrying for up to 30 s.
+pub fn model_client<P: LlmProvider>(governor: Arc<Governor>, provider: Arc<P>) -> ModelClient<P> {
+    let retry = RetryPolicy {
+        total_deadline: Duration::from_secs(30),
+        max_attempts: 3,
+        backoff: Duration::from_millis(100),
+    };
+    ModelClient::new(governor, provider, ExecutionLimits::default(), retry).expect("valid client")
+}
+
+pub fn client(actions: Vec<FakeAction>, grouped: bool) -> (Arc<Model>, Arc<ModelClient<Model>>) {
     let provider = Arc::new(Model {
         fake: Arc::new(FakeProvider::new(actions)),
         calls: AtomicUsize::new(0),
@@ -505,18 +531,7 @@ pub fn client(actions: Vec<FakeAction>, grouped: bool) -> (Arc<Model>, Arc<Model
         caps: Mutex::new(None),
         request_ids: Mutex::new(Vec::new()),
     });
-    let retry = RetryPolicy {
-        total_deadline: Duration::from_secs(30),
-        max_attempts: 3,
-        backoff: Duration::from_millis(100),
-    };
-    let client = ModelClient::new(
-        governor,
-        provider.clone(),
-        ExecutionLimits::default(),
-        retry,
-    )
-    .expect("valid client");
+    let client = model_client(governor(grouped), provider.clone());
     (provider, Arc::new(client))
 }
 
