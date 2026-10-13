@@ -479,15 +479,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
         let request = edit_digest(&op, &self.expect)?;
         let overriding = !self.expect.overrides.is_empty();
         let surface = self.origin.surface;
-        let meta = ChangeMeta {
-            origin: self.origin.clone(),
-            at: DateTime::UNIX_EPOCH,
-            notices: Vec::new(),
-            refs: self.expect.overrides.clone(),
-            request_digest: self.origin.request_id.as_ref().map(|_| request),
-            expect: self.expect,
-            outbox: Vec::new(),
-        };
+        let meta = edit_meta(&self.origin, self.expect, DateTime::UNIX_EPOCH, request);
         self.service
             .transact_as(
                 meta,
@@ -593,22 +585,12 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
         self.expect
             .validate(&self.origin.actor)
             .map_err(SchedulerError::Precondition)?;
-        let request = digest("portal_answer", &(run_id, user_id, answer));
-        let request = if self.expect.is_empty() {
-            request
-        } else {
-            digest("expect", &(request, &self.expect.canonical()))
-        };
+        let request = expecting_digest(
+            digest("portal_answer", &(run_id, user_id, answer)),
+            &self.expect,
+        );
         let overriding = !self.expect.overrides.is_empty();
-        let meta = ChangeMeta {
-            origin: self.origin.clone(),
-            at: DateTime::UNIX_EPOCH,
-            notices: Vec::new(),
-            refs: self.expect.overrides.clone(),
-            request_digest: self.origin.request_id.as_ref().map(|_| request),
-            expect: self.expect,
-            outbox: Vec::new(),
-        };
+        let meta = edit_meta(&self.origin, self.expect, DateTime::UNIX_EPOCH, request);
         let (run, user) = (run_id.to_owned(), user_id.to_owned());
         self.service
             .transact_as(
@@ -1160,20 +1142,8 @@ impl<S: ScheduleStore + DeclineNoticeStore, I: IdSource, C: Clock> Attributed<'_
             .validate(&self.origin.actor)
             .map_err(SchedulerError::Precondition)?;
         let now = self.service.clock.now();
-        let request = if self.expect.is_empty() {
-            request
-        } else {
-            digest("expect", &(request, &self.expect.canonical()))
-        };
-        let meta = ChangeMeta {
-            origin: self.origin.clone(),
-            at: now,
-            notices: Vec::new(),
-            refs: self.expect.overrides.clone(),
-            request_digest: self.origin.request_id.as_ref().map(|_| request),
-            expect: self.expect,
-            outbox: Vec::new(),
-        };
+        let request = expecting_digest(request, &self.expect);
+        let meta = edit_meta(&self.origin, self.expect, now, request);
         check_request(&self.service.store, &meta).await?;
         let ends = self.service.run_ends();
         let mut attempt = 1;
@@ -1541,12 +1511,31 @@ fn op_digest(op: &Op<'_>) -> SchedulerResult<String> {
 /// (as before they existed, pinned by `digest_pins`), otherwise folding the
 /// declared expectations in, so a retry with other expectations mismatches.
 fn edit_digest(op: &Op<'_>, expect: &Expect) -> SchedulerResult<String> {
-    let request = op_digest(op)?;
-    Ok(if expect.is_empty() {
+    Ok(expecting_digest(op_digest(op)?, expect))
+}
+
+/// `request` with the declared expectations folded in; unchanged without
+/// any (as before preconditions existed).
+fn expecting_digest(request: String, expect: &Expect) -> String {
+    if expect.is_empty() {
         request
     } else {
         digest("expect", &(request, &expect.canonical()))
-    })
+    }
+}
+
+/// An attributed edit's change metadata at `at`; `request` is recorded only
+/// with a request id.
+fn edit_meta(origin: &Origin, expect: Expect, at: DateTime<Utc>, request: String) -> ChangeMeta {
+    ChangeMeta {
+        origin: origin.clone(),
+        at,
+        notices: Vec::new(),
+        refs: expect.overrides.clone(),
+        request_digest: origin.request_id.as_ref().map(|_| request),
+        expect,
+        outbox: Vec::new(),
+    }
 }
 
 /// The request digest a reused request id must match: SHA-256 over the
