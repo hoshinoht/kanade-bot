@@ -278,30 +278,14 @@ impl<P: LlmProvider> ModelClient<P> {
                     .await?
             }
         };
+        let ticket = Ticket {
+            priority: requeue,
+            ..ticket
+        };
+        let max_requests = u32::from(limits.tool_rounds) + 1;
         Ok(Session {
-            client: self,
-            permit: Some(permit),
-            role: Role::Chat,
-            ticket: Ticket {
-                priority: requeue,
-                ..ticket
-            },
-            deadline,
-            max_requests: u32::from(limits.tool_rounds) + 1,
-            used: 0,
-            requeues_left: 1,
             question: true,
-            clean_used: false,
-            completed: false,
-            answered: false,
-            answer_retry_used: false,
-            ended: false,
-            last_sent: None,
-            last_reservation: None,
-            refused: None,
-            over_budget: None,
-            request_ids: Vec::new(),
-            id: self.next_id(CallKind::Chat),
+            ..self.session(permit, Role::Chat, ticket, deadline, max_requests)
         })
     }
 
@@ -357,28 +341,9 @@ impl<P: LlmProvider> ModelClient<P> {
                 .map_err(|refused| refunded(SessionFailure::Refused(refused)))?,
             None => self.acquire(Role::Extraction, ticket.clone(), wait).await?,
         };
-        Ok(Session {
-            client: self,
-            permit: Some(permit),
-            role: Role::Extraction,
-            ticket,
-            deadline: Instant::now() + timeout,
-            max_requests: u32::from(self.max_attempts) + 2,
-            used: 0,
-            requeues_left: 1,
-            question: false,
-            clean_used: false,
-            completed: false,
-            answered: false,
-            answer_retry_used: false,
-            ended: false,
-            last_sent: None,
-            last_reservation: None,
-            refused: None,
-            over_budget: None,
-            request_ids: Vec::new(),
-            id: self.next_id(CallKind::Extraction),
-        })
+        let deadline = Instant::now() + timeout;
+        let max_requests = u32::from(self.max_attempts) + 2;
+        Ok(self.session(permit, Role::Extraction, ticket, deadline, max_requests))
     }
 
     /// A one-line persona rewrite (nudges): never waits. The `rewrite` role's
@@ -427,34 +392,52 @@ impl<P: LlmProvider> ModelClient<P> {
                 .try_acquire(Role::Rewrite, CallKind::Rewrite, who.clone()),
         }
         .map_err(|refused| refunded(SessionFailure::Refused(refused)))?;
+        let ticket = Ticket {
+            // Never queued: requeues are disabled below.
+            priority: Priority::FollowUp,
+            kind: CallKind::Rewrite,
+            who,
+        };
         Ok(Session {
+            requeues_left: 0,
+            // No answer retry, so no request is held in reserve for one.
+            answer_retry_used: true,
+            ..self.session(permit, Role::Rewrite, ticket, Instant::now() + timeout, 1)
+        })
+    }
+
+    /// A session holding `permit` with nothing sent yet: one requeue left and
+    /// the answer retry still available.
+    fn session(
+        &self,
+        permit: Permit,
+        role: Role,
+        ticket: Ticket,
+        deadline: Instant,
+        max_requests: u32,
+    ) -> Session<'_, P> {
+        Session {
             client: self,
             permit: Some(permit),
-            role: Role::Rewrite,
-            ticket: Ticket {
-                // Never queued: requeues are disabled below.
-                priority: Priority::FollowUp,
-                kind: CallKind::Rewrite,
-                who,
-            },
-            deadline: Instant::now() + timeout,
-            max_requests: 1,
+            role,
+            id: self.next_id(ticket.kind),
+            ticket,
+            deadline,
+            max_requests,
             used: 0,
-            requeues_left: 0,
+            requeues_left: 1,
             question: false,
             clean_used: false,
             completed: false,
             answered: false,
-            // No answer retry, so no request is held in reserve for one.
-            answer_retry_used: true,
+            answer_retry_used: false,
             ended: false,
             last_sent: None,
             last_reservation: None,
             refused: None,
             over_budget: None,
             request_ids: Vec::new(),
-            id: self.next_id(CallKind::Rewrite),
-        })
+        }
     }
 
     async fn acquire(
