@@ -281,10 +281,7 @@ async fn token_logins_and_bearer_failures_are_rate_limited() {
     let limited = harness
         .post("/api/admin/auth/token", &[ORIGIN], Some(&right))
         .await;
-    assert_eq!(
-        (limited.status, limited.api_error()),
-        (429, "rate_limited".into())
-    );
+    assert_eq!(limited.error(), (429, "rate_limited".into()));
 
     for _ in 0..5 {
         let reply = harness

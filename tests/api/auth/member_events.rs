@@ -131,15 +131,12 @@ async fn the_stream_needs_an_open_portal_and_a_session() {
     let portal = Portal::new().await;
     let alice = portal.sign_in(ALICE).await;
     let reply = portal.get(None, PATH).await;
-    assert_eq!(
-        (reply.status, reply.api_error()),
-        (401, "unauthenticated".into())
-    );
+    assert_eq!(reply.error(), (401, "unauthenticated".into()));
 
     portal.harness.set_open(false);
     for browser in [None, Some(&alice)] {
         let reply = portal.get(browser, PATH).await;
-        assert_eq!((reply.status, reply.api_error()), (503, "closed".into()));
+        assert_eq!(reply.error(), (503, "closed".into()));
     }
     portal.harness.set_open(true);
 
@@ -412,14 +409,14 @@ async fn streams_are_capped_per_member_and_overall_apart_from_admins() {
     }
     let refused = portal.get(Some(&alice), PATH).await;
     assert_eq!(
-        (refused.status, refused.api_error()),
+        refused.error(),
         (429, "too_many_streams".into()),
         "three per member"
     );
     let _bob = live(&portal, &bob).await;
     let refused = portal.get(Some(&dan), PATH).await;
     assert_eq!(
-        (refused.status, refused.api_error()),
+        refused.error(),
         (429, "too_many_streams".into()),
         "the overall cap"
     );
@@ -474,8 +471,5 @@ async fn a_stream_takes_one_read_token_when_it_opens() {
         assert_eq!(reply.status, 200, "read {n}: {}", reply.text());
     }
     let refused = portal.get(Some(&alice), "/api/public/me/allowance").await;
-    assert_eq!(
-        (refused.status, refused.api_error()),
-        (429, "rate_limited".into())
-    );
+    assert_eq!(refused.error(), (429, "rate_limited".into()));
 }

@@ -4,8 +4,6 @@
 //! seeded store and writer. The members here have snowflake ids, since a
 //! hand-off names its receiver by one.
 
-use std::collections::BTreeSet;
-
 use chrono::{NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
 use kanade::{
     api::auth::{audit::AuditEvent, rate::MEMBER_WRITE_ROUTE},
@@ -19,14 +17,16 @@ use kanade::{
 };
 use serde_json::{Value, json};
 
-use super::member_support::{Browser, MemberHarness, Options, PUB_ORIGIN, discord_user};
+use super::{
+    member_support::{Browser, MemberHarness, Options, PUB_ORIGIN, discord_user},
+    member_writes::{IP, keys, set},
+};
 use crate::{
     reads::{Reads, commit_as},
     schemas::assert_valid,
-    support::{PUBLIC_HOST, Reply, send, strs},
+    support::{Reply, items, strs},
 };
 
-const IP: &str = "198.51.100.10";
 const TIMINGS: &str = "/api/public/timings";
 const FIXED: &str = "f-own";
 /// The party (Aki owns it as its first member) and an outsider.
@@ -35,38 +35,12 @@ const BEN: u64 = 300_000_000_000_000_002;
 const CHO: u64 = 300_000_000_000_000_003;
 const DEE: u64 = 300_000_000_000_000_004;
 
-const TIMINGS_KEYS: [&str; 2] = ["generated_at", "timings"];
-const TIMING_KEYS: [&str; 9] = [
-    "bosses",
-    "id",
-    "owner",
-    "owner_pinned",
-    "party",
-    "requests",
-    "time",
-    "weekday",
-    "you_own",
-];
-const REQUEST_KEYS: [&str; 6] = [
-    "created_at",
-    "expires_at",
-    "id",
-    "mine",
-    "requester",
-    "status",
-];
+const TIMINGS_KEYS: &str = "generated_at timings";
+const TIMING_KEYS: &str = "bosses id owner owner_pinned party requests time weekday you_own";
+const REQUEST_KEYS: &str = "created_at expires_at id mine requester status";
 
 fn id(member: u64) -> String {
     member.to_string()
-}
-
-fn keys(value: &Value) -> BTreeSet<&str> {
-    value
-        .as_object()
-        .unwrap()
-        .keys()
-        .map(String::as_str)
-        .collect()
 }
 
 fn owner_path(fixed: &str) -> String {
@@ -158,12 +132,7 @@ impl Portal {
     }
 
     async fn get(&self, browser: Option<&Browser>, path: &str) -> Reply {
-        let cookie = browser.map(Browser::cookie);
-        let mut headers = vec![("CF-Connecting-IP", IP)];
-        if let Some((name, value)) = &cookie {
-            headers.push((name, value));
-        }
-        self.harness.get(path, &headers).await
+        self.harness.member_get(browser, path).await
     }
 
     /// `GET /api/public/timings`: 200, `no-store`, valid, exact keys.
@@ -173,11 +142,11 @@ impl Portal {
         assert_eq!(reply.header("cache-control"), Some("no-store"));
         let value = reply.json();
         assert_valid("public.json#/$defs/MemberTimings", TIMINGS, &value);
-        assert_eq!(keys(&value), TIMINGS_KEYS.into());
-        for timing in value["timings"].as_array().unwrap() {
-            assert_eq!(keys(timing), TIMING_KEYS.into(), "{timing}");
-            for request in timing["requests"].as_array().unwrap() {
-                assert_eq!(keys(request), REQUEST_KEYS.into(), "{request}");
+        assert_eq!(keys(&value), set(TIMINGS_KEYS));
+        for timing in items(&value["timings"]) {
+            assert_eq!(keys(timing), set(TIMING_KEYS), "{timing}");
+            for request in items(&timing["requests"]) {
+                assert_eq!(keys(request), set(REQUEST_KEYS), "{request}");
             }
         }
         value
@@ -185,9 +154,7 @@ impl Portal {
 
     /// `f-own` as `browser` sees it, if they are on it.
     async fn own(&self, browser: &Browser) -> Option<Value> {
-        self.timings(browser).await["timings"]
-            .as_array()
-            .unwrap()
+        items(&self.timings(browser).await["timings"])
             .iter()
             .find(|timing| timing["id"] == FIXED)
             .cloned()
@@ -202,16 +169,10 @@ impl Portal {
         headers: &[(&str, &str)],
         body: Option<&str>,
     ) -> Reply {
-        let cookie = browser.map(Browser::cookie);
-        let mut all = vec![("CF-Connecting-IP", IP)];
-        if let Some((name, value)) = &cookie {
-            all.push((name, value));
-        }
-        all.extend_from_slice(headers);
-        if body.is_none() {
-            all.push(("Content-Length", "0"));
-        }
-        send(self.harness.public, "POST", PUBLIC_HOST, path, &all, body).await
+        let harness = &self.harness;
+        harness
+            .member_send(browser, "POST", path, headers, body)
+            .await
     }
 
     async fn post(&self, browser: &Browser, path: &str, key: &str, body: Option<&str>) -> Reply {
@@ -245,7 +206,7 @@ async fn put_fixed(reads: &Reads, fixed: FixedRun) {
 fn request_body(reply: &Reply) -> Value {
     let value = reply.json();
     assert_valid("public.json#/$defs/MemberOwnerRequest", "request", &value);
-    assert_eq!(keys(&value), REQUEST_KEYS.into());
+    assert_eq!(keys(&value), set(REQUEST_KEYS));
     value
 }
 

@@ -676,10 +676,7 @@ async fn revert_previews_then_applies_once() {
             &key,
         )
         .await;
-    assert_eq!(
-        (reused.status, reused.api_error()),
-        (422, "idempotency_mismatch".into())
-    );
+    assert_eq!(reused.error(), (422, "idempotency_mismatch".into()));
     let split = reads
         .call(
             "POST",
@@ -688,10 +685,7 @@ async fn revert_previews_then_applies_once() {
             &key,
         )
         .await;
-    assert_eq!(
-        (split.status, split.api_error()),
-        (400, "invalid_idempotency_key".into())
-    );
+    assert_eq!(split.error(), (400, "invalid_idempotency_key".into()));
     for (body, status, code) in [
         (json!({"seqs": []}), 422, "invalid"),
         (json!({"seqs": [0]}), 422, "invalid"),
@@ -861,7 +855,7 @@ async fn rollbacks_need_csrf_even_to_preview() {
         Some(&json!({"seqs": [1], "preview": true}).to_string()),
     )
     .await;
-    assert_eq!((reply.status, reply.api_error()), (403, "csrf".into()));
+    assert_eq!(reply.error(), (403, "csrf".into()));
 }
 
 /// Seqs past i64::MAX (what SQLite stores) name no record: contract codes,

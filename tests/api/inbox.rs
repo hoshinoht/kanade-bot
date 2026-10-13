@@ -790,16 +790,11 @@ async fn member_requests_are_decided_by_any_admin_session_with_every_refusal() {
         code(400, "invalid_idempotency_key")
     );
     // CSRF is required.
-    let no_csrf = send(
-        inbox.reads.admin,
-        "POST",
-        ADMIN_HOST,
-        &approve(&ids.join),
-        &[("Cookie", inbox.reads.cookie.as_str()), ORIGIN],
-        Some(&json!({"version": v}).to_string()),
-    )
-    .await;
-    assert_eq!((no_csrf.status, no_csrf.api_error()), (403, "csrf".into()));
+    let no_csrf = inbox
+        .reads
+        .without_csrf("POST", &approve(&ids.join), &json!({"version": v}))
+        .await;
+    assert_eq!(no_csrf.error(), (403, "csrf".into()));
     assert_eq!(inbox.head().await, head, "no refusal wrote anything");
 
     // A weekly-timing change needs a choice for its amended run.

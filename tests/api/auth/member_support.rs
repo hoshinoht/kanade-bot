@@ -333,6 +333,31 @@ impl MemberHarness {
         send(self.admin, "GET", ADMIN_HOST, path, extra, None).await
     }
 
+    /// A request from the usual client address with `browser`'s session
+    /// cookie, then exactly `headers` (`Content-Length: 0` when bodiless).
+    pub async fn member_send(
+        &self,
+        browser: Option<&Browser>,
+        method: &str,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: Option<&str>,
+    ) -> Reply {
+        let cookie = browser.map(Browser::cookie);
+        let mut all = member_headers(cookie.as_ref());
+        all.extend_from_slice(headers);
+        if body.is_none() {
+            all.push(("Content-Length", "0"));
+        }
+        send(self.public, method, PUBLIC_HOST, path, &all, body).await
+    }
+
+    /// A GET from the usual client address with `browser`'s session cookie.
+    pub async fn member_get(&self, browser: Option<&Browser>, path: &str) -> Reply {
+        let cookie = browser.map(Browser::cookie);
+        self.get(path, &member_headers(cookie.as_ref())).await
+    }
+
     /// Start a sign-in and approve it at Discord: the callback path and the
     /// pre-auth cookie header value.
     pub async fn approved(&self, user: DiscordUser, next: &str, ip: &str) -> (String, String) {
@@ -395,4 +420,12 @@ impl MemberHarness {
             .await
             .unwrap()
     }
+}
+
+fn member_headers<'a>(cookie: Option<&'a (&'static str, String)>) -> Vec<(&'static str, &'a str)> {
+    let mut headers = vec![("CF-Connecting-IP", "198.51.100.10")];
+    if let Some((name, value)) = cookie {
+        headers.push((*name, value.as_str()));
+    }
+    headers
 }

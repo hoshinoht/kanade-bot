@@ -220,18 +220,14 @@ async fn presence_is_admin_only_and_never_on_the_public_origin() {
                 .then_some(r#"{"at":{"kind":"run","id":"r-kalos"},"mode":"viewing","seq":1}"#),
         )
         .await;
-        assert_eq!(
-            (reply.status, reply.api_error()),
-            (401, "unauthenticated".into()),
-            "{method}"
-        );
+        assert_eq!(reply.error(), (401, "unauthenticated".into()), "{method}");
     }
 
     let fixture = Fixture::new();
     let http = fixture.http();
     let public = public(&http).await;
     let reply = get(public, "kanade-pub.test", &format!("{PATH}?at=run:r-kalos")).await;
-    assert_eq!((reply.status, reply.api_error()), (404, "not_found".into()));
+    assert_eq!(reply.error(), (404, "not_found".into()));
 }
 
 #[tokio::test]

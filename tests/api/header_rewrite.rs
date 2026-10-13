@@ -42,7 +42,7 @@ async fn needs_an_admin_session_and_csrf_then_answers_at_once_and_replays() {
         None,
     )
     .await;
-    assert_eq!((no_csrf.status, no_csrf.api_error()), (403, "csrf".into()));
+    assert_eq!(no_csrf.error(), (403, "csrf".into()));
     assert!(reads.header_rewrites.lock().unwrap().is_empty());
 
     let first = post(&reads, Some("rewrite-now")).await;
@@ -69,10 +69,7 @@ async fn a_trigger_while_a_run_is_active_is_refused() {
     let reads = Reads::new().await;
     *reads.header_rewrite_answer.lock().unwrap() = ManualStart::Running;
     let busy = post(&reads, Some("second")).await;
-    assert_eq!(
-        (busy.status, busy.api_error()),
-        (409, "rewrite_running".into())
-    );
+    assert_eq!(busy.error(), (409, "rewrite_running".into()));
     assert_valid(ERROR, "rewrite running", &busy.json());
     // A refusal is not remembered: the same key works once the run ends.
     *reads.header_rewrite_answer.lock().unwrap() = ManualStart::Started(2);
@@ -81,7 +78,7 @@ async fn a_trigger_while_a_run_is_active_is_refused() {
 
     *reads.header_rewrite_answer.lock().unwrap() = ManualStart::Disabled;
     let off = post(&reads, None).await;
-    assert_eq!((off.status, off.api_error()), (409, "rewrite_off".into()));
+    assert_eq!(off.error(), (409, "rewrite_off".into()));
     *reads.header_rewrite_answer.lock().unwrap() = ManualStart::Nothing;
     let nothing = post(&reads, None).await;
     assert_eq!(nothing.status, 200, "{}", nothing.text());
@@ -92,9 +89,6 @@ async fn a_trigger_while_a_run_is_active_is_refused() {
 async fn is_unavailable_without_live_delivery() {
     let reads = Reads::without_digest_delivery().await;
     let reply = post(&reads, None).await;
-    assert_eq!(
-        (reply.status, reply.api_error()),
-        (503, "unavailable".into())
-    );
+    assert_eq!(reply.error(), (503, "unavailable".into()));
     assert_valid(ERROR, "offline header rewrite", &reply.json());
 }

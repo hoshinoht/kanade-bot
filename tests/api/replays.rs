@@ -88,10 +88,7 @@ async fn a_window_clear_replays_across_a_restart_and_expires() {
         json!({}),
     )
     .await;
-    assert_eq!(
-        (other.status, other.api_error()),
-        (422, "idempotency_mismatch".into())
-    );
+    assert_eq!(other.error(), (422, "idempotency_mismatch".into()));
     // The digest and header rewrite share the Limits desk's keys.
     let digest = keyed(
         &reads,
@@ -101,10 +98,7 @@ async fn a_window_clear_replays_across_a_restart_and_expires() {
         json!({"week": "this", "channel_id": "kalos-four"}),
     )
     .await;
-    assert_eq!(
-        (digest.status, digest.api_error()),
-        (422, "idempotency_mismatch".into())
-    );
+    assert_eq!(digest.error(), (422, "idempotency_mismatch".into()));
 
     reads.restart(expired(), None).await;
     let anew = keyed(&reads, "DELETE", RESET, "clear-r", json!({})).await;
@@ -185,7 +179,7 @@ async fn a_digest_and_a_header_rewrite_replay_across_a_restart_and_expire() {
     // `channel_id` left out is another request than naming the channel.
     let default_channel = keyed(&reads, "POST", DIGEST, "digest-r", json!({"week": "this"})).await;
     assert_eq!(
-        (default_channel.status, default_channel.api_error()),
+        default_channel.error(),
         (422, "idempotency_mismatch".into())
     );
 
@@ -226,10 +220,7 @@ async fn rescan_submit_and_cancel_replay_across_a_restart() {
         json!({"channels": ["kalos-four"], "window": "week"}),
     )
     .await;
-    assert_eq!(
-        (other.status, other.api_error()),
-        (422, "idempotency_mismatch".into())
-    );
+    assert_eq!(other.error(), (422, "idempotency_mismatch".into()));
 
     reads.restart(expired(), None).await;
     let anew = keyed(&reads, "POST", RESCAN, "scan-r", body).await;
@@ -339,10 +330,7 @@ async fn member_edits_are_recorded_and_replay_across_a_restart() {
         json!({"ping_level": "essential"}),
     )
     .await;
-    assert_eq!(
-        (other.status, other.api_error()),
-        (422, "idempotency_mismatch".into())
-    );
+    assert_eq!(other.error(), (422, "idempotency_mismatch".into()));
     let stored = reads.store.load_member("1001").await.unwrap().unwrap();
     assert_eq!(
         stored.member.ping_level,

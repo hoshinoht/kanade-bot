@@ -228,16 +228,13 @@ impl Stream {
 async fn events_need_a_session_and_are_never_served_on_the_public_origin() {
     let reads = Reads::new().await;
     let reply = request(reads.admin, "GET", ADMIN_HOST, EVENTS_PATH, &[]).await;
-    assert_eq!(
-        (reply.status, reply.api_error()),
-        (401, "unauthenticated".into())
-    );
+    assert_eq!(reply.error(), (401, "unauthenticated".into()));
 
     let fixture = Fixture::new();
     let http = fixture.http();
     let public = public(&http).await;
     let reply = get(public, "kanade-pub.test", EVENTS_PATH).await;
-    assert_eq!((reply.status, reply.api_error()), (404, "not_found".into()));
+    assert_eq!(reply.error(), (404, "not_found".into()));
 }
 
 #[tokio::test]
@@ -381,10 +378,7 @@ async fn streams_are_bounded_and_a_closed_one_frees_its_place() {
         &[("Cookie", reads.cookie.as_str())],
     )
     .await;
-    assert_eq!(
-        (refused.status, refused.api_error()),
-        (429, "too_many_streams".into())
-    );
+    assert_eq!(refused.error(), (429, "too_many_streams".into()));
     assert_eq!(reads.events.streams(), EVENTS.max_clients);
 
     drop(first);
@@ -526,10 +520,7 @@ async fn after_shutdown_begins_new_streams_are_unavailable() {
         &[("Cookie", reads.cookie.as_str())],
     )
     .await;
-    assert_eq!(
-        (reply.status, reply.api_error()),
-        (503, "unavailable".into())
-    );
+    assert_eq!(reply.error(), (503, "unavailable".into()));
 }
 
 #[tokio::test]

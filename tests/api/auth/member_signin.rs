@@ -427,10 +427,7 @@ async fn member_data_lost_during_sign_in_hands_out_a_session_due_for_recheck() {
     assert!(wire::is_token(&id));
     let checks = harness.gate.checks();
     let next = session_reply(&harness, &id, IP).await;
-    assert_eq!(
-        (next.status, next.api_error()),
-        (503, "auth_unavailable".into())
-    );
+    assert_eq!(next.error(), (503, "auth_unavailable".into()));
     assert_eq!(harness.gate.checks(), checks + 1, "re-checked at once");
     assert_eq!(harness.rows(MIKAN).await.len(), 1, "the session is kept");
     harness.gate.force(None);
@@ -490,10 +487,7 @@ async fn a_capped_sign_in_with_unavailable_member_data_hands_out_the_new_session
     assert!(rows.iter().any(|row| row.id_hash == hash));
     assert_eq!(capped_events(&harness), 1, "the cap made room for it");
     let next = session_reply(&harness, &id, IP).await;
-    assert_eq!(
-        (next.status, next.api_error()),
-        (503, "auth_unavailable".into())
-    );
+    assert_eq!(next.error(), (503, "auth_unavailable".into()));
     let rows = harness.rows(MIKAN).await;
     assert_eq!(rows.len(), 10);
     assert!(rows.iter().any(|row| row.id_hash == hash), "kept");
@@ -530,10 +524,7 @@ async fn a_role_loss_after_the_second_check_refuses_the_cookie_on_first_use() {
     let id = reply.cookie(wire::MEMBER_SESSION_COOKIE).unwrap();
     assert!(harness.rows(MIKAN).await.is_empty());
     let next = session_reply(&harness, &id, IP).await;
-    assert_eq!(
-        (next.status, next.api_error()),
-        (401, "unauthenticated".into())
-    );
+    assert_eq!(next.error(), (401, "unauthenticated".into()));
 }
 
 #[tokio::test]
@@ -791,11 +782,7 @@ async fn start_is_a_top_level_navigation_from_this_site_only() {
     ];
     for (n, headers) in refused.into_iter().enumerate() {
         let reply = start_from(&harness, 50 + n, headers).await;
-        assert_eq!(
-            (reply.status, reply.api_error()),
-            (403, "csrf".into()),
-            "{headers:?}"
-        );
+        assert_eq!(reply.error(), (403, "csrf".into()), "{headers:?}");
         assert!(
             reply.cookie(wire::MEMBER_LOGIN_COOKIE).is_none(),
             "no pre-auth cookie: {headers:?}"
@@ -864,11 +851,7 @@ async fn a_closed_portal_answers_closed_and_drops_the_pending_login() {
         let reply = harness
             .get(path, &[(browser.cookie().0, &browser.cookie().1)])
             .await;
-        assert_eq!(
-            (reply.status, reply.api_error()),
-            (503, "closed".into()),
-            "{path}"
-        );
+        assert_eq!(reply.error(), (503, "closed".into()), "{path}");
     }
     // Closing neither deletes nor touches the session.
     assert_eq!(harness.rows(MIKAN).await.len(), 1);
@@ -885,7 +868,7 @@ async fn a_closed_portal_answers_closed_and_drops_the_pending_login() {
         "the pending login was dropped while closed"
     );
     let reply = harness.get("/api/public/anything", &[]).await;
-    assert_eq!((reply.status, reply.api_error()), (404, "not_found".into()));
+    assert_eq!(reply.error(), (404, "not_found".into()));
     // Data and every art path now ask for the session instead.
     for path in [
         "/art/entry/Carling",
@@ -897,11 +880,7 @@ async fn a_closed_portal_answers_closed_and_drops_the_pending_login() {
         "/api/public/requests/mine",
     ] {
         let reply = harness.get(path, &[]).await;
-        assert_eq!(
-            (reply.status, reply.api_error()),
-            (401, "unauthenticated".into()),
-            "{path}"
-        );
+        assert_eq!(reply.error(), (401, "unauthenticated".into()), "{path}");
     }
 }
 

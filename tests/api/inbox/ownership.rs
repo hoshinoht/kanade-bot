@@ -127,16 +127,9 @@ async fn ownership_requests_are_listed_counted_and_decided_by_any_admin_session(
 
     // Refusals write nothing.
     let before = head(&reads).await;
-    let no_csrf = send(
-        reads.admin,
-        "POST",
-        ADMIN_HOST,
-        &decision("own-bob", "accept"),
-        &[("Cookie", reads.cookie.as_str()), ORIGIN],
-        Some("{}"),
-    )
-    .await;
-    assert_eq!((no_csrf.status, no_csrf.api_error()), (403, "csrf".into()));
+    let path = decision("own-bob", "accept");
+    let no_csrf = reads.without_csrf("POST", &path, &json!({})).await;
+    assert_eq!(no_csrf.error(), (403, "csrf".into()));
     for action in ["accept", "decline"] {
         let reply = post(&reads, &token, &decision("nope", action), &[]).await;
         assert_eq!(refused(&reply), code(404, "not_found"), "{action}");

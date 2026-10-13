@@ -193,7 +193,7 @@ async fn staff_is_rechecked_after_the_ttl_and_revocation_ends_every_session() {
     harness.advance(TimeDelta::minutes(2));
     let reply = harness.get("/api/admin/session", &[(name, value)]).await;
     assert_eq!(
-        (reply.status, reply.api_error()),
+        reply.error(),
         (503, "auth_unavailable".into()),
         "fails closed"
     );

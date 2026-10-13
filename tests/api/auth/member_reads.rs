@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 
 use super::{
     member_support::Browser,
-    member_writes::{ALICE, BOB, CARA, DAN, IP, Portal, keys, utc},
+    member_writes::{ALICE, BOB, CARA, DAN, IP, Portal, all_keys, keys, set, utc},
 };
 use crate::{
     reads::{Reads, commit_as, snapshot},
@@ -32,7 +32,7 @@ const WEEK: &str = "/api/public/week";
 const ALLOWANCE: &str = "/api/public/me/allowance";
 const ART: &str = "/art/portraits/MaleficStar";
 
-// Key sets, space-separated.
+// Key sets (see `set`).
 const WEEK_KEYS: &str = "days generated_at reset runs starts timezone version";
 const RUN_KEYS: &str =
     "bosses can_edit channel day fixed_id id mine minutes participants party status tally time";
@@ -42,10 +42,6 @@ const FORBIDDEN: &str =
     "short_id channel_id cards amended roster_change role roles role_id role_ids";
 /// `MemberRun` fields that are the admin run's own.
 const SHARED: &str = "id day time minutes status bosses tally participants party channel fixed_id";
-
-fn set(words: &str) -> BTreeSet<&str> {
-    words.split_whitespace().collect()
-}
 
 impl Portal {
     async fn week(&self, browser: &Browser, query: &str) -> Value {
@@ -57,19 +53,6 @@ impl Portal {
     async fn allowance(&self, browser: &Browser) -> Value {
         self.read(browser, ALLOWANCE, "public.json#/$defs/MemberAllowance")
             .await
-    }
-}
-
-fn all_keys<'a>(value: &'a Value, out: &mut BTreeSet<&'a str>) {
-    match value {
-        Value::Object(map) => {
-            for (key, value) in map {
-                out.insert(key);
-                all_keys(value, out);
-            }
-        }
-        Value::Array(items) => items.iter().for_each(|item| all_keys(item, out)),
-        _ => {}
     }
 }
 
@@ -217,7 +200,7 @@ async fn the_member_week_is_the_admin_week_with_only_member_fields() {
     for query in ["?week=later", "?week=", "?week=NEXT"] {
         let reply = portal.get(Some(&alice), &format!("{WEEK}{query}")).await;
         assert_eq!(
-            (reply.status, reply.api_error()),
+            reply.error(),
             (422, "invalid_query".into()),
             "{query}: as the admin week"
         );
@@ -309,11 +292,7 @@ async fn reads_need_an_open_portal_and_an_eligible_session() {
     let alice = portal.sign_in(ALICE).await;
     for path in [WEEK, ALLOWANCE, ART] {
         let reply = portal.get(None, path).await;
-        assert_eq!(
-            (reply.status, reply.api_error()),
-            (401, "unauthenticated".into()),
-            "{path}"
-        );
+        assert_eq!(reply.error(), (401, "unauthenticated".into()), "{path}");
         assert_eq!(reply.header("cache-control"), Some("no-store"));
     }
 
@@ -321,11 +300,7 @@ async fn reads_need_an_open_portal_and_an_eligible_session() {
     for browser in [None, Some(&alice)] {
         for path in [WEEK, ALLOWANCE, ART] {
             let reply = portal.get(browser, path).await;
-            assert_eq!(
-                (reply.status, reply.api_error()),
-                (503, "closed".into()),
-                "{path}"
-            );
+            assert_eq!(reply.error(), (503, "closed".into()), "{path}");
         }
     }
     portal.harness.set_open(true);
@@ -337,10 +312,7 @@ async fn reads_need_an_open_portal_and_an_eligible_session() {
         .harness
         .get(WEEK, &[("Cookie", &admin_cookie), ("CF-Connecting-IP", IP)])
         .await;
-    assert_eq!(
-        (reply.status, reply.api_error()),
-        (401, "unauthenticated".into())
-    );
+    assert_eq!(reply.error(), (401, "unauthenticated".into()));
 
     // Losing the bossing role ends the session, and with it the reads.
     portal.harness.roster(ALICE, false).await;
@@ -354,11 +326,7 @@ async fn reads_need_an_open_portal_and_an_eligible_session() {
     );
     for path in [WEEK, ALLOWANCE, ART] {
         let reply = portal.get(Some(&alice), path).await;
-        assert_eq!(
-            (reply.status, reply.api_error()),
-            (401, "unauthenticated".into()),
-            "{path}"
-        );
+        assert_eq!(reply.error(), (401, "unauthenticated".into()), "{path}");
     }
 }
 
@@ -382,11 +350,7 @@ async fn art_is_served_to_signed_in_members_and_unchanged_on_admin() {
     assert_eq!(clip.header("content-type"), Some("video/mp4"));
     for path in ["/art/portraits/Missing", "/art/bogus/MaleficStar"] {
         let reply = portal.get(Some(&alice), path).await;
-        assert_eq!(
-            (reply.status, reply.api_error()),
-            (404, "not_found".into()),
-            "{path}"
-        );
+        assert_eq!(reply.error(), (404, "not_found".into()), "{path}");
     }
     // Other shapes and paths stay unmounted.
     for path in ["/art/portraits/a/b", "/api/public/anything"] {
@@ -413,11 +377,7 @@ async fn data_reads_take_the_members_read_bucket_and_art_does_not() {
     }
     for path in [WEEK, ALLOWANCE, "/api/public/bosses"] {
         let reply = portal.get(Some(&alice), path).await;
-        assert_eq!(
-            (reply.status, reply.api_error()),
-            (429, "rate_limited".into()),
-            "{path}"
-        );
+        assert_eq!(reply.error(), (429, "rate_limited".into()), "{path}");
     }
     assert!(
         portal

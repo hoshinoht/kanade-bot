@@ -251,20 +251,13 @@ async fn a_draft_on_a_moved_base_rebases_keeping_its_edit_then_merges() {
     let id = created["id"].as_str().unwrap().to_owned();
 
     // CSRF is required on every write.
-    let no_csrf = send(
-        desk.reads.admin,
-        "POST",
-        ADMIN_HOST,
-        &format!("/api/admin/drafts/{id}/ops"),
-        &[("Cookie", desk.reads.cookie.as_str()), ORIGIN],
-        Some(&json!({"version": 1, "op": {"kind": "reset", "run": "r-kalos"}}).to_string()),
-    )
-    .await;
-    assert_eq!((no_csrf.status, no_csrf.api_error()), (403, "csrf".into()));
+    let body = json!({"version": 1, "op": {"kind": "reset", "run": "r-kalos"}});
+    let ops = format!("/api/admin/drafts/{id}/ops");
+    let no_csrf = desk.reads.without_csrf("POST", &ops, &body).await;
+    assert_eq!(no_csrf.error(), (403, "csrf".into()));
 
     // Stage a move of r-kalos to Wed 30 Sep 21:30 (day 6 of the boss week).
     let op = json!({"kind": "move", "run": "r-kalos", "day": 6, "time": "21:30"});
-    let ops = format!("/api/admin/drafts/{id}/ops");
     for (body, expected) in [
         (json!({"op": op}), code(422, "version_required")),
         (json!({"version": 9, "op": op}), code(409, "stale")),
