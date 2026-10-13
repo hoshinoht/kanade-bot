@@ -26,10 +26,7 @@ const HARD: &str = "<:diff_h:2000000000000000001>";
 async fn v2_card(world: &World, desk: &Desk) -> (String, String) {
     let entry = world.propose(local(9, 2, 21, 30)).await;
     let id = entry.proposal_id.clone();
-    assert_eq!(
-        desk.post_card(&card(vec![entry], Vec::new())).await,
-        PostResult::Posted
-    );
+    assert_eq!(desk.post_card(&one(entry)).await, PostResult::Posted);
     let message = world.message_of(&id).await.expect("posted");
     (id, message)
 }

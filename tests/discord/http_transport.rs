@@ -12,7 +12,6 @@ use tokio::net::{TcpListener, TcpStream};
 use twilight_http::Client;
 use twilight_model::id::Id;
 
-use kanade::bot::mentions;
 use kanade::bot::transport::{
     AmbiguousKind, DiscordTransport, HistoryPage, InteractionRef, InteractionReply, MAX_SENDS,
     Outcome, OutgoingMessage, Presence, RejectionKind, SILENT, TransportConfig, TwilightTransport,
@@ -21,7 +20,7 @@ use kanade::bot::transport::{
 use twilight_model::channel::message::MessageFlags;
 
 use super::support::{
-    ALICE, BOB, CHANNEL, GUILD, TEXT, channel_json, member_json, message_json, user_json,
+    ALICE, BOB, CHANNEL, GUILD, TEXT, channel_json, member_json, message_json, outgoing, user_json,
 };
 
 const TOKEN: &str = "synthetic-token-never-real";
@@ -197,14 +196,7 @@ fn quick(addr: SocketAddr) -> TwilightTransport {
 }
 
 fn post() -> OutgoingMessage {
-    OutgoingMessage {
-        content: Some("@everyone <@&500> <@1002> run at 8".into()),
-        embeds: Vec::new(),
-        allowed_mentions: mentions::allow_users(&["1001"]),
-        reply_to: None,
-        attachments: Vec::new(),
-        components: Vec::new(),
-    }
+    outgoing("@everyone <@&500> <@1002> run at 8")
 }
 
 async fn create(

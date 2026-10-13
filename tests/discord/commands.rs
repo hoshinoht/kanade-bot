@@ -10,7 +10,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use twilight_gateway::Event;
-use twilight_model::application::command::{Command, CommandType};
+use twilight_model::application::command::Command;
 use twilight_model::application::interaction::{
     Interaction, InteractionContextType, InteractionData,
 };
@@ -35,8 +35,6 @@ use kanade::domain::members::Roster;
 
 use super::support::*;
 
-const ADMINISTRATOR: u64 = 1 << 3;
-
 fn policy() -> AccessPolicy {
     AccessPolicy {
         bossing_role_id: role(BOSSING_ROLE),
@@ -47,27 +45,6 @@ fn policy() -> AccessPolicy {
 
 /// A bossing-role command whose reply depends on its option.
 struct Echo;
-
-#[allow(deprecated)]
-fn plain_command(name: &str) -> Command {
-    Command {
-        application_id: None,
-        contexts: None,
-        default_member_permissions: None,
-        dm_permission: None,
-        description: "test".into(),
-        description_localizations: None,
-        guild_id: None,
-        id: None,
-        integration_types: None,
-        kind: CommandType::ChatInput,
-        name: name.into(),
-        name_localizations: None,
-        nsfw: None,
-        options: Vec::new(),
-        version: Id::new(1),
-    }
-}
 
 impl SlashCommand for Echo {
     fn definition(&self) -> Command {

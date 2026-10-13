@@ -3,10 +3,9 @@
 //! and the `interaction_handled` log fields.
 
 use serde_json::json;
-use twilight_model::application::command::{Command, CommandOptionChoiceValue, CommandType};
+use twilight_model::application::command::{Command, CommandOptionChoiceValue};
 use twilight_model::channel::message::Embed;
 use twilight_model::channel::message::embed::EmbedField;
-use twilight_model::id::Id;
 
 use kanade::bot::commands::{
     AccessPolicy, COMPLETION_FALLBACK, CONTENT_LIMIT, ChoicesFuture, CommandFuture, Dispatcher,
@@ -25,30 +24,9 @@ struct Fixed {
     defer: Option<bool>,
 }
 
-#[allow(deprecated)]
-fn definition(name: &str) -> Command {
-    Command {
-        application_id: None,
-        contexts: None,
-        default_member_permissions: None,
-        dm_permission: None,
-        description: "test".into(),
-        description_localizations: None,
-        guild_id: None,
-        id: None,
-        integration_types: None,
-        kind: CommandType::ChatInput,
-        name: name.into(),
-        name_localizations: None,
-        nsfw: None,
-        options: Vec::new(),
-        version: Id::new(1),
-    }
-}
-
 impl SlashCommand for Fixed {
     fn definition(&self) -> Command {
-        definition("fixedreply")
+        plain_command("fixedreply")
     }
 
     fn gate(&self) -> Gate {

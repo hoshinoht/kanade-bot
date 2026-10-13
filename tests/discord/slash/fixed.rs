@@ -317,8 +317,7 @@ async fn timing_picker_lists_the_invokers_timings() {
 async fn a_long_list_is_split_into_follow_ups_at_line_boundaries() {
     use kanade::bot::transport::Call;
     use kanade::domain::attendance::AttendanceDefault;
-    use kanade::domain::history::{Actor, ChangeMeta, Origin};
-    use kanade::domain::schedule::{Change, ChangeSet, FixedRun};
+    use kanade::domain::schedule::{Change, FixedRun};
 
     let slash = Slash::new().await;
     let party: Vec<String> = [ALICE, BOB, DAN, 1_010, 1_011, 1_012]
@@ -342,24 +341,7 @@ async fn a_long_list_is_split_into_follow_ups_at_line_boundaries() {
             })
         })
         .collect();
-    let revision = slash.store.load(&Scope::All).await.unwrap().revision;
-    slash
-        .store
-        .commit(
-            revision,
-            ChangeSet { changes },
-            ChangeMeta {
-                origin: Origin::new(Actor::admin("seed"), Surface::AdminPortal),
-                at: super::now(),
-                notices: Vec::new(),
-                refs: Vec::new(),
-                request_digest: None,
-                expect: Default::default(),
-                outbox: Vec::new(),
-            },
-        )
-        .await
-        .unwrap();
+    super::seed_changes(&slash.store, changes, super::now()).await;
 
     let before = slash.discord.calls().len();
     slash
