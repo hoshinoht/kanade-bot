@@ -61,6 +61,34 @@ struct AttemptRow {
     targets: Vec<TargetRow>,
 }
 
+impl AttemptRow {
+    /// A new live `intent` attempt holding `targets`.
+    fn fresh(
+        lease: &Lease,
+        ordinal: i64,
+        intent: &NotificationIntent,
+        dedupe_key: DedupeKey,
+        at: DateTime<Utc>,
+        targets: Vec<TargetRow>,
+    ) -> Self {
+        Self {
+            operation_id: lease.operation_id.clone(),
+            ordinal,
+            effect: intent.effect.as_str().to_owned(),
+            dedupe_key,
+            dedupe_active: true,
+            state: AttemptState::Intent,
+            channel_id: intent.channel_id.clone(),
+            message_id: None,
+            resolved_by: None,
+            reason: String::new(),
+            intended_at: at,
+            resolved_at: None,
+            targets,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub(super) struct JournalTables {
     leases: BTreeMap<String, LeaseRow>,
@@ -358,27 +386,20 @@ fn claim_in(
     let id = uuid::Uuid::new_v4().to_string();
     tables.journal.attempts.insert(
         id.clone(),
-        AttemptRow {
-            operation_id: lease.operation_id.clone(),
+        AttemptRow::fresh(
+            lease,
             ordinal,
-            effect: intent.effect.as_str().to_owned(),
-            dedupe_key: key,
-            dedupe_active: true,
-            state: AttemptState::Intent,
-            channel_id: intent.channel_id.clone(),
-            message_id: None,
-            resolved_by: None,
-            reason: String::new(),
-            intended_at: at,
-            resolved_at: None,
-            targets: targets
+            intent,
+            key,
+            at,
+            targets
                 .into_iter()
                 .map(|target| TargetRow {
                     target,
                     released: false,
                 })
                 .collect(),
-        },
+        ),
     );
     if let Some((run_id, kind)) = debug {
         tables.journal.debug_cards.insert(
@@ -429,21 +450,7 @@ fn claim_source_in(
     let id = uuid::Uuid::new_v4().to_string();
     tables.journal.attempts.insert(
         id.clone(),
-        AttemptRow {
-            operation_id: lease.operation_id.clone(),
-            ordinal,
-            effect: intent.effect.as_str().to_owned(),
-            dedupe_key: key,
-            dedupe_active: true,
-            state: AttemptState::Intent,
-            channel_id: intent.channel_id.clone(),
-            message_id: None,
-            resolved_by: None,
-            reason: String::new(),
-            intended_at: at,
-            resolved_at: None,
-            targets: Vec::new(),
-        },
+        AttemptRow::fresh(lease, ordinal, intent, key, at, Vec::new()),
     );
     Ok(Claim::Fresh(AttemptId(id)))
 }

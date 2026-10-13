@@ -10,6 +10,18 @@ use crate::domain::scheduler::StoreError;
 
 pub(super) type MemberScheduleGuard<'a> = MutexGuard<'a, BTreeMap<String, MemberProfile>>;
 
+impl super::MemoryScheduleStore {
+    /// Edit an existing row; true (and a `Members` hint) when it exists.
+    fn edit_member(&self, user_id: &str, edit: impl FnOnce(&mut MemberProfile)) -> bool {
+        let found = self.members().get_mut(user_id).map(edit).is_some();
+        if found {
+            self.written
+                .notify(crate::infrastructure::store::Written::Members);
+        }
+        found
+    }
+}
+
 impl MemberStore for super::MemoryScheduleStore {
     async fn list_members(&self) -> Result<Vec<MemberProfile>, StoreError> {
         Ok(self.members().values().cloned().collect())
@@ -61,41 +73,15 @@ impl MemberStore for super::MemoryScheduleStore {
     }
 
     async fn member_departed(&self, user_id: &str) -> Result<bool, StoreError> {
-        let result = async {
-            Ok(match self.members().get_mut(user_id) {
-                Some(profile) => {
-                    profile.member.has_role = false;
-                    profile.roles.clear();
-                    profile.is_guild_admin = false;
-                    true
-                }
-                None => false,
-            })
-        }
-        .await;
-        self.written.after_if(
-            crate::infrastructure::store::Written::Members,
-            result,
-            |found| *found,
-        )
+        Ok(self.edit_member(user_id, |profile| {
+            profile.member.has_role = false;
+            profile.roles.clear();
+            profile.is_guild_admin = false;
+        }))
     }
 
     async fn clear_guild_admin(&self, user_id: &str) -> Result<bool, StoreError> {
-        let result = async {
-            Ok(match self.members().get_mut(user_id) {
-                Some(profile) => {
-                    profile.is_guild_admin = false;
-                    true
-                }
-                None => false,
-            })
-        }
-        .await;
-        self.written.after_if(
-            crate::infrastructure::store::Written::Members,
-            result,
-            |found| *found,
-        )
+        Ok(self.edit_member(user_id, |profile| profile.is_guild_admin = false))
     }
 
     async fn apply_portal(

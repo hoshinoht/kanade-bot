@@ -144,20 +144,14 @@ impl DeclineNoticeStore for MemoryScheduleStore {
         channel_id: &str,
         message_id: &str,
     ) -> Result<bool, StoreError> {
-        let mut tables = self.tables();
-        let Some(notice) = tables
-            .declines
-            .rows
-            .get_mut(&(run_id.into(), user_id.into()))
-        else {
-            return Ok(false);
-        };
-        if notice.message_id.is_some() {
-            return Ok(false);
-        }
-        notice.channel_id = Some(channel_id.into());
-        notice.message_id = Some(message_id.into());
-        Ok(true)
+        Ok(self.update_one(run_id, user_id, |notice| {
+            if notice.message_id.is_some() {
+                return false;
+            }
+            notice.channel_id = Some(channel_id.into());
+            notice.message_id = Some(message_id.into());
+            true
+        }))
     }
 
     async fn mark_decline_retract_pending(
@@ -165,16 +159,10 @@ impl DeclineNoticeStore for MemoryScheduleStore {
         run_id: &str,
         user_id: &str,
     ) -> Result<bool, StoreError> {
-        let mut tables = self.tables();
-        let Some(notice) = tables
-            .declines
-            .rows
-            .get_mut(&(run_id.into(), user_id.into()))
-        else {
-            return Ok(false);
-        };
-        notice.retract_pending = true;
-        Ok(true)
+        Ok(self.update_one(run_id, user_id, |notice| {
+            notice.retract_pending = true;
+            true
+        }))
     }
 
     async fn clear_decline_notice_message(
@@ -183,20 +171,14 @@ impl DeclineNoticeStore for MemoryScheduleStore {
         user_id: &str,
         message_id: &str,
     ) -> Result<bool, StoreError> {
-        let mut tables = self.tables();
-        let Some(notice) = tables
-            .declines
-            .rows
-            .get_mut(&(run_id.into(), user_id.into()))
-        else {
-            return Ok(false);
-        };
-        if notice.message_id.as_deref() != Some(message_id) {
-            return Ok(false);
-        }
-        notice.message_id = None;
-        notice.retract_pending = false;
-        Ok(true)
+        Ok(self.update_one(run_id, user_id, |notice| {
+            if notice.message_id.as_deref() != Some(message_id) {
+                return false;
+            }
+            notice.message_id = None;
+            notice.retract_pending = false;
+            true
+        }))
     }
 
     async fn decline_notice_on_cooldown(
@@ -213,5 +195,22 @@ impl DeclineNoticeStore for MemoryScheduleStore {
             .is_some_and(|notice| {
                 now.signed_duration_since(notice.notified_at) < DECLINE_NOTICE_COOLDOWN
             }))
+    }
+}
+
+impl MemoryScheduleStore {
+    /// `update` the row under the tables lock; false when it is missing or
+    /// `update` declines, like SQLite's guarded single-row UPDATE.
+    fn update_one(
+        &self,
+        run_id: &str,
+        user_id: &str,
+        update: impl FnOnce(&mut DeclineNotice) -> bool,
+    ) -> bool {
+        self.tables()
+            .declines
+            .rows
+            .get_mut(&(run_id.into(), user_id.into()))
+            .is_some_and(update)
     }
 }
