@@ -71,6 +71,62 @@ pub fn outcome<T: serde::Serialize>(result: Result<T, MoveError>) -> Response {
     }
 }
 
+/// `result` with `status` on success.
+pub fn outcome_with<T: serde::Serialize>(
+    status: StatusCode,
+    result: Result<T, MoveError>,
+) -> Response {
+    let mut response = outcome(result);
+    if response.status().is_success() {
+        *response.status_mut() = status;
+    }
+    response
+}
+
+/// `{message}` on success.
+fn message(result: Result<String, MoveError>) -> Response {
+    outcome(result.map(|message| json!({ "message": message })))
+}
+
+/// A refusal that is the whole answer, so handlers can return it with `?`.
+pub struct Refusal(Box<Response>);
+
+impl From<Response> for Refusal {
+    fn from(response: Response) -> Self {
+        Self(Box::new(response))
+    }
+}
+
+impl IntoResponse for Refusal {
+    fn into_response(self) -> Response {
+        *self.0
+    }
+}
+
+pub type Answer = Result<Response, Refusal>;
+
+/// A module's routes answer the generic 404 while it is off, as the server's.
+async fn module(app: &App, on: fn(&Store) -> bool) -> Result<(), Refusal> {
+    if on(&*app.store.lock().await) {
+        Ok(())
+    } else {
+        Err(not_found().await.into())
+    }
+}
+
+/// The JSON body, or `400 invalid_body`.
+fn json_body<T>(body: Result<Json<T>, JsonRejection>) -> Result<T, Refusal> {
+    match body {
+        Ok(Json(value)) => Ok(value),
+        Err(_) => Err(error(
+            StatusCode::BAD_REQUEST,
+            "invalid_body",
+            "The request body is not valid.",
+        )
+        .into()),
+    }
+}
+
 pub async fn week(State(app): State<App>, Query(q): Query<WeekQuery>) -> Response {
     Json(app.store.lock().await.week(q.next())).into_response()
 }
@@ -123,20 +179,12 @@ pub async fn remove_alias(
     outcome(app.store.lock().await.remove_alias(&id, &alias))
 }
 
-/// The roster module's routes answer the generic 404 while it is off, as the server's.
-async fn roster_off(app: &App) -> Option<Response> {
-    if app.store.lock().await.roster_on() {
-        None
-    } else {
-        Some(not_found().await)
-    }
-}
+// The roster module's routes, then `character_data`'s (on only with the
+// roster: the server refuses it without).
 
-pub async fn characters(State(app): State<App>, Path(id): Path<String>) -> Response {
-    if let Some(off) = roster_off(&app).await {
-        return off;
-    }
-    outcome(app.store.lock().await.characters_of(&id))
+pub async fn characters(State(app): State<App>, Path(id): Path<String>) -> Answer {
+    module(&app, Store::roster_on).await?;
+    Ok(outcome(app.store.lock().await.characters_of(&id)))
 }
 
 /// `201` with the new row, as the server answers a create.
@@ -144,63 +192,31 @@ pub async fn create_character(
     State(app): State<App>,
     Path(id): Path<String>,
     body: Result<Json<crate::mock::characters::CharacterCreate>, JsonRejection>,
-) -> Response {
-    if let Some(off) = roster_off(&app).await {
-        return off;
-    }
-    let Ok(Json(req)) = body else {
-        return error(
-            StatusCode::BAD_REQUEST,
-            "invalid_body",
-            "The request body is not valid.",
-        );
-    };
-    match app.store.lock().await.create_character(&id, req) {
-        Ok(row) => (StatusCode::CREATED, Json(row)).into_response(),
-        Err(refused) => outcome::<()>(Err(refused)),
-    }
+) -> Answer {
+    module(&app, Store::roster_on).await?;
+    let req = json_body(body)?;
+    let created = app.store.lock().await.create_character(&id, req);
+    Ok(outcome_with(StatusCode::CREATED, created))
 }
 
 pub async fn patch_character(
     State(app): State<App>,
     Path(id): Path<String>,
     body: Result<Json<crate::mock::characters::CharacterPatch>, JsonRejection>,
-) -> Response {
-    if let Some(off) = roster_off(&app).await {
-        return off;
-    }
-    let Ok(Json(req)) = body else {
-        return error(
-            StatusCode::BAD_REQUEST,
-            "invalid_body",
-            "The request body is not valid.",
-        );
-    };
-    outcome(app.store.lock().await.patch_character(&id, req))
+) -> Answer {
+    module(&app, Store::roster_on).await?;
+    let req = json_body(body)?;
+    Ok(outcome(app.store.lock().await.patch_character(&id, req)))
 }
 
-pub async fn delete_character(State(app): State<App>, Path(id): Path<String>) -> Response {
-    if let Some(off) = roster_off(&app).await {
-        return off;
-    }
-    outcome(app.store.lock().await.delete_character(&id))
+pub async fn delete_character(State(app): State<App>, Path(id): Path<String>) -> Answer {
+    module(&app, Store::roster_on).await?;
+    Ok(outcome(app.store.lock().await.delete_character(&id)))
 }
 
-/// Module `character_data` answers the generic 404 while off (it is on only
-/// with the roster: the server refuses it without).
-async fn chardata_off(app: &App) -> Option<Response> {
-    if app.store.lock().await.character_data_on() {
-        None
-    } else {
-        Some(not_found().await)
-    }
-}
-
-pub async fn character_link(State(app): State<App>, Path(id): Path<String>) -> Response {
-    if let Some(off) = chardata_off(&app).await {
-        return off;
-    }
-    outcome(app.store.lock().await.character_link(&id))
+pub async fn character_link(State(app): State<App>, Path(id): Path<String>) -> Answer {
+    module(&app, Store::character_data_on).await?;
+    Ok(outcome(app.store.lock().await.character_link(&id)))
 }
 
 /// `201`: pending until the member confirms in Discord.
@@ -208,152 +224,94 @@ pub async fn request_link(
     State(app): State<App>,
     Path(id): Path<String>,
     body: Result<Json<crate::mock::character_data::LinkRequest>, JsonRejection>,
-) -> Response {
-    if let Some(off) = chardata_off(&app).await {
-        return off;
-    }
-    let Ok(Json(req)) = body else {
-        return error(
-            StatusCode::BAD_REQUEST,
-            "invalid_body",
-            "The request body is not valid.",
-        );
-    };
-    match app.store.lock().await.request_link(&id, req) {
-        Ok(view) => (StatusCode::CREATED, Json(view)).into_response(),
-        Err(refused) => outcome::<()>(Err(refused)),
-    }
+) -> Answer {
+    module(&app, Store::character_data_on).await?;
+    let req = json_body(body)?;
+    let requested = app.store.lock().await.request_link(&id, req);
+    Ok(outcome_with(StatusCode::CREATED, requested))
 }
 
-pub async fn unlink(State(app): State<App>, Path(id): Path<String>) -> Response {
-    if let Some(off) = chardata_off(&app).await {
-        return off;
-    }
-    outcome(app.store.lock().await.unlink(&id))
+pub async fn unlink(State(app): State<App>, Path(id): Path<String>) -> Answer {
+    module(&app, Store::character_data_on).await?;
+    Ok(outcome(app.store.lock().await.unlink(&id)))
 }
 
 /// `GET /api/admin/characters/lookup`.
-pub async fn lookup_status(State(app): State<App>) -> Response {
-    if let Some(off) = chardata_off(&app).await {
-        return off;
-    }
-    Json(app.store.lock().await.lookup_status()).into_response()
+pub async fn lookup_status(State(app): State<App>) -> Answer {
+    module(&app, Store::character_data_on).await?;
+    Ok(Json(app.store.lock().await.lookup_status()).into_response())
 }
 
 /// `POST /api/admin/characters/lookup`: shown only, nothing kept.
 pub async fn look_up(
     State(app): State<App>,
     body: Result<Json<crate::mock::character_data::LookupRequest>, JsonRejection>,
-) -> Response {
-    if let Some(off) = chardata_off(&app).await {
-        return off;
-    }
-    let Ok(Json(req)) = body else {
-        return error(
-            StatusCode::BAD_REQUEST,
-            "invalid_body",
-            "The request body is not valid.",
-        );
-    };
-    outcome(app.store.lock().await.look_up(req))
+) -> Answer {
+    module(&app, Store::character_data_on).await?;
+    let req = json_body(body)?;
+    Ok(outcome(app.store.lock().await.look_up(req)))
 }
 
-pub async fn refresh_link(State(app): State<App>, Path(id): Path<String>) -> Response {
-    if let Some(off) = chardata_off(&app).await {
-        return off;
-    }
-    outcome(app.store.lock().await.refresh_link(&id))
+pub async fn refresh_link(State(app): State<App>, Path(id): Path<String>) -> Answer {
+    module(&app, Store::character_data_on).await?;
+    Ok(outcome(app.store.lock().await.refresh_link(&id)))
 }
 
-pub async fn run_characters(State(app): State<App>, Path(id): Path<String>) -> Response {
-    if let Some(off) = roster_off(&app).await {
-        return off;
-    }
-    outcome(app.store.lock().await.run_characters(&id))
+pub async fn run_characters(State(app): State<App>, Path(id): Path<String>) -> Answer {
+    module(&app, Store::roster_on).await?;
+    Ok(outcome(app.store.lock().await.run_characters(&id)))
 }
 
 /// `GET /api/admin/runs/{id}/readiness` (module `character_data`).
-pub async fn run_readiness(State(app): State<App>, Path(id): Path<String>) -> Response {
-    if let Some(off) = chardata_off(&app).await {
-        return off;
-    }
-    outcome(app.store.lock().await.run_readiness(&id))
+pub async fn run_readiness(State(app): State<App>, Path(id): Path<String>) -> Answer {
+    module(&app, Store::character_data_on).await?;
+    Ok(outcome(app.store.lock().await.run_readiness(&id)))
 }
 
 pub async fn pick_character(
     State(app): State<App>,
     Path((id, member)): Path<(String, String)>,
     body: Result<Json<crate::mock::run_picks::CharacterPick>, JsonRejection>,
-) -> Response {
-    if let Some(off) = roster_off(&app).await {
-        return off;
-    }
-    let Ok(Json(req)) = body else {
-        return error(
-            StatusCode::BAD_REQUEST,
-            "invalid_body",
-            "The request body is not valid.",
-        );
-    };
-    outcome(app.store.lock().await.pick_character(&id, &member, req))
+) -> Answer {
+    module(&app, Store::roster_on).await?;
+    let req = json_body(body)?;
+    Ok(outcome(
+        app.store.lock().await.pick_character(&id, &member, req),
+    ))
 }
 
 /// `GET /api/admin/fixed/{id}/characters` (modules `roster` and
 /// `character_data`: off, either one, the generic 404).
-pub async fn fixed_characters(State(app): State<App>, Path(id): Path<String>) -> Response {
-    if let Some(off) = chardata_off(&app).await {
-        return off;
-    }
-    outcome(app.store.lock().await.timing_characters(&id))
+pub async fn fixed_characters(State(app): State<App>, Path(id): Path<String>) -> Answer {
+    module(&app, Store::character_data_on).await?;
+    Ok(outcome(app.store.lock().await.timing_characters(&id)))
 }
 
 pub async fn pick_fixed_character(
     State(app): State<App>,
     Path((id, member)): Path<(String, String)>,
     body: Result<Json<crate::mock::run_picks::CharacterPick>, JsonRejection>,
-) -> Response {
-    if let Some(off) = chardata_off(&app).await {
-        return off;
-    }
-    let Ok(Json(req)) = body else {
-        return error(
-            StatusCode::BAD_REQUEST,
-            "invalid_body",
-            "The request body is not valid.",
-        );
-    };
-    outcome(
-        app.store
-            .lock()
-            .await
-            .pick_timing_character(&id, &member, req),
-    )
+) -> Answer {
+    module(&app, Store::character_data_on).await?;
+    let req = json_body(body)?;
+    let mut store = app.store.lock().await;
+    Ok(outcome(store.pick_timing_character(&id, &member, req)))
 }
 
 /// `GET /api/admin/fixed/{id}/readiness`.
-pub async fn fixed_readiness(State(app): State<App>, Path(id): Path<String>) -> Response {
-    if let Some(off) = chardata_off(&app).await {
-        return off;
-    }
-    outcome(app.store.lock().await.fixed_readiness(&id))
+pub async fn fixed_readiness(State(app): State<App>, Path(id): Path<String>) -> Answer {
+    module(&app, Store::character_data_on).await?;
+    Ok(outcome(app.store.lock().await.fixed_readiness(&id)))
 }
 
 /// `POST /api/admin/fixed/readiness`: the editor's form, nothing written.
 pub async fn preview_readiness(
     State(app): State<App>,
     body: Result<Json<crate::mock::readiness::TimingPreview>, JsonRejection>,
-) -> Response {
-    if let Some(off) = chardata_off(&app).await {
-        return off;
-    }
-    let Ok(Json(req)) = body else {
-        return error(
-            StatusCode::BAD_REQUEST,
-            "invalid_body",
-            "The request body is not valid.",
-        );
-    };
-    outcome(app.store.lock().await.preview_readiness(req))
+) -> Answer {
+    module(&app, Store::character_data_on).await?;
+    let req = json_body(body)?;
+    Ok(outcome(app.store.lock().await.preview_readiness(req)))
 }
 
 #[derive(Deserialize)]
@@ -388,35 +346,17 @@ pub async fn set_chardata_health(
     StatusCode::NO_CONTENT.into_response()
 }
 
-/// Scouter estimates answer the generic 404 while off (no scouter URL,
-/// or the roster module off), as the server's.
-async fn estimates_off(app: &App) -> Option<Response> {
-    if app.store.lock().await.estimates_on() {
-        None
-    } else {
-        Some(not_found().await)
-    }
-}
-
-/// `POST /api/admin/estimates`: `202 {job}`.
+/// `POST /api/admin/estimates`: `202 {job}`. Scouter estimates answer the
+/// generic 404 while off (no scouter URL, or the roster module off), as the
+/// server's.
 pub async fn start_estimate(
     State(app): State<App>,
     body: Result<Json<crate::mock::estimates::EstimateRequest>, JsonRejection>,
-) -> Response {
-    if let Some(off) = estimates_off(&app).await {
-        return off;
-    }
-    let Ok(Json(req)) = body else {
-        return error(
-            StatusCode::BAD_REQUEST,
-            "invalid_body",
-            "The request body is not valid.",
-        );
-    };
-    match app.store.lock().await.start_estimate(req) {
-        Ok(started) => (StatusCode::ACCEPTED, Json(started)).into_response(),
-        Err(refused) => outcome::<()>(Err(refused)),
-    }
+) -> Answer {
+    module(&app, Store::estimates_on).await?;
+    let req = json_body(body)?;
+    let started = app.store.lock().await.start_estimate(req);
+    Ok(outcome_with(StatusCode::ACCEPTED, started))
 }
 
 #[derive(Deserialize)]
@@ -425,24 +365,16 @@ pub struct EstimateQuery {
     run_id: Option<String>,
 }
 
-pub async fn estimate_status(State(app): State<App>, Query(q): Query<EstimateQuery>) -> Response {
-    if let Some(off) = estimates_off(&app).await {
-        return off;
-    }
-    outcome(
-        app.store
-            .lock()
-            .await
-            .estimate_status(q.character_ids.as_deref(), q.run_id.as_deref()),
-    )
+pub async fn estimate_status(State(app): State<App>, Query(q): Query<EstimateQuery>) -> Answer {
+    module(&app, Store::estimates_on).await?;
+    let (ids, run) = (q.character_ids.as_deref(), q.run_id.as_deref());
+    Ok(outcome(app.store.lock().await.estimate_status(ids, run)))
 }
 
 /// Each read advances a running job one step (`mock/estimates.rs`).
-pub async fn estimate(State(app): State<App>, Path(id): Path<String>) -> Response {
-    if let Some(off) = estimates_off(&app).await {
-        return off;
-    }
-    outcome(app.store.lock().await.estimate(&id))
+pub async fn estimate(State(app): State<App>, Path(id): Path<String>) -> Answer {
+    module(&app, Store::estimates_on).await?;
+    Ok(outcome(app.store.lock().await.estimate(&id)))
 }
 
 /// `POST /__mock/estimates {scenario}`: what later lookups do, until the
@@ -632,13 +564,7 @@ pub async fn participants(
 }
 
 pub async fn ping(State(app): State<App>, Path(id): Path<String>) -> Response {
-    outcome(
-        app.store
-            .lock()
-            .await
-            .ping(&id)
-            .map(|message| json!({ "message": message })),
-    )
+    message(app.store.lock().await.ping(&id))
 }
 
 pub async fn reset(State(app): State<App>) -> StatusCode {
@@ -707,13 +633,7 @@ pub async fn approve(
     Path(id): Path<String>,
     Json(req): Json<ApproveRequest>,
 ) -> Response {
-    outcome(
-        app.store
-            .lock()
-            .await
-            .approve_tracked(&id, req)
-            .map(|message| json!({ "message": message })),
-    )
+    message(app.store.lock().await.approve_tracked(&id, req))
 }
 
 pub async fn reject(
@@ -722,13 +642,7 @@ pub async fn reject(
     body: Option<Json<crate::mock::inbox::RejectRequest>>,
 ) -> Response {
     let req = body.map(|Json(r)| r).unwrap_or_default();
-    outcome(
-        app.store
-            .lock()
-            .await
-            .reject(&id, req)
-            .map(|message| json!({ "message": message })),
-    )
+    message(app.store.lock().await.reject(&id, req))
 }
 
 pub async fn owner_requests(State(app): State<App>) -> Response {
@@ -738,21 +652,11 @@ pub async fn owner_requests(State(app): State<App>) -> Response {
 /// Any admin session decides (no Discord sign-in needed); the write guard
 /// already checked CSRF and replays a repeated `Idempotency-Key`.
 pub async fn accept_owner_request(State(app): State<App>, Path(id): Path<String>) -> Response {
-    decide_owner_request(&app, &id, true).await
+    message(app.store.lock().await.decide_owner_request(&id, true))
 }
 
 pub async fn decline_owner_request(State(app): State<App>, Path(id): Path<String>) -> Response {
-    decide_owner_request(&app, &id, false).await
-}
-
-async fn decide_owner_request(app: &App, id: &str, accept: bool) -> Response {
-    outcome(
-        app.store
-            .lock()
-            .await
-            .decide_owner_request(id, accept)
-            .map(|message| json!({ "message": message })),
-    )
+    message(app.store.lock().await.decide_owner_request(&id, false))
 }
 
 pub async fn extractions(
@@ -971,10 +875,10 @@ pub async fn digest(State(app): State<App>, Json(req): Json<DigestRequest>) -> R
 
 /// The manual header rewrite answers `202` at once, as the server does.
 pub async fn rewrite_headers(State(app): State<App>) -> Response {
-    match app.store.lock().await.rewrite_headers() {
-        Ok(value) => (StatusCode::ACCEPTED, Json(value)).into_response(),
-        Err(error) => outcome::<serde_json::Value>(Err(error)),
-    }
+    outcome_with(
+        StatusCode::ACCEPTED,
+        app.store.lock().await.rewrite_headers(),
+    )
 }
 
 pub async fn access(State(app): State<App>) -> Response {

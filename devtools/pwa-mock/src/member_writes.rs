@@ -8,13 +8,13 @@
 
 use crate::{
     App,
-    api::error,
+    api::Answer,
     mock::{
         member_runs::{AnswerBody, MoveBody},
         portal::MEMBER_SEED_ID,
         requests::{Refused, RequestBody},
     },
-    public::{admit, carry, member, written},
+    public::{admit, carry, member, member_body, written},
 };
 use axum::{
     Json,
@@ -25,27 +25,16 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
-fn invalid_body() -> Response {
-    error(
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "invalid_body",
-        "The request body is not valid.",
-    )
-}
-
 /// `GET /api/public/runs/{id}`: `MemberRunLink`.
 pub async fn link(
     State(app): State<App>,
     method: Method,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Response {
-    let current = match member(&app, &method, &headers).await {
-        Ok(current) => current,
-        Err(refused) => return *refused,
-    };
+) -> Answer {
+    let current = member(&app, &method, &headers).await?;
     let found = app.store.lock().await.member_link(MEMBER_SEED_ID, &id);
-    carry(crate::api::outcome(found), &current)
+    Ok(carry(crate::api::outcome(found), &current))
 }
 
 /// `PUT /api/public/runs/{id}/answer`.
@@ -55,14 +44,9 @@ pub async fn answer(
     headers: HeaderMap,
     Path(id): Path<String>,
     body: Result<Json<AnswerBody>, JsonRejection>,
-) -> Response {
-    let (current, key) = match admit(&app, &method, &headers, true).await {
-        Ok(admitted) => admitted,
-        Err(refused) => return *refused,
-    };
-    let Ok(Json(body)) = body else {
-        return carry(invalid_body(), &current);
-    };
+) -> Answer {
+    let (current, key) = admit(&app, &method, &headers, true).await?;
+    let body = member_body(body, &current)?;
     let result = app
         .store
         .lock()
@@ -78,14 +62,9 @@ pub async fn move_run(
     headers: HeaderMap,
     Path(id): Path<String>,
     body: Result<Json<MoveBody>, JsonRejection>,
-) -> Response {
-    let (current, key) = match admit(&app, &method, &headers, true).await {
-        Ok(admitted) => admitted,
-        Err(refused) => return *refused,
-    };
-    let Ok(Json(body)) = body else {
-        return carry(invalid_body(), &current);
-    };
+) -> Answer {
+    let (current, key) = admit(&app, &method, &headers, true).await?;
+    let body = member_body(body, &current)?;
     let result = app
         .store
         .lock()
@@ -95,13 +74,10 @@ pub async fn move_run(
 }
 
 /// `GET /api/public/requests/mine`: `MemberRequests`.
-pub async fn requests(State(app): State<App>, method: Method, headers: HeaderMap) -> Response {
-    let current = match member(&app, &method, &headers).await {
-        Ok(current) => current,
-        Err(refused) => return *refused,
-    };
+pub async fn requests(State(app): State<App>, method: Method, headers: HeaderMap) -> Answer {
+    let current = member(&app, &method, &headers).await?;
     let body = app.store.lock().await.member_requests(MEMBER_SEED_ID);
-    carry(Json(body).into_response(), &current)
+    Ok(carry(Json(body).into_response(), &current))
 }
 
 /// `POST /api/public/requests`: `201` with the new request; an exact retry
@@ -111,14 +87,9 @@ pub async fn submit(
     method: Method,
     headers: HeaderMap,
     body: Result<Json<RequestBody>, JsonRejection>,
-) -> Response {
-    let (current, key) = match admit(&app, &method, &headers, true).await {
-        Ok(admitted) => admitted,
-        Err(refused) => return *refused,
-    };
-    let Ok(Json(body)) = body else {
-        return carry(invalid_body(), &current);
-    };
+) -> Answer {
+    let (current, key) = admit(&app, &method, &headers, true).await?;
+    let body = member_body(body, &current)?;
     let result = app
         .store
         .lock()
@@ -141,10 +112,8 @@ pub async fn submit(
                 "You've sent the most requests allowed in a day; try again tomorrow."
             };
             let body = json!({ "error": "request_limit", "message": message, "limit": limit });
-            carry(
-                (StatusCode::TOO_MANY_REQUESTS, Json(body)).into_response(),
-                &current,
-            )
+            let limited = (StatusCode::TOO_MANY_REQUESTS, Json(body)).into_response();
+            Ok(carry(limited, &current))
         }
     }
 }
@@ -155,11 +124,8 @@ pub async fn withdraw(
     method: Method,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Response {
-    let (current, key) = match admit(&app, &method, &headers, false).await {
-        Ok(admitted) => admitted,
-        Err(refused) => return *refused,
-    };
+) -> Answer {
+    let (current, key) = admit(&app, &method, &headers, false).await?;
     let result = app
         .store
         .lock()

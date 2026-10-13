@@ -9,97 +9,75 @@
 
 use crate::{
     App,
-    api::{closed, error, not_found, outcome},
+    api::{Answer, Refusal, closed, error, not_found, outcome_with},
     mock::{
-        MoveError,
+        MoveError, Store,
         member_characters::{
             EstimateRefused, LinkConfirm, MyCreate, MyEstimate, MyLookup, MyPatch, RosterRequest,
         },
-        portal::MEMBER_SEED_ID,
+        portal::{Current, MEMBER_SEED_ID},
     },
-    public::{admit, carry, member},
+    public::{admit, carry, member, member_body},
 };
 use axum::{
     Json,
     extract::{Path, Query, State, rejection::JsonRejection},
     http::{HeaderMap, Method, StatusCode},
-    response::{IntoResponse, Response},
+    response::IntoResponse,
 };
 use serde::Deserialize;
 use serde_json::json;
 
-#[derive(Clone, Copy)]
-enum Need {
-    Roster,
-    CharacterData,
-    Estimates,
-}
-
-/// `closed`, then the generic 404 for an off module, before the session.
-async fn gate(app: &App, need: Need) -> Option<Response> {
+/// `closed`, then the generic 404 while the module (`on`) is off, before the session.
+async fn gate(app: &App, on: fn(&Store) -> bool) -> Result<(), Refusal> {
     let store = app.store.lock().await;
     if !store.public_portal() {
-        return Some(closed());
+        return Err(closed().into());
     }
-    let on = match need {
-        Need::Roster => store.roster_on(),
-        Need::CharacterData => store.character_data_on(),
-        Need::Estimates => store.estimates_on(),
-    };
+    let on = on(&store);
     drop(store);
-    if on { None } else { Some(not_found().await) }
+    if on {
+        Ok(())
+    } else {
+        Err(not_found().await.into())
+    }
 }
 
-fn invalid_body() -> Response {
-    error(
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "invalid_body",
-        "The request body is not valid.",
-    )
+async fn session(
+    app: &App,
+    on: fn(&Store) -> bool,
+    method: &Method,
+    headers: &HeaderMap,
+) -> Result<Current, Refusal> {
+    gate(app, on).await?;
+    member(app, method, headers).await
+}
+
+async fn admitted(
+    app: &App,
+    on: fn(&Store) -> bool,
+    method: &Method,
+    headers: &HeaderMap,
+    fresh: bool,
+) -> Result<(Current, String), Refusal> {
+    gate(app, on).await?;
+    admit(app, method, headers, fresh).await
 }
 
 /// `result` with `status` on success.
 fn answer<T: serde::Serialize>(
-    current: &crate::mock::portal::Current,
+    current: &Current,
     status: StatusCode,
     result: Result<T, MoveError>,
-) -> Response {
-    let mut response = outcome(result);
-    if response.status().is_success() {
-        *response.status_mut() = status;
-    }
-    carry(response, current)
-}
-
-macro_rules! session {
-    ($app:expr, $need:expr, $method:expr, $headers:expr) => {{
-        if let Some(off) = gate(&$app, $need).await {
-            return off;
-        }
-        match member(&$app, &$method, &$headers).await {
-            Ok(current) => current,
-            Err(refused) => return *refused,
-        }
-    }};
-}
-
-macro_rules! admitted {
-    ($app:expr, $need:expr, $method:expr, $headers:expr, $fresh:expr) => {{
-        if let Some(off) = gate(&$app, $need).await {
-            return off;
-        }
-        match admit(&$app, &$method, &$headers, $fresh).await {
-            Ok(admitted) => admitted,
-            Err(refused) => return *refused,
-        }
-    }};
+) -> Answer {
+    Ok(carry(outcome_with(status, result), current))
 }
 
 /// `GET /api/public/me/characters`: `MyCharacters`.
-pub async fn list(State(app): State<App>, method: Method, headers: HeaderMap) -> Response {
-    let current = session!(app, Need::Roster, method, headers);
+pub async fn list(State(app): State<App>, method: Method, headers: HeaderMap) -> Answer {
+    let current = session(&app, Store::roster_on, &method, &headers).await?;
     let body = app.store.lock().await.my_characters(MEMBER_SEED_ID);
-    carry(Json(body).into_response(), &current)
+    Ok(carry(Json(body).into_response(), &current))
 }
 
 /// `POST /api/public/me/characters`: `201 MyCharacterCreated` (a retry
@@ -109,11 +87,9 @@ pub async fn create(
     method: Method,
     headers: HeaderMap,
     body: Result<Json<MyCreate>, JsonRejection>,
-) -> Response {
-    let (current, key) = admitted!(app, Need::Roster, method, headers, true);
-    let Ok(Json(body)) = body else {
-        return carry(invalid_body(), &current);
-    };
+) -> Answer {
+    let (current, key) = admitted(&app, Store::roster_on, &method, &headers, true).await?;
+    let body = member_body(body, &current)?;
     let result = app.store.lock().await.my_create(MEMBER_SEED_ID, &key, body);
     answer(&current, StatusCode::CREATED, result.map(|(_, row)| row))
 }
@@ -125,11 +101,9 @@ pub async fn update(
     headers: HeaderMap,
     Path(id): Path<String>,
     body: Result<Json<MyPatch>, JsonRejection>,
-) -> Response {
-    let (current, key) = admitted!(app, Need::Roster, method, headers, true);
-    let Ok(Json(body)) = body else {
-        return carry(invalid_body(), &current);
-    };
+) -> Answer {
+    let (current, key) = admitted(&app, Store::roster_on, &method, &headers, true).await?;
+    let body = member_body(body, &current)?;
     let result = app
         .store
         .lock()
@@ -144,11 +118,9 @@ pub async fn look_up(
     method: Method,
     headers: HeaderMap,
     body: Result<Json<MyLookup>, JsonRejection>,
-) -> Response {
-    let current = session!(app, Need::CharacterData, method, headers);
-    let Ok(Json(body)) = body else {
-        return carry(invalid_body(), &current);
-    };
+) -> Answer {
+    let current = session(&app, Store::character_data_on, &method, &headers).await?;
+    let body = member_body(body, &current)?;
     let result = app.store.lock().await.my_look_up(body);
     answer(&current, StatusCode::OK, result)
 }
@@ -159,8 +131,8 @@ pub async fn link(
     method: Method,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Response {
-    let current = session!(app, Need::CharacterData, method, headers);
+) -> Answer {
+    let current = session(&app, Store::character_data_on, &method, &headers).await?;
     let result = app.store.lock().await.my_link(MEMBER_SEED_ID, &id);
     answer(&current, StatusCode::OK, result)
 }
@@ -171,8 +143,8 @@ pub async fn notice(
     method: Method,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Response {
-    let current = session!(app, Need::CharacterData, method, headers);
+) -> Answer {
+    let current = session(&app, Store::character_data_on, &method, &headers).await?;
     let result = app.store.lock().await.my_notice(MEMBER_SEED_ID, &id);
     answer(&current, StatusCode::OK, result)
 }
@@ -184,11 +156,10 @@ pub async fn confirm(
     headers: HeaderMap,
     Path(id): Path<String>,
     body: Result<Json<LinkConfirm>, JsonRejection>,
-) -> Response {
-    let (current, _) = admitted!(app, Need::CharacterData, method, headers, true);
-    let Ok(Json(body)) = body else {
-        return carry(invalid_body(), &current);
-    };
+) -> Answer {
+    let on = Store::character_data_on;
+    let (current, _) = admitted(&app, on, &method, &headers, true).await?;
+    let body = member_body(body, &current)?;
     let result = app.store.lock().await.my_confirm(MEMBER_SEED_ID, &id, body);
     answer(&current, StatusCode::OK, result)
 }
@@ -199,8 +170,8 @@ pub async fn cancel(
     method: Method,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Response {
-    let current = session!(app, Need::CharacterData, method, headers);
+) -> Answer {
+    let current = session(&app, Store::character_data_on, &method, &headers).await?;
     let result = app.store.lock().await.my_cancel(MEMBER_SEED_ID, &id);
     answer(&current, StatusCode::OK, result)
 }
@@ -211,24 +182,26 @@ pub async fn unlink(
     method: Method,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Response {
-    let (current, key) = admitted!(app, Need::CharacterData, method, headers, false);
+) -> Answer {
+    let on = Store::character_data_on;
+    let (current, key) = admitted(&app, on, &method, &headers, false).await?;
     let result = app.store.lock().await.my_unlink(MEMBER_SEED_ID, &key, &id);
     answer(&current, StatusCode::OK, result)
 }
 
 /// `DELETE /api/public/me/characters/links`: `UnlinkedAll`.
-pub async fn unlink_all(State(app): State<App>, method: Method, headers: HeaderMap) -> Response {
-    let (current, key) = admitted!(app, Need::CharacterData, method, headers, false);
+pub async fn unlink_all(State(app): State<App>, method: Method, headers: HeaderMap) -> Answer {
+    let on = Store::character_data_on;
+    let (current, key) = admitted(&app, on, &method, &headers, false).await?;
     let result = app.store.lock().await.my_unlink_all(MEMBER_SEED_ID, &key);
     answer(&current, StatusCode::OK, result)
 }
 
 /// `GET /api/public/me/data`: `MyData`.
-pub async fn data(State(app): State<App>, method: Method, headers: HeaderMap) -> Response {
-    let current = session!(app, Need::CharacterData, method, headers);
+pub async fn data(State(app): State<App>, method: Method, headers: HeaderMap) -> Answer {
+    let current = session(&app, Store::character_data_on, &method, &headers).await?;
     let body = app.store.lock().await.my_data(MEMBER_SEED_ID);
-    carry(Json(body).into_response(), &current)
+    Ok(carry(Json(body).into_response(), &current))
 }
 
 /// `POST /api/public/me/estimates`: `202 {job}`, or `429 member_limited`
@@ -238,11 +211,9 @@ pub async fn start_estimate(
     method: Method,
     headers: HeaderMap,
     body: Result<Json<MyEstimate>, JsonRejection>,
-) -> Response {
-    let current = session!(app, Need::Estimates, method, headers);
-    let Ok(Json(body)) = body else {
-        return carry(invalid_body(), &current);
-    };
+) -> Answer {
+    let current = session(&app, Store::estimates_on, &method, &headers).await?;
+    let body = member_body(body, &current)?;
     let result = app
         .store
         .lock()
@@ -259,10 +230,8 @@ pub async fn start_estimate(
                 "message": "You can start one lookup every 30 minutes.",
                 "next_at": next_at,
             });
-            carry(
-                (StatusCode::TOO_MANY_REQUESTS, Json(body)).into_response(),
-                &current,
-            )
+            let limited = (StatusCode::TOO_MANY_REQUESTS, Json(body)).into_response();
+            Ok(carry(limited, &current))
         }
     }
 }
@@ -278,17 +247,15 @@ pub async fn estimate_status(
     method: Method,
     headers: HeaderMap,
     Query(q): Query<EstimateQuery>,
-) -> Response {
-    let current = session!(app, Need::Estimates, method, headers);
+) -> Answer {
+    let current = session(&app, Store::estimates_on, &method, &headers).await?;
     let Some(id) = q.character_id else {
-        return carry(
-            error(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "invalid",
-                "Ask with character_id=<id>.",
-            ),
-            &current,
+        let refused = error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid",
+            "Ask with character_id=<id>.",
         );
+        return Ok(carry(refused, &current));
     };
     let result = app
         .store
@@ -304,8 +271,8 @@ pub async fn estimate(
     method: Method,
     headers: HeaderMap,
     Path(job): Path<String>,
-) -> Response {
-    let current = session!(app, Need::Estimates, method, headers);
+) -> Answer {
+    let current = session(&app, Store::estimates_on, &method, &headers).await?;
     let result = app.store.lock().await.my_estimate(MEMBER_SEED_ID, &job);
     answer(&current, StatusCode::OK, result)
 }
@@ -316,8 +283,8 @@ pub async fn party(
     method: Method,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Response {
-    let current = session!(app, Need::Roster, method, headers);
+) -> Answer {
+    let current = session(&app, Store::roster_on, &method, &headers).await?;
     let result = app.store.lock().await.party_characters(MEMBER_SEED_ID, &id);
     answer(&current, StatusCode::OK, result)
 }

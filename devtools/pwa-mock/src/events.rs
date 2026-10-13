@@ -27,6 +27,7 @@ use tokio::sync::watch;
 
 use crate::{
     App,
+    api::Answer,
     mock::{
         dto::{MoveRequest, RsvpRequest},
         history::Actor,
@@ -112,11 +113,9 @@ pub async fn events(State(app): State<App>, headers: HeaderMap) -> Response {
 
 /// `GET /api/public/events`: the member session's stream, behind the quiet
 /// session check (no rotation, no touch), as on the server.
-pub async fn member_events(State(app): State<App>, headers: HeaderMap) -> Response {
-    match crate::public::member_quietly(&app, &headers).await {
-        Ok(()) => stream(answer(&app.member_hints, &headers, true).await),
-        Err(refused) => *refused,
-    }
+pub async fn member_events(State(app): State<App>, headers: HeaderMap) -> Answer {
+    crate::public::member_quietly(&app, &headers).await?;
+    Ok(stream(answer(&app.member_hints, &headers, true).await))
 }
 
 /// One short response: `ready` on a fresh connection, else the hints after
