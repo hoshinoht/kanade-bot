@@ -51,7 +51,7 @@ use crate::domain::history::{
 };
 use crate::domain::members::Directory;
 use crate::domain::notify::{
-    ChannelDirectory, DeliveryJournal, DeliverySettings, DigestAction, DigestPostInput,
+    ChannelDirectory, DeliveryJournal, DeliverySettings, DigestAction, DigestPostInput, DigestSend,
     DispatchInput, JournalError, Lease, NoticeOutbox, NotificationIntent, Queued, RecordReason,
     Recovery, SendDisposition, WeekReset, plan_digest_post, plan_digest_tick, plan_dispatch,
 };
@@ -373,6 +373,18 @@ where
         Some(operation)
     }
 
+    /// Run `work` in a newly admitted operation; `None` when it was not
+    /// admitted or did not begin (delivery is paused).
+    pub(super) async fn in_operation<R>(&self, work: impl AsyncFnOnce() -> R) -> Option<R> {
+        let mut operation = self.admit().await?;
+        if !operation.begin() {
+            return None;
+        }
+        let result = work().await;
+        operation.settle();
+        Some(result)
+    }
+
     fn card_context<'s>(&'s self, schedule: &'s ScheduleSnapshot) -> CardContext<'s> {
         CardContext {
             schedule,
@@ -491,23 +503,20 @@ where
         message: MessageId,
         edit: impl FnOnce() -> MessageEdit,
     ) -> bool {
-        let Some(mut operation) = self.admit().await else {
-            return false;
-        };
-        if !operation.begin() {
-            return false;
-        }
-        let outcome = self.transport.edit_message(channel, message, &edit()).await;
-        operation.settle();
+        let outcome = self
+            .in_operation(async || self.transport.edit_message(channel, message, &edit()).await)
+            .await;
         matches!(
             outcome,
-            Outcome::Delivered(())
-                | Outcome::DefinitelyRejected(
-                    RejectionKind::UnknownMessage
-                        | RejectionKind::UnknownChannel
-                        | RejectionKind::MissingAccess
-                        | RejectionKind::MissingPermissions,
-                )
+            Some(
+                Outcome::Delivered(())
+                    | Outcome::DefinitelyRejected(
+                        RejectionKind::UnknownMessage
+                            | RejectionKind::UnknownChannel
+                            | RejectionKind::MissingAccess
+                            | RejectionKind::MissingPermissions,
+                    )
+            )
         )
     }
 
@@ -760,19 +769,17 @@ where
             report.outcome = DigestOutcome::ClockRolledBack;
             return Ok(report);
         }
-        let Some(mut operation) = self.admit().await else {
+        let retired = self
+            .in_operation(async || {
+                self.store
+                    .retire_digests_before(lease, week_start, now)
+                    .await
+            })
+            .await;
+        let Some(retired) = retired else {
             report.outcome = DigestOutcome::Paused;
             return Ok(report);
         };
-        if !operation.begin() {
-            report.outcome = DigestOutcome::Paused;
-            return Ok(report);
-        }
-        let retired = self
-            .store
-            .retire_digests_before(lease, week_start, now)
-            .await;
-        operation.settle();
         report.retired = retired?;
         let log = self.store.load_digests().await?;
         let week = self.store.load(&Scope::Weeks(vec![week_start])).await?;
@@ -794,72 +801,7 @@ where
             report.outcome = DigestOutcome::NoChannel;
             return Ok(report);
         };
-        let executor = self.executor(lease);
-        let phrase = if post.send.disposition == SendDisposition::Send {
-            let Some(phrase) =
-                card_records::prepare_digest(self.store, &self.cards, &post.send.intent, now).await
-            else {
-                report.outcome = DigestOutcome::PhraseUnavailable;
-                return Ok(report);
-            };
-            Some(phrase)
-        } else {
-            None
-        };
-        if post.send.disposition == SendDisposition::Send
-            && let Some(old) = &post.replaces
-        {
-            let Some(permit) = self.admit().await else {
-                report.outcome = DigestOutcome::Paused;
-                return Ok(report);
-            };
-            match executor.replace_digest_admitted(permit, old, now).await? {
-                Some(Replacement::Suppressed(reason)) => {
-                    report.outcome = DigestOutcome::ReplacementSuppressed(reason);
-                    return Ok(report);
-                }
-                Some(Replacement::Retired) => {}
-                None => {
-                    report.outcome = DigestOutcome::Paused;
-                    return Ok(report);
-                }
-            }
-        }
-        let content = match post.send.disposition {
-            SendDisposition::Send => {
-                render(
-                    &post.send.intent,
-                    &self.card_context(&week),
-                    phrase.as_deref(),
-                    self.cards.art.as_ref(),
-                )
-                .await
-            }
-            SendDisposition::Suppressed => unrendered(),
-        };
-        let Some(permit) = self.admit().await else {
-            report.outcome = DigestOutcome::Paused;
-            return Ok(report);
-        };
-        let result = match executor
-            .execute_admitted(permit, &post.send, &content, None, post.record_week, now)
-            .await
-        {
-            Ok(Some(outcome)) => Ok(outcome),
-            Ok(None) => {
-                report.outcome = DigestOutcome::Paused;
-                return Ok(report);
-            }
-            Err(failure) => Err(failure),
-        };
-        let outcome = settle(result)?;
-        self.note_format(&outcome, &content);
-        report.outcome = DigestOutcome::Attempted;
-        report.send = Some(SendReport {
-            intent: post.send.intent,
-            outcome,
-        });
-        Ok(report)
+        self.post_digest(lease, report, post, &week, now).await
     }
 
     /// The dispatch step alone, under its own lease.
@@ -893,19 +835,17 @@ where
             outcome: DigestOutcome::UpToDate,
             send: None,
         };
-        let Some(mut operation) = self.admit().await else {
+        let retired = self
+            .in_operation(async || {
+                self.store
+                    .retire_digests_before(lease, current_week, now)
+                    .await
+            })
+            .await;
+        let Some(retired) = retired else {
             report.outcome = DigestOutcome::Paused;
             return Ok(report);
         };
-        if !operation.begin() {
-            report.outcome = DigestOutcome::Paused;
-            return Ok(report);
-        }
-        let retired = self
-            .store
-            .retire_digests_before(lease, current_week, now)
-            .await;
-        operation.settle();
         report.retired = retired?;
         let log = self.store.load_digests().await?;
         let last = log
@@ -937,19 +877,17 @@ where
         match plan.action {
             DigestAction::UpToDate => return Ok(report),
             DigestAction::Record(reason) => {
-                let Some(mut operation) = self.admit().await else {
+                let recorded = self
+                    .in_operation(async || {
+                        self.store
+                            .record_digest_week(lease, current_week, now)
+                            .await
+                    })
+                    .await;
+                let Some(recorded) = recorded else {
                     report.outcome = DigestOutcome::Paused;
                     return Ok(report);
                 };
-                if !operation.begin() {
-                    report.outcome = DigestOutcome::Paused;
-                    return Ok(report);
-                }
-                let recorded = self
-                    .store
-                    .record_digest_week(lease, current_week, now)
-                    .await;
-                operation.settle();
                 recorded?;
                 report.outcome = DigestOutcome::Recorded(reason);
                 return Ok(report);
@@ -976,6 +914,23 @@ where
             report.outcome = DigestOutcome::NoChannel;
             return Ok(report);
         };
+        self.post_digest(lease, report, post, &week, now).await
+    }
+
+    /// Post a planned digest: prepare its phrase, replace the week's old
+    /// card (only when sending: a suppressed send may already have posted,
+    /// so it never deletes), render and send.
+    async fn post_digest(
+        &self,
+        lease: &Lease,
+        mut report: DigestReport,
+        post: DigestSend,
+        week: &ScheduleSnapshot,
+        now: DateTime<Utc>,
+    ) -> Result<DigestReport, DeliveryError>
+    where
+        S: DigestPhraseStore,
+    {
         let executor = self.executor(lease);
         let phrase = if post.send.disposition == SendDisposition::Send {
             let Some(phrase) =
@@ -988,7 +943,6 @@ where
         } else {
             None
         };
-        // A suppressed send may already have posted: never delete for it.
         if post.send.disposition == SendDisposition::Send
             && let Some(old) = &post.replaces
         {
@@ -1012,7 +966,7 @@ where
             SendDisposition::Send => {
                 render(
                     &post.send.intent,
-                    &self.card_context(&week),
+                    &self.card_context(week),
                     phrase.as_deref(),
                     self.cards.art.as_ref(),
                 )
