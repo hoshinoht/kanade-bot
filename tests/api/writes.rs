@@ -380,8 +380,10 @@ impl Reads {
         let fixed = self
             .read("/api/admin/fixed", "fixed.json#/$defs/FixedRows")
             .await;
-        let find = |rows: &Value, id: &str| find(&rows, "id", id).clone();
-        (find(&week["runs"], "r-kalos"), find(&fixed, "f-kalos"))
+        (
+            find(&week["runs"], "id", "r-kalos").clone(),
+            find(&fixed, "id", "f-kalos").clone(),
+        )
     }
 }
 

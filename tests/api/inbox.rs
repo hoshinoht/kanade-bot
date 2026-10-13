@@ -98,50 +98,45 @@ struct Inbox {
     discord: (String, String),
 }
 
-async fn propose(
-    service: &mut Service,
-    change: ProposedChange,
-    source: ProposalSource,
-    directory: &Roster,
-) -> String {
-    service
-        .propose(
-            ProposalRequest {
-                change,
-                source,
-                source_id: "log-1".into(),
-                supersede: Supersede::Keep,
-            },
-            &policy(),
-            directory,
-        )
-        .await
-        .unwrap()
-        .proposal
-        .id
-}
+/// A scheduler on one pinned clock over the seeded directory.
+struct Seeder<'a>(Service, &'a Roster);
 
-fn change(kind: ChangeKind, run: &str, to: Option<DateTime<Utc>>) -> ProposedChange {
-    ProposedChange {
-        run_id: Some(run.into()),
-        channel_id: Some("kalos-four".into()),
-        new_datetime: to,
-        ..ProposedChange::new(kind)
+impl Seeder<'_> {
+    /// A `kind` proposal about `run` (to `to`) from `source`: its id.
+    async fn propose(
+        &mut self,
+        kind: ChangeKind,
+        run: &str,
+        to: Option<DateTime<Utc>>,
+        source: ProposalSource,
+    ) -> String {
+        let request = ProposalRequest {
+            change: ProposedChange {
+                run_id: Some(run.into()),
+                channel_id: Some("kalos-four".into()),
+                new_datetime: to,
+                ..ProposedChange::new(kind)
+            },
+            source,
+            source_id: "log-1".into(),
+            supersede: Supersede::Keep,
+        };
+        let proposed = self.0.propose(request, &policy(), self.1).await;
+        proposed.unwrap().proposal.id
+    }
+
+    /// `member`'s request: its id.
+    async fn submit(&mut self, member: &str, title: &str, spec: RequestSpec) -> String {
+        let (policy, freezes) = (policy(), NoFreezes);
+        let submitted = self
+            .0
+            .submit_request(member, title, spec, None, &policy, self.1, &freezes);
+        submitted.await.unwrap().id
     }
 }
 
-async fn submit(
-    service: &mut Service,
-    member: &str,
-    title: &str,
-    spec: RequestSpec,
-    directory: &Roster,
-) -> String {
-    service
-        .submit_request(member, title, spec, None, &policy(), directory, &NoFreezes)
-        .await
-        .unwrap()
-        .id
+fn on_run(run: &str) -> Subject {
+    Subject::Run(run.into())
 }
 
 async fn seeded() -> Inbox {
@@ -157,8 +152,9 @@ async fn seeded() -> Inbox {
     let dir = directory(&store).await;
 
     // Last boss week: a run and a request that has since expired.
-    let mut past = service(&store, utc(9, 19, 4, 0));
+    let mut past = Seeder(service(&store, utc(9, 19, 4, 0)), &dir);
     let p_run = past
+        .0
         .as_origin(Origin::new(Actor::admin("seed"), Surface::AdminPortal))
         .create_run(NewRun {
             fixed_run_id: None,
@@ -172,46 +168,25 @@ async fn seeded() -> Inbox {
         })
         .await
         .unwrap();
-    let expired_request = submit(
-        &mut past,
-        "1007",
-        "let me in",
-        RequestSpec::Join(Subject::Run(p_run)),
-        &dir,
-    )
-    .await;
+    let join_past = RequestSpec::Join(Subject::Run(p_run));
+    let expired_request = past.submit("1007", "let me in", join_past).await;
 
     // Yesterday: two proposals now past their 24 h.
-    let mut yesterday = service(&store, utc(9, 28, 3, 0));
-    let expired_chat = propose(
-        &mut yesterday,
-        change(ChangeKind::Cancel, "r-kalos", None),
-        ProposalSource::Chat,
-        &dir,
-    )
-    .await;
-    let expired_extraction = propose(
-        &mut yesterday,
-        change(ChangeKind::Otot, "r-kalos", None),
-        ProposalSource::Extraction,
-        &dir,
-    )
-    .await;
+    use {ChangeKind::*, ProposalSource::*};
+    let mut yesterday = Seeder(service(&store, utc(9, 28, 3, 0)), &dir);
+    let expired_chat = yesterday.propose(Cancel, "r-kalos", None, Chat).await;
+    let expired_extraction = yesterday.propose(Otot, "r-kalos", None, Extraction).await;
 
-    let mut now = service(&store, utc(9, 29, 4, 0));
+    let mut now = Seeder(service(&store, utc(9, 29, 4, 0)), &dir);
     // r-kalos moves off its weekly slot (Tue 22:00 → 21:00), so a timing
     // change must ask about it.
-    now.as_origin(Origin::new(Actor::admin("seed"), Surface::AdminPortal))
+    now.0
+        .as_origin(Origin::new(Actor::admin("seed"), Surface::AdminPortal))
         .amend_run("r-kalos", utc(9, 29, 13, 0), &policy())
         .await
         .unwrap();
-    let moved = propose(
-        &mut now,
-        change(ChangeKind::Move, "r-kalos", Some(utc(9, 30, 13, 0))),
-        ProposalSource::Extraction,
-        &dir,
-    )
-    .await;
+    let wed = Some(utc(9, 30, 13, 0));
+    let moved = now.propose(Move, "r-kalos", wed, Extraction).await;
     let said = utc(9, 29, 3, 30);
     let gone = utc(9, 29, 3, 31);
     store
@@ -235,7 +210,7 @@ async fn seeded() -> Inbox {
                 run_id: Some("r-kalos".into()),
                 bosses: vec!["XKalos".into()],
                 participants: vec!["1001".into()],
-                new_datetime: Some(utc(9, 30, 13, 0)),
+                new_datetime: wed,
                 day_ref: Some("wed".into()),
                 time_ref: Some("9pm".into()),
                 rsvp: None,
@@ -251,102 +226,44 @@ async fn seeded() -> Inbox {
         )
         .await
         .unwrap();
-    let to_edit = propose(
-        &mut now,
-        change(ChangeKind::Move, "r-kalos", Some(utc(9, 30, 12, 30))),
-        ProposalSource::Extraction,
-        &dir,
-    )
-    .await;
-    let cancel_chat = propose(
-        &mut now,
-        change(ChangeKind::Cancel, "n-star", None),
-        ProposalSource::Chat,
-        &dir,
-    )
-    .await;
-    let to_no_effect = propose(
-        &mut now,
-        change(ChangeKind::Move, "n-kalos", Some(utc(10, 7, 13, 0))),
-        ProposalSource::Extraction,
-        &dir,
-    )
-    .await;
+    let wed_early = Some(utc(9, 30, 12, 30));
+    let to_edit = now.propose(Move, "r-kalos", wed_early, Extraction).await;
+    let cancel_chat = now.propose(Cancel, "n-star", None, Chat).await;
+    let next_tue = Some(utc(10, 7, 13, 0));
+    let to_no_effect = now.propose(Move, "n-kalos", next_tue, Extraction).await;
+    let cancel_nkalos = now.propose(Cancel, "n-kalos", None, Extraction).await;
 
-    let cancel_nkalos = propose(
-        &mut now,
-        change(ChangeKind::Cancel, "n-kalos", None),
-        ProposalSource::Extraction,
-        &dir,
-    )
-    .await;
-    let join = submit(
-        &mut now,
-        "1007",
-        "can I come?",
-        RequestSpec::Join(Subject::Run("r-kalos".into())),
-        &dir,
-    )
-    .await;
-    let leave = submit(
-        &mut now,
-        "1002",
-        "busy next week",
-        RequestSpec::Leave(Subject::Run("n-kalos".into())),
-        &dir,
-    )
-    .await;
-    let swap = submit(
-        &mut now,
-        "1001",
-        "Gus takes my spot",
-        RequestSpec::Swap {
-            subject: Subject::Run("r-kalos".into()),
-            with: "1008".into(),
+    let spec = RequestSpec::Join(on_run("r-kalos"));
+    let join = now.submit("1007", "can I come?", spec).await;
+    let spec = RequestSpec::Leave(on_run("n-kalos"));
+    let leave = now.submit("1002", "busy next week", spec).await;
+    let spec = RequestSpec::Swap {
+        subject: on_run("r-kalos"),
+        with: "1008".into(),
+    };
+    let swap = now.submit("1001", "Gus takes my spot", spec).await;
+    let spec = RequestSpec::NewFixed(NewFixedRun {
+        owner_pinned: false,
+        owner_id: "1004".into(),
+        channel_id: Some("kalos-four".into()),
+        bosses: vec!["NMaleficStar".into()],
+        weekday: Weekday::Sat,
+        time: NaiveTime::from_hms_opt(20, 0, 0).unwrap(),
+        participants: vec!["1004".into()],
+        note: None,
+    });
+    let new_fixed = now.submit("1004", "weekly star", spec).await;
+    let spec = RequestSpec::ChangeFixed {
+        fixed_id: "f-kalos".into(),
+        edit: FixedEdit {
+            weekday: Some(Weekday::Wed),
+            time: Some(NaiveTime::from_hms_opt(21, 0, 0).unwrap()),
+            ..FixedEdit::default()
         },
-        &dir,
-    )
-    .await;
-    let new_fixed = submit(
-        &mut now,
-        "1004",
-        "weekly star",
-        RequestSpec::NewFixed(NewFixedRun {
-            owner_pinned: false,
-            owner_id: "1004".into(),
-            channel_id: Some("kalos-four".into()),
-            bosses: vec!["NMaleficStar".into()],
-            weekday: Weekday::Sat,
-            time: NaiveTime::from_hms_opt(20, 0, 0).unwrap(),
-            participants: vec!["1004".into()],
-            note: None,
-        }),
-        &dir,
-    )
-    .await;
-    let change_fixed = submit(
-        &mut now,
-        "1001",
-        "Wednesdays suit us",
-        RequestSpec::ChangeFixed {
-            fixed_id: "f-kalos".into(),
-            edit: FixedEdit {
-                weekday: Some(Weekday::Wed),
-                time: Some(NaiveTime::from_hms_opt(21, 0, 0).unwrap()),
-                ..FixedEdit::default()
-            },
-        },
-        &dir,
-    )
-    .await;
-    let unauthorised = submit(
-        &mut now,
-        "1008",
-        "next week too",
-        RequestSpec::Join(Subject::Run("n-kalos".into())),
-        &dir,
-    )
-    .await;
+    };
+    let change_fixed = now.submit("1001", "Wednesdays suit us", spec).await;
+    let spec = RequestSpec::Join(on_run("n-kalos"));
+    let unauthorised = now.submit("1008", "next week too", spec).await;
     // Gus loses the bossing role after asking.
     let mut gus = store.load_member("1008").await.unwrap().unwrap();
     gus.member.has_role = false;
@@ -1459,23 +1376,21 @@ async fn items_carry_a_one_line_consequence_from_the_preview() {
     let ids = &inbox.ids;
     let store = inbox.reads.store.clone();
     let dir = directory(&store).await;
-    let mut now = service(&store, utc(9, 29, 4, 0));
+    let mut now = Seeder(service(&store, utc(9, 29, 4, 0)), &dir);
     // r-kalos (Tue 21:00 KL) to 22:00 the same day: T-1h and T-15m are
     // queued and move; the morning card was already sent and is not counted.
-    let same_day = propose(
-        &mut now,
-        change(ChangeKind::Move, "r-kalos", Some(utc(9, 29, 14, 0))),
-        ProposalSource::Extraction,
-        &dir,
-    )
-    .await;
-    let cancel = propose(
-        &mut now,
-        change(ChangeKind::Cancel, "r-kalos", None),
-        ProposalSource::Chat,
-        &dir,
-    )
-    .await;
+    let later = Some(utc(9, 29, 14, 0));
+    let same_day = now
+        .propose(
+            ChangeKind::Move,
+            "r-kalos",
+            later,
+            ProposalSource::Extraction,
+        )
+        .await;
+    let cancel = now
+        .propose(ChangeKind::Cancel, "r-kalos", None, ProposalSource::Chat)
+        .await;
     let items = inbox.list().await;
     let of = |id: &str| items.iter().find(|item| item["id"] == id).unwrap()["consequence"].clone();
     assert_eq!(of(&same_day), "Party unchanged · 2 reminders will move");
@@ -1504,23 +1419,17 @@ async fn items_carry_a_one_line_consequence_from_the_preview() {
 async fn timing_and_party(inbox: &Inbox, title: &str) -> String {
     let store = &inbox.reads.store;
     let dir = directory(store).await;
-    let mut now = service(store, utc(9, 29, 4, 0));
-    submit(
-        &mut now,
-        "1001",
-        title,
-        RequestSpec::ChangeFixed {
-            fixed_id: "f-kalos".into(),
-            edit: FixedEdit {
-                weekday: Some(Weekday::Sat),
-                time: Some(NaiveTime::from_hms_opt(22, 30, 0).unwrap()),
-                participants: Some(vec!["1001".into(), "1002".into(), "1004".into()]),
-                ..FixedEdit::default()
-            },
+    let mut now = Seeder(service(store, utc(9, 29, 4, 0)), &dir);
+    let spec = RequestSpec::ChangeFixed {
+        fixed_id: "f-kalos".into(),
+        edit: FixedEdit {
+            weekday: Some(Weekday::Sat),
+            time: Some(NaiveTime::from_hms_opt(22, 30, 0).unwrap()),
+            participants: Some(vec!["1001".into(), "1002".into(), "1004".into()]),
+            ..FixedEdit::default()
         },
-        &dir,
-    )
-    .await
+    };
+    now.submit("1001", title, spec).await
 }
 
 /// Approve with changes: the admin moves the asked time and leaves the
