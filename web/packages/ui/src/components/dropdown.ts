@@ -46,13 +46,3 @@ export function follow(pop: () => HTMLElement | undefined, again: () => void): (
     removeEventListener('scroll', onScroll, true);
   };
 }
-
-/** Whether the native-picker frame applies now. */
-export function watchMedia(query: string, on: (matches: boolean) => void): () => void {
-  if (typeof matchMedia !== 'function') return () => {};
-  const list = matchMedia(query);
-  on(list.matches);
-  const change = (e: MediaQueryListEvent) => on(e.matches);
-  list.addEventListener('change', change);
-  return () => list.removeEventListener('change', change);
-}

@@ -9,10 +9,11 @@
 <script lang="ts">
   import '@kanade/ui/styles/core/panes.scss';
   import '@kanade/ui/styles/screens/extract.scss';
-  import { LoadError, LoadingState, SINGLE_PANE_QUERY, type Toaster } from '@kanade/ui';
+  import { LoadError, LoadingState, SINGLE_PANE_QUERY, watchMedia, type Toaster } from '@kanade/ui';
   import type { LogFacets, Rewrites } from '@kanade/api-types';
   import { tick, untrack } from 'svelte';
   import { activeCount, parseFilter, toSearch, type LogFilter } from '../logs/filters';
+  import { SearchBox } from '../logs/search.svelte';
   import LogFilters from '../logs/LogFilters.svelte';
   import Pager from '../pages/Pager.svelte';
   import { PAGE_SIZE, paged } from '../pages/paging';
@@ -63,23 +64,7 @@
     onsearch?.(withAttempt(searchOf(next), attempt));
   }
 
-  // svelte-ignore state_referenced_locally
-  let query = $state(filter.q);
-  $effect(() => {
-    const text = query;
-    if (text.trim() === filter.q.trim()) return;
-    const timer = setTimeout(() => apply({ ...filter, q: text }), 250);
-    return () => clearTimeout(timer);
-  });
-  // A q changed from outside the box (Clear, Back, a deep link) replaces what it shows.
-  // svelte-ignore state_referenced_locally
-  let seenQ = filter.q;
-  $effect(() => {
-    const q = filter.q;
-    if (q === seenQ) return;
-    seenQ = q;
-    if (q.trim() !== query.trim()) query = q;
-  });
+  const query = new SearchBox(() => filter.q, (q) => apply({ ...filter, q }));
 
   const rows = $derived(view?.rows ?? []);
   let page = $state(1);
@@ -97,13 +82,7 @@
   const accepted = $derived(rows.filter((row) => row.verdict === 'accepted').length);
 
   let phone = $state(false);
-  $effect(() => {
-    const media = window.matchMedia(SINGLE_PANE_QUERY);
-    const update = () => (phone = media.matches);
-    update();
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  });
+  $effect(() => watchMedia(SINGLE_PANE_QUERY, (matches) => (phone = matches)));
   // Wide: an attempt is always open (the first one on the page until one is chosen).
   const firstOpen = pinnedFirst(() => rewrites);
   const chosen = $derived(attempt || (phone ? '' : firstOpen(shown.rows, page)));
@@ -158,7 +137,7 @@
     <div class="extract-window__actions">
       <div class="extract-window__search" role="search">
         <label class="vh" for="{uid}-q">Search rewrites</label>
-        <input id="{uid}-q" type="search" bind:value={query} placeholder="line, reply, code…" autocomplete="off" spellcheck="false" />
+        <input id="{uid}-q" type="search" bind:value={query.text} placeholder="line, reply, code…" autocomplete="off" spellcheck="false" />
       </div>
       <div class="extract-window__filters">
         <LogFilters {filter} {facets} rewrites={scopes} members={store.members} week={store.week} onchange={apply} />

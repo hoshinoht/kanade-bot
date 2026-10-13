@@ -8,7 +8,8 @@
   import { tick } from 'svelte';
   import Icon from './Icon.svelte';
   import SelectList from './SelectList.svelte';
-  import { follow, placePopover, pressAway, watchMedia } from './dropdown';
+  import { follow, placePopover, pressAway } from './dropdown';
+  import { watchMedia } from '../media';
   import { allOf, countWords, NATIVE_QUERY, navigate, startRow, toggle, typeAhead, type SelectOption } from './select';
 
   let {

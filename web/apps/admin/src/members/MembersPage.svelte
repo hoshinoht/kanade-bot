@@ -2,7 +2,7 @@
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/screens/members.scss';
   import type { MemberRow, Persona, PingLevel, Week } from '@kanade/api-types';
-  import { Avatar, LoadError, LoadingState, PHONE_QUERY, Presence, RowContent, Select, TWO_PANE_QUERY, type Toaster } from '@kanade/ui';
+  import { Avatar, LoadError, LoadingState, PHONE_QUERY, Presence, RowContent, Select, TWO_PANE_QUERY, watchMedia, type Toaster } from '@kanade/ui';
   import '@kanade/ui/styles/core/select.scss';
   import Pager from '../pages/Pager.svelte';
   import { paged } from '../pages/paging';
@@ -71,21 +71,8 @@
   const paneRuns = $derived(paneMember && week.data ? memberRuns(week.data, paneMember.id) : null);
   const dialogs = provideDialogLayer();
 
-  $effect(() => {
-    const twoPane = window.matchMedia(TWO_PANE_QUERY);
-    const phoneFrame = window.matchMedia(PHONE_QUERY);
-    const update = () => {
-      wide = twoPane.matches;
-      phone = phoneFrame.matches;
-    };
-    update();
-    twoPane.addEventListener('change', update);
-    phoneFrame.addEventListener('change', update);
-    return () => {
-      twoPane.removeEventListener('change', update);
-      phoneFrame.removeEventListener('change', update);
-    };
-  });
+  $effect(() => watchMedia(TWO_PANE_QUERY, (matches) => (wide = matches)));
+  $effect(() => watchMedia(PHONE_QUERY, (matches) => (phone = matches)));
 
   function replace(row: MemberRow) {
     if (members.data) members.data = members.data.map((m) => (m.id === row.id ? row : m));

@@ -15,7 +15,7 @@
   import RowContent from '../components/RowContent.svelte';
   import StatusChip from '../components/StatusChip.svelte';
   import { entryArt } from '../bossArt';
-  import { SINGLE_PANE_QUERY } from '../media';
+  import { SINGLE_PANE_QUERY, watchMedia } from '../media';
   import { enter } from '../motion/enter';
   import BossGrid from './BossGrid.svelte';
   import KnowledgeGuide from './KnowledgeGuide.svelte';
@@ -102,13 +102,7 @@
   const infoOnly = $derived(facts.filter((fact) => !LETTER[fact.name]).map((fact) => fact.name));
   const tickClass = (name: string) => LETTER[name] ?? name.toLowerCase();
   let phone = $state(false);
-  $effect(() => {
-    const query = window.matchMedia(SINGLE_PANE_QUERY);
-    const update = () => (phone = query.matches);
-    update();
-    query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
-  });
+  $effect(() => watchMedia(SINGLE_PANE_QUERY, (matches) => (phone = matches)));
   const compact = $derived(phone && Boolean(selectedKey) && Boolean(chrome?.phone));
   $effect(() => {
     if (!compact || !chrome) return;

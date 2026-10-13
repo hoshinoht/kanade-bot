@@ -13,7 +13,7 @@
   import '@kanade/ui/styles/screens/history.scss';
   import '@kanade/ui/styles/screens/drafts.scss';
   import type { Boss, DraftDetail, DraftList as DraftListData, DraftWritten } from '@kanade/api-types';
-  import { Icon, LoadError, LoadingState, Modal, PendingLabel, Portrait, SINGLE_PANE_QUERY, StateNote, Toaster, enter } from '@kanade/ui';
+  import { Icon, LoadError, LoadingState, Modal, PendingLabel, Portrait, SINGLE_PANE_QUERY, StateNote, Toaster, enter, watchMedia } from '@kanade/ui';
   import { tick, untrack } from 'svelte';
   import { shortAt } from '../history/describe';
   import { Resource, send } from '../resource.svelte';
@@ -57,13 +57,7 @@
   const timeZone = $derived(store.week?.timezone ?? 'Asia/Kuala_Lumpur');
 
   let phone = $state(false);
-  $effect(() => {
-    const query = window.matchMedia(SINGLE_PANE_QUERY);
-    const update = () => (phone = query.matches);
-    update();
-    query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
-  });
+  $effect(() => watchMedia(SINGLE_PANE_QUERY, (matches) => (phone = matches)));
   const chosen = $derived(items.find((d) => d.id === item) ?? (phone ? undefined : items[0]));
   const chosenId = $derived(chosen?.id ?? null);
 

@@ -10,7 +10,7 @@
   // Its global `pre` (prompts, raw replies, traces) styles the turn's code text.
   import '@kanade/ui/styles/screens/evidence.scss';
   import '@kanade/ui/styles/screens/chat.scss';
-  import { LoadError, LoadingState, SINGLE_PANE_QUERY, enter, type Toaster } from '@kanade/ui';
+  import { LoadError, LoadingState, SINGLE_PANE_QUERY, enter, watchMedia, type Toaster } from '@kanade/ui';
   import { tick, untrack } from 'svelte';
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
@@ -20,6 +20,7 @@
   import type { AdminWeek } from '../store.svelte';
   import type { Chat } from '@kanade/api-types';
   import { activeCount, parseFilter, toSearch, type LogFilter } from '../logs/filters';
+  import { SearchBox } from '../logs/search.svelte';
   import LogFilters from '../logs/LogFilters.svelte';
   import Pager from '../pages/Pager.svelte';
   import { paged } from '../pages/paging';
@@ -59,24 +60,7 @@
     onsearch?.(toSearch(next));
   }
 
-  // The title bar's text search, debounced into the URL.
-  // svelte-ignore state_referenced_locally
-  let query = $state(filter.q);
-  $effect(() => {
-    const text = query;
-    if (text.trim() === filter.q.trim()) return;
-    const timer = setTimeout(() => apply({ ...filter, q: text }), 250);
-    return () => clearTimeout(timer);
-  });
-  // A q changed from outside the box (Clear, Back, a deep link) replaces what it shows.
-  // svelte-ignore state_referenced_locally
-  let seenQ = filter.q;
-  $effect(() => {
-    const q = filter.q;
-    if (q === seenQ) return;
-    seenQ = q;
-    if (q.trim() !== query.trim()) query = q;
-  });
+  const query = new SearchBox(() => filter.q, (q) => apply({ ...filter, q }));
 
   let page = $state(1);
   $effect(() => {
@@ -89,13 +73,7 @@
 
   // Below 900 px the list and the turn take turns (as the Inbox).
   let narrow = $state(false);
-  $effect(() => {
-    const media = window.matchMedia(SINGLE_PANE_QUERY);
-    const update = () => (narrow = media.matches);
-    update();
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  });
+  $effect(() => watchMedia(SINGLE_PANE_QUERY, (matches) => (narrow = matches)));
   // The default open turn stays put when a refresh adds turns above it.
   const firstOpen = pinnedFirst(() => chat);
   const chosenId = $derived(id || (narrow ? '' : firstOpen(shown.rows, page)));
@@ -152,7 +130,7 @@
     <div class="chat__actions">
       <div class="chat__search" role="search" data-fid="window-search">
         <label class="vh" for="chat-q">Search interactions</label>
-        <input id="chat-q" type="search" bind:value={query} placeholder="question, answer…" autocomplete="off" spellcheck="false" />
+        <input id="chat-q" type="search" bind:value={query.text} placeholder="question, answer…" autocomplete="off" spellcheck="false" />
       </div>
       <div class="chat__filters" data-fid="window-filters">
         <LogFilters {filter} facets={last?.facets ?? null} members={store.members} week={store.week} chat onchange={apply} />
