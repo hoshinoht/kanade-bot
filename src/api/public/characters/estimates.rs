@@ -24,7 +24,7 @@ use super::{module, own, roster};
 use crate::{
     api::{
         admin::{
-            character_data::estimates::lookup_name,
+            character_data::estimates::estimate_ign,
             write::{Refusal, state},
         },
         auth::{
@@ -44,7 +44,7 @@ use crate::{
     },
     domain::history::Actor,
     infrastructure::scouter::{
-        Estimates, Job, JobRequest, JobState, MAX_QUEUED, MissingReason, Start, Subject, Target,
+        Estimates, Job, JobRequest, JobState, MAX_QUEUED, Start, Subject, Target,
     },
 };
 
@@ -94,18 +94,7 @@ pub(super) async fn start(
     let estimates = estimates(&site)?;
     let me = session.user_id.as_str();
     let character = own(roster(state)?.as_ref(), me, body.character_id.trim()).await?;
-    let ign = lookup_name(&character).map_err(|reason| match reason {
-        MissingReason::OtherRegion => Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "region",
-            "Estimates cover MapleSEA characters only.",
-        ),
-        _ => Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "unsupported_ign",
-            "This IGN can't be looked up for an estimate.",
-        ),
-    })?;
+    let ign = estimate_ign(&character)?;
     let target = Target::Characters(vec![character.id.clone()]);
     // Already waiting or running: that lookup, at no cost.
     if let Some(found) = estimates.latest(&target)
