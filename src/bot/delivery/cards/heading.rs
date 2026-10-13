@@ -167,17 +167,19 @@ pub struct Chosen {
     pub code: Option<&'static str>,
 }
 
-/// Where a heading came from, for the `day_of_heading` log line.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HeadingSource {
-    Rewrite,
-    Seed,
+crate::domain::spelled! {
+    /// Where a heading came from, for the `day_of_heading` log line.
+    HeadingSource {
+        Rewrite => "rewrite",
+        Seed => "seed",
+    }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PhraseKind {
-    Countdown,
-    Digest,
+crate::domain::spelled! {
+    PhraseKind {
+        Countdown => "countdown",
+        Digest => "digest",
+    }
 }
 
 impl PhraseKind {
@@ -185,13 +187,6 @@ impl PhraseKind {
         match self {
             Self::Countdown => COUNTDOWN_PHRASE_SEED,
             Self::Digest => DIGEST_PHRASE_SEED,
-        }
-    }
-
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Countdown => "countdown",
-            Self::Digest => "digest",
         }
     }
 }
@@ -308,15 +303,6 @@ impl Trial {
             HeadingSource::Rewrite
         } else {
             HeadingSource::Seed
-        }
-    }
-}
-
-impl HeadingSource {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Rewrite => "rewrite",
-            Self::Seed => "seed",
         }
     }
 }

@@ -8,17 +8,19 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 
 use super::ports::{Clock, IdSource, ScheduleStore, StoreError};
 use super::service::{COMMIT_ATTEMPTS, SchedulerService, digest};
+use crate::domain::completion::RunEnds;
 use crate::domain::drafts::{
     DraftChange, DraftCreated, DraftEventKind, DraftKind, DraftOp, DraftRequest, DraftStale,
     DraftStatus, DraftStore, DraftUpdate, DraftWrite, Entity, LoadedDraft, MergeAnalysis,
-    MergeCommit, MergeConflict, NewDraft, PreviewIds, Removal, ReplayError, Settle, StagedOp,
-    StoredDraft, Target, analyze_merge, analyze_merge_applying, conflict_ops, expires_week,
-    renumber_created, replay, replay_equivalent, replay_real,
+    MergeCommit, MergeConflict, NewDraft, PreviewIds, Rejected, Removal, ReplayError, Settle,
+    StagedOp, StoredDraft, Target, analyze_merge, analyze_merge_applying, conflict_ops,
+    expires_week, renumber_created, replay, replay_equivalent, replay_real,
 };
 use crate::domain::history::{
     Actor, ChangeMeta, ChangeRecord, ChangeRef, HistoryGap, Origin, Surface, rewind,
@@ -129,6 +131,15 @@ impl From<StoreError> for DraftError {
 impl From<HistoryGap> for DraftError {
     fn from(gap: HistoryGap) -> Self {
         Self::HistoryGap(gap)
+    }
+}
+
+impl From<Rejected> for DraftError {
+    fn from(rejected: Rejected) -> Self {
+        Self::ReplayFailed {
+            ord: rejected.ord,
+            error: rejected.error,
+        }
     }
 }
 
@@ -466,6 +477,26 @@ fn needed_by(ops: &[DraftOp], ord: usize) -> Option<usize> {
         })
 }
 
+/// Replay `ops` on `base` with the checks a merge runs, and derive the
+/// expiry scope they leave there.
+pub(super) fn replay_scope(
+    base: &ScheduleSnapshot,
+    ops: &[DraftOp],
+    policy: &SchedulePolicy,
+    ends: Option<&Arc<RunEnds>>,
+    directory: &(dyn Directory + Sync),
+    now: DateTime<Utc>,
+) -> DraftResult<Option<DateTime<Utc>>> {
+    let replayed = replay(base, ops, policy, ends, directory, now)?;
+    Ok(expires_week(
+        ops,
+        &replayed.created,
+        base,
+        &replayed.draft,
+        policy,
+    ))
+}
+
 impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I, C> {
     /// Start an administrator draft on the current head. `request_id` makes
     /// the create idempotent per author (exact repeat replays the draft, a
@@ -537,25 +568,14 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             added_at: now,
         });
         let ops: Vec<DraftOp> = staged.iter().map(|staged| staged.op.clone()).collect();
-        let replayed = replay(
+        let expires = replay_scope(
             &flow.base_snapshot,
             &ops,
             policy,
             ends.as_ref(),
             directory,
             now,
-        )
-        .map_err(|rejected| DraftError::ReplayFailed {
-            ord: rejected.ord,
-            error: rejected.error,
-        })?;
-        let expires = expires_week(
-            &ops,
-            &replayed.created,
-            &flow.base_snapshot,
-            &replayed.draft,
-            policy,
-        );
+        )?;
         self.replace_ops(
             &loaded.draft,
             staged,
@@ -601,25 +621,14 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         ops[ord] = op;
         // The whole list must still replay on the base.
         let flow = upstream(&self.store, &loaded.draft.base).await?;
-        let replayed = replay(
+        let expires = replay_scope(
             &flow.base_snapshot,
             &ops,
             policy,
             ends.as_ref(),
             directory,
             now,
-        )
-        .map_err(|rejected| DraftError::ReplayFailed {
-            ord: rejected.ord,
-            error: rejected.error,
-        })?;
-        let expires = expires_week(
-            &ops,
-            &replayed.created,
-            &flow.base_snapshot,
-            &replayed.draft,
-            policy,
-        );
+        )?;
         let staged = restage(&loaded.ops, &ops, admin, now);
         self.replace_ops(
             &loaded.draft,
@@ -672,25 +681,14 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             }
         }
         let flow = upstream(&self.store, &loaded.draft.base).await?;
-        let replayed = replay(
+        let expires = replay_scope(
             &flow.base_snapshot,
             &ops,
             policy,
             ends.as_ref(),
             directory,
             now,
-        )
-        .map_err(|rejected| DraftError::ReplayFailed {
-            ord: rejected.ord,
-            error: rejected.error,
-        })?;
-        let expires = expires_week(
-            &ops,
-            &replayed.created,
-            &flow.base_snapshot,
-            &replayed.draft,
-            policy,
-        );
+        )?;
         let staged = restage(&loaded.ops, &ops, admin, now);
         self.replace_ops(
             &loaded.draft,
@@ -718,24 +716,38 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         for (position, op) in staged.iter_mut().enumerate() {
             op.ord = position;
         }
+        let change = DraftChange::ReplaceOps {
+            ops: staged,
+            event,
+            ord,
+            expires_week,
+        };
+        let written = self
+            .update_as(draft, Actor::admin(admin), now, change)
+            .await?;
+        self.store
+            .load_draft(&written.id)
+            .await?
+            .ok_or(DraftError::UnknownDraft(written.id))
+    }
+
+    /// Write one change to the live `draft` as `actor` at `at`.
+    pub(super) async fn update_as(
+        &self,
+        draft: &StoredDraft,
+        actor: Actor,
+        at: DateTime<Utc>,
+        change: DraftChange,
+    ) -> DraftResult<StoredDraft> {
         let update = DraftUpdate {
             draft_id: draft.id.clone(),
             expected_version: draft.version,
-            actor: Actor::admin(admin),
-            at: now,
-            change: DraftChange::ReplaceOps {
-                ops: staged,
-                event,
-                ord,
-                expires_week,
-            },
+            actor,
+            at,
+            change,
         };
         match self.store.update_draft(update).await? {
-            DraftWrite::Written(draft) => Ok(self
-                .store
-                .load_draft(&draft.id)
-                .await?
-                .ok_or_else(|| DraftError::UnknownDraft(draft.id.clone()))?),
+            DraftWrite::Written(draft) => Ok(draft),
             DraftWrite::Stale(stale) => Err(stale_of(&draft.id, stale)),
         }
     }
@@ -886,41 +898,22 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         };
         // The new base is the current schedule, so replay there for the
         // re-derived scope.
-        let replayed = replay(
+        let expires = replay_scope(
             &flow.current,
             &rebased,
             policy,
             ends.as_ref(),
             directory,
             now,
-        )
-        .map_err(|rejected| DraftError::ReplayFailed {
-            ord: rejected.ord,
-            error: rejected.error,
-        })?;
-        let expires = expires_week(
-            &rebased,
-            &replayed.created,
-            &flow.current,
-            &replayed.draft,
-            policy,
-        );
-        let update = DraftUpdate {
-            draft_id: loaded.draft.id.clone(),
-            expected_version: loaded.draft.version,
-            actor: Actor::admin(admin),
-            at: now,
-            change: DraftChange::Rebase {
-                base: flow.head,
-                base_revision: flow.current.revision,
-                expires_week: expires,
-                ops: staged,
-            },
+        )?;
+        let change = DraftChange::Rebase {
+            base: flow.head,
+            base_revision: flow.current.revision,
+            expires_week: expires,
+            ops: staged,
         };
-        match self.store.update_draft(update).await? {
-            DraftWrite::Written(draft) => Ok(draft),
-            DraftWrite::Stale(stale) => Err(stale_of(&loaded.draft.id, stale)),
-        }
+        self.update_as(&loaded.draft, Actor::admin(admin), now, change)
+            .await
     }
 
     /// Rename a live draft (1..=200 characters); its operations are as
@@ -935,19 +928,11 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         check_title(title)?;
         let now = self.clock.now();
         let loaded = load_live(&self.store, draft_id, expected_version).await?;
-        let update = DraftUpdate {
-            draft_id: loaded.draft.id.clone(),
-            expected_version: loaded.draft.version,
-            actor: Actor::admin(admin),
-            at: now,
-            change: DraftChange::Retitle {
-                title: title.to_owned(),
-            },
+        let change = DraftChange::Retitle {
+            title: title.to_owned(),
         };
-        match self.store.update_draft(update).await? {
-            DraftWrite::Written(draft) => Ok(draft),
-            DraftWrite::Stale(stale) => Err(stale_of(&loaded.draft.id, stale)),
-        }
+        self.update_as(&loaded.draft, Actor::admin(admin), now, change)
+            .await
     }
 
     /// Discard a live draft for good; its operations stay in history.
@@ -960,21 +945,13 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
     ) -> DraftResult<StoredDraft> {
         let now = self.clock.now();
         let loaded = load_live(&self.store, draft_id, expected_version).await?;
-        let update = DraftUpdate {
-            draft_id: loaded.draft.id.clone(),
-            expected_version: loaded.draft.version,
-            actor: Actor::admin(admin),
-            at: now,
-            change: DraftChange::Close {
-                status: DraftStatus::Discarded,
-                reason,
-                notices: Vec::new(),
-            },
+        let change = DraftChange::Close {
+            status: DraftStatus::Discarded,
+            reason,
+            notices: Vec::new(),
         };
-        match self.store.update_draft(update).await? {
-            DraftWrite::Written(draft) => Ok(draft),
-            DraftWrite::Stale(stale) => Err(stale_of(&loaded.draft.id, stale)),
-        }
+        self.update_as(&loaded.draft, Actor::admin(admin), now, change)
+            .await
     }
 
     /// Merge the staged operations as one `DraftMerge` change: one record
@@ -1181,11 +1158,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
                 }
                 return Err(DraftError::Conflicts(analysis.conflicts));
             }
-            let preview = replay(&flow.current, &ops, policy, ends.as_ref(), directory, now)
-                .map_err(|rejected| DraftError::ReplayFailed {
-                    ord: rejected.ord,
-                    error: rejected.error,
-                })?;
+            let preview = replay(&flow.current, &ops, policy, ends.as_ref(), directory, now)?;
             let real = replay_real(
                 &flow.current,
                 &ops,
@@ -1194,11 +1167,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
                 directory,
                 now,
                 &mut self.ids,
-            )
-            .map_err(|rejected| DraftError::ReplayFailed {
-                ord: rejected.ord,
-                error: rejected.error,
-            })?;
+            )?;
             let mut timing_notices: Vec<Notice> = real
                 .notices
                 .iter()

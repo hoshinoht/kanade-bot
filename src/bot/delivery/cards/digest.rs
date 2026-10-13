@@ -4,10 +4,9 @@
 
 use chrono::{DateTime, Utc};
 
-use super::common::{
-    COLOUR_DIGEST, CardContext, answers_text, format_bosses, local_day, local_time,
-};
+use super::common::{COLOUR_DIGEST, CardContext, answers_text};
 use super::{Card, CardEmbed, CardField};
+use crate::bot::commands::text::{format_bosses, local_day, local_time};
 use crate::domain::ids::short_id;
 use crate::domain::notify::DigestInclusion;
 use crate::domain::schedule::{Run, RunStatus};

@@ -5,9 +5,10 @@ use chrono::{DateTime, Utc};
 
 use super::alerts::AlertSink;
 use super::cards::redesign::decline_text;
-use super::cards::{CardKit, ReminderCardStore, format_bosses, local_day, local_time};
+use super::cards::{CardKit, ReminderCardStore};
 use super::executor::SendReport;
 use super::tick::{Delivery, DeliveryError};
+use crate::bot::commands::text::{format_bosses, local_day, local_time};
 use crate::bot::ids::parse_id;
 use crate::bot::mentions::allow_users;
 use crate::bot::transport::{DiscordTransport, Outcome, OutgoingMessage, RejectionKind};

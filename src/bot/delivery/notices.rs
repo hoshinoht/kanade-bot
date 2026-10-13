@@ -126,17 +126,16 @@ where
         let mut held_back = BTreeSet::new();
         for row in pending.notices {
             if now - row.created_at > self.config.max_notice_age {
-                let Some(mut operation) = self.admit().await else {
+                let drained = self
+                    .in_operation(async || {
+                        self.store
+                            .mark_drained(lease, &row.source, row.ordinal, DrainReason::Stale, now)
+                            .await
+                    })
+                    .await;
+                let Some(drained) = drained else {
                     break;
                 };
-                if !operation.begin() {
-                    break;
-                }
-                let drained = self
-                    .store
-                    .mark_drained(lease, &row.source, row.ordinal, DrainReason::Stale, now)
-                    .await;
-                operation.settle();
                 drained?;
                 report.stale += 1;
                 continue;
@@ -168,17 +167,16 @@ where
                 self.config.quiet_mode,
                 &self.cards,
             ) else {
-                let Some(mut operation) = self.admit().await else {
+                let drained = self
+                    .in_operation(async || {
+                        self.store
+                            .mark_drained(lease, &row.source, row.ordinal, DrainReason::Silent, now)
+                            .await
+                    })
+                    .await;
+                let Some(drained) = drained else {
                     break;
                 };
-                if !operation.begin() {
-                    break;
-                }
-                let drained = self
-                    .store
-                    .mark_drained(lease, &row.source, row.ordinal, DrainReason::Silent, now)
-                    .await;
-                operation.settle();
                 drained?;
                 report.silent += 1;
                 continue;

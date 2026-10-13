@@ -37,12 +37,13 @@ pub use store::{DebugCardStore, PostedDebugCard};
 
 use super::alerts::{AlertThrottle, LogAlerts};
 use super::cards::{
-    self, CardContext, CardKit, HeaderKind, PhraseKind, TrialOrigin, Verdict, fetch_art, local_day,
+    self, CardContext, CardKit, HeaderKind, PhraseKind, TrialOrigin, Verdict, fetch_art,
 };
 use super::executor::{Executor, SendOutcome};
 use super::notice_text::QUIET_NOTE;
 use super::pregen::PREGEN_DEADLINE;
 use super::refresh::Now;
+use crate::bot::commands::text::local_day;
 use crate::bot::commands::{
     DebugCards, HeaderNote, HeaderRequest, HeaderTrialKind, HeaderTrials, PingRequest, PortFuture,
     TestKind, TestPosted, TestReport, TestSubject,

@@ -4,10 +4,11 @@
 
 use super::art::{lead_entry_art, lead_portrait};
 use super::common::{
-    COLOUR_DAY_OF, CardContext, People, REACT_HINT, boss_detail, everyone_on, format_bosses,
-    lead_colour, local_time, status_line, unanswered,
+    COLOUR_DAY_OF, CardContext, People, REACT_HINT, boss_detail, everyone_on, lead_colour,
+    status_line, unanswered,
 };
 use super::{Card, CardEmbed, CardField};
+use crate::bot::commands::text::{format_bosses, local_time};
 use crate::domain::schedule::{Run, RunStatus};
 
 /// The runs a day-of card names, in time order (missing runs skipped).

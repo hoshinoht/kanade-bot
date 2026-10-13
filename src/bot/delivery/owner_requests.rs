@@ -17,13 +17,11 @@ use twilight_model::channel::message::component::ButtonStyle;
 use super::alerts::{AdminAlert, AlertSink};
 use super::cards::redesign::{ButtonId, action_row, button};
 use super::executor::SendOutcome;
-use super::tick::{Delivery, DeliveryError, settle};
+use super::tick::{Delivery, DeliveryError};
 use crate::bot::commands::text::{hhmm, weekday_name};
 use crate::bot::ids::{id_text, parse_id};
 use crate::bot::mentions;
-use crate::bot::transport::{
-    DiscordTransport, MessageEdit, Outcome, OutgoingMessage, RejectionKind,
-};
+use crate::bot::transport::{DiscordTransport, MessageEdit, OutgoingMessage};
 use crate::domain::drafts::ProposalStore;
 use crate::domain::history::Checkpoints;
 use crate::domain::ids::short_id;
@@ -239,41 +237,24 @@ where
             content: IntentContent::Plain,
             warnings: Vec::new(),
         };
-        let Some(mut operation) = self.admit().await else {
+        let source = format!("owner-request:{}", request.id);
+        let Some((operation, outcome)) = self
+            .post_source(lease, &intent, &message, &source, now)
+            .await?
+        else {
             return Ok(false);
         };
-        let source = format!("owner-request:{}", request.id);
-        let result = self
-            .executor(lease)
-            .execute_source_in_operation(&mut operation, &intent, &message, &source, 0, now)
-            .await;
-        let outcome = match result {
-            Ok(Some(outcome)) => Ok(outcome),
-            Ok(None) => {
-                operation.settle();
-                return Ok(false);
+        let bound = if let SendOutcome::Bound(message_id) = outcome {
+            let stored = self
+                .store
+                .set_owner_request_message(&request.id, &channel_id, &id_text(message_id))
+                .await;
+            if let Err(error) = stored {
+                self.owner_alert(format!("record post of {}: {error}", request.id), now);
             }
-            Err(failure) => Err(failure),
-        };
-        let outcome = match settle(outcome) {
-            Ok(outcome) => outcome,
-            Err(error) => {
-                operation.settle();
-                return Err(error);
-            }
-        };
-        let bound = match outcome {
-            SendOutcome::Bound(message_id) => {
-                let stored = self
-                    .store
-                    .set_owner_request_message(&request.id, &channel_id, &id_text(message_id))
-                    .await;
-                if let Err(error) = stored {
-                    self.owner_alert(format!("record post of {}: {error}", request.id), now);
-                }
-                true
-            }
-            _ => false,
+            true
+        } else {
+            false
         };
         operation.settle();
         Ok(bound)
@@ -293,25 +274,9 @@ where
         ) else {
             return self.mark_settled(request, now).await;
         };
-        let Some(mut operation) = self.admit().await else {
-            return false;
-        };
-        if !operation.begin() {
-            return false;
-        }
-        let edit = MessageEdit::legacy(decided_text(request, timing), Vec::new(), mentions::none());
-        let outcome = self.transport.edit_message(channel, message, &edit).await;
-        operation.settle();
-        match outcome {
-            Outcome::Delivered(())
-            | Outcome::DefinitelyRejected(
-                RejectionKind::UnknownMessage
-                | RejectionKind::UnknownChannel
-                | RejectionKind::MissingAccess
-                | RejectionKind::MissingPermissions,
-            ) => self.mark_settled(request, now).await,
-            _ => false,
-        }
+        let edit =
+            || MessageEdit::legacy(decided_text(request, timing), Vec::new(), mentions::none());
+        self.edit_or_gone(channel, message, edit).await && self.mark_settled(request, now).await
     }
 
     async fn mark_settled(&self, request: &OwnerRequest, now: DateTime<Utc>) -> bool {

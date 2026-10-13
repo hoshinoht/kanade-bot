@@ -9,14 +9,14 @@ use chrono::{DateTime, Utc};
 
 use super::drafts::{
     DraftError, MergeInput, MergeOutcome, MergeWarning, check_stageable, check_title, is_expired,
-    merge_request_id, skipped_runs, stale_of, upstream,
+    merge_request_id, replay_scope, skipped_runs, stale_of, upstream,
 };
 use super::ports::{Clock, IdSource, ScheduleStore, Scope};
 use super::service::{SchedulerService, digest};
 use crate::domain::drafts::{
     DraftChange, DraftCreated, DraftEventKind, DraftKind, DraftOp, DraftRequest, DraftStale,
     DraftStatus, DraftStore, DraftUpdate, DraftWrite, LoadedDraft, MergeAnalysis, NewDraft,
-    RequestLimit, StagedOp, StoredDraft, Submission, analyze_merge, expires_week, replay,
+    RequestLimit, StagedOp, StoredDraft, Submission, analyze_merge, replay,
 };
 use crate::domain::history::{Actor, Surface};
 use crate::domain::members::Directory;
@@ -245,14 +245,6 @@ fn staged(ops: Vec<DraftOp>, author: &Actor, at: DateTime<Utc>) -> Vec<StagedOp>
         .collect()
 }
 
-fn replay_failed(rejected: crate::domain::drafts::Rejected) -> RequestError {
-    DraftError::ReplayFailed {
-        ord: rejected.ord,
-        error: rejected.error,
-    }
-    .into()
-}
-
 impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I, C> {
     /// Submit a member request. The requester is authorised on the current
     /// schedule, the operations are dry-run there (a request that could not
@@ -298,9 +290,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         let subject = spec.subject();
         authorise(kind, subject.as_ref(), member, &snapshot, directory)?;
         let ops = operations(&spec, member, &snapshot)?;
-        let replayed = replay(&snapshot, &ops, policy, ends.as_ref(), directory, now)
-            .map_err(replay_failed)?;
-        let expires = expires_week(&ops, &replayed.created, &snapshot, &replayed.draft, policy);
+        let expires = replay_scope(&snapshot, &ops, policy, ends.as_ref(), directory, now)?;
         if is_expired(expires, policy, now)? {
             return Err(DraftError::Expired.into());
         }
@@ -376,22 +366,14 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         let loaded = load_request(&self.store, id).await?;
         require_submitted(&loaded, expected_version)?;
         let flow = upstream(&self.store, &loaded.draft.base).await?;
-        let replayed = replay(
+        let expires = replay_scope(
             &flow.base_snapshot,
             &ops,
             policy,
             ends.as_ref(),
             directory,
             now,
-        )
-        .map_err(replay_failed)?;
-        let expires = expires_week(
-            &ops,
-            &replayed.created,
-            &flow.base_snapshot,
-            &replayed.draft,
-            policy,
-        );
+        )?;
         let update = DraftUpdate {
             draft_id: id.to_owned(),
             expected_version,
@@ -688,21 +670,14 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         reason: Option<String>,
         notices: Vec<Notice>,
     ) -> RequestResult<StoredDraft> {
-        let update = DraftUpdate {
-            draft_id: loaded.draft.id.clone(),
-            expected_version: loaded.draft.version,
-            actor,
-            at: self.clock.now(),
-            change: DraftChange::Close {
-                status,
-                reason,
-                notices,
-            },
+        let change = DraftChange::Close {
+            status,
+            reason,
+            notices,
         };
-        match self.store.update_draft(update).await? {
-            DraftWrite::Written(draft) => Ok(draft),
-            DraftWrite::Stale(stale) => Err(stale_of(&loaded.draft.id, stale).into()),
-        }
+        Ok(self
+            .update_as(&loaded.draft, actor, self.clock.now(), change)
+            .await?)
     }
 
     /// Close an expired request (as the tick's system actor) and return

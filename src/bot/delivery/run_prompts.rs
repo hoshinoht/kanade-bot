@@ -28,13 +28,11 @@ use super::cards::redesign::{
     subtext, text,
 };
 use super::executor::SendOutcome;
-use super::tick::{Delivery, DeliveryError, settle};
+use super::tick::{Delivery, DeliveryError};
 use crate::bot::commands::text::{format_bosses, local_day, local_time, status_label};
 use crate::bot::ids::{id_text, parse_id};
 use crate::bot::mentions;
-use crate::bot::transport::{
-    DiscordTransport, MessageEdit, Outcome, OutgoingMessage, RejectionKind,
-};
+use crate::bot::transport::{DiscordTransport, MessageEdit, OutgoingMessage};
 use crate::domain::completion::{
     ASK_AGAIN_AFTER, CompletionPlan, PromptClose, PromptOutcome, RunPrompt, RunPromptStore,
     auto_request_id, plan, pressed_request_id, run_minutes,
@@ -588,45 +586,28 @@ where
             Ok(None) => {}
             Err(error) => return Err(error.into()),
         }
-        let Some(mut operation) = self.admit().await else {
+        let Some((operation, outcome)) = self
+            .post_source(lease, &intent, &message, &source, now)
+            .await?
+        else {
             return Ok(false);
         };
-        let result = self
-            .executor(lease)
-            .execute_source_in_operation(&mut operation, &intent, &message, &source, 0, now)
-            .await;
-        let outcome = match result {
-            Ok(Some(outcome)) => Ok(outcome),
-            Ok(None) => {
-                operation.settle();
-                return Ok(false);
+        let bound = if let SendOutcome::Bound(message_id) = outcome {
+            let stored = self
+                .store
+                .set_run_prompt_message(
+                    prompt.run_id.clone(),
+                    prompt.ask,
+                    channel_id,
+                    id_text(message_id),
+                )
+                .await;
+            if let Err(error) = stored {
+                self.prompt_alert(format!("record post of {}: {error}", prompt.key()), now);
             }
-            Err(failure) => Err(failure),
-        };
-        let outcome = match settle(outcome) {
-            Ok(outcome) => outcome,
-            Err(error) => {
-                operation.settle();
-                return Err(error);
-            }
-        };
-        let bound = match outcome {
-            SendOutcome::Bound(message_id) => {
-                let stored = self
-                    .store
-                    .set_run_prompt_message(
-                        prompt.run_id.clone(),
-                        prompt.ask,
-                        channel_id,
-                        id_text(message_id),
-                    )
-                    .await;
-                if let Err(error) = stored {
-                    self.prompt_alert(format!("record post of {}: {error}", prompt.key()), now);
-                }
-                true
-            }
-            _ => false,
+            true
+        } else {
+            false
         };
         operation.settle();
         Ok(bound)
@@ -646,28 +627,14 @@ where
         ) else {
             return self.mark_prompt_settled(prompt, now).await;
         };
-        let Some(mut operation) = self.admit().await else {
-            return false;
+        let edit = || {
+            MessageEdit::v2(
+                outcome_components(prompt, run, self.config.policy.zone()),
+                mentions::none(),
+            )
         };
-        if !operation.begin() {
-            return false;
-        }
-        let edit = MessageEdit::v2(
-            outcome_components(prompt, run, self.config.policy.zone()),
-            mentions::none(),
-        );
-        let outcome = self.transport.edit_message(channel, message, &edit).await;
-        operation.settle();
-        match outcome {
-            Outcome::Delivered(())
-            | Outcome::DefinitelyRejected(
-                RejectionKind::UnknownMessage
-                | RejectionKind::UnknownChannel
-                | RejectionKind::MissingAccess
-                | RejectionKind::MissingPermissions,
-            ) => self.mark_prompt_settled(prompt, now).await,
-            _ => false,
-        }
+        self.edit_or_gone(channel, message, edit).await
+            && self.mark_prompt_settled(prompt, now).await
     }
 
     async fn mark_prompt_settled(&self, prompt: &RunPrompt, now: DateTime<Utc>) -> bool {

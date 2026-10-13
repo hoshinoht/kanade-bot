@@ -18,12 +18,13 @@
 
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, Datelike, Timelike, Utc, Weekday};
+use chrono::{DateTime, Timelike, Utc};
 use chrono_tz::Tz;
 
 use super::cards::CardKit;
 use super::cards::redesign::{self, NoticeLook};
 use crate::bot::cards::format::{Audience, format_participants};
+use crate::bot::commands::text::{format_bosses, local_day, local_time, weekday_name};
 use crate::bot::mentions;
 use crate::bot::transport::OutgoingMessage;
 use crate::domain::members::Directory;
@@ -34,10 +35,6 @@ use crate::domain::schedule::{
 };
 use crate::domain::settings::MessageStyle;
 
-const WEEKDAY_NAMES: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const MONTH_NAMES: [&str; 12] = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
 /// v4 `QUIET_NOTE`.
 pub(super) const QUIET_NOTE: &str = "🔕 quiet mode - nobody was notified";
 
@@ -45,36 +42,8 @@ fn react_hint() -> String {
     format!("React {EMOJI_YES} if you're on, {EMOJI_NO} if not.")
 }
 
-/// v4 `format_bosses`: stored tokens, not labels.
-fn format_bosses(bosses: &[String]) -> String {
-    if bosses.is_empty() {
-        "(no bosses)".to_owned()
-    } else {
-        bosses.join(" + ")
-    }
-}
-
-fn local_day(at: DateTime<Utc>, zone: Tz) -> String {
-    let local = at.with_timezone(&zone);
-    format!(
-        "{} {:02} {}",
-        WEEKDAY_NAMES[local.weekday().num_days_from_monday() as usize],
-        local.day(),
-        MONTH_NAMES[local.month0() as usize]
-    )
-}
-
-fn local_time(at: DateTime<Utc>, zone: Tz) -> String {
-    let local = at.with_timezone(&zone);
-    format!("{:02}:{:02}", local.hour(), local.minute())
-}
-
 fn slot(at: DateTime<Utc>, zone: Tz) -> String {
     format!("{} {}", local_day(at, zone), local_time(at, zone))
-}
-
-fn weekday_name(weekday: Weekday) -> &'static str {
-    WEEKDAY_NAMES[weekday.num_days_from_monday() as usize]
 }
 
 /// v4 `pings.audience(repo, listed, kind)`.
@@ -331,7 +300,7 @@ pub fn render_notice(
 
 #[cfg(test)]
 mod tests {
-    use chrono::{NaiveTime, TimeZone};
+    use chrono::{NaiveTime, TimeZone, Weekday};
 
     use super::*;
     use crate::domain::members::{Member, PingLevel, Roster};

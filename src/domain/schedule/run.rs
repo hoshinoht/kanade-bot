@@ -185,30 +185,17 @@ impl std::fmt::Debug for FixedRunPatch {
     }
 }
 
-/// Weekly-timing fields an edit touched, which decide what reaches its runs.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum FixedField {
-    OwnerId,
-    ChannelId,
-    Bosses,
-    Weekday,
-    Time,
-    Participants,
-    Note,
-}
-
-impl FixedField {
-    /// v4's column name, as notices list touched fields.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::OwnerId => "owner_id",
-            Self::ChannelId => "channel_id",
-            Self::Bosses => "bosses",
-            Self::Weekday => "weekday",
-            Self::Time => "time",
-            Self::Participants => "participants",
-            Self::Note => "note",
-        }
+spelled! {
+    /// Weekly-timing fields an edit touched, which decide what reaches its
+    /// runs; spelled as v4's column name, as notices list touched fields.
+    FixedField {
+        OwnerId => "owner_id",
+        ChannelId => "channel_id",
+        Bosses => "bosses",
+        Weekday => "weekday",
+        Time => "time",
+        Participants => "participants",
+        Note => "note",
     }
 }
 

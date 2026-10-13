@@ -4,9 +4,9 @@
 
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, Datelike, Timelike, Utc};
 use chrono_tz::Tz;
 
+use crate::bot::commands::text::{WEEKDAY_NAMES, local_day, local_time, mention};
 use crate::domain::ids::short_id;
 use crate::domain::proposals::{CardDetails, ChangeKind};
 use crate::domain::schedule::{EMOJI_NO, EMOJI_YES, Run};
@@ -18,10 +18,6 @@ pub const TBD: &str = "**TBD**";
 /// Put on a card a newer card (or an approved sibling) retired.
 pub const SUPERSEDED_NOTICE: &str = "↪ superseded by a newer card";
 
-const WEEKDAY_NAMES: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const MONTH_NAMES: [&str; 12] = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
 const DIFFICULTY_WORDS: [(&str, &str); 5] = [
     ("e", "Easy"),
     ("n", "Normal"),
@@ -61,10 +57,6 @@ impl Audience {
     }
 }
 
-fn mention(user_id: &str) -> String {
-    format!("<@{user_id}>")
-}
-
 /// v4 `format_participants`: everyone a mention without an audience.
 pub fn format_participants(user_ids: &[String], who: Option<&Audience>) -> String {
     if user_ids.is_empty() {
@@ -96,21 +88,6 @@ pub fn boss_labels(bosses: &[String]) -> String {
     }
     let labels: Vec<String> = bosses.iter().map(|token| boss_label(token)).collect();
     labels.join(" + ")
-}
-
-pub(crate) fn local_day(at: DateTime<Utc>, zone: Tz) -> String {
-    let local = at.with_timezone(&zone);
-    format!(
-        "{} {:02} {}",
-        WEEKDAY_NAMES[local.weekday().num_days_from_monday() as usize],
-        local.day(),
-        MONTH_NAMES[local.month0() as usize]
-    )
-}
-
-pub(crate) fn local_time(at: DateTime<Utc>, zone: Tz) -> String {
-    let local = at.with_timezone(&zone);
-    format!("{:02}:{:02}", local.hour(), local.minute())
 }
 
 pub(crate) fn kind_verb(kind: &str) -> &str {
@@ -307,23 +284,16 @@ pub fn proposal_line(
     (name, lines.join("\n"))
 }
 
-/// Which header a card gets.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CardKind {
-    Proposal,
-    Suggestion,
-    Fix,
+crate::domain::spelled! {
+    /// Which header a card gets.
+    CardKind {
+        Proposal => "proposal",
+        Suggestion => "suggestion",
+        Fix => "fix",
+    }
 }
 
 impl CardKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Proposal => "proposal",
-            Self::Suggestion => "suggestion",
-            Self::Fix => "fix",
-        }
-    }
-
     fn header(self) -> (&'static str, u32) {
         match self {
             Self::Proposal => ("📋 Proposed change", COLOUR_PROPOSAL),

@@ -2,7 +2,6 @@
 //! append-only event log, and the merge commit that closes a draft in the
 //! same transaction as the schedule change it records.
 
-use std::fmt;
 use std::future::Future;
 
 use chrono::{DateTime, Utc};
@@ -12,75 +11,32 @@ use crate::domain::history::{Actor, ChangeMeta, ChangeRecord, ChangeRef};
 use crate::domain::schedule::{ChangeSet, Notice, ScheduleSnapshot};
 use crate::domain::scheduler::{Committed, StoreError};
 
-/// Who may merge a draft: an administrator's own draft, (S3) a member's
-/// request an administrator approves, or a proposal the extractor or
-/// chatbot staged (see [`ProposalStore`](super::ProposalStore)).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum DraftKind {
-    Admin,
-    Request,
-    Proposal,
-}
-
-impl DraftKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Admin => "admin",
-            Self::Request => "request",
-            Self::Proposal => "proposal",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        [Self::Admin, Self::Request, Self::Proposal]
-            .into_iter()
-            .find(|kind| kind.as_str() == value)
+spelled! {
+    /// Who may merge a draft: an administrator's own draft, (S3) a member's
+    /// request an administrator approves, or a proposal the extractor or
+    /// chatbot staged (see [`ProposalStore`](super::ProposalStore)).
+    DraftKind {
+        Admin => "admin",
+        Request => "request",
+        Proposal => "proposal",
     }
 }
 
-/// A draft's lifecycle. Only `Open` (and, for requests, `Submitted`) drafts
-/// change; every other status is final.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum DraftStatus {
-    Open,
-    Submitted,
-    Merged,
-    Discarded,
-    Rejected,
-    Withdrawn,
-    Expired,
+spelled! {
+    /// A draft's lifecycle. Only `Open` (and, for requests, `Submitted`) drafts
+    /// change; every other status is final.
+    DraftStatus {
+        Open => "open",
+        Submitted => "submitted",
+        Merged => "merged",
+        Discarded => "discarded",
+        Rejected => "rejected",
+        Withdrawn => "withdrawn",
+        Expired => "expired",
+    }
 }
 
 impl DraftStatus {
-    pub const ALL: &[Self] = &[
-        Self::Open,
-        Self::Submitted,
-        Self::Merged,
-        Self::Discarded,
-        Self::Rejected,
-        Self::Withdrawn,
-        Self::Expired,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Open => "open",
-            Self::Submitted => "submitted",
-            Self::Merged => "merged",
-            Self::Discarded => "discarded",
-            Self::Rejected => "rejected",
-            Self::Withdrawn => "withdrawn",
-            Self::Expired => "expired",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL
-            .iter()
-            .copied()
-            .find(|status| status.as_str() == value)
-    }
-
     /// Still accepting changes (and expiry).
     pub fn is_live(self) -> bool {
         matches!(self, Self::Open | Self::Submitted)
@@ -154,63 +110,25 @@ impl LoadedDraft {
     }
 }
 
-/// What happened to a draft; the log is append-only.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum DraftEventKind {
-    Created,
-    OpAdded,
-    OpEdited,
-    OpRemoved,
-    Rebased,
-    Merged,
-    Discarded,
-    Expired,
-    Submitted,
-    Rejected,
-    Withdrawn,
-    Retitled,
+spelled! {
+    /// What happened to a draft; the log is append-only.
+    DraftEventKind {
+        Created => "created",
+        OpAdded => "op_added",
+        OpEdited => "op_edited",
+        OpRemoved => "op_removed",
+        Rebased => "rebased",
+        Merged => "merged",
+        Discarded => "discarded",
+        Expired => "expired",
+        Submitted => "submitted",
+        Rejected => "rejected",
+        Withdrawn => "withdrawn",
+        Retitled => "retitled",
+    }
 }
 
 impl DraftEventKind {
-    pub const ALL: &[Self] = &[
-        Self::Created,
-        Self::OpAdded,
-        Self::OpEdited,
-        Self::OpRemoved,
-        Self::Rebased,
-        Self::Merged,
-        Self::Discarded,
-        Self::Expired,
-        Self::Submitted,
-        Self::Rejected,
-        Self::Withdrawn,
-        Self::Retitled,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Created => "created",
-            Self::OpAdded => "op_added",
-            Self::OpEdited => "op_edited",
-            Self::OpRemoved => "op_removed",
-            Self::Rebased => "rebased",
-            Self::Merged => "merged",
-            Self::Discarded => "discarded",
-            Self::Expired => "expired",
-            Self::Submitted => "submitted",
-            Self::Rejected => "rejected",
-            Self::Withdrawn => "withdrawn",
-            Self::Retitled => "retitled",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL
-            .iter()
-            .copied()
-            .find(|kind| kind.as_str() == value)
-    }
-
     /// Whether this event closes the draft for good (a closed draft logs
     /// nothing after it).
     pub fn closes(self) -> bool {
@@ -474,63 +392,19 @@ pub trait DraftStore {
     ) -> impl Future<Output = Result<Vec<String>, StoreError>> + Send;
 }
 
-impl<T: DraftStore + Sync> DraftStore for &T {
-    fn snapshot_with_head(
-        &self,
-    ) -> impl Future<Output = Result<(ScheduleSnapshot, ChangeRef), StoreError>> + Send {
-        (**self).snapshot_with_head()
-    }
-
-    fn records_after(
-        &self,
-        base: &ChangeRef,
-    ) -> impl Future<Output = Result<Vec<ChangeRecord>, StoreError>> + Send {
-        (**self).records_after(base)
-    }
-
-    fn create_draft(
-        &self,
-        new: NewDraft,
-    ) -> impl Future<Output = Result<DraftCreated, StoreError>> + Send {
-        (**self).create_draft(new)
-    }
-
-    fn load_draft(
-        &self,
-        id: &str,
-    ) -> impl Future<Output = Result<Option<LoadedDraft>, StoreError>> + Send {
-        (**self).load_draft(id)
-    }
-
-    fn list_drafts(
-        &self,
-        status: Option<DraftStatus>,
-    ) -> impl Future<Output = Result<Vec<StoredDraft>, StoreError>> + Send {
-        (**self).list_drafts(status)
-    }
-
+forward_store!(DraftStore for [ref, arc] {
+    fn snapshot_with_head(&self) -> Result<(ScheduleSnapshot, ChangeRef), StoreError>;
+    fn records_after(&self, base: &ChangeRef) -> Result<Vec<ChangeRecord>, StoreError>;
+    fn create_draft(&self, new: NewDraft) -> Result<DraftCreated, StoreError>;
+    fn load_draft(&self, id: &str) -> Result<Option<LoadedDraft>, StoreError>;
     fn recorded_draft_request(
         &self,
         author: &Actor,
         request_id: &str,
-    ) -> impl Future<Output = Result<Option<(String, StoredDraft)>, StoreError>> + Send {
-        (**self).recorded_draft_request(author, request_id)
-    }
-
-    fn draft_events(
-        &self,
-        id: &str,
-    ) -> impl Future<Output = Result<Vec<DraftEvent>, StoreError>> + Send {
-        (**self).draft_events(id)
-    }
-
-    fn update_draft(
-        &self,
-        update: DraftUpdate,
-    ) -> impl Future<Output = Result<DraftWrite, StoreError>> + Send {
-        (**self).update_draft(update)
-    }
-
+    ) -> Result<Option<(String, StoredDraft)>, StoreError>;
+    fn list_drafts(&self, status: Option<DraftStatus>) -> Result<Vec<StoredDraft>, StoreError>;
+    fn draft_events(&self, id: &str) -> Result<Vec<DraftEvent>, StoreError>;
+    fn update_draft(&self, update: DraftUpdate) -> Result<DraftWrite, StoreError>;
     fn commit_merge(
         &self,
         expected_revision: u64,
@@ -539,118 +413,12 @@ impl<T: DraftStore + Sync> DraftStore for &T {
         draft_id: &str,
         expected_version: u64,
         note: Option<String>,
-    ) -> impl Future<Output = Result<MergeCommit, StoreError>> + Send {
-        (**self).commit_merge(
-            expected_revision,
-            changes,
-            meta,
-            draft_id,
-            expected_version,
-            note,
-        )
-    }
-
+    ) -> Result<MergeCommit, StoreError>;
     fn expire_drafts(
         &self,
         week: DateTime<Utc>,
         at: DateTime<Utc>,
         actor: &Actor,
         notices: Vec<(String, Notice)>,
-    ) -> impl Future<Output = Result<Vec<String>, StoreError>> + Send {
-        (**self).expire_drafts(week, at, actor, notices)
-    }
-}
-
-/// A shared store: the API's writer and its readers hold one `Arc`.
-impl<T: DraftStore + Send + Sync> DraftStore for std::sync::Arc<T> {
-    fn snapshot_with_head(
-        &self,
-    ) -> impl Future<Output = Result<(ScheduleSnapshot, ChangeRef), StoreError>> + Send {
-        (**self).snapshot_with_head()
-    }
-
-    fn records_after(
-        &self,
-        base: &ChangeRef,
-    ) -> impl Future<Output = Result<Vec<ChangeRecord>, StoreError>> + Send {
-        (**self).records_after(base)
-    }
-
-    fn create_draft(
-        &self,
-        new: NewDraft,
-    ) -> impl Future<Output = Result<DraftCreated, StoreError>> + Send {
-        (**self).create_draft(new)
-    }
-
-    fn load_draft(
-        &self,
-        id: &str,
-    ) -> impl Future<Output = Result<Option<LoadedDraft>, StoreError>> + Send {
-        (**self).load_draft(id)
-    }
-
-    fn list_drafts(
-        &self,
-        status: Option<DraftStatus>,
-    ) -> impl Future<Output = Result<Vec<StoredDraft>, StoreError>> + Send {
-        (**self).list_drafts(status)
-    }
-
-    fn recorded_draft_request(
-        &self,
-        author: &Actor,
-        request_id: &str,
-    ) -> impl Future<Output = Result<Option<(String, StoredDraft)>, StoreError>> + Send {
-        (**self).recorded_draft_request(author, request_id)
-    }
-
-    fn draft_events(
-        &self,
-        id: &str,
-    ) -> impl Future<Output = Result<Vec<DraftEvent>, StoreError>> + Send {
-        (**self).draft_events(id)
-    }
-
-    fn update_draft(
-        &self,
-        update: DraftUpdate,
-    ) -> impl Future<Output = Result<DraftWrite, StoreError>> + Send {
-        (**self).update_draft(update)
-    }
-
-    fn commit_merge(
-        &self,
-        expected_revision: u64,
-        changes: ChangeSet,
-        meta: ChangeMeta,
-        draft_id: &str,
-        expected_version: u64,
-        note: Option<String>,
-    ) -> impl Future<Output = Result<MergeCommit, StoreError>> + Send {
-        (**self).commit_merge(
-            expected_revision,
-            changes,
-            meta,
-            draft_id,
-            expected_version,
-            note,
-        )
-    }
-
-    fn expire_drafts(
-        &self,
-        week: DateTime<Utc>,
-        at: DateTime<Utc>,
-        actor: &Actor,
-        notices: Vec<(String, Notice)>,
-    ) -> impl Future<Output = Result<Vec<String>, StoreError>> + Send {
-        (**self).expire_drafts(week, at, actor, notices)
-    }
-}
-
-impl fmt::Display for DraftStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
+    ) -> Result<Vec<String>, StoreError>;
+});

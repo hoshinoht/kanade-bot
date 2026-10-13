@@ -479,15 +479,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
         let request = edit_digest(&op, &self.expect)?;
         let overriding = !self.expect.overrides.is_empty();
         let surface = self.origin.surface;
-        let meta = ChangeMeta {
-            origin: self.origin.clone(),
-            at: DateTime::UNIX_EPOCH,
-            notices: Vec::new(),
-            refs: self.expect.overrides.clone(),
-            request_digest: self.origin.request_id.as_ref().map(|_| request),
-            expect: self.expect,
-            outbox: Vec::new(),
-        };
+        let meta = edit_meta(&self.origin, self.expect, DateTime::UNIX_EPOCH, request);
         self.service
             .transact_as(
                 meta,
@@ -593,22 +585,12 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
         self.expect
             .validate(&self.origin.actor)
             .map_err(SchedulerError::Precondition)?;
-        let request = digest("portal_answer", &(run_id, user_id, answer));
-        let request = if self.expect.is_empty() {
-            request
-        } else {
-            digest("expect", &(request, &self.expect.canonical()))
-        };
+        let request = expecting_digest(
+            digest("portal_answer", &(run_id, user_id, answer)),
+            &self.expect,
+        );
         let overriding = !self.expect.overrides.is_empty();
-        let meta = ChangeMeta {
-            origin: self.origin.clone(),
-            at: DateTime::UNIX_EPOCH,
-            notices: Vec::new(),
-            refs: self.expect.overrides.clone(),
-            request_digest: self.origin.request_id.as_ref().map(|_| request),
-            expect: self.expect,
-            outbox: Vec::new(),
-        };
+        let meta = edit_meta(&self.origin, self.expect, DateTime::UNIX_EPOCH, request);
         let (run, user) = (run_id.to_owned(), user_id.to_owned());
         self.service
             .transact_as(
@@ -762,14 +744,11 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
             reminder_id: reminder_id.to_owned(),
             fire_at,
         };
-        match self
-            .apply(Scope::Reminder(reminder_id.to_owned()), op)
-            .await?
-            .value
-        {
-            OpResult::Changed(changed) => Ok(changed),
-            other => unreachable!("reschedule_unposted_reminder returned {other:?}"),
-        }
+        Ok(changed(
+            self.apply(Scope::Reminder(reminder_id.to_owned()), op)
+                .await?
+                .value,
+        ))
     }
 
     /// Move unposted day-of pings after the ping time changed.
@@ -789,10 +768,9 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
         let op = Op::FinishRun {
             run_id: run_id.to_owned(),
         };
-        match self.apply(Scope::Run(run_id.to_owned()), op).await?.value {
-            OpResult::Changed(changed) => Ok(changed),
-            other => unreachable!("finish_run returned {other:?}"),
-        }
+        Ok(changed(
+            self.apply(Scope::Run(run_id.to_owned()), op).await?.value,
+        ))
     }
 
     /// v5 (run completion): a prompt press, applied only if the run is still
@@ -803,14 +781,11 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
         policy: &ReminderPolicy,
     ) -> SchedulerResult<bool> {
         let scope = Scope::Run(settle.run_id.clone());
-        match self
-            .apply(scope, Op::SettleRun { settle, policy })
-            .await?
-            .value
-        {
-            OpResult::Changed(changed) => Ok(changed),
-            other => unreachable!("settle_run returned {other:?}"),
-        }
+        Ok(changed(
+            self.apply(scope, Op::SettleRun { settle, policy })
+                .await?
+                .value,
+        ))
     }
 
     /// Materialise the current and next two boss weeks, then reconcile
@@ -950,14 +925,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
             directory,
             policy,
         };
-        let outcome = self.apply(Scope::All, op).await?;
-        match outcome.value {
-            OpResult::Fixed(fixed) => Ok(Outcome {
-                value: fixed,
-                notices: outcome.notices,
-            }),
-            other => unreachable!("apply_fixed_edit returned {other:?}"),
-        }
+        Ok(fixed_outcome(self.apply(Scope::All, op).await?))
     }
 
     /// Pin `pin`'s new owner on the weekly timing (every amended run
@@ -989,10 +957,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
                 .ok_or_else(|| ScheduleError::UnknownFixedRun(fixed_id.to_owned()))?;
             pin.check(fixed).map_err(ScheduleError::Ownership)
         };
-        match self.apply_guarded(Scope::All, op, guard).await?.value {
-            OpResult::Fixed(fixed) => Ok(fixed),
-            other => unreachable!("pin_fixed_owner returned {other:?}"),
-        }
+        fixed(self.apply_guarded(Scope::All, op, guard).await?.value)
     }
 
     /// v4 `update_fixed`: apply an edit, every amended run following it.
@@ -1177,20 +1142,8 @@ impl<S: ScheduleStore + DeclineNoticeStore, I: IdSource, C: Clock> Attributed<'_
             .validate(&self.origin.actor)
             .map_err(SchedulerError::Precondition)?;
         let now = self.service.clock.now();
-        let request = if self.expect.is_empty() {
-            request
-        } else {
-            digest("expect", &(request, &self.expect.canonical()))
-        };
-        let meta = ChangeMeta {
-            origin: self.origin.clone(),
-            at: now,
-            notices: Vec::new(),
-            refs: self.expect.overrides.clone(),
-            request_digest: self.origin.request_id.as_ref().map(|_| request),
-            expect: self.expect,
-            outbox: Vec::new(),
-        };
+        let request = expecting_digest(request, &self.expect);
+        let meta = edit_meta(&self.origin, self.expect, now, request);
         check_request(&self.service.store, &meta).await?;
         let ends = self.service.run_ends();
         let mut attempt = 1;
@@ -1390,6 +1343,23 @@ fn count(result: OpResult) -> usize {
     }
 }
 
+fn changed(result: OpResult) -> bool {
+    match result {
+        OpResult::Changed(changed) => changed,
+        other => unreachable!("expected a changed flag, got {other:?}"),
+    }
+}
+
+fn fixed_outcome(outcome: Outcome<OpResult>) -> Outcome<FixedRun> {
+    match outcome.value {
+        OpResult::Fixed(fixed) => Outcome {
+            value: fixed,
+            notices: outcome.notices,
+        },
+        other => unreachable!("expected a weekly timing, got {other:?}"),
+    }
+}
+
 /// The first `count` boss weeks from the one holding `now` (start instants).
 fn member_weeks(
     policy: &SchedulePolicy,
@@ -1541,12 +1511,31 @@ fn op_digest(op: &Op<'_>) -> SchedulerResult<String> {
 /// (as before they existed, pinned by `digest_pins`), otherwise folding the
 /// declared expectations in, so a retry with other expectations mismatches.
 fn edit_digest(op: &Op<'_>, expect: &Expect) -> SchedulerResult<String> {
-    let request = op_digest(op)?;
-    Ok(if expect.is_empty() {
+    Ok(expecting_digest(op_digest(op)?, expect))
+}
+
+/// `request` with the declared expectations folded in; unchanged without
+/// any (as before preconditions existed).
+fn expecting_digest(request: String, expect: &Expect) -> String {
+    if expect.is_empty() {
         request
     } else {
         digest("expect", &(request, &expect.canonical()))
-    })
+    }
+}
+
+/// An attributed edit's change metadata at `at`; `request` is recorded only
+/// with a request id.
+fn edit_meta(origin: &Origin, expect: Expect, at: DateTime<Utc>, request: String) -> ChangeMeta {
+    ChangeMeta {
+        origin: origin.clone(),
+        at,
+        notices: Vec::new(),
+        refs: expect.overrides.clone(),
+        request_digest: origin.request_id.as_ref().map(|_| request),
+        expect,
+        outbox: Vec::new(),
+    }
 }
 
 /// The request digest a reused request id must match: SHA-256 over the
@@ -1629,6 +1618,24 @@ struct Rollback<'a> {
     preview: bool,
 }
 
+impl<'a> Rollback<'a> {
+    /// A rollback with no checkpoint; a week selection reverts only within
+    /// that week.
+    fn new(selection: Selection<'a>, mode: RevertMode, preview: bool) -> Self {
+        let scope = match selection {
+            Selection::Week { week, .. } => RevertScope::Week(week),
+            Selection::Seqs(_) | Selection::Actor { .. } => RevertScope::Whole,
+        };
+        Self {
+            selection,
+            scope,
+            mode,
+            checkpoint: None,
+            preview,
+        }
+    }
+}
+
 impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S, I, C> {
     /// Revert the named records as one new change by `admin` through
     /// [`Surface::Rollback`] (history is never rewritten). `held` supplies
@@ -1650,13 +1657,7 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
         policy: &ReminderPolicy,
         held: &impl HeldReminders,
     ) -> SchedulerResult<RevertOutcome> {
-        let rollback = Rollback {
-            selection: Selection::Seqs(seqs),
-            scope: RevertScope::Whole,
-            mode,
-            checkpoint: None,
-            preview: false,
-        };
+        let rollback = Rollback::new(Selection::Seqs(seqs), mode, false);
         self.rollback(admin, request_id, rollback, policy, held)
             .await
     }
@@ -1678,13 +1679,7 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
         policy: &ReminderPolicy,
         held: &impl HeldReminders,
     ) -> SchedulerResult<RevertOutcome> {
-        let rollback = Rollback {
-            selection: Selection::Week { week, revision },
-            scope: RevertScope::Week(week),
-            mode,
-            checkpoint: None,
-            preview: false,
-        };
+        let rollback = Rollback::new(Selection::Week { week, revision }, mode, false);
         self.rollback(admin, request_id, rollback, policy, held)
             .await
     }
@@ -1704,13 +1699,7 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
         policy: &ReminderPolicy,
         held: &impl HeldReminders,
     ) -> SchedulerResult<RevertOutcome> {
-        let rollback = Rollback {
-            selection: Selection::Actor { actor, since },
-            scope: RevertScope::Whole,
-            mode,
-            checkpoint: None,
-            preview: false,
-        };
+        let rollback = Rollback::new(Selection::Actor { actor, since }, mode, false);
         self.rollback(admin, request_id, rollback, policy, held)
             .await
     }
@@ -1727,13 +1716,7 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
         policy: &ReminderPolicy,
         held: &impl HeldReminders,
     ) -> SchedulerResult<RevertOutcome> {
-        let rollback = Rollback {
-            selection: Selection::Seqs(seqs),
-            scope: RevertScope::Whole,
-            mode,
-            checkpoint: None,
-            preview: true,
-        };
+        let rollback = Rollback::new(Selection::Seqs(seqs), mode, true);
         self.rollback("preview", None, rollback, policy, held).await
     }
 
@@ -1749,13 +1732,7 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
         policy: &ReminderPolicy,
         held: &impl HeldReminders,
     ) -> SchedulerResult<RevertOutcome> {
-        let rollback = Rollback {
-            selection: Selection::Week { week, revision },
-            scope: RevertScope::Week(week),
-            mode,
-            checkpoint: None,
-            preview: true,
-        };
+        let rollback = Rollback::new(Selection::Week { week, revision }, mode, true);
         self.rollback("preview", None, rollback, policy, held).await
     }
 
@@ -1771,13 +1748,7 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
         policy: &ReminderPolicy,
         held: &impl HeldReminders,
     ) -> SchedulerResult<RevertOutcome> {
-        let rollback = Rollback {
-            selection: Selection::Actor { actor, since },
-            scope: RevertScope::Whole,
-            mode,
-            checkpoint: None,
-            preview: true,
-        };
+        let rollback = Rollback::new(Selection::Actor { actor, since }, mode, true);
         self.rollback("preview", None, rollback, policy, held).await
     }
 
@@ -1997,15 +1968,13 @@ impl<S: ScheduleStore + ChangeHistory + Checkpoints, I: IdSource, C: Clock>
         held: &impl HeldReminders,
     ) -> SchedulerResult<RevertOutcome> {
         let checkpoint = self.checkpoint(name).await?;
+        let week = Selection::Week {
+            week: checkpoint.week,
+            revision: checkpoint.revision,
+        };
         let rollback = Rollback {
-            selection: Selection::Week {
-                week: checkpoint.week,
-                revision: checkpoint.revision,
-            },
-            scope: RevertScope::Week(checkpoint.week),
-            mode,
             checkpoint: Some((checkpoint.name.clone(), checkpoint.head)),
-            preview,
+            ..Rollback::new(week, mode, preview)
         };
         match self
             .rollback(admin, request_id, rollback, policy, held)

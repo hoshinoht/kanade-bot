@@ -39,10 +39,11 @@ use tokio::time::MissedTickBehavior;
 use super::card_records::{digest_phrase_key, record_kind};
 use super::cards::{
     CardContext, CardKit, CardRecord, DAY_OF_KIND, DigestPhraseStore, HeadingSource, PhraseKind,
-    ReminderCardStore, card_runs, local_day,
+    ReminderCardStore, card_runs,
 };
 use super::preview::{record_key, reminder_intent};
 use super::refresh::Now;
+use crate::bot::commands::text::local_day;
 use crate::domain::members::Directory;
 use crate::domain::model_log::RewriteStage;
 use crate::domain::notify::{

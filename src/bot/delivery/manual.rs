@@ -26,10 +26,11 @@ use tokio::sync::{Notify, watch};
 use super::card_records::digest_phrase_key;
 use super::cards::{
     DAY_OF_KIND, DigestPhraseStore, HeaderOverrideStore, HeadingSource, PhraseKind, PostedCard,
-    ReminderCardStore, card_runs, local_day,
+    ReminderCardStore, card_runs,
 };
 use super::pregen::PREGEN_DEADLINE;
 use super::refresh::CardRefresh;
+use crate::bot::commands::text::local_day;
 use crate::bot::ids::parse_id;
 use crate::bot::mentions;
 use crate::bot::transport::{DiscordTransport, OutgoingMessage};

@@ -29,8 +29,7 @@ pub use art::{
 };
 pub use common::{
     COLOUR_ALL_SET, COLOUR_COUNTDOWN, COLOUR_DAY_OF, COLOUR_DIGEST, CardContext, People,
-    REACT_HINT, UNNAMED, format_bosses, format_offset, local_day, local_time, status_text,
-    tally_text,
+    REACT_HINT, UNNAMED, format_offset, tally_text,
 };
 pub use countdown::countdown_card;
 pub use day_of::{card_runs, day_of_card};
@@ -47,6 +46,7 @@ pub use record::{
 };
 pub use redesign::{DifficultyMarks, PortalSwitch, StyleSource, V2Kit};
 
+use crate::bot::commands::text::local_day;
 use crate::bot::mentions;
 use crate::bot::transport::{MessageEdit, OutgoingMessage, Upload};
 use crate::domain::catalog::BossTable;

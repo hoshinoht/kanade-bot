@@ -5,49 +5,34 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::future::Future;
-use std::sync::Arc;
 
 use crate::domain::ids::short_id;
 use crate::domain::pytext;
 use crate::domain::scheduler::StoreError;
 
-/// A member's mention preference, in v4's `PING_LEVELS` order.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum PingLevel {
-    /// Only posts that ask somebody to act (the default).
-    #[default]
-    Essential,
-    /// Every post that lists them.
-    All,
-    /// Never; they are still named.
-    Off,
+spelled! {
+    /// A member's mention preference, in v4's `PING_LEVELS` order.
+    #[derive(Default)]
+    PingLevel {
+        /// Only posts that ask somebody to act (the default).
+        #[default]
+        Essential => "essential",
+        /// Every post that lists them.
+        All => "all",
+        /// Never; they are still named.
+        Off => "off",
+    }
 }
 
 impl PingLevel {
-    pub const ALL: &[Self] = &[Self::Essential, Self::All, Self::Off];
     pub const DEFAULT: Self = Self::Essential;
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Essential => "essential",
-            Self::All => "all",
-            Self::Off => "off",
-        }
-    }
-
-    fn exact(value: &str) -> Option<Self> {
-        Self::ALL
-            .iter()
-            .copied()
-            .find(|level| level.as_str() == value)
-    }
 
     /// A level as stored: exact spelling only (v4 `Repo.set_ping_level`).
     ///
     /// # Errors
     /// [`PingError::InvalidLevel`] quoting `value` with Python `repr`.
     pub fn parse_stored(value: &str) -> Result<Self, PingError> {
-        Self::exact(value).ok_or_else(|| PingError::InvalidLevel(pytext::repr(value)))
+        Self::parse(value).ok_or_else(|| PingError::InvalidLevel(pytext::repr(value)))
     }
 }
 
@@ -65,7 +50,7 @@ fn levels_text() -> String {
 /// [`PingError::InvalidLevel`] quoting the raw value in backticks, as v4.
 pub fn normalise_level(value: Option<&str>) -> Result<PingLevel, PingError> {
     let level = pytext::strip(value.unwrap_or_default()).to_lowercase();
-    PingLevel::exact(&level)
+    PingLevel::parse(&level)
         .ok_or_else(|| PingError::InvalidLevel(format!("`{}`", value.unwrap_or("None"))))
 }
 
@@ -227,55 +212,19 @@ pub struct PortalEdit {
     pub remove_alias: Option<String>,
 }
 
-/// A shared store is a member store (the API holds stores behind `Arc`).
-impl<T: MemberStore + Send + Sync> MemberStore for Arc<T> {
-    fn apply_gateway(
-        &self,
-        update: GatewayMember,
-    ) -> impl Future<Output = Result<(), StoreError>> + Send {
-        (**self).apply_gateway(update)
-    }
-
-    fn member_departed(
-        &self,
-        user_id: &str,
-    ) -> impl Future<Output = Result<bool, StoreError>> + Send {
-        (**self).member_departed(user_id)
-    }
-
-    fn clear_guild_admin(
-        &self,
-        user_id: &str,
-    ) -> impl Future<Output = Result<bool, StoreError>> + Send {
-        (**self).clear_guild_admin(user_id)
-    }
-
+forward_store!(MemberStore for [arc] {
+    fn list_members(&self) -> Result<Vec<MemberProfile>, StoreError>;
+    fn load_member(&self, user_id: &str) -> Result<Option<MemberProfile>, StoreError>;
+    fn put_member(&self, profile: MemberProfile) -> Result<(), StoreError>;
+    fn apply_gateway(&self, update: GatewayMember) -> Result<(), StoreError>;
+    fn member_departed(&self, user_id: &str) -> Result<bool, StoreError>;
+    fn clear_guild_admin(&self, user_id: &str) -> Result<bool, StoreError>;
     fn apply_portal(
         &self,
         user_id: &str,
         edit: PortalEdit,
-    ) -> impl Future<Output = Result<Option<MemberProfile>, StoreError>> + Send {
-        (**self).apply_portal(user_id, edit)
-    }
-
-    fn list_members(&self) -> impl Future<Output = Result<Vec<MemberProfile>, StoreError>> + Send {
-        (**self).list_members()
-    }
-
-    fn load_member(
-        &self,
-        user_id: &str,
-    ) -> impl Future<Output = Result<Option<MemberProfile>, StoreError>> + Send {
-        (**self).load_member(user_id)
-    }
-
-    fn put_member(
-        &self,
-        profile: MemberProfile,
-    ) -> impl Future<Output = Result<(), StoreError>> + Send {
-        (**self).put_member(profile)
-    }
-}
+    ) -> Result<Option<MemberProfile>, StoreError>;
+});
 
 /// An alias as stored: one lowercase word (1..=64 characters, no whitespace or
 /// control characters). Loose enough for any name v4 stored; the portal's

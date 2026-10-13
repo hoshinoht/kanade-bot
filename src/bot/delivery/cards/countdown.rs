@@ -6,9 +6,10 @@
 use super::art::lead_portrait;
 use super::common::{
     COLOUR_ALL_SET, COLOUR_COUNTDOWN, CardContext, People, REACT_HINT, boss_detail, declined,
-    format_bosses, format_offset, lead_colour, local_time, not_declined, status_line, unanswered,
+    format_offset, lead_colour, not_declined, status_line, unanswered,
 };
 use super::{Card, CardEmbed};
+use crate::bot::commands::text::{format_bosses, local_time};
 use crate::domain::schedule::Run;
 
 pub fn countdown_card(

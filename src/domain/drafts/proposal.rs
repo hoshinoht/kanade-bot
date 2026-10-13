@@ -141,44 +141,17 @@ pub trait ProposalStore: DraftStore {
     ) -> impl Future<Output = Result<Vec<String>, StoreError>> + Send;
 }
 
-impl<T: ProposalStore + Send + Sync> ProposalStore for std::sync::Arc<T> {
+forward_store!(ProposalStore for [arc] {
+    fn create_proposal(&self, new: NewProposal) -> Result<ProposalCreated, StoreError>;
     fn create_proposal_or_existing(
         &self,
         new: NewProposal,
         current_week: DateTime<Utc>,
-    ) -> impl Future<Output = Result<ProposalSubmission, StoreError>> + Send {
-        (**self).create_proposal_or_existing(new, current_week)
-    }
-
-    fn create_proposal(
-        &self,
-        new: NewProposal,
-    ) -> impl Future<Output = Result<ProposalCreated, StoreError>> + Send {
-        (**self).create_proposal(new)
-    }
-
-    fn load_proposal(
-        &self,
-        id: &str,
-    ) -> impl Future<Output = Result<Option<(LoadedDraft, ProposalInfo)>, StoreError>> + Send {
-        (**self).load_proposal(id)
-    }
-
-    fn list_proposals(
-        &self,
-        live_only: bool,
-    ) -> impl Future<Output = Result<Vec<StoredProposal>, StoreError>> + Send {
-        (**self).list_proposals(live_only)
-    }
-
-    fn expire_proposals(
-        &self,
-        now: DateTime<Utc>,
-        actor: &Actor,
-    ) -> impl Future<Output = Result<Vec<String>, StoreError>> + Send {
-        (**self).expire_proposals(now, actor)
-    }
-}
+    ) -> Result<ProposalSubmission, StoreError>;
+    fn load_proposal(&self, id: &str) -> Result<Option<(LoadedDraft, ProposalInfo)>, StoreError>;
+    fn list_proposals(&self, live_only: bool) -> Result<Vec<StoredProposal>, StoreError>;
+    fn expire_proposals(&self, now: DateTime<Utc>, actor: &Actor) -> Result<Vec<String>, StoreError>;
+});
 
 /// Refusals both stores apply before writing; returns `expires_at`.
 pub fn check_new(new: &NewProposal) -> Result<DateTime<Utc>, StoreError> {

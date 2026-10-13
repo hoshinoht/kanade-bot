@@ -95,13 +95,8 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
             directory,
             policy,
         };
-        let outcome = self.apply_fixed_patch(Scope::All, op, identity).await?;
-        match outcome.value {
-            OpResult::Fixed(fixed) => Ok(Outcome {
-                value: fixed,
-                notices: outcome.notices,
-            }),
-            other => unreachable!("apply_fixed_patch_edit returned {other:?}"),
-        }
+        Ok(super::fixed_outcome(
+            self.apply_fixed_patch(Scope::All, op, identity).await?,
+        ))
     }
 }

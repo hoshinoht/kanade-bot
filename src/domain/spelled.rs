@@ -33,3 +33,5 @@ macro_rules! spelled {
         }
     };
 }
+
+pub(crate) use spelled;

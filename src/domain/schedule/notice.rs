@@ -99,21 +99,12 @@ pub enum NoticeChange {
     },
 }
 
-/// What became of a member request.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum RequestDecision {
-    Approved,
-    Rejected,
-    Expired,
-}
-
-impl RequestDecision {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Approved => "approved",
-            Self::Rejected => "rejected",
-            Self::Expired => "expired",
-        }
+spelled! {
+    /// What became of a member request.
+    RequestDecision {
+        Approved => "approved",
+        Rejected => "rejected",
+        Expired => "expired",
     }
 }
 

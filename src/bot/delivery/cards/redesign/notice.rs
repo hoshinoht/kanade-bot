@@ -18,8 +18,8 @@ use crate::domain::schedule::{
 };
 use crate::extract::redirect::is_link_id;
 
-use super::super::common::{local_day, local_time};
 use super::vocab::{DifficultyMarks, boss_labels, full_time, relative_time, subtext};
+use crate::bot::commands::text::{local_day, local_time};
 
 const WEEKDAYS: [&str; 7] = [
     "Monday",

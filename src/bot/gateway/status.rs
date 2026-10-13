@@ -8,27 +8,17 @@ use tokio::sync::watch;
 use twilight_gateway::Event;
 use twilight_model::id::{Id, marker::UserMarker};
 
-/// Where the session stands.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Connection {
-    /// Before the first `READY`, or reconnecting after a fresh identify.
-    Connecting,
-    /// `READY` or `RESUMED` arrived since the last close.
-    Ready,
-    /// A close frame arrived or a reconnect failed; Twilight is reconnecting.
-    Disconnected,
-    /// A fatal close ended the session for good (serve does not reconnect).
-    Closed,
-}
-
-impl Connection {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Connecting => "connecting",
-            Self::Ready => "ready",
-            Self::Disconnected => "disconnected",
-            Self::Closed => "closed",
-        }
+crate::domain::spelled! {
+    /// Where the session stands.
+    Connection {
+        /// Before the first `READY`, or reconnecting after a fresh identify.
+        Connecting => "connecting",
+        /// `READY` or `RESUMED` arrived since the last close.
+        Ready => "ready",
+        /// A close frame arrived or a reconnect failed; Twilight is reconnecting.
+        Disconnected => "disconnected",
+        /// A fatal close ended the session for good (serve does not reconnect).
+        Closed => "closed",
     }
 }
 

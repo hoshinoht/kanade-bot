@@ -30,36 +30,23 @@ pub enum Orphan {
     Reconsent,
 }
 
-/// Why a link was removed; logged as this code, never with names.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum UnlinkReason {
-    /// An admin or the member asked.
-    Requested,
-    CharacterGone,
-    /// The roster IGN, region or member changed.
-    IdentityChanged,
-    MemberDeparted,
-    /// Retired and its data has expired.
-    RetiredExpired,
-    /// An admin's request the member did not confirm within
-    /// [`super::PENDING_TTL`].
-    PendingExpired,
-    /// The member's confirmation found no such character in the Open API:
-    /// nothing is kept, the request included.
-    NotFound,
-}
-
-impl UnlinkReason {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Requested => "requested",
-            Self::CharacterGone => "character_gone",
-            Self::IdentityChanged => "identity_changed",
-            Self::MemberDeparted => "member_departed",
-            Self::RetiredExpired => "retired_expired",
-            Self::PendingExpired => "pending_expired",
-            Self::NotFound => "not_found",
-        }
+spelled! {
+    /// Why a link was removed; logged as this code, never with names.
+    UnlinkReason {
+        /// An admin or the member asked.
+        Requested => "requested",
+        CharacterGone => "character_gone",
+        /// The roster IGN, region or member changed.
+        IdentityChanged => "identity_changed",
+        MemberDeparted => "member_departed",
+        /// Retired and its data has expired.
+        RetiredExpired => "retired_expired",
+        /// An admin's request the member did not confirm within
+        /// [`super::PENDING_TTL`].
+        PendingExpired => "pending_expired",
+        /// The member's confirmation found no such character in the Open API:
+        /// nothing is kept, the request included.
+        NotFound => "not_found",
     }
 }
 

@@ -33,6 +33,27 @@ pub struct Invocation {
     pub owner_id: Option<Id<UserMarker>>,
 }
 
+/// The interaction's guild member and the name to call them by: server
+/// nickname, else global name, else username (`None` when empty).
+pub(super) fn invoker(interaction: &Interaction) -> Option<(Invoker, Option<String>)> {
+    let member = interaction.member.as_ref()?;
+    let user = member.user.as_ref()?;
+    let invoker = Invoker {
+        user_id: user.id,
+        roles: member.roles.clone(),
+        is_guild_admin: member
+            .permissions
+            .is_some_and(|permissions| permissions.contains(Permissions::ADMINISTRATOR)),
+    };
+    let name = member
+        .nick
+        .clone()
+        .or_else(|| user.global_name.clone())
+        .or_else(|| Some(user.name.clone()))
+        .filter(|name| !name.is_empty());
+    Some((invoker, name))
+}
+
 impl Invocation {
     /// `None` for anything but a guild chat-input command (or its
     /// autocomplete) with a member.
@@ -43,8 +64,7 @@ impl Invocation {
             _ => return None,
         };
         let guild_id = interaction.guild_id?;
-        let member = interaction.member.as_ref()?;
-        let user = member.user.as_ref()?;
+        let (invoker, invoker_name) = invoker(interaction)?;
         let Some(InteractionData::ApplicationCommand(data)) = &interaction.data else {
             return None;
         };
@@ -63,19 +83,8 @@ impl Invocation {
             interaction: InteractionRef::new(interaction.id, interaction.token.clone()),
             guild_id,
             channel_id: interaction.channel.as_ref().map(|channel| channel.id),
-            invoker: Invoker {
-                user_id: user.id,
-                roles: member.roles.clone(),
-                is_guild_admin: member
-                    .permissions
-                    .is_some_and(|permissions| permissions.contains(Permissions::ADMINISTRATOR)),
-            },
-            invoker_name: member
-                .nick
-                .clone()
-                .or_else(|| user.global_name.clone())
-                .or_else(|| Some(user.name.clone()))
-                .filter(|name| !name.is_empty()),
+            invoker,
+            invoker_name,
             path,
             options,
             autocomplete,

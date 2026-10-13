@@ -16,9 +16,9 @@ use crate::domain::catalog::BossTable;
 use crate::domain::ids::short_id;
 use crate::domain::schedule::{Run, RunStatus, ScheduleSnapshot};
 
-use super::super::common::{local_day, local_time};
 use super::v2::{container, separator, text};
 use super::vocab::{DifficultyMarks, INK_BLUE, boss_labels, subtext};
+use crate::bot::commands::text::{local_day, local_time};
 
 /// The footer with runs hidden, and without.
 pub const SCHEDULE_FOOTER_HIDDEN: &str =
