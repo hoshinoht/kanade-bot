@@ -45,33 +45,25 @@ impl YamlIssue {
 
 impl fmt::Display for PersonaError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnsafeId => formatter.write_str("persona or profile ID is not a safe slug"),
-            Self::UnsafeAlias => formatter.write_str("persona alias is not a safe bare token"),
-            Self::Missing => formatter.write_str("persona file is missing"),
-            Self::Symlink => formatter.write_str("persona path must not be a symlink"),
-            Self::NotRegular => formatter.write_str("persona path is not a regular file"),
-            Self::Escape => formatter.write_str("persona path escapes the persona directory"),
-            Self::TooLarge => formatter.write_str("persona file exceeds the size limit"),
-            Self::Linked => formatter.write_str("persona file must have exactly one hard link"),
-            Self::TooManyProfiles => {
-                formatter.write_str("persona profiles directory has too many profile files")
-            }
-            Self::InvalidUtf8 => formatter.write_str("persona file is not valid UTF-8"),
-            Self::Io(kind) => write!(formatter, "persona file is unreadable ({kind})"),
-            Self::Yaml(YamlIssue::DuplicateKey) => {
-                formatter.write_str("persona YAML repeats a key")
-            }
-            Self::Yaml(YamlIssue::UnknownField) => {
-                formatter.write_str("persona YAML has an unknown key")
-            }
-            Self::Yaml(YamlIssue::MissingField) => {
-                formatter.write_str("persona YAML is missing a required key")
-            }
-            Self::Yaml(YamlIssue::Other) => formatter.write_str("persona YAML is invalid"),
-            Self::Invalid(reason) => write!(formatter, "persona file is invalid: {reason}"),
-            Self::NotInCatalog => formatter.write_str("persona is not in the catalog"),
-        }
+        formatter.write_str(match self {
+            Self::UnsafeId => "persona or profile ID is not a safe slug",
+            Self::UnsafeAlias => "persona alias is not a safe bare token",
+            Self::Missing => "persona file is missing",
+            Self::Symlink => "persona path must not be a symlink",
+            Self::NotRegular => "persona path is not a regular file",
+            Self::Escape => "persona path escapes the persona directory",
+            Self::TooLarge => "persona file exceeds the size limit",
+            Self::Linked => "persona file must have exactly one hard link",
+            Self::TooManyProfiles => "persona profiles directory has too many profile files",
+            Self::InvalidUtf8 => "persona file is not valid UTF-8",
+            Self::Io(kind) => return write!(formatter, "persona file is unreadable ({kind})"),
+            Self::Yaml(YamlIssue::DuplicateKey) => "persona YAML repeats a key",
+            Self::Yaml(YamlIssue::UnknownField) => "persona YAML has an unknown key",
+            Self::Yaml(YamlIssue::MissingField) => "persona YAML is missing a required key",
+            Self::Yaml(YamlIssue::Other) => "persona YAML is invalid",
+            Self::Invalid(reason) => return write!(formatter, "persona file is invalid: {reason}"),
+            Self::NotInCatalog => "persona is not in the catalog",
+        })
     }
 }
 

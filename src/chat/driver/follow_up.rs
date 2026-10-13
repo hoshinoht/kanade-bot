@@ -12,7 +12,7 @@ use crate::chat::answer::{
     AnswerFailure, AnswerSettings, Generation, Question, interaction, with_persona,
 };
 use crate::chat::context::{ChatTurn, TurnRole, assemble, system_prompt};
-use crate::chat::gate::{IncomingMessage, is_chat_channel};
+use crate::chat::gate::{ChannelInfo, IncomingMessage, is_chat_channel};
 use crate::chat::pilot::{ChatPilot, failure_reply};
 use crate::chat::sanitize::reply_parts;
 use crate::chat::tools::ToolContext;
@@ -325,34 +325,32 @@ impl<A: Answerer, S: Surface> RejectionFollowUp for ChatDriver<A, S> {
 }
 
 impl<A: Answerer, S: Surface> ChatDriver<A, S> {
+    /// Whether chat is on, ready and allowed in `channel_id`, with the
+    /// channel's live record.
+    fn chat_allowed(&self, channel_id: &str) -> (bool, Option<ChannelInfo>) {
+        let setup = self.shared.answerer.setup();
+        let channels = self.shared.answerer.channels();
+        let channel = channels.channel(channel_id);
+        let allowed = setup.enabled
+            && setup.ready
+            && setup.pilot.configured()
+            && is_chat_channel(channel.as_ref(), channels, &setup.pilot);
+        (allowed, channel)
+    }
+
     async fn offer_follow_up(&self, request: FollowUpRequest) {
         if request.source_ids.is_empty() || request.cards.is_empty() {
             return;
         }
-        let setup = self.shared.answerer.setup();
-        let channels = self.shared.answerer.channels();
-        let channel = channels.channel(&request.channel_id);
-        if !(setup.enabled
-            && setup.ready
-            && setup.pilot.configured()
-            && is_chat_channel(channel.as_ref(), channels, &setup.pilot))
+        if !self.chat_allowed(&request.channel_id).0
+            || !self.shared.answerer.owns_rejection(&request).await
         {
             return;
         }
-        if !self.shared.answerer.owns_rejection(&request).await {
-            return;
-        }
-
         // The source load above can wait; make both live checks again before
         // reserving the channel's in-memory cooldown.
-        let setup = self.shared.answerer.setup();
-        let channels = self.shared.answerer.channels();
-        let channel = channels.channel(&request.channel_id);
-        if !(setup.enabled
-            && setup.ready
-            && setup.pilot.configured()
-            && is_chat_channel(channel.as_ref(), channels, &setup.pilot))
-        {
+        let (allowed, channel) = self.chat_allowed(&request.channel_id);
+        if !allowed {
             return;
         }
         let origin_id = channel

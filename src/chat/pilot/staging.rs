@@ -9,8 +9,9 @@ use std::sync::LazyLock;
 
 use regex::{Regex, RegexBuilder};
 
-use crate::chat::persona::{Staging, StagingState, py_strip};
+use crate::chat::persona::{Staging, StagingState};
 use crate::domain::catalog::{BossReference, BossTable};
+use crate::domain::pytext::strip;
 
 /// v4 grounds at most this many bosses at once; more is unresolved.
 const MAX_BOSSES: usize = 3;
@@ -86,7 +87,7 @@ enum Strategy {
 /// render is unsafe); any other strategy question → `guide`; then v4's write
 /// and schedule hints; else `generic`.
 pub fn staging_line(text: &str, bosses: &BossTable, staging: &Staging) -> String {
-    let cleaned = py_strip(text);
+    let cleaned = strip(text);
     if cleaned.is_empty() {
         return staging.line(StagingState::Generic).to_owned();
     }

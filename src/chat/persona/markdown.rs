@@ -2,15 +2,8 @@
 //! the `# Persona:` name and `Good` example extraction. Hand-written matchers
 //! mirror the v4 regular expressions; the persona oracle vectors pin them.
 
-/// Python `str.isspace`: Unicode `White_Space` plus the ASCII separators U+001C..U+001F.
-pub(crate) fn is_space(c: char) -> bool {
-    c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c)
-}
-
-/// Python `str.strip()`.
-pub(crate) fn strip(text: &str) -> &str {
-    text.trim_matches(is_space)
-}
+use crate::domain::pytext::is_space;
+pub(crate) use crate::domain::pytext::strip;
 
 fn strip_end(text: &str) -> &str {
     text.trim_end_matches(is_space)
