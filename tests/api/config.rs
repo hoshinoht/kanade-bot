@@ -395,15 +395,7 @@ impl Config {
     }
 
     async fn get(&self) -> Value {
-        let reply = request(
-            self.reads.admin,
-            "GET",
-            ADMIN_HOST,
-            PATH,
-            &[("Cookie", &self.reads.cookie)],
-        )
-        .await;
-        view(&reply, "GET")
+        self.reads.read(PATH, VIEW).await
     }
 
     /// Signs in `login` (one of the two edge admins).

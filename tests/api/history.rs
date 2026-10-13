@@ -8,27 +8,23 @@ use kanade::domain::scheduler::ScheduleStore;
 use serde_json::{Value, json};
 use sqlx::ConnectOptions;
 
-use crate::{
-    reads::Reads,
-    schemas::assert_valid,
-    support::{ADMIN_HOST, find, request},
-};
+use crate::{reads::Reads, schemas::assert_valid, support::find};
 
 const PAGE: &str = "history.json#/$defs/HistoryPage";
 const RECORD: &str = "history.json#/$defs/ChangeRecord";
 const PLAN: &str = "history.json#/$defs/RevertPlan";
 const THIS_WEEK: &str = "2026-09-23T16:00:00+00:00";
+const REVERT: &str = "/api/admin/history/revert";
+const RESTORE_WEEK: &str = "/api/admin/history/restore-week";
+const REVERT_ACTOR: &str = "/api/admin/history/revert-actor";
 
 impl Reads {
     async fn move_kalos(&self, day: u8, time: &str) -> u64 {
         let v = self.version().await;
-        self.ok(
-            "POST",
-            "/api/admin/runs/r-kalos/move",
-            json!({"day": day, "time": time, "version": v}),
-            "week.json#/$defs/MoveResult",
-        )
-        .await;
+        let body = json!({"day": day, "time": time, "version": v});
+        let path = "/api/admin/runs/r-kalos/move";
+        self.ok("POST", path, body, "week.json#/$defs/MoveResult")
+            .await;
         v + 1
     }
 
@@ -45,17 +41,14 @@ impl Reads {
         plan
     }
 
-    async fn status_of(&self, path: &str) -> (u16, String) {
-        let reply = request(
-            self.admin,
-            "GET",
-            ADMIN_HOST,
-            path,
-            &[("Cookie", &self.cookie)],
-        )
-        .await;
-        assert_valid("error.json#/$defs/ApiError", path, &reply.json());
-        (reply.status, reply.api_error())
+    /// A history page: `/api/admin/history{query}`.
+    async fn history(&self, query: &str) -> Value {
+        self.read(&format!("/api/admin/history{query}"), PAGE).await
+    }
+
+    async fn checkpoints(&self) -> Value {
+        self.read("/api/admin/history/checkpoints", CHECKPOINTS)
+            .await
     }
 }
 
@@ -122,16 +115,12 @@ async fn pages_newest_first_with_filters_totals_and_records() {
     assert_eq!(&one, newest);
 
     // Filters: actor, week (either form), both.
-    let by_admin = reads
-        .read("/api/admin/history?actor=admin:token", PAGE)
-        .await;
+    let by_admin = reads.history("?actor=admin:token").await;
     assert_eq!(
         (seqs(&by_admin), by_admin["total"].clone()),
         (vec![4, 3, 2], json!(3))
     );
-    let seed = reads
-        .read("/api/admin/history?actor=admin:seed", PAGE)
-        .await;
+    let seed = reads.history("?actor=admin:seed").await;
     assert_eq!(seqs(&seed), [1]);
     let week = format!("/api/admin/history?week={}", THIS_WEEK.replace('+', "%2B"));
     let by_week = reads.read(&week, PAGE).await;
@@ -140,9 +129,7 @@ async fn pages_newest_first_with_filters_totals_and_records() {
     assert_eq!(seqs(&by_date), seqs(&by_week));
     let next = reads.read("/api/admin/history?week=2026-10-01", PAGE).await;
     assert_eq!((seqs(&next), next["total"].clone()), (vec![1], json!(1)));
-    let both = reads
-        .read("/api/admin/history?week=2026-10-01&actor=admin:token", PAGE)
-        .await;
+    let both = reads.history("?week=2026-10-01&actor=admin:token").await;
     assert_eq!((seqs(&both), both["total"].clone()), (vec![], json!(0)));
     assert_eq!(both["next_before"], Value::Null);
 
@@ -160,7 +147,9 @@ async fn pages_newest_first_with_filters_totals_and_records() {
         "week=%ZZ",
     ] {
         assert_eq!(
-            reads.status_of(&format!("/api/admin/history?{bad}")).await,
+            reads
+                .status(&format!("/api/admin/history?{bad}"), true)
+                .await,
             (422, "invalid_query".into()),
             "{bad}"
         );
@@ -168,7 +157,7 @@ async fn pages_newest_first_with_filters_totals_and_records() {
     for missing in ["0", "99", "abc"] {
         assert_eq!(
             reads
-                .status_of(&format!("/api/admin/history/{missing}"))
+                .status(&format!("/api/admin/history/{missing}"), true)
                 .await,
             (404, "not_found".into()),
             "{missing}"
@@ -267,29 +256,21 @@ async fn config_saves_interleave_by_time_and_appear_on_exactly_one_page() {
 async fn a_run_log_pages_every_record_touching_one_run() {
     let reads = Reads::new().await;
     let moved = reads.move_kalos(6, "21:00").await;
-    let reverted = reads
-        .plan("/api/admin/history/revert", json!({"seqs": [moved]}), &[])
-        .await["record"]["seq"]
+    let reverted = reads.plan(REVERT, json!({"seqs": [moved]}), &[]).await["record"]["seq"]
         .as_u64()
         .unwrap();
     for (run, member) in [("r-kalos", "1004"), ("n-kalos", "1001")] {
-        let v = reads.version().await;
+        let body = json!({"member_id": member, "answer": "yes", "version": reads.version().await});
+        let path = format!("/api/admin/runs/{run}/rsvp");
         reads
-            .ok(
-                "POST",
-                &format!("/api/admin/runs/{run}/rsvp"),
-                json!({"member_id": member, "answer": "yes", "version": v}),
-                "week.json#/$defs/RunResult",
-            )
+            .ok("POST", &path, body, "week.json#/$defs/RunResult")
             .await;
     }
     let answered = reads.version().await - 1;
     assert_eq!((moved, reverted, answered), (2, 3, 4));
 
     // Newest first, paged like the full list; the seed created the run.
-    let first = reads
-        .read("/api/admin/history?run=r-kalos&limit=3", PAGE)
-        .await;
+    let first = reads.history("?run=r-kalos&limit=3").await;
     assert_eq!(
         (
             seqs(&first),
@@ -299,9 +280,7 @@ async fn a_run_log_pages_every_record_touching_one_run() {
         (vec![4, 3, 2], json!(4), json!(2))
     );
     assert_eq!(first["head"]["seq"], 5);
-    let rest = reads
-        .read("/api/admin/history?run=r-kalos&limit=3&before=2", PAGE)
-        .await;
+    let rest = reads.history("?run=r-kalos&limit=3&before=2").await;
     assert_eq!(
         (seqs(&rest), rest["next_before"].clone()),
         (vec![1], Value::Null)
@@ -344,7 +323,9 @@ async fn a_run_log_pages_every_record_touching_one_run() {
         "run=r-kalos&actor=admin:token",
     ] {
         assert_eq!(
-            reads.status_of(&format!("/api/admin/history?{bad}")).await,
+            reads
+                .status(&format!("/api/admin/history?{bad}"), true)
+                .await,
             (422, "invalid_query".into()),
             "{bad}"
         );
@@ -380,12 +361,7 @@ async fn a_run_log_pages_every_record_touching_one_run() {
 async fn checkpoints_report_the_verified_chain() {
     let reads = Reads::new().await;
     reads.move_kalos(6, "21:00").await;
-    let checkpoints = reads
-        .read(
-            "/api/admin/history/checkpoints",
-            "history.json#/$defs/Checkpoints",
-        )
-        .await;
+    let checkpoints = reads.checkpoints().await;
     assert_eq!(checkpoints["verified"]["ok"], true);
     assert_eq!(checkpoints["verified"]["checked"], 3, "genesis, seed, move");
     assert_eq!(checkpoints["verified"]["head"]["seq"], 2);
@@ -407,9 +383,7 @@ async fn checkpoints_report_the_verified_chain() {
     .await
     .unwrap();
     sqlx::Connection::close(conn).await.unwrap();
-    let broken = reads
-        .read("/api/admin/history/checkpoints", CHECKPOINTS)
-        .await;
+    let broken = reads.checkpoints().await;
     assert_eq!(broken["verified"]["ok"], false);
     assert_eq!(broken["verified"]["first_broken"], 1);
 }
@@ -519,9 +493,7 @@ async fn checkpoints_list_backups_newest_first_with_their_anchor() {
     )
     .unwrap();
 
-    let checkpoints = reads
-        .read("/api/admin/history/checkpoints", CHECKPOINTS)
-        .await;
+    let checkpoints = reads.checkpoints().await;
     assert_eq!(checkpoints["verified"]["ok"], true);
     let backups = checkpoints["backups"].as_array().unwrap();
     let summary: Vec<(&str, &str, bool)> = backups
@@ -554,9 +526,7 @@ async fn checkpoints_list_backups_newest_first_with_their_anchor() {
 
     // Each read looks again: a removed snapshot drops out.
     std::fs::remove_file(dir.join("kanade-forked.sqlite")).unwrap();
-    let again = reads
-        .read("/api/admin/history/checkpoints", CHECKPOINTS)
-        .await;
+    let again = reads.checkpoints().await;
     assert_eq!(again["backups"].as_array().unwrap().len(), 3);
 }
 
@@ -590,9 +560,7 @@ async fn checkpoints_list_encrypted_backups_from_their_plaintext_manifest() {
             .starts_with(b"age-encryption.org/v1\n")
     );
 
-    let checkpoints = reads
-        .read("/api/admin/history/checkpoints", CHECKPOINTS)
-        .await;
+    let checkpoints = reads.checkpoints().await;
     let backups = checkpoints["backups"].as_array().unwrap();
     assert_eq!(backups.len(), 1, "{backups:?}");
     assert_eq!(backups[0]["file"], "kanade-enc.sqlite.age");
@@ -605,9 +573,7 @@ async fn checkpoints_list_encrypted_backups_from_their_plaintext_manifest() {
 #[tokio::test]
 async fn checkpoints_say_when_no_backup_dir_is_configured() {
     let reads = Reads::without_backup_dir().await;
-    let checkpoints = reads
-        .read("/api/admin/history/checkpoints", CHECKPOINTS)
-        .await;
+    let checkpoints = reads.checkpoints().await;
     assert_eq!(checkpoints["backup_dir_configured"], false);
     assert_eq!(checkpoints["backups"], json!([]));
     assert_eq!(checkpoints["verified"]["ok"], true);
@@ -622,7 +588,7 @@ async fn revert_previews_then_applies_once() {
 
     let preview = reads
         .plan(
-            "/api/admin/history/revert",
+            REVERT,
             json!({"seqs": [moved], "preview": true, "request_id": "ignored-on-preview"}),
             &[],
         )
@@ -635,9 +601,7 @@ async fn revert_previews_then_applies_once() {
     assert_eq!(reads.kalos().await["day"], 6);
 
     let key = [("Idempotency-Key", "revert-1")];
-    let applied = reads
-        .plan("/api/admin/history/revert", json!({"seqs": [moved]}), &key)
-        .await;
+    let applied = reads.plan(REVERT, json!({"seqs": [moved]}), &key).await;
     assert_eq!(applied["outcome"], "applied");
     assert_eq!(schedule_rows(&applied), schedule_rows(&preview));
     let record = &applied["record"];
@@ -658,7 +622,7 @@ async fn revert_previews_then_applies_once() {
     // A retry answers the recorded rollback, whichever way the id is sent.
     let again = reads
         .plan(
-            "/api/admin/history/revert",
+            REVERT,
             json!({"seqs": [moved], "request_id": "revert-1"}),
             &[],
         )
@@ -668,19 +632,12 @@ async fn revert_previews_then_applies_once() {
     assert_eq!(again["reverts"], json!([moved]));
     assert_eq!(reads.version().await, v + 1, "applied once");
 
-    let reused = reads
-        .call(
-            "POST",
-            "/api/admin/history/revert",
-            json!({"seqs": [1]}),
-            &key,
-        )
-        .await;
+    let reused = reads.call("POST", REVERT, json!({"seqs": [1]}), &key).await;
     assert_eq!(reused.error(), (422, "idempotency_mismatch".into()));
     let split = reads
         .call(
             "POST",
-            "/api/admin/history/revert",
+            REVERT,
             json!({"seqs": [moved], "request_id": "other"}),
             &key,
         )
@@ -698,9 +655,7 @@ async fn revert_previews_then_applies_once() {
         (json!({"seqs": [1], "colour": 1}), 400, "invalid_body"),
     ] {
         assert_eq!(
-            reads
-                .refused("POST", "/api/admin/history/revert", body.clone())
-                .await,
+            reads.refused("POST", REVERT, body.clone()).await,
             (status, code.into()),
             "{body}"
         );
@@ -716,11 +671,7 @@ async fn strict_reverts_report_conflicts_and_force_overrides_them() {
     let v = reads.version().await;
     for preview in [true, false] {
         let plan = reads
-            .plan(
-                "/api/admin/history/revert",
-                json!({"seqs": [first], "preview": preview}),
-                &[],
-            )
+            .plan(REVERT, json!({"seqs": [first], "preview": preview}), &[])
             .await;
         assert_eq!(plan["outcome"], "conflicts");
         assert_eq!(plan["reverts"], json!([first]));
@@ -733,7 +684,7 @@ async fn strict_reverts_report_conflicts_and_force_overrides_them() {
     }
     let forced = reads
         .plan(
-            "/api/admin/history/revert",
+            REVERT,
             json!({"seqs": [first], "force": true, "preview": true}),
             &[],
         )
@@ -742,11 +693,7 @@ async fn strict_reverts_report_conflicts_and_force_overrides_them() {
     assert!(!forced["conflicts"].as_array().unwrap().is_empty());
     assert_eq!(reads.version().await, v);
     let applied = reads
-        .plan(
-            "/api/admin/history/revert",
-            json!({"seqs": [first], "force": true}),
-            &[],
-        )
+        .plan(REVERT, json!({"seqs": [first], "force": true}), &[])
         .await;
     assert_eq!(applied["outcome"], "applied");
     assert_eq!(reads.version().await, v + 1);
@@ -764,15 +711,11 @@ async fn week_restores_and_actor_reverts_preview_then_apply() {
 
     let body =
         |preview: bool| json!({"week": "2026-09-24", "revision": revision, "preview": preview});
-    let preview = reads
-        .plan("/api/admin/history/restore-week", body(true), &[])
-        .await;
+    let preview = reads.plan(RESTORE_WEEK, body(true), &[]).await;
     assert_eq!(preview["outcome"], "preview");
     assert_eq!(preview["reverts"], json!([3, 2]));
     assert_eq!(reads.version().await, v);
-    let applied = reads
-        .plan("/api/admin/history/restore-week", body(false), &[])
-        .await;
+    let applied = reads.plan(RESTORE_WEEK, body(false), &[]).await;
     assert_eq!(applied["outcome"], "applied");
     assert_eq!(schedule_rows(&applied), schedule_rows(&preview));
     assert_eq!(reads.kalos().await["day"], 5);
@@ -780,7 +723,7 @@ async fn week_restores_and_actor_reverts_preview_then_apply() {
         reads
             .refused(
                 "POST",
-                "/api/admin/history/restore-week",
+                RESTORE_WEEK,
                 json!({"week": "2026-09-25", "revision": revision}),
             )
             .await,
@@ -789,7 +732,7 @@ async fn week_restores_and_actor_reverts_preview_then_apply() {
     // Nothing in next week changed after the seed.
     let quiet = reads
         .plan(
-            "/api/admin/history/restore-week",
+            RESTORE_WEEK,
             json!({"week": "2026-09-30T16:00:00+00:00", "revision": revision + 100, "preview": true}),
             &[],
         )
@@ -801,26 +744,18 @@ async fn week_restores_and_actor_reverts_preview_then_apply() {
     reads.move_kalos(3, "19:00").await;
     let actor = |since: &str, preview: bool| json!({"actor": "admin:token", "since": since, "preview": preview});
     let preview = reads
-        .plan(
-            "/api/admin/history/revert-actor",
-            actor("2026-09-29", true),
-            &[],
-        )
+        .plan(REVERT_ACTOR, actor("2026-09-29", true), &[])
         .await;
     assert_eq!(preview["outcome"], "preview");
     assert_eq!(preview["reverts"], json!([v + 1, v, 3, 2]));
     assert_eq!(reads.version().await, v + 1);
     let later = reads
-        .plan(
-            "/api/admin/history/revert-actor",
-            actor("2026-09-29T13:00", true),
-            &[],
-        )
+        .plan(REVERT_ACTOR, actor("2026-09-29T13:00", true), &[])
         .await;
     assert_eq!(later["outcome"], "unchanged", "nothing after 13:00 KL");
     let applied = reads
         .plan(
-            "/api/admin/history/revert-actor",
+            REVERT_ACTOR,
             json!({"actor": "admin:token", "since": "2026-09-29T00:00:00", "force": true}),
             &[("Idempotency-Key", "spam-1")],
         )
@@ -833,9 +768,7 @@ async fn week_restores_and_actor_reverts_preview_then_apply() {
         (json!({"actor": "robot:1", "since": "2026-09-29"}), "actor"),
         (json!({"actor": "admin:token"}), "since missing"),
     ] {
-        let (status, _) = reads
-            .refused("POST", "/api/admin/history/revert-actor", body)
-            .await;
+        let (status, _) = reads.refused("POST", REVERT_ACTOR, body).await;
         assert!(matches!(status, 400 | 422), "{what}: {status}");
     }
 }
@@ -843,18 +776,8 @@ async fn week_restores_and_actor_reverts_preview_then_apply() {
 #[tokio::test]
 async fn rollbacks_need_csrf_even_to_preview() {
     let reads = Reads::new().await;
-    let reply = crate::support::send(
-        reads.admin,
-        "POST",
-        ADMIN_HOST,
-        "/api/admin/history/revert",
-        &[
-            ("Cookie", reads.cookie.as_str()),
-            ("Origin", "https://kanade.test"),
-        ],
-        Some(&json!({"seqs": [1], "preview": true}).to_string()),
-    )
-    .await;
+    let body = json!({"seqs": [1], "preview": true});
+    let reply = reads.without_csrf("POST", REVERT, &body).await;
     assert_eq!(reply.error(), (403, "csrf".into()));
 }
 
@@ -863,32 +786,18 @@ async fn rollbacks_need_csrf_even_to_preview() {
 #[tokio::test]
 async fn seqs_beyond_the_store_range_get_contract_codes() {
     let reads = Reads::new().await;
+    let path = "/api/admin/history?before=18446744073709551615";
     assert_eq!(
-        reads
-            .status_of("/api/admin/history?before=18446744073709551615")
-            .await,
+        reads.status(path, true).await,
         (422, "invalid_query".into())
     );
-    assert_eq!(
-        reads
-            .status_of("/api/admin/history/9223372036854775808")
-            .await,
-        (404, "not_found".into())
-    );
-    assert_eq!(
-        reads
-            .refused(
-                "POST",
-                "/api/admin/history/revert",
-                json!({"seqs": [9223372036854775808_u64]}),
-            )
-            .await,
-        (422, "invalid".into())
-    );
+    let path = "/api/admin/history/9223372036854775808";
+    assert_eq!(reads.status(path, true).await, (404, "not_found".into()));
+    let body = json!({"seqs": [9223372036854775808_u64]});
+    let refusal = reads.refused("POST", REVERT, body).await;
+    assert_eq!(refusal, (422, "invalid".into()));
     // i64::MAX itself is in range: an older-than cursor, and a missing record.
-    let page = reads
-        .read("/api/admin/history?before=9223372036854775807", PAGE)
-        .await;
+    let page = reads.history("?before=9223372036854775807").await;
     assert_eq!(seqs(&page), [1]);
 }
 
@@ -945,7 +854,7 @@ async fn strict_conflicts_list_all_selected_records() {
     let head = reads.version().await;
     let plan = reads
         .plan(
-            "/api/admin/history/revert-actor",
+            REVERT_ACTOR,
             json!({"actor": "admin:token", "since": "2026-09-01"}),
             &[],
         )
@@ -987,7 +896,7 @@ async fn forced_week_restore_answers_the_record_rows() {
     reads.move_kalos(6, "21:00").await;
     let applied = reads
         .plan(
-            "/api/admin/history/restore-week",
+            RESTORE_WEEK,
             json!({"week": "2026-09-24", "revision": revision, "force": true}),
             &[],
         )

@@ -39,6 +39,31 @@ fn no_session_cookie(reply: &Reply) -> bool {
         .is_none_or(|value| value.is_empty())
 }
 
+/// The login error the callback at `path` answers, sent with `login` as its
+/// cookie (none when `None`).
+async fn callback_error(
+    harness: &MemberHarness,
+    path: &str,
+    login: Option<&str>,
+) -> Option<String> {
+    let headers: Vec<(&str, &str)> = login.map(|login| ("Cookie", login)).into_iter().collect();
+    login_error(&harness.get(path, &headers).await)
+}
+
+/// Mikan's callback from [`IP`], landing on `/`.
+async fn mikan_callback(harness: &MemberHarness) -> Reply {
+    harness
+        .callback(discord_user(MIKAN, "Mikan"), "%2F", IP)
+        .await
+}
+
+/// Mikan's approved callback path and login cookie, not yet followed.
+async fn mikan_approved(harness: &MemberHarness) -> (String, String) {
+    harness
+        .approved(discord_user(MIKAN, "Mikan"), "%2F", IP)
+        .await
+}
+
 #[tokio::test]
 async fn an_eligible_member_signs_in_with_a_strict_host_cookie() {
     let harness = MemberHarness::new().await;
@@ -147,9 +172,7 @@ async fn the_authorize_request_is_the_public_application_identify_only_with_prom
 #[tokio::test]
 async fn the_pkce_verifier_travels_with_the_state() {
     let harness = MemberHarness::new().await;
-    let (path, login) = harness
-        .approved(discord_user(MIKAN, "Mikan"), "%2F", IP)
-        .await;
+    let (path, login) = mikan_approved(&harness).await;
     let code = path
         .split_once("code=")
         .and_then(|(_, rest)| rest.split_once('&'))
@@ -181,52 +204,50 @@ async fn state_is_one_use_bound_to_its_login_and_expires() {
     // Forged state, then the right one: the login was consumed by the forgery.
     let (path, login) = harness.approved(user(), "%2F", IP).await;
     let forged = path.replace("state=", "state=forged");
-    assert_eq!(
-        login_error(&harness.get(&forged, &[("Cookie", &login)]).await).as_deref(),
-        Some("state")
-    );
-    assert_eq!(
-        login_error(&harness.get(&path, &[("Cookie", &login)]).await).as_deref(),
-        Some("state")
-    );
+    let state = Some("state".to_owned());
+    assert_eq!(callback_error(&harness, &forged, Some(&login)).await, state);
+    assert_eq!(callback_error(&harness, &path, Some(&login)).await, state);
 
     // Mismatched: another login's cookie, or none.
     let (path, _) = harness.approved(user(), "%2F", IP).await;
     let (_, other) = harness.approved(user(), "%2F", IP).await;
-    assert_eq!(
-        login_error(&harness.get(&path, &[("Cookie", &other)]).await).as_deref(),
-        Some("state")
-    );
+    assert_eq!(callback_error(&harness, &path, Some(&other)).await, state);
     let (path, _) = harness.approved(user(), "%2F", IP).await;
-    assert_eq!(
-        login_error(&harness.get(&path, &[]).await).as_deref(),
-        Some("state")
-    );
+    assert_eq!(callback_error(&harness, &path, None).await, state);
 
     // Expired.
     let (path, login) = harness.approved(user(), "%2F", IP).await;
     harness.advance(LOGIN_TTL);
-    assert_eq!(
-        login_error(&harness.get(&path, &[("Cookie", &login)]).await).as_deref(),
-        Some("state")
-    );
+    assert_eq!(callback_error(&harness, &path, Some(&login)).await, state);
     assert_eq!(harness.rows(MIKAN).await.len(), 1, "only the first sign-in");
 }
 
-fn one_callback(route: Route) -> Limits {
+/// One token a minute: `bursts` (per IP, global) on `tight`, 10 elsewhere.
+fn limits(route: Route, tight: Route, bursts: (f64, f64)) -> Limits {
     let rule = |burst| Rule {
         burst,
         per_minute: 1.0,
     };
-    match route {
-        Route::DiscordCallback => Limits {
-            per_ip: rule(1.0),
-            global: rule(10.0),
-        },
-        _ => Limits {
-            per_ip: rule(10.0),
-            global: rule(10.0),
-        },
+    let (per_ip, global) = if route == tight { bursts } else { (10.0, 10.0) };
+    Limits {
+        per_ip: rule(per_ip),
+        global: rule(global),
+    }
+}
+
+fn one_callback(route: Route) -> Limits {
+    limits(route, Route::DiscordCallback, (1.0, 10.0))
+}
+
+/// Mikan, still in the guild, without the bossing role.
+fn role_lost() -> RosterUpdate {
+    RosterUpdate::Seen {
+        user_id: MIKAN.to_string(),
+        display_name: "Mikan".into(),
+        nickname: None,
+        has_role: false,
+        roles: Vec::new(),
+        is_guild_admin: false,
     }
 }
 
@@ -239,20 +260,12 @@ async fn a_rate_limited_callback_consumes_its_state() {
         ..Options::default()
     })
     .await;
-    let first = harness
-        .approved(discord_user(MIKAN, "Mikan"), "%2F", IP)
-        .await;
-    let second = harness
-        .approved(discord_user(MIKAN, "Mikan"), "%2F", IP)
-        .await;
+    let user = || discord_user(MIKAN, "Mikan");
+    let first = harness.approved(user(), "%2F", IP).await;
+    let second = harness.approved(user(), "%2F", IP).await;
     let ip = ("CF-Connecting-IP", IP);
-    assert_eq!(
-        harness
-            .get(&first.0, &[("Cookie", &first.1), ip])
-            .await
-            .status,
-        200
-    );
+    let reply = harness.get(&first.0, &[("Cookie", &first.1), ip]).await;
+    assert_eq!(reply.status, 200);
     let limited = harness.get(&second.0, &[("Cookie", &second.1), ip]).await;
     assert_eq!(login_error(&limited).as_deref(), Some("rate_limited"));
     harness.advance(TimeDelta::minutes(2));
@@ -267,9 +280,7 @@ async fn a_rate_limited_callback_consumes_its_state() {
 async fn a_scope_broader_than_identify_is_refused_and_its_token_revoked_unused() {
     let harness = MemberHarness::new().await;
     harness.discord.grant_scope("identify email");
-    let reply = harness
-        .callback(discord_user(MIKAN, "Mikan"), "%2F", IP)
-        .await;
+    let reply = mikan_callback(&harness).await;
     assert_eq!(login_error(&reply).as_deref(), Some("discord"));
     assert!(no_session_cookie(&reply));
     assert_eq!(harness.discord.revoked(), 1);
@@ -308,9 +319,7 @@ async fn bots_and_members_without_the_role_are_not_eligible_and_get_nothing() {
 async fn unavailable_member_data_refuses_sign_in_without_denying() {
     let harness = MemberHarness::new().await;
     harness.gate.force(Some(Eligibility::Unavailable));
-    let reply = harness
-        .callback(discord_user(MIKAN, "Mikan"), "%2F", IP)
-        .await;
+    let reply = mikan_callback(&harness).await;
     assert_eq!(login_error(&reply).as_deref(), Some("unavailable"));
     assert!(no_session_cookie(&reply));
 }
@@ -330,14 +339,7 @@ fn roster_during_sign_in(harness: &MemberHarness, update: RosterUpdate) {
 
 #[tokio::test]
 async fn a_role_loss_or_leave_during_sign_in_leaves_no_live_session() {
-    let lost_role = RosterUpdate::Seen {
-        user_id: MIKAN.to_string(),
-        display_name: "Mikan".into(),
-        nickname: None,
-        has_role: false,
-        roles: Vec::new(),
-        is_guild_admin: false,
-    };
+    let lost_role = role_lost();
     let left = RosterUpdate::Left {
         user_id: MIKAN.to_string(),
     };
@@ -345,9 +347,7 @@ async fn a_role_loss_or_leave_during_sign_in_leaves_no_live_session() {
         let harness = MemberHarness::new().await;
         let earlier = harness.sign_in(discord_user(MIKAN, "Mikan")).await;
         roster_during_sign_in(&harness, update);
-        let reply = harness
-            .callback(discord_user(MIKAN, "Mikan"), "%2F", IP)
-            .await;
+        let reply = mikan_callback(&harness).await;
         assert_eq!(
             login_error(&reply).as_deref(),
             Some("not_eligible"),
@@ -419,9 +419,7 @@ fn capped_events(harness: &MemberHarness) -> usize {
 async fn member_data_lost_during_sign_in_hands_out_a_session_due_for_recheck() {
     let harness = MemberHarness::new().await;
     unavailable_after_insert(&harness);
-    let reply = harness
-        .callback(discord_user(MIKAN, "Mikan"), "%2F", IP)
-        .await;
+    let reply = mikan_callback(&harness).await;
     assert_eq!(reply.status, 200, "{}", reply.text());
     let id = reply.cookie(wire::MEMBER_SESSION_COOKIE).unwrap();
     assert!(wire::is_token(&id));
@@ -439,9 +437,7 @@ async fn a_replacing_sign_in_with_unavailable_member_data_keeps_the_browser_sign
     let harness = MemberHarness::new().await;
     let earlier = harness.sign_in(discord_user(MIKAN, "Mikan")).await;
     unavailable_after_insert(&harness);
-    let (path, login) = harness
-        .approved(discord_user(MIKAN, "Mikan"), "%2F", IP)
-        .await;
+    let (path, login) = mikan_approved(&harness).await;
     let cookies = format!("{login}; {}={}", wire::MEMBER_SESSION_COOKIE, earlier.id);
     let reply = harness
         .get(&path, &[("Cookie", &cookies), ("CF-Connecting-IP", IP)])
@@ -476,9 +472,7 @@ async fn a_capped_sign_in_with_unavailable_member_data_hands_out_the_new_session
     }
     harness.advance(TimeDelta::seconds(1));
     unavailable_after_insert(&harness);
-    let reply = harness
-        .callback(discord_user(MIKAN, "Mikan"), "%2F", IP)
-        .await;
+    let reply = mikan_callback(&harness).await;
     assert_eq!(reply.status, 200, "{}", reply.text());
     let id = reply.cookie(wire::MEMBER_SESSION_COOKIE).unwrap();
     let hash = crypto::sha256_hex(id.as_bytes());
@@ -504,22 +498,12 @@ async fn a_role_loss_after_the_second_check_refuses_the_cookie_on_first_use() {
     let store = harness.store.clone();
     harness.gate.after_next_check(async move {
         gate.after_next_check(async move {
-            let lost = RosterUpdate::Seen {
-                user_id: MIKAN.to_string(),
-                display_name: "Mikan".into(),
-                nickname: None,
-                has_role: false,
-                roles: Vec::new(),
-                is_guild_admin: false,
-            };
-            on_roster_update(&admin, Some(&member), &*store, None, &lost)
+            on_roster_update(&admin, Some(&member), &*store, None, &role_lost())
                 .await
                 .unwrap();
         });
     });
-    let reply = harness
-        .callback(discord_user(MIKAN, "Mikan"), "%2F", IP)
-        .await;
+    let reply = mikan_callback(&harness).await;
     assert_eq!(reply.status, 200, "{}", reply.text());
     let id = reply.cookie(wire::MEMBER_SESSION_COOKIE).unwrap();
     assert!(harness.rows(MIKAN).await.is_empty());
@@ -530,9 +514,7 @@ async fn a_role_loss_after_the_second_check_refuses_the_cookie_on_first_use() {
 #[tokio::test]
 async fn tokens_are_revoked_and_no_secret_or_address_reaches_the_audit() {
     let harness = MemberHarness::new().await;
-    let (path, login) = harness
-        .approved(discord_user(MIKAN, "Mikan"), "%2F", IP)
-        .await;
+    let (path, login) = mikan_approved(&harness).await;
     harness.discord.fail_revocation(true);
     let reply = harness
         .get(&path, &[("Cookie", &login), ("CF-Connecting-IP", IP)])
@@ -599,9 +581,7 @@ async fn next_stays_a_same_origin_path() {
 #[tokio::test]
 async fn discord_errors_are_never_echoed() {
     let harness = MemberHarness::new().await;
-    let (path, login) = harness
-        .approved(discord_user(MIKAN, "Mikan"), "%2F", IP)
-        .await;
+    let (path, login) = mikan_approved(&harness).await;
     let state = path.split("state=").nth(1).unwrap();
     let denied = format!(
         "/api/public/auth/discord/callback?error=access_denied&error_description=%3Cscript%3Eevil%3C%2Fscript%3E&state={state}"
@@ -623,20 +603,7 @@ async fn discord_errors_are_never_echoed() {
 }
 
 fn tight(route: Route) -> Limits {
-    let rule = |burst| Rule {
-        burst,
-        per_minute: 1.0,
-    };
-    match route {
-        Route::DiscordStart => Limits {
-            per_ip: rule(2.0),
-            global: rule(3.0),
-        },
-        _ => Limits {
-            per_ip: rule(10.0),
-            global: rule(10.0),
-        },
-    }
+    limits(route, Route::DiscordStart, (2.0, 3.0))
 }
 
 #[tokio::test]
@@ -799,9 +766,7 @@ async fn start_is_a_top_level_navigation_from_this_site_only() {
 async fn a_discord_429_cools_the_member_login_down() {
     let harness = MemberHarness::new().await;
     harness.discord.rate_limit_next(Duration::from_secs(30));
-    let reply = harness
-        .callback(discord_user(MIKAN, "Mikan"), "%2F", IP)
-        .await;
+    let reply = mikan_callback(&harness).await;
     assert_eq!(login_error(&reply).as_deref(), Some("unavailable"));
     let start = harness.get("/api/public/auth/discord/start", &[]).await;
     assert_eq!(login_error(&start).as_deref(), Some("unavailable"));
@@ -815,9 +780,7 @@ async fn a_discord_429_cools_the_member_login_down() {
 async fn a_closed_portal_answers_closed_and_drops_the_pending_login() {
     let harness = MemberHarness::new().await;
     let browser = harness.sign_in(discord_user(MIKAN, "Mikan")).await;
-    let (path, login) = harness
-        .approved(discord_user(MIKAN, "Mikan"), "%2F", IP)
-        .await;
+    let (path, login) = mikan_approved(&harness).await;
     harness.set_open(false);
 
     let status = harness.get("/api/public/status", &[]).await;

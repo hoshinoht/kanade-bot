@@ -131,6 +131,24 @@ fn answer_of(run: &Value, member: u64) -> &str {
 }
 
 impl Portal {
+    /// `PUT` the member's answer on `run` under `key`.
+    async fn answer(&self, browser: &super::Browser, run: &str, key: &str, body: &Value) -> Reply {
+        let path = answer_path(run);
+        self.write(browser, "PUT", &path, key, Some(body)).await
+    }
+
+    /// `POST` the member's move of `run` under `key`.
+    async fn move_run(
+        &self,
+        browser: &super::Browser,
+        run: &str,
+        key: &str,
+        body: &Value,
+    ) -> Reply {
+        let path = move_path(run);
+        self.write(browser, "POST", &path, key, Some(body)).await
+    }
+
     async fn link(&self, browser: &super::Browser, id: &str) -> Value {
         let value = self
             .read(browser, &link_path(id), "public.json#/$defs/MemberRunLink")
@@ -163,9 +181,7 @@ async fn members_answer_their_own_runs_through_the_admin_path() {
     );
     let v0 = portal.version().await;
     let maybe = json!({"answer": "maybe", "version": v0});
-    let reply = portal
-        .write(&dan, "PUT", &answer_path("r-kalos"), "a-1", Some(&maybe))
-        .await;
+    let reply = portal.answer(&dan, "r-kalos", "a-1", &maybe).await;
     let first = checked(&reply, "public.json#/$defs/MemberRunResult", &RESULT_KEYS);
     assert_eq!(answer_of(&first["run"], DAN), "maybe");
     assert_eq!(
@@ -191,39 +207,23 @@ async fn members_answer_their_own_runs_through_the_admin_path() {
     assert_eq!(first["version"], head.seq);
 
     // An exact retry answers the first result and records nothing.
-    let again = portal
-        .write(&dan, "PUT", &answer_path("r-kalos"), "a-1", Some(&maybe))
-        .await;
+    let again = portal.answer(&dan, "r-kalos", "a-1", &maybe).await;
     assert_eq!(again.status, 200);
     assert_eq!(again.json(), first);
     assert_eq!(portal.version().await, head.seq, "no second record");
     let other = json!({"answer": "yes", "version": v0});
-    let mismatch = portal
-        .write(&dan, "PUT", &answer_path("r-kalos"), "a-1", Some(&other))
-        .await;
+    let mismatch = portal.answer(&dan, "r-kalos", "a-1", &other).await;
     assert_eq!(refused(&mismatch), (422, "idempotency_mismatch".into()));
 
     // Stale only against the member's own answer.
-    let stale = portal
-        .write(&dan, "PUT", &answer_path("r-kalos"), "a-2", Some(&other))
-        .await;
+    let stale = portal.answer(&dan, "r-kalos", "a-2", &other).await;
     assert_eq!(refused(&stale), (409, "stale".into()));
     let v1 = portal.version().await;
     let alice_yes = json!({"answer": "no", "version": v1});
-    let reply = portal
-        .write(
-            &alice,
-            "PUT",
-            &answer_path("r-kalos"),
-            "a-3",
-            Some(&alice_yes),
-        )
-        .await;
+    let reply = portal.answer(&alice, "r-kalos", "a-3", &alice_yes).await;
     assert_eq!(reply.status, 200, "{}", reply.text());
     let dan_yes = json!({"answer": "yes", "version": v1});
-    let reply = portal
-        .write(&dan, "PUT", &answer_path("r-kalos"), "a-4", Some(&dan_yes))
-        .await;
+    let reply = portal.answer(&dan, "r-kalos", "a-4", &dan_yes).await;
     let run = checked(&reply, "public.json#/$defs/MemberRunResult", &RESULT_KEYS);
     assert_eq!(
         (answer_of(&run["run"], DAN), answer_of(&run["run"], ALICE)),
@@ -233,9 +233,7 @@ async fn members_answer_their_own_runs_through_the_admin_path() {
 
     // Next week's runs take answers too.
     let next = json!({"answer": "yes", "version": portal.version().await});
-    let reply = portal
-        .write(&alice, "PUT", &answer_path("n-kalos"), "a-5", Some(&next))
-        .await;
+    let reply = portal.answer(&alice, "n-kalos", "a-5", &next).await;
     assert_eq!(reply.status, 200, "{}", reply.text());
 
     let v = portal.version().await;
@@ -247,15 +245,7 @@ async fn members_answer_their_own_runs_through_the_admin_path() {
         (&alice, "r-star", (409, "run_closed")),
         (&alice, "r-off", (409, "run_closed")),
     ] {
-        let reply = portal
-            .write(
-                browser,
-                "PUT",
-                &answer_path(id),
-                &format!("x-{id}"),
-                Some(&yes),
-            )
-            .await;
+        let reply = portal.answer(browser, id, &format!("x-{id}"), &yes).await;
         assert_eq!(refused(&reply), (expected.0, expected.1.into()), "{id}");
     }
     for (body, what) in [
@@ -266,9 +256,7 @@ async fn members_answer_their_own_runs_through_the_admin_path() {
             "extra field",
         ),
     ] {
-        let reply = portal
-            .write(&dan, "PUT", &answer_path("r-kalos"), "b-1", Some(&body))
-            .await;
+        let reply = portal.answer(&dan, "r-kalos", "b-1", &body).await;
         assert_eq!(refused(&reply), (422, "invalid_body".into()), "{what}");
     }
     assert_eq!(portal.version().await, v, "nothing refused was recorded");
@@ -285,9 +273,7 @@ async fn members_move_their_own_runs_within_this_boss_week() {
     let v0 = portal.version().await;
     // Tue 22:00 → Wed 21:00 (day 6).
     let to_wed = json!({"day": 6, "time": "21:00", "version": v0});
-    let reply = portal
-        .write(&dan, "POST", &move_path("r-kalos"), "m-1", Some(&to_wed))
-        .await;
+    let reply = portal.move_run(&dan, "r-kalos", "m-1", &to_wed).await;
     let first = checked(&reply, "public.json#/$defs/MemberMoveResult", &MOVE_KEYS);
     assert_eq!(first["previous"], json!({"day": 5, "time": "22:00"}));
     assert_eq!(
@@ -305,20 +291,14 @@ async fn members_move_their_own_runs_within_this_boss_week() {
     );
     assert_eq!(portal.stored("r-kalos").await.datetime, utc(9, 30, 13, 0));
 
-    let again = portal
-        .write(&dan, "POST", &move_path("r-kalos"), "m-1", Some(&to_wed))
-        .await;
+    let again = portal.move_run(&dan, "r-kalos", "m-1", &to_wed).await;
     assert_eq!(again.status, 200);
     assert_eq!(again.json(), first, "the first result, `previous` included");
     assert_eq!(portal.version().await, head.seq, "no second record");
     let other = json!({"day": 6, "time": "20:00", "version": v0});
-    let mismatch = portal
-        .write(&dan, "POST", &move_path("r-kalos"), "m-1", Some(&other))
-        .await;
+    let mismatch = portal.move_run(&dan, "r-kalos", "m-1", &other).await;
     assert_eq!(refused(&mismatch), (422, "idempotency_mismatch".into()));
-    let stale = portal
-        .write(&alice, "POST", &move_path("r-kalos"), "m-2", Some(&other))
-        .await;
+    let stale = portal.move_run(&alice, "r-kalos", "m-2", &other).await;
     assert_eq!(refused(&stale), (409, "stale".into()));
 
     let v = portal.version().await;
@@ -350,13 +330,7 @@ async fn members_move_their_own_runs_within_this_boss_week() {
         ),
     ] {
         let reply = portal
-            .write(
-                browser,
-                "POST",
-                &move_path(id),
-                &format!("x-{id}"),
-                Some(&body),
-            )
+            .move_run(browser, id, &format!("x-{id}"), &body)
             .await;
         assert_eq!(
             refused(&reply),
@@ -368,17 +342,13 @@ async fn members_move_their_own_runs_within_this_boss_week() {
 
     // An own-time run keeps its clock, or gets a time (this week only).
     let keep = json!({"day": 6, "time": null, "version": v});
-    let reply = portal
-        .write(&dan, "POST", &move_path("r-own"), "o-1", Some(&keep))
-        .await;
+    let reply = portal.move_run(&dan, "r-own", "o-1", &keep).await;
     let kept = checked(&reply, "public.json#/$defs/MemberMoveResult", &MOVE_KEYS);
     assert_eq!(kept["previous"], json!({"day": 5, "time": null}));
     assert_eq!(kept["run"]["day"], 6);
     assert_eq!(portal.stored("r-own").await.datetime, utc(9, 30, 12, 0));
     let timed = json!({"day": 6, "time": "21:30", "version": kept["version"]});
-    let reply = portal
-        .write(&dan, "POST", &move_path("r-own"), "o-2", Some(&timed))
-        .await;
+    let reply = portal.move_run(&dan, "r-own", "o-2", &timed).await;
     checked(&reply, "public.json#/$defs/MemberMoveResult", &MOVE_KEYS);
     let stored = portal.stored("r-own").await;
     assert_eq!(
@@ -394,9 +364,7 @@ async fn a_move_never_leaves_the_boss_week() {
         Portal::over(Reads::with_reset(NaiveTime::from_hms_opt(12, 0, 0).unwrap()).await).await;
     let dan = portal.sign_in(DAN).await;
     let body = json!({"day": 0, "time": "11:00", "version": portal.version().await});
-    let reply = portal
-        .write(&dan, "POST", &move_path("r-kalos"), "w-1", Some(&body))
-        .await;
+    let reply = portal.move_run(&dan, "r-kalos", "w-1", &body).await;
     assert_eq!(refused(&reply), (422, "outside_week".into()));
 }
 
@@ -464,9 +432,7 @@ async fn run_links_show_the_week_the_slot_and_who_took_you_off() {
         (json!(false), json!(false))
     );
     let late = json!({"answer": "yes", "version": v});
-    let reply = portal
-        .write(&bob, "PUT", &answer_path("r-kalos"), "late-1", Some(&late))
-        .await;
+    let reply = portal.answer(&bob, "r-kalos", "late-1", &late).await;
     assert_eq!(refused(&reply), (403, "not_in_run".into()));
 
     // Last week's run: its party sees it, with this week's run of the timing.
@@ -534,27 +500,19 @@ async fn member_run_writes_need_a_fresh_sign_in_csrf_a_key_and_a_session() {
     portal.harness.advance(TimeDelta::minutes(16));
     let answer = json!({"answer": "yes", "version": v});
     let moved = json!({"day": 6, "time": "21:00", "version": v});
-    let reply = portal
-        .write(&dan, "PUT", &answer_path("r-kalos"), "f-1", Some(&answer))
-        .await;
+    let reply = portal.answer(&dan, "r-kalos", "f-1", &answer).await;
     assert_eq!(refused(&reply), (401, "reauth_required".into()));
-    let reply = portal
-        .write(&dan, "POST", &move_path("r-kalos"), "f-2", Some(&moved))
-        .await;
+    let reply = portal.move_run(&dan, "r-kalos", "f-2", &moved).await;
     assert_eq!(refused(&reply), (401, "reauth_required".into()));
     portal.link(&dan, "r-kalos").await;
     assert_eq!(portal.version().await, v);
     let dan = portal.sign_in(DAN).await;
-    let reply = portal
-        .write(&dan, "PUT", &answer_path("r-kalos"), "f-3", Some(&answer))
-        .await;
+    let reply = portal.answer(&dan, "r-kalos", "f-3", &answer).await;
     assert_eq!(reply.status, 200, "{}", reply.text());
 
     // Losing the role ends the session.
     portal.harness.member.member_changed("1004", false).await;
-    let reply = portal
-        .write(&dan, "PUT", &answer_path("r-kalos"), "f-4", Some(&answer))
-        .await;
+    let reply = portal.answer(&dan, "r-kalos", "f-4", &answer).await;
     assert_eq!(refused(&reply), (401, "unauthenticated".into()));
 
     let alice = portal.sign_in(ALICE).await;
@@ -578,19 +536,11 @@ async fn member_run_writes_take_the_member_write_tokens() {
     let body = json!({"answer": "yes", "version": portal.version().await});
     for n in 0..20 {
         let reply = portal
-            .write(
-                &dan,
-                "PUT",
-                &answer_path("r-nope"),
-                &format!("r-{n}"),
-                Some(&body),
-            )
+            .answer(&dan, "r-nope", &format!("r-{n}"), &body)
             .await;
         assert_eq!(refused(&reply), (404, "not_found".into()), "write {n}");
     }
-    let limited = portal
-        .write(&dan, "PUT", &answer_path("r-kalos"), "r-20", Some(&body))
-        .await;
+    let limited = portal.answer(&dan, "r-kalos", "r-20", &body).await;
     assert_eq!(refused(&limited), (429, "rate_limited".into()));
     assert!(
         portal
@@ -620,19 +570,11 @@ async fn refused_member_writes_are_audited_with_route_and_reason() {
         (&bob, "n-star", "w-2"),
         (&alice, "r-star", "w-3"),
     ] {
-        let reply = portal
-            .write(browser, "PUT", &answer_path(id), key, Some(&yes))
-            .await;
+        let reply = portal.answer(browser, id, key, &yes).await;
         assert!(matches!(reply.status, 403 | 404 | 409), "{}", reply.text());
     }
     let reply = portal
-        .write(
-            &alice,
-            "PUT",
-            &answer_path("r-kalos"),
-            "w-4",
-            Some(&json!({"answer": "?"})),
-        )
+        .answer(&alice, "r-kalos", "w-4", &json!({"answer": "?"}))
         .await;
     assert_eq!(refused(&reply), (422, "invalid_body".into()));
     let body = yes.to_string();
@@ -657,9 +599,7 @@ async fn refused_member_writes_are_audited_with_route_and_reason() {
         .await;
     assert_eq!(refused(&reply), (401, "unauthenticated".into()));
     portal.harness.advance(TimeDelta::minutes(16));
-    let reply = portal
-        .write(&alice, "PUT", &answer_path("r-kalos"), "w-6", Some(&yes))
-        .await;
+    let reply = portal.answer(&alice, "r-kalos", "w-6", &yes).await;
     assert_eq!(refused(&reply), (401, "reauth_required".into()));
 
     let refusals: Vec<(String, String, String)> = portal
@@ -733,16 +673,12 @@ async fn only_writes_are_audited_and_identical_refusals_are_coalesced() {
     ];
     let late = attempts.split_off(4);
     for (browser, id, key) in attempts {
-        let reply = portal
-            .write(browser, "PUT", &answer_path(id), key, Some(&yes))
-            .await;
+        let reply = portal.answer(browser, id, key, &yes).await;
         assert_eq!(refused(&reply), (404, "not_found".into()), "{key}");
     }
     portal.harness.advance(TimeDelta::seconds(61));
     for (browser, id, key) in late {
-        let reply = portal
-            .write(browser, "PUT", &answer_path(id), key, Some(&yes))
-            .await;
+        let reply = portal.answer(browser, id, key, &yes).await;
         assert_eq!(refused(&reply), (404, "not_found".into()), "{key}");
     }
 
@@ -872,13 +808,9 @@ async fn retries_answer_before_the_live_checks() {
     let v = portal.version().await;
     let answer = json!({"answer": "yes", "version": v});
     let to_wed = json!({"day": 6, "time": "21:00", "version": v});
-    let reply = portal
-        .write(&dan, "PUT", &answer_path("r-kalos"), "a-1", Some(&answer))
-        .await;
+    let reply = portal.answer(&dan, "r-kalos", "a-1", &answer).await;
     assert_eq!(reply.status, 200, "{}", reply.text());
-    let moved = portal
-        .write(&dan, "POST", &move_path("r-kalos"), "m-1", Some(&to_wed))
-        .await;
+    let moved = portal.move_run(&dan, "r-kalos", "m-1", &to_wed).await;
     let first = checked(&moved, "public.json#/$defs/MemberMoveResult", &MOVE_KEYS);
     let w = portal.version().await;
     portal
@@ -891,13 +823,9 @@ async fn retries_answer_before_the_live_checks() {
         )
         .await;
     let removed = portal.version().await;
-    let again = portal
-        .write(&dan, "PUT", &answer_path("r-kalos"), "a-1", Some(&answer))
-        .await;
+    let again = portal.answer(&dan, "r-kalos", "a-1", &answer).await;
     assert_eq!(again.status, 200, "{}", again.text());
-    let again = portal
-        .write(&dan, "POST", &move_path("r-kalos"), "m-1", Some(&to_wed))
-        .await;
+    let again = portal.move_run(&dan, "r-kalos", "m-1", &to_wed).await;
     let again = checked(&again, "public.json#/$defs/MemberMoveResult", &MOVE_KEYS);
     assert_eq!(again["previous"], first["previous"]);
     for (method, path, key, body) in [
@@ -931,9 +859,7 @@ async fn a_move_to_the_current_slot_writes_nothing() {
     let dan = portal.sign_in(DAN).await;
     let v = portal.version().await;
     let same = json!({"day": 5, "time": "22:00", "version": v});
-    let reply = portal
-        .write(&dan, "POST", &move_path("r-kalos"), "s-1", Some(&same))
-        .await;
+    let reply = portal.move_run(&dan, "r-kalos", "s-1", &same).await;
     let value = checked(&reply, "public.json#/$defs/MemberMoveResult", &MOVE_KEYS);
     assert_eq!(value["previous"], json!({"day": 5, "time": "22:00"}));
     assert_eq!(value["version"], v);
