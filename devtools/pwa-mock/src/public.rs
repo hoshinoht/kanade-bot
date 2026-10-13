@@ -75,7 +75,7 @@ fn unauthenticated() -> Response {
 }
 
 /// Same-origin when the browser says, and exactly one matching token.
-fn csrf_ok(headers: &HeaderMap, expected: &str) -> bool {
+pub(crate) fn csrf_ok(headers: &HeaderMap, expected: &str) -> bool {
     let site = headers
         .get("sec-fetch-site")
         .is_none_or(|v| v == "same-origin");
