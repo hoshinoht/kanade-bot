@@ -125,6 +125,12 @@ pub struct ScouterReading {
     pub estimated_minutes: Option<f64>,
     /// When kanade received it from MapleScouter.
     pub fetched_at: String,
+    /// MapleScouter assumed a 100% critical rate for this character (theirs
+    /// is under it): label it "Assumes 100% critical rate (actual N%)".
+    pub critical_rate_assumed: bool,
+    /// The character's own critical rate with an assumed reading; `null`
+    /// otherwise, or when MapleScouter didn't say.
+    pub critical_rate_actual: Option<f64>,
 }
 
 /// The card for `boss` in `member`'s result, through the scouter key table.
@@ -135,11 +141,14 @@ fn reading(
 ) -> Option<ScouterReading> {
     let token = format!("{}{}", boss.difficulty.to_ascii_uppercase(), boss.boss);
     let card = scouter_keys(&token).find_map(|key| member.bosses.get(key))?;
+    let assumed = member.crit_assumed();
     Some(ScouterReading {
         percentage: card.effective_percentage.unwrap_or(card.percentage),
         rating: card.rating.clone(),
         estimated_minutes: card.estimated_minutes,
         fetched_at: iso_instant(fetched_at),
+        critical_rate_assumed: assumed,
+        critical_rate_actual: member.critical_rate_actual.filter(|_| assumed),
     })
 }
 

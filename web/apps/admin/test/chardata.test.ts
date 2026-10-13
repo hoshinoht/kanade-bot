@@ -11,6 +11,7 @@ import type {
 } from '@kanade/api-types';
 import {
   asOfDate,
+  assumedCrit,
   catalogBoss,
   clock,
   combatPower,
@@ -24,6 +25,7 @@ import {
   lookupMiss,
   minutes,
   percent,
+  queuedText,
   readinessLine,
   scouterAt,
   scouterChip,
@@ -98,6 +100,8 @@ describe('run readiness', () => {
     rating: '2p Min Cut',
     estimated_minutes: 18.3,
     fetched_at: '2026-09-29T02:10:00Z',
+    critical_rate_assumed: false,
+    critical_rate_actual: null,
     ...over,
   });
   const slot = (over: Partial<ReadinessSlot>): ReadinessSlot => ({
@@ -131,9 +135,15 @@ describe('run readiness', () => {
     expect(readinessLine(read)).toEqual({ values: 'Lv. 276', source: 'NEXON · as of 29 Sep' });
     expect(scouterAt(read)).toBe('2026-09-29T02:10:00Z');
     expect(scouterAt(slot({}))).toBeNull();
-    expect(scouterChip(reading())).toEqual({ text: 'MapleScouter 164% · ~18 min', rating: '2p Min Cut' });
-    expect(scouterChip(reading({ percentage: 9, estimated_minutes: null }))).toEqual({ text: 'MapleScouter 9%', rating: '2p Min Cut' });
+    expect(scouterChip(reading())).toEqual({ text: 'MapleScouter 164% · ~18 min', rating: '2p Min Cut', assumed: null });
+    expect(scouterChip(reading({ percentage: 9, estimated_minutes: null }))).toEqual({ text: 'MapleScouter 9%', rating: '2p Min Cut', assumed: null });
     expect(scouterChip(reading({ estimated_minutes: 0.2 })).text).toBe('MapleScouter 164% · ~1 min');
+    // An assumed critical rate: a short marker on the chip, the full label for its title.
+    expect(scouterChip(reading({ critical_rate_assumed: true, critical_rate_actual: 89 }))).toEqual({
+      text: 'MapleScouter 164% · ~18 min · crit assumed',
+      rating: '2p Min Cut',
+      assumed: 'Assumes 100% critical rate (actual 89%)',
+    });
     // Manual level, no NEXON data: the reading still hides the CP dash.
     expect(readinessLine(slot({ link: 'not_linked', level: { value: 270, source: 'manual', as_of: null }, power: null, bosses: [boss('unknown', reading())] }))).toEqual({
       values: 'Lv. 270',
@@ -158,12 +168,25 @@ describe('MapleScouter estimates', () => {
     expect(catalogBoss(catalog, 'XUnknown')).toBeNull();
   });
 
-  it('says each error the boards draw, and never a partial party total', () => {
-    const error = (code: EstimateError['code'], status: number | null): EstimateError => ({ code, message: '', status, detail: '', retry_after_seconds: 40, character_id: null });
-    expect(estimateErrorText(error('critical_rate', 422), 'YuzuPala', true).text).toContain('No party total is made from a partial lookup.');
-    expect(estimateErrorText(error('manual_check', 503), null, false).lead).toBe('Scouter needs a manual check.');
-    expect(estimateErrorText(error('failed', 504), null, false).text).toBe('MapleScouter didn’t answer within 2 minutes (504). Nothing was kept.');
-    expect(estimateErrorText(error('busy', 429), null, false).text).toContain('Try again in 40 s.');
+  it('labels an assumed critical rate, and only then', () => {
+    expect(assumedCrit({ critical_rate_assumed: true, critical_rate_actual: 89 })).toBe('Assumes 100% critical rate (actual 89%)');
+    expect(assumedCrit({ critical_rate_assumed: true, critical_rate_actual: 89.46 })).toBe('Assumes 100% critical rate (actual 89.5%)');
+    expect(assumedCrit({ critical_rate_assumed: true, critical_rate_actual: null })).toBe('Assumes 100% critical rate');
+    expect(assumedCrit({ critical_rate_assumed: false, critical_rate_actual: null })).toBeNull();
+  });
+
+  it('says a queued lookup’s place', () => {
+    expect(queuedText(2)).toBe('Queued · 2 ahead');
+    expect(queuedText(null)).toBe('Queued · 1 ahead');
+  });
+
+  it('says each error the boards draw', () => {
+    const error = (code: EstimateError['code'], status: number | null, detail = ''): EstimateError => ({ code, message: '', status, detail, retry_after_seconds: 40, character_id: null });
+    expect(estimateErrorText(error('critical_rate', 422), 'YuzuPala').text).toContain('YuzuPala’s critical rate under 100% and couldn’t assume 100% for it.');
+    expect(estimateErrorText(error('manual_check', 503), null).lead).toBe('Scouter needs a manual check.');
+    expect(estimateErrorText(error('failed', 504), null).text).toBe('MapleScouter didn’t answer within 2 minutes (504). Nothing was kept.');
+    expect(estimateErrorText(error('failed', null, 'timeout'), null).text).toBe('MapleScouter didn’t answer in time. Nothing was kept.');
+    expect(estimateErrorText(error('busy', 429), null).text).toBe('It stayed busy with other lookups. Try again in 40 s.');
   });
 });
 

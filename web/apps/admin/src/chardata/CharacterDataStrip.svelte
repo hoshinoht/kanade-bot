@@ -307,7 +307,7 @@
     </div>
     {#if data}<span class="chardata__attrib" data-fid="roster-external-attrib">{link.attribution}</span>{/if}
     <LiveRegion message={said} />
-    {#if !retired}<EstimateRow {character} {sheet} {timeZone} {actor} />{/if}
+    {#if !retired}<EstimateRow {character} {sheet} {timeZone} />{/if}
   </section>
 {:else if view.error}
   <p class="settings__box settings__box--risk settings__box--small" role="alert">

@@ -2,8 +2,9 @@
 //! Nexon client does: one connection per call, a whole-exchange timeout, a
 //! capped body, redirects never followed. A lookup's query is built here
 //! and only here, from [`RosterIgn`]s: `ign=<IGN>` or `igns=<A>,<B>,…`.
-//! Nothing else is ever sent (no preset, no `preset_fallback`, no Nexon
-//! field, no cookie or credential).
+//! Nothing else is ever sent (no preset, no `assume_crit`: MapleScouter's
+//! default assumes 100% critical rate below it and labels the result; no
+//! Nexon field, no cookie or credential).
 
 use std::{pin::pin, time::Duration};
 
@@ -23,14 +24,15 @@ use super::{
     wire::{Batch, ErrorBody, Member},
 };
 
-/// The sidecar takes up to 120 s per request; kanade waits a little longer.
-pub const TIMEOUT: Duration = Duration::from_secs(130);
+/// The sidecar may hold a request up to 60 s in its own queue, then works
+/// up to 120 s on it (its write timeout is 190 s); kanade waits that long.
+pub const TIMEOUT: Duration = Duration::from_secs(190);
 /// MapleScouter's batch limit.
 pub const MAX_BATCH: usize = 6;
 pub const PATH: &str = "/v1/bosses";
 const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_BODY: usize = 512 * 1024;
-/// MapleScouter answers `busy` with `Retry-After: 5`.
+/// A `busy` answer without `Retry-After` (the sidecar always sends one).
 const BUSY_RETRY: u32 = 5;
 
 /// A lookup that produced no estimate.
@@ -118,18 +120,26 @@ impl ScouterClient {
         self
     }
 
-    /// `GET /v1/bosses?ign=<IGN>`.
-    pub async fn single(&self, ign: &RosterIgn) -> Result<Member, LookupError> {
-        self.lookup(&query(std::slice::from_ref(ign), false)).await
+    /// The longest one call waits.
+    pub fn timeout(&self) -> Duration {
+        self.timeout
     }
 
-    /// `GET /v1/bosses?igns=<A>,<B>,…` (1 to [`MAX_BATCH`] unique IGNs).
-    pub async fn batch(&self, igns: &[RosterIgn]) -> Result<Batch, LookupError> {
+    /// `GET /v1/bosses?ign=<IGN>`, waiting at most `within` (and never past
+    /// the client timeout).
+    pub async fn single(&self, ign: &RosterIgn, within: Duration) -> Result<Member, LookupError> {
+        self.lookup(&query(std::slice::from_ref(ign), false), within)
+            .await
+    }
+
+    /// `GET /v1/bosses?igns=<A>,<B>,…` (1 to [`MAX_BATCH`] unique IGNs),
+    /// waiting at most `within`.
+    pub async fn batch(&self, igns: &[RosterIgn], within: Duration) -> Result<Batch, LookupError> {
         // The caller dedupes and caps; MapleScouter would refuse it anyway.
         if !(1..=MAX_BATCH).contains(&igns.len()) {
             return Err(LookupError::Unreadable { status: None });
         }
-        self.lookup(&query(igns, true)).await
+        self.lookup(&query(igns, true), within).await
     }
 
     /// `GET /healthz` within a short timeout.
@@ -146,8 +156,14 @@ impl ScouterClient {
         }
     }
 
-    async fn lookup<T: DeserializeOwned>(&self, query: &str) -> Result<T, LookupError> {
-        let answer = self.get(&format!("{PATH}?{query}"), self.timeout).await?;
+    async fn lookup<T: DeserializeOwned>(
+        &self,
+        query: &str,
+        within: Duration,
+    ) -> Result<T, LookupError> {
+        let answer = self
+            .get(&format!("{PATH}?{query}"), self.timeout.min(within))
+            .await?;
         if answer.status == 200 {
             return serde_json::from_slice(&answer.body)
                 .map_err(|_| LookupError::Unreadable { status: Some(200) });

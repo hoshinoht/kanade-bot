@@ -246,7 +246,7 @@ async fn an_unlink_wakes_the_sweeper_and_stop_joins_the_task() {
 }
 
 /// A lookup the sidecar never answers is cancelled and joined by `stop`,
-/// so it has ended before serve closes the stores (not 130 s later).
+/// so it has ended before serve closes the stores (not 190 s later).
 #[tokio::test]
 async fn stop_cancels_and_joins_a_running_estimate_lookup() {
     use std::time::Duration;

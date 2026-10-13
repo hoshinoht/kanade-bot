@@ -1,7 +1,7 @@
 //! MapleScouter estimates for module `character_data` (admin only, on
-//! demand, one lookup at a time): the client of the private scouter sidecar
-//! (`KANADE_SCOUTER_URL`, a separate Compose project with no
-//! authentication), the lookup jobs and their in-memory 24-hour cache, and
+//! demand, queued and looked up one at a time): the client of the private
+//! scouter sidecar (`KANADE_SCOUTER_URL`, a separate Compose project with
+//! no authentication), the lookup jobs and their in-memory 24-hour cache, and
 //! the one table mapping scouter boss keys to catalog tokens.
 //!
 //! The sidecar is only ever sent roster IGNs ([`RosterIgn`], built from a
@@ -18,9 +18,9 @@ mod wire;
 
 pub use client::{LookupError, MAX_BATCH, ScouterClient, TIMEOUT, query};
 pub use estimates::{
-    CACHE_TTL, Estimate, Estimates, Failure, FailureKind, Found, Job, JobRequest, JobState,
-    MAX_CACHED, MAX_JOBS, Missing, MissingReason, ScouterHealth, ScouterState, Start, Subject,
-    Target,
+    CACHE_TTL, Estimates, Failure, FailureKind, Found, Job, JobRequest, JobState, MAX_CACHED,
+    MAX_JOBS, MAX_QUEUED, MemberOutcome, Missing, MissingReason, ScouterHealth, ScouterState,
+    Start, Subject, Target,
 };
 pub use ign::RosterIgn;
 pub use keys::{BOSS_KEYS, catalog_token, scouter_keys};

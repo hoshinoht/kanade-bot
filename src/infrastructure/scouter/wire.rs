@@ -11,10 +11,28 @@ use serde::Deserialize;
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Member {
     pub ign: String,
-    /// The preset the result was read with (`00010` unless MapleScouter
-    /// fell back to another for critical rate).
+    /// The preset the result was read with (`00010`).
     pub preset: String,
+    /// The character's critical rate is under 100% and MapleScouter's
+    /// manual Input flow raised it to exactly 100 for this result: a "what
+    /// if crit were 100%" estimate, labelled as such wherever it shows.
+    #[serde(default)]
+    pub critical_rate_assumed: bool,
+    /// The character's own critical rate, with an assumed result.
+    #[serde(default)]
+    pub critical_rate_actual: Option<f64>,
+    /// `manual_input` with an assumed result; absent for the normal page.
+    #[serde(default)]
+    pub source: Option<String>,
     pub bosses: BTreeMap<String, Card>,
+}
+
+impl Member {
+    /// A result from the manual Input flow: either marker labels it, so a
+    /// "what if" result never shows as the normal benchmark.
+    pub fn crit_assumed(&self) -> bool {
+        self.critical_rate_assumed || self.source.as_deref() == Some("manual_input")
+    }
 }
 
 /// One boss card. Unknown values stay `null`; a missing card is never 0%.
@@ -27,10 +45,10 @@ pub struct Card {
     pub estimated_minutes: Option<f64>,
 }
 
-/// The `igns=` answer.
+/// The `igns=` answer (its `members` repeat the `ign=` answers kanade
+/// already holds).
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Batch {
-    pub members: Vec<Member>,
     pub combined: BTreeMap<String, Combined>,
 }
 

@@ -1,10 +1,10 @@
 //! MapleScouter estimates (module `character_data` with
-//! `KANADE_SCOUTER_URL`): admin only, on demand, one lookup at a time, run
-//! as a job because a lookup takes up to two minutes. While the module is
-//! off or the URL is unset, every route answers the generic `404` before
-//! the session is checked, as an unmounted path does. `POST` takes the
-//! session's CSRF token. Nothing is stored: jobs and results live 24 hours
-//! in memory. MapleScouter is sent roster IGNs only.
+//! `KANADE_SCOUTER_URL`): admin only, on demand, run as queued jobs looked
+//! up one at a time, because a lookup takes up to a few minutes. While the
+//! module is off or the URL is unset, every route answers the generic `404`
+//! before the session is checked, as an unmounted path does. `POST` takes
+//! the session's CSRF token. Nothing is stored: jobs and results live 24
+//! hours in memory. MapleScouter is sent roster IGNs only.
 
 use std::sync::Arc;
 
@@ -33,8 +33,8 @@ use crate::{
     infrastructure::{
         character_data::CharacterData,
         scouter::{
-            Estimates, JobRequest, MAX_BATCH, Missing, MissingReason, RosterIgn, Start, Subject,
-            Target,
+            Estimates, JobRequest, MAX_BATCH, MAX_QUEUED, Missing, MissingReason, RosterIgn, Start,
+            Subject, Target,
         },
     },
 };
@@ -231,8 +231,10 @@ pub struct EstimateRequest {
     refresh: bool,
 }
 
-/// `POST /api/admin/estimates` → `202 {job}` (already `done` when the
-/// 24-hour memory answers it); `409 estimate_running` while a lookup runs.
+/// `POST /api/admin/estimates` → `202 {job}`: queued (or running at once),
+/// already `done` when the 24-hour memory answers it, or the target's job
+/// already queued or running; `429 estimate_queue_full` past
+/// [`MAX_QUEUED`] waiting jobs.
 async fn start(
     scouter: Scouter,
     State(site): State<Arc<Site>>,
@@ -255,17 +257,17 @@ async fn start(
         started_by: session.origin().actor,
         refresh: body.refresh,
     }) {
-        Start::Started(started) => Ok((
+        Start::Started(started) | Start::Joined(started) => Ok((
             StatusCode::ACCEPTED,
             Json(EstimateStarted {
                 job: job(&started, &state.catalog),
             }),
         )
             .into_response()),
-        Start::Running(_) => Err(Refusal::new(
-            StatusCode::CONFLICT,
-            "estimate_running",
-            "Another lookup is running.",
+        Start::Full => Err(Refusal::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "estimate_queue_full",
+            format!("{MAX_QUEUED} lookups are waiting already. Try again in a few minutes."),
         )),
     }
 }

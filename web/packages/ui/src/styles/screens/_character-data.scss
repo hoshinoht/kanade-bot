@@ -286,6 +286,51 @@
   white-space: normal;
 }
 
+// A party member still waiting for their lookup, or one that failed (the
+// others fill in regardless); its line under the name says which.
+.estimate__table tr.estimate__pending :is(th, td) {
+  color: var(--dim-text);
+}
+
+.estimate__table tr.estimate__failed td {
+  color: var(--risk-text);
+}
+
+.estimate__who-note {
+  display: block;
+  color: var(--dim-text);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.estimate__failed .estimate__who-note {
+  color: var(--risk-text);
+}
+
+// "Assumes 100% critical rate (actual 89%)": the result is a what-if, so it
+// is said beside the numbers in the label's warning tone.
+.estimate__assumed {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  color: var(--warn-text);
+  font-size: var(--fs-mini);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.estimate__assumed .icon {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+
+.estimate__who-note.estimate__assumed {
+  display: flex;
+  font-size: 11px;
+}
+
 .estimate__boss {
   display: flex;
   align-items: center;

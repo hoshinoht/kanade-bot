@@ -377,9 +377,12 @@ docker compose -f deploy/compose.yaml up -d --force-recreate bot
 #    next successful lookup clears it.
 ```
 
-Lookups run one at a time and take up to two minutes (the bot waits 130 s).
-Results stay in the bot's memory for 24 hours and are lost on restart; they
-are never written to the store, backups or logs.
+Lookups wait in one line (at most 16) and run one at a time; each can take
+a few minutes (the bot waits up to 190 s per sidecar call, as long as the
+sidecar's own queue and lookup can take). This needs the scouter build with
+its request queue and the critical-rate assumption. Results stay in the bot's
+memory for 24 hours and are lost on restart; they are never written to the
+store, backups or logs.
 
 ## Stop and roll back
 

@@ -4,13 +4,15 @@
 //! with invented IGNs and numbers. The fake answers by IGN prefix: `Busy`,
 //! `Limited` (429), `Crit` (422), `Verify` (503), `Blocked`, `Mismatch`,
 //! `Extract`, `Failed` (502), `Slow` (504), `Hang` (past the client
-//! timeout), `Gate` (waits to be released), `Null` (unknown shares);
-//! anything else is a full result.
+//! timeout), `Gate` (waits to be released), `Null` (unknown shares),
+//! `Once` (429 busy with `Retry-After: 1` the first time), `Assumed`
+//! (critical rate 89% assumed at 100%); anything else is a full result.
 
 use std::{
+    collections::HashSet,
     net::SocketAddr,
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use axum::{
@@ -26,7 +28,7 @@ use kanade::{
     infrastructure::{
         character_data::{CharacterData, ConfirmOutcome, RosterSide, Timing},
         nexon::{ApiKey, NexonClient},
-        scouter::{Estimates, ScouterClient, TIMEOUT},
+        scouter::{Estimates, MAX_QUEUED, ScouterClient, TIMEOUT},
         store::MemoryCharData,
     },
 };
@@ -45,7 +47,7 @@ const STATUS: &str = "character_data.json#/$defs/EstimateStatus";
 const ERROR: &str = "error.json#/$defs/ApiError";
 const CONFIG: &str = "config.json#/$defs/ConfigView";
 const ESTIMATES: &str = "/api/admin/estimates";
-/// The client timeout under test (production: 130 s).
+/// The client timeout under test (production: 190 s).
 const CLIENT_TIMEOUT: Duration = Duration::from_millis(400);
 
 /// One request the fake received.
@@ -60,6 +62,8 @@ struct Seen {
 struct Fake {
     seen: Arc<Mutex<Vec<Seen>>>,
     gate: Arc<Notify>,
+    /// `Once…` IGNs already answered busy.
+    refused: Arc<Mutex<HashSet<String>>>,
 }
 
 impl Fake {
@@ -93,18 +97,17 @@ fn card(percentage: f64, rating: &str, party: bool, effective: Option<f64>) -> V
     })
 }
 
-/// An invented member answer; `Null…` has an unknown Star share.
+/// An invented member answer; `Null…` has an unknown Star share,
+/// `Assumed…` a critical rate of 89% assumed at 100%.
 fn member(ign: &str) -> Value {
     let star = if ign.starts_with("Null") {
         card(64.5, "Party-able", true, None)
     } else {
         card(64.5, "3p Min Cut", true, Some(21.5))
     };
-    json!({
+    let mut answer = json!({
         "boss_380_hexa": 100_000,
         "requested_preset": "00010",
-        "preset_fallback_used": false,
-        "preset_attempts": [],
         "cache_hit": false,
         "ign": ign,
         "region": "msea",
@@ -120,7 +123,13 @@ fn member(ign: &str) -> Value {
             "destiny_kalos": card(3.0, "Impossible", false, Some(3.0)),
         },
         "timings_ms": {"total": 1},
-    })
+    });
+    if ign.starts_with("Assumed") {
+        answer["critical_rate_assumed"] = json!(true);
+        answer["critical_rate_actual"] = json!(89);
+        answer["source"] = json!("manual_input");
+    }
+    answer
 }
 
 fn total(sum: Option<f64>, issues: Value) -> Value {
@@ -201,8 +210,19 @@ async fn bosses(State(fake): State<Fake>, request: Request) -> Response {
         if name.starts_with("Hang") {
             tokio::time::sleep(Duration::from_secs(10)).await;
         }
-        if name.starts_with("Gate") {
+        // The party total (`igns=`) answers from the sidecar's cache.
+        if name.starts_with("Gate") && query.starts_with("ign=") {
             fake.gate.notified().await;
+        }
+        let huge = name.starts_with("Huge");
+        if (huge || name.starts_with("Once")) && fake.refused.lock().unwrap().insert(name.clone()) {
+            let body = json!({"error": {"code": "busy", "message": "4 lookups are waiting; retry later."}});
+            let mut response = (StatusCode::TOO_MANY_REQUESTS, Json(body)).into_response();
+            response.headers_mut().insert(
+                "retry-after",
+                if huge { "4294967295" } else { "1" }.parse().unwrap(),
+            );
+            return response;
         }
         if let Some(refused) = refusal(name) {
             return refused;
@@ -298,12 +318,14 @@ fn config() -> ConfigMaker {
     })
 }
 
-/// The module with estimates at `scouter` (off with `None`), and the Open
-/// API at `nexon` when given; the service is handed back through `slot`.
+/// The module with estimates at `scouter` (off with `None`) under the
+/// client `timeout`, and the Open API at `nexon` when given; the service is
+/// handed back through `slot`.
 fn module(
     scouter: Option<SocketAddr>,
     nexon: Option<SocketAddr>,
     slot: Arc<std::sync::OnceLock<Arc<CharacterData>>>,
+    timeout: Duration,
 ) -> CharacterDataMaker {
     Box::new(move |store, clock| {
         let mut service = CharacterData::new(
@@ -318,9 +340,7 @@ fn module(
         );
         if let Some(address) = scouter {
             let url = format!("http://{address}");
-            let client = ScouterClient::new(&url)
-                .unwrap()
-                .with_timeout(CLIENT_TIMEOUT);
+            let client = ScouterClient::new(&url).unwrap().with_timeout(timeout);
             service = service.with_estimates(Estimates::new(client, url, clock));
         }
         let service = Arc::new(service);
@@ -330,7 +350,11 @@ fn module(
 }
 
 async fn on(scouter: Option<SocketAddr>) -> Reads {
-    Reads::with_character_data(Some(config()), module(scouter, None, Arc::default())).await
+    Reads::with_character_data(
+        Some(config()),
+        module(scouter, None, Arc::default(), CLIENT_TIMEOUT),
+    )
+    .await
 }
 
 async fn character(reads: &Reads, member: &str, ign: &str) -> String {
@@ -361,17 +385,30 @@ async fn refused(reads: &Reads, body: Value) -> (u16, String) {
     (reply.status, reply.api_error())
 }
 
-/// The job once it stops running.
+/// The job once it has finished (`done` or `failed`).
 async fn settled(reads: &Reads, job: &Value) -> Value {
     let path = format!("{ESTIMATES}/{}", job["id"].as_str().unwrap());
     for _ in 0..400 {
         let read = reads.read(&path, JOB).await;
-        if read["state"] != "running" {
+        if read["state"] == "done" || read["state"] == "failed" {
             return read;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    panic!("{path} still running");
+    panic!("{path} still queued or running");
+}
+
+/// Job `job` once `ready` holds for it, still unfinished or not.
+async fn read_until(reads: &Reads, job: &Value, ready: impl Fn(&Value) -> bool) -> Value {
+    let path = format!("{ESTIMATES}/{}", job["id"].as_str().unwrap());
+    for _ in 0..400 {
+        let read = reads.read(&path, JOB).await;
+        if ready(&read) {
+            return read;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("{path} never got there: {}", reads.read(&path, JOB).await);
 }
 
 async fn look_up(reads: &Reads, body: Value) -> Value {
@@ -427,18 +464,23 @@ async fn routes_are_the_generic_404_while_the_module_or_the_url_is_off() {
 
 #[tokio::test]
 async fn one_character_is_one_ign_lookup_with_a_pinned_request() {
-    assert_eq!(TIMEOUT, Duration::from_secs(130), "the production timeout");
+    assert_eq!(TIMEOUT, Duration::from_secs(190), "the production timeout");
     let (address, fake) = fake_scouter().await;
     let reads = on(Some(address)).await;
     let id = character(&reads, "1001", "MikaBish").await;
 
     let running = post(&reads, json!({"character_ids": [id]})).await;
-    assert_eq!(running["state"], "running");
+    assert_eq!(
+        running["state"], "running",
+        "nothing ahead: it runs at once"
+    );
+    assert_eq!(running["position"], Value::Null);
     assert_eq!(running["started_by"]["kind"], "admin");
     assert_eq!(
         running["progress"],
         json!({"done": 0, "total": 1, "current": null})
     );
+    assert_eq!(running["characters"][0]["outcome"], "pending");
     let done = settled(&reads, &running).await;
     assert_eq!(done["state"], "done", "{done}");
     assert_eq!(done["label"], "Estimate from MapleScouter");
@@ -458,6 +500,18 @@ async fn one_character_is_one_ign_lookup_with_a_pinned_request() {
     assert_eq!(
         (&mika["character_id"], &mika["ign"], &mika["preset"]),
         (&json!(id), &json!("MikaBish"), &json!("00010"))
+    );
+    assert_eq!(
+        (
+            &mika["critical_rate_assumed"],
+            &mika["critical_rate_actual"]
+        ),
+        (&json!(false), &Value::Null),
+        "the normal page"
+    );
+    assert_eq!(
+        done["characters"][0],
+        json!({"character_id": id, "member_id": "1001", "ign": "MikaBish", "outcome": "ok", "error": null})
     );
     // Catalog bosses only, in catalog order; Limbo and Destiny dropped.
     assert_eq!(tokens(mika), ["XKalos", "HMaleficStar"]);
@@ -690,6 +744,8 @@ async fn scouter_errors_map_to_the_drawn_states_and_are_never_cached() {
             }),
             "{ign}"
         );
+        assert_eq!(failed["characters"][0]["outcome"], "failed", "{ign}");
+        assert_eq!(failed["characters"][0]["error"], failed["error"], "{ign}");
         if ign == "VerifyAa" {
             let view = reads.read("/api/admin/config", CONFIG).await;
             assert_eq!(
@@ -754,8 +810,8 @@ async fn a_run_is_looked_up_one_by_one_then_as_a_party_with_missing_members() {
     assert_eq!(
         done["characters"],
         json!([
-            {"character_id": mika, "member_id": "1001", "ign": "MikaBish"},
-            {"character_id": ren, "member_id": "1002", "ign": "RenShade"},
+            {"character_id": mika, "member_id": "1001", "ign": "MikaBish", "outcome": "ok", "error": null},
+            {"character_id": ren, "member_id": "1002", "ign": "RenShade", "outcome": "ok", "error": null},
         ])
     );
     assert_eq!(
@@ -847,57 +903,324 @@ async fn a_party_with_an_unknown_share_has_no_total_and_says_why() {
 }
 
 #[tokio::test]
-async fn a_party_failure_keeps_finished_characters_and_makes_no_total() {
+async fn a_party_member_failure_never_stops_the_others() {
     let (address, fake) = fake_scouter().await;
     let reads = on(Some(address)).await;
     let mika = character(&reads, "1001", "MikaBish").await;
     let crit = character(&reads, "1002", "CritAa").await;
-    let failed = look_up(&reads, json!({"run_id": "r-kalos"})).await;
-    assert_eq!(failed["state"], "failed");
-    assert_eq!(failed["result"], Value::Null, "no partial total");
-    assert_eq!(failed["error"]["code"], "critical_rate");
+    let done = look_up(&reads, json!({"run_id": "r-kalos"})).await;
+    assert_eq!(done["state"], "done", "{done}");
+    assert_eq!(done["error"], Value::Null, "the total itself came back");
     assert_eq!(
-        failed["error"]["character_id"], crit,
-        "names who stopped it"
+        (
+            &done["characters"][0]["outcome"],
+            &done["characters"][0]["error"]
+        ),
+        (&json!("ok"), &Value::Null)
     );
-    assert_eq!(failed["progress"]["done"], 1);
-    // MikaBish was kept: the strip answers from memory.
-    let strip = post(&reads, json!({"character_ids": [mika]})).await;
-    assert_eq!(strip["result"]["cache_hit"], true);
+    let failed = &done["characters"][1];
+    assert_eq!(failed["outcome"], "failed");
+    assert_eq!(
+        (&failed["error"]["code"], &failed["error"]["character_id"]),
+        (&json!("critical_rate"), &json!(crit))
+    );
+    assert_eq!(done["progress"]["done"], 2);
+    let result = &done["result"];
+    assert_eq!(result["members"].as_array().unwrap().len(), 1);
+    assert_eq!(result["members"][0]["character_id"], mika);
+    // The total counts MikaBish only and is never complete.
+    assert_eq!(
+        result["combined"],
+        json!([{
+            "boss": "XKalos",
+            "combined_percentage": 9.0,
+            "estimated_minutes": 3000.0 / 9.0,
+            "technically_possible": false,
+            "complete": false,
+            "issues": [],
+        }])
+    );
+    assert_eq!(result["complete"], false);
     assert_eq!(
         fake.targets(),
-        ["/v1/bosses?ign=MikaBish", "/v1/bosses?ign=CritAa"]
+        [
+            "/v1/bosses?ign=MikaBish",
+            "/v1/bosses?ign=CritAa",
+            "/v1/bosses?igns=MikaBish",
+        ]
+    );
+    // MikaBish was kept; the partial party was not.
+    let strip = post(&reads, json!({"character_ids": [mika]})).await;
+    assert_eq!(strip["result"]["cache_hit"], true);
+    let again = look_up(&reads, json!({"run_id": "r-kalos"})).await;
+    assert_eq!(again["result"]["cache_hit"], false);
+    assert_eq!(
+        fake.targets()[3..],
+        ["/v1/bosses?ign=CritAa", "/v1/bosses?igns=MikaBish"],
+        "only the failed character is asked again"
     );
 }
 
 #[tokio::test]
-async fn a_second_lookup_while_one_runs_is_409() {
+async fn a_party_with_nobody_found_fails_with_each_reason() {
+    let (address, fake) = fake_scouter().await;
+    let reads = on(Some(address)).await;
+    let crit = character(&reads, "1001", "CritAa").await;
+    let slow = character(&reads, "1002", "SlowAa").await;
+    let failed = look_up(&reads, json!({"character_ids": [crit, slow]})).await;
+    assert_eq!(failed["state"], "failed");
+    assert_eq!(failed["result"], Value::Null, "no total from nobody");
+    let codes: Vec<(&Value, &Value)> = failed["characters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| (&row["ign"], &row["error"]["detail"]))
+        .collect();
+    assert!(codes.contains(&(&json!("CritAa"), &json!("critical_rate_setup_required"))));
+    assert!(codes.contains(&(&json!("SlowAa"), &json!("lookup_timeout"))));
+    // The job's error is the first character's.
+    assert_eq!(failed["error"], failed["characters"][0]["error"]);
+    assert_eq!(fake.lookups().len(), 2, "no party total asked");
+}
+
+#[tokio::test]
+async fn party_results_fill_in_as_each_character_finishes() {
+    let (address, fake) = fake_scouter().await;
+    let reads = on(Some(address)).await;
+    let mika = character(&reads, "1001", "MikaBish").await;
+    let gate = character(&reads, "1002", "GateAa").await;
+    let job = post(&reads, json!({"run_id": "r-kalos"})).await;
+    let partial = read_until(&reads, &job, |read| read["progress"]["current"] == gate).await;
+    assert_eq!(partial["state"], "running");
+    assert_eq!(
+        partial["progress"],
+        json!({"done": 1, "total": 2, "current": gate})
+    );
+    assert_eq!(
+        (
+            &partial["characters"][0]["outcome"],
+            &partial["characters"][1]["outcome"]
+        ),
+        (&json!("ok"), &json!("pending"))
+    );
+    let result = &partial["result"];
+    assert_eq!(result["members"][0]["character_id"], mika);
+    assert_eq!(result["members"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        (
+            &result["combined"],
+            &result["complete"],
+            &result["cache_hit"]
+        ),
+        (&Value::Null, &json!(false), &json!(false))
+    );
+    assert_eq!(partial["fetched_at"], Value::Null, "until it is done");
+    // Readiness already shows MikaBish's reading.
+    let ready = reads.read("/api/admin/runs/r-kalos/readiness", READY).await;
+    assert_eq!(
+        ready_slot(&ready, "1001")["bosses"][0]["scouter"]["percentage"],
+        9.0
+    );
+    fake.gate.notify_one();
+    let done = settled(&reads, &job).await;
+    assert_eq!(done["state"], "done");
+    assert_eq!(done["result"]["members"].as_array().unwrap().len(), 2);
+    assert_eq!(done["result"]["combined"][0]["combined_percentage"], 18.0);
+}
+
+#[tokio::test]
+async fn lookups_wait_in_line_in_order_with_their_position() {
     let (address, fake) = fake_scouter().await;
     let reads = on(Some(address)).await;
     let gate = character(&reads, "1001", "GateAa").await;
-    let other = character(&reads, "1002", "MikaBish").await;
+    let mika = character(&reads, "1002", "MikaBish").await;
+    let ren = character(&reads, "1001", "RenShade").await;
     let running = post(&reads, json!({"character_ids": [gate]})).await;
     assert_eq!(running["state"], "running");
+    let first = post(&reads, json!({"character_ids": [mika]})).await;
+    let second = post(&reads, json!({"character_ids": [ren]})).await;
     assert_eq!(
-        refused(&reads, json!({"character_ids": [other]})).await,
-        (409, "estimate_running".into())
+        (&first["state"], &first["position"]),
+        (&json!("queued"), &json!(1))
     );
-    let refusal = reads
-        .call("POST", ESTIMATES, json!({"character_ids": [other]}), &[])
-        .await;
-    assert_eq!(refusal.json()["message"], "Another lookup is running.");
-    // Another target's status names the running job (who and what).
+    assert_eq!(
+        (&second["state"], &second["position"]),
+        (&json!("queued"), &json!(2))
+    );
+    assert_eq!(
+        first["progress"],
+        json!({"done": 0, "total": 1, "current": null})
+    );
+    // Asking again for a queued or running target answers its job.
+    let joined = post(&reads, json!({"character_ids": [mika], "refresh": true})).await;
+    assert_eq!(
+        (&joined["id"], &joined["position"]),
+        (&first["id"], &json!(1))
+    );
+    let same = post(&reads, json!({"character_ids": [gate]})).await;
+    assert_eq!(
+        (&same["id"], &same["state"]),
+        (&running["id"], &json!("running"))
+    );
+    // The status read reports the place too, and the job ahead.
     let status = reads
-        .read(&format!("{ESTIMATES}?character_ids={other}"), STATUS)
+        .read(&format!("{ESTIMATES}?character_ids={ren}"), STATUS)
         .await;
-    assert_eq!(status["job"], Value::Null);
+    assert_eq!(
+        (&status["job"]["id"], &status["job"]["position"]),
+        (&second["id"], &json!(2))
+    );
     assert_eq!(status["running"]["id"], running["id"]);
-    assert_eq!(status["running"]["characters"][0]["ign"], "GateAa");
+    assert!(
+        fake.targets()
+            .iter()
+            .all(|target| target.ends_with("GateAa")),
+        "only the running one is asked"
+    );
+
     fake.gate.notify_one();
-    let done = settled(&reads, &running).await;
-    assert_eq!(done["state"], "done");
-    // Free again.
-    look_up(&reads, json!({"character_ids": [other]})).await;
+    let last = settled(&reads, &second).await;
+    assert_eq!(
+        (&last["state"], &last["position"]),
+        (&json!("done"), &Value::Null)
+    );
+    assert_eq!(settled(&reads, &first).await["state"], "done");
+    assert_eq!(
+        fake.targets(),
+        [
+            "/v1/bosses?ign=GateAa",
+            "/v1/bosses?ign=MikaBish",
+            "/v1/bosses?ign=RenShade",
+        ],
+        "first in, first looked up"
+    );
+    assert_eq!(
+        reads
+            .read(&format!("{ESTIMATES}?character_ids={ren}"), STATUS)
+            .await["running"],
+        Value::Null,
+        "the worker stops once the line is empty"
+    );
+    // A later lookup starts a new worker.
+    let id = character(&reads, "1002", "AsaAa").await;
+    assert_eq!(
+        look_up(&reads, json!({"character_ids": [id]})).await["state"],
+        "done"
+    );
+}
+
+#[tokio::test]
+async fn the_line_holds_16_and_refuses_more() {
+    assert_eq!(MAX_QUEUED, 16);
+    let (address, fake) = fake_scouter().await;
+    let reads = on(Some(address)).await;
+    let gate = character(&reads, "1001", "GateAa").await;
+    post(&reads, json!({"character_ids": [gate]})).await;
+    let mut queued = Vec::new();
+    for n in 0..MAX_QUEUED {
+        let id = character(&reads, "1002", &format!("Mika{n:02}")).await;
+        let job = post(&reads, json!({"character_ids": [id]})).await;
+        assert_eq!(job["position"], json!(n + 1));
+        queued.push((id, job));
+    }
+    let late = character(&reads, "1002", "MikaLate").await;
+    let reply = reads
+        .call("POST", ESTIMATES, json!({"character_ids": [late]}), &[])
+        .await;
+    assert_valid(ERROR, ESTIMATES, &reply.json());
+    assert_eq!(
+        (reply.status, reply.api_error()),
+        (429, "estimate_queue_full".into())
+    );
+    assert_eq!(
+        reply.json()["message"],
+        "16 lookups are waiting already. Try again in a few minutes."
+    );
+    // A target already in line still gets its job.
+    let (id, job) = &queued[3];
+    assert_eq!(
+        post(&reads, json!({"character_ids": [id]})).await["id"],
+        job["id"]
+    );
+    fake.gate.notify_one();
+    let (_, last) = queued.last().unwrap();
+    assert_eq!(settled(&reads, last).await["state"], "done");
+    assert_eq!(
+        look_up(&reads, json!({"character_ids": [late]})).await["state"],
+        "done"
+    );
+}
+
+#[tokio::test]
+async fn busy_is_asked_again_after_retry_after_within_the_deadline() {
+    let (address, fake) = fake_scouter().await;
+    // One call's budget (3 s) leaves room for the 1-second wait.
+    let reads = Reads::with_character_data(
+        Some(config()),
+        module(Some(address), None, Arc::default(), Duration::from_secs(3)),
+    )
+    .await;
+    let id = character(&reads, "1001", "OnceAa").await;
+    let begun = Instant::now();
+    let done = look_up(&reads, json!({"character_ids": [id]})).await;
+    assert_eq!(done["state"], "done", "{done}");
+    assert!(
+        begun.elapsed() >= Duration::from_secs(1),
+        "waited Retry-After"
+    );
+    assert_eq!(fake.targets(), ["/v1/bosses?ign=OnceAa"; 2]);
+    let view = reads.read("/api/admin/config", CONFIG).await;
+    assert_eq!(view["character_data"]["scouter"]["state"], "ok");
+    // A Retry-After past the deadline (5 s against 0.4 s) still fails as
+    // busy: covered by `scouter_errors_map_to_the_drawn_states…`.
+}
+
+/// A Retry-After far past any deadline (`u32::MAX` seconds) fails that
+/// lookup as busy and never stalls the line: the next lookup still runs.
+#[tokio::test]
+async fn a_huge_retry_after_fails_as_busy_and_the_line_moves_on() {
+    let (address, _) = fake_scouter().await;
+    let reads = Reads::with_character_data(
+        Some(config()),
+        module(Some(address), None, Arc::default(), Duration::from_secs(3)),
+    )
+    .await;
+    let huge = character(&reads, "1001", "HugeAa").await;
+    let failed = look_up(&reads, json!({"character_ids": [huge]})).await;
+    assert_eq!(failed["state"], "failed", "{failed}");
+    let next = character(&reads, "1002", "PlainBb").await;
+    let done = look_up(&reads, json!({"character_ids": [next]})).await;
+    assert_eq!(done["state"], "done", "{done}");
+}
+
+#[tokio::test]
+async fn an_assumed_critical_rate_is_labelled_in_the_result_and_readiness() {
+    let (address, _) = fake_scouter().await;
+    let reads = on(Some(address)).await;
+    let id = character(&reads, "1001", "AssumedAa").await;
+    let done = look_up(&reads, json!({"character_ids": [id]})).await;
+    let member = &done["result"]["members"][0];
+    assert_eq!(
+        (
+            &member["critical_rate_assumed"],
+            &member["critical_rate_actual"]
+        ),
+        (&json!(true), &json!(89.0))
+    );
+    assert_eq!(done["note"], "Estimate for planning only, not eligibility");
+    // Readiness carries the same label for each of the character's bosses.
+    let ready = reads.read("/api/admin/runs/r-kalos/readiness", READY).await;
+    assert_eq!(
+        ready_slot(&ready, "1001")["bosses"][0]["scouter"],
+        json!({
+            "percentage": 9.0,
+            "rating": "6p Min Cut",
+            "estimated_minutes": 3000.0 / 9.0,
+            "fetched_at": "2026-09-29T04:00:00Z",
+            "critical_rate_assumed": true,
+            "critical_rate_actual": 89.0,
+        })
+    );
 }
 
 #[tokio::test]
@@ -907,7 +1230,12 @@ async fn scouter_requests_never_carry_nexon_fields() {
     let slot = Arc::new(std::sync::OnceLock::new());
     let reads = Reads::with_character_data(
         Some(config()),
-        module(Some(address), Some(nexon), Arc::clone(&slot)),
+        module(
+            Some(address),
+            Some(nexon),
+            Arc::clone(&slot),
+            CLIENT_TIMEOUT,
+        ),
     )
     .await;
     let service = slot.get().unwrap().clone();
@@ -1043,7 +1371,12 @@ async fn readiness_shows_cached_scouter_readings_per_boss_and_never_looks_up() {
     let slot = Arc::new(std::sync::OnceLock::new());
     let reads = Reads::with_character_data(
         Some(config()),
-        module(Some(address), Some(nexon), Arc::clone(&slot)),
+        module(
+            Some(address),
+            Some(nexon),
+            Arc::clone(&slot),
+            CLIENT_TIMEOUT,
+        ),
     )
     .await;
     let service = slot.get().unwrap().clone();
@@ -1083,7 +1416,7 @@ async fn readiness_shows_cached_scouter_readings_per_boss_and_never_looks_up() {
     let alice = ready_slot(&mixed, "1001");
     assert_eq!(
         alice["bosses"][0]["scouter"],
-        json!({"percentage": 9.0, "rating": "6p Min Cut", "estimated_minutes": 3000.0 / 9.0, "fetched_at": "2026-09-29T04:00:00Z"})
+        json!({"percentage": 9.0, "rating": "6p Min Cut", "estimated_minutes": 3000.0 / 9.0, "fetched_at": "2026-09-29T04:00:00Z", "critical_rate_assumed": false, "critical_rate_actual": null})
     );
     assert_eq!(alice["power"], Value::Null);
     let bob = ready_slot(&mixed, "1002");

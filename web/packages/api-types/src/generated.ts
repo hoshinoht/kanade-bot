@@ -588,19 +588,29 @@ percentage: number, rating: string, estimated_minutes: number | null,
 /**
  * When kanade received it from MapleScouter.
  */
-fetched_at: string, };
+fetched_at: string, 
+/**
+ * MapleScouter assumed a 100% critical rate for this character (theirs
+ * is under it): label it "Assumes 100% critical rate (actual N%)".
+ */
+critical_rate_assumed: boolean, 
+/**
+ * The character's own critical rate with an assumed reading; `null`
+ * otherwise, or when MapleScouter didn't say.
+ */
+critical_rate_actual: number | null, };
 
 /**
  * `GET /api/admin/estimates?character_ids=|run_id=`.
  */
 export type EstimateStatus = { 
 /**
- * The newest job for exactly this target (running, or finished in the
- * last 24 hours); `null` without one.
+ * The newest job for exactly this target (queued, running, or
+ * finished in the last 24 hours); `null` without one.
  */
 job: EstimateJob | null, 
 /**
- * The job running now, whatever it looks up (one runs at a time).
+ * The job running now, whatever it looks up (the others wait in line).
  */
 running: EstimateJob | null, };
 
@@ -609,7 +619,12 @@ running: EstimateJob | null, };
  */
 export type EstimateStarted = { job: EstimateJob, };
 
-export type EstimateJob = { id: string, state: 'running' | 'done' | 'failed', 
+export type EstimateJob = { id: string, state: 'queued' | 'running' | 'done' | 'failed', 
+/**
+ * While `queued`: the lookups ahead of it, the running one included
+ * (1 or more); `null` otherwise.
+ */
+position: number | null, 
 /**
  * A run's party; `null` for a character lookup.
  */
@@ -617,9 +632,14 @@ run_id: string | null,
 /**
  * The characters asked for; empty for a run.
  */
-character_ids: Array<string>, started_by: SettingsActor, started_at: string, finished_at: string | null, 
+character_ids: Array<string>, started_by: SettingsActor, 
 /**
- * Who is looked up, in party order (roster IGNs).
+ * When it was asked for.
+ */
+started_at: string, finished_at: string | null, 
+/**
+ * Who is looked up, in party order (roster IGNs), each with their
+ * outcome as it arrives.
  */
 characters: Array<EstimateCharacter>, 
 /**
@@ -628,9 +648,19 @@ characters: Array<EstimateCharacter>,
 missing: Array<EstimateMissing>, progress: EstimateProgress, 
 /**
  * When the result came from MapleScouter (a cached result keeps its
- * first time); `null` without a result.
+ * first time); `null` until the job is done.
  */
-fetched_at: string | null, result: EstimateResult | null, error: EstimateError | null, 
+fetched_at: string | null, 
+/**
+ * The characters found so far (while queued or running too) and,
+ * once done, the party total; `null` with none found.
+ */
+result: EstimateResult | null, 
+/**
+ * `failed`: why nobody was found. `done`: why the party total is
+ * missing although characters were found (`character_id` null).
+ */
+error: EstimateError | null, 
 /**
  * `Estimate from MapleScouter`.
  */
@@ -640,7 +670,16 @@ label: string,
  */
 note: string, };
 
-export type EstimateCharacter = { character_id: string, member_id: string, ign: string, };
+export type EstimateCharacter = { character_id: string, member_id: string, ign: string, 
+/**
+ * `pending` until looked up; `ok` (in `result.members`) or `failed`
+ * (`error`). One character's failure never stops the others.
+ */
+outcome: 'pending' | 'ok' | 'failed', 
+/**
+ * Why this character has no result; `null` unless `failed`.
+ */
+error: EstimateError | null, };
 
 export type EstimateMissing = { member_id: string, 
 /**
@@ -650,12 +689,12 @@ character_id: string | null, reason: 'no_characters' | 'no_character_picked' | '
 
 export type EstimateProgress = { 
 /**
- * Characters looked up so far.
+ * Characters finished so far, found or failed.
  */
 done: number, total: number, 
 /**
- * The character being looked up now; `null` between characters, for
- * the party total and once finished.
+ * The character being looked up now; `null` while queued, between
+ * characters, for the party total and once finished.
  */
 current: string | null, };
 
@@ -665,21 +704,36 @@ export type EstimateResult = {
  */
 cache_hit: boolean, 
 /**
- * No party member missing and every total complete.
+ * Done, no party member missing or failed, and every total complete.
  */
-complete: boolean, members: Array<EstimateMember>, 
+complete: boolean, 
 /**
- * The party totals (a run's bosses, or every catalog boss for several
- * characters); `null` for one character.
+ * The characters found, in party order.
+ */
+members: Array<EstimateMember>, 
+/**
+ * The party totals over the characters found (a run's bosses, or
+ * every catalog boss for several characters); `null` for one
+ * character, until the job is done, or when the total failed.
  */
 combined: Array<EstimateCombined> | null, };
 
 export type EstimateMember = { character_id: string, ign: string, 
 /**
- * The preset MapleScouter read (`00010` unless it fell back for
- * critical rate).
+ * The preset MapleScouter read (`00010`).
  */
 preset: string, 
+/**
+ * The character's critical rate is under 100% and MapleScouter
+ * assumed exactly 100%: label it "Assumes 100% critical rate (actual
+ * N%)" wherever its numbers show.
+ */
+critical_rate_assumed: boolean, 
+/**
+ * The character's own critical rate with an assumed result; `null`
+ * otherwise, or when MapleScouter didn't say.
+ */
+critical_rate_actual: number | null, 
 /**
  * Catalog bosses only, in catalog order.
  */
@@ -705,11 +759,11 @@ party: boolean, };
 
 export type EstimateCombined = { boss: string, 
 /**
- * `null` unless every looked-up member has a known share.
+ * `null` unless every member found has a known share.
  */
 combined_percentage: number | null, estimated_minutes: number | null, technically_possible: boolean | null, 
 /**
- * `false` with a missing member or an unknown share.
+ * `false` with a missing or failed member or an unknown share.
  */
 complete: boolean, issues: Array<EstimateIssue>, };
 
@@ -730,9 +784,9 @@ issue: 'missing_boss' | 'unknown_benchmark_players' | 'not_covered' | 'other', }
  */
 export type EstimateError = { 
 /**
- * `busy` (429; retry after `retry_after_seconds`), `critical_rate`
- * (422), `manual_check` (503), `failed` (502, 504, timeout, no
- * connection).
+ * `busy` (429 past the job's deadline, or a rate limit; retry after
+ * `retry_after_seconds`), `critical_rate` (422), `manual_check` (503),
+ * `failed` (502, 504, timeout, no connection).
  */
 code: 'busy' | 'critical_rate' | 'manual_check' | 'failed', message: string, 
 /**
@@ -746,7 +800,7 @@ status: number | null,
  */
 detail: string, retry_after_seconds: number | null, 
 /**
- * The character it stopped at, when known.
+ * The character it is about, when known.
  */
 character_id: string | null, };
 

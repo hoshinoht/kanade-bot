@@ -3748,14 +3748,19 @@ async fn estimates_match_the_contract() {
     .await;
     let csrf = h.csrf.clone();
     let marks = [("x-kanade-csrf", csrf.as_str())];
-    h.refused(
-        "POST",
-        estimates,
-        json!({ "character_ids": ["ch-s3"] }),
-        &marks,
-        (StatusCode::CONFLICT, "estimate_running"),
-    )
-    .await;
+    // A second lookup waits in line behind the running one.
+    let queued = h
+        .expect(
+            false,
+            "POST",
+            estimates,
+            Some(json!({ "character_ids": ["ch-s3"] })),
+            StatusCode::ACCEPTED,
+            "character_data.json#/$defs/EstimateStarted",
+        )
+        .await;
+    assert_eq!(queued["job"]["state"], "queued");
+    assert_eq!(queued["job"]["position"], 1);
     let mut last = Value::Null;
     for _ in 0..8 {
         last = h.ok("GET", &format!("{estimates}/{id}"), None, job).await;
@@ -3764,6 +3769,47 @@ async fn estimates_match_the_contract() {
         }
     }
     assert_eq!(last["state"], "done");
+    let next = h
+        .ok(
+            "GET",
+            &format!("{estimates}/{}", s(&queued["job"]["id"])),
+            None,
+            job,
+        )
+        .await;
+    assert_eq!(next["state"], "done", "it ran once the line moved");
+    // The queued and assumed scenarios.
+    for scenario in ["queued", "assumed"] {
+        h.send(
+            false,
+            "POST",
+            "/__mock/estimates",
+            Some(json!({ "scenario": scenario })),
+        )
+        .await;
+        let started = h
+            .expect(
+                false,
+                "POST",
+                estimates,
+                Some(json!({ "run_id": "r-carling", "refresh": true })),
+                StatusCode::ACCEPTED,
+                "character_data.json#/$defs/EstimateStarted",
+            )
+            .await;
+        let path = format!("{estimates}/{}", s(&started["job"]["id"]));
+        let mut read = started["job"].clone();
+        while read["state"] != "done" {
+            read = h.ok("GET", &path, None, job).await;
+        }
+        h.ok(
+            "GET",
+            "/api/admin/runs/r-carling/readiness",
+            None,
+            "character_data.json#/$defs/RunReadiness",
+        )
+        .await;
+    }
     // Every error state, the hold (running) and off.
     for scenario in ["busy", "critical_rate", "manual_check", "failed", "timeout"] {
         h.send(

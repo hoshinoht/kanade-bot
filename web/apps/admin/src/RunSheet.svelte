@@ -8,7 +8,7 @@
 -->
 <script lang="ts">
   import { tick, untrack } from 'svelte';
-  import type { Member, Participant, Run, RunCharacters, RunStatus, SettingsActor, Week } from '@kanade/api-types';
+  import type { Member, Participant, Run, RunCharacters, RunStatus, Week } from '@kanade/api-types';
   import '@kanade/ui/styles/screens/run-sheet.scss';
   import '@kanade/ui/styles/core/select.scss';
   import { ANSWER_MARKS, AnswerBar, AnswerChip, BossArt, BossTag, enter, Icon, liveRuns, LiveRegion, Modal, MovePicker, namesIn, pickerRun, Select, StatusMark, WavyProgress, dayLabel, runCountdown, runTitle, sortRuns, whenLabel, type Slot } from '@kanade/ui';
@@ -32,7 +32,6 @@
   import { scouterAt } from './chardata/format';
   import { estimateEnds, RunReadinessView } from './chardata/routes.svelte';
   import '@kanade/ui/styles/screens/character-data.scss';
-  import { actorName } from './history/describe';
 
   let {
     open = $bindable(false),
@@ -337,9 +336,6 @@
   const charRun = $derived(rosterModule && !rosterRoutes.gone && open && run && (!wide || popped) ? run.id : null);
   const chars = $derived(charRun ? new CharacterSlots<RunCharacters>('runs', charRun) : null);
   const charsShown = $derived(Boolean(chars?.data));
-  // MapleScouter (module `character_data` with a scouter URL; B_CharEstimateRun): the Party tab's
-  // Estimate panel, over the same picks. Off, its status route answers 404 and nothing shows.
-  const estimateActor = (who: SettingsActor) => actorName(who, (id) => memberLabel(members, id), (id) => members.some((m) => m.id === id));
   // A party change (add, take off) changes the slots: read them again.
   const partyIds = $derived(run?.participants.map((p) => p.id).join(' ') ?? '');
   $effect(() => {
@@ -1221,7 +1217,6 @@
                     name={(id) => memberLabel(run.participants, id)}
                     timeZone={week.timezone}
                     sheet
-                    actor={estimateActor}
                   />
                 {/if}
               </ul>
@@ -1252,7 +1247,6 @@
                       name={(id) => memberLabel(run.participants, id)}
                       timeZone={week.timezone}
                       sheet={false}
-                      actor={estimateActor}
                     />
                   {/if}
                 </aside>

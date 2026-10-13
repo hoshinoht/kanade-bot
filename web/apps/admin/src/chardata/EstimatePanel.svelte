@@ -1,19 +1,22 @@
 <!--
   The run sheet's Estimate panel (boards B_CharEstimateRun, B_EstRunStates,
   phone twins): one MapleScouter lookup over the characters the party brings
-  (at most 6), as a job of up to 2 minutes. Per boss of the run:
-  the combined minutes and %, "technically possible", "not complete"; per
-  member: effective %. Members without a character are listed as missing,
-  never 0%, and an error never leaves a partial total. Labelled as
-  MapleScouter's and as planning only. No scouter URL: no panel.
+  (at most 6), as a job that may first wait its turn ("Queued · 2 ahead").
+  Each member's row fills in as their lookup finishes; one that fails says why
+  in its row and never stops the others. Per boss of the run: the combined
+  minutes and % over the members found, "technically possible", "not
+  complete". Members without a character are listed as missing, never 0%.
+  Labelled as MapleScouter's and as planning only, and "Assumes 100% critical
+  rate (actual N%)" for a member MapleScouter assumed it for. No scouter URL:
+  no panel.
 -->
 <script lang="ts">
-  import type { Boss, RunCharacters, SettingsActor } from '@kanade/api-types';
+  import type { Boss, EstimateCharacter, RunCharacters } from '@kanade/api-types';
   import { DIFFICULTY_WORDS, Icon, StatusChip } from '@kanade/ui';
   import '@kanade/ui/styles/screens/character-data.scss';
   import EstimateProgress from './EstimateProgress.svelte';
-  import { dayTime, ESTIMATE_LABEL, ESTIMATE_NOTE, estimateErrorText, hourMinute, joinNames, lookupTarget, minutes, MISSING_REASONS, percent } from './format';
-  import { chardataRoutes, EstimateLookup } from './routes.svelte';
+  import { assumedCrit, dayTime, ESTIMATE_LABEL, ESTIMATE_NOTE, estimateErrorText, joinNames, minutes, MISSING_REASONS, percent } from './format';
+  import { activeJob, chardataRoutes, EstimateLookup } from './routes.svelte';
 
   let {
     runId,
@@ -22,7 +25,6 @@
     name,
     timeZone,
     sheet,
-    actor,
   }: {
     runId: string;
     /** The run's bosses, in order (the totals' columns). */
@@ -34,7 +36,6 @@
     timeZone: string;
     /** The phone's Party list: the button under the panel, 44 px. */
     sheet: boolean;
-    actor: (who: SettingsActor) => string;
   } = $props();
 
   const uid = $props.id();
@@ -46,36 +47,54 @@
   });
 
   const job = $derived(lookup.job);
-  const running = $derived(job?.state === 'running');
-  const result = $derived(job?.state === 'done' ? job.result : null);
+  const active = $derived(activeJob(job));
+  const queued = $derived(job?.state === 'queued');
+  const result = $derived(job?.result ?? null);
+  const done = $derived(job?.state === 'done');
+  // Failed: nobody was found. Done with an error: the party total itself failed.
   const error = $derived(job?.state === 'failed' ? job.error : null);
-  const blocker = $derived(lookup.blocker);
-  const ignOf = (id: string | null) => job?.characters.find((c) => c.character_id === id)?.ign ?? null;
+  const totalError = $derived(done ? (job?.error ?? null) : null);
+  const failed = $derived(job?.characters.filter((c) => c.outcome === 'failed') ?? []);
+  const memberOf = (c: EstimateCharacter) => result?.members.find((m) => m.character_id === c.character_id) ?? null;
+  const assumedNames = $derived(result?.members.filter((m) => m.critical_rate_assumed).map((m) => m.ign) ?? []);
 
   // Before a lookup: who brings a character, and who will be listed as missing.
   const bringing = $derived(slots?.slots.filter((s) => s.brings) ?? []);
   const without = $derived(slots?.slots.filter((s) => !s.brings).map((s) => name(s.member_id)) ?? []);
   const nothing = $derived(slots !== null && bringing.length === 0);
 
-  const off = $derived(running || Boolean(blocker) || lookup.starting || nothing || error?.code === 'manual_check' || lookup.wait > 0);
-  const again = $derived(Boolean(result || error));
+  const off = $derived(active || lookup.starting || nothing || error?.code === 'manual_check' || lookup.wait > 0);
+  const again = $derived(Boolean((done && job?.result) || error));
+  // A member that failed is asked again with the others answered from memory.
+  const retry = $derived(error?.code === 'failed' || (done && failed.length > 0));
   const label = $derived.by(() => {
-    if (running) return 'Looking up…';
-    if (error?.code === 'failed') return 'Try again';
+    if (queued) return 'Queued…';
+    if (active) return 'Looking up…';
+    if (retry) return 'Try again';
     if (again && error?.code !== 'manual_check' && error?.code !== 'busy') return 'Look up again';
     return 'Look up party';
   });
 
+  const who = $derived.by(() => {
+    if (!job) return '';
+    const current = job.characters.find((c) => c.character_id === job.progress.current);
+    if (current) return `Looking up ${Math.min(job.progress.done + 1, job.progress.total)} of ${job.progress.total} · ${current.ign}`;
+    return job.progress.done < job.progress.total ? `Looking up ${job.progress.total} characters…` : `Adding up ${job.progress.total} characters…`;
+  });
+
   const issues = $derived.by(() => {
-    if (!job || !result) return [];
+    if (!job || !result || !done) return [];
     const lines: string[] = [];
     const missing = job.missing.map((m) => name(m.member_id));
     if (missing.length) lines.push(`${joinNames(missing)} ${missing.length === 1 ? 'has' : 'have'} no character (missing, never 0%).`);
+    if (failed.length) lines.push(`${joinNames(failed.map((c) => c.ign))} couldn’t be looked up: the totals leave ${failed.length === 1 ? 'them' : 'them all'} out.`);
+    if (assumedNames.length && result.combined?.length)
+      lines.push(`The totals count ${joinNames(assumedNames)} at an assumed 100% critical rate.`);
     for (const total of result.combined ?? []) {
       const boss = bosses.find((b) => b.token === total.boss);
       const title = boss ? `${boss.name} ${DIFFICULTY_WORDS[boss.difficulty]}` : total.boss;
       for (const issue of total.issues) {
-        const ign = ignOf(issue.character_id);
+        const ign = job.characters.find((c) => c.character_id === issue.character_id)?.ign ?? null;
         if (issue.issue === 'missing_boss') lines.push(`${ign ?? 'A character'} has no ${title} card.`);
         else if (issue.issue === 'not_covered') lines.push(`MapleScouter has no ${title} card at all.`);
         else if (issue.issue === 'unknown_benchmark_players') lines.push(`${ign ?? 'A character'}’s ${title} card has an unknown party size.`);
@@ -94,7 +113,7 @@
     aria-disabled={off ? 'true' : undefined}
     aria-describedby={off ? `${uid}-why` : undefined}
     onclick={() => {
-      if (!off) void lookup.start(again);
+      if (!off) void lookup.start(again && !retry);
     }}><Icon name={again && label !== 'Look up party' ? 'refresh-cw' : 'gauge'} />{label}</button
   >
 {/snippet}
@@ -116,32 +135,27 @@
       {#if !sheet}{@render button()}{/if}
     </div>
     <span class="chardata__sub" data-fid="estimate-disclaimer"
-      ><b>{job?.note ?? ESTIMATE_NOTE}.</b> Admins only; members never see it. {#if result && job?.fetched_at}Looked up
+      ><b>{job?.note ?? ESTIMATE_NOTE}.</b> Admins only; members never see it. {#if done && job?.fetched_at}Looked up
         <span class="mono">{dayTime(job.fetched_at, timeZone)}</span>, kept 24 h in memory.{/if}</span
     >
 
-    {#if blocker}
-      {@render problem(
-        'Another lookup is running.',
-        `Only one lookup runs at a time (${actor(blocker.started_by)} started one for ${lookupTarget(blocker)} at ${hourMinute(blocker.started_at, timeZone)}). Try again when it ends.`,
-      )}
-    {:else if lookup.refused}
+    {#if lookup.refused}
       {@render problem('Couldn’t look up the party.', lookup.refused.message)}
-    {:else if running && job}
-      <EstimateProgress
-        data-fid="estimate-progress"
-        done={job.progress.done}
-        total={job.progress.total}
-        who={job.progress.current
-          ? `Looking up ${Math.min(job.progress.done + 1, job.progress.total)} of ${job.progress.total} · ${ignOf(job.progress.current) ?? ''}`
-          : `Adding up ${job.progress.total} characters…`}
-        elapsed={lookup.elapsed}
-      />
+    {:else if active && job}
+      <EstimateProgress data-fid="estimate-progress" done={job.progress.done} total={job.progress.total} {who} elapsed={lookup.elapsed} queued={queued ? job.position : null} />
     {:else if error && job}
-      {@const words = estimateErrorText(error, ignOf(error.character_id), true)}
-      {@render problem(words.lead, error.code === 'busy' && lookup.wait > 0 ? `It is serving another lookup. Try again in ${lookup.wait} s.` : words.text)}
-    {:else if result && job}
-      {#if result.combined?.length}
+      {@const words = estimateErrorText(error, job.characters.find((c) => c.character_id === error.character_id)?.ign ?? null)}
+      {@render problem(
+        failed.length > 1 ? 'No one in the party could be looked up.' : words.lead,
+        error.code === 'busy' && lookup.wait > 0 ? `It stayed busy with other lookups. Try again in ${lookup.wait} s.` : words.text,
+      )}
+    {:else if totalError}
+      {@const words = estimateErrorText(totalError, null)}
+      {@render problem('No party total.', `The members below were found, but MapleScouter’s total didn’t come back: ${words.lead} ${words.text}`)}
+    {/if}
+
+    {#if job && (result || failed.length || active) && !lookup.refused}
+      {#if done && result?.combined?.length}
         <div class="estimate__combined" class:estimate__combined--one={sheet || result.combined.length === 1} data-fid="estimate-combined">
           {#each result.combined as total (total.boss)}
             {@const boss = bosses.find((b) => b.token === total.boss)}
@@ -172,14 +186,40 @@
           </tr>
         </thead>
         <tbody>
-          {#each result.members as member (member.character_id)}
-            {@const who = job.characters.find((c) => c.character_id === member.character_id)}
-            <tr>
-              <th scope="row" class="estimate__who"><b>{who ? name(who.member_id) : member.ign}</b> <span class="chardata__sub">{member.ign}</span></th>
-              {#each bosses as boss (boss.token)}
-                <td class="estimate__n">{percent(member.bosses.find((b) => b.boss === boss.token)?.effective_percentage ?? null)}</td>
-              {/each}
-            </tr>
+          {#each job.characters as c (c.character_id)}
+            {@const member = memberOf(c)}
+            {#if member}
+              {@const assumed = assumedCrit(member)}
+              <tr>
+                <th scope="row" class="estimate__who"
+                  ><b>{name(c.member_id)}</b> <span class="chardata__sub">{member.ign}</span>{#if assumed}<span class="estimate__who-note estimate__assumed"
+                      ><Icon name="alert-triangle" />{assumed}</span
+                    >{/if}</th
+                >
+                {#each bosses as boss (boss.token)}
+                  <td class="estimate__n">{percent(member.bosses.find((b) => b.boss === boss.token)?.effective_percentage ?? null)}</td>
+                {/each}
+              </tr>
+            {:else if c.outcome === 'failed' && c.error}
+              {@const words = estimateErrorText(c.error, c.ign)}
+              <tr class="estimate__failed">
+                <th scope="row" class="estimate__who"
+                  ><b>{name(c.member_id)}</b> <span class="chardata__sub">{c.ign}</span><span class="estimate__who-note" title={words.text}
+                    >failed · {words.lead}<span class="vh"> {words.text}</span></span
+                  ></th
+                >
+                {#each bosses as boss (boss.token)}<td class="estimate__n">—</td>{/each}
+              </tr>
+            {:else}
+              <tr class="estimate__pending">
+                <th scope="row" class="estimate__who"
+                  ><b>{name(c.member_id)}</b> <span class="chardata__sub">{c.ign}</span><span class="estimate__who-note"
+                    >{job.progress.current === c.character_id ? 'looking up…' : queued ? 'queued' : 'waiting'}</span
+                  ></th
+                >
+                {#each bosses as boss (boss.token)}<td class="estimate__n">…</td>{/each}
+              </tr>
+            {/if}
           {/each}
           {#each job.missing as gap (gap.member_id)}
             <tr class="estimate__missing" data-fid="estimate-missing">
@@ -192,10 +232,10 @@
       {#if issues.length}<p class="chardata__foot" data-fid="estimate-issues"><span><b>Issues:</b> {issues.join(' ')}</span></p>{/if}
     {:else if nothing}
       <span class="chardata__msg" id="{uid}-why">No one in this party has a character to look up yet.</span>
-    {:else}
+    {:else if !lookup.refused && !error}
       <span class="chardata__msg"
         >Looks up the {bringing.length || ''} character{bringing.length === 1 ? '' : 's'} this run brings (at most 6) and adds their effective % per boss.
-        Takes up to 2 minutes.</span
+        Takes up to 2 minutes, after any lookup ahead of it.</span
       >
       {#if without.length}<span class="chardata__sub">{joinNames(without)} {without.length === 1 ? 'has' : 'have'} no character yet and will be listed as missing.</span>{/if}
     {/if}

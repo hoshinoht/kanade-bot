@@ -2,7 +2,10 @@
 //! `character_data` with `KANADE_SCOUTER_URL`). Bosses are catalog tokens
 //! (`HLimbo`); MapleScouter's other cards are left out. Every job carries
 //! the binding labels "Estimate from MapleScouter" and "Estimate for
-//! planning only, not eligibility".
+//! planning only, not eligibility"; a member whose critical rate was
+//! assumed says so (`critical_rate_assumed`).
+
+use std::collections::BTreeMap;
 
 use serde::Serialize;
 
@@ -10,7 +13,7 @@ use super::{history::SettingsActor, iso_instant};
 use crate::{
     domain::catalog::BossTable,
     infrastructure::scouter::{
-        Card, Combined, Estimate, Failure, FailureKind, Job, Subject, Target, catalog_token,
+        Card, Combined, Failure, FailureKind, Found, Job, Member, Subject, Target, catalog_token,
         scouter_keys,
     },
 };
@@ -22,10 +25,10 @@ pub const NOTE: &str = "Estimate for planning only, not eligibility";
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct EstimateStatus {
-    /// The newest job for exactly this target (running, or finished in the
-    /// last 24 hours); `null` without one.
+    /// The newest job for exactly this target (queued, running, or
+    /// finished in the last 24 hours); `null` without one.
     pub job: Option<EstimateJob>,
-    /// The job running now, whatever it looks up (one runs at a time).
+    /// The job running now, whatever it looks up (the others wait in line).
     pub running: Option<EstimateJob>,
 }
 
@@ -40,24 +43,33 @@ pub struct EstimateStarted {
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct EstimateJob {
     pub id: String,
-    #[cfg_attr(test, ts(type = "'running' | 'done' | 'failed'"))]
+    #[cfg_attr(test, ts(type = "'queued' | 'running' | 'done' | 'failed'"))]
     pub state: &'static str,
+    /// While `queued`: the lookups ahead of it, the running one included
+    /// (1 or more); `null` otherwise.
+    pub position: Option<u32>,
     /// A run's party; `null` for a character lookup.
     pub run_id: Option<String>,
     /// The characters asked for; empty for a run.
     pub character_ids: Vec<String>,
     pub started_by: SettingsActor,
+    /// When it was asked for.
     pub started_at: String,
     pub finished_at: Option<String>,
-    /// Who is looked up, in party order (roster IGNs).
+    /// Who is looked up, in party order (roster IGNs), each with their
+    /// outcome as it arrives.
     pub characters: Vec<EstimateCharacter>,
     /// Party members not looked up (listed as missing, never 0%).
     pub missing: Vec<EstimateMissing>,
     pub progress: EstimateProgress,
     /// When the result came from MapleScouter (a cached result keeps its
-    /// first time); `null` without a result.
+    /// first time); `null` until the job is done.
     pub fetched_at: Option<String>,
+    /// The characters found so far (while queued or running too) and,
+    /// once done, the party total; `null` with none found.
     pub result: Option<EstimateResult>,
+    /// `failed`: why nobody was found. `done`: why the party total is
+    /// missing although characters were found (`character_id` null).
     pub error: Option<EstimateError>,
     /// `Estimate from MapleScouter`.
     pub label: &'static str,
@@ -71,6 +83,12 @@ pub struct EstimateCharacter {
     pub character_id: String,
     pub member_id: String,
     pub ign: String,
+    /// `pending` until looked up; `ok` (in `result.members`) or `failed`
+    /// (`error`). One character's failure never stops the others.
+    #[cfg_attr(test, ts(type = "'pending' | 'ok' | 'failed'"))]
+    pub outcome: &'static str,
+    /// Why this character has no result; `null` unless `failed`.
+    pub error: Option<EstimateError>,
 }
 
 #[derive(Serialize)]
@@ -89,11 +107,11 @@ pub struct EstimateMissing {
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct EstimateProgress {
-    /// Characters looked up so far.
+    /// Characters finished so far, found or failed.
     pub done: u32,
     pub total: u32,
-    /// The character being looked up now; `null` between characters, for
-    /// the party total and once finished.
+    /// The character being looked up now; `null` while queued, between
+    /// characters, for the party total and once finished.
     pub current: Option<String>,
 }
 
@@ -102,11 +120,13 @@ pub struct EstimateProgress {
 pub struct EstimateResult {
     /// Answered from kanade's 24-hour memory without calling MapleScouter.
     pub cache_hit: bool,
-    /// No party member missing and every total complete.
+    /// Done, no party member missing or failed, and every total complete.
     pub complete: bool,
+    /// The characters found, in party order.
     pub members: Vec<EstimateMember>,
-    /// The party totals (a run's bosses, or every catalog boss for several
-    /// characters); `null` for one character.
+    /// The party totals over the characters found (a run's bosses, or
+    /// every catalog boss for several characters); `null` for one
+    /// character, until the job is done, or when the total failed.
     pub combined: Option<Vec<EstimateCombined>>,
 }
 
@@ -115,9 +135,15 @@ pub struct EstimateResult {
 pub struct EstimateMember {
     pub character_id: String,
     pub ign: String,
-    /// The preset MapleScouter read (`00010` unless it fell back for
-    /// critical rate).
+    /// The preset MapleScouter read (`00010`).
     pub preset: String,
+    /// The character's critical rate is under 100% and MapleScouter
+    /// assumed exactly 100%: label it "Assumes 100% critical rate (actual
+    /// N%)" wherever its numbers show.
+    pub critical_rate_assumed: bool,
+    /// The character's own critical rate with an assumed result; `null`
+    /// otherwise, or when MapleScouter didn't say.
+    pub critical_rate_actual: Option<f64>,
     /// Catalog bosses only, in catalog order.
     pub bosses: Vec<EstimateBoss>,
 }
@@ -141,11 +167,11 @@ pub struct EstimateBoss {
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct EstimateCombined {
     pub boss: String,
-    /// `null` unless every looked-up member has a known share.
+    /// `null` unless every member found has a known share.
     pub combined_percentage: Option<f64>,
     pub estimated_minutes: Option<f64>,
     pub technically_possible: Option<bool>,
-    /// `false` with a missing member or an unknown share.
+    /// `false` with a missing or failed member or an unknown share.
     pub complete: bool,
     pub issues: Vec<EstimateIssue>,
 }
@@ -169,9 +195,9 @@ pub struct EstimateIssue {
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct EstimateError {
-    /// `busy` (429; retry after `retry_after_seconds`), `critical_rate`
-    /// (422), `manual_check` (503), `failed` (502, 504, timeout, no
-    /// connection).
+    /// `busy` (429 past the job's deadline, or a rate limit; retry after
+    /// `retry_after_seconds`), `critical_rate` (422), `manual_check` (503),
+    /// `failed` (502, 504, timeout, no connection).
     #[cfg_attr(
         test,
         ts(type = "'busy' | 'critical_rate' | 'manual_check' | 'failed'")
@@ -185,7 +211,7 @@ pub struct EstimateError {
     /// `unreadable`.
     pub detail: String,
     pub retry_after_seconds: Option<u32>,
-    /// The character it stopped at, when known.
+    /// The character it is about, when known.
     pub character_id: Option<String>,
 }
 
@@ -234,6 +260,27 @@ fn boss(token: &str, card: &Card) -> EstimateBoss {
     }
 }
 
+fn member(subject: &Subject, member: &Member, catalog: &BossTable) -> EstimateMember {
+    let mut bosses: Vec<EstimateBoss> = Vec::new();
+    for (key, card) in &member.bosses {
+        if let Some(token) = catalog_token(key, catalog)
+            && !bosses.iter().any(|row| row.boss == token)
+        {
+            bosses.push(boss(token, card));
+        }
+    }
+    bosses.sort_by_key(|row| rank(catalog, &row.boss));
+    let assumed = member.crit_assumed();
+    EstimateMember {
+        character_id: subject.character_id.clone(),
+        ign: subject.ign.as_str().to_owned(),
+        preset: member.preset.clone(),
+        critical_rate_assumed: assumed,
+        critical_rate_actual: member.critical_rate_actual.filter(|_| assumed),
+        bosses,
+    }
+}
+
 fn combined(
     token: &str,
     total: &Combined,
@@ -261,15 +308,16 @@ fn combined(
     }
 }
 
-/// A run boss with no total: nobody has the card, or MapleScouter has none.
-fn uncovered(token: &str, subjects: &[Subject]) -> EstimateCombined {
+/// A run boss with no total: nobody found has the card, or MapleScouter
+/// has none.
+fn uncovered(token: &str, found: &[&Subject]) -> EstimateCombined {
     let issues = if scouter_keys(token).next().is_none() {
         vec![EstimateIssue {
             character_id: None,
             issue: "not_covered",
         }]
     } else {
-        subjects
+        found
             .iter()
             .map(|subject| EstimateIssue {
                 character_id: Some(subject.character_id.clone()),
@@ -287,35 +335,21 @@ fn uncovered(token: &str, subjects: &[Subject]) -> EstimateCombined {
     }
 }
 
-fn result(job: &Job, estimate: &Estimate, cache_hit: bool, catalog: &BossTable) -> EstimateResult {
+fn totals(
+    job: &Job,
+    totals: &BTreeMap<String, Combined>,
+    party_whole: bool,
+    catalog: &BossTable,
+) -> Vec<EstimateCombined> {
     let subjects = &job.subjects;
-    let party_whole = job.missing.is_empty();
-    let members = subjects
-        .iter()
-        .filter_map(|subject| {
-            let member = estimate
-                .members
-                .iter()
-                .find(|member| member.ign.eq_ignore_ascii_case(subject.ign.as_str()))?;
-            let mut bosses: Vec<EstimateBoss> = Vec::new();
-            for (key, card) in &member.bosses {
-                if let Some(token) = catalog_token(key, catalog)
-                    && !bosses.iter().any(|row| row.boss == token)
-                {
-                    bosses.push(boss(token, card));
-                }
-            }
-            bosses.sort_by_key(|row| rank(catalog, &row.boss));
-            Some(EstimateMember {
-                character_id: subject.character_id.clone(),
-                ign: subject.ign.as_str().to_owned(),
-                preset: member.preset.clone(),
-                bosses,
-            })
-        })
-        .collect();
-    let combined = estimate.combined.as_ref().map(|totals| match &job.target {
+    match &job.target {
         Target::Run { bosses, .. } => {
+            let found: Vec<&Subject> = subjects
+                .iter()
+                .zip(&job.results)
+                .filter(|(_, result)| matches!(result, Some(Ok(_))))
+                .map(|(subject, _)| subject)
+                .collect();
             let mut tokens: Vec<&str> = Vec::new();
             for token in bosses {
                 if catalog.split(token).is_some() && !tokens.contains(&token.as_str()) {
@@ -328,7 +362,7 @@ fn result(job: &Job, estimate: &Estimate, cache_hit: bool, catalog: &BossTable) 
                     scouter_keys(token)
                         .find_map(|key| totals.get(key))
                         .map_or_else(
-                            || uncovered(token, subjects),
+                            || uncovered(token, &found),
                             |total| combined(token, total, subjects, party_whole),
                         )
                 })
@@ -346,16 +380,43 @@ fn result(job: &Job, estimate: &Estimate, cache_hit: bool, catalog: &BossTable) 
             rows.sort_by_key(|row| rank(catalog, &row.boss));
             rows
         }
-    });
-    EstimateResult {
-        cache_hit,
-        complete: party_whole
-            && combined
-                .as_ref()
-                .is_none_or(|rows: &Vec<EstimateCombined>| rows.iter().all(|row| row.complete)),
+    }
+}
+
+/// The characters found so far and, once done, the party total; `None`
+/// with nobody found.
+fn result(job: &Job, found: Option<&Found>, catalog: &BossTable) -> Option<EstimateResult> {
+    let members: Vec<EstimateMember> = job
+        .subjects
+        .iter()
+        .zip(&job.results)
+        .filter_map(|(subject, result)| match result {
+            Some(Ok(found)) => Some(member(subject, found, catalog)),
+            _ => None,
+        })
+        .collect();
+    if members.is_empty() {
+        return None;
+    }
+    let failed = job
+        .results
+        .iter()
+        .any(|result| matches!(result, Some(Err(_))));
+    let party_whole = job.missing.is_empty() && !failed;
+    let combined = found
+        .and_then(|found| found.combined.as_ref())
+        .map(|combined| totals(job, combined, party_whole, catalog));
+    let complete = found.is_some_and(|found| found.total_failure.is_none())
+        && party_whole
+        && combined
+            .as_ref()
+            .is_none_or(|rows| rows.iter().all(|row| row.complete));
+    Some(EstimateResult {
+        cache_hit: found.is_some_and(|found| found.cache_hit),
+        complete,
         members,
         combined,
-    }
+    })
 }
 
 fn error(job: &Job, failure: &Failure) -> EstimateError {
@@ -381,18 +442,19 @@ pub fn job(job: &Job, catalog: &BossTable) -> EstimateJob {
         Target::Run { run_id, .. } => (Some(run_id.clone()), Vec::new()),
         Target::Characters(ids) => (None, ids.clone()),
     };
-    let (fetched_at, result, error) = match &job.outcome {
+    let (fetched_at, found, failure) = match &job.outcome {
         None => (None, None, None),
         Some(Ok(found)) => (
             Some(iso_instant(found.fetched_at)),
-            Some(result(job, &found.estimate, found.cache_hit, catalog)),
-            None,
+            Some(found),
+            found.total_failure.as_ref(),
         ),
-        Some(Err(failure)) => (None, None, Some(error(job, failure))),
+        Some(Err(failure)) => (None, None, Some(failure)),
     };
     EstimateJob {
         id: job.id.clone(),
         state: job.state().as_str(),
+        position: job.position.map(count),
         run_id,
         character_ids,
         started_by: SettingsActor {
@@ -404,10 +466,20 @@ pub fn job(job: &Job, catalog: &BossTable) -> EstimateJob {
         characters: job
             .subjects
             .iter()
-            .map(|subject| EstimateCharacter {
+            .zip(&job.results)
+            .map(|(subject, outcome)| EstimateCharacter {
                 character_id: subject.character_id.clone(),
                 member_id: subject.member_id.clone(),
                 ign: subject.ign.as_str().to_owned(),
+                outcome: match outcome {
+                    None => "pending",
+                    Some(Ok(_)) => "ok",
+                    Some(Err(_)) => "failed",
+                },
+                error: match outcome {
+                    Some(Err(failure)) => Some(error(job, failure)),
+                    _ => None,
+                },
             })
             .collect(),
         missing: job
@@ -420,7 +492,7 @@ pub fn job(job: &Job, catalog: &BossTable) -> EstimateJob {
             })
             .collect(),
         progress: EstimateProgress {
-            done: count(job.done),
+            done: count(job.done()),
             total: count(job.subjects.len()),
             current: job
                 .current
@@ -428,8 +500,8 @@ pub fn job(job: &Job, catalog: &BossTable) -> EstimateJob {
                 .map(|subject| subject.character_id.clone()),
         },
         fetched_at,
-        result,
-        error,
+        result: result(job, found, catalog),
+        error: failure.map(|failure| error(job, failure)),
         label: LABEL,
         note: NOTE,
     }

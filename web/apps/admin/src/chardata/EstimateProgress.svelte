@@ -1,26 +1,43 @@
 <!--
-  A MapleScouter lookup in progress (a job of up to 2 minutes): who is looked
-  up, the time so far, a bar, and that the page can be closed.
+  A MapleScouter lookup on its way: waiting in line ("Queued · 2 ahead", a
+  flat bar and the time waited) or being looked up (who, the time so far, a
+  bar of up to 2 minutes or of the characters done), and that the page can be
+  closed.
 -->
 <script lang="ts">
   import { WavyProgress } from '@kanade/ui';
-  import { clock } from './format';
+  import { clock, queuedText } from './format';
 
   let {
     done,
     total,
     who,
     elapsed,
+    queued = null,
     ...rest
-  }: { done: number; total: number; who: string; elapsed: number; [data: `data-${string}`]: string | undefined } = $props();
+  }: {
+    done: number;
+    total: number;
+    who: string;
+    elapsed: number;
+    /** While waiting in line: the lookups ahead of it. */
+    queued?: number | null;
+    [data: `data-${string}`]: string | undefined;
+  } = $props();
   // One character has no steps to count: the bar follows the time, out of the 2 minutes.
   const value = $derived(total > 1 ? done : Math.min(elapsed, 120));
   const max = $derived(total > 1 ? total : 120);
 </script>
 
-<!-- Only who is looked up is announced; the ticking time is not. -->
+<!-- Only the place or who is looked up is announced; the ticking time is not. -->
 <div class="estimate__progress" {...rest}>
-  <span class="estimate__progress-line"><span role="status">{who}</span><span class="mono">{clock(elapsed)} of up to 2:00</span></span>
-  <WavyProgress value={Math.max(value, max * 0.08)} {max} label="Lookup progress" text={total > 1 ? `${done} of ${total}` : clock(elapsed)} />
-  <span class="chardata__sub">You can close this. The result stays for 24 h and shows here when you come back.</span>
+  {#if queued !== null}
+    <span class="estimate__progress-line"><span role="status">{queuedText(queued)}</span><span class="mono">waiting {clock(elapsed)}</span></span>
+    <WavyProgress value={0} max={1} wavy={false} label="Place in line" text={queuedText(queued)} />
+    <span class="chardata__sub">Lookups run one at a time. You can close this: it runs when its turn comes, and the result stays for 24 h.</span>
+  {:else}
+    <span class="estimate__progress-line"><span role="status">{who}</span><span class="mono">{clock(elapsed)} of up to 2:00</span></span>
+    <WavyProgress value={Math.max(value, max * 0.08)} {max} label="Lookup progress" text={total > 1 ? `${done} of ${total}` : clock(elapsed)} />
+    <span class="chardata__sub">You can close this. The result stays for 24 h and shows here when you come back.</span>
+  {/if}
 </div>

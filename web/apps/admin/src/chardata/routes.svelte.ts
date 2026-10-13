@@ -10,8 +10,9 @@ import { send, type Outcome } from '../resource.svelte';
 export const chardataRoutes = $state({ gone: false, estimatesGone: false });
 
 /**
- * Lookups this tab saw end (any target): readiness reads it, so its
- * MapleScouter chips follow a finished Estimate panel or strip lookup.
+ * Lookup steps this tab saw finish (a character found or failed, or a whole
+ * lookup, any target): readiness reads it, so its MapleScouter chips follow
+ * an Estimate panel or strip lookup as each character comes in.
  */
 export const estimateEnds = $state({ count: 0 });
 
@@ -164,19 +165,22 @@ let serverOffset: number | null = null;
 
 const POLL_MS = 1_500;
 
+/** Not finished yet: waiting in line or being looked up. */
+export const activeJob = (job: EstimateJob | null): job is EstimateJob => job?.state === 'queued' || job?.state === 'running';
+
 /**
- * One estimate target (a character, or a run's party): its newest job and the
- * one running now. A running job is read again until it ends (one lookup runs
- * at a time, so another target's job blocks this one until it does).
+ * One estimate target (a character, or a run's party): its newest job. A
+ * queued or running job is read again until it ends; lookups never block one
+ * another (a second one waits in line, with its place), and each character's
+ * outcome shows as it comes in.
  */
 export class EstimateLookup {
   job = $state<EstimateJob | null>(null);
-  running = $state<EstimateJob | null>(null);
   loaded = $state(false);
   starting = $state(false);
-  /** A refused start (409, 422, …): what and why. */
+  /** A refused start (422, 429 queue full, …): what and why. */
   refused = $state<{ code: string; message: string } | null>(null);
-  /** Seconds since the running job started; ticks while one runs. */
+  /** Seconds the job has been in its state (waiting, or being looked up); ticks while active. */
   elapsed = $state(0);
   /** Busy (429): the Look up button waits this many seconds. */
   wait = $state(0);
@@ -184,8 +188,12 @@ export class EstimateLookup {
   readonly #body: { character_ids: string[] } | { run_id: string };
   #timer: number | undefined;
   readonly #ticker: number;
-  /** The running job this tab first saw (not started here) and when. */
-  #seen = { id: '', at: 0 };
+  /** Since when (browser clock) the job has been in its state. */
+  #since = { key: '', at: 0 };
+  /** The job this tab started, so its time starts now. */
+  #mine = '';
+  /** The finished steps last seen, so each new one is told once. */
+  #steps = { id: '', count: 0 };
   #closed = false;
 
   constructor(target: { character_ids: string[] } | { run_id: string }) {
@@ -194,19 +202,12 @@ export class EstimateLookup {
     this.#ticker = window.setInterval(() => this.#tick(), 1_000);
   }
 
-  /** The running job that blocks this target: another target's. */
-  get blocker(): EstimateJob | null {
-    return this.running && this.running.id !== this.job?.id ? this.running : null;
-  }
-
   async load(): Promise<void> {
     if (chardataRoutes.gone || chardataRoutes.estimatesGone) return;
     const result = await send((c) => c.get<EstimateStatus>(`/api/admin/estimates?${this.#query}`));
     if (this.#closed) return;
     if (result.ok) {
-      this.job = result.value.job;
-      this.running = result.value.running;
-      this.#busyFrom(this.job);
+      this.#take(result.value.job, false);
       this.#follow();
     } else if (result.unbuilt) chardataRoutes.estimatesGone = true;
     this.loaded = true;
@@ -222,10 +223,8 @@ export class EstimateLookup {
     if (result.ok) {
       const job = result.value.job;
       serverOffset = Date.parse(job.started_at) - Date.now();
-      this.job = job;
-      this.running = job.state === 'running' ? job : null;
-      if (job.state !== 'running') estimateEnds.count += 1;
-      this.#busyFrom(job);
+      if (job.id !== this.job?.id) this.#mine = job.id;
+      this.#take(job, true);
       this.#follow();
       return;
     }
@@ -234,8 +233,6 @@ export class EstimateLookup {
       return;
     }
     this.refused = { code: result.code ?? '', message: result.message };
-    // 409: another lookup is running; read who started it, and wait for it.
-    if (result.status === 409) await this.load();
   }
 
   close(): void {
@@ -244,40 +241,46 @@ export class EstimateLookup {
     clearInterval(this.#ticker);
   }
 
-  #busyFrom(job: EstimateJob | null) {
+  /** Takes a read of the job; `told` says new finished steps (a found or failed character, or the end). */
+  #take(job: EstimateJob | null, told: boolean) {
+    this.job = job;
     const seconds = job?.state === 'failed' && job.error?.code === 'busy' ? job.error.retry_after_seconds : null;
     this.wait = seconds ?? 0;
+    if (!job) return;
+    const count = job.progress.done + (activeJob(job) ? 0 : 1);
+    if (told && count > (job.id === this.#steps.id ? this.#steps.count : 0)) estimateEnds.count += 1;
+    this.#steps = { id: job.id, count };
+    this.#clock();
   }
 
   #tick() {
     if (this.wait > 0) this.wait -= 1;
-    const job = this.job?.state === 'running' ? this.job : this.blocker;
-    if (!job) return;
-    if (serverOffset !== null) this.elapsed = Math.max(0, (Date.now() + serverOffset - Date.parse(job.started_at)) / 1000);
-    else {
-      // Found running, not started here: count from when this tab first saw it.
-      if (this.#seen.id !== job.id) this.#seen = { id: job.id, at: Date.now() };
-      this.elapsed = (Date.now() - this.#seen.at) / 1000;
-    }
+    this.#clock();
   }
 
-  /** Reads the running job (this target's, or the one blocking it) again until it ends. */
+  #clock() {
+    const job = this.job;
+    if (!activeJob(job)) return;
+    const key = `${job.id} ${job.state}`;
+    if (this.#since.key !== key) {
+      // A state seen change here starts now; one found already under way counts from when it was asked for.
+      const seenChange = this.#since.key.startsWith(`${job.id} `) || job.id === this.#mine;
+      const asked = serverOffset === null ? Date.now() : Date.parse(job.started_at) - serverOffset;
+      this.#since = { key, at: seenChange ? Date.now() : Math.min(Date.now(), asked) };
+    }
+    this.elapsed = Math.max(0, (Date.now() - this.#since.at) / 1000);
+  }
+
+  /** Reads this target's queued or running job again until it ends. */
   #follow() {
     clearTimeout(this.#timer);
-    const next = this.job?.state === 'running' ? this.job : this.blocker;
-    if (!next || this.#closed) return;
+    const next = this.job;
+    if (!activeJob(next) || this.#closed) return;
     this.#timer = window.setTimeout(async () => {
       const result = await send((c) => c.get<EstimateJob>(`/api/admin/estimates/${encodeURIComponent(next.id)}`));
       if (this.#closed) return;
       if (result.ok) {
-        const job = result.value;
-        if (job.id === this.job?.id) {
-          this.job = job;
-          this.#busyFrom(job);
-        }
-        this.running = job.state === 'running' ? job : null;
-        if (!this.running) estimateEnds.count += 1;
-        if (!this.running && this.refused?.code === 'estimate_running') this.refused = null;
+        if (result.value.id === this.job?.id) this.#take(result.value, true);
         this.#follow();
       } else if (result.unbuilt) chardataRoutes.estimatesGone = true;
       else if (result.status === 404) await this.load();

@@ -220,19 +220,24 @@ covers every level verdict.
 
 MapleScouter estimates (`src/mock/estimates.rs`; on with the module):
 `POST /api/admin/estimates {character_ids | run_id, refresh?}` (`202
-{job}`, `409 estimate_running`, the server's 422/404/400 refusals),
-`GET /api/admin/estimates/{job}` and `GET
-/api/admin/estimates?character_ids=|run_id=` (`{job, running}`). There is
-no sidecar: each `GET …/{job}` read of a running job advances it one
-character, and a party takes one more read for its total; a repeat lookup
-of the same target answers `done` with `cache_hit` unless `refresh`.
-`POST /__mock/estimates {scenario}` sets later lookups until the next
-reset: `ok`, `busy` (429, 40 s), `critical_rate` (422), `manual_check`
-(503), `failed` (502), `timeout` (504), `hold` (stays running: the running
-state and the 409) or `off` (no scouter URL: every route 404). A party's
-error stops at its last character with no total; the last character of a
-party has no Star card (an incomplete total). Seeded: a done lookup of
-MikaNL (`ch-s2`). Wholly invented numbers.
+{job}`, `429 estimate_queue_full` past 16 waiting, the server's 422/404/400
+refusals), `GET /api/admin/estimates/{job}` and `GET
+/api/admin/estimates?character_ids=|run_id=` (`{job, running}`). Jobs wait
+in one FIFO line (`queued` with `position`) and run one at a time; a target
+already queued or running answers that job. There is no sidecar: each
+`GET …/{job}` read of a running job finishes one character (its outcome and
+result appear at once), and a party takes one more read for its total; a
+repeat lookup of the same target answers `done` with `cache_hit` unless
+`refresh`. `POST /__mock/estimates {scenario}` sets later lookups until the
+next reset: `ok`, `queued` (waits behind two invented lookups, one place per
+read), `assumed` (the first character's 89% critical rate assumed at 100%),
+`busy` (429, 40 s), `critical_rate` (422), `manual_check` (503), `failed`
+(502), `timeout` (504), `hold` (stays running; later lookups queue behind
+it) or `off` (no scouter URL: every route 404). An error fails the last
+character only: the others are found and the total covers them (one
+character alone fails the job); the last character of a party has no Star
+card (an incomplete total). Seeded: a done lookup of MikaNL (`ch-s2`).
+Wholly invented numbers.
 
 Run character picks (module `roster`, `src/mock/run_picks.rs`): `GET
 /api/admin/runs/{id}/characters` and `PUT

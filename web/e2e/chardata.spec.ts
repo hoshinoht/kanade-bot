@@ -156,16 +156,19 @@ test('chardata estimate row: labelled, runs as a job, then shows catalog bosses'
   await expect(row.getByRole('button', { name: 'Look up again' })).toBeVisible();
 });
 
-test('chardata estimate row: running, busy, 422, 503 and failed', async ({ page }) => {
+test('chardata estimate row: running, queued behind it, busy, 422, 503 and failed', async ({ page }) => {
   await estimates(page, 'hold');
   let row = stripOf(await openEdit(page, 'MikaBish')).locator('.estimate');
   await row.getByRole('button', { name: 'Look up' }).click();
   await expect(row.locator('.estimate__progress')).toContainText('Looking up MikaBish…');
   await expect(row.getByRole('button', { name: 'Looking up…' })).toHaveAttribute('aria-disabled', 'true');
-  // Another character's row waits for it (one lookup at a time).
+  // Another character's lookup is never refused: it waits its turn, with its place.
   row = stripOf(await openEdit(page, 'MikaNL')).locator('.estimate');
-  await expect(row.locator('.estimate__error')).toContainText('Another lookup is running.');
-  await expect(row.locator('.estimate__error')).toContainText('for MikaBish at 12:00');
+  await row.getByRole('button', { name: 'Look up again' }).click();
+  await expect(row.locator('.estimate__progress')).toContainText('Queued · 1 ahead');
+  await expect(row.getByRole('button', { name: 'Queued…' })).toHaveAttribute('aria-disabled', 'true');
+  await expect(row.getByRole('status')).toHaveText('Queued · 1 ahead');
+  await expect(row.locator('.estimate__error')).toHaveCount(0);
 
   const cases: [string, RegExp, string, boolean][] = [
     ['busy', /Look up · 0:\d\d$/, 'MapleScouter is busy.', true],
@@ -214,36 +217,90 @@ test('chardata estimate panel: party lookup with totals, missing members and the
   await expect(panel).toContainText('Ren (2) has no character yet and will be listed as missing.');
   await panel.getByRole('button', { name: 'Look up party' }).click();
   await expect(panel.locator('.estimate__progress')).toContainText(/Looking up \d of \d · /);
+  // The members table shows from the start and fills in; the total comes last.
   const members = panel.getByRole('table', { name: 'Effective % per member' });
-  await expect(members).toBeVisible({ timeout: 20_000 });
-  await expect(panel.locator('.estimate__combined')).toContainText('Carling');
+  await expect(members).toBeVisible();
+  await expect(panel.locator('.estimate__combined')).toContainText('Carling', { timeout: 20_000 });
   await expect(panel.locator('.estimate__combined')).toContainText('not complete');
   await expect(panel.locator('.estimate__missing')).toHaveText([/Ren \(2\) missing · no characters on the roster/]);
   await expect(panel.locator('p.chardata__foot')).toContainText('Ren (2) has no character (missing, never 0%).');
   await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText('kept 24 h in memory');
 });
 
-test('chardata estimate panel: another lookup, a failed party lookup, and off', async ({ page }) => {
+test('chardata estimate panel: queued behind another lookup, a member that fails, and off', async ({ page }) => {
   const headers = await csrf(page.request);
   await estimates(page, 'hold');
   expect((await page.request.post(`${ADMIN}/api/admin/estimates`, { headers, data: { character_ids: ['ch-s3'] } })).status()).toBe(202);
   let panel = (await carling(page)).locator('.estimate-panel');
-  await expect(panel.locator('.estimate__error')).toContainText('Another lookup is running.');
-  await expect(panel.getByRole('button', { name: 'Look up party' })).toHaveAttribute('aria-disabled', 'true');
+  // Never refused: the party waits its turn, its members listed as queued.
+  await panel.getByRole('button', { name: 'Look up party' }).click();
+  await expect(panel.locator('.estimate__progress')).toContainText('Queued · 1 ahead');
+  await expect(panel.getByRole('button', { name: 'Queued…' })).toHaveAttribute('aria-disabled', 'true');
+  await expect(panel.locator('.estimate__pending').first()).toContainText('queued');
+  await expect(panel.locator('.estimate__error')).toHaveCount(0);
 
   await page.request.post(`${ADMIN}/api/admin/reset`);
   await estimates(page, 'failed');
   panel = (await carling(page)).locator('.estimate-panel');
   await panel.getByRole('button', { name: 'Look up party' }).click();
-  await expect(panel.locator('.estimate__error')).toContainText('Lookup failed.', { timeout: 20_000 });
-  await expect(panel.locator('.estimate__error')).toContainText('No party total is made from a partial lookup.');
-  await expect(panel.locator('.estimate__combined')).toHaveCount(0);
+  // The last member fails in their row; the others are found and totalled.
+  const failed = panel.locator('.estimate__failed');
+  await expect(failed).toHaveCount(1, { timeout: 20_000 });
+  await expect(failed).toContainText('failed · Lookup failed.');
+  await expect(panel.locator('.estimate__combined')).toContainText('not complete', { timeout: 20_000 });
+  await expect(panel.locator('.estimate__pending')).toHaveCount(0);
+  await expect(panel.locator('p.chardata__foot')).toContainText('couldn’t be looked up: the totals leave them out.');
+  await expect(panel.locator('.estimate__error')).toHaveCount(0);
   await expect(panel.getByRole('button', { name: 'Try again' })).toBeVisible();
 
   await page.request.post(`${ADMIN}/api/admin/reset`);
   await estimates(page, 'off');
   const sheet = await carling(page);
   await expect(sheet.locator('.estimate-panel')).toHaveCount(0);
+});
+
+test('chardata estimate panel: members fill in as each finishes, and readiness follows each', async ({ page }) => {
+  const sheet = await carling(page);
+  const panel = sheet.locator('.estimate-panel');
+  await panel.getByRole('button', { name: 'Look up party' }).click();
+  const found = panel.locator('tbody tr:not(.estimate__pending):not(.estimate__missing)');
+  // One member in, the rest still waiting, the lookup still running.
+  await expect(found).toHaveCount(1, { timeout: 10_000 });
+  await expect(panel.locator('.estimate__pending').first()).toBeVisible();
+  await expect(panel.locator('.estimate__progress')).toBeVisible();
+  // Readiness is read again for that member, before the lookup ends.
+  await expect(sheet.locator('.ready__scouter').first()).toBeVisible();
+  await expect(panel.locator('.estimate__pending').first()).toBeVisible();
+  await expect(panel.locator('.estimate__combined')).toContainText('Carling', { timeout: 20_000 });
+  await expect(panel.locator('.estimate__pending')).toHaveCount(0);
+});
+
+test('chardata estimate: an assumed critical rate is labelled in the panel, the strip and readiness', async ({ page }) => {
+  await estimates(page, 'assumed');
+  const sheet = await carling(page);
+  const panel = sheet.locator('.estimate-panel');
+  await panel.getByRole('button', { name: 'Look up party' }).click();
+  await expect(panel.locator('.estimate__combined')).toContainText('Carling', { timeout: 20_000 });
+  await expect(panel.locator('.estimate__assumed')).toHaveText(['Assumes 100% critical rate (actual 89%)']);
+  await expect(panel.locator('p.chardata__foot')).toContainText('at an assumed 100% critical rate.');
+  await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText('Estimate for planning only, not eligibility.');
+  const chip = sheet.locator('.ready__scouter', { hasText: 'crit assumed' }).first();
+  await expect(chip).toHaveText(/^MapleScouter \d+%( · ~\d+ min)? · crit assumed/);
+  await expect(chip).toHaveAttribute('title', /Assumes 100% critical rate \(actual 89%\)$/);
+
+  const row = stripOf(await openEdit(page, 'MikaBish')).locator('.estimate');
+  await row.getByRole('button', { name: 'Look up' }).click();
+  await expect(row.locator('.estimate__assumed')).toHaveText('Assumes 100% critical rate (actual 89%)');
+  await expect(row.getByRole('table', { name: 'Estimate from MapleScouter for MikaBish · Assumes 100% critical rate (actual 89%)' })).toBeVisible();
+});
+
+test('chardata estimate row: waiting behind other lookups shows its place, then the result', async ({ page }) => {
+  await estimates(page, 'queued');
+  const row = stripOf(await openEdit(page, 'MikaBish')).locator('.estimate');
+  await row.getByRole('button', { name: 'Look up' }).click();
+  await expect(row.locator('.estimate__progress')).toContainText('Queued · 2 ahead');
+  await expect(row.locator('.estimate__progress')).toContainText('Queued · 1 ahead');
+  await expect(row.getByRole('table', { name: 'Estimate from MapleScouter for MikaBish' })).toBeVisible({ timeout: 20_000 });
 });
 
 test('chardata estimate panel: the phone Party list ends with it', async ({ page }) => {
@@ -455,16 +512,17 @@ test('chardata capture', async ({ page }) => {
       sheet = await carling(page);
       panel = sheet.locator('.estimate-panel');
       await panel.getByRole('button', { name: 'Look up party' }).click();
-      await expect(panel.locator('.estimate__progress, .estimate__error')).toBeVisible({ timeout: 20_000 });
-      if (scenario !== 'hold') await expect(panel.locator('.estimate__error')).toBeVisible({ timeout: 20_000 });
+      await expect(panel.locator('.estimate__progress, .estimate__table').first()).toBeVisible({ timeout: 20_000 });
+      if (scenario !== 'hold') await expect(panel.locator('.estimate__failed')).toBeVisible({ timeout: 20_000 });
       await shot(`${phone ? 'B_PhoneEstRunStates' : 'B_EstRunStates'}-${name}`, panel);
     }
     await reset();
     await estimates(page, 'hold');
     await page.request.post(`${ADMIN}/api/admin/estimates`, { headers: await csrf(page.request), data: { character_ids: ['ch-s3'] } });
     panel = (await carling(page)).locator('.estimate-panel');
-    await expect(panel.locator('.estimate__error')).toBeVisible();
-    await shot(`${phone ? 'B_PhoneEstRunStates2' : 'B_EstRunStates'}-409`, panel);
+    await panel.getByRole('button', { name: 'Look up party' }).click();
+    await expect(panel.locator('.estimate__progress')).toContainText('Queued');
+    await shot(`${phone ? 'B_PhoneEstRunStates2' : 'B_EstRunStates'}-queued`, panel);
 
     // Run sheet readiness (the board's sheet has no Estimate panel).
     await reset();
@@ -498,5 +556,81 @@ test('chardata capture', async ({ page }) => {
       await expect(page.locator('[aria-labelledby="chardata-nexon-h"]')).toBeVisible();
       await shot(`${P}${name}`);
     }
+  }
+});
+
+// For user approval (not assertions): the strip row and the run panel queued, part-way
+// (members filling in) and with an assumed critical rate, desktop and phone.
+const QUEUE_CAPTURES = '/private/tmp/eq-captures';
+test('chardata estimate queue capture', async ({ page }) => {
+  test.skip(!process.env.KANADE_CHARDATA_CAPTURES, 'set KANADE_CHARDATA_CAPTURES=1 to write the review captures');
+  test.setTimeout(300_000);
+  mkdirSync(QUEUE_CAPTURES, { recursive: true });
+  const shot = async (name: string, target: Locator) => {
+    await target.scrollIntoViewIfNeeded();
+    await settle(page);
+    await page.screenshot({ path: `${QUEUE_CAPTURES}/${name}.png`, animations: 'disabled' });
+  };
+  const reset = () => page.request.post(`${ADMIN}/api/admin/reset`);
+  const holdMikaBish = async () => {
+    await estimates(page, 'hold');
+    await page.request.post(`${ADMIN}/api/admin/estimates`, { headers: await csrf(page.request), data: { character_ids: ['ch-s3'] } });
+    await estimates(page, 'ok');
+  };
+  for (const phone of [false, true]) {
+    await page.setViewportSize(phone ? { width: 390, height: 844 } : { width: 1280, height: 800 });
+    const P = phone ? 'phone-' : 'desktop-';
+
+    // Strip row: queued behind two, looking up, assumed.
+    await reset();
+    await estimates(page, 'queued');
+    let row = stripOf(await openEdit(page, 'Mikadere')).locator('.estimate');
+    await row.getByRole('button', { name: 'Look up' }).click();
+    await expect(row.locator('.estimate__progress')).toContainText('Queued · 2 ahead');
+    await shot(`${P}strip-queued`, row);
+    await reset();
+    await estimates(page, 'hold');
+    row = stripOf(await openEdit(page, 'MikaBish')).locator('.estimate');
+    await row.getByRole('button', { name: 'Look up' }).click();
+    await expect(row.locator('.estimate__progress')).toContainText('Looking up MikaBish…');
+    await shot(`${P}strip-running`, row);
+    await reset();
+    await estimates(page, 'assumed');
+    row = stripOf(await openEdit(page, 'MikaBish')).locator('.estimate');
+    await row.getByRole('button', { name: 'Look up' }).click();
+    await expect(row.locator('.estimate__assumed')).toBeVisible({ timeout: 20_000 });
+    await shot(`${P}strip-assumed`, row);
+
+    // Run panel: queued behind another lookup, members filling in, a failed member, assumed.
+    await reset();
+    await holdMikaBish();
+    let sheet = await carling(page);
+    let panel = sheet.locator('.estimate-panel');
+    await panel.getByRole('button', { name: 'Look up party' }).click();
+    await expect(panel.locator('.estimate__progress')).toContainText('Queued · 1 ahead');
+    await shot(`${P}panel-queued`, panel);
+    await reset();
+    sheet = await carling(page);
+    panel = sheet.locator('.estimate-panel');
+    await panel.getByRole('button', { name: 'Look up party' }).click();
+    await expect(panel.locator('tbody tr:not(.estimate__pending):not(.estimate__missing)')).toHaveCount(2, { timeout: 10_000 });
+    await shot(`${P}panel-partial`, panel);
+    await reset();
+    await estimates(page, 'critical_rate');
+    sheet = await carling(page);
+    panel = sheet.locator('.estimate-panel');
+    await panel.getByRole('button', { name: 'Look up party' }).click();
+    await expect(panel.locator('.estimate__combined')).toBeVisible({ timeout: 20_000 });
+    await shot(`${P}panel-partial-failed-member`, panel);
+    await reset();
+    await estimates(page, 'assumed');
+    sheet = await carling(page);
+    panel = sheet.locator('.estimate-panel');
+    await panel.getByRole('button', { name: 'Look up party' }).click();
+    await expect(panel.locator('.estimate__combined')).toBeVisible({ timeout: 20_000 });
+    await shot(`${P}panel-assumed`, panel);
+    const chip = sheet.locator('.ready__scouter', { hasText: 'crit assumed' }).first();
+    await expect(chip).toBeVisible();
+    await shot(`${P}readiness-assumed`, chip);
   }
 });

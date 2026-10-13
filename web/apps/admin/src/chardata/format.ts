@@ -11,7 +11,6 @@ import type {
   CharacterRow,
   Difficulty,
   EstimateError,
-  EstimateJob,
   EstimateMissing,
   ReadinessSlot,
   ScouterReading,
@@ -83,10 +82,30 @@ export function readinessLine(slot: ReadinessSlot): { values: string; source: st
   return { values, source: reason ? `manual · ${reason}` : 'manual' };
 }
 
-/** One boss's MapleScouter reading as a chip: "MapleScouter 164% · ~18 min"; the rating goes in its title. */
-export function scouterChip(reading: ScouterReading): { text: string; rating: string } {
+/** A critical rate as MapleScouter reads it: "89", "89.5". */
+const critRate = (value: number) => `${Math.round(value * 10) / 10}`;
+
+/**
+ * "Assumes 100% critical rate (actual 89%)" for a result MapleScouter worked out
+ * as if the character's critical rate were 100% (theirs is under it); null otherwise.
+ */
+export function assumedCrit(found: { critical_rate_assumed: boolean; critical_rate_actual: number | null }): string | null {
+  if (!found.critical_rate_assumed) return null;
+  return `Assumes 100% critical rate${found.critical_rate_actual === null ? '' : ` (actual ${critRate(found.critical_rate_actual)}%)`}`;
+}
+
+/** A queued lookup's place: "Queued · 2 ahead". */
+export const queuedText = (position: number | null) => `Queued · ${position ?? 1} ahead`;
+
+/**
+ * One boss's MapleScouter reading as a chip: "MapleScouter 164% · ~18 min"; the rating
+ * goes in its title. An assumed critical rate adds a short "· crit assumed" marker and
+ * its full label (`assumed`) for the title.
+ */
+export function scouterChip(reading: ScouterReading): { text: string; rating: string; assumed: string | null } {
   const time = reading.estimated_minutes === null ? '' : ` · ~${Math.max(1, Math.round(reading.estimated_minutes))} min`;
-  return { text: `MapleScouter ${Math.round(reading.percentage)}%${time}`, rating: reading.rating };
+  const assumed = assumedCrit(reading);
+  return { text: `MapleScouter ${Math.round(reading.percentage)}%${time}${assumed ? ' · crit assumed' : ''}`, rating: reading.rating, assumed };
 }
 
 /** One boss's level verdict as a chip; never blocking, so nothing is red. */
@@ -156,26 +175,27 @@ export function catalogBoss(catalog: readonly BossRow[], token: string): { name:
 }
 
 /** An estimate error in the boards' words: the lead, and what to do. */
-export function estimateErrorText(error: EstimateError, ign: string | null, party: boolean): { lead: string; text: string } {
-  const partial = party ? ' No party total is made from a partial lookup.' : '';
+export function estimateErrorText(error: EstimateError, ign: string | null): { lead: string; text: string } {
   switch (error.code) {
     case 'busy':
-      return { lead: 'MapleScouter is busy.', text: `It is serving another lookup.${error.retry_after_seconds ? ` Try again in ${error.retry_after_seconds} s.` : ''}` };
+      return { lead: 'MapleScouter is busy.', text: `It stayed busy with other lookups.${error.retry_after_seconds ? ` Try again in ${error.retry_after_seconds} s.` : ''}` };
     case 'critical_rate':
       return {
         lead: 'Set up critical rate on MapleScouter first.',
-        text: `${party ? 'MapleScouter shows' : 'Every preset MapleScouter tried shows'} ${ign ?? 'a character'}’s critical rate under 100%${party ? ' in every preset it tried.' : '. Fix it on MapleScouter, then look up again.'}${partial}`,
+        text: `MapleScouter shows ${ign ?? 'a character'}’s critical rate under 100% and couldn’t assume 100% for it. Fix it on MapleScouter, then look up again.`,
       };
     case 'manual_check':
       return { lead: 'Scouter needs a manual check.', text: 'MapleScouter asked for a verification. Lookups stay off until an operator runs the scouter setup.' };
     case 'failed': {
       const why =
-        error.status === 504 || error.detail === 'lookup_timeout' || error.detail === 'timeout'
+        error.status === 504 || error.detail === 'lookup_timeout'
           ? `MapleScouter didn’t answer within 2 minutes${error.status ? ` (${error.status})` : ''}.`
-          : error.status
-            ? `MapleScouter ${party && ign ? `stopped at ${ign}` : 'couldn’t finish the lookup'} (${error.status}).`
-            : 'Kanade couldn’t reach MapleScouter.';
-      return { lead: 'Lookup failed.', text: `${why}${party ? partial : ' Nothing was kept.'}` };
+          : error.detail === 'timeout'
+            ? 'MapleScouter didn’t answer in time.'
+            : error.status
+              ? `MapleScouter couldn’t finish the lookup (${error.status}).`
+              : 'Kanade couldn’t reach MapleScouter.';
+      return { lead: 'Lookup failed.', text: `${why} Nothing was kept.` };
     }
   }
 }
@@ -192,11 +212,6 @@ export const MISSING_REASONS: Record<EstimateMissing['reason'], string> = {
 export function joinNames(names: readonly string[]): string {
   if (names.length < 2) return names[0] ?? '';
   return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
-}
-
-/** Who started a lookup and of what, for the 409 line. */
-export function lookupTarget(job: EstimateJob): string {
-  return job.run_id ? 'a run’s party' : joinNames(job.characters.map((c) => c.ign));
 }
 
 export type HealthTone = Tone;

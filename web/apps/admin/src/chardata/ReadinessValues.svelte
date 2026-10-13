@@ -2,7 +2,8 @@
   One member's readiness (module `character_data`): the level and Combat Power
   (dropped for the time of a MapleScouter reading, which replaces it) with
   their source, then the level verdict per boss with that boss's MapleScouter
-  chip. Shown, never judged, never blocking. Drawn by the run sheet's Party tab
+  chip ("· crit assumed" when MapleScouter assumed a 100% critical rate; the
+  full label in its title). Shown, never judged, never blocking. Drawn by the run sheet's Party tab
   (B_CharReady, B_PhoneCharReady) and the Fixed editor's Characters tab
   (B_FixedReady, B_PhoneFixedReady); `fid` and `bossesFid` are their tags.
 -->
@@ -50,7 +51,8 @@
         {#if slot.bosses.length > 1}<span class="ready__boss-name">{bossLabel(boss.boss, boss.difficulty)}</span>{/if}
         <StatusChip tone={chip.tone}>{chip.text}</StatusChip>{#if boss.scouter}{@const est = scouterChip(boss.scouter)}<span
             class="status-chip status-chip--neutral ready__scouter"
-            title={est.rating}>{est.text}<span class="vh"> · {est.rating}</span></span
+            title={est.assumed ? `${est.rating} · ${est.assumed}` : est.rating}
+            >{est.text}<span class="vh"> · {est.rating}{est.assumed ? ` · ${est.assumed}` : ''}</span></span
           >{/if}
       </li>
     {/each}
