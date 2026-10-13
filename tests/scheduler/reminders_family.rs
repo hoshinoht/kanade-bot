@@ -3,9 +3,8 @@
 use std::collections::BTreeMap;
 
 use kanade::domain::{
-    schedule::{
-        NewFixedRun, NewRun, ReminderPolicy, RunSource, RunStatus, is_stale, reminder_specs,
-    },
+    history::Origin,
+    schedule::{ReminderPolicy, RunStatus, is_stale, reminder_specs},
     scheduler::SchedulerError,
     time::isoformat,
 };
@@ -13,8 +12,9 @@ use serde_json::{Value, json};
 
 use crate::common::{
     self, Deviation, Service, apply_deviations, assert_case, clock_time, countdowns, instant, iso,
-    opt_iso, register_materialised, run_ref, step_result, strings, text, utc, weekday, zone,
+    opt_iso, register_materialised, run_ref, step_result, text, utc, zone,
 };
+use crate::vector_steps::{add_fixed, create_run};
 
 /// Decision 1 (DST spring-forward gap): v4 resolves a nonexistent `day_of`
 /// wall clock with the pre-transition offset, which can fire at or after the
@@ -77,46 +77,15 @@ async fn replay(case: &Value) -> Value {
     let mut steps = Vec::new();
     for step in input["steps"].as_array().expect("steps") {
         let result: Result<Value, SchedulerError> = match text(&step["op"]) {
-            "add_fixed" => {
-                let id = service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
-                    .add_fixed_run(NewFixedRun {
-                        owner_pinned: false,
-                        owner_id: text(&step["owner_id"]).into(),
-                        channel_id: Some(text(&step["channel_id"]).into()),
-                        bosses: strings(&step["bosses"]),
-                        weekday: weekday(&step["weekday"]),
-                        time: clock_time(&step["time"]),
-                        participants: strings(&step["participants"]),
-                        note: None,
-                    })
-                    .await
-                    .expect("add_fixed");
-                fixed_refs.insert(text(&step["fixed_key"]).to_owned(), id.clone());
-                Ok(json!(id))
-            }
+            "add_fixed" => Ok(add_fixed(&mut service, step, &mut fixed_refs).await),
             "create_run" => {
-                let id = service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
-                    .create_run(NewRun {
-                        fixed_run_id: None,
-                        channel_id: Some(text(&step["channel_id"]).into()),
-                        week_start: utc(&step["week_start"]),
-                        datetime: utc(&step["at"]),
-                        bosses: strings(&step["bosses"]),
-                        participants: strings(&step["participants"]),
-                        status: RunStatus::parse(text(&step["status"])).unwrap(),
-                        source: RunSource::parse(text(&step["source"])).unwrap(),
-                    })
-                    .await
-                    .expect("create_run");
-                run_refs.insert(text(&step["run_key"]).to_owned(), id.clone());
-                Ok(json!(id))
+                let week = &step["week_start"];
+                Ok(create_run(&mut service, step, week, &mut run_refs).await)
             }
             "materialise" => {
                 let start = instant(&step["week_start"]);
                 let created = service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
+                    .as_origin(Origin::for_tests())
                     .materialise_week(start, &policy(tz, step))
                     .await;
                 let week = utc(&step["week_start"]);
@@ -135,7 +104,7 @@ async fn replay(case: &Value) -> Value {
                 Ok(status) => {
                     let run = run_ref(&run_refs, &step["run_key"]).to_owned();
                     service
-                        .as_origin(kanade::domain::history::Origin::for_tests())
+                        .as_origin(Origin::for_tests())
                         .set_run_status(&run, status)
                         .await
                         .map(|()| json!(status.as_str()))
@@ -166,7 +135,7 @@ async fn replay(case: &Value) -> Value {
                 let run = run_ref(&run_refs, &step["run_key"]).to_owned();
                 let rebuild = step["rebuild"].as_bool().expect("rebuild");
                 service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
+                    .as_origin(Origin::for_tests())
                     .ensure_reminders(&run, &policy(tz, step), rebuild)
                     .await
                     .map(|kinds| json!(kinds))
@@ -175,7 +144,7 @@ async fn replay(case: &Value) -> Value {
                 let run = run_ref(&run_refs, &step["run_key"]).to_owned();
                 let sent_at = (!step["sent_at"].is_null()).then(|| utc(&step["sent_at"]));
                 service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
+                    .as_origin(Origin::for_tests())
                     .add_reminder(&run, text(&step["kind"]), utc(&step["fire_at"]), sent_at)
                     .await
                     .map(|id| json!(id))
@@ -184,7 +153,7 @@ async fn replay(case: &Value) -> Value {
                 let run = run_ref(&run_refs, &step["run_key"]).to_owned();
                 let id = reminder_id(&service, &run, text(&step["kind"])).await;
                 service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
+                    .as_origin(Origin::for_tests())
                     .mark_reminder_sent(&id, step["message_id"].as_str())
                     .await
                     .map(|()| Value::Null)
@@ -193,18 +162,18 @@ async fn replay(case: &Value) -> Value {
                 let run = run_ref(&run_refs, &step["run_key"]).to_owned();
                 let id = reminder_id(&service, &run, text(&step["kind"])).await;
                 service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
+                    .as_origin(Origin::for_tests())
                     .reschedule_unposted_reminder(&id, utc(&step["fire_at"]))
                     .await
                     .map(|changed| json!(changed))
             }
             "reconcile_day_of" => service
-                .as_origin(kanade::domain::history::Origin::for_tests())
+                .as_origin(Origin::for_tests())
                 .reconcile_day_of(&policy(tz, step))
                 .await
                 .map(|count| json!(count)),
             "mark_done" => service
-                .as_origin(kanade::domain::history::Origin::for_tests())
+                .as_origin(Origin::for_tests())
                 .mark_done()
                 .await
                 .map(|ids| json!(ids)),

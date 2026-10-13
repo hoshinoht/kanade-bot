@@ -7,7 +7,7 @@ use kanade::domain::schedule::{Change, ChangeSet};
 use kanade::domain::scheduler::{ScheduleStore, Scope, StoreError};
 use kanade::infrastructure::store::SqliteStore;
 
-use crate::support::{TempDir, commit, fixed, seed, tamper};
+use crate::support::{TempDir, commit, create, fixed, seed, tamper};
 
 #[tokio::test]
 async fn unreadable_rows_are_a_typed_backend_error() {
@@ -19,12 +19,7 @@ async fn unreadable_rows_are_a_typed_backend_error() {
         ("JSON", "'not json', 0, '21:30', '[]'"),
     ];
     for (what, values) in cases {
-        SqliteStore::open(&config)
-            .await
-            .expect("opens")
-            .close()
-            .await
-            .expect("close");
+        create(&config).await;
         tamper(
             &config,
             &format!(

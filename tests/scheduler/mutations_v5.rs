@@ -3,209 +3,88 @@
 
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, FixedOffset, NaiveTime, TimeZone, Utc, Weekday};
-use chrono_tz::Asia::Kuala_Lumpur;
-use kanade::domain::{
-    ids::IdGenerator,
-    members::{Directory, Member},
-    notify::NoticeOutbox,
-    schedule::{
-        AmendedRunChoice, EMOJI_NO, EMOJI_YES, FixedEdit, FixedEditChoices, FixedEditRequest,
-        NewFixedRun, NewRun, NoticeChange, ReminderPolicy, RunSource, RunStatus, ScheduleError,
-        SchedulePolicy, ScheduleSnapshot, StatusChange,
-    },
-    scheduler::{ScheduleStore, SchedulerError, SchedulerService, Scope},
+use chrono::{DateTime, TimeDelta, Utc, Weekday};
+use kanade::domain::history::Origin;
+use kanade::domain::notify::NoticeOutbox;
+use kanade::domain::schedule::{
+    AmendedRunChoice, EMOJI_NO, EMOJI_YES, FixedEdit, FixedEditChoices, FixedEditRequest, FixedRun,
+    NewRun, NoticeChange, Outcome, Reminder, RunSource, RunState, RunStatus, ScheduleError,
+    ScheduleSnapshot, StatusChange,
 };
+use kanade::domain::scheduler::{SchedulerError, SchedulerResult, SchedulerService};
 use kanade::infrastructure::store::MemoryScheduleStore;
 
 use crate::common::{TestClock, assert_sound};
-
-#[derive(Default)]
-struct CountingIds(u32);
-
-impl IdGenerator for CountingIds {
-    fn new_id(&mut self) -> String {
-        self.0 += 1;
-        format!("id-{:04}", self.0)
-    }
-}
-
-struct Guild;
-
-impl Directory for Guild {
-    fn member(&self, user_id: &str) -> Option<Member> {
-        ["1001", "1002", "1003"].contains(&user_id).then(|| Member {
-            user_id: user_id.to_owned(),
-            display_name: Some(format!("member {user_id}")),
-            has_role: true,
-            ..Member::default()
-        })
-    }
-
-    fn is_watched(&self, channel_id: &str) -> bool {
-        ["222", "333"].contains(&channel_id)
-    }
-}
+use crate::support::{
+    CountingIds, Guild, OneTiming as Fixture, hm, kl, one_timing, owned, policy, snapshot, utc,
+    weekly,
+};
 
 type Service = SchedulerService<MemoryScheduleStore, CountingIds, TestClock>;
 
-fn kl(d: u32, h: u32, mi: u32) -> DateTime<FixedOffset> {
-    let month = if d >= 27 { 8 } else { 9 };
-    FixedOffset::east_opt(8 * 3600)
-        .unwrap()
-        .with_ymd_and_hms(2026, month, d, h, mi, 0)
-        .unwrap()
-}
-
-fn utc(at: DateTime<FixedOffset>) -> DateTime<Utc> {
-    at.with_timezone(&Utc)
-}
-
-fn policy() -> SchedulePolicy {
-    SchedulePolicy::new(
-        ReminderPolicy {
-            zone: Kuala_Lumpur,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
-            countdowns: vec![60, 15],
-        },
-        Weekday::Thu,
-        NaiveTime::MIN,
-    )
-}
-
-/// Weekly Mon 21:30 materialised for weeks of 27 Aug, 3 Sep and 10 Sep; the
-/// 3 Sep run is amended to Wed 9 Sep 21:00 and the 10 Sep run is cancelled.
-struct Fixture {
-    service: Service,
-    clock: TestClock,
-    fixed: String,
-    /// Runs by week: 31 Aug, 7 Sep (amended), 14 Sep (cancelled).
-    runs: [String; 3],
-}
-
+/// [`one_timing`] with the 14 Sep run cancelled: runs by week are 31 Aug,
+/// 7 Sep (amended to Wed 9 Sep 21:00) and 14 Sep (cancelled).
 async fn fixture() -> Fixture {
-    let clock = TestClock::new(kl(27, 1, 0));
-    let mut service = SchedulerService::new(
-        MemoryScheduleStore::new(),
-        CountingIds::default(),
-        clock.clone(),
-    );
-    let fixed = service
-        .as_origin(kanade::domain::history::Origin::for_tests())
-        .add_fixed_run(NewFixedRun {
-            owner_pinned: false,
-            owner_id: "1001".into(),
-            channel_id: Some("222".into()),
-            bosses: vec!["HFA".into()],
-            weekday: Weekday::Mon,
-            time: NaiveTime::from_hms_opt(21, 30, 0).unwrap(),
-            participants: vec!["1001".into(), "1002".into()],
-            note: None,
-        })
-        .await
-        .unwrap();
-    service
-        .as_origin(kanade::domain::history::Origin::for_tests())
-        .materialise_weeks(&policy())
-        .await
-        .unwrap();
-    let state = snapshot(&service).await;
-    let run_at = |at: DateTime<FixedOffset>| {
-        state
-            .runs
-            .iter()
-            .find(|run| run.datetime == utc(at))
-            .unwrap()
-            .id
-            .clone()
-    };
-    let runs = [
-        run_at(kl(31, 21, 30)),
-        run_at(kl(7, 21, 30)),
-        run_at(kl(14, 21, 30)),
-    ];
-    service
-        .as_origin(kanade::domain::history::Origin::for_tests())
-        .amend_run(&runs[1], utc(kl(9, 21, 0)), &policy())
-        .await
-        .unwrap();
-    let cancel = StatusChange {
-        status: RunStatus::Cancelled,
-        announce: false,
+    let mut f = one_timing().await;
+    set_status(&mut f.service, &f.runs[2], RunStatus::Cancelled, false).await;
+    f
+}
+
+async fn set_status(service: &mut Service, run: &str, status: RunStatus, announce: bool) {
+    let change = StatusChange {
+        status,
+        announce,
         via_portal: true,
     };
     service
-        .as_origin(kanade::domain::history::Origin::for_tests())
-        .set_status(&runs[2], cancel, &policy().reminders)
+        .as_origin(Origin::for_tests())
+        .set_status(run, change, &policy().reminders)
         .await
         .unwrap();
-    Fixture {
-        service,
-        clock,
-        fixed,
-        runs,
-    }
 }
 
-#[tokio::test]
-async fn weekly_timing_add_and_remove_enqueue_notices_once_in_memory() {
-    let clock = TestClock::new(kl(27, 1, 0));
-    let mut service = SchedulerService::new(
-        MemoryScheduleStore::new(),
-        CountingIds::default(),
-        clock.clone(),
-    );
-    let added = service
-        .as_origin(kanade::domain::history::Origin::for_tests().with_request_id("fixed-add"))
-        .add_fixed_run(NewFixedRun {
-            owner_pinned: false,
-            owner_id: "1001".into(),
-            channel_id: Some("222".into()),
-            bosses: vec!["HFA".into()],
-            weekday: Weekday::Mon,
-            time: NaiveTime::from_hms_opt(21, 30, 0).unwrap(),
-            participants: vec!["1001".into()],
-            note: None,
-        })
-        .await
-        .unwrap();
-    let notices = service.store().outbox_notices().await.unwrap();
-    assert!(matches!(
-        &notices[..],
-        [row] if matches!(&row.notice.change, NoticeChange::FixedAdded { fixed_id, .. } if fixed_id == &added)
-    ));
-    assert!(matches!(
-        service
-            .as_origin(kanade::domain::history::Origin::for_tests().with_request_id("fixed-add"),)
-            .add_fixed_run(NewFixedRun {
-                owner_pinned: false,
-                owner_id: "1001".into(),
-                channel_id: Some("222".into()),
-                bosses: vec!["HFA".into()],
-                weekday: Weekday::Mon,
-                time: NaiveTime::from_hms_opt(21, 30, 0).unwrap(),
-                participants: vec!["1001".into()],
-                note: None,
-            })
-            .await,
-        Err(SchedulerError::AlreadyApplied { .. })
-    ));
-    assert_eq!(service.store().outbox_notices().await.unwrap().len(), 1);
-
+async fn react(service: &mut Service, run: &str, user: &str, emoji: &str) {
     service
-        .as_origin(kanade::domain::history::Origin::for_tests().with_request_id("fixed-remove"))
-        .retire_fixed_run(&added, &[kl(27, 0, 0)], &policy().reminders)
+        .as_origin(Origin::for_tests())
+        .apply_reaction(run, user, emoji, true)
         .await
         .unwrap();
-    let notices = service.store().outbox_notices().await.unwrap();
-    assert!(matches!(
-        notices.last().map(|row| &row.notice.change),
-        Some(NoticeChange::FixedRemoved { fixed_id, .. }) if fixed_id == &added
-    ));
 }
 
-async fn snapshot(service: &Service) -> ScheduleSnapshot {
-    service.store().load(&Scope::All).await.unwrap()
+async fn apply_edit(
+    service: &mut Service,
+    fixed: &str,
+    edit: FixedEdit,
+    choices: FixedEditChoices,
+) -> SchedulerResult<Outcome<FixedRun>> {
+    let request = FixedEditRequest {
+        fixed_id: fixed.into(),
+        edit,
+        choices,
+    };
+    service
+        .as_origin(Origin::for_tests())
+        .apply_fixed_edit(&request, &Guild, &policy())
+        .await
+}
+
+async fn reset(service: &mut Service, run: &str) -> SchedulerResult<Outcome<RunState>> {
+    service
+        .as_origin(Origin::for_tests())
+        .reset_to_fixed(run, &policy())
+        .await
+}
+
+/// Mark the run's morning card as posted with `message`.
+async fn send_day_of(service: &mut Service, run: &str, message: &str) -> Reminder {
+    let rows = service.reminders(run).await.unwrap();
+    let day_of = rows.into_iter().find(|row| row.kind == "day_of").unwrap();
+    service
+        .as_origin(Origin::for_tests())
+        .mark_reminder_sent(&day_of.id, Some(message))
+        .await
+        .unwrap();
+    day_of
 }
 
 fn run_at(state: &ScheduleSnapshot, id: &str) -> DateTime<Utc> {
@@ -225,18 +104,15 @@ fn pings(
         .collect()
 }
 
-fn time_edit(hour: u32, minute: u32) -> FixedEdit {
-    FixedEdit {
-        time: NaiveTime::from_hms_opt(hour, minute, 0),
-        ..FixedEdit::default()
-    }
+fn reminder_rows(state: &ScheduleSnapshot, run: &str) -> Vec<Reminder> {
+    let rows = state.reminders.iter().filter(|row| row.run_id == run);
+    rows.cloned().collect()
 }
 
-fn request(fixed: &str, edit: FixedEdit, choices: FixedEditChoices) -> FixedEditRequest {
-    FixedEditRequest {
-        fixed_id: fixed.into(),
-        edit,
-        choices,
+fn time_edit(hour: u32, minute: u32) -> FixedEdit {
+    FixedEdit {
+        time: Some(hm(hour, minute)),
+        ..FixedEdit::default()
     }
 }
 
@@ -250,14 +126,52 @@ fn per_run(entries: &[(&str, AmendedRunChoice)]) -> FixedEditChoices {
 }
 
 #[tokio::test]
+async fn weekly_timing_add_and_remove_enqueue_notices_once_in_memory() {
+    let clock = TestClock::new(kl(27, 1, 0));
+    let mut service =
+        SchedulerService::new(MemoryScheduleStore::new(), CountingIds::default(), clock);
+    let timing = || weekly("222", Weekday::Mon, hm(21, 30), &["1001"]);
+    let keyed = |key: &str| Origin::for_tests().with_request_id(key);
+    let added = service
+        .as_origin(keyed("fixed-add"))
+        .add_fixed_run(timing())
+        .await
+        .unwrap();
+    let notices = service.store().outbox_notices().await.unwrap();
+    assert!(matches!(
+        &notices[..],
+        [row] if matches!(&row.notice.change, NoticeChange::FixedAdded { fixed_id, .. } if fixed_id == &added)
+    ));
+    assert!(matches!(
+        service
+            .as_origin(keyed("fixed-add"))
+            .add_fixed_run(timing())
+            .await,
+        Err(SchedulerError::AlreadyApplied { .. })
+    ));
+    assert_eq!(service.store().outbox_notices().await.unwrap().len(), 1);
+
+    service
+        .as_origin(keyed("fixed-remove"))
+        .retire_fixed_run(&added, &[kl(27, 0, 0)], &policy().reminders)
+        .await
+        .unwrap();
+    let notices = service.store().outbox_notices().await.unwrap();
+    assert!(matches!(
+        notices.last().map(|row| &row.notice.change),
+        Some(NoticeChange::FixedRemoved { fixed_id, .. }) if fixed_id == &added
+    ));
+}
+
+#[tokio::test]
 async fn preview_lists_only_live_amended_runs_a_day_or_time_edit_would_move() {
     let f = fixture().await;
     let policy = policy();
-    let affected = f
-        .service
-        .preview_fixed_edit(&f.fixed, &time_edit(22, 0), &policy)
-        .await
-        .unwrap();
+    let preview = async |edit: FixedEdit| {
+        let affected = f.service.preview_fixed_edit(&f.fixed, &edit, &policy);
+        affected.await.unwrap()
+    };
+    let affected = preview(time_edit(22, 0)).await;
     assert_eq!(affected.len(), 1);
     let amended = &affected[0];
     assert_eq!(amended.run_id, f.runs[1]);
@@ -268,62 +182,26 @@ async fn preview_lists_only_live_amended_runs_a_day_or_time_edit_would_move() {
         note: Some("bring pots".into()),
         ..FixedEdit::default()
     };
-    assert!(
-        f.service
-            .preview_fixed_edit(&f.fixed, &note, &policy)
-            .await
-            .unwrap()
-            .is_empty()
-    );
+    assert!(preview(note).await.is_empty());
     // Editing to the slot the amended run already sits on moves nothing.
     let onto = FixedEdit {
         weekday: Some(Weekday::Wed),
-        time: NaiveTime::from_hms_opt(21, 0, 0),
-        ..FixedEdit::default()
+        ..time_edit(21, 0)
     };
-    assert!(
-        f.service
-            .preview_fixed_edit(&f.fixed, &onto, &policy)
-            .await
-            .unwrap()
-            .is_empty()
-    );
+    assert!(preview(onto).await.is_empty());
 }
 
 #[tokio::test]
 async fn keeping_an_amended_run_leaves_its_slot_and_pings_while_others_follow() {
     let mut f = fixture().await;
-    let policy = policy();
     // The amended run's morning ping already went out with a card.
-    let amended_day_of = f
-        .service
-        .reminders(&f.runs[1])
-        .await
-        .unwrap()
-        .into_iter()
-        .find(|row| row.kind == "day_of")
-        .unwrap();
-    f.service
-        .as_origin(kanade::domain::history::Origin::for_tests())
-        .mark_reminder_sent(&amended_day_of.id, Some("555"))
-        .await
-        .unwrap();
+    let amended_day_of = send_day_of(&mut f.service, &f.runs[1], "555").await;
     let before = snapshot(&f.service).await;
     let keep = per_run(&[(&f.runs[1], AmendedRunChoice::KeepForThisWeek)]);
-    let outcome = f
-        .service
-        .as_origin(kanade::domain::history::Origin::for_tests())
-        .apply_fixed_edit(
-            &request(&f.fixed, time_edit(22, 0), keep.clone()),
-            &Guild,
-            &policy,
-        )
+    let outcome = apply_edit(&mut f.service, &f.fixed, time_edit(22, 0), keep.clone())
         .await
         .unwrap();
-    assert_eq!(
-        outcome.value.time,
-        NaiveTime::from_hms_opt(22, 0, 0).unwrap()
-    );
+    assert_eq!(outcome.value.time, hm(22, 0));
     let after = snapshot(&f.service).await;
     assert_eq!(
         run_at(&after, &f.runs[0]),
@@ -336,18 +214,14 @@ async fn keeping_an_amended_run_leaves_its_slot_and_pings_while_others_follow() 
         utc(kl(14, 21, 30)),
         "cancelled untouched"
     );
-    let rows = |state: &ScheduleSnapshot| {
-        state
-            .reminders
-            .iter()
-            .filter(|row| row.run_id == f.runs[1])
-            .cloned()
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(rows(&after), rows(&before), "kept run's pings untouched");
+    let kept = reminder_rows(&after, &f.runs[1]);
+    assert_eq!(
+        kept,
+        reminder_rows(&before, &f.runs[1]),
+        "kept run's pings untouched"
+    );
     assert!(
-        rows(&after)
-            .iter()
+        kept.iter()
             .any(|row| row.id == amended_day_of.id && row.message_id.as_deref() == Some("555"))
     );
     assert_sound(
@@ -357,10 +231,7 @@ async fn keeping_an_amended_run_leaves_its_slot_and_pings_while_others_follow() 
     );
 
     // Idempotent: the same edit and choice again changes no slot or ping.
-    let again = f
-        .service
-        .as_origin(kanade::domain::history::Origin::for_tests())
-        .apply_fixed_edit(&request(&f.fixed, time_edit(22, 0), keep), &Guild, &policy)
+    let again = apply_edit(&mut f.service, &f.fixed, time_edit(22, 0), keep)
         .await
         .unwrap();
     assert_eq!(again.value, outcome.value);
@@ -373,8 +244,8 @@ async fn keeping_an_amended_run_leaves_its_slot_and_pings_while_others_follow() 
     // Later weeks follow the new slot once they materialise.
     f.clock.set(kl(10, 1, 0));
     f.service
-        .as_origin(kanade::domain::history::Origin::for_tests())
-        .materialise_weeks(&policy)
+        .as_origin(Origin::for_tests())
+        .materialise_weeks(&policy())
         .await
         .unwrap();
     let later = snapshot(&f.service).await;
@@ -389,24 +260,16 @@ async fn keeping_an_amended_run_leaves_its_slot_and_pings_while_others_follow() 
 
 #[tokio::test]
 async fn updating_an_amended_run_matches_the_v4_default() {
-    let policy = policy();
     let mut chosen = fixture().await;
     let mut default = fixture().await;
     let update = per_run(&[(&chosen.runs[1], AmendedRunChoice::UpdateToFixed)]);
-    chosen
-        .service
-        .as_origin(kanade::domain::history::Origin::for_tests())
-        .apply_fixed_edit(
-            &request(&chosen.fixed, time_edit(22, 0), update),
-            &Guild,
-            &policy,
-        )
+    apply_edit(&mut chosen.service, &chosen.fixed, time_edit(22, 0), update)
         .await
         .unwrap();
     default
         .service
-        .as_origin(kanade::domain::history::Origin::for_tests())
-        .update_fixed(&default.fixed, time_edit(22, 0), &Guild, &policy)
+        .as_origin(Origin::for_tests())
+        .update_fixed(&default.fixed, time_edit(22, 0), &Guild, &policy())
         .await
         .unwrap();
     let state = snapshot(&chosen.service).await;
@@ -423,89 +286,60 @@ async fn updating_an_amended_run_matches_the_v4_default() {
 #[tokio::test]
 async fn choices_must_name_exactly_the_affected_runs() {
     let mut f = fixture().await;
-    let policy = policy();
     let before = snapshot(&f.service).await;
-    let cases = [
-        (
-            per_run(&[
-                (&f.runs[1], AmendedRunChoice::KeepForThisWeek),
-                (&f.runs[0], AmendedRunChoice::KeepForThisWeek),
-            ]),
-            ScheduleError::UnexpectedChoice(f.runs[0].clone()),
-        ),
-        (
-            per_run(&[(&f.runs[2], AmendedRunChoice::UpdateToFixed)]),
-            ScheduleError::UnexpectedChoice(f.runs[2].clone()),
-        ),
-        (
-            per_run(&[]),
-            ScheduleError::MissingChoice(f.runs[1].clone()),
-        ),
-    ];
-    for (choices, expected) in cases {
-        let error = f
-            .service
-            .as_origin(kanade::domain::history::Origin::for_tests())
-            .apply_fixed_edit(
-                &request(&f.fixed, time_edit(22, 0), choices),
-                &Guild,
-                &policy,
-            )
-            .await
-            .unwrap_err();
-        assert_eq!(error, SchedulerError::Schedule(expected));
-    }
-    // A note-only edit affects nothing, so any per-run choice is refused.
+    let keep = AmendedRunChoice::KeepForThisWeek;
     let note = FixedEdit {
         note: Some("x".into()),
         ..FixedEdit::default()
     };
-    let stray = per_run(&[(&f.runs[1], AmendedRunChoice::KeepForThisWeek)]);
-    assert!(matches!(
-        f.service
-            .as_origin(kanade::domain::history::Origin::for_tests())
-            .apply_fixed_edit(&request(&f.fixed, note, stray), &Guild, &policy)
-            .await,
-        Err(SchedulerError::Schedule(ScheduleError::UnexpectedChoice(_)))
-    ));
+    let cases = [
+        (
+            time_edit(22, 0),
+            per_run(&[(&f.runs[1], keep), (&f.runs[0], keep)]),
+            ScheduleError::UnexpectedChoice(f.runs[0].clone()),
+        ),
+        (
+            time_edit(22, 0),
+            per_run(&[(&f.runs[2], AmendedRunChoice::UpdateToFixed)]),
+            ScheduleError::UnexpectedChoice(f.runs[2].clone()),
+        ),
+        (
+            time_edit(22, 0),
+            per_run(&[]),
+            ScheduleError::MissingChoice(f.runs[1].clone()),
+        ),
+        // A note-only edit affects nothing, so any per-run choice is refused.
+        (
+            note,
+            per_run(&[(&f.runs[1], keep)]),
+            ScheduleError::UnexpectedChoice(f.runs[1].clone()),
+        ),
+    ];
+    for (edit, choices, expected) in cases {
+        let error = apply_edit(&mut f.service, &f.fixed, edit, choices).await;
+        assert_eq!(error.unwrap_err(), SchedulerError::Schedule(expected));
+    }
     assert_eq!(snapshot(&f.service).await, before, "refusals write nothing");
 }
 
 #[tokio::test]
 async fn reset_restores_the_weekly_slot_party_and_channel() {
     let mut f = fixture().await;
-    let policy = policy();
     let run = &f.runs[1];
     f.service
-        .as_origin(kanade::domain::history::Origin::for_tests())
-        .swap_participants(run, &["1002".into()], &["1003".into()], true, &Guild)
+        .as_origin(Origin::for_tests())
+        .swap_participants(run, &owned(&["1002"]), &owned(&["1003"]), true, &Guild)
         .await
         .unwrap();
     for user in ["1001", "1003"] {
-        f.service
-            .as_origin(kanade::domain::history::Origin::for_tests())
-            .apply_reaction(run, user, EMOJI_YES, true)
-            .await
-            .unwrap();
+        react(&mut f.service, run, user, EMOJI_YES).await;
     }
-    assert_eq!(
-        snapshot(&f.service)
-            .await
-            .runs
-            .iter()
-            .find(|r| &r.id == run)
-            .unwrap()
-            .status,
-        RunStatus::Confirmed
-    );
+    let status = snapshot(&f.service).await;
+    let status = status.runs.iter().find(|r| &r.id == run).unwrap().status;
+    assert_eq!(status, RunStatus::Confirmed);
     // Late enough that the restored slot's morning and T-1h pings have passed.
     f.clock.set(kl(7, 21, 0));
-    let outcome = f
-        .service
-        .as_origin(kanade::domain::history::Origin::for_tests())
-        .reset_to_fixed(run, &policy)
-        .await
-        .unwrap();
+    let outcome = reset(&mut f.service, run).await.unwrap();
     let state = &outcome.value;
     assert_eq!(state.run.datetime, utc(kl(7, 21, 30)));
     assert_eq!(state.run.participants, ["1001", "1002"]);
@@ -539,12 +373,7 @@ async fn reset_restores_the_weekly_slot_party_and_channel() {
     );
 
     // Idempotent: a matching run is left exactly as it is, quietly.
-    let again = f
-        .service
-        .as_origin(kanade::domain::history::Origin::for_tests())
-        .reset_to_fixed(run, &policy)
-        .await
-        .unwrap();
+    let again = reset(&mut f.service, run).await.unwrap();
     assert!(again.notices.is_empty());
     assert_eq!(snapshot(&f.service).await, after);
 }
@@ -552,10 +381,9 @@ async fn reset_restores_the_weekly_slot_party_and_channel() {
 #[tokio::test]
 async fn reset_refuses_one_offs_retired_timings_and_finished_runs() {
     let mut f = fixture().await;
-    let policy = policy();
     let one_off = f
         .service
-        .as_origin(kanade::domain::history::Origin::for_tests())
+        .as_origin(Origin::for_tests())
         .create_run(NewRun {
             fixed_run_id: None,
             channel_id: Some("333".into()),
@@ -569,48 +397,24 @@ async fn reset_refuses_one_offs_retired_timings_and_finished_runs() {
         .await
         .unwrap();
     let before = snapshot(&f.service).await;
-    let refusal = |result| match result {
+    let refusal = async |service: &mut Service, run: &str| match reset(service, run).await {
         Err(SchedulerError::Schedule(error)) => error,
         other => panic!("expected a refusal, got {other:?}"),
     };
     assert_eq!(
-        refusal(
-            f.service
-                .as_origin(kanade::domain::history::Origin::for_tests())
-                .reset_to_fixed(&one_off, &policy)
-                .await
-        ),
+        refusal(&mut f.service, &one_off).await,
         ScheduleError::NotAFixedRun(one_off.clone())
     );
     assert_eq!(
-        refusal(
-            f.service
-                .as_origin(kanade::domain::history::Origin::for_tests())
-                .reset_to_fixed(&f.runs[2], &policy)
-                .await
-        ),
+        refusal(&mut f.service, &f.runs[2]).await,
         ScheduleError::RunNotLive {
             run_id: f.runs[2].clone(),
             status: "cancelled".into()
         }
     );
-    let done = StatusChange {
-        status: RunStatus::Done,
-        announce: false,
-        via_portal: true,
-    };
-    f.service
-        .as_origin(kanade::domain::history::Origin::for_tests())
-        .set_status(&f.runs[0], done, &policy.reminders)
-        .await
-        .unwrap();
+    set_status(&mut f.service, &f.runs[0], RunStatus::Done, false).await;
     assert!(matches!(
-        refusal(
-            f.service
-                .as_origin(kanade::domain::history::Origin::for_tests())
-                .reset_to_fixed(&f.runs[0], &policy)
-                .await
-        ),
+        refusal(&mut f.service, &f.runs[0]).await,
         ScheduleError::RunNotLive { .. }
     ));
     assert_eq!(
@@ -625,17 +429,12 @@ async fn reset_refuses_one_offs_retired_timings_and_finished_runs() {
     // Retire only the first week's timing: the amended run keeps a dangling link.
     let first_week = [kl(27, 0, 0)];
     f.service
-        .as_origin(kanade::domain::history::Origin::for_tests())
-        .retire_fixed_run(&f.fixed, &first_week, &policy.reminders)
+        .as_origin(Origin::for_tests())
+        .retire_fixed_run(&f.fixed, &first_week, &policy().reminders)
         .await
         .unwrap();
     assert_eq!(
-        refusal(
-            f.service
-                .as_origin(kanade::domain::history::Origin::for_tests())
-                .reset_to_fixed(&f.runs[1], &policy)
-                .await
-        ),
+        refusal(&mut f.service, &f.runs[1]).await,
         ScheduleError::FixedRunRetired(f.fixed.clone())
     );
     assert_eq!(
@@ -646,7 +445,6 @@ async fn reset_refuses_one_offs_retired_timings_and_finished_runs() {
 
 #[tokio::test]
 async fn a_fixed_edit_removing_the_lone_decliner_recomputes_status_like_swap() {
-    let policy = policy();
     // New line-up still missing an answer -> planned; only yes-sayers left -> confirmed.
     for (line_up, expected) in [
         (vec!["1001", "1003"], RunStatus::Planned),
@@ -654,26 +452,18 @@ async fn a_fixed_edit_removing_the_lone_decliner_recomputes_status_like_swap() {
     ] {
         let mut f = fixture().await;
         let run = &f.runs[0];
-        f.service
-            .as_origin(kanade::domain::history::Origin::for_tests())
-            .apply_reaction(run, "1001", EMOJI_YES, true)
-            .await
-            .unwrap();
-        f.service
-            .as_origin(kanade::domain::history::Origin::for_tests())
-            .apply_reaction(run, "1002", EMOJI_NO, true)
-            .await
-            .unwrap();
+        react(&mut f.service, run, "1001", EMOJI_YES).await;
+        react(&mut f.service, run, "1002", EMOJI_NO).await;
         let status =
             |state: &ScheduleSnapshot| state.runs.iter().find(|r| &r.id == run).unwrap().status;
         assert_eq!(status(&snapshot(&f.service).await), RunStatus::AtRisk);
         let edit = FixedEdit {
-            participants: Some(line_up.iter().map(|uid| (*uid).to_owned()).collect()),
+            participants: Some(owned(&line_up)),
             ..FixedEdit::default()
         };
         f.service
-            .as_origin(kanade::domain::history::Origin::for_tests())
-            .update_fixed(&f.fixed, edit, &Guild, &policy)
+            .as_origin(Origin::for_tests())
+            .update_fixed(&f.fixed, edit, &Guild, &policy())
             .await
             .unwrap();
         let after = snapshot(&f.service).await;
@@ -696,19 +486,13 @@ async fn a_fixed_edit_removing_the_lone_decliner_recomputes_status_like_swap() {
 
 #[tokio::test]
 async fn reset_refuses_a_weekly_slot_at_or_before_now_and_writes_nothing() {
-    let policy = policy();
     // After the weekly Mon 7 Sep 21:30 slot, before the amended Wed 9 Sep 21:00;
     // then exactly on the slot.
     for now in [kl(8, 12, 0), kl(7, 21, 30)] {
         let mut f = fixture().await;
         f.clock.set(now);
         let before = snapshot(&f.service).await;
-        let error = f
-            .service
-            .as_origin(kanade::domain::history::Origin::for_tests())
-            .reset_to_fixed(&f.runs[1], &policy)
-            .await
-            .unwrap_err();
+        let error = reset(&mut f.service, &f.runs[1]).await.unwrap_err();
         assert_eq!(
             error,
             SchedulerError::Schedule(ScheduleError::ResetSlotPassed {
@@ -722,49 +506,22 @@ async fn reset_refuses_a_weekly_slot_at_or_before_now_and_writes_nothing() {
     }
     // One second before the slot it still resets.
     let mut f = fixture().await;
-    f.clock.set(kl(7, 21, 30) - chrono::TimeDelta::seconds(1));
-    let outcome = f
-        .service
-        .as_origin(kanade::domain::history::Origin::for_tests())
-        .reset_to_fixed(&f.runs[1], &policy)
-        .await
-        .unwrap();
+    f.clock.set(kl(7, 21, 30) - TimeDelta::seconds(1));
+    let outcome = reset(&mut f.service, &f.runs[1]).await.unwrap();
     assert_eq!(outcome.value.run.datetime, utc(kl(7, 21, 30)));
     assert_eq!(outcome.notices.len(), 1);
 }
 
 #[tokio::test]
 async fn restoring_after_the_morning_card_posted_recreates_it_as_sent() {
-    let policy = policy();
     for from in [RunStatus::Cancelled, RunStatus::Otot, RunStatus::Done] {
         let mut f = fixture().await;
         let run = &f.runs[0];
         // Mon 31 Aug 10:00: the 09:00 card has gone out.
         f.clock.set(kl(31, 10, 0));
-        let day_of = f
-            .service
-            .reminders(run)
-            .await
-            .unwrap()
-            .into_iter()
-            .find(|row| row.kind == "day_of")
-            .unwrap();
-        f.service
-            .as_origin(kanade::domain::history::Origin::for_tests())
-            .mark_reminder_sent(&day_of.id, Some("777"))
-            .await
-            .unwrap();
+        send_day_of(&mut f.service, run, "777").await;
         for status in [from, RunStatus::Planned] {
-            let change = StatusChange {
-                status,
-                announce: true,
-                via_portal: true,
-            };
-            f.service
-                .as_origin(kanade::domain::history::Origin::for_tests())
-                .set_status(run, change, &policy.reminders)
-                .await
-                .unwrap();
+            set_status(&mut f.service, run, status, true).await;
         }
         let now = utc(kl(31, 10, 0));
         let state = snapshot(&f.service).await;
@@ -784,29 +541,17 @@ async fn restoring_after_the_morning_card_posted_recreates_it_as_sent() {
 #[tokio::test]
 async fn keeping_an_amended_run_still_takes_the_roster_and_channel_edit() {
     let mut f = fixture().await;
-    let policy = policy();
     let run = &f.runs[1];
-    f.service
-        .as_origin(kanade::domain::history::Origin::for_tests())
-        .apply_reaction(run, "1001", EMOJI_YES, true)
-        .await
-        .unwrap();
-    f.service
-        .as_origin(kanade::domain::history::Origin::for_tests())
-        .apply_reaction(run, "1002", EMOJI_NO, true)
-        .await
-        .unwrap();
+    react(&mut f.service, run, "1001", EMOJI_YES).await;
+    react(&mut f.service, run, "1002", EMOJI_NO).await;
     let before = snapshot(&f.service).await;
     let edit = FixedEdit {
-        time: NaiveTime::from_hms_opt(22, 0, 0),
-        participants: Some(vec!["1001".into(), "1003".into()]),
+        participants: Some(owned(&["1001", "1003"])),
         channel_id: Some("333".into()),
-        ..FixedEdit::default()
+        ..time_edit(22, 0)
     };
     let keep = per_run(&[(run, AmendedRunChoice::KeepForThisWeek)]);
-    f.service
-        .as_origin(kanade::domain::history::Origin::for_tests())
-        .apply_fixed_edit(&request(&f.fixed, edit, keep), &Guild, &policy)
+    apply_edit(&mut f.service, &f.fixed, edit, keep)
         .await
         .unwrap();
     let after = snapshot(&f.service).await;
@@ -825,15 +570,11 @@ async fn keeping_an_amended_run_still_takes_the_roster_and_channel_edit() {
             .iter()
             .any(|r| &r.run_id == run && r.user_id == "1002")
     );
-    let rows = |state: &ScheduleSnapshot| {
-        state
-            .reminders
-            .iter()
-            .filter(|row| &row.run_id == run)
-            .cloned()
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(rows(&after), rows(&before), "kept run's pings untouched");
+    assert_eq!(
+        reminder_rows(&after, run),
+        reminder_rows(&before, run),
+        "kept run's pings untouched"
+    );
     let followed = after.runs.iter().find(|r| r.id == f.runs[0]).unwrap();
     assert_eq!(followed.datetime, utc(kl(31, 22, 0)));
     assert_eq!(followed.channel_id.as_deref(), Some("333"));

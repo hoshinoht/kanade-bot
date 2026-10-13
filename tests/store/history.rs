@@ -10,12 +10,10 @@ use kanade::domain::history::{
 use kanade::domain::schedule::{Change, ReminderPolicy};
 use kanade::domain::scheduler::{ScheduleStore, SchedulerError, Scope};
 use kanade::infrastructure::store::{
-    BackupManifest, MemoryScheduleStore, SqliteStore, SqliteStoreConfig, SqliteStoreError,
+    BackupManifest, MemoryScheduleStore, SqliteStore, SqliteStoreError,
 };
-use sqlx::sqlite::SqliteConnectOptions;
-use sqlx::{ConnectOptions, Connection};
 
-use crate::support::{TempDir, commit, fixed, seed, tamper};
+use crate::support::{TempDir, commit, create, fixed, raw, seed, tamper};
 
 async fn verify<S: ChangeHistory>(store: &S) -> kanade::domain::history::HistoryVerification {
     store.verify_history().await.expect("verify")
@@ -27,16 +25,6 @@ async fn history<S: ScheduleStore>(store: &S, extra: usize) {
     for n in 0..extra {
         commit(store, vec![Change::PutFixedRun(fixed(&format!("f-{n}")))]).await;
     }
-}
-
-async fn raw(config: &SqliteStoreConfig, sql: &str) -> Result<(), sqlx::Error> {
-    let mut conn = SqliteConnectOptions::new()
-        .filename(&config.db_path)
-        .connect()
-        .await?;
-    let result = sqlx::raw_sql(sql).execute(&mut conn).await.map(|_| ());
-    conn.close().await?;
-    result
 }
 
 #[tokio::test]
@@ -423,12 +411,7 @@ async fn rows_from_before_the_history_blame_as_unknown() {
 
     let dir = TempDir::new();
     let config = dir.config("imported");
-    SqliteStore::open(&config)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&config).await;
     // Rows written outside the history, as an import would.
     tamper(
         &config,

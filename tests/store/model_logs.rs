@@ -11,7 +11,7 @@ use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{ConnectOptions, Connection};
 
-use crate::support::{TempDir, tamper};
+use crate::support::{LATE_SCHEMA_DROPS, TempDir, create, raw, tamper};
 
 #[tokio::test]
 async fn an_out_of_range_wire_reasoning_count_is_unknown_and_stored_as_null() {
@@ -96,16 +96,6 @@ async fn an_out_of_range_wire_reasoning_count_is_unknown_and_stored_as_null() {
     store.close().await.expect("close store");
 }
 
-async fn raw(config: &SqliteStoreConfig, sql: &str) -> Result<(), sqlx::Error> {
-    let mut conn = SqliteConnectOptions::new()
-        .filename(&config.db_path)
-        .connect()
-        .await?;
-    let result = sqlx::raw_sql(sql).execute(&mut conn).await.map(|_| ());
-    conn.close().await?;
-    result
-}
-
 async fn count(config: &SqliteStoreConfig, table: &str) -> i64 {
     let mut conn = SqliteConnectOptions::new()
         .filename(&config.db_path)
@@ -138,12 +128,7 @@ const HASH: &str = "000000000000000000000000000000000000000000000000000000000000
 async fn proposal_facts_are_system_admin_rows_and_never_change() {
     let dir = TempDir::new();
     let config = dir.config("proposal-triggers");
-    SqliteStore::open(&config)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&config).await;
     tamper(
         &config,
         &format!(
@@ -188,12 +173,7 @@ async fn proposal_facts_are_system_admin_rows_and_never_change() {
 async fn logs_refuse_updates_but_allow_deletes() {
     let dir = TempDir::new();
     let config = dir.config("log-triggers");
-    SqliteStore::open(&config)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&config).await;
     tamper(
         &config,
         "INSERT INTO extractions (id, at, member_ids, model, prompt, raw_response, request_count, \
@@ -236,12 +216,7 @@ async fn logs_refuse_updates_but_allow_deletes() {
 async fn a_trigger_refusal_is_a_constraint_error() {
     let dir = TempDir::new();
     let config = dir.config("trigger-constraint");
-    SqliteStore::open(&config)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&config).await;
     tamper(
         &config,
         "CREATE TRIGGER refuse_boom BEFORE INSERT ON messages WHEN NEW.id = 'boom'
@@ -274,12 +249,7 @@ async fn a_trigger_refusal_is_a_constraint_error() {
 async fn retention_runs_in_bounded_batches_until_done() {
     let dir = TempDir::new();
     let config = dir.config("prune-batches");
-    SqliteStore::open(&config)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&config).await;
     let old = PRUNE_BATCH * 2 + 1;
     // `n` old rows at 2026-01-01 plus one of each kept: a recent log, and an
     // old unprocessed message.
@@ -362,49 +332,29 @@ async fn retention_runs_in_bounded_batches_until_done() {
 async fn rows_logged_before_context_facts_still_read_after_a_reopen() {
     let dir = TempDir::new();
     let config = dir.config("pre-context-rows");
-    SqliteStore::open(&config)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&config).await;
     // Guardrails as written before `guardrail.context` existed.
     tamper(
         &config,
-        "INSERT INTO extractions (id, at, member_ids, model, prompt, raw_response, request_count, \
-         outcome, guardrail, message_ids, proposal_ids) VALUES ('x-old', \
-         '2026-09-20T00:00:00+00:00', '[]', 'm', 'p', 'r', 1, 'no_change', \
-         '{\"external_unmasked\": true}', '[]', '[]');
-         INSERT INTO chat_interactions (id, at, question, reply, outcome, clean_retry, withheld, \
-         guardrail, request_count) VALUES ('c-old', '2026-09-20T00:00:00+00:00', 'q', 'a', \
-         'answered', 0, 0, '{}', 1);
-         INSERT INTO chat_rounds (interaction_id, ord, model, tool_bundles, tools, tool_calls) \
-         VALUES ('c-old', 0, 'm', '[]', '[]', '[]');
-         ALTER TABLE extractions DROP COLUMN reasoning_content;
-         ALTER TABLE extractions DROP COLUMN reasoning_tokens;
-         ALTER TABLE chat_rounds DROP COLUMN reasoning_content;
-         ALTER TABLE chat_rounds DROP COLUMN reasoning_tokens;
-         ALTER TABLE extractions DROP COLUMN session_id;
-         ALTER TABLE extractions DROP COLUMN request_ids;
-         ALTER TABLE chat_interactions DROP COLUMN session_id;
-         ALTER TABLE chat_rounds DROP COLUMN request_ids;
-         ALTER TABLE web_sessions DROP COLUMN superseded_until;
-         ALTER TABLE web_sessions DROP COLUMN client_tag;
-         ALTER TABLE web_sessions DROP COLUMN device;
-         ALTER TABLE web_sessions DROP COLUMN avatar_hash;
-         DROP TABLE settings_changes;
-         DROP TABLE rewrites;
-         DROP TABLE header_overrides;
-         DROP TABLE idempotency_replays;
-         DROP TABLE auth_audit;
-         DROP TABLE owner_requests;
-         DROP TABLE run_prompts;
-         DROP TABLE roster_fixed_picks;
-         DROP TABLE roster_run_picks;
-         DROP TABLE roster_characters;
-         ALTER TABLE fixed_runs DROP COLUMN owner_pinned;
-         DELETE FROM schema_migrations WHERE version IN (21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40);
-         UPDATE store_meta SET schema_version = 20;",
+        &[
+            "INSERT INTO extractions (id, at, member_ids, model, prompt, raw_response, \
+             request_count, outcome, guardrail, message_ids, proposal_ids) VALUES ('x-old', \
+             '2026-09-20T00:00:00+00:00', '[]', 'm', 'p', 'r', 1, 'no_change', \
+             '{\"external_unmasked\": true}', '[]', '[]');
+             INSERT INTO chat_interactions (id, at, question, reply, outcome, clean_retry, \
+             withheld, guardrail, request_count) VALUES ('c-old', '2026-09-20T00:00:00+00:00', \
+             'q', 'a', 'answered', 0, 0, '{}', 1);
+             INSERT INTO chat_rounds (interaction_id, ord, model, tool_bundles, tools, \
+             tool_calls) VALUES ('c-old', 0, 'm', '[]', '[]', '[]');
+             ALTER TABLE extractions DROP COLUMN reasoning_content;
+             ALTER TABLE extractions DROP COLUMN reasoning_tokens;
+             ALTER TABLE chat_rounds DROP COLUMN reasoning_content;
+             ALTER TABLE chat_rounds DROP COLUMN reasoning_tokens;",
+            LATE_SCHEMA_DROPS,
+            "DELETE FROM schema_migrations WHERE version >= 21;
+             UPDATE store_meta SET schema_version = 20;",
+        ]
+        .concat(),
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("reopens");
@@ -510,45 +460,25 @@ async fn the_profanity_migration_keeps_existing_chat_rows_and_their_children() {
 
     let dir = TempDir::new();
     let config = dir.config("pre-profanity");
-    SqliteStore::open(&config)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&config).await;
     tamper(
         &config,
-        "INSERT INTO chat_interactions (id, at, channel_id, member_id, question, reply, \
-         outcome, clean_retry, withheld, guardrail, request_count, persona) VALUES \
-         ('c-plain', '2026-09-20T00:00:00+00:00', '9', '1', 'q', 'a', 'answered', 0, 0, \
-          '{\"context\": {}}', 1, 'kanade'), \
-         ('c-masked', '2026-09-21T00:00:00+00:00', '9', '2', 'q2', 'a2', 'content_blocked', \
-          1, 1, '{\"pseudonymized\": true}', 2, NULL);
-         INSERT INTO chat_rounds (interaction_id, ord, model, tool_bundles, tools, tool_calls) \
-         VALUES ('c-plain', 0, 'm', '[]', '[\"get_schedule\"]', '[]');
-         INSERT INTO chat_tools VALUES ('c-plain', 'get_schedule');
-         INSERT INTO chat_masked VALUES ('c-masked', '[]', 'a2', '[]');
-         ALTER TABLE extractions DROP COLUMN session_id;
-         ALTER TABLE extractions DROP COLUMN request_ids;
-         ALTER TABLE chat_interactions DROP COLUMN session_id;
-         ALTER TABLE chat_rounds DROP COLUMN request_ids;
-         ALTER TABLE web_sessions DROP COLUMN superseded_until;
-         ALTER TABLE web_sessions DROP COLUMN client_tag;
-         ALTER TABLE web_sessions DROP COLUMN device;
-         ALTER TABLE web_sessions DROP COLUMN avatar_hash;
-         DROP TABLE settings_changes;
-         DROP TABLE rewrites;
-         DROP TABLE header_overrides;
-         DROP TABLE idempotency_replays;
-         DROP TABLE auth_audit;
-         DROP TABLE owner_requests;
-         DROP TABLE run_prompts;
-         DROP TABLE roster_fixed_picks;
-         DROP TABLE roster_run_picks;
-         DROP TABLE roster_characters;
-         ALTER TABLE fixed_runs DROP COLUMN owner_pinned;
-         DELETE FROM schema_migrations WHERE version >= 22;
-         UPDATE store_meta SET schema_version = 21;",
+        &[
+            "INSERT INTO chat_interactions (id, at, channel_id, member_id, question, reply, \
+             outcome, clean_retry, withheld, guardrail, request_count, persona) VALUES \
+             ('c-plain', '2026-09-20T00:00:00+00:00', '9', '1', 'q', 'a', 'answered', 0, 0, \
+              '{\"context\": {}}', 1, 'kanade'), \
+             ('c-masked', '2026-09-21T00:00:00+00:00', '9', '2', 'q2', 'a2', 'content_blocked', \
+              1, 1, '{\"pseudonymized\": true}', 2, NULL);
+             INSERT INTO chat_rounds (interaction_id, ord, model, tool_bundles, tools, tool_calls) \
+             VALUES ('c-plain', 0, 'm', '[]', '[\"get_schedule\"]', '[]');
+             INSERT INTO chat_tools VALUES ('c-plain', 'get_schedule');
+             INSERT INTO chat_masked VALUES ('c-masked', '[]', 'a2', '[]');",
+            LATE_SCHEMA_DROPS,
+            "DELETE FROM schema_migrations WHERE version >= 22;
+             UPDATE store_meta SET schema_version = 21;",
+        ]
+        .concat(),
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("migrates");

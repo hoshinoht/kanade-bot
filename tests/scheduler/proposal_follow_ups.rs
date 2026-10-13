@@ -4,7 +4,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::{DateTime, FixedOffset, NaiveTime, TimeZone, Utc, Weekday};
-use chrono_tz::Asia::Kuala_Lumpur;
 use kanade::bot::delivery::StoreRef;
 use kanade::domain::drafts::{
     DraftCreated, DraftEvent, DraftStatus, DraftStore, DraftUpdate, DraftWrite, LoadedDraft,
@@ -15,9 +14,7 @@ use kanade::domain::history::{Actor, ChangeHistory, ChangeMeta, ChangeRecord, Ch
 use kanade::domain::ids::RandomIds;
 use kanade::domain::members::{Directory, Member};
 use kanade::domain::proposals::{Approver, ChangeKind, Payload, ProposedChange};
-use kanade::domain::schedule::{
-    ChangeSet, Notice, NoticeChange, ReminderPolicy, SchedulePolicy, ScheduleSnapshot,
-};
+use kanade::domain::schedule::{ChangeSet, Notice, NoticeChange, ScheduleSnapshot};
 use kanade::domain::scheduler::{
     Committed, DraftError, ProposalError, ProposalRequest, RecordedRequest, ScheduleStore,
     SchedulerService, Scope, StoreError, Supersede,
@@ -25,6 +22,7 @@ use kanade::domain::scheduler::{
 use kanade::infrastructure::store::MemoryScheduleStore;
 
 use crate::common::TestClock;
+use crate::support;
 
 /// The memory store, with materialise commits and proposal listing
 /// failing while `broken` is set (a crash between merge and follow-ups).
@@ -226,15 +224,7 @@ fn weekly(time: u32) -> ProposedChange {
 
 #[tokio::test]
 async fn a_repeated_approval_finishes_follow_ups_a_crash_left_undone() {
-    let policy = SchedulePolicy::new(
-        ReminderPolicy {
-            zone: Kuala_Lumpur,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
-            countdowns: vec![60, 15],
-        },
-        Weekday::Thu,
-        NaiveTime::MIN,
-    );
+    let policy = support::policy();
     let store = Flaky::default();
     let clock = TestClock::new(kl(27, 1));
     let mut service = SchedulerService::new(StoreRef(&store), RandomIds, clock.clone());

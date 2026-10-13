@@ -2,12 +2,10 @@
 
 use std::collections::BTreeMap;
 
-use chrono::Utc;
+use chrono::{DateTime, FixedOffset, Utc};
 use kanade::domain::{
-    schedule::{
-        FixedField, FixedRunPatch, NewFixedRun, NewRun, ReminderPolicy, RsvpSource, RsvpState,
-        RunSource, RunStatus,
-    },
+    history::Origin,
+    schedule::{FixedField, FixedRunPatch, ReminderPolicy, RsvpSource, RsvpState, RunStatus},
     scheduler::SchedulerError,
     time::isoformat,
 };
@@ -15,8 +13,14 @@ use serde_json::{Value, json};
 
 use crate::common::{
     self, assert_case, clock_time, countdowns, instant, register_materialised, run_ref,
-    step_result, strings, text, utc, weekday, zone,
+    step_result, strings, text, weekday, zone,
 };
+use crate::vector_steps::{add_fixed, create_run};
+
+fn week_starts(step: &Value) -> Vec<DateTime<FixedOffset>> {
+    let weeks = step["week_starts"].as_array().expect("week_starts");
+    weeks.iter().map(instant).collect()
+}
 
 async fn replay(case: &Value) -> Value {
     let input = &case["input"];
@@ -32,46 +36,12 @@ async fn replay(case: &Value) -> Value {
     let mut steps = Vec::new();
     for step in input["steps"].as_array().expect("steps") {
         let result: Result<Value, SchedulerError> = match text(&step["op"]) {
-            "add_fixed" => {
-                let id = service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
-                    .add_fixed_run(NewFixedRun {
-                        owner_pinned: false,
-                        owner_id: text(&step["owner_id"]).into(),
-                        channel_id: Some(text(&step["channel_id"]).into()),
-                        bosses: strings(&step["bosses"]),
-                        weekday: weekday(&step["weekday"]),
-                        time: clock_time(&step["time"]),
-                        participants: strings(&step["participants"]),
-                        note: None,
-                    })
-                    .await
-                    .expect("add_fixed");
-                fixed_refs.insert(text(&step["fixed_key"]).to_owned(), id.clone());
-                Ok(json!(id))
-            }
-            "create_run" => {
-                let id = service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
-                    .create_run(NewRun {
-                        fixed_run_id: None,
-                        channel_id: Some(text(&step["channel_id"]).into()),
-                        week_start: utc(default_week),
-                        datetime: utc(&step["at"]),
-                        bosses: strings(&step["bosses"]),
-                        participants: strings(&step["participants"]),
-                        status: RunStatus::parse(text(&step["status"])).unwrap(),
-                        source: RunSource::parse(text(&step["source"])).unwrap(),
-                    })
-                    .await
-                    .expect("create_run");
-                run_refs.insert(text(&step["run_key"]).to_owned(), id.clone());
-                Ok(json!(id))
-            }
+            "add_fixed" => Ok(add_fixed(&mut service, step, &mut fixed_refs).await),
+            "create_run" => Ok(create_run(&mut service, step, default_week, &mut run_refs).await),
             "materialise" => {
                 let start = instant(step.get("week_start").unwrap_or(default_week));
                 let created = service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
+                    .as_origin(Origin::for_tests())
                     .materialise_week(start, &policy)
                     .await;
                 let week_text = isoformat(&start);
@@ -83,7 +53,7 @@ async fn replay(case: &Value) -> Value {
                 let status = RunStatus::parse(text(&step["status"])).unwrap();
                 let run = run_ref(&run_refs, &step["run_key"]).to_owned();
                 service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
+                    .as_origin(Origin::for_tests())
                     .set_run_status(&run, status)
                     .await
                     .map(|()| json!(status.as_str()))
@@ -94,7 +64,7 @@ async fn replay(case: &Value) -> Value {
                     let run = run_ref(&run_refs, &step["run_key"]).to_owned();
                     let source = RsvpSource::parse(text(&step["source"])).unwrap();
                     service
-                        .as_origin(kanade::domain::history::Origin::for_tests())
+                        .as_origin(Origin::for_tests())
                         .set_rsvp(&run, text(&step["user_id"]), state, source)
                         .await
                         .map(|()| json!(state.as_str()))
@@ -104,7 +74,7 @@ async fn replay(case: &Value) -> Value {
                 let run = run_ref(&run_refs, &step["run_key"]).to_owned();
                 let added = step["added"].as_bool().expect("added");
                 service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
+                    .as_origin(Origin::for_tests())
                     .apply_reaction(&run, text(&step["user_id"]), text(&step["emoji"]), added)
                     .await
                     .map(|result| {
@@ -136,14 +106,9 @@ async fn replay(case: &Value) -> Value {
                         other => panic!("unsupported changed field {other}"),
                     })
                     .collect();
-                let weeks: Vec<_> = step["week_starts"]
-                    .as_array()
-                    .expect("week_starts")
-                    .iter()
-                    .map(instant)
-                    .collect();
+                let weeks = week_starts(step);
                 service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
+                    .as_origin(Origin::for_tests())
                     .edit_fixed_run(&fixed, patch, &changed, &weeks, &policy)
                     .await
                     .map(|count| json!(count))
@@ -152,15 +117,9 @@ async fn replay(case: &Value) -> Value {
                 let fixed = fixed_refs
                     .remove(text(&step["fixed_key"]))
                     .expect("known fixed key");
-                let weeks: Vec<_> = step["week_starts"]
-                    .as_array()
-                    .expect("week_starts")
-                    .iter()
-                    .map(instant)
-                    .collect();
                 service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
-                    .retire_fixed_run(&fixed, &weeks, &policy)
+                    .as_origin(Origin::for_tests())
+                    .retire_fixed_run(&fixed, &week_starts(step), &policy)
                     .await
                     .map(|count| json!(count))
             }

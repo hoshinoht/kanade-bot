@@ -15,6 +15,8 @@ mod reminders_family;
 mod requests;
 mod rollback_previews;
 mod scheduler_family;
+mod support;
+mod vector_steps;
 
 // Vector loading, pinned clock/ids and snapshots shared with the notify target.
 #[path = "../common/mod.rs"]
