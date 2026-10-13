@@ -8,6 +8,7 @@ pub mod maintenance;
 mod observer;
 mod order;
 pub mod replays;
+mod rules;
 pub mod snapshots;
 pub mod sqlite;
 pub mod web_sessions;

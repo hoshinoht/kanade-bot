@@ -336,27 +336,7 @@ pub(super) async fn insert_draft(
     status: DraftStatus,
     expires_week: Option<chrono::DateTime<chrono::Utc>>,
 ) -> Result<StoredDraft, StoreError> {
-    let stored = StoredDraft {
-        id: new.id.clone(),
-        kind: new.kind,
-        title: new.title.clone(),
-        author: new.author.clone(),
-        base: new.base.clone(),
-        base_revision: new.base_revision,
-        version: 1,
-        status,
-        request_type: new.request_type.clone(),
-        subject: new.subject.clone(),
-        merged_seq: None,
-        closed_by: None,
-        close_reason: None,
-        created_at: new.at,
-        updated_at: new.at,
-        scope: match expires_week {
-            None => DraftScope::Weekly,
-            Some(week) => DraftScope::Week(week),
-        },
-    };
+    let stored = crate::infrastructure::store::rules::created_draft(new, status, expires_week);
     execute(
         conn,
         sqlx::query(

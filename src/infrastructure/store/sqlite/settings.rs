@@ -16,6 +16,7 @@ use crate::domain::scheduler::StoreError;
 use crate::domain::settings::{RowDiff, SettingsChange, SettingsChangeQuery, SettingsStore, keys};
 use crate::domain::time::from_iso;
 use crate::infrastructure::store::Written;
+use crate::infrastructure::store::rules::refuse_unknown_settings;
 
 fn key_list() -> String {
     serde_json::Value::from(keys::ALL.to_vec()).to_string()
@@ -50,13 +51,6 @@ pub(super) async fn write(
         .map_err(store_error)?;
     }
     Ok(())
-}
-
-pub(super) fn refuse_unknown(rows: &[(String, String)]) -> Result<(), StoreError> {
-    match rows.iter().find(|(key, _)| !keys::is_setting(key)) {
-        Some((key, _)) => Err(StoreError::Constraint(format!("{key:?} is not a setting"))),
-        None => Ok(()),
-    }
 }
 
 fn encode_values(values: &BTreeMap<String, RowDiff>) -> String {
@@ -172,7 +166,7 @@ impl SettingsStore for SqliteStore {
     }
 
     async fn put_settings_rows(&self, rows: Vec<(String, String)>) -> Result<(), StoreError> {
-        refuse_unknown(&rows)?;
+        refuse_unknown_settings(&rows)?;
         let result = write_txn!(self, tx, write(&mut tx, &rows));
         self.written().after(Written::Settings, result)
     }
@@ -182,7 +176,7 @@ impl SettingsStore for SqliteStore {
         rows: Vec<(String, String)>,
         change: SettingsChange,
     ) -> Result<u64, StoreError> {
-        refuse_unknown(&rows)?;
+        refuse_unknown_settings(&rows)?;
         let result = write_txn!(self, tx, async {
             write(&mut tx, &rows).await?;
             append(&mut tx, &change).await

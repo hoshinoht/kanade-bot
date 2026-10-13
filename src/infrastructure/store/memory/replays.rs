@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 
 use super::members::portal;
-use super::settings::{append, refuse_change, refuse_unknown};
+use super::settings::{append, refuse_change};
 use crate::domain::characters::{
     CharacterChange, CharacterRecord, CharacterWrite, PickChange, PickWrite,
 };
@@ -18,6 +18,7 @@ use crate::infrastructure::store::Written;
 use crate::infrastructure::store::replays::{
     KeyedWrite, PortalRecord, PortalWrite, ReplayScope, ReplayStore, StoredReplay, keyed, replayed,
 };
+use crate::infrastructure::store::rules::refuse_unknown_settings;
 
 pub(super) type ReplayTable = BTreeMap<(ReplayScope, String, String), StoredReplay>;
 
@@ -83,7 +84,7 @@ impl ReplayStore for super::MemoryScheduleStore {
         replay: StoredReplay,
     ) -> Result<(), StoreError> {
         let result = async {
-            refuse_unknown(&rows)?;
+            refuse_unknown_settings(&rows)?;
             if let Some(change) = &change {
                 refuse_change(change)?;
             }

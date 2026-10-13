@@ -10,6 +10,7 @@ use crate::domain::notify::{
     DECLINE_NOTICE_COOLDOWN, DeclineNotice, DeclineNoticeStore, MAX_PENDING_DECLINE_NOTICES,
 };
 use crate::domain::scheduler::{Committed, StoreError};
+use crate::infrastructure::store::rules::check_decline_candidate;
 use crate::infrastructure::store::sqlite::rows;
 
 const COLUMNS: &str = "run_id, user_id, channel_id, reference_id, display_name, message_id, notified_at, retract_pending";
@@ -45,20 +46,6 @@ fn decode(row: &sqlx::sqlite::SqliteRow) -> Result<DeclineNotice, StoreError> {
     })
 }
 
-fn check_candidate(candidate: &DeclineNotice) -> Result<(), StoreError> {
-    let Some(display_name) = &candidate.display_name else {
-        return Err(StoreError::Constraint(
-            "decline notice candidate needs a display name".into(),
-        ));
-    };
-    if display_name.chars().count() > 128 {
-        return Err(StoreError::Constraint(
-            "decline notice display name exceeds 128 characters".into(),
-        ));
-    }
-    Ok(())
-}
-
 /// Upsert a candidate inside its deciding schedule transaction. Bound rows are
 /// retained: S3 only creates candidates after its cooldown/binding checks.
 pub(super) async fn upsert(
@@ -66,7 +53,7 @@ pub(super) async fn upsert(
     candidates: &[DeclineNotice],
 ) -> Result<(), StoreError> {
     for candidate in candidates {
-        check_candidate(candidate)?;
+        check_decline_candidate(candidate)?;
         sqlx::query(
             "INSERT INTO decline_notices
              (run_id, user_id, channel_id, reference_id, display_name, message_id, notified_at, retract_pending)

@@ -4,7 +4,8 @@
 use std::collections::BTreeMap;
 
 use crate::domain::scheduler::StoreError;
-use crate::domain::settings::{SettingsChange, SettingsChangeQuery, SettingsStore, keys};
+use crate::domain::settings::{SettingsChange, SettingsChangeQuery, SettingsStore};
+use crate::infrastructure::store::rules::refuse_unknown_settings;
 
 impl SettingsStore for super::MemoryScheduleStore {
     async fn settings_rows(&self) -> Result<BTreeMap<String, String>, StoreError> {
@@ -13,7 +14,7 @@ impl SettingsStore for super::MemoryScheduleStore {
 
     async fn put_settings_rows(&self, rows: Vec<(String, String)>) -> Result<(), StoreError> {
         let result = async {
-            refuse_unknown(&rows)?;
+            refuse_unknown_settings(&rows)?;
             self.config().extend(rows);
             Ok(())
         }
@@ -28,7 +29,7 @@ impl SettingsStore for super::MemoryScheduleStore {
         change: SettingsChange,
     ) -> Result<u64, StoreError> {
         let result = async {
-            refuse_unknown(&rows)?;
+            refuse_unknown_settings(&rows)?;
             refuse_change(&change)?;
             let mut config = self.config();
             let mut changes = self.changes();
@@ -60,14 +61,6 @@ pub(super) fn matching(
         .collect();
     found.sort_by(|a, b| b.at.cmp(&a.at).then(b.id.cmp(&a.id)));
     found
-}
-
-/// As SQLite's `refuse_unknown`: nothing is written when a key is unknown.
-pub(super) fn refuse_unknown(rows: &[(String, String)]) -> Result<(), StoreError> {
-    match rows.iter().find(|(key, _)| !keys::is_setting(key)) {
-        Some((key, _)) => Err(StoreError::Constraint(format!("{key:?} is not a setting"))),
-        None => Ok(()),
-    }
 }
 
 /// The checks SQLite's `append` makes before it writes.

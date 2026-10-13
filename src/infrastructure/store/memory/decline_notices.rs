@@ -9,6 +9,7 @@ use crate::domain::notify::{
     DECLINE_NOTICE_COOLDOWN, DeclineNotice, DeclineNoticeStore, MAX_PENDING_DECLINE_NOTICES,
 };
 use crate::domain::scheduler::StoreError;
+use crate::infrastructure::store::rules::check_decline_candidate;
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct DeclineNotices {
@@ -17,16 +18,7 @@ pub(super) struct DeclineNotices {
 
 impl DeclineNotices {
     pub(super) fn upsert(&mut self, mut candidate: DeclineNotice) -> Result<(), StoreError> {
-        let Some(display_name) = &candidate.display_name else {
-            return Err(StoreError::Constraint(
-                "decline notice candidate needs a display name".into(),
-            ));
-        };
-        if display_name.chars().count() > 128 {
-            return Err(StoreError::Constraint(
-                "decline notice display name exceeds 128 characters".into(),
-            ));
-        }
+        check_decline_candidate(&candidate)?;
         candidate.notified_at = micros(candidate.notified_at);
         candidate.message_id = None;
         candidate.retract_pending = false;
