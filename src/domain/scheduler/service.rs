@@ -762,14 +762,11 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
             reminder_id: reminder_id.to_owned(),
             fire_at,
         };
-        match self
-            .apply(Scope::Reminder(reminder_id.to_owned()), op)
-            .await?
-            .value
-        {
-            OpResult::Changed(changed) => Ok(changed),
-            other => unreachable!("reschedule_unposted_reminder returned {other:?}"),
-        }
+        Ok(changed(
+            self.apply(Scope::Reminder(reminder_id.to_owned()), op)
+                .await?
+                .value,
+        ))
     }
 
     /// Move unposted day-of pings after the ping time changed.
@@ -789,10 +786,9 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
         let op = Op::FinishRun {
             run_id: run_id.to_owned(),
         };
-        match self.apply(Scope::Run(run_id.to_owned()), op).await?.value {
-            OpResult::Changed(changed) => Ok(changed),
-            other => unreachable!("finish_run returned {other:?}"),
-        }
+        Ok(changed(
+            self.apply(Scope::Run(run_id.to_owned()), op).await?.value,
+        ))
     }
 
     /// v5 (run completion): a prompt press, applied only if the run is still
@@ -803,14 +799,11 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
         policy: &ReminderPolicy,
     ) -> SchedulerResult<bool> {
         let scope = Scope::Run(settle.run_id.clone());
-        match self
-            .apply(scope, Op::SettleRun { settle, policy })
-            .await?
-            .value
-        {
-            OpResult::Changed(changed) => Ok(changed),
-            other => unreachable!("settle_run returned {other:?}"),
-        }
+        Ok(changed(
+            self.apply(scope, Op::SettleRun { settle, policy })
+                .await?
+                .value,
+        ))
     }
 
     /// Materialise the current and next two boss weeks, then reconcile
@@ -950,14 +943,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
             directory,
             policy,
         };
-        let outcome = self.apply(Scope::All, op).await?;
-        match outcome.value {
-            OpResult::Fixed(fixed) => Ok(Outcome {
-                value: fixed,
-                notices: outcome.notices,
-            }),
-            other => unreachable!("apply_fixed_edit returned {other:?}"),
-        }
+        Ok(fixed_outcome(self.apply(Scope::All, op).await?))
     }
 
     /// Pin `pin`'s new owner on the weekly timing (every amended run
@@ -989,10 +975,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
                 .ok_or_else(|| ScheduleError::UnknownFixedRun(fixed_id.to_owned()))?;
             pin.check(fixed).map_err(ScheduleError::Ownership)
         };
-        match self.apply_guarded(Scope::All, op, guard).await?.value {
-            OpResult::Fixed(fixed) => Ok(fixed),
-            other => unreachable!("pin_fixed_owner returned {other:?}"),
-        }
+        fixed(self.apply_guarded(Scope::All, op, guard).await?.value)
     }
 
     /// v4 `update_fixed`: apply an edit, every amended run following it.
@@ -1387,6 +1370,23 @@ fn count(result: OpResult) -> usize {
     match result {
         OpResult::Count(count) => count,
         other => unreachable!("expected a count, got {other:?}"),
+    }
+}
+
+fn changed(result: OpResult) -> bool {
+    match result {
+        OpResult::Changed(changed) => changed,
+        other => unreachable!("expected a changed flag, got {other:?}"),
+    }
+}
+
+fn fixed_outcome(outcome: Outcome<OpResult>) -> Outcome<FixedRun> {
+    match outcome.value {
+        OpResult::Fixed(fixed) => Outcome {
+            value: fixed,
+            notices: outcome.notices,
+        },
+        other => unreachable!("expected a weekly timing, got {other:?}"),
     }
 }
 
