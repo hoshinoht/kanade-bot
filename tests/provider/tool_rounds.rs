@@ -2,42 +2,18 @@
 //! and chat replies validate tool calls leniently (v4) while every other call
 //! kind stays strict.
 
-use super::support::{build_runner, tool_request};
+use super::support::{build_runner, calls_reply, response_call as call, text_reply, tool_request};
 use kanade::infrastructure::llm::{
-    ChatRequest, CompletionResponse, ErrorCode, FakeAction, FinishReason, Message, ToolCall,
-    ToolCallRequest, ToolCallValidation, governor::CallKind,
+    ChatRequest, ErrorCode, FakeAction, Message, ToolCall, ToolCallRequest, ToolCallValidation,
+    governor::CallKind,
 };
 
 fn words() -> FakeAction {
-    FakeAction::Response(CompletionResponse {
-        reasoning_content: None,
-        reasoning_tokens: None,
-        model: "m".into(),
-        content: Some("answered in words".into()),
-        tool_calls: Vec::new(),
-        finish_reason: FinishReason::Stop,
-        usage: None,
-    })
+    FakeAction::Response(text_reply(Some("answered in words".into())))
 }
 
 fn calls(calls: Vec<ToolCall>) -> FakeAction {
-    FakeAction::Response(CompletionResponse {
-        reasoning_content: None,
-        reasoning_tokens: None,
-        model: "m".into(),
-        content: None,
-        tool_calls: calls,
-        finish_reason: FinishReason::ToolCalls,
-        usage: None,
-    })
-}
-
-fn call(id: &str, name: &str, arguments: &str) -> ToolCall {
-    ToolCall {
-        id: id.into(),
-        name: name.into(),
-        arguments: arguments.into(),
-    }
+    FakeAction::Response(calls_reply(calls))
 }
 
 fn round(id: &str, name: &str) -> [Message; 2] {

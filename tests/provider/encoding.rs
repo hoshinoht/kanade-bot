@@ -1,12 +1,31 @@
 use kanade::infrastructure::llm::{
-    CompletionResponse, ErrorCode, ExecutionLimits, FakeAction, FinishReason, Message,
-    OutputSchema, OutputValidation,
+    ChatRequest, CompletionResponse, ErrorCode, ExecutionLimits, Message,
 };
 use serde_json::{Map, Value, json};
 
 use super::support::{
-    build_runner_with, default_retry, request, response, tiny_request, tiny_response,
+    answer_schema, output_schema, request, response, run_once, text_reply, tiny_request,
+    tiny_response,
 };
+
+/// `limits(n)` admits `input`/`output` exactly at `n` and fails with
+/// `over` (after `asked` provider requests) at `n - 1`.
+async fn assert_exact_boundary(
+    input: &ChatRequest,
+    output: CompletionResponse,
+    limits: impl Fn(usize) -> ExecutionLimits,
+    len: usize,
+    over: (Option<ErrorCode>, usize),
+) {
+    assert_eq!(
+        run_once(input, output.clone(), limits(len)).await,
+        (None, 1)
+    );
+    assert_eq!(run_once(input, output, limits(len - 1)).await, over);
+}
+
+const REFUSED: (Option<ErrorCode>, usize) = (Some(ErrorCode::RequestInvalid), 0);
+const REJECTED: (Option<ErrorCode>, usize) = (Some(ErrorCode::InvalidOutput), 1);
 
 #[tokio::test]
 async fn canonical_request_size_matches_serde_json_at_both_boundaries() {
@@ -19,31 +38,11 @@ async fn canonical_request_size_matches_serde_json_at_both_boundaries() {
     };
     input.tools[0].description = Some("description \" \\ \n ☃".repeat(8));
     let encoded_len = serde_json::to_vec(&input).unwrap().len();
-
-    let (provider, runner) = build_runner_with(
-        [FakeAction::Response(response())],
-        ExecutionLimits {
-            max_request_bytes: encoded_len,
-            ..ExecutionLimits::default()
-        },
-        default_retry(),
-    );
-    assert!(runner.complete(&input).await.is_ok());
-    assert_eq!(provider.requests().len(), 1);
-
-    let (provider, runner) = build_runner_with(
-        [FakeAction::Response(response())],
-        ExecutionLimits {
-            max_request_bytes: encoded_len - 1,
-            ..ExecutionLimits::default()
-        },
-        default_retry(),
-    );
-    assert_eq!(
-        runner.complete(&input).await.unwrap_err().code,
-        ErrorCode::RequestInvalid
-    );
-    assert!(provider.requests().is_empty());
+    let limits = |max_request_bytes| ExecutionLimits {
+        max_request_bytes,
+        ..ExecutionLimits::default()
+    };
+    assert_exact_boundary(&input, response(), limits, encoded_len, REFUSED).await;
 }
 
 #[tokio::test]
@@ -62,144 +61,41 @@ async fn canonical_schema_size_matches_serde_json_at_both_boundaries() {
     });
     let schema_len = serde_json::to_vec(&schema).unwrap().len();
     let mut input = tiny_request();
-    input.output_schema = Some(OutputSchema {
-        name: "answer".into(),
-        schema,
-        strict: true,
-        validation: OutputValidation::Runner,
-    });
+    input.output_schema = Some(output_schema("answer", schema));
     let mut output_object = Map::new();
     output_object.insert(key.into(), json!(["ok"]));
-    let output = CompletionResponse {
-        reasoning_content: None,
-        reasoning_tokens: None,
-        model: "m".into(),
-        content: Some(serde_json::to_string(&Value::Object(output_object)).unwrap()),
-        tool_calls: Vec::new(),
-        finish_reason: FinishReason::Stop,
-        usage: None,
+    let output = text_reply(Some(Value::Object(output_object).to_string()));
+    let limits = |max_schema_bytes| ExecutionLimits {
+        max_schema_bytes,
+        ..ExecutionLimits::default()
     };
-
-    let (provider, runner) = build_runner_with(
-        [FakeAction::Response(output.clone())],
-        ExecutionLimits {
-            max_schema_bytes: schema_len,
-            ..ExecutionLimits::default()
-        },
-        default_retry(),
-    );
-    assert!(runner.complete(&input).await.is_ok());
-    assert_eq!(provider.requests().len(), 1);
-
-    let (provider, runner) = build_runner_with(
-        [FakeAction::Response(output)],
-        ExecutionLimits {
-            max_schema_bytes: schema_len - 1,
-            ..ExecutionLimits::default()
-        },
-        default_retry(),
-    );
-    assert_eq!(
-        runner.complete(&input).await.unwrap_err().code,
-        ErrorCode::RequestInvalid
-    );
-    assert!(provider.requests().is_empty());
+    assert_exact_boundary(&input, output, limits, schema_len, REFUSED).await;
 }
 
 #[tokio::test]
 async fn canonical_response_size_matches_serde_json_at_both_boundaries() {
-    let output = CompletionResponse {
-        reasoning_content: None,
-        reasoning_tokens: None,
-        model: "m".into(),
-        content: Some("quote \" slash \\ line\ncontrol\tunicode ☃".repeat(16)),
-        tool_calls: Vec::new(),
-        finish_reason: FinishReason::Stop,
-        usage: None,
-    };
+    let content = "quote \" slash \\ line\ncontrol\tunicode ☃".repeat(16);
+    let output = text_reply(Some(content));
     let response_len = serde_json::to_vec(&output).unwrap().len();
-
-    let (provider, runner) = build_runner_with(
-        [FakeAction::Response(output.clone())],
-        ExecutionLimits {
-            max_response_bytes: response_len,
-            ..ExecutionLimits::default()
-        },
-        default_retry(),
-    );
-    assert!(runner.complete(&tiny_request()).await.is_ok());
-    assert_eq!(provider.requests().len(), 1);
-
-    let (provider, runner) = build_runner_with(
-        [FakeAction::Response(output)],
-        ExecutionLimits {
-            max_response_bytes: response_len - 1,
-            ..ExecutionLimits::default()
-        },
-        default_retry(),
-    );
-    assert_eq!(
-        runner.complete(&tiny_request()).await.unwrap_err().code,
-        ErrorCode::InvalidOutput
-    );
-    assert_eq!(provider.requests().len(), 1);
+    let limits = |max_response_bytes| ExecutionLimits {
+        max_response_bytes,
+        ..ExecutionLimits::default()
+    };
+    assert_exact_boundary(&tiny_request(), output, limits, response_len, REJECTED).await;
 }
 
 #[tokio::test]
 async fn canonical_structured_output_size_matches_serde_json_at_both_boundaries() {
     let mut input = tiny_request();
-    input.output_schema = Some(OutputSchema {
-        name: "answer".into(),
-        schema: json!({
-            "type":"object",
-            "properties":{"answer":{"type":"string"}},
-            "required":["answer"],
-            "additionalProperties":false
-        }),
-        strict: true,
-        validation: OutputValidation::Runner,
-    });
-    let mut output_object = Map::new();
-    output_object.insert(
-        "answer".into(),
-        Value::String("quote \" slash \\ line\ncontrol\tunicode ☃".into()),
-    );
-    let value = Value::Object(output_object);
+    input.output_schema = Some(answer_schema());
+    let value = json!({"answer": "quote \" slash \\ line\ncontrol\tunicode ☃"});
     let output_len = serde_json::to_vec(&value).unwrap().len();
-    let output = CompletionResponse {
-        reasoning_content: None,
-        reasoning_tokens: None,
-        model: "m".into(),
-        content: Some(serde_json::to_string(&value).unwrap()),
-        tool_calls: Vec::new(),
-        finish_reason: FinishReason::Stop,
-        usage: None,
+    let output = text_reply(Some(value.to_string()));
+    let limits = |max_output_bytes| ExecutionLimits {
+        max_output_bytes,
+        ..ExecutionLimits::default()
     };
-
-    let (provider, runner) = build_runner_with(
-        [FakeAction::Response(output.clone())],
-        ExecutionLimits {
-            max_output_bytes: output_len,
-            ..ExecutionLimits::default()
-        },
-        default_retry(),
-    );
-    assert!(runner.complete(&input).await.is_ok());
-    assert_eq!(provider.requests().len(), 1);
-
-    let (provider, runner) = build_runner_with(
-        [FakeAction::Response(output)],
-        ExecutionLimits {
-            max_output_bytes: output_len - 1,
-            ..ExecutionLimits::default()
-        },
-        default_retry(),
-    );
-    assert_eq!(
-        runner.complete(&input).await.unwrap_err().code,
-        ErrorCode::InvalidOutput
-    );
-    assert_eq!(provider.requests().len(), 1);
+    assert_exact_boundary(&input, output, limits, output_len, REJECTED).await;
 }
 
 #[tokio::test]
@@ -209,22 +105,9 @@ async fn encoded_large_all_of_schema_fails_before_provider_or_compilation() {
         serde_json::to_vec(&schema).unwrap().len() > ExecutionLimits::default().max_schema_bytes
     );
     let mut input = tiny_request();
-    input.output_schema = Some(OutputSchema {
-        name: "large".into(),
-        schema,
-        strict: true,
-        validation: OutputValidation::Runner,
-    });
-    let (provider, runner) = build_runner_with(
-        [FakeAction::Response(tiny_response("m"))],
-        ExecutionLimits::default(),
-        default_retry(),
-    );
-    assert_eq!(
-        runner.complete(&input).await.unwrap_err().code,
-        ErrorCode::RequestInvalid
-    );
-    assert!(provider.requests().is_empty());
+    input.output_schema = Some(output_schema("large", schema));
+    let outcome = run_once(&input, tiny_response("m"), ExecutionLimits::default()).await;
+    assert_eq!(outcome, REFUSED);
 }
 
 #[tokio::test]
@@ -241,29 +124,13 @@ async fn encoded_escaping_changes_the_reservation() {
     let escaped_len = serde_json::to_vec(&escaped).unwrap().len();
     assert!(escaped_len > plain_len);
     let budget = u32::try_from(plain_len.div_ceil(4) + plain.max_output_tokens as usize).unwrap();
+    let limits = ExecutionLimits {
+        token_budget: budget,
+        ..ExecutionLimits::default()
+    };
 
-    let (provider, runner) = build_runner_with(
-        [FakeAction::Response(tiny_response("m"))],
-        ExecutionLimits {
-            token_budget: budget,
-            ..ExecutionLimits::default()
-        },
-        default_retry(),
-    );
-    assert!(runner.complete(&plain).await.is_ok());
-    assert_eq!(provider.requests().len(), 1);
-
-    let (provider, runner) = build_runner_with(
-        [FakeAction::Response(tiny_response("m"))],
-        ExecutionLimits {
-            token_budget: budget,
-            ..ExecutionLimits::default()
-        },
-        default_retry(),
-    );
-    assert_eq!(
-        runner.complete(&escaped).await.unwrap_err().code,
-        ErrorCode::BudgetExceeded
-    );
-    assert!(provider.requests().is_empty());
+    let outcome = run_once(&plain, tiny_response("m"), limits.clone()).await;
+    assert_eq!(outcome, (None, 1));
+    let outcome = run_once(&escaped, tiny_response("m"), limits).await;
+    assert_eq!(outcome, (Some(ErrorCode::BudgetExceeded), 0));
 }

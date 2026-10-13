@@ -9,56 +9,32 @@ use kanade::infrastructure::llm::{
 use serde_json::json;
 
 use super::support::{
-    build_runner, deep_schema, default_retry, dispose_json_value_iteratively, request,
-    take_request_schemas, tiny_request, tiny_response, wide_value,
+    deep_schema, default_retry, dispose_json_value_iteratively, output_schema, request, run_once,
+    tiny_request, tiny_response, wide_value,
 };
 
 #[tokio::test]
 async fn deeply_nested_values_are_rejected_before_schema_compilation() {
     let mut input = request();
     input.tools.clear();
-    input.output_schema = Some(OutputSchema {
-        name: "deep".into(),
-        schema: deep_schema(128),
-        strict: true,
-        validation: OutputValidation::Runner,
-    });
-    let (provider, runner) =
-        build_runner([FakeAction::Response(tiny_response("synthetic-model-v1"))]);
-    assert_eq!(
-        runner.complete(&input).await.unwrap_err().code,
-        ErrorCode::RequestInvalid
-    );
-    assert!(provider.requests().is_empty());
-    let schema = input.output_schema.take().unwrap().schema;
-    dispose_json_value_iteratively(schema);
+    input.output_schema = Some(output_schema("deep", deep_schema(128)));
+    let output = tiny_response("synthetic-model-v1");
+    let outcome = run_once(&input, output, ExecutionLimits::default()).await;
+    assert_eq!(outcome, (Some(ErrorCode::RequestInvalid), 0));
+    dispose_json_value_iteratively(input.output_schema.take().unwrap().schema);
 }
 
 #[tokio::test]
 async fn broad_values_are_rejected_before_an_unbounded_work_stack_is_built() {
     let mut input = tiny_request();
-    input.output_schema = Some(OutputSchema {
-        name: "wide".into(),
-        schema: wide_value(50_000),
-        strict: true,
-        validation: OutputValidation::Runner,
-    });
+    input.output_schema = Some(output_schema("wide", wide_value(50_000)));
     let limits = ExecutionLimits {
         max_value_nodes: 4,
         ..ExecutionLimits::default()
     };
-    let (provider, runner) = super::support::build_runner_with(
-        [FakeAction::Response(tiny_response("m"))],
-        limits,
-        default_retry(),
-    );
-    assert_eq!(
-        runner.complete(&input).await.unwrap_err().code,
-        ErrorCode::RequestInvalid
-    );
-    assert!(provider.requests().is_empty());
-    let schema = input.output_schema.take().unwrap().schema;
-    dispose_json_value_iteratively(schema);
+    let outcome = run_once(&input, tiny_response("m"), limits).await;
+    assert_eq!(outcome, (Some(ErrorCode::RequestInvalid), 0));
+    dispose_json_value_iteratively(input.output_schema.take().unwrap().schema);
 }
 
 #[tokio::test]
@@ -260,17 +236,4 @@ fn zero_and_extreme_limits_and_retry_policies_return_typed_errors() {
             Err(error) => assert_eq!(error.code, ErrorCode::RequestInvalid),
         }
     }
-}
-
-#[test]
-fn request_schema_disposal_helper_is_iterative() {
-    let mut input = request();
-    input.output_schema = Some(OutputSchema {
-        name: "small".into(),
-        schema: deep_schema(8),
-        strict: true,
-        validation: OutputValidation::Runner,
-    });
-    take_request_schemas(&mut input);
-    assert!(input.output_schema.is_none());
 }
