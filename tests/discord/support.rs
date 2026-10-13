@@ -228,6 +228,18 @@ pub fn plain_command(name: &str) -> Command {
     }
 }
 
+/// A plain post of `text` that may ping only Alice.
+pub fn outgoing(text: &str) -> kanade::bot::transport::OutgoingMessage {
+    kanade::bot::transport::OutgoingMessage {
+        content: Some(text.to_owned()),
+        embeds: Vec::new(),
+        allowed_mentions: kanade::bot::mentions::allow_users(&["1001"]),
+        reply_to: None,
+        attachments: Vec::new(),
+        components: Vec::new(),
+    }
+}
+
 pub fn role_json(id: u64, permissions: u64) -> Value {
     json!({
         "color": 0,

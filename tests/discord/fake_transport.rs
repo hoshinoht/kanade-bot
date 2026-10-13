@@ -14,20 +14,9 @@ use kanade::bot::transport::{
 };
 
 use super::support::{
-    ALICE, BOB, CHANNEL, GUILD, OWNER, TEXT, channel_json, member_json, message_json, parse,
-    parse_channel, parse_message, user_json,
+    ALICE, BOB, CHANNEL, GUILD, OWNER, TEXT, channel_json, member_json, message_json,
+    outgoing as message, parse, parse_channel, parse_message, user_json,
 };
-
-fn message(text: &str) -> OutgoingMessage {
-    OutgoingMessage {
-        content: Some(text.to_owned()),
-        embeds: Vec::new(),
-        allowed_mentions: mentions::allow_users(&["1001"]),
-        reply_to: None,
-        attachments: Vec::new(),
-        components: Vec::new(),
-    }
-}
 
 #[tokio::test]
 async fn creates_get_sequential_ids_and_are_recorded() {

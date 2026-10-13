@@ -6,9 +6,7 @@
 use kanade::bot::commands::Disposition;
 use kanade::bot::delivery::cards::redesign::{INK_BLUE, SCHEDULE_FOOTER, SCHEDULE_FOOTER_HIDDEN};
 use kanade::bot::transport::InteractionReply;
-use kanade::domain::history::{Actor, ChangeMeta, Origin, Surface};
-use kanade::domain::schedule::{Change, ChangeSet, Run, RunSource, RunStatus};
-use kanade::domain::scheduler::{ScheduleStore, Scope};
+use kanade::domain::schedule::{Change, Run, RunSource, RunStatus};
 use kanade::domain::settings::MessageStyle;
 use serde_json::json;
 
@@ -110,9 +108,8 @@ async fn scopes_weeks_and_hidden_runs_follow_v4() {
     assert_eq!(embed.fields[0].name, "Tue 06 Oct");
 }
 
-#[tokio::test]
-async fn a_one_week_stand_in_shows_its_roster_delta() {
-    let slash = Slash::new().await;
+/// Dan stands in for Bob on `R_KALOS` this week, and Alice answers yes.
+async fn stand_in_dan(slash: &Slash) {
     slash
         .run(
             ALICE,
@@ -131,6 +128,12 @@ async fn a_one_week_stand_in_shows_its_roster_delta() {
             json!([opt("run_id", R_KALOS), opt("answer", "yes")]),
         )
         .await;
+}
+
+#[tokio::test]
+async fn a_one_week_stand_in_shows_its_roster_delta() {
+    let slash = Slash::new().await;
+    stand_in_dan(&slash).await;
     let reply = slash
         .run_in(ALICE, &[BOSSING_ROLE], KALOS, "schedule", json!([]))
         .await;
@@ -249,24 +252,7 @@ async fn the_redesign_titles_your_runs_and_counts_hidden_ones() {
 #[tokio::test]
 async fn the_redesign_names_a_one_week_stand_in() {
     let slash = redesigned().await;
-    slash
-        .run(
-            ALICE,
-            "swap",
-            json!([
-                opt("run_id", R_KALOS),
-                user_opt("out", BOB),
-                user_opt("in", DAN)
-            ]),
-        )
-        .await;
-    slash
-        .run(
-            ALICE,
-            "rsvp",
-            json!([opt("run_id", R_KALOS), opt("answer", "yes")]),
-        )
-        .await;
+    stand_in_dan(&slash).await;
     let reply = slash
         .run_in(ALICE, &[BOSSING_ROLE], KALOS, "schedule", json!([]))
         .await;
@@ -296,24 +282,7 @@ async fn crowd(slash: &Slash, count: u64) {
             })
         })
         .collect();
-    let revision = slash.store.load(&Scope::All).await.unwrap().revision;
-    slash
-        .store
-        .commit(
-            revision,
-            ChangeSet { changes },
-            ChangeMeta {
-                origin: Origin::new(Actor::admin("seed"), Surface::AdminPortal),
-                at: utc(9, 28, 0, 0),
-                notices: Vec::new(),
-                refs: Vec::new(),
-                request_digest: None,
-                expect: Default::default(),
-                outbox: Vec::new(),
-            },
-        )
-        .await
-        .unwrap();
+    super::seed_changes(&slash.store, changes, utc(9, 28, 0, 0)).await;
 }
 
 #[tokio::test]

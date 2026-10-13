@@ -310,6 +310,11 @@ async fn seed(store: &SqliteStore) {
             KALOS,
         )),
     ];
+    seed_changes(store, changes, utc(9, 28, 0, 0)).await;
+}
+
+/// Commits `changes` straight to the store as an admin seed at `at`.
+pub async fn seed_changes(store: &SqliteStore, changes: Vec<Change>, at: DateTime<Utc>) {
     let revision = store.load(&Scope::All).await.unwrap().revision;
     store
         .commit(
@@ -317,7 +322,7 @@ async fn seed(store: &SqliteStore) {
             ChangeSet { changes },
             ChangeMeta {
                 origin: Origin::new(Actor::admin("seed"), Surface::AdminPortal),
-                at: utc(9, 28, 0, 0),
+                at,
                 notices: Vec::new(),
                 refs: Vec::new(),
                 request_digest: None,
