@@ -29,11 +29,16 @@ use kanade::domain::{
     scheduler::{Clock, ScheduleStore, SchedulerError, SchedulerService},
 };
 use kanade::infrastructure::store::{
-    MemoryScheduleStore, SqliteStore, attendance_conformance, card_conformance,
+    MemoryCharData, MemoryScheduleStore, SqliteCharData, SqliteStore, attendance_conformance,
+    auth_audit_conformance, card_conformance, characters_conformance, chardata_conformance,
     cherry_pick_conformance, conformance, decline_conformance, draft_conformance,
-    history_conformance, journal_conformance, model_log_conformance, precondition_conformance,
-    proposal_conformance, web_sessions_conformance,
+    history_conformance, journal_conformance, members_conformance, model_log_conformance,
+    outbox_conformance, owner_request_conformance, picks_conformance, precondition_conformance,
+    proposal_conformance, replay_conformance, run_prompt_conformance, settings_conformance,
+    web_sessions_conformance,
 };
+
+use support::FreshStores;
 
 #[derive(Clone, Copy)]
 struct FixedClock(chrono::DateTime<Utc>);
@@ -203,13 +208,8 @@ async fn memory_slot_swap_conforms() {
 
 #[tokio::test]
 async fn sqlite_slot_swap_conforms() {
-    let dir = support::TempDir::new();
-    let store = swap_conforms(
-        SqliteStore::open(&dir.config("slot-swap"))
-            .await
-            .expect("fresh store opens"),
-    )
-    .await;
+    let fresh = FreshStores::new("slot-swap");
+    let store = swap_conforms(fresh.open().await).await;
     store.close().await.expect("store closes");
 }
 
@@ -220,22 +220,14 @@ async fn memory_slot_swap_respects_non_midnight_reset() {
 
 #[tokio::test]
 async fn sqlite_slot_swap_respects_non_midnight_reset() {
-    let dir = support::TempDir::new();
-    let store = swap_respects_non_midnight_reset(
-        SqliteStore::open(&dir.config("slot-swap-non-midnight"))
-            .await
-            .expect("fresh store opens"),
-    )
-    .await;
+    let fresh = FreshStores::new("slot-swap-non-midnight");
+    let store = swap_respects_non_midnight_reset(fresh.open().await).await;
     store.close().await.expect("store closes");
 }
 
 #[tokio::test]
 async fn memory_members_conform() {
-    kanade::infrastructure::store::members_conformance::run_suite(async || {
-        MemoryScheduleStore::new()
-    })
-    .await;
+    members_conformance::run_suite(async || MemoryScheduleStore::new()).await;
 }
 
 #[tokio::test]
@@ -245,171 +237,94 @@ async fn memory_decline_notices_conform() {
 
 #[tokio::test]
 async fn sqlite_decline_notices_conform() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    decline_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("declines-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("declines");
+    decline_conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]
 async fn sqlite_members_conform() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    kanade::infrastructure::store::members_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("members-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("members");
+    members_conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]
 async fn memory_settings_conform() {
-    kanade::infrastructure::store::settings_conformance::run_suite(async || {
-        MemoryScheduleStore::new()
-    })
-    .await;
+    settings_conformance::run_suite(async || MemoryScheduleStore::new()).await;
 }
 
 #[tokio::test]
 async fn sqlite_settings_conform() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    kanade::infrastructure::store::settings_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("settings-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("settings");
+    settings_conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]
 async fn memory_replays_conform() {
-    kanade::infrastructure::store::replay_conformance::run_suite(async || {
-        MemoryScheduleStore::new()
-    })
-    .await;
+    replay_conformance::run_suite(async || MemoryScheduleStore::new()).await;
 }
 
 #[tokio::test]
 async fn sqlite_replays_conform() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    kanade::infrastructure::store::replay_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("replays-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("replays");
+    replay_conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]
 async fn memory_auth_audit_conforms() {
-    kanade::infrastructure::store::auth_audit_conformance::run_suite(async || {
-        MemoryScheduleStore::new()
-    })
-    .await;
+    auth_audit_conformance::run_suite(async || MemoryScheduleStore::new()).await;
 }
 
 #[tokio::test]
 async fn sqlite_auth_audit_conforms() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    kanade::infrastructure::store::auth_audit_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("audit-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("audit");
+    auth_audit_conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]
 async fn memory_owner_requests_conform() {
-    kanade::infrastructure::store::owner_request_conformance::run_suite(async || {
-        MemoryScheduleStore::new()
-    })
-    .await;
+    owner_request_conformance::run_suite(async || MemoryScheduleStore::new()).await;
 }
 
 #[tokio::test]
 async fn sqlite_owner_requests_conform() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    kanade::infrastructure::store::owner_request_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("owner-requests-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("owner-requests");
+    owner_request_conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]
 async fn memory_run_prompts_conform() {
-    kanade::infrastructure::store::run_prompt_conformance::run_suite(async || {
-        MemoryScheduleStore::new()
-    })
-    .await;
+    run_prompt_conformance::run_suite(async || MemoryScheduleStore::new()).await;
 }
 
 #[tokio::test]
 async fn sqlite_run_prompts_conform() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    kanade::infrastructure::store::run_prompt_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("run-prompts-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("run-prompts");
+    run_prompt_conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]
 async fn memory_characters_conform() {
-    kanade::infrastructure::store::characters_conformance::run_suite(async || {
-        MemoryScheduleStore::new()
-    })
-    .await;
+    characters_conformance::run_suite(async || MemoryScheduleStore::new()).await;
 }
 
 #[tokio::test]
 async fn sqlite_characters_conform() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    kanade::infrastructure::store::characters_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("characters-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("characters");
+    characters_conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]
 async fn memory_chardata_conforms() {
-    kanade::infrastructure::store::chardata_conformance::run_suite(async || {
-        kanade::infrastructure::store::MemoryCharData::new()
-    })
-    .await;
+    chardata_conformance::run_suite(async || MemoryCharData::new()).await;
 }
 
 #[tokio::test]
 async fn sqlite_chardata_conforms() {
     let dir = support::TempDir::new();
     let counter = std::sync::atomic::AtomicUsize::new(0);
-    kanade::infrastructure::store::chardata_conformance::run_suite(async || {
+    chardata_conformance::run_suite(async || {
         let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        kanade::infrastructure::store::SqliteCharData::open(&dir.config(&format!("chardata-{n}")))
+        SqliteCharData::open(&dir.config(&format!("chardata-{n}")))
             .await
             .expect("fresh chardata file opens")
     })
@@ -418,23 +333,13 @@ async fn sqlite_chardata_conforms() {
 
 #[tokio::test]
 async fn memory_picks_conform() {
-    kanade::infrastructure::store::picks_conformance::run_suite(async || {
-        MemoryScheduleStore::new()
-    })
-    .await;
+    picks_conformance::run_suite(async || MemoryScheduleStore::new()).await;
 }
 
 #[tokio::test]
 async fn sqlite_picks_conform() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    kanade::infrastructure::store::picks_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("picks-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("picks");
+    picks_conformance::run_suite(async || fresh.open().await).await;
 }
 
 /// A pick is stored, not recomputed: run and timing picks survive a
@@ -585,23 +490,13 @@ async fn sqlite_role_profiles_preserve_order_across_reopen() {
 
 #[tokio::test]
 async fn memory_outbox_conforms() {
-    kanade::infrastructure::store::outbox_conformance::run_suite(async || {
-        MemoryScheduleStore::new()
-    })
-    .await;
+    outbox_conformance::run_suite(async || MemoryScheduleStore::new()).await;
 }
 
 #[tokio::test]
 async fn sqlite_outbox_conforms() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    kanade::infrastructure::store::outbox_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("outbox-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("outbox");
+    outbox_conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]
@@ -611,15 +506,8 @@ async fn memory_web_sessions_conform() {
 
 #[tokio::test]
 async fn sqlite_web_sessions_conform() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    web_sessions_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("sessions-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("sessions");
+    web_sessions_conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]
@@ -629,15 +517,8 @@ async fn memory_model_logs_conform() {
 
 #[tokio::test]
 async fn sqlite_model_logs_conform() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    model_log_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("logs-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("logs");
+    model_log_conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]
@@ -647,15 +528,8 @@ async fn memory_proposal_cards_conform() {
 
 #[tokio::test]
 async fn sqlite_proposal_cards_conform() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    card_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("cards-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("cards");
+    card_conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]
@@ -665,28 +539,14 @@ async fn memory_proposals_conform() {
 
 #[tokio::test]
 async fn sqlite_proposals_conform() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    proposal_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("proposals-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("proposals");
+    proposal_conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]
 async fn sqlite_store_conforms() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("conform-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("conform");
+    conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]
@@ -696,15 +556,8 @@ async fn memory_journal_conforms() {
 
 #[tokio::test]
 async fn sqlite_journal_conforms() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    journal_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("journal-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("journal");
+    journal_conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]
@@ -714,15 +567,8 @@ async fn memory_drafts_conform() {
 
 #[tokio::test]
 async fn sqlite_drafts_conform() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    draft_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("drafts-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("drafts");
+    draft_conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]
@@ -732,15 +578,8 @@ async fn memory_attendance_conforms() {
 
 #[tokio::test]
 async fn sqlite_attendance_conforms() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    attendance_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("attendance-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("attendance");
+    attendance_conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]
@@ -750,15 +589,8 @@ async fn memory_cherry_picks_conform() {
 
 #[tokio::test]
 async fn sqlite_cherry_picks_conform() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    cherry_pick_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("picks-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("picks");
+    cherry_pick_conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]
@@ -768,15 +600,8 @@ async fn memory_preconditions_conform() {
 
 #[tokio::test]
 async fn sqlite_preconditions_conform() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    precondition_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("preconditions-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("preconditions");
+    precondition_conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]
@@ -786,15 +611,8 @@ async fn memory_history_conforms() {
 
 #[tokio::test]
 async fn sqlite_history_conforms() {
-    let dir = support::TempDir::new();
-    let counter = std::sync::atomic::AtomicUsize::new(0);
-    history_conformance::run_suite(async || {
-        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("history-{n}")))
-            .await
-            .expect("fresh store opens")
-    })
-    .await;
+    let fresh = FreshStores::new("history");
+    history_conformance::run_suite(async || fresh.open().await).await;
 }
 
 #[tokio::test]

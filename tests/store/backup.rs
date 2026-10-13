@@ -14,7 +14,7 @@ use kanade::domain::schedule::{Change, ScheduleSnapshot};
 use kanade::domain::scheduler::{ScheduleStore, Scope};
 use kanade::infrastructure::store::{BackupManifest, Seal, SqliteStore, SqliteStoreError};
 
-use crate::support::{TempDir, commit, fixed, partials, seed, tamper};
+use crate::support::{LATE_SCHEMA_DROPS, TempDir, commit, create, fixed, partials, seed, tamper};
 
 #[tokio::test]
 async fn backup_restores_to_an_equal_store_and_never_overwrites() {
@@ -220,12 +220,7 @@ async fn restore_validates_the_copy_before_publishing() {
     );
 
     let future = dir.config("future");
-    SqliteStore::open(&future)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&future).await;
     tamper(
         &future,
         "INSERT INTO schema_migrations VALUES (41, 'next', '2027-01-01T00:00:00+00:00')",
@@ -250,15 +245,11 @@ async fn restore_validates_the_copy_before_publishing() {
 async fn a_pre_v20_backup_restores_and_migrates() {
     let dir = TempDir::new();
     let old = dir.config("pre-v19");
-    SqliteStore::open(&old)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&old).await;
     tamper(
         &old,
-        "INSERT INTO extractions (id, at, member_ids, model, prompt, raw_response, \
+        &[
+            "INSERT INTO extractions (id, at, member_ids, model, prompt, raw_response, \
          request_count, outcome, guardrail, message_ids, proposal_ids) VALUES ('x-1', \
          '2026-09-01T00:00:00.000000+00:00', '[]', 'm', 'p', 'r', 1, 'no_change', '{}', \
          '[]', '[]');
@@ -279,32 +270,16 @@ async fn a_pre_v20_backup_restores_and_migrates() {
          ALTER TABLE decline_notices DROP COLUMN reference_id;
          INSERT INTO decline_notices (run_id, user_id, channel_id, message_id, notified_at)
          VALUES ('old-run', 'old-member', 'old-channel', 'old-message',
-                 '2026-09-01T00:00:00.000000+00:00');
-         ALTER TABLE extractions DROP COLUMN session_id;
-         ALTER TABLE extractions DROP COLUMN request_ids;
-         ALTER TABLE chat_interactions DROP COLUMN session_id;
-         ALTER TABLE chat_rounds DROP COLUMN request_ids;
-         ALTER TABLE web_sessions DROP COLUMN superseded_until;
-         ALTER TABLE web_sessions DROP COLUMN client_tag;
-         ALTER TABLE web_sessions DROP COLUMN device;
-         ALTER TABLE web_sessions DROP COLUMN avatar_hash;
-         DROP TABLE settings_changes;
-         DROP TABLE rewrites;
-         DROP TABLE header_overrides;
-         DROP TABLE idempotency_replays;
-         DROP TABLE auth_audit;
-         DROP TABLE owner_requests;
-         DROP TABLE run_prompts;
-         DROP TABLE roster_fixed_picks;
-         DROP TABLE roster_run_picks;
-         DROP TABLE roster_characters;
-         ALTER TABLE fixed_runs DROP COLUMN owner_pinned;
-         DELETE FROM schema_migrations WHERE version >= 19;
-         ALTER TABLE extractions DROP COLUMN reasoning_content;
-         ALTER TABLE extractions DROP COLUMN reasoning_tokens;
-         ALTER TABLE chat_rounds DROP COLUMN reasoning_content;
-         ALTER TABLE chat_rounds DROP COLUMN reasoning_tokens;
-         UPDATE store_meta SET schema_version = 18;",
+                 '2026-09-01T00:00:00.000000+00:00');",
+            LATE_SCHEMA_DROPS,
+            "DELETE FROM schema_migrations WHERE version >= 19;
+             ALTER TABLE extractions DROP COLUMN reasoning_content;
+             ALTER TABLE extractions DROP COLUMN reasoning_tokens;
+             ALTER TABLE chat_rounds DROP COLUMN reasoning_content;
+             ALTER TABLE chat_rounds DROP COLUMN reasoning_tokens;
+             UPDATE store_meta SET schema_version = 18;",
+        ]
+        .concat(),
     )
     .await;
     let restored = SqliteStore::restore(&old.db_path, &dir.config("from-pre-v19"))

@@ -1,25 +1,86 @@
 //! Fresh, self-removing temp directories and store fixtures.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use kanade::domain::schedule::{
     Change, ChangeSet, FixedRun, Reminder, Rsvp, RsvpSource, RsvpState, Run, RunSource, RunStatus,
 };
 use kanade::domain::scheduler::{ScheduleStore, Scope};
-use kanade::infrastructure::store::SqliteStoreConfig;
+use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{ConnectOptions, Connection};
 
-/// Run `sql` on a closed database with a plain connection.
-pub async fn tamper(config: &SqliteStoreConfig, sql: &str) {
+/// Run `sql` on the database with a plain connection.
+pub async fn raw(config: &SqliteStoreConfig, sql: &str) -> Result<(), sqlx::Error> {
     let mut conn = SqliteConnectOptions::new()
         .filename(&config.db_path)
         .connect()
-        .await
-        .expect("raw connection");
-    sqlx::raw_sql(sql).execute(&mut conn).await.expect("tamper");
-    conn.close().await.expect("close");
+        .await?;
+    let result = sqlx::raw_sql(sql).execute(&mut conn).await.map(|_| ());
+    conn.close().await?;
+    result
+}
+
+/// Run `sql` on a closed database with a plain connection.
+pub async fn tamper(config: &SqliteStoreConfig, sql: &str) {
+    raw(config, sql).await.expect("tamper");
+}
+
+/// Create the database at `config` on the newest schema, then close it.
+pub async fn create(config: &SqliteStoreConfig) {
+    let store = SqliteStore::open(config).await.expect("opens");
+    store.close().await.expect("close");
+}
+
+/// What the downgrade scripts below v22 all remove first: the session and
+/// request ids, the later web-session columns, and the tables and columns
+/// from settings changes to owner pins.
+pub const LATE_SCHEMA_DROPS: &str = "
+    ALTER TABLE extractions DROP COLUMN session_id;
+    ALTER TABLE extractions DROP COLUMN request_ids;
+    ALTER TABLE chat_interactions DROP COLUMN session_id;
+    ALTER TABLE chat_rounds DROP COLUMN request_ids;
+    ALTER TABLE web_sessions DROP COLUMN superseded_until;
+    ALTER TABLE web_sessions DROP COLUMN client_tag;
+    ALTER TABLE web_sessions DROP COLUMN device;
+    ALTER TABLE web_sessions DROP COLUMN avatar_hash;
+    DROP TABLE settings_changes;
+    DROP TABLE rewrites;
+    DROP TABLE header_overrides;
+    DROP TABLE idempotency_replays;
+    DROP TABLE auth_audit;
+    DROP TABLE owner_requests;
+    DROP TABLE run_prompts;
+    DROP TABLE roster_fixed_picks;
+    DROP TABLE roster_run_picks;
+    DROP TABLE roster_characters;
+    ALTER TABLE fixed_runs DROP COLUMN owner_pinned;
+";
+
+/// Fresh SQLite stores for a conformance suite: one database per store
+/// the suite asks for, all in one temp directory.
+pub struct FreshStores {
+    dir: TempDir,
+    next: AtomicUsize,
+    prefix: &'static str,
+}
+
+impl FreshStores {
+    pub fn new(prefix: &'static str) -> Self {
+        Self {
+            dir: TempDir::new(),
+            next: AtomicUsize::new(0),
+            prefix,
+        }
+    }
+
+    pub async fn open(&self) -> SqliteStore {
+        let n = self.next.fetch_add(1, Ordering::Relaxed);
+        let config = self.dir.config(&format!("{}-{n}", self.prefix));
+        SqliteStore::open(&config).await.expect("fresh store opens")
+    }
 }
 
 /// Entries of `dir` whose name marks a staging leftover.

@@ -7,7 +7,7 @@ use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig, SqliteStoreE
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{ConnectOptions, Connection, Row};
 
-use crate::support::{TempDir, reminder, seed, tamper};
+use crate::support::{LATE_SCHEMA_DROPS, TempDir, create, reminder, seed, tamper};
 
 async fn ledger(config: &SqliteStoreConfig) -> Vec<i64> {
     let mut conn = SqliteConnectOptions::new()
@@ -40,13 +40,7 @@ async fn empty_file_migrates_to_the_newest_version_with_sound_foreign_keys() {
     let empty = store.load(&Scope::All).await.expect("load");
     assert_eq!(empty.revision, 0);
     store.close().await.expect("close");
-    assert_eq!(
-        ledger(&config).await,
-        [
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40
-        ]
-    );
+    assert_eq!(ledger(&config).await, (1..=40).collect::<Vec<_>>());
 }
 
 #[tokio::test]
@@ -63,25 +57,14 @@ async fn reopen_is_idempotent_and_keeps_rows() {
         assert_eq!(store.load(&Scope::All).await.expect("load"), before);
         store.close().await.expect("close");
     }
-    assert_eq!(
-        ledger(&config).await,
-        [
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40
-        ]
-    );
+    assert_eq!(ledger(&config).await, (1..=40).collect::<Vec<_>>());
 }
 
 #[tokio::test]
 async fn changed_migration_checksum_refuses_to_open() {
     let dir = TempDir::new();
     let config = dir.config("checksum");
-    SqliteStore::open(&config)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&config).await;
     tamper(&config, "UPDATE schema_migrations SET checksum = 'edited'").await;
     let error = SqliteStore::open(&config).await.err().expect("refused");
     assert!(
@@ -94,12 +77,7 @@ async fn changed_migration_checksum_refuses_to_open() {
 async fn future_schema_version_refuses_to_open() {
     let dir = TempDir::new();
     let config = dir.config("future");
-    SqliteStore::open(&config)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&config).await;
     tamper(
         &config,
         "INSERT INTO schema_migrations VALUES (41, 'next', '2027-01-01T00:00:00+00:00')",
@@ -118,10 +96,7 @@ async fn future_schema_version_refuses_to_open() {
     );
     assert_eq!(
         ledger(&config).await,
-        [
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41
-        ],
+        (1..=41).collect::<Vec<_>>(),
         "a refused open writes nothing"
     );
 }
@@ -130,12 +105,7 @@ async fn future_schema_version_refuses_to_open() {
 async fn foreign_keys_are_enforced_after_reopen() {
     let dir = TempDir::new();
     let config = dir.config("fk");
-    SqliteStore::open(&config)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&config).await;
     let store = SqliteStore::open(&config).await.expect("reopens");
     seed(&store).await;
     let before = store.load(&Scope::All).await.expect("load");
@@ -161,45 +131,24 @@ async fn foreign_keys_are_enforced_after_reopen() {
 async fn upgrading_from_v19_preserves_declines_and_reenables_foreign_keys() {
     let dir = TempDir::new();
     let config = dir.config("v19-declines");
-    SqliteStore::open(&config)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&config).await;
     tamper(
         &config,
-        "DROP INDEX decline_notices_pending;
-         ALTER TABLE decline_notices DROP COLUMN retract_pending;
-         ALTER TABLE decline_notices DROP COLUMN display_name;
-         ALTER TABLE decline_notices DROP COLUMN reference_id;
-         INSERT INTO decline_notices (run_id, user_id, channel_id, message_id, notified_at)
-         VALUES ('run-19', 'member-19', 'channel-19', 'message-19', '2026-09-01T00:00:00.000000+00:00');
-         ALTER TABLE extractions DROP COLUMN session_id;
-         ALTER TABLE extractions DROP COLUMN request_ids;
-         ALTER TABLE chat_interactions DROP COLUMN session_id;
-         ALTER TABLE chat_rounds DROP COLUMN request_ids;
-         ALTER TABLE web_sessions DROP COLUMN superseded_until;
-         ALTER TABLE web_sessions DROP COLUMN client_tag;
-         ALTER TABLE web_sessions DROP COLUMN device;
-         ALTER TABLE web_sessions DROP COLUMN avatar_hash;
-         DROP TABLE settings_changes;
-         DROP TABLE rewrites;
-         DROP TABLE header_overrides;
-         DROP TABLE idempotency_replays;
-         DROP TABLE auth_audit;
-         DROP TABLE owner_requests;
-         DROP TABLE run_prompts;
-         DROP TABLE roster_fixed_picks;
-         DROP TABLE roster_run_picks;
-         DROP TABLE roster_characters;
-         ALTER TABLE fixed_runs DROP COLUMN owner_pinned;
-         DELETE FROM schema_migrations WHERE version >= 20;
-         ALTER TABLE extractions DROP COLUMN reasoning_content;
-         ALTER TABLE extractions DROP COLUMN reasoning_tokens;
-         ALTER TABLE chat_rounds DROP COLUMN reasoning_content;
-         ALTER TABLE chat_rounds DROP COLUMN reasoning_tokens;
-         UPDATE store_meta SET schema_version = 19;",
+        &format!(
+            "DROP INDEX decline_notices_pending;
+             ALTER TABLE decline_notices DROP COLUMN retract_pending;
+             ALTER TABLE decline_notices DROP COLUMN display_name;
+             ALTER TABLE decline_notices DROP COLUMN reference_id;
+             INSERT INTO decline_notices (run_id, user_id, channel_id, message_id, notified_at)
+             VALUES ('run-19', 'member-19', 'channel-19', 'message-19', '2026-09-01T00:00:00.000000+00:00');
+             {LATE_SCHEMA_DROPS}
+             DELETE FROM schema_migrations WHERE version >= 20;
+             ALTER TABLE extractions DROP COLUMN reasoning_content;
+             ALTER TABLE extractions DROP COLUMN reasoning_tokens;
+             ALTER TABLE chat_rounds DROP COLUMN reasoning_content;
+             ALTER TABLE chat_rounds DROP COLUMN reasoning_tokens;
+             UPDATE store_meta SET schema_version = 19;"
+        ),
     )
     .await;
 
@@ -238,12 +187,7 @@ async fn upgrading_from_v19_preserves_declines_and_reenables_foreign_keys() {
 async fn migration_gap_refuses_to_open() {
     let dir = TempDir::new();
     let config = dir.config("gap");
-    SqliteStore::open(&config)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&config).await;
     tamper(
         &config,
         "INSERT INTO schema_migrations VALUES (0, 'unknown', '2026-01-01T00:00:00+00:00')",
@@ -260,12 +204,7 @@ async fn migration_gap_refuses_to_open() {
 async fn a_version_one_store_gains_the_later_tables_on_open() {
     let dir = TempDir::new();
     let config = dir.config("upgrade");
-    SqliteStore::open(&config)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&config).await;
     // Roll the file back to what a version-1 build left behind.
     tamper(
         &config,
@@ -365,36 +304,15 @@ async fn upgrading_from_v22_adds_append_only_settings_changes() {
 
     let dir = TempDir::new();
     let config = dir.config("v22-settings");
-    SqliteStore::open(&config)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&config).await;
     tamper(
         &config,
-        "ALTER TABLE extractions DROP COLUMN session_id;
-         ALTER TABLE extractions DROP COLUMN request_ids;
-         ALTER TABLE chat_interactions DROP COLUMN session_id;
-         ALTER TABLE chat_rounds DROP COLUMN request_ids;
-         ALTER TABLE web_sessions DROP COLUMN superseded_until;
-         ALTER TABLE web_sessions DROP COLUMN client_tag;
-         ALTER TABLE web_sessions DROP COLUMN device;
-         ALTER TABLE web_sessions DROP COLUMN avatar_hash;
-DROP TABLE settings_changes;
-         DROP TABLE rewrites;
-         DROP TABLE header_overrides;
-         DROP TABLE idempotency_replays;
-         DROP TABLE auth_audit;
-         DROP TABLE owner_requests;
-         DROP TABLE run_prompts;
-         DROP TABLE roster_fixed_picks;
-         DROP TABLE roster_run_picks;
-         DROP TABLE roster_characters;
-         ALTER TABLE fixed_runs DROP COLUMN owner_pinned;
-         DELETE FROM schema_migrations WHERE version >= 23;
-         UPDATE store_meta SET schema_version = 22;
-         INSERT INTO config (key, value) VALUES ('quiet_mode', '1');",
+        &format!(
+            "{LATE_SCHEMA_DROPS}
+             DELETE FROM schema_migrations WHERE version >= 23;
+             UPDATE store_meta SET schema_version = 22;
+             INSERT INTO config (key, value) VALUES ('quiet_mode', '1');"
+        ),
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("v22 migrates");
@@ -464,12 +382,7 @@ async fn upgrading_from_v24_keeps_sessions_and_adds_the_avatar_hash() {
 
     let dir = TempDir::new();
     let config = dir.config("v24-sessions");
-    SqliteStore::open(&config)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&config).await;
     let old = "a".repeat(64);
     tamper(
         &config,
@@ -572,12 +485,7 @@ async fn upgrading_from_v25_keeps_sessions_and_adds_the_device() {
 
     let dir = TempDir::new();
     let config = dir.config("v25-sessions");
-    SqliteStore::open(&config)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&config).await;
     let old = "a".repeat(64);
     tamper(
         &config,
@@ -655,12 +563,7 @@ async fn upgrading_from_v29_keeps_sessions_and_adds_rotation_grace() {
 
     let dir = TempDir::new();
     let config = dir.config("v29-sessions");
-    SqliteStore::open(&config)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&config).await;
     let old = "a".repeat(64);
     tamper(
         &config,
@@ -768,12 +671,7 @@ async fn upgrading_from_v30_adds_replays() {
 
     let dir = TempDir::new();
     let config = dir.config("v30-replays");
-    SqliteStore::open(&config)
-        .await
-        .expect("opens")
-        .close()
-        .await
-        .expect("close");
+    create(&config).await;
     tamper(
         &config,
         "DROP TABLE idempotency_replays;
