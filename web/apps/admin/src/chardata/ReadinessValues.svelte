@@ -1,8 +1,8 @@
 <!--
   One member's readiness (module `character_data`): the level and Combat Power
-  (dropped for the time of a MapleScouter reading, which replaces it) with
-  their source, then the level verdict per boss with that boss's MapleScouter
-  chip ("· crit assumed" when MapleScouter assumed a 100% critical rate; the
+  (dropped for the time of a scouter reading, which replaces it) with
+  their source, then the level verdict per boss with that boss's Estimate
+  chip ("· crit assumed" when the scouter assumed a 100% critical rate; the
   full label in its title). Shown, never judged, never blocking. Drawn by the run sheet's Party tab
   (B_CharReady, B_PhoneCharReady) and the Fixed editor's Characters tab
   (B_FixedReady, B_PhoneFixedReady); `fid` and `bossesFid` are their tags.
@@ -41,7 +41,7 @@
 <div class="ready" class:ready--row={row} role="group" aria-label="Readiness of {character.ign}" data-fid={fid}>
   <span class="ready__line"
     ><span class="ready__values">{line.values}</span><span class="ready__source">{line.source}</span>{#if readAt}<span class="ready__source ready__scouter-at"
-        >MapleScouter · <span class="mono">{dayTime(readAt, timeZone)}</span></span
+        >Estimate · <span class="mono">{dayTime(readAt, timeZone)}</span></span
       >{/if}</span
   >
   <ul class="ready__bosses" data-fid={bossesFid}>

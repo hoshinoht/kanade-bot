@@ -26,7 +26,8 @@
 
 - Boss portraits and entry artwork are intentionally git-ignored deployment assets. Their tests isolate themselves from whatever images happen to exist locally.
 - Treat the root `.env`, `data/`, guides and live persona paths as deployment-private. Model calls go only to the Kanata gateway through `src/infrastructure/llm/`; never add native Ollama endpoints.
-- `scouter/` (git-ignored) is the private MapleScouter sidecar checkout: read it to confirm its API and boss keys, never copy its code into tracked files. Kanade reaches it only through `src/infrastructure/scouter/` (roster IGNs as `ign`/`igns`, nothing else); the scouter→catalog boss keys live in one table there (`keys.rs`), and a new scouter key needs a row and the tracked-catalog test.
+- `scouter/` (git-ignored) is the private scouter sidecar checkout: read it to confirm its API and boss keys, never copy its code into tracked files. Kanade reaches it only through `src/infrastructure/scouter/` (roster IGNs as `ign`/`igns`, nothing else); the scouter→catalog boss keys live in one table there (`keys.rs`), and a new scouter key needs a row and the tracked-catalog test.
+- Never name the private scouter's upstream site in tracked code, copy or docs: say "the scouter" (UI: "Estimate"). Boss knowledge source citations (`boss/knowledge/`) are the only exception.
 
 ## Coding policy
 

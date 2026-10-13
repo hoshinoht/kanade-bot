@@ -6,7 +6,7 @@
 //! /api/admin/fixed/readiness`: each party slot's level (fresh NEXON, else
 //! manual) and power (NEXON combat power from fresh data only, shown, never
 //! judged), its level judged per boss, and per boss the character's
-//! MapleScouter reading once a done mock lookup holds one (`null` before,
+//! scouter reading once a done mock lookup holds one (`null` before,
 //! and while estimates are off). `r-carling`'s party covers every level
 //! verdict.
 

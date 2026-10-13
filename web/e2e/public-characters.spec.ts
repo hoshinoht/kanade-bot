@@ -275,7 +275,7 @@ test('Unlink all: a 503 keeps the key, and Try again finishes the same action', 
   expect(keys[1]).toBe(keys[0]);
 });
 
-test('my MapleScouter lookup: result, then the 30-minute limit names the next time', async ({ page }) => {
+test('my scouter lookup: result, then the 30-minute limit names the next time', async ({ page }) => {
   await openTab(page);
   const dialog = await openEdit(page, 'AsahiKanna');
   const row = dialog.locator('.estimate');
@@ -291,7 +291,7 @@ test('my MapleScouter lookup: result, then the 30-minute limit names the next ti
   await expect(row.getByRole('table')).toBeVisible();
 });
 
-test('my MapleScouter lookup: queued behind the others’ lookups', async ({ page }) => {
+test('my scouter lookup: queued behind the others’ lookups', async ({ page }) => {
   await page.request.post(`${ADMIN}/__mock/estimates`, { data: { scenario: 'queued' } });
   await openTab(page);
   const row = (await openEdit(page, 'AsahiPath')).locator('.estimate');
@@ -301,7 +301,7 @@ test('my MapleScouter lookup: queued behind the others’ lookups', async ({ pag
   await expect(row.getByRole('button', { name: 'Queued…' })).toHaveAttribute('aria-disabled', 'true');
 });
 
-test('my MapleScouter lookup: a failure doesn’t count toward the 30 minutes', async ({ page }) => {
+test('my scouter lookup: a failure doesn’t count toward the 30 minutes', async ({ page }) => {
   await page.request.post(`${ADMIN}/__mock/estimates`, { data: { scenario: 'timeout' } });
   await openTab(page);
   const row = (await openEdit(page, 'AsahiBlaze')).locator('.estimate');
@@ -327,7 +327,7 @@ test('run Party · characters: others show roster level and estimates, only you 
   expect(await others.count()).toBeGreaterThan(0);
   for (const other of await others.all()) await expect(other).not.toContainText('NEXON');
   await expect(others.filter({ hasText: 'roster' }).first()).toBeVisible();
-  await expect(section.getByText('Estimate from MapleScouter')).toBeVisible();
+  await expect(section.getByText('Clear-time estimate')).toBeVisible();
   await expect(section.getByText(ATTRIBUTION)).toBeVisible();
   // The party read itself never carries another member's NEXON data.
   const party = (await (await page.request.get(`${PUBLIC}/api/public/runs/r-carling/characters`)).json()) as { slots: { you: boolean; character: { level_source: string } | null }[] };
@@ -341,7 +341,7 @@ test('run Party · characters on a phone: each slot gains its character line', a
   await page.goto(`${PUBLIC}/?run=r-carling&sw=off`);
   const list = page.getByRole('list', { name: 'Party characters' });
   await expect(list.locator('.member-slot--chars').first()).toContainText('NEXON · as of 29 Sep · only you see this');
-  await expect(page.locator('.party-chars__note')).toContainText('Estimate from MapleScouter');
+  await expect(page.locator('.party-chars__note')).toContainText('Clear-time estimate');
 });
 
 test('other members’ characters, lookups and runs are the generic 404', async ({ page }) => {

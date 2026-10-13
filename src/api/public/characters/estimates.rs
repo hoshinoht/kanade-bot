@@ -1,4 +1,4 @@
-//! The member's own MapleScouter lookups (module `character_data` with
+//! The member's own scouter lookups (module `character_data` with
 //! `KANADE_SCOUTER_URL`): one of their characters at a time, through the
 //! one queue the admins use (behind every lookup already waiting). A
 //! member starts at most one lookup per 30 minutes; a lookup that fails
@@ -98,12 +98,12 @@ pub(super) async fn start(
         MissingReason::OtherRegion => Refusal::new(
             StatusCode::UNPROCESSABLE_ENTITY,
             "region",
-            "MapleScouter covers MapleSEA characters only.",
+            "Estimates cover MapleSEA characters only.",
         ),
         _ => Refusal::new(
             StatusCode::UNPROCESSABLE_ENTITY,
             "unsupported_ign",
-            "MapleScouter can't look up this IGN.",
+            "This IGN can't be looked up for an estimate.",
         ),
     })?;
     let target = Target::Characters(vec![character.id.clone()]);

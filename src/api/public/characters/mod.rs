@@ -2,11 +2,11 @@
 //! (add, edit, retire; never delete) with module `roster`, and with module
 //! `character_data` the NEXON lookup preview, the link notice (v1, word for
 //! word as Discord's), Link / Cancel / Unlink, My data and their own
-//! MapleScouter lookups; and, on a run they are on, the party's characters.
+//! scouter lookups; and, on a run they are on, the party's characters.
 //!
 //! Every route answers the generic `404` while its module is off, before
 //! the session is checked (`roster`; `character_data` for the NEXON and
-//! estimate routes; MapleScouter's URL for the estimates). A character that
+//! estimate routes; the scouter URL for the estimates). A character that
 //! is not the caller's answers the same generic `404` as an unknown id, and
 //! another member's lookup job is `404` too. Roster writes and Link take a
 //! member write token, an `Idempotency-Key` and a fresh sign-in; Unlink

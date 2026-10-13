@@ -2,7 +2,7 @@
 //! Nexon client does: one connection per call, a whole-exchange timeout, a
 //! capped body, redirects never followed. A lookup's query is built here
 //! and only here, from [`RosterIgn`]s: `ign=<IGN>` or `igns=<A>,<B>,…`.
-//! Nothing else is ever sent (no preset, no `assume_crit`: MapleScouter's
+//! Nothing else is ever sent (no preset, no `assume_crit`: the scouter's
 //! default assumes 100% critical rate below it and labels the result; no
 //! Nexon field, no cookie or credential).
 
@@ -27,7 +27,7 @@ use super::{
 /// The sidecar may hold a request up to 60 s in its own queue, then works
 /// up to 120 s on it (its write timeout is 190 s); kanade waits that long.
 pub const TIMEOUT: Duration = Duration::from_secs(190);
-/// MapleScouter's batch limit.
+/// The scouter's batch limit.
 pub const MAX_BATCH: usize = 6;
 pub const PATH: &str = "/v1/bosses";
 const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
@@ -38,7 +38,7 @@ const BUSY_RETRY: u32 = 5;
 /// A lookup that produced no estimate.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LookupError {
-    /// An error answer: the HTTP status, MapleScouter's error code (letters
+    /// An error answer: the HTTP status, the scouter's error code (letters
     /// and `_` only, else `unknown`), the IGN it names, if any, and the
     /// `Retry-After` seconds of a 429. Its message is never kept.
     Refused {
@@ -135,7 +135,7 @@ impl ScouterClient {
     /// `GET /v1/bosses?igns=<A>,<B>,…` (1 to [`MAX_BATCH`] unique IGNs),
     /// waiting at most `within`.
     pub async fn batch(&self, igns: &[RosterIgn], within: Duration) -> Result<Batch, LookupError> {
-        // The caller dedupes and caps; MapleScouter would refuse it anyway.
+        // The caller dedupes and caps; the scouter would refuse it anyway.
         if !(1..=MAX_BATCH).contains(&igns.len()) {
             return Err(LookupError::Unreadable { status: None });
         }
@@ -296,7 +296,7 @@ mod tests {
         assert_eq!(query(std::slice::from_ref(&mika), false), "ign=MikaBish");
         assert_eq!(query(&[mika.clone(), ren], true), "igns=MikaBish,RenShade");
         assert_eq!(mika.key(), "mikabish");
-        // Level, class and anything outside MapleScouter's rule never pass.
+        // Level, class and anything outside the scouter's rule never pass.
         for ign in ["", "Mika Bish", "Mika&preset=1", "Mikä", &"a".repeat(33)] {
             assert_eq!(RosterIgn::of(&roster(ign)), None, "{ign:?}");
         }

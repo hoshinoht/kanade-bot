@@ -4,7 +4,7 @@
   portal's M_CharEdit, M_CharStates2): the manual roster values beside
   NEXON's (never copied over), the link state and its actions. The
   attribution shows wherever NEXON data does. Module off: the link route
-  answers the generic 404 and nothing is drawn. A MapleScouter estimate row
+  answers the generic 404 and nothing is drawn. A scouter estimate row
   follows while estimates are on.
 
   Admin: Link… (a pending request the member confirms in Discord), Unlink…

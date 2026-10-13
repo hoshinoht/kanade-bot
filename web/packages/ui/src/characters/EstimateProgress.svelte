@@ -1,5 +1,5 @@
 <!--
-  A MapleScouter lookup on its way: waiting in line ("Queued · 2 ahead", a
+  A scouter lookup on its way: waiting in line ("Queued · 2 ahead", a
   flat bar and the time waited) or being looked up (who, the time so far, a
   bar of up to 2 minutes or of the characters done), and that the page can be
   closed. A member's line also says whose lookups share the line.

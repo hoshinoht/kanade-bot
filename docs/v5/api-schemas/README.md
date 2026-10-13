@@ -65,7 +65,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `POST /api/public/me/estimates` | body `public.json#/$defs/MemberEstimateRequest`; `202` `character_data.json#/$defs/EstimateStarted` (one of the caller's characters (else the generic 404) in the admins' FIFO queue; a lookup of it already queued or running answers that job; one counted start per 30 min per member, else 429 `public.json#/$defs/MemberEstimateLimit` with `next_at`; a failed lookup or an answer from the 24-hour memory does not count; 429 `estimate_queue_full`; 422 `region`/`unsupported_ign`; no fresh sign-in) |
 | `GET /api/public/me/estimates?character_id=<id>` | `character_data.json#/$defs/EstimateStatus` (that character's newest job; `running` only when it is a lookup of the caller's own characters) |
 | `GET /api/public/me/estimates/{job}` | `character_data.json#/$defs/EstimateJob` (only a lookup of the caller's own characters, else the generic 404) |
-| `GET /api/public/runs/{id}/characters` | `public.json#/$defs/RunPartyCharacters` (module `roster`; a run the caller is on, else 404 `not_found` as for a run that does not exist; each party member's IGN, class and roster level (the caller's own NEXON level when linked), their cached MapleScouter readings per boss; never another member's NEXON data or link state) |
+| `GET /api/public/runs/{id}/characters` | `public.json#/$defs/RunPartyCharacters` (module `roster`; a run the caller is on, else 404 `not_found` as for a run that does not exist; each party member's IGN, class and roster level (the caller's own NEXON level when linked), their cached scouter readings per boss; never another member's NEXON data or link state) |
 | `GET /api/admin/session` | `identity.json#/$defs/Session` |
 | `GET /api/admin/me` | `identity.json#/$defs/Me` |
 | `GET /api/admin/me/sessions` | `identity.json#/$defs/AccountSessions` |
@@ -100,7 +100,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `POST /api/admin/characters/{id}/link` | `201` `character_data.json#/$defs/CharacterLink` (body `LinkRequest`; the link becomes `pending` and no Open API call is made until the member confirms in Discord; 422 `version_required`, 409 `stale` for another link version, 409 `already_linked`, 409 `not_connected` without a Nexon key, 409 `retired`, 422 `region` for a non-`msea` character, 404 `not_found`; Idempotency-Key as the character POST; adds one History settings row, section `characters`, key `link.<id>`, values `unlinked`/`pending`/`linked`/`stale` and the actor only) |
 | `DELETE /api/admin/characters/{id}/link` | `common.json#/$defs/Message` (deletes the link and all its Nexon data in one write, makes the character's tracked Discord posts due for stripping at once; 404 `not_linked`; Idempotency-Key and History as the POST). Deleting a roster character, or changing its IGN, region or member, unlinks it the same way after the roster write commits |
 | `POST /api/admin/characters/{id}/refresh` | `character_data.json#/$defs/CharacterLink` (fetches now, at any time: `basic` + `stat`, plus `id` when the ocid is missing or 29 days old, from the shared 800-call 24-hour budget; 409 `not_linked` unless active on an active character, 409 `not_connected`, 503 `nexon_unavailable` while calls are held (key refused, maintenance); a failed fetch still answers 200 with `refresh.last_error`; a retry with the same Idempotency-Key replays the first answer) |
-| `GET /api/admin/runs/{id}/readiness` | `character_data.json#/$defs/RunReadiness` (module `character_data`, generic 404 before the session check while off; 404 `not_found` for a run that is gone; the slots of `GET …/characters` (what each member brings and its `basis`, recomputed; `candidates` counts their active characters), each with its level (fresh NEXON level, else the manual roster level), power (NEXON combat power, only from an active link's unexpired data; shown, never judged) and per boss of the run a level verdict against the knowledge `entry_level` and the character's MapleScouter reading (`scouter`: share, rating, minutes, `fetched_at`) when the estimates' 24-hour memory holds a successful lookup of that character, alone or in a party (the newest); `null` otherwise and always while estimates are off; never starts a lookup; computed on read, never stored, never blocking) |
+| `GET /api/admin/runs/{id}/readiness` | `character_data.json#/$defs/RunReadiness` (module `character_data`, generic 404 before the session check while off; 404 `not_found` for a run that is gone; the slots of `GET …/characters` (what each member brings and its `basis`, recomputed; `candidates` counts their active characters), each with its level (fresh NEXON level, else the manual roster level), power (NEXON combat power, only from an active link's unexpired data; shown, never judged) and per boss of the run a level verdict against the knowledge `entry_level` and the character's scouter reading (`scouter`: share, rating, minutes, `fetched_at`) when the estimates' 24-hour memory holds a successful lookup of that character, alone or in a party (the newest); `null` otherwise and always while estimates are off; never starts a lookup; computed on read, never stored, never blocking) |
 | `GET /api/admin/fixed/{id}/readiness` | `character_data.json#/$defs/TimingReadiness` (modules `roster` and `character_data`; the saved timing's party and bosses, each slot as `GET /api/admin/fixed/{id}/characters` resolves it, with the values and verdicts of `RunReadiness`; 404 `not_found` for a timing that is gone) |
 | `POST /api/admin/fixed/readiness` | `character_data.json#/$defs/TimingReadiness` (body `TimingPreview`: the Fixed editor's bosses and party as they stand and the timing they edit, absent for a new one; picks count only for members of the saved party, the rest bring their default; unknown boss tokens are left out; CSRF; nothing written; 404 `not_found` for a timing that is gone, 422 `invalid` past 64 bosses or members, 400 `invalid_body`) |
 | `POST /api/admin/estimates` | `202` `character_data.json#/$defs/EstimateStarted` (body `EstimateRequest`: `character_ids` (1 to 6) or `run_id`, optional `refresh`; module `character_data` with `KANADE_SCOUTER_URL`: every estimate route answers the generic 404, before the session check, while the module is off or the URL unset; CSRF; nothing stored, no History row. A run looks up the character each party member brings (as `GET …/characters` resolves it); members without one are `missing`. Jobs wait in one FIFO line and run one at a time: a new job is `queued` with its `position`, or `running` when nothing is ahead; a target already queued or running answers that job; the job is already `done` with `cache_hit` when the 24-hour memory holds the same IGN set; 429 `estimate_queue_full` when 16 jobs wait already; 422 `invalid`, `region` (not MapleSEA), `unsupported_ign`, `nothing_to_look_up`, `too_many`; 404 `not_found` for an unknown character or run; 400 `invalid_body` for any other field) |
@@ -251,7 +251,7 @@ Pointers are `<file>#/$defs/<Name>`.
   `PresenceHere`, `PresenceList`, `PresenceEntry`) for
   `PUT`/`GET`/`DELETE /api/admin/presence`; the events stream adds topic
   `presence` (someone arrived at, left or changed mode at a place).
-- MapleScouter estimates (2026-10-12): `character_data.json`
+- Scouter estimates (2026-10-12): `character_data.json`
   `EstimateRequest`, `EstimateStarted`, `EstimateStatus`, `EstimateJob`,
   `EstimateResult`, `EstimateError` for `/api/admin/estimates`, and
   `CharacterDataHealth.scouter` (`ScouterHealth`: `off`, `ok`,
@@ -261,7 +261,7 @@ Pointers are `<file>#/$defs/<Name>`.
   `GET /api/admin/runs/{id}/readiness` (each slot's level and power, and a
   level verdict per boss against its knowledge `entry_level`).
   `BossReadiness.scouter` (`ScouterReading`, or `null`) carries the
-  character's cached MapleScouter reading per boss; `ReadinessPower.kind`
+  character's cached scouter reading per boss; `ReadinessPower.kind`
   is only `nexon_cp` (the reserved `scouter` kind is removed).
 - Admin refresh and privacy link (2026-10-12): `RefreshInfo.refreshable_at`
   and `429 refresh_cap` are removed (an admin may refresh at any time;
@@ -296,6 +296,12 @@ Pointers are `<file>#/$defs/<Name>`.
   `MyCharacterPatch`, `MemberLookupRequest`, `LinkNotice`, `LinkConfirm`,
   `LinkOutcome`, `LinkCancelled`, `Unlinked`, `UnlinkedAll`, `MyData`,
   `MemberEstimateRequest`, `MemberEstimateLimit` and `RunPartyCharacters`
-  for the member's own characters, NEXON consent and MapleScouter lookups on
+  for the member's own characters, NEXON consent and scouter lookups on
   the portal; `character_data.json` `CharacterLink.consent_surface`
   (`discord` | `portal`, optional so earlier responses stay valid).
+- Estimate wording (2026-10-14): the consts `EstimateJob.label` and
+  `RunPartyCharacters.estimate_label` become `Clear-time estimate`,
+  `EstimateJob.note` and `RunPartyCharacters.estimate_note` become
+  `For planning only, not eligibility`, and the `EstimateError.message`
+  values `busy` and `critical_rate` become `The scouter is busy.` and
+  `Set up critical rate on the scouter first.` (no field changes).

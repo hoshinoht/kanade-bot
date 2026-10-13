@@ -1,5 +1,5 @@
 /**
- * Character data routes (module `character_data`, MapleScouter estimates):
+ * Character data routes (module `character_data`, scouter estimates):
  * there is no session flag for the module, so the first generic 404 (the
  * module off, or no scouter URL) is remembered for the session and nothing
  * more is asked or drawn, as the roster's `rosterRoutes` does.
@@ -12,7 +12,7 @@ export const chardataRoutes = $state({ gone: false, estimatesGone: false });
 
 /**
  * Lookup steps this tab saw finish (a character found or failed, or a whole
- * lookup, any target): readiness reads it, so its MapleScouter chips follow
+ * lookup, any target): readiness reads it, so its Estimate chips follow
  * an Estimate panel or strip lookup as each character comes in.
  */
 export const estimateEnds = $state({ count: 0 });
@@ -146,7 +146,7 @@ export function adminEstimateApi(target: { character_ids: string[] } | { run_id:
   };
 }
 
-/** A lookup step finished: readiness re-reads its MapleScouter chips. */
+/** A lookup step finished: readiness re-reads its Estimate chips. */
 export function estimateStep(): void {
   estimateEnds.count += 1;
 }

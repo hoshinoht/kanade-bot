@@ -6,6 +6,9 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 _In development_
 
+### Changes
+- Estimates are now labelled “Estimate” on the portals and in Discord.
+
 ## 1.0.0-beta.7
 
 _13 Oct 2026_
@@ -30,10 +33,10 @@ Character data from NEXON and a simpler setup: members link and manage their Map
 - The run sheet's Party tab names the character each member brings: the run's pick, else the weekly timing's pick, their main or their only character.
 - The Party tab warns, without blocking, when a character is already on another run this boss week for a shared boss.
 - With character data on, the Party tab shows each character's level and Combat Power with source and date, plus a level verdict per boss.
-- Added MapleScouter clear-time estimates for a run's party or one character, marked for planning only; set `KANADE_SCOUTER_URL` to a private scouter to turn them on ([runbook](deploy/README.md#maplescouter-estimates)).
+- Added scouter clear-time estimates for a run's party or one character, marked for planning only; set `KANADE_SCOUTER_URL` to a private scouter to turn them on ([runbook](deploy/README.md#scouter-estimates)).
 - The Fixed editor gains a Characters tab to pick the character each member brings to a weekly timing, with the same readiness lines.
-- Added Account › Characters on the public portal, where members add, edit, retire and link their own characters and run their own MapleScouter lookups.
-- A run's pane on the public portal shows Party · characters: each member's IGN, class and level, and cached MapleScouter estimates per boss.
+- Added Account › Characters on the public portal, where members add, edit, retire and link their own characters and run their own estimate lookups.
+- A run's pane on the public portal shows Party · characters: each member's IGN, class and level, and cached estimates per boss.
 - Inbox member requests and the run sheet show which other admins have them open and who is editing; it's a hint, never a lock.
 - History has a Graph tab that draws your drafts as lanes beside the changes, with keyboard navigation and Go to #.
 - Redesigned day-of and countdown cards end with an "Open in portal" button while the public portal is open.

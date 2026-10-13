@@ -1,9 +1,9 @@
-//! `character_data.json` estimates: MapleScouter lookup jobs (module
+//! `character_data.json` estimates: scouter lookup jobs (module
 //! `character_data` with `KANADE_SCOUTER_URL`). Bosses are catalog tokens
-//! (`HLimbo`); MapleScouter's other cards are left out. Every job carries
-//! the binding labels "Estimate from MapleScouter" and "Estimate for
-//! planning only, not eligibility"; a member whose critical rate was
-//! assumed says so (`critical_rate_assumed`).
+//! (`HLimbo`); the scouter's other cards are left out. Every job carries
+//! the binding labels "Clear-time estimate" and "For planning only, not
+//! eligibility"; a member whose critical rate was assumed says so
+//! (`critical_rate_assumed`).
 
 use std::collections::BTreeMap;
 
@@ -18,8 +18,8 @@ use crate::{
     },
 };
 
-pub const LABEL: &str = "Estimate from MapleScouter";
-pub const NOTE: &str = "Estimate for planning only, not eligibility";
+pub const LABEL: &str = "Clear-time estimate";
+pub const NOTE: &str = "For planning only, not eligibility";
 
 /// `GET /api/admin/estimates?character_ids=|run_id=`.
 #[derive(Serialize)]
@@ -62,7 +62,7 @@ pub struct EstimateJob {
     /// Party members not looked up (listed as missing, never 0%).
     pub missing: Vec<EstimateMissing>,
     pub progress: EstimateProgress,
-    /// When the result came from MapleScouter (a cached result keeps its
+    /// When the result came from the scouter (a cached result keeps its
     /// first time); `null` until the job is done.
     pub fetched_at: Option<String>,
     /// The characters found so far (while queued or running too) and,
@@ -71,9 +71,9 @@ pub struct EstimateJob {
     /// `failed`: why nobody was found. `done`: why the party total is
     /// missing although characters were found (`character_id` null).
     pub error: Option<EstimateError>,
-    /// `Estimate from MapleScouter`.
+    /// `Clear-time estimate`.
     pub label: &'static str,
-    /// `Estimate for planning only, not eligibility`.
+    /// `For planning only, not eligibility`.
     pub note: &'static str,
 }
 
@@ -118,7 +118,7 @@ pub struct EstimateProgress {
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct EstimateResult {
-    /// Answered from kanade's 24-hour memory without calling MapleScouter.
+    /// Answered from kanade's 24-hour memory without calling the scouter.
     pub cache_hit: bool,
     /// Done, no party member missing or failed, and every total complete.
     pub complete: bool,
@@ -135,14 +135,14 @@ pub struct EstimateResult {
 pub struct EstimateMember {
     pub character_id: String,
     pub ign: String,
-    /// The preset MapleScouter read (`00010`).
+    /// The preset the scouter read (`00010`).
     pub preset: String,
-    /// The character's critical rate is under 100% and MapleScouter
+    /// The character's critical rate is under 100% and the scouter
     /// assumed exactly 100%: label it "Assumes 100% critical rate (actual
     /// N%)" wherever its numbers show.
     pub critical_rate_assumed: bool,
     /// The character's own critical rate with an assumed result; `null`
-    /// otherwise, or when MapleScouter didn't say.
+    /// otherwise, or when the scouter didn't say.
     pub critical_rate_actual: Option<f64>,
     /// Catalog bosses only, in catalog order.
     pub bosses: Vec<EstimateBoss>,
@@ -153,9 +153,9 @@ pub struct EstimateMember {
 pub struct EstimateBoss {
     /// Catalog token, e.g. `HLimbo`.
     pub boss: String,
-    /// As MapleScouter shows it (a `[Party]` card's whole-party figure).
+    /// As the scouter shows it (a `[Party]` card's whole-party figure).
     pub percentage: f64,
-    /// This character's share; `null` when MapleScouter can't tell.
+    /// This character's share; `null` when the scouter can't tell.
     pub effective_percentage: Option<f64>,
     pub estimated_minutes: Option<f64>,
     pub rating: String,
@@ -183,7 +183,7 @@ pub struct EstimateIssue {
     pub character_id: Option<String>,
     /// `missing_boss`: no card for this boss; `unknown_benchmark_players`:
     /// a `[Party]` card with an unknown party size; `not_covered`:
-    /// MapleScouter has no card for this boss at all.
+    /// the scouter has no card for this boss at all.
     #[cfg_attr(
         test,
         ts(type = "'missing_boss' | 'unknown_benchmark_players' | 'not_covered' | 'other'")
@@ -204,9 +204,9 @@ pub struct EstimateError {
     )]
     pub code: &'static str,
     pub message: &'static str,
-    /// MapleScouter's HTTP status; `null` without an answer.
+    /// The scouter's HTTP status; `null` without an answer.
     pub status: Option<u16>,
-    /// MapleScouter's error code (`busy`, `upstream_rate_limited`,
+    /// The scouter's error code (`busy`, `upstream_rate_limited`,
     /// `lookup_timeout`, `result_mismatch`, …) or `timeout`, `unreachable`,
     /// `unreadable`.
     pub detail: String,
@@ -217,8 +217,8 @@ pub struct EstimateError {
 
 fn message(kind: FailureKind) -> &'static str {
     match kind {
-        FailureKind::Busy => "MapleScouter is busy.",
-        FailureKind::CriticalRate => "Set up critical rate on MapleScouter first.",
+        FailureKind::Busy => "The scouter is busy.",
+        FailureKind::CriticalRate => "Set up critical rate on the scouter first.",
         FailureKind::ManualCheck => "Scouter needs a manual check.",
         FailureKind::Failed => "Lookup failed.",
     }
@@ -308,7 +308,7 @@ fn combined(
     }
 }
 
-/// A run boss with no total: nobody found has the card, or MapleScouter
+/// A run boss with no total: nobody found has the card, or the scouter
 /// has none.
 fn uncovered(token: &str, found: &[&Subject]) -> EstimateCombined {
     let issues = if scouter_keys(token).next().is_none() {

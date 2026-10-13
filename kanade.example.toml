@@ -127,7 +127,7 @@ bossing_role_id = "223456789012345678"
 # The Open API key (one line). Unset: links are refused; set but
 # unreadable: startup is refused.
 # nexon_key_file = "/run/secrets/nexon_api_key"
-# The private MapleScouter sidecar for clear-time estimates (admins; members for
+# The private scouter sidecar for clear-time estimates (admins; members for
 # their own characters). Plain http to a loopback, private or single-label host;
 # no secret. Unset: estimates off.
 # scouter_url = "http://scouter:8091"

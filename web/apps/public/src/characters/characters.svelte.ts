@@ -2,7 +2,7 @@
 // docs/research/2026-10-13-member-characters): their roster rows, links and
 // the admins' requests waiting for them (`GET /api/public/me/characters`),
 // the NEXON notice and its Link / Cancel, Unlink, My data, their own
-// MapleScouter lookups, and the characters of a run they are on. Every route
+// scouter lookups, and the characters of a run they are on. Every route
 // is the generic 404 while its module is off: the first one is remembered
 // and nothing more is drawn or asked. Kept in memory for this tab only,
 // dropped with the session.

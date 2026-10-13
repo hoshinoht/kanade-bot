@@ -1,4 +1,4 @@
-//! The parts of MapleScouter's `GET /v1/bosses` answers kanade reads;
+//! The parts of the scouter's `GET /v1/bosses` answers kanade reads;
 //! every other field is ignored. Boss keys are the sidecar's
 //! `<difficulty>_<boss>` card keys (`hard_limbo`), mapped to catalog tokens
 //! by [`super::keys`] on the way out.
@@ -13,7 +13,7 @@ pub struct Member {
     pub ign: String,
     /// The preset the result was read with (`00010`).
     pub preset: String,
-    /// The character's critical rate is under 100% and MapleScouter's
+    /// The character's critical rate is under 100% and the scouter's
     /// manual Input flow raised it to exactly 100 for this result: a "what
     /// if crit were 100%" estimate, labelled as such wherever it shows.
     #[serde(default)]

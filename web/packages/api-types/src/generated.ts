@@ -127,17 +127,17 @@ export type PartyEstimate = { boss: string, difficulty: Difficulty,
  */
 percentage: number, rating: string, estimated_minutes: number | null, 
 /**
- * When kanade received it from MapleScouter.
+ * When kanade received it from the scouter.
  */
 fetched_at: string, 
 /**
- * MapleScouter assumed a 100% critical rate for this character (theirs
+ * The scouter assumed a 100% critical rate for this character (theirs
  * is under it): label it "Assumes 100% critical rate (actual N%)".
  */
 critical_rate_assumed: boolean, 
 /**
  * The character's own critical rate with an assumed reading; `null`
- * otherwise, or when MapleScouter didn't say.
+ * otherwise, or when the scouter didn't say.
  */
 critical_rate_actual: number | null, };
 
@@ -513,7 +513,7 @@ reference: string, state: 'unknown' | 'stuck' | 'overdue', channel_id: string, p
 jump_url: string | null, };
 
 /**
- * MapleScouter (estimates): `off` without `KANADE_SCOUTER_URL`.
+ * The scouter (estimates): `off` without `KANADE_SCOUTER_URL`.
  */
 export type ScouterHealthBlock = { state: 'off' | 'ok' | 'unreachable' | 'verification_required', 
 /**
@@ -521,7 +521,7 @@ export type ScouterHealthBlock = { state: 'off' | 'ok' | 'unreachable' | 'verifi
  */
 url: string | null, last_lookup_at: string | null, 
 /**
- * The last error's code: MapleScouter's (`busy`,
+ * The last error's code: the scouter's (`busy`,
  * `verification_required`, `lookup_timeout`, …) or `timeout`,
  * `unreachable`, `unreadable`.
  */
@@ -643,14 +643,14 @@ boss: string, difficulty: Difficulty,
  */
 entry_level: number | null, level: 'ok' | 'under' | 'unknown', 
 /**
- * The character's MapleScouter reading for this boss from the
+ * The character's scouter reading for this boss from the
  * estimates' 24-hour memory (never looked up here); `null` without
  * one, or while estimates are off.
  */
 scouter: ScouterReading | null, };
 
 /**
- * Shown, never judged: "Estimate for planning only, not eligibility".
+ * Shown, never judged: "For planning only, not eligibility".
  */
 export type ScouterReading = { 
 /**
@@ -659,17 +659,17 @@ export type ScouterReading = {
  */
 percentage: number, rating: string, estimated_minutes: number | null, 
 /**
- * When kanade received it from MapleScouter.
+ * When kanade received it from the scouter.
  */
 fetched_at: string, 
 /**
- * MapleScouter assumed a 100% critical rate for this character (theirs
+ * The scouter assumed a 100% critical rate for this character (theirs
  * is under it): label it "Assumes 100% critical rate (actual N%)".
  */
 critical_rate_assumed: boolean, 
 /**
  * The character's own critical rate with an assumed reading; `null`
- * otherwise, or when MapleScouter didn't say.
+ * otherwise, or when the scouter didn't say.
  */
 critical_rate_actual: number | null, };
 
@@ -720,7 +720,7 @@ characters: Array<EstimateCharacter>,
  */
 missing: Array<EstimateMissing>, progress: EstimateProgress, 
 /**
- * When the result came from MapleScouter (a cached result keeps its
+ * When the result came from the scouter (a cached result keeps its
  * first time); `null` until the job is done.
  */
 fetched_at: string | null, 
@@ -735,11 +735,11 @@ result: EstimateResult | null,
  */
 error: EstimateError | null, 
 /**
- * `Estimate from MapleScouter`.
+ * `Clear-time estimate`.
  */
 label: string, 
 /**
- * `Estimate for planning only, not eligibility`.
+ * `For planning only, not eligibility`.
  */
 note: string, };
 
@@ -773,7 +773,7 @@ current: string | null, };
 
 export type EstimateResult = { 
 /**
- * Answered from kanade's 24-hour memory without calling MapleScouter.
+ * Answered from kanade's 24-hour memory without calling the scouter.
  */
 cache_hit: boolean, 
 /**
@@ -793,18 +793,18 @@ combined: Array<EstimateCombined> | null, };
 
 export type EstimateMember = { character_id: string, ign: string, 
 /**
- * The preset MapleScouter read (`00010`).
+ * The preset the scouter read (`00010`).
  */
 preset: string, 
 /**
- * The character's critical rate is under 100% and MapleScouter
+ * The character's critical rate is under 100% and the scouter
  * assumed exactly 100%: label it "Assumes 100% critical rate (actual
  * N%)" wherever its numbers show.
  */
 critical_rate_assumed: boolean, 
 /**
  * The character's own critical rate with an assumed result; `null`
- * otherwise, or when MapleScouter didn't say.
+ * otherwise, or when the scouter didn't say.
  */
 critical_rate_actual: number | null, 
 /**
@@ -818,11 +818,11 @@ export type EstimateBoss = {
  */
 boss: string, 
 /**
- * As MapleScouter shows it (a `[Party]` card's whole-party figure).
+ * As the scouter shows it (a `[Party]` card's whole-party figure).
  */
 percentage: number, 
 /**
- * This character's share; `null` when MapleScouter can't tell.
+ * This character's share; `null` when the scouter can't tell.
  */
 effective_percentage: number | null, estimated_minutes: number | null, rating: string, 
 /**
@@ -848,7 +848,7 @@ character_id: string | null,
 /**
  * `missing_boss`: no card for this boss; `unknown_benchmark_players`:
  * a `[Party]` card with an unknown party size; `not_covered`:
- * MapleScouter has no card for this boss at all.
+ * the scouter has no card for this boss at all.
  */
 issue: 'missing_boss' | 'unknown_benchmark_players' | 'not_covered' | 'other', };
 
@@ -863,11 +863,11 @@ export type EstimateError = {
  */
 code: 'busy' | 'critical_rate' | 'manual_check' | 'failed', message: string, 
 /**
- * MapleScouter's HTTP status; `null` without an answer.
+ * The scouter's HTTP status; `null` without an answer.
  */
 status: number | null, 
 /**
- * MapleScouter's error code (`busy`, `upstream_rate_limited`,
+ * The scouter's error code (`busy`, `upstream_rate_limited`,
  * `lookup_timeout`, `result_mismatch`, …) or `timeout`, `unreachable`,
  * `unreadable`.
  */

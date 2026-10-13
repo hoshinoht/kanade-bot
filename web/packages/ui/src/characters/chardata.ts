@@ -1,14 +1,14 @@
 // Character data (module `character_data`; boards in
 // docs/research/2026-10-12-chardata-mockups and 2026-10-13-member-characters):
-// the strip's states, NEXON values and MapleScouter estimates in the boards'
+// the strip's states, NEXON values and scouter estimates in the boards'
 // words, shared by the admin app and the member portal (which shows a member
 // only their own characters' NEXON data). Never a model path.
 import type { BossRow, CharacterLink, CharacterLookup, CharacterRow, Difficulty, EstimateError, ScouterReading } from '@kanade/api-types';
 import type { IconName } from '../components/Icon.svelte';
 
 /** The API sends these with every job; the rows need them before the first one. */
-export const ESTIMATE_LABEL = 'Estimate from MapleScouter';
-export const ESTIMATE_NOTE = 'Estimate for planning only, not eligibility';
+export const ESTIMATE_LABEL = 'Clear-time estimate';
+export const ESTIMATE_NOTE = 'For planning only, not eligibility';
 
 /** NEXON data is kept 30 days after the fetch; a member's pending request 14. */
 export const PENDING_DAYS = 14;
@@ -39,12 +39,12 @@ export function combatPower(value: number): string {
 }
 
 /**
- * "Assumes 100% critical rate (actual 89%)" for a result MapleScouter worked out
+ * "Assumes 100% critical rate (actual 89%)" for a result the scouter worked out
  * as if the character's critical rate were 100% (theirs is under it); null otherwise.
  */
 export function assumedCrit(found: { critical_rate_assumed: boolean; critical_rate_actual: number | null }): string | null {
   if (!found.critical_rate_assumed) return null;
-  // MapleScouter's rate to one decimal: "89", "89.5".
+  // The scouter's rate to one decimal: "89", "89.5".
   return `Assumes 100% critical rate${found.critical_rate_actual === null ? '' : ` (actual ${Math.round(found.critical_rate_actual * 10) / 10}%)`}`;
 }
 
@@ -52,7 +52,7 @@ export function assumedCrit(found: { critical_rate_assumed: boolean; critical_ra
 export const queuedText = (position: number | null) => `Queued · ${position ?? 1} ahead`;
 
 /**
- * One boss's MapleScouter reading as a chip: "MapleScouter 164% · ~18 min"; the rating
+ * One boss's scouter reading as a chip: "Estimate 164% · ~18 min"; the rating
  * goes in its title. An assumed critical rate adds a short "· crit assumed" marker and
  * its full label (`assumed`) for the title.
  */
@@ -63,7 +63,7 @@ export function scouterChip(reading: Pick<ScouterReading, 'percentage' | 'rating
 } {
   const time = reading.estimated_minutes === null ? '' : ` · ~${Math.max(1, Math.round(reading.estimated_minutes))} min`;
   const assumed = assumedCrit(reading);
-  return { text: `MapleScouter ${Math.round(reading.percentage)}%${time}${assumed ? ' · crit assumed' : ''}`, rating: reading.rating, assumed };
+  return { text: `Estimate ${Math.round(reading.percentage)}%${time}${assumed ? ' · crit assumed' : ''}`, rating: reading.rating, assumed };
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -74,7 +74,7 @@ export function asOfDate(date: string): string {
   return y && m && d ? `${d} ${MONTHS[m - 1]} ${y}` : date;
 }
 
-/** "72.4%"; null (MapleScouter can't tell) is a dash. */
+/** "72.4%"; null (the scouter can't tell) is a dash. */
 export const percent = (value: number | null) => (value === null ? '—' : `${value.toFixed(1)}%`);
 
 /** Estimated minutes: a decimal under half an hour, whole minutes above. */
@@ -102,23 +102,23 @@ export function catalogBoss(catalog: readonly BossRow[], token: string): { name:
 export function estimateErrorText(error: EstimateError, ign: string | null): { lead: string; text: string } {
   switch (error.code) {
     case 'busy':
-      return { lead: 'MapleScouter is busy.', text: `It stayed busy with other lookups.${error.retry_after_seconds ? ` Try again in ${error.retry_after_seconds} s.` : ''}` };
+      return { lead: 'The scouter is busy.', text: `It stayed busy with other lookups.${error.retry_after_seconds ? ` Try again in ${error.retry_after_seconds} s.` : ''}` };
     case 'critical_rate':
       return {
-        lead: 'Set up critical rate on MapleScouter first.',
-        text: `MapleScouter shows ${ign ?? 'a character'}’s critical rate under 100% and couldn’t assume 100% for it. Fix it on MapleScouter, then look up again.`,
+        lead: 'Set up critical rate on the scouter first.',
+        text: `The scouter shows ${ign ?? 'a character'}’s critical rate under 100% and couldn’t assume 100% for it. Fix it on the scouter, then look up again.`,
       };
     case 'manual_check':
-      return { lead: 'Scouter needs a manual check.', text: 'MapleScouter asked for a verification. Lookups stay off until an operator runs the scouter setup.' };
+      return { lead: 'Scouter needs a manual check.', text: 'The scouter asked for a verification. Lookups stay off until an operator runs the scouter setup.' };
     case 'failed': {
       const why =
         error.status === 504 || error.detail === 'lookup_timeout'
-          ? `MapleScouter didn’t answer within 2 minutes${error.status ? ` (${error.status})` : ''}.`
+          ? `The scouter didn’t answer within 2 minutes${error.status ? ` (${error.status})` : ''}.`
           : error.detail === 'timeout'
-            ? 'MapleScouter didn’t answer in time.'
+            ? 'The scouter didn’t answer in time.'
             : error.status
-              ? `MapleScouter couldn’t finish the lookup (${error.status}).`
-              : 'Kanade couldn’t reach MapleScouter.';
+              ? `The scouter couldn’t finish the lookup (${error.status}).`
+              : 'Kanade couldn’t reach the scouter.';
       return { lead: 'Lookup failed.', text: `${why} Nothing was kept.` };
     }
   }

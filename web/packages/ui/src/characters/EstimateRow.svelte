@@ -1,10 +1,10 @@
 <!--
-  The strip's MapleScouter row (boards B_CharEstimate, B_EstStates; the
+  The strip's estimate row (boards B_CharEstimate, B_EstStates; the
   portal's M_EstStates*): one character's estimate per catalog boss, run as a
   job of up to 2 minutes that may first wait its turn ("Queued · 2 ahead";
-  lookups never refuse one another). Labelled as MapleScouter's and as
-  planning only, and "Assumes 100% critical rate (actual N%)" when
-  MapleScouter assumed it; MapleScouter gets the roster IGN and nothing from
+  lookups never refuse one another). Labelled as the scouter's and as
+  planning only, and "Assumes 100% critical rate (actual N%)" when the
+  scouter assumed it; the scouter gets the roster IGN and nothing from
   NEXON. Drawn only while estimates are on (no scouter URL: the routes answer
   the generic 404 and nothing shows). A member starts one lookup per 30
   minutes: refused, the button names the next time and the last result stays.
@@ -60,7 +60,7 @@
   const limited = $derived(lookup.refused?.code === 'member_limited' ? lookup.refused : null);
   const nextAt = $derived(limited?.nextAt ? clockTime(limited.nextAt, kit.timeZone, false) : null);
 
-  // The button follows the state: off while the lookup waits or runs, MapleScouter waits for a check, is busy, or the member's limit holds.
+  // The button follows the state: off while the lookup waits or runs, the scouter waits for a check, is busy, or the member's limit holds.
   const off = $derived(active || lookup.starting || error?.code === 'manual_check' || lookup.wait > 0 || Boolean(limited));
   // The shown reason (a refusal, the job's error) says why the button is off.
   const why = $derived(limited ? `${uid}-next` : lookup.refused || error ? `${uid}-why` : undefined);
@@ -126,8 +126,8 @@
       {#if !sheet}{@render button()}{/if}
     </div>
     <span class="chardata__sub" data-fid="estimate-disclaimer"
-      >{#if member}<b>{job?.note ?? ESTIMATE_NOTE}.</b> Your own characters only. MapleScouter gets the roster IGN and nothing from NEXON; the admins and your party see the
-        result.{:else}<b>{job?.note ?? ESTIMATE_NOTE}.</b> Members see their own and their run party’s estimates. MapleScouter gets the roster IGN and nothing from NEXON.{/if}</span
+      >{#if member}<b>{job?.note ?? ESTIMATE_NOTE}.</b> Your own characters only. The scouter gets the roster IGN and nothing from NEXON; the admins and your party see the
+        result.{:else}<b>{job?.note ?? ESTIMATE_NOTE}.</b> Members see their own and their run party’s estimates. The scouter gets the roster IGN and nothing from NEXON.{/if}</span
     >
     {#if limited}
       <p class="chardata__sub" id="{uid}-next" data-fid={fids.next}>

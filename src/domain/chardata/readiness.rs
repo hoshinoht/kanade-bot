@@ -24,7 +24,7 @@ pub struct Level {
 }
 
 /// The NEXON combat power of usable data; shown, never judged.
-/// MapleScouter readings are per boss and come from the estimates' memory
+/// Scouter readings are per boss and come from the estimates' memory
 /// (API layer), not from here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Power {

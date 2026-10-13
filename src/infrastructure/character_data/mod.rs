@@ -183,7 +183,7 @@ pub struct CharacterData {
     wake: Notify,
     /// The Discord side that strips posts; unset without a gateway.
     desk: OnceLock<Arc<dyn PostDesk>>,
-    /// MapleScouter estimates; `None` without `KANADE_SCOUTER_URL`.
+    /// Scouter estimates; `None` without `KANADE_SCOUTER_URL`.
     estimates: Option<Estimates>,
     /// The public `/privacy` page; `None` without a public listener.
     privacy_url: Option<String>,
@@ -220,7 +220,7 @@ impl CharacterData {
         }
     }
 
-    /// With MapleScouter estimates (`KANADE_SCOUTER_URL` set).
+    /// With scouter estimates (`KANADE_SCOUTER_URL` set).
     #[must_use]
     pub fn with_estimates(mut self, estimates: Estimates) -> Self {
         self.estimates = Some(estimates);

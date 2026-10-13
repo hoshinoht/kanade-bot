@@ -134,17 +134,17 @@ test('fixed ready: several characters and no main bring nothing until picked; no
   expect(await timingSlot(page, 'f-bm', '1008')).toMatchObject({ picked: 'ch-s12', basis: 'timing_pick' });
 });
 
-test('fixed ready: a MapleScouter reading replaces CP, once labelled', async ({ page }) => {
+test('fixed ready: a scouter reading replaces CP, once labelled', async ({ page }) => {
   const headers = await csrf(page.request);
   const { job } = await (await page.request.post(`${ADMIN}/api/admin/estimates`, { headers, data: { run_id: 'r-carling' } })).json();
   await expect.poll(async () => (await (await page.request.get(`${ADMIN}/api/admin/estimates/${job.id}`)).json()).state).toBe('done');
   const editor = await characters(page);
-  await expect(editor.locator('.ready__estimate')).toHaveText('Estimate from MapleScouter · Estimate for planning only, not eligibility.');
+  await expect(editor.locator('.ready__estimate')).toHaveText('Clear-time estimate · For planning only, not eligibility.');
   const asahi = row(editor, 'Asahi').getByRole('group', { name: 'Readiness of AsahiDK' });
   await expect(asahi.locator('.ready__values')).toHaveText('Lv. 284');
-  await expect(asahi.locator('.ready__scouter-at')).toContainText(/^MapleScouter · \d{1,2} \w{3} \d{2}:\d{2}$/);
+  await expect(asahi.locator('.ready__scouter-at')).toContainText(/^Estimate · \d{1,2} \w{3} \d{2}:\d{2}$/);
   await expect(asahi.locator('.ready__scouter')).toHaveCount(2);
-  await expect(asahi.locator('.ready__scouter').first()).toHaveText(/^MapleScouter \d+%( · ~\d+ min)? · .+$/);
+  await expect(asahi.locator('.ready__scouter').first()).toHaveText(/^Estimate \d+%( · ~\d+ min)? · .+$/);
 });
 
 test('fixed ready: either module off draws today’s editor and asks nothing', async ({ page }) => {

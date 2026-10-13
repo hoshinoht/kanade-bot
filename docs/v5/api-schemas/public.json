@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kanade.invalid/api-schemas/public.json",
-  "title": "Public portal: status, the member session, the member's signed-in devices, the member week, the member's own runs (answer, move, deep link, the party's characters), the member's weekly timings and their ownership, the member's requests, the member's own chat allowance, boss guides, and the member's own characters (roster, NEXON link and consent, My data, MapleScouter lookups)",
+  "title": "Public portal: status, the member session, the member's signed-in devices, the member week, the member's own runs (answer, move, deep link, the party's characters), the member's weekly timings and their ownership, the member's requests, the member's own chat allowance, boss guides, and the member's own characters (roster, NEXON link and consent, My data, scouter lookups)",
   "$defs": {
     "PublicStatus": {
       "type": "object",
@@ -415,7 +415,7 @@
         "pending": { "type": "array", "items": { "$ref": "#/$defs/PendingLink" }, "description": "\"Waiting for you\": the links an admin asked for and the member has not confirmed." },
         "character_data": { "type": "boolean", "description": "Module `character_data` is on (links, notice, My data)." },
         "connected": { "type": "boolean", "description": "A NEXON key is configured: Add looks up, links can be made, class and level may be left out for MapleSEA." },
-        "estimates": { "type": "boolean", "description": "MapleScouter lookups are on (`KANADE_SCOUTER_URL`)." },
+        "estimates": { "type": "boolean", "description": "Scouter lookups are on (`KANADE_SCOUTER_URL`)." },
         "notice_version": { "type": "integer", "minimum": 1 },
         "privacy_url": { "$ref": "common.json#/$defs/NullableString", "description": "The public /privacy page; null without a public listener." }
       }
@@ -651,7 +651,7 @@
     "PartyEstimate": {
       "type": "object",
       "additionalProperties": false,
-      "description": "One boss of the run: the character's cached MapleScouter reading (`character_data.json#/$defs/ScouterReading` plus the boss).",
+      "description": "One boss of the run: the character's cached scouter reading (`character_data.json#/$defs/ScouterReading` plus the boss).",
       "required": ["boss", "difficulty", "percentage", "rating", "estimated_minutes", "fetched_at", "critical_rate_assumed", "critical_rate_actual"],
       "properties": {
         "boss": { "type": "string" },
@@ -678,7 +678,7 @@
     "RunPartyCharacters": {
       "type": "object",
       "additionalProperties": false,
-      "description": "GET /api/public/runs/{id}/characters (module `roster`): on a run the caller is on, the character each party member brings (the run's pick, else its timing's pick, else the main, else the only one) and its cached MapleScouter readings. Never another member's NEXON data or link state. 404 `not_found` for anyone not on the run, as for a run that does not exist. `Cache-Control: no-store`.",
+      "description": "GET /api/public/runs/{id}/characters (module `roster`): on a run the caller is on, the character each party member brings (the run's pick, else its timing's pick, else the main, else the only one) and its cached scouter readings. Never another member's NEXON data or link state. 404 `not_found` for anyone not on the run, as for a run that does not exist. `Cache-Control: no-store`.",
       "required": ["run_id", "slots", "character_data", "estimates", "nexon_data", "attribution", "estimate_label", "estimate_note"],
       "properties": {
         "run_id": { "type": "string" },
@@ -687,8 +687,8 @@
         "estimates": { "type": "boolean" },
         "nexon_data": { "type": "boolean", "description": "The caller's own slot shows NEXON data: show `attribution` with it." },
         "attribution": { "const": "Data based on NEXON Open API" },
-        "estimate_label": { "const": "Estimate from MapleScouter" },
-        "estimate_note": { "const": "Estimate for planning only, not eligibility" }
+        "estimate_label": { "const": "Clear-time estimate" },
+        "estimate_note": { "const": "For planning only, not eligibility" }
       }
     }
   }

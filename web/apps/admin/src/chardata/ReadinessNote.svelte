@@ -1,7 +1,7 @@
 <!--
   The line over a readiness list (module `character_data`): "Readiness" and
   what it is, the NEXON attribution while a NEXON value shows, and, once any
-  MapleScouter reading shows, its label and note (once per list). The run
+  scouter reading shows, its label and note (once per list). The run
   sheet's Party tab (`party-ready-*`) and the Fixed editor's Characters tab
   (`fixed-ready-*`) draw it; `fid` is the tags' stem.
 -->
@@ -22,7 +22,7 @@
     lead: string;
     /** `Data based on NEXON Open API`, or null while no NEXON value shows. */
     attribution: string | null;
-    /** Some row shows a MapleScouter reading. */
+    /** Some row shows a scouter reading. */
     scouter: boolean;
     /** Say that a reading replaces CP. */
     replaces?: boolean;

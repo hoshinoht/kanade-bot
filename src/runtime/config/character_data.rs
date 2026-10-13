@@ -5,7 +5,7 @@
 //! `character_data.nexon_key_file` / `KANADE_NEXON_API_KEY_FILE` (unset:
 //! the module runs with links refused; set but unreadable: startup is
 //! refused, checked by serve) and the optional
-//! `character_data.scouter_url` / `KANADE_SCOUTER_URL` (the MapleScouter
+//! `character_data.scouter_url` / `KANADE_SCOUTER_URL` (the scouter
 //! sidecar; unset: estimates are off). Off, all are ignored and no file is
 //! opened.
 
@@ -24,7 +24,7 @@ pub const SCOUTER_URL_KEY: &str = "KANADE_SCOUTER_URL";
 pub struct CharacterDataSettings {
     pub db_path: PathBuf,
     pub nexon_key_file: Option<PathBuf>,
-    /// `http://host[:port]` of the MapleScouter sidecar; `None`: estimates
+    /// `http://host[:port]` of the scouter sidecar; `None`: estimates
     /// are off.
     pub scouter_url: Option<String>,
 }

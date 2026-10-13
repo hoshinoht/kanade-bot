@@ -2,7 +2,7 @@
   Config › Character data (module `character_data`; boards B_CfgCharHealth,
   …Alert, …Setup, …Refused and phone twins): read-only health of the NEXON
   Open API (key, the 24-hour call budget, the daily batch, links), of
-  MapleScouter, and of the sweeper that strips shared Discord cards, plus
+  the scouter, and of the sweeper that strips shared Discord cards, plus
   what is set in the environment. Informational: it never changes /healthz.
 -->
 <script lang="ts">
@@ -97,13 +97,13 @@
 
 {#snippet scouterCard()}
   <section class="chardata-health__card chardata-health__card--{scouter.tone === 'risk' ? 'risk' : 'plain'}" aria-labelledby="chardata-scouter-h" data-fid="chardata-scouter-health">
-    <div class="chardata-health__head"><h4 class="chardata-health__title" id="chardata-scouter-h">MapleScouter</h4><span class="chardata__grow"></span>{@render tagChip(scouter)}</div>
+    <div class="chardata-health__head"><h4 class="chardata-health__title" id="chardata-scouter-h">Scouter</h4><span class="chardata__grow"></span>{@render tagChip(scouter)}</div>
     {#if health.scouter.state === 'off'}
       <p class="chardata__msg"><span class="mono">KANADE_SCOUTER_URL</span> is unset, so estimates are off and no Estimate rows are drawn.</p>
     {:else}
       {#if health.scouter.state === 'verification_required'}
         <p class="chardata__msg">
-          MapleScouter asked for a verification check. Lookups say “Scouter needs a manual check” until someone runs the scouter setup on its host.
+          The scouter asked for a verification check. Lookups say “Scouter needs a manual check” until someone runs the scouter setup on its host.
         </p>
       {:else if health.scouter.state === 'unreachable'}
         <p class="chardata__msg">No answer from the scouter URL. Lookups say “Lookup failed.” until it answers.</p>

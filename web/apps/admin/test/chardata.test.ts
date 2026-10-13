@@ -125,17 +125,17 @@ describe('run readiness', () => {
     expect(levelChip(boss('unknown'))).toEqual({ text: 'Lv unknown', tone: 'neutral' });
   });
 
-  it('replaces CP with MapleScouter per boss once a slot has a reading', () => {
+  it('replaces CP with an estimate per boss once a slot has a reading', () => {
     const read = slot({ bosses: [boss('ok', reading()), boss('under')] });
     expect(readinessLine(read)).toEqual({ values: 'Lv. 276', source: 'NEXON · as of 29 Sep' });
     expect(scouterAt(read)).toBe('2026-09-29T02:10:00Z');
     expect(scouterAt(slot({}))).toBeNull();
-    expect(scouterChip(reading())).toEqual({ text: 'MapleScouter 164% · ~18 min', rating: '2p Min Cut', assumed: null });
-    expect(scouterChip(reading({ percentage: 9, estimated_minutes: null }))).toEqual({ text: 'MapleScouter 9%', rating: '2p Min Cut', assumed: null });
-    expect(scouterChip(reading({ estimated_minutes: 0.2 })).text).toBe('MapleScouter 164% · ~1 min');
+    expect(scouterChip(reading())).toEqual({ text: 'Estimate 164% · ~18 min', rating: '2p Min Cut', assumed: null });
+    expect(scouterChip(reading({ percentage: 9, estimated_minutes: null }))).toEqual({ text: 'Estimate 9%', rating: '2p Min Cut', assumed: null });
+    expect(scouterChip(reading({ estimated_minutes: 0.2 })).text).toBe('Estimate 164% · ~1 min');
     // An assumed critical rate: a short marker on the chip, the full label for its title.
     expect(scouterChip(reading({ critical_rate_assumed: true, critical_rate_actual: 89 }))).toEqual({
-      text: 'MapleScouter 164% · ~18 min · crit assumed',
+      text: 'Estimate 164% · ~18 min · crit assumed',
       rating: '2p Min Cut',
       assumed: 'Assumes 100% critical rate (actual 89%)',
     });
@@ -147,7 +147,7 @@ describe('run readiness', () => {
   });
 });
 
-describe('MapleScouter estimates', () => {
+describe('scouter estimates', () => {
   it('formats shares, minutes and the elapsed clock', () => {
     expect(percent(72.4)).toBe('72.4%');
     expect(percent(null)).toBe('—');
@@ -179,8 +179,8 @@ describe('MapleScouter estimates', () => {
     const error = (code: EstimateError['code'], status: number | null, detail = ''): EstimateError => ({ code, message: '', status, detail, retry_after_seconds: 40, character_id: null });
     expect(estimateErrorText(error('critical_rate', 422), 'YuzuPala').text).toContain('YuzuPala’s critical rate under 100% and couldn’t assume 100% for it.');
     expect(estimateErrorText(error('manual_check', 503), null).lead).toBe('Scouter needs a manual check.');
-    expect(estimateErrorText(error('failed', 504), null).text).toBe('MapleScouter didn’t answer within 2 minutes (504). Nothing was kept.');
-    expect(estimateErrorText(error('failed', null, 'timeout'), null).text).toBe('MapleScouter didn’t answer in time. Nothing was kept.');
+    expect(estimateErrorText(error('failed', 504), null).text).toBe('The scouter didn’t answer within 2 minutes (504). Nothing was kept.');
+    expect(estimateErrorText(error('failed', null, 'timeout'), null).text).toBe('The scouter didn’t answer in time. Nothing was kept.');
     expect(estimateErrorText(error('busy', 429), null).text).toBe('It stayed busy with other lookups. Try again in 40 s.');
   });
 });

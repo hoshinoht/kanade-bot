@@ -50,7 +50,7 @@ async fn rig() -> Rig {
     rig_with(None).await
 }
 
-/// The same, with MapleScouter at `scouter` when given.
+/// The same, with the scouter at `scouter` when given.
 async fn rig_with(scouter: Option<std::net::SocketAddr>) -> Rig {
     let file = Arc::new(MemoryCharData::new());
     let now = Arc::new(Mutex::new(at(11, 0)));

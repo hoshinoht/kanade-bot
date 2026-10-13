@@ -388,7 +388,7 @@ pub async fn set_chardata_health(
     StatusCode::NO_CONTENT.into_response()
 }
 
-/// MapleScouter estimates answer the generic 404 while off (no scouter URL,
+/// Scouter estimates answer the generic 404 while off (no scouter URL,
 /// or the roster module off), as the server's.
 async fn estimates_off(app: &App) -> Option<Response> {
     if app.store.lock().await.estimates_on() {

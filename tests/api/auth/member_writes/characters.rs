@@ -1,8 +1,8 @@
 //! The member's own characters on the public origin (module `roster`, and
-//! `character_data` over a fake Open API and a fake MapleScouter on
+//! `character_data` over a fake Open API and a fake scouter on
 //! loopback, all invented): own rows with the admin rules, the NEXON notice,
 //! Link / Cancel / Unlink / My data, the lookup preview, the member's own
-//! MapleScouter lookups and the party's characters on their runs; module
+//! scouter lookups and the party's characters on their runs; module
 //! gates, other-member isolation, fresh sign-in, CSRF and rate limits.
 
 use std::{
@@ -164,7 +164,7 @@ async fn fake_nexon() -> SocketAddr {
 }
 
 /// The module, its clock moved by `skew` (the lookup spacing), with the
-/// Open API at `nexon` and MapleScouter at `scouter` when given.
+/// Open API at `nexon` and the scouter at `scouter` when given.
 fn module(
     nexon: Option<SocketAddr>,
     scouter: Option<SocketAddr>,
@@ -197,7 +197,7 @@ fn module(
     })
 }
 
-/// The portal over both modules: NEXON connected when `nexon`, MapleScouter
+/// The portal over both modules: NEXON connected when `nexon`, the scouter
 /// on when `scouter`.
 struct Chars {
     portal: Portal,
@@ -413,7 +413,7 @@ async fn every_route_is_the_generic_404_while_its_module_is_off() {
     let closed = portal.get(Some(&alice), MINE).await;
     assert_eq!(refused(&closed), (503, "closed".into()));
 
-    // Character data without MapleScouter: only the estimate routes stay 404.
+    // Character data without the scouter: only the estimate routes stay 404.
     let chars = Chars::new(true, false).await;
     let alice = chars.portal.sign_in(ALICE).await;
     for path in [
@@ -1147,7 +1147,7 @@ async fn members_look_up_their_own_characters_once_per_30_minutes() {
         202,
         STARTED,
     );
-    // MapleScouter only ever got roster IGNs.
+    // The scouter only ever got roster IGNs.
     let targets = chars.scouter.as_ref().unwrap().targets();
     assert!(
         targets
@@ -1239,7 +1239,7 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
         (&json!(271), &json!("nexon"))
     );
 
-    // Cached MapleScouter readings per boss, never looked up here.
+    // Cached scouter readings per boss, never looked up here.
     let reads = chars.reads();
     let started = reads
         .ok(

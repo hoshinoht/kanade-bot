@@ -1,7 +1,7 @@
 // Character data (module `character_data`; boards in
 // docs/research/2026-10-12-chardata-mockups): the roster dialog's strip
 // (manual and NEXON values side by side, Link… / Unlink… / Refresh with
-// inline confirmations), MapleScouter's estimate row and the run sheet's
+// inline confirmations), the scouter's estimate row and the run sheet's
 // Estimate panel, and Config › Character data's health cards. Admin only:
 // imported by the admin components that draw them, never by the portal.
 @use "../core/breakpoints" as *;
@@ -177,7 +177,7 @@
   justify-content: center;
 }
 
-// ── MapleScouter estimates: the strip's row (B_CharEstimate, B_EstStates) and the run sheet's panel ──
+// ── Scouter estimates: the strip's row (B_CharEstimate, B_EstStates) and the run sheet's panel ──
 .estimate {
   display: flex;
   flex-direction: column;
@@ -481,7 +481,7 @@
     display: contents;
   }
 
-  // Stacked: NEXON, MapleScouter, Sweeper, then the environment (B_PhoneCfgCharHealth).
+  // Stacked: NEXON, Scouter, Sweeper, then the environment (B_PhoneCfgCharHealth).
   .chardata-health__env {
     order: 1;
   }
@@ -556,7 +556,7 @@
   font-size: 11px;
 }
 
-// MapleScouter's reading beside the level verdict: shown, never judged (no tone).
+// The scouter's reading beside the level verdict: shown, never judged (no tone).
 .ready__scouter {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

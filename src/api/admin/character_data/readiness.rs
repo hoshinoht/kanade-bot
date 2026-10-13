@@ -7,7 +7,7 @@
 //! /api/admin/fixed/readiness` for the Fixed editor's form as it stands (a
 //! timing not added yet, or an unsaved boss or party change; picks count
 //! only for members of the saved party). With estimates on, each boss also
-//! carries the character's MapleScouter reading when the estimates' 24-hour
+//! carries the character's scouter reading when the estimates' 24-hour
 //! memory holds one; readiness never starts a lookup. Computed on read;
 //! nothing is stored and nothing is blocked. While a module is off the
 //! routes answer the generic `404` before the session is checked.

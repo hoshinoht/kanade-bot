@@ -1,10 +1,10 @@
-//! MapleScouter estimates (module `character_data` with
+//! Scouter estimates (module `character_data` with
 //! `KANADE_SCOUTER_URL`): admin only, on demand, run as queued jobs looked
 //! up one at a time, because a lookup takes up to a few minutes. While the
 //! module is off or the URL is unset, every route answers the generic `404`
 //! before the session is checked, as an unmounted path does. `POST` takes
 //! the session's CSRF token. Nothing is stored: jobs and results live 24
-//! hours in memory. MapleScouter is sent roster IGNs only.
+//! hours in memory. The scouter is sent roster IGNs only.
 
 use std::sync::Arc;
 
@@ -90,7 +90,7 @@ fn not_found() -> Refusal {
     )
 }
 
-/// What one character is to MapleScouter: an IGN to look up, or why not.
+/// What one character is to the scouter: an IGN to look up, or why not.
 /// Readiness reads the cache under the same IGN.
 pub(crate) fn lookup_name(character: &Character) -> Result<RosterIgn, MissingReason> {
     if character.world != DEFAULT_WORLD {
@@ -99,7 +99,7 @@ pub(crate) fn lookup_name(character: &Character) -> Result<RosterIgn, MissingRea
     RosterIgn::of(character).ok_or(MissingReason::UnsupportedIgn)
 }
 
-/// Unique by IGN (MapleScouter refuses duplicates).
+/// Unique by IGN (the scouter refuses duplicates).
 fn push(subjects: &mut Vec<Subject>, subject: Subject) {
     if !subjects
         .iter()
@@ -132,12 +132,12 @@ async fn characters(roster: &dyn CharacterRoster, ids: Vec<String>) -> Result<Re
             MissingReason::OtherRegion => Refusal::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "region",
-                "MapleScouter covers MapleSEA characters only.",
+                "Estimates cover MapleSEA characters only.",
             ),
             _ => Refusal::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "unsupported_ign",
-                "MapleScouter can't look up this IGN.",
+                "This IGN can't be looked up for an estimate.",
             ),
         })?;
         push(
@@ -205,7 +205,7 @@ async fn run_party(
         return Err(Refusal::new(
             StatusCode::UNPROCESSABLE_ENTITY,
             "too_many",
-            format!("MapleScouter looks up at most {MAX_BATCH} characters at once."),
+            format!("An estimate looks up at most {MAX_BATCH} characters at once."),
         ));
     }
     Ok((

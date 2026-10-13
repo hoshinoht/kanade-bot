@@ -69,7 +69,7 @@
 
 - **Roster:** each member's MapleSEA characters and which one they bring to a run (`modules.roster`).
 - **Character data:** NEXON Open API data for linked characters, after the member consents, in a separate SQLite file kept out of backups, logs and model prompts (`modules.character_data`).
-- **MapleScouter estimates:** clear-time estimates from a separate scouter sidecar that is not part of this repository; it is sent roster IGNs only (`character_data.scouter_url`).
+- **Scouter estimates:** clear-time estimates from a separate scouter sidecar that is not part of this repository; it is sent roster IGNs only (`character_data.scouter_url`).
 
 Full behaviour, settings and limits are in [docs/v5/runtime-bootstrap.md](docs/v5/runtime-bootstrap.md).
 
@@ -90,7 +90,7 @@ flowchart LR
   memberapp["Member portal PWA"]
   chardata[("Character-data file")]
   nexon["NEXON Open API"]
-  scouter["MapleScouter sidecar"]
+  scouter["Scouter sidecar"]
 
   discord <--> bot
   tick --> discord
@@ -203,7 +203,7 @@ v4 (Python, 4.9.0) is retired. Its code is kept at tag `v4.9.0` and on branch `v
 
 ## Non-goals
 
-Kanade serves one Discord server, not many. It does not change the schedule on a model's word, keep per-member chat memory, or mask data sent to models. It does not run the MapleScouter sidecar, and it has no export command.
+Kanade serves one Discord server, not many. It does not change the schedule on a model's word, keep per-member chat memory, or mask data sent to models. It does not run the scouter sidecar, and it has no export command.
 
 ## License
 

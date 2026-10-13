@@ -1,4 +1,4 @@
-//! MapleScouter boss keys → catalog tokens: the one table.
+//! Scouter boss keys → catalog tokens: the one table.
 //!
 //! The sidecar keys each card by the boss icon its result page draws,
 //! `<difficulty>_<boss>` (`hard_maleficStar`, `extreme_kaling`), read from
@@ -9,7 +9,7 @@
 
 use crate::domain::catalog::BossTable;
 
-/// `(scouter key, catalog token)`. MapleScouter spells Baldrix both ways
+/// `(scouter key, catalog token)`. The scouter spells Baldrix both ways
 /// (`bardrix` on its cards, `baldrix` in its party-size mapping).
 pub const BOSS_KEYS: &[(&str, &str)] = &[
     ("extreme_lotus", "XLotus"),
@@ -52,7 +52,7 @@ pub fn catalog_token(key: &str, catalog: &BossTable) -> Option<&'static str> {
         .filter(|token| known(token, catalog))
 }
 
-/// The scouter keys that map to catalog `token` (empty when MapleScouter
+/// The scouter keys that map to catalog `token` (empty when the scouter
 /// has no card for it).
 pub fn scouter_keys(token: &str) -> impl Iterator<Item = &'static str> + '_ {
     BOSS_KEYS

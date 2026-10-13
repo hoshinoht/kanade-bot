@@ -1,7 +1,7 @@
 //! `GET /api/public/runs/{id}/characters`: on a run the caller is on, the
 //! character each party member brings (as the admin's `…/characters`
 //! resolves it) with its IGN, class and roster level, and each one's cached
-//! MapleScouter reading per boss of the run (never looked up here). NEXON
+//! scouter reading per boss of the run (never looked up here). NEXON
 //! data shows only on the caller's own slot: notice v1 names admins and
 //! share-card channels as who sees it, never the party. No combat power,
 //! no verdicts. Anyone not on the run gets the generic `404`.

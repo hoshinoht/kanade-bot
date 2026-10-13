@@ -1,6 +1,6 @@
 //! `character_data.json` readiness (module `character_data`) of a run or a
 //! weekly timing: each party slot's level and power, its level against
-//! each boss, and the character's MapleScouter reading per boss when the
+//! each boss, and the character's scouter reading per boss when the
 //! estimates' 24-hour memory holds one. NEXON values appear only from an
 //! active link's unexpired data, with the attribution.
 
@@ -108,13 +108,13 @@ pub struct BossReadiness {
     pub entry_level: Option<u16>,
     #[cfg_attr(test, ts(type = "'ok' | 'under' | 'unknown'"))]
     pub level: &'static str,
-    /// The character's MapleScouter reading for this boss from the
+    /// The character's scouter reading for this boss from the
     /// estimates' 24-hour memory (never looked up here); `null` without
     /// one, or while estimates are off.
     pub scouter: Option<ScouterReading>,
 }
 
-/// Shown, never judged: "Estimate for planning only, not eligibility".
+/// Shown, never judged: "For planning only, not eligibility".
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ScouterReading {
@@ -123,13 +123,13 @@ pub struct ScouterReading {
     pub percentage: f64,
     pub rating: String,
     pub estimated_minutes: Option<f64>,
-    /// When kanade received it from MapleScouter.
+    /// When kanade received it from the scouter.
     pub fetched_at: String,
-    /// MapleScouter assumed a 100% critical rate for this character (theirs
+    /// The scouter assumed a 100% critical rate for this character (theirs
     /// is under it): label it "Assumes 100% critical rate (actual N%)".
     pub critical_rate_assumed: bool,
     /// The character's own critical rate with an assumed reading; `null`
-    /// otherwise, or when MapleScouter didn't say.
+    /// otherwise, or when the scouter didn't say.
     pub critical_rate_actual: Option<f64>,
 }
 
@@ -153,7 +153,7 @@ pub fn reading(
 }
 
 /// One slot: `candidates` is how many active characters the member has,
-/// `brings` the character and why; `scouter` its cached MapleScouter
+/// `brings` the character and why; `scouter` its cached scouter
 /// result and when it was fetched.
 pub fn slot(
     member_id: &str,

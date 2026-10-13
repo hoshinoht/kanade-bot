@@ -951,7 +951,7 @@ const scouterOff = async (page: Page) => {
 const chardataHealth = (health: string) => async (page: Page) => {
   await page.request.post(`${ADMIN}/__mock/character-data`, { data: { health } });
 };
-/** A finished MapleScouter lookup (the mock steps a running job once per read). */
+/** A finished scouter lookup (the mock steps a running job once per read). */
 const lookedUp = (target: { character_ids: string[] } | { run_id: string }) => async (page: Page) => {
   const headers = await csrf(page.request);
   const { job } = await (await page.request.post(`${ADMIN}/api/admin/estimates`, { headers, data: target })).json();

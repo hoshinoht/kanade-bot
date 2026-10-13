@@ -45,9 +45,9 @@ services:
       # volume root itself may come up 0755), and the optional key file.
       KANADE_CHARACTER_DATA_DB_PATH: /chardata/db/chardata.sqlite
       KANADE_NEXON_API_KEY_FILE: ${KANADE_NEXON_API_KEY_HOST_FILE:+/run/secrets/nexon_api_key}
-      # MapleScouter estimates: the scouter sidecar is its own private Compose
+      # Scouter estimates: the scouter sidecar is its own private Compose
       # project, never a service here. Attach it to a network the bot is on
-      # (kanade_admin) with the alias `scouter` (runbook "MapleScouter
+      # (kanade_admin) with the alias `scouter` (runbook "Scouter
       # estimates"), then set KANADE_SCOUTER_URL=http://scouter:8091 in .env.
       # Unset or empty: estimates are off.
       KANADE_SCOUTER_URL: ${KANADE_SCOUTER_URL:-}

@@ -76,7 +76,7 @@
   const targetKey = $derived(JSON.stringify(target));
   $effect(() => {
     void targetKey;
-    // A finished MapleScouter lookup replaces CP: read again.
+    // A finished scouter lookup replaces CP: read again.
     void estimateEnds.count;
     const next = untrack(() => target);
     if ('fixedId' in next) {
@@ -430,10 +430,10 @@
     {#snippet levels()}{#each entries as e, i (e.label)}{i ? ', ' : ''}{e.label}
         {#if e.entry !== null}<span class="mono">Lv. {e.entry}</span>{:else}no entry level{/if}{/each}{/snippet}
     {#if wide}
-      Per boss of the timing: level against its entry level{#if entries.length}&nbsp;({@render levels()}){/if}. CP, or MapleScouter where a lookup is kept (it
+      Per boss of the timing: level against its entry level{#if entries.length}&nbsp;({@render levels()}){/if}. CP, or the estimate where a lookup is kept (it
       replaces CP), is shown, never judged. Fresh NEXON data first; else the roster level, marked manual.
     {:else}
-      Level against each boss’s entry level{#if entries.length}: {@render levels()}{/if}. CP and MapleScouter are shown, never judged.
+      Level against each boss’s entry level{#if entries.length}: {@render levels()}{/if}. CP and estimates are shown, never judged.
     {/if}
   </p>
   <!-- Said once, and kept out of the visible notice so its Undo stays a plain button. -->

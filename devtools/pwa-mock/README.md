@@ -246,7 +246,7 @@ combat power from fresh data only; shown, never judged), and its level
 against each boss's entry level from boss knowledge. `r-carling`'s party
 covers every level verdict.
 
-MapleScouter estimates (`src/mock/estimates.rs`; on with the module):
+Scouter estimates (`src/mock/estimates.rs`; on with the module):
 `POST /api/admin/estimates {character_ids | run_id, refresh?}` (`202
 {job}`, `429 estimate_queue_full` past 16 waiting, the server's 422/404/400
 refusals), `GET /api/admin/estimates/{job}` and `GET

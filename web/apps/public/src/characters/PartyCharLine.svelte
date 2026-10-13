@@ -2,8 +2,8 @@
   One party member's character on a run they share with the member (boards
   M_RunParty, M_RunStates, M_PhoneRunParty): IGN · class · level · its
   source (`roster` for everyone else; the member's own NEXON level, "only you
-  see this"), then MapleScouter's cached estimate per boss of the run, shown
-  and never judged ("HCarling · MapleScouter 31% · ~96 min"; an assumed
+  see this"), then the scouter's cached estimate per boss of the run, shown
+  and never judged ("HCarling · Estimate 31% · ~96 min"; an assumed
   critical rate as "crit assumed", its full label in the title and the
   accessible name). No character, or no lookup in 24 h, says so; never 0%.
 -->
@@ -44,6 +44,6 @@
   {#if slot.scouter?.length}
     {#if boxed}<span class="party-char">{@render chips()}</span>{:else}{@render chips()}{/if}
   {:else if slot.scouter}
-    <span class="party-char__none">No MapleScouter lookup in the last 24 h</span>
+    <span class="party-char__none">No estimate in the last 24 h</span>
   {/if}
 {/if}

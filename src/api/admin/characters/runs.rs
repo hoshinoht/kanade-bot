@@ -56,7 +56,7 @@ async fn run_of(state: &ApiState, run_id: &str) -> Result<Run, Refusal> {
 }
 
 /// `run_id`'s run and its party slots as `GET …/characters` reads them,
-/// for the run's readiness and MapleScouter estimate.
+/// for the run's readiness and scouter estimate.
 pub async fn party(
     state: &ApiState,
     roster: &dyn CharacterRoster,

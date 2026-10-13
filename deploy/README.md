@@ -11,7 +11,7 @@ root's file.
 - [Quick start](#quick-start): one bot and its admin portal on
   `http://localhost:8080`.
 - [Add-ons](#add-ons): a reverse proxy, admin Discord sign-in, the public
-  portal, encrypted backups, character data, MapleScouter estimates.
+  portal, encrypted backups, character data, scouter estimates.
 - [Operations](#operations): deploy an update, back up, restore, roll back,
   import v4 data.
 - [Reference](#reference): the image, host inputs and hardening.
@@ -366,7 +366,7 @@ within 24 hours.
 docker compose up -d --force-recreate bot
 ```
 
-### MapleScouter estimates
+### Scouter estimates
 
 Clear-time estimates for admins, and for members on their own characters
 (module `character_data`). The scouter sidecar (private repository, its own
@@ -395,7 +395,7 @@ are off (health `off`). No secret.
 # 2. Set KANADE_SCOUTER_URL=http://scouter:8091 in deploy/.env (with
 #    [modules] character_data = true) and recreate the bot.
 docker compose up -d --force-recreate bot
-# 3. Check: Config -> Character data shows MapleScouter "ok" (the bot probes
+# 3. Check: Config -> Character data shows Scouter "ok" (the bot probes
 #    /healthz at most once a minute). "unreachable": the network or alias is
 #    missing; "verification_required": run the scouter's own setup, then the
 #    next successful lookup clears it.
@@ -743,7 +743,7 @@ docker compose build
 | Backups | `${KANADE_BACKUP_HOST_DIR:-$HOME/.config/kanade/v5/backups}` | Must exist (Compose does not create it, and the bot then fails to start). Bind mounted **read-only** into `bot` at `/backups` (`KANADE_BACKUP_DIR`, listed by History → Checkpoints) and read-write only into the `backup` tool service. Docker Desktop's file sharing writes as the host user, so a `0700` directory you own works for uid 65532; on a Linux host it must be writable by uid 65532 (e.g. an ACL `setfacl -m u:65532:rwx`). The volume tarballs live here too; the listing ignores them. |
 | Backup recipients | `KANADE_BACKUP_RECIPIENTS_HOST_FILE` in `.env` | Optional: [Encrypted backups](#encrypted-backups). age **public** keys only, mounted as the Compose secret `backup_recipients` into `bot` (checked at startup: a bad or empty file refuses it) and `backup`. Unset: `/dev/null` stands in and backups are plaintext. |
 | Character data | Docker volume `kanade_v5_chardata`; `KANADE_NEXON_API_KEY_HOST_FILE` in `.env` | Optional: [Character data and NEXON](#character-data-and-nexon). |
-| MapleScouter | `KANADE_SCOUTER_URL` in `.env` | Optional: [MapleScouter estimates](#maplescouter-estimates). |
+| Scouter | `KANADE_SCOUTER_URL` in `.env` | Optional: [Scouter estimates](#scouter-estimates). |
 | Networks | `kanade_admin` (`172.23.0.0/24`), `kanade_public` (internal, `172.25.0.0/24`), `kanade_tunnel_egress` (`172.24.0.0/24`) | Created by Compose with fixed subnets so the listeners bind fixed addresses: the bot at `172.23.0.10` (egress and the admin listener) and `172.25.0.10` (the public listener, unused until `[public] bind` is set); cloudflared (`172.25.0.3`, profile `public`) alone uses `kanade_tunnel_egress`. The subnets are not reserved: Docker can already have given an overlapping range to another network, and then Compose cannot create this one. If one overlaps a network on your host (`docker network inspect`), change it and its addresses in `compose.yaml`. |
 
 ### Hardening

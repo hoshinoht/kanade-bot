@@ -1,13 +1,13 @@
 <!--
   The run sheet's Estimate panel (boards B_CharEstimateRun, B_EstRunStates,
-  phone twins): one MapleScouter lookup over the characters the party brings
+  phone twins): one scouter lookup over the characters the party brings
   (at most 6), as a job that may first wait its turn ("Queued · 2 ahead").
   Each member's row fills in as their lookup finishes; one that fails says why
   in its row and never stops the others. Per boss of the run: the combined
   minutes and % over the members found, "technically possible", "not
   complete". Members without a character are listed as missing, never 0%.
-  Labelled as MapleScouter's and as planning only, and "Assumes 100% critical
-  rate (actual N%)" for a member MapleScouter assumed it for. No scouter URL:
+  Labelled as the scouter's and as planning only, and "Assumes 100% critical
+  rate (actual N%)" for a member the scouter assumed it for. No scouter URL:
   no panel.
 -->
 <script lang="ts">
@@ -109,7 +109,7 @@
       for (const issue of total.issues) {
         const ign = job.characters.find((c) => c.character_id === issue.character_id)?.ign ?? null;
         if (issue.issue === 'missing_boss') lines.push(`${ign ?? 'A character'} has no ${title} card.`);
-        else if (issue.issue === 'not_covered') lines.push(`MapleScouter has no ${title} card at all.`);
+        else if (issue.issue === 'not_covered') lines.push(`The scouter has no ${title} card at all.`);
         else if (issue.issue === 'unknown_benchmark_players') lines.push(`${ign ?? 'A character'}’s ${title} card has an unknown party size.`);
         else lines.push(`${title}: ${ign ? `${ign}’s card` : 'a card'} can’t be counted.`);
       }
@@ -164,7 +164,7 @@
       )}
     {:else if totalError}
       {@const words = estimateErrorText(totalError, null)}
-      {@render problem('No party total.', `The members below were found, but MapleScouter’s total didn’t come back: ${words.lead} ${words.text}`)}
+      {@render problem('No party total.', `The members below were found, but the scouter’s total didn’t come back: ${words.lead} ${words.text}`)}
     {/if}
 
     {#if job && (result || failed.length || active) && !lookup.refused}

@@ -1,7 +1,7 @@
 //! The member's own characters on the public origin (`mock/member_characters.rs`,
 //! as `src/api/public/characters/`): each route answers `closed` while the
 //! portal is, then the generic 404 while its module is off (`roster`;
-//! `character_data` for the NEXON routes; MapleScouter for the estimates),
+//! `character_data` for the NEXON routes; the scouter for the estimates),
 //! both before the session. Add, Edit and Link need the session's token, an
 //! `Idempotency-Key` and the fresh window; Unlink and Unlink all the token
 //! and key; the lookup preview, Cancel and a lookup start the token only.

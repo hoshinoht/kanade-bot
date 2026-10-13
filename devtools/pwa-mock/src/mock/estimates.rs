@@ -1,4 +1,4 @@
-//! MapleScouter estimates (module `character_data` with `KANADE_SCOUTER_URL`),
+//! Scouter estimates (module `character_data` with `KANADE_SCOUTER_URL`),
 //! as the server's admin API answers them (`src/api/admin/character_data/
 //! estimates.rs`): `POST /api/admin/estimates {character_ids | run_id,
 //! refresh?}` → `202 {job}`, `GET /api/admin/estimates/{job}` and
@@ -26,8 +26,8 @@ use serde_json::{Value, json};
 use super::clock::{iso_secs, now_secs};
 use super::{MoveError, Store};
 
-pub const LABEL: &str = "Estimate from MapleScouter";
-pub const NOTE: &str = "Estimate for planning only, not eligibility";
+pub const LABEL: &str = "Clear-time estimate";
+pub const NOTE: &str = "For planning only, not eligibility";
 const MAX_BATCH: usize = 6;
 const MAX_QUEUED: usize = 16;
 /// Lookups a `queued` scenario job waits behind.
@@ -303,10 +303,10 @@ impl Job {
 
     fn error(&self, at: usize) -> Value {
         let (code, message, status, detail, retry) = match self.scenario {
-            Scenario::Busy => ("busy", "MapleScouter is busy.", 429, "busy", Some(40)),
+            Scenario::Busy => ("busy", "The scouter is busy.", 429, "busy", Some(40)),
             Scenario::CriticalRate => (
                 "critical_rate",
-                "Set up critical rate on MapleScouter first.",
+                "Set up critical rate on the scouter first.",
                 422,
                 "critical_rate_setup_required",
                 None,
@@ -530,7 +530,7 @@ impl Store {
             return Err(coded(
                 422,
                 "region",
-                "MapleScouter covers MapleSEA characters only.",
+                "Estimates cover MapleSEA characters only.",
             ));
         }
         Ok(Subject {
@@ -594,7 +594,7 @@ impl Store {
                     return Err(coded(
                         422,
                         "too_many",
-                        "MapleScouter looks up at most 6 characters at once.",
+                        "An estimate looks up at most 6 characters at once.",
                     ));
                 }
                 (Some(run_id), Vec::new(), subjects, missing, bosses)

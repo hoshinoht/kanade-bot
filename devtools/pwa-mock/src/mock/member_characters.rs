@@ -2,7 +2,7 @@
 //! them (`src/api/public/characters/`): their roster rows with the admin
 //! rules (no delete), the NEXON notice (v1 word for word), Link / Cancel /
 //! Unlink / Unlink all / My data, the Add lookup preview, their own
-//! MapleScouter lookups (one counted start per 30 minutes; a failed one
+//! scouter lookups (one counted start per 30 minutes; a failed one
 //! does not count; the pinned clock never ages it, so it lasts until the
 //! next reset) and the party's characters on a run they are on. Another
 //! member's character or lookup is the generic 404.
@@ -28,7 +28,7 @@ use super::estimates::{EstimateRequest, LABEL, NOTE};
 use super::portal::snowflake;
 use super::{MoveError, Store};
 
-/// A member starts one counted MapleScouter lookup this often.
+/// A member starts one counted scouter lookup this often.
 const ESTIMATE_SPACING: i64 = 30 * 60;
 /// A pending request lapses after this.
 const PENDING_TTL: i64 = 14 * DAY;

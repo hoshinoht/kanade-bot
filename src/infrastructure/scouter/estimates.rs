@@ -13,7 +13,7 @@
 //! A job looks up each character on its own (`ign=`) and records each
 //! outcome as it arrives: one character's failure never stops the others,
 //! and every success is cached under its IGN. A party then asks once as
-//! `igns=` with the characters that succeeded, for MapleScouter's party
+//! `igns=` with the characters that succeeded, for the scouter's party
 //! total, which its own short cache answers without rendering again; the
 //! total is complete only when every character succeeded. A `429 busy` is
 //! asked again after its `Retry-After` while the job's deadline allows.
@@ -61,9 +61,9 @@ pub enum MissingReason {
     NoCharacters,
     /// Several active characters and none picked for the run.
     NoCharacterPicked,
-    /// The character is not on MapleSEA (MapleScouter covers only it).
+    /// The character is not on MapleSEA (the scouter covers only it).
     OtherRegion,
-    /// The roster IGN is outside MapleScouter's rule.
+    /// The roster IGN is outside the scouter's rule.
     UnsupportedIgn,
 }
 
@@ -104,7 +104,7 @@ impl Target {
         }
     }
 
-    /// A party lookup, with MapleScouter's total.
+    /// A party lookup, with the scouter's total.
     fn party(&self) -> bool {
         !matches!(self, Self::Characters(ids) if ids.len() == 1)
     }
@@ -132,7 +132,7 @@ struct Estimate {
 /// the job's `results`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Found {
-    /// MapleScouter's party total over the characters that succeeded;
+    /// The scouter's party total over the characters that succeeded;
     /// `None` for one character, or when `total_failure` says why.
     pub combined: Option<BTreeMap<String, Combined>>,
     /// The party total's own failure, after characters succeeded.
@@ -146,12 +146,12 @@ pub struct Found {
 /// The drawn error states.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FailureKind {
-    /// 429: MapleScouter stayed busy past the job's deadline, or was
+    /// 429: the scouter stayed busy past the job's deadline, or was
     /// rate-limited.
     Busy,
     /// 422: critical rate under 100% and no assumed result.
     CriticalRate,
-    /// 503: MapleScouter asked for a verification.
+    /// 503: the scouter asked for a verification.
     ManualCheck,
     /// 502, 504, the client timeout, no connection, an unreadable answer.
     Failed,
@@ -298,7 +298,7 @@ pub enum ScouterState {
     Ok,
     /// The last call or probe got no connection (or no scouter answer).
     Unreachable,
-    /// MapleScouter answered 503 `verification_required`; it stays until a
+    /// The scouter answered 503 `verification_required`; it stays until a
     /// lookup succeeds again.
     VerificationRequired,
 }

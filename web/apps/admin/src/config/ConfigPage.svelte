@@ -80,7 +80,7 @@
       key: 'character-data',
       label: 'Character data',
       group: 'Server',
-      terms: 'nexon open api key budget batch links maplescouter scouter estimates sweeper shared cards health',
+      terms: 'nexon open api key budget batch links scouter estimates sweeper shared cards health',
       module: 'character_data',
     },
     { key: 'theme', label: 'Theme', group: 'Server', terms: 'colourway colorway mode system light dark' },
@@ -304,7 +304,7 @@
       case 'theme': return [colorway, 'Kept in this browser'];
       case 'character-data': {
         const h = c.character_data;
-        return h ? [`NEXON ${h.nexon.replace('_', ' ')}`, `MapleScouter ${h.scouter.state.replace('_', ' ')}`, `${postIssues(h)} shared cards need a hand`] : [];
+        return h ? [`NEXON ${h.nexon.replace('_', ' ')}`, `Scouter ${h.scouter.state.replace('_', ' ')}`, `${postIssues(h)} shared cards need a hand`] : [];
       }
       case 'env': return c.env.map((setting) => setting.label);
     }

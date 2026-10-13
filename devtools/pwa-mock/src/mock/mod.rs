@@ -134,11 +134,11 @@ pub struct Store {
     /// Character data links (module `character_data`, on with the roster),
     /// seeded (`character_data::seed`).
     links: Vec<character_data::Link>,
-    /// MapleScouter estimate jobs and the scenario (`estimates.rs`).
+    /// Scouter estimate jobs and the scenario (`estimates.rs`).
     estimates: estimates::Estimates,
     /// Member character writes already answered, by `Idempotency-Key`.
     member_character_writes: Vec<member_characters::Keyed>,
-    /// The member's last counted MapleScouter lookup start and its job.
+    /// The member's last counted scouter lookup start and its job.
     member_estimate: Option<(i64, String)>,
     /// The roster module's startup flag (on unless `/__mock/modules` turns it off).
     roster: bool,

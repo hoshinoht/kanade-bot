@@ -66,7 +66,7 @@ pub struct Health {
     pub posts: Option<PostCounts>,
     /// Posts an admin should look at: `unknown`, `stuck`, `overdue`.
     pub post_issues: Vec<super::PostIssue>,
-    /// MapleScouter: `off` without `KANADE_SCOUTER_URL`.
+    /// The scouter: `off` without `KANADE_SCOUTER_URL`.
     pub scouter: ScouterHealth,
 }
 

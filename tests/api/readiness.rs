@@ -175,7 +175,7 @@ async fn readiness_judges_each_slot_per_boss_and_writes_nothing() {
         linked["power"],
         json!({"kind": "nexon_cp", "value": NEXON_CP, "as_of": "2026-09-28"})
     );
-    // Estimates off (no scouter URL): never a MapleScouter reading.
+    // Estimates off (no scouter URL): never a scouter reading.
     assert_eq!(
         linked["bosses"],
         json!([{"boss": "Kalos", "difficulty": "x", "entry_level": 265, "level": "ok", "scouter": null}])

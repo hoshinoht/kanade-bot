@@ -1,4 +1,4 @@
-//! MapleScouter estimates for module `character_data` (admin only, on
+//! Scouter estimates for module `character_data` (admin only, on
 //! demand, queued and looked up one at a time): the client of the private
 //! scouter sidecar (`KANADE_SCOUTER_URL`, a separate Compose project with
 //! no authentication), the lookup jobs and their in-memory 24-hour cache, and
@@ -7,8 +7,8 @@
 //! The sidecar is only ever sent roster IGNs ([`RosterIgn`], built from a
 //! roster `Character`) as `ign` or `igns`: never a preset, never a Nexon
 //! field. Results never reach a model, a file or a log line (logs carry
-//! codes and counts only), and are labelled "Estimate for planning only,
-//! not eligibility".
+//! codes and counts only), and are labelled "For planning only, not
+//! eligibility".
 
 mod client;
 mod estimates;

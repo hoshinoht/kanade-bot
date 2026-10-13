@@ -66,14 +66,14 @@ pub const MEMBER_LOOKUPS: Rule = Rule {
 /// The audited route name of a refused member lookup preview.
 pub const MEMBER_LOOKUP_ROUTE: &str = "member_lookup";
 
-/// A member starts at most one MapleScouter lookup this often; a lookup
+/// A member starts at most one scouter lookup this often; a lookup
 /// that fails does not count.
 pub const MEMBER_ESTIMATE_SPACING: TimeDelta = TimeDelta::minutes(30);
 
 /// The audited route name of a refused member lookup start.
 pub const MEMBER_ESTIMATE_ROUTE: &str = "member_estimate";
 
-/// A member's last counted MapleScouter lookup start.
+/// A member's last counted scouter lookup start.
 #[derive(Clone, Debug)]
 struct EstimateStart {
     at: DateTime<Utc>,
@@ -233,7 +233,7 @@ impl RateLimits {
         self.take_member(MEMBER_LOOKUPS, |state| &mut state.lookups, member, now)
     }
 
-    /// Claim `member`'s MapleScouter lookup start at `now`: refused with the
+    /// Claim `member`'s scouter lookup start at `now`: refused with the
     /// time the next one may start while their last counted start is under
     /// [`MEMBER_ESTIMATE_SPACING`] old, unless `failed` says that job failed
     /// (a failure never counts). A claim must be settled with

@@ -1,4 +1,4 @@
-//! MapleScouter estimates (module `character_data` with
+//! Scouter estimates (module `character_data` with
 //! `KANADE_SCOUTER_URL`) over the seeded store of `reads.rs` (`r-kalos`
 //! XKalos with 1001, 1002 and 1004) and a fake scouter sidecar on loopback
 //! with invented IGNs and numbers. The fake answers by IGN prefix: `Busy`,
@@ -170,7 +170,7 @@ fn batch(igns: &[&str]) -> Value {
     })
 }
 
-/// MapleScouter's error answer for `ign`, by its prefix.
+/// The scouter's error answer for `ign`, by its prefix.
 fn refusal(ign: &str) -> Option<Response> {
     let (status, code, retry) = [
         ("Busy", 429, "busy", Some("5")),
@@ -499,8 +499,8 @@ async fn one_character_is_one_ign_lookup_with_a_pinned_request() {
     assert_eq!(running["characters"][0]["outcome"], "pending");
     let done = settled(&reads, &running).await;
     assert_eq!(done["state"], "done", "{done}");
-    assert_eq!(done["label"], "Estimate from MapleScouter");
-    assert_eq!(done["note"], "Estimate for planning only, not eligibility");
+    assert_eq!(done["label"], "Clear-time estimate");
+    assert_eq!(done["note"], "For planning only, not eligibility");
     assert_eq!(done["character_ids"], json!([id]));
     assert_eq!(done["run_id"], Value::Null);
     assert_eq!(done["fetched_at"], "2026-09-29T04:00:00Z");
@@ -674,7 +674,7 @@ async fn scouter_errors_map_to_the_drawn_states_and_are_never_cached() {
             Some(429),
             "busy",
             Some(5),
-            "MapleScouter is busy.",
+            "The scouter is busy.",
         ),
         (
             "LimitedAa",
@@ -682,7 +682,7 @@ async fn scouter_errors_map_to_the_drawn_states_and_are_never_cached() {
             Some(429),
             "upstream_rate_limited",
             Some(40),
-            "MapleScouter is busy.",
+            "The scouter is busy.",
         ),
         (
             "CritAa",
@@ -690,7 +690,7 @@ async fn scouter_errors_map_to_the_drawn_states_and_are_never_cached() {
             Some(422),
             "critical_rate_setup_required",
             None,
-            "Set up critical rate on MapleScouter first.",
+            "Set up critical rate on the scouter first.",
         ),
         (
             "VerifyAa",
@@ -1223,7 +1223,7 @@ async fn an_assumed_critical_rate_is_labelled_in_the_result_and_readiness() {
         ),
         (&json!(true), &json!(89.0))
     );
-    assert_eq!(done["note"], "Estimate for planning only, not eligibility");
+    assert_eq!(done["note"], "For planning only, not eligibility");
     // Readiness carries the same label for each of the character's bosses.
     let ready = reads.read("/api/admin/runs/r-kalos/readiness", READY).await;
     assert_eq!(
@@ -1381,7 +1381,7 @@ fn ready_slot<'a>(answer: &'a Value, member: &str) -> &'a Value {
 }
 
 /// Readiness (`r-kalos` XKalos; `r-star` HMaleficStar + HLucid with Alice)
-/// shows each character's cached MapleScouter reading per boss, from a
+/// shows each character's cached scouter reading per boss, from a
 /// lookup of them alone or of a run that included them, and never looks
 /// anything up itself. NEXON combat power stays as it was.
 #[tokio::test]
@@ -1449,7 +1449,7 @@ async fn readiness_shows_cached_scouter_readings_per_boss_and_never_looks_up() {
     let bob = ready_slot(&mixed, "1002");
     assert_eq!(bob["power"], nexon_cp);
     assert_eq!(bob["bosses"][0]["scouter"], Value::Null);
-    // Mapped bosses only: Star has a card; Lucid has none at MapleScouter.
+    // Mapped bosses only: Star has a card; Lucid has none at the scouter.
     let star = reads.read(STAR, READY).await;
     let shares: Vec<&Value> = ready_slot(&star, "1001")["bosses"]
         .as_array()

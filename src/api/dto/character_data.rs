@@ -195,7 +195,7 @@ pub struct CharacterDataHealth {
     pub scouter: ScouterHealthBlock,
 }
 
-/// MapleScouter (estimates): `off` without `KANADE_SCOUTER_URL`.
+/// The scouter (estimates): `off` without `KANADE_SCOUTER_URL`.
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ScouterHealthBlock {
@@ -207,7 +207,7 @@ pub struct ScouterHealthBlock {
     /// The sidecar's `http://host[:port]` (no secret); `null` while off.
     pub url: Option<String>,
     pub last_lookup_at: Option<String>,
-    /// The last error's code: MapleScouter's (`busy`,
+    /// The last error's code: the scouter's (`busy`,
     /// `verification_required`, `lookup_timeout`, …) or `timeout`,
     /// `unreachable`, `unreadable`.
     pub last_error: Option<String>,

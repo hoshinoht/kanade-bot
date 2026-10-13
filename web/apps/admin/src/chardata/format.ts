@@ -7,7 +7,7 @@ import type { BossReadiness, CharacterDataHealth, EstimateMissing, ReadinessSlot
 import { asOfDate, combatPower, type ChipTone, type IconName } from '@kanade/ui';
 
 /**
- * The slot's MapleScouter reading time (B_CharReady), when any boss has one:
+ * The slot's scouter reading time (B_CharReady), when any boss has one:
  * its readings replace the NEXON CP for that slot (the newest, as they come
  * from one lookup). Shown, never judged.
  */
@@ -19,7 +19,7 @@ export function scouterAt(slot: ReadinessSlot): string | null {
 
 /**
  * "Lv. 283 · CP 48.2M" and its source: "NEXON · as of 29 Sep", "manual · not linked".
- * With a MapleScouter reading the CP is left out ("Lv. 283"): the per-boss chips replace it.
+ * With a scouter reading the CP is left out ("Lv. 283"): the per-boss chips replace it.
  */
 export function readinessLine(slot: ReadinessSlot): { values: string; source: string } {
   const scouter = scouterAt(slot) !== null;
@@ -59,7 +59,7 @@ export const MISSING_REASONS: Record<EstimateMissing['reason'], string> = {
   no_characters: 'no characters on the roster',
   no_character_picked: 'no character picked',
   other_region: 'not a MapleSEA character',
-  unsupported_ign: 'an IGN MapleScouter can’t look up',
+  unsupported_ign: 'an IGN the scouter can’t look up',
 };
 
 /** "A", "A and B", "A, B and C". */

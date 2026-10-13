@@ -186,13 +186,13 @@
         "entry_level": { "type": ["integer", "null"], "minimum": 1, "description": "From boss knowledge; null when it has none." },
         "level": { "enum": ["ok", "under", "unknown"], "description": "ok at or above entry_level; unknown without a level or an entry_level." },
         "scouter": {
-          "description": "The character's MapleScouter reading for this boss from the estimates' 24-hour memory (readiness never looks one up); null without one, for a boss MapleScouter has no card for, or while estimates are off.",
+          "description": "The character's scouter reading for this boss from the estimates' 24-hour memory (readiness never looks one up); null without one, for a boss the scouter has no card for, or while estimates are off.",
           "oneOf": [{ "$ref": "#/$defs/ScouterReading" }, { "type": "null" }]
         }
       }
     },
     "ScouterReading": {
-      "description": "Shown, never judged: Estimate from MapleScouter, for planning only, not eligibility.",
+      "description": "Shown, never judged: a clear-time estimate, for planning only, not eligibility.",
       "type": "object",
       "additionalProperties": false,
       "required": ["percentage", "rating", "estimated_minutes", "fetched_at", "critical_rate_assumed", "critical_rate_actual"],
@@ -200,9 +200,9 @@
         "percentage": { "type": "number", "minimum": 0, "description": "The character's share (effective_percentage), else the card's percentage." },
         "rating": { "type": "string" },
         "estimated_minutes": { "type": ["number", "null"], "minimum": 0 },
-        "fetched_at": { "type": "string", "description": "When kanade received it from MapleScouter." },
-        "critical_rate_assumed": { "type": "boolean", "description": "MapleScouter assumed a 100% critical rate (the character's is under it): label it Assumes 100% critical rate (actual N%)." },
-        "critical_rate_actual": { "type": ["number", "null"], "minimum": 0, "description": "The character's own critical rate with an assumed reading; null otherwise or when MapleScouter didn't say." }
+        "fetched_at": { "type": "string", "description": "When kanade received it from the scouter." },
+        "critical_rate_assumed": { "type": "boolean", "description": "The scouter assumed a 100% critical rate (the character's is under it): label it Assumes 100% critical rate (actual N%)." },
+        "critical_rate_actual": { "type": ["number", "null"], "minimum": 0, "description": "The character's own critical rate with an assumed reading; null otherwise or when the scouter didn't say." }
       }
     },
     "CharacterDataHealth": {
@@ -283,7 +283,7 @@
       }
     },
     "ScouterHealth": {
-      "description": "MapleScouter estimates: off without KANADE_SCOUTER_URL; verification_required stays until a lookup succeeds again.",
+      "description": "Scouter estimates: off without KANADE_SCOUTER_URL; verification_required stays until a lookup succeeds again.",
       "type": "object",
       "additionalProperties": false,
       "required": ["state", "url", "last_lookup_at", "last_error", "last_error_at"],
@@ -291,7 +291,7 @@
         "state": { "enum": ["off", "ok", "unreachable", "verification_required"] },
         "url": { "type": ["string", "null"], "pattern": "^http://", "description": "The sidecar's http://host[:port]; null while off." },
         "last_lookup_at": { "$ref": "common.json#/$defs/NullableString" },
-        "last_error": { "$ref": "common.json#/$defs/NullableString", "description": "MapleScouter's error code (busy, upstream_rate_limited, critical_rate_setup_required, verification_required, upstream_blocked, lookup_failed, result_mismatch, extraction_failed, lookup_timeout, …) or timeout, unreachable, unreadable." },
+        "last_error": { "$ref": "common.json#/$defs/NullableString", "description": "The scouter's error code (busy, upstream_rate_limited, critical_rate_setup_required, verification_required, upstream_blocked, lookup_failed, result_mismatch, extraction_failed, lookup_timeout, …) or timeout, unreachable, unreadable." },
         "last_error_at": { "$ref": "common.json#/$defs/NullableString" }
       }
     },
@@ -324,7 +324,7 @@
       }
     },
     "EstimateJob": {
-      "description": "One MapleScouter lookup (admin only), queued and looked up one at a time. MapleScouter is sent roster IGNs only, never a Nexon field.",
+      "description": "One scouter lookup (admin only), queued and looked up one at a time. The scouter is sent roster IGNs only, never a Nexon field.",
       "type": "object",
       "additionalProperties": false,
       "required": ["id", "state", "position", "run_id", "character_ids", "started_by", "started_at", "finished_at", "characters", "missing", "progress", "fetched_at", "result", "error", "label", "note"],
@@ -347,7 +347,7 @@
             "properties": {
               "character_id": { "type": "string" },
               "member_id": { "type": "string" },
-              "ign": { "type": "string", "pattern": "^[A-Za-z0-9]{1,32}$", "description": "The roster IGN, as sent to MapleScouter." },
+              "ign": { "type": "string", "pattern": "^[A-Za-z0-9]{1,32}$", "description": "The roster IGN, as sent to the scouter." },
               "outcome": { "enum": ["pending", "ok", "failed"], "description": "Recorded as each character finishes: ok is in result.members, failed has error. One character's failure never stops the others." },
               "error": { "oneOf": [{ "$ref": "#/$defs/EstimateError" }, { "type": "null" }], "description": "Why this character has no result; null unless failed." }
             }
@@ -377,11 +377,11 @@
             "current": { "$ref": "common.json#/$defs/NullableString", "description": "The character being looked up now; null while queued, between characters, for the party total and once finished." }
           }
         },
-        "fetched_at": { "$ref": "common.json#/$defs/NullableString", "description": "When the result came from MapleScouter (a cached answer keeps its first time); null until done." },
+        "fetched_at": { "$ref": "common.json#/$defs/NullableString", "description": "When the result came from the scouter (a cached answer keeps its first time); null until done." },
         "result": { "oneOf": [{ "$ref": "#/$defs/EstimateResult" }, { "type": "null" }], "description": "The characters found so far (while queued or running too) and, once done, the party total; null with nobody found." },
         "error": { "oneOf": [{ "$ref": "#/$defs/EstimateError" }, { "type": "null" }], "description": "failed: why nobody was found (the first character's error). done: why the party total is missing although characters were found (character_id null)." },
-        "label": { "const": "Estimate from MapleScouter" },
-        "note": { "const": "Estimate for planning only, not eligibility" }
+        "label": { "const": "Clear-time estimate" },
+        "note": { "const": "For planning only, not eligibility" }
       }
     },
     "EstimateResult": {
@@ -389,7 +389,7 @@
       "additionalProperties": false,
       "required": ["cache_hit", "complete", "members", "combined"],
       "properties": {
-        "cache_hit": { "type": "boolean", "description": "Answered from kanade's 24-hour memory (never persisted) without calling MapleScouter." },
+        "cache_hit": { "type": "boolean", "description": "Answered from kanade's 24-hour memory (never persisted) without calling the scouter." },
         "complete": { "type": "boolean", "description": "Done, no party member missing or failed, and every total complete." },
         "members": {
           "type": "array",
@@ -401,8 +401,8 @@
               "character_id": { "type": "string" },
               "ign": { "type": "string" },
               "preset": { "type": "string", "pattern": "^[0-9]{5}$" },
-              "critical_rate_assumed": { "type": "boolean", "description": "The character's critical rate is under 100% and MapleScouter assumed exactly 100%: label it Assumes 100% critical rate (actual N%) wherever its numbers show." },
-              "critical_rate_actual": { "type": ["number", "null"], "minimum": 0, "description": "The character's own critical rate with an assumed result; null otherwise or when MapleScouter didn't say." },
+              "critical_rate_assumed": { "type": "boolean", "description": "The character's critical rate is under 100% and the scouter assumed exactly 100%: label it Assumes 100% critical rate (actual N%) wherever its numbers show." },
+              "critical_rate_actual": { "type": ["number", "null"], "minimum": 0, "description": "The character's own critical rate with an assumed result; null otherwise or when the scouter didn't say." },
               "bosses": {
                 "type": "array",
                 "description": "Catalog bosses only, in catalog order.",
@@ -459,15 +459,15 @@
       }
     },
     "EstimateError": {
-      "description": "The drawn error states, per character or for the job. A 429 busy is asked again after its Retry-After within the job's deadline; busy here means it stayed busy past it (or MapleScouter was rate-limited).",
+      "description": "The drawn error states, per character or for the job. A 429 busy is asked again after its Retry-After within the job's deadline; busy here means it stayed busy past it (or the scouter was rate-limited).",
       "type": "object",
       "additionalProperties": false,
       "required": ["code", "message", "status", "detail", "retry_after_seconds", "character_id"],
       "properties": {
         "code": { "enum": ["busy", "critical_rate", "manual_check", "failed"] },
-        "message": { "enum": ["MapleScouter is busy.", "Set up critical rate on MapleScouter first.", "Scouter needs a manual check.", "Lookup failed."] },
-        "status": { "type": ["integer", "null"], "description": "MapleScouter's HTTP status (429, 422, 503, 502, 504); null without an answer." },
-        "detail": { "type": "string", "description": "MapleScouter's error code, or timeout, unreachable, unreadable." },
+        "message": { "enum": ["The scouter is busy.", "Set up critical rate on the scouter first.", "Scouter needs a manual check.", "Lookup failed."] },
+        "status": { "type": ["integer", "null"], "description": "The scouter's HTTP status (429, 422, 503, 502, 504); null without an answer." },
+        "detail": { "type": "string", "description": "The scouter's error code, or timeout, unreachable, unreadable." },
         "retry_after_seconds": { "type": ["integer", "null"], "minimum": 0, "description": "429 only: Retry-After." },
         "character_id": { "$ref": "common.json#/$defs/NullableString", "description": "The character it is about, when known; null for a party total's own failure." }
       }

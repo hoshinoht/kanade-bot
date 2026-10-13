@@ -144,11 +144,11 @@ test('chardata strip: the phone sheet puts 44 px actions under the values', asyn
 test('chardata estimate row: labelled, runs as a job, then shows catalog bosses', async ({ page }) => {
   const strip = stripOf(await openEdit(page, 'MikaBish'));
   const row = strip.locator('.estimate');
-  await expect(row.locator('.estimate__label')).toHaveText('Estimate from MapleScouter');
-  await expect(row.locator('.estimate__head + .chardata__sub')).toContainText('Estimate for planning only, not eligibility.');
+  await expect(row.locator('.estimate__label')).toHaveText('Clear-time estimate');
+  await expect(row.locator('.estimate__head + .chardata__sub')).toContainText('For planning only, not eligibility.');
   await expect(row).toContainText('No lookup in the last 24 h.');
   await row.getByRole('button', { name: 'Look up' }).click();
-  const table = row.getByRole('table', { name: 'Estimate from MapleScouter for MikaBish' });
+  const table = row.getByRole('table', { name: 'Clear-time estimate for MikaBish' });
   await expect(table).toBeVisible();
   await expect(table.getByRole('row')).toHaveCount(5);
   await expect(table.getByRole('row').nth(1)).toContainText('Limbo');
@@ -171,10 +171,10 @@ test('chardata estimate row: running, queued behind it, busy, 422, 503 and faile
   await expect(row.locator('.estimate__error')).toHaveCount(0);
 
   const cases: [string, RegExp, string, boolean][] = [
-    ['busy', /Look up · 0:\d\d$/, 'MapleScouter is busy.', true],
-    ['critical_rate', /Look up again$/, 'Set up critical rate on MapleScouter first.', false],
+    ['busy', /Look up · 0:\d\d$/, 'The scouter is busy.', true],
+    ['critical_rate', /Look up again$/, 'Set up critical rate on the scouter first.', false],
     ['manual_check', /Look up$/, 'Scouter needs a manual check.', true],
-    ['timeout', /Try again$/, 'MapleScouter didn’t answer within 2 minutes (504).', false],
+    ['timeout', /Try again$/, 'The scouter didn’t answer within 2 minutes (504).', false],
   ];
   for (const [scenario, button, text, off] of cases) {
     await page.request.post(`${ADMIN}/api/admin/reset`);
@@ -210,8 +210,8 @@ async function carling(page: Page): Promise<Locator> {
 test('chardata estimate panel: party lookup with totals, missing members and the labels', async ({ page }) => {
   const sheet = await carling(page);
   const panel = sheet.locator('.estimate-panel');
-  await expect(panel.locator('.estimate__label')).toHaveText('Estimate from MapleScouter');
-  await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText("Estimate for planning only, not eligibility. Members see their own and their run party’s estimates.");
+  await expect(panel.locator('.estimate__label')).toHaveText('Clear-time estimate');
+  await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText("For planning only, not eligibility. Members see their own and their run party’s estimates.");
   await expect(panel).toContainText('this run brings (at most 6)');
   // Mika brings MikaBish from the timing; only Ren (2), with no characters, is missing.
   await expect(panel).toContainText('Ren (2) has no character yet and will be listed as missing.');
@@ -283,15 +283,15 @@ test('chardata estimate: an assumed critical rate is labelled in the panel, the 
   await expect(panel.locator('.estimate__combined')).toContainText('Carling', { timeout: 20_000 });
   await expect(panel.locator('.estimate__assumed')).toHaveText(['Assumes 100% critical rate (actual 89%)']);
   await expect(panel.locator('p.chardata__foot')).toContainText('at an assumed 100% critical rate.');
-  await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText('Estimate for planning only, not eligibility.');
+  await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText('For planning only, not eligibility.');
   const chip = sheet.locator('.ready__scouter', { hasText: 'crit assumed' }).first();
-  await expect(chip).toHaveText(/^MapleScouter \d+%( · ~\d+ min)? · crit assumed/);
+  await expect(chip).toHaveText(/^Estimate \d+%( · ~\d+ min)? · crit assumed/);
   await expect(chip).toHaveAttribute('title', /Assumes 100% critical rate \(actual 89%\)$/);
 
   const row = stripOf(await openEdit(page, 'MikaBish')).locator('.estimate');
   await row.getByRole('button', { name: 'Look up' }).click();
   await expect(row.locator('.estimate__assumed')).toHaveText('Assumes 100% critical rate (actual 89%)');
-  await expect(row.getByRole('table', { name: 'Estimate from MapleScouter for MikaBish · Assumes 100% critical rate (actual 89%)' })).toBeVisible();
+  await expect(row.getByRole('table', { name: 'Clear-time estimate for MikaBish · Assumes 100% critical rate (actual 89%)' })).toBeVisible();
 });
 
 test('chardata estimate row: waiting behind other lookups shows its place, then the result', async ({ page }) => {
@@ -300,7 +300,7 @@ test('chardata estimate row: waiting behind other lookups shows its place, then 
   await row.getByRole('button', { name: 'Look up' }).click();
   await expect(row.locator('.estimate__progress')).toContainText('Queued · 2 ahead');
   await expect(row.locator('.estimate__progress')).toContainText('Queued · 1 ahead');
-  await expect(row.getByRole('table', { name: 'Estimate from MapleScouter for MikaBish' })).toBeVisible({ timeout: 20_000 });
+  await expect(row.getByRole('table', { name: 'Clear-time estimate for MikaBish' })).toBeVisible({ timeout: 20_000 });
 });
 
 test('chardata estimate panel: the phone Party list ends with it', async ({ page }) => {
@@ -379,7 +379,7 @@ test('chardata readiness: level and CP per slot, a level verdict per boss, attri
   await expect(slotOf(sheet, 'Mika').getByRole('group', { name: 'Readiness of Mikadere' }).getByRole('listitem')).toHaveText([/^HCarling\s*under Lv\. \d+$/, /^HStar\s*under Lv\. \d+$/]);
 });
 
-test('chardata readiness: after the run lookup ends, MapleScouter per boss replaces the slot CP', async ({ page }) => {
+test('chardata readiness: after the run lookup ends, the estimate per boss replaces the slot CP', async ({ page }) => {
   const sheet = await carling(page);
   const yuzu = slotOf(sheet, 'Yuzu').getByRole('group', { name: 'Readiness of YuzuPala' });
   await expect(yuzu).toContainText('Lv. 276 · CP 52.1M');
@@ -388,14 +388,14 @@ test('chardata readiness: after the run lookup ends, MapleScouter per boss repla
   await sheet.locator('.estimate-panel').getByRole('button', { name: 'Look up party' }).click();
   // No page reload: readiness is read again when the lookup ends.
   const chip = yuzu.locator('.ready__scouter').first();
-  await expect(chip).toHaveText(/^MapleScouter \d+% · ~\d+ min/, { timeout: 20_000 });
+  await expect(chip).toHaveText(/^Estimate \d+% · ~\d+ min/, { timeout: 20_000 });
   await expect(chip).toHaveAttribute('title', 'Party-able');
   await expect(yuzu.locator('.ready__values')).toHaveText('Lv. 276');
   await expect(yuzu).not.toContainText('CP 52.1M');
-  await expect(yuzu.locator('.ready__scouter-at')).toContainText(/^MapleScouter · \d+ \w{3} \d{2}:\d{2}$/);
+  await expect(yuzu.locator('.ready__scouter-at')).toContainText(/^Estimate · \d+ \w{3} \d{2}:\d{2}$/);
   // Level chips unchanged; the label and note show once for the panel.
   await expect(yuzu.getByRole('listitem').first().locator('.status-chip').first()).toHaveText('Lv ok');
-  await expect(sheet.locator('.ready__estimate')).toHaveText(/^Estimate from MapleScouter · Estimate for planning only, not eligibility\./);
+  await expect(sheet.locator('.ready__estimate')).toHaveText(/^Clear-time estimate · For planning only, not eligibility\./);
 });
 
 test('chardata readiness: the phone list says it never blocks; module off asks nothing', async ({ page }) => {
@@ -533,7 +533,7 @@ test('chardata capture', async ({ page }) => {
     await expect(sheet.locator('.ready').first()).toBeVisible();
     await shot(`${P}CharReady`, phone ? sheet.locator('.ready__hint') : undefined);
 
-    // The same readiness once a party lookup is kept: MapleScouter per boss replaces the CP.
+    // The same readiness once a party lookup is kept: the estimate per boss replaces the CP.
     await reset();
     await page.request.put(`${ADMIN}/api/admin/runs/${RUN}/characters/1003`, { headers: await csrf(page.request), data: { character_id: 'ch-s3', version: 0 } });
     const started = await page.request.post(`${ADMIN}/api/admin/estimates`, { headers: await csrf(page.request), data: { run_id: RUN } });

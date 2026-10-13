@@ -346,7 +346,7 @@
   $effect(() => chars?.follow());
   // Module `character_data` (B_CharReady): level and power per slot, judged per boss of the run.
   // Computed on read and never blocking; read again whenever the picks are, and when a
-  // MapleScouter lookup ends (its readings replace the slot's CP).
+  // scouter lookup ends (its readings replace the slot's CP).
   const ready = $derived(charRun ? new RunReadinessView(charRun) : null);
   $effect(() => {
     if (!ready || !chars?.data) return;
@@ -551,7 +551,7 @@
   <div class="runsheet__charrules ready__rules" data-fid="party-ready-rules">
     <span class="cap">How the verdict reads</span>
     <span>Per boss of the run: level against its entry level.</span>
-    <span>CP, or MapleScouter where a lookup is kept, is shown, never judged.</span>
+    <span>CP, or the estimate where a lookup is kept, is shown, never judged.</span>
     <span>Fresh NEXON data first; else the roster level, marked manual.</span>
   </div>
 {/snippet}
@@ -1206,7 +1206,7 @@
                 {/if}
                 {#if readyShown && !wide}
                   <li class="hint ready__hint">
-                    Per boss: level against its entry level. CP and MapleScouter are shown, never judged.
+                    Per boss: level against its entry level. CP and estimates are shown, never judged.
                   </li>
                 {/if}
                 {#if charsShown && !wide}
