@@ -670,21 +670,14 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         reason: Option<String>,
         notices: Vec<Notice>,
     ) -> RequestResult<StoredDraft> {
-        let update = DraftUpdate {
-            draft_id: loaded.draft.id.clone(),
-            expected_version: loaded.draft.version,
-            actor,
-            at: self.clock.now(),
-            change: DraftChange::Close {
-                status,
-                reason,
-                notices,
-            },
+        let change = DraftChange::Close {
+            status,
+            reason,
+            notices,
         };
-        match self.store.update_draft(update).await? {
-            DraftWrite::Written(draft) => Ok(draft),
-            DraftWrite::Stale(stale) => Err(stale_of(&loaded.draft.id, stale).into()),
-        }
+        Ok(self
+            .update_as(&loaded.draft, actor, self.clock.now(), change)
+            .await?)
     }
 
     /// Close an expired request (as the tick's system actor) and return

@@ -1629,6 +1629,24 @@ struct Rollback<'a> {
     preview: bool,
 }
 
+impl<'a> Rollback<'a> {
+    /// A rollback with no checkpoint; a week selection reverts only within
+    /// that week.
+    fn new(selection: Selection<'a>, mode: RevertMode, preview: bool) -> Self {
+        let scope = match selection {
+            Selection::Week { week, .. } => RevertScope::Week(week),
+            Selection::Seqs(_) | Selection::Actor { .. } => RevertScope::Whole,
+        };
+        Self {
+            selection,
+            scope,
+            mode,
+            checkpoint: None,
+            preview,
+        }
+    }
+}
+
 impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S, I, C> {
     /// Revert the named records as one new change by `admin` through
     /// [`Surface::Rollback`] (history is never rewritten). `held` supplies
@@ -1650,13 +1668,7 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
         policy: &ReminderPolicy,
         held: &impl HeldReminders,
     ) -> SchedulerResult<RevertOutcome> {
-        let rollback = Rollback {
-            selection: Selection::Seqs(seqs),
-            scope: RevertScope::Whole,
-            mode,
-            checkpoint: None,
-            preview: false,
-        };
+        let rollback = Rollback::new(Selection::Seqs(seqs), mode, false);
         self.rollback(admin, request_id, rollback, policy, held)
             .await
     }
@@ -1678,13 +1690,7 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
         policy: &ReminderPolicy,
         held: &impl HeldReminders,
     ) -> SchedulerResult<RevertOutcome> {
-        let rollback = Rollback {
-            selection: Selection::Week { week, revision },
-            scope: RevertScope::Week(week),
-            mode,
-            checkpoint: None,
-            preview: false,
-        };
+        let rollback = Rollback::new(Selection::Week { week, revision }, mode, false);
         self.rollback(admin, request_id, rollback, policy, held)
             .await
     }
@@ -1704,13 +1710,7 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
         policy: &ReminderPolicy,
         held: &impl HeldReminders,
     ) -> SchedulerResult<RevertOutcome> {
-        let rollback = Rollback {
-            selection: Selection::Actor { actor, since },
-            scope: RevertScope::Whole,
-            mode,
-            checkpoint: None,
-            preview: false,
-        };
+        let rollback = Rollback::new(Selection::Actor { actor, since }, mode, false);
         self.rollback(admin, request_id, rollback, policy, held)
             .await
     }
@@ -1727,13 +1727,7 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
         policy: &ReminderPolicy,
         held: &impl HeldReminders,
     ) -> SchedulerResult<RevertOutcome> {
-        let rollback = Rollback {
-            selection: Selection::Seqs(seqs),
-            scope: RevertScope::Whole,
-            mode,
-            checkpoint: None,
-            preview: true,
-        };
+        let rollback = Rollback::new(Selection::Seqs(seqs), mode, true);
         self.rollback("preview", None, rollback, policy, held).await
     }
 
@@ -1749,13 +1743,7 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
         policy: &ReminderPolicy,
         held: &impl HeldReminders,
     ) -> SchedulerResult<RevertOutcome> {
-        let rollback = Rollback {
-            selection: Selection::Week { week, revision },
-            scope: RevertScope::Week(week),
-            mode,
-            checkpoint: None,
-            preview: true,
-        };
+        let rollback = Rollback::new(Selection::Week { week, revision }, mode, true);
         self.rollback("preview", None, rollback, policy, held).await
     }
 
@@ -1771,13 +1759,7 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
         policy: &ReminderPolicy,
         held: &impl HeldReminders,
     ) -> SchedulerResult<RevertOutcome> {
-        let rollback = Rollback {
-            selection: Selection::Actor { actor, since },
-            scope: RevertScope::Whole,
-            mode,
-            checkpoint: None,
-            preview: true,
-        };
+        let rollback = Rollback::new(Selection::Actor { actor, since }, mode, true);
         self.rollback("preview", None, rollback, policy, held).await
     }
 
@@ -1997,15 +1979,13 @@ impl<S: ScheduleStore + ChangeHistory + Checkpoints, I: IdSource, C: Clock>
         held: &impl HeldReminders,
     ) -> SchedulerResult<RevertOutcome> {
         let checkpoint = self.checkpoint(name).await?;
+        let week = Selection::Week {
+            week: checkpoint.week,
+            revision: checkpoint.revision,
+        };
         let rollback = Rollback {
-            selection: Selection::Week {
-                week: checkpoint.week,
-                revision: checkpoint.revision,
-            },
-            scope: RevertScope::Week(checkpoint.week),
-            mode,
             checkpoint: Some((checkpoint.name.clone(), checkpoint.head)),
-            preview,
+            ..Rollback::new(week, mode, preview)
         };
         match self
             .rollback(admin, request_id, rollback, policy, held)

@@ -16,9 +16,9 @@ use super::ports::{Clock, IdSource, ScheduleStore, Scope, StoreError};
 use super::service::{SchedulerError, SchedulerService, digest};
 use crate::domain::completion::RunEnds;
 use crate::domain::drafts::{
-    DEFAULT_PROPOSAL_TTL, DraftChange, DraftOp, DraftStale, DraftStatus, DraftUpdate, DraftWrite,
-    ExistingProposal, LoadedDraft, MergeAnalysis, NewProposal, ProposalCreated, ProposalInfo,
-    ProposalSource, ProposalStore, ProposalSubmission, SUPERSEDED, StagedOp, StoredDraft, Target,
+    DEFAULT_PROPOSAL_TTL, DraftChange, DraftOp, DraftStale, DraftStatus, ExistingProposal,
+    LoadedDraft, MergeAnalysis, NewProposal, ProposalCreated, ProposalInfo, ProposalSource,
+    ProposalStore, ProposalSubmission, SUPERSEDED, StagedOp, StoredDraft, Target,
     analyze_merge_applying, expires_week, replay,
 };
 use crate::domain::history::{Actor, Origin, Surface};
@@ -559,21 +559,14 @@ impl<S: ScheduleStore + ProposalStore, I: IdSource, C: Clock> SchedulerService<S
         status: DraftStatus,
         reason: Option<String>,
     ) -> ProposalResult<StoredDraft> {
-        let update = DraftUpdate {
-            draft_id: draft.id.clone(),
-            expected_version: draft.version,
-            actor,
-            at: self.clock.now(),
-            change: DraftChange::Close {
-                status,
-                reason,
-                notices: Vec::new(),
-            },
+        let change = DraftChange::Close {
+            status,
+            reason,
+            notices: Vec::new(),
         };
-        match self.store.update_draft(update).await? {
-            DraftWrite::Written(draft) => Ok(draft),
-            DraftWrite::Stale(stale) => Err(stale_of(&draft.id, stale).into()),
-        }
+        Ok(self
+            .update_as(draft, actor, self.clock.now(), change)
+            .await?)
     }
 
     /// Approve (✅) a proposal as `approver`: authorised on the current

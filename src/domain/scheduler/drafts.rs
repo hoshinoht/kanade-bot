@@ -716,24 +716,38 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         for (position, op) in staged.iter_mut().enumerate() {
             op.ord = position;
         }
+        let change = DraftChange::ReplaceOps {
+            ops: staged,
+            event,
+            ord,
+            expires_week,
+        };
+        let written = self
+            .update_as(draft, Actor::admin(admin), now, change)
+            .await?;
+        self.store
+            .load_draft(&written.id)
+            .await?
+            .ok_or(DraftError::UnknownDraft(written.id))
+    }
+
+    /// Write one change to the live `draft` as `actor` at `at`.
+    pub(super) async fn update_as(
+        &self,
+        draft: &StoredDraft,
+        actor: Actor,
+        at: DateTime<Utc>,
+        change: DraftChange,
+    ) -> DraftResult<StoredDraft> {
         let update = DraftUpdate {
             draft_id: draft.id.clone(),
             expected_version: draft.version,
-            actor: Actor::admin(admin),
-            at: now,
-            change: DraftChange::ReplaceOps {
-                ops: staged,
-                event,
-                ord,
-                expires_week,
-            },
+            actor,
+            at,
+            change,
         };
         match self.store.update_draft(update).await? {
-            DraftWrite::Written(draft) => Ok(self
-                .store
-                .load_draft(&draft.id)
-                .await?
-                .ok_or_else(|| DraftError::UnknownDraft(draft.id.clone()))?),
+            DraftWrite::Written(draft) => Ok(draft),
             DraftWrite::Stale(stale) => Err(stale_of(&draft.id, stale)),
         }
     }
@@ -892,22 +906,14 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
             directory,
             now,
         )?;
-        let update = DraftUpdate {
-            draft_id: loaded.draft.id.clone(),
-            expected_version: loaded.draft.version,
-            actor: Actor::admin(admin),
-            at: now,
-            change: DraftChange::Rebase {
-                base: flow.head,
-                base_revision: flow.current.revision,
-                expires_week: expires,
-                ops: staged,
-            },
+        let change = DraftChange::Rebase {
+            base: flow.head,
+            base_revision: flow.current.revision,
+            expires_week: expires,
+            ops: staged,
         };
-        match self.store.update_draft(update).await? {
-            DraftWrite::Written(draft) => Ok(draft),
-            DraftWrite::Stale(stale) => Err(stale_of(&loaded.draft.id, stale)),
-        }
+        self.update_as(&loaded.draft, Actor::admin(admin), now, change)
+            .await
     }
 
     /// Rename a live draft (1..=200 characters); its operations are as
@@ -922,19 +928,11 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
         check_title(title)?;
         let now = self.clock.now();
         let loaded = load_live(&self.store, draft_id, expected_version).await?;
-        let update = DraftUpdate {
-            draft_id: loaded.draft.id.clone(),
-            expected_version: loaded.draft.version,
-            actor: Actor::admin(admin),
-            at: now,
-            change: DraftChange::Retitle {
-                title: title.to_owned(),
-            },
+        let change = DraftChange::Retitle {
+            title: title.to_owned(),
         };
-        match self.store.update_draft(update).await? {
-            DraftWrite::Written(draft) => Ok(draft),
-            DraftWrite::Stale(stale) => Err(stale_of(&loaded.draft.id, stale)),
-        }
+        self.update_as(&loaded.draft, Actor::admin(admin), now, change)
+            .await
     }
 
     /// Discard a live draft for good; its operations stay in history.
@@ -947,21 +945,13 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
     ) -> DraftResult<StoredDraft> {
         let now = self.clock.now();
         let loaded = load_live(&self.store, draft_id, expected_version).await?;
-        let update = DraftUpdate {
-            draft_id: loaded.draft.id.clone(),
-            expected_version: loaded.draft.version,
-            actor: Actor::admin(admin),
-            at: now,
-            change: DraftChange::Close {
-                status: DraftStatus::Discarded,
-                reason,
-                notices: Vec::new(),
-            },
+        let change = DraftChange::Close {
+            status: DraftStatus::Discarded,
+            reason,
+            notices: Vec::new(),
         };
-        match self.store.update_draft(update).await? {
-            DraftWrite::Written(draft) => Ok(draft),
-            DraftWrite::Stale(stale) => Err(stale_of(&loaded.draft.id, stale)),
-        }
+        self.update_as(&loaded.draft, Actor::admin(admin), now, change)
+            .await
     }
 
     /// Merge the staged operations as one `DraftMerge` change: one record
