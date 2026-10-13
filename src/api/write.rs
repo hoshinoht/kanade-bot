@@ -1009,5 +1009,4 @@ where
     }
 }
 
-/// A shared writer.
 pub type SharedWriter = Arc<dyn Writer>;

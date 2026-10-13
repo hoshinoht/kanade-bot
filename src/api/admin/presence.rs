@@ -57,11 +57,8 @@ fn tab(session: &AdminSession) -> String {
 /// `?at=<kind>:<id>`, plus `&seq=<n>` exactly when `seq` is wanted (the
 /// leave); anything else is refused.
 fn query(uri: &Uri, seq: bool) -> Result<(Place, u64), ApiError> {
-    let pairs = wire::query_pairs(uri.query());
-    let sent = uri.query().map_or(0, |query| {
-        query.split('&').filter(|pair| !pair.is_empty()).count()
-    });
-    if pairs.len() != sent || pairs.len() != 1 + usize::from(seq) {
+    let pairs = wire::strict_query_pairs(uri.query()).ok_or(ApiError::INVALID_QUERY)?;
+    if pairs.len() != 1 + usize::from(seq) {
         return Err(ApiError::INVALID_QUERY);
     }
     let place = wire::query_value(&pairs, "at")

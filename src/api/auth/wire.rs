@@ -61,17 +61,26 @@ pub fn clear_cookie(name: &str, same_site: &str) -> HeaderValue {
     set_cookie(name, "", same_site, 0)
 }
 
-/// Decoded query pairs; malformed percent escapes drop the pair.
-pub fn query_pairs(query: Option<&str>) -> Vec<(String, String)> {
+fn decode_pair(pair: &str) -> Option<(String, String)> {
+    let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+    Some((decode(key)?, decode(value)?))
+}
+
+fn raw_pairs(query: Option<&str>) -> impl Iterator<Item = &str> {
     query
         .unwrap_or_default()
         .split('&')
         .filter(|pair| !pair.is_empty())
-        .filter_map(|pair| {
-            let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
-            Some((decode(key)?, decode(value)?))
-        })
-        .collect()
+}
+
+/// Decoded query pairs; malformed percent escapes drop the pair.
+pub fn query_pairs(query: Option<&str>) -> Vec<(String, String)> {
+    raw_pairs(query).filter_map(decode_pair).collect()
+}
+
+/// Decoded query pairs; `None` when any pair does not decode.
+pub fn strict_query_pairs(query: Option<&str>) -> Option<Vec<(String, String)>> {
+    raw_pairs(query).map(decode_pair).collect()
 }
 
 /// The single value of `key`; repeated keys are ambiguous and refused.

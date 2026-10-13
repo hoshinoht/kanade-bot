@@ -73,12 +73,9 @@ struct PageQuery {
 /// unknown key or malformed value is `422 invalid_query`, and so is `run`
 /// beside `week` or `actor` (a run's log is the whole of it).
 fn page_query(state: &ApiState, uri: &Uri) -> Result<PageQuery, ApiError> {
-    let pairs = wire::query_pairs(uri.query());
-    // `query_pairs` drops pairs it cannot decode; those are refused too.
-    let sent = uri.query().map_or(0, |query| {
-        query.split('&').filter(|pair| !pair.is_empty()).count()
-    });
-    if pairs.len() != sent || pairs.iter().any(|(key, _)| !PARAMS.contains(&key.as_str())) {
+    // An undecodable pair is refused too.
+    let pairs = wire::strict_query_pairs(uri.query()).ok_or(ApiError::INVALID_QUERY)?;
+    if pairs.iter().any(|(key, _)| !PARAMS.contains(&key.as_str())) {
         return Err(ApiError::INVALID_QUERY);
     }
     let value = |key: &str| -> Result<Option<String>, ApiError> {

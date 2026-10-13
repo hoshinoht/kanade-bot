@@ -37,14 +37,7 @@ struct Query {
 impl Query {
     /// Every pair, decoded; a pair that does not decode refuses the whole query.
     fn pairs(uri: &Uri) -> Result<Vec<(String, String)>, Refusal> {
-        let pairs = wire::query_pairs(uri.query());
-        let sent = uri.query().map_or(0, |query| {
-            query.split('&').filter(|pair| !pair.is_empty()).count()
-        });
-        if pairs.len() != sent {
-            return Err(invalid("A filter could not be read."));
-        }
-        Ok(pairs)
+        wire::strict_query_pairs(uri.query()).ok_or_else(|| invalid("A filter could not be read."))
     }
 
     fn once(pairs: &[(String, String)], index: usize, key: &str) -> Result<(), Refusal> {
