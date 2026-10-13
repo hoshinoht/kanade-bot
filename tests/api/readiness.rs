@@ -6,27 +6,19 @@
 //! boss, with NEXON values only from an active link's unexpired data.
 //! Invented IGNs.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use chrono::TimeDelta;
 use kanade::{
-    domain::{
-        chardata::NOTICE_VERSION,
-        settings::{SettingsChangeQuery, SettingsStore},
-    },
-    infrastructure::{
-        character_data::{CharacterData, ConfirmOutcome, RosterSide, Timing},
-        nexon::{ApiKey, NexonClient},
-        store::MemoryCharData,
-    },
+    domain::settings::{SettingsChangeQuery, SettingsStore},
+    infrastructure::character_data::{CharacterData, ConfirmOutcome},
 };
 use serde_json::{Value, json};
 
 use crate::{
-    character_data::{config, fake_nexon},
-    reads::{CharacterDataMaker, Reads},
-    schemas::assert_valid,
-    support::{ADMIN_HOST, send},
+    character_data::{config, confirm, fake_nexon, skewed},
+    reads::Reads,
+    support::{find, strs},
 };
 
 const READY: &str = "character_data.json#/$defs/RunReadiness";
@@ -35,81 +27,46 @@ const STAR: &str = "/api/admin/runs/r-star/readiness";
 /// The fake Open API's invented answer (`character_data.rs`).
 const NEXON_CP: u64 = 27_182_818;
 
-/// The module over the fake Open API, its clock the pinned one moved by
-/// `skew`; the service is handed back for the member's confirmation.
-fn module(
-    nexon: std::net::SocketAddr,
-    skew: Arc<Mutex<TimeDelta>>,
-    slot: Arc<std::sync::OnceLock<Arc<CharacterData>>>,
-) -> CharacterDataMaker {
-    Box::new(move |store, clock| {
-        let service = Arc::new(CharacterData::new(
-            Arc::new(MemoryCharData::new()),
-            store as Arc<dyn RosterSide>,
-            Some(NexonClient::plain(nexon, ApiKey::new("invented-key"))),
-            Arc::new(move || clock() + *skew.lock().unwrap()),
-            Timing {
-                spacing: std::time::Duration::from_millis(1),
-                rate_limit_unit: std::time::Duration::from_millis(1),
-            },
-        ));
-        slot.set(Arc::clone(&service)).ok().unwrap();
-        service
-    })
-}
-
 pub(crate) struct On {
     pub(crate) reads: Reads,
     pub(crate) service: Arc<CharacterData>,
     pub(crate) skew: Arc<Mutex<TimeDelta>>,
 }
 
-/// Modules `roster` and `character_data` on, over the fake Open API.
+/// Modules `roster` and `character_data` on, over the fake Open API, its
+/// clock the pinned one moved by `skew`.
 pub(crate) async fn on() -> On {
     let (address, _) = fake_nexon().await;
     let skew = Arc::new(Mutex::new(TimeDelta::zero()));
-    let slot = Arc::new(std::sync::OnceLock::new());
-    let reads = Reads::with_character_data(
-        Some(config()),
-        module(address, Arc::clone(&skew), Arc::clone(&slot)),
-    )
-    .await;
+    let slot = Arc::new(OnceLock::new());
+    let module = skewed(Some(address), Arc::clone(&slot), Arc::clone(&skew));
+    let reads = Reads::with_character_data(Some(config()), module).await;
+    let service = slot.get().unwrap().clone();
     On {
         reads,
-        service: slot.get().unwrap().clone(),
+        service,
         skew,
     }
 }
 
 pub(crate) async fn character(reads: &Reads, member: &str, ign: &str, level: u16) -> String {
     let path = format!("/api/admin/members/{member}/characters");
-    let reply = reads
-        .call("POST", &path, json!({"ign": ign, "level": level}), &[])
-        .await;
-    assert_eq!(reply.status, 201, "{}", reply.text());
-    reply.json()["id"].as_str().unwrap().to_owned()
+    let body = json!({"ign": ign, "level": level});
+    let reply = reads.call("POST", &path, body, &[]).await;
+    reply.expect(201, "characters.json#/$defs/CharacterCreated")["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
 }
 
 pub(crate) fn slot<'a>(answer: &'a Value, member: &str) -> &'a Value {
-    answer["slots"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|slot| slot["member_id"] == member)
-        .unwrap_or_else(|| panic!("no slot for {member}: {answer}"))
+    find(&answer["slots"], "member_id", member)
 }
 
 #[tokio::test]
 async fn off_the_route_is_the_generic_404() {
     let reads = Reads::with_config(|store| config()(store)).await;
-    let signed_in = reads.call("GET", KALOS, json!(null), &[]).await;
-    assert_eq!(
-        (signed_in.status, signed_in.api_error()),
-        (404, "not_found".into())
-    );
-    let anonymous = send(reads.admin, "GET", ADMIN_HOST, KALOS, &[], None).await;
-    assert_eq!(anonymous.status, 404, "before the session check");
-    assert_valid("error.json#/$defs/ApiError", KALOS, &anonymous.json());
+    reads.assert_unmounted("GET", KALOS, json!(null)).await;
 }
 
 #[tokio::test]
@@ -122,16 +79,7 @@ async fn readiness_judges_each_slot_per_boss_and_writes_nothing() {
     // Alice: linked (NEXON Lv. 271, CP 27,182,818); her manual level is 260.
     // The create already asked her to link it (pending).
     let alice = character(&reads, "1001", "Wisteria", 260).await;
-    let ConfirmOutcome::Linked(..) = service
-        .confirm_link(
-            "1001",
-            &alice,
-            NOTICE_VERSION,
-            kanade::domain::chardata::ConsentSurface::Discord,
-        )
-        .await
-        .unwrap()
-    else {
+    let ConfirmOutcome::Linked(..) = confirm(&service, "1001", &alice).await else {
         panic!("not linked");
     };
     // Bob: two characters, nothing picked, so his main (the first). Dan:
@@ -153,13 +101,7 @@ async fn readiness_judges_each_slot_per_boss_and_writes_nothing() {
     assert_eq!(ready["run_id"], "r-kalos");
     assert_eq!(ready["nexon_data"], true);
     assert_eq!(ready["attribution"], "Data based on NEXON Open API");
-    let members: Vec<&Value> = ready["slots"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|slot| &slot["member_id"])
-        .collect();
-    assert_eq!(members, [&json!("1001"), &json!("1002"), &json!("1004")]);
+    assert_eq!(strs(&ready["slots"], "member_id"), ["1001", "1002", "1004"]);
 
     let linked = slot(&ready, "1001");
     assert_eq!(linked["character"]["id"], alice.as_str());

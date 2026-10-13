@@ -28,7 +28,6 @@ use serde_json::{Value, json};
 
 use crate::{
     reads::{CharacterDataMaker, ConfigMaker, Reads},
-    schemas::assert_valid,
     support::{ADMIN_HOST, send},
 };
 
@@ -44,6 +43,7 @@ const OCID: &str = "ocid-invented-api-1";
 const NOBODY: &str = "Nobody42";
 const DOWNTIME: &str = "Downtime";
 const LOOKUP_PATH: &str = "/api/admin/characters/lookup";
+const ALICE: &str = "/api/admin/members/1001/characters";
 
 fn link(id: &str) -> String {
     format!("/api/admin/characters/{id}/link")
@@ -122,7 +122,7 @@ fn module(
 }
 
 /// [`module`] on the pinned clock moved by `skew` (the lookup spacing).
-fn skewed(
+pub(crate) fn skewed(
     nexon: Option<std::net::SocketAddr>,
     slot: Arc<std::sync::OnceLock<Arc<CharacterData>>>,
     skew: Arc<Mutex<TimeDelta>>,
@@ -143,15 +143,28 @@ fn skewed(
     })
 }
 
+/// The module over the fake Open API at `nexon` (and the config API when
+/// `config`): the reads and the service, for the member's confirmation.
+async fn on(
+    nexon: std::net::SocketAddr,
+    config: Option<ConfigMaker>,
+) -> (Reads, Arc<CharacterData>) {
+    let slot = Arc::new(std::sync::OnceLock::new());
+    let reads = Reads::with_character_data(config, module(Some(nexon), Arc::clone(&slot))).await;
+    (reads, slot.get().unwrap().clone())
+}
+
+/// `member` confirms the link from Discord (S3's /character link).
+pub(crate) async fn confirm(service: &CharacterData, member: &str, id: &str) -> ConfirmOutcome {
+    let surface = kanade::domain::chardata::ConsentSurface::Discord;
+    let confirmed = service.confirm_link(member, id, NOTICE_VERSION, surface);
+    confirmed.await.unwrap()
+}
+
 /// Create a character for Alice: its `CharacterCreated` answer.
 async fn created(reads: &Reads, body: Value) -> Value {
-    let reply = reads
-        .call("POST", "/api/admin/members/1001/characters", body, &[])
-        .await;
-    assert_eq!(reply.status, 201, "{}", reply.text());
-    let value = reply.json();
-    assert_valid(CREATED, "create", &value);
-    value
+    let reply = reads.call("POST", ALICE, body, &[]).await;
+    reply.expect(201, CREATED)
 }
 
 async fn character(reads: &Reads, ign: &str) -> String {
@@ -190,23 +203,9 @@ async fn every_route_is_the_generic_404_while_the_module_is_off() {
         ("GET", LOOKUP_PATH.to_owned()),
         ("POST", LOOKUP_PATH.to_owned()),
     ] {
-        let signed_in = reads.call(method, &path, json!({"version": 0}), &[]).await;
-        assert_eq!(
-            (signed_in.status, signed_in.api_error()),
-            (404, "not_found".into()),
-            "{method} {path}"
-        );
-        let anonymous = send(
-            reads.admin,
-            method,
-            ADMIN_HOST,
-            &path,
-            &[("Origin", "https://kanade.test")],
-            Some("{}"),
-        )
-        .await;
-        assert_eq!(anonymous.status, 404, "{method} {path} signed out");
-        assert_valid("error.json#/$defs/ApiError", &path, &anonymous.json());
+        reads
+            .assert_unmounted(method, &path, json!({"version": 0}))
+            .await;
     }
 }
 
@@ -229,20 +228,14 @@ async fn without_a_key_links_are_refused_and_health_says_no_key() {
     let refused_lookup = reads
         .call("POST", LOOKUP_PATH, json!({"ign": IGN}), &[])
         .await;
-    assert_eq!(
-        (refused_lookup.status, refused_lookup.api_error()),
-        (409, "not_connected".into())
-    );
+    assert_eq!(refused_lookup.error(), (409, "not_connected".into()));
     let status = reads.read(&link(&id), LINK).await;
     assert_eq!(status["state"], "not_connected");
     assert_eq!(status["attribution"], "Data based on NEXON Open API");
     let refused = reads
         .call("POST", &link(&id), json!({"version": 0}), &[])
         .await;
-    assert_eq!(
-        (refused.status, refused.api_error()),
-        (409, "not_connected".into())
-    );
+    assert_eq!(refused.error(), (409, "not_connected".into()));
     assert_eq!(
         refused.json()["message"],
         "Character data isn't connected yet."
@@ -258,10 +251,7 @@ async fn without_a_key_links_are_refused_and_health_says_no_key() {
 #[tokio::test]
 async fn an_admin_request_is_pending_until_the_member_confirms() {
     let (address, calls) = fake_nexon().await;
-    let slot = Arc::new(std::sync::OnceLock::new());
-    let reads =
-        Reads::with_character_data(Some(config()), module(Some(address), Arc::clone(&slot))).await;
-    let service = slot.get().unwrap().clone();
+    let (reads, service) = on(address, Some(config())).await;
     // A MapleSEA create asks the member at once: pending, nothing called.
     let answer = created(&reads, json!({"ign": IGN})).await;
     assert_eq!(answer["link"], "pending");
@@ -303,9 +293,7 @@ async fn an_admin_request_is_pending_until_the_member_confirms() {
     let pending = reads
         .call("POST", &link(&id), json!({"version": 0}), &key)
         .await;
-    assert_eq!(pending.status, 201, "{}", pending.text());
-    let pending = pending.json();
-    assert_valid(LINK, "link", &pending);
+    let pending = pending.expect(201, LINK);
     assert_eq!(
         (&pending["state"], &pending["version"]),
         (&json!("pending"), &json!(1))
@@ -318,26 +306,14 @@ async fn an_admin_request_is_pending_until_the_member_confirms() {
     let taken = reads
         .call("POST", &link(&id), json!({"version": 1}), &[])
         .await;
-    assert_eq!(
-        (taken.status, taken.api_error()),
-        (409, "already_linked".into())
-    );
+    assert_eq!(taken.error(), (409, "already_linked".into()));
     let stale = reads
         .call("POST", &link(&id), json!({"version": 0}), &[])
         .await;
-    assert_eq!((stale.status, stale.api_error()), (409, "stale".into()));
+    assert_eq!(stale.error(), (409, "stale".into()));
 
     // The member confirms (S3's /character link): active with data.
-    let ConfirmOutcome::Linked(..) = service
-        .confirm_link(
-            "1001",
-            &id,
-            NOTICE_VERSION,
-            kanade::domain::chardata::ConsentSurface::Discord,
-        )
-        .await
-        .unwrap()
-    else {
+    let ConfirmOutcome::Linked(..) = confirm(&service, "1001", &id).await else {
         panic!("not linked");
     };
     assert_eq!(calls.load(Ordering::SeqCst), 3);
@@ -354,17 +330,15 @@ async fn an_admin_request_is_pending_until_the_member_confirms() {
 
     // An admin refresh may run at any time; only the budget counts it.
     let refreshed = reads.call("POST", &refresh(&id), json!(null), &[]).await;
-    assert_eq!(refreshed.status, 200, "{}", refreshed.text());
-    assert_valid(LINK, "refresh", &refreshed.json());
+    refreshed.expect(200, LINK);
     assert_eq!(calls.load(Ordering::SeqCst), 5, "basic and stat again");
 
     // Unlink: gone at once.
     let unlinked = reads.call("DELETE", &link(&id), json!(null), &[]).await;
-    assert_eq!(unlinked.status, 200);
-    assert_valid(MESSAGE, "unlink", &unlinked.json());
+    unlinked.expect(200, MESSAGE);
     assert_eq!(reads.read(&link(&id), LINK).await["state"], "not_linked");
     let gone = reads.call("DELETE", &link(&id), json!(null), &[]).await;
-    assert_eq!((gone.status, gone.api_error()), (404, "not_linked".into()));
+    assert_eq!(gone.error(), (404, "not_linked".into()));
     let unlinked_refresh = reads.call("POST", &refresh(&id), json!(null), &[]).await;
     assert_eq!(unlinked_refresh.api_error(), "not_linked");
 
@@ -408,24 +382,15 @@ async fn an_admin_request_is_pending_until_the_member_confirms() {
 #[tokio::test]
 async fn roster_deletes_and_ign_edits_unlink() {
     let (address, _) = fake_nexon().await;
-    let slot = Arc::new(std::sync::OnceLock::new());
-    let reads = Reads::with_character_data(None, module(Some(address), Arc::clone(&slot))).await;
-    let service = slot.get().unwrap().clone();
+    let (reads, service) = on(address, None).await;
     let id = character(&reads, IGN).await;
-    service
-        .confirm_link(
-            "1001",
-            &id,
-            NOTICE_VERSION,
-            kanade::domain::chardata::ConsentSurface::Discord,
-        )
-        .await
-        .unwrap();
+    confirm(&service, "1001", &id).await;
     // A class edit keeps the link; an IGN edit removes it.
+    let path = format!("/api/admin/characters/{id}");
     let edited = reads
         .call(
             "PATCH",
-            &format!("/api/admin/characters/{id}"),
+            &path,
             json!({"version": 1, "class": "Bishop"}),
             &[],
         )
@@ -435,7 +400,7 @@ async fn roster_deletes_and_ign_edits_unlink() {
     let renamed = reads
         .call(
             "PATCH",
-            &format!("/api/admin/characters/{id}"),
+            &path,
             json!({"version": 2, "ign": "Lavender"}),
             &[],
         )
@@ -444,23 +409,9 @@ async fn roster_deletes_and_ign_edits_unlink() {
     assert_eq!(reads.read(&link(&id), LINK).await["state"], "not_linked");
 
     let other = character(&reads, "Heather9").await;
-    service
-        .confirm_link(
-            "1001",
-            &other,
-            NOTICE_VERSION,
-            kanade::domain::chardata::ConsentSurface::Discord,
-        )
-        .await
-        .unwrap();
-    let deleted = reads
-        .call(
-            "DELETE",
-            &format!("/api/admin/characters/{other}"),
-            Value::Null,
-            &[],
-        )
-        .await;
+    confirm(&service, "1001", &other).await;
+    let path = format!("/api/admin/characters/{other}");
+    let deleted = reads.call("DELETE", &path, Value::Null, &[]).await;
     assert_eq!(deleted.status, 200, "{}", deleted.text());
     let rows = link_rows(&reads).await;
     assert_eq!(rows.iter().filter(|(_, to, _)| to == "unlinked").count(), 2);
@@ -499,31 +450,19 @@ async fn a_lookup_shows_nexon_data_once_and_stores_nothing() {
         (json!({"ign": IGN, "level": 1}), (400, "invalid_body")),
     ] {
         let reply = reads.call("POST", LOOKUP_PATH, body.clone(), &[]).await;
-        assert_eq!(
-            (reply.status, reply.api_error()),
-            (want.0, want.1.into()),
-            "{body}"
-        );
+        assert_eq!(reply.error(), (want.0, want.1.into()), "{body}");
     }
-    let no_csrf = send(
-        reads.admin,
-        "POST",
-        ADMIN_HOST,
-        LOOKUP_PATH,
-        &[("Cookie", &reads.cookie), ("Origin", "https://kanade.test")],
-        Some(&json!({"ign": IGN}).to_string()),
-    )
-    .await;
-    assert_eq!((no_csrf.status, no_csrf.api_error()), (403, "csrf".into()));
+    let no_csrf = reads
+        .without_csrf("POST", LOOKUP_PATH, &json!({"ign": IGN}))
+        .await;
+    assert_eq!(no_csrf.error(), (403, "csrf".into()));
     assert_eq!(calls.load(Ordering::SeqCst), 0);
 
     // Found: `id` + `basic` only (no `stat`), attributed, no combat power.
     let found = reads
         .call("POST", LOOKUP_PATH, json!({"ign": IGN.to_lowercase()}), &[])
         .await;
-    assert_eq!(found.status, 200, "{}", found.text());
-    let found = found.json();
-    assert_valid(LOOKUP, "lookup", &found);
+    let found = found.expect(200, LOOKUP);
     assert_eq!(
         found,
         json!({
@@ -545,10 +484,7 @@ async fn a_lookup_shows_nexon_data_once_and_stores_nothing() {
     assert_eq!(history_len(&reads).await, rows, "no History row");
     assert_eq!(
         reads
-            .read(
-                "/api/admin/members/1001/characters",
-                "characters.json#/$defs/MemberCharacters"
-            )
+            .read(ALICE, "characters.json#/$defs/MemberCharacters")
             .await["characters"],
         json!([]),
         "no roster row"
@@ -558,10 +494,7 @@ async fn a_lookup_shows_nexon_data_once_and_stores_nothing() {
     let soon = reads
         .call("POST", LOOKUP_PATH, json!({"ign": IGN}), &[])
         .await;
-    assert_eq!(
-        (soon.status, soon.api_error()),
-        (429, "lookup_cooldown".into())
-    );
+    assert_eq!(soon.error(), (429, "lookup_cooldown".into()));
     assert_eq!(calls.load(Ordering::SeqCst), 2, "no call while waiting");
 
     // Unknown: live MapleSEA's 400 OPENAPI00004 on `/id` is "no such name".
@@ -569,10 +502,7 @@ async fn a_lookup_shows_nexon_data_once_and_stores_nothing() {
     let unknown = reads
         .call("POST", LOOKUP_PATH, json!({"ign": NOBODY}), &[])
         .await;
-    assert_eq!(
-        (unknown.status, unknown.api_error()),
-        (404, "not_found".into())
-    );
+    assert_eq!(unknown.error(), (404, "not_found".into()));
     assert_eq!(calls.load(Ordering::SeqCst), 3, "`id` only");
 
     // Maintenance holds every call: the next lookup calls nothing.
@@ -580,18 +510,12 @@ async fn a_lookup_shows_nexon_data_once_and_stores_nothing() {
     let down = reads
         .call("POST", LOOKUP_PATH, json!({"ign": DOWNTIME}), &[])
         .await;
-    assert_eq!(
-        (down.status, down.api_error()),
-        (503, "nexon_unavailable".into())
-    );
+    assert_eq!(down.error(), (503, "nexon_unavailable".into()));
     later(3);
     let held = reads
         .call("POST", LOOKUP_PATH, json!({"ign": IGN}), &[])
         .await;
-    assert_eq!(
-        (held.status, held.api_error()),
-        (503, "nexon_unavailable".into())
-    );
+    assert_eq!(held.error(), (503, "nexon_unavailable".into()));
     assert!(
         held.json()["message"]
             .as_str()
@@ -604,9 +528,7 @@ async fn a_lookup_shows_nexon_data_once_and_stores_nothing() {
 #[tokio::test]
 async fn a_create_asks_only_for_maplesea_and_keeps_manual_values_elsewhere() {
     let (address, calls) = fake_nexon().await;
-    let slot = Arc::new(std::sync::OnceLock::new());
-    let reads =
-        Reads::with_character_data(Some(config()), module(Some(address), Arc::clone(&slot))).await;
+    let (reads, _) = on(address, Some(config())).await;
 
     // Another region: the manual class and level stay; no link is asked.
     let other = created(
@@ -625,24 +547,13 @@ async fn a_create_asks_only_for_maplesea_and_keeps_manual_values_elsewhere() {
     // and asks nothing twice.
     let key = [("Idempotency-Key", "create-link-1")];
     let body = json!({"ign": IGN});
-    let first = reads
-        .call(
-            "POST",
-            "/api/admin/members/1001/characters",
-            body.clone(),
-            &key,
-        )
-        .await;
-    assert_eq!(first.status, 201, "{}", first.text());
-    let first = first.json();
-    assert_valid(CREATED, "create", &first);
+    let first = reads.call("POST", ALICE, body.clone(), &key).await;
+    let first = first.expect(201, CREATED);
     assert_eq!(
         (&first["class"], &first["level"], &first["link"]),
         (&Value::Null, &Value::Null, &json!("pending"))
     );
-    let again = reads
-        .call("POST", "/api/admin/members/1001/characters", body, &key)
-        .await;
+    let again = reads.call("POST", ALICE, body, &key).await;
     assert_eq!((again.status, again.json()), (201, first.clone()));
     let rows = link_rows(&reads).await;
     assert_eq!(rows.len(), 1, "one request: {rows:?}");
@@ -678,22 +589,13 @@ async fn a_create_asks_only_for_maplesea_and_keeps_manual_values_elsewhere() {
     };
     let retry = json!({"ign": IGN});
     crashed(&reads).await;
-    let resumed = reads
-        .call(
-            "POST",
-            "/api/admin/members/1001/characters",
-            retry.clone(),
-            &key,
-        )
-        .await;
+    let resumed = reads.call("POST", ALICE, retry.clone(), &key).await;
     assert_eq!((resumed.status, resumed.json()), (201, first.clone()));
     assert_eq!(link_rows(&reads).await.len(), 1, "not asked again");
     crashed(&reads).await;
     let withdrawn = reads.call("DELETE", &link(id), json!(null), &[]).await;
     assert_eq!(withdrawn.status, 200, "{}", withdrawn.text());
-    let asked = reads
-        .call("POST", "/api/admin/members/1001/characters", retry, &key)
-        .await;
+    let asked = reads.call("POST", ALICE, retry, &key).await;
     assert_eq!(
         (asked.status, asked.json()["link"].clone()),
         (201, json!("pending"))
@@ -702,10 +604,7 @@ async fn a_create_asks_only_for_maplesea_and_keeps_manual_values_elsewhere() {
     assert_eq!(calls.load(Ordering::SeqCst), 0, "still no NEXON call");
     // The listed row is the plain CharacterRow.
     let listed = reads
-        .read(
-            "/api/admin/members/1001/characters",
-            "characters.json#/$defs/MemberCharacters",
-        )
+        .read(ALICE, "characters.json#/$defs/MemberCharacters")
         .await;
     assert!(listed["characters"][0].get("link").is_none());
 }

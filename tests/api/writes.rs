@@ -70,6 +70,27 @@ impl Reads {
     pub(crate) async fn version(&self) -> u64 {
         self.store.history_head().await.unwrap().seq
     }
+
+    /// Signed in but without the CSRF token.
+    pub(crate) async fn without_csrf(&self, method: &str, path: &str, body: &Value) -> Reply {
+        let headers = [("Cookie", self.cookie.as_str()), ORIGIN];
+        let body = body.to_string();
+        send(self.admin, method, ADMIN_HOST, path, &headers, Some(&body)).await
+    }
+
+    /// An unmounted route: the generic 404 signed in (sending `body`) and
+    /// before the session check.
+    pub(crate) async fn assert_unmounted(&self, method: &str, path: &str, body: Value) {
+        let signed_in = self.call(method, path, body, &[]).await;
+        assert_eq!(
+            signed_in.error(),
+            (404, "not_found".into()),
+            "{method} {path}"
+        );
+        let anonymous = send(self.admin, method, ADMIN_HOST, path, &[ORIGIN], Some("{}")).await;
+        assert_eq!(anonymous.status, 404, "{method} {path} signed out");
+        assert_valid(ERROR, path, &anonymous.json());
+    }
 }
 
 #[tokio::test]
