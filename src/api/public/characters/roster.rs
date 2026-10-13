@@ -16,15 +16,14 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::{module, own, roster};
 use crate::{
     api::{
         admin::{
-            characters::present,
-            replay::{Keyed, mismatch, replayed},
+            characters::{CharacterCreate, CharacterPatch, patch_request, write_row},
+            replay::{Keyed, replayed},
             write::{Refusal, state},
         },
         auth::{audit::AuditContext, member::MemberSession},
@@ -37,27 +36,17 @@ use crate::{
         },
         listeners::Site,
         public::write::{admit, invalid_body, path_id},
-        state::CharacterRoster,
     },
     domain::{
-        characters::{
-            Character, CharacterChange, CharacterEdit, CharacterRecord, CharacterRole,
-            CharacterWrite, DEFAULT_WORLD, new_role, parse_class, parse_ign, parse_level,
-            parse_role, parse_world,
-        },
+        characters::{Character, CharacterChange, CharacterRecord, CharacterWrite},
         chardata::{LINK_REGION, Link, LinkStatus, NOTICE_VERSION, PENDING_TTL},
         history::{Actor, Surface},
-        ids::{IdGenerator, RandomIds},
         members::MemberProfile,
     },
-    infrastructure::store::replays::{KeyedWrite, ReplayScope, StoredReplay},
+    infrastructure::store::replays::ReplayScope,
 };
 
 type Reply = Result<Response, Refusal>;
-
-fn invalid(error: impl std::fmt::Display) -> Refusal {
-    Refusal::invalid(error.to_string())
-}
 
 /// The answer to a roster write that did not go through: the admin
 /// routes' codes, and the generic `404` for a row gone meanwhile.
@@ -91,23 +80,6 @@ fn record(me: &str, at: DateTime<Utc>) -> CharacterRecord {
         at,
         actor: Actor::member(me),
         surface: Surface::PublicPortal,
-    }
-}
-
-/// Write `change` with the keyed answer `replay` in one transaction:
-/// `None` once written now, else the answer a retry gets.
-async fn write(
-    roster: &dyn CharacterRoster,
-    change: CharacterChange,
-    record: CharacterRecord,
-    replay: StoredReplay,
-) -> Result<Option<Response>, Refusal> {
-    match roster.write_character(change, record, Some(replay)).await {
-        Ok(KeyedWrite::Applied(written)) if written.applied() => Ok(None),
-        Ok(KeyedWrite::Applied(written)) => Err(refused(written)),
-        Ok(KeyedWrite::Replayed(found)) => replayed(&found).map(Some),
-        Ok(KeyedWrite::KeyTaken) => Err(mismatch()),
-        Err(error) => Err(Refusal::unavailable(error)),
     }
 }
 
@@ -190,31 +162,17 @@ pub(super) async fn list(State(site): State<Arc<Site>>, session: MemberSession) 
     .into_response())
 }
 
-/// `MyCharacterCreate`: the IGN, its world (`msea` when absent) and role;
-/// class and level are required unless NEXON can be asked (a MapleSEA
-/// character with NEXON connected).
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct CreateBody {
-    ign: String,
-    #[serde(default)]
-    world: Option<String>,
-    #[serde(default)]
-    class: Option<String>,
-    #[serde(default)]
-    level: Option<i64>,
-    #[serde(default)]
-    role: Option<String>,
-}
-
-/// `POST /api/public/me/characters` → `201 MyCharacterCreated`. No link
-/// request is made: the notice opens next on the portal (`linkable`).
+/// `POST /api/public/me/characters` (`MyCharacterCreate`, as the admin's
+/// `CharacterCreate`) → `201 MyCharacterCreated`. Class and level are
+/// required unless NEXON can be asked (a MapleSEA character with NEXON
+/// connected). No link request is made: the notice opens next on the
+/// portal (`linkable`).
 pub(super) async fn create(
     State(site): State<Arc<Site>>,
     audit: AuditContext,
     session: MemberSession,
     headers: HeaderMap,
-    body: Result<Json<CreateBody>, JsonRejection>,
+    body: Result<Json<CharacterCreate>, JsonRejection>,
 ) -> Reply {
     let (member, key) = admit(&site, &audit, &session, &headers)?;
     session.require_fresh(member.now())?;
@@ -224,35 +182,20 @@ pub(super) async fn create(
     let state = state(&site)?;
     let roster = roster(state)?;
     let me = session.user_id.as_str();
-    let ign = parse_ign(&body.ign).map_err(invalid)?;
-    let world = parse_world(body.world.as_deref().unwrap_or(DEFAULT_WORLD)).map_err(invalid)?;
-    let class = parse_class(body.class.as_deref().unwrap_or_default()).map_err(invalid)?;
-    let level = body.level.map(parse_level).transpose().map_err(invalid)?;
-    let asked = body
-        .role
-        .as_deref()
-        .map(parse_role)
-        .transpose()
-        .map_err(invalid)?;
-    let linkable = world == LINK_REGION
+    let fields = body.parse()?;
+    let linkable = fields.world == LINK_REGION
         && state
             .character_data
             .as_ref()
             .is_some_and(|module| module.connected());
-    if !linkable && (class.is_none() || level.is_none()) {
+    if !linkable && (fields.class.is_none() || fields.level.is_none()) {
         return Err(Refusal::new(
             StatusCode::UNPROCESSABLE_ENTITY,
             "class_level_required",
             "Give the class and level: NEXON can't be asked for this character.",
         ));
     }
-    let request = format!(
-        "character.create\u{1f}{me}\u{1f}{}",
-        json!({
-            "ign": ign, "world": world, "class": class, "level": level,
-            "role": asked.map(CharacterRole::as_str),
-        })
-    );
+    let request = fields.request(me);
     let keyed = Keyed::member(ReplayScope::Config, me, key, &request);
     let now = state.now();
     if let Some(found) = keyed.recall(state.store.as_ref(), now).await? {
@@ -262,30 +205,18 @@ pub(super) async fn create(
         .member_characters(me.to_owned())
         .await
         .map_err(Refusal::unavailable)?;
-    let character = Character {
-        id: RandomIds.new_id(),
-        member_id: me.to_owned(),
-        ign,
-        world,
-        class,
-        level,
-        role: new_role(asked, &others),
-        retired_at: None,
-        created_at: now,
-        updated_at: now,
-        updated_by: Actor::member(me),
-        version: 1,
-    };
+    let character = fields.character(me.to_owned(), &others, now, Actor::member(me));
     let body = json!(MyCharacterCreated {
         row: row(&character),
         linkable,
     });
     let replay = keyed.answered(StatusCode::CREATED, &body, now);
-    if let Some(answer) = write(
+    if let Some(answer) = write_row(
         roster.as_ref(),
         CharacterChange::Create(character),
         record(me, now),
-        replay,
+        Some(replay),
+        refused,
     )
     .await?
     {
@@ -294,34 +225,15 @@ pub(super) async fn create(
     Ok((StatusCode::CREATED, Json(body)).into_response())
 }
 
-/// `MyCharacterPatch`: as the admin's `CharacterPatch`.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct PatchBody {
-    #[serde(default)]
-    version: Option<u32>,
-    #[serde(default)]
-    ign: Option<String>,
-    #[serde(default)]
-    world: Option<String>,
-    #[serde(default, deserialize_with = "present")]
-    class: Option<Option<String>>,
-    #[serde(default, deserialize_with = "present")]
-    level: Option<Option<i64>>,
-    #[serde(default)]
-    role: Option<String>,
-    #[serde(default)]
-    retired: Option<bool>,
-}
-
-/// `PATCH /api/public/me/characters/{id}` → the row as stored.
+/// `PATCH /api/public/me/characters/{id}` (`MyCharacterPatch`, as the
+/// admin's `CharacterPatch`) → the row as stored.
 pub(super) async fn update(
     State(site): State<Arc<Site>>,
     audit: AuditContext,
     session: MemberSession,
     headers: HeaderMap,
     path: Result<UrlPath<String>, PathRejection>,
-    body: Result<Json<PatchBody>, JsonRejection>,
+    body: Result<Json<CharacterPatch>, JsonRejection>,
 ) -> Reply {
     let (member, key) = admit(&site, &audit, &session, &headers)?;
     session.require_fresh(member.now())?;
@@ -332,56 +244,8 @@ pub(super) async fn update(
     let state = state(&site)?;
     let roster = roster(state)?;
     let me = session.user_id.as_str();
-    let version = body.version.ok_or_else(|| {
-        Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "version_required",
-            "Send the version the character was loaded at.",
-        )
-    })?;
-    let edit = CharacterEdit {
-        ign: body
-            .ign
-            .as_deref()
-            .map(parse_ign)
-            .transpose()
-            .map_err(invalid)?,
-        world: body
-            .world
-            .as_deref()
-            .map(parse_world)
-            .transpose()
-            .map_err(invalid)?,
-        class: body
-            .class
-            .map(|class| parse_class(class.as_deref().unwrap_or_default()))
-            .transpose()
-            .map_err(invalid)?,
-        level: body
-            .level
-            .map(|level| level.map(parse_level).transpose())
-            .transpose()
-            .map_err(invalid)?,
-        role: body
-            .role
-            .as_deref()
-            .map(parse_role)
-            .transpose()
-            .map_err(invalid)?,
-        retired: body.retired,
-    };
-    let request = format!(
-        "character.patch\u{1f}{id}\u{1f}{}",
-        json!({
-            "version": version,
-            "ign": edit.ign,
-            "world": edit.world,
-            "class": edit.class,
-            "level": edit.level,
-            "role": edit.role.map(CharacterRole::as_str),
-            "retired": edit.retired,
-        })
-    );
+    let (version, edit) = body.parse()?;
+    let request = patch_request(&id, version, &edit);
     let keyed = Keyed::member(ReplayScope::Config, me, key, &request);
     let now = state.now();
     if let Some(found) = keyed.recall(state.store.as_ref(), now).await? {
@@ -400,14 +264,15 @@ pub(super) async fn update(
     let after = current.edited(&edit, &others, now, &actor);
     let body: Value = json!(row(&after));
     let replay = keyed.answered(StatusCode::OK, &body, now);
-    let answer = write(
+    let answer = write_row(
         roster.as_ref(),
         CharacterChange::Update {
             version,
             after: after.clone(),
         },
         record(me, now),
-        replay,
+        Some(replay),
+        refused,
     )
     .await?;
     if let Some(answer) = answer {

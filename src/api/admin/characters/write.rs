@@ -19,12 +19,11 @@ use super::{Reply, Roster, require_member};
 use crate::{
     api::{
         admin::{
-            replay::{Keyed, mismatch, replayed},
+            replay::{Keyed, mismatch, recall, replayed},
             write::{Refusal, bad_body, origin, state},
         },
         auth::AdminSession,
         dto::characters::{CharacterCreated, row},
-        error::ApiError,
         listeners::Site,
         state::{ApiState, CharacterRoster},
     },
@@ -35,6 +34,7 @@ use crate::{
             parse_role, parse_world,
         },
         chardata::LINK_REGION,
+        history::Actor,
         ids::{IdGenerator, RandomIds},
     },
     infrastructure::{
@@ -95,19 +95,21 @@ pub(super) fn record(session: &AdminSession, now: DateTime<Utc>) -> CharacterRec
 }
 
 /// Write `change` with a keyed request's `replay` in the same transaction:
-/// `None` once written now, else the answer a retry gets.
-async fn write(
+/// `None` once written now, else the answer a retry gets. `refused` is the
+/// origin's answer to a write that did not go through.
+pub(crate) async fn write_row(
     roster: &dyn CharacterRoster,
     change: CharacterChange,
     record: CharacterRecord,
     replay: Option<StoredReplay>,
+    refused: fn(CharacterWrite) -> Refusal,
 ) -> Result<Option<Response>, Refusal> {
     match roster.write_character(change, record, replay).await {
         Ok(KeyedWrite::Applied(written)) if written.applied() => Ok(None),
         Ok(KeyedWrite::Applied(written)) => Err(refused(written)),
         Ok(KeyedWrite::Replayed(found)) => replayed(&found).map(Some),
         Ok(KeyedWrite::KeyTaken) => Err(mismatch()),
-        Err(_) => Err(ApiError::UNAVAILABLE.into()),
+        Err(error) => Err(Refusal::unavailable(error)),
     }
 }
 
@@ -122,28 +124,9 @@ async fn apply(
     body: Value,
 ) -> Reply {
     let replay = keyed.map(|keyed| keyed.answered(status, &body, record.at));
-    Ok(write(roster, change, record, replay)
+    Ok(write_row(roster, change, record, replay, refused)
         .await?
         .unwrap_or_else(|| (status, Json(body)).into_response()))
-}
-
-/// The request's key, if any, and its stored answer when it already has
-/// one (`idempotency_mismatch` for another request under it).
-pub(super) async fn recall(
-    state: &ApiState,
-    session: &AdminSession,
-    headers: &HeaderMap,
-    request: &str,
-) -> Result<(Option<Keyed>, Option<Response>), Refusal> {
-    let Some(key) = origin(session, headers)?.request_id else {
-        return Ok((None, None));
-    };
-    let keyed = Keyed::new(ReplayScope::Config, session, key, request);
-    let found = keyed.recall(state.store.as_ref(), state.now()).await?;
-    Ok(match found {
-        Some(found) => (None, Some(replayed(&found)?)),
-        None => (Some(keyed), None),
-    })
 }
 
 /// The member's characters, for the role rules.
@@ -181,6 +164,70 @@ pub struct CharacterCreate {
     role: Option<String>,
 }
 
+/// A checked [`CharacterCreate`]; `role` is the one asked for, if any.
+pub(crate) struct NewCharacter {
+    pub(crate) ign: String,
+    pub(crate) world: String,
+    pub(crate) class: Option<String>,
+    pub(crate) level: Option<u16>,
+    pub(crate) role: Option<CharacterRole>,
+}
+
+impl CharacterCreate {
+    /// Checked field by field in this order; the first bad one refuses.
+    pub(crate) fn parse(self) -> Result<NewCharacter, Refusal> {
+        Ok(NewCharacter {
+            ign: parse_ign(&self.ign).map_err(invalid)?,
+            world: parse_world(self.world.as_deref().unwrap_or(DEFAULT_WORLD)).map_err(invalid)?,
+            class: parse_class(self.class.as_deref().unwrap_or_default()).map_err(invalid)?,
+            level: self.level.map(parse_level).transpose().map_err(invalid)?,
+            role: self
+                .role
+                .as_deref()
+                .map(parse_role)
+                .transpose()
+                .map_err(invalid)?,
+        })
+    }
+}
+
+impl NewCharacter {
+    /// The keyed request's identity: a create on `member_id`'s roster.
+    pub(crate) fn request(&self, member_id: &str) -> String {
+        format!(
+            "character.create\u{1f}{member_id}\u{1f}{}",
+            json!({
+                "ign": self.ign, "world": self.world, "class": self.class, "level": self.level,
+                "role": self.role.map(CharacterRole::as_str),
+            })
+        )
+    }
+
+    /// The new row of `member_id`, whose other characters are `others`.
+    pub(crate) fn character(
+        self,
+        member_id: String,
+        others: &[Character],
+        now: DateTime<Utc>,
+        by: Actor,
+    ) -> Character {
+        Character {
+            id: RandomIds.new_id(),
+            member_id,
+            ign: self.ign,
+            world: self.world,
+            class: self.class,
+            level: self.level,
+            role: new_role(self.role, others),
+            retired_at: None,
+            created_at: now,
+            updated_at: now,
+            updated_by: by,
+            version: 1,
+        }
+    }
+}
+
 pub async fn create(
     Roster(roster): Roster,
     State(site): State<Arc<Site>>,
@@ -191,23 +238,8 @@ pub async fn create(
 ) -> Reply {
     let Json(body) = body.map_err(bad_body)?;
     let state = state(&site)?;
-    let ign = parse_ign(&body.ign).map_err(invalid)?;
-    let world = parse_world(body.world.as_deref().unwrap_or(DEFAULT_WORLD)).map_err(invalid)?;
-    let class = parse_class(body.class.as_deref().unwrap_or_default()).map_err(invalid)?;
-    let level = body.level.map(parse_level).transpose().map_err(invalid)?;
-    let asked = body
-        .role
-        .as_deref()
-        .map(parse_role)
-        .transpose()
-        .map_err(invalid)?;
-    let request = format!(
-        "character.create\u{1f}{member_id}\u{1f}{}",
-        json!({
-            "ign": ign, "world": world, "class": class, "level": level,
-            "role": asked.map(CharacterRole::as_str),
-        })
-    );
+    let fields = body.parse()?;
+    let request = fields.request(&member_id);
     let (keyed, answered) = match origin(&session, &headers)?.request_id {
         None => (None, None),
         Some(key) => {
@@ -224,21 +256,7 @@ pub async fn create(
     require_member(state, &member_id).await?;
     let others = member_characters(roster.as_ref(), &member_id).await?;
     let now = state.now();
-    let by = session.origin().actor;
-    let character = Character {
-        id: RandomIds.new_id(),
-        member_id,
-        ign,
-        world,
-        class,
-        level,
-        role: new_role(asked, &others),
-        retired_at: None,
-        created_at: now,
-        updated_at: now,
-        updated_by: by,
-        version: 1,
-    };
+    let character = fields.character(member_id, &others, now, session.origin().actor);
     let created = |link| {
         json!(CharacterCreated {
             row: row(&character),
@@ -249,11 +267,12 @@ pub async fn create(
     let replay = keyed
         .as_ref()
         .map(|keyed| keyed.answered(StatusCode::CREATED, &body, now));
-    if let Some(answer) = write(
+    if let Some(answer) = write_row(
         roster.as_ref(),
         CharacterChange::Create(character.clone()),
         record(&session, now),
         replay,
+        refused,
     )
     .await?
     {
@@ -392,55 +411,55 @@ pub struct CharacterPatch {
     retired: Option<bool>,
 }
 
-pub async fn update(
-    Roster(roster): Roster,
-    State(site): State<Arc<Site>>,
-    session: AdminSession,
-    UrlPath(id): UrlPath<String>,
-    headers: HeaderMap,
-    body: Result<Json<CharacterPatch>, JsonRejection>,
-) -> Reply {
-    let Json(body) = body.map_err(bad_body)?;
-    let state = state(&site)?;
-    let version = body.version.ok_or_else(|| {
-        Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "version_required",
-            "Send the version the character was loaded at.",
-        )
-    })?;
-    let edit = CharacterEdit {
-        ign: body
-            .ign
-            .as_deref()
-            .map(parse_ign)
-            .transpose()
-            .map_err(invalid)?,
-        world: body
-            .world
-            .as_deref()
-            .map(parse_world)
-            .transpose()
-            .map_err(invalid)?,
-        class: body
-            .class
-            .map(|class| parse_class(class.as_deref().unwrap_or_default()))
-            .transpose()
-            .map_err(invalid)?,
-        level: body
-            .level
-            .map(|level| level.map(parse_level).transpose())
-            .transpose()
-            .map_err(invalid)?,
-        role: body
-            .role
-            .as_deref()
-            .map(parse_role)
-            .transpose()
-            .map_err(invalid)?,
-        retired: body.retired,
-    };
-    let request = format!(
+impl CharacterPatch {
+    /// The version the row was loaded at, then the edit, checked field by
+    /// field in this order; the first bad one refuses.
+    pub(crate) fn parse(self) -> Result<(u32, CharacterEdit), Refusal> {
+        let version = self.version.ok_or_else(|| {
+            Refusal::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "version_required",
+                "Send the version the character was loaded at.",
+            )
+        })?;
+        let edit = CharacterEdit {
+            ign: self
+                .ign
+                .as_deref()
+                .map(parse_ign)
+                .transpose()
+                .map_err(invalid)?,
+            world: self
+                .world
+                .as_deref()
+                .map(parse_world)
+                .transpose()
+                .map_err(invalid)?,
+            class: self
+                .class
+                .map(|class| parse_class(class.as_deref().unwrap_or_default()))
+                .transpose()
+                .map_err(invalid)?,
+            level: self
+                .level
+                .map(|level| level.map(parse_level).transpose())
+                .transpose()
+                .map_err(invalid)?,
+            role: self
+                .role
+                .as_deref()
+                .map(parse_role)
+                .transpose()
+                .map_err(invalid)?,
+            retired: self.retired,
+        };
+        Ok((version, edit))
+    }
+}
+
+/// The keyed request's identity: `edit` of character `id` at `version`.
+pub(crate) fn patch_request(id: &str, version: u32, edit: &CharacterEdit) -> String {
+    format!(
         "character.patch\u{1f}{id}\u{1f}{}",
         json!({
             "version": version,
@@ -451,7 +470,21 @@ pub async fn update(
             "role": edit.role.map(CharacterRole::as_str),
             "retired": edit.retired,
         })
-    );
+    )
+}
+
+pub async fn update(
+    Roster(roster): Roster,
+    State(site): State<Arc<Site>>,
+    session: AdminSession,
+    UrlPath(id): UrlPath<String>,
+    headers: HeaderMap,
+    body: Result<Json<CharacterPatch>, JsonRejection>,
+) -> Reply {
+    let Json(body) = body.map_err(bad_body)?;
+    let state = state(&site)?;
+    let (version, edit) = body.parse()?;
+    let request = patch_request(&id, version, &edit);
     let (keyed, answered) = recall(state, &session, &headers, &request).await?;
     if let Some(answer) = answered {
         return Ok(answer);

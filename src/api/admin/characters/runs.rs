@@ -19,9 +19,10 @@ use axum::{
 use serde_json::json;
 
 use super::{
+    super::replay::recall,
     Reply, Roster,
     picks::{CharacterPick, SlotWrite, apply, named, stale},
-    write::{recall, record},
+    write::record,
 };
 use crate::{
     api::{

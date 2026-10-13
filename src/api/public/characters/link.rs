@@ -26,6 +26,7 @@ use super::{
 use crate::{
     api::{
         admin::{
+            character_data::{lookup_answer, not_connected},
             replay::{Keyed, replayed},
             write::{Refusal, state},
         },
@@ -35,7 +36,7 @@ use crate::{
             rate::MEMBER_LOOKUP_ROUTE,
         },
         dto::{
-            character_data::{CharacterLink, facts, link, link_state, lookup},
+            character_data::{CharacterLink, facts, link, link_state},
             history::SettingsActor,
             iso_instant,
             public::{
@@ -58,20 +59,12 @@ use crate::{
         history::{Actor, Surface},
     },
     infrastructure::{
-        character_data::{CharacterData, ConfirmOutcome, FetchState, LinkView, LookupOutcome},
+        character_data::{CharacterData, ConfirmOutcome, FetchState, LinkView},
         store::replays::ReplayScope,
     },
 };
 
 type Reply = Result<Response, Refusal>;
-
-fn not_connected() -> Refusal {
-    Refusal::new(
-        StatusCode::CONFLICT,
-        "not_connected",
-        "Character data isn't connected yet.",
-    )
-}
 
 fn retired() -> Refusal {
     Refusal::new(
@@ -147,29 +140,12 @@ pub(super) async fn look_up(
     };
     let ign = parse_ign(&body.ign).map_err(|error| Refusal::invalid(error.to_string()))?;
     let module = module(state(&site)?)?;
-    match module
-        .look_up(&Actor::member(session.user_id.clone()), &ign)
-        .await
-        .map_err(Refusal::unavailable)?
-    {
-        LookupOutcome::Found(found) => Ok(Json(lookup(found)).into_response()),
-        LookupOutcome::NotFound => Err(Refusal::new(
-            StatusCode::NOT_FOUND,
-            "not_found",
-            "NEXON has no MapleSEA character by that name.",
-        )),
-        LookupOutcome::NotConnected => Err(not_connected()),
-        LookupOutcome::TooSoon => Err(Refusal::new(
-            StatusCode::TOO_MANY_REQUESTS,
-            "lookup_cooldown",
-            "Wait a few seconds before looking up again.",
-        )),
-        LookupOutcome::Unavailable(reason) => Err(Refusal::new(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "nexon_unavailable",
-            format!("The Open API can't be called right now ({reason})."),
-        )),
-    }
+    lookup_answer(
+        module
+            .look_up(&Actor::member(session.user_id.clone()), &ign)
+            .await
+            .map_err(Refusal::unavailable)?,
+    )
 }
 
 /// `GET /api/public/me/characters/{id}/link` → `CharacterLink`.

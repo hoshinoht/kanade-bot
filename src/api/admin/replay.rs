@@ -6,13 +6,24 @@
 //! Each desk holds one lock across lookup, effect and record, so a concurrent
 //! retry with the same key waits for the first request and replays it.
 
-use axum::{Json, http::StatusCode, response::IntoResponse};
+use axum::{
+    Json,
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
-use super::{context::unavailable, write::Refusal};
+use super::{
+    context::unavailable,
+    write::{Refusal, origin},
+};
 use crate::{
-    api::{auth::AdminSession, auth::crypto::sha256_hex, state::ReadStore},
+    api::{
+        auth::AdminSession,
+        auth::crypto::sha256_hex,
+        state::{ApiState, ReadStore},
+    },
     infrastructure::store::replays::{ReplayScope, StoredReplay},
 };
 
@@ -116,4 +127,24 @@ pub(crate) fn replayed(replay: &StoredReplay) -> Result<axum::response::Response
     let status = StatusCode::from_u16(replay.status).map_err(Refusal::unavailable)?;
     let body: Value = serde_json::from_str(&replay.body).map_err(Refusal::unavailable)?;
     Ok((status, Json(body)).into_response())
+}
+
+/// A `Config`-scope request's key, if any, and its stored answer when it
+/// already has one (`idempotency_mismatch` for another request under it).
+pub(super) async fn recall(
+    state: &ApiState,
+    session: &AdminSession,
+    headers: &HeaderMap,
+    request: &str,
+) -> Result<(Option<Keyed>, Option<Response>), Refusal> {
+    let Some(key) = origin(session, headers)?.request_id else {
+        return Ok((None, None));
+    };
+    let keyed = Keyed::new(ReplayScope::Config, session, key, request);
+    Ok(
+        match keyed.recall(state.store.as_ref(), state.now()).await? {
+            Some(found) => (None, Some(replayed(&found)?)),
+            None => (Some(keyed), None),
+        },
+    )
 }

@@ -16,7 +16,7 @@ mod write;
 
 pub(super) use fixed::{Both, Timing};
 pub(crate) use runs::party;
-pub(crate) use write::present;
+pub(crate) use write::{CharacterCreate, CharacterPatch, patch_request, write_row};
 
 use std::sync::Arc;
 

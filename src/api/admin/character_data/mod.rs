@@ -13,6 +13,8 @@ pub(crate) mod estimates;
 mod lookup;
 mod readiness;
 
+pub(crate) use lookup::answer as lookup_answer;
+
 use std::sync::Arc;
 
 use axum::{
@@ -26,8 +28,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::{
-    replay::{Keyed, replayed},
-    write::{Refusal, bad_body, origin, state},
+    replay::recall,
+    write::{Refusal, bad_body, state},
 };
 use crate::{
     api::{
@@ -35,10 +37,7 @@ use crate::{
         state::ApiState,
     },
     domain::chardata::UnlinkReason,
-    infrastructure::{
-        character_data::{CharacterData, LinkView, RefreshOutcome, RequestOutcome},
-        store::replays::ReplayScope,
-    },
+    infrastructure::character_data::{CharacterData, LinkView, RefreshOutcome, RequestOutcome},
 };
 
 pub fn routes() -> Router<Arc<Site>> {
@@ -79,7 +78,7 @@ fn not_found() -> Refusal {
     )
 }
 
-fn not_connected() -> Refusal {
+pub(crate) fn not_connected() -> Refusal {
     Refusal::new(
         StatusCode::CONFLICT,
         "not_connected",
@@ -92,26 +91,6 @@ fn not_linked() -> Refusal {
         StatusCode::CONFLICT,
         "not_linked",
         "That character is not linked.",
-    )
-}
-
-/// The request's key, if any, and its stored answer when it already has
-/// one (`idempotency_mismatch` for another request under it).
-async fn recall(
-    state: &ApiState,
-    session: &AdminSession,
-    headers: &HeaderMap,
-    request: &str,
-) -> Result<(Option<Keyed>, Option<Response>), Refusal> {
-    let Some(key) = origin(session, headers)?.request_id else {
-        return Ok((None, None));
-    };
-    let keyed = Keyed::new(ReplayScope::Config, session, key, request);
-    Ok(
-        match keyed.recall(state.store.as_ref(), state.now()).await? {
-            Some(found) => (None, Some(replayed(&found)?)),
-            None => (Some(keyed), None),
-        },
     )
 }
 
