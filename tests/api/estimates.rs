@@ -280,7 +280,7 @@ async fn fake_scouter() -> (SocketAddr, Fake) {
 }
 
 /// A fake Open API for linking (invented data; the Nexon name differs in
-/// case from the roster IGN on purpose).
+/// case from the roster IGN on purpose: linking corrects the roster IGN).
 async fn fake_nexon() -> SocketAddr {
     let app = Router::new().fallback(|request: Request| async move {
         let path = request.uri().path().to_owned();
@@ -1259,9 +1259,10 @@ async fn scouter_requests_never_carry_nexon_fields() {
     let done = look_up(&reads, json!({"character_ids": [id]})).await;
     assert_eq!(done["state"], "done");
     let sent = format!("{:?}", fake.seen.lock().unwrap());
-    assert!(sent.contains("ign=MikaBish"), "the roster IGN: {sent}");
+    // The roster IGN, which took NEXON's letter case when the link fetched
+    // (user decision 2026-10-13); nothing else from NEXON.
+    assert!(sent.contains("ign=MIKABISH"), "the roster IGN: {sent}");
     for nexon_field in [
-        "MIKABISH",
         "ocid",
         "invented-estimate",
         "48213377",

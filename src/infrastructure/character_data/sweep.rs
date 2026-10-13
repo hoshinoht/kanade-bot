@@ -167,7 +167,7 @@ impl CharacterData {
 }
 
 /// A store error's class for logs (its text may carry paths).
-fn error_kind(error: &StoreError) -> &'static str {
+pub(super) fn error_kind(error: &StoreError) -> &'static str {
     match error {
         StoreError::Constraint(_) => "constraint",
         StoreError::Conflict { .. } => "conflict",

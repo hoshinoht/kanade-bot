@@ -6,10 +6,13 @@
 //!
 //! Logs carry error codes, counts and reasons only: never an IGN, a Nexon
 //! field or an ocid. History rows (section `characters`, key
-//! `link.<character>`) carry the status word and the actor only.
+//! `link.<character>`) carry the status word and the actor only; a roster
+//! IGN's case correction (`ign_case`) is the roster's own `character.<id>`
+//! row by [`NEXON_ACTOR`].
 
 mod calls;
 mod health;
+mod ign_case;
 mod link;
 mod lookup;
 mod member;
@@ -33,7 +36,9 @@ pub use member::{MemberCharacter, MemberLink};
 pub use posts::{DeskFuture, Located, PostDesk, PostIssue, StripReport, Stripped, Tracked};
 pub use refresh::{FetchState, RefreshOutcome};
 
-use crate::domain::characters::{Character, CharacterStore};
+use crate::domain::characters::{
+    Character, CharacterChange, CharacterRecord, CharacterStore, CharacterWrite,
+};
 use crate::domain::chardata::{CharDataStore, StoreFuture};
 use crate::domain::history::Actor;
 use crate::domain::members::{MemberProfile, MemberStore};
@@ -41,18 +46,27 @@ use crate::domain::settings::{SettingsChange, SettingsChangeQuery, SettingsStore
 use crate::infrastructure::nexon::{Limiter, NexonClient, SPACING};
 use crate::infrastructure::scouter::Estimates;
 use crate::infrastructure::store::replays::{ReplayStore, StoredReplay};
+pub use ign_case::NEXON_ACTOR;
 pub use sweep::{SWEEPER, SweepReport};
 
 /// The injected aware wall clock (cutoffs and stamps).
 pub type Clock = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
 
 /// What the service reads from and writes to the main store: roster
-/// characters, member rows and the History row of a link change.
+/// characters, member rows, the History row of a link change and the
+/// roster IGN's case correction.
 pub trait RosterSide: Send + Sync {
     fn character(&self, id: String) -> StoreFuture<'_, Option<Character>>;
     fn member(&self, user_id: String) -> StoreFuture<'_, Option<MemberProfile>>;
     /// One member's roster characters, retired included, oldest first.
     fn member_characters(&self, member_id: String) -> StoreFuture<'_, Vec<Character>>;
+    /// A roster write under the store's rules (version check included),
+    /// with its History row in the same transaction.
+    fn write_character(
+        &self,
+        change: CharacterChange,
+        record: CharacterRecord,
+    ) -> StoreFuture<'_, CharacterWrite>;
     /// The History row (and a keyed request's replay) in one transaction.
     fn record(&self, change: SettingsChange, replay: Option<StoredReplay>) -> StoreFuture<'_, ()>;
     /// `actor`'s latest History row naming `link.<character_id>`.
@@ -73,6 +87,14 @@ where
 
     fn member_characters(&self, member_id: String) -> StoreFuture<'_, Vec<Character>> {
         Box::pin(async move { CharacterStore::member_characters(self, &member_id).await })
+    }
+
+    fn write_character(
+        &self,
+        change: CharacterChange,
+        record: CharacterRecord,
+    ) -> StoreFuture<'_, CharacterWrite> {
+        Box::pin(async move { CharacterStore::apply_character(self, change, record).await })
     }
 
     fn member(&self, user_id: String) -> StoreFuture<'_, Option<MemberProfile>> {

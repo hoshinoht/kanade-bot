@@ -244,6 +244,14 @@ impl RosterSide for FlakyRoster {
         RosterSide::member_characters(&*self.inner, member_id)
     }
 
+    fn write_character(
+        &self,
+        change: CharacterChange,
+        record: CharacterRecord,
+    ) -> StoreFuture<'_, crate::domain::characters::CharacterWrite> {
+        RosterSide::write_character(&*self.inner, change, record)
+    }
+
     fn record(
         &self,
         change: crate::domain::settings::SettingsChange,
@@ -1095,4 +1103,198 @@ async fn a_confirmation_nexon_cannot_serve_writes_nothing() {
     assert_eq!(rig.confirm().await, ConfirmOutcome::Busy);
     assert_eq!(rig.link("c1").await, None);
     assert!(rig.fake.calls().is_empty());
+}
+
+/// The roster row `id` as stored now.
+async fn roster_row(rig: &Rig, id: &str) -> crate::domain::characters::Character {
+    CharacterStore::character(&*rig.roster, id)
+        .await
+        .unwrap()
+        .unwrap()
+}
+
+/// The History rows of NEXON's case corrections.
+async fn nexon_rows(rig: &Rig) -> Vec<crate::domain::settings::SettingsChange> {
+    rig.roster
+        .settings_changes(SettingsChangeQuery {
+            actor: Some(Actor::system(NEXON_ACTOR)),
+            ..SettingsChangeQuery::default()
+        })
+        .await
+        .unwrap()
+}
+
+/// A fetch whose name differs from the roster IGN in case only (link
+/// confirm, then an admin refresh) gives the roster NEXON's spelling with
+/// one History row each, keeps the link and calls nothing more.
+#[tokio::test]
+async fn a_case_only_name_takes_nexons_spelling_and_keeps_the_link() {
+    let rig = rig().await;
+    rename(&rig, "c1", "wisteria").await;
+    let ConfirmOutcome::Linked(link, fetched) = rig.confirm().await else {
+        panic!()
+    };
+    assert_eq!(fetched, FetchState::Stored);
+    let link = Some(*link);
+    let row = roster_row(&rig, "c1").await;
+    assert_eq!(
+        (row.ign.as_str(), row.version, &row.updated_by),
+        (IGN, 3, &Actor::system(NEXON_ACTOR))
+    );
+    assert_eq!(rig.link("c1").await, link, "link kept");
+    assert!(rig.service.data("c1").await.unwrap().is_some());
+    assert_eq!(rig.fake.calls(), ["id", "basic", "stat"]);
+    let rows = nexon_rows(&rig).await;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        (rows[0].section.as_str(), rows[0].surface),
+        ("characters", Surface::DeliveryTick)
+    );
+    let diff = &rows[0].values["character.c1"];
+    assert_eq!(rows[0].values.len(), 1);
+    assert!(diff.from.contains(r#""ign":"wisteria""#), "{diff:?}");
+    assert!(diff.to.contains(r#""ign":"Wisteria""#), "{diff:?}");
+    // Only the IGN changes: every other field is the roster's own.
+    assert_eq!(
+        diff.from.replace("wisteria", "Wisteria"),
+        diff.to,
+        "nothing else copied"
+    );
+
+    // Already NEXON's spelling: a refresh writes nothing.
+    assert_eq!(
+        rig.service.refresh_now("c1").await.unwrap(),
+        RefreshOutcome::Done(FetchState::Stored)
+    );
+    assert_eq!(nexon_rows(&rig).await.len(), 1);
+
+    // An admin's case-only edit keeps the link; the next refresh puts
+    // NEXON's spelling back.
+    let edited = rename(&rig, "c1", "WISTERIA").await;
+    rig.service
+        .roster_changed(
+            "c1",
+            Some(&edited),
+            &Actor::admin("token"),
+            Surface::AdminPortal,
+        )
+        .await;
+    assert_eq!(rig.link("c1").await, link);
+    assert_eq!(
+        rig.service.refresh_now("c1").await.unwrap(),
+        RefreshOutcome::Done(FetchState::Stored)
+    );
+    assert_eq!(roster_row(&rig, "c1").await.ign, IGN);
+    assert_eq!(nexon_rows(&rig).await.len(), 2);
+    assert_eq!(rig.link("c1").await, link);
+}
+
+/// Another name makes the link stale and leaves the roster as it is.
+#[tokio::test]
+async fn a_different_name_goes_stale_and_changes_no_ign() {
+    let rig = rig().await;
+    rename(&rig, "c1", "wisteria").await;
+    rig.fake.queue("basic", [(200, basic("Wisterias"))]);
+    let ConfirmOutcome::Linked(_, fetched) = rig.confirm().await else {
+        panic!()
+    };
+    assert_eq!(fetched, FetchState::Stale);
+    let row = roster_row(&rig, "c1").await;
+    assert_eq!((row.ign.as_str(), row.version), ("wisteria", 2));
+    assert!(nexon_rows(&rig).await.is_empty());
+    assert_eq!(rig.service.match_ign_cases().await, 0);
+}
+
+/// A roster write between the fetch's read and the correction (another
+/// version) wins: nothing is written.
+#[tokio::test]
+async fn a_roster_edit_since_the_fetch_read_skips_the_correction() {
+    let rig = rig().await;
+    rig.confirm().await;
+    let link = rig.link("c1").await.unwrap();
+    let seen = rename(&rig, "c1", "wisteria").await;
+    let after = crate::domain::characters::Character {
+        class: Some("Cleric".into()),
+        ..seen.clone()
+    }
+    .next_version(at(11, 2), &Actor::admin("token"));
+    rig.roster
+        .apply_character(
+            CharacterChange::Update {
+                version: seen.version,
+                after,
+            },
+            CharacterRecord {
+                at: at(11, 2),
+                actor: Actor::admin("token"),
+                surface: Surface::AdminPortal,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(!rig.service.match_ign_case(&link, &seen, IGN).await);
+    let row = roster_row(&rig, "c1").await;
+    assert_eq!(
+        (row.ign.as_str(), row.class.as_deref(), row.version),
+        ("wisteria", Some("Cleric"), 3)
+    );
+    assert!(nexon_rows(&rig).await.is_empty());
+}
+
+/// Startup: an active link whose stored name already differs in case is
+/// corrected once, without a Nexon call; a second pass does nothing.
+#[tokio::test]
+async fn the_startup_pass_corrects_stored_names_once() {
+    let rig = rig().await;
+    rig.confirm().await;
+    let link = rig.link("c1").await.unwrap();
+    rename(&rig, "c1", "WISTERIA").await;
+    let calls = rig.fake.calls().len();
+    assert_eq!(rig.service.match_ign_cases().await, 1);
+    assert_eq!(roster_row(&rig, "c1").await.ign, IGN);
+    assert_eq!(nexon_rows(&rig).await.len(), 1);
+    assert_eq!(rig.link("c1").await, Some(link));
+    assert_eq!(rig.service.match_ign_cases().await, 0, "idempotent");
+    assert_eq!(nexon_rows(&rig).await.len(), 1);
+    assert_eq!(rig.fake.calls().len(), calls, "no Nexon call");
+}
+
+/// Expired data, stale and pending links (an older notice included) are
+/// never corrected.
+#[tokio::test]
+async fn the_startup_pass_leaves_expired_stale_and_pending_links_alone() {
+    for case in ["expired", "stale", "pending", "older_notice"] {
+        let rig = rig().await;
+        rig.confirm().await;
+        let link = rig.link("c1").await.unwrap();
+        let version = link.version;
+        match case {
+            "expired" => rig.set_now(at(11, 0) + TimeDelta::days(31)),
+            "stale" => {
+                rig.file
+                    .put_link(link.with_status(LinkStatus::Stale), version)
+                    .await
+                    .unwrap();
+            }
+            "pending" => {
+                let pending = Link {
+                    consent_version: None,
+                    consented_at: None,
+                    linked_at: None,
+                    ..link.with_status(LinkStatus::Pending)
+                };
+                rig.file.put_link(pending, version).await.unwrap();
+            }
+            _ => {
+                let mut old = link;
+                old.consent_version = Some(NOTICE_VERSION - 1);
+                old.version += 1;
+                rig.file.put_link(old, version).await.unwrap();
+            }
+        }
+        rename(&rig, "c1", "WISTERIA").await;
+        assert_eq!(rig.service.match_ign_cases().await, 0, "{case}");
+        assert_eq!(roster_row(&rig, "c1").await.ign, "WISTERIA", "{case}");
+        assert!(nexon_rows(&rig).await.is_empty(), "{case}");
+    }
 }

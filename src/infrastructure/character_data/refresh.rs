@@ -1,6 +1,7 @@
 //! Fetching a linked character (`id` when the ocid is missing or 29 days
-//! old, then `basic` + `stat`), the admin's on-demand refresh (sharing the
-//! 24-hour cap) and the daily batch and retry passes.
+//! old, then `basic` + `stat`; a stored name in another letter case corrects
+//! the roster IGN, see `ign_case`), the admin's on-demand refresh (sharing
+//! the 24-hour cap) and the daily batch and retry passes.
 
 use chrono::{DateTime, Utc};
 use serde_json::json;
@@ -172,6 +173,7 @@ impl CharacterData {
             Err(failed) => return self.failed(&id, failed).await,
         };
         let snapshot = facts(&id, ocid, ocid_at, basic, combat_power, self.now());
+        let name = snapshot.character_name.clone();
         if !self.store.put_snapshot(snapshot).await? {
             return Ok(FetchState::Unlinked);
         }
@@ -182,6 +184,9 @@ impl CharacterData {
                 last_error_code: None,
             })
             .await?;
+        if let Some(name) = name {
+            self.match_ign_case(link, character, &name).await;
+        }
         Ok(FetchState::Stored)
     }
 
