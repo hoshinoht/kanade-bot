@@ -307,23 +307,16 @@ pub fn proposal_line(
     (name, lines.join("\n"))
 }
 
-/// Which header a card gets.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CardKind {
-    Proposal,
-    Suggestion,
-    Fix,
+crate::domain::spelled! {
+    /// Which header a card gets.
+    CardKind {
+        Proposal => "proposal",
+        Suggestion => "suggestion",
+        Fix => "fix",
+    }
 }
 
 impl CardKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Proposal => "proposal",
-            Self::Suggestion => "suggestion",
-            Self::Fix => "fix",
-        }
-    }
-
     fn header(self) -> (&'static str, u32) {
         match self {
             Self::Proposal => ("📋 Proposed change", COLOUR_PROPOSAL),

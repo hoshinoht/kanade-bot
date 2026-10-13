@@ -220,27 +220,12 @@ pub struct TestReport {
     pub header: Option<HeaderNote>,
 }
 
-/// Which header `/debug header` rewrites.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HeaderTrialKind {
-    DayOf,
-    Countdown,
-    Digest,
-}
-
-impl HeaderTrialKind {
-    pub const ALL: [Self; 3] = [Self::DayOf, Self::Countdown, Self::Digest];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::DayOf => "day_of",
-            Self::Countdown => "countdown",
-            Self::Digest => "digest",
-        }
-    }
-
-    pub fn parse(text: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|kind| kind.as_str() == text)
+crate::domain::spelled! {
+    /// Which header `/debug header` rewrites.
+    HeaderTrialKind {
+        DayOf => "day_of",
+        Countdown => "countdown",
+        Digest => "digest",
     }
 }
 
