@@ -1,10 +1,11 @@
 //! Decline-notice candidates and their delivery bindings (schema v20).
 
 use chrono::{DateTime, Utc};
-use sqlx::error::ErrorKind;
+use sqlx::sqlite::{Sqlite, SqliteArguments};
 use sqlx::{Connection, Row, SqliteConnection};
 
 use super::SqliteStore;
+use super::schedule::store_error;
 use crate::domain::notify::{
     DECLINE_NOTICE_COOLDOWN, DeclineNotice, DeclineNoticeStore, MAX_PENDING_DECLINE_NOTICES,
 };
@@ -12,23 +13,6 @@ use crate::domain::scheduler::{Committed, StoreError};
 use crate::infrastructure::store::sqlite::rows;
 
 const COLUMNS: &str = "run_id, user_id, channel_id, reference_id, display_name, message_id, notified_at, retract_pending";
-
-fn store_error(error: sqlx::Error) -> StoreError {
-    match &error {
-        sqlx::Error::Database(db)
-            if matches!(
-                db.kind(),
-                ErrorKind::UniqueViolation
-                    | ErrorKind::ForeignKeyViolation
-                    | ErrorKind::NotNullViolation
-                    | ErrorKind::CheckViolation
-            ) =>
-        {
-            StoreError::Constraint(db.message().to_owned())
-        }
-        _ => StoreError::Backend(error.to_string()),
-    }
-}
 
 fn decode(row: &sqlx::sqlite::SqliteRow) -> Result<DeclineNotice, StoreError> {
     let text =
@@ -127,12 +111,18 @@ pub(super) async fn mark_retractions(
     Ok(())
 }
 
-async fn begin(store: &SqliteStore) -> Result<super::writer::WriterLease<'_>, StoreError> {
-    store
-        .writer
-        .lease()
-        .await
-        .map_err(|error| StoreError::Backend(error.to_string()))
+/// One write transaction running `query`; true when it changed exactly one row.
+async fn update_one<'q>(
+    store: &SqliteStore,
+    query: sqlx::query::Query<'q, Sqlite, SqliteArguments<'q>>,
+) -> Result<bool, StoreError> {
+    write_txn!(store, tx, async {
+        query
+            .execute(&mut *tx)
+            .await
+            .map(|done| done.rows_affected() == 1)
+            .map_err(store_error)
+    })
 }
 
 impl DeclineNoticeStore for SqliteStore {
@@ -144,26 +134,8 @@ impl DeclineNoticeStore for SqliteStore {
         candidates: Vec<DeclineNotice>,
         retractions: Vec<(String, String)>,
     ) -> Result<Option<Committed>, StoreError> {
-        let mut lease = begin(self).await?;
-        let runs = crate::infrastructure::store::observer::touched_runs(&changes);
-        let (result, healthy) = super::schedule::commit_on(
-            lease.conn(),
-            expected_revision,
-            changes,
-            meta,
-            &candidates,
-            &retractions,
-        )
-        .await;
-        lease.finish(healthy);
-        if let Ok(Some(committed)) = &result
-            && !committed.replayed
-        {
-            self.runs_written(&runs);
-            self.written()
-                .notify(crate::infrastructure::store::Written::Schedule);
-        }
-        result
+        self.commit_schedule(expected_revision, changes, meta, &candidates, &retractions)
+            .await
     }
 
     async fn decline_notice(
@@ -212,33 +184,18 @@ impl DeclineNoticeStore for SqliteStore {
         channel_id: &str,
         message_id: &str,
     ) -> Result<bool, StoreError> {
-        let mut lease = begin(self).await?;
-        let (result, healthy) = match lease.conn().begin_with("BEGIN IMMEDIATE").await {
-            Ok(mut tx) => {
-                let result = sqlx::query(
-                    "UPDATE decline_notices SET channel_id = ?1, message_id = ?2
-                     WHERE run_id = ?3 AND user_id = ?4 AND message_id IS NULL",
-                )
-                .bind(channel_id)
-                .bind(message_id)
-                .bind(run_id)
-                .bind(user_id)
-                .execute(&mut *tx)
-                .await
-                .map(|done| done.rows_affected() == 1)
-                .map_err(store_error);
-                match result {
-                    Ok(value) => match tx.commit().await {
-                        Ok(()) => (Ok(value), true),
-                        Err(error) => (Err(store_error(error)), false),
-                    },
-                    Err(error) => (Err(error), tx.rollback().await.is_ok()),
-                }
-            }
-            Err(error) => (Err(store_error(error)), false),
-        };
-        lease.finish(healthy);
-        result
+        update_one(
+            self,
+            sqlx::query(
+                "UPDATE decline_notices SET channel_id = ?1, message_id = ?2
+                 WHERE run_id = ?3 AND user_id = ?4 AND message_id IS NULL",
+            )
+            .bind(channel_id)
+            .bind(message_id)
+            .bind(run_id)
+            .bind(user_id),
+        )
+        .await
     }
 
     async fn mark_decline_retract_pending(
@@ -246,30 +203,15 @@ impl DeclineNoticeStore for SqliteStore {
         run_id: &str,
         user_id: &str,
     ) -> Result<bool, StoreError> {
-        let mut lease = begin(self).await?;
-        let (result, healthy) = match lease.conn().begin_with("BEGIN IMMEDIATE").await {
-            Ok(mut tx) => {
-                let result = sqlx::query(
-                    "UPDATE decline_notices SET retract_pending = 1 WHERE run_id = ?1 AND user_id = ?2",
-                )
-                .bind(run_id)
-                .bind(user_id)
-                .execute(&mut *tx)
-                .await
-                .map(|done| done.rows_affected() == 1)
-                .map_err(store_error);
-                match result {
-                    Ok(value) => match tx.commit().await {
-                        Ok(()) => (Ok(value), true),
-                        Err(error) => (Err(store_error(error)), false),
-                    },
-                    Err(error) => (Err(error), tx.rollback().await.is_ok()),
-                }
-            }
-            Err(error) => (Err(store_error(error)), false),
-        };
-        lease.finish(healthy);
-        result
+        update_one(
+            self,
+            sqlx::query(
+                "UPDATE decline_notices SET retract_pending = 1 WHERE run_id = ?1 AND user_id = ?2",
+            )
+            .bind(run_id)
+            .bind(user_id),
+        )
+        .await
     }
 
     async fn clear_decline_notice_message(
@@ -278,32 +220,17 @@ impl DeclineNoticeStore for SqliteStore {
         user_id: &str,
         message_id: &str,
     ) -> Result<bool, StoreError> {
-        let mut lease = begin(self).await?;
-        let (result, healthy) = match lease.conn().begin_with("BEGIN IMMEDIATE").await {
-            Ok(mut tx) => {
-                let result = sqlx::query(
-                    "UPDATE decline_notices SET message_id = NULL, retract_pending = 0
-                     WHERE run_id = ?1 AND user_id = ?2 AND message_id = ?3",
-                )
-                .bind(run_id)
-                .bind(user_id)
-                .bind(message_id)
-                .execute(&mut *tx)
-                .await
-                .map(|done| done.rows_affected() == 1)
-                .map_err(store_error);
-                match result {
-                    Ok(value) => match tx.commit().await {
-                        Ok(()) => (Ok(value), true),
-                        Err(error) => (Err(store_error(error)), false),
-                    },
-                    Err(error) => (Err(error), tx.rollback().await.is_ok()),
-                }
-            }
-            Err(error) => (Err(store_error(error)), false),
-        };
-        lease.finish(healthy);
-        result
+        update_one(
+            self,
+            sqlx::query(
+                "UPDATE decline_notices SET message_id = NULL, retract_pending = 0
+                 WHERE run_id = ?1 AND user_id = ?2 AND message_id = ?3",
+            )
+            .bind(run_id)
+            .bind(user_id)
+            .bind(message_id),
+        )
+        .await
     }
 
     async fn decline_notice_on_cooldown(
