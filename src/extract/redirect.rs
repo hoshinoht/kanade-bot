@@ -11,33 +11,10 @@ use crate::domain::notify::WeekReset;
 use crate::domain::proposals::{ChangeKind, Payload, ProposedChange};
 use crate::domain::schedule::Run;
 
-/// Admin setting `self_service.mode` (guild-wide).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum SelfServiceMode {
-    /// Launch default: the card stays and the link is added.
-    #[default]
-    CardsAndLink,
-    /// Self-serviceable moves get only the link.
-    LinkFirst,
-    /// v4 behaviour: cards, no links.
-    CardsOnly,
-}
-
-impl SelfServiceMode {
-    pub const ALL: [Self; 3] = [Self::CardsAndLink, Self::LinkFirst, Self::CardsOnly];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::CardsAndLink => "cards_and_link",
-            Self::LinkFirst => "link_first",
-            Self::CardsOnly => "cards_only",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|mode| mode.as_str() == value)
-    }
-}
+/// Admin setting `self_service.mode` (guild-wide): `CardsAndLink` (launch
+/// default: the card stays and the link is added), `LinkFirst`
+/// (self-serviceable moves get only the link) or `CardsOnly` (v4 behaviour).
+pub use crate::domain::settings::SelfServiceMode;
 
 /// No links while the public portal is closed, whatever is configured.
 pub fn effective_mode(configured: SelfServiceMode, public_portal_open: bool) -> SelfServiceMode {
