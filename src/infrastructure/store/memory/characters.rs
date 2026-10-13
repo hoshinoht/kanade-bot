@@ -1,23 +1,24 @@
-//! In-memory `CharacterStore`, mirroring SQLite's `roster_characters` and
-//! `roster_run_picks` (a deleted character's picks go with it, as SQLite's
-//! cascade does).
+//! In-memory `CharacterStore`, mirroring SQLite's `roster_characters`,
+//! `roster_run_picks` and `roster_fixed_picks` (a deleted character's picks
+//! go with it, as SQLite's cascade does).
 
 use std::collections::BTreeMap;
 
 use super::settings::{append, refuse_change};
 use crate::domain::characters::{
-    Character, CharacterChange, CharacterRecord, CharacterStore, CharacterWrite, PickChange,
-    PickWrite, RunPick, plan, plan_pick,
+    Character, CharacterChange, CharacterRecord, CharacterStore, CharacterWrite, Pick, PickChange,
+    PickScope, PickWrite, plan, plan_pick,
 };
 use crate::domain::scheduler::StoreError;
 use crate::domain::settings::SettingsChange;
 use crate::infrastructure::store::Written;
 
-/// Characters by id and their run picks by `(run, member)`, under one lock.
+/// Characters by id and their picks by `(scope, target, member)`, under
+/// one lock.
 #[derive(Debug, Default)]
 pub(super) struct CharacterTable {
     rows: BTreeMap<String, Character>,
-    picks: BTreeMap<(String, String), RunPick>,
+    picks: BTreeMap<(PickScope, String, String), Pick>,
 }
 
 fn of_member(table: &CharacterTable, member_id: &str) -> Vec<Character> {
@@ -79,8 +80,8 @@ pub(super) fn apply_pick(
     change: PickChange,
     record: &CharacterRecord,
 ) -> Result<(PickWrite, Option<SettingsChange>), StoreError> {
-    let (run_id, member_id) = change.slot();
-    let slot = (run_id.to_owned(), member_id.to_owned());
+    let (scope, target, member_id) = change.slot();
+    let slot = (scope, target.to_owned(), member_id.to_owned());
     let current = table.picks.get(&slot).cloned();
     let current_character = current
         .as_ref()
@@ -138,12 +139,12 @@ impl CharacterStore for super::MemoryScheduleStore {
         Ok(written)
     }
 
-    async fn run_picks(&self, run_ids: &[String]) -> Result<Vec<RunPick>, StoreError> {
+    async fn picks(&self, scope: PickScope, targets: &[String]) -> Result<Vec<Pick>, StoreError> {
         Ok(self
             .characters()
             .picks
             .values()
-            .filter(|pick| run_ids.contains(&pick.run_id))
+            .filter(|pick| pick.scope == scope && targets.contains(&pick.target))
             .cloned()
             .collect())
     }

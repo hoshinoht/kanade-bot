@@ -22,8 +22,8 @@ use crate::{
     domain::{
         catalog::BossTable,
         characters::{
-            Character, CharacterChange, CharacterRecord, CharacterStore, CharacterWrite,
-            PickChange, PickWrite, RunPick,
+            Character, CharacterChange, CharacterRecord, CharacterStore, CharacterWrite, Pick,
+            PickChange, PickScope, PickWrite,
         },
         drafts::{
             DraftEvent, DraftKind, DraftStatus, DraftStore, LoadedDraft, ProposalInfo,
@@ -250,8 +250,8 @@ pub trait ReadStore: Send + Sync {
 }
 
 /// The roster module's store (`modules.roster`), object-safe as
-/// [`ReadStore`]: one member's characters, run picks and the recorded,
-/// keyed writes.
+/// [`ReadStore`]: one member's characters, run and timing picks and the
+/// recorded, keyed writes.
 pub trait CharacterRoster: Send + Sync {
     fn member_characters(&self, member_id: String) -> ReadFuture<'_, Vec<Character>>;
     fn character(&self, id: String) -> ReadFuture<'_, Option<Character>>;
@@ -264,8 +264,8 @@ pub trait CharacterRoster: Send + Sync {
         record: CharacterRecord,
         replay: Option<StoredReplay>,
     ) -> ReadFuture<'_, KeyedWrite<CharacterWrite>>;
-    /// The stored picks on these runs.
-    fn run_picks(&self, run_ids: Vec<String>) -> ReadFuture<'_, Vec<RunPick>>;
+    /// The stored picks of `scope` on these runs or timings.
+    fn picks(&self, scope: PickScope, targets: Vec<String>) -> ReadFuture<'_, Vec<Pick>>;
     /// One pick write as [`Self::write_character`] (see
     /// [`ReplayStore::apply_pick_replayed`]).
     fn write_pick(
@@ -302,8 +302,8 @@ impl<T: CharacterStore + ReplayStore + Send + Sync> CharacterRoster for T {
         })
     }
 
-    fn run_picks(&self, run_ids: Vec<String>) -> ReadFuture<'_, Vec<RunPick>> {
-        Box::pin(async move { CharacterStore::run_picks(self, &run_ids).await })
+    fn picks(&self, scope: PickScope, targets: Vec<String>) -> ReadFuture<'_, Vec<Pick>> {
+        Box::pin(async move { CharacterStore::picks(self, scope, &targets).await })
     }
 
     fn write_pick(

@@ -251,6 +251,8 @@
         members={store.members}
         week={store.week}
         timeStep={store.runStep}
+        rosterModule={store.session ? store.session.roster : null}
+        timeZone={store.week?.timezone ?? 'Asia/Kuala_Lumpur'}
         version={fixed.version}
         onsaved={saved}
         onstale={stale}

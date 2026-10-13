@@ -103,7 +103,8 @@ describe('run readiness', () => {
   const slot = (over: Partial<ReadinessSlot>): ReadinessSlot => ({
     member_id: '1004',
     character: null,
-    inferred: false,
+    basis: null,
+    candidates: 0,
     link: 'linked',
     level: { value: 276, source: 'nexon', as_of: '2026-09-29' },
     power: { kind: 'nexon_cp', value: 52_104_000, as_of: '2026-09-29' },

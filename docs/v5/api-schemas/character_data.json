@@ -97,7 +97,7 @@
       }
     },
     "RunReadiness": {
-      "description": "GET /api/admin/runs/{id}/readiness: each party slot (as GET .../characters reads them, inferred recomputed) with its level and power, and its level against each boss of the run. Computed on read, never stored, never blocking. NEXON values only from an active link's unexpired data.",
+      "description": "GET /api/admin/runs/{id}/readiness: each party slot (as GET .../characters resolves it) with its level and power, and its level against each boss of the run. Computed on read, never stored, never blocking. NEXON values only from an active link's unexpired data.",
       "type": "object",
       "additionalProperties": false,
       "required": ["run_id", "slots", "nexon_data", "attribution"],
@@ -108,17 +108,41 @@
         "attribution": { "const": "Data based on NEXON Open API" }
       }
     },
+    "TimingReadiness": {
+      "description": "GET /api/admin/fixed/{id}/readiness (the saved timing) and POST /api/admin/fixed/readiness (the Fixed editor's form as it stands; body `TimingPreview`), modules `roster` and `character_data`: each party slot as GET /api/admin/fixed/{id}/characters resolves it (picks only for members of the saved party), with the same values and verdicts as `RunReadiness`. Computed on read, never stored, never blocking.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixed_run_id", "slots", "nexon_data", "attribution"],
+      "properties": {
+        "fixed_run_id": { "$ref": "common.json#/$defs/NullableString", "description": "Null for a timing not added yet." },
+        "slots": { "type": "array", "items": { "$ref": "#/$defs/ReadinessSlot" }, "description": "In party order." },
+        "nexon_data": { "type": "boolean", "description": "Some slot shows a NEXON value: show the attribution." },
+        "attribution": { "const": "Data based on NEXON Open API" }
+      }
+    },
+    "TimingPreview": {
+      "description": "Request body of POST /api/admin/fixed/readiness: the editor's bosses (tokens; unknown ones are left out) and party (member ids) as they stand, and the timing they edit (absent or null for a new one; 404 `not_found` when it is gone). At most 64 of each (else 422 `invalid`).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bosses", "participants"],
+      "properties": {
+        "fixed_run_id": { "type": ["string", "null"] },
+        "bosses": { "type": "array", "items": { "type": "string" }, "maxItems": 64 },
+        "participants": { "type": "array", "items": { "type": "string" }, "maxItems": 64 }
+      }
+    },
     "ReadinessSlot": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["member_id", "character", "inferred", "link", "level", "power", "bosses"],
+      "required": ["member_id", "character", "basis", "candidates", "link", "level", "power", "bosses"],
       "properties": {
         "member_id": { "type": "string" },
         "character": {
-          "description": "The character the member brings (picked, else the only candidate); null with none.",
+          "description": "The character the member brings (as GET .../characters resolves it); null with none.",
           "oneOf": [{ "$ref": "characters.json#/$defs/CharacterChoice" }, { "type": "null" }]
         },
-        "inferred": { "type": "boolean", "description": "The character is the only candidate, not a pick." },
+        "basis": { "oneOf": [{ "$ref": "characters.json#/$defs/CharacterBasis" }, { "type": "null" }], "description": "Where `character` comes from; null with none." },
+        "candidates": { "type": "integer", "minimum": 0, "description": "How many active characters the member has (with no character: 0 reads as no characters, more as no main)." },
         "link": { "enum": ["not_connected", "not_linked", "pending", "linked", "stale", "expired", null], "description": "The character's link as the strip shows it; null without a character." },
         "level": {
           "description": "Fresh NEXON level, else the manual roster level; null with neither.",

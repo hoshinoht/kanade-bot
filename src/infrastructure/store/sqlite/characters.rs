@@ -1,17 +1,18 @@
-//! `CharacterStore` over `roster_characters` (0037) and `roster_run_picks`
-//! (0039, `run_picks.rs`): constant SQL, reads on a reader connection, one
-//! `BEGIN IMMEDIATE` per write with its History row (`settings_changes`,
-//! section `characters`). Deleting a character cascades to its picks.
+//! `CharacterStore` over `roster_characters` (0037), `roster_run_picks`
+//! (0039) and `roster_fixed_picks` (0040, both in `picks.rs`): constant SQL,
+//! reads on a reader connection, one `BEGIN IMMEDIATE` per write with its
+//! History row (`settings_changes`, section `characters`). Deleting a
+//! character cascades to its picks.
 
 use sqlx::{Connection, Row, SqliteConnection, sqlite::SqliteRow};
 
 use super::SqliteStore;
 use super::rows::instant;
 use super::schedule::store_error;
-use super::{run_picks, settings};
+use super::{picks, settings};
 use crate::domain::characters::{
     Character, CharacterChange, CharacterRecord, CharacterRole, CharacterStore, CharacterWrite,
-    PickChange, PickWrite, RunPick, plan,
+    Pick, PickChange, PickScope, PickWrite, plan,
 };
 use crate::domain::history::Actor;
 use crate::domain::scheduler::StoreError;
@@ -249,8 +250,8 @@ impl CharacterStore for SqliteStore {
         Ok(written)
     }
 
-    async fn run_picks(&self, run_ids: &[String]) -> Result<Vec<RunPick>, StoreError> {
-        read_txn!(self, tx, run_picks::of_runs(&mut tx, run_ids))
+    async fn picks(&self, scope: PickScope, targets: &[String]) -> Result<Vec<Pick>, StoreError> {
+        read_txn!(self, tx, picks::of_targets(&mut tx, scope, targets))
     }
 
     async fn apply_pick(
@@ -258,7 +259,7 @@ impl CharacterStore for SqliteStore {
         change: PickChange,
         record: CharacterRecord,
     ) -> Result<PickWrite, StoreError> {
-        let (written, recorded) = write_txn!(self, tx, run_picks::apply(&mut tx, change, &record))?;
+        let (written, recorded) = write_txn!(self, tx, picks::apply(&mut tx, change, &record))?;
         if recorded {
             self.written().notify(Written::Settings);
         }

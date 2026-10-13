@@ -1,5 +1,5 @@
 //! `characters.json`: a member's roster characters and the character each
-//! party member brings to a run (module `roster`).
+//! party member brings to a run or a weekly timing (module `roster`).
 
 use serde::Serialize;
 
@@ -104,24 +104,39 @@ pub struct CharacterClash {
     pub time: Option<String>,
     /// The other run's bosses this run has too, any difficulty.
     pub bosses: Vec<String>,
-    /// The character is inferred on the other run, not picked.
-    pub inferred: bool,
+    /// Why the character is on the other run.
+    #[cfg_attr(test, ts(type = "'run_pick' | 'timing_pick' | 'main' | 'only'"))]
+    pub basis: &'static str,
 }
 
-/// One party member's slot on a run.
+/// One party member's slot on a run or a weekly timing.
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct RunCharacterSlot {
     pub member_id: String,
     /// Their active characters, oldest first; empty when they have none.
     pub candidates: Vec<CharacterChoice>,
-    /// The picked character's id.
+    /// How many retired characters they have (never offered).
+    pub retired: u32,
+    /// This slot's own stored pick (the run's on a run, the timing's on a
+    /// timing) while it names a candidate.
     pub picked: Option<String>,
-    /// With nothing picked, the only candidate's id (never stored).
-    pub inferred: Option<String>,
+    /// When `picked` was picked; `null` without it.
+    pub picked_at: Option<String>,
+    /// Who picked `picked`; `null` without it.
+    pub picked_by: Option<SettingsActor>,
+    /// The character the member brings: on a run its pick, else its
+    /// timing's pick, else their main, else their only active character;
+    /// on a timing its pick, else the main, else the only one. `null` with
+    /// none (no characters, or several and no main). Never stored.
+    pub brings: Option<String>,
+    /// Where `brings` comes from; `null` with nothing brought.
+    #[cfg_attr(test, ts(type = "'run_pick' | 'timing_pick' | 'main' | 'only' | null"))]
+    pub basis: Option<&'static str>,
     /// Send it back with the pick: 0 while nothing is picked.
     pub version: u32,
-    /// Other runs with the picked or inferred character for a shared boss.
+    /// Other runs with the character brought here for a shared boss (always
+    /// empty on a timing).
     pub warnings: Vec<CharacterClash>,
 }
 
@@ -130,6 +145,15 @@ pub struct RunCharacterSlot {
 pub struct RunCharacters {
     pub run_id: String,
     /// In party order.
+    pub slots: Vec<RunCharacterSlot>,
+}
+
+/// A weekly timing's party slots (modules `roster` and `character_data`).
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TimingCharacters {
+    pub fixed_run_id: String,
+    /// In party order (the saved party).
     pub slots: Vec<RunCharacterSlot>,
 }
 
@@ -153,22 +177,37 @@ fn clash(ctx: &Context<'_>, week: &[Run], clash: &Clash) -> Option<CharacterClas
         day: day_index(ctx, ctx.local_date(run.week_start), run.datetime),
         time: run_time(ctx, run),
         bosses: clash.bosses.clone(),
-        inferred: clash.inferred,
+        basis: clash.basis.as_str(),
     })
 }
 
-/// `slot` as the API answers it; `week` holds the runs its clashes name.
-pub fn run_slot(ctx: &Context<'_>, week: &[Run], slot: &PartySlot) -> RunCharacterSlot {
+/// `slot` without its clashes, as a timing answers it.
+pub fn slot(slot: &PartySlot) -> RunCharacterSlot {
     RunCharacterSlot {
         member_id: slot.member_id.clone(),
         candidates: slot.candidates.iter().map(choice).collect(),
-        picked: slot.picked.clone(),
-        inferred: slot.inferred.clone(),
+        retired: u32::try_from(slot.retired).unwrap_or(u32::MAX),
+        picked: slot.pick.as_ref().map(|pick| pick.character_id.clone()),
+        picked_at: slot.pick.as_ref().map(|pick| iso_instant(pick.picked_at)),
+        picked_by: slot.pick.as_ref().map(|pick| SettingsActor {
+            kind: pick.picked_by.kind(),
+            id: pick.picked_by.id().to_owned(),
+        }),
+        brings: slot.bringing().map(str::to_owned),
+        basis: slot.brings.as_ref().map(|(_, basis)| basis.as_str()),
         version: slot.version,
-        warnings: slot
+        warnings: Vec::new(),
+    }
+}
+
+/// `party` as a run answers it; `week` holds the runs its clashes name.
+pub fn run_slot(ctx: &Context<'_>, week: &[Run], party: &PartySlot) -> RunCharacterSlot {
+    RunCharacterSlot {
+        warnings: party
             .clashes
             .iter()
             .filter_map(|found| clash(ctx, week, found))
             .collect(),
+        ..slot(party)
     }
 }

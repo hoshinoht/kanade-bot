@@ -209,16 +209,17 @@ test('chardata estimate panel: party lookup with totals, missing members and the
   const panel = sheet.locator('.estimate-panel');
   await expect(panel.locator('.estimate__label')).toHaveText('Estimate from MapleScouter');
   await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText('Estimate for planning only, not eligibility. Admins only; members never see it.');
-  await expect(panel).toContainText('picked or inferred for this run (at most 6)');
-  await expect(panel).toContainText('Mika and Ren (2) have no character yet and will be listed as missing.');
+  await expect(panel).toContainText('this run brings (at most 6)');
+  // Mika brings MikaBish from the timing; only Ren (2), with no characters, is missing.
+  await expect(panel).toContainText('Ren (2) has no character yet and will be listed as missing.');
   await panel.getByRole('button', { name: 'Look up party' }).click();
   await expect(panel.locator('.estimate__progress')).toContainText(/Looking up \d of \d · /);
   const members = panel.getByRole('table', { name: 'Effective % per member' });
   await expect(members).toBeVisible({ timeout: 20_000 });
   await expect(panel.locator('.estimate__combined')).toContainText('Carling');
   await expect(panel.locator('.estimate__combined')).toContainText('not complete');
-  await expect(panel.locator('.estimate__missing')).toHaveText([/Mika missing · no character picked/, /Ren \(2\) missing · no characters on the roster/]);
-  await expect(panel.locator('p.chardata__foot')).toContainText('Mika and Ren (2) have no character (missing, never 0%).');
+  await expect(panel.locator('.estimate__missing')).toHaveText([/Ren \(2\) missing · no characters on the roster/]);
+  await expect(panel.locator('p.chardata__foot')).toContainText('Ren (2) has no character (missing, never 0%).');
   await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText('kept 24 h in memory');
 });
 
@@ -312,12 +313,13 @@ test('chardata readiness: level and CP per slot, a level verdict per boss, attri
   await expect(hotaru).toContainText('manual · NEXON data expired');
   await expect(hotaru.getByRole('listitem').first()).toHaveText(/^HCarling\s*Lv ok$/);
   await expect(slotOf(sheet, 'Ren (1)').getByRole('group', { name: 'Readiness of RenShade' })).toContainText('manual · not linked');
-  await expect(slotOf(sheet, 'Mika')).toContainText('Readiness shows once a character is picked.');
-  await expect(sheet.getByRole('link', { name: /floor/i })).toHaveCount(0);
-  // Never blocking: a pick saves as before and the lines follow it.
-  await sheet.getByRole('button', { name: /^Pick Mika's character/ }).click();
-  await sheet.getByRole('dialog', { name: "Mika's character for HCarling + HStar" }).getByRole('option', { name: /MikaBish/ }).click();
+  // Mika brings the timing's pick (MikaBish); no one on this run is left without a character.
   await expect(slotOf(sheet, 'Mika').getByRole('group', { name: 'Readiness of MikaBish' })).toContainText('Lv. 283 · CP 48.2M');
+  await expect(sheet.getByRole('link', { name: /floor/i })).toHaveCount(0);
+  // Never blocking: a pick under an entry level saves as before and the lines follow it.
+  await sheet.getByRole('button', { name: /^Mika's character on HCarling/ }).click();
+  await sheet.getByRole('dialog', { name: "Mika's character for HCarling + HStar" }).getByRole('option', { name: /Mikadere/ }).click();
+  await expect(slotOf(sheet, 'Mika').getByRole('group', { name: 'Readiness of Mikadere' }).getByRole('listitem')).toHaveText([/^HCarling\s*under Lv\. \d+$/, /^HStar\s*under Lv\. \d+$/]);
 });
 
 test('chardata readiness: after the run lookup ends, MapleScouter per boss replaces the slot CP', async ({ page }) => {

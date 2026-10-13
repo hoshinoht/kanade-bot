@@ -454,6 +454,14 @@
   min-width: 0;
 }
 
+// A wide Fixed editor (B_FixedReady): the values line, then the bosses on the same row, wrapping.
+.ready--row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+}
+
 .ready__line {
   display: flex;
   flex-wrap: wrap;

@@ -1089,6 +1089,53 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         .await;
     assert_eq!(ready["nexon_data"], true);
 
+    // Fixed readiness and timing picks (modules roster and character_data).
+    let timing = h
+        .ok(
+            "GET",
+            "/api/admin/fixed/f-carling/characters",
+            None,
+            "characters.json#/$defs/TimingCharacters",
+        )
+        .await;
+    assert_eq!(timing["fixed_run_id"], "f-carling");
+    let mika = h
+        .ok(
+            "PUT",
+            "/api/admin/fixed/f-carling/characters/1003",
+            Some(json!({ "character_id": "ch-s4", "version": 1 })),
+            "characters.json#/$defs/RunCharacterSlot",
+        )
+        .await;
+    assert_eq!(
+        (&mika["picked"], &mika["basis"]),
+        (&json!("ch-s4"), &json!("timing_pick"))
+    );
+    h.refused(
+        "PUT",
+        "/api/admin/fixed/f-carling/characters/1003",
+        json!({ "character_id": null, "version": 1 }),
+        &marks,
+        (StatusCode::CONFLICT, "stale"),
+    )
+    .await;
+    h.ok(
+        "GET",
+        "/api/admin/fixed/f-carling/readiness",
+        None,
+        "character_data.json#/$defs/TimingReadiness",
+    )
+    .await;
+    let preview = h
+        .ok(
+            "POST",
+            "/api/admin/fixed/readiness",
+            Some(json!({ "bosses": ["HCarling"], "participants": ["1003", "1008"] })),
+            "character_data.json#/$defs/TimingReadiness",
+        )
+        .await;
+    assert_eq!(preview["fixed_run_id"], Value::Null);
+
     // Weekly timings.
     let row = &fixed[0];
     let tokens: Vec<&str> = row["bosses"]

@@ -1,15 +1,18 @@
 <!--
   A party member's character for one run (module `roster`; B_RosterRunPick,
-  B_PhoneRosterRunPick): their active characters, the main crowned. On a wide
-  sheet a popover by the slot's chip (a listbox: a choice saves at once); in
-  the narrow sheet a bottom sheet with radios and "Use <IGN>". Clear pick
-  goes back to inferred (one character) or nothing. Picks save live, never
-  into a staged draft.
+  B_PhoneRosterRunPick) or one weekly timing (B_FixedReadyPick,
+  B_PhoneFixedReadyPick): their active characters, the main crowned. On a
+  wide screen a popover by the slot's chip (a listbox: a choice saves at
+  once); in the narrow sheet or editor a bottom sheet with radios and
+  "Use <IGN>". On a run, Clear pick goes back to the default (the timing's
+  pick, the main or the only character); a timing's caller clears when the
+  default is chosen. Picks save live, never into a staged draft or a form.
 -->
 <script lang="ts">
-  import { tick, untrack } from 'svelte';
+  import { tick, untrack, type Snippet } from 'svelte';
   import type { CharacterChoice, RunCharacterSlot } from '@kanade/api-types';
   import { Icon, Modal } from '@kanade/ui';
+  import '@kanade/ui/styles/screens/character-pick.scss';
   import { DEFAULT_REGION, regionLabel } from '../members/characters';
 
   let {
@@ -18,9 +21,16 @@
     title,
     eyebrow = '',
     variant,
+    what = 'run',
+    fid = 'roster-picker',
+    optionFid = 'roster-picker-option',
+    tagEveryOption = false,
     open = $bindable(false),
     busy = false,
     staging = false,
+    meta,
+    under,
+    note,
     onpick,
     onclose,
     returnFocus,
@@ -28,16 +38,28 @@
     slot: RunCharacterSlot;
     /** The member as the sheet names them ("Mika", "Ren (2)"). */
     name: string;
-    /** The run ("HCarling + HStar"). */
+    /** The run or timing ("HCarling + HStar"). */
     title: string;
     /** The sheet's line over its title: "HCarling + HStar · Tue 22:00". */
     eyebrow?: string;
     variant: 'popover' | 'sheet';
+    /** A run's pick, or a weekly timing's. */
+    what?: 'run' | 'timing';
+    fid?: string;
+    /** The options' `data-fid`: the first one's, or with `tagEveryOption` each one's (as its board tags them). */
+    optionFid?: string;
+    tagEveryOption?: boolean;
     /** The bottom sheet's state (the popover is mounted only while open). */
     open?: boolean;
     busy?: boolean;
     /** Run-sheet staging is on: say the pick still saves live. */
     staging?: boolean;
+    /** More words after a choice's class ("the default", "picked 12 Oct by Asahi"). */
+    meta?: (c: CharacterChoice) => string[];
+    /** A choice below an entry level: tinted, still offered (it never blocks). */
+    under?: (c: CharacterChoice) => boolean;
+    /** Lines under the choices. */
+    note?: Snippet;
     /** A character id, or `null` to clear the pick. */
     onpick: (characterId: string | null) => void;
     /** The popover closed without a pick; `refocus` when Escape asked for it. */
@@ -47,10 +69,10 @@
   } = $props();
 
   const uid = $props.id();
-  const current = $derived(slot.picked ?? slot.inferred);
+  const current = $derived(slot.brings);
   let pop = $state<HTMLDivElement>();
   let list = $state<HTMLDivElement>();
-  // The sheet's radio: the pick, else the inferred one, else the main, else the first.
+  // The sheet's radio: what the member brings, else the main, else the first.
   let choice = $state('');
   const chosen = $derived(slot.candidates.find((c) => c.id === choice) ?? null);
 
@@ -70,7 +92,7 @@
   $effect(() => {
     if (variant !== 'popover') return;
     const away = (event: PointerEvent) => {
-      if (event.target instanceof Element && (pop?.contains(event.target) || event.target.closest('.slotchar__btn[aria-expanded="true"]'))) return;
+      if (event.target instanceof Element && (pop?.contains(event.target) || event.target.closest('[data-char-for][aria-expanded="true"]'))) return;
       onclose?.(false);
     };
     document.addEventListener('pointerdown', away);
@@ -97,7 +119,7 @@
 
   function popKey(event: KeyboardEvent) {
     if (event.key !== 'Escape' || event.defaultPrevented) return;
-    // The sheet's own Escape (close the run) must not fire too.
+    // The sheet's own Escape (close the run or the editor) must not fire too.
     event.preventDefault();
     event.stopPropagation();
     onclose?.(true);
@@ -112,7 +134,7 @@
 
   function use() {
     if (!chosen || busy) return;
-    if (chosen.id === slot.picked) open = false;
+    if (chosen.id === current) open = false;
     else onpick(chosen.id);
   }
 </script>
@@ -122,33 +144,39 @@
     <span class="charpick__ign"
       >{c.ign}{#if c.role === 'main'}<span class="charpick__crown"><Icon name="crown" />main</span>{/if}</span
     >
-    <span class="charpick__meta">{c.class ?? 'No class'}{#if c.world !== DEFAULT_REGION}{` · ${regionLabel(c.world)}`}{/if}</span>
+    <span class="charpick__meta"
+      >{[`${c.class ?? 'No class'}${c.world !== DEFAULT_REGION ? ` · ${regionLabel(c.world)}` : ''}`, ...(meta?.(c) ?? [])].join(' · ')}</span
+    >
   </span>
   <span class="charpick__lv mono">{#if c.level}<small>Lv.</small> {c.level}{/if}</span>
 {/snippet}
 
 {#snippet extras()}
-  {#if slot.picked}
+  <!-- A timing goes back to its default by choosing it; with no main and several characters there is none to choose. -->
+  {#if slot.picked && (what === 'run' || !(slot.candidates.some((c) => c.role === 'main') || slot.candidates.length === 1))}
     <button type="button" class="btn charpick__clear" disabled={busy} onclick={() => onpick(null)}
-      >Clear pick{#if slot.candidates.length === 1}<span class="charpick__clearhint">&nbsp;· back to inferred</span>{/if}</button
+      >Clear pick<span class="charpick__clearhint">&nbsp;· {what === 'run' ? 'back to the default' : 'nothing is brought'}</span></button
     >
   {/if}
+  {#if slot.retired}<p class="charpick__note">{slot.retired} retired character{slot.retired === 1 ? '' : 's'} not offered.</p>{/if}
+  {@render note?.()}
   {#if staging}<p class="charpick__note">Saves live: character picks are not staged in the draft.</p>{/if}
 {/snippet}
 
 {#if variant === 'popover'}
-  <div class="charpick charpick--pop" role="dialog" tabindex="-1" aria-label="{name}'s character for {title}" data-fid="roster-picker" bind:this={pop} onkeydown={popKey} onfocusout={leave}>
-    <p class="cap charpick__cap" id="{uid}-cap">{name}'s character for this run</p>
+  <div class="charpick charpick--pop" role="dialog" tabindex="-1" aria-label="{name}'s character for {title}" data-fid={fid} bind:this={pop} onkeydown={popKey} onfocusout={leave}>
+    <p class="cap charpick__cap" id="{uid}-cap">{name}'s character for this {what}</p>
     <div class="charpick__options" role="listbox" aria-labelledby="{uid}-cap" tabindex="-1" bind:this={list} onkeydown={listKey} onclick={listClick}>
       {#each slot.candidates as c, index (c.id)}
         <div
           class="charpick__option"
           class:charpick__option--on={c.id === current}
+          class:charpick__option--under={under?.(c)}
           role="option"
           aria-selected={c.id === current}
           tabindex="-1"
           data-id={c.id}
-          data-fid={index === 0 ? 'roster-picker-option' : undefined}
+          data-fid={index === 0 || tagEveryOption ? optionFid : undefined}
         >
           <span class="charpick__dot" aria-hidden="true"></span>
           {@render row(c)}
@@ -158,11 +186,11 @@
     {@render extras()}
   </div>
 {:else}
-  <Modal bind:open title="{name}'s character" {eyebrow} narrow className="charsheet" fid="roster-picker" fidParts={{}} {returnFocus}>
+  <Modal bind:open title="{name}'s character{what === 'timing' ? ' for this timing' : ''}" {eyebrow} narrow className="charsheet" {fid} fidParts={{}} {returnFocus}>
     <fieldset class="charpick charpick--sheet">
       <legend class="vh">{name}'s character for {title}</legend>
       {#each slot.candidates as c, index (c.id)}
-        <label class="charpick__option" class:charpick__option--on={c.id === choice} data-fid={index === 0 ? 'roster-picker-option' : undefined}>
+        <label class="charpick__option" class:charpick__option--on={c.id === choice} class:charpick__option--under={under?.(c)} data-fid={index === 0 || tagEveryOption ? optionFid : undefined}>
           <input type="radio" name="{uid}-char" value={c.id} bind:group={choice} />
           {@render row(c)}
         </label>

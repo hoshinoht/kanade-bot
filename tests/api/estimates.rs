@@ -519,6 +519,16 @@ async fn one_character_is_one_ign_lookup_with_a_pinned_request() {
 async fn post_needs_csrf_and_a_valid_body() {
     let (address, fake) = fake_scouter().await;
     let reads = on(Some(address)).await;
+    // Alice's main (her first character) is on GMS.
+    let gms = reads
+        .call(
+            "POST",
+            "/api/admin/members/1001/characters",
+            json!({"ign": "MikaGms", "world": "gms"}),
+            &[],
+        )
+        .await;
+    let gms = gms.json()["id"].as_str().unwrap().to_owned();
     let id = character(&reads, "1001", "MikaBish").await;
     let body = json!({"character_ids": [id]}).to_string();
     let forged = send(
@@ -562,20 +572,11 @@ async fn post_needs_csrf_and_a_valid_body() {
             "{body}"
         );
     }
-    let gms = reads
-        .call(
-            "POST",
-            "/api/admin/members/1001/characters",
-            json!({"ign": "MikaGms", "world": "gms"}),
-            &[],
-        )
-        .await;
-    let gms = gms.json()["id"].as_str().unwrap().to_owned();
     assert_eq!(
         refused(&reads, json!({"character_ids": [gms]})).await,
         (422, "region".into())
     );
-    // Nobody in r-kalos has a character yet.
+    // Alice brings her GMS main and nobody else in r-kalos has a character.
     assert_eq!(
         refused(&reads, json!({"run_id": "r-kalos"})).await,
         (422, "nothing_to_look_up".into())
@@ -731,10 +732,10 @@ async fn unknown_shares_stay_null() {
 async fn a_run_is_looked_up_one_by_one_then_as_a_party_with_missing_members() {
     let (address, fake) = fake_scouter().await;
     let reads = on(Some(address)).await;
-    // Alice picks MikaBish of two, Bob's only character is inferred, Dan
-    // has none.
-    let mika = character(&reads, "1001", "MikaBish").await;
+    // Alice picks MikaBish over her main MikaHero, Bob brings his main
+    // (his first character), Dan has none.
     character(&reads, "1001", "MikaHero").await;
+    let mika = character(&reads, "1001", "MikaBish").await;
     let ren = character(&reads, "1002", "RenShade").await;
     let picked = reads
         .call(
@@ -803,21 +804,14 @@ async fn a_run_is_looked_up_one_by_one_then_as_a_party_with_missing_members() {
     assert_eq!(strip["result"]["cache_hit"], true);
     assert_eq!(fake.lookups().len(), 3, "no new lookups");
 
-    // Bob gains a second character without a pick: missing, not guessed;
-    // MikaBish alone comes from memory, then the party total.
+    // Bob gains a second character: he still brings his main, so the
+    // party's IGN set, and its memory, stay the same.
     character(&reads, "1002", "RenAlt").await;
-    let alone = look_up(&reads, json!({"run_id": "r-kalos"})).await;
-    assert_eq!(
-        alone["missing"],
-        json!([
-            {"member_id": "1002", "character_id": null, "reason": "no_character_picked"},
-            {"member_id": "1004", "character_id": null, "reason": "no_characters"},
-        ])
-    );
-    assert_eq!(
-        fake.targets().last().map(String::as_str),
-        Some("/v1/bosses?igns=MikaBish")
-    );
+    let later = look_up(&reads, json!({"run_id": "r-kalos"})).await;
+    assert_eq!(later["characters"], done["characters"]);
+    assert_eq!(later["missing"], done["missing"]);
+    assert_eq!(later["result"]["cache_hit"], true);
+    assert_eq!(fake.lookups().len(), 3, "still no new lookups");
 }
 
 #[tokio::test]

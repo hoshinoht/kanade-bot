@@ -1,7 +1,7 @@
 <!--
   The run sheet's Estimate panel (boards B_CharEstimateRun, B_EstRunStates,
-  phone twins): one MapleScouter lookup over the party's picked or inferred
-  characters (at most 6), as a job of up to 2 minutes. Per boss of the run:
+  phone twins): one MapleScouter lookup over the characters the party brings
+  (at most 6), as a job of up to 2 minutes. Per boss of the run:
   the combined minutes and %, "technically possible", "not complete"; per
   member: effective %. Members without a character are listed as missing,
   never 0%, and an error never leaves a partial total. Labelled as
@@ -53,8 +53,8 @@
   const ignOf = (id: string | null) => job?.characters.find((c) => c.character_id === id)?.ign ?? null;
 
   // Before a lookup: who brings a character, and who will be listed as missing.
-  const bringing = $derived(slots?.slots.filter((s) => s.picked ?? s.inferred) ?? []);
-  const without = $derived(slots?.slots.filter((s) => !(s.picked ?? s.inferred)).map((s) => name(s.member_id)) ?? []);
+  const bringing = $derived(slots?.slots.filter((s) => s.brings) ?? []);
+  const without = $derived(slots?.slots.filter((s) => !s.brings).map((s) => name(s.member_id)) ?? []);
   const nothing = $derived(slots !== null && bringing.length === 0);
 
   const off = $derived(running || Boolean(blocker) || lookup.starting || nothing || error?.code === 'manual_check' || lookup.wait > 0);
@@ -194,7 +194,7 @@
       <span class="chardata__msg" id="{uid}-why">No one in this party has a character to look up yet.</span>
     {:else}
       <span class="chardata__msg"
-        >Looks up the {bringing.length || ''} character{bringing.length === 1 ? '' : 's'} picked or inferred for this run (at most 6) and adds their effective % per boss.
+        >Looks up the {bringing.length || ''} character{bringing.length === 1 ? '' : 's'} this run brings (at most 6) and adds their effective % per boss.
         Takes up to 2 minutes.</span
       >
       {#if without.length}<span class="chardata__sub">{joinNames(without)} {without.length === 1 ? 'has' : 'have'} no character yet and will be listed as missing.</span>{/if}

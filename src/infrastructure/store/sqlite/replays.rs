@@ -8,7 +8,7 @@ use sqlx::{Connection, Row, SqliteConnection};
 use super::SqliteStore;
 use super::rows::instant;
 use super::schedule::store_error;
-use super::{characters, members, run_picks, settings};
+use super::{characters, members, picks, settings};
 use crate::domain::characters::{
     CharacterChange, CharacterRecord, CharacterWrite, PickChange, PickWrite,
 };
@@ -225,7 +225,7 @@ impl ReplayStore for SqliteStore {
             if let Some(answer) = keyed(found, &replay) {
                 return Ok((answer, false));
             }
-            let (written, recorded) = run_picks::apply(&mut tx, change, &record).await?;
+            let (written, recorded) = picks::apply(&mut tx, change, &record).await?;
             if written.applied() {
                 put(&mut tx, &replay).await?;
             }

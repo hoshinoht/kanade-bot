@@ -298,6 +298,64 @@ pub async fn pick_character(
     outcome(app.store.lock().await.pick_character(&id, &member, req))
 }
 
+/// `GET /api/admin/fixed/{id}/characters` (modules `roster` and
+/// `character_data`: off, either one, the generic 404).
+pub async fn fixed_characters(State(app): State<App>, Path(id): Path<String>) -> Response {
+    if let Some(off) = chardata_off(&app).await {
+        return off;
+    }
+    outcome(app.store.lock().await.timing_characters(&id))
+}
+
+pub async fn pick_fixed_character(
+    State(app): State<App>,
+    Path((id, member)): Path<(String, String)>,
+    body: Result<Json<crate::mock::run_picks::CharacterPick>, JsonRejection>,
+) -> Response {
+    if let Some(off) = chardata_off(&app).await {
+        return off;
+    }
+    let Ok(Json(req)) = body else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "invalid_body",
+            "The request body is not valid.",
+        );
+    };
+    outcome(
+        app.store
+            .lock()
+            .await
+            .pick_timing_character(&id, &member, req),
+    )
+}
+
+/// `GET /api/admin/fixed/{id}/readiness`.
+pub async fn fixed_readiness(State(app): State<App>, Path(id): Path<String>) -> Response {
+    if let Some(off) = chardata_off(&app).await {
+        return off;
+    }
+    outcome(app.store.lock().await.fixed_readiness(&id))
+}
+
+/// `POST /api/admin/fixed/readiness`: the editor's form, nothing written.
+pub async fn preview_readiness(
+    State(app): State<App>,
+    body: Result<Json<crate::mock::readiness::TimingPreview>, JsonRejection>,
+) -> Response {
+    if let Some(off) = chardata_off(&app).await {
+        return off;
+    }
+    let Ok(Json(req)) = body else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            "invalid_body",
+            "The request body is not valid.",
+        );
+    };
+    outcome(app.store.lock().await.preview_readiness(req))
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Modules {

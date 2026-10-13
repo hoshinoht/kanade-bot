@@ -277,12 +277,12 @@ time: string | null,
  */
 bosses: Array<string>, 
 /**
- * The character is inferred on the other run, not picked.
+ * Why the character is on the other run.
  */
-inferred: boolean, };
+basis: 'run_pick' | 'timing_pick' | 'main' | 'only', };
 
 /**
- * One party member's slot on a run.
+ * One party member's slot on a run or a weekly timing.
  */
 export type RunCharacterSlot = { member_id: string, 
 /**
@@ -290,25 +290,55 @@ export type RunCharacterSlot = { member_id: string,
  */
 candidates: Array<CharacterChoice>, 
 /**
- * The picked character's id.
+ * How many retired characters they have (never offered).
+ */
+retired: number, 
+/**
+ * This slot's own stored pick (the run's on a run, the timing's on a
+ * timing) while it names a candidate.
  */
 picked: string | null, 
 /**
- * With nothing picked, the only candidate's id (never stored).
+ * When `picked` was picked; `null` without it.
  */
-inferred: string | null, 
+picked_at: string | null, 
+/**
+ * Who picked `picked`; `null` without it.
+ */
+picked_by: SettingsActor | null, 
+/**
+ * The character the member brings: on a run its pick, else its
+ * timing's pick, else their main, else their only active character;
+ * on a timing its pick, else the main, else the only one. `null` with
+ * none (no characters, or several and no main). Never stored.
+ */
+brings: string | null, 
+/**
+ * Where `brings` comes from; `null` with nothing brought.
+ */
+basis: 'run_pick' | 'timing_pick' | 'main' | 'only' | null, 
 /**
  * Send it back with the pick: 0 while nothing is picked.
  */
 version: number, 
 /**
- * Other runs with the picked or inferred character for a shared boss.
+ * Other runs with the character brought here for a shared boss (always
+ * empty on a timing).
  */
 warnings: Array<CharacterClash>, };
 
 export type RunCharacters = { run_id: string, 
 /**
  * In party order.
+ */
+slots: Array<RunCharacterSlot>, };
+
+/**
+ * A weekly timing's party slots (modules `roster` and `character_data`).
+ */
+export type TimingCharacters = { fixed_run_id: string, 
+/**
+ * In party order (the saved party).
  */
 slots: Array<RunCharacterSlot>, };
 
@@ -466,16 +496,43 @@ nexon_data: boolean,
  */
 attribution: string, };
 
+/**
+ * A weekly timing's readiness (modules `roster` and `character_data`), or
+ * a preview of one being edited.
+ */
+export type TimingReadiness = { 
+/**
+ * `null` for a timing not added yet.
+ */
+fixed_run_id: string | null, 
+/**
+ * One per party member, in party order.
+ */
+slots: Array<ReadinessSlot>, 
+/**
+ * Some slot shows a NEXON value: show the attribution.
+ */
+nexon_data: boolean, 
+/**
+ * `Data based on NEXON Open API`.
+ */
+attribution: string, };
+
 export type ReadinessSlot = { member_id: string, 
 /**
- * The character the member brings (picked, else inferred); `null` with
- * none.
+ * The character the member brings (as `…/characters` resolves it);
+ * `null` with none.
  */
 character: CharacterChoice | null, 
 /**
- * The character is the only candidate, not a pick.
+ * Where `character` comes from; `null` with none.
  */
-inferred: boolean, 
+basis: 'run_pick' | 'timing_pick' | 'main' | 'only' | null, 
+/**
+ * How many active characters the member has (with no character: 0 is
+ * "no characters", more is "no main").
+ */
+candidates: number, 
 /**
  * The character's link as the strip shows it; `null` without a
  * character.

@@ -1,8 +1,8 @@
-//! `character_data.json` run readiness (module `character_data`): each party
-//! slot's level and power, its level against each boss of the run, and the
-//! character's MapleScouter reading per boss when the estimates' 24-hour
-//! memory holds one. NEXON values appear only from an active link's
-//! unexpired data, with the attribution.
+//! `character_data.json` readiness (module `character_data`) of a run or a
+//! weekly timing: each party slot's level and power, its level against
+//! each boss, and the character's MapleScouter reading per boss when the
+//! estimates' 24-hour memory holds one. NEXON values appear only from an
+//! active link's unexpired data, with the attribution.
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -13,7 +13,7 @@ use super::{
 };
 use crate::{
     domain::{
-        characters::Character,
+        characters::{Basis, Character},
         chardata::{ATTRIBUTION, LevelSource, LevelVerdict, Readiness, Requirement, date_text},
     },
     infrastructure::scouter::{Member, scouter_keys},
@@ -31,15 +31,34 @@ pub struct RunReadiness {
     pub attribution: &'static str,
 }
 
+/// A weekly timing's readiness (modules `roster` and `character_data`), or
+/// a preview of one being edited.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct TimingReadiness {
+    /// `null` for a timing not added yet.
+    pub fixed_run_id: Option<String>,
+    /// One per party member, in party order.
+    pub slots: Vec<ReadinessSlot>,
+    /// Some slot shows a NEXON value: show the attribution.
+    pub nexon_data: bool,
+    /// `Data based on NEXON Open API`.
+    pub attribution: &'static str,
+}
+
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ReadinessSlot {
     pub member_id: String,
-    /// The character the member brings (picked, else inferred); `null` with
-    /// none.
+    /// The character the member brings (as `…/characters` resolves it);
+    /// `null` with none.
     pub character: Option<CharacterChoice>,
-    /// The character is the only candidate, not a pick.
-    pub inferred: bool,
+    /// Where `character` comes from; `null` with none.
+    #[cfg_attr(test, ts(type = "'run_pick' | 'timing_pick' | 'main' | 'only' | null"))]
+    pub basis: Option<&'static str>,
+    /// How many active characters the member has (with no character: 0 is
+    /// "no characters", more is "no main").
+    pub candidates: u32,
     /// The character's link as the strip shows it; `null` without a
     /// character.
     #[cfg_attr(
@@ -124,11 +143,13 @@ fn reading(
     })
 }
 
-/// One slot: `brings` is the character and whether it is inferred;
-/// `scouter` its cached MapleScouter result and when it was fetched.
+/// One slot: `candidates` is how many active characters the member has,
+/// `brings` the character and why; `scouter` its cached MapleScouter
+/// result and when it was fetched.
 pub fn slot(
     member_id: &str,
-    brings: Option<(&Character, bool)>,
+    candidates: usize,
+    brings: Option<(&Character, Basis)>,
     link: Option<&'static str>,
     readiness: &Readiness,
     bosses: &[Requirement],
@@ -137,7 +158,8 @@ pub fn slot(
     ReadinessSlot {
         member_id: member_id.to_owned(),
         character: brings.map(|(character, _)| choice(character)),
-        inferred: brings.is_some_and(|(_, inferred)| inferred),
+        basis: brings.map(|(_, basis)| basis.as_str()),
+        candidates: u32::try_from(candidates).unwrap_or(u32::MAX),
         link,
         level: readiness.level.map(|level| ReadinessLevel {
             value: level.value,
@@ -174,6 +196,19 @@ pub fn slot(
 pub fn run(run_id: &str, slots: Vec<ReadinessSlot>, nexon_data: bool) -> RunReadiness {
     RunReadiness {
         run_id: run_id.to_owned(),
+        slots,
+        nexon_data,
+        attribution: ATTRIBUTION,
+    }
+}
+
+pub fn timing(
+    fixed_run_id: Option<&str>,
+    slots: Vec<ReadinessSlot>,
+    nexon_data: bool,
+) -> TimingReadiness {
+    TimingReadiness {
+        fixed_run_id: fixed_run_id.map(str::to_owned),
         slots,
         nexon_data,
         attribution: ATTRIBUTION,

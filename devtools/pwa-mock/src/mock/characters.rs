@@ -51,19 +51,35 @@ impl Char {
     }
 }
 
-/// Invented characters, oldest first: member, IGN, class, level, main, days
-/// since the last write, retired. Mika has three active and one retired.
-const SEED: [(&str, &str, &str, i64, bool, i64, bool); 10] = [
-    ("1003", "MikaHero", "Hero", 260, false, 46, true),
-    ("1003", "MikaNL", "Night Lord", 286, true, 2, false),
-    ("1003", "MikaBish", "Bishop", 281, false, 2, false),
-    ("1003", "Mikadere", "Lara", 266, false, 21, false),
-    ("1001", "AsahiDK", "Dark Knight", 284, true, 5, false),
-    ("1001", "AsahiMech", "Mechanic", 262, false, 12, false),
-    ("1002", "RenShade", "Shade", 279, true, 3, false),
-    ("1004", "YuzuPala", "Paladin", 270, true, 9, false),
-    ("1005", "TsubaKain", "Kain", 255, true, 14, false),
-    ("1011", "Hotaru7", "Adele", 275, true, 6, false),
+/// One seeded character: member, IGN, class, level, main, days since the
+/// last write, retired.
+type SeedRow = (
+    &'static str,
+    &'static str,
+    &'static str,
+    Option<i64>,
+    bool,
+    i64,
+    bool,
+);
+
+/// Invented characters, oldest first. Mika has three active and one retired;
+/// Sora two and no main (an older roster), Kaito one alt with no level
+/// (the Fixed readiness boards' "no main" and "only character").
+const SEED: [SeedRow; 13] = [
+    ("1003", "MikaHero", "Hero", Some(260), false, 46, true),
+    ("1003", "MikaNL", "Night Lord", Some(286), true, 2, false),
+    ("1003", "MikaBish", "Bishop", Some(281), false, 2, false),
+    ("1003", "Mikadere", "Lara", Some(266), false, 21, false),
+    ("1001", "AsahiDK", "Dark Knight", Some(284), true, 5, false),
+    ("1001", "AsahiMech", "Mechanic", Some(262), false, 12, false),
+    ("1002", "RenShade", "Shade", Some(279), true, 3, false),
+    ("1004", "YuzuPala", "Paladin", Some(270), true, 9, false),
+    ("1005", "TsubaKain", "Kain", Some(255), true, 14, false),
+    ("1011", "Hotaru7", "Adele", Some(275), true, 6, false),
+    ("1008", "SoraPF", "Pathfinder", Some(279), false, 4, false),
+    ("1008", "SoraLumi", "Luminous", Some(285), false, 4, false),
+    ("1009", "KaitoLyn", "Lynn", None, false, 1, false),
 ];
 
 /// The seed at the mock's now (a pinned clock gives fixed dates).
@@ -79,7 +95,7 @@ pub fn seed() -> Vec<Char> {
                 ign: ign.into(),
                 world: "msea".into(),
                 class: Some(class.into()),
-                level: Some(level),
+                level,
                 main,
                 retired_at: retired.then(|| at.clone()),
                 created_at: iso_secs(now - 120 * 86_400 + n * 3_600),
@@ -425,7 +441,14 @@ mod tests {
         assert_eq!(igns.len(), rows.len(), "IGNs are unique, whatever the case");
         assert!(
             rows.iter()
-                .all(|c| ign(&c.ign).is_ok() && c.level.is_some_and(|l| level(l).is_ok()))
+                .all(|c| ign(&c.ign).is_ok() && c.level.is_none_or(|l| level(l).is_ok()))
+        );
+        // The Fixed readiness boards' older rosters: Sora with no main, Kaito
+        // one alt with no level.
+        assert!(!rows.iter().any(|c| c.member_id == "1008" && c.main));
+        assert!(
+            rows.iter()
+                .any(|c| c.member_id == "1009" && c.level.is_none())
         );
         assert!(
             !rows.iter().any(|c| c.member_id == "1013"),

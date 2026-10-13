@@ -27,7 +27,7 @@ mod people;
 pub mod portal;
 pub mod presence;
 mod profanity;
-mod readiness;
+pub mod readiness;
 mod reminders;
 pub mod requests;
 mod rewrites;
@@ -127,7 +127,8 @@ pub struct Store {
     member_requests: Vec<requests::MemberRequestRec>,
     /// Roster characters (module `roster`), seeded (`characters::seed`).
     characters: Vec<characters::Char>,
-    /// Run character picks (module `roster`), seeded (`run_picks::seed`).
+    /// Run and timing character picks (module `roster`), seeded
+    /// (`run_picks::seed`).
     picks: Vec<run_picks::Pick>,
     /// Character data links (module `character_data`, on with the roster),
     /// seeded (`character_data::seed`).

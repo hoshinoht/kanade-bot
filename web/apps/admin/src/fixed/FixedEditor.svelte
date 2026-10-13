@@ -1,7 +1,11 @@
 <!--
   Add or edit a weekly timing (v4 fixed.html / fixed_rows.html editor). Saving
   an edit whose timing has amended runs this week or next asks, per run,
-  whether it follows the new timing or keeps its own change (v5).
+  whether it follows the new timing or keeps its own change (v5). With the
+  modules `roster` and `character_data` on, the editor has Timing and
+  Characters tabs (B_FixedReady): the Characters tab (`FixedCharacters`) is
+  who each member brings and their readiness; off, it is today's editor
+  (B_FixedReadyOff).
 -->
 <script lang="ts">
   import type { Boss, BossRow, Channel, FixedRequest, FixedRow, MemberRow, ValidateResult } from '@kanade/api-types';
@@ -14,6 +18,8 @@
   import { send } from '../resource.svelte';
   import { memberLabel } from '../names/directory.svelte';
   import type { Week } from '@kanade/api-types';
+  import { fixedReadyRoutes, probeFixedReady } from '../chardata/routes.svelte';
+  import FixedCharacters from './FixedCharacters.svelte';
 
   let {
     open = $bindable(false),
@@ -32,6 +38,8 @@
     leaving = false,
     onleft,
     timeStep = 30,
+    rosterModule = null,
+    timeZone = 'Asia/Kuala_Lumpur',
   }: {
     open: boolean;
     wide: boolean;
@@ -54,6 +62,10 @@
     onleft?: (event: AnimationEvent) => void;
     /** The time stepper's step: Config → Run lengths default minutes, as the Move picker. */
     timeStep?: number;
+    /** The session's `roster` flag; null until the session is read. */
+    rosterModule?: boolean | null;
+    /** The guild's timezone (readiness dates). */
+    timeZone?: string;
   } = $props();
   // A primitive key: the pane's content enters again only for another timing (or a new one).
   const rowKey = $derived(row?.id ?? 'new');
@@ -169,6 +181,35 @@
   });
   const hiddenParty = $derived(roster.length - shownRoster.length);
 
+  // Modules `roster` and `character_data` (B_FixedReady): learnt once per session, then the tabs show.
+  $effect(() => {
+    if (open && rosterModule !== null) void probeFixedReady(rosterModule);
+  });
+  const tabbed = $derived(fixedReadyRoutes.on === true && !fixedReadyRoutes.gone && step === 'edit');
+  // As the Members sheet's tabs: the tab stays put from one timing to the next.
+  let tab = $state<'timing' | 'characters'>('timing');
+  const charsTab = $derived(tabbed && tab === 'characters');
+  const tabButtons: Record<'timing' | 'characters', HTMLButtonElement | undefined> = $state({ timing: undefined, characters: undefined });
+  function tabKey(event: KeyboardEvent) {
+    const next = ({ ArrowRight: 'characters', ArrowLeft: 'timing', Home: 'timing', End: 'characters' } as Record<string, 'timing' | 'characters'>)[event.key];
+    if (!next) return;
+    event.preventDefault();
+    tab = next;
+    tabButtons[next]?.focus();
+  }
+  const tokens = $derived([...selected, typed.trim()].filter(Boolean));
+  const savedParty = $derived(row?.participants.map((p) => p.id) ?? []);
+  // The saved bosses and party (in any order): the Characters tab reads the timing, not a preview.
+  const formMatches = $derived(
+    Boolean(row) &&
+      !typed.trim() &&
+      selected.length === row!.bosses.length &&
+      row!.bosses.every((b) => selected.includes(b.token)) &&
+      party.length === savedParty.length &&
+      savedParty.every((id) => party.includes(id)),
+  );
+  const bossTitle = $derived(row ? row.bosses.map((b) => b.token).join(' + ') : '');
+
   /** "+n" goes away once pressed; focus moves to the first member it showed. */
   async function showAllParty() {
     const before = new Set(shownRoster.map((m) => m.id));
@@ -246,8 +287,53 @@
 
 {#snippet formBody()}
   <form id="{uid}-form" class="fixedsheet__form" onsubmit={submit} novalidate>
-    <div class="fixedsheet__content">
-    {#if step === 'edit'}
+    {#if tabbed}
+      <div class="fixedsheet__tabs" role="tablist" aria-label="Weekly timing sections" data-fid="fixed-tabs">
+        {#each [{ id: 'timing', label: 'Timing', fid: 'fixed-tab-timing' }, { id: 'characters', label: 'Characters', fid: 'fixed-tab-characters' }] as const as t (t.id)}
+          <button
+            type="button"
+            role="tab"
+            class="ptab"
+            id="{uid}-tab-{t.id}"
+            aria-selected={tab === t.id}
+            aria-controls="{uid}-panel"
+            tabindex={tab === t.id ? 0 : -1}
+            data-fid={t.fid}
+            bind:this={tabButtons[t.id]}
+            onclick={() => (tab = t.id)}
+            onkeydown={tabKey}
+            >{t.label}{#if t.id === 'characters'}<span class="ptab__count fixedsheet__tabcount mono"
+                ><span class="vh">, </span>{party.length}<span class="vh"> in the party</span></span
+              >{/if}</button
+          >
+        {/each}
+      </div>
+    {/if}
+    <!-- One panel, as the Members sheet's tabs: only the selected tab's content is mounted. -->
+    <div
+      class="fixedsheet__content"
+      class:fixedsheet__content--chars={charsTab}
+      id="{uid}-panel"
+      role={tabbed ? 'tabpanel' : undefined}
+      aria-labelledby={tabbed ? `${uid}-tab-${tab}` : undefined}
+      data-fid={charsTab ? 'fixed-ready' : undefined}
+    >
+    {#if charsTab}
+      <FixedCharacters
+        fixedId={row?.id ?? null}
+        {savedParty}
+        {party}
+        {tokens}
+        {formMatches}
+        catalog={bosses}
+        {wide}
+        {timeZone}
+        title={row ? `${row.weekday_name} ${row.time} — ${bossTitle}` : 'the new timing'}
+        eyebrow={row ? `${bossTitle} · ${row.weekday_name.slice(0, 3)} ${row.time} weekly` : ''}
+        names={(id) => memberLabel(roster, id)}
+        known={(id) => members.some((m) => m.id === id)}
+      />
+    {:else if step === 'edit'}
       <p class="eyebrow">Bosses — tap the difficulties this party runs</p>
       <!-- B_Fixed: an existing timing shows its own bosses; "All n bosses…" opens the full list. -->
       <div class="fixedsheet__bosses" data-fid="fixed-bosses">
@@ -366,8 +452,9 @@
 {/snippet}
 
 {#if wide}
-  <!-- A native aside (not SidePane) so the board's region name sits on the pane itself. -->
-  <aside class="side-pane side-pane--fixed" class:is-leaving={leaving} inert={leaving} aria-label="Weekly timing details" data-fid="fixed-editor" onanimationend={onleft} {@attach enter(rowKey)}>
+  <!-- A native aside (not SidePane) so the board's region name sits on the pane itself. It widens
+       while the Characters tab is open (B_FixedReady), so a readiness line fits on one row. -->
+  <aside class="side-pane side-pane--fixed" class:fixedsheet--chars={charsTab} class:is-leaving={leaving} inert={leaving} aria-label="Weekly timing details" data-fid="fixed-editor" onanimationend={onleft} {@attach enter(rowKey)}>
     <header class="fixedsheet__head" data-fid="fixed-editor-head">
       <div class="fixedsheet__title">
         <p class="cap">{row ? `#${row.short_id} · edit` : 'Baseline · new'}</p>
@@ -378,7 +465,16 @@
     {@render formBody()}
   </aside>
 {:else}
-  <Modal bind:open title={row ? `${row.weekday_name} ${row.time} — ${row.bosses.map((b) => b.token).join(' + ')}` : 'Add a weekly timing'} eyebrow={row ? `#${row.short_id} · ${row.channel_name}` : 'Baseline'} narrow className="fixedsheet" onclose={onclose}>
+  <Modal
+    bind:open
+    title={row ? `${row.weekday_name} ${row.time} — ${row.bosses.map((b) => b.token).join(' + ')}` : 'Add a weekly timing'}
+    eyebrow={row ? `#${row.short_id} · ${row.channel_name}` : 'Baseline'}
+    narrow
+    className="fixedsheet{tabbed ? ' fixedsheet--tabbed' : ''}"
+    fid="fixed-editor"
+    fidParts={{ head: 'fixed-editor-head', foot: 'fixed-editor-foot' }}
+    onclose={onclose}
+  >
     {@render formBody()}
     {#snippet footer(close)}
     {#if step === 'choose'}

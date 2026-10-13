@@ -66,11 +66,15 @@
         "role": { "enum": ["main", "alt"] }
       }
     },
+    "CharacterBasis": {
+      "description": "Where the character a member brings comes from, first match wins: `run_pick` the run's own pick (runs only), `timing_pick` the weekly timing's pick (on a run: read live from the run's timing), `main` their roster main, `only` their only active character with no main.",
+      "enum": ["run_pick", "timing_pick", "main", "only"]
+    },
     "CharacterClash": {
-      "description": "The same character (picked or inferred) on another run of this boss week (the configured reset) for a boss this run has too, at any difficulty: the weekly clear limit. A warning only; a pick always saves. Cancelled runs never clash.",
+      "description": "The character brought here also brought on another run of this boss week (the configured reset) for a boss this run has too, at any difficulty: the weekly clear limit. A warning only; a pick always saves. Cancelled runs never clash.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["character_id", "run_id", "short_id", "day", "time", "bosses", "inferred"],
+      "required": ["character_id", "run_id", "short_id", "day", "time", "bosses", "basis"],
       "properties": {
         "character_id": { "type": "string" },
         "run_id": { "type": "string" },
@@ -78,19 +82,23 @@
         "day": { "type": "integer", "minimum": 0, "maximum": 6, "description": "Day index within the boss week (0 = reset day)." },
         "time": { "$ref": "common.json#/$defs/NullableString", "description": "HH:MM; null for an own-time run." },
         "bosses": { "type": "array", "items": { "type": "string" }, "minItems": 1, "description": "The other run's boss tokens this run shares by boss." },
-        "inferred": { "type": "boolean", "description": "The character is inferred on the other run, not picked." }
+        "basis": { "$ref": "#/$defs/CharacterBasis", "description": "Why the character is on the other run." }
       }
     },
     "RunCharacterSlot": {
-      "description": "One party member on a run. `candidates` are their active characters (no level filter), oldest first; empty when they have none. `picked` is the stored pick while it names a candidate; `inferred`, only with nothing picked, is the one candidate when there is exactly one: recomputed on every read, never stored. `version` is the slot version a pick sends back (0 while nothing is stored).",
+      "description": "One party member on a run or a weekly timing. `candidates` are their active characters (no level filter), oldest first; empty when they have none; `retired` counts the rest (never offered). `picked` is this slot's own stored pick (the run's on a run, the timing's on a timing) while it names a candidate, with `picked_at`/`picked_by`. `brings` is the character the member brings, resolved on every read and never stored: on a run its pick, else its timing's pick, else the main, else the only active character; on a timing its pick, else the main, else the only one; null with none. `basis` says which. `version` is the slot version a pick sends back (0 while nothing is stored). `warnings` is always empty on a timing.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["member_id", "candidates", "picked", "inferred", "version", "warnings"],
+      "required": ["member_id", "candidates", "retired", "picked", "picked_at", "picked_by", "brings", "basis", "version", "warnings"],
       "properties": {
         "member_id": { "type": "string" },
         "candidates": { "type": "array", "items": { "$ref": "#/$defs/CharacterChoice" } },
+        "retired": { "type": "integer", "minimum": 0 },
         "picked": { "$ref": "common.json#/$defs/NullableString" },
-        "inferred": { "$ref": "common.json#/$defs/NullableString" },
+        "picked_at": { "$ref": "common.json#/$defs/NullableString" },
+        "picked_by": { "oneOf": [{ "$ref": "history.json#/$defs/Actor" }, { "type": "null" }] },
+        "brings": { "$ref": "common.json#/$defs/NullableString" },
+        "basis": { "oneOf": [{ "$ref": "#/$defs/CharacterBasis" }, { "type": "null" }] },
         "version": { "type": "integer", "minimum": 0 },
         "warnings": { "type": "array", "items": { "$ref": "#/$defs/CharacterClash" } }
       }
@@ -104,8 +112,18 @@
         "slots": { "type": "array", "items": { "$ref": "#/$defs/RunCharacterSlot" }, "description": "In party order." }
       }
     },
+    "TimingCharacters": {
+      "description": "A weekly timing's party slots (modules `roster` and `character_data`).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixed_run_id", "slots"],
+      "properties": {
+        "fixed_run_id": { "type": "string" },
+        "slots": { "type": "array", "items": { "$ref": "#/$defs/RunCharacterSlot" }, "description": "In the saved party's order." }
+      }
+    },
     "CharacterPick": {
-      "description": "Request body of `PUT /api/admin/runs/{id}/characters/{member}`. `character_id` names one of the member's active characters, or is null to clear the pick (required either way, else 422 `invalid`); `version` is the slot version read (else 422 `version_required`; another is 409 `stale`).",
+      "description": "Request body of `PUT /api/admin/runs/{id}/characters/{member}` and `PUT /api/admin/fixed/{id}/characters/{member}`. `character_id` names one of the member's active characters, or is null to clear the pick (required either way, else 422 `invalid`); `version` is the slot version read (else 422 `version_required`; another is 409 `stale`).",
       "type": "object",
       "additionalProperties": false,
       "required": ["character_id", "version"],

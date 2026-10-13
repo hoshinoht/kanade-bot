@@ -4,7 +4,7 @@
  * module off, or no scouter URL) is remembered for the session and nothing
  * more is asked or drawn, as the roster's `rosterRoutes` does.
  */
-import type { CharacterLink, CharacterLookup, EstimateJob, EstimateStarted, EstimateStatus, LookupStatus, RunReadiness } from '@kanade/api-types';
+import type { CharacterLink, CharacterLookup, EstimateJob, EstimateStarted, EstimateStatus, LookupStatus, RunReadiness, TimingReadiness } from '@kanade/api-types';
 import { send, type Outcome } from '../resource.svelte';
 
 export const chardataRoutes = $state({ gone: false, estimatesGone: false });
@@ -60,6 +60,65 @@ export class RunReadinessView {
     else {
       this.data = null;
       if (result.unbuilt) chardataRoutes.gone = true;
+    }
+  }
+}
+
+/**
+ * The Fixed editor's readiness and per-timing picks (modules `roster` and
+ * `character_data`; B_FixedReady*): `on` is null until asked, then whether
+ * both answer. Learnt once per session from the session's `roster` and the
+ * module's lookup status (a generic 404 when it is off); a generic 404 from
+ * a timing route later turns it off too (`gone`).
+ */
+export const fixedReadyRoutes = $state({ on: null as boolean | null, gone: false });
+
+export async function probeFixedReady(roster: boolean): Promise<void> {
+  if (fixedReadyRoutes.on !== null) return;
+  if (!roster || chardataRoutes.gone) {
+    fixedReadyRoutes.on = false;
+    return;
+  }
+  const result = await send((c) => c.get<LookupStatus>(LOOKUP));
+  const unbuilt = !result.ok && result.unbuilt === true;
+  if (unbuilt) chardataRoutes.gone = true;
+  // A failed read leaves it unknown: the next editor asks again.
+  if (result.ok || unbuilt) fixedReadyRoutes.on = result.ok;
+}
+
+/** What the readiness is read for: the saved timing, or the editor's form as it stands. */
+export type TimingTarget = { fixedId: string } | { fixed_run_id: string | null; bosses: string[]; participants: string[] };
+
+/**
+ * A weekly timing's readiness (B_FixedReady): computed on read, never stored and
+ * never blocking. `error` keeps the rows (their basis and picks come from the
+ * characters read) and drops only the values.
+ */
+export class TimingReadinessView {
+  data = $state<TimingReadiness | null>(null);
+  error = $state('');
+  loading = $state(false);
+  #seq = 0;
+  #last: TimingTarget | null = null;
+
+  async load(target: TimingTarget | null = this.#last): Promise<void> {
+    if (!target || fixedReadyRoutes.gone) return;
+    this.#last = target;
+    const mine = ++this.#seq;
+    this.loading = true;
+    const result =
+      'fixedId' in target
+        ? await send((c) => c.get<TimingReadiness>(`/api/admin/fixed/${encodeURIComponent(target.fixedId)}/readiness`))
+        : await send((c) => c.post<TimingReadiness>('/api/admin/fixed/readiness', target));
+    if (mine !== this.#seq) return;
+    this.loading = false;
+    if (result.ok) {
+      this.data = result.value;
+      this.error = '';
+    } else if (result.unbuilt) fixedReadyRoutes.gone = true;
+    else {
+      this.data = null;
+      this.error = result.message;
     }
   }
 }

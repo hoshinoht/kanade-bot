@@ -152,8 +152,8 @@ async fn characters(roster: &dyn CharacterRoster, ids: Vec<String>) -> Result<Re
     Ok((Target::Characters(ids), subjects, Vec::new()))
 }
 
-/// The run's party: each member's picked (else inferred) character; the
-/// rest are missing.
+/// The run's party: the character each member brings (as `…/characters`
+/// resolves it); the rest are missing.
 async fn run_party(
     state: &ApiState,
     roster: &dyn CharacterRoster,

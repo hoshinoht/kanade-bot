@@ -2,14 +2,15 @@
 //! the seeded store of `reads.rs` (pinned clock Tue 29 Sep 12:00 KL; boss
 //! weeks reset Thursday 00:00; `r-kalos` XKalos Tue 22:00 with Alice, Bob
 //! and Dan; `r-star` a done Star run this week; `n-kalos` XKalos next
-//! week). Off, both routes are the generic 404; on, reads infer without
-//! writing, warnings name runs of a shared boss this boss week, and picks
-//! save directly with CSRF, a slot version, History rows and replays.
+//! week). Off, both routes are the generic 404; on, reads resolve what each
+//! member brings (the main by default) without writing, warnings name runs
+//! of a shared boss this boss week, and picks save directly with CSRF, a
+//! slot version, History rows and replays.
 //! Invented IGNs only.
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use kanade::domain::{
-    characters::CharacterStore,
+    characters::{CharacterStore, PickScope},
     history::{Actor, ChangeMeta, Origin, Surface},
     schedule::{Change, ChangeSet, Run, RunSource, RunStatus},
     scheduler::{ScheduleStore, Scope},
@@ -113,7 +114,12 @@ async fn records(reads: &Reads) -> Vec<SettingsChange> {
 
 async fn stored_picks(reads: &Reads, runs: &[&str]) -> usize {
     let runs: Vec<String> = runs.iter().map(|run| (*run).to_owned()).collect();
-    reads.store.run_picks(&runs).await.unwrap().len()
+    reads
+        .store
+        .picks(PickScope::Run, &runs)
+        .await
+        .unwrap()
+        .len()
 }
 
 fn slot<'a>(answer: &'a Value, member: &str) -> &'a Value {
@@ -159,7 +165,7 @@ async fn both_routes_are_the_generic_404_while_the_module_is_off() {
 }
 
 #[tokio::test]
-async fn inferred_is_recomputed_on_every_read_and_reads_write_nothing() {
+async fn the_default_is_recomputed_on_every_read_and_reads_write_nothing() {
     let reads = Reads::with_characters().await;
     let lilac = created(&reads, "1001", json!({"ign": "Lilac", "level": 280})).await;
     let answer = reads.read(KALOS, RUN).await;
@@ -172,22 +178,32 @@ async fn inferred_is_recomputed_on_every_read_and_reads_write_nothing() {
         .collect();
     assert_eq!(members, ["1001", "1002", "1004"], "party order");
     let alice = slot(&answer, "1001");
-    assert_eq!(alice["inferred"], lilac.as_str());
+    assert_eq!(
+        (&alice["brings"], &alice["basis"]),
+        (&json!(lilac), &json!("main")),
+        "her first character is her main"
+    );
     assert_eq!(alice["picked"], Value::Null);
     assert_eq!(alice["version"], 0);
     assert_eq!(alice["candidates"][0]["ign"], "Lilac");
     let bob = slot(&answer, "1002");
     assert_eq!(bob["candidates"], json!([]), "no characters: an empty slot");
-    assert_eq!(bob["inferred"], Value::Null);
+    assert_eq!(
+        (&bob["brings"], &bob["basis"]),
+        (&Value::Null, &Value::Null)
+    );
 
-    // A second active character: nothing to infer.
+    // A second active character: the main is still the default.
     let wisteria = created(&reads, "1001", json!({"ign": "Wisteria"})).await;
     let answer = reads.read(KALOS, RUN).await;
     let alice = slot(&answer, "1001");
-    assert_eq!(alice["inferred"], Value::Null);
+    assert_eq!(
+        (&alice["brings"], &alice["basis"]),
+        (&json!(lilac), &json!("main"))
+    );
     assert_eq!(alice["candidates"].as_array().unwrap().len(), 2);
 
-    // Retiring it infers Lilac again; the retired one is no candidate.
+    // Retiring it leaves Lilac; the retired one is no candidate but counted.
     reads
         .ok(
             "PATCH",
@@ -198,13 +214,14 @@ async fn inferred_is_recomputed_on_every_read_and_reads_write_nothing() {
         .await;
     let answer = reads.read(KALOS, RUN).await;
     let alice = slot(&answer, "1001");
-    assert_eq!(alice["inferred"], lilac.as_str());
+    assert_eq!(alice["brings"], lilac.as_str());
     assert_eq!(alice["candidates"].as_array().unwrap().len(), 1);
+    assert_eq!(alice["retired"], 1);
 
     assert_eq!(
         stored_picks(&reads, &["r-kalos"]).await,
         0,
-        "inferred is never stored"
+        "the default is never stored"
     );
     assert_eq!(
         records(&reads).await.len(),
@@ -230,7 +247,7 @@ async fn the_same_character_on_a_shared_boss_this_boss_week_warns() {
             "day": 6,
             "time": "21:00",
             "bosses": ["CKalos"],
-            "inferred": true,
+            "basis": "main",
         }])
     );
     let next = reads.read("/api/admin/runs/n-kalos/characters", RUN).await;
@@ -267,7 +284,7 @@ async fn the_same_character_on_a_shared_boss_this_boss_week_warns() {
         )
         .await;
     assert_eq!(theirs["warnings"][0]["run_id"], "r-kalos");
-    assert_eq!(theirs["warnings"][0]["inferred"], false);
+    assert_eq!(theirs["warnings"][0]["basis"], "run_pick");
     let answer = reads.read(KALOS, RUN).await;
     assert_eq!(slot(&answer, "1001")["warnings"][0]["run_id"], "r-ckalos");
 }
@@ -435,10 +452,12 @@ async fn picks_save_directly_and_replay_across_a_restart() {
     assert_eq!(
         (
             &cleared["picked"],
-            &cleared["inferred"],
+            &cleared["brings"],
+            &cleared["basis"],
             &cleared["version"]
         ),
-        (&Value::Null, &Value::Null, &json!(0))
+        (&Value::Null, &json!(lilac), &json!("main"), &json!(0)),
+        "back to the main"
     );
     assert_eq!(stored_picks(&reads, &["r-kalos"]).await, 0);
     assert_eq!(
@@ -481,8 +500,13 @@ async fn deleting_a_character_drops_its_picks_and_party_leavers_drop_out() {
     let answer = reads.read(KALOS, RUN).await;
     let alice = slot(&answer, "1001");
     assert_eq!(
-        (&alice["picked"], &alice["inferred"], &alice["version"]),
-        (&Value::Null, &json!(lilac), &json!(0))
+        (
+            &alice["picked"],
+            &alice["brings"],
+            &alice["basis"],
+            &alice["version"]
+        ),
+        (&Value::Null, &json!(lilac), &json!("main"), &json!(0))
     );
 
     // Dan leaves the party: his slot is gone and his pick is not returned.

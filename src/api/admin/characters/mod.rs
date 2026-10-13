@@ -1,16 +1,20 @@
 //! The manual character roster (module `roster`): one member's characters
-//! and their create, edit (retire included) and delete, and the character
-//! each party member brings to a run (`runs.rs`). While the module is off
-//! (`modules.roster`, read at startup) every route answers the generic
-//! `404`, before the session is even checked, as an unmounted path does.
-//! Writes take the session's CSRF token, record History rows (section
-//! `characters`, key `character.<id>` or `pick.<run>.<member>`) and replay
-//! an `Idempotency-Key` (scope `config`) in the same transaction; roster
-//! data never reaches a model.
+//! and their create, edit (retire included) and delete, the character each
+//! party member brings to a run (`runs.rs`) and, with module
+//! `character_data` on too, to a weekly timing (`fixed.rs`). While a
+//! route's module is off (`modules.roster`, read at startup) it answers the
+//! generic `404`, before the session is even checked, as an unmounted path
+//! does. Writes take the session's CSRF token, record History rows
+//! (section `characters`, key `character.<id>`, `pick.<run>.<member>` or
+//! `fixedpick.<fixed>.<member>`) and replay an `Idempotency-Key` (scope
+//! `config`) in the same transaction; roster data never reaches a model.
 
+mod fixed;
+mod picks;
 mod runs;
 mod write;
 
+pub(super) use fixed::{Both, Timing};
 pub(super) use runs::party;
 
 use std::sync::Arc;
@@ -44,6 +48,11 @@ pub fn routes() -> Router<Arc<Site>> {
         )
         .route("/api/admin/runs/{id}/characters", get(runs::read))
         .route("/api/admin/runs/{id}/characters/{member}", put(runs::pick))
+        .route("/api/admin/fixed/{id}/characters", get(fixed::read))
+        .route(
+            "/api/admin/fixed/{id}/characters/{member}",
+            put(fixed::pick),
+        )
 }
 
 type Reply = Result<Response, Refusal>;

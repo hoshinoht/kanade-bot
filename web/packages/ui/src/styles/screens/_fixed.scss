@@ -165,7 +165,8 @@
 
 @media #{$single-pane} {
   dialog.modal--narrow.fixedsheet { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; }
-  dialog.fixedsheet .modal__panel { min-height: 100dvh; }
+  // `>`: the Characters tab's picker sheet is a dialog inside this one.
+  dialog.fixedsheet > .modal__panel { min-height: 100dvh; }
   .fixed-window__search { flex: 1 1 auto; margin-left: 0; }
   .fixed-window__search input { width: 100%; }
   .fixed-window__head { flex-wrap: wrap; }
@@ -193,3 +194,68 @@
 // only focus mark (no `input:focus` wash box inside it).
 .fixedsheet__time .timestep { align-self: start; height: 40px; border-radius: 20px; }
 .fixedsheet__content .timestep input.timestep__value { width: 4.5em; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; outline: none; color: inherit; font-size: var(--fs-body); font-weight: 600; text-align: center; }
+
+/* ── Timing / Characters (modules roster + character_data; B_FixedReady*, B_PhoneFixedReady*) ── */
+
+// The pane widens while the Characters tab is open, so a readiness line fits on one row.
+.side-pane--fixed.fixedsheet--chars { flex-basis: min(580px, 50vw); }
+// The run pane's `.ptab` pills under the head, ruled off from the panel.
+.fixedsheet__tabs { display: flex; flex: none; align-items: center; gap: 4px; padding: 8px 12px; border-bottom: 1.5px solid var(--line); }
+.fixedsheet__tabs .ptab { min-height: 36px; padding: 0 14px; border-radius: 18px; font-size: var(--fs-small); }
+.fixedsheet__tabcount { display: inline-grid; min-width: 18px; height: 18px; place-items: center; padding: 0 5px; border-radius: 9px; box-shadow: inset 0 0 0 1.5px currentColor; font-weight: 600; }
+.fixedsheet__content--chars { padding: 12px 16px; }
+// The phone Modal: the tabs stay put and only the panel scrolls (44 px tabs).
+dialog.fixedsheet--tabbed > .modal__panel > .modal__body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+dialog.fixedsheet--tabbed .fixedsheet__tabs .ptab { min-height: 44px; padding: 0 18px; border-radius: 22px; font-size: var(--fs-body-sm); }
+dialog.fixedsheet--tabbed .fixedsheet__content { padding: 12px; }
+
+.fixedready { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.fixedready > p { margin: 0; }
+.fixedready .ready__note, .fixedready .ready__estimate { margin: 0; }
+.fixedready__box { align-items: flex-start; }
+.fixedready__grow { flex: 1 1 auto; min-width: 0; }
+.fixedready__retry { flex: none; gap: 6px; min-height: 32px; border-radius: 16px; background: transparent; }
+.fixedready__hint { margin: 0; color: var(--dim-text); font-size: var(--fs-small); line-height: 1.45; }
+.fixedready__hint a { color: var(--accent-text); }
+
+// One row per party member (the board's `.frow`): who and their basis, the chip, then the readiness.
+.fixedready__rows { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.fixedready__row { position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 8px 8px 9px 12px; border-radius: 4px; background: var(--row); }
+.fixedready__rows > :first-child { border-top-left-radius: 16px; border-top-right-radius: 16px; }
+.fixedready__rows > :last-child { border-bottom-left-radius: 16px; border-bottom-right-radius: 16px; }
+.fixedready__row--new { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 60%, var(--surface)); }
+.fixedready__head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.fixedready__who { display: flex; flex: 1 1 auto; flex-direction: column; gap: 3px; min-width: 0; }
+.fixedready--wide .fixedready__who { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.fixedready__name { font-size: var(--fs-body-sm); }
+.fixedready__tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--dim-text); font-size: var(--fs-mini); }
+.fixedready__tags:empty { display: none; }
+
+// Where the character comes from, in words (and a mark), never colour alone.
+.fixedready__basis { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: 10px; font-family: var(--mono); font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.04em; white-space: nowrap; }
+.fixedready__basis .icon { width: 12px; height: 12px; }
+.fixedready__basis--main { background: var(--select); color: var(--select-ink); }
+.fixedready__basis--picked { background: var(--accent-fill); color: var(--accent-ink); }
+.fixedready__basis--only { background: var(--chip-fill); color: var(--ink); }
+.fixedready__basis--none { box-shadow: inset 0 0 0 1.5px var(--select-edge); color: var(--dim-text); }
+.fixedready__basis--new { background: color-mix(in srgb, var(--warn) 18%, var(--surface)); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 60%, var(--surface)); color: color-mix(in srgb, var(--warn-text) 85%, var(--ink)); }
+
+// The chip (or "Pick character") keeps its width; the popover opens under it, right-aligned.
+.fixedready__control { flex: none; }
+.fixedready__control .slotchar__btn { min-height: 34px; }
+.fixedready__control .charpick--pop { right: 0; left: auto; width: 340px; }
+.fixedready:not(.fixedready--wide) .fixedready__control .slotchar__btn { min-height: 44px; padding: 0 12px 0 16px; border-radius: 22px; }
+// The bosses on one line each, wrapping (`.ready__bosses` stacks them on the run sheet).
+.fixedready .ready__bosses { flex-direction: row; flex-wrap: wrap; gap: 4px 14px; }
+.fixedready__skel { display: block; height: 12px; border-radius: 6px; background: var(--line-soft); }
+.fixedready__skel--long { width: 62%; }
+.fixedready__skel--short { width: 44%; }
+
+// Saved (with Undo) or someone else's pick: the line under that member's row.
+.fixedready__notice { list-style: none; }
+.fixedready__status { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 12px; font-size: var(--fs-small); line-height: 1.35; }
+.fixedready__status .icon { flex: none; width: 16px; height: 16px; }
+.fixedready__status--ok { background: color-mix(in srgb, var(--ok) 14%, var(--surface)); color: var(--ok-text); }
+.fixedready__status--warn { background: color-mix(in srgb, var(--warn) 12%, var(--surface)); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 50%, var(--surface)); color: var(--ink); }
+.fixedready__status--risk { background: color-mix(in srgb, var(--risk) 16%, var(--surface)); color: var(--risk-text); }
+.fixedready__status .btn { flex: none; min-height: 28px; padding: 0 12px; border-color: currentColor; border-radius: 14px; background: transparent; color: inherit; }

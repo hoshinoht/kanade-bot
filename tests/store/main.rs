@@ -417,38 +417,38 @@ async fn sqlite_chardata_conforms() {
 }
 
 #[tokio::test]
-async fn memory_run_picks_conform() {
-    kanade::infrastructure::store::run_picks_conformance::run_suite(async || {
+async fn memory_picks_conform() {
+    kanade::infrastructure::store::picks_conformance::run_suite(async || {
         MemoryScheduleStore::new()
     })
     .await;
 }
 
 #[tokio::test]
-async fn sqlite_run_picks_conform() {
+async fn sqlite_picks_conform() {
     let dir = support::TempDir::new();
     let counter = std::sync::atomic::AtomicUsize::new(0);
-    kanade::infrastructure::store::run_picks_conformance::run_suite(async || {
+    kanade::infrastructure::store::picks_conformance::run_suite(async || {
         let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        SqliteStore::open(&dir.config(&format!("run-picks-{n}")))
+        SqliteStore::open(&dir.config(&format!("picks-{n}")))
             .await
             .expect("fresh store opens")
     })
     .await;
 }
 
-/// A pick is stored, not recomputed: it survives a reopen, and the
-/// character's delete after the reopen still drops it.
+/// A pick is stored, not recomputed: run and timing picks survive a
+/// reopen, and the character's delete after the reopen still drops both.
 #[tokio::test]
-async fn sqlite_run_picks_survive_reopen() {
+async fn sqlite_picks_survive_reopen() {
     use kanade::domain::characters::{
         Character, CharacterChange, CharacterRecord, CharacterRole, CharacterStore, PickChange,
-        PickWrite,
+        PickScope, PickWrite,
     };
     use kanade::domain::history::{Actor, Surface};
 
     let dir = support::TempDir::new();
-    let config = dir.config("run-picks-reopen");
+    let config = dir.config("picks-reopen");
     let at = Utc.with_ymd_and_hms(2026, 10, 12, 4, 0, 0).unwrap();
     let record = CharacterRecord {
         at,
@@ -474,26 +474,35 @@ async fn sqlite_run_picks_survive_reopen() {
         .apply_character(CharacterChange::Create(lilac), record.clone())
         .await
         .expect("create");
-    let picked = store
-        .apply_pick(
-            PickChange::Set {
-                run_id: "r-1".into(),
-                member_id: "1001".into(),
-                character_id: "c-1".into(),
-                version: 0,
-            },
-            record.clone(),
-        )
-        .await
-        .expect("pick");
-    let PickWrite::Picked(pick) = picked else {
-        panic!("picked: {picked:?}");
-    };
+    let mut stored = Vec::new();
+    for (scope, target) in [(PickScope::Run, "r-1"), (PickScope::Timing, "f-1")] {
+        let picked = store
+            .apply_pick(
+                PickChange::Set {
+                    scope,
+                    target: target.into(),
+                    member_id: "1001".into(),
+                    character_id: "c-1".into(),
+                    version: 0,
+                },
+                record.clone(),
+            )
+            .await
+            .expect("pick");
+        let PickWrite::Picked(pick) = picked else {
+            panic!("picked: {picked:?}");
+        };
+        stored.push((scope, vec![target.to_owned()], pick));
+    }
     store.close().await.expect("close store");
 
     let reopened = SqliteStore::open(&config).await.expect("reopen store");
-    let runs = vec!["r-1".to_owned()];
-    assert_eq!(reopened.run_picks(&runs).await.unwrap(), [pick]);
+    for (scope, targets, pick) in &stored {
+        assert_eq!(
+            reopened.picks(*scope, targets).await.unwrap(),
+            std::slice::from_ref(pick)
+        );
+    }
     reopened
         .apply_character(
             CharacterChange::Delete {
@@ -504,7 +513,9 @@ async fn sqlite_run_picks_survive_reopen() {
         )
         .await
         .expect("delete");
-    assert!(reopened.run_picks(&runs).await.unwrap().is_empty());
+    for (scope, targets, _) in &stored {
+        assert!(reopened.picks(*scope, targets).await.unwrap().is_empty());
+    }
     reopened.close().await.expect("close reopened store");
 }
 

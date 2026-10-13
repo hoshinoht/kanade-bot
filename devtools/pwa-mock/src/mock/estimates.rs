@@ -434,7 +434,7 @@ impl Store {
                 let mut missing = Vec::new();
                 for slot in slots["slots"].as_array().into_iter().flatten() {
                     let member = slot["member_id"].as_str().unwrap_or_default();
-                    let brought = slot["picked"].as_str().or(slot["inferred"].as_str());
+                    let brought = slot["brings"].as_str();
                     match brought.map(|id| self.subject_of(id)) {
                         Some(Ok(subject)) => subjects.push(subject),
                         Some(Err(_)) => missing.push(json!({

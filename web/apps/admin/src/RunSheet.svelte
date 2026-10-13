@@ -8,10 +8,10 @@
 -->
 <script lang="ts">
   import { tick, untrack } from 'svelte';
-  import type { Member, Participant, Run, RunStatus, SettingsActor, Week } from '@kanade/api-types';
+  import type { Member, Participant, Run, RunCharacters, RunStatus, SettingsActor, Week } from '@kanade/api-types';
   import '@kanade/ui/styles/screens/run-sheet.scss';
   import '@kanade/ui/styles/core/select.scss';
-  import { ANSWER_MARKS, AnswerBar, AnswerChip, BossArt, BossTag, enter, Icon, liveRuns, LiveRegion, Modal, MovePicker, namesIn, pickerRun, Select, StatusChip, StatusMark, WavyProgress, dayLabel, runCountdown, runTitle, sortRuns, whenLabel, type Slot } from '@kanade/ui';
+  import { ANSWER_MARKS, AnswerBar, AnswerChip, BossArt, BossTag, enter, Icon, liveRuns, LiveRegion, Modal, MovePicker, namesIn, pickerRun, Select, StatusMark, WavyProgress, dayLabel, runCountdown, runTitle, sortRuns, whenLabel, type Slot } from '@kanade/ui';
   import { swapSlots } from './planner/dropTime';
   import { directory, memberLabel } from './names/directory.svelte';
   import Name from './names/Name.svelte';
@@ -22,12 +22,14 @@
   import StagePicker from './drafts/StagePicker.svelte';
   import type { Staging, StagingDraft } from './drafts/staging.svelte';
   import CharacterPicker from './sheet/CharacterPicker.svelte';
-  import { choiceMeta, clashRun, rosterRoutes, RunCharacterSlots, shownCharacter } from './sheet/characters.svelte';
+  import { CharacterSlots, choiceMeta, clashRun, rosterRoutes, runBasisTag, shownCharacter } from './sheet/characters.svelte';
   import { Presence } from './presence/presence.svelte';
   import PresenceButton from './presence/PresenceButton.svelte';
   import PresenceNote from './presence/PresenceNote.svelte';
   import EstimatePanel from './chardata/EstimatePanel.svelte';
-  import { dayTime, ESTIMATE_LABEL, ESTIMATE_NOTE, levelChip, readinessLine, scouterAt, scouterChip } from './chardata/format';
+  import ReadinessNote from './chardata/ReadinessNote.svelte';
+  import ReadinessValues from './chardata/ReadinessValues.svelte';
+  import { scouterAt } from './chardata/format';
   import { estimateEnds, RunReadinessView } from './chardata/routes.svelte';
   import '@kanade/ui/styles/screens/character-data.scss';
   import { actorName } from './history/describe';
@@ -333,7 +335,7 @@
   // Module `roster` (B_RosterRunPick): who each party member brings, in the full
   // sheet's Party tab only. Off (the session, or a 404 since), no character UI and no requests.
   const charRun = $derived(rosterModule && !rosterRoutes.gone && open && run && (!wide || popped) ? run.id : null);
-  const chars = $derived(charRun ? new RunCharacterSlots(charRun) : null);
+  const chars = $derived(charRun ? new CharacterSlots<RunCharacters>('runs', charRun) : null);
   const charsShown = $derived(Boolean(chars?.data));
   // MapleScouter (module `character_data` with a scouter URL; B_CharEstimateRun): the Party tab's
   // Estimate panel, over the same picks. Off, its status route answers 404 and nothing shows.
@@ -403,10 +405,11 @@
     sheetPickOpen = false;
     if (result.ok) {
       const shown = shownCharacter(result.value);
+      const tag = runBasisTag(result.value.basis);
       const done = characterId
         ? `${label} brings ${shown?.ign ?? 'that character'} to ${title}.`
         : shown
-          ? `Cleared ${label}'s pick: ${shown.ign} is inferred again.`
+          ? `Cleared ${label}'s pick: back to ${shown.ign}${tag ? ` (${tag})` : ''}.`
           : `Cleared ${label}'s pick.`;
       notice = {
         ok: true,
@@ -460,14 +463,19 @@
   </div>
 {/snippet}
 
-<!-- B_RosterRunPick / B_PhoneRosterRunPick: the slot's character, its picker and its clash warning. -->
+<!-- B_RosterRunPick / B_PhoneRosterRunPick: the slot's character, its picker and its clash warning.
+     A character the run did not pick itself carries its basis (B_FixedReadyStates2): "from timing",
+     "main" or "only character". -->
+{#snippet basisTag(tag: string, basis: string | null)}
+  <span class="slot__basis" data-fid={basis === 'timing_pick' ? 'party-from-timing' : undefined}>{tag}</span>
+{/snippet}
 {#snippet slotChar(person: Participant)}
   {@const slot = chars?.slot(person.id)}
   {#if slot}
     {@const shown = shownCharacter(slot)}
     {@const label = who(person)}
-    {@const inferred = Boolean(slot.inferred) && !slot.picked}
-    {#if inferred && !wide}<span class="slot__inferred">inferred</span>{/if}
+    {@const tag = shown ? runBasisTag(slot.basis, wide) : null}
+    {#if tag && !wide}{@render basisTag(tag, slot.basis)}{/if}
     <span class="slotchar">
       {#if slot.candidates.length === 0}
         <span class="slotchar__none"
@@ -485,7 +493,7 @@
           data-char-for={person.id}
           aria-haspopup="dialog"
           aria-expanded={pickFor === person.id || (sheetPickOpen && sheetPick === person.id)}
-          aria-label="{label}'s character on {runTitle(run!)}: {shown.ign}{inferred ? ', inferred' : ''}. Change"
+          aria-label="{label}'s character on {runTitle(run!)}: {shown.ign}{tag ? `, ${tag}` : ''}. Change"
           onclick={() => openPick(person.id)}
           ><span class="slotchar__ign">{shown.ign}</span>{#if wide}<span class="slotchar__meta">{choiceMeta(shown)}</span><Icon name="chevron-down" />{:else if shown.level}<span
               class="slotchar__lv mono">{shown.level}</span
@@ -506,7 +514,7 @@
             />{/if}</button
         >
       {/if}
-      {#if inferred && wide}<span class="slot__inferred">inferred</span>{/if}
+      {#if tag && wide}{@render basisTag(tag, slot.basis)}{/if}
       {#if wide && pickFor === person.id}
         <CharacterPicker
           variant="popover"
@@ -526,45 +534,21 @@
 {#snippet slotReady(person: Participant)}
   {@const r = ready?.data?.slots.find((s) => s.member_id === person.id)}
   {#if r?.character}
-    {@const line = readinessLine(r)}
-    {@const readAt = scouterAt(r)}
-    <div class="ready" role="group" aria-label="Readiness of {r.character.ign}" data-fid="party-ready">
-      <span class="ready__line"
-        ><span class="ready__values">{line.values}</span><span class="ready__source">{line.source}</span>{#if readAt}<span class="ready__source ready__scouter-at"
-            >MapleScouter · <span class="mono">{dayTime(readAt, week.timezone)}</span></span
-          >{/if}</span
-      >
-      <ul class="ready__bosses">
-        {#each r.bosses as boss (`${boss.boss}-${boss.difficulty}`)}
-          {@const chip = levelChip(boss)}
-          <li class="ready__boss">
-            {#if r.bosses.length > 1}<span class="ready__boss-name">{bossLabel(boss.boss, boss.difficulty)}</span>{/if}
-            <StatusChip tone={chip.tone}>{chip.text}</StatusChip>{#if boss.scouter}{@const est = scouterChip(boss.scouter)}<span
-                class="status-chip status-chip--neutral ready__scouter"
-                title={est.rating}>{est.text}<span class="vh"> · {est.rating}</span></span
-              >{/if}
-          </li>
-        {/each}
-      </ul>
-    </div>
+    <ReadinessValues slot={r} character={r.character} timeZone={week.timezone} {bossLabel} fid="party-ready" />
   {:else if r && wide && chars?.slot(person.id)?.candidates.length}
     <span class="ready__source">Readiness shows once a character is picked.</span>
   {/if}
 {/snippet}
 
 {#snippet readyNote(tag: 'p' | 'li')}
-  <svelte:element this={tag} class="ready__note" data-fid="party-ready-note"
-    ><span><b>Readiness</b>{wide ? ' · level and CP per character, dated, and level per boss. It never blocks a pick or a save.' : ' · never blocks'}</span>{#if ready?.data?.nexon_data}<span
-        class="chardata__attrib"
-        data-fid="party-ready-attrib">{ready.data.attribution}</span
-      >{/if}</svelte:element
-  >
-  {#if scouterShown}
-    <!-- Wherever MapleScouter numbers show, its label and note do too (once per panel). -->
-    <svelte:element this={tag} class="ready__estimate" data-fid="party-ready-estimate"
-      ><b>{ESTIMATE_LABEL}</b> · {ESTIMATE_NOTE}. It replaces CP where a character has one.</svelte:element
-    >
-  {/if}
+  <ReadinessNote
+    {tag}
+    lead={wide ? ' · level and CP per character, dated, and level per boss. It never blocks a pick or a save.' : ' · never blocks'}
+    attribution={ready?.data?.nexon_data ? ready.data.attribution : null}
+    scouter={scouterShown}
+    replaces
+    fid="party-ready"
+  />
 {/snippet}
 
 {#snippet readyRules()}
@@ -583,7 +567,7 @@
     {#each slot.warnings as clash (clash.run_id)}
       <span class="slot__warn" data-fid="party-warn" role="note"
         ><Icon name="alert-triangle" /><span
-          >{wide ? `${shown.ign} is also on` : 'Also on'} {clashRun(week, clash)} this boss week{clash.inferred ? ' (inferred there)' : ''}.</span
+          >{wide ? `${shown.ign} is also on` : 'Also on'} {clashRun(week, clash)} this boss week{clash.basis === 'run_pick' ? '' : ` (${runBasisTag(clash.basis)} there)`}.</span
         ></span
       >
     {/each}
@@ -1254,8 +1238,8 @@
                   {#if charsShown && !readyShown}
                     <div class="runsheet__charrules" data-fid="party-rules">
                       <span class="cap">Characters</span>
-                      <span>One active character: the slot names it, marked “inferred”.</span>
-                      <span>More than one: the slot asks to pick.</span>
+                      <span>No pick on the run: the timing's pick (“from timing”), else the main, else the only character.</span>
+                      <span>Several characters and no main: the slot asks to pick.</span>
                       <span>The same character twice for one boss this boss week warns; it still saves.</span>
                     </div>
                   {/if}

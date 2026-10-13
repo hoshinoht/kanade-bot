@@ -58,13 +58,14 @@ fn module(
     })
 }
 
-struct On {
-    reads: Reads,
-    service: Arc<CharacterData>,
-    skew: Arc<Mutex<TimeDelta>>,
+pub(crate) struct On {
+    pub(crate) reads: Reads,
+    pub(crate) service: Arc<CharacterData>,
+    pub(crate) skew: Arc<Mutex<TimeDelta>>,
 }
 
-async fn on() -> On {
+/// Modules `roster` and `character_data` on, over the fake Open API.
+pub(crate) async fn on() -> On {
     let (address, _) = fake_nexon().await;
     let skew = Arc::new(Mutex::new(TimeDelta::zero()));
     let slot = Arc::new(std::sync::OnceLock::new());
@@ -80,7 +81,7 @@ async fn on() -> On {
     }
 }
 
-async fn character(reads: &Reads, member: &str, ign: &str, level: u16) -> String {
+pub(crate) async fn character(reads: &Reads, member: &str, ign: &str, level: u16) -> String {
     let path = format!("/api/admin/members/{member}/characters");
     let reply = reads
         .call("POST", &path, json!({"ign": ign, "level": level}), &[])
@@ -89,7 +90,7 @@ async fn character(reads: &Reads, member: &str, ign: &str, level: u16) -> String
     reply.json()["id"].as_str().unwrap().to_owned()
 }
 
-fn slot<'a>(answer: &'a Value, member: &str) -> &'a Value {
+pub(crate) fn slot<'a>(answer: &'a Value, member: &str) -> &'a Value {
     answer["slots"]
         .as_array()
         .unwrap()
@@ -128,7 +129,8 @@ async fn readiness_judges_each_slot_per_boss_and_writes_nothing() {
     else {
         panic!("not linked");
     };
-    // Bob: two characters, nothing picked. Dan: one, so inferred.
+    // Bob: two characters, nothing picked, so his main (the first). Dan:
+    // one, his main too.
     character(&reads, "1002", "Gardenia", 280).await;
     character(&reads, "1002", "Camellia", 250).await;
     let dan = character(&reads, "1004", "Hollyhock", 265).await;
@@ -157,8 +159,8 @@ async fn readiness_judges_each_slot_per_boss_and_writes_nothing() {
     let linked = slot(&ready, "1001");
     assert_eq!(linked["character"]["id"], alice.as_str());
     assert_eq!(
-        (&linked["inferred"], &linked["link"]),
-        (&json!(true), &json!("linked"))
+        (&linked["basis"], &linked["candidates"], &linked["link"]),
+        (&json!("main"), &json!(1), &json!("linked"))
     );
     assert_eq!(
         linked["level"],
@@ -174,25 +176,25 @@ async fn readiness_judges_each_slot_per_boss_and_writes_nothing() {
         json!([{"boss": "Kalos", "difficulty": "x", "entry_level": 265, "level": "ok", "scouter": null}])
     );
 
-    let none = slot(&ready, "1002");
+    // Several characters and nothing picked: the main is the default.
+    let main = slot(&ready, "1002");
+    assert_eq!(main["character"]["ign"], "Gardenia");
     assert_eq!(
-        (
-            &none["character"],
-            &none["link"],
-            &none["level"],
-            &none["power"]
-        ),
-        (&Value::Null, &Value::Null, &Value::Null, &Value::Null)
+        (&main["basis"], &main["candidates"]),
+        (&json!("main"), &json!(2))
     );
-    assert_eq!(none["inferred"], false);
-    assert_eq!(none["bosses"][0]["level"], "unknown");
+    assert_eq!(
+        main["level"],
+        json!({"value": 280, "source": "manual", "as_of": null})
+    );
+    assert_eq!(main["bosses"][0]["level"], "ok");
 
     let manual = slot(&ready, "1004");
     assert_eq!(manual["character"]["id"], dan.as_str());
     // The create asked Dan to link it; until he confirms, manual values.
     assert_eq!(
-        (&manual["inferred"], &manual["link"]),
-        (&json!(true), &json!("pending"))
+        (&manual["basis"], &manual["link"]),
+        (&json!("main"), &json!("pending"))
     );
     assert_eq!(
         manual["level"],

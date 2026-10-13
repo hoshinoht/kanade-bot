@@ -231,6 +231,16 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
             "/api/admin/fixed/{id}",
             patch(api::update_fixed).delete(api::retire_fixed),
         )
+        .route(
+            "/api/admin/fixed/{id}/characters",
+            get(api::fixed_characters),
+        )
+        .route(
+            "/api/admin/fixed/{id}/characters/{member}",
+            put(api::pick_fixed_character),
+        )
+        .route("/api/admin/fixed/{id}/readiness", get(api::fixed_readiness))
+        .route("/api/admin/fixed/readiness", post(api::preview_readiness))
         .route("/api/admin/validate/bosses", post(api::validate_bosses))
         .route("/api/admin/bosses", get(api::bosses))
         .route("/api/admin/bosses/{key}/knowledge", get(api::knowledge_v2))
