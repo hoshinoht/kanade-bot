@@ -29,6 +29,9 @@ fn placeholder() -> String {
     format!("post silent ^1001 {CHANNEL}: {}", staged())
 }
 
+/// The log row error of a question deleted before its answer was delivered.
+const DELETED: &str = "cancelled: the question was deleted";
+
 fn ambiguous(applied: bool) -> Discord {
     Discord::Ambiguous {
         kind: AmbiguousKind::Timeout,
@@ -401,10 +404,7 @@ async fn t16_a_deletion_while_staged_withdraws_beside_the_running_answer() {
     rig.settle().await;
     assert_eq!(rig.effects().len(), 2);
     let row = &rig.rows()[0];
-    assert_eq!(
-        row.error.as_deref(),
-        Some("cancelled: the question was deleted")
-    );
+    assert_eq!(row.error.as_deref(), Some(DELETED));
     assert_eq!(
         delivery_of(row),
         json!({"placeholder": "deleted", "parts": 0, "delivered": 0, "cause": "deleted"})
@@ -443,10 +443,7 @@ async fn t18_a_deletion_after_the_answer_but_before_its_edit_withdraws() {
     rig.settle().await;
     assert_eq!(rig.effects(), [placeholder(), "delete 5001".to_owned()]);
     let row = &rig.rows()[0];
-    assert_eq!(
-        row.error.as_deref(),
-        Some("cancelled: the question was deleted")
-    );
+    assert_eq!(row.error.as_deref(), Some(DELETED));
 }
 
 #[tokio::test]
@@ -524,16 +521,7 @@ async fn t21_an_ambiguous_withdrawal_is_retried_once_then_orphaned() {
 
 #[tokio::test]
 async fn t22_a_cut_while_staged_turns_the_placeholder_into_the_failure_line() {
-    let config = DriverConfig {
-        stop_grace: Duration::from_millis(50),
-        ..DriverConfig::default()
-    };
-    let rig = rig_with(
-        Fake::new(vec![Step::Forever]),
-        config,
-        &MemoryScheduleStore::new(),
-    )
-    .await;
+    let rig = configured(vec![Step::Forever], quick_grace()).await;
     assert!(rig.driver.offer(asked("1001", "11", CHANNEL, &[ROLE])));
     rig.settle().await;
     rig.driver.stop().await;
@@ -551,18 +539,8 @@ async fn t22_a_cut_while_staged_turns_the_placeholder_into_the_failure_line() {
 
 #[tokio::test]
 async fn t23_a_continuation_past_the_cut_budget_is_recorded_not_marked() {
-    let config = DriverConfig {
-        stop_grace: Duration::from_millis(50),
-        cut_budget: Duration::from_millis(50),
-        ..DriverConfig::default()
-    };
     let (reply, parts) = long_reply(3);
-    let rig = rig_with(
-        Fake::new(vec![Step::Reply(reply)]),
-        config,
-        &MemoryScheduleStore::new(),
-    )
-    .await;
+    let rig = configured(vec![Step::Reply(reply)], quick_stop()).await;
     rig.fake_discord().hold(Op::Create).release();
     let _stuck = rig.fake_discord().hold(Op::Create);
     assert!(rig.driver.offer(asked("1001", "11", CHANNEL, &[ROLE])));
@@ -717,14 +695,6 @@ async fn t28_shed_and_limited_questions_never_get_a_placeholder() {
     );
 }
 
-fn quick_stop() -> DriverConfig {
-    DriverConfig {
-        stop_grace: Duration::from_millis(50),
-        cut_budget: Duration::from_millis(50),
-        ..DriverConfig::default()
-    }
-}
-
 /// Wait until `stop` has passed its grace and cut running answers.
 async fn cut_sent(rig: &Rig) {
     while !*rig.driver.shared.cut.borrow() {
@@ -734,12 +704,7 @@ async fn cut_sent(rig: &Rig) {
 
 #[tokio::test]
 async fn an_aborted_failure_line_edit_after_a_cut_reads_as_the_cut() {
-    let rig = rig_with(
-        Fake::new(vec![Step::Forever]),
-        quick_stop(),
-        &MemoryScheduleStore::new(),
-    )
-    .await;
+    let rig = configured(vec![Step::Forever], quick_stop()).await;
     let _stuck = rig.fake_discord().hold(Op::Edit);
     assert!(rig.driver.offer(asked("1001", "11", CHANNEL, &[ROLE])));
     rig.settle().await;
@@ -760,12 +725,7 @@ async fn an_aborted_failure_line_edit_after_a_cut_reads_as_the_cut() {
 #[tokio::test]
 async fn a_deleted_question_aborted_mid_delivery_keeps_its_cancel_string() {
     let (reply, _) = long_reply(3);
-    let rig = rig_with(
-        Fake::new(vec![Step::Reply(reply)]),
-        quick_stop(),
-        &MemoryScheduleStore::new(),
-    )
-    .await;
+    let rig = configured(vec![Step::Reply(reply)], quick_stop()).await;
     rig.fake_discord().hold(Op::Create).release();
     let stuck = rig.fake_discord().hold(Op::Create);
     assert!(rig.driver.offer(asked("1001", "11", CHANNEL, &[ROLE])));
@@ -800,21 +760,13 @@ async fn t17b_an_unsent_placeholder_is_not_retried_after_a_deletion() {
     rig.settle().await;
     assert_eq!(rig.effects(), [placeholder()], "one create, never retried");
     let row = &rig.rows()[0];
-    assert_eq!(
-        row.error.as_deref(),
-        Some("cancelled: the question was deleted")
-    );
+    assert_eq!(row.error.as_deref(), Some(DELETED));
     assert_eq!(delivery_of(row)["placeholder"], "create_rejected");
 }
 
 #[tokio::test]
 async fn t17c_an_unsent_placeholder_is_not_retried_after_the_cut() {
-    let rig = rig_with(
-        Fake::new(vec![Step::Forever]),
-        quick_stop(),
-        &MemoryScheduleStore::new(),
-    )
-    .await;
+    let rig = configured(vec![Step::Forever], quick_stop()).await;
     rig.fake_discord()
         .script(Op::Create, Discord::Reject(RejectionKind::NotSent));
     let create = rig.fake_discord().hold(Op::Create);
@@ -867,10 +819,7 @@ async fn an_abort_after_a_deletion_withdraws_the_placeholder_from_the_guard() {
         "concluded by the guard"
     );
     let row = &rig.rows()[0];
-    assert_eq!(
-        row.error.as_deref(),
-        Some("cancelled: the question was deleted")
-    );
+    assert_eq!(row.error.as_deref(), Some(DELETED));
     assert_eq!(
         delivery_of(row),
         json!({"placeholder": "deleted", "parts": 0, "delivered": 0, "cause": "deleted"})
@@ -928,10 +877,7 @@ async fn a_deletion_after_a_refused_first_edit_withdraws_without_a_marker() {
         ]
     );
     let row = &rig.rows()[0];
-    assert_eq!(
-        row.error.as_deref(),
-        Some("cancelled: the question was deleted")
-    );
+    assert_eq!(row.error.as_deref(), Some(DELETED));
     assert_eq!(
         delivery_of(row),
         json!({"placeholder": "deleted", "parts": 2, "delivered": 0, "cause": "deleted"})

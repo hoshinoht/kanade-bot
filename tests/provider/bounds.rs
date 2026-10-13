@@ -1,13 +1,30 @@
 use kanade::infrastructure::llm::{
-    ChatRequest, CompletionResponse, ErrorCode, ExecutionLimits, FakeAction, FinishReason, Message,
-    OutputSchema, OutputValidation, ToolCall, ToolDefinition,
+    ChatRequest, ErrorCode, ExecutionLimits, FinishReason, Message, ToolCallRequest, ToolDefinition,
 };
 use serde_json::json;
 
 use super::support::{
-    build_runner_with, default_retry, response_tool_call, tiny_request, tiny_response, tool_call,
-    tool_request, tool_schema,
+    calls_reply, output_schema, response_call, response_tool_call, run_once, text_reply,
+    tiny_request, tiny_response, tool_call, tool_request, tool_schema,
 };
+
+fn content_limit() -> ExecutionLimits {
+    ExecutionLimits {
+        max_content_bytes: 32,
+        ..ExecutionLimits::default()
+    }
+}
+
+fn asks(tool_calls: Vec<ToolCallRequest>) -> Message {
+    Message::Assistant {
+        content: None,
+        tool_calls,
+    }
+}
+
+fn with_messages(base: ChatRequest, messages: Vec<Message>) -> ChatRequest {
+    ChatRequest { messages, ..base }
+}
 
 #[tokio::test]
 async fn individually_bounded_texts_and_schemas_still_obey_request_aggregate() {
@@ -21,12 +38,7 @@ async fn individually_bounded_texts_and_schemas_still_obey_request_aggregate() {
             description: Some("d".repeat(20)),
             input_schema: json!({"type":"object"}),
         }],
-        output_schema: Some(OutputSchema {
-            name: "output".into(),
-            schema: json!({"type":"string"}),
-            strict: true,
-            validation: OutputValidation::Runner,
-        }),
+        output_schema: Some(output_schema("output", json!({"type":"string"}))),
         max_output_tokens: 1,
         reasoning: None,
         sampling: None,
@@ -37,24 +49,9 @@ async fn individually_bounded_texts_and_schemas_still_obey_request_aggregate() {
         max_request_bytes: 40,
         ..ExecutionLimits::default()
     };
-    let (provider, runner) = build_runner_with(
-        [FakeAction::Response(CompletionResponse {
-            reasoning_content: None,
-            reasoning_tokens: None,
-            model: "model".into(),
-            content: Some("not-called".into()),
-            tool_calls: Vec::new(),
-            finish_reason: FinishReason::Stop,
-            usage: None,
-        })],
-        limits,
-        default_retry(),
-    );
-    assert_eq!(
-        runner.complete(&input).await.unwrap_err().code,
-        ErrorCode::RequestInvalid
-    );
-    assert!(provider.requests().is_empty());
+    let output = text_reply(Some("not-called".into()));
+    let outcome = run_once(&input, output, limits).await;
+    assert_eq!(outcome, (Some(ErrorCode::RequestInvalid), 0));
 }
 
 #[tokio::test]
@@ -66,17 +63,18 @@ async fn request_string_fields_are_each_bounded_before_provider_call() {
     value.model = long.clone();
     cases.push(("model", value));
 
-    let mut value = tiny_request();
-    value.messages = vec![Message::System {
+    let system = Message::System {
         content: long.clone(),
-    }];
-    cases.push(("system content", value));
+    };
+    cases.push((
+        "system content",
+        with_messages(tiny_request(), vec![system]),
+    ));
 
-    let mut value = tiny_request();
-    value.messages = vec![Message::User {
+    let user = Message::User {
         content: long.clone(),
-    }];
-    cases.push(("user content", value));
+    };
+    cases.push(("user content", with_messages(tiny_request(), vec![user])));
 
     let mut value = tool_request();
     value.tools[0].name = long.clone();
@@ -87,302 +85,130 @@ async fn request_string_fields_are_each_bounded_before_provider_call() {
     cases.push(("tool description", value));
 
     let mut value = tool_request();
-    value.output_schema = Some(OutputSchema {
-        name: long.clone(),
-        schema: json!({"type":"string"}),
-        strict: true,
-        validation: OutputValidation::Runner,
-    });
+    value.output_schema = Some(output_schema(&long, json!({"type":"string"})));
     cases.push(("output schema name", value));
 
-    let mut value = tool_request();
-    value.messages = vec![Message::Assistant {
+    let assistant = Message::Assistant {
         content: Some(long.clone()),
         tool_calls: vec![tool_call("id")],
-    }];
-    cases.push(("assistant content", value));
+    };
+    cases.push((
+        "assistant content",
+        with_messages(tool_request(), vec![assistant]),
+    ));
 
-    let mut value = tool_request();
-    value.messages = vec![
-        Message::Assistant {
-            content: None,
-            tool_calls: vec![tool_call("id")],
-        },
-        Message::Tool {
-            tool_call_id: "id".into(),
-            content: long.clone(),
-        },
-    ];
-    cases.push(("tool result content", value));
+    for (field, call_id, content) in [
+        ("tool result content", "id", long.as_str()),
+        ("tool result id", long.as_str(), "ok"),
+    ] {
+        let result = Message::Tool {
+            tool_call_id: call_id.into(),
+            content: content.into(),
+        };
+        let messages = vec![asks(vec![tool_call("id")]), result];
+        cases.push((field, with_messages(tool_request(), messages)));
+    }
 
-    let mut value = tool_request();
-    value.messages = vec![
-        Message::Assistant {
-            content: None,
-            tool_calls: vec![tool_call("id")],
-        },
-        Message::Tool {
-            tool_call_id: long.clone(),
-            content: "ok".into(),
-        },
-    ];
-    cases.push(("tool result id", value));
-
-    let mut value = tool_request();
-    value.messages = vec![Message::Assistant {
-        content: None,
-        tool_calls: vec![tool_call(&long)],
-    }];
-    cases.push(("requested call id", value));
-
-    let mut value = tool_request();
-    let mut call = tool_call("id");
-    call.name = long.clone();
-    value.messages = vec![Message::Assistant {
-        content: None,
-        tool_calls: vec![call],
-    }];
-    cases.push(("requested call name", value));
-
-    let mut value = tool_request();
-    let mut call = tool_call("id");
-    call.arguments = long.clone();
-    value.messages = vec![Message::Assistant {
-        content: None,
-        tool_calls: vec![call],
-    }];
-    cases.push(("requested call arguments", value));
+    let mut long_name = tool_call("id");
+    long_name.name = long.clone();
+    let mut long_arguments = tool_call("id");
+    long_arguments.arguments = long.clone();
+    for (field, call) in [
+        ("requested call id", tool_call(&long)),
+        ("requested call name", long_name),
+        ("requested call arguments", long_arguments),
+    ] {
+        cases.push((field, with_messages(tool_request(), vec![asks(vec![call])])));
+    }
 
     for (field, input) in cases {
-        let limits = ExecutionLimits {
-            max_content_bytes: 32,
-            ..ExecutionLimits::default()
-        };
-        let (provider, runner) = build_runner_with(
-            [FakeAction::Response(CompletionResponse {
-                reasoning_content: None,
-                reasoning_tokens: None,
-                model: "m".into(),
-                content: None,
-                tool_calls: Vec::new(),
-                finish_reason: FinishReason::Stop,
-                usage: None,
-            })],
-            limits,
-            default_retry(),
-        );
-        let error = runner.complete(&input).await.unwrap_err();
-        assert_eq!(error.code, ErrorCode::RequestInvalid, "{field}");
-        assert!(provider.requests().is_empty(), "{field}");
+        let outcome = run_once(&input, text_reply(None), content_limit()).await;
+        assert_eq!(outcome, (Some(ErrorCode::RequestInvalid), 0), "{field}");
     }
 }
 
 #[tokio::test]
 async fn request_collection_bounds_fail_closed() {
-    let mut too_many_messages = tiny_request();
-    too_many_messages.messages = vec![
-        Message::User {
-            content: "a".into(),
-        },
-        Message::User {
-            content: "b".into(),
-        },
-        Message::User {
-            content: "c".into(),
-        },
-    ];
-    let limits = ExecutionLimits {
+    let users = ["a", "b", "c"].map(|content| Message::User {
+        content: content.into(),
+    });
+    let too_many_messages = with_messages(tiny_request(), users.into());
+    let mut too_many_tools = tiny_request();
+    too_many_tools.tools = ["one", "two"]
+        .map(|name| ToolDefinition {
+            name: name.into(),
+            description: None,
+            input_schema: tool_schema(),
+        })
+        .into();
+    let too_many_calls = with_messages(
+        tool_request(),
+        vec![asks(vec![tool_call("one"), tool_call("two")])],
+    );
+    let max_messages = ExecutionLimits {
         max_messages: 2,
         ..ExecutionLimits::default()
     };
-    assert_request_invalid_before_call(too_many_messages, limits).await;
-
-    let mut too_many_tools = tiny_request();
-    too_many_tools.tools = vec![
-        ToolDefinition {
-            name: "one".into(),
-            description: None,
-            input_schema: tool_schema(),
-        },
-        ToolDefinition {
-            name: "two".into(),
-            description: None,
-            input_schema: tool_schema(),
-        },
-    ];
-    let limits = ExecutionLimits {
+    let max_tools = ExecutionLimits {
         max_tools: 1,
         ..ExecutionLimits::default()
     };
-    assert_request_invalid_before_call(too_many_tools, limits).await;
-
-    let mut too_many_calls = tool_request();
-    too_many_calls.messages = vec![Message::Assistant {
-        content: None,
-        tool_calls: vec![tool_call("one"), tool_call("two")],
-    }];
-    let limits = ExecutionLimits {
-        max_tools: 1,
-        ..ExecutionLimits::default()
-    };
-    assert_request_invalid_before_call(too_many_calls, limits).await;
+    for (label, input, limits) in [
+        ("messages", too_many_messages, max_messages),
+        ("tools", too_many_tools, max_tools.clone()),
+        ("requested calls", too_many_calls, max_tools),
+    ] {
+        let outcome = run_once(&input, tiny_response("m"), limits).await;
+        assert_eq!(outcome, (Some(ErrorCode::RequestInvalid), 0), "{label}");
+    }
 }
 
 #[tokio::test]
 async fn response_string_and_collection_bounds_fail_closed() {
+    let long = "x".repeat(33);
+    let ok = r#"{"value":"ok"}"#;
+    let invalid = Some(ErrorCode::InvalidOutput);
     let response_cases = [
+        (text_reply(Some(long.clone())), None),
+        (calls_reply(vec![response_call(&long, "tool", ok)]), invalid),
+        (calls_reply(vec![response_call("id", &long, ok)]), invalid),
         (
-            CompletionResponse {
-                reasoning_content: None,
-                reasoning_tokens: None,
-                model: "m".into(),
-                content: Some("x".repeat(33)),
-                tool_calls: Vec::new(),
-                finish_reason: FinishReason::Stop,
-                usage: None,
-            },
-            None,
-        ),
-        (
-            CompletionResponse {
-                reasoning_content: None,
-                reasoning_tokens: None,
-                model: "m".into(),
-                content: None,
-                tool_calls: vec![ToolCall {
-                    id: "x".repeat(33),
-                    name: "tool".into(),
-                    arguments: r#"{"value":"ok"}"#.into(),
-                }],
-                finish_reason: FinishReason::ToolCalls,
-                usage: None,
-            },
-            Some(ErrorCode::InvalidOutput),
-        ),
-        (
-            CompletionResponse {
-                reasoning_content: None,
-                reasoning_tokens: None,
-                model: "m".into(),
-                content: None,
-                tool_calls: vec![ToolCall {
-                    id: "id".into(),
-                    name: "x".repeat(33),
-                    arguments: r#"{"value":"ok"}"#.into(),
-                }],
-                finish_reason: FinishReason::ToolCalls,
-                usage: None,
-            },
-            Some(ErrorCode::InvalidOutput),
-        ),
-        (
-            CompletionResponse {
-                reasoning_content: None,
-                reasoning_tokens: None,
-                model: "m".into(),
-                content: None,
-                tool_calls: vec![ToolCall {
-                    id: "id".into(),
-                    name: "tool".into(),
-                    arguments: "x".repeat(33),
-                }],
-                finish_reason: FinishReason::ToolCalls,
-                usage: None,
-            },
-            Some(ErrorCode::InvalidOutput),
+            calls_reply(vec![response_call("id", "tool", long.clone())]),
+            invalid,
         ),
     ];
     for (index, (output, expected)) in response_cases.into_iter().enumerate() {
-        let limits = ExecutionLimits {
-            max_content_bytes: 32,
-            ..ExecutionLimits::default()
-        };
-        let (provider, runner) = build_runner_with(
-            [FakeAction::Response(output.clone())],
-            limits,
-            default_retry(),
-        );
         let input = if output.tool_calls.is_empty() {
             tiny_request()
         } else {
             tool_request()
         };
-        let result = runner.complete(&input).await;
-        match expected {
-            None => assert!(result.is_ok(), "case {index}"),
-            Some(code) => assert_eq!(result.unwrap_err().code, code, "case {index}"),
-        }
-        assert_eq!(provider.requests().len(), 1, "case {index}");
+        let outcome = run_once(&input, output, content_limit()).await;
+        assert_eq!(outcome, (expected, 1), "case {index}");
     }
 
-    let output = CompletionResponse {
-        reasoning_content: None,
-        reasoning_tokens: None,
-        model: "m".into(),
-        content: None,
-        tool_calls: vec![response_tool_call("one"), response_tool_call("two")],
-        finish_reason: FinishReason::ToolCalls,
-        usage: None,
+    let output = calls_reply(vec![response_tool_call("one"), response_tool_call("two")]);
+    let max_tools = ExecutionLimits {
+        max_tools: 1,
+        ..ExecutionLimits::default()
     };
-    let (provider, runner) = build_runner_with(
-        [FakeAction::Response(output)],
-        ExecutionLimits {
-            max_tools: 1,
-            ..ExecutionLimits::default()
-        },
-        default_retry(),
-    );
-    assert_eq!(
-        runner.complete(&tool_request()).await.unwrap_err().code,
-        ErrorCode::InvalidOutput
-    );
-    assert_eq!(provider.requests().len(), 1);
+    let outcome = run_once(&tool_request(), output, max_tools).await;
+    assert_eq!(outcome, (invalid, 1));
 }
 
 #[tokio::test]
 async fn response_aggregate_and_unknown_finish_reason_are_bounded() {
     let mut output = tiny_response("m");
     output.content = Some("x".repeat(16));
-    let (provider, runner) = build_runner_with(
-        [FakeAction::Response(output)],
-        ExecutionLimits {
-            max_response_bytes: 20,
-            ..ExecutionLimits::default()
-        },
-        default_retry(),
-    );
-    assert_eq!(
-        runner.complete(&tiny_request()).await.unwrap_err().code,
-        ErrorCode::InvalidOutput
-    );
-    assert_eq!(provider.requests().len(), 1);
+    let max_response = ExecutionLimits {
+        max_response_bytes: 20,
+        ..ExecutionLimits::default()
+    };
+    let outcome = run_once(&tiny_request(), output, max_response).await;
+    assert_eq!(outcome, (Some(ErrorCode::InvalidOutput), 1));
 
     let mut output = tiny_response("m");
     output.finish_reason = FinishReason::Other("x".repeat(33));
-    let (provider, runner) = build_runner_with(
-        [FakeAction::Response(output)],
-        ExecutionLimits {
-            max_content_bytes: 32,
-            ..ExecutionLimits::default()
-        },
-        default_retry(),
-    );
-    assert_eq!(
-        runner.complete(&tiny_request()).await.unwrap_err().code,
-        ErrorCode::InvalidOutput
-    );
-    assert_eq!(provider.requests().len(), 1);
-}
-
-async fn assert_request_invalid_before_call(input: ChatRequest, limits: ExecutionLimits) {
-    let (provider, runner) = build_runner_with(
-        [FakeAction::Response(tiny_response("m"))],
-        limits,
-        default_retry(),
-    );
-    assert_eq!(
-        runner.complete(&input).await.unwrap_err().code,
-        ErrorCode::RequestInvalid
-    );
-    assert!(provider.requests().is_empty());
+    let outcome = run_once(&tiny_request(), output, content_limit()).await;
+    assert_eq!(outcome, (Some(ErrorCode::InvalidOutput), 1));
 }

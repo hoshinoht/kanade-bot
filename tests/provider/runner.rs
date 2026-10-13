@@ -1,14 +1,31 @@
 use std::{sync::Arc, time::Duration};
 
 use kanade::infrastructure::llm::{
-    CompletionResponse, CompletionRunner, ErrorCode, ExecutionLimits, FakeAction, FakeProvider,
-    FinishReason, Message, RetryPolicy, ToolDefinition, Usage,
+    ChatRequest, CompletionResponse, CompletionRunner, ErrorCode, ExecutionLimits, FakeAction,
+    FakeProvider, FinishReason, Message, RetryPolicy, ToolDefinition, Usage,
 };
 
 use super::support::{
-    build_runner, build_runner_with, default_retry, request, response, tiny_request, tiny_response,
-    tool_schema,
+    build_runner, default_retry, request, response, run_once, tiny_request, tiny_response,
+    tool_request, tool_schema,
 };
+
+/// The runner's token reservation for one attempt of `request`.
+fn reservation(request: &ChatRequest) -> u32 {
+    u32::try_from(serde_json::to_vec(request).unwrap().len().div_ceil(4))
+        .unwrap()
+        .checked_add(request.max_output_tokens)
+        .unwrap()
+}
+
+fn token_budget(token_budget: u32) -> ExecutionLimits {
+    ExecutionLimits {
+        token_budget,
+        ..ExecutionLimits::default()
+    }
+}
+
+const OVER_BUDGET: (Option<ErrorCode>, usize) = (Some(ErrorCode::BudgetExceeded), 0);
 
 #[tokio::test]
 async fn accepts_openai_style_structured_tool_response() {
@@ -101,16 +118,12 @@ async fn missing_usage_is_accepted_but_model_and_usage_overflow_fail_closed() {
 
 #[tokio::test]
 async fn request_content_limit_is_rejected_before_provider_call() {
-    let (provider, runner) = build_runner([FakeAction::Response(response())]);
     let mut limited = request();
     limited.messages[0] = Message::System {
         content: "x".repeat(70_000),
     };
-    assert_eq!(
-        runner.complete(&limited).await.unwrap_err().code,
-        ErrorCode::RequestInvalid
-    );
-    assert!(provider.requests().is_empty());
+    let outcome = run_once(&limited, response(), ExecutionLimits::default()).await;
+    assert_eq!(outcome, (Some(ErrorCode::RequestInvalid), 0));
 
     let mut with_tool = tiny_request();
     with_tool.tools = vec![ToolDefinition {
@@ -118,33 +131,15 @@ async fn request_content_limit_is_rejected_before_provider_call() {
         description: None,
         input_schema: tool_schema(),
     }];
-    let (provider, runner) = build_runner_with(
-        [FakeAction::Response(tiny_response("m"))],
-        ExecutionLimits {
-            token_budget: 10,
-            ..ExecutionLimits::default()
-        },
-        default_retry(),
-    );
-    assert_eq!(
-        runner.complete(&with_tool).await.unwrap_err().code,
-        ErrorCode::BudgetExceeded
-    );
-    assert!(provider.requests().is_empty());
+    let outcome = run_once(&with_tool, tiny_response("m"), token_budget(10)).await;
+    assert_eq!(outcome, OVER_BUDGET);
 }
 
 #[tokio::test(start_paused = true)]
 async fn unknown_transient_attempts_consume_the_full_reservation() {
     let (provider, _) = build_runner([FakeAction::Transient, FakeAction::Transient]);
     let request = tiny_request();
-    let reservation = u32::try_from(serde_json::to_vec(&request).unwrap().len().div_ceil(4))
-        .unwrap()
-        .checked_add(request.max_output_tokens)
-        .unwrap();
-    let limits = ExecutionLimits {
-        token_budget: reservation * 2 - 1,
-        ..ExecutionLimits::default()
-    };
+    let limits = token_budget(reservation(&request) * 2 - 1);
     let runner = CompletionRunner::ungoverned(provider.clone(), limits, default_retry()).unwrap();
     assert_eq!(
         runner.complete(&request).await.unwrap_err().code,
@@ -156,41 +151,15 @@ async fn unknown_transient_attempts_consume_the_full_reservation() {
 #[tokio::test]
 async fn request_schema_and_tool_bytes_change_the_reservation() {
     let small = tiny_request();
-    let larger = super::support::tool_request();
-    let small_reservation = u32::try_from(serde_json::to_vec(&small).unwrap().len().div_ceil(4))
-        .unwrap()
-        .checked_add(small.max_output_tokens)
-        .unwrap();
-    let large_reservation = u32::try_from(serde_json::to_vec(&larger).unwrap().len().div_ceil(4))
-        .unwrap()
-        .checked_add(larger.max_output_tokens)
-        .unwrap();
-    assert!(large_reservation > small_reservation);
+    let larger = tool_request();
+    let small_reservation = reservation(&small);
+    assert!(reservation(&larger) > small_reservation);
 
-    let (provider, runner) = build_runner_with(
-        [FakeAction::Response(tiny_response("m"))],
-        ExecutionLimits {
-            token_budget: small_reservation,
-            ..ExecutionLimits::default()
-        },
-        default_retry(),
-    );
-    assert!(runner.complete(&small).await.is_ok());
-    assert_eq!(provider.requests().len(), 1);
-
-    let (provider, runner) = build_runner_with(
-        [FakeAction::Response(tiny_response("m"))],
-        ExecutionLimits {
-            token_budget: small_reservation,
-            ..ExecutionLimits::default()
-        },
-        default_retry(),
-    );
-    assert_eq!(
-        runner.complete(&larger).await.unwrap_err().code,
-        ErrorCode::BudgetExceeded
-    );
-    assert!(provider.requests().is_empty());
+    let limits = token_budget(small_reservation);
+    let outcome = run_once(&small, tiny_response("m"), limits.clone()).await;
+    assert_eq!(outcome, (None, 1));
+    let outcome = run_once(&larger, tiny_response("m"), limits).await;
+    assert_eq!(outcome, OVER_BUDGET);
 }
 
 #[tokio::test]
@@ -199,17 +168,8 @@ async fn request_content_bytes_change_the_reservation() {
     larger.messages[0] = Message::User {
         content: "x".repeat(256),
     };
-    let limits = ExecutionLimits {
-        token_budget: 10,
-        ..ExecutionLimits::default()
-    };
-    let (provider, _) = build_runner([FakeAction::Response(tiny_response("m"))]);
-    let runner = CompletionRunner::ungoverned(provider.clone(), limits, default_retry()).unwrap();
-    assert_eq!(
-        runner.complete(&larger).await.unwrap_err().code,
-        ErrorCode::BudgetExceeded
-    );
-    assert!(provider.requests().is_empty());
+    let outcome = run_once(&larger, tiny_response("m"), token_budget(10)).await;
+    assert_eq!(outcome, OVER_BUDGET);
 }
 
 #[tokio::test(start_paused = true)]
@@ -240,7 +200,7 @@ async fn a_content_filter_is_told_apart_from_a_length_cut_off_and_never_retried(
 
 #[tokio::test(start_paused = true)]
 async fn a_cut_off_reply_names_its_counts_but_never_the_finish_text() {
-    let request = kanade::infrastructure::llm::ChatRequest {
+    let request = ChatRequest {
         max_output_tokens: 64,
         ..tiny_request()
     };

@@ -76,13 +76,22 @@ const HOME_A: u64 = 301;
 const HOME_B: u64 = 302;
 const HOME_C: u64 = 303;
 
-// ---- Gateway fixtures (Discord's JSON shapes) ----
+/// The phases a full Discord stop completes, in order.
+const ALL_STEPS: [&str; 5] = [
+    "gateway_closed",
+    "chat_stopped",
+    "extraction_stopped",
+    "workers_stopped",
+    "tick_stopped",
+];
 
-fn parse<T: serde::de::DeserializeOwned>(value: Value) -> T {
+// ---- Gateway fixtures (Discord's JSON shapes; `chat_tests` shares them) ----
+
+pub(super) fn parse<T: serde::de::DeserializeOwned>(value: Value) -> T {
     serde_json::from_value(value).expect("twilight fixture")
 }
 
-fn user_json(id: u64, name: &str, bot: bool) -> Value {
+pub(super) fn user_json(id: u64, name: &str, bot: bool) -> Value {
     json!({
         "id": id.to_string(), "username": name, "global_name": null,
         "discriminator": "0", "avatar": null, "bot": bot,
@@ -103,7 +112,7 @@ fn guild_member(id: u64, name: &str, bot: bool, roles: &[u64]) -> twilight_model
     parse(member_json(id, name, bot, roles))
 }
 
-fn role_json(id: u64) -> Value {
+pub(super) fn role_json(id: u64) -> Value {
     json!({
         "color": 0,
         "colors": { "primary_color": 0, "secondary_color": null, "tertiary_color": null },
@@ -119,7 +128,7 @@ fn channel_json(id: u64) -> Value {
     })
 }
 
-fn ready() -> Event {
+pub(super) fn ready() -> Event {
     Event::Ready(parse::<Ready>(json!({
         "application": { "id": "9", "flags": 0 },
         "guilds": [],
@@ -587,16 +596,7 @@ async fn guild_create_registers_guild_commands_reconciles_and_drops_other_guilds
         assert!(health.last_tick_age_seconds.is_some());
     })
     .await;
-    assert_eq!(
-        discord.steps(),
-        [
-            "gateway_closed",
-            "chat_stopped",
-            "extraction_stopped",
-            "workers_stopped",
-            "tick_stopped"
-        ]
-    );
+    assert_eq!(discord.steps(), ALL_STEPS);
     assert!(discord.result().is_ok());
     finish(&harness, ctx).await;
 }
@@ -1020,16 +1020,7 @@ async fn the_tick_sends_due_work_once_and_never_resends_an_interrupted_send() {
         assert_eq!(health.scheduler, "running");
     })
     .await;
-    assert_eq!(
-        discord.steps(),
-        [
-            "gateway_closed",
-            "chat_stopped",
-            "extraction_stopped",
-            "workers_stopped",
-            "tick_stopped"
-        ]
-    );
+    assert_eq!(discord.steps(), ALL_STEPS);
     finish(&harness, ctx).await;
 }
 
@@ -1326,16 +1317,7 @@ async fn a_fatal_close_reports_closed_health_and_stops_the_discord_side() {
         assert_eq!(ctx.health.health().await.discord, "closed");
     })
     .await;
-    assert_eq!(
-        discord.steps(),
-        [
-            "gateway_closed",
-            "chat_stopped",
-            "extraction_stopped",
-            "workers_stopped",
-            "tick_stopped"
-        ]
-    );
+    assert_eq!(discord.steps(), ALL_STEPS);
     assert!(discord.result().is_ok());
     finish(&harness, ctx).await;
 }

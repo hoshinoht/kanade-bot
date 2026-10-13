@@ -2,81 +2,23 @@
 //! back unvalidated (`CallerValidates`), extraction's own parse/coerce logic
 //! judges it, and one answer retry follows a rejected reply.
 
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use kanade::extract::AmendmentKind;
 use kanade::extract::prompt::extraction_request;
 use kanade::extract::schema::{AttemptOutcome, ExtractionAttempts, ExtractionCall, Next};
-use kanade::infrastructure::llm::governor::{
-    Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient, Random, Role, RoleConfig,
-};
-use kanade::infrastructure::llm::{
-    CompletionResponse, ExecutionLimits, FakeAction, FakeProvider, FinishReason, Message,
-    OutputValidation, RetryPolicy, Usage,
-};
+use kanade::infrastructure::llm::governor::{Governor, ModelClient};
+use kanade::infrastructure::llm::{FakeProvider, Message, OutputValidation};
 
-const ALIAS: &str = "extractor";
+use crate::fakes::{ALIAS, governor, model_client, reply};
+
 const TIMEOUT: Duration = Duration::from_secs(60);
-
-struct Fixed;
-
-impl Random for Fixed {
-    fn next_u64(&self) -> u64 {
-        1 << 63
-    }
-}
 
 /// One permit, no rate waits, over a provider answering `replies` in order.
 fn governed(replies: &[&str]) -> (Arc<Governor>, Arc<FakeProvider>, ModelClient<FakeProvider>) {
-    let config = GovernorConfig {
-        groups: vec![GroupConfig {
-            name: "local".into(),
-            backend: "local backend".into(),
-            permits: 1,
-            requests_per_min: 6_000,
-            burst: Some(1_000),
-            aliases: vec![ALIAS.into()],
-        }],
-        roles: [Role::Chat, Role::Extraction, Role::Rewrite]
-            .into_iter()
-            .map(|role| {
-                let route = RoleConfig {
-                    alias: ALIAS.into(),
-                    external: false,
-                };
-                (role, route)
-            })
-            .collect::<BTreeMap<_, _>>(),
-        policy: GovernorPolicy::default(),
-    };
-    let governor = Arc::new(Governor::new(&config, Arc::new(Fixed)).expect("valid config"));
-    let actions = replies.iter().map(|content| {
-        FakeAction::Response(CompletionResponse {
-            reasoning_content: None,
-            reasoning_tokens: None,
-            model: ALIAS.into(),
-            content: Some((*content).to_owned()),
-            tool_calls: Vec::new(),
-            finish_reason: FinishReason::Stop,
-            usage: Some(Usage {
-                prompt_tokens: 1,
-                completion_tokens: 1,
-            }),
-        })
-    });
-    let provider = Arc::new(FakeProvider::new(actions));
-    let retry = RetryPolicy {
-        total_deadline: Duration::from_secs(30),
-        max_attempts: 3,
-        backoff: Duration::from_millis(100),
-    };
-    let client = ModelClient::new(
-        governor.clone(),
-        provider.clone(),
-        ExecutionLimits::default(),
-        retry,
-    )
-    .expect("valid client");
+    let governor = governor(true);
+    let provider = Arc::new(FakeProvider::new(replies.iter().map(|text| reply(text))));
+    let client = model_client(governor.clone(), provider.clone());
     (governor, provider, client)
 }
 

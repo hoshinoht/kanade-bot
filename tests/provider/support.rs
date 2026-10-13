@@ -1,9 +1,9 @@
 use std::{sync::Arc, time::Duration};
 
 use kanade::infrastructure::llm::{
-    ChatRequest, CompletionResponse, CompletionRunner, ExecutionLimits, FakeAction, FakeProvider,
-    FinishReason, Message, OutputSchema, OutputValidation, RetryPolicy, ToolCall, ToolCallRequest,
-    ToolDefinition, Usage,
+    ChatRequest, CompletionResponse, CompletionRunner, ErrorCode, ExecutionLimits, FakeAction,
+    FakeProvider, FinishReason, Message, OutputSchema, OutputValidation, RetryPolicy, ToolCall,
+    ToolCallRequest, ToolDefinition, Usage,
 };
 use serde_json::{Map, Value, json};
 
@@ -23,12 +23,7 @@ pub fn request() -> ChatRequest {
             description: Some("synthetic test tool".into()),
             input_schema: json!({"type":"object","properties":{"week":{"type":"string","enum":["next"]}},"required":["week"],"additionalProperties":false}),
         }],
-        output_schema: Some(OutputSchema {
-            name: "answer".into(),
-            schema: json!({"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}),
-            strict: true,
-            validation: OutputValidation::Runner,
-        }),
+        output_schema: Some(answer_schema()),
         max_output_tokens: 128,
         reasoning: None,
         sampling: None,
@@ -64,6 +59,67 @@ pub fn build_runner_with(
     let provider = Arc::new(FakeProvider::new(actions));
     let runner = CompletionRunner::ungoverned(provider.clone(), limits, retry).unwrap();
     (provider, runner)
+}
+
+/// Completes `input` once against a fake answering `output` under `limits`:
+/// the error code (`None` on success) and how many requests reached the provider.
+pub async fn run_once(
+    input: &ChatRequest,
+    output: CompletionResponse,
+    limits: ExecutionLimits,
+) -> (Option<ErrorCode>, usize) {
+    let (provider, runner) =
+        build_runner_with([FakeAction::Response(output)], limits, default_retry());
+    let code = runner.complete(input).await.err().map(|error| error.code);
+    (code, provider.requests().len())
+}
+
+/// A strict, runner-validated output schema.
+pub fn output_schema(name: &str, schema: Value) -> OutputSchema {
+    OutputSchema {
+        name: name.into(),
+        schema,
+        strict: true,
+        validation: OutputValidation::Runner,
+    }
+}
+
+/// The closed `{"answer": string}` output schema.
+pub fn answer_schema() -> OutputSchema {
+    output_schema(
+        "answer",
+        json!({"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}),
+    )
+}
+
+/// A reply from model `m` without usage or tool calls, finishing `Stop`.
+pub fn text_reply(content: Option<String>) -> CompletionResponse {
+    CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
+        model: "m".into(),
+        content,
+        tool_calls: Vec::new(),
+        finish_reason: FinishReason::Stop,
+        usage: None,
+    }
+}
+
+/// A reply from model `m` without usage or content, finishing `ToolCalls`.
+pub fn calls_reply(tool_calls: Vec<ToolCall>) -> CompletionResponse {
+    CompletionResponse {
+        tool_calls,
+        finish_reason: FinishReason::ToolCalls,
+        ..text_reply(None)
+    }
+}
+
+pub fn response_call(id: &str, name: &str, arguments: impl Into<String>) -> ToolCall {
+    ToolCall {
+        id: id.into(),
+        name: name.into(),
+        arguments: arguments.into(),
+    }
 }
 
 pub fn tiny_request() -> ChatRequest {
@@ -131,11 +187,7 @@ pub fn tool_call(id: &str) -> ToolCallRequest {
 }
 
 pub fn response_tool_call(id: &str) -> ToolCall {
-    ToolCall {
-        id: id.into(),
-        name: "tool".into(),
-        arguments: r#"{"value":"ok"}"#.into(),
-    }
+    response_call(id, "tool", r#"{"value":"ok"}"#)
 }
 
 pub fn deep_schema(depth: usize) -> Value {
@@ -165,15 +217,5 @@ pub fn dispose_json_value_iteratively(value: Value) {
             Value::Object(map) => work.extend(map.into_values()),
             Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
         }
-    }
-}
-
-pub fn take_request_schemas(request: &mut ChatRequest) {
-    if let Some(output) = request.output_schema.take() {
-        dispose_json_value_iteratively(output.schema);
-    }
-    for tool in &mut request.tools {
-        let schema = std::mem::replace(&mut tool.input_schema, Value::Null);
-        dispose_json_value_iteratively(schema);
     }
 }

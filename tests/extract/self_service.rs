@@ -26,14 +26,13 @@ use kanade::infrastructure::llm::governor::{
     BreakerState, CallKind, Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient,
     Outcome, Random, Role, RoleConfig,
 };
-use kanade::infrastructure::llm::{
-    ExecutionLimits, FakeAction, FakeProvider, Message, RetryPolicy,
-};
+use kanade::infrastructure::llm::{FakeAction, FakeProvider, Message};
 use serde_json::json;
 use tokio::time::Instant;
 
 use crate::fakes::{
-    ALIAS, CHANNEL, MY, PORTAL, World, after, client, filtered, kanade, local, message, now, reply,
+    ALIAS, CHANNEL, MY, PORTAL, World, after, client, filtered, kanade, local, message,
+    model_client, now, reply,
 };
 
 struct Fixed;
@@ -92,18 +91,7 @@ fn rewrite_client(
     };
     let governor = Arc::new(Governor::new(&config, Arc::new(Fixed)).expect("config"));
     let provider = Arc::new(FakeProvider::new(actions));
-    let retry = RetryPolicy {
-        total_deadline: Duration::from_secs(30),
-        max_attempts: 3,
-        backoff: Duration::from_millis(100),
-    };
-    let client = ModelClient::new(
-        governor,
-        provider.clone(),
-        ExecutionLimits::default(),
-        retry,
-    )
-    .expect("client");
+    let client = model_client(governor, provider.clone());
     (provider, Arc::new(client))
 }
 
@@ -224,6 +212,18 @@ fn reset() -> WeekReset {
     crate::fakes::config().week_reset()
 }
 
+/// The public portal open, in link-first or cards mode; the model moves a
+/// run on message 101, then answers the rewrite.
+async fn portal_world(link_first: bool) -> World {
+    World::self_service(vec![moved("101"), reply(REWRITTEN)], |config| {
+        if link_first {
+            config.self_service.mode = SelfServiceMode::LinkFirst;
+        }
+        config.self_service.public_portal_open = true;
+    })
+    .await
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_closed_portal_keeps_today_behaviour_and_spends_no_tip() {
     let world = World::self_service(vec![moved("101")], |config| {
@@ -253,11 +253,7 @@ async fn a_closed_portal_keeps_today_behaviour_and_spends_no_tip() {
 
 #[tokio::test(start_paused = true)]
 async fn link_first_with_the_portal_open_sends_only_the_link_and_one_lead_in() {
-    let world = World::self_service(vec![moved("101"), reply(REWRITTEN)], |config| {
-        config.self_service.mode = SelfServiceMode::LinkFirst;
-        config.self_service.public_portal_open = true;
-    })
-    .await;
+    let world = portal_world(true).await;
     let (events, _loop) = world.pipeline();
     events.send(post("101")).await.expect("send");
     after(91).await;
@@ -298,11 +294,7 @@ async fn link_first_with_the_portal_open_sends_only_the_link_and_one_lead_in() {
 
 #[tokio::test(start_paused = true)]
 async fn a_link_that_never_posted_gives_the_weekly_tip_back() {
-    let world = World::self_service(vec![moved("101"), reply(REWRITTEN)], |config| {
-        config.self_service.mode = SelfServiceMode::LinkFirst;
-        config.self_service.public_portal_open = true;
-    })
-    .await;
+    let world = portal_world(true).await;
     world.outbox.fail_posts.store(true, Ordering::SeqCst);
     let (events, _loop) = world.pipeline();
     events.send(post("101")).await.expect("send");
@@ -319,10 +311,7 @@ async fn a_link_that_never_posted_gives_the_weekly_tip_back() {
 
 #[tokio::test(start_paused = true)]
 async fn a_card_that_never_posted_gives_the_weekly_tip_back() {
-    let world = World::self_service(vec![moved("101"), reply(REWRITTEN)], |config| {
-        config.self_service.public_portal_open = true;
-    })
-    .await;
+    let world = portal_world(false).await;
     world.outbox.fail_posts.store(true, Ordering::SeqCst);
     let (events, _loop) = world.pipeline();
     events.send(post("101")).await.expect("send");
@@ -336,10 +325,7 @@ async fn a_card_that_never_posted_gives_the_weekly_tip_back() {
 
 #[tokio::test(start_paused = true)]
 async fn a_saved_card_waiting_for_a_repost_keeps_its_tip() {
-    let world = World::self_service(vec![moved("101"), reply(REWRITTEN)], |config| {
-        config.self_service.public_portal_open = true;
-    })
-    .await;
+    let world = portal_world(false).await;
     world.outbox.pending_posts.store(true, Ordering::SeqCst);
     let (events, _loop) = world.pipeline();
     events.send(post("101")).await.expect("send");
@@ -356,11 +342,7 @@ async fn a_saved_card_waiting_for_a_repost_keeps_its_tip() {
 
 #[tokio::test(start_paused = true)]
 async fn a_link_first_move_retires_the_older_card_for_its_run() {
-    let world = World::self_service(vec![moved("101"), reply(REWRITTEN)], |config| {
-        config.self_service.mode = SelfServiceMode::LinkFirst;
-        config.self_service.public_portal_open = true;
-    })
-    .await;
+    let world = portal_world(true).await;
     let older = world
         .scheduler
         .propose(ProposalRequest {
@@ -469,10 +451,7 @@ async fn a_refused_proposal_posts_no_card_or_link_and_spends_no_tip() {
     // The same self-service move that gets a link beside its card in
     // `cards_and_link_keeps_the_card_and_gives_the_lead_in_once_a_week`, but
     // the scheduler refuses the proposal up front.
-    let world = World::self_service(vec![moved("101"), reply(REWRITTEN)], |config| {
-        config.self_service.public_portal_open = true;
-    })
-    .await;
+    let world = portal_world(false).await;
     world.scheduler.refuse.store(true, Ordering::SeqCst);
     let (events, _loop) = world.pipeline();
     events.send(post("101")).await.expect("send");

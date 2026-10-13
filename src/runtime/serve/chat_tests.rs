@@ -16,7 +16,7 @@ use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Instant, sleep};
 use twilight_gateway::Event;
-use twilight_model::gateway::payload::incoming::{GuildCreate, MessageCreate, Ready};
+use twilight_model::gateway::payload::incoming::{GuildCreate, MessageCreate};
 
 use super::{
     api::{self, Composition},
@@ -244,39 +244,7 @@ fn tool_completion(name: &str, arguments: Value) -> Value {
 
 // ---- Gateway fixtures ----
 
-fn parse<T: serde::de::DeserializeOwned>(value: Value) -> T {
-    serde_json::from_value(value).expect("twilight fixture")
-}
-
-fn user_json(id: u64, name: &str, bot: bool) -> Value {
-    json!({
-        "id": id.to_string(), "username": name, "global_name": null,
-        "discriminator": "0", "avatar": null, "bot": bot,
-    })
-}
-
-fn ready() -> Event {
-    Event::Ready(parse::<Ready>(json!({
-        "application": { "id": "9", "flags": 0 },
-        "guilds": [],
-        "resume_gateway_url": "wss://gateway.invalid",
-        "session_id": "session",
-        "user": {
-            "id": SELF.to_string(), "username": "kanade", "discriminator": "0",
-            "avatar": null, "bot": true, "mfa_enabled": false,
-        },
-        "v": 10,
-    })))
-}
-
-fn role_json(id: u64) -> Value {
-    json!({
-        "color": 0,
-        "colors": { "primary_color": 0, "secondary_color": null, "tertiary_color": null },
-        "hoist": false, "id": id.to_string(), "managed": false, "mentionable": false,
-        "name": format!("role-{id}"), "permissions": "0", "position": 1, "flags": 0,
-    })
-}
+use super::live_tests::{parse, ready, role_json, user_json};
 
 fn channel_json(id: u64, kind: u8, parent: Option<u64>) -> Value {
     json!({

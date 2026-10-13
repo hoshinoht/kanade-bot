@@ -454,13 +454,28 @@ async fn rig_with(fake: Fake, config: DriverConfig, log: &MemoryScheduleStore) -
     }
 }
 
+async fn configured(steps: Vec<Step>, config: DriverConfig) -> Rig {
+    rig_with(Fake::new(steps), config, &MemoryScheduleStore::new()).await
+}
+
 async fn rig(steps: Vec<Step>) -> Rig {
-    rig_with(
-        Fake::new(steps),
-        DriverConfig::default(),
-        &MemoryScheduleStore::new(),
-    )
-    .await
+    configured(steps, DriverConfig::default()).await
+}
+
+/// A 50 ms stop grace before running answers are cut.
+fn quick_grace() -> DriverConfig {
+    DriverConfig {
+        stop_grace: Duration::from_millis(50),
+        ..DriverConfig::default()
+    }
+}
+
+/// [`quick_grace`], and 50 ms for what the cut answers still deliver.
+fn quick_stop() -> DriverConfig {
+    DriverConfig {
+        cut_budget: Duration::from_millis(50),
+        ..quick_grace()
+    }
 }
 
 fn asked(id: &str, member: &str, channel: &str, roles: &[&str]) -> Asked {
@@ -625,12 +640,7 @@ async fn a_full_queue_sheds_with_a_busy_reaction_and_a_refund() {
         ..DriverConfig::default()
     };
     let held = Arc::new(Notify::new());
-    let rig = rig_with(
-        Fake::new(vec![Step::Held(Arc::clone(&held), "a")]),
-        config,
-        &MemoryScheduleStore::new(),
-    )
-    .await;
+    let rig = configured(vec![Step::Held(Arc::clone(&held), "a")], config).await;
     for (id, member) in [("1001", "11"), ("1002", "12"), ("1003", "13")] {
         assert!(rig.driver.offer(asked(id, member, CHANNEL, &[ROLE])));
     }
@@ -837,16 +847,7 @@ async fn the_question_timeout_must_stay_below_the_clean_retry_window() {
 
 #[tokio::test]
 async fn shutdown_cuts_running_questions_refunds_and_concludes_them() {
-    let config = DriverConfig {
-        stop_grace: Duration::from_millis(50),
-        ..DriverConfig::default()
-    };
-    let rig = rig_with(
-        Fake::new(vec![Step::Forever]),
-        config,
-        &MemoryScheduleStore::new(),
-    )
-    .await;
+    let rig = configured(vec![Step::Forever], quick_grace()).await;
     assert!(rig.driver.offer(asked("1001", "11", CHANNEL, &[ROLE])));
     rig.settle().await;
     assert!(rig.driver.offer(asked("1002", "12", CHANNEL, &[ROLE])));
@@ -1076,17 +1077,7 @@ async fn a_keycap_is_removed_only_after_it_was_added() {
 
 #[tokio::test]
 async fn shutdown_is_bounded_even_when_discord_hangs() {
-    let config = DriverConfig {
-        stop_grace: Duration::from_millis(50),
-        cut_budget: Duration::from_millis(50),
-        ..DriverConfig::default()
-    };
-    let rig = rig_with(
-        Fake::new(vec![Step::Forever]),
-        config,
-        &MemoryScheduleStore::new(),
-    )
-    .await;
+    let rig = configured(vec![Step::Forever], quick_stop()).await;
     assert!(rig.driver.offer(asked("1001", "11", CHANNEL, &[ROLE])));
     assert!(rig.driver.offer(asked("1002", "12", CHANNEL, &[ROLE])));
     rig.settle().await;
@@ -1444,15 +1435,7 @@ async fn rejected_cards_are_silent_when_the_scope_fails_or_the_channel_is_busy()
 #[tokio::test]
 async fn rejected_cards_share_a_thirty_second_channel_cooldown_and_shutdown_drains_them() {
     let held = Arc::new(Notify::new());
-    let rig = rig_with(
-        Fake::new(vec![Step::Held(Arc::clone(&held), "late")]),
-        DriverConfig {
-            stop_grace: Duration::from_millis(50),
-            ..DriverConfig::default()
-        },
-        &MemoryScheduleStore::new(),
-    )
-    .await;
+    let rig = configured(vec![Step::Held(Arc::clone(&held), "late")], quick_grace()).await;
     rig.driver.rejected(rejected_card("9001", CHANNEL)).await;
     rig.driver.rejected(rejected_card("9002", CHANNEL)).await;
     rig.settle().await;
@@ -1502,16 +1485,7 @@ async fn a_panicking_rejection_follow_up_logs_and_releases_its_channel() {
 
 #[tokio::test]
 async fn a_hard_shutdown_abort_of_a_rejection_follow_up_logs_and_joins_it() {
-    let rig = rig_with(
-        Fake::new(vec![Step::Forever]),
-        DriverConfig {
-            stop_grace: Duration::from_millis(50),
-            cut_budget: Duration::from_millis(50),
-            ..DriverConfig::default()
-        },
-        &MemoryScheduleStore::new(),
-    )
-    .await;
+    let rig = configured(vec![Step::Forever], quick_stop()).await;
     let _stuck = rig.fake_discord().hold(Op::Edit);
     rig.driver.rejected(rejected_card("9001", CHANNEL)).await;
     rig.settle().await;

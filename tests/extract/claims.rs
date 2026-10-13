@@ -10,21 +10,14 @@ use std::time::Duration;
 
 use kanade::domain::model_log::{ExtractionOutcome, ModelLogStore};
 use kanade::extract::pipeline::{CALL_CANCELLED, MESSAGES_UNWRITABLE, MessageEvent};
-use kanade::extract::rescan::{RescanRequest, Rescans};
+use kanade::extract::rescan::RescanRequest;
 use kanade::infrastructure::llm::FakeAction;
 use serde_json::Value;
 
 use crate::fakes::{
-    CHANNEL, Core, FakeHistory, MY, OTHER, World, after, local, message, nothing, reply,
+    CHANNEL, Core, FakeHistory, Jobs, MY, OTHER, World, after, local, message, nothing, reply,
+    rescans as jobs_over, start,
 };
-
-type Jobs = Rescans<
-    kanade::infrastructure::store::MemoryScheduleStore,
-    crate::fakes::Model,
-    crate::fakes::Scheduler,
-    crate::fakes::Recorder,
-    FakeHistory,
->;
 
 const RUNS: usize = 10;
 const M: &str = "101";
@@ -81,15 +74,6 @@ fn startup() -> RescanRequest {
 
 fn jobs(extractor: &Arc<Core>) -> Arc<Jobs> {
     jobs_over(extractor, FakeHistory::default())
-}
-
-fn jobs_over(extractor: &Arc<Core>, history: FakeHistory) -> Arc<Jobs> {
-    Arc::new(Rescans::new(extractor.clone(), Arc::new(history)))
-}
-
-fn start(jobs: &Arc<Jobs>) -> tokio::task::JoinHandle<()> {
-    let worker = jobs.clone();
-    tokio::spawn(async move { worker.run().await })
 }
 
 /// The first channel result of a finished job.

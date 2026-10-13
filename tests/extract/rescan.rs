@@ -10,16 +10,9 @@ use kanade::infrastructure::llm::FakeAction;
 use serde_json::Value;
 
 use crate::fakes::{
-    CHANNEL, Core, FakeHistory, MY, OTHER, STRANGER, World, after, local, message, nothing, reply,
+    CHANNEL, FakeHistory, MY, OTHER, STRANGER, World, after, local, message, nothing, reply,
+    rescans as jobs, start,
 };
-
-type Jobs = Rescans<
-    kanade::infrastructure::store::MemoryScheduleStore,
-    crate::fakes::Model,
-    crate::fakes::Scheduler,
-    crate::fakes::Recorder,
-    FakeHistory,
->;
 
 fn moved(evidence: &str) -> FakeAction {
     reply(&format!(
@@ -38,15 +31,6 @@ fn request(channels: &[&str], window: &str) -> RescanRequest {
         requested_by: Some(MY.into()),
         unprocessed_only: false,
     }
-}
-
-fn jobs(extractor: &Arc<Core>, history: FakeHistory) -> Arc<Jobs> {
-    Arc::new(Rescans::new(extractor.clone(), Arc::new(history)))
-}
-
-fn start(jobs: &Arc<Jobs>) -> tokio::task::JoinHandle<()> {
-    let worker = jobs.clone();
-    tokio::spawn(async move { worker.run().await })
 }
 
 fn history(
