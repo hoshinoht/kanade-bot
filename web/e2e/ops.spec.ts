@@ -1,15 +1,9 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, csrf, expect, test, choose, expectValue, optionLabels, optionIn, openList, toggleOptions, unconditional } from './support';
+import { ADMIN, csrf, expect, go, test, toast, choose, expectValue, optionLabels, optionIn, openList, toggleOptions, unconditional } from './support';
 
 // Knowledge (tracked boss/knowledge, schema v2), Inbox, Extractions + rescan,
 // Chat, Limits, History (revert / restore / by member / checkpoints) and the
 // run pane's change log. Mock clock pinned (playwright.config.ts).
-
-async function go(page: Page, path: string) {
-  await page.goto(`${ADMIN}${path}${path.includes('?') ? '&' : '?'}sw=off`);
-}
-
-const toast = (page: Page, text: string | RegExp) => page.getByRole('group', { name: 'Notification' }).filter({ hasText: text });
 
 test('knowledge: opens on the difficulty the guild runs, switches, credits sources', async ({ page }) => {
   await go(page, '/bosses/MaleficStar/knowledge');

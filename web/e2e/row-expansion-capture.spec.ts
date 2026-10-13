@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, REAL_ART, expect, settle, test } from './support';
+import { ADMIN, REAL_ART, expect, settle, test, useLook } from './support';
 
 const OUT = `e2e/.captures/${REAL_ART ? 'real' : 'synthetic'}/row-expansion`;
 
@@ -17,10 +17,7 @@ for (const size of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) 
   test(`capture row expansion ${size.width}×${size.height}`, async ({ page }) => {
     test.setTimeout(120_000);
     await page.setViewportSize(size);
-    await page.addInitScript(() => {
-      localStorage.setItem('colorway', 'blossom');
-      localStorage.setItem('theme', 'light');
-    });
+    await useLook(page, 'blossom');
     const tag = `${size.width}x${size.height}`;
 
     await page.goto(`${ADMIN}/fixed?sw=off`);

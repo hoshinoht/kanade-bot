@@ -1,14 +1,8 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, csrf, expect, test, choose, expectValue, optionLabels, unconditional } from './support';
+import { ADMIN, csrf, expect, go, test, toast, choose, expectValue, optionLabels, unconditional, useLook } from './support';
 
 // Fixed, Bosses, Members, Reminders and the run sheet's weekly-timing tools,
 // against the mock pinned to Tue 29 Sep 2026 12:00 (playwright.config.ts).
-
-async function go(page: Page, path: string) {
-  await page.goto(`${ADMIN}${path}${path.includes('?') ? '&' : '?'}sw=off`);
-}
-
-const toast = (page: Page, text: string | RegExp) => page.getByRole('group', { name: 'Notification' }).filter({ hasText: text });
 
 test('fixed: table, bosscheck, add a timing, and its runs reach the board', async ({ page }) => {
   await go(page, '/fixed');
@@ -777,10 +771,7 @@ for (const [path, rows, pane, active] of [
   ['/members', '.memberlist__row', '.memberlist', '.memberlist__row--active'],
 ] as const) {
   test(`${path}: a hovered row stands apart from the row, the pane and the selection`, async ({ page }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem('colorway', 'blossom');
-      localStorage.setItem('theme', 'light');
-    });
+    await useLook(page, 'blossom');
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`${ADMIN}${path}?sw=off`);
     await page.locator(rows).first().click();
@@ -806,10 +797,7 @@ for (const [path, rows, pane, active] of [
 // fill shows selection and hover, its cells drawing none -- with one button
 // per row; flags in their own case; Add has its plus.
 test('fixed: whole-row selection and hover, quiet flags, the Add key with its plus', async ({ page }) => {
-  await page.addInitScript(() => {
-    localStorage.setItem('colorway', 'blossom');
-    localStorage.setItem('theme', 'light');
-  });
+  await useLook(page, 'blossom');
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(`${ADMIN}/fixed?sw=off`);
   await expect(page.locator('[data-fixed-add] svg[data-icon="plus"]')).toHaveCount(1);

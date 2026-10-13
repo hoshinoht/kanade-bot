@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import type { Locator, Page } from '@playwright/test';
-import { ADMIN, csrf, expect, settle, test } from './support';
+import { ADMIN, csrf, expect, settle, test, useLook } from './support';
 
 // Character data (module `character_data`; boards in docs/research/2026-10-12-chardata-mockups)
 // over the mock's invented seed: MikaBish (ch-s3) linked by today's 04:01 batch, MikaHero
@@ -421,10 +421,7 @@ test('chardata capture', async ({ page }) => {
   test.skip(!process.env.KANADE_CHARDATA_CAPTURES, 'set KANADE_CHARDATA_CAPTURES=1 to write the review captures');
   test.setTimeout(300_000);
   mkdirSync(CAPTURES, { recursive: true });
-  await page.addInitScript(() => {
-    localStorage.setItem('colorway', 'blossom');
-    localStorage.setItem('theme', 'light');
-  });
+  await useLook(page, 'blossom');
   const reset = async () => {
     await page.request.post(`${ADMIN}/api/admin/reset`);
   };

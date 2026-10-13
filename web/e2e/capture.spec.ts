@@ -1,55 +1,31 @@
 import type { Page } from '@playwright/test';
 import { busyWeek } from './busy-week';
-import { ADMIN, PUBLIC, REAL_ART, expect, settle as settleMotion, setPortal, signInPublic, test, choose, expectValue } from './support';
+// Fonts and on-screen images decoded (lazy ones off-screen never decode), as the fidelity boards wait.
+import { settle } from './fidelity-kit';
+import { ADMIN, CAPTURE_VIEWPORTS, LOOKS, PUBLIC, REAL_ART, expect, settle as settleMotion, setPortal, signInPublic, test, choose, expectValue, useLook } from './support';
 
 // Reference captures for the v4 comparison, both git-ignored. Default: the
 // synthetic placeholder art (fixtures, not the game's art) into
 // e2e/.captures/synthetic/. With KANADE_REAL_ART=1: the local, private art
 // into e2e/.captures/real/ for the user's visual review.
 const OUT = REAL_ART ? 'e2e/.captures/real' : 'e2e/.captures/synthetic';
-const VIEWPORTS = [
-  { name: 'wide', width: 1280, height: 800 },
-  { name: 'narrow', width: 390, height: 844 },
-];
-const LOOKS = [
-  { name: 'marigold-light', colorway: 'marigold', theme: 'light' },
-  { name: 'marigold-dark', colorway: 'marigold', theme: 'dark' },
-  { name: 'twilight-dark', colorway: 'twilight', theme: 'dark' },
-  // The face the user reviews the live site in.
-  { name: 'blossom-light', colorway: 'blossom', theme: 'light' },
-];
 
 // Each capture is independent (own files, fresh mock), and this file is the
 // suite's longest: spread its tests across workers.
 test.describe.configure({ mode: 'parallel' });
-
-async function settle(page: Page) {
-  await page.evaluate(async () => {
-    await document.fonts.ready;
-    // Lazy images outside the viewport never decode; wait for the rest, briefly.
-    const eager = [...document.images].filter((i) => i.loading !== 'lazy' || i.getBoundingClientRect().top < innerHeight);
-    await Promise.race([Promise.all(eager.map((i) => i.decode().catch(() => {}))), new Promise((r) => setTimeout(r, 3000))]);
-  });
-}
 
 async function shot(page: Page, name: string) {
   await settle(page);
   await page.screenshot({ path: `${OUT}/${name}.png`, animations: 'disabled' });
 }
 
-for (const vp of VIEWPORTS) {
+for (const vp of CAPTURE_VIEWPORTS) {
   for (const look of LOOKS) {
     test(`capture ${vp.name} ${look.name}`, async ({ page }) => {
       // About thirty settled shots: well past 30 s on a loaded 4-vCPU runner.
       test.setTimeout(120_000);
       await page.setViewportSize({ width: vp.width, height: vp.height });
-      await page.addInitScript(
-        ([c, t]) => {
-          localStorage.setItem('colorway', c!);
-          localStorage.setItem('theme', t!);
-        },
-        [look.colorway, look.theme],
-      );
+      await useLook(page, look.colorway, look.theme);
       const tag = `${vp.name}-${look.name}`;
 
       await page.goto(`${ADMIN}/?sw=off`);
@@ -141,13 +117,7 @@ for (const vp of VIEWPORTS) {
     // The member portal (D4-A, D5-A): Sign in, Denied, Account, Session ended, Closed.
     test(`capture public portal ${vp.name} ${look.name}`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
-      await page.addInitScript(
-        ([c, t]) => {
-          localStorage.setItem('colorway', c!);
-          localStorage.setItem('theme', t!);
-        },
-        [look.colorway, look.theme],
-      );
+      await useLook(page, look.colorway, look.theme);
       const tag = `${vp.name}-${look.name}`;
 
       await page.goto(`${PUBLIC}/?sw=off`);
@@ -181,13 +151,7 @@ for (const vp of VIEWPORTS) {
 // keyboard focus. Full frame plus a close crop around the card.
 for (const look of LOOKS) {
   test(`capture admin grip states ${look.name}`, async ({ page }) => {
-    await page.addInitScript(
-      ([c, t]) => {
-        localStorage.setItem('colorway', c!);
-        localStorage.setItem('theme', t!);
-      },
-      [look.colorway, look.theme],
-    );
+    await useLook(page, look.colorway, look.theme);
     await page.goto(`${ADMIN}/?sw=off`);
     const card = page.locator('[data-run="r-carling"]');
     await expect(card).toBeVisible();
@@ -218,7 +182,7 @@ for (const look of LOOKS) {
 
 // A run on every day squeezes the columns to their 230 px track: 1, 2 and 3
 // bosses beside the grip.
-for (const vp of VIEWPORTS) {
+for (const vp of CAPTURE_VIEWPORTS) {
   test(`capture admin busy week grip ${vp.name}`, async ({ page }) => {
     await page.setViewportSize({ width: vp.width, height: vp.height });
     await busyWeek(page);
@@ -287,10 +251,7 @@ for (const vp of [
   test(`capture v4 comparison set ${vp.name}`, async ({ page }) => {
     test.skip(!REAL_ART, 'real art only');
     await page.setViewportSize({ width: vp.width, height: vp.height });
-    await page.addInitScript(() => {
-      localStorage.setItem('colorway', 'marigold');
-      localStorage.setItem('theme', 'light');
-    });
+    await useLook(page, 'marigold');
     for (const [name, path] of COMPARE) {
       await page.goto(`${ADMIN}${path}${path.includes('?') ? '&' : '?'}sw=off`);
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
@@ -308,10 +269,7 @@ for (const vp of [
 // wide and narrow) and filtered Chat / Extractions.
 test('capture batch 6 layout set', async ({ page }) => {
   test.setTimeout(120_000);
-  await page.addInitScript(() => {
-    localStorage.setItem('colorway', 'marigold');
-    localStorage.setItem('theme', 'light');
-  });
+  await useLook(page, 'marigold');
   for (const [w, h] of [[1280, 800], [1000, 670], [1280, 600], [390, 844], [844, 390]] as const) {
     await page.setViewportSize({ width: w, height: h });
     await page.goto(`${ADMIN}/?sw=off`);
@@ -340,10 +298,7 @@ test('capture batch 6 layout set', async ({ page }) => {
 // Config → Run lengths section.
 test('capture planner time drops and run lengths', async ({ page }) => {
   test.setTimeout(120_000);
-  await page.addInitScript(() => {
-    localStorage.setItem('colorway', 'marigold');
-    localStorage.setItem('theme', 'light');
-  });
+  await useLook(page, 'marigold');
   await page.goto(`${ADMIN}/?sw=off`);
   await expect(page.locator('.board[data-hydrated]')).toBeVisible();
   const from = (await page.locator('[data-run="r-fa"]').boundingBox())!;
@@ -360,7 +315,7 @@ test('capture planner time drops and run lengths', async ({ page }) => {
   await expect(page.getByText(/Moved HFA/)).toBeVisible();
   await shot(page, 'admin-planner-clash-wide-marigold-light');
 
-  for (const vp of VIEWPORTS) {
+  for (const vp of CAPTURE_VIEWPORTS) {
     await page.setViewportSize({ width: vp.width, height: vp.height });
     await page.goto(`${ADMIN}/config?section=run-lengths&sw=off`);
     await expect(page.getByRole('heading', { name: 'Run lengths' })).toBeVisible();
@@ -373,10 +328,7 @@ test('capture planner time drops and run lengths', async ({ page }) => {
 // card, and the run sheet's "Swap timing with…" picker, wide and narrow.
 test('capture planner swap', async ({ page }) => {
   test.setTimeout(120_000);
-  await page.addInitScript(() => {
-    localStorage.setItem('colorway', 'marigold');
-    localStorage.setItem('theme', 'light');
-  });
+  await useLook(page, 'marigold');
   await page.goto(`${ADMIN}/?sw=off`);
   await expect(page.locator('.board[data-hydrated]')).toBeVisible();
   const from = (await page.locator('[data-run="r-fa"]').boundingBox())!;
@@ -392,7 +344,7 @@ test('capture planner swap', async ({ page }) => {
   await page.keyboard.press('Escape');
   await page.mouse.up();
 
-  for (const vp of VIEWPORTS) {
+  for (const vp of CAPTURE_VIEWPORTS) {
     await page.setViewportSize({ width: vp.width, height: vp.height });
     await page.goto(`${ADMIN}/?sw=off`);
     await page.locator('[data-run="r-fa"] .plan-card__open').click();
@@ -439,7 +391,7 @@ for (const groups of ['three', 'default'] as const) {
 
 // The profanity guardrail (user decision 2026-10-05): Config → Profanity with
 // the built-in word search open, and the three profanity turns in Chat.
-for (const vp of VIEWPORTS) {
+for (const vp of CAPTURE_VIEWPORTS) {
   for (const look of [
     { name: 'blossom-light', colorway: 'blossom', theme: 'light' },
     { name: 'blossom-dark', colorway: 'blossom', theme: 'dark' },

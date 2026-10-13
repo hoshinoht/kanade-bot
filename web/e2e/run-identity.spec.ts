@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import type { Week } from '@kanade/api-types';
-import { ADMIN, REAL_ART, expect, settle, test, unconditional } from './support';
+import { ADMIN, CAPTURE_VIEWPORTS, REAL_ART, expect, settle, test, unconditional, useLook } from './support';
 
 // The run pane's and the full sheet's identity card: entry art confined to the
 // card (one picture, or up to three angled slices in run order), the "View
@@ -219,24 +219,14 @@ const LOOKS = [
   { name: 'blossom-light', colorway: 'blossom', theme: 'light' },
   { name: 'twilight-dark', colorway: 'twilight', theme: 'dark' },
 ];
-const VIEWPORTS = [
-  { name: 'wide', width: 1280, height: 800 },
-  { name: 'narrow', width: 390, height: 844 },
-];
 
 test.describe('captures', () => {
   test.describe.configure({ mode: 'parallel' });
-  for (const vp of VIEWPORTS) {
+  for (const vp of CAPTURE_VIEWPORTS) {
     for (const look of LOOKS) {
       test(`capture run identity ${vp.name} ${look.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
-        await page.addInitScript(
-          ([c, t]) => {
-            localStorage.setItem('colorway', c!);
-            localStorage.setItem('theme', t!);
-          },
-          [look.colorway, look.theme],
-        );
+        await useLook(page, look.colorway, look.theme);
         const tag = `${vp.name}-${look.name}`;
         const shot = async (name: string) => {
           await page.evaluate(() => Promise.all([...document.images].map((i) => i.decode().catch(() => {}))));

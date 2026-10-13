@@ -1,15 +1,11 @@
-import type { Locator, Page } from '@playwright/test';
-import { ADMIN, expect, test } from './support';
+import type { Locator } from '@playwright/test';
+import { expect, go, test } from './support';
 
 // Member and admin portraits (`/api/admin/members/{id}/avatar`,
 // `/api/admin/me/avatar`): the mock serves generated stand-in art for most
 // members and the server's monogram for 1005, 1009 and 1014. Each portrait
 // is a same-origin image under the strict CSP; the letter stays only when an
 // image cannot load.
-
-async function go(page: Page, path: string) {
-  await page.goto(`${ADMIN}${path}${path.includes('?') ? '&' : '?'}sw=off`);
-}
 
 /** The portrait's image has loaded (decoded, non-zero size). */
 async function loaded(avatar: Locator, src: RegExp) {

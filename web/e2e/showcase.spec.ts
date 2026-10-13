@@ -1,4 +1,4 @@
-import { ADMIN, expect, settle, test } from './support';
+import { ADMIN, CAPTURE_VIEWPORTS, LOOKS, expect, settle, test, useLook } from './support';
 
 // The core primitives showcase (devtools/pwa-mock/showcase/): every core
 // primitive once, captured per colourway into the git-ignored
@@ -7,32 +7,16 @@ import { ADMIN, expect, settle, test } from './support';
 // showcase`, then `KANADE_SHOWCASE=1 bunx playwright test e2e/showcase.spec.ts`.
 const ENABLED = process.env.KANADE_SHOWCASE === '1';
 const OUT = 'e2e/.captures/showcase';
-const VIEWPORTS = [
-  { name: 'wide', width: 1280, height: 800 },
-  { name: 'narrow', width: 390, height: 844 },
-];
-const LOOKS = [
-  { name: 'marigold-light', colorway: 'marigold', theme: 'light' },
-  { name: 'marigold-dark', colorway: 'marigold', theme: 'dark' },
-  { name: 'twilight-dark', colorway: 'twilight', theme: 'dark' },
-  { name: 'blossom-light', colorway: 'blossom', theme: 'light' },
-];
 
 test.describe('core primitives showcase', () => {
   test.skip(!ENABLED, 'run with KANADE_SHOWCASE=1 after `bun run showcase`');
   test.describe.configure({ mode: 'parallel' });
 
-  for (const vp of VIEWPORTS) {
+  for (const vp of CAPTURE_VIEWPORTS) {
     for (const look of LOOKS) {
       test(`showcase ${vp.name} ${look.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
-        await page.addInitScript(
-          ([c, t]) => {
-            localStorage.setItem('colorway', c!);
-            localStorage.setItem('theme', t!);
-          },
-          [look.colorway, look.theme],
-        );
+        await useLook(page, look.colorway, look.theme);
         await page.goto(`${ADMIN}/__showcase/`);
         await expect(page.getByRole('heading', { level: 1, name: 'Core primitives' })).toBeVisible();
         await page.evaluate(() => document.fonts.ready);

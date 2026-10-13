@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { COLORWAYS } from '../packages/tokens/src/colorways';
-import { ADMIN, HEADING, PUBLIC, expect, settle, setPortal, signInPublic, test, choose } from './support';
+import { ADMIN, HEADING, PUBLIC, expect, settle, setPortal, signInPublic, test, choose, useLook } from './support';
 
 // Every test is independent (the fixture resets the mock), so the looks spread across workers.
 test.describe.configure({ mode: 'parallel' });
@@ -18,13 +18,6 @@ async function serious(page: Page, label: string, rules?: string[]) {
   return result.violations.length;
 }
 
-async function look(page: Page, colorway: string, theme: string) {
-  await page.addInitScript(([c, t]) => {
-    localStorage.setItem('colorway', c!);
-    localStorage.setItem('theme', t!);
-  }, [colorway, theme]);
-}
-
 /** The default colourway gets the full walk (all rules, every screen) in both faces. */
 const FULL = 'marigold';
 const THEMES = ['light', 'dark'] as const;
@@ -39,7 +32,7 @@ for (const [colorway, theme] of CONTRAST_LOOKS) {
     // CI runner, which tipped over the default 30 s.
     test.setTimeout(60_000);
     const contrast = (label: string) => serious(page, label, ['color-contrast']);
-    await look(page, colorway, theme);
+    await useLook(page, colorway, theme);
     await page.goto(`${PUBLIC}/?sw=off`);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(HEADING.public);
     // Dynamic: wait for the avatar's palette; later pages paint it from the cache.
@@ -255,7 +248,7 @@ for (const theme of THEMES) {
     test(`axe: ${part.name}, ${FULL} ${theme}`, async ({ page }) => {
       // About ten full scans each: past the default 30 s on a loaded CI runner.
       test.setTimeout(120_000);
-      await look(page, FULL, theme);
+      await useLook(page, FULL, theme);
       await part.walk(page);
     });
   }

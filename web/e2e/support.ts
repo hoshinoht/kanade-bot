@@ -34,6 +34,37 @@ export async function setPortal(request: APIRequestContext, open: boolean): Prom
   expect(response.status()).toBe(200);
 }
 
+/** Opens an admin path with the service worker off. */
+export async function go(page: Page, path: string): Promise<void> {
+  await page.goto(`${ADMIN}${path}${path.includes('?') ? '&' : '?'}sw=off`);
+}
+
+/** The toast saying `text`. */
+export const toast = (page: Page, text: string | RegExp) => page.getByRole('group', { name: 'Notification' }).filter({ hasText: text });
+
+/** Every page this test opens starts in this colourway and theme (seeded before the app reads them). */
+export async function useLook(page: Page, colorway: string, theme = 'light'): Promise<void> {
+  await page.addInitScript(
+    ([c, t]) => {
+      localStorage.setItem('colorway', c!);
+      localStorage.setItem('theme', t!);
+    },
+    [colorway, theme],
+  );
+}
+
+/** The capture specs' frames and faces (blossom light is the face the user reviews the live site in). */
+export const CAPTURE_VIEWPORTS = [
+  { name: 'wide', width: 1280, height: 800 },
+  { name: 'narrow', width: 390, height: 844 },
+];
+export const LOOKS = [
+  { name: 'marigold-light', colorway: 'marigold', theme: 'light' },
+  { name: 'marigold-dark', colorway: 'marigold', theme: 'dark' },
+  { name: 'twilight-dark', colorway: 'twilight', theme: 'dark' },
+  { name: 'blossom-light', colorway: 'blossom', theme: 'light' },
+];
+
 export interface Violation {
   directive: string;
   blocked: string;
