@@ -5,8 +5,8 @@ use std::{
 };
 
 use kanade::chat::persona::{
-    MAX_PROFILE_FILES, PersonaError, PersonaSnapshot, PersonaStore, ProfileQuery, ReloadError,
-    SelectionSource,
+    MAX_PROFILE_FILES, PersonaError, PersonaId, PersonaRoot, PersonaSnapshot, PersonaStore,
+    ProfileQuery, ReloadError, SelectionSource,
 };
 
 use crate::support::{Fixture, bundle, catalog, pid, prof, profile};
@@ -274,38 +274,21 @@ fn identity_changes_signal_history_clearing_but_profile_changes_do_not() {
     let fixture = with_catalog();
     let root = fixture.root();
     let store = PersonaStore::new(PersonaSnapshot::startup(&root, Some(&pid("alpha"))));
-    let ok = |_: &kanade::chat::persona::PersonaId| Ok::<_, ()>(());
+    fn changed(store: &PersonaStore, root: &PersonaRoot, id: &str) -> bool {
+        let ok = |_: &PersonaId| Ok::<_, ()>(());
+        store.reload(root, &pid(id), ok).unwrap().identity_changed
+    }
 
     fixture.write("profiles/style.yaml", profile("style", Some("new")));
-    assert!(
-        !store
-            .reload(&root, &pid("alpha"), ok)
-            .unwrap()
-            .identity_changed
-    );
+    assert!(!changed(&store, &root, "alpha"));
     fixture.write(
         "bundles/alpha.yaml",
         bundle("alpha", "Alpha").replace("Synthetic behaviour", "Edited behaviour"),
     );
-    assert!(
-        !store
-            .reload(&root, &pid("alpha"), ok)
-            .unwrap()
-            .identity_changed
-    );
+    assert!(!changed(&store, &root, "alpha"));
     fixture.write("bundles/alpha.yaml", bundle("alpha", "Renamed"));
-    assert!(
-        store
-            .reload(&root, &pid("alpha"), ok)
-            .unwrap()
-            .identity_changed
-    );
-    assert!(
-        store
-            .reload(&root, &pid("beta"), ok)
-            .unwrap()
-            .identity_changed
-    );
+    assert!(changed(&store, &root, "alpha"));
+    assert!(changed(&store, &root, "beta"));
 
     // Recovering from a disabled startup is an identity change.
     let empty = Fixture::new();
@@ -313,12 +296,7 @@ fn identity_changes_signal_history_clearing_but_profile_changes_do_not() {
     let disabled = PersonaStore::new(PersonaSnapshot::startup(&empty.root(), None));
     empty.write("catalog.yaml", catalog("alpha", &[("alpha", &[])]));
     empty.write("bundles/alpha.yaml", bundle("alpha", "Alpha"));
-    assert!(
-        disabled
-            .reload(&empty.root(), &pid("alpha"), ok)
-            .unwrap()
-            .identity_changed
-    );
+    assert!(changed(&disabled, &empty.root(), "alpha"));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
