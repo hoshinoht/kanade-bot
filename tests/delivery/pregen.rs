@@ -23,7 +23,7 @@ use kanade::chat::nudge::{
 use kanade::domain::history::Origin;
 use kanade::domain::ids::RandomIds;
 use kanade::domain::model_log::{RewriteFilter, RewriteLogStore, RewriteStage};
-use kanade::domain::notify::{DedupeKey, DeliveryJournal, DeliveryTarget};
+use kanade::domain::notify::{DedupeKey, DeliveryTarget};
 use kanade::domain::schedule::RunStatus;
 use kanade::infrastructure::store::MemoryScheduleStore;
 use tokio::sync::watch;
@@ -33,7 +33,7 @@ use crate::cards::{
     shows_phrase, world,
 };
 use crate::scenarios::{self, now, previous_week, week};
-use crate::support::{self, seed_digest, with_lease};
+use crate::support::{self, mark_digest_week, seed_digest};
 
 /// A Kalos countdown firing at `at`; returns its record key.
 async fn countdown_at(store: &MemoryScheduleStore, at: DateTime<Utc>) -> String {
@@ -605,13 +605,7 @@ async fn the_digest_phrase_is_pregenerated_only_for_an_unposted_coming_week() {
     let legacy = Arc::new(MemoryScheduleStore::new());
     seed_digest(&*legacy, week(), "222", "7001", previous_week()).await;
     let marked = Arc::new(MemoryScheduleStore::new());
-    with_lease(&*marked, week(), async |lease| {
-        marked
-            .record_digest_week(lease, week(), week())
-            .await
-            .expect("digest marker");
-    })
-    .await;
+    mark_digest_week(&*marked, week(), week()).await;
     for store in [legacy, marked] {
         assert_eq!(
             pregen(&store, &world, &cards, before_reset).pass().await,

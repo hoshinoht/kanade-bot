@@ -49,29 +49,13 @@ async fn each_boss_week_gets_one_automatic_checkpoint() {
     on_both_stores!(each_week_gets_one_checkpoint);
 }
 
-async fn raw(dir: &TempDir, sql: &str) {
-    use sqlx::sqlite::SqliteConnectOptions;
-    use sqlx::{ConnectOptions, Connection};
-
-    let mut conn = SqliteConnectOptions::new()
-        .filename(dir.config().db_path)
-        .connect()
-        .await
-        .expect("raw connection");
-    sqlx::raw_sql(sql)
-        .execute(&mut conn)
-        .await
-        .expect("raw sql");
-    conn.close().await.expect("close");
-}
-
 #[tokio::test]
 async fn a_failed_checkpoint_never_aborts_the_tick_and_is_retried() {
     let dir = TempDir::new();
     let store = dir.open().await;
     let world = world();
     // Break checkpoint writes behind the store's back.
-    raw(&dir, "DROP TABLE checkpoints;").await;
+    dir.raw("DROP TABLE checkpoints;").await;
     let mut delivery = delivery(&store, &world, &world.fake);
     delivery.tick_at(now()).await.expect("the tick still runs");
     assert!(
@@ -84,8 +68,7 @@ async fn a_failed_checkpoint_never_aborts_the_tick_and_is_retried() {
         world.alerts.alerts()
     );
 
-    raw(
-        &dir,
+    dir.raw(
         "CREATE TABLE checkpoints (
             id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE,
             kind TEXT NOT NULL CHECK (kind IN ('auto', 'admin')),

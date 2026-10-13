@@ -24,8 +24,8 @@ use kanade::infrastructure::store::MemoryScheduleStore;
 use twilight_model::id::Id;
 
 use crate::cards::{
-    STAR_COLOUR, allowed, art_dir, created, due, edits, fields, kit, pictures, run, tonight,
-    uploads, world,
+    STAR_COLOUR, allowed, art_dir, created, due, edits, fields, kit, pictures, refresher, run,
+    tonight, uploads, world,
 };
 use crate::intercept::Intercept;
 use crate::scenarios::{self, HOME, POST, World, now};
@@ -297,13 +297,8 @@ async fn reactions_and_refresh_follow_the_run<S: Store + DebugCardStore + 'stati
     assert_eq!(support::snapshot(&*store).await.rsvps, rsvps);
     // The day-of test card is re-rendered with its prefix; the amend text is not.
     let refresh = CardRefresh {
-        store: Arc::clone(&store),
-        transport: Arc::clone(&fake),
-        members: Arc::new(world.roster.clone()),
-        cards: kit(None),
-        policy: scenarios::config().policy,
-        quiet: Arc::new(AtomicBool::new(false)),
         now: Arc::new(now),
+        ..refresher(&store, &fake, &world, kit(None))
     };
     refresh.refresh(std::slice::from_ref(&run_id)).await;
     let edited = edits(&fake);

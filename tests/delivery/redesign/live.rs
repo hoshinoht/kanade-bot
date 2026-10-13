@@ -5,14 +5,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::TimeDelta;
-use kanade::bot::delivery::CardRefresh;
 use kanade::bot::delivery::cards::redesign::OPEN_IN_PORTAL;
 use kanade::bot::delivery::cards::{CardKit, V2Kit};
 use kanade::domain::settings::MessageStyle;
 use kanade::infrastructure::store::MemoryScheduleStore;
 use twilight_model::channel::message::Component;
 
-use crate::cards::{answer, art_dir, created, edits, kit, pictures, seed_day_of, world};
+use crate::cards::{answer, art_dir, created, edits, kit, pictures, refresher, seed_day_of, world};
 use crate::scenarios::{self, now};
 use crate::support;
 
@@ -68,15 +67,7 @@ async fn the_tick_posts_and_refresh_edits_in_the_live_style() {
 
     // An answer re-renders the card: the same names, nothing uploaded.
     answer(&*store, &star, "1002", true, now() + TimeDelta::minutes(1)).await;
-    let refresh = CardRefresh {
-        store: Arc::clone(&store),
-        transport: Arc::clone(&fake),
-        members: Arc::new(world.roster.clone()),
-        cards,
-        policy: scenarios::config().policy,
-        quiet: Arc::new(AtomicBool::new(false)),
-        now: Arc::new(|| now() + TimeDelta::minutes(1)),
-    };
+    let refresh = refresher(&store, &fake, &world, cards);
     assert_eq!(refresh.refresh(std::slice::from_ref(&star)).await, 1);
     let edited = edits(&fake);
     let [edit] = edited.as_slice() else {
@@ -153,15 +144,7 @@ async fn refresh_adds_and_drops_the_portal_link_with_the_switch() {
     assert_eq!(links(&post.components), link);
     assert_eq!(post.embeds.len(), 2);
 
-    let refresh = CardRefresh {
-        store: Arc::clone(&store),
-        transport: Arc::clone(&fake),
-        members: Arc::new(world.roster.clone()),
-        cards,
-        policy: scenarios::config().policy,
-        quiet: Arc::new(AtomicBool::new(false)),
-        now: Arc::new(|| now() + TimeDelta::minutes(1)),
-    };
+    let refresh = refresher(&store, &fake, &world, cards);
     let rerender = async |minutes: i64, user: &str| {
         answer(
             &*store,

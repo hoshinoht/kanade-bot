@@ -4,7 +4,7 @@
 //! refresh keeps the override; one run at a time.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use chrono::TimeDelta;
@@ -17,14 +17,13 @@ use kanade::chat::nudge::{
     NudgeRewriter, RewriteFailure, RewritePrompt, SharedRewriter, StoreRewriteSink,
 };
 use kanade::domain::model_log::{RewriteFilter, RewriteLogStore, RewriteStage};
-use kanade::domain::notify::DeliveryJournal;
 use kanade::domain::settings::MessageStyle;
 use kanade::infrastructure::store::MemoryScheduleStore;
 use tokio::sync::{Notify, watch};
 
-use crate::cards::{answer, created, edits, kit, persona, seed_day_of, world};
+use crate::cards::{answer, created, edits, kit, persona, refresher, seed_day_of, world};
 use crate::scenarios::{self, HOME, World, now, previous_week};
-use crate::support::{self, with_lease};
+use crate::support::{self, mark_digest_week};
 
 const DAY_OF_SEED: &str = "Today — {day}";
 
@@ -93,13 +92,7 @@ impl Posted {
         let world = world();
         let fake = Arc::new(support::fake());
         let (star, _) = seed_day_of(&*store).await;
-        with_lease(&*store, now(), async |lease| {
-            store
-                .record_digest_week(lease, previous_week(), now())
-                .await
-                .expect("digest week");
-        })
-        .await;
+        mark_digest_week(&*store, previous_week(), now()).await;
         let seeds = CardKit {
             style: Some(Arc::new(move || style)),
             ..kit(None)
@@ -120,27 +113,20 @@ impl Posted {
 
     fn refresh(&self, rewriter: &Arc<BySeed>) -> CardRefresh<MemoryScheduleStore, FakeDiscord> {
         let style = self.style;
-        CardRefresh {
-            store: Arc::clone(&self.store),
-            transport: Arc::clone(&self.fake),
-            members: Arc::new(self.world.roster.clone()),
-            cards: CardKit {
-                heading: HeadingRewrite {
-                    rewriter: Some(SharedRewriter(rewriter.clone())),
-                    persona: Some(persona()),
-                    words: None,
-                    log: Some(Arc::new(StoreRewriteSink::new(
-                        Arc::clone(&self.logs),
-                        Arc::new(now),
-                    ))),
-                },
-                style: Some(Arc::new(move || style)),
-                ..kit(None)
+        let cards = CardKit {
+            heading: HeadingRewrite {
+                rewriter: Some(SharedRewriter(rewriter.clone())),
+                persona: Some(persona()),
+                words: None,
+                log: Some(Arc::new(StoreRewriteSink::new(
+                    Arc::clone(&self.logs),
+                    Arc::new(now),
+                ))),
             },
-            policy: scenarios::config().policy,
-            quiet: Arc::new(AtomicBool::new(false)),
-            now: Arc::new(|| now() + TimeDelta::minutes(1)),
-        }
+            style: Some(Arc::new(move || style)),
+            ..kit(None)
+        };
+        refresher(&self.store, &self.fake, &self.world, cards)
     }
 
     fn manual(
@@ -168,6 +154,12 @@ impl Posted {
             .map(|row| row.stage)
             .collect()
     }
+
+    /// The card's header overrides, `(line, actor)` oldest first.
+    async fn overrides(&self, key: &str) -> Vec<(String, String)> {
+        let history = self.store.header_history(key).await.expect("history");
+        history.overrides
+    }
 }
 
 fn request() -> ManualRequest {
@@ -183,21 +175,31 @@ fn digest_phrase(edit: &MessageEdit) -> Option<String> {
     support::v2_digest_phrase(edit.components.as_deref()?)
 }
 
-/// Start the worker, trigger one run and wait for its report.
-async fn run_once(
+/// Start `manual`'s worker; it runs until the returned sender stops it.
+fn spawn_worker(
     manual: &Arc<ManualRewrite<MemoryScheduleStore, FakeDiscord>>,
-) -> (ManualStart, ManualReport) {
+) -> (watch::Sender<bool>, tokio::task::JoinHandle<()>) {
     let (stop, stopped) = watch::channel(false);
-    let worker = {
-        let manual = Arc::clone(manual);
-        tokio::spawn(async move { manual.run(stopped).await })
-    };
-    let mut finished = manual.finished();
-    let started = manual.start(request()).await;
+    let manual = Arc::clone(manual);
+    (stop, tokio::spawn(async move { manual.run(stopped).await }))
+}
+
+/// Wait (bounded) until the run in flight reports.
+async fn run_ends(finished: &mut watch::Receiver<Option<ManualReport>>) {
     tokio::time::timeout(Duration::from_secs(5), finished.changed())
         .await
         .expect("the run ends")
         .expect("open");
+}
+
+/// Start the worker, trigger one run and wait for its report.
+async fn run_once(
+    manual: &Arc<ManualRewrite<MemoryScheduleStore, FakeDiscord>>,
+) -> (ManualStart, ManualReport) {
+    let (stop, worker) = spawn_worker(manual);
+    let mut finished = manual.finished();
+    let started = manual.start(request()).await;
+    run_ends(&mut finished).await;
     let report = finished.borrow().expect("a report");
     stop.send_replace(true);
     worker.await.expect("no panic");
@@ -317,11 +319,7 @@ async fn a_refresh_in_flight_never_lands_after_a_manual_edit() {
     card_edit.entered().await;
 
     let manual = posted.manual(&rewriter);
-    let (stop, stopped) = watch::channel(false);
-    let worker = {
-        let manual = Arc::clone(&manual);
-        tokio::spawn(async move { manual.run(stopped).await })
-    };
+    let (stop, worker) = spawn_worker(&manual);
     let mut finished = manual.finished();
     assert_eq!(manual.start(request()).await, ManualStart::Started(2));
     // Both overrides are stored while the refresh still holds the card.
@@ -334,10 +332,7 @@ async fn a_refresh_in_flight_never_lands_after_a_manual_edit() {
     .expect("the manual run started");
     card_edit.release();
     assert_eq!(stale.await.expect("no panic"), 2, "card and digest");
-    tokio::time::timeout(Duration::from_secs(5), finished.changed())
-        .await
-        .expect("the run ends")
-        .expect("open");
+    run_ends(&mut finished).await;
     stop.send_replace(true);
     worker.await.expect("no panic");
 
@@ -383,15 +378,7 @@ async fn a_rejected_or_failed_rewrite_stores_and_edits_nothing() {
         assert_eq!(report, expected);
         assert!(edits(&posted.fake).is_empty(), "the post is unchanged");
         let key = posted.card_key().await;
-        assert!(
-            posted
-                .store
-                .header_history(&key)
-                .await
-                .expect("history")
-                .overrides
-                .is_empty()
-        );
+        assert!(posted.overrides(&key).await.is_empty());
         assert_eq!(
             posted
                 .store
@@ -410,20 +397,13 @@ async fn a_second_trigger_while_a_run_is_active_is_refused() {
     let posted = Posted::new(MessageStyle::Classic).await;
     let rewriter = BySeed::gated("Rise and shine, it's {day}!");
     let manual = posted.manual(&rewriter);
-    let (stop, stopped) = watch::channel(false);
-    let worker = {
-        let manual = Arc::clone(&manual);
-        tokio::spawn(async move { manual.run(stopped).await })
-    };
+    let (stop, worker) = spawn_worker(&manual);
     let mut finished = manual.finished();
     assert_eq!(manual.start(request()).await, ManualStart::Started(1));
     rewriter.started.notified().await;
     assert_eq!(manual.start(request()).await, ManualStart::Running);
     rewriter.release.notify_one();
-    tokio::time::timeout(Duration::from_secs(5), finished.changed())
-        .await
-        .expect("the run ends")
-        .expect("open");
+    run_ends(&mut finished).await;
     assert_eq!(
         manual.start(request()).await,
         ManualStart::Started(1),
@@ -443,11 +423,7 @@ async fn a_stop_ends_the_call_in_flight_and_abandons_the_run() {
     let posted = Posted::new(MessageStyle::Redesigned).await;
     let rewriter = BySeed::gated("Rise and shine, it's {day}!");
     let manual = posted.manual(&rewriter);
-    let (stop, stopped) = watch::channel(false);
-    let worker = {
-        let manual = Arc::clone(&manual);
-        tokio::spawn(async move { manual.run(stopped).await })
-    };
+    let (stop, worker) = spawn_worker(&manual);
     let finished = manual.finished();
     assert_eq!(manual.start(request()).await, ManualStart::Started(2));
     rewriter.started.notified().await;
@@ -472,15 +448,7 @@ async fn a_stop_ends_the_call_in_flight_and_abandons_the_run() {
     assert!(edits(&posted.fake).is_empty(), "nothing is edited");
     assert_eq!(created(&posted.fake).len(), 2, "no summary at shutdown");
     let key = posted.card_key().await;
-    assert!(
-        posted
-            .store
-            .header_history(&key)
-            .await
-            .expect("history")
-            .overrides
-            .is_empty()
-    );
+    assert!(posted.overrides(&key).await.is_empty());
     assert_eq!(
         posted.stages().await,
         [RewriteStage::Manual],

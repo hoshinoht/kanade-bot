@@ -12,7 +12,7 @@ use kanade::domain::ids::RandomIds;
 use kanade::domain::schedule::{EMOJI_YES, NewFixedRun, RunStatus};
 
 use crate::scenarios::{HOME, config, now, previous_week, world};
-use crate::support::{Store, on_both_stores, service, snapshot, with_lease};
+use crate::support::{Store, mark_digest_week, on_both_stores, service, snapshot};
 
 /// Sat 12 Sep 21:00 in Kuala Lumpur.
 fn start() -> DateTime<Utc> {
@@ -87,13 +87,7 @@ async fn seed<S: Store>(store: &S, attendance: AttendancePolicy) -> String {
         .set_standing_answer("1001", &fixed, true)
         .await
         .expect("standing");
-    with_lease(store, now(), async |lease| {
-        store
-            .record_digest_week(lease, previous_week(), now())
-            .await
-            .expect("digest week");
-    })
-    .await;
+    mark_digest_week(store, previous_week(), now()).await;
     fixed
 }
 

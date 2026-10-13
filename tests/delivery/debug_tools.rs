@@ -27,7 +27,9 @@ use kanade::domain::settings::MessageStyle;
 use kanade::infrastructure::store::MemoryScheduleStore;
 use twilight_model::id::Id;
 
-use crate::cards::{Script, Scripted, allowed, created, kit, persona, rewriting, tonight, world};
+use crate::cards::{
+    Script, Scripted, allowed, created, kit, persona, refresher, rewriting, tonight, world,
+};
 use crate::debug::{desk, on_both_arcs, star};
 use crate::scenarios::{self, HOME, POST, now, week};
 use crate::support::{self, Store, seed_digest};
@@ -159,13 +161,8 @@ async fn sandbox_posts_are_display_only<S: Store + DebugCardStore + 'static>(sto
 
     // Only the home card is refreshed.
     let refresh = CardRefresh {
-        store: Arc::clone(&store),
-        transport: Arc::clone(&fake),
-        members: Arc::new(world.roster.clone()),
-        cards: kit(None),
-        policy: scenarios::config().policy,
-        quiet: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         now: Arc::new(now),
+        ..refresher(&store, &fake, &world, kit(None))
     };
     refresh.refresh(std::slice::from_ref(&run_id)).await;
     let edited: Vec<u64> = fake

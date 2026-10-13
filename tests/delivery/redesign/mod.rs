@@ -10,7 +10,7 @@ mod styled;
 
 use std::sync::Arc;
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use chrono_tz::Tz;
 use kanade::bot::delivery::cards::redesign::{DifficultyMarks, NO_MARKS};
 use kanade::bot::delivery::cards::{ArtFile, ArtKind, ArtSource, CardContext};
@@ -18,7 +18,7 @@ use kanade::bot::transport::{MessageEdit, OutgoingMessage};
 use kanade::domain::attendance::AttendancePolicy;
 use kanade::domain::catalog::BossTable;
 use kanade::domain::members::{Member, PingLevel, Roster};
-use kanade::domain::notify::{DigestInclusion, digest_inclusion};
+use kanade::domain::notify::{DigestInclusion, IntentContent, digest_inclusion};
 use kanade::domain::schedule::{
     Rsvp, RsvpSource, RsvpState, Run, RunSource, RunStatus, ScheduleSnapshot,
 };
@@ -200,6 +200,62 @@ pub(crate) fn redesigned<'a>(
         style: MessageStyle::Redesigned,
         marks,
         ..context(schedule, members, catalog, attendance, quiet)
+    }
+}
+
+/// [`redesigned`] under v5 attendance, not quiet, with no difficulty marks.
+pub(crate) fn redesigned_v5<'a>(
+    schedule: &'a ScheduleSnapshot,
+    members: &'a Roster,
+    catalog: &'a BossTable,
+) -> CardContext<'a> {
+    redesigned(
+        schedule,
+        members,
+        catalog,
+        AttendancePolicy::V5,
+        false,
+        &NO_MARKS,
+    )
+}
+
+/// Replace the week's runs with `count` copies of its Extreme Kalos run ten
+/// minutes apart, each adjusted by `edit`; returns their ids.
+pub(crate) fn kalos_copies(
+    schedule: &mut ScheduleSnapshot,
+    count: i64,
+    edit: impl Fn(&mut Run),
+) -> Vec<String> {
+    let base = schedule
+        .runs
+        .iter()
+        .find(|run| run.id == KALOS)
+        .unwrap()
+        .clone();
+    schedule.runs = (0..count)
+        .map(|index| {
+            let mut run = Run {
+                id: format!("{index:08x}-0000-4000-8000-000000000000"),
+                datetime: base.datetime + TimeDelta::minutes(10 * index),
+                ..base.clone()
+            };
+            edit(&mut run);
+            run
+        })
+        .collect();
+    schedule.runs.iter().map(|run| run.id.clone()).collect()
+}
+
+pub(crate) fn day_of(run_ids: &[&str]) -> IntentContent {
+    IntentContent::DayOf {
+        run_ids: run_ids.iter().map(|id| (*id).to_owned()).collect(),
+    }
+}
+
+pub(crate) fn countdown(run_id: &str) -> IntentContent {
+    IntentContent::Countdown {
+        run_id: run_id.into(),
+        minutes: 15,
     }
 }
 

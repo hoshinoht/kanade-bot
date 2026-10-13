@@ -2,7 +2,9 @@
 
 use chrono::Duration;
 use kanade::bot::mentions::allow_users;
-use kanade::bot::transport::{AmbiguousKind, Call, Op, RejectionKind, Step};
+use kanade::bot::transport::{
+    AmbiguousKind, Call, FakeDiscord, MessageId, Op, Outcome, RejectionKind, Step,
+};
 use kanade::domain::history::{ChangeHistory, ChangeMeta, Origin};
 use kanade::domain::ids::RandomIds;
 use kanade::domain::notify::DeclineNotice;
@@ -154,15 +156,7 @@ async fn posts_v4_text_as_a_reply<S: Store>(store: &S) {
             "<@1002> Decliner can't make **Kalos** (Thu 10 Sep 20:14) — reschedule? `/amend run_id:decliner to:...`"
         )
     );
-    assert!(
-        store
-            .decline_notice(&run, &user)
-            .await
-            .unwrap()
-            .unwrap()
-            .message_id
-            .is_some()
-    );
+    assert!(notice(store, &run, &user).await.message_id.is_some());
 }
 
 #[tokio::test]
@@ -278,14 +272,7 @@ async fn committed_retraction_survives_a_missing_post_commit_port<S: Store>(stor
         )
         .await
         .expect("commits RSVP and retraction together");
-    assert!(
-        store
-            .decline_notice(&run, &user)
-            .await
-            .unwrap()
-            .unwrap()
-            .retract_pending
-    );
+    assert!(notice(store, &run, &user).await.retract_pending);
     // No live port ran; recovery is sufficient to delete the bound message.
     delivery
         .drain_decline_notices(now() + Duration::seconds(2))
@@ -304,26 +291,45 @@ async fn confirmed_delete_retires_the_bound_decline_attempt() {
     on_both_stores!(confirmed_retraction_retires_exact_binding);
 }
 
-async fn unsent_race_resolves_without_repost<S: Store>(store: &S) {
-    let world = world();
-    let (run, user) = seed(store).await;
-    let transport = Intercept::new(&world.fake).on_create(|_| {
-        let run = run.clone();
-        let user = user.clone();
+/// The stored notice of `user` on `run`.
+async fn notice<S: Store>(store: &S, run: &str, user: &str) -> DeclineNotice {
+    store.decline_notice(run, user).await.unwrap().unwrap()
+}
+
+/// Creates through `fake` that mark the notice's retraction pending while
+/// in flight (the member takes the decline back mid-send), then report
+/// `replaced` (`None` keeps Discord's outcome).
+fn retracted_mid_send<'a, S: Store>(
+    fake: &'a FakeDiscord,
+    store: &'a S,
+    run: &str,
+    user: &str,
+    replaced: Option<Outcome<MessageId>>,
+) -> Intercept<'a> {
+    let (run, user) = (run.to_owned(), user.to_owned());
+    Intercept::new(fake).on_create(move |outcome| {
+        let (run, user, replaced) = (run.clone(), user.clone(), replaced.clone());
         Box::pin(async move {
             store
                 .mark_decline_retract_pending(&run, &user)
                 .await
                 .expect("mark race");
-            kanade::bot::transport::Outcome::DefinitelyRejected(RejectionKind::NotSent)
+            replaced.unwrap_or(outcome)
         })
-    });
+    })
+}
+
+async fn unsent_race_resolves_without_repost<S: Store>(store: &S) {
+    let world = world();
+    let (run, user) = seed(store).await;
+    let unsent = Outcome::DefinitelyRejected(RejectionKind::NotSent);
+    let transport = retracted_mid_send(&world.fake, store, &run, &user, Some(unsent));
     let mut delivery = delivery(store, &world, &transport);
     delivery
         .drain_decline_notices(now())
         .await
         .expect("send race");
-    let notice = store.decline_notice(&run, &user).await.unwrap().unwrap();
+    let notice = notice(store, &run, &user).await;
     assert!(!notice.retract_pending, "the proven-unsent race resolved");
     delivery
         .drain_decline_notices(now() + Duration::minutes(1))
@@ -340,31 +346,13 @@ async fn in_flight_retraction_after_an_unsent_create_is_resolved() {
 async fn bind_then_confirmed_delete_race<S: Store>(store: &S) {
     let world = world();
     let (run, user) = seed(store).await;
-    let transport = Intercept::new(&world.fake).on_create(|outcome| {
-        let run = run.clone();
-        let user = user.clone();
-        Box::pin(async move {
-            store
-                .mark_decline_retract_pending(&run, &user)
-                .await
-                .expect("mark race");
-            outcome
-        })
-    });
+    let transport = retracted_mid_send(&world.fake, store, &run, &user, None);
     let mut delivery = delivery(store, &world, &transport);
     let report = delivery.drain_decline_notices(now()).await.expect("race");
     assert_eq!(report.retracted, 1);
     assert_eq!(world.fake.count(Op::Create), 1);
     assert_eq!(world.fake.count(Op::Delete), 1);
-    assert!(
-        store
-            .decline_notice(&run, &user)
-            .await
-            .unwrap()
-            .unwrap()
-            .message_id
-            .is_none()
-    );
+    assert!(notice(store, &run, &user).await.message_id.is_none());
 }
 
 #[tokio::test]
@@ -375,31 +363,16 @@ async fn in_flight_retraction_binds_then_confirms_delete() {
 async fn bind_then_ambiguous_delete_race<S: Store>(store: &S) {
     let world = world();
     let (run, user) = seed(store).await;
-    world.fake.script(
-        Op::Delete,
-        Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: false,
-        },
-    );
-    world.fake.script(
-        Op::Delete,
-        Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: false,
-        },
-    );
-    let transport = Intercept::new(&world.fake).on_create(|outcome| {
-        let run = run.clone();
-        let user = user.clone();
-        Box::pin(async move {
-            store
-                .mark_decline_retract_pending(&run, &user)
-                .await
-                .expect("mark race");
-            outcome
-        })
-    });
+    for _ in 0..2 {
+        world.fake.script(
+            Op::Delete,
+            Step::Ambiguous {
+                kind: AmbiguousKind::Timeout,
+                applied: false,
+            },
+        );
+    }
+    let transport = retracted_mid_send(&world.fake, store, &run, &user, None);
     let mut delivery = delivery(store, &world, &transport);
     let report = delivery.drain_decline_notices(now()).await.expect("race");
     assert_eq!(report.retracted, 0);
@@ -423,21 +396,11 @@ async fn in_flight_retraction_binds_then_retries_ambiguous_delete_once() {
 async fn ambiguous_send_race<S: Store>(store: &S) {
     let world = world();
     let (run, user) = seed(store).await;
-    let transport = Intercept::new(&world.fake).on_create(|_| {
-        let run = run.clone();
-        let user = user.clone();
-        Box::pin(async move {
-            store
-                .mark_decline_retract_pending(&run, &user)
-                .await
-                .expect("mark race");
-            kanade::bot::transport::Outcome::Ambiguous(AmbiguousKind::Timeout)
-        })
-    });
+    let ambiguous = Outcome::Ambiguous(AmbiguousKind::Timeout);
+    let transport = retracted_mid_send(&world.fake, store, &run, &user, Some(ambiguous));
     let mut delivery = delivery(store, &world, &transport);
     delivery.drain_decline_notices(now()).await.expect("race");
-    let notice = store.decline_notice(&run, &user).await.unwrap().unwrap();
-    assert!(notice.retract_pending);
+    assert!(notice(store, &run, &user).await.retract_pending);
     delivery
         .drain_decline_notices(now() + Duration::minutes(1))
         .await
@@ -510,15 +473,7 @@ async fn recovery_drains_unbound_and_bound_pending_once<S: Store>(store: &S) {
         "one initial and one recovered candidate"
     );
     assert_eq!(world.fake.count(Op::Delete), 1, "one recovered retraction");
-    assert!(
-        store
-            .decline_notice(&run, &second)
-            .await
-            .unwrap()
-            .unwrap()
-            .message_id
-            .is_some()
-    );
+    assert!(notice(store, &run, &second).await.message_id.is_some());
 }
 
 #[tokio::test]

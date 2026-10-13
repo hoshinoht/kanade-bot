@@ -9,15 +9,15 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use kanade::bot::delivery::{AlertRecorder, Delivery};
-use kanade::bot::transport::{AmbiguousKind, Op, Step};
-use kanade::domain::schedule::{NewFixedRun, NewRun, RunSource, RunStatus};
+use kanade::domain::history::Origin;
+use kanade::domain::schedule::{NewFixedRun, RunStatus};
 use kanade::domain::scheduler::SchedulerError;
 use kanade::domain::time::{isoformat, to_iso};
 use serde_json::{Value, json};
 
 use crate::common::{
-    self, SeqIds, assert_case, clock_time, instant, iso, opt_iso, run_ref, step_result, strings,
-    text, utc, weekday,
+    self, SeqIds, assert_case, clock_time, iso, opt_iso, run_ref, step_result, strings, text, utc,
+    weekday,
 };
 use crate::support::{self, Store, on_both_stores, with_lease};
 
@@ -53,7 +53,7 @@ async fn replay<S: Store>(store: &S, case: &Value) -> Value {
         let result: Result<Value, SchedulerError> = match text(&step["op"]) {
             "add_fixed" => {
                 let id = support::service(store, &mut ids, now)
-                    .as_origin(kanade::domain::history::Origin::for_tests())
+                    .as_origin(Origin::for_tests())
                     .add_fixed_run(NewFixedRun {
                         owner_pinned: false,
                         owner_id: text(&step["owner_id"]).into(),
@@ -69,29 +69,11 @@ async fn replay<S: Store>(store: &S, case: &Value) -> Value {
                 fixed_refs.insert(text(&step["fixed_key"]).to_owned(), id.clone());
                 Ok(json!(id))
             }
-            "create_run" => {
-                let id = support::service(store, &mut ids, now)
-                    .as_origin(kanade::domain::history::Origin::for_tests())
-                    .create_run(NewRun {
-                        fixed_run_id: None,
-                        channel_id: step["channel_id"].as_str().map(str::to_owned),
-                        week_start: utc(&step["week_start"]),
-                        datetime: utc(&step["at"]),
-                        bosses: strings(&step["bosses"]),
-                        participants: strings(&step["participants"]),
-                        status: RunStatus::parse(text(&step["status"])).unwrap(),
-                        source: RunSource::parse(text(&step["source"])).unwrap(),
-                    })
-                    .await
-                    .expect("create_run");
-                run_refs.insert(text(&step["run_key"]).to_owned(), id.clone());
-                Ok(json!(id))
-            }
             "set_status" => {
                 let run = run_ref(&run_refs, &step["run_key"]).to_owned();
                 let status = RunStatus::parse(text(&step["status"])).unwrap();
                 support::service(store, &mut ids, now)
-                    .as_origin(kanade::domain::history::Origin::for_tests())
+                    .as_origin(Origin::for_tests())
                     .set_run_status(&run, status)
                     .await
                     .map(|()| json!(status.as_str()))
@@ -120,16 +102,7 @@ async fn replay<S: Store>(store: &S, case: &Value) -> Value {
             "set_config" => {
                 let value = text(&step["value"]).to_owned();
                 match text(&step["key"]) {
-                    LAST_DIGEST => {
-                        let week = utc(&step["value"]);
-                        with_lease(store, now, async |lease| {
-                            store
-                                .record_digest_week(lease, week, now)
-                                .await
-                                .expect("record week");
-                        })
-                        .await;
-                    }
+                    LAST_DIGEST => support::mark_digest_week(store, utc(&step["value"]), now).await,
                     LAST_WEEK => last_materialised = Some(value.clone()),
                     other => panic!("unknown config key {other:?}"),
                 }
@@ -162,21 +135,9 @@ async fn replay<S: Store>(store: &S, case: &Value) -> Value {
                 .await;
                 Ok(json!(retired))
             }
-            "set_clock" => {
-                let at = instant(&step["clock"]);
-                now = at.with_timezone(&Utc);
-                Ok(json!(isoformat(&at)))
-            }
-            "set_transport" => {
-                let fail = step["fail_sends"].as_bool().expect("fail_sends");
-                let step = fail.then_some(Step::Ambiguous {
-                    kind: AmbiguousKind::Timeout,
-                    applied: false,
-                });
-                fake.set_default(Op::Create, step);
-                Ok(json!(fail))
-            }
-            other => panic!("unknown digest vector operation {other:?}"),
+            op => support::shared_step(store, &mut ids, &mut now, &fake, &mut run_refs, step)
+                .await
+                .unwrap_or_else(|| panic!("unknown digest vector operation {op:?}")),
         };
         steps.push(step_result(step, result));
     }
