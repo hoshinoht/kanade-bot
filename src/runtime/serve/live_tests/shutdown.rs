@@ -458,6 +458,133 @@ impl<F: Future> Future for Caught<F> {
     }
 }
 
+type Served = (Result<(), Error>, Vec<&'static str>, Instant);
+
+/// Serve over `harness` with a scripted gateway (`events`) and the fake
+/// transport, shutting down once `trigger` fires or is dropped.
+fn launch<'a>(
+    harness: &'a Harness,
+    cdn: SlowCdn,
+    clock: budget::ShutdownClock,
+    opened: impl FnOnce(&SqliteStore) + 'a,
+) -> (
+    mpsc::UnboundedSender<Event>,
+    oneshot::Sender<()>,
+    impl Future<Output = Served> + 'a,
+) {
+    let (events, source) = script();
+    let wiring = Wiring {
+        source,
+        transport: Arc::clone(&harness.fake),
+        clock: Arc::new(auth::system_now),
+        tick: TICK,
+        extraction: TIMING,
+    };
+    let (trigger, triggered) = oneshot::channel::<()>();
+    let serve = serve_live(
+        &harness.config,
+        async move {
+            let _ = triggered.await;
+        },
+        wiring,
+        (harness._temp.0.join("avatars"), cdn),
+        clock,
+        opened,
+    );
+    (events, trigger, serve)
+}
+
+/// `serve` with `timeline` stamping log lines until it returns.
+async fn watched(serve: impl Future<Output = Served>, timeline: &Timeline) -> Served {
+    tokio::select! {
+        ended = serve => ended,
+        never = timeline.clone().watch() => match never {},
+    }
+}
+
+/// The admin listener's address, once serve logs it.
+async fn listening() -> SocketAddr {
+    eventually!("the admin listener", !logged("server_started").is_empty());
+    logged("server_started")[0]["bind"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap()
+}
+
+/// Alice asks the bot in the chat channel.
+fn lotus_question() -> Event {
+    message(1, CHAT_CHANNEL, &format!("<@{SELF}> when is lotus?"), true)
+}
+
+/// Alice's `/schedule`.
+fn schedule_command() -> Event {
+    slash(
+        COMMAND,
+        70,
+        GUILD,
+        Some(GUILD),
+        ALICE,
+        "schedule",
+        json!([]),
+    )
+}
+
+/// An extraction-worthy line in the watched home.
+fn amend_message() -> Event {
+    message(2, HOME_A, "nkalos amend to 10pm", false)
+}
+
+/// The admin app fetching Alice's portrait.
+fn avatar_request(cookie: &str) -> String {
+    let path = format!("/api/admin/members/{ALICE}/avatar");
+    request("GET", &path, &[("Cookie", cookie)], None)
+}
+
+/// Starts the budget as if only `left` remained before the store reserve.
+fn start_near_cutoff(clock: &budget::ShutdownClock, left: Duration) {
+    clock.start_at(Instant::now() - (budget::TOTAL - budget::STORE_RESERVE - left));
+}
+
+fn assert_ordered(timeline: &Timeline, order: &[&str], breakdown: &str) {
+    for pair in order.windows(2) {
+        assert!(
+            timeline.first(pair[0]).0 < timeline.first(pair[1]).0,
+            "{pair:?}\n{breakdown}"
+        );
+    }
+}
+
+/// The store close began with (about) its whole reserve left.
+fn assert_reserve_kept(clock: &budget::ShutdownClock, closing: Instant, breakdown: &str) {
+    let left = left_at_close(clock, closing);
+    assert!(
+        left >= close_floor(),
+        "the close began with {left:?} left\n{breakdown}"
+    );
+}
+
+/// Alice and Bob, both bossing, in the guild's member list.
+fn seed_discord_members(harness: &Harness) {
+    harness.fake.seed_members(
+        Id::new(GUILD),
+        vec![
+            guild_member(ALICE, "alice", false, &[BOSSING]),
+            guild_member(BOB, "bob", false, &[BOSSING]),
+        ],
+    );
+}
+
+/// Alice and Bob, both bossing, in the stored roster.
+async fn add_members(store: &SqliteStore) {
+    for (id, name) in [(ALICE, "alice"), (BOB, "bob")] {
+        store
+            .apply_gateway(gateway_member(id, name, &[BOSSING]))
+            .await
+            .unwrap();
+    }
+}
+
 // ---- The test ----
 
 #[tokio::test]
@@ -469,12 +596,7 @@ async fn shutdown_with_everything_in_flight_is_ordered_and_inside_the_stop_grace
     let now = auth::system_now();
     harness
         .seed(async |store| {
-            for (id, name) in [(ALICE, "alice"), (BOB, "bob")] {
-                store
-                    .apply_gateway(gateway_member(id, name, &[BOSSING]))
-                    .await
-                    .unwrap();
-            }
+            add_members(store).await;
             // Two due notices: the tick's first send is held, the second
             // must never start once shutdown has begun.
             cancelled_with_notice(store, &policy, now, HOME_A).await;
@@ -486,23 +608,10 @@ async fn shutdown_with_everything_in_flight_is_ordered_and_inside_the_stop_grace
     let tick_send = fake.hold(Op::Create);
     let holds = Mutex::new(vec![tick_send.clone()]);
     let timeline = Timeline::default();
-    let (events, source) = script();
-    let wiring = Wiring {
-        source,
-        transport: Arc::clone(fake),
-        clock: Arc::new(auth::system_now),
-        tick: TICK,
-        extraction: TIMING,
-    };
     let cdn = SlowCdn::default();
-    let (trigger, triggered) = oneshot::channel::<()>();
-    let serve = serve_live(
-        &harness.config,
-        async {
-            let _ = triggered.await;
-        },
-        wiring,
-        (harness._temp.0.join("avatars"), cdn.clone()),
+    let (events, trigger, serve) = launch(
+        &harness,
+        cdn.clone(),
         budget::ShutdownClock::default(),
         |_| {},
     );
@@ -514,12 +623,7 @@ async fn shutdown_with_everything_in_flight_is_ordered_and_inside_the_stop_grace
         stream: JoinHandle<()>,
     }
     let scenario = async {
-        eventually!("the admin listener", !logged("server_started").is_empty());
-        let address: SocketAddr = logged("server_started")[0]["bind"]
-            .as_str()
-            .unwrap()
-            .parse()
-            .unwrap();
+        let address = listening().await;
         events.send(ready()).unwrap();
         events.send(guild()).unwrap();
 
@@ -529,14 +633,7 @@ async fn shutdown_with_everything_in_flight_is_ordered_and_inside_the_stop_grace
             .expect("the tick's send");
 
         // 1. A chat answer hanging on the model, its placeholder posted.
-        events
-            .send(message(
-                1,
-                CHAT_CHANNEL,
-                &format!("<@{SELF}> when is lotus?"),
-                true,
-            ))
-            .unwrap();
+        events.send(lotus_question()).unwrap();
         eventually!(
             "the chat call and its placeholder",
             model.calls().0 == 1 && fake.count(Op::Create) == 1
@@ -546,12 +643,7 @@ async fn shutdown_with_everything_in_flight_is_ordered_and_inside_the_stop_grace
         // digest post: the tick's send holds the one delivery operation, so
         // a digest post now is refused at once (503), never in flight.
         let cookie = sign_in(address).await;
-        let text = request(
-            "GET",
-            &format!("/api/admin/members/{ALICE}/avatar"),
-            &[("Cookie", &cookie)],
-            None,
-        );
+        let text = avatar_request(&cookie);
         let mut avatar = tokio::spawn(async move {
             let (status, _, body) = http(address, text).await;
             mark("v03_avatar_answered");
@@ -564,25 +656,13 @@ async fn shutdown_with_everything_in_flight_is_ordered_and_inside_the_stop_grace
         }
 
         // 2. An extraction call hanging on the model.
-        events
-            .send(message(2, HOME_A, "nkalos amend to 10pm", false))
-            .unwrap();
+        events.send(amend_message()).unwrap();
         eventually!("the extraction call", model.calls().1 == 1);
 
         // 4. A slash command inside its reply.
         let reply = fake.hold(Op::Respond);
         holds.lock().unwrap().push(reply.clone());
-        events
-            .send(slash(
-                COMMAND,
-                70,
-                GUILD,
-                Some(GUILD),
-                ALICE,
-                "schedule",
-                json!([]),
-            ))
-            .unwrap();
+        events.send(schedule_command()).unwrap();
         tokio::time::timeout(Duration::from_secs(10), reply.entered())
             .await
             .expect("the command's reply");
@@ -622,26 +702,18 @@ async fn shutdown_with_everything_in_flight_is_ordered_and_inside_the_stop_grace
             stream,
         }
     };
-    let ((served, steps, _), held) = tokio::join!(
-        async {
-            tokio::select! {
-                ended = serve => ended,
-                never = timeline.clone().watch() => match never {},
+    let ((served, steps, _), held) = tokio::join!(watched(serve, &timeline), async {
+        // A failed setup still shuts serve down (its trigger dropped,
+        // every held call let go) before the failure is reported.
+        let held = Caught(Box::pin(scenario)).await;
+        if held.is_err() {
+            for hold in holds.lock().unwrap().iter() {
+                hold.release();
             }
-        },
-        async {
-            // A failed setup still shuts serve down (its trigger dropped,
-            // every held call let go) before the failure is reported.
-            let held = Caught(Box::pin(scenario)).await;
-            if held.is_err() {
-                for hold in holds.lock().unwrap().iter() {
-                    hold.release();
-                }
-                cdn.release.notify_one();
-            }
-            held
+            cdn.release.notify_one();
         }
-    );
+        held
+    });
     let held = held.unwrap_or_else(|panic| std::panic::resume_unwind(panic));
     let (status, body) = held.avatar.await.unwrap();
     held.stream.await.unwrap();
@@ -651,17 +723,7 @@ async fn shutdown_with_everything_in_flight_is_ordered_and_inside_the_stop_grace
 
     // Ordered: the Discord side (its steps), then HTTP, then the store.
     assert!(served.is_ok(), "{served:?}\n{breakdown}");
-    assert_eq!(
-        steps,
-        [
-            "gateway_closed",
-            "chat_stopped",
-            "extraction_stopped",
-            "workers_stopped",
-            "tick_stopped"
-        ],
-        "{breakdown}"
-    );
+    assert_eq!(steps, ALL_STEPS, "{breakdown}");
     let order = [
         "v03_trigger",
         "gateway_tasks_aborted",
@@ -678,12 +740,7 @@ async fn shutdown_with_everything_in_flight_is_ordered_and_inside_the_stop_grace
         "store_closed",
         "v03_serve_returned",
     ];
-    for pair in order.windows(2) {
-        assert!(
-            timeline.first(pair[0]).0 < timeline.first(pair[1]).0,
-            "{pair:?}\n{breakdown}"
-        );
-    }
+    assert_ordered(&timeline, &order, &breakdown);
     let at = |event: &str| timeline.first(event).1;
     assert!(logged("store_close_failed").is_empty(), "{breakdown}");
 
@@ -775,12 +832,7 @@ async fn shutdown_with_nothing_letting_go_ends_inside_the_budget() {
     let now = auth::system_now();
     harness
         .seed(async |store| {
-            for (id, name) in [(ALICE, "alice"), (BOB, "bob")] {
-                store
-                    .apply_gateway(gateway_member(id, name, &[BOSSING]))
-                    .await
-                    .unwrap();
-            }
+            add_members(store).await;
             cancelled_with_notice(store, &policy, now, HOME_A).await;
             cancelled_with_notice(store, &policy, now, HOME_B).await;
         })
@@ -788,80 +840,33 @@ async fn shutdown_with_nothing_letting_go_ends_inside_the_budget() {
     let fake = &harness.fake;
     let tick_send = fake.hold(Op::Create);
     let timeline = Timeline::default();
-    let (events, source) = script();
-    let wiring = Wiring {
-        source,
-        transport: Arc::clone(fake),
-        clock: Arc::new(auth::system_now),
-        tick: TICK,
-        extraction: TIMING,
-    };
     let cdn = SlowCdn::default();
-    let (trigger, triggered) = oneshot::channel::<()>();
     let clock = budget::ShutdownClock::default();
-    let serve = serve_live(
-        &harness.config,
-        async {
-            let _ = triggered.await;
-        },
-        wiring,
-        (harness._temp.0.join("avatars"), cdn.clone()),
-        clock.clone(),
-        |_| {},
-    );
+    let (events, trigger, serve) = launch(&harness, cdn.clone(), clock.clone(), |_| {});
     // Past the drain's cut, inside the store reserve.
     let cdn_tail = budget::TOTAL - budget::STORE_RESERVE + Duration::from_millis(1500);
     let scenario = async {
-        eventually!("the admin listener", !logged("server_started").is_empty());
-        let address: SocketAddr = logged("server_started")[0]["bind"]
-            .as_str()
-            .unwrap()
-            .parse()
-            .unwrap();
+        let address = listening().await;
         events.send(ready()).unwrap();
         events.send(guild()).unwrap();
         tokio::time::timeout(Duration::from_secs(10), tick_send.entered())
             .await
             .expect("the tick's send");
-        events
-            .send(message(
-                1,
-                CHAT_CHANNEL,
-                &format!("<@{SELF}> when is lotus?"),
-                true,
-            ))
-            .unwrap();
+        events.send(lotus_question()).unwrap();
         eventually!(
             "the chat call and its placeholder",
             model.calls().0 == 1 && fake.count(Op::Create) == 1
         );
         let cookie = sign_in(address).await;
-        let text = request(
-            "GET",
-            &format!("/api/admin/members/{ALICE}/avatar"),
-            &[("Cookie", &cookie)],
-            None,
-        );
+        let text = avatar_request(&cookie);
         let avatar = tokio::spawn(async move { http(address, text).await.0 });
         tokio::time::timeout(Duration::from_secs(10), cdn.entered.notified())
             .await
             .expect("the avatar fetch");
-        events
-            .send(message(2, HOME_A, "nkalos amend to 10pm", false))
-            .unwrap();
+        events.send(amend_message()).unwrap();
         eventually!("the extraction call", model.calls().1 == 1);
         let reply = fake.hold(Op::Respond);
-        events
-            .send(slash(
-                COMMAND,
-                70,
-                GUILD,
-                Some(GUILD),
-                ALICE,
-                "schedule",
-                json!([]),
-            ))
-            .unwrap();
+        events.send(schedule_command()).unwrap();
         tokio::time::timeout(Duration::from_secs(10), reply.entered())
             .await
             .expect("the command's reply");
@@ -877,15 +882,8 @@ async fn shutdown_with_nothing_letting_go_ends_inside_the_budget() {
         trigger.send(()).unwrap();
         (creates, reply, avatar, stream)
     };
-    let ((served, steps, closing), (creates, reply, avatar, stream)) = tokio::join!(
-        async {
-            tokio::select! {
-                ended = serve => ended,
-                never = timeline.clone().watch() => match never {},
-            }
-        },
-        scenario
-    );
+    let ((served, steps, closing), (creates, reply, avatar, stream)) =
+        tokio::join!(watched(serve, &timeline), scenario);
     timeline.scan();
     let breakdown = timeline.breakdown();
     eprintln!("worst-case shutdown breakdown (from trigger):\n{breakdown}");
@@ -901,24 +899,10 @@ async fn shutdown_with_nothing_letting_go_ends_inside_the_budget() {
         "shutdown took {total:?}\n{breakdown}"
     );
     assert!(served.is_ok(), "{served:?}\n{breakdown}");
-    assert_eq!(
-        steps,
-        [
-            "gateway_closed",
-            "chat_stopped",
-            "extraction_stopped",
-            "workers_stopped",
-            "tick_stopped"
-        ],
-        "{breakdown}"
-    );
+    assert_eq!(steps, ALL_STEPS, "{breakdown}");
     assert!(!logged("store_closed").is_empty(), "{breakdown}");
     assert!(logged("store_close_failed").is_empty(), "{breakdown}");
-    let left = left_at_close(&clock, closing);
-    assert!(
-        left >= close_floor(),
-        "the close began with {left:?} left\n{breakdown}"
-    );
+    assert_reserve_kept(&clock, closing, &breakdown);
     // The drain was cut at once, yet the avatar request still in flight kept
     // its connection: it was answered inside the reserve, and the store
     // closed only after it let go.
@@ -970,53 +954,20 @@ async fn chat_stop_with_the_budget_spent_still_settles_its_questions() {
     let model = HangingModel::start().await;
     let harness = harness(&model);
     let timeline = Timeline::default();
-    let (events, source) = script();
-    let wiring = Wiring {
-        source,
-        transport: Arc::clone(&harness.fake),
-        clock: Arc::new(auth::system_now),
-        tick: TICK,
-        extraction: TIMING,
-    };
     let clock = budget::ShutdownClock::default();
-    let (trigger, triggered) = oneshot::channel::<()>();
-    let serve = serve_live(
-        &harness.config,
-        async {
-            let _ = triggered.await;
-        },
-        wiring,
-        (harness._temp.0.join("avatars"), SlowCdn::default()),
-        clock.clone(),
-        |_| {},
-    );
+    let (events, trigger, serve) = launch(&harness, SlowCdn::default(), clock.clone(), |_| {});
     let left = Duration::from_millis(200);
     let scenario = async {
-        eventually!("the admin listener", !logged("server_started").is_empty());
+        listening().await;
         events.send(ready()).unwrap();
         events.send(guild()).unwrap();
-        events
-            .send(message(
-                1,
-                CHAT_CHANNEL,
-                &format!("<@{SELF}> when is lotus?"),
-                true,
-            ))
-            .unwrap();
+        events.send(lotus_question()).unwrap();
         eventually!("the chat call", model.calls().0 == 1);
         mark("v03_trigger");
-        clock.start_at(Instant::now() - (budget::TOTAL - budget::STORE_RESERVE - left));
+        start_near_cutoff(&clock, left);
         trigger.send(()).unwrap();
     };
-    let ((served, steps, closing), ()) = tokio::join!(
-        async {
-            tokio::select! {
-                ended = serve => ended,
-                never = timeline.clone().watch() => match never {},
-            }
-        },
-        scenario
-    );
+    let ((served, steps, closing), ()) = tokio::join!(watched(serve, &timeline), scenario);
     timeline.scan();
     let breakdown = timeline.breakdown();
     eprintln!("spent-budget chat stop breakdown (from trigger):\n{breakdown}");
@@ -1037,11 +988,7 @@ async fn chat_stop_with_the_budget_spent_still_settles_its_questions() {
     );
     // The log writes may spill into the store reserve, never by more than
     // 1 s: the close still began with at least 2 s left.
-    let left = left_at_close(&clock, closing);
-    assert!(
-        left >= close_floor(),
-        "the close began with {left:?} left\n{breakdown}"
-    );
+    assert_reserve_kept(&clock, closing, &breakdown);
     // The cut question concluded: logged with its cancellation, its
     // allowance refunded (no answer counted).
     let store = store::open(&harness.config.store).await.unwrap();
@@ -1087,23 +1034,12 @@ async fn a_header_rewrite_hanging_at_the_cutoff_still_ends_by_it() {
         ("KANADE_CHAT_CATEGORY_IDS", "410"),
         ("KANADE_CHAT_PILOT_ROLE_ID", "10"),
     ]);
-    harness.fake.seed_members(
-        Id::new(GUILD),
-        vec![
-            guild_member(ALICE, "alice", false, &[BOSSING]),
-            guild_member(BOB, "bob", false, &[BOSSING]),
-        ],
-    );
+    seed_discord_members(&harness);
     let policy = policy(&harness);
     let now = auth::system_now();
     harness
         .seed(async |store| {
-            for (id, name) in [(ALICE, "alice"), (BOB, "bob")] {
-                store
-                    .apply_gateway(gateway_member(id, name, &[BOSSING]))
-                    .await
-                    .unwrap();
-            }
+            add_members(store).await;
             // A day-of reminder firing in 2 h: inside the pre-generation
             // horizon, not yet due for the tick, and rewritten in every
             // message style (classic countdowns carry no phrase).
@@ -1119,34 +1055,11 @@ async fn a_header_rewrite_hanging_at_the_cutoff_still_ends_by_it() {
         })
         .await;
     let timeline = Timeline::default();
-    let (events, source) = script();
-    let wiring = Wiring {
-        source,
-        transport: Arc::clone(&harness.fake),
-        clock: Arc::new(auth::system_now),
-        tick: TICK,
-        extraction: TIMING,
-    };
     let clock = budget::ShutdownClock::default();
-    let (trigger, triggered) = oneshot::channel::<()>();
-    let serve = serve_live(
-        &harness.config,
-        async {
-            let _ = triggered.await;
-        },
-        wiring,
-        (harness._temp.0.join("avatars"), SlowCdn::default()),
-        clock.clone(),
-        |_| {},
-    );
+    let (events, trigger, serve) = launch(&harness, SlowCdn::default(), clock.clone(), |_| {});
     let left = Duration::from_millis(200);
     let scenario = async {
-        eventually!("the admin listener", !logged("server_started").is_empty());
-        let address: SocketAddr = logged("server_started")[0]["bind"]
-            .as_str()
-            .unwrap()
-            .parse()
-            .unwrap();
+        let address = listening().await;
         events.send(ready()).unwrap();
         events.send(guild()).unwrap();
         // A stop that lands before the tick's loop (the roster not yet
@@ -1155,54 +1068,22 @@ async fn a_header_rewrite_hanging_at_the_cutoff_still_ends_by_it() {
         // has completed inside the loop.
         eventually!("the tick running", scheduler(address).await == "running");
         eventually!("the header rewrite", model.calls().1 == 1);
-        events
-            .send(message(
-                1,
-                CHAT_CHANNEL,
-                &format!("<@{SELF}> when is lotus?"),
-                true,
-            ))
-            .unwrap();
+        events.send(lotus_question()).unwrap();
         eventually!("the chat call", model.calls().0 == 1);
         mark("v03_trigger");
-        clock.start_at(Instant::now() - (budget::TOTAL - budget::STORE_RESERVE - left));
+        start_near_cutoff(&clock, left);
         trigger.send(()).unwrap();
     };
-    let ((served, steps, closing), ()) = tokio::join!(
-        async {
-            tokio::select! {
-                ended = serve => ended,
-                never = timeline.clone().watch() => match never {},
-            }
-        },
-        scenario
-    );
+    let ((served, steps, closing), ()) = tokio::join!(watched(serve, &timeline), scenario);
     timeline.scan();
     let breakdown = timeline.breakdown();
     eprintln!("hanging header rewrite breakdown (from trigger):\n{breakdown}");
 
     assert!(served.is_ok(), "{served:?}\n{breakdown}");
-    assert_eq!(
-        steps,
-        [
-            "gateway_closed",
-            "chat_stopped",
-            "extraction_stopped",
-            "workers_stopped",
-            "tick_stopped"
-        ],
-        "{breakdown}"
-    );
-    assert!(
-        timeline.first("tick_stopped").0 < timeline.first("store_closed").0,
-        "{breakdown}"
-    );
+    assert_eq!(steps, ALL_STEPS, "{breakdown}");
+    assert_ordered(&timeline, &["tick_stopped", "store_closed"], &breakdown);
     assert!(logged("store_close_failed").is_empty(), "{breakdown}");
-    let left_then = left_at_close(&clock, closing);
-    assert!(
-        left_then >= close_floor(),
-        "the close began with {left_then:?} left\n{breakdown}"
-    );
+    assert_reserve_kept(&clock, closing, &breakdown);
     // Ended by the wrapper at the cutoff, not abandoned at the late stop.
     let cut = logged("shutdown_deadline_cut");
     assert!(
@@ -1237,47 +1118,25 @@ async fn an_admin_read_with_every_reader_busy_answers_unavailable() {
     logging::capture();
     let model = HangingModel::start().await;
     let harness = harness(&model);
-    let (events, source) = script();
-    let wiring = Wiring {
-        source,
-        transport: Arc::clone(&harness.fake),
-        clock: Arc::new(auth::system_now),
-        tick: TICK,
-        extraction: TIMING,
-    };
     let (pools, pool) = std::sync::mpsc::channel();
-    let (trigger, triggered) = oneshot::channel::<()>();
-    let serve = serve_live(
-        &harness.config,
-        async {
-            let _ = triggered.await;
-        },
-        wiring,
-        (harness._temp.0.join("avatars"), SlowCdn::default()),
+    let (events, trigger, serve) = launch(
+        &harness,
+        SlowCdn::default(),
         budget::ShutdownClock::default(),
         move |store| pools.send(store.reader_pool()).unwrap(),
     );
     let scenario = async {
-        eventually!("the admin listener", !logged("server_started").is_empty());
-        let address: SocketAddr = logged("server_started")[0]["bind"]
-            .as_str()
-            .unwrap()
-            .parse()
-            .unwrap();
+        let address = listening().await;
         let pool = pool.try_recv().expect("the store opened");
         let cookie = sign_in(address).await;
         let held = hold_readers(&pool).await;
         let started = Instant::now();
-        let text = request("GET", "/api/admin/members", &[("Cookie", &cookie)], None);
-        let (status, _, body) = http(address, text).await;
+        let members = || request("GET", "/api/admin/members", &[("Cookie", &cookie)], None);
+        let (status, _, body) = http(address, members()).await;
         let waited = started.elapsed();
         drop(held);
         // Readers free again: the same read succeeds.
-        let (status_after, _, _) = http(
-            address,
-            request("GET", "/api/admin/members", &[("Cookie", &cookie)], None),
-        )
-        .await;
+        let (status_after, _, _) = http(address, members()).await;
         drop(events);
         trigger.send(()).unwrap();
         (status, body, waited, status_after)
@@ -1305,51 +1164,25 @@ async fn an_admin_read_with_every_reader_busy_answers_unavailable() {
 async fn shutdown_with_every_reader_held_ends_inside_the_budget() {
     logging::capture();
     let harness = Harness::new();
-    harness.fake.seed_members(
-        Id::new(GUILD),
-        vec![
-            guild_member(ALICE, "alice", false, &[BOSSING]),
-            guild_member(BOB, "bob", false, &[BOSSING]),
-        ],
-    );
+    seed_discord_members(&harness);
     let policy = policy(&harness);
     let now = auth::system_now();
     harness
         .seed(async |store| {
-            for (id, name) in [(ALICE, "alice"), (BOB, "bob")] {
-                store
-                    .apply_gateway(gateway_member(id, name, &[BOSSING]))
-                    .await
-                    .unwrap();
-            }
+            add_members(store).await;
             cancelled_with_notice(store, &policy, now, HOME_A).await;
         })
         .await;
     let timeline = Timeline::default();
-    let (events, source) = script();
-    let wiring = Wiring {
-        source,
-        transport: Arc::clone(&harness.fake),
-        clock: Arc::new(auth::system_now),
-        tick: TICK,
-        extraction: TIMING,
-    };
     let clock = budget::ShutdownClock::default();
     let (pools, pool) = std::sync::mpsc::channel();
-    let (trigger, triggered) = oneshot::channel::<()>();
-    let serve = serve_live(
-        &harness.config,
-        async {
-            let _ = triggered.await;
-        },
-        wiring,
-        (harness._temp.0.join("avatars"), SlowCdn::default()),
-        clock.clone(),
-        move |store| pools.send(store.reader_pool()).unwrap(),
-    );
+    let (events, trigger, serve) =
+        launch(&harness, SlowCdn::default(), clock.clone(), move |store| {
+            pools.send(store.reader_pool()).unwrap()
+        });
     let left = Duration::from_millis(300);
     let scenario = async {
-        eventually!("the admin listener", !logged("server_started").is_empty());
+        listening().await;
         let pool = pool.try_recv().expect("the store opened");
         events.send(ready()).unwrap();
         events.send(guild()).unwrap();
@@ -1358,7 +1191,7 @@ async fn shutdown_with_every_reader_held_ends_inside_the_budget() {
         // Several tick periods: the tick now waits on a reader.
         sleep(TICK * 4).await;
         mark("v03_trigger");
-        clock.start_at(Instant::now() - (budget::TOTAL - budget::STORE_RESERVE - left));
+        start_near_cutoff(&clock, left);
         trigger.send(()).unwrap();
         // The reads in flight let go once serve is past the drain, as a
         // slow handler would finish inside the reserve.
@@ -1368,15 +1201,7 @@ async fn shutdown_with_every_reader_held_ends_inside_the_budget() {
         }
         drop(held);
     };
-    let ((served, steps, closing), ()) = tokio::join!(
-        async {
-            tokio::select! {
-                ended = serve => ended,
-                never = timeline.clone().watch() => match never {},
-            }
-        },
-        scenario
-    );
+    let ((served, steps, closing), ()) = tokio::join!(watched(serve, &timeline), scenario);
     timeline.scan();
     let breakdown = timeline.breakdown();
     eprintln!("readers-held shutdown breakdown (from trigger):\n{breakdown}");
@@ -1389,18 +1214,9 @@ async fn shutdown_with_every_reader_held_ends_inside_the_budget() {
         "tick_stopped",
         "store_closed",
     ];
-    for pair in order.windows(2) {
-        assert!(
-            timeline.first(pair[0]).0 < timeline.first(pair[1]).0,
-            "{pair:?}\n{breakdown}"
-        );
-    }
+    assert_ordered(&timeline, &order, &breakdown);
     assert!(logged("store_close_failed").is_empty(), "{breakdown}");
-    let left_then = left_at_close(&clock, closing);
-    assert!(
-        left_then >= close_floor(),
-        "the close began with {left_then:?} left\n{breakdown}"
-    );
+    assert_reserve_kept(&clock, closing, &breakdown);
     let at = |event: &str| timeline.first(event).1;
     let total = at("v03_serve_returned") - at("v03_trigger");
     // The 300 ms left and the store reserve; far below one acquire timeout
@@ -1445,58 +1261,24 @@ async fn a_manual_digest_in_flight_at_the_cutoff_is_journalled_before_the_store_
     let token = harness._temp.0.join("admin_token");
     std::fs::write(&token, format!("{TOKEN}\n")).unwrap();
     harness.config.runtime.admin_auth.token_file = Some(token);
-    harness.fake.seed_members(
-        Id::new(GUILD),
-        vec![
-            guild_member(ALICE, "alice", false, &[BOSSING]),
-            guild_member(BOB, "bob", false, &[BOSSING]),
-        ],
-    );
+    seed_discord_members(&harness);
     let policy = policy(&harness);
     let now = auth::system_now();
     harness
         .seed(async |store| {
-            for (id, name) in [(ALICE, "alice"), (BOB, "bob")] {
-                store
-                    .apply_gateway(gateway_member(id, name, &[BOSSING]))
-                    .await
-                    .unwrap();
-            }
+            add_members(store).await;
             // The tick's one send shows delivery is open.
             cancelled_with_notice(store, &policy, now, HOME_A).await;
         })
         .await;
     let fake = &harness.fake;
     let timeline = Timeline::default();
-    let (events, source) = script();
-    let wiring = Wiring {
-        source,
-        transport: Arc::clone(fake),
-        clock: Arc::new(auth::system_now),
-        tick: TICK,
-        extraction: TIMING,
-    };
     let clock = budget::ShutdownClock::default();
-    let (trigger, triggered) = oneshot::channel::<()>();
-    let serve = serve_live(
-        &harness.config,
-        async {
-            let _ = triggered.await;
-        },
-        wiring,
-        (harness._temp.0.join("avatars"), SlowCdn::default()),
-        clock.clone(),
-        |_| {},
-    );
+    let (events, trigger, serve) = launch(&harness, SlowCdn::default(), clock.clone(), |_| {});
     // The send cut is SEND_FINALISE before the cutoff: half a second away.
     let left = budget::SEND_FINALISE + Duration::from_millis(500);
     let scenario = async {
-        eventually!("the admin listener", !logged("server_started").is_empty());
-        let address: SocketAddr = logged("server_started")[0]["bind"]
-            .as_str()
-            .unwrap()
-            .parse()
-            .unwrap();
+        let address = listening().await;
         events.send(ready()).unwrap();
         events.send(guild()).unwrap();
         eventually!("the tick running", harness.creates_in(HOME_A).len() == 1);
@@ -1534,22 +1316,14 @@ async fn a_manual_digest_in_flight_at_the_cutoff_is_journalled_before_the_store_
             sleep(Duration::from_millis(50)).await;
         };
         mark("v03_trigger");
-        clock.start_at(Instant::now() - (budget::TOTAL - budget::STORE_RESERVE - left));
+        start_near_cutoff(&clock, left);
         trigger.send(()).unwrap();
         // Bounded, so a post nothing cuts fails the test instead of hanging.
         let answered = tokio::time::timeout(COMPOSE_STOP_GRACE, &mut answer).await;
         digest_send.release();
         answered.map(Result::unwrap)
     };
-    let ((served, steps, closing), answered) = tokio::join!(
-        async {
-            tokio::select! {
-                ended = serve => ended,
-                never = timeline.clone().watch() => match never {},
-            }
-        },
-        scenario
-    );
+    let ((served, steps, closing), answered) = tokio::join!(watched(serve, &timeline), scenario);
     timeline.scan();
     let breakdown = timeline.breakdown();
     eprintln!("manual digest shutdown breakdown (from trigger):\n{breakdown}");
@@ -1559,12 +1333,7 @@ async fn a_manual_digest_in_flight_at_the_cutoff_is_journalled_before_the_store_
     assert!(served.is_ok(), "{served:?}\n{breakdown}");
     assert_eq!(steps.last(), Some(&"tick_stopped"), "{breakdown}");
     let order = ["v03_trigger", "v03_digest_answered", "store_closed"];
-    for pair in order.windows(2) {
-        assert!(
-            timeline.first(pair[0]).0 < timeline.first(pair[1]).0,
-            "{pair:?}\n{breakdown}"
-        );
-    }
+    assert_ordered(&timeline, &order, &breakdown);
     assert!(logged("store_close_failed").is_empty(), "{breakdown}");
     assert!(
         logged("shutdown_deadline_cut")
@@ -1572,11 +1341,7 @@ async fn a_manual_digest_in_flight_at_the_cutoff_is_journalled_before_the_store_
             .any(|line| line["phase"] == "discord_send"),
         "{breakdown}"
     );
-    let left_then = left_at_close(&clock, closing);
-    assert!(
-        left_then >= close_floor(),
-        "the close began with {left_then:?} left\n{breakdown}"
-    );
+    assert_reserve_kept(&clock, closing, &breakdown);
     let at = |event: &str| timeline.first(event).1;
     let total = at("v03_serve_returned") - at("v03_trigger");
     assert!(total < Duration::from_secs(5), "{total:?}\n{breakdown}");

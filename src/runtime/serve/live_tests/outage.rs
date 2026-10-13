@@ -14,7 +14,7 @@ use tokio::sync::{Mutex, oneshot};
 
 use crate::{
     bot::{
-        delivery::{DEFAULT_MAX_SENDS_PER_TICK, Delivery, DeliveryConfig, SendOutcome},
+        delivery::{DEFAULT_MAX_SENDS_PER_TICK, Delivery, DeliveryConfig, SendOutcome, SendReport},
         gateway::ConnectionStatus,
         transport::{
             ChannelId, DiscordTransport, HistoryPage, InteractionRef, InteractionReply,
@@ -57,32 +57,57 @@ async fn add_due_reminder(
     reminder.expect("due reminder")
 }
 
-fn delivery_config(policy: SchedulePolicy, post_channel_id: Option<String>) -> DeliveryConfig {
-    DeliveryConfig {
-        instance_id: "cancel-safety-test".into(),
-        policy,
-        post_channel_id,
-        quiet_mode: false,
-        max_sends_per_tick: DEFAULT_MAX_SENDS_PER_TICK,
-        max_notice_age: crate::domain::notify::DEFAULT_MAX_NOTICE_AGE,
-        run_lengths: crate::domain::settings::RunLengths::default(),
-        freeze_ended: true,
-    }
+/// What a gated delivery borrows besides its store and transport: a ready
+/// connection, an empty roster and the one home channel.
+struct Gate {
+    policy: SchedulePolicy,
+    connection: ConnectionStatus,
+    members: Roster,
+    channels: BTreeSet<String>,
+    alerts: LogAlerts,
 }
 
-fn gated_delivery<'a, T: DiscordTransport>(
-    store: &'a SqliteStore,
-    transport: &'a T,
-    alerts: &'a LogAlerts,
-    members: &'a Roster,
-    channels: &'a BTreeSet<String>,
-    connection: ConnectionStatus,
-    config: DeliveryConfig,
-) -> Delivery<'a, SqliteStore, RandomIds, T, LogAlerts> {
-    Delivery::new(
-        store, RandomIds, transport, alerts, members, channels, config,
-    )
-    .with_admission_gate(move || connection.delivery_eligibility())
+impl Gate {
+    fn new(policy: SchedulePolicy) -> Self {
+        let connection = ConnectionStatus::new();
+        connection.mark_ready_for_test();
+        Self {
+            policy,
+            connection,
+            members: Roster::new(),
+            channels: [HOME_C.to_string()].into_iter().collect(),
+            alerts: LogAlerts,
+        }
+    }
+
+    fn delivery<'a, T: DiscordTransport>(
+        &'a self,
+        store: &'a SqliteStore,
+        transport: &'a T,
+        post_channel_id: Option<String>,
+    ) -> Delivery<'a, SqliteStore, RandomIds, T, LogAlerts> {
+        let config = DeliveryConfig {
+            instance_id: "cancel-safety-test".into(),
+            policy: self.policy.clone(),
+            post_channel_id,
+            quiet_mode: false,
+            max_sends_per_tick: DEFAULT_MAX_SENDS_PER_TICK,
+            max_notice_age: crate::domain::notify::DEFAULT_MAX_NOTICE_AGE,
+            run_lengths: crate::domain::settings::RunLengths::default(),
+            freeze_ended: true,
+        };
+        let connection = self.connection.clone();
+        Delivery::new(
+            store,
+            RandomIds,
+            transport,
+            &self.alerts,
+            &self.members,
+            &self.channels,
+            config,
+        )
+        .with_admission_gate(move || connection.delivery_eligibility())
+    }
 }
 
 async fn open_recovered_store(harness: &Harness, now: DateTime<Utc>) -> Arc<SqliteStore> {
@@ -129,6 +154,21 @@ fn hold_hook(hold: Arc<Hold>) -> impl Fn() -> HookFuture + Send + Sync + 'static
     }
 }
 
+/// Drives `effect` until its hold reports the barrier; it must not finish first.
+async fn until_held<F>(effect: &mut Pin<Box<F>>, reached: oneshot::Receiver<()>, what: &str)
+where
+    F: Future,
+    F::Output: std::fmt::Debug,
+{
+    tokio::select! {
+        biased;
+        result = effect => panic!("{what} returned through the barrier: {result:?}"),
+        reached = tokio::time::timeout(std::time::Duration::from_secs(5), reached) => {
+            reached.expect(what).expect("barrier signal");
+        }
+    }
+}
+
 struct InFlight(Arc<AtomicUsize>);
 
 impl Drop for InFlight {
@@ -137,14 +177,37 @@ impl Drop for InFlight {
     }
 }
 
+/// The fake transport, pausing after the `blocked` op's remote effect until
+/// the test resumes it (never, here: the tests drop the paused future).
 struct BlockedTransport {
     fake: Arc<FakeDiscord>,
     blocked: Op,
     hold: Arc<Hold>,
+    _resume: oneshot::Sender<()>,
     in_flight: Arc<AtomicUsize>,
 }
 
 impl BlockedTransport {
+    fn new(fake: &Arc<FakeDiscord>, blocked: Op) -> (Self, oneshot::Receiver<()>) {
+        let (hold, reached, resume) = Hold::new();
+        let transport = Self {
+            fake: Arc::clone(fake),
+            blocked,
+            hold,
+            _resume: resume,
+            in_flight: Arc::new(AtomicUsize::new(0)),
+        };
+        (transport, reached)
+    }
+
+    fn assert_dropped(&self) {
+        assert_eq!(
+            self.in_flight.load(Ordering::SeqCst),
+            0,
+            "transport future was dropped"
+        );
+    }
+
     async fn pause_after_effect(&self, op: Op) {
         if self.blocked == op {
             self.in_flight.fetch_add(1, Ordering::SeqCst);
@@ -264,10 +327,26 @@ impl DiscordTransport for BlockedTransport {
     }
 }
 
-fn test_connection() -> ConnectionStatus {
-    let connection = ConnectionStatus::new();
-    connection.mark_ready_for_test();
-    connection
+/// Which of the two claimed reminders the store still holds.
+async fn held_reminder(store: &SqliteStore, reminders: [&str; 2]) -> DeliveryTarget {
+    let held = store.load_view().await.unwrap().targets().clone();
+    reminders
+        .into_iter()
+        .map(|id| DeliveryTarget::Reminder(id.to_owned()))
+        .find(|target| held.contains(target))
+        .expect("the claimed reminder remains held")
+}
+
+/// A retry after a cancelled tick suppresses the held reminder, binds the
+/// other one, and leaves the held claim in place.
+async fn assert_retry_skips_held(store: &SqliteStore, retry: &[SendReport], held: &DeliveryTarget) {
+    assert!(retry.iter().any(|send| {
+        send.intent.targets.contains(held) && send.outcome == SendOutcome::Suppressed
+    }));
+    assert!(retry.iter().any(|send| {
+        !send.intent.targets.contains(held) && matches!(send.outcome, SendOutcome::Bound(_))
+    }));
+    assert!(store.load_view().await.unwrap().targets().contains(held));
 }
 
 #[tokio::test]
@@ -275,32 +354,15 @@ async fn cancelling_after_a_committed_claim_releases_only_the_slot() {
     let harness = Harness::new();
     let now = auth::system_now();
     let store = open_recovered_store(&harness, now).await;
-    let policy = policy(&harness);
-    let first = add_due_reminder(&store, &policy, now).await;
-    let second = add_due_reminder(&store, &policy, now).await;
-    let connection = test_connection();
-    let members = Roster::new();
-    let channels = [HOME_C.to_string()].into_iter().collect();
-    let alerts = LogAlerts;
+    let gate = Gate::new(policy(&harness));
+    let first = add_due_reminder(&store, &gate.policy, now).await;
+    let second = add_due_reminder(&store, &gate.policy, now).await;
     let (hold, reached, _resume) = Hold::new();
-    let mut delivery = gated_delivery(
-        &store,
-        &*harness.fake,
-        &alerts,
-        &members,
-        &channels,
-        connection.clone(),
-        delivery_config(policy.clone(), None),
-    )
-    .with_claim_result_hook(hold_hook(hold));
+    let mut delivery = gate
+        .delivery(&store, &*harness.fake, None)
+        .with_claim_result_hook(hold_hook(hold));
     let mut tick = Box::pin(delivery.dispatch_reminders(now));
-    tokio::select! {
-        biased;
-        result = &mut tick => panic!("claim returned through the barrier: {result:?}"),
-        reached = tokio::time::timeout(std::time::Duration::from_secs(5), reached) => {
-            reached.expect("claim-result barrier").expect("barrier signal");
-        }
-    }
+    until_held(&mut tick, reached, "claim").await;
     assert_eq!(
         harness.fake.count(Op::Create),
         0,
@@ -309,43 +371,19 @@ async fn cancelling_after_a_committed_claim_releases_only_the_slot() {
     drop(tick);
     drop(delivery);
 
-    let target = |id: &str| DeliveryTarget::Reminder(id.to_owned());
-    let held = store.load_view().await.unwrap().targets().clone();
-    let held_target = [first.as_str(), second.as_str()]
-        .into_iter()
-        .map(target)
-        .find(|target| held.contains(target))
-        .expect("the committed claim remains held");
-    assert!(connection.delivery_eligibility().is_some(), "slot released");
-
-    let mut retry = gated_delivery(
-        &store,
-        &*harness.fake,
-        &alerts,
-        &members,
-        &channels,
-        connection.clone(),
-        delivery_config(policy, None),
+    let held = held_reminder(&store, [first.as_str(), second.as_str()]).await;
+    assert!(
+        gate.connection.delivery_eligibility().is_some(),
+        "slot released"
     );
+
+    let mut retry = gate.delivery(&store, &*harness.fake, None);
     let report = retry.dispatch_reminders(now).await.unwrap();
-    assert!(report.sends.iter().any(|send| {
-        send.intent.targets.contains(&held_target) && send.outcome == SendOutcome::Suppressed
-    }));
-    assert!(report.sends.iter().any(|send| {
-        !send.intent.targets.contains(&held_target) && matches!(send.outcome, SendOutcome::Bound(_))
-    }));
+    assert_retry_skips_held(&store, &report.sends, &held).await;
     assert_eq!(
         harness.fake.count(Op::Create),
         1,
         "only the other target posts"
-    );
-    assert!(
-        store
-            .load_view()
-            .await
-            .unwrap()
-            .targets()
-            .contains(&held_target)
     );
 
     drop(retry);
@@ -357,38 +395,13 @@ async fn cancelling_a_blocked_create_keeps_its_target_held_and_admits_another() 
     let harness = Harness::new();
     let now = auth::system_now();
     let store = open_recovered_store(&harness, now).await;
-    let policy = policy(&harness);
-    let first = add_due_reminder(&store, &policy, now).await;
-    let second = add_due_reminder(&store, &policy, now).await;
-    let connection = test_connection();
-    let members = Roster::new();
-    let channels = [HOME_C.to_string()].into_iter().collect();
-    let alerts = LogAlerts;
-    let (hold, reached, _resume) = Hold::new();
-    let in_flight = Arc::new(AtomicUsize::new(0));
-    let transport = BlockedTransport {
-        fake: Arc::clone(&harness.fake),
-        blocked: Op::Create,
-        hold,
-        in_flight: Arc::clone(&in_flight),
-    };
-    let mut delivery = gated_delivery(
-        &store,
-        &transport,
-        &alerts,
-        &members,
-        &channels,
-        connection.clone(),
-        delivery_config(policy.clone(), None),
-    );
+    let gate = Gate::new(policy(&harness));
+    let first = add_due_reminder(&store, &gate.policy, now).await;
+    let second = add_due_reminder(&store, &gate.policy, now).await;
+    let (transport, reached) = BlockedTransport::new(&harness.fake, Op::Create);
+    let mut delivery = gate.delivery(&store, &transport, None);
     let mut tick = Box::pin(delivery.dispatch_reminders(now));
-    tokio::select! {
-        biased;
-        result = &mut tick => panic!("create returned through the barrier: {result:?}"),
-        reached = tokio::time::timeout(std::time::Duration::from_secs(5), reached) => {
-            reached.expect("blocked create").expect("barrier signal");
-        }
-    }
+    until_held(&mut tick, reached, "create").await;
     assert_eq!(
         harness.fake.count(Op::Create),
         1,
@@ -396,49 +409,21 @@ async fn cancelling_a_blocked_create_keeps_its_target_held_and_admits_another() 
     );
     drop(tick);
     drop(delivery);
-    assert_eq!(
-        in_flight.load(Ordering::SeqCst),
-        0,
-        "transport future was dropped"
+    transport.assert_dropped();
+
+    let held = held_reminder(&store, [first.as_str(), second.as_str()]).await;
+    assert!(
+        gate.connection.delivery_eligibility().is_some(),
+        "slot released"
     );
 
-    let target = |id: &str| DeliveryTarget::Reminder(id.to_owned());
-    let held_targets = store.load_view().await.unwrap().targets().clone();
-    let held_target = [first.as_str(), second.as_str()]
-        .into_iter()
-        .map(target)
-        .find(|target| held_targets.contains(target))
-        .expect("claimed reminder remains held");
-    assert!(connection.delivery_eligibility().is_some(), "slot released");
-
-    let mut retry = gated_delivery(
-        &store,
-        &transport,
-        &alerts,
-        &members,
-        &channels,
-        connection.clone(),
-        delivery_config(policy, None),
-    );
+    let mut retry = gate.delivery(&store, &transport, None);
     let report = retry.dispatch_reminders(now).await.unwrap();
-    assert!(report.sends.iter().any(|send| {
-        send.intent.targets.contains(&held_target) && send.outcome == SendOutcome::Suppressed
-    }));
-    assert!(report.sends.iter().any(|send| {
-        !send.intent.targets.contains(&held_target) && matches!(send.outcome, SendOutcome::Bound(_))
-    }));
+    assert_retry_skips_held(&store, &report.sends, &held).await;
     assert_eq!(
         harness.fake.count(Op::Create),
         2,
         "only a different target retries"
-    );
-    assert!(
-        store
-            .load_view()
-            .await
-            .unwrap()
-            .targets()
-            .contains(&held_target)
     );
 
     drop(retry);
@@ -497,8 +482,8 @@ async fn cancelling_a_blocked_digest_delete_keeps_the_old_claim_and_admits_anoth
     let harness = Harness::new();
     let now = auth::system_now();
     let store = open_recovered_store(&harness, now).await;
-    let policy = policy(&harness);
-    let week = week_of(&policy, now);
+    let gate = Gate::new(policy(&harness));
+    let week = week_of(&gate.policy, now);
     let old_claim = seed_digest(
         &store,
         week,
@@ -507,40 +492,15 @@ async fn cancelling_a_blocked_digest_delete_keeps_the_old_claim_and_admits_anoth
         now,
     )
     .await;
-    let reminder = add_due_reminder(&store, &policy, now).await;
+    let reminder = add_due_reminder(&store, &gate.policy, now).await;
     harness.fake.seed_message(
         crate::bot::ids::parse_id(HOME_C.to_string().as_str()).unwrap(),
         crate::bot::ids::parse_id("900000000000000001").unwrap(),
     );
-    let connection = test_connection();
-    let members = Roster::new();
-    let channels = [HOME_C.to_string()].into_iter().collect();
-    let alerts = LogAlerts;
-    let (hold, reached, _resume) = Hold::new();
-    let in_flight = Arc::new(AtomicUsize::new(0));
-    let transport = BlockedTransport {
-        fake: Arc::clone(&harness.fake),
-        blocked: Op::Delete,
-        hold,
-        in_flight: Arc::clone(&in_flight),
-    };
-    let mut delivery = gated_delivery(
-        &store,
-        &transport,
-        &alerts,
-        &members,
-        &channels,
-        connection.clone(),
-        delivery_config(policy.clone(), Some(HOME_C.to_string())),
-    );
+    let (transport, reached) = BlockedTransport::new(&harness.fake, Op::Delete);
+    let mut delivery = gate.delivery(&store, &transport, Some(HOME_C.to_string()));
     let mut delete = Box::pin(delivery.post_week_digest(now));
-    tokio::select! {
-        biased;
-        result = &mut delete => panic!("delete returned through the barrier: {result:?}"),
-        reached = tokio::time::timeout(std::time::Duration::from_secs(5), reached) => {
-            reached.expect("blocked digest delete").expect("barrier signal");
-        }
-    }
+    until_held(&mut delete, reached, "digest delete").await;
     assert_eq!(harness.fake.count(Op::Delete), 1);
     assert_eq!(
         harness.fake.count(Op::Create),
@@ -549,11 +509,7 @@ async fn cancelling_a_blocked_digest_delete_keeps_the_old_claim_and_admits_anoth
     );
     drop(delete);
     drop(delivery);
-    assert_eq!(
-        in_flight.load(Ordering::SeqCst),
-        0,
-        "transport future was dropped"
-    );
+    transport.assert_dropped();
 
     let old = store.load_attempt(&old_claim).await.unwrap().unwrap();
     assert_eq!(old.state, crate::domain::notify::AttemptState::Bound);
@@ -568,17 +524,12 @@ async fn cancelling_a_blocked_digest_delete_keeps_the_old_claim_and_admits_anoth
             .any(|digest| digest.week_start == week && digest.retired_at.is_none()),
         "delete result was not settled into retirement"
     );
-    assert!(connection.delivery_eligibility().is_some(), "slot released");
-
-    let mut retry = gated_delivery(
-        &store,
-        &transport,
-        &alerts,
-        &members,
-        &channels,
-        connection,
-        delivery_config(policy, Some(HOME_C.to_string())),
+    assert!(
+        gate.connection.delivery_eligibility().is_some(),
+        "slot released"
     );
+
+    let mut retry = gate.delivery(&store, &transport, Some(HOME_C.to_string()));
     let report = retry.dispatch_reminders(now).await.unwrap();
     assert!(report.sends.iter().any(|send| {
         send.intent

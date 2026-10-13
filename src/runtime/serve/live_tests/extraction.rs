@@ -301,6 +301,27 @@ async fn job(ctx: &Ctx, source: &str) -> Option<RescanJob> {
     jobs(ctx).await.into_iter().find(|job| job.source == source)
 }
 
+async fn startup_rescan_ended(ctx: &Ctx) {
+    eventually!(
+        "the startup rescan",
+        job(ctx, "startup")
+            .await
+            .is_some_and(|job| job.status.is_final())
+    );
+}
+
+/// An admin's rescan of the past week in `channel`.
+fn week_rescan(channel: u64) -> RescanRequest {
+    RescanRequest {
+        channels: vec![channel.to_string()],
+        window: "week".into(),
+        source: "portal".into(),
+        automated: false,
+        requested_by: None,
+        unprocessed_only: false,
+    }
+}
+
 fn replies(fake: &FakeDiscord) -> Vec<String> {
     fake.calls()
         .into_iter()
@@ -461,16 +482,7 @@ async fn extraction_off_records_watched_messages_but_never_calls_the_model() {
         let runner = &ctx.composition.admin.state.rescans.as_ref().unwrap().runner;
         // Known before anyone asks: the summary's `rescan_off` reads this.
         assert_eq!(runner.ready(), Err(RescanError::Off));
-        let refused = runner
-            .submit(RescanRequest {
-                channels: vec![HOME_A.to_string()],
-                window: "week".into(),
-                source: "portal".into(),
-                automated: false,
-                requested_by: None,
-                unprocessed_only: false,
-            })
-            .await;
+        let refused = runner.submit(week_rescan(HOME_A)).await;
         assert_eq!(refused.unwrap_err(), RescanError::Off);
         ctx.events
             .send(slash(
@@ -707,12 +719,7 @@ async fn rescans_page_discord_history_from_startup_the_api_and_the_slash_command
     let (mut discord, ctx) = started(&harness).await;
     drive(&mut discord, async {
         connect(&ctx).await;
-        eventually!(
-            "the startup rescan",
-            job(&ctx, "startup")
-                .await
-                .is_some_and(|job| job.status.is_final())
-        );
+        startup_rescan_ended(&ctx).await;
         let startup = job(&ctx, "startup").await.unwrap();
         assert_eq!(startup.status, RescanStatus::Done, "{startup:?}");
         assert!(startup.automated);
@@ -934,16 +941,7 @@ async fn saved_settings_switch_extraction_live() {
         admin.stop().await;
     })
     .await;
-    assert_eq!(
-        discord.steps(),
-        [
-            "gateway_closed",
-            "chat_stopped",
-            "extraction_stopped",
-            "workers_stopped",
-            "tick_stopped"
-        ]
-    );
+    assert_eq!(discord.steps(), ALL_STEPS);
     finish(&harness, ctx).await;
 }
 
@@ -1023,30 +1021,11 @@ async fn shutdown_stops_rescans_before_the_store_closes() {
         eventually!("the startup call", model.chats() == 1);
         let runner = &ctx.composition.admin.state.rescans.as_ref().unwrap().runner;
         assert_eq!(runner.ready(), Ok(()), "switched on");
-        let queued = runner
-            .submit(RescanRequest {
-                channels: vec![HOME_B.to_string()],
-                window: "week".into(),
-                source: "portal".into(),
-                automated: false,
-                requested_by: None,
-                unprocessed_only: false,
-            })
-            .await
-            .unwrap();
+        let queued = runner.submit(week_rescan(HOME_B)).await.unwrap();
         assert_eq!(queued.job.status, RescanStatus::Queued);
     })
     .await;
-    assert_eq!(
-        discord.steps(),
-        [
-            "gateway_closed",
-            "chat_stopped",
-            "extraction_stopped",
-            "workers_stopped",
-            "tick_stopped"
-        ]
-    );
+    assert_eq!(discord.steps(), ALL_STEPS);
     // Written by `Rescans::close` and the stopped worker, before the store closes.
     let startup = job(&ctx, "startup").await.unwrap();
     assert_eq!(startup.status, RescanStatus::Cancelled, "{startup:?}");
@@ -1180,16 +1159,7 @@ async fn shutdown_cuts_hanging_extraction_calls_and_stays_bounded() {
         took < extract::STOP_GRACE + extract::CANCEL_GRACE + Duration::from_secs(2),
         "{took:?}"
     );
-    assert_eq!(
-        discord.steps(),
-        [
-            "gateway_closed",
-            "chat_stopped",
-            "extraction_stopped",
-            "workers_stopped",
-            "tick_stopped"
-        ]
-    );
+    assert_eq!(discord.steps(), ALL_STEPS);
     let rows = logs(&ctx).await;
     assert_eq!(rows.len(), 2, "{rows:?}");
     for row in &rows {
@@ -1247,17 +1217,7 @@ async fn switching_off_mid_rescan_cuts_the_call_and_cancels_every_job() {
         connect(&ctx).await;
         eventually!("the first rescan call", model.chats() == 1);
         let runner = &ctx.composition.admin.state.rescans.as_ref().unwrap().runner;
-        let queued = runner
-            .submit(RescanRequest {
-                channels: vec![HOME_B.to_string()],
-                window: "week".into(),
-                source: "portal".into(),
-                automated: false,
-                requested_by: None,
-                unprocessed_only: false,
-            })
-            .await
-            .unwrap();
+        let queued = runner.submit(week_rescan(HOME_B)).await.unwrap();
         assert_eq!(queued.job.status, RescanStatus::Queued);
         let before = creates(&harness.fake);
         let admin = Admin::start(&ctx, &harness).await;
@@ -1349,12 +1309,7 @@ async fn a_restart_neither_reposts_cards_nor_extracts_chat_questions() {
             .await
             .unwrap();
         connect(&ctx).await;
-        eventually!(
-            "the startup rescan",
-            job(&ctx, "startup")
-                .await
-                .is_some_and(|job| job.status.is_final())
-        );
+        startup_rescan_ended(&ctx).await;
         model.answer(moved(evidence));
         ctx.events
             .send(Event::MessageCreate(Box::new(parse::<MessageCreate>(
@@ -1465,12 +1420,7 @@ async fn stale_jobs_are_interrupted_and_system_messages_never_read() {
             Some(crate::extract::rescan::INTERRUPTED)
         );
         connect(&ctx).await;
-        eventually!(
-            "the startup rescan",
-            job(&ctx, "startup")
-                .await
-                .is_some_and(|job| job.status.is_final())
-        );
+        startup_rescan_ended(&ctx).await;
         assert_eq!(ctx.health.health().await.extraction, Some("idle"));
         // A thread's creation notice carries its name as content.
         let now = auth::system_now();
