@@ -8,45 +8,16 @@ use serde_json::{Value, json};
 
 use crate::domain::schedule::RsvpState;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum ChangeKind {
-    Move,
-    Add,
-    Cancel,
-    Split,
-    Otot,
-    Sub,
-    Rsvp,
-    Fix,
-}
-
-impl ChangeKind {
-    pub const ALL: [Self; 8] = [
-        Self::Move,
-        Self::Add,
-        Self::Cancel,
-        Self::Split,
-        Self::Otot,
-        Self::Sub,
-        Self::Rsvp,
-        Self::Fix,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Move => "move",
-            Self::Add => "add",
-            Self::Cancel => "cancel",
-            Self::Split => "split",
-            Self::Otot => "otot",
-            Self::Sub => "sub",
-            Self::Rsvp => "rsvp",
-            Self::Fix => "fix",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|kind| kind.as_str() == value)
+spelled! {
+    ChangeKind {
+        Move => "move",
+        Add => "add",
+        Cancel => "cancel",
+        Split => "split",
+        Otot => "otot",
+        Sub => "sub",
+        Rsvp => "rsvp",
+        Fix => "fix",
     }
 }
 

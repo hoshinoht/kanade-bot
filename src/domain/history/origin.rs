@@ -60,64 +60,24 @@ impl Actor {
     }
 }
 
-/// The surface a change arrived through.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Surface {
-    Discord,
-    AdminPortal,
-    PublicPortal,
-    Cli,
-    ChatApproval,
-    ExtractionApproval,
-    DeliveryTick,
-    Rollback,
-    Import,
-    /// An administrator merged a draft.
-    DraftMerge,
-    /// An approved member request was merged (S3).
-    RequestMerge,
-    /// A change cherry-picked into another boss week (S4).
-    CherryPick,
-}
-
-impl Surface {
-    pub const ALL: &[Self] = &[
-        Self::Discord,
-        Self::AdminPortal,
-        Self::PublicPortal,
-        Self::Cli,
-        Self::ChatApproval,
-        Self::ExtractionApproval,
-        Self::DeliveryTick,
-        Self::Rollback,
-        Self::Import,
-        Self::DraftMerge,
-        Self::RequestMerge,
-        Self::CherryPick,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Discord => "discord",
-            Self::AdminPortal => "admin_portal",
-            Self::PublicPortal => "public_portal",
-            Self::Cli => "cli",
-            Self::ChatApproval => "chat_approval",
-            Self::ExtractionApproval => "extraction_approval",
-            Self::DeliveryTick => "delivery_tick",
-            Self::Rollback => "rollback",
-            Self::Import => "import",
-            Self::DraftMerge => "draft_merge",
-            Self::RequestMerge => "request_merge",
-            Self::CherryPick => "cherry_pick",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL
-            .iter()
-            .copied()
-            .find(|surface| surface.as_str() == value)
+spelled! {
+    /// The surface a change arrived through.
+    Surface {
+        Discord => "discord",
+        AdminPortal => "admin_portal",
+        PublicPortal => "public_portal",
+        Cli => "cli",
+        ChatApproval => "chat_approval",
+        ExtractionApproval => "extraction_approval",
+        DeliveryTick => "delivery_tick",
+        Rollback => "rollback",
+        Import => "import",
+        /// An administrator merged a draft.
+        DraftMerge => "draft_merge",
+        /// An approved member request was merged (S3).
+        RequestMerge => "request_merge",
+        /// A change cherry-picked into another boss week (S4).
+        CherryPick => "cherry_pick",
     }
 }
 

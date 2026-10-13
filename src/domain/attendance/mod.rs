@@ -46,27 +46,14 @@ impl AttendancePolicy {
     };
 }
 
-/// A weekly timing's default for members who did not answer. One-off runs
-/// are always opt-in; timings imported from v4 start opt-in.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum AttendanceDefault {
-    #[default]
-    OptIn,
-    AssumeComing,
-}
-
-impl AttendanceDefault {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::OptIn => "opt_in",
-            Self::AssumeComing => "assume_coming",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        [Self::OptIn, Self::AssumeComing]
-            .into_iter()
-            .find(|default| default.as_str() == value)
+spelled! {
+    /// A weekly timing's default for members who did not answer. One-off runs
+    /// are always opt-in; timings imported from v4 start opt-in.
+    #[derive(Default)]
+    AttendanceDefault {
+        #[default]
+        OptIn => "opt_in",
+        AssumeComing => "assume_coming",
     }
 }
 

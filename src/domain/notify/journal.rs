@@ -54,43 +54,21 @@ impl fmt::Display for AttemptId {
     }
 }
 
-/// v4 `delivery_attempts.state`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum AttemptState {
-    /// Claimed; the send may be in flight.
-    Intent,
-    /// The send's outcome is unknown; its targets stay held.
-    Indeterminate,
-    /// Delivered and bound to its native rows.
-    Bound,
-    /// Resolved without (or after) a live message; no longer held.
-    Retired,
+spelled! {
+    /// v4 `delivery_attempts.state`.
+    AttemptState {
+        /// Claimed; the send may be in flight.
+        Intent => "intent",
+        /// The send's outcome is unknown; its targets stay held.
+        Indeterminate => "indeterminate",
+        /// Delivered and bound to its native rows.
+        Bound => "bound",
+        /// Resolved without (or after) a live message; no longer held.
+        Retired => "retired",
+    }
 }
 
 impl AttemptState {
-    pub const ALL: &[Self] = &[
-        Self::Intent,
-        Self::Indeterminate,
-        Self::Bound,
-        Self::Retired,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Intent => "intent",
-            Self::Indeterminate => "indeterminate",
-            Self::Bound => "bound",
-            Self::Retired => "retired",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL
-            .iter()
-            .copied()
-            .find(|state| state.as_str() == value)
-    }
-
     /// Unresolved attempts may have delivered, so they hold their targets.
     pub fn is_unresolved(self) -> bool {
         matches!(self, Self::Intent | Self::Indeterminate)

@@ -3,6 +3,9 @@
 //! Error `Display` output reproduces the v4 messages byte-for-byte because they
 //! reach members verbatim and are frozen in `docs/v5/vectors/domain`.
 
+#[macro_use]
+mod spelled;
+
 pub mod attendance;
 pub mod catalog;
 pub mod characters;

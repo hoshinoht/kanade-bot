@@ -115,27 +115,13 @@ pub enum MergeConflict {
     Divergent { entity: Entity, field: Field },
 }
 
-/// How an administrator settles one conflict when rebasing: keep the
-/// draft's operations (a cancelled or finished run is revived first), or
-/// take upstream's version by dropping the operations involved.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Settle {
-    Keep,
-    Take,
-}
-
-impl Settle {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Keep => "keep",
-            Self::Take => "take",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        [Self::Keep, Self::Take]
-            .into_iter()
-            .find(|settle| settle.as_str() == value)
+spelled! {
+    /// How an administrator settles one conflict when rebasing: keep the
+    /// draft's operations (a cancelled or finished run is revived first), or
+    /// take upstream's version by dropping the operations involved.
+    Settle {
+        Keep => "keep",
+        Take => "take",
     }
 }
 

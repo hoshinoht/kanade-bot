@@ -42,14 +42,15 @@ pub const PENDING_TTL: TimeDelta = TimeDelta::days(14);
 pub const MAX_TEXT_CHARS: usize = 64;
 pub const MAX_URL_CHARS: usize = 1024;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum LinkStatus {
-    /// Requested (by an admin) but not confirmed by the member: no calls.
-    Pending,
-    Active,
-    /// The character could not be resolved or changed its name: the member
-    /// is asked to link again; no calls.
-    Stale,
+spelled! {
+    LinkStatus {
+        /// Requested (by an admin) but not confirmed by the member: no calls.
+        Pending => "pending",
+        Active => "active",
+        /// The character could not be resolved or changed its name: the member
+        /// is asked to link again; no calls.
+        Stale => "stale",
+    }
 }
 
 /// `YYYY-MM-DD` (chrono's formatter is not compiled in).
@@ -71,23 +72,6 @@ pub fn parse_date(text: &str) -> Option<NaiveDate> {
 }
 
 impl LinkStatus {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Pending => "pending",
-            Self::Active => "active",
-            Self::Stale => "stale",
-        }
-    }
-
-    pub fn parse(text: &str) -> Option<Self> {
-        match text {
-            "pending" => Some(Self::Pending),
-            "active" => Some(Self::Active),
-            "stale" => Some(Self::Stale),
-            _ => None,
-        }
-    }
-
     /// The History value of a link in this state (section `characters`,
     /// key `link.<character>`); `unlinked` is the absent link.
     pub fn audit_value(status: Option<Self>) -> &'static str {
@@ -100,30 +84,16 @@ impl LinkStatus {
     }
 }
 
-/// Where the member gave their consent: Discord's `/character link` or the
-/// public portal. Links consented before it was recorded have none.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ConsentSurface {
-    Discord,
-    Portal,
+spelled! {
+    /// Where the member gave their consent: Discord's `/character link` or the
+    /// public portal. Links consented before it was recorded have none.
+    ConsentSurface {
+        Discord => "discord",
+        Portal => "portal",
+    }
 }
 
 impl ConsentSurface {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Discord => "discord",
-            Self::Portal => "portal",
-        }
-    }
-
-    pub fn parse(text: &str) -> Option<Self> {
-        match text {
-            "discord" => Some(Self::Discord),
-            "portal" => Some(Self::Portal),
-            _ => None,
-        }
-    }
-
     /// The History surface of a link change made here.
     pub fn history(self) -> Surface {
         match self {
@@ -280,34 +250,14 @@ impl Snapshot {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum PostState {
-    Live,
-    Stripping,
-    /// The create's outcome is unknown and the post was not found again.
-    Unknown,
-    /// Neither edit nor delete was allowed: it needs a manual removal.
-    Stuck,
-}
-
-impl PostState {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Live => "live",
-            Self::Stripping => "stripping",
-            Self::Unknown => "unknown",
-            Self::Stuck => "stuck",
-        }
-    }
-
-    pub fn parse(text: &str) -> Option<Self> {
-        match text {
-            "live" => Some(Self::Live),
-            "stripping" => Some(Self::Stripping),
-            "unknown" => Some(Self::Unknown),
-            "stuck" => Some(Self::Stuck),
-            _ => None,
-        }
+spelled! {
+    PostState {
+        Live => "live",
+        Stripping => "stripping",
+        /// The create's outcome is unknown and the post was not found again.
+        Unknown => "unknown",
+        /// Neither edit nor delete was allowed: it needs a manual removal.
+        Stuck => "stuck",
     }
 }
 

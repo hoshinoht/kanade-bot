@@ -70,40 +70,14 @@ impl Subject {
     }
 }
 
-/// A request type, as stored in `request_type`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RequestType {
-    NewFixed,
-    ChangeFixed,
-    Join,
-    Leave,
-    Swap,
-}
-
-impl RequestType {
-    pub const ALL: &[Self] = &[
-        Self::NewFixed,
-        Self::ChangeFixed,
-        Self::Join,
-        Self::Leave,
-        Self::Swap,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::NewFixed => "new_fixed",
-            Self::ChangeFixed => "change_fixed",
-            Self::Join => "join",
-            Self::Leave => "leave",
-            Self::Swap => "swap",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL
-            .iter()
-            .copied()
-            .find(|kind| kind.as_str() == value)
+spelled! {
+    /// A request type, as stored in `request_type`.
+    RequestType {
+        NewFixed => "new_fixed",
+        ChangeFixed => "change_fixed",
+        Join => "join",
+        Leave => "leave",
+        Swap => "swap",
     }
 }
 

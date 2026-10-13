@@ -9,43 +9,15 @@ use crate::domain::scheduler::StoreError;
 /// How long a request stays open.
 pub const OWNER_REQUEST_TTL: TimeDelta = TimeDelta::hours(24);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum OwnerRequestStatus {
-    Open,
-    Accepted,
-    Declined,
-    Expired,
-    Withdrawn,
-    /// The timing's owner changed another way while it was open.
-    Superseded,
-}
-
-impl OwnerRequestStatus {
-    pub const ALL: &[Self] = &[
-        Self::Open,
-        Self::Accepted,
-        Self::Declined,
-        Self::Expired,
-        Self::Withdrawn,
-        Self::Superseded,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Open => "open",
-            Self::Accepted => "accepted",
-            Self::Declined => "declined",
-            Self::Expired => "expired",
-            Self::Withdrawn => "withdrawn",
-            Self::Superseded => "superseded",
-        }
-    }
-
-    pub fn parse(text: &str) -> Option<Self> {
-        Self::ALL
-            .iter()
-            .copied()
-            .find(|status| status.as_str() == text)
+spelled! {
+    OwnerRequestStatus {
+        Open => "open",
+        Accepted => "accepted",
+        Declined => "declined",
+        Expired => "expired",
+        Withdrawn => "withdrawn",
+        /// The timing's owner changed another way while it was open.
+        Superseded => "superseded",
     }
 }
 
