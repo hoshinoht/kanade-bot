@@ -6,6 +6,7 @@ use chrono_tz::Tz;
 use regex::Regex;
 
 use super::{PromptContext, PromptMessage};
+use crate::chat::persona::split_lines;
 use crate::domain::catalog::BossTable;
 use crate::domain::ids::short_id;
 use crate::domain::pytext::strip;
@@ -46,49 +47,13 @@ pub(super) fn render_time(when: DateTime<Utc>, zone: Tz) -> String {
     )
 }
 
-/// Python `str.splitlines()` boundaries.
-fn splitlines(text: &str) -> Vec<&str> {
-    let is_break = |c: char| {
-        matches!(
-            c,
-            '\n' | '\r'
-                | '\x0b'
-                | '\x0c'
-                | '\x1c'
-                | '\x1d'
-                | '\x1e'
-                | '\u{85}'
-                | '\u{2028}'
-                | '\u{2029}'
-        )
-    };
-    let mut lines = Vec::new();
-    let mut start = 0;
-    let mut chars = text.char_indices().peekable();
-    while let Some((at, c)) = chars.next() {
-        if !is_break(c) {
-            continue;
-        }
-        lines.push(&text[start..at]);
-        start = at + c.len_utf8();
-        if c == '\r' && chars.peek().is_some_and(|&(_, next)| next == '\n') {
-            chars.next();
-            start += 1;
-        }
-    }
-    if start < text.len() {
-        lines.push(&text[start..]);
-    }
-    lines
-}
-
 /// `[123] [2026-08-30 13:07 Sun] [kanon <@114...>] then weds lah`.
 pub(super) fn render_message(
     message: &PromptMessage,
     zone: Tz,
     session: &mut PassthroughSession,
 ) -> String {
-    let lines: Vec<&str> = splitlines(&message.content)
+    let lines: Vec<&str> = split_lines(&message.content)
         .into_iter()
         .map(strip)
         .filter(|line| !line.is_empty())
